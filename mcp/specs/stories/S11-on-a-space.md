@@ -152,9 +152,20 @@ Preconditions:
 - mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
 - dummy is deployed and active on the space, serving on `/run/ikigenba/dummy.sock`, and its manifest has `mcp = true`, so the host's services file lists `dummy` enabled, marked for MCP, with that socket.
 - `<token>` is a bearer token that the space's gate accepts.
+- The telemetry service is deployed and active on the space, and the host's services file lists it as `telemetry`.
 
 Postconditions:
 
 - Nothing has changed. No widget was created.
-- mcp wrote two lines to stderr, `mcp: request <id>: dummy tools/list: ok` and then `mcp: request <id>: dummy tools/call list_widgets: ok`, where `<id>` is the `X-Request-Id` nginx set on the request (`S08`).
-- dummy wrote nothing to stderr.
+- mcp wrote nothing to stderr, and neither did dummy.
+- The space's telemetry service holds mcp's trail for the request, under `<id>`, the `X-Request-Id` nginx set on the request, and the id of the user `<token>` belongs to (`S08`):
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=call kind=read outcome=ok
+  request.finished status=200
+  ```
+
+  It holds dummy's own events for the two requests the gateway made under the same `<id>` and user, dummy's `tool.called` for `list_widgets` among them, so a trace of `<id>` shows the forward and the execution.

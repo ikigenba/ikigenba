@@ -1,6 +1,6 @@
 # Stories — services
 
-The gateway's `services` tool, offered at `/mcp` and at every scoped `/mcp/<scope>` (`S05`): it lists the services the connection reaches and whether each is available, so a model learns what it can use before it asks `describe` (`S07`) for a service's tools. It takes no arguments. Its answer is an object whose one member, `services`, is an array with one entry per service the connection reaches, in name order: on `/mcp` the MCP services of the services file, and on a scoped endpoint exactly the scope's names (`S05`). Each entry's members are, in this order, `name`; `description`, the entry's `description` from the services file, or `""` for a name that is not installed; `available`, `true` or `false`; and, only when `available` is `false`, `reason`, which is `disabled` for an MCP service whose `enabled` is `false` and `not installed` for a scoped name the file does not hold as an MCP service. The answer is read from the services file as it stands at the moment of the call. `services` contacts no backend: whether a service is available is what the file says, not whether its socket answers. Requests, the envelope, the result's two forms, and the gateway's silence on stderr are as `S05` fixes them; `services` writes nothing to stderr.
+The gateway's `services` tool, offered at `/mcp` and at every scoped `/mcp/<scope>` (`S05`): it lists the services the connection reaches and whether each is available, so a model learns what it can use before it asks `describe` (`S07`) for a service's tools. It takes no arguments. Its answer is an object whose one member, `services`, is an array with one entry per service the connection reaches, in name order: on `/mcp` the MCP services of the services file, and on a scoped endpoint exactly the scope's names (`S05`). Each entry's members are, in this order, `name`; `description`, the entry's `description` from the services file, or `""` for a name that is not installed; `available`, `true` or `false`; and, only when `available` is `false`, `reason`, which is `disabled` for an MCP service whose `enabled` is `false` and `not installed` for a scoped name the file does not hold as an MCP service. The answer is read from the services file as it stands at the moment of the call. `services` contacts no backend: whether a service is available is what the file says, not whether its socket answers. Requests, the envelope, the result's two forms, the gateway's silence on stderr, and the `tool.called` event each call adds to the trail are as `S05` fixes them; `services` writes nothing to stderr.
 
 ## A model lists the services
 
@@ -45,6 +45,13 @@ Postconditions:
 - Nothing has changed. The services file is as it was.
 - No backend was contacted; neither dummy nor notes received a request.
 - The gateway wrote nothing to stderr.
+- The trail holds, under user `u_7f3a9c21` and a request id mcp made up for it:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=services kind=read outcome=ok
+  request.finished status=200
+  ```
 
 ## A model lists the services through a scoped endpoint
 
@@ -88,6 +95,13 @@ Postconditions:
 
 - Nothing has changed.
 - No backend was contacted, and the gateway wrote nothing to stderr.
+- The trail holds, under user `u_7f3a9c21` and a request id mcp made up for it:
+
+  ```
+  request.started method=POST path=/mcp/mcp,ghost,dummy,auth
+  tool.called tool=services kind=read outcome=ok
+  request.finished status=200
+  ```
 
 ## A model lists the services on a host with no services file
 
@@ -129,7 +143,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- The gateway wrote nothing to stderr.
+- The gateway wrote nothing to stderr about the services file. Without one, though, it cannot find the telemetry service either, so no event of the request reaches the trail, and stderr holds one `undelivered event` line for each (`S02`), in this order, where `<id>` is the request id mcp made up for the request, each `<time>` is when mcp recorded that event, and each `<us>` a duration in whole microseconds:
+
+  ```
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.started","request_id":"<id>","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"tool.called","request_id":"<id>","user":"u_7f3a9c21","attrs":{"duration_us":<us>,"kind":"read","outcome":"ok","tool":"services"}}
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.finished","request_id":"<id>","user":"u_7f3a9c21","attrs":{"duration_us":<us>,"status":200}}
+  ```
 
 ## A model never sees the gateway listed
 
@@ -167,6 +187,13 @@ Postconditions:
 
 - Nothing has changed.
 - No backend was contacted, and the gateway wrote nothing to stderr.
+- The trail holds, under user `u_7f3a9c21` and a request id mcp made up for it:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=services kind=read outcome=ok
+  request.finished status=200
+  ```
 
 ## A model sees the list follow a change to the services file
 
@@ -209,7 +236,7 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- No backend was contacted, and the gateway wrote nothing to stderr.
+- No backend was contacted, and the gateway wrote nothing to stderr. The call added the three events of `A model lists the services` to the trail.
 
 ## A model passes services an argument it does not take
 
@@ -252,3 +279,10 @@ Postconditions:
 
 - Nothing has changed.
 - No backend was contacted, and the gateway wrote nothing to stderr.
+- The trail holds, under user `u_7f3a9c21` and a request id mcp made up for it:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=services kind=read outcome=invalid_arguments
+  request.finished status=200
+  ```

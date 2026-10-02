@@ -1,10 +1,23 @@
 # Stories — serve
 
-The bare binary serves, and it serves only on a listening socket it inherits: mcp never opens one of its own, and there is no port or address it falls back to. It takes the socket the way systemd socket activation passes it — `LISTEN_PID` names mcp's own process, `LISTEN_FDS` is `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*` variables from its environment once it has taken it. On a host, opsctl publishes `ikigenba-mcp.socket`, which holds the Unix socket `/run/ikigenba/mcp.sock`, beside `ikigenba-mcp.service`, which runs `/opt/mcp/bin/mcp` with no arguments as the `ikigenba` user, with `/opt/mcp` as its working directory and `/opt/mcp/etc/env` as its environment file; nginx proxies to `http://unix:/run/ikigenba/mcp.sock:`. The service is `Type=notify`: mcp tells systemd it is ready, by sending `READY=1` to `$NOTIFY_SOCKET`, once it is serving. When stopped, mcp drains for at most `DRAIN_SECONDS`, a positive whole number of seconds read from its environment, and 5 when that is unset or empty. On a host, opsctl owns this value and the service unit's stop timeout: both are space-wide settings in opsctl's configuration, opsctl writes the drain into every app's `etc/env` and the stop timeout (10 seconds by default, always longer than the drain) into every service unit, and an app's manifest never sets either. mcp's environment also carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives mcp. The file lists the platform's services: it feeds the launcher in the connect page's banner (`S03`), and it is where the gateway finds the suite's MCP services and the socket each one serves on (`S06`). mcp reads the variable once, when it starts, and reads the file it names afresh on every request, so a rewritten file shows on the next request without a restart. mcp never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, mcp starts and serves all the same, treats the file as listing no services, and says nothing about it. A diagnostic mcp writes about a request names that request by its `X-Request-Id`, as `mcp: request <id>: <reason>` on stderr, so a line in the journal can be matched to nginx's log of the same request; a request that carries no `X-Request-Id` is named `-`. An app writes one such line for each request it answers with a 5xx, any status from 500 through 599, and nothing for any other answer: a 4xx is the caller's to fix, not trouble. A healthy app prints nothing, so under systemd the journal holds only trouble; mcp has one exception, below. The actor in these stories is the host, whether that is systemd or a developer at a terminal standing in for it.
+The bare binary serves, and it serves only on a listening socket it inherits: mcp never opens one of its own, and there is no port or address it falls back to. It takes the socket the way systemd socket activation passes it — `LISTEN_PID` names mcp's own process, `LISTEN_FDS` is `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*` variables from its environment once it has taken it. On a host, opsctl publishes `ikigenba-mcp.socket`, which holds the Unix socket `/run/ikigenba/mcp.sock`, beside `ikigenba-mcp.service`, which runs `/opt/mcp/bin/mcp` with no arguments as the `ikigenba` user, with `/opt/mcp` as its working directory and `/opt/mcp/etc/env` as its environment file; nginx proxies to `http://unix:/run/ikigenba/mcp.sock:`. The service is `Type=notify`: mcp tells systemd it is ready, by sending `READY=1` to `$NOTIFY_SOCKET`, once it is serving. When stopped, mcp drains for at most `DRAIN_SECONDS`, a positive whole number of seconds read from its environment, and 5 when that is unset or empty. On a host, opsctl owns this value and the service unit's stop timeout: both are space-wide settings in opsctl's configuration, opsctl writes the drain into every app's `etc/env` and the stop timeout (10 seconds by default, always longer than the drain) into every service unit, and an app's manifest never sets either. mcp's environment also carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives mcp. The file lists the platform's services: it feeds the launcher in the connect page's banner (`S03`), and it is where the gateway finds the suite's MCP services and the socket each one serves on (`S06`). mcp reads the variable once, when it starts, and reads the file it names afresh on every request, so a rewritten file shows on the next request without a restart. mcp never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, mcp starts and serves all the same, treats the file as listing no services, and says nothing about it. Such a file names no telemetry service either, so while it lasts every event of mcp's trail is undeliverable and reaches stderr as told below. mcp's stderr holds only trouble, and trouble is exactly two things: a condition mcp cannot continue from, and an event of its trail (below) that it could not deliver to the telemetry service. Everything else mcp does it records in its trail and writes nothing about, a request it answers with a 5xx included: a handled failure is a fact of the trail, recorded with its status, not a line in the journal. So under systemd the journal holds only trouble, and a healthy mcp whose trail is being delivered writes nothing at all. Every line mcp writes to stderr begins `mcp: `. The actor in these stories is the host, whether that is systemd or a developer at a terminal standing in for it.
 
-These are the terms every app of the platform serves on, the same as dummy's. The socket is the app's only way in. Every app runs as the one `ikigenba` user, so any app can reach any sibling's socket, and nginx reaches them all; nothing else on the host can. The suite is a closed system that only we deploy services into, and an app trusts the suite: it trusts the headers nginx sets — `X-User-Id` and `X-User-Email`, the caller auth authenticated, and `X-Request-Id`, 32 lowercase hexadecimal characters nginx sets on every request and overwrites whatever a client sent — and it trusts a sibling that calls it to have forwarded them. An app that calls a sibling while serving a request calls it directly at its socket, not through nginx, and copies `X-User-Id`, `X-User-Email`, and `X-Request-Id` from the request it is serving onto the call, so the sibling cannot tell the call from one nginx made.
+These are the terms every app of the platform serves on, the same as dummy's. The socket is the app's only way in. Every app runs as the one `ikigenba` user, so any app can reach any sibling's socket, and nginx reaches them all; nothing else on the host can. The suite is a closed system that only we deploy services into, and an app trusts the suite: it trusts the headers nginx sets — `X-User-Id` and `X-User-Email`, the caller auth authenticated, and `X-Request-Id`, 32 lowercase hexadecimal characters nginx sets on every request and overwrites whatever a client sent — and it trusts a sibling that calls it to have forwarded them. An app that calls a sibling while serving a request calls it directly at its socket, not through nginx, and copies `X-User-Id`, `X-User-Email`, and `X-Request-Id` from the request it is serving onto the call, so the sibling cannot tell the call from one nginx made. Every request an app serves has a request id: a request that arrives with no `X-Request-Id`, or an empty one — a developer's request with no nginx in front, say — is given one in nginx's shape, 32 lowercase hexadecimal characters the app makes up, before anything else in the app sees the request, and from then on that id is the request's `X-Request-Id` in the app's trail and on every call the app makes for it.
 
-mcp is an app that calls its siblings: calling them is what the gateway is for. While serving a request to `/mcp` it calls a backend directly at the socket that backend's entry in the services file names (on a host, `/run/ikigenba/<name>.sock`), never through nginx, and copies `X-User-Id`, `X-User-Email`, and `X-Request-Id` from the request onto the call; a header the request lacked is not sent. One request to the gateway may wait up to 50 seconds on its backends (`S08`). These backend calls are mcp's one exception to printing nothing when healthy: it writes one line to stderr for each request it makes to a backend, when that request ends, whatever its outcome (`S08`). A request that never reaches a backend writes no such line.
+mcp is an app that calls its siblings: calling them is what the gateway is for. While serving a request to `/mcp` it calls a backend directly at the socket that backend's entry in the services file names (on a host, `/run/ikigenba/<name>.sock`), never through nginx, and copies `X-User-Id`, `X-User-Email`, and `X-Request-Id` from the request onto the call; an `X-User-Email` the request lacked is not sent. One request to the gateway may wait up to 50 seconds on its backends (`S08`). mcp records each request it makes to a backend in its trail, once the backend's status and headers arrive or the request fails, whatever its outcome (`S08`), and writes nothing to stderr about it.
+
+mcp records what it does as a trail of events, the platform's telemetry, and sends each event to the telemetry service: the entry named `telemetry` in the services file, at the socket that entry names, as `POST /ingest`, never through nginx. mcp looks that entry up afresh for every event, so a telemetry service installed, moved, or restarted while mcp runs gets mcp's next event without mcp restarting. An event is one record: the time, in UTC to the microsecond; the service, always `mcp`; the event's name; the request id, the `X-Request-Id` of the request the event belongs to; the user, that request's `X-User-Id`, empty when it had none; and its attributes, flat names with string, number, or boolean values. The request id and the user are empty for an event that belongs to no request. Attributes carry what happened and the names of the things it happened to, never what a request or an answer held: no tool arguments, no results, no error text, no query string. Sending the trail never holds up a request: mcp answers as fast, and the same, with the telemetry service down as with it up. mcp records these events and no others; it has no events of its own beyond the ones every app of the platform records:
+
+- `service.started`, once mcp is serving and has told systemd it is ready, with `version`, the version `mcp --version` prints (`S01`);
+- `service.stopping`, when mcp is told to stop and has finished the requests it accepted, with `reason`, the name of the signal that stopped it, `SIGTERM` or `SIGINT`; it is the last event mcp sends;
+- `request.started`, as each request arrives, with `method` and `path`, the request's URL path without its query;
+- `request.finished`, once that request's answer is complete, with `status`, the HTTP status mcp answered with, and `duration_us`, how long mcp took to answer, in whole microseconds;
+- `sibling.called`, for each request mcp makes to a backend, once the backend's status and headers arrive or the request fails (`S08`), with `target`, the service's name, `method`, `path`, `status`, the HTTP status the backend answered with or `0` when no answer came, and `duration_us`;
+- `tool.called`, for each call of one of the gateway's four tools that is answered with a result (`S05`), with `tool`, `kind`, `outcome`, and `duration_us`.
+
+A story shows the events a request added to the trail as a block, one event to a line, in the order mcp recorded them: the event's name, then each attribute as `<key>=<value>`, with `duration_us` left out because it varies; the request id and the user every line of the block carries are stated beside it. A story's `Nothing has changed.` speaks of everything but the trail, which every request adds to. Unless a story says otherwise, the telemetry service is serving and stores every event mcp sends it, so no event reaches stderr. The services files these stories show leave out one entry, `telemetry`, whose `socket` is `/run/ikigenba/telemetry.sock`, where a stand-in that stores every event serves. It is not an MCP service (`"mcp": false`) and has no icon, so it appears in no page, list, or answer quoted here. On a host the real telemetry service is an MCP service the gateway reaches like any other (`S11`). A services file a story shows as missing, unreadable, or malformed holds no such entry, and then mcp's events reach stderr as below.
+
+An event mcp cannot deliver is not lost without trace: mcp writes it to stderr as one line, `mcp: undelivered event: ` followed by the event exactly as it would have been sent, a JSON object whose members are, in this order, `time`, `service`, `event`, `request_id`, `user`, and `attrs`, with `time` in the form `2026-10-02T14:03:07.123456Z`. An event is undeliverable when the telemetry service has not stored it after three tries within a fraction of a second (no `telemetry` entry, nothing listening on its socket, or an answer that is not a success); at once, without another try, when the telemetry service refuses it as malformed; and at once, without being sent, when so many events are already waiting to be sent that mcp holds no more. mcp never sends an event again once it has written it to stderr.
 
 ## The host starts mcp
 
@@ -34,7 +47,47 @@ Postconditions:
 - `ikigenba-mcp.service` is `active`, and mcp is serving on `/run/ikigenba/mcp.sock`: a connection there, and every connection queued before mcp started, is answered by mcp.
 - mcp listens on no other socket and no port.
 - mcp has written nothing to the journal.
+- The trail holds one event from this start, the first this mcp records, before the `request.started` of any request it answers, with an empty request id and an empty user, `v<semver>` being the version `mcp --version` prints:
+
+  ```
+  service.started version=v<semver>
+  ```
+
 - It keeps running until it is signalled.
+
+## The host starts mcp while the telemetry service is down
+
+The trail is not mcp's to serve: mcp serves the same whether or not the telemetry service is there, and readiness never waits on it. An event it cannot deliver is the one kind of handled trouble that reaches the journal, so the operator can see what the trail is missing and nothing is lost without trace.
+
+Command:
+
+```
+$ sudo systemctl start ikigenba-mcp.service
+```
+
+Output:
+
+```
+```
+
+Exits 0. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- mcp is installed, `ikigenba-mcp.socket` is active, and `ikigenba-mcp.service` is not running, as in `The host starts mcp`.
+- The services file's `telemetry` entry names `/run/ikigenba/telemetry.sock`, and nothing accepts connections there.
+
+Postconditions:
+
+- mcp is serving on `/run/ikigenba/mcp.sock`, as in `The host starts mcp`.
+- The journal holds one line from mcp, where `<time>` is when mcp recorded the event and `v<semver>` the version `mcp --version` prints:
+
+  ```
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+  ```
+
+- While the telemetry service stays down, every request mcp serves is answered exactly as it would be with the telemetry service up, and each event mcp records for it adds one such line to the journal. A services file with no `telemetry` entry is the same.
+- Once the telemetry service is serving on the socket its entry names, the next event mcp records reaches it, with no restart of mcp. No event already written to the journal is sent.
 
 ## The host stops mcp
 
@@ -63,10 +116,17 @@ Postconditions:
 
 - Every request accepted before the signal received its full response.
 - `/run/ikigenba/mcp.sock` still exists, and connections made to it after mcp exited wait in the socket's queue for the next mcp to answer.
+- The trail holds, after the `request.finished` of every request accepted before the signal, one last event from mcp, with an empty request id and an empty user; after a `SIGINT` its reason is `SIGINT`:
+
+  ```
+  service.stopping reason=SIGTERM
+  ```
+
+  mcp delivered every event it had recorded before it exited.
 
 ## The host stops mcp while a request outlasts the drain
 
-mcp waits for accepted requests only until its drain deadline, `DRAIN_SECONDS` after the signal, so that it always exits before the service unit's stop timeout and is never killed mid-write by systemd. A request still running at the deadline is cut off: its connection is closed without the rest of its response. The request still running may be one waiting on a backend; it is cut off and counted like any other. Losing a request is trouble, so mcp says how many it lost and exits non-zero.
+mcp waits for accepted requests only until its drain deadline, `DRAIN_SECONDS` after the signal, so that it always exits before the service unit's stop timeout and is never killed mid-write by systemd. A request still running at the deadline is cut off: its connection is closed without the rest of its response. The request still running may be one waiting on a backend; it is cut off and counted like any other. Losing a request is trouble, so mcp says how many it lost and exits non-zero. The drain deadline bounds the trail too: sending what is left of the trail happens inside the same `DRAIN_SECONDS`, so once the requests have used it all, nothing is left to send in, and every event not yet delivered goes to stderr instead, `service.stopping` among them. The trail then ends with the cut-off requests' `request.started` and no `request.finished` for them, which is how it shows a request that never finished.
 
 Command:
 
@@ -77,10 +137,11 @@ $ kill -TERM <pid>
 Output:
 
 ```
+mcp: undelivered event: {"time":"<time>","service":"mcp","event":"service.stopping","request_id":"","user":"","attrs":{"reason":"SIGTERM"}}
 mcp: stopped with <n> requests unfinished
 ```
 
-mcp exits 1, 5 seconds after the signal. The line is on stderr; stdout is empty. `<n>` is the number of requests still running at the deadline. When `<n>` is 1 the line reads `mcp: stopped with 1 request unfinished`.
+mcp exits 1, 5 seconds after the signal. The lines are on stderr; stdout is empty. The output is one or more `mcp: undelivered event: ` lines and then the `stopped with` line, always last; the `service.stopping` line shown is always among them, but other lines may come before or after it. `<n>` is the number of requests still running at the deadline. When `<n>` is 1 the last line reads `mcp: stopped with 1 request unfinished`. `<time>` is when mcp recorded the event. The undelivered lines are every event that was still waiting to be sent at the deadline, `service.stopping` included, in the order mcp recorded them, followed by any event mcp records after the deadline, such as a cut-off request's `request.finished`, which is written the same way, never sent, before the last line or not at all.
 
 Preconditions:
 
@@ -91,6 +152,7 @@ Preconditions:
 Postconditions:
 
 - Every request that finished within 5 seconds of the signal received its full response; the `<n>` that did not were cut off.
+- The trail holds no `service.stopping` from this mcp, and no `request.finished` for any of the `<n>` requests cut off.
 - `/run/ikigenba/mcp.sock` still exists, and connections made to it after mcp exited wait in the socket's queue for the next mcp to answer.
 
 ## The host restarts mcp during a deploy
@@ -119,6 +181,7 @@ Postconditions:
 
 - Every request the client sent was answered, by the old mcp or the new one; none was refused and none was cut off.
 - A new mcp process is serving on `/run/ikigenba/mcp.sock`.
+- The trail holds the old mcp's `service.stopping reason=SIGTERM`, after the `request.finished` of every request the old mcp answered, then the new mcp's `service.started version=v<semver>` naming the version just deployed; every request the new mcp answered is recorded after it. A new version in a start event is how the trail shows a deploy.
 
 ## The host starts mcp without a socket
 
@@ -148,7 +211,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. mcp listened on nothing and told systemd nothing.
+- Nothing has changed. mcp listened on nothing, told systemd nothing, and sent nothing to the telemetry service: a start refused as a usage error records no event.
 
 ## The host passes mcp more than one socket
 
@@ -178,7 +241,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. mcp served on neither socket and told systemd nothing.
+- Nothing has changed. mcp served on neither socket, told systemd nothing, and sent nothing to the telemetry service.
 
 ## The host gives mcp a drain deadline that is not a number of seconds
 
@@ -205,4 +268,4 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. mcp served nothing and told systemd nothing.
+- Nothing has changed. mcp served nothing, told systemd nothing, and sent nothing to the telemetry service.

@@ -27,7 +27,7 @@ The launcher is the banner's way to the platform's other services, and it is the
 
 The page links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport, so a phone shows it at the phone's own width. The stylesheet, its fonts, and the launcher's script are the platform's shared files, which mcp serves under `/_appkit/` (`S04`); the page makes no request to any third party. Last on the page is the footer, whose text is `mcp v<semver>`: the service's name, one space, and the version `mcp --version` prints (`S01`), exactly as it prints it. The version is data, and no story fixes its value.
 
-The connect page is mcp's only HTML. Every other answer in this group is bare: the missing-header 500 and the 404 are one line of plain text, and the 405 has an empty body; none has a banner or a footer. mcp writes one line to stderr for the missing-header 500, in the form `S02` fixes, and nothing for any other answer in this group: a 404 or a 405 is the caller's mistake, not trouble, and serving the page contacts no backend.
+The connect page is mcp's only HTML. Every other answer in this group is bare: the missing-header 500 and the 404 are one line of plain text, and the 405 has an empty body; none has a banner or a footer. mcp writes nothing to stderr about any answer in this group, the missing-header 500 included; only an event it cannot deliver reaches stderr (`S02`): every request it answers here adds exactly two events to its trail (`S02`), `request.started` with its method and path as it arrives and `request.finished` with the status mcp answered once the answer is complete, and serving the page contacts no backend.
 
 The routes are `/`, the connect page, which takes `GET` and `HEAD`; `/_appkit/<name>`, the platform's shared files (`S04`); and `/mcp` and `/mcp/<scope>`, the MCP endpoint, whose answers, to every method, are `S05`'s and never one of the answers below. A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
 
@@ -63,6 +63,12 @@ Postconditions:
 
 - Nothing has changed. The services file is as it was, and no backend was contacted.
 - mcp wrote nothing to stderr and set no cookie.
+- The trail holds two events for the request, both under user `u_7f3a9c21` and a request id mcp made up for it, 32 lowercase hexadecimal characters, since the request carried no `X-Request-Id`:
+
+  ```
+  request.started method=GET path=/
+  request.finished status=200
+  ```
 
 ## A user's client asks for the connect page's headers
 
@@ -122,7 +128,7 @@ Status 200. The body is the connect page of `A user opens the connect page`, wit
 Preconditions:
 
 - mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` lists `auth` and `mcp` as in the suite's services file, and no other entry.
+- `/var/lib/ikigenba/services.json` lists `auth` and `mcp` as in the suite's services file, and no other entry but the stand-in `telemetry` entry every story's file holds (`S02`).
 
 Postconditions:
 
@@ -160,7 +166,12 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr about the services file. Without one, though, mcp cannot find the telemetry service either, so no event of the request reaches the trail, and stderr holds one `undelivered event` line for each (`S02`), in this order, where `<id>` is the request id mcp made up for the request, each `<time>` is when mcp recorded that event, and each `<us>` a duration in whole microseconds:
+
+  ```
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.started","request_id":"<id>","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/"}}
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.finished","request_id":"<id>","user":"u_7f3a9c21","attrs":{"duration_us":<us>,"status":200}}
+  ```
 
 ## A user does not see the gateway in its own list
 
@@ -344,11 +355,16 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted.
-- mcp wrote one line to stderr, `mcp: request -: X-User-Id is missing`, naming the request `-` because it carried no `X-Request-Id`.
+- mcp wrote nothing to stderr. The 500 is a handled failure, so it is in the trail and not the journal: the trail holds two events for the request, with an empty user and a request id mcp made up for it, 32 lowercase hexadecimal characters, because it carried no `X-Request-Id`:
+
+  ```
+  request.started method=GET path=/
+  request.finished status=500
+  ```
 
 ## A request from nginx arrives without the identity headers
 
-nginx sets `X-Request-Id` on every request it forwards, so when the gate is misconfigured and forwards a request without `X-User-Id`, the line mcp writes names the request by the id nginx gave it, and the operator reading the journal can find the same request in nginx's log. The developer here stands in for such an nginx by sending the id by hand.
+nginx sets `X-Request-Id` on every request it forwards, so when the gate is misconfigured and forwards a request without `X-User-Id`, mcp records the 500 under the id nginx gave the request, and the operator who finds the 500 in the trail can find the same request in nginx's log. The developer here stands in for such an nginx by sending the id by hand.
 
 Request:
 
@@ -375,7 +391,12 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr, `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: X-User-Id is missing`.
+- mcp wrote nothing to stderr. The trail holds two events for the request, under request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and an empty user:
+
+  ```
+  request.started method=GET path=/
+  request.finished status=500
+  ```
 
 ## A caller asks for a path that does not exist
 

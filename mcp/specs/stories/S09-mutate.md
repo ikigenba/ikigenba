@@ -1,6 +1,6 @@
 # Stories — mutate
 
-`mutate`, the gateway tool that runs a write tool of a service and returns what that tool answered. It is `call` (`S08`) for the other kind of tool: the same arguments, `service` and `tool`, required, and `args`, optional, `{}` when left out and passed to the backend untouched; the same hop to the backend, the same 50-second budget, the same cancellation, and the same line on stderr for every backend request (`S08`); the same checks in the same order; and the backend's result relayed verbatim, `isError` included, under the gateway's own envelope (`S05`). Only a tool whose kind is `write` runs here (`S07`); a read tool runs with `call`. A client is told that `mutate` is destructive (`S05`), so it can ask its user before running one, whatever the tool does.
+`mutate`, the gateway tool that runs a write tool of a service and returns what that tool answered. It is `call` (`S08`) for the other kind of tool: the same arguments, `service` and `tool`, required, and `args`, optional, `{}` when left out and passed to the backend untouched; the same hop to the backend, the same 50-second budget, the same cancellation, and the same `sibling.called` in the trail for every backend request, with nothing on stderr (`S08`); the same checks in the same order; and the backend's result relayed verbatim, `isError` included, under the gateway's own envelope (`S05`). Only a tool whose kind is `write` runs here (`S07`); a read tool runs with `call`. Every call answered with a result adds the gateway's `tool.called` for `mutate`, `kind=destructive` (`S05`); a story below shows the request's whole trail, under request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and user `u_7f3a9c21`. A client is told that `mutate` is destructive (`S05`), so it can ask its user before running one, whatever the tool does.
 
 The actor is a model working through an MCP client. Each request is the HTTP request the client sends to a running mcp (`S02`), on revision `2026-07-28`, with the headers and `_meta` `S05` fixes and `Mcp-Name: mutate`; every answer also carries the envelope members `S05` fixes. Every request carries the caller's `X-User-Id`, `X-User-Email` and `X-Request-Id` by hand. `IKIGENBA_SERVICES` names `/var/lib/ikigenba/services.json`, which holds the suite's services file (`S05`) unless a story says otherwise. dummy is the backend these stories reach, serving on `/run/ikigenba/dummy.sock` with its two tools and its fixture widgets `alpha`, `beta`, and `gamma` exactly as dummy's `S9` defines them. Stories about a backend that misbehaves use the hypothetical backend `reports` of `S07`, added to the file after `notes`, offering here two tools in this order: `build_report`, the read tool of `S07`, and `archive_report`, a write tool, annotated `readOnlyHint` `false` and `destructiveHint` `true`, that takes a report's `name`.
 
@@ -46,11 +46,14 @@ Preconditions:
 Postconditions:
 
 - dummy holds a widget named `delta`, count 7, status `active`, last, after `gamma`; a `call` of `list_widgets` (`S08`) and dummy's own panel show it from the next request on.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/call create_widget: ok
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=mutate kind=destructive outcome=ok
+  request.finished status=200
   ```
 
 ## A model mutates with a read tool
@@ -93,7 +96,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list` and no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
+  ```
 
 ## A backend refuses the change a model asked for
 
@@ -137,11 +147,14 @@ Preconditions:
 Postconditions:
 
 - No widget was created. dummy's widgets are unchanged; `alpha` still has count 3 and status `active`.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/call create_widget: tool error
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
   ```
 
 ## A model mutates and the tool does not finish in time
@@ -184,11 +197,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed in mcp. The gateway abandoned its `tools/call` to `reports`; whether `reports` archived `q3` is not known to the gateway.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/call archive_report: timed out
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  sibling.called target=reports method=POST path=/mcp status=0
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
   ```
 
 ## A model mutates through a service the gateway does not know
@@ -230,7 +246,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
+  ```
 
 ## A model mutates through a service that is disabled
 
@@ -269,7 +291,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing was sent to `/run/ikigenba/notes.sock`.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
+  ```
 
 ## A model mutates through a scoped service that is not installed
 
@@ -310,7 +338,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp/dummy,weather
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
+  ```
 
 ## A model mutates through a service whose backend is not running
 
@@ -352,7 +386,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: unreachable`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=0
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
+  ```
 
 ## A model mutates with a tool the service does not have
 
@@ -394,7 +435,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list` and no `tools/call`; `alpha` still exists.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
+  ```
 
 ## A model mutates through a backend that does not list its tools in time
 
@@ -436,11 +484,18 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `reports` was sent no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: timed out`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=0
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
+  ```
 
 ## A model mutates and the backend answers with an error
 
-The backend answers the `tools/call` with a JSON-RPC error; the gateway passes its message on unaltered, after naming the service, as for `call` (`S08`). A JSON-RPC error in answer to the `tools/list` is answered with the same text, as in `S07`, and its line names `tools/list`. Here `reports` answers with `code` `-32603` and `message` `report store is offline`.
+The backend answers the `tools/call` with a JSON-RPC error; the gateway passes its message on unaltered, after naming the service, as for `call` (`S08`). A JSON-RPC error in answer to the `tools/list` is answered with the same text, as in `S07`, and the trail then holds one `sibling.called`, for the `tools/list`. Here `reports` answers with `code` `-32603` and `message` `report store is offline`.
 
 Request:
 
@@ -473,21 +528,26 @@ Service reports answered with an error: report store is offline
 Preconditions:
 
 - mcp is serving, with the suite's services file plus the `reports` entry.
-- `reports` is serving on `/run/ikigenba/reports.sock`; it answers `tools/list` offering its two tools, and a `tools/call` of `archive_report` with a JSON-RPC error whose `code` is `-32603` and whose `message` is `report store is offline`.
+- `reports` is serving on `/run/ikigenba/reports.sock`; it answers `tools/list` offering its two tools, and a `tools/call` of `archive_report` with HTTP status `500` and a JSON-RPC error whose `code` is `-32603` and whose `message` is `report store is offline`, as an MCP server answers an internal error.
 
 Postconditions:
 
 - Nothing has changed in mcp.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/call archive_report: rpc error -32603: report store is offline
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  sibling.called target=reports method=POST path=/mcp status=500
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
   ```
+
+  The error's code and message are in no event.
 
 ## A model mutates and the backend does not answer as MCP
 
-The backend answers the `tools/call` with something the gateway cannot read as MCP: here an HTTP `502` with a one-line plain-text body. The change may have been made before the answer went wrong, so the model is told the call may have completed. An unreadable answer to the `tools/list` is answered as in `S07`, `Service reports gave an answer the gateway could not read. Retry later.`, since no tool has run, and its line names `tools/list`.
+The backend answers the `tools/call` with something the gateway cannot read as MCP: here an HTTP `502` with a one-line plain-text body. The change may have been made before the answer went wrong, so the model is told the call may have completed. An unreadable answer to the `tools/list` is answered as in `S07`, `Service reports gave an answer the gateway could not read. Retry later.`, since no tool has run, and the trail then holds one `sibling.called`, for the `tools/list`.
 
 Request:
 
@@ -525,11 +585,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed in mcp; whether `reports` archived `q3` is not known to the gateway.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/call archive_report: bad response (status 502)
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  sibling.called target=reports method=POST path=/mcp status=502
+  tool.called tool=mutate kind=destructive outcome=error
+  request.finished status=200
   ```
 
 ## A model mutates with arguments that are not an object
@@ -573,4 +636,10 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy was not contacted; no widget named `delta` exists.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=mutate kind=destructive outcome=invalid_arguments
+  request.finished status=200
+  ```

@@ -4,7 +4,7 @@ Running mcp at all: help, version, the manifest, exit codes. mcp is an app of th
 
 ## A developer asks which version they have
 
-The version is a `var` in the source, never injected at build time, so a developer's build and a deployed binary report the same string. Its shape is `v<semver>`: a `v`, then a semantic version, prerelease and build metadata included. Its value is data and is not fixed here.
+The version is a `var` in the source, never injected at build time, so a developer's build and a deployed binary report the same string. Its shape is `v<semver>`: a `v`, then a semantic version, prerelease and build metadata included. Its value is data and is not fixed here. It is the same version the connect page's footer shows (`S03`) and mcp's `service.started` event carries in the trail (`S02`).
 
 Command:
 

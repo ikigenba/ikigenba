@@ -4,7 +4,7 @@ The files that give the connect page the platform's visual style and its service
 
 Every served file answered 200 or 304 carries a strong `ETag` and exactly one `Cache-Control: no-cache`, so a browser keeps its copy but asks each time whether it is still current, and an unchanged file costs a `304` rather than the bytes again. The `ETag`'s value is opaque — no story fixes it, and `"<etag>"` below stands for whatever the server sent. What is fixed is the relation: the value follows from the file's content alone, so the same content always yields the same value and different content a different one. A body is the same bytes on every request to the same mcp binary; no story fixes its content. The stories do not fix how mcp answers a `Range` request, whether it sends `Last-Modified`, how it treats `If-Match`, `If-Unmodified-Since`, `If-Range`, an `If-Modified-Since` with no `If-None-Match`, or an `If-None-Match` that is not a well-formed list of tags.
 
-The asset routes are routes like any other. Every request reaching mcp comes through the host's nginx gate, which sets `X-User-Id` and `X-User-Email` on each upstream request, and the identity check runs first here as on every route (`S03`). The requests below therefore carry both headers explicitly, and go to a running mcp (`S02`). A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
+The asset routes are routes like any other. Every request reaching mcp comes through the host's nginx gate, which sets `X-User-Id` and `X-User-Email` on each upstream request, and the identity check runs first here as on every route (`S03`). The requests below therefore carry both headers explicitly, and go to a running mcp (`S02`). Every request here, whatever its answer, adds `request.started` and `request.finished` to the trail, and mcp writes nothing to stderr about it; only an event it cannot deliver reaches stderr, as on every route (`S03`). A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A browser fetches the connect page's stylesheet
 
@@ -384,4 +384,9 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr, `mcp: request -: X-User-Id is missing`, as it does for every request that arrives without identity (`S03`).
+- mcp wrote nothing to stderr. The trail holds two events for the request, with an empty user and a request id mcp made up for it, as for every request that arrives without identity (`S03`):
+
+  ```
+  request.started method=GET path=/_appkit/theme.css
+  request.finished status=500
+  ```

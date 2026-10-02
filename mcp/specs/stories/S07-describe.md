@@ -2,7 +2,7 @@
 
 `describe`, the gateway tool a model calls to learn what a service can do before it runs anything there. Its arguments are `service`, required, a service's name as `services` lists it, and `tool`, optional, a tool's name as `describe` lists it. With `service` only, it answers `{"service":<name>,"tools":[...]}`: each of the backend's tools, in the backend's order, as `{"name":<name>,"summary":<summary>,"kind":<kind>}`, where the summary is the backend's description up to its first LF (the whole description when it has none). With `tool` too, it answers `{"service":<name>,"tool":{"name":...,"description":...,"kind":...,"inputSchema":...,"outputSchema":...}}`: the backend's full description and input schema, equal to the backend's, its output schema only when the backend's tool has one, and the kind. A tool's kind is `read` when the backend annotates it `readOnlyHint` `true`, and `write` otherwise, a tool with no annotations included; a read tool runs with `call` (`S08`), a write tool with `mutate` (`S09`). The answer carries the object twice, as `structuredContent` and as one text block holding it compactly encoded, the convention every tool result of the gateway follows (`S05`).
 
-`describe` holds nothing: every call asks the backend for its `tools/list` afresh, over the hop `S08` describes — straight to the socket the services file names, forwarding the caller — within the one 50-second budget of `S08`, and writes one line to stderr for that backend request in the format `S08` fixes. The checks run in this order: a service the connection does not reach, then a service that is unavailable, then the backend's `tools/list` and whatever goes wrong with it, then, when `tool` is given, a tool the backend does not have. A check that refuses ends the call: it is answered status 200 with a result whose `isError` is `true`, no `structuredContent`, and one text block saying what the model should do next. A refusal made before the backend is asked contacts no backend and writes nothing to stderr.
+`describe` holds nothing: every call asks the backend for its `tools/list` afresh, over the hop `S08` describes — straight to the socket the services file names, forwarding the caller — within the one 50-second budget of `S08`, and records that backend request in the trail as one `sibling.called` event, as `S08` tells; whatever goes wrong with it, the gateway writes nothing to stderr. The checks run in this order: a service the connection does not reach, then a service that is unavailable, then the backend's `tools/list` and whatever goes wrong with it, then, when `tool` is given, a tool the backend does not have. A check that refuses ends the call: it is answered status 200 with a result whose `isError` is `true`, no `structuredContent`, and one text block saying what the model should do next. A refusal made before the backend is asked contacts no backend and adds no `sibling.called` to the trail. Every call answered with a result adds the gateway's `tool.called` for `describe` (`S05`). A story below shows the request's whole trail, under request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and user `u_7f3a9c21`.
 
 The actor is a model working through an MCP client. Each request is the HTTP request the client sends to a running mcp (`S02`), on revision `2026-07-28`, with the headers and `_meta` `S05` fixes and `Mcp-Name: describe`; every successful answer also carries the envelope members `S05` fixes, not repeated below. Every request carries the caller's `X-User-Id`, `X-User-Email` and `X-Request-Id` by hand. Unless a story says otherwise, `IKIGENBA_SERVICES` names `/var/lib/ikigenba/services.json`, which holds the suite's services file (`S05`): `dummy`, an available MCP service; `notes`, an MCP service that is disabled; and `auth` and `mcp`, which are not MCP services.
 
@@ -52,7 +52,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list` and no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=describe kind=read outcome=ok
+  request.finished status=200
+  ```
 
 ## A model reads one tool's full description and schemas
 
@@ -114,7 +121,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list` and no `tools/call`; no widget was created.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=describe kind=read outcome=ok
+  request.finished status=200
+  ```
 
 ## A model reads a tool that has no output schema
 
@@ -158,7 +172,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `reports` received one `tools/list` and no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  tool.called tool=describe kind=read outcome=ok
+  request.finished status=200
+  ```
 
 ## A model lists a tool whose backend makes no claim about it
 
@@ -202,7 +223,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `reports` received one `tools/list` and no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  tool.called tool=describe kind=read outcome=ok
+  request.finished status=200
+  ```
 
 ## A model sees a tool a backend gained a moment ago
 
@@ -252,7 +280,7 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed in mcp. `reports` received one `tools/list` for each request.
-- mcp wrote one line to stderr for each request: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok`.
+- mcp wrote nothing to stderr. Each request added the trail of `A model reads a tool that has no output schema` (`sibling.called` for `reports` with `status=200`, then `tool.called` for `describe` with `outcome=ok`).
 
 ## A model describes a service the gateway does not know
 
@@ -293,7 +321,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model describes a service outside its connection's scope
 
@@ -335,7 +369,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy was not contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp/notes
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model describes a service that is disabled
 
@@ -376,7 +416,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing was sent to `/run/ikigenba/notes.sock`.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model describes a scoped service that is not installed
 
@@ -417,7 +463,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp/dummy,weather
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model describes a service whose backend is not running
 
@@ -459,7 +511,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: unreachable`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=0
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model describes a service whose backend does not answer in time
 
@@ -501,7 +560,16 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: timed out`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=0
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
+
+  The `sibling.called` shows the 50 seconds it waited in its `duration_us`.
 
 ## A model describes a service whose backend answers with an error
 
@@ -538,12 +606,21 @@ Service reports answered with an error: report store is offline
 Preconditions:
 
 - mcp is serving, with the suite's services file plus the `reports` entry.
-- `reports` is serving on `/run/ikigenba/reports.sock` and answers `tools/list` with a JSON-RPC error whose `code` is `-32603` and whose `message` is `report store is offline`.
+- `reports` is serving on `/run/ikigenba/reports.sock` and answers `tools/list` with HTTP status `500` and a JSON-RPC error whose `code` is `-32603` and whose `message` is `report store is offline`, as an MCP server answers an internal error.
 
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: rpc error -32603: report store is offline`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=500
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
+
+  The error's code and message are in no event.
 
 ## A model describes a service whose backend does not answer as MCP
 
@@ -585,7 +662,16 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: bad response (status 502)`. Had the connection broken before any status arrived, the line would end `bad response`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=502
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
+
+  Had the connection broken before any status arrived, the `sibling.called` would have `status=0`.
 
 ## A model describes a tool the service does not have
 
@@ -627,7 +713,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list` and no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=describe kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model describes without naming a service
 
@@ -669,4 +762,10 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=describe kind=read outcome=invalid_arguments
+  request.finished status=200
+  ```

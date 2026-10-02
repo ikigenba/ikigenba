@@ -25,7 +25,9 @@ A client speaking the protocol revision `2026-07-28` sends, on every request, th
 
 Each gateway tool's arguments, its result, and its failures are told in its own group, `S06` to `S09`; what they share is fixed here. A successful result of the gateway's own making carries the answer twice: as `structuredContent`, a JSON object, and as one text content block whose text is that same object encoded compactly, with no white space between its tokens. A result the gateway relays from a backend is the backend's, as `S08` and `S09` tell. A tool that cannot do what it was asked answers status 200 with a result whose `isError` is `true`, with no `structuredContent` and a `content` array of exactly one text block saying why and what the model can do next. A tool that refuses its arguments answers that way with the platform's wording: the line `invalid arguments:` followed by one line per offence, each `<field>: <reason>` (`service: missing required field`, `args: expected object, got string`, `bogus: unknown field`), separated by LF with no LF after the last.
 
-A response body below is laid out for reading: its white space is not fixed. The order of members within a tool and within its schemas, and within a tool's result where a story shows one, is fixed as shown; elsewhere the order of members is not. A response block shows the status line and the headers the story fixes; a header it does not show is not fixed. No answer in this group or in `S06` contacts a backend, and the gateway writes nothing to stderr for any of them except the missing-header 500; the line it writes for each backend request `describe`, `call`, and `mutate` make is told in `S08`.
+Every call of one of the four tools that is answered with a result, an `isError` result included, adds one `tool.called` event to the trail (`S02`) once the tool has done its work and before the answer goes out, under the caller's request id and user, so in the trail it falls between the request's `request.started` and its `request.finished`. Its `tool` is the gateway tool's name, `services`, `describe`, `call`, or `mutate`, never a backend tool's; its `kind` is `read` for `services`, `describe`, and `call`, and `destructive` for `mutate`, as each tool is marked to the client; and its `outcome` is `ok` when the tool answered with a result that is not an error, `error` when it answered with an `isError` result, a refusal of the gateway's own or a backend's result relayed with `isError` `true`, and `invalid_arguments` when the gateway refused its own arguments (`service`, `tool`, `args`) with the platform's wording; a backend's refusal of the `args` it was passed is relayed, and is `error`. A request answered with a JSON-RPC error, an unknown tool say, reached no tool and adds no `tool.called`; its `request.finished` records it. The backend a gateway call reaches records its own `tool.called` for the tool it ran, in its own trail and under the same request id, so a trace of the request shows both the forward and the execution.
+
+A response body below is laid out for reading: its white space is not fixed. The order of members within a tool and within its schemas, and within a tool's result where a story shows one, is fixed as shown; elsewhere the order of members is not. A response block shows the status line and the headers the story fixes; a header it does not show is not fixed. No answer in this group or in `S06` contacts a backend, and the gateway writes nothing to stderr about any answer in this group or in `S06` to `S09`, the missing-header 500 included; only an event it cannot deliver reaches stderr (`S02`); every request adds `request.started` and `request.finished` to the trail, as on every route (`S03`), and what a backend request of `describe`, `call`, or `mutate` adds is told in `S08`.
 
 ## An MCP client lists the gateway's tools
 
@@ -288,7 +290,12 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- The gateway wrote nothing to stderr.
+- The gateway wrote nothing to stderr about the services file. Without one, though, it cannot find the telemetry service either, so no event of the request reaches the trail, and stderr holds one `undelivered event` line for each (`S02`), in this order, where `<id>` is the request id mcp made up for the request, each `<time>` is when mcp recorded that event, and each `<us>` a duration in whole microseconds:
+
+  ```
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.started","request_id":"<id>","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.finished","request_id":"<id>","user":"u_7f3a9c21","attrs":{"duration_us":<us>,"status":200}}
+  ```
 
 ## A client speaking an earlier revision opens with initialize
 
@@ -564,8 +571,15 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No backend was contacted.
-- The gateway wrote one line to stderr, `mcp: request -: X-User-Id is missing`, as it does on every route.
+- Nothing has changed. No backend was contacted, and no tool ran, so the trail holds no `tool.called`.
+- The gateway wrote nothing to stderr. The trail holds two events for each request, with an empty user and a request id mcp made up for it, as on every route (`S03`); for the first request:
+
+  ```
+  request.started method=POST path=/mcp
+  request.finished status=500
+  ```
+
+  and for the second the same, with `path=/mcp/a,,b`.
 
 ## A model calls a tool the gateway does not have
 
@@ -602,4 +616,9 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted; dummy received no request.
-- The gateway wrote nothing to stderr.
+- The gateway wrote nothing to stderr. No tool ran, so the trail holds no `tool.called` for the request, only its two events, under user `u_7f3a9c21` and a request id mcp made up for it:
+
+  ```
+  request.started method=POST path=/mcp
+  request.finished status=400
+  ```

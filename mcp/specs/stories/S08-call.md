@@ -2,11 +2,11 @@
 
 `call`, the gateway tool that runs a read tool of a service and returns what that tool answered. Its arguments are `service`, required, a service's name as `services` lists it; `tool`, required, a tool's name as `describe` lists it (`S07`); and `args`, optional, an object holding the tool's own arguments. `args` left out is `{}`. The gateway passes `args` to the backend untouched: it does not hold them to the tool's input schema, which is the backend's to enforce. Only a tool whose kind is `read` runs here (`S07`); a write tool runs with `mutate` (`S09`). When the backend answers the call, its result is the answer, relayed verbatim — its `content`, its `structuredContent`, its `isError`, every member it has — except for the envelope members the gateway's own server sets (`S05`): `resultType`, and `_meta`, whose `io.modelcontextprotocol/serverInfo` is the gateway's `{"name":"mcp","version":"v<semver>"}`, never the backend's; on the earlier revisions those are absent, as for every result.
 
-The hop to a backend is the same for `describe`, `call`, and `mutate`. The gateway goes straight to the socket the service's entry in the services file names, never through the space's nginx, and speaks revision `2026-07-28`, carrying the caller it serves: the `X-User-Id`, `X-User-Email`, and `X-Request-Id` it received, each sent only when the caller's request had it. It asks the backend for its `tools/list` afresh on every gateway call, keeping no copy from one call to the next, and for `call` and `mutate` then sends one `tools/call`. One budget of 50 seconds, counted from the moment the gateway call arrives, covers every backend request that gateway call makes, so every answer comes before nginx's 60 seconds run out. When the client goes away before the answer, the backend request in flight is abandoned with it.
+The hop to a backend is the same for `describe`, `call`, and `mutate`. The gateway goes straight to the socket the service's entry in the services file names, never through the space's nginx, and speaks revision `2026-07-28`, carrying the caller it serves: the `X-User-Id` and `X-User-Email` it received, `X-User-Email` sent only when the caller's request had it, and the request's id as `X-Request-Id`, the one it received or, for a request that came without one, the one mcp made up for it (`S02`). It asks the backend for its `tools/list` afresh on every gateway call, keeping no copy from one call to the next, and for `call` and `mutate` then sends one `tools/call`. One budget of 50 seconds, counted from the moment the gateway call arrives, covers every backend request that gateway call makes, so every answer comes before nginx's 60 seconds run out. When the client goes away before the answer, the backend request in flight is abandoned with it.
 
-The checks run in this order, and the first that refuses ends the call: a service the connection does not reach; a service that is unavailable; the backend's `tools/list` and whatever goes wrong with it; a tool the backend does not have; a tool of the wrong kind; and last the backend's `tools/call` and whatever goes wrong with it. A refusal is answered status 200 with a result whose `isError` is `true`, no `structuredContent`, and one text block saying what the model should do next (`S05`). A refusal made before the backend is asked contacts no backend and writes nothing to stderr.
+The checks run in this order, and the first that refuses ends the call: a service the connection does not reach; a service that is unavailable; the backend's `tools/list` and whatever goes wrong with it; a tool the backend does not have; a tool of the wrong kind; and last the backend's `tools/call` and whatever goes wrong with it. A refusal is answered status 200 with a result whose `isError` is `true`, no `structuredContent`, and one text block saying what the model should do next (`S05`). A refusal made before the backend is asked contacts no backend and adds no `sibling.called` to the trail.
 
-The gateway writes one line to stderr for every request it makes to a backend, when that request ends, whatever the outcome; this is its one exception to a healthy app's silence (`S02`). The line is `mcp: request <id>: <service> tools/list: <outcome>` for a `tools/list` and `mcp: request <id>: <service> tools/call <tool>: <outcome>` for a `tools/call`, where `<id>` is the caller's `X-Request-Id`, or `-` when it sent none. `<outcome>` is one of: `ok`, a `tools/list` answered with tools or a `tools/call` answered with a result that is not an error; `tool error`, a result whose `isError` is `true`; `rpc error <code>: <message>`, a JSON-RPC error, with any CR or LF in its message replaced by a space; `unreachable`, nothing accepted the connection; `timed out`, the budget ran out; `cancelled`, the client went away; and `bad response (status <n>)`, an answer that is not MCP, `<n>` the HTTP status received, written `bad response` alone when no HTTP status explains it: the connection broke before any status arrived, or an answer broke the protocol.
+The gateway records every request it makes to a backend in its trail (`S02`), as one `sibling.called` event, whatever its outcome, under the caller's request id and user: it is recorded when the backend's status and headers arrive, or, when none arrive, when the request fails. It writes nothing to stderr about any of them, whatever went wrong: a backend that fails is a handled failure, told to the model in the answer and recorded in the trail. The event's `target` is the service's name, its `method` is `POST`, its `path` is `/mcp`, and its `status` is the HTTP status the backend answered with, or `0` when no answer came: nothing accepted the connection, the budget ran out or the client went away before the backend answered, or the connection broke before any status arrived. Its `duration_us` runs from sending the request until the backend's status and headers arrived, or until the request failed, so a request that ran out of budget shows the time it waited. A tool list the backend gives in pages takes one request, and one event, per page. The event names no tool and carries nothing of the backend's answer: which tool ran, and how it ended, is in the backend's own trail under the same request id, beside the gateway's own `tool.called` for `call` (`S05`), which follows the backend requests. A story below shows the request's whole trail, from `request.started` to `request.finished`, under request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and user `u_7f3a9c21` unless it says otherwise.
 
 The actor is a model working through an MCP client. Each request is the HTTP request the client sends to a running mcp (`S02`), on revision `2026-07-28`, with the headers and `_meta` `S05` fixes and `Mcp-Name: call`; every answer also carries the envelope members `S05` fixes. Every request carries the caller's `X-User-Id`, `X-User-Email` and `X-Request-Id` by hand unless a story says otherwise. `IKIGENBA_SERVICES` names `/var/lib/ikigenba/services.json`, which holds the suite's services file (`S05`) unless a story says otherwise. dummy is the backend these stories reach, serving on `/run/ikigenba/dummy.sock` with its two tools and its fixture widgets `alpha`, `beta`, and `gamma` exactly as dummy's `S9` defines them. Stories about a backend that misbehaves use the hypothetical backend `reports` of `S07`, added to the file after `notes`, whose one tool, `build_report`, is a read tool that takes no arguments.
 
@@ -52,11 +52,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list`, then one `tools/call` of `list_widgets` with the arguments `{}`.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/call list_widgets: ok
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=call kind=read outcome=ok
+  request.finished status=200
   ```
 
 ## A model calls a tool and leaves out its arguments
@@ -95,11 +98,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. The `tools/call` dummy received carried the arguments `{}`.
-- mcp wrote the two lines of `A model calls a read tool` to stderr.
+- mcp wrote nothing to stderr. The trail holds the five events of `A model calls a read tool`.
 
 ## A backend sees the caller the gateway serves
 
-The gateway calls a backend on behalf of the person whose request it is serving, so the backend answers for that person, exactly as it would had the person's client called it through nginx. The backend gets the `X-User-Id`, `X-User-Email`, and `X-Request-Id` of the request the gateway received, so anything it writes about the request carries the same id as the gateway's lines.
+The gateway calls a backend on behalf of the person whose request it is serving, so the backend answers for that person, exactly as it would had the person's client called it through nginx. The backend gets the `X-User-Id`, `X-User-Email`, and `X-Request-Id` of the request the gateway received, so every event it records about the request carries the same request id and user as the gateway's, and a trace of the request shows both the forward and the execution.
 
 Request:
 
@@ -143,11 +146,11 @@ Postconditions:
   ```
 
   as in dummy's `S9` story `The mcp gateway calls dummy over its socket`.
-- mcp wrote the two lines of `A model calls a read tool` to stderr.
+- mcp wrote nothing to stderr. The trail holds the five events of `A model calls a read tool`; dummy's own trail holds its events for the two requests under the same request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and user `u_7f3a9c21`, its `tool.called` for `list_widgets` among them.
 
 ## A backend sees a caller that sent no request id
 
-The gateway forwards what its caller sent and makes nothing up: a request that reached it without `X-Request-Id` reaches the backend without one too, and the gateway's lines about it carry `-` for the id.
+Every request has an id, so the trail can follow it through every service it touches. A request that reached the gateway without `X-Request-Id` is given one by mcp as it arrives (`S02`), and that id is the one the backend receives and the one every event about the request carries, in the gateway's trail and in the backend's. The developer here sends no id, as a request made without nginx in front would.
 
 Request:
 
@@ -181,12 +184,15 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy received both requests carrying `X-User-Id: u_7f3a9c21` and `X-User-Email: mg@example.com` and no `X-Request-Id` header.
-- mcp wrote two lines to stderr, in this order:
+- dummy received both requests carrying `X-User-Id: u_7f3a9c21`, `X-User-Email: mg@example.com`, and the same `X-Request-Id`, the id mcp made up for the request: 32 lowercase hexadecimal characters.
+- mcp wrote nothing to stderr. The trail holds, under user `u_7f3a9c21` and the request id mcp made up, the one dummy received:
 
   ```
-  mcp: request -: dummy tools/list: ok
-  mcp: request -: dummy tools/call list_widgets: ok
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=call kind=read outcome=ok
+  request.finished status=200
   ```
 
 ## A backend refuses the arguments a model passed
@@ -230,11 +236,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received the `tools/call` with the arguments `{"x":1}`, as the model sent them.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/call list_widgets: tool error
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
   ```
 
 ## A model calls a write tool
@@ -277,7 +286,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list` and no `tools/call`; no widget named `delta` exists.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model calls a tool of a service the gateway does not know
 
@@ -318,7 +334,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model calls a tool of a service that is disabled
 
@@ -357,7 +379,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing was sent to `/run/ikigenba/notes.sock`.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model calls a tool of a scoped service that is not installed
 
@@ -398,7 +426,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing was sent to `/run/ikigenba/auth.sock`.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp/auth,dummy
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model calls a tool of a service whose backend is not running
 
@@ -440,7 +474,16 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: unreachable`. Had the backend stopped between the `tools/list` and the `tools/call`, the answer would be the same and the second line would end `tools/call list_widgets: unreachable`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=0
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
+  ```
+
+  Had the backend stopped between the `tools/list` and the `tools/call`, the answer would be the same, and the second `sibling.called` would have `status=0`.
 
 ## A model calls a tool the service does not have
 
@@ -480,7 +523,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy received one `tools/list` and no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: dummy tools/list: ok`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=dummy method=POST path=/mcp status=200
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
+  ```
 
 ## A model calls a tool of a backend that does not list its tools in time
 
@@ -522,7 +572,16 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `reports` was sent no `tools/call`.
-- mcp wrote one line to stderr: `mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: timed out`.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=0
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
+  ```
+
+  The `sibling.called` shows the 50 seconds it waited in its `duration_us`.
 
 ## A model calls a tool that does not finish in time
 
@@ -564,16 +623,19 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed in mcp. The gateway abandoned its `tools/call` to `reports`.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/call build_report: timed out
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  sibling.called target=reports method=POST path=/mcp status=0
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
   ```
 
 ## A model calls a tool and the backend answers with an error
 
-The backend answers the `tools/call` with a JSON-RPC error rather than a result. The gateway passes the backend's message on unaltered, after naming the service it came from. A JSON-RPC error in answer to the `tools/list` is answered with the same text, as in `S07`, and its line names `tools/list`. Here `reports` answers with `code` `-32603` and `message` `report store is offline`.
+The backend answers the `tools/call` with a JSON-RPC error rather than a result. The gateway passes the backend's message on unaltered, after naming the service it came from. A JSON-RPC error in answer to the `tools/list` is answered with the same text, as in `S07`, and the trail then holds one `sibling.called`, for the `tools/list`. Here `reports` answers with `code` `-32603` and `message` `report store is offline`.
 
 Request:
 
@@ -606,21 +668,26 @@ Service reports answered with an error: report store is offline
 Preconditions:
 
 - mcp is serving, with the suite's services file plus the `reports` entry.
-- `reports` is serving on `/run/ikigenba/reports.sock`; it answers `tools/list` offering `build_report`, and a `tools/call` of `build_report` with a JSON-RPC error whose `code` is `-32603` and whose `message` is `report store is offline`.
+- `reports` is serving on `/run/ikigenba/reports.sock`; it answers `tools/list` offering `build_report`, and a `tools/call` of `build_report` with HTTP status `500` and a JSON-RPC error whose `code` is `-32603` and whose `message` is `report store is offline`, as an MCP server answers an internal error.
 
 Postconditions:
 
 - Nothing has changed in mcp.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/call build_report: rpc error -32603: report store is offline
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  sibling.called target=reports method=POST path=/mcp status=500
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
   ```
+
+  The error's code and message are in no event.
 
 ## A model calls a tool and the backend does not answer as MCP
 
-The backend lists its tools, but answers the `tools/call` with something the gateway cannot read as MCP: here an HTTP `502` with a one-line plain-text body and no JSON-RPC response. The tool may have run before the answer went wrong, so the model is told the call may have completed. An unreadable answer to the `tools/list` is answered as in `S07`, `Service reports gave an answer the gateway could not read. Retry later.`, since no tool has run, and its line names `tools/list`.
+The backend lists its tools, but answers the `tools/call` with something the gateway cannot read as MCP: here an HTTP `502` with a one-line plain-text body and no JSON-RPC response. The tool may have run before the answer went wrong, so the model is told the call may have completed. An unreadable answer to the `tools/list` is answered as in `S07`, `Service reports gave an answer the gateway could not read. Retry later.`, since no tool has run, and the trail then holds one `sibling.called`, for the `tools/list`.
 
 Request:
 
@@ -658,11 +725,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed in mcp.
-- mcp wrote two lines to stderr, in this order:
+- mcp wrote nothing to stderr. The trail holds:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/call build_report: bad response (status 502)
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  sibling.called target=reports method=POST path=/mcp status=502
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
   ```
 
 ## A model passes arguments that are not an object
@@ -706,7 +776,13 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. dummy was not contacted.
-- mcp wrote nothing to stderr.
+- mcp wrote nothing to stderr. The trail holds:
+
+  ```
+  request.started method=POST path=/mcp
+  tool.called tool=call kind=read outcome=invalid_arguments
+  request.finished status=200
+  ```
 
 ## A client gives up while the backend works
 
@@ -739,9 +815,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed in mcp. When the client went away, the gateway abandoned its `tools/call` to `reports`, closing that connection, without waiting for the 50 seconds to run out.
-- mcp wrote two lines to stderr, in this order, the second as soon as the client went away:
+- mcp wrote nothing to stderr. The trail holds, the second `sibling.called` recorded as soon as the client went away:
 
   ```
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/list: ok
-  mcp: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: reports tools/call build_report: cancelled
+  request.started method=POST path=/mcp
+  sibling.called target=reports method=POST path=/mcp status=200
+  sibling.called target=reports method=POST path=/mcp status=0
+  tool.called tool=call kind=read outcome=error
+  request.finished status=200
   ```
+
+  The `request.finished` records the answer mcp wrote to the closed connection, an `isError` result no one read.
