@@ -4,7 +4,7 @@ A sandbox is one worktree's running copy of the suite. This document owns how a 
 
 Most commands act on this worktree's sandbox. They ask git for the top level of the working tree from the current directory, so any subdirectory works, and name the sandbox after that directory's last element, folded into a DNS label because every app answers at `<app>.<name>.localhost`. `down` and `wipe` may instead be given a name, which reaches any sandbox the registry knows from anywhere, including one whose worktree is gone; `ls` lists every sandbox and needs no checkout. A sandbox found from a worktree is this worktree's only when the registry records that worktree for it, so two worktrees with the same last element never act on each other's sandbox.
 
-All of a sandbox's data lives under the developer's state directory, and its units in the developer's systemd user directory, both found from the XDG variables with the usual fallbacks to `HOME`. Under the data root sit the registry, its lock, one lock per sandbox, and one data directory per sandbox. A data directory holds two kinds of entry. Generated entries are what `up` writes and rewrites: built binaries and their build staging area, env files, the services file, and nginx's directory; together with the unit files they are what `down` removes. Kept entries are each app's working directory with its `state/`, and the stored token; only `wipe` removes them. The lock files are never removed, since deleting a lock file another process holds open would let a third process lock a different file of the same name.
+All of a sandbox's data lives under the developer's state directory, and its units in the developer's systemd user directory, both found from the XDG variables with the usual fallbacks to `HOME`. Under the data root sit the registry, its lock, one lock per sandbox, and one data directory per sandbox. A data directory holds two kinds of entry. Generated entries are what `up` writes and rewrites: built binaries, env files, the services file, nginx's directory, and the staging directory `<data>/stage` where `up` builds and writes a whole deployment before nginx has tested it; together with the unit files they are what `down` removes. `up` leaves no staging directory behind when it returns; one is found only after an `up` that was killed, and the next `up` that builds, or `down`, clears it. Two paths inside it are named: the staged nginx configuration, because `up` names it to nginx and nginx names it back in what it reports, and each app's staged env file, because it holds the app's secrets and so is never readable by others, even before it is moved into place. Kept entries are each app's working directory with its `state/`, and the stored token; only `wipe` removes them. The lock files are never removed, since deleting a lock file another process holds open would let a third process lock a different file of the same name.
 
 App names, like sandbox names, are DNS labels of at most 63 characters, and `nginx` is not one because the nginx unit takes that place in the unit names. Sockets cannot live under the data directory: a Unix socket path must fit `sun_path`, 108 bytes with its terminating NUL, and a long home directory alone could exceed that. They live instead in the user manager's runtime directory, `/run/user/<uid>`, keyed by the sandbox's port, which no other sandbox holds while this one has it. The longest possible path, with uid 4294967294, port 7499 and a 63-character app name, is 102 bytes. sandbox only names these paths in what it generates; systemd creates the parent directories when it binds a socket; it removes the socket when the socket unit stops only because the socket unit D04 generates sets `RemoveOnStop=yes`, which is not systemd's default.
 
@@ -76,7 +76,11 @@ A path in a unit file is written in one of three forms, by where it stands, beca
 
 - R-F4GM-14ZD: An app's built binary, the program its service runs, MUST be `<data>/bin/<app>`.
 
-- R-F5OI-EWQ2: The build staging directory MUST be `<data>/build`, and an app's staged build MUST be `<data>/build/<app>`.
+- R-RAL0-PDMM: A sandbox's staging directory MUST be `<data>/stage`, and an app's staged build MUST be `<data>/stage/bin/<app>`.
+
+- R-RD0T-GX40: A sandbox's staged nginx configuration file MUST be `<data>/stage/nginx/nginx.conf`.
+
+- R-ZEB1-HI5Q: An app's staged env file MUST be `<data>/stage/env/<app>.env`.
 
 - R-F6WE-SOGR: An app's env file MUST be `<data>/env/<app>.env`, with mode 0600.
 
@@ -106,11 +110,11 @@ A path in a unit file is written in one of three forms, by where it stands, beca
 
 - R-FMR3-RP3S: An app's socket path MUST be the same whatever `XDG_RUNTIME_DIR`, `HOME`, `XDG_STATE_HOME` and `XDG_CONFIG_HOME` hold, and whatever the sandbox's name is.
 
-- R-FNZ0-5GUH: A sandbox's generated entries MUST be `<data>/bin`, `<data>/build`, `<data>/env`, `<data>/services.json`, `<data>/nginx`, and its unit files in `<units>`.
+- R-RE8P-UOUP: A sandbox's generated entries MUST be `<data>/bin`, `<data>/stage`, `<data>/env`, `<data>/services.json`, `<data>/nginx`, and its unit files in `<units>`.
 
 - R-FP6W-J8L6: A sandbox's kept entries MUST be `<data>/apps` and `<data>/token`.
 
-- R-FQES-X0BV: sandbox MUST NOT leave in a data directory, when a command returns, any entry it created other than `bin`, `build`, `env`, `services.json`, `nginx`, `apps` and `token`.
+- R-RFGM-8GLE: sandbox MUST NOT leave in a data directory, when a command returns, any entry it created other than `bin`, `stage`, `env`, `services.json`, `nginx`, `apps` and `token`.
 
 - R-LG0T-Y097: A command other than `wipe` MUST NOT remove `<data>/apps`, an app's directory, or anything under one.
 
