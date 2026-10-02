@@ -110,7 +110,7 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 
 // R-78QR-PFQ3
 // R-WILI-A3EP
-// R-79YO-37GS
+// R-EQJK-2PQY
 // R-WOP0-6Y46
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
@@ -151,7 +151,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-79YO-37GS
+// R-EQJK-2PQY
 // R-WOP0-6Y46
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
@@ -224,9 +224,9 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-79YO-37GS
+// R-EQJK-2PQY
 // R-7CEG-UQY6
-// R-7DMD-8IOV
+// R-EMVU-XEIV
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -333,7 +333,7 @@ func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	}
 }
 
-// R-7G26-0269
+// R-ESZC-U98C
 func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
@@ -367,6 +367,60 @@ func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 			if !strings.Contains(check, directive) {
 				t.Fatalf("missing %q: %s", directive, check)
 			}
+		}
+	}
+}
+
+// R-EZ2U-R3XT
+func TestRenderOriginalRequestHeadersOnlyInAuthenticatorSubrequest(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeManifest(t, root, "auth", "app = \"auth\"\n")
+	writeManifest(t, root, "notes", "app = \"notes\"\ndefault = true\n")
+	writeManifest(t, root, "web", "app = \"web\"\n")
+	writeManifest(t, root, "disabled", "app = \"disabled\"\n")
+	env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if command.Args[3] == "ikigenba-disabled.socket" {
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+		}
+		return host.Result{}, nil
+	}}
+	got, err := nginx.Render(context.Background(), env, "space.example.test", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers := map[string]string{
+		"X-Original-Method": "        proxy_set_header        X-Original-Method $request_method;\n",
+		"X-Original-Host":   "        proxy_set_header        X-Original-Host   $host;\n",
+		"X-Original-URI":    "        proxy_set_header        X-Original-URI    $request_uri;\n",
+	}
+	for _, name := range []string{"notes", "web"} {
+		block := serverBlockFor(t, string(got), name+".space.example.test")
+		check := locationFor(t, block, "= /_ikigenba/check")
+		for header, directive := range headers {
+			if strings.Count(check, header) != 1 || !strings.Contains(check, directive) || strings.Count(block, header) != 1 {
+				t.Fatalf("%s must set %s solely from the original request variable in its check subrequest: %s", name, header, block)
+			}
+		}
+	}
+	for _, name := range []string{"auth", "disabled"} {
+		assertNoOriginalRequestHeaders(t, serverBlockFor(t, string(got), name+".space.example.test"), headers)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "opt", "auth")); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := nginx.Render(context.Background(), env, "space.example.test", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNoOriginalRequestHeaders(t, string(plain), headers)
+}
+
+func assertNoOriginalRequestHeaders(t *testing.T, configuration string, headers map[string]string) {
+	t.Helper()
+	for header := range headers {
+		if strings.Contains(configuration, header) {
+			t.Fatalf("non-wired configuration names %s: %s", header, configuration)
 		}
 	}
 }
@@ -1160,6 +1214,9 @@ func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexNa
 		"        proxy_set_header        X-User-Id    \"\";\n" +
 		"        proxy_set_header        X-User-Email \"\";\n" +
 		"        proxy_set_header        X-Request-Id $request_id;\n" +
+		"        proxy_set_header        X-Original-Method $request_method;\n" +
+		"        proxy_set_header        X-Original-Host   $host;\n" +
+		"        proxy_set_header        X-Original-URI    $request_uri;\n" +
 		"    }\n\n" +
 		"    location @auth_redirect {\n" +
 		"        return 302 https://auth." + hostName + "/?return=$scheme://$host$request_uri;\n" +
@@ -1372,7 +1429,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-7B6K-GZ7H R-79YO-37GS R-78QR-PFQ3
+// R-7B6K-GZ7H R-EQJK-2PQY R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")
@@ -1561,7 +1618,7 @@ func TestUpdateRejectsInvalidApexBeforeHostWork(t *testing.T) {
 	}
 }
 
-// R-7IHY-RLNN
+// R-EWN1-ZKGF
 func TestRenderMCPReservationsIgnoreManifestMCP(t *testing.T) {
 	for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
 		t.Run(strings.TrimSpace(manifestMCP), func(t *testing.T) {
