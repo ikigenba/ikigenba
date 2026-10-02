@@ -58,6 +58,25 @@ agent that made it, in whatever form that agent identifies itself. This is the
 only commit attribution rule in the repository; no sub-project AGENTS.md
 restates it or names a specific model.
 
+## Sandbox
+
+The suite's apps are not designed to run alone. To test them together, run
+`sandbox` (built from `sandbox/` with `make install`; see `sandbox --help`).
+It stands up the whole suite from the current worktree, uncommitted edits
+included, as user-level systemd units behind a local nginx.
+
+- `sandbox up` builds every app and starts or redeploys the sandbox; run it
+  again after a change. It prints each app's URL,
+  `http://<app>.<name>.localhost:<port>`; `sandbox url` prints them again.
+- `sandbox status` shows each unit's state; `sandbox logs [app]` prints the
+  journal (`-n <count>`, `-f` to follow).
+- `sandbox down` stops the sandbox and keeps its data; `sandbox wipe` deletes
+  a stopped sandbox's data.
+- Apps behind auth take a bearer token:
+  `curl -H "Authorization: Bearer $(sandbox token)" <url>`. When none is
+  stored, `sandbox token` says so; ask the human to create one at the auth
+  app and store it with `sandbox token set`.
+
 ## Web assets
 
 The visual style for every app, service, and page is defined in `design/`.
