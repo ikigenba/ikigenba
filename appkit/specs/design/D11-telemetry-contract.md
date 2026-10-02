@@ -26,11 +26,12 @@ Attributes carry the operation and the ids of the entities it touched. They neve
 
 ## Entity ids
 
-An attribute naming an entity has the entity's type as its key (`token`, `widget`, `user`) and the entity's id as its value. Every id carries a suite-wide type prefix, lowercase letters followed by `_`, the way auth's tokens carry `ikp_`, so an id from one service never collides with one from another and a search for an id finds it once. The prefixes are registered here, so no two services can claim the same one:
+An attribute naming an entity has the entity's type as its key (`token`, `widget`, `user`) and the entity's id as its value. Every id carries a suite-wide type prefix, lowercase letters followed by `_`, the way auth's token ids carry `tok_`, so an id from one service never collides with one from another and a search for an id finds it once. The prefixes are registered here, so no two services can claim the same one:
 
 | Prefix | Entity type | Owning service |
 |---|---|---|
-| `ikp_` | `token` | `auth` |
+| `tok_` | `token` | `auth` |
+| `wgt_` | `widget` | `dummy` |
 
 This table is the registry, and it exists only here: appkit exports no code for it, so adding a row is a design change to this document alone, with no change to appkit's code and no appkit release. A service that adds an entity type adds its row in that change, and its own design then holds the testable requirements: that its ids begin with its registered prefix and that its events name the entity under its registered type. The convention every service follows: an entity attribute's key is the entity type's name exactly as registered (itself a valid attribute key), and its value is a string that begins with the registered prefix, lowercase ASCII letters followed by `_`. appkit's own framework events name no entity, so the convention places no requirement on appkit's code.
 
