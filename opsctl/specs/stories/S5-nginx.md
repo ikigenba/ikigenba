@@ -49,7 +49,11 @@ block: each gains an `auth_request` subrequest to `auth`'s `/check`, so a
 request reaches the app only once `auth` has answered it a valid session — the
 *wired* shape. In a wired block the client's own `X-User-Id` and `X-User-Email`
 never reach the app; nginx sets them from `auth`'s answer instead, turns a 401
-into a redirect to `auth`, and passes a 403 through. `auth`'s own block is left
+into a redirect to `auth`, and passes a 403 through. The subrequest tells
+`auth` which request it is checking: the client's method, host, and request
+target — path and any query string — as `X-Original-Method`,
+`X-Original-Host`, and `X-Original-URI`, always overwriting whatever the
+client sent under those names. `auth`'s own block is left
 *unwired*, and its `/check` answers 404 to any public request — it is reachable
 only as that internal subrequest. Recognition is by a routed manifest, not the
 name alone: an `/opt/auth/` with no `etc/manifest.toml` naming its `app` is
@@ -493,7 +497,9 @@ The blocks come in ascending name order — `auth`, `crm`, `dashboard` — and
 request and is reached only as the other blocks' internal subrequest. In each
 wired block a client cannot forge identity: the subrequest to `/check` carries
 no client `X-User-Id` or `X-User-Email`, and on a valid session nginx sets
-those two headers on the upstream from `auth`'s answer. A 401 from `auth`
+those two headers on the upstream from `auth`'s answer. The subrequest also
+carries the original request's method, host, and request target as
+`X-Original-Method`, `X-Original-Host`, and `X-Original-URI`. A 401 from `auth`
 becomes a 302 redirect to `auth.sbx.ikigenba.dev` carrying the original request
 URL as `return=`; a 403 reaches the client unchanged. Between the redirect and
 `location /`, each wired block carries the MCP locations: `/mcp` exactly and
@@ -580,6 +586,9 @@ server {
         proxy_set_header        X-User-Id    "";
         proxy_set_header        X-User-Email "";
         proxy_set_header        X-Request-Id $request_id;
+        proxy_set_header        X-Original-Method $request_method;
+        proxy_set_header        X-Original-Host   $host;
+        proxy_set_header        X-Original-URI    $request_uri;
     }
 
     location @auth_redirect {
@@ -658,6 +667,9 @@ server {
         proxy_set_header        X-User-Id    "";
         proxy_set_header        X-User-Email "";
         proxy_set_header        X-Request-Id $request_id;
+        proxy_set_header        X-Original-Method $request_method;
+        proxy_set_header        X-Original-Host   $host;
+        proxy_set_header        X-Original-URI    $request_uri;
     }
 
     location @auth_redirect {
@@ -747,6 +759,11 @@ Postconditions:
   `/mcp` or `/mcp/<anything>` that `auth` admits reaches the app with
   `X-Request-Id`, `X-User-Id`, and `X-User-Email` set exactly as a request to
   `/` would.
+- Once applied, the subrequest to `/check` carries the client's request, not
+  its own: a `POST` to `https://crm.sbx.ikigenba.dev/notes?page=2` reaches
+  `auth` with `X-Original-Method: POST`, `X-Original-Host:
+  crm.sbx.ikigenba.dev`, and `X-Original-URI: /notes?page=2`, whatever the
+  client itself sent under those names.
 
 ## An operator reads the configuration where auth is present but not routed
 
