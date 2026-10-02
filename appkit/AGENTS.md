@@ -15,6 +15,10 @@ privileged; the module root holds no exported name. Module path
   call to a sibling service.
 - `mcp` — the Model Context Protocol: the server a service mounts at `/mcp`
   with its tools, and the client the gateway and service tests use.
+- `telemetry` — the suite's event trail: the event contract, the writer
+  that queues and delivers a service's events, its sinks, the wire to the
+  telemetry service, and the request middleware and sibling client that
+  record every request and sibling call.
 
 appkit knows nothing about authentication: nginx and auth establish who the
 caller is, and appkit only carries it.
@@ -59,12 +63,19 @@ requirement-id tag.
 
 ## Test discipline
 
-- Offline: no network beyond loopback. MCP and identity tests talk HTTP to
-  an `httptest` server on loopback, or to a unix socket created in the
-  test's own temporary directory; never to `/run/ikigenba` or a real
-  service.
+- Offline: no network beyond loopback. MCP, identity, and telemetry tests
+  talk HTTP to an `httptest` server on loopback, or to a unix socket created
+  in the test's own temporary directory (keep its path short: a unix socket
+  path is limited to 107 bytes); never to `/run/ikigenba` or a real service.
+  A socket-sink test names its socket in a services file it writes there.
 - Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
+  sleeps to wait for something. A telemetry writer under test gets a fixed
+  `Config.Now` (advanced by hand where a duration is checked), a
+  `Config.Rand` of known bytes where a minted request id is checked, and a
+  `Config.Sleep` that records each pause and returns at once; a test waits
+  for delivery with `Writer.Flush` or with a sink that signals on a
+  channel, never with a timer. Every writer a test builds is shut down
+  before the test ends (`t.Cleanup`), so no sender outlives it.
 - No fixed ports: a test uses `httptest` or binds `127.0.0.1:0`.
 - Isolated: a test touches only its own temporary directory, never the
   developer's home, config, or real state, and never `/var/lib/ikigenba`.

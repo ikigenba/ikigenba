@@ -1,0 +1,49 @@
+# D13-telemetry-wire
+
+A service delivers each event to the `telemetry` service over that service's unix socket, one HTTP request per event. Both ends of that wire live in package `telemetry`: the socket sink, which every service's writer uses by default (D12), and the ingest handler, which the telemetry service mounts to receive events. Keeping both ends in one package means the request a service sends and the answer telemetry gives are one contract, tested against each other in appkit.
+
+## Finding telemetry
+
+The telemetry service is the services-file entry named `telemetry.ServiceName` (D05). The socket sink reads the services file on every delivery, at the path in the environment variable `services.Variable` names, and connects to that entry's `Socket`, so a host where telemetry is installed after a service started is picked up without a restart, as `services.Read` intends. Whether the entry is `Enabled` does not matter: the socket is the address. A missing variable, an unreadable file, or no entry is an ordinary delivery failure: the writer retries and then writes the event to standard error.
+
+## The request and its answer
+
+Every delivery is `POST` to `telemetry.IngestPath` (`/ingest`) with `Content-Type: application/json` and, as the body, exactly the bytes `Event.MarshalJSON` returns (D11): one JSON object with exactly the members `time`, `service`, `event`, `request_id`, `user`, and `attrs`. The answer tells the writer what to do next:
+
+| Answer | Meaning | Writer |
+|---|---|---|
+| 204 | stored | done |
+| 4xx | the event is malformed; sending it again cannot succeed | writes it to standard error (`ErrRejected`) |
+| anything else, or no answer | telemetry is unavailable | retries (D12) |
+
+The sink never follows a redirect: a 3xx is an answer like any other non-204, retried.
+
+The ingest handler is what telemetry answers with. It checks, in order, the method (405), the content type (415), the size (413, past `MaxEventBytes`), and the body (400), and only a body that is exactly a well-formed event reaches the sink the telemetry service gives it, which stores the event; a store failure answers 500 so the sender retries. It decodes JSON numbers the way the writer encodes them, so an event posted by the socket sink reaches telemetry's store with the same JSON it was sent with, byte for byte.
+
+## Where telemetry mounts it
+
+The ingest path is for siblings on the host, not for users. Siblings connect to telemetry's socket directly and send no identity headers, so telemetry mounts the ingest handler at `IngestPath` outside `identity.Require` and outside the request middleware (D14) — an ingest recording two more events of its own for every event it ingests would double the trail with noise. Publicly, telemetry ships an nginx fragment that answers the ingest path 404, so nothing outside the host reaches it; that fragment is telemetry's own design.
+
+## REQUIREMENTS
+
+- R-WOLQ-LNZL: Package `telemetry` MUST export `const ServiceName = "telemetry"`, `const IngestPath = "/ingest"`, and the untyped integer constant `MaxEventBytes = 65536`.
+- R-WPTM-ZFQA: Package `telemetry` MUST export `func NewSocketSink() Sink`.
+- R-WR1J-D7GZ: Package `telemetry` MUST export `func IngestHandler(sink Sink) http.Handler`, where `http` is the standard library's `net/http`.
+- R-WS9F-QZ7O: On every `Deliver` call, the `Sink` `telemetry.NewSocketSink` returns MUST read the environment variable `services.Variable` names, read the services file at that path anew as `services.Read` reads it, and take the `services.Entry` that `List.Find` returns for `telemetry.ServiceName`, whatever its `Enabled` holds.
+- R-WTHC-4QYD: For an `Event` whose `MarshalJSON` returns a nil error and an entry R-WS9F-QZ7O finds, the socket sink's `Deliver` MUST send exactly one HTTP/1.1 request over a unix-domain stream connection to the entry's `Socket`, with method `POST`, URL path `telemetry.IngestPath` and no query, exactly one `Content-Type` header whose value is exactly `application/json`, and a body exactly the bytes `e.MarshalJSON()` returns.
+- R-WUP8-IIP2: The socket sink's `Deliver` MUST return nil when the answer to the request of R-WTHC-4QYD has status 204; a non-nil error for which `errors.Is(err, telemetry.ErrRejected)` is true when its status is from 400 through 499; and a non-nil error for which `errors.Is(err, telemetry.ErrRejected)` is false for every other status, without following a redirect.
+- R-WVX4-WAFR: The socket sink's `Deliver` MUST return a non-nil error for which `errors.Is(err, telemetry.ErrRejected)` is false, without sending a request, when the variable `services.Variable` names is unset or empty, when `services.Read` returns an error for its path, or when `List.Find` returns false for `telemetry.ServiceName`; and when the connection cannot be made or the answer cannot be read.
+- R-WX51-A26G: When `ctx` is done before the socket sink's `Deliver` has the answer, `Deliver` MUST return a non-nil error for which `errors.Is(err, ctx.Err())` is true and `errors.Is(err, telemetry.ErrRejected)` is false, without waiting for the answer.
+- R-WYCX-NTX5: When `e.MarshalJSON()` returns an error, the socket sink's `Deliver` MUST return a non-nil error for which `errors.Is(err, telemetry.ErrRejected)` is true, without sending a request.
+- R-WZKU-1LNU: The socket sink's `Deliver` MUST be safe to call concurrently from multiple goroutines and MUST NOT panic for any `Event`.
+- R-X20M-T558: `telemetry.IngestHandler` MUST panic, with a message that says the sink is nil, when `sink` is nil.
+- R-X38J-6WVX: The handler `telemetry.IngestHandler` returns MUST answer a request whose method is not `POST` with status 405 and exactly one `Allow` header whose value is `POST`, and MUST NOT call `sink.Deliver` for it.
+- R-X4GF-KOMM: The handler MUST answer a `POST` whose `Content-Type` header is absent, or whose first `Content-Type` value `mime.ParseMediaType` (the standard library's `mime`) fails on or reads as a media type other than `application/json`, with status 415, and MUST NOT call `sink.Deliver` for it.
+- R-X5OB-YGDB: The handler MUST answer a `POST` whose media type R-X4GF-KOMM reads as `application/json` and whose body is longer than `telemetry.MaxEventBytes` bytes with status 413, and MUST NOT call `sink.Deliver` for it.
+- R-X6W8-C840: A body MUST be a valid event body exactly when it is valid UTF-8 and exactly one JSON text (RFC 8259) whose value is an object holding exactly the members `time`, `service`, `event`, `request_id`, `user`, and `attrs`, each once, where `time` is a string `s` for which `time.Parse("2006-01-02T15:04:05.000000Z", s)` returns a time `t` and a nil error and `t.Format("2006-01-02T15:04:05.000000Z")` equals `s`; `service` is a string other than the empty string; `event` is a string that is a valid event name; `request_id` and `user` are strings; and `attrs` is an object in which no member name appears twice, every member name is a valid attribute key, and every value is a string, `true`, `false`, or a number for which the decoding of R-X844-PZUP succeeds.
+- R-X844-PZUP: A JSON number in `attrs` MUST decode to `float64` negative zero when its text is `-0`; otherwise to the `int64` that `strconv.ParseInt(text, 10, 64)` returns when that returns a nil error; otherwise to the `uint64` that `strconv.ParseUint(text, 10, 64)` returns when that returns a nil error; otherwise to the `float64` that `strconv.ParseFloat(text, 64)` returns when that returns a nil error; and decoding MUST fail when all three return an error.
+- R-X9C1-3RLE: The handler MUST answer a `POST` that R-X4GF-KOMM and R-X5OB-YGDB do not answer, and whose body is not a valid event body, with status 400, and MUST NOT call `sink.Deliver` for it.
+- R-DI1E-RO4X: For a `POST` whose media type R-X4GF-KOMM reads as `application/json` and whose body is a valid event body no longer than `telemetry.MaxEventBytes` bytes, the handler MUST call `sink.Deliver` exactly once, with a context derived from the request's context and an `Event` whose `Time` is the `t` of R-X6W8-C840 in UTC, whose `Service`, `Name`, `RequestID`, and `User` are the decoded strings of `service`, `event`, `request_id`, and `user`, and whose `Attrs` is a non-nil map holding each member of `attrs`, under its decoded name, a string decoded as `string`, `true` and `false` as `bool`, and a number as R-X844-PZUP decodes it; each JSON string MUST decode to the Go string `json.Unmarshal` (the standard library's `encoding/json`) decodes it to, so an escape of a lone surrogate such as `\ud800` decodes to U+FFFD.
+- R-DKH7-J7MB: For a request R-DI1E-RO4X describes, the handler MUST answer with status 204 and an empty body when `sink.Deliver` returns nil, and with status 500 when it returns a non-nil error.
+- R-XCZQ-92TH: For every `Event` `e` whose `MarshalJSON` returns a nil error, a `POST` to the handler with media type `application/json` and the body `e.MarshalJSON()` returns MUST call `sink.Deliver` with an `Event` whose `MarshalJSON` returns exactly the same bytes, whenever that body is no longer than `telemetry.MaxEventBytes` bytes.
+- R-XE7M-MUK6: The handler `telemetry.IngestHandler` returns MUST be safe to serve concurrent requests from multiple goroutines.

@@ -1,6 +1,6 @@
 # D01-scope-and-layout
 
-`appkit` is the shared library code of the Ikigenba services. Anything that more than one service needs — the page chrome every app shows a signed-in user, the reader for the host's services file, the identity nginx hands each request, the Model Context Protocol server and client — belongs here, so that every service gets it from one place and behaves the same way. The module path is `github.com/ikigenba/ikigenba/appkit`; it depends on the Go standard library only. Every command runs from this sub-project directory.
+`appkit` is the shared library code of the Ikigenba services. Anything that more than one service needs — the page chrome every app shows a signed-in user, the reader for the host's services file, the identity nginx hands each request, the Model Context Protocol server and client, the trail of events every service records — belongs here, so that every service gets it from one place and behaves the same way. The module path is `github.com/ikigenba/ikigenba/appkit`; it depends on the Go standard library only. Every command runs from this sub-project directory.
 
 ## One concern per package
 
@@ -10,8 +10,9 @@ The library is a set of packages, each holding one concern small enough to hold 
 - `services` — the one reader of the host's services file, the published format opsctl owns and names in the variable `IKIGENBA_SERVICES`. D05.
 - `identity` — the caller nginx authenticated for a request: the middleware that requires it, the context that carries it, and forwarding it on a call to a sibling service. D06.
 - `mcp` — the Model Context Protocol over Streamable HTTP: the server a service mounts with its tools, and the client the gateway and service tests use. D07-mcp-server, D08-mcp-tools, D09-mcp-schema, and D10-mcp-client define its contents.
+- `telemetry` — the suite's event trail: the event and the rules it follows, the catalogue of framework events (D11), the writer that queues and delivers a service's events and its sinks (D12), the wire to the telemetry service (D13), and the request middleware and sibling client that record every request and every call to a sibling (D14).
 
-Dependencies point one way: `page` uses `services`; `mcp` uses `identity` and `services`; `identity` and `services` use no other appkit package. Which package imports which is not observable, so this is guidance, not a requirement.
+Dependencies point one way: `page` uses `services`; `telemetry` uses `identity` and `services`; `mcp` uses `identity`, `services`, and `telemetry`; `identity` and `services` use no other appkit package. Which package imports which is not observable, so this is guidance, not a requirement.
 
 ## Assets
 
@@ -19,19 +20,27 @@ Dependencies point one way: `page` uses `services`; `mcp` uses `identity` and `s
 
 ## What every package promises
 
-A library shared by every service must not surprise any of them. No package reads its own files from the working directory (D04 states this for `page`'s embedded assets), and none writes to the process's standard output or standard error or through the standard library's default logger: those streams belong to the service. When a package has something to report, it writes to an `io.Writer` the consumer passed in, so the service decides where its diagnostics go.
+A library shared by every service must not surprise any of them. No package reads its own files from the working directory (D04 states this for `page`'s embedded assets), and none writes to the process's standard output or standard error or through the standard library's default logger: those streams belong to the service. When a package has something to report, it writes to an `io.Writer` the consumer passed in, so the service decides where its diagnostics go. The telemetry writer is no exception: the standard-error lines it writes for undeliverable events go to the writer its `Config` names.
 
 ## Consumer tasks
 
 These are the tasks the packages exist for, in outline; the documents named above hold the contract.
 
+An app wires its telemetry. At start-up it builds one `*telemetry.Writer` with `telemetry.New`, naming its service and release version in a `telemetry.Config`, `os.Stderr` as `Stderr`, and no `Sink`, so events go to the telemetry service through the socket sink `telemetry.NewSocketSink` returns (D13). It wraps its whole handler tree, `identity.Require(mux)`, in `telemetry.Middleware` with the writer (D14), and hands the same writer to its `mcp` server as `ServerConfig.Telemetry` (D07). It calls a sibling through `telemetry.SiblingClient` over `telemetry.SocketTransport` (D14), which forwards the caller and records the call. Once it is listening it calls `Writer.Ready`, which records `service.started`. Its handlers record domain events with `Writer.Emit`, passing the request's context so each event carries the request id and the user, and attributes that name the entities touched by type (`token`) with their prefixed ids, each type's prefix registered in D11's table. On a stop signal it drains its HTTP server and then calls `Writer.Shutdown` with the reason and the same drain context, which records `service.stopping`, delivers what is queued, and writes what is left to standard error when the context ends.
+
 An app wires its pages. At start-up it builds a `page.Kit` with `page.New`, naming its service and release version; it parses its own page templates into the set `page.Templates` returns; it mounts `page.Static` at `page.StaticPrefix`. Its whole handler tree is wrapped in `identity.Require`, so each page handler takes the signed-in person from `identity.FromContext`, passes a `page.User` to `Kit.Banner`, and renders the page with the returned `page.Banner`. The page carries the banner, the launcher when the host lists services with icons, and the footer naming the app and its version.
 
-A service offers tools to an MCP client. It builds an `mcp` server with its name and version, registers its tools, and mounts the server at `/mcp` on the same mux the pages use, the whole mux wrapped in `identity.Require`; each tool handler receives the caller explicitly (D07, D08).
+A service offers tools to an MCP client. It builds an `mcp` server with `mcp.NewServer`, its `ServerConfig` naming its `Name`, `Version`, its telemetry writer as `Telemetry`, and optionally `Instructions`, registers its tools, and mounts the server at `/mcp` on the same mux the pages use, the whole mux wrapped in `identity.Require` and that in `telemetry.Middleware`; each tool handler receives the caller explicitly (D07, D08).
 
 The gateway finds the suite's MCP services. On each request it calls `services.Read` with the value of `services.Variable` from its environment, keeps the entries whose `MCP` is true, and reaches each one over its `Socket` with the `mcp` client (D10), which carries the caller to the backend with `identity.Forward`.
 
-A service's own test drives its MCP tools end to end: it serves the server wrapped in `identity.Require` from a test server and calls a tool through the `mcp` client with an `identity.Caller` it makes up.
+A service's test checks what it records. It builds its writer with a `*telemetry.Capture` as the `Sink`, a fixed `Now`, and a buffer as `Stderr`, drives a handler, calls `Writer.Flush`, and asserts on the events `Capture.Events` returns, by `Name` and `Attrs`, and that the buffer is empty. A test that checks a duration advances its `Now` by hand inside the handler; one that checks a minted request id supplies a `Rand` of known bytes; one that checks a retry supplies its own `Sink` that fails and a `Sleep` that records each pause and returns at once. Every writer it builds it shuts down with `Writer.Shutdown` before it ends.
+
+The telemetry service stores the suite's events. Its writer's `Sink` is its own type with a `Deliver` method that inserts the event into its store, so its own events never pass through its socket. It mounts `telemetry.IngestHandler` with that same sink at `telemetry.IngestPath`, outside `identity.Require` and the request middleware, and every sibling's socket sink posts there.
+
+The gateway records its calls to backends. The `HTTPClient` it gives the `mcp` client (D10) is the sibling client (D14), so every call to a backend records `sibling.called` beside the backend's own `request.started`, `tool.called`, and `request.finished` under the same request id.
+
+A service's own test drives its MCP tools end to end: it builds the server with a writer over a `*telemetry.Capture`, serves it wrapped in `identity.Require` from a test server, and calls a tool through the `mcp` client with an `identity.Caller` it makes up.
 
 ## REQUIREMENTS
 
@@ -39,5 +48,6 @@ A service's own test drives its MCP tools end to end: it serves the server wrapp
 - R-HN1T-ZJZF: Package `services` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/services`, and its package name MUST be `services`.
 - R-HO9Q-DBQ4: Package `identity` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/identity`, and its package name MUST be `identity`.
 - R-HPHM-R3GT: Package `mcp` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/mcp`, and its package name MUST be `mcp`.
-- R-YFJ3-L9UN: An exported function or method of packages `page`, `services`, `identity`, or `mcp` MUST NOT write to the process's standard output, to its standard error, or through the standard library `log` package's default logger, except through an `io.Writer` the consumer passed to that function or method or to the value it belongs to.
-- R-9TRL-4U3V: Every exported function and method of packages `services`, `identity`, and `mcp`, and `page.New` and `Kit.Banner`, MUST behave identically whatever the process working directory is, apart from how a relative path the consumer supplies resolves.
+- R-XFFJ-0MAV: Package `telemetry` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/telemetry`, and its package name MUST be `telemetry`.
+- R-XGNF-EE1K: An exported function or method of packages `page`, `services`, `identity`, `mcp`, or `telemetry` MUST NOT write to the process's standard output, to its standard error, or through the standard library `log` package's default logger, except through an `io.Writer` the consumer passed to that function or method, to the value it belongs to, or to the function that built that value.
+- R-XHVB-S5S9: Every exported function and method of packages `services`, `identity`, `mcp`, and `telemetry`, and `page.New` and `Kit.Banner`, MUST behave identically whatever the process working directory is, apart from how a relative path the consumer supplies resolves.
