@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
@@ -28,7 +28,7 @@ type Config struct {
 	Rand            io.Reader
 	Stderr          io.Writer
 	WorkspaceDomain string
-	Banner          func(u appkit.User) appkit.Banner
+	Banner          func(u page.User) page.Banner
 }
 
 // Server is auth's HTTP service.
@@ -64,9 +64,9 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("POST /tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /tokens/{id}/{action}", s.handleTokenAction)
 
-	static := appkit.Static()
+	static := page.Static()
 	s.httpServer = &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, appkit.StaticPrefix) {
+		if strings.HasPrefix(r.URL.Path, page.StaticPrefix) {
 			static.ServeHTTP(w, r)
 			return
 		}

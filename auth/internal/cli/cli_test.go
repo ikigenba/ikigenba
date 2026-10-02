@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
@@ -63,7 +63,7 @@ path = "state/auth.db"
 const wantSocketHint = "\n\nrun it under systemd, with a listening socket passed in\n"
 
 func TestSurface(t *testing.T) {
-	// R-SITN-PQPU
+	// R-4WVH-WX70
 	// An unkeyed literal fixes the field set, order, and types at compile time;
 	// reading each field back into a variable of its declared type fixes them exactly.
 	var (
@@ -78,7 +78,7 @@ func TestSurface(t *testing.T) {
 		rnd       io.Reader
 		issuer    string
 		dbSource  string
-		banner    func(appkit.User) appkit.Banner
+		banner    func(page.User) page.Banner
 	)
 	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner}
 	args, lookupEnv, unsetenv, pid = p.Args, p.LookupEnv, p.Unsetenv, p.Pid
@@ -152,8 +152,8 @@ func baseProcess(env map[string]string, source string, ln net.Listener) Process 
 			return nil, fmt.Errorf("fd %d", fd)
 		}
 		return ln, nil
-	}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)), OIDCIssuer: "http://127.0.0.1:0", DBSource: source, Banner: func(u appkit.User) appkit.Banner {
-		return appkit.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)), OIDCIssuer: "http://127.0.0.1:0", DBSource: source, Banner: func(u page.User) page.Banner {
+		return page.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}}
 }
 func goodEnv() map[string]string {
@@ -445,7 +445,7 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 			env["NOTIFY_SOCKET"] = addr
 			p := baseProcess(env, source, ln)
 			// R-T4RU-LM2C: no request may consult the banner source.
-			p.Banner = func(appkit.User) appkit.Banner { t.Error("banner called without request"); return appkit.Banner{} }
+			p.Banner = func(page.User) page.Banner { t.Error("banner called without request"); return page.Banner{} }
 			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan int, 1)
 			go func() { done <- Run(ctx, p) }()
@@ -540,9 +540,9 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 		t.Fatal(err)
 	}
 	bannerCalls := 0
-	p.Banner = func(u appkit.User) appkit.Banner {
+	p.Banner = func(u page.User) page.Banner {
 		bannerCalls++
-		return appkit.Banner{Service: "injected-banner", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		return page.Banner{Service: "injected-banner", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
 	p.OIDCIssuer = issuer.URL
 	ctx, cancel := context.WithCancel(t.Context())

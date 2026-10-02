@@ -17,13 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
 func TestConfigAndNew(t *testing.T) {
-	// R-SXGG-AZM6: Config is exactly the process dependencies handlers need.
+	// R-4Y3E-AOXP: Config is exactly the process dependencies handlers need.
 	// An unkeyed literal fixes the field set, order, and types at compile time;
 	// reading each exported field back into a variable of its declared type
 	// fixes them exactly.
@@ -34,7 +34,7 @@ func TestConfigAndNew(t *testing.T) {
 		rnd             io.Reader
 		errOut          io.Writer
 		workspaceDomain string
-		bannerFn        func(appkit.User) appkit.Banner
+		bannerFn        func(page.User) page.Banner
 	)
 	fields := Config{st, gClient, nowFn, rnd, errOut, workspaceDomain, bannerFn}
 	st, gClient, nowFn, rnd = fields.Store, fields.Google, fields.Now, fields.Rand
@@ -388,8 +388,8 @@ func TestContractRoutesServed(t *testing.T) {
 		Rand:            bytes.NewReader(bytes.Repeat([]byte{5}, 64)),
 		Stderr:          &bytes.Buffer{},
 		WorkspaceDomain: "example.test",
-		Banner: func(u appkit.User) appkit.Banner {
-			return appkit.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		Banner: func(u page.User) page.Banner {
+			return page.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 		},
 	})
 
@@ -513,8 +513,8 @@ func TestCrossRouteFailureDiagnostics(t *testing.T) {
 	}
 
 	var writes diagnosticWrites
-	s := New(Config{Store: st, Now: fixedNow, Stderr: &writes, Banner: func(u appkit.User) appkit.Banner {
-		return appkit.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	s := New(Config{Store: st, Now: fixedNow, Stderr: &writes, Banner: func(u page.User) page.Banner {
+		return page.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}})
 	for _, tc := range []struct{ method, target, origin string }{
 		{http.MethodGet, "/", ""},

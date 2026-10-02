@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -32,7 +32,7 @@ type Process struct {
 	Rand       io.Reader
 	OIDCIssuer string
 	DBSource   string
-	Banner     func(u appkit.User) appkit.Banner
+	Banner     func(u page.User) page.Banner
 }
 
 const usageText = `Usage: auth [command]

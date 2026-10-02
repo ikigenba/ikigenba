@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
 type pageTag struct {
@@ -635,8 +635,8 @@ func assertSignInCard(t *testing.T, body, host, word, target, footer string) str
 }
 func assertChrome(t *testing.T, body, email string) string {
 	t.Helper()
-	banner := renderTestBanner(t, testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"}))
-	data := testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
+	banner := renderTestBanner(t, testPageBanner(page.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"}))
+	data := testPageBanner(page.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
 	footer := renderTestFooter(t, data)
 	if !strings.HasSuffix(body[:strings.LastIndex(body, "</body>")], footer) {
 		t.Fatal("missing expected appkit footer at body end")

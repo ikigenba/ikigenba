@@ -9,26 +9,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
-func testPageBanner(u appkit.User) appkit.Banner {
-	return appkit.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+func testPageBanner(u page.User) page.Banner {
+	return page.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 }
 
-func renderTestBanner(t *testing.T, data appkit.Banner) string {
+func renderTestBanner(t *testing.T, data page.Banner) string {
 	t.Helper()
 	var out strings.Builder
-	if err := appkit.Templates().ExecuteTemplate(&out, "banner", data); err != nil {
+	if err := page.Templates().ExecuteTemplate(&out, "banner", data); err != nil {
 		t.Fatal(err)
 	}
 	return out.String()
 }
 
-func renderTestFooter(t *testing.T, data appkit.Banner) string {
+func renderTestFooter(t *testing.T, data page.Banner) string {
 	t.Helper()
 	var out strings.Builder
-	if err := appkit.Templates().ExecuteTemplate(&out, "footer", data); err != nil {
+	if err := page.Templates().ExecuteTemplate(&out, "footer", data); err != nil {
 		t.Fatal(err)
 	}
 	return out.String()
@@ -60,12 +60,12 @@ func fixtureWrittenMarkup(t *testing.T, body string) string {
 		return body
 	}
 	email := pageAttrs(links[0])["title"][0]
-	data := testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
+	data := testPageBanner(page.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
 	return pageWrittenMarkup(body, renderTestBanner(t, data), renderTestFooter(t, data))
 }
 
 func TestWrittenMarkupRemovesOnlyExactBoundaryTemplates(t *testing.T) {
-	data := testPageBanner(appkit.User{Email: "one@example", ProfileURL: "/", LogoutURL: "/logout"})
+	data := testPageBanner(page.User{Email: "one@example", ProfileURL: "/", LogoutURL: "/logout"})
 	banner, footer := renderTestBanner(t, data), renderTestFooter(t, data)
 	for _, tc := range []struct{ body, want string }{
 		{"<body>" + banner + "<main>" + banner + footer + "</main>" + footer + "</body>", "<body><main>" + banner + footer + "</main></body>"},
@@ -81,16 +81,16 @@ func TestWrittenMarkupRemovesOnlyExactBoundaryTemplates(t *testing.T) {
 }
 
 func TestPagesUseReturnedBannerOnce(t *testing.T) {
-	// R-02QQ-MZL0 R-03YN-0RBP R-1MU4-8FOY R-06EF-SAT3 R-07MC-62JS
-	for _, services := range [][]appkit.Service{nil, {
+	// R-4ZBA-OGOE R-50J7-28F3 R-51R3-G05S R-06EF-SAT3 R-52YZ-TRWH
+	for _, services := range [][]page.Service{nil, {
 		{Name: "Outside & secret", URL: "https://other.example/", Icon: template.HTML(`<svg><path d="x"/></svg>`), Enabled: true},
 		{Name: "auth", URL: "https://auth.example/", Enabled: true, Current: true},
 	}} {
 		st := openTokenTestStore(t)
 		user, session := tokenTestIdentity(t, st, "banner")
-		calls := []appkit.User{}
-		returned := appkit.Banner{Service: "returned service", Version: "fixture<& version", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services}
-		srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(u appkit.User) appkit.Banner { calls = append(calls, u); return returned }})
+		calls := []page.User{}
+		returned := page.Banner{Service: "returned service", Version: "fixture<& version", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services}
+		srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(u page.User) page.Banner { calls = append(calls, u); return returned }})
 		requests := []*http.Request{tokenProfileRequest(session.ID), tokenRequest("/tokens", session.ID, url.Values{"name": {""}, "expires": {"bad"}}), tokenRequest("/tokens", session.ID, url.Values{"name": {"banner token"}, "expires": {"never"}}), tokenProfileRequest(session.ID)}
 		for i, req := range requests {
 			returned.Service = []string{"profile", "rejected", "created", "refreshed"}[i] + " <& service"
@@ -98,7 +98,7 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 			calls = nil
 			w := httptest.NewRecorder()
 			srv.ServeHTTP(w, req)
-			wantUser := appkit.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"}
+			wantUser := page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"}
 			if len(calls) != 1 || calls[0] != wantUser {
 				t.Fatalf("request %d calls=%v want=%v", i, calls, wantUser)
 			}
@@ -108,6 +108,9 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 			bodies := pageElements(body, "body")
 			if len(bodies) != 1 || !strings.HasPrefix(body[bodies[0].end:], banner) || !strings.HasSuffix(body[:strings.LastIndex(body, "</body>")], footer) {
 				t.Fatalf("request %d missing boundary templates", i)
+			}
+			if len(services) != 0 {
+				assertBannerLauncher(t, body[bodies[0].end:bodies[0].end+len(banner)])
 			}
 			written := pageWrittenMarkup(body, banner, footer)
 			if written == body {
@@ -120,8 +123,36 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 	}
 }
 
+func assertBannerLauncher(t *testing.T, banner string) {
+	t.Helper()
+	// R-2XJU-MVK4: inspect the banner actually emitted in the response.
+	header := pageOne(t, banner, "header")
+	var launchers, marks []pageTag
+	for _, tag := range pageElements(banner, "button") {
+		if values := pageAttrs(tag)["class"]; len(values) == 1 && values[0] == "launcher" {
+			launchers = append(launchers, tag)
+		}
+	}
+	for _, tag := range pageElements(banner, "strong") {
+		if values := pageAttrs(tag)["class"]; len(values) == 1 && values[0] == "mark" {
+			marks = append(marks, tag)
+		}
+	}
+	if len(launchers) != 1 || len(marks) != 1 {
+		t.Fatalf("banner launchers=%d marks=%d", len(launchers), len(marks))
+	}
+	button, mark := launchers[0], marks[0]
+	if !strings.HasPrefix(strings.TrimLeft(pageContent(banner, header), " \t\r\n\f"), button.raw) {
+		t.Fatalf("banner header does not begin with launcher: %q", pageContent(banner, header))
+	}
+	buttonEnd := button.end + len(pageContent(banner, button)) + len("</button>")
+	if mark.start < buttonEnd || strings.Trim(banner[buttonEnd:mark.start], " \t\r\n\f") != "" {
+		t.Fatal("banner mark does not immediately follow launcher")
+	}
+}
+
 func TestOtherResponsesNeverCallBanner(t *testing.T) {
-	// R-07MC-62JS: only a response drawn with the banner consults its source.
+	// R-52YZ-TRWH: only a response drawn with the banner consults its source.
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "no-banner")
 	calls := 0
@@ -129,7 +160,7 @@ func TestOtherResponsesNeverCallBanner(t *testing.T) {
 	issuer.issue("banner-member", "banner-member-subject", "member@green.example")
 	issuer.issueClaims("banner-nonmember", map[string]any{"iss": "https://accounts.google.com", "sub": "banner-nonmember-subject", "aud": "client-id", "exp": 4102444800, "iat": 1700000000, "email": "other@example", "email_verified": true, "hd": "other"})
 	srv := signInServer(t, st, issuer, func() time.Time { return tokenTestNow })
-	srv.cfg.Banner = func(appkit.User) appkit.Banner { calls++; return appkit.Banner{} }
+	srv.cfg.Banner = func(page.User) page.Banner { calls++; return page.Banner{} }
 	for _, code := range []string{"banner-member", "banner-nonmember"} {
 		state, err := st.CreateLoginState("verifier", "")
 		if err != nil {
@@ -147,10 +178,16 @@ func TestOtherResponsesNeverCallBanner(t *testing.T) {
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login/google/callback", nil),
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/check", nil),
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/me", nil),
-		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/_appkit/theme.css", nil),
+		httptest.NewRequestWithContext(t.Context(), http.MethodGet, page.StaticPrefix+"theme.css", nil),
+		httptest.NewRequestWithContext(t.Context(), http.MethodGet, page.StaticPrefix+"missing", nil),
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/missing", nil),
 		tokenRequest("/tokens", "", url.Values{"name": {"valid"}, "expires": {"never"}}),
 		tokenActionRequest(session.ID, "00000000000000000000000000", "delete"),
+	}
+	for _, target := range []string{"/check", "/me"} {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+		r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+		requests = append(requests, r)
 	}
 	for _, r := range requests {
 		w := httptest.NewRecorder()

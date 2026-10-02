@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
 type authPageData struct {
-	Banner  appkit.Banner
+	Banner  page.Banner
 	SignIn  *signInPageData
 	Profile *profilePageData
 	Create  *tokenCreateData
@@ -45,7 +45,7 @@ const authPageTemplates = `{{define "page"}}<!DOCTYPE html><html><head><title>au
 // between independently context-escaped segments. No segment is trusted HTML.
 const pageValueTemplate = `{{define "value"}}{{range $i, $part := splitNUL .}}{{if $i}}` + "\x00" + `{{end}}{{$part}}{{end}}{{end}}`
 
-var authTemplates = template.Must(appkit.Templates().Funcs(template.FuncMap{
+var authTemplates = template.Must(page.Templates().Funcs(template.FuncMap{
 	"splitNUL": func(value string) []string { return strings.Split(value, "\x00") },
 }).Parse(authPageTemplates + tokenPageTemplates + pageValueTemplate))
 
@@ -90,6 +90,6 @@ func writeNonMemberPage(w http.ResponseWriter, host, workspace, email string) {
 	}})
 }
 
-func (s *Server) pageBanner(email string) appkit.Banner {
-	return s.cfg.Banner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
+func (s *Server) pageBanner(email string) page.Banner {
+	return s.cfg.Banner(page.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
 }

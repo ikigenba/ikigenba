@@ -158,7 +158,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	var sessionID string
 	if sig == syscall.SIGTERM {
 		services := filepath.Join(shortDir, "services.json")
-		if err := os.WriteFile(services, []byte(`{"services":[{"name":"auth","url":"/","icon":"","enabled":true},{"name":"Wiring probe","url":"https://probe.example.test/","icon":"","enabled":true}]}`), 0o600); err != nil {
+		if err := os.WriteFile(services, []byte(`{"services":[{"name":"auth","url":"/","description":"Auth service","socket":"/run/auth.sock","enabled":true,"mcp":false,"icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M3 3h18v18H3z\"/></svg>"},{"name":"Wiring probe","url":"https://probe.example.test/","description":"Main wiring fixture","socket":"/run/probe.sock","enabled":true,"mcp":false,"icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M3 3h18v18H3z\"/></svg>"}]}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+services)

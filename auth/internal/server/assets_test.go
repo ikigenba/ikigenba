@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
@@ -76,7 +76,7 @@ func TestSharedAssetRepresentations(t *testing.T) {
 	s, other := New(Config{}), New(Config{})
 	for name, contentType := range sharedFiles {
 		t.Run(name, func(t *testing.T) {
-			target := appkit.StaticPrefix + name
+			target := page.StaticPrefix + name
 			get := assetRequest(s, "GET", target, nil)
 			if get.Code != 200 || get.Body.Len() == 0 {
 				t.Fatalf("GET = %d body length %d", get.Code, get.Body.Len())
@@ -112,7 +112,7 @@ func TestSharedAssetConditionalRequests(t *testing.T) {
 	// R-1K1A-N3G4: nonmatching well-formed lists yield the GET representation.
 	s := New(Config{})
 	for name, contentType := range sharedFiles {
-		target := appkit.StaticPrefix + name
+		target := page.StaticPrefix + name
 		get := assetRequest(s, "GET", target, nil)
 		tag := get.Header().Get("ETag")
 		for _, modified := range []string{"", "Thu, 01 Jan 1970 00:00:00 GMT", "Fri, 31 Dec 9999 23:59:59 GMT", "invalid"} {
@@ -138,22 +138,39 @@ func TestSharedAssetConditionalRequests(t *testing.T) {
 }
 
 func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
-	// R-4KUY-CHJL: decoded byte-exact prefix and file names define the paths.
-	// R-4M2U-Q9AA: every appkit path delegates unchanged, including unspecified header behavior.
+	// R-546W-7JN6: decoded byte-exact page.StaticPrefix and file names define the paths.
+	// R-55ES-LBDV: every appkit path delegates unchanged, including unspecified header behavior.
 	// R-4VU1-SF7U: unsupported methods on files yield 405, Allow, and no tag.
 	// R-4X1Y-66YJ: non-file appkit paths yield 404 without a tag for any method or condition.
 	s := New(Config{})
-	static := appkit.Static()
+	static := page.Static()
+	if page.StaticPrefix != "/_appkit/" {
+		t.Fatalf("shared asset prefix = %q, want /_appkit/", page.StaticPrefix)
+	}
 	missing := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/missing", "/_appkit/THEME.CSS", "/_appkit/theme.cssX", "/_appkit/theme.css/child", "/_appkit//theme.css", "/_appkit/./theme.css", "/_appkit/../theme.css", "/_appkit/%2ftheme.css"}
 	for name := range sharedFiles {
-		missing = append(missing, appkit.StaticPrefix+strings.ToUpper(name), appkit.StaticPrefix+name+"extra")
+		missing = append(missing, page.StaticPrefix+strings.ToUpper(name), page.StaticPrefix+name+"extra")
 	}
 	targets := append([]string{}, missing...)
 	for name := range sharedFiles {
-		targets = append(targets, appkit.StaticPrefix+name)
+		targets = append(targets, page.StaticPrefix+name)
 	}
 	targets = append(targets, "/_appkit/%74heme.css")
-	conditions := []http.Header{nil, {"If-None-Match": {"*"}}, {"If-None-Match": {"\"other\""}}, {"If-None-Match": {"malformed", "*"}, "Range": {"bytes=0-1"}, "If-Match": {"*"}, "If-Unmodified-Since": {"invalid"}, "If-Range": {"invalid"}, "If-Modified-Since": {"invalid"}, "X-Test": {"one", "two"}}}
+	conditions := []http.Header{
+		nil,
+		{"If-None-Match": {"*"}},
+		{"If-None-Match": {"\"other\""}},
+		{"If-None-Match": {"malformed"}},
+		{"If-None-Match": {"malformed", "*"}},
+		{"Range": {"bytes=0-1"}},
+		{"Range": {"bytes=999999999-"}},
+		{"If-Match": {"\"other\""}},
+		{"If-Unmodified-Since": {"Thu, 01 Jan 1970 00:00:00 GMT"}},
+		{"If-Range": {"\"other\""}, "Range": {"bytes=0-1"}},
+		{"If-Modified-Since": {"Fri, 31 Dec 9999 23:59:59 GMT"}},
+		{"Cookie": {"arbitrary=value"}, "Authorization": {"Bearer arbitrary"}, "X-Test": {"one", "two"}},
+		{"If-None-Match": {"malformed", "*"}, "Range": {"bytes=0-1"}, "If-Match": {"*"}, "If-Unmodified-Since": {"invalid"}, "If-Range": {"invalid"}, "If-Modified-Since": {"invalid"}, "X-Test": {"one", "two"}},
+	}
 	for _, target := range targets {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT", "CUSTOM"} {
 			for _, header := range conditions {
@@ -206,7 +223,7 @@ func TestSharedAssetCredentialAndStoreIndependence(t *testing.T) {
 	s := New(Config{Store: st, Now: fixedNow})
 	targets := []string{"/_appkit/", "/_appkit/missing", "/_appkit//theme.css"}
 	for name := range sharedFiles {
-		targets = append(targets, appkit.StaticPrefix+name)
+		targets = append(targets, page.StaticPrefix+name)
 	}
 	type testCase struct {
 		method, target string
