@@ -1,4 +1,4 @@
-package panel
+package panel_test
 
 import (
 	"io"
@@ -14,7 +14,7 @@ import (
 
 func invariantSeededStore(t *testing.T) *widget.Store {
 	t.Helper()
-	store := widget.NewStore()
+	store := panelTestStore()
 	for _, sub := range []widget.Submission{
 		{Name: "later first", Count: "8", Status: string(widget.StatusPaused)},
 		{Name: "later second", Count: "2", Status: string(widget.StatusActive)},

@@ -3,7 +3,6 @@ package panel
 
 import (
 	"html/template"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/tools"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -42,19 +42,20 @@ type handler struct {
 	templates *template.Template
 	banner    func(page.User) page.Banner
 	srv       *mcp.Server
+	writer    *telemetry.Writer
 }
 
 // Handler constructs a panel whose requests share s.
-func Handler(s *widget.Store, banner func(page.User) page.Banner, srv *mcp.Server, stderr io.Writer) http.Handler {
+func Handler(s *widget.Store, banner func(page.User) page.Banner, srv *mcp.Server, w *telemetry.Writer) http.Handler {
 	set := template.Must(page.Templates().ParseFS(dummy.Assets(), "*.html"))
-	tools.Register(srv, s)
-	required := identity.Require(ServiceName, stderr, &handler{store: s, banner: banner, srv: srv, templates: set})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tools.Register(srv, s, w)
+	required := identity.Require(&handler{store: s, banner: banner, srv: srv, templates: set, writer: w})
+	return telemetry.Middleware(w, http.HandlerFunc(func(out http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-User-Id") == "" {
-			w.Header().Set("Content-Length", strconv.Itoa(len(identity.MissingBody)))
+			out.Header().Set("Content-Length", strconv.Itoa(len(identity.MissingBody)))
 		}
-		required.ServeHTTP(w, r)
-	})
+		required.ServeHTTP(out, r)
+	}))
 }
 
 // LogoutURL derives auth's logout endpoint from the request host and strict proxy scheme.

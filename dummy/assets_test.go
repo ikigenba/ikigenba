@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy"
 )
 
-// R-DKAC-F3TN R-DNY1-KF1Q
+// R-E5L5-F828 R-DNY1-KF1Q
 func TestAssets(t *testing.T) {
 	assets := []func() fs.FS{dummy.Assets}[0]
 	names := []string{"form.html", "page.html", "script.html", "table.html"}

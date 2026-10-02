@@ -1,4 +1,4 @@
-package panel
+package panel_test
 
 import (
 	"bytes"
@@ -19,6 +19,7 @@ import (
 	appidentity "github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/dummy"
+	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -122,7 +123,7 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 	// R-MJ5E-KGIF R-HUJP-90QB R-HWZI-0K7P
 	for _, empty := range []bool{false, true} {
 		t.Run(fmt.Sprintf("empty=%v", empty), func(t *testing.T) {
-			store := widget.NewStore()
+			store := panelTestStore()
 			if empty {
 				store = new(widget.Store)
 			} else {
@@ -178,7 +179,7 @@ func tableTestHasASCIIClass(value, name string) bool {
 
 func TestTableCountAndStatusMarkup(t *testing.T) {
 	// R-HH4T-1JKO R-HICP-FBBD R-HM0E-KMJG R-HOG7-C60U
-	store := widget.NewStore()
+	store := panelTestStore()
 	for _, status := range widget.Statuses() {
 		if _, errs := store.Create(widget.Draft{Name: "widget " + string(status), Count: 7, Status: status}); errs.Any() {
 			t.Fatalf("create %q: %+v", status, errs)
@@ -260,11 +261,11 @@ func TestTableCountAndStatusMarkup(t *testing.T) {
 
 func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 	// R-HZFA-S3P3 R-I1V3-JN6H R-I4AW-B6NV
-	store := widget.NewStore()
+	store := panelTestStore()
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	first := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
 	second := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
-	otherStore := tableTestRequest(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+	otherStore := tableTestRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
 	for _, response := range []*httptest.ResponseRecorder{first, second, otherStore} {
 		if response.Code != http.StatusOK || !regexp.MustCompile(`^"[^",\x09-\x0d\x20]+"$`).MatchString(response.Header().Get("ETag")) {
 			t.Fatalf("invalid success validator: %d %v", response.Code, response.Header())
@@ -288,7 +289,7 @@ func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 func TestTableConditionalRequests(t *testing.T) {
 	// R-IAEE-81DC R-ICU6-ZKUQ R-I7YL-GHVY
 	for _, empty := range []bool{false, true} {
-		store := widget.NewStore()
+		store := panelTestStore()
 		if empty {
 			store = new(widget.Store)
 		}
@@ -340,12 +341,12 @@ func TestTableConditionalRequests(t *testing.T) {
 }
 
 func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
-	// R-IF9Z-R4C4 R-IIXO-WFK7 R-ILDH-NZ1L R-INTA-FIIZ R-I7YL-GHVY
+	// R-IF9Z-R4C4 R-IIXO-WFK7 R-0142-4LXJ R-INTA-FIIZ R-I7YL-GHVY
 	for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CUSTOM"} {
 		for _, identity := range []string{"absent", "empty", "present"} {
 			for _, conditional := range []string{"", "*", `"stale"`} {
 				t.Run(method+"/"+identity+"/"+conditional, func(t *testing.T) {
-					store := widget.NewStore()
+					store := panelTestStore()
 					tableTestCreate(t, store, "read-only fixture")
 					headers := tableTestIdentity()
 					switch identity {
@@ -365,7 +366,7 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 					case identity != "present":
 						wantStatus, wantBody = http.StatusInternalServerError, appidentity.MissingBody
 					case method != "GET" && method != "HEAD":
-						wantStatus, wantBody = http.StatusMethodNotAllowed, MethodNotAllowedBody
+						wantStatus, wantBody = http.StatusMethodNotAllowed, panel.MethodNotAllowedBody
 					case conditional == "*":
 						wantStatus = http.StatusNotModified
 					}
@@ -379,8 +380,12 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 						if response.Body.String() != wantBody || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
 							t.Errorf("failure shape = %v %q", response.Header(), response.Body.String())
 						}
-						if _, exists := response.Header()["Etag"]; exists {
-							t.Error("failure carries ETag")
+						if identity == "present" {
+							for key := range response.Header() {
+								if strings.EqualFold(key, "ETag") {
+									t.Error("authenticated failure carries ETag")
+								}
+							}
 						}
 						if _, exists := response.Header()["Location"]; wantStatus == http.StatusMethodNotAllowed && exists {
 							t.Error("failure carries Location")
@@ -402,7 +407,7 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 }
 
 func TestTableConcurrentSnapshots(t *testing.T) {
-	store := widget.NewStore()
+	store := panelTestStore()
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	var group sync.WaitGroup
 	for i := range 12 {
@@ -427,7 +432,7 @@ func TestTableConcurrentSnapshots(t *testing.T) {
 func TestTableTransportHeadParity(t *testing.T) {
 	// R-I7YL-GHVY: exercise net/http's real response framing, including lengths
 	// it otherwise adds to GET responses but omits from unwritten HEAD bodies.
-	store := widget.NewStore()
+	store := panelTestStore()
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	etag := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Header().Get("ETag")
 	server := httptest.NewServer(h)
@@ -486,7 +491,7 @@ func TestTableTransportHeadParity(t *testing.T) {
 
 // R-CI8O-LO8U
 func TestTableFragmentExcludesPageHeading(t *testing.T) {
-	store := widget.NewStore()
+	store := panelTestStore()
 	for _, extra := range []bool{false, true} {
 		if extra {
 			tableTestCreate(t, store, "one more")
@@ -509,7 +514,7 @@ func TestTableUsesAssetData(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, empty := range []bool{false, true} {
-		store := widget.NewStore()
+		store := panelTestStore()
 		if empty {
 			store = new(widget.Store)
 		} else {

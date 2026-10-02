@@ -3,7 +3,6 @@ package tools_test
 import (
 	"encoding/json"
 	"html"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,8 +21,9 @@ import (
 func panelClient(t *testing.T, s *widget.Store) (*mcp.Client, http.Handler) {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Stderr: io.Discard})
-	handler := panel.Handler(s, func(page.User) page.Banner { return page.Banner{} }, srv, io.Discard)
+	writer, _, _ := capturingWriter(t)
+	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer})
+	handler := panel.Handler(s, func(page.User) page.Banner { return page.Banner{} }, srv, writer)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp", HTTPClient: server.Client()}), handler
@@ -132,7 +132,7 @@ func assertLastRow(t *testing.T, body string, w widget.Widget) {
 }
 
 func TestToolCreationAppearsInPanel(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	c, h := panelClient(t, s)
 	before := panelRequest(h, http.MethodGet, "/widgets/table", "", "")
 	if before.Code != http.StatusOK || before.Header().Get("ETag") == "" {
@@ -158,7 +158,7 @@ func TestToolCreationAppearsInPanel(t *testing.T) {
 }
 
 func TestFormCreationAppearsInToolList(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	c, h := panelClient(t, s)
 	body := url.Values{"name": {" from form & tools "}, "count": {"9"}, "status": {"retired"}}.Encode()
 	response := panelRequest(h, http.MethodPost, "/widgets", body, "")
@@ -183,8 +183,7 @@ func TestFormCreationAppearsInToolList(t *testing.T) {
 	if len(widgets) == 0 {
 		t.Fatal("empty widget list")
 	}
-	want := widgetJSON(t, widget.Widget{Name: "from form & tools", Count: 9, Status: widget.StatusRetired})
-	if string(widgets[len(widgets)-1]) != want {
-		t.Fatalf("last widget = %s; want %s", widgets[len(widgets)-1], want)
-	}
+	all := s.All()
+	want := widgetJSON(t, widget.Widget{ID: all[len(all)-1].ID, Name: "from form & tools", Count: 9, Status: widget.StatusRetired})
+	jsonEqual(t, widgets[len(widgets)-1], want)
 }

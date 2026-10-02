@@ -8,10 +8,18 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
+type widgetInput struct {
+	Name   string        `json:"name" mcp:"required" description:"The widget's name: 1 to 40 characters after trimming, unique."`
+	Count  int           `json:"count" mcp:"required" description:"How many: a whole number, zero or more."`
+	Status widget.Status `json:"status" mcp:"required" description:"The widget's status."`
+}
+
 type widgetObject struct {
+	ID     string        `json:"id" mcp:"required" description:"The widget's id, which names it in dummy's telemetry trail."`
 	Name   string        `json:"name" mcp:"required" description:"The widget's name: 1 to 40 characters after trimming, unique."`
 	Count  int           `json:"count" mcp:"required" description:"How many: a whole number, zero or more."`
 	Status widget.Status `json:"status" mcp:"required" description:"The widget's status."`
@@ -22,11 +30,11 @@ type widgetList struct {
 }
 
 func object(w widget.Widget) widgetObject {
-	return widgetObject{Name: w.Name, Count: w.Count, Status: w.Status}
+	return widgetObject{ID: w.ID, Name: w.Name, Count: w.Count, Status: w.Status}
 }
 
 // Register adds the read-only listing and additive creation tools over s.
-func Register(srv *mcp.Server, s *widget.Store) {
+func Register(srv *mcp.Server, s *widget.Store, writer *telemetry.Writer) {
 	mcp.AddTool(srv, mcp.Tool[struct{}, widgetList]{
 		Name: "list_widgets", Description: "List the widgets, oldest first.", Effect: mcp.Read,
 		Handler: func(context.Context, identity.Caller, struct{}) (widgetList, error) {
@@ -38,11 +46,11 @@ func Register(srv *mcp.Server, s *widget.Store) {
 			return out, nil
 		},
 	})
-	mcp.AddTool(srv, mcp.Tool[widgetObject, widgetObject]{
+	mcp.AddTool(srv, mcp.Tool[widgetInput, widgetObject]{
 		Name:        "create_widget",
 		Description: "Create a widget and return it.\n\nThe name is trimmed of surrounding white space and must then be 1 to 40 characters and not already taken (letter case counts). The count is a whole number, zero or more. Every rule the arguments break is reported in one error, and nothing is created unless all of them hold.",
 		Effect:      mcp.Additive,
-		Handler: func(_ context.Context, _ identity.Caller, in widgetObject) (widgetObject, error) {
+		Handler: func(ctx context.Context, _ identity.Caller, in widgetInput) (widgetObject, error) {
 			w, errs := s.Create(widget.Draft{Name: in.Name, Count: in.Count, Status: in.Status})
 			if errs.Any() {
 				lines := []string{"invalid arguments:"}
@@ -54,6 +62,7 @@ func Register(srv *mcp.Server, s *widget.Store) {
 				}
 				return widgetObject{}, errors.New(strings.Join(lines, "\n"))
 			}
+			writer.Emit(ctx, "widget.created", telemetry.Attrs{"widget": w.ID})
 			return object(w), nil
 		},
 	})

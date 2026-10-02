@@ -11,21 +11,32 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-func testMCP(t *testing.T) *mcp.Server {
+type testTrail struct {
+	server  *mcp.Server
+	writer  *telemetry.Writer
+	capture *telemetry.Capture
+	stderr  bytes.Buffer
+}
+
+func testMCP(t *testing.T) *testTrail {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	return mcp.NewServer(mcp.ServerConfig{Name: "dummy", Version: Version, Stderr: io.Discard})
+	trail := &testTrail{capture: &telemetry.Capture{}}
+	trail.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: Version, Sink: trail.capture, Stderr: &trail.stderr, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 8192))})
+	trail.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: Version, Telemetry: trail.writer})
+	t.Cleanup(func() { trail.writer.Shutdown(context.Background(), "test finished") })
+	return trail
 }
 func emptyBanner(page.User) page.Banner { return page.Banner{} }
 func readySocket(t *testing.T) (string, *net.UnixConn) {
@@ -44,7 +55,7 @@ func readySocket(t *testing.T) (string, *net.UnixConn) {
 	return path, conn
 }
 
-// R-PE6U-PF31 R-PFER-36TQ R-EUBD-X7ZQ
+// R-PE6U-PF31 R-PFER-36TQ R-HUGI-VVDH R-IWRG-RPL0 R-IXZD-5HBP
 func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 	for _, tc := range []struct {
 		name, value   string
@@ -57,6 +68,18 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 		{"huge", strings.Repeat("9", 100), true, true, 7 * time.Second},
 	} {
 		srv := testMCP(t)
+		var ordering *orderedLog
+		var sink *deadlineSink
+		var gate *Gate
+		if tc.name == "one" {
+			ordering = &orderedLog{}
+			sink = &deadlineSink{}
+			gate = NewGate(sink)
+			ordering.gate = gate
+			srv.writer.Shutdown(context.Background(), "replace fixture writer")
+			srv.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: Version, Sink: gate, Stderr: ordering, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}})
+			srv.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: Version, Telemetry: srv.writer})
+		}
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -72,9 +95,15 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 				env["DRAIN_SECONDS"] = tc.value
 			}
 			var stdout, stderr bytes.Buffer
+			var processStderr io.Writer = &stderr
+			inherited := listener
+			if ordering != nil {
+				processStderr = ordering
+				inherited = &closeRecordingListener{Listener: listener, log: ordering}
+			}
 			result := make(chan int, 1)
 			go func() {
-				result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: emptyBanner, MCP: srv, Stdout: &stdout, Stderr: &stderr})
+				result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return inherited, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Gate: gate, Rand: testWidgetRand(), Stdout: &stdout, Stderr: processStderr})
 			}()
 			waitReady(t, notify)
 			conn, err := net.Dial("tcp", listener.Addr().String())
@@ -86,7 +115,7 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 				t.Fatal(err)
 			}
 			body := "name=drained&count=2&status=active"
-			header := fmt.Sprintf("POST /widgets HTTP/1.1\r\nHost: dummy\r\nX-User-Id: test-user\r\nContent-Type: application/x-www-form-urlencoded\r\nExpect: 100-continue\r\nContent-Length: %d\r\n\r\n", len(body))
+			header := fmt.Sprintf("POST /widgets HTTP/1.1\r\nHost: dummy\r\nX-User-Id: test-user\r\nX-Request-Id: cut-off\r\nContent-Type: application/x-www-form-urlencoded\r\nExpect: 100-continue\r\nContent-Length: %d\r\n\r\n", len(body))
 			if _, err = io.WriteString(conn, header); err != nil {
 				t.Fatal(err)
 			}
@@ -143,6 +172,40 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 				if tc.complete {
 					want, diagnostic = ExitSuccess, ""
 				}
+				if ordering != nil {
+					before := len(sink.capture.Events())
+					if gate.Deliver(context.Background(), telemetry.Event{Name: "after.return"}) == nil || len(sink.capture.Events()) != before {
+						t.Error("gate delivered after Run returned")
+					}
+					if !ordering.refusedDuringStop {
+						t.Error("gate did not refuse during service.stopping write")
+					}
+					lines := ordering.snapshot()
+					stop, closed, overrun := -1, -1, -1
+					for i, line := range lines {
+						if strings.Contains(line, `"event":"service.stopping"`) {
+							stop = i
+							if !strings.Contains(line, `"reason":"context canceled"`) {
+								t.Errorf("stop line=%q", line)
+							}
+						}
+						if line == "connection closed" && closed < 0 {
+							closed = i
+						}
+						if line == diagnostic {
+							overrun = i
+						}
+					}
+					if stop < 0 || closed <= stop || overrun <= stop {
+						t.Errorf("shutdown ordering=%q", lines)
+					}
+					for _, event := range sink.capture.Events() {
+						if event.Name == "service.stopping" || (event.RequestID == "cut-off" && event.Name == "request.finished") {
+							t.Errorf("delivered cutoff event=%+v", event)
+						}
+					}
+					diagnostic = ""
+				}
 				if code != want || stdout.Len() != 0 || stderr.String() != diagnostic {
 					t.Errorf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 				}
@@ -156,7 +219,7 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 	}
 }
 
-// R-ET3H-JG91 R-QFU0-CZZ9 R-EUBD-X7ZQ
+// R-QFU0-CZZ9
 func TestRunNoRequestsAndNoNotification(t *testing.T) {
 	for _, env := range []map[string]string{{}, {"NOTIFY_SOCKET": ""}} {
 		srv := testMCP(t)
@@ -169,7 +232,7 @@ func TestRunNoRequestsAndNoNotification(t *testing.T) {
 		env["LISTEN_PID"], env["LISTEN_FDS"] = "42", "1"
 		calls := 0
 		var out, diagnostics bytes.Buffer
-		code := Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { calls++; return page.Banner{} }, MCP: srv, Stdout: &out, Stderr: &diagnostics})
+		code := Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { calls++; return page.Banner{} }, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
 		if code != ExitSuccess || calls != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
 			t.Errorf("code=%d banner=%d out=%q diagnostics=%q", code, calls, out.String(), diagnostics.String())
 		}
@@ -192,7 +255,7 @@ func (l *observingListener) Accept() (net.Conn, error) {
 func (l *observingListener) Close() error   { return nil }
 func (l *observingListener) Addr() net.Addr { return testAddr("observing") }
 
-// R-QH1W-QRPY R-ERVL-5OIC R-EUBD-X7ZQ
+// R-QH1W-QRPY R-ERVL-5OIC
 func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
 	for _, abstract := range []bool{false, true} {
 		srv := testMCP(t)
@@ -219,7 +282,7 @@ func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
 			}
 		}
 		var out, diagnostics recordingWriter
-		code := Run(context.Background(), Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: &out, Stderr: &diagnostics})
+		code := Run(context.Background(), Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
 		if code != ExitServerFailed || out.Len() != 0 || !strings.HasPrefix(diagnostics.String(), "dummy: ") || !strings.HasSuffix(diagnostics.String(), "\n") || strings.Count(diagnostics.String(), "\n") != 1 {
 			t.Errorf("code=%d out=%q diagnostic=%q writes=%d", code, out.String(), diagnostics.String(), diagnostics.calls)
 		}
@@ -245,89 +308,8 @@ func TestReadyFailurePreventsAccept(t *testing.T) {
 		t.Fatal("notification unexpectedly succeeded")
 	}
 	var out, diagnostics recordingWriter
-	code := Run(context.Background(), Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: &out, Stderr: &diagnostics})
+	code := Run(context.Background(), Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
 	if code != ExitServerFailed || out.Len() != 0 || diagnostics.String() != "dummy: "+wantErr.Error()+"\n" || ln.accepts != 0 {
 		t.Errorf("code=%d out=%q diagnostic=%q accepts=%d", code, out.String(), diagnostics.String(), ln.accepts)
-	}
-}
-
-type overlapWriter struct {
-	mu              sync.Mutex
-	active, overlap bool
-	entered         chan struct{}
-	release         chan struct{}
-	buf             bytes.Buffer
-}
-
-func (w *overlapWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	if w.active {
-		w.overlap = true
-	}
-	w.active = true
-	w.mu.Unlock()
-	w.entered <- struct{}{}
-	<-w.release
-	for range 100 {
-		runtime.Gosched()
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.active = false
-	return w.buf.Write(p)
-}
-
-// R-PHUJ-UQB4
-func TestRunSerializesConcurrentHandlerDiagnostics(t *testing.T) {
-	srv := testMCP(t)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, notify := readySocket(t)
-	writer := &overlapWriter{entered: make(chan struct{}, 32), release: make(chan struct{})}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	result := make(chan int, 1)
-	go func() {
-		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: io.Discard, Stderr: writer})
-	}()
-	if err := notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	var packet [32]byte
-	if _, _, err := notify.ReadFromUnix(packet[:]); err != nil {
-		t.Fatal(err)
-	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	done := make(chan error, 32)
-	for range 32 {
-		go func() {
-			resp, err := client.Get("http://" + ln.Addr().String() + "/widgets")
-			if err == nil {
-				_, err = io.Copy(io.Discard, resp.Body)
-				_ = resp.Body.Close()
-			}
-			done <- err
-		}()
-	}
-	<-writer.entered
-	close(writer.release)
-	for range 32 {
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
-	}
-	cancel()
-	if code := <-result; code != ExitSuccess {
-		t.Errorf("exit=%d", code)
-	}
-	writer.mu.Lock()
-	defer writer.mu.Unlock()
-	if writer.overlap {
-		t.Error("overlapping Stderr.Write calls")
-	}
-	if strings.Count(writer.buf.String(), "\n") != 32 {
-		t.Errorf("diagnostics=%q", writer.buf.String())
 	}
 }

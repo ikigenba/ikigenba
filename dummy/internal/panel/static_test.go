@@ -1,4 +1,4 @@
-package panel
+package panel_test
 
 import (
 	"io"
@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
-	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
 var sharedFiles = []struct{ name, contentType string }{
@@ -22,7 +21,7 @@ var sharedFiles = []struct{ name, contentType string }{
 }
 
 func staticTestHandler(t *testing.T) http.Handler {
-	return coreHandler(t, widget.NewStore(), func(page.User) page.Banner { return page.Banner{} }, io.Discard)
+	return coreHandler(t, panelTestStore(), func(page.User) page.Banner { return page.Banner{} }, io.Discard)
 }
 
 func staticStrongTag(tag string) bool {
@@ -167,6 +166,19 @@ func TestSharedStaticMissingPaths(t *testing.T) {
 					t.Fatalf("%s %s: %d %v", method, path, got.Code, got.Header())
 				}
 			}
+		}
+	}
+}
+
+// R-I1RX-6HTN
+func TestSharedStaticHead(t *testing.T) {
+	h := staticTestHandler(t)
+	for _, file := range sharedFiles {
+		path := "/_appkit/" + file.name
+		get := pageTestResponse(h, pageTestRequest(http.MethodGet, path))
+		head := pageTestResponse(h, pageTestRequest(http.MethodHead, path))
+		if head.Code != http.StatusOK || head.Body.Len() != 0 || !reflect.DeepEqual(head.Header().Values("Content-Type"), []string{file.contentType}) || head.Header().Get("ETag") != get.Header().Get("ETag") {
+			t.Fatalf("HEAD %s: %d %v body=%q", path, head.Code, head.Header(), head.Body.String())
 		}
 	}
 }

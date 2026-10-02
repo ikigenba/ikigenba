@@ -14,6 +14,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 // R-F2D6-M8QD R-E8OC-2INJ
@@ -25,7 +26,7 @@ func TestUsageConstant(t *testing.T) {
 	}
 }
 
-// R-DSTN-3I0I
+// R-HPKX-CSEP
 func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	// Each field's address is stored in a slot of the declared pointer type,
 	// and Run is stored in a field of its declared type, so this compiles
@@ -51,7 +52,10 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 		inherit   *func(fd uintptr) (net.Listener, error)
 		banner    *func(u page.User) page.Banner
 		mcp       **mcp.Server
-	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner, &p.MCP}
+		telemetry **telemetry.Writer
+		gate      **Gate
+		rand      *io.Reader
+	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner, &p.MCP, &p.Telemetry, &p.Gate, &p.Rand}
 	*fields.args, *fields.lookupEnv, *fields.unsetenv, *fields.pid = args, lookupEnv, unsetenv, 1
 	*fields.stdout, *fields.stderr, *fields.inherit, *fields.banner = stdout, stderr, inherit, banner
 	*fields.mcp = nil

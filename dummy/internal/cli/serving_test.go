@@ -41,6 +41,7 @@ type servingRun struct {
 	stdout   bytes.Buffer
 	stderr   writeLines
 	fds      []uintptr
+	trail    *testTrail
 }
 
 type writeLines struct {
@@ -53,7 +54,11 @@ func (w *writeLines) Write(p []byte) (int, error) {
 	return w.Buffer.Write(p)
 }
 
-func startRun(t *testing.T, srv *mcp.Server) *servingRun {
+func startRun(t *testing.T, srv *testTrail) *servingRun {
+	return startConfiguredRun(t, srv, nil)
+}
+
+func startConfiguredRun(t *testing.T, srv *testTrail, configure func(*Process)) *servingRun {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -61,12 +66,16 @@ func startRun(t *testing.T, srv *mcp.Server) *servingRun {
 	}
 	t.Cleanup(func() { _ = ln.Close() })
 	path, notify := readySocket(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	run := &servingRun{client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, endpoint: "http://" + ln.Addr().String(), cancel: cancel, result: make(chan int, 1)}
+	ctx, cancelCause := context.WithCancelCause(context.Background())
+	cancel := func() { cancelCause(errors.New("explicit run cancellation")) }
+	run := &servingRun{client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, endpoint: "http://" + ln.Addr().String(), cancel: cancel, result: make(chan int, 1), trail: srv}
 	t.Cleanup(cancel)
-	go func() {
-		run.result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(fd uintptr) (net.Listener, error) { run.fds = append(run.fds, fd); return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: &run.stdout, Stderr: &run.stderr})
-	}()
+	p := Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(fd uintptr) (net.Listener, error) { run.fds = append(run.fds, fd); return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &run.stdout, Stderr: &run.stderr}
+	if configure != nil {
+		configure(&p)
+	}
+	go func() { run.result <- Run(ctx, p) }()
+
 	waitReady(t, notify)
 	return run
 }
@@ -157,7 +166,7 @@ func runWidgets(t *testing.T, run *servingRun) []servedWidget {
 	return result.StructuredContent.Widgets
 }
 
-// R-DPQ2-9T5Q R-ET3H-JG91 R-P9B9-6C49 R-PAJ5-K3UY R-PBR1-XVLN R-EUBD-X7ZQ
+// R-DPQ2-9T5Q R-E6T1-SZSX R-KEWX-FE96 R-P9B9-6C49 R-PAJ5-K3UY R-PBR1-XVLN R-IXZD-5HBP
 func TestRunSharesWidgetsAndRestartsFresh(t *testing.T) {
 	for range 2 {
 		run := startRun(t, testMCP(t))
@@ -219,22 +228,6 @@ func TestRunSharesWidgetsAndRestartsFresh(t *testing.T) {
 	}
 }
 
-// R-PCYY-BNCC R-EUBD-X7ZQ
-func TestRunMissingIdentityWritesExactlyOneLinePerRequest(t *testing.T) {
-	run := startRun(t, testMCP(t))
-	for _, id := range []string{"", "request-one"} {
-		code, _ := run.request(t, http.MethodGet, "/widgets", "", "", id)
-		if code != http.StatusInternalServerError {
-			t.Fatalf("missing identity status=%d", code)
-		}
-	}
-	run.stop(t)
-	want := []string{"dummy: request -: X-User-Id is missing\n", "dummy: request request-one: X-User-Id is missing\n"}
-	if !reflect.DeepEqual(run.stderr.lines, want) {
-		t.Errorf("Stderr.Write calls=%q", run.stderr.lines)
-	}
-}
-
 type retryListener struct {
 	net.Listener
 	once    sync.Once
@@ -256,7 +249,7 @@ func (temporaryAcceptError) Error() string   { return "retry accept" }
 func (temporaryAcceptError) Temporary() bool { return true }
 func (temporaryAcceptError) Timeout() bool   { return false }
 
-// R-DOI5-W1F1 R-EUBD-X7ZQ
+// R-DOI5-W1F1
 func TestRunDiscardsRetryAndPanicLogs(t *testing.T) {
 	srv := testMCP(t)
 	var logs bytes.Buffer
@@ -275,7 +268,7 @@ func TestRunDiscardsRetryAndPanicLogs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	result := make(chan int, 1)
 	go func() {
-		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { panic("banner failed") }, MCP: srv, Stdout: &stdout, Stderr: &stderr})
+		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { panic("banner failed") }, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &stdout, Stderr: &stderr})
 	}()
 	waitReady(t, notify)
 	<-ln.retried
@@ -319,4 +312,12 @@ func assertNoNotification(t *testing.T, notify *net.UnixConn) {
 	if !errors.As(err, &netErr) || !netErr.Timeout() {
 		t.Errorf("unexpected notification, read error=%v", err)
 	}
+}
+
+func testWidgetRand() io.Reader {
+	source := make([]byte, 1024)
+	for i := range 128 {
+		source[i*8] = byte(i)
+	}
+	return bytes.NewReader(source)
 }

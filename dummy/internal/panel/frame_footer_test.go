@@ -1,4 +1,4 @@
-package panel
+package panel_test
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
-	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
 func frameTestRender(t *testing.T, name string, data page.Banner) string {
@@ -90,7 +89,7 @@ func TestFrameDocumentsDrawSameFetchedBannerAndFooter(t *testing.T) {
 			Services: []page.Service{{Name: "other", URL: "/other", Enabled: true}}}
 		return drawn
 	}
-	h := coreHandler(t, widget.NewStore(), source, io.Discard)
+	h := coreHandler(t, panelTestStore(), source, io.Discard)
 	for _, r := range pageTestDocuments() {
 		body := pageTestResponse(h, r).Body.String()
 		banner := frameTestRender(t, "banner", drawn)
@@ -123,19 +122,30 @@ func TestFrameDocumentsDrawSameFetchedBannerAndFooter(t *testing.T) {
 	}
 }
 
-// R-0OXI-OYCC
+// R-HY48-16LK
 func TestFrameEmailHasNoVisibleText(t *testing.T) {
 	for _, services := range [][]page.Service{nil, {}, {{Name: "alpha", URL: "https://alpha.test/", Enabled: true, Icon: `<svg><path d="M0 0"/></svg>`}}} {
-		source := func(u page.User) page.Banner {
-			data := pageTestBanner(u)
-			data.Services = services
-			return data
-		}
+		source := pageTestEchoingBanner(services)
 		for _, email := range []string{"reader@example.test", " \treader+<&\"@example.test \n"} {
 			for _, r := range pageTestDocuments() {
 				r.Header.Set("X-User-Email", email)
-				body := pageTestResponse(coreHandler(t, widget.NewStore(), source, io.Discard), r).Body.String()
-				if strings.Contains(pageTestVisible(body), strings.Join(strings.Fields(email), " ")) {
+				store := panelTestStore()
+				for _, w := range store.All() {
+					if strings.Contains(w.Name, "@") {
+						t.Fatal("email test precondition violated")
+					}
+				}
+				if r.Body != nil {
+					data, err := io.ReadAll(r.Body)
+					if err != nil || strings.Contains(string(data), "@") {
+						t.Fatal("email body precondition violated")
+					}
+					r.Body = io.NopCloser(bytes.NewReader(data))
+				}
+				body := pageTestResponse(coreHandler(t, store, source, io.Discard), r).Body.String()
+				data := pageTestBannerData(r)
+				data.Services = services
+				if strings.Contains(pageTestVisible(frameTestWritten(t, body, data)), strings.Join(strings.Fields(email), " ")) {
 					t.Fatal("email appears in visible text")
 				}
 			}

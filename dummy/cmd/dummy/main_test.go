@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -22,11 +21,14 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-49MF-7KF1 R-4UCP-PO0U R-JC0I-TC5V
+// R-49MF-7KF1 R-K1I1-7X3J R-K2PX-LOU8 R-K3XT-ZGKX R-K55Q-D8BM R-K7LJ-4RT0 R-MRE2-JOZN
 func TestMainWiring(t *testing.T) {
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")
@@ -56,15 +58,19 @@ func TestMainWiring(t *testing.T) {
 		})
 	}
 
+	var alphaIDs []string
 	for _, sig := range []os.Signal{syscall.SIGTERM, os.Interrupt} {
 		t.Run(sig.String(), func(t *testing.T) {
-			serveAndSignal(t, binary, sig)
+			alphaIDs = append(alphaIDs, serveAndSignal(t, binary, sig))
 		})
 	}
+	if len(alphaIDs) != 2 {
+		t.Fatalf("process ids=%v", alphaIDs)
+	}
+	if alphaIDs[0] == "" || alphaIDs[0] == alphaIDs[1] {
+		t.Errorf("process alpha ids=%v", alphaIDs)
+	}
 }
-
-// launcherButton matches a button start tag whose class is launcher.
-var launcherButton = regexp.MustCompile(`<button\s[^>]*\bclass="launcher"[^>]*>`)
 
 func mainProjectRoot(t *testing.T) string {
 	t.Helper()
@@ -94,8 +100,8 @@ func runBinary(t *testing.T, binary string, args []string) (string, string, int)
 	return stdout.String(), stderr.String(), exitError.ExitCode()
 }
 
-// R-DPQ2-9T5Q R-5ZTA-PV8G R-DXP8-MKZA
-func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
+// R-DPQ2-9T5Q R-5ZTA-PV8G
+func serveAndSignal(t *testing.T, binary string, sig os.Signal) string {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "dummy-exec-")
 	if err != nil {
@@ -103,6 +109,15 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 
+	capture := &telemetry.Capture{}
+	ingestSocket := filepath.Join(directory, "telemetry.sock")
+	ingestListener, err := net.Listen("unix", ingestSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingest := &http.Server{Handler: telemetry.IngestHandler(capture), ReadHeaderTimeout: time.Second}
+	go func() { _ = ingest.Serve(ingestListener) }()
+	t.Cleanup(func() { _ = ingest.Close() })
 	socketPath := filepath.Join(directory, "serve.sock")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
 	if err != nil {
@@ -152,7 +167,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	servicesPath := filepath.Join(directory, "services.json")
 	command.Env = []string{"NOTIFY_SOCKET=" + notifyPath}
 	if sig == syscall.SIGTERM {
-		writeServices(t, servicesPath, "First description")
+		writeServices(t, servicesPath, "First description", ingestSocket)
 		command.Env = append(command.Env, "IKIGENBA_SERVICES="+servicesPath)
 	}
 	// Only descriptor 3 is a listener. Readiness proves the child took it.
@@ -179,6 +194,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	if got := string(datagram[:n]); got != "READY=1" {
 		t.Fatalf("readiness = %q, want READY=1", got)
 	}
+	var alphaID string
 	{
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -200,14 +216,16 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 		if err != nil || closeErr != nil {
 			t.Fatalf("read child response: %v, close: %v", err, closeErr)
 		}
-		if sig == syscall.SIGTERM && !launcherButton.Match(body) {
-			t.Error("main did not pass appkit banner source to handler")
+		servicesValue := ""
+		if sig == syscall.SIGTERM {
+			servicesValue = servicesPath
 		}
-		assertVersionFooter(t, string(body))
-		assertMCPWiring(t, client)
+		t.Setenv(services.Variable, servicesValue)
+		assertAppkitFrame(t, string(body), page.New(panel.ServiceName, cli.Version).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")}))
+		alphaID = assertMCPWiring(t, client)
 		if sig == syscall.SIGTERM {
 			assertDiscovery(t, client, "First description", true)
-			writeServices(t, servicesPath, "Second description")
+			writeServices(t, servicesPath, "Second description", ingestSocket)
 			assertDiscovery(t, client, "Second description", true)
 		} else {
 			assertDiscovery(t, client, "", false)
@@ -230,9 +248,63 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	if err != nil {
 		t.Errorf("serve case for %v exited with error: %v", sig, err)
 	}
-	if stdout.Len() != 0 || stderr.Len() != 0 {
-		t.Errorf("serve case for %v: stdout=%q stderr=%q", sig, stdout.String(), stderr.String())
+	if stdout.Len() != 0 {
+		t.Errorf("stdout=%q", stdout.String())
 	}
+	reason := "SIGTERM"
+	if sig == os.Interrupt {
+		reason = "SIGINT"
+	}
+	if sig == syscall.SIGTERM {
+		if stderr.Len() != 0 {
+			t.Errorf("stderr=%q", stderr.String())
+		}
+		events := capture.Events()
+		if len(events) < 2 {
+			t.Fatalf("events=%v", events)
+		}
+		first, last := events[0], events[len(events)-1]
+		if first.Name != "service.started" || first.Service != panel.ServiceName || first.RequestID != "" || first.User != "" || !reflect.DeepEqual(first.Attrs, telemetry.Attrs{"version": cli.Version}) {
+			t.Errorf("first event=%+v", first)
+		}
+		if last.Name != "service.stopping" || last.Attrs["reason"] != reason {
+			t.Errorf("last event=%+v", last)
+		}
+		found := false
+		for _, e := range events {
+			if e.Name == "tool.called" && e.RequestID == "binary-tool-request" && e.User == "test-user" && e.Attrs["tool"] == "list_widgets" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing tool.called: %+v", events)
+		}
+	} else {
+		lines := strings.Split(strings.TrimSuffix(stderr.String(), "\n"), "\n")
+		if len(lines) < 2 {
+			t.Fatalf("stderr=%q", stderr.String())
+		}
+		var events []map[string]any
+		for _, line := range lines {
+			prefix := panel.ServiceName + ": undelivered event: "
+			if !strings.HasPrefix(line, prefix) {
+				t.Fatalf("unexpected line %q", line)
+			}
+			var event map[string]any
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, prefix)), &event); err != nil {
+				t.Fatal(err)
+			}
+			events = append(events, event)
+		}
+		if events[0]["event"] != "service.started" || events[len(events)-1]["event"] != "service.stopping" {
+			t.Errorf("events=%v", events)
+		}
+		attrs, _ := events[len(events)-1]["attrs"].(map[string]any)
+		if attrs["reason"] != reason {
+			t.Errorf("stop attrs=%v", attrs)
+		}
+	}
+
 	if _, err := os.Stat(socketPath); err != nil {
 		t.Errorf("socket path after child exit: %v", err)
 	}
@@ -242,79 +314,53 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	} else if err := connection.Close(); err != nil {
 		t.Errorf("close queued connection: %v", err)
 	}
+	return alphaID
 }
 
-func assertVersionFooter(t *testing.T, body string) {
+// R-HVOF-9N46
+func assertAppkitFrame(t *testing.T, body string, banner page.Banner) {
 	t.Helper()
-	starts := elementStart("footer").FindAllStringIndex(body, -1)
-	if len(starts) != 1 {
-		t.Fatalf("whole response contains %d footer start tags, want 1", len(starts))
+	starts := regexp.MustCompile(`(?i)<body(?:[^a-z0-9>][^>]*|)>`).FindStringIndex(body)
+	ends := regexp.MustCompile(`(?i)</body(?:[^a-z0-9>][^>]*|)>`).FindAllStringIndex(body, -1)
+	if starts == nil || len(ends) == 0 {
+		t.Fatal("response lacks body tags")
 	}
-	content := body[starts[0][1]:]
-	end := elementEnd("footer").FindStringIndex(content)
-	if end == nil {
-		t.Fatal("footer has no following end tag")
-	}
-	got := normaliseFooterContent(content[:end[0]])
-	if want := panel.ServiceName + " " + cli.Version; got != want {
-		t.Errorf("normalised footer = %q, want %q", got, want)
+	content := body[starts[1]:ends[len(ends)-1][0]]
+	for _, name := range []string{"banner", "footer"} {
+		var expected bytes.Buffer
+		if err := page.Templates().ExecuteTemplate(&expected, name, banner); err != nil {
+			t.Fatal(err)
+		}
+		if name == "banner" {
+			if !strings.HasPrefix(strings.TrimLeft(content, " \t\r\n\f\v"), strings.TrimLeft(expected.String(), " \t\r\n\f\v")) {
+				t.Errorf("body does not begin with appkit banner: %q", content)
+			}
+		} else if !strings.HasSuffix(strings.TrimRight(content, " \t\r\n\f\v"), strings.TrimRight(expected.String(), " \t\r\n\f\v")) {
+			t.Errorf("body does not end with appkit footer: %q", content)
+		}
 	}
 }
 
-func elementStart(name string) *regexp.Regexp {
-	return regexp.MustCompile(`(?i)<` + name + `(?:[^a-z0-9>][^>]*|)>`)
-}
-
-func elementEnd(name string) *regexp.Regexp {
-	return regexp.MustCompile(`(?i)</` + name + `(?:[^a-z0-9>][^>]*|)>`)
-}
-
-func normaliseFooterContent(content string) string {
-	blocks := regexp.MustCompile(`(?i)<(script|style)(?:[^a-z0-9>][^>]*|)>`)
-	for {
-		start := blocks.FindStringSubmatchIndex(content)
-		if start == nil {
-			break
-		}
-		end := elementEnd(content[start[2]:start[3]]).FindStringIndex(content[start[1]:])
-		if end == nil {
-			content = content[:start[0]]
-			break
-		}
-		content = content[:start[0]] + content[start[1]+end[1]:]
-	}
-	for {
-		start := strings.IndexByte(content, '<')
-		if start == -1 {
-			break
-		}
-		end := strings.IndexByte(content[start:], '>')
-		if end == -1 {
-			content = content[:start]
-			break
-		}
-		content = content[:start] + content[start+end+1:]
-	}
-	return strings.Join(strings.Fields(html.UnescapeString(content)), " ")
-}
-
-func writeServices(t *testing.T, path, description string) {
+func writeServices(t *testing.T, path, description, telemetrySocket string) {
 	t.Helper()
 	entry := map[string]any{"name": panel.ServiceName, "url": "/widgets", "description": description, "socket": "dummy.sock", "enabled": true, "mcp": true, "icon": ""}
-	data, err := json.Marshal(map[string]any{"services": []any{entry}})
+	data, err := json.Marshal(map[string]any{"services": []any{entry, map[string]any{"name": telemetry.ServiceName, "socket": telemetrySocket, "url": "", "description": "", "enabled": true, "mcp": false}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path+".new", data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path+".new", path); err != nil {
 		t.Fatal(err)
 	}
 }
 
 // R-E051-E4GO
-func assertMCPWiring(t *testing.T, httpClient *http.Client) {
+func assertMCPWiring(t *testing.T, httpClient *http.Client) string {
 	t.Helper()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://dummy/mcp", HTTPClient: httpClient, Name: "test", Version: "test"})
-	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "test-user"}, "list_widgets", nil)
+	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "test-user", RequestID: "binary-tool-request"}, "list_widgets", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,6 +386,22 @@ func assertMCPWiring(t *testing.T, httpClient *http.Client) {
 	if !reflect.DeepEqual(info, map[string]string{"name": panel.ServiceName, "version": cli.Version}) {
 		t.Errorf("serverInfo=%v", info)
 	}
+	var resultBody struct {
+		StructuredContent struct {
+			Widgets []struct{ ID, Name string } `json:"widgets"`
+		} `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(data, &resultBody); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range resultBody.StructuredContent.Widgets {
+		if w.Name == "alpha" {
+			return w.ID
+		}
+	}
+	t.Fatal("alpha missing")
+	return ""
+
 }
 
 // R-E3SQ-JFOR R-E68J-AZ65

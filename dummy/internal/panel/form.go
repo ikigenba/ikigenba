@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -40,6 +41,7 @@ func (h *handler) serveForm(w http.ResponseWriter, r *http.Request) {
 		Name: values.Get("name"), Count: values.Get("count"), Status: values.Get("status"),
 	}
 	d, errs := widget.ParseSubmission(sub)
+	var created widget.Widget
 	if errs.Any() {
 		rules := h.store.Check(d)
 		if errs.Name == "" {
@@ -52,12 +54,13 @@ func (h *handler) serveForm(w http.ResponseWriter, r *http.Request) {
 			errs.Status = rules.Status
 		}
 	} else {
-		_, errs = h.store.Create(d)
+		created, errs = h.store.Create(d)
 	}
 	if errs.Any() {
 		h.renderPage(w, r, http.StatusUnprocessableEntity, sub, errs)
 		return
 	}
+	h.writer.Emit(r.Context(), "widget.created", telemetry.Attrs{"widget": created.ID})
 	w.Header().Set("Location", "/widgets")
 	w.WriteHeader(http.StatusSeeOther)
 }

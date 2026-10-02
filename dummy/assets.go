@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed assets/*.html
+//go:embed assets/page.html assets/table.html assets/form.html assets/script.html
 var assets embed.FS
 
 // Assets returns the embedded human-authored panel templates.

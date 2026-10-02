@@ -2,6 +2,9 @@
 package widget
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -49,6 +52,7 @@ func (s Status) Enum() []string {
 
 // Widget is an accepted name, count, and status.
 type Widget struct {
+	ID     string
 	Name   string
 	Count  int
 	Status Status
@@ -84,15 +88,37 @@ func (e FieldErrors) Any() bool {
 type Store struct {
 	mu      sync.RWMutex
 	widgets []Widget
+	src     io.Reader
 }
 
 // NewStore creates an independent store with the three starting widgets.
-func NewStore() *Store {
-	return &Store{widgets: []Widget{
-		{Name: "alpha", Count: 3, Status: StatusActive},
-		{Name: "beta", Count: 0, Status: StatusPaused},
-		{Name: "gamma", Count: 12, Status: StatusRetired},
-	}}
+func NewStore(src io.Reader) *Store {
+	if src == nil {
+		src = rand.Reader
+	}
+	s := &Store{src: src}
+	for _, w := range []Widget{{Name: "alpha", Count: 3, Status: StatusActive}, {Name: "beta", Count: 0, Status: StatusPaused}, {Name: "gamma", Count: 12, Status: StatusRetired}} {
+		w.ID = s.nextID()
+		s.widgets = append(s.widgets, w)
+	}
+	return s
+}
+
+// nextID requires exclusive access to the store and its source.
+func (s *Store) nextID() string {
+	for {
+		var data [8]byte
+		if _, err := io.ReadFull(s.src, data[:]); err != nil {
+			data = [8]byte{}
+			if _, err := io.ReadFull(rand.Reader, data[:]); err != nil {
+				panic(err)
+			}
+		}
+		id := "wgt_" + hex.EncodeToString(data[:])
+		if !slices.ContainsFunc(s.widgets, func(w Widget) bool { return w.ID == id }) {
+			return id
+		}
+	}
 }
 
 // All returns an independent snapshot of the widgets in creation order.
@@ -136,7 +162,7 @@ func (s *Store) Create(d Draft) (Widget, FieldErrors) {
 	if errs.Any() {
 		return Widget{}, errs
 	}
-	w := Widget{Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
+	w := Widget{ID: s.nextID(), Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
 	s.widgets = append(s.widgets, w)
 	return w, errs
 }

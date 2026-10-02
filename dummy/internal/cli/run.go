@@ -14,6 +14,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -30,6 +31,9 @@ type Process struct {
 	Inherit   func(fd uintptr) (net.Listener, error)
 	Banner    func(u page.User) page.Banner
 	MCP       *mcp.Server
+	Telemetry *telemetry.Writer
+	Gate      *Gate
+	Rand      io.Reader
 }
 
 // Process exit codes.
@@ -105,15 +109,30 @@ func Run(ctx context.Context, p Process) int {
 	}
 	defer func() { _ = ln.Close() }()
 
-	store := widget.NewStore()
-	handler := panel.Handler(store, p.Banner, p.MCP, stderr)
 	if address, ok := lookup(p.LookupEnv, "NOTIFY_SOCKET"); ok && address != "" {
 		if err = notifyReady(address); err != nil {
 			writeDiagnostic(stderr, "dummy: "+err.Error()+"\n")
 			return ExitServerFailed
 		}
 	}
-	if err = server.Serve(ctx, ln, handler, drain); err != nil {
+	store := widget.NewStore(p.Rand)
+	handler := panel.Handler(store, p.Banner, p.MCP, p.Telemetry)
+	p.Telemetry.Ready()
+	if p.Gate != nil {
+		stopWatching := p.Gate.watch(ctx, drain)
+		defer stopWatching()
+	}
+	if err = server.Serve(ctx, ln, handler, drain, func(stopCtx context.Context) {
+		if p.Gate != nil {
+			if deadline, ok := stopCtx.Deadline(); ok {
+				p.Gate.limit(deadline)
+			}
+			if stopCtx.Err() != nil {
+				p.Gate.limit(time.Now())
+			}
+		}
+		p.Telemetry.Shutdown(stopCtx, context.Cause(ctx).Error())
+	}); err != nil {
 		detail := strings.NewReplacer("\r", " ", "\n", " ").Replace(err.Error())
 		writeDiagnostic(stderr, "dummy: "+detail+"\n")
 		return ExitServerFailed

@@ -1,7 +1,11 @@
 package widget_test
 
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -74,14 +78,14 @@ func TestMessageConstants(t *testing.T) {
 	}
 }
 
-// R-I2W8-NTQ6, R-ISI4-P0AR, R-EBQ5-GVM3.
+// R-KVZI-S6MW, R-ISI4-P0AR, R-EBQ5-GVM3.
 func TestPublicStructsConstructWithDeclaredFields(t *testing.T) {
 	// Each literal names its fields with values of the declared types, and each
 	// read compares a field against a value of the declared type, so this
 	// compiles only if every declared field exists with its declared type.
-	name, count, status := "delta", 7, widget.StatusPaused
-	w := widget.Widget{Name: name, Count: count, Status: status}
-	if w.Name != name || w.Count != count || w.Status != status {
+	id, name, count, status := "known-id", "delta", 7, widget.StatusPaused
+	w := widget.Widget{ID: id, Name: name, Count: count, Status: status}
+	if w.ID != id || w.Name != name || w.Count != count || w.Status != status {
 		t.Errorf("Widget = %+v", w)
 	}
 	rawName, rawCount, rawStatus := " delta ", "7", "paused"
@@ -135,21 +139,29 @@ func TestFieldErrorsAny(t *testing.T) {
 	}
 }
 
+func knownSource() io.Reader {
+	data := make([]byte, 8*256)
+	for i := range 256 {
+		data[i*8] = byte(i)
+	}
+	return bytes.NewReader(data)
+}
+
 func initialWidgets() []widget.Widget {
 	return []widget.Widget{
-		{Name: "alpha", Count: 3, Status: widget.StatusActive},
-		{Name: "beta", Count: 0, Status: widget.StatusPaused},
-		{Name: "gamma", Count: 12, Status: widget.StatusRetired},
+		{ID: "wgt_0000000000000000", Name: "alpha", Count: 3, Status: widget.StatusActive},
+		{ID: "wgt_0100000000000000", Name: "beta", Count: 0, Status: widget.StatusPaused},
+		{ID: "wgt_0200000000000000", Name: "gamma", Count: 12, Status: widget.StatusRetired},
 	}
 }
 
-// R-EFDU-M6U6, R-EJ1J-RI29, R-EYW8-QIPA, R-GV6M-5O86.
+// R-KX7F-5YDL, R-EJ1J-RI29, R-EYW8-QIPA, R-GV6M-5O86.
 func TestStoreInitialStateAndIndependence(t *testing.T) {
 	declared := struct {
-		newStore func() *widget.Store
+		newStore func(io.Reader) *widget.Store
 		all      func(*widget.Store) []widget.Widget
 	}{widget.NewStore, (*widget.Store).All}
-	first, second := declared.newStore(), declared.newStore()
+	first, second := declared.newStore(knownSource()), declared.newStore(knownSource())
 	want := initialWidgets()
 	if !slices.Equal(declared.all(first), want) || !slices.Equal(declared.all(second), want) {
 		t.Fatal("new stores do not contain the exact starting widgets")
@@ -158,7 +170,7 @@ func TestStoreInitialStateAndIndependence(t *testing.T) {
 	if errs.Any() {
 		t.Fatal(errs)
 	}
-	if !slices.Equal(second.All(), want) || !slices.Equal(widget.NewStore().All(), want) {
+	if !slices.Equal(second.All(), want) || !slices.Equal(widget.NewStore(knownSource()).All(), want) {
 		t.Fatal("a write changed another store or later store's starting widgets")
 	}
 	if _, errs := second.Create(widget.Draft{Name: "epsilon", Count: 6, Status: widget.StatusPaused}); errs.Any() {
@@ -171,7 +183,7 @@ func TestStoreInitialStateAndIndependence(t *testing.T) {
 
 // R-F1C1-I26O.
 func TestAllReturnsIndependentSnapshots(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	want := initialWidgets()
 	snapshot := s.All()
 	snapshot[0] = widget.Widget{Name: "changed", Count: 900, Status: widget.StatusRetired}
@@ -290,7 +302,7 @@ func TestCheckNames(t *testing.T) {
 	check := struct {
 		call func(*widget.Store, widget.Draft) widget.FieldErrors
 	}{call: (*widget.Store).Check}.call
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	if _, errs := s.Create(widget.Draft{Name: " new name ", Count: 0, Status: widget.StatusActive}); errs.Any() {
 		t.Fatal(errs)
 	}
@@ -323,7 +335,7 @@ func TestCheckCounts(t *testing.T) {
 		if count < 0 {
 			want = widget.CountNegativeMessage
 		}
-		errs := widget.NewStore().Check(widget.Draft{Name: "delta", Count: count, Status: widget.StatusActive})
+		errs := widget.NewStore(knownSource()).Check(widget.Draft{Name: "delta", Count: count, Status: widget.StatusActive})
 		if errs.Count != want {
 			t.Errorf("Check count %d = %q; want %q", count, errs.Count, want)
 		}
@@ -337,7 +349,7 @@ func TestCheckStatuses(t *testing.T) {
 		if slices.Contains(widget.Statuses(), status) {
 			want = ""
 		}
-		errs := widget.NewStore().Check(widget.Draft{Name: "delta", Count: 0, Status: status})
+		errs := widget.NewStore(knownSource()).Check(widget.Draft{Name: "delta", Count: 0, Status: status})
 		if errs.Status != want {
 			t.Errorf("Check status %q = %q; want %q", status, errs.Status, want)
 		}
@@ -350,7 +362,7 @@ func TestCheckAndCreateRejections(t *testing.T) {
 		call func(*widget.Store, widget.Draft) (widget.Widget, widget.FieldErrors)
 	}{call: (*widget.Store).Create}.call
 	for bits := range 8 {
-		s := widget.NewStore()
+		s := widget.NewStore(knownSource())
 		before := s.All()
 		d := widget.Draft{Name: " delta ", Count: 0, Status: widget.StatusActive}
 		want := widget.FieldErrors{}
@@ -383,7 +395,7 @@ func TestCheckAndCreateRejections(t *testing.T) {
 	}
 	// All name rules must agree too, including duplicate and rune limit.
 	for _, name := range []string{"alpha", " alpha ", strings.Repeat("é", widget.MaxNameRunes+1), strings.Repeat("é", widget.MaxNameRunes), "Alpha"} {
-		s := widget.NewStore()
+		s := widget.NewStore(knownSource())
 		d := widget.Draft{Name: name, Count: 2, Status: widget.StatusPaused}
 		before, checked := s.All(), s.Check(d)
 		w, errs := create(s, d)
@@ -398,7 +410,7 @@ func TestCheckAndCreateRejections(t *testing.T) {
 
 // R-F4ZQ-NDER, R-FIEM-UUKE, R-GFBX-6NL5.
 func TestAcceptedCreationOrder(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	for _, d := range []widget.Draft{
 		{Name: "\u2003 delta \t", Count: 7, Status: widget.StatusActive},
 		{Name: "omega", Count: 0, Status: widget.StatusPaused},
@@ -407,15 +419,16 @@ func TestAcceptedCreationOrder(t *testing.T) {
 		before := s.All()
 		want := widget.Widget{Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
 		got, errs := s.Create(d)
+		want.ID = got.ID
 		if errs.Any() || got != want || !slices.Equal(s.All(), append(before, want)) {
 			t.Fatalf("Create(%+v) = %+v, %+v; All=%+v", d, got, errs, s.All())
 		}
 	}
 }
 
-// R-GMNB-HA1B, R-GQB0-ML9E.
+// R-L3AX-2T32, R-GMNB-HA1B, R-GQB0-ML9E.
 func TestConcurrentCreationChecksAndSnapshots(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	const writers = 64
 	start := make(chan struct{})
 	results := make(chan widget.Widget, writers)
@@ -475,7 +488,7 @@ func TestConcurrentCreationChecksAndSnapshots(t *testing.T) {
 
 // R-GSQT-E4QS, R-GMNB-HA1B.
 func TestConcurrentDuplicateNamesAreAtomic(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	const writers = 64
 	start := make(chan struct{})
 	type outcome struct {
@@ -520,5 +533,162 @@ func TestConcurrentDuplicateNamesAreAtomic(t *testing.T) {
 			t.Errorf("duplicate name %q", w.Name)
 		}
 		seen[w.Name] = true
+	}
+}
+
+type countedSource struct {
+	source  io.Reader
+	lengths []int
+}
+
+func (r *countedSource) Read(p []byte) (int, error) {
+	r.lengths = append(r.lengths, len(p))
+	return r.source.Read(p)
+}
+
+// R-KYFB-JQ4A, R-KZN7-XHUZ.
+func TestIDDrawsAndNoDrawOnRefusalOrObservation(t *testing.T) {
+	source := &countedSource{source: knownSource()}
+	s := widget.NewStore(source)
+	if !slices.Equal(source.lengths, []int{8, 8, 8}) || !slices.Equal(s.All(), initialWidgets()) {
+		t.Fatalf("initial widgets or draws: %+v, %v", s.All(), source.lengths)
+	}
+	s.All()
+	s.Check(widget.Draft{Name: "new", Count: 1, Status: widget.StatusActive})
+	s.Create(widget.Draft{Name: "alpha", Count: 1, Status: widget.StatusActive})
+	if !slices.Equal(source.lengths, []int{8, 8, 8}) {
+		t.Fatalf("observation or refusal drew: %v", source.lengths)
+	}
+	w, e := s.Create(widget.Draft{Name: "new", Count: 1, Status: widget.StatusActive})
+	if e.Any() || w.ID != "wgt_0300000000000000" || !slices.Equal(source.lengths, []int{8, 8, 8, 8}) {
+		t.Fatalf("creation: %+v %+v draws %v", w, e, source.lengths)
+	}
+}
+
+// R-L0V4-B9LO.
+func TestRepeatedIDsDrawAgain(t *testing.T) {
+	source := &countedSource{source: bytes.NewReader([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0})}
+	s := widget.NewStore(source)
+	if !slices.Equal(s.All(), initialWidgets()) || len(source.lengths) != 5 {
+		t.Fatalf("fixture collision: %+v draws %v", s.All(), source.lengths)
+	}
+	w, e := s.Create(widget.Draft{Name: "new", Count: 0, Status: widget.StatusActive})
+	if e.Any() || w.ID != "wgt_0300000000000000" || len(source.lengths) != 7 {
+		t.Fatalf("creation collision: %+v %+v draws %v", w, e, source.lengths)
+	}
+}
+
+func assertIDs(t *testing.T, widgets []widget.Widget) {
+	t.Helper()
+	seen := make(map[string]bool)
+	for _, w := range widgets {
+		if len(w.ID) != 20 || !strings.HasPrefix(w.ID, "wgt_") {
+			t.Fatalf("bad id: %q", w.ID)
+		}
+		data, err := hex.DecodeString(w.ID[4:])
+		if err != nil || len(data) != 8 || hex.EncodeToString(data) != w.ID[4:] || seen[w.ID] {
+			t.Fatalf("invalid or repeated id: %q", w.ID)
+		}
+		seen[w.ID] = true
+	}
+}
+
+type partialFailureSource []byte
+
+func (r partialFailureSource) Read(p []byte) (int, error) {
+	n := copy(p, r)
+	return n, io.ErrUnexpectedEOF
+}
+
+// R-L230-P1CD.
+func TestFailedAndPartialDrawsStillCreateWidgets(t *testing.T) {
+	original := rand.Reader
+	t.Cleanup(func() { rand.Reader = original })
+	var baseline []string
+	for _, marker := range [][]byte{nil, {0x13, 0x47, 0x82, 0xac, 0x59, 0xd1, 0xe7}, {0xf3, 0xb7, 0x62, 0x0c, 0xa9, 0x31, 0x17}} {
+		// Inject fallback randomness to keep this implementation's test deterministic.
+		// Only independence from the failed draw's bytes is asserted, never the
+		// choice of fallback source or a particular successful fallback ID.
+		rand.Reader = knownSource()
+		s := widget.NewStore(partialFailureSource(marker))
+		initial := s.All()
+		if len(initial) != 3 {
+			t.Fatal(initial)
+		}
+		for i, w := range initial {
+			w.ID = initialWidgets()[i].ID
+			if w != initialWidgets()[i] {
+				t.Fatal(w)
+			}
+		}
+		w, e := s.Create(widget.Draft{Name: "new", Count: 2, Status: widget.StatusPaused})
+		if e.Any() || w.Name != "new" || w.Count != 2 || w.Status != widget.StatusPaused || !slices.Equal(s.All(), append(initial, w)) {
+			t.Fatalf("fallback changed creation: %+v %+v", w, e)
+		}
+		assertIDs(t, s.All())
+		var ids []string
+		for _, w := range s.All() {
+			ids = append(ids, w.ID)
+		}
+		if baseline == nil {
+			baseline = ids
+		} else if !slices.Equal(ids, baseline) {
+			t.Fatalf("failed bytes changed IDs with the same fallback draws: %v; want %v", ids, baseline)
+		}
+		if len(marker) != 0 {
+			retainedPrefix := "wgt_" + hex.EncodeToString(marker)
+			for _, w := range s.All() {
+				if strings.HasPrefix(w.ID, retainedPrefix) {
+					t.Fatalf("failed draw's seven-byte marker retained in %q", w.ID)
+				}
+			}
+		}
+	}
+}
+
+// R-L4IT-GKTR.
+func TestNilSourceUsesFreshIDs(t *testing.T) {
+	original := rand.Reader
+	rand.Reader = knownSource()
+	t.Cleanup(func() { rand.Reader = original })
+	first, second := widget.NewStore(nil), widget.NewStore(nil)
+	assertIDs(t, first.All())
+	assertIDs(t, second.All())
+	if first.All()[0].ID == second.All()[0].ID {
+		t.Fatal("stores share alpha id")
+	}
+	w, e := first.Create(widget.Draft{Name: "new", Count: 0, Status: widget.StatusActive})
+	if e.Any() || w.ID == "" {
+		t.Fatalf("nil source create: %+v %+v", w, e)
+	}
+	assertIDs(t, first.All())
+}
+
+type chunkSource struct{ source io.Reader }
+
+func (r chunkSource) Read(p []byte) (int, error) {
+	if len(p) > 2 {
+		p = p[:2]
+	}
+	return r.source.Read(p)
+}
+
+// R-KYFB-JQ4A, R-KZN7-XHUZ.
+func TestIDDrawsAccumulateShortSuccessfulReads(t *testing.T) {
+	source := &countedSource{source: chunkSource{source: knownSource()}}
+	s := widget.NewStore(source)
+	initialDraws := []int{8, 6, 4, 2, 8, 6, 4, 2, 8, 6, 4, 2}
+	if !slices.Equal(s.All(), initialWidgets()) || !slices.Equal(source.lengths, initialDraws) {
+		t.Fatalf("incomplete initial draws: %+v %v", s.All(), source.lengths)
+	}
+	s.All()
+	s.Check(widget.Draft{Name: "new", Count: 0, Status: widget.StatusActive})
+	s.Create(widget.Draft{Name: "alpha", Count: 0, Status: widget.StatusActive})
+	if !slices.Equal(source.lengths, initialDraws) {
+		t.Fatal("observation or refusal consumed bytes")
+	}
+	w, e := s.Create(widget.Draft{Name: "new", Count: 0, Status: widget.StatusActive})
+	if e.Any() || w.ID != "wgt_0300000000000000" || !slices.Equal(source.lengths, append(initialDraws, 8, 6, 4, 2)) {
+		t.Fatalf("incomplete creation draw: %+v %+v %v", w, e, source.lengths)
 	}
 }

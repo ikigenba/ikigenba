@@ -61,9 +61,14 @@ func (e *DrainError) Error() string {
 }
 
 // Serve serves h on ln until ctx is cancelled or the server fails.
-func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error {
+func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration, stop func(context.Context)) error {
 	if ctx.Err() != nil {
 		_ = ln.Close()
+		stopCtx, cancel := context.WithTimeout(context.Background(), drain)
+		defer cancel()
+		if stop != nil {
+			stop(stopCtx)
+		}
 		return nil
 	}
 
@@ -128,6 +133,16 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Dura
 
 	select {
 	case <-ctx.Done():
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), drain)
+		defer stopCancel()
+		var stopOnce sync.Once
+		callStop := func() {
+			stopOnce.Do(func() {
+				if stop != nil {
+					stop(stopCtx)
+				}
+			})
+		}
 		shutdownCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		type cutoffState struct {
@@ -169,6 +184,8 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Dura
 			}
 			connectionsMu.Unlock()
 			if state.unfinished > 0 {
+				<-stopCtx.Done()
+				callStop()
 				cancel()
 				for _, conn := range toClose {
 					_ = conn.SetWriteDeadline(time.Now())
@@ -201,6 +218,7 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Dura
 			if shutdownFinished && allHandlersDone {
 				if timer.Stop() {
 					<-serveResult
+					callStop()
 					return shutdownErr
 				}
 				cut := <-cutoff
@@ -209,6 +227,7 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Dura
 					waitForDelivered(cut.pending)
 					return &DrainError{Unfinished: cut.unfinished}
 				}
+				callStop()
 				return shutdownErr
 			}
 			select {
@@ -221,6 +240,7 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Dura
 					waitForDelivered(cut.pending)
 					return &DrainError{Unfinished: cut.unfinished}
 				}
+				callStop()
 				return shutdownErr
 			case shutdownErr = <-shutdownResult:
 				shutdownFinished = true

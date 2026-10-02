@@ -16,23 +16,23 @@ import (
 	"time"
 )
 
-// R-LLO3-0V1R
+// R-K8TF-IJJP
 func TestServeSignature(t *testing.T) {
 	t.Parallel()
 
 	// Storing Serve in a field of the declared function type compiles only
 	// if Serve has exactly that signature; calling it proves it runs.
 	declared := struct {
-		serve func(context.Context, net.Listener, http.Handler, time.Duration) error
+		serve func(context.Context, net.Listener, http.Handler, time.Duration, func(context.Context)) error
 	}{Serve}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := declared.serve(ctx, listenLoopback(t), http.NotFoundHandler(), time.Millisecond); err != nil {
+	if err := declared.serve(ctx, listenLoopback(t), http.NotFoundHandler(), time.Millisecond, nil); err != nil {
 		t.Errorf("Serve with a done context = %v, want nil", err)
 	}
 }
 
-// R-QLRL-RC1B R-LSZH-BHHX R-LU7D-P98M
+// R-QLRL-RC1B R-LSZH-BHHX R-KA1B-WBAE
 func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 	listener := listenLoopback(t)
 	tracked := &trackingListener{
@@ -51,7 +51,21 @@ func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 		_, _ = io.WriteString(w, "last")
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, tracked, handler, 2*time.Second) }()
+	stopReached, releaseStop := make(chan struct{}), make(chan struct{})
+	go func() {
+		serveResult <- Serve(ctx, tracked, handler, 2*time.Second, func(stopCtx context.Context) {
+			if ctx.Err() == nil || stopCtx.Err() != nil {
+				t.Error("invalid graceful stop context")
+			}
+			select {
+			case <-finishResponse:
+			default:
+				t.Error("stop preceded handler completion")
+			}
+			close(stopReached)
+			<-releaseStop
+		})
+	}()
 
 	requestConn := dialListener(t, listener)
 	if _, err := io.WriteString(requestConn, "GET /page HTTP/1.1\r\nHost: dummy\r\nConnection: close\r\n\r\n"); err != nil {
@@ -112,6 +126,8 @@ func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 	if response.Proto != "HTTP/1.1" || string(body) != "first-last" {
 		t.Errorf("response = %s %q, want HTTP/1.1 %q", response.Proto, body, "first-last")
 	}
+	<-stopReached
+	close(releaseStop)
 	select {
 	case err = <-serveResult:
 		if err != nil {
@@ -178,7 +194,7 @@ func TestDrainErrorShapeAndText(t *testing.T) {
 	}
 }
 
-// R-LVFA-30ZB
+// R-KB98-A313
 func TestServeClosesUnfinishedRequestsAtDrainDeadline(t *testing.T) {
 	listener := listenLoopback(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -193,7 +209,7 @@ func TestServeClosesUnfinishedRequestsAtDrainDeadline(t *testing.T) {
 		_, _ = io.WriteString(w, "last")
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, listener, handler, 20*time.Millisecond) }()
+	go func() { serveResult <- Serve(ctx, listener, handler, 20*time.Millisecond, nil) }()
 
 	connections := make([]net.Conn, 2)
 	for i := range connections {
@@ -230,7 +246,7 @@ func TestServeClosesUnfinishedRequestsAtDrainDeadline(t *testing.T) {
 	}
 }
 
-// R-LU7D-P98M R-LVFA-30ZB
+// R-KA1B-WBAE R-KB98-A313
 func TestServeDrainsHijackedHandler(t *testing.T) {
 	listener := listenLoopback(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -251,7 +267,7 @@ func TestServeDrainsHijackedHandler(t *testing.T) {
 		_ = buffered.Flush()
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, listener, handler, 20*time.Millisecond) }()
+	go func() { serveResult <- Serve(ctx, listener, handler, 20*time.Millisecond, nil) }()
 	connection := dialListener(t, listener)
 	defer func() { _ = connection.Close() }()
 	if _, err := io.WriteString(connection, "GET /page HTTP/1.1\r\nHost: dummy\r\n\r\n"); err != nil {
@@ -280,7 +296,7 @@ func TestServeDrainsHijackedHandler(t *testing.T) {
 	}
 }
 
-// R-LU7D-P98M
+// R-KA1B-WBAE
 func TestServeDeliversFinishedResponseAfterDrainCutoff(t *testing.T) {
 	listener := listenLoopback(t)
 	writeStarted := make(chan struct{})
@@ -300,7 +316,7 @@ func TestServeDeliversFinishedResponseAfterDrainCutoff(t *testing.T) {
 		_, _ = io.WriteString(w, "complete response")
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond) }()
+	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond, nil) }()
 	connection := dialListener(t, listener)
 	defer func() { _ = connection.Close() }()
 	if _, err := io.WriteString(connection, "GET /page HTTP/1.1\r\nHost: dummy\r\nConnection: close\r\n\r\n"); err != nil {
@@ -341,7 +357,7 @@ func TestServeDeliversFinishedResponseAfterDrainCutoff(t *testing.T) {
 	}
 }
 
-// R-LVFA-30ZB
+// R-KB98-A313
 func TestServeRejectsWriteAfterDrainCutoff(t *testing.T) {
 	listener := listenLoopback(t)
 	closeStarted := make(chan struct{})
@@ -371,7 +387,7 @@ func TestServeRejectsWriteAfterDrainCutoff(t *testing.T) {
 		_ = conn.Close()
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond) }()
+	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond, nil) }()
 	connection := dialListener(t, listener)
 	defer func() { _ = connection.Close() }()
 	if _, err := io.WriteString(connection, "GET /page HTTP/1.1\r\nHost: dummy\r\n\r\n"); err != nil {
@@ -410,7 +426,7 @@ func TestServeRejectsWriteAfterDrainCutoff(t *testing.T) {
 	}
 }
 
-// R-LVFA-30ZB
+// R-KB98-A313
 func TestServeReturnsWhileHandlerWriteIsBlocked(t *testing.T) {
 	listener := listenLoopback(t)
 	writeStarted := make(chan struct{})
@@ -428,7 +444,7 @@ func TestServeReturnsWhileHandlerWriteIsBlocked(t *testing.T) {
 		w.(http.Flusher).Flush()
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond) }()
+	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond, nil) }()
 	connection := dialListener(t, listener)
 	defer func() { _ = connection.Close() }()
 	if _, err := io.WriteString(connection, "GET /page HTTP/1.1\r\nHost: dummy\r\n\r\n"); err != nil {
@@ -447,7 +463,7 @@ func TestServeReturnsWhileHandlerWriteIsBlocked(t *testing.T) {
 	}
 }
 
-// R-LU7D-P98M R-LVFA-30ZB
+// R-KA1B-WBAE R-KB98-A313
 func TestServePreservesFinishedResponseWhenAnotherRequestOverruns(t *testing.T) {
 	listener := listenLoopback(t)
 	writeStarted := make(chan struct{})
@@ -479,7 +495,7 @@ func TestServePreservesFinishedResponseWhenAnotherRequestOverruns(t *testing.T) 
 		_, _ = io.WriteString(w, "complete response")
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond) }()
+	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond, nil) }()
 	slowConn := dialListener(t, listener)
 	defer func() { _ = slowConn.Close() }()
 	if _, err := io.WriteString(slowConn, "GET /slow HTTP/1.1\r\nHost: dummy\r\nConnection: close\r\n\r\n"); err != nil {
@@ -525,7 +541,7 @@ func TestServePreservesFinishedResponseWhenAnotherRequestOverruns(t *testing.T) 
 	}
 }
 
-// R-LVFA-30ZB
+// R-KB98-A313
 func TestServeStopsWriteThatPassedGateBeforeCutoff(t *testing.T) {
 	listener := listenLoopback(t)
 	writeStarted := make(chan struct{})
@@ -548,7 +564,7 @@ func TestServeStopsWriteThatPassedGateBeforeCutoff(t *testing.T) {
 		w.(http.Flusher).Flush()
 	})
 	serveResult := make(chan error, 1)
-	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond) }()
+	go func() { serveResult <- Serve(ctx, wrapped, handler, 20*time.Millisecond, nil) }()
 	connection := dialListener(t, listener)
 	defer func() { _ = connection.Close() }()
 	if _, err := io.WriteString(connection, "GET /page HTTP/1.1\r\nHost: dummy\r\n\r\n"); err != nil {
@@ -580,7 +596,7 @@ func TestServeStopsWriteThatPassedGateBeforeCutoff(t *testing.T) {
 // R-QO7E-IVIP
 func TestServeReturnsServingFailureWhileContextIsLive(t *testing.T) {
 	want := errors.New("accept failed")
-	err := Serve(context.Background(), &errorListener{err: want}, http.NotFoundHandler(), time.Second)
+	err := Serve(context.Background(), &errorListener{err: want}, http.NotFoundHandler(), time.Second, nil)
 	if !errors.Is(err, want) {
 		t.Errorf("Serve error = %v, want %v", err, want)
 	}
@@ -599,7 +615,7 @@ func TestServeDiscardsHTTPServerDiagnostics(t *testing.T) {
 	go func() {
 		serveResult <- Serve(ctx, transient, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			panic("handler failure")
-		}), time.Second)
+		}), time.Second, nil)
 	}()
 
 	connection := dialListener(t, listener)

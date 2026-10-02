@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,10 +11,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/dummy/internal/cli"
+	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/tools"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
@@ -23,10 +28,11 @@ var caller = identity.Caller{UserID: "tool-tester"}
 func clientOver(t *testing.T, s *widget.Store) *mcp.Client {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	srv := mcp.NewServer(mcp.ServerConfig{Name: "test", Stderr: io.Discard})
-	// R-2NUZ-0HJ1: using the public registration signature.
-	tools.Register(srv, s)
-	httpServer := httptest.NewServer(identity.Require("test", io.Discard, srv))
+	writer, _, _ := capturingWriter(t)
+	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: cli.Version, Telemetry: writer})
+	// R-L86I-LW1U: using the public registration signature.
+	tools.Register(srv, s, writer)
+	httpServer := httptest.NewServer(identity.Require(srv))
 	t.Cleanup(httpServer.Close)
 	return mcp.NewClient(mcp.ClientConfig{Endpoint: httpServer.URL, HTTPClient: httpServer.Client()})
 }
@@ -56,13 +62,37 @@ func jsonEqual(t *testing.T, got json.RawMessage, want string) {
 
 const widgetSchema = `{"type":"object","properties":{"name":{"type":"string","description":"The widget's name: 1 to 40 characters after trimming, unique."},"count":{"type":"integer","description":"How many: a whole number, zero or more."},"status":{"type":"string","enum":["active","paused","retired"],"description":"The widget's status."}},"required":["name","count","status"],"additionalProperties":false}`
 
+var widgetOutputSchema = strings.Replace(strings.Replace(widgetSchema, `"properties":{`, `"properties":{"id":{"type":"string","description":"The widget's id, which names it in dummy's telemetry trail."},`, 1), `"required":["name"`, `"required":["id","name"`, 1)
+
+func knownSource() io.Reader {
+	data := make([]byte, 8*256)
+	for i := range 256 {
+		data[i*8] = byte(i)
+	}
+	return bytes.NewReader(data)
+}
+
+func capturingWriter(t *testing.T) (*telemetry.Writer, *telemetry.Capture, *bytes.Buffer) {
+	t.Helper()
+	capture := &telemetry.Capture{}
+	stderr := &bytes.Buffer{}
+	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: cli.Version, Sink: capture, Stderr: stderr, Now: func() time.Time { return time.Unix(1000, 0) }, Sleep: func(context.Context, time.Duration) { t.Error("unexpected telemetry retry") }, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 4096))})
+	t.Cleanup(func() {
+		writer.Shutdown(context.Background(), "test complete")
+		if stderr.Len() != 0 {
+			t.Errorf("telemetry stderr: %s", stderr)
+		}
+	})
+	return writer, capture, stderr
+}
+
 func TestAdvertisedTools(t *testing.T) {
-	c := clientOver(t, widget.NewStore())
+	c := clientOver(t, widget.NewStore(knownSource()))
 	infos, err := c.ListTools(context.Background(), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// R-2RIO-5SR4: typed registration advertises both output schemas in order.
+	// R-L9EE-ZNSJ: typed registration advertises both output schemas in order.
 	if len(infos) != 2 || infos[0].Name != "list_widgets" || infos[1].Name != "create_widget" || len(infos[0].OutputSchema) == 0 || len(infos[1].OutputSchema) == 0 {
 		t.Fatalf("tools = %+v", infos)
 	}
@@ -73,7 +103,7 @@ func TestAdvertisedTools(t *testing.T) {
 	if infos[1].Description != "Create a widget and return it.\n\nThe name is trimmed of surrounding white space and must then be 1 to 40 characters and not already taken (letter case counts). The count is a whole number, zero or more. Every rule the arguments break is reported in one error, and nothing is created unless all of them hold." {
 		t.Fatal(infos[1].Description)
 	}
-	// R-E4A6-X3DY, R-EK4V-W40Z.
+	// R-CJ5K-XZLQ, R-CKDH-BRCF.
 	for i, info := range infos {
 		a := info.Annotations
 		if a.ReadOnlyHint == nil || *a.ReadOnlyHint != (i == 0) || a.DestructiveHint == nil || *a.DestructiveHint || a.OpenWorldHint == nil || *a.OpenWorldHint || a.IdempotentHint != nil {
@@ -89,19 +119,20 @@ func TestAdvertisedTools(t *testing.T) {
 	}
 	// R-E6PZ-OMVC.
 	jsonEqual(t, infos[0].InputSchema, `{"type":"object","additionalProperties":false}`)
-	// R-EADO-TY3F, R-EE1D-Z9BI, R-ENSL-1F92, R-EQ8D-SYQG.
-	jsonEqual(t, infos[0].OutputSchema, `{"type":"object","properties":{"widgets":{"type":"array","items":`+widgetSchema+`,"description":"Every widget, oldest first."}},"required":["widgets"],"additionalProperties":false}`)
+	// R-EADO-TY3F, R-LD24-4Z0M, R-LBU7-R79X, R-ENSL-1F92, R-LEA0-IQRB.
+	jsonEqual(t, infos[0].OutputSchema, `{"type":"object","properties":{"widgets":{"type":"array","items":`+widgetOutputSchema+`,"description":"Every widget, oldest first."}},"required":["widgets"],"additionalProperties":false}`)
 	jsonEqual(t, infos[1].InputSchema, widgetSchema)
-	jsonEqual(t, infos[1].OutputSchema, widgetSchema)
+	jsonEqual(t, infos[1].OutputSchema, widgetOutputSchema)
 }
 
 func widgetJSON(t *testing.T, w widget.Widget) string {
 	t.Helper()
 	encoded, err := json.Marshal(struct {
+		ID     string `json:"id"`
 		Name   string `json:"name"`
 		Count  int    `json:"count"`
 		Status string `json:"status"`
-	}{w.Name, w.Count, string(w.Status)})
+	}{w.ID, w.Name, w.Count, string(w.Status)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,9 +161,7 @@ func assertSuccess(t *testing.T, r mcp.Result, want string) {
 	if _, exists := members["isError"]; exists {
 		t.Fatalf("unexpected isError: %s", raw)
 	}
-	if string(members["structuredContent"]) != want {
-		t.Fatalf("structuredContent = %s; want %s", members["structuredContent"], want)
-	}
+	jsonEqual(t, members["structuredContent"], want)
 	var content []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
@@ -140,11 +169,38 @@ func assertSuccess(t *testing.T, r mcp.Result, want string) {
 	if err := json.Unmarshal(members["content"], &content); err != nil {
 		t.Fatal(err)
 	}
-	if len(content) != 1 || content[0].Type != "text" || content[0].Text != want {
+	if len(content) != 1 || content[0].Type != "text" {
 		t.Fatalf("content = %s", members["content"])
 	}
-	expected, _ := json.Marshal([]map[string]string{{"type": "text", "text": want}})
+	jsonEqual(t, json.RawMessage(content[0].Text), want)
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(content[0].Text)); err != nil {
+		t.Fatal(err)
+	}
+	if content[0].Text != compact.String() {
+		t.Fatalf("text has whitespace outside strings: %s", members["content"])
+	}
+	if !reflect.DeepEqual(jsonTokens(t, content[0].Text), jsonTokens(t, string(members["structuredContent"]))) || !reflect.DeepEqual(jsonTokens(t, content[0].Text), jsonTokens(t, want)) {
+		t.Fatalf("text and structured content differ in member order: %s", members["content"])
+	}
+	expected, _ := json.Marshal([]map[string]string{{"type": "text", "text": content[0].Text}})
 	jsonEqual(t, members["content"], string(expected))
+}
+
+func jsonTokens(t *testing.T, raw string) []json.Token {
+	t.Helper()
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	var tokens []json.Token
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return tokens
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		tokens = append(tokens, token)
+	}
 }
 
 func assertError(t *testing.T, r mcp.Result, text string) {
@@ -170,20 +226,28 @@ func assertError(t *testing.T, r mcp.Result, text string) {
 }
 
 func TestListResultAndReadOnly(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	_, errs := s.Create(widget.Draft{Name: "last \"widget\"", Count: 8, Status: widget.StatusPaused})
 	if errs.Any() {
 		t.Fatal(errs)
 	}
 	c := clientOver(t, s)
 	before := s.All()
-	// R-ESO6-KI7U, R-EV3Z-C1P8, R-EYRO-HCXB.
+	// R-LFHW-WII0, R-9E70-T554, R-EYRO-HCXB.
 	for _, args := range []json.RawMessage{nil, json.RawMessage(`{}`)} {
 		assertSuccess(t, call(t, c, "list_widgets", args), listJSON(t, before))
 		if !reflect.DeepEqual(s.All(), before) {
 			t.Fatal("listing changed the store")
 		}
 	}
+}
+
+func draftInput(d widget.Draft) any {
+	return struct {
+		Name   string        `json:"name"`
+		Count  int           `json:"count"`
+		Status widget.Status `json:"status"`
+	}{d.Name, d.Count, d.Status}
 }
 
 func TestCreateMatchesStoreOutcome(t *testing.T) {
@@ -198,9 +262,13 @@ func TestCreateMatchesStoreOutcome(t *testing.T) {
 	}
 	for i, draft := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			s, expected := widget.NewStore(), widget.NewStore()
+			s, expected := widget.NewStore(knownSource()), widget.NewStore(knownSource())
 			c := clientOver(t, s)
-			input := widgetJSON(t, widget.Widget(draft))
+			inputBytes, err := json.Marshal(draftInput(draft))
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := string(inputBytes)
 			w, errs := expected.Create(draft)
 			result := call(t, c, "create_widget", json.RawMessage(input))
 			// R-5XXV-7CQL: effects match one domain Create, including refusal.
@@ -208,7 +276,7 @@ func TestCreateMatchesStoreOutcome(t *testing.T) {
 				t.Fatalf("store = %+v; want %+v", s.All(), expected.All())
 			}
 			if !errs.Any() {
-				// R-F2FD-MO5E: ordered compact widget object and matching text.
+				// R-9FEX-6WVT: ordered compact widget object and matching text.
 				assertSuccess(t, result, widgetJSON(t, w))
 			} else {
 				// R-M5QI-CZCS: exact error members and field order.
@@ -237,7 +305,7 @@ func TestArgumentOffencesLeaveStoreUnchanged(t *testing.T) {
 	// R-F8IV-JIUV: decode offences preclude any mutation for both tools.
 	for i, tc := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			s := widget.NewStore()
+			s := widget.NewStore(knownSource())
 			c := clientOver(t, s)
 			before := s.All()
 			result := call(t, c, tc.name, json.RawMessage(tc.args))
@@ -252,7 +320,7 @@ func TestArgumentOffencesLeaveStoreUnchanged(t *testing.T) {
 }
 
 func TestCountRange(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	c := clientOver(t, s)
 	// R-FAYO-B2C9: integral JSON values beyond either int64 bound.
 	for _, number := range []string{"-9223372036854775809", "9223372036854775808"} {
@@ -262,7 +330,7 @@ func TestCountRange(t *testing.T) {
 }
 
 func TestConcurrentCreateSameName(t *testing.T) {
-	s := widget.NewStore()
+	s := widget.NewStore(knownSource())
 	c := clientOver(t, s)
 	before := s.All()
 	const n = 16
@@ -300,5 +368,57 @@ func TestConcurrentCreateSameName(t *testing.T) {
 	}
 	if successes != 1 || len(s.All()) != len(before)+1 {
 		t.Fatalf("successes %d; widgets %d", successes, len(s.All()))
+	}
+}
+
+// R-LGPT-AA8P, R-LHXP-O1ZE.
+func TestToolDomainTelemetry(t *testing.T) {
+	t.Setenv(services.Variable, "")
+	writer, capture, stderr := capturingWriter(t)
+	store := widget.NewStore(knownSource())
+	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: cli.Version, Telemetry: writer})
+	tools.Register(srv, store, writer)
+	server := httptest.NewServer(identity.Require(srv))
+	t.Cleanup(server.Close)
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL, HTTPClient: server.Client()})
+	cases := []struct {
+		name, args string
+		accepted   bool
+	}{
+		{"create_widget", `{"name":" new private name ","count":7,"status":"paused"}`, true},
+		{"list_widgets", `{}`, false},
+		{"create_widget", `{"name":"alpha","count":-1,"status":"active"}`, false},
+		{"create_widget", `{"name":"newer","count":7,"status":"unknown"}`, false},
+		{"list_widgets", `{"unknown":1}`, false},
+	}
+	for i, tc := range cases {
+		before := len(capture.Events())
+		caller := identity.Caller{UserID: fmt.Sprintf("user-%d", i), RequestID: fmt.Sprintf("request-%d", i)}
+		result, err := client.CallTool(context.Background(), caller, tc.name, json.RawMessage(tc.args))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tc.accepted && result.IsError() {
+			t.Fatal("creation refused")
+		}
+		if err := writer.Flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		events := capture.Events()[before:]
+		if tc.accepted {
+			if len(events) != 2 || events[0].Name != "widget.created" || events[1].Name != "tool.called" {
+				t.Fatalf("accepted events: %+v", events)
+			}
+			all := store.All()
+			event := events[0]
+			if event.RequestID != caller.RequestID || event.User != caller.UserID || !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"widget": all[len(all)-1].ID}) {
+				t.Fatalf("created event: %+v", event)
+			}
+		} else if len(events) != 1 || events[0].Name != "tool.called" {
+			t.Fatalf("noncreation events: %+v", events)
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("telemetry stderr: %s", stderr)
+		}
 	}
 }
