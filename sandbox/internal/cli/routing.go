@@ -81,6 +81,9 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			directive("      ", "proxy_pass", "http://app_auth/check")
 			directive("      ", "proxy_pass_request_body", "off")
 			directive("      ", "proxy_set_header", "Content-Length", `""`)
+			directive("      ", "proxy_set_header", "X-Original-Method", "$request_method")
+			directive("      ", "proxy_set_header", "X-Original-Host", "$host")
+			directive("      ", "proxy_set_header", "X-Original-URI", "$request_uri")
 			forward(`""`, `""`)
 			b.WriteString("    }\n")
 			for _, location := range []struct{ path, handler string }{

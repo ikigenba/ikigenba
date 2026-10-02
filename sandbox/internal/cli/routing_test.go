@@ -385,18 +385,21 @@ func TestRoutingFragmentEscaping(t *testing.T) {
 }
 
 func TestRoutingGatedLocations(t *testing.T) {
-	// R-TCSE-KNUS R-435D-7EGC R-RVPU-1JS5 R-RWXQ-FBIU
+	// R-EBCD-K7ZY R-435D-7EGC R-RVPU-1JS5 R-RWXQ-FBIU
 	// R-5GAR-J3SA R-TF87-C7C6 R-5IQK-AN9O R-56JK-GXUQ R-T94P-FCMP
 	for _, mcp := range []bool{false, true} {
 		http := routingFind(t, parseRoutingConfig(t, string(renderNginxConfig("/data", "/checkout", "wip", 7003, 100, []appInfo{{Name: "auth"}, {Name: "dummy", MCP: mcp}}))), "http")
 		server := routingServer(t, http, "dummy.wip.localhost")
 		routingKeys(t, server.children, "listen", "server_name", "include", "location", "location", "location", "location", "location", "location", "location", "location")
 		check := routingFind(t, server.children, "location", "=", "/_sandbox/auth")
-		routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
+		routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
 		routingFind(t, check.children, "internal")
 		routingFind(t, check.children, "proxy_pass", "http://app_auth/check")
 		routingFind(t, check.children, "proxy_pass_request_body", "off")
 		routingFind(t, check.children, "proxy_set_header", "Content-Length", "")
+		routingFind(t, check.children, "proxy_set_header", "X-Original-Method", "$request_method")
+		routingFind(t, check.children, "proxy_set_header", "X-Original-Host", "$host")
+		routingFind(t, check.children, "proxy_set_header", "X-Original-URI", "$request_uri")
 		routingHeaders(t, check, "", "")
 		for _, spec := range []struct {
 			args    []string
