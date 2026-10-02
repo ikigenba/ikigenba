@@ -949,7 +949,7 @@ the last two has an icon, so neither is in the launcher:
     {"name": "mcp", "url": "https://mcp.sbx.ikigenba.dev/", "description": "The space's MCP gateway", "socket": "/run/ikigenba/mcp.sock", "enabled": true, "mcp": false},
     {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "description": "Demo widgets to list and create", "socket": "/run/ikigenba/dummy.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>"},
     {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "description": "Ledger", "socket": "/run/ikigenba/ledger.sock", "enabled": false, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>"},
-    {"name": "telemetry", "url": "https://telemetry.sbx.ikigenba.dev/", "description": "The space's trail of events", "socket": "/run/ikigenba/telemetry.sock", "enabled": true, "mcp": true}
+    {"name": "telemetry", "url": "https://telemetry.sbx.ikigenba.dev/", "description": "The suite's trail of events", "socket": "/run/ikigenba/telemetry.sock", "enabled": true, "mcp": true}
   ]
 }
 ```
