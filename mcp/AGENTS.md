@@ -63,11 +63,11 @@ human-authored; the build run never writes it. `devctl build` packs it beside
   itself is cgo-free, which gate 3 proves.
 - the appkit module at the version `go.mod` requires, in the Go module cache;
   `go.sum` is committed, and the gates themselves run offline. The appkit
-  release is `v0.7.0`, the first with the package `telemetry`, with
+  release `go.mod` requires (written `<version>` below) is one with the package `telemetry`, with
   `identity.Require` taking only the handler it guards, and with
   `mcp.ServerConfig` carrying `Telemetry` in place of `Stderr`; the build run
   sets the requirement and writes its `go.sum` lines, and moves to a later
-  appkit release only when this file names one (see Adopting the appkit
+  appkit release only when a human asks for one (see Adopting the appkit
   release)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
@@ -75,23 +75,23 @@ human-authored; the build run never writes it. `devctl build` packs it beside
 
 ## Adopting the appkit release
 
-appkit `v0.7.0` is tagged locally and not pushed, so it is fetched from the
+The appkit release `go.mod` requires is tagged locally and not pushed, so it is fetched from the
 local repository rather than the module proxy. Three steps, in order:
 
 1. A human, after appkit's own build of the release has landed, tags it
-   locally: `git tag appkit/v0.7.0 <commit>`.
+   locally: `git tag appkit/<version> <commit>`.
 2. A human seeds the module cache once, online:
 
    ```
-   GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@v0.7.0
+   GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>
    ```
 
 3. The build run sets the requirement with
-   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@v0.7.0`;
+   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`;
    the build run's shell must export `GONOSUMDB=github.com/ikigenba/ikigenba`.
 
 Once `go.sum` holds the release's lines, the gates and ordinary builds work
-offline from the cache. The tag `appkit/v0.7.0` must be pushed before any
+offline from the cache. The tag `appkit/<version>` must be pushed before any
 other machine builds mcp.
 
 ## Test files

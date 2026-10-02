@@ -64,21 +64,21 @@ human-authored; the build run never writes it. `devctl build` packs it beside
   itself is cgo-free, which gate 3 proves.
 - the appkit module at the version `go.mod` requires, in the Go module cache;
   `go.sum` is committed, and the gates themselves run offline. `go.mod`
-  requires appkit `v0.7.0`, the first release with the packages `page`,
+  requires an appkit release (written `<version>` below) with the packages `page`,
   `services`, `identity`, `mcp` and `telemetry`; the build run sets that
   requirement and its `go.sum` lines, and moves to a later appkit release
-  only when this file names one. `v0.7.0` reaches the module cache this way,
+  only when a human asks for one. That release reaches the module cache this way,
   before the build run:
   1. once appkit's build of that release is done, a human tags it locally:
-     `git tag appkit/v0.7.0 <commit>`;
+     `git tag appkit/<version> <commit>`;
   2. a human seeds the module cache once, from the local repository:
-     `GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@v0.7.0`;
+     `GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>`;
   3. the build run sets the requirement with
-     `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@v0.7.0`,
+     `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`,
      its shell exporting `GONOSUMDB=github.com/ikigenba/ikigenba`.
 
   Once `go.sum` holds the line, ordinary builds and the gates work offline.
-  The tag `appkit/v0.7.0` must be pushed before any other machine builds
+  The tag `appkit/<version>` must be pushed before any other machine builds
   dummy.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through

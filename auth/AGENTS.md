@@ -52,24 +52,25 @@ release selection is `go.mod`'s job, and the build run writes it.
 
 ## appkit release
 
-The design consumes appkit release `v0.7.0` (module
-`github.com/ikigenba/ikigenba/appkit`, tag `appkit/v0.7.0`): the release whose
+The design consumes the appkit release `go.mod` requires (module
+`github.com/ikigenba/ikigenba/appkit`, tag `appkit/<version>`, where
+`<version>` is that release): the release whose
 `telemetry` package and `identity.NewContext`/`identity.FromContext` the
 design names. It is
 adopted locally, without a push, by this procedure:
 
 1. A human, after appkit's build run has committed the release, tags that
-   commit locally: `git tag appkit/v0.7.0 <commit>`.
+   commit locally: `git tag appkit/<version> <commit>`.
 2. A human seeds the module cache once, from the local repository:
-   `GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@v0.7.0`
+   `GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>`
 3. The build run sets the requirement with
-   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@v0.7.0`.
+   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`.
    The shell the build run is started from must export
    `GONOSUMDB=github.com/ikigenba/ikigenba`, so no step consults the checksum
    database for a release it has never seen.
 
 Once `go.sum` holds the release's lines, ordinary builds and the gates work
-offline from the module cache. The tag `appkit/v0.7.0` must be pushed before
+offline from the module cache. The tag `appkit/<version>` must be pushed before
 any other machine builds auth.
 
 ## Test files

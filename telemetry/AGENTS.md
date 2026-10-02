@@ -67,8 +67,8 @@ human-authored; the build run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.7.0`, the first release with the package `telemetry` and the
-    MCP server's tool events. See Adopting appkit v0.7.0 below.
+  - appkit, at the release `go.mod` requires: one with the package
+    `telemetry` and the MCP server's tool events. See Adopting appkit below.
   - `modernc.org/sqlite` `v1.59.0`, the SQLite driver, set with
     `go get modernc.org/sqlite@v1.59.0`. It and the modules it pulls in are
     telemetry's only other dependencies.
@@ -85,24 +85,24 @@ cgo-free (gate 3), already approved for the repository, and already in the
 module cache wherever auth builds. Adding any other external dependency, or
 moving this one to another version, needs human approval first.
 
-### Adopting appkit v0.7.0
+### Adopting appkit
 
-appkit `v0.7.0` is released from this repository, and until its tag is pushed
+The appkit release `go.mod` requires (written `<version>` below) is released from this repository, and until its tag is pushed
 neither the Go module proxy nor the checksum database knows it. Until then,
 on the machine that runs the build:
 
 1. After appkit's build, tag its release commit locally:
-   `git tag appkit/v0.7.0 <commit>`.
+   `git tag appkit/<version> <commit>`.
 2. Seed the module cache once, from the local repository:
    ```
-   GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@v0.7.0
+   GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>
    ```
 3. The build run sets the requirement with
-   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@v0.7.0`;
+   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`;
    the build run's shell must export `GONOSUMDB=github.com/ikigenba/ikigenba`.
 
 Once `go.sum` holds appkit's lines, ordinary builds and the gates work. The
-tag `appkit/v0.7.0` must be pushed before any other machine builds telemetry.
+tag `appkit/<version>` must be pushed before any other machine builds telemetry.
 
 ## Test files
 
@@ -297,8 +297,8 @@ build run never reads, edits, or tests it.
 
 telemetry is an app, not a self-installing CLI: `devctl` builds it into a
 release tarball and pushes it to a space's host, where `opsctl install`
-installs it. The tag `appkit/v0.7.0` must be on `origin` before the first
-release (see Adopting appkit v0.7.0).
+installs it. The tag `appkit/<version>` must be on `origin` before the first
+release (see Adopting appkit).
 
 1. Set the version literal design declares to `vX.Y.Z`. The binary reports it
    verbatim, and the deploy refuses a tag that does not match it.
