@@ -54,7 +54,7 @@ func (s *Server) handleLoginGoogle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirect := redirectURI(r.Host)
+	redirect := redirectURI(r.Host, s.cfg.CallbackURL)
 	authURL, err := s.gc.AuthCodeURL(loginState.State, verifier, redirect)
 	if err != nil {
 		s.writeDiagnostic(r, err)
@@ -108,7 +108,7 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	claims, err := s.gc.Exchange(r.Context(), r.URL.Query().Get("code"), loginState.Verifier, redirectURI(r.Host))
+	claims, err := s.gc.Exchange(r.Context(), r.URL.Query().Get("code"), loginState.Verifier, redirectURI(r.Host, s.cfg.CallbackURL))
 	if err != nil {
 		s.writeDiagnostic(r, err)
 		writePlainError(w, http.StatusBadGateway, "Google sign-in failed")
@@ -140,7 +140,7 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	origins := r.Header.Values("Origin")
-	if len(origins) != 1 || !onSpaceOrigin(origins[0], r.Host) {
+	if len(origins) != 1 || !onSpaceOrigin(origins[0], r.Host, s.cfg.PublicURL) {
 		writePlainError(w, http.StatusForbidden, "forbidden")
 		return
 	}

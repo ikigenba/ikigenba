@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
@@ -162,7 +163,7 @@ func goodEnv() map[string]string {
 func testSource(t *testing.T) string { return filepath.Join(t.TempDir(), "auth.db") }
 
 func TestConfigAndSocketValidation(t *testing.T) {
-	// R-MKD0-BA3G R-MLKW-P1U5 R-MO0P-GLBJ R-MMST-2TKU R-MQGI-84SX R-ERFV-M2PB R-ETVO-DM6P
+	// R-GESR-IE7R R-MLKW-P1U5 R-MO0P-GLBJ R-MMST-2TKU R-MQGI-84SX R-GIGG-NPFU R-GJOD-1H6J
 	dir, err := os.MkdirTemp("", "auth-validation-")
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +243,7 @@ func TestConfigAndSocketValidation(t *testing.T) {
 }
 
 func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
-	// R-MU47-DG10 R-MWK0-4ZIE R-MXRW-IR93 R-MYZS-WIZS
+	// R-GM45-T0NX R-MWK0-4ZIE R-MXRW-IR93 R-MYZS-WIZS
 	env := goodEnv()
 	source := testSource(t)
 	p := baseProcess(env, source, nil)
@@ -259,7 +260,8 @@ func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
 	if code := Run(t.Context(), p); code != 1 || p.Stderr.(*countWriter).String() != "auth: bad listener\n" || calls != 1 {
 		t.Fatalf("code=%d diag=%q", code, p.Stderr)
 	}
-	if !slices.Equal(unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
+	slices.Sort(unset)
+	if !slices.Equal(unset, []string{"LISTEN_FDNAMES", "LISTEN_FDS", "LISTEN_PID"}) {
 		t.Fatal(unset)
 	}
 	if _, err := os.Stat(source); !errors.Is(err, os.ErrNotExist) {
@@ -295,7 +297,7 @@ func (ln *trackedListener) Close() error {
 }
 
 func TestRunTakesInjectedListener(t *testing.T) {
-	// R-FLRS-9LZN R-FO7L-15H1
+	// R-GNC2-6SEM R-FO7L-15H1
 	for _, network := range []string{"tcp", "unix"} {
 		for _, drain := range []string{"unset", "", "1"} {
 			t.Run(network+"/"+drain, func(t *testing.T) {
@@ -406,7 +408,7 @@ func TestRunClosesListenerOnLaterFailure(t *testing.T) {
 }
 
 func TestServeReadinessAndInjectedSeam(t *testing.T) {
-	// R-T145-GAU9 R-NII7-0UUW R-SRCY-E4WP R-N1FL-O2H6 R-N3VE-FLYK R-N6B7-75FY R-T2C1-U2KY R-OYUS-DBTQ
+	// R-T07Q-JE4P R-NII7-0UUW R-SRCY-E4WP R-N1FL-O2H6 R-N3VE-FLYK R-N6B7-75FY R-T1FM-X5VE R-OYUS-DBTQ
 	for _, preexisting := range []bool{false, true} {
 		t.Run(strconv.FormatBool(preexisting), func(t *testing.T) {
 			source := testSource(t)
@@ -487,11 +489,25 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 }
 
 func TestRunWiresIssuerAndRandomness(t *testing.T) {
-	// R-SRCY-E4WP R-T145-GAU9: serve a request through Run's inherited listener.
+	// R-SRCY-E4WP R-T07Q-JE4P: serve a request through Run's inherited listener.
 	var issuerCalls atomic.Int32
+	credentials := make(chan [2]string, 1)
 	var issuer *httptest.Server
 	issuer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		issuerCalls.Add(1)
+		if r.URL.Path == "/token" {
+			if err := r.ParseForm(); err != nil {
+				t.Error(err)
+			}
+			id, secret, ok := r.BasicAuth()
+			if !ok {
+				id, secret = r.Form.Get("client_id"), r.Form.Get("client_secret")
+			}
+			credentials <- [2]string{id, secret}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"access_token":"unused","token_type":"Bearer"}`)
+			return
+		}
 		if r.URL.Path != "/.well-known/openid-configuration" {
 			http.NotFound(w, r)
 			return
@@ -577,8 +593,29 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	}
 	verifier := idcodec.Encode(bytes.Repeat([]byte{0x42}, 32))
 	sum := sha256.Sum256([]byte(verifier))
-	if resp.StatusCode != http.StatusFound || loc.Scheme+"://"+loc.Host+loc.Path != issuer.URL+"/authorize" || loc.Query().Get("state") != idcodec.Encode(bytes.Repeat([]byte{0x42}, 16)) || loc.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(sum[:]) {
+	if resp.StatusCode != http.StatusFound || loc.Scheme+"://"+loc.Host+loc.Path != issuer.URL+"/authorize" || loc.Query().Get("client_id") != "id" || loc.Query().Get("hd") != "example.test" || loc.Query().Get("state") != idcodec.Encode(bytes.Repeat([]byte{0x42}, 16)) || loc.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(sum[:]) {
 		t.Fatalf("status=%d location=%s", resp.StatusCode, loc)
+	}
+	callback, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "http://"+ln.Addr().String()+"/login/google/callback?code=test&state="+url.QueryEscape(loc.Query().Get("state")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback.Header.Set("X-Request-Id", "wiring")
+	failure, err := client.Do(callback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = failure.Body.Close()
+	if failure.StatusCode != http.StatusBadGateway {
+		t.Fatalf("callback status=%d", failure.StatusCode)
+	}
+	if got := <-credentials; got != [2]string{"id", "secret"} {
+		t.Fatalf("client credentials=%q", got)
+	}
+	// The client supplies the reason; its wording is not part of Run's contract.
+	_, exchangeErr := google.NewClient("id", "secret", "example.test", issuer.URL).Exchange(reqCtx, "test", verifier, loc.Query().Get("redirect_uri"))
+	if exchangeErr == nil {
+		t.Fatal("fake token response unexpectedly supplied an ID token")
 	}
 	profile, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "http://"+ln.Addr().String()+"/", nil)
 	if err != nil {
@@ -597,6 +634,10 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	cancel()
 	if code := <-done; code != 0 {
 		t.Fatalf("Run=%d diagnostic=%q", code, p.Stderr)
+	}
+	// R-T1FM-X5VE: the server's one diagnostic is forwarded once, unaltered.
+	if got := p.Stderr.(*countWriter); got.String() != "auth: request wiring: "+exchangeErr.Error()+"\n" || got.calls != 1 || p.Stdout.(*bytes.Buffer).Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q calls=%d", p.Stdout, got.String(), got.calls)
 	}
 	if bannerCalls == 0 || !bytes.Contains(body, []byte("injected-banner")) {
 		t.Fatalf("banner calls=%d page=%s", bannerCalls, body)
@@ -824,7 +865,7 @@ func (w *overlapWriter) Write(b []byte) (int, error) {
 }
 
 func TestDiagnosticWriterSerializesCalls(t *testing.T) {
-	// R-T3JY-7UBN: concurrent HTTP failures exercise the writer passed by Run.
+	// R-T2NJ-AXM3: concurrent HTTP failures exercise the writer passed by Run.
 	underlying := new(overlapWriter)
 	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
 	defer issuer.Close()
@@ -910,7 +951,7 @@ func (b *brokenListener) Close() error              { return nil }
 func (b *brokenListener) Addr() net.Addr            { return &net.TCPAddr{} }
 
 func TestSocketUsageErrorsHaveNoServingSideEffects(t *testing.T) {
-	// R-ERFV-M2PB R-ETVO-DM6P
+	// R-GIGG-NPFU R-GJOD-1H6J
 	dir, err := os.MkdirTemp("", "auth-notify-")
 	if err != nil {
 		t.Fatal(err)

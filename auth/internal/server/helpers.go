@@ -21,40 +21,55 @@ func space(host string) string {
 	return strings.TrimPrefix(host, "auth.")
 }
 
-func redirectURI(host string) string {
+func redirectURI(host, callbackURL string) string {
+	if callbackURL != "" {
+		return callbackURL + "/login/google/callback"
+	}
 	return "https://auth." + space(host) + "/login/google/callback"
 }
 
-func ownOrigin(host string) string {
+func ownOrigin(host, publicURL string) string {
+	if publicURL != "" {
+		return publicURL
+	}
 	return "https://auth." + space(host)
 }
 
-// onSpaceOrigin accepts only the serialized origins that can drive logout.
-func onSpaceOrigin(origin, requestHost string) bool {
-
-	const prefix = "https://"
+// onSpaceOrigin compares a serialized origin with the request's space.
+func onSpaceOrigin(origin, requestHost, publicURL string) bool {
+	scheme, port := "https", ""
+	requestSpace := space(requestHost)
+	if publicURL != "" {
+		var authority string
+		scheme, authority, _ = strings.Cut(publicURL, "://")
+		_, portText, hasPort := strings.Cut(authority, ":")
+		if hasPort {
+			port = ":" + portText
+		}
+		requestSpace = stripNumericPort(requestSpace)
+	}
+	prefix := scheme + "://"
 	if len(origin) <= len(prefix) || !asciiEqualFold(origin[:len(prefix)], prefix) {
 		return false
 	}
-	host := origin[len(prefix):]
-	if strings.ContainsAny(host, "/?#@:") {
+	origin = origin[len(prefix):]
+	if port != "" {
+		if !strings.HasSuffix(origin, port) {
+			return false
+		}
+		origin = strings.TrimSuffix(origin, port)
+	}
+	if origin == "" || strings.ContainsAny(origin, "/?#@:") || strings.HasPrefix(origin, ".") || strings.HasSuffix(origin, ".") || strings.Contains(origin, "..") {
 		return false
 	}
-	requestSpace := space(requestHost)
-	if asciiEqualFold(host, requestSpace) {
-		return true
-	}
-	if len(host) <= len(requestSpace)+1 || host[len(host)-len(requestSpace)-1] != '.' {
-		return false
-	}
-	return asciiEqualFold(host[len(host)-len(requestSpace):], requestSpace)
+	return requestSpace != "" && (asciiEqualFold(origin, requestSpace) || len(origin) > len(requestSpace)+1 && origin[len(origin)-len(requestSpace)-1] == '.' && asciiEqualFold(origin[len(origin)-len(requestSpace):], requestSpace))
 }
 
 func asciiEqualFold(a, b string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
+	for i := range len(a) {
 		ac, bc := a[i], b[i]
 		if ac >= 'A' && ac <= 'Z' {
 			ac += 'a' - 'A'

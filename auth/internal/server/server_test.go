@@ -23,7 +23,7 @@ import (
 )
 
 func TestConfigAndNew(t *testing.T) {
-	// R-4Y3E-AOXP: Config is exactly the process dependencies handlers need.
+	// R-SMSU-BWZ2: Config is exactly the process dependencies handlers need.
 	// An unkeyed literal fixes the field set, order, and types at compile time;
 	// reading each exported field back into a variable of its declared type
 	// fixes them exactly.
@@ -33,12 +33,18 @@ func TestConfigAndNew(t *testing.T) {
 		nowFn           func() time.Time
 		rnd             io.Reader
 		errOut          io.Writer
-		workspaceDomain string
+		workspaceDomain = "workspace.example"
+		publicURL       = "http://auth.public.example:7400"
+		callbackURL     = "https://callback.example"
 		bannerFn        func(page.User) page.Banner
 	)
-	fields := Config{st, gClient, nowFn, rnd, errOut, workspaceDomain, bannerFn}
+	fields := Config{st, gClient, nowFn, rnd, errOut, workspaceDomain, publicURL, callbackURL, bannerFn}
 	st, gClient, nowFn, rnd = fields.Store, fields.Google, fields.Now, fields.Rand
 	errOut, workspaceDomain, bannerFn = fields.Stderr, fields.WorkspaceDomain, fields.Banner
+	publicURL, callbackURL = fields.PublicURL, fields.CallbackURL
+	if workspaceDomain != "workspace.example" || publicURL != "http://auth.public.example:7400" || callbackURL != "https://callback.example" {
+		t.Fatal("Config string fields changed order")
+	}
 	_, _, _, _, _, _, _ = st, gClient, nowFn, rnd, errOut, workspaceDomain, bannerFn
 
 	// R-KWD9-PBZI: New is func(Config) *Server and the result's type is the

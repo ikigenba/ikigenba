@@ -131,6 +131,17 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 		}
 		drain = drainDuration(v)
 	}
+	origins := [2]string{}
+	for i, key := range []string{"IKIGENBA_PUBLIC_URL", "IKIGENBA_CALLBACK_URL"} {
+		v, ok := lookup(key)
+		if ok && !originValue(v) {
+			_, _ = fmt.Fprintf(stderr, "auth: %s is '%s', not an origin\n", key, v)
+			return 2
+		}
+		if ok {
+			origins[i] = v
+		}
+	}
 	pid, pidOK := lookup("LISTEN_PID")
 	fds, fdsOK := lookup("LISTEN_FDS")
 	if !pidOK || pid != strconv.Itoa(p.Pid) || !fdsOK || !decimal(fds) || strings.TrimLeft(fds, "0") == "" {
@@ -159,7 +170,7 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 	}
 	defer func() { _ = st.Close() }()
 	client := google.NewClient(values[0], values[1], values[2], p.OIDCIssuer)
-	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Stderr: stderr, WorkspaceDomain: values[2], Banner: p.Banner})
+	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Stderr: stderr, WorkspaceDomain: values[2], PublicURL: origins[0], CallbackURL: origins[1], Banner: p.Banner})
 	if addr, ok := lookup("NOTIFY_SOCKET"); ok && addr != "" {
 		if err := notify(addr); err != nil {
 			_, _ = fmt.Fprintf(stderr, "auth: %s\n", err)
@@ -171,6 +182,33 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func originValue(v string) bool {
+	scheme, host, ok := strings.Cut(v, "://")
+	if !ok || (scheme != "http" && scheme != "https") {
+		return false
+	}
+	if hostname, port, hasPort := strings.Cut(host, ":"); hasPort {
+		if !positiveDecimal(port) {
+			return false
+		}
+		n, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || n == 0 || scheme == "http" && n == 80 || scheme == "https" && n == 443 {
+			return false
+		}
+		host = hostname
+	}
+	if host == "" || strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.Contains(host, "..") {
+		return false
+	}
+	for i := range len(host) {
+		c := host[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' && c != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func positiveDecimal(v string) bool {

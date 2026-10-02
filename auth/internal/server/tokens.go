@@ -13,7 +13,7 @@ import (
 const htmlDocumentContentType = "text/html; charset=utf-8"
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
-	if !tokenOriginAllowed(r) {
+	if !s.tokenOriginAllowed(r) {
 		writeTokenError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -51,7 +51,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {
-	if !tokenOriginAllowed(r) {
+	if !s.tokenOriginAllowed(r) {
 		writeTokenError(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -107,8 +107,8 @@ func tokenExpiry(value string) (store.Expiry, bool) {
 	}
 }
 
-func tokenOriginAllowed(r *http.Request) bool {
-	return r.Header.Get("Origin") == ownOrigin(r.Host)
+func (s *Server) tokenOriginAllowed(r *http.Request) bool {
+	return r.Header.Get("Origin") == ownOrigin(r.Host, s.cfg.PublicURL)
 }
 
 func writeTokenError(w http.ResponseWriter, status int, message string) {

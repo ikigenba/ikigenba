@@ -367,7 +367,7 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 
 	returnURL := "https://app.green.example/after"
 	w := serveSignIn(s, http.MethodGet, "/login/google?return="+url.QueryEscape(returnURL), "auth.green.example", nil, "")
-	// R-KY4E-8B7G: a successful start records the minted verifier and return
+	// R-TB6T-ZBSY: a successful start records the minted verifier and return
 	// URL, then redirects to AuthCodeURL for that recorded state.
 	if w.Code != http.StatusFound || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("login start = %d cookies %#v", w.Code, w.Result().Cookies())
@@ -385,7 +385,15 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	if recorded.Verifier != wantVerifier || recorded.ReturnURL != returnURL {
 		t.Fatalf("recorded login state = %#v, want verifier %s return %s", recorded, wantVerifier, returnURL)
 	}
-	if location.Query().Get("redirect_uri") != redirectURI("auth.green.example") || location.Query().Get("code_challenge_method") != "S256" {
+	const wantRedirectURI = "https://auth.green.example/login/google/callback"
+	wantLocation, err := gc.AuthCodeURL(recorded.State, recorded.Verifier, wantRedirectURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Header().Get("Location"); got != wantLocation {
+		t.Fatalf("Location = %q, want AuthCodeURL %q", got, wantLocation)
+	}
+	if location.Query().Get("redirect_uri") != wantRedirectURI || location.Query().Get("code_challenge_method") != "S256" {
 		t.Fatalf("authorization URL = %s", location)
 	}
 	wantChallenge := sha256.Sum256([]byte(wantVerifier))
@@ -445,7 +453,7 @@ func TestLoginStartDiscoveryFailureRemovesStateAndWritesDiagnostic(t *testing.T)
 	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("discovery failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
-	_, discoveryErr := gc.AuthCodeURL("another-state", "another-verifier", redirectURI("auth.green.example"))
+	_, discoveryErr := gc.AuthCodeURL("another-state", "another-verifier", redirectURI("auth.green.example", ""))
 	if discoveryErr == nil {
 		t.Fatal("closed issuer unexpectedly discovered")
 	}
@@ -581,7 +589,7 @@ func TestCallbackRejectsMissingUnknownAndExchangeFailure(t *testing.T) {
 	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("exchange failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
-	_, exchangeErr := gc.Exchange(context.Background(), "rejected", "verifier", redirectURI("auth.green.example"))
+	_, exchangeErr := gc.Exchange(context.Background(), "rejected", "verifier", redirectURI("auth.green.example", ""))
 	if exchangeErr == nil {
 		t.Fatal("rejected token unexpectedly exchanged")
 	}
@@ -1060,7 +1068,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 				t.Fatal("login cookie was not stored")
 			}
 			good := serveSignIn(s, http.MethodPost, "/logout", tc.host, cookie, tc.origin)
-			// R-3NOD-YQ0E: every on-space origin gives the same redirect,
+			// R-GTFK-3N43: every on-space origin gives the same redirect,
 			// cookie clearing, and session deletion without changing user/token.
 			response := logoutResponse{good.Code, good.Header().Clone(), good.Body.String()}
 			if first, ok := baseline[tc.host]; ok {
@@ -1076,7 +1084,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			if got := signInUserRows(t, st); len(got) != len(beforeUser) || got[0] != beforeUser[0] {
 				t.Fatalf("logout changed user: %#v, want %#v", got, beforeUser)
 			}
-			if tokens, err := st.ListTokens(user.ID); err != nil || len(tokens) != 1 || tokens[0].ID != token.ID {
+			if tokens, err := st.ListTokens(user.ID); err != nil || len(tokens) != 1 || !reflect.DeepEqual(tokens[0], token) {
 				t.Fatalf("logout changed token/user: %#v %v", tokens, err)
 			}
 			jar.SetCookies(requestURL, good.Result().Cookies())
@@ -1102,7 +1110,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 }
 
 func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
-	// R-3OWA-CHR3: a missing, repeated, or off-space Origin is a plain
+	// R-GUNG-HEUS: a missing, repeated, or off-space Origin is a plain
 	// single-line 403 with no cookie or session mutation.
 	for _, tc := range []struct {
 		name, host string
@@ -1533,7 +1541,7 @@ func TestLoginStartCleanupFailureKeepsDiscoveryDiagnostic(t *testing.T) {
 		t.Fatalf("discovery with cleanup failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
 	assertNoSetCookie(t, w)
-	_, cause := gc.AuthCodeURL("state", "verifier", redirectURI("auth.green.example"))
+	_, cause := gc.AuthCodeURL("state", "verifier", redirectURI("auth.green.example", ""))
 	if cause == nil {
 		t.Fatal("closed issuer unexpectedly discovered")
 	}

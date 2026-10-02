@@ -20,27 +20,27 @@ func TestHostDerivedValues(t *testing.T) {
 }
 
 func TestRedirectURI(t *testing.T) {
-	// R-3K0O-TESB
+	// R-T8R1-7SBK
 	for _, tc := range []struct{ host, want string }{
 		{"auth.green.example", "https://auth.green.example/login/google/callback"},
 		{"auth.green.example:8443", "https://auth.green.example:8443/login/google/callback"},
 		{"localhost:3001", "https://auth.localhost:3001/login/google/callback"},
 	} {
-		if got := redirectURI(tc.host); got != tc.want {
+		if got := redirectURI(tc.host, ""); got != tc.want {
 			t.Errorf("redirectURI(%q) = %q, want %q", tc.host, got, tc.want)
 		}
 	}
 }
 
 func TestOwnOrigin(t *testing.T) {
-	// R-3L8L-76J0
+	// R-TCEQ-D3JN
 	for _, tc := range []struct{ host, want string }{
 		{"auth.green.example", "https://auth.green.example"},
 		{"green.example", "https://auth.green.example"},
 		{"auth.green.example:8443", "https://auth.green.example:8443"},
 		{"localhost:3001", "https://auth.localhost:3001"},
 	} {
-		if got := ownOrigin(tc.host); got != tc.want {
+		if got := ownOrigin(tc.host, ""); got != tc.want {
 			t.Errorf("ownOrigin(%q) = %q, want %q", tc.host, got, tc.want)
 		}
 	}
@@ -63,7 +63,7 @@ func TestCookieDomain(t *testing.T) {
 }
 
 func TestOnSpaceOrigin(t *testing.T) {
-	// R-3MGH-KY9P: space origins require HTTPS and an exact space host or
+	// R-GQZR-C3MP: space origins require HTTPS and an exact space host or
 	// a label-boundary subdomain, without a port or URL suffix.
 	for _, tc := range []struct {
 		origin string
@@ -78,6 +78,8 @@ func TestOnSpaceOrigin(t *testing.T) {
 		{"http://green.example", false},
 		{"https://green.example:443", false},
 		{"https://green.example.", false},
+		{"https://.app.green.example", false},
+		{"https://app..green.example", false},
 		{"https://green.example/path", false},
 		{"https://green.example?x=1", false},
 		{"https://green.example#x", false},
@@ -86,11 +88,38 @@ func TestOnSpaceOrigin(t *testing.T) {
 		{"http://localhost:3001", false},
 		{"null", false},
 	} {
-		if got := onSpaceOrigin(tc.origin, "auth.green.example"); got != tc.want {
+		if got := onSpaceOrigin(tc.origin, "auth.green.example", ""); got != tc.want {
 			t.Errorf("onSpaceOrigin(%q, space) = %t, want %t", tc.origin, got, tc.want)
 		}
 	}
 
+}
+
+func TestOnSpaceOriginComparesEveryHostByte(t *testing.T) {
+	// R-GQZR-C3MP, R-GS7N-PVDE: host comparison folds ASCII only;
+	// identical UTF-8 text is allowed, but differing continuation bytes
+	// cannot make different hosts equal.
+	for _, publicURL := range []string{"", "http://configured.example:7400"} {
+		scheme, port, host := "https", "", "auth.é.example"
+		if publicURL != "" {
+			scheme, port, host = "http", ":7400", "auth.é.example:9000"
+		}
+		for _, tc := range []struct {
+			originHost string
+			want       bool
+		}{
+			{"é.example", true},
+			{"APP.é.EXAMPLE", true},
+			{"ê.example", false},
+			{"app.ê.example", false},
+			{"É.example", false},
+		} {
+			origin := scheme + "://" + tc.originHost + port
+			if got := onSpaceOrigin(origin, host, publicURL); got != tc.want {
+				t.Errorf("onSpaceOrigin(%q, %q, %q) = %t, want %t", origin, host, publicURL, got, tc.want)
+			}
+		}
+	}
 }
 
 func TestCookieAndReturnURLHelpers(t *testing.T) {

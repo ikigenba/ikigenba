@@ -28,6 +28,8 @@ type Config struct {
 	Rand            io.Reader
 	Stderr          io.Writer
 	WorkspaceDomain string
+	PublicURL       string
+	CallbackURL     string
 	Banner          func(u page.User) page.Banner
 }
 
