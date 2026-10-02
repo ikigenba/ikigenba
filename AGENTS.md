@@ -35,9 +35,12 @@ branches and worktrees; only `main` (and release tags) is published to origin.
 Never push a working or feature branch, and never create a remote branch other
 than `main`.
 
-Agents commit only to their worktree's branch and move no other branch unless
-asked. Land work, when asked, with `git fetch . <branch>:main`. Never touch
-`origin` unless asked; then push only `main` (`git push origin main`).
+Agents commit only to the branch already checked out in the working directory
+they were started in, and move no other branch unless asked. Never create a
+branch or worktree to do or commit the work you were asked to do; the
+throwaway worktrees described below are for probes only and are never
+committed to. Land work, when asked, with `git fetch . <branch>:main`. Never
+touch `origin` unless asked; then push only `main` (`git push origin main`).
 
 Never use `git stash`. The stash stack is shared across all worktrees, so
 another session may pop or drop your entry. Set work aside with a temporary WIP
