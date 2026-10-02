@@ -288,7 +288,7 @@ Postconditions:
 
 ## A developer runs sandbox as root by mistake
 
-sandbox runs as the developer: its units are the developer's user units, and its data, configuration and secrets are under the developer's own directories. Run as root, it would write all of that where the developer cannot use it, so every command refuses before it touches anything. The arguments are parsed first, so only a well-formed command line reaches the refusal; help and version answer as root, as the stories after this one tell. `up` and `ls` stand here for every command.
+sandbox runs as the developer: its units are the developer's user units, and its data and configuration are under the developer's own directories. Run as root, it would write all of that where the developer cannot use it, so every command refuses before it touches anything. The arguments are parsed first, so only a well-formed command line reaches the refusal; help and version answer as root, as the stories after this one tell. `up` and `ls` stand here for every command.
 
 Command:
 

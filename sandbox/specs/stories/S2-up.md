@@ -123,7 +123,7 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `/home/me/src/ikigenba/wip` is the top level of a git worktree whose checkout holds `auth/etc/manifest.toml` and `dummy/etc/manifest.toml` as above, and each app's `cmd/<app>/` builds.
-- `/home/me/.config/ikigenba/sandbox/secrets.toml` holds a non-empty `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` under `[auth]`.
+- The environment `sandbox up` runs with exports `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_LOCALHOST_CLIENT_SECRET` with non-empty values, the sources of auth's `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, as the apps group tells.
 - The registry does not exist, or holds no entry.
 - `git`, `go` and `nginx` are on `PATH`, and the developer's systemd user manager is running.
 - The effective user is `me`; `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are unset.

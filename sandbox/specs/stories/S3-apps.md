@@ -1,6 +1,6 @@
 # Stories — apps
 
-What `up` does with the checkout's apps: which directories it takes for apps, how it builds them, where each one runs, what each one is given, and every manifest or secret it refuses. The stories share one setting unless they say otherwise: the worktree is `/home/me/src/ikigenba/wip`, its sandbox is `wip` on port `7400`, its data is under `/home/me/.local/state/ikigenba/sandbox/wip/`, the developer is `me` with `XDG_CONFIG_HOME` and `XDG_STATE_HOME` unset, and the checkout holds two apps, `auth` and `dummy`, whose manifests are below. An app is an immediate subdirectory of the checkout root holding `etc/manifest.toml`; its directory name is the app's name, and its `main` package is `cmd/<app>/` inside it. Each app runs as a socket unit and a service unit, `sandbox-wip-<app>.socket` and `sandbox-wip-<app>.service`. Manifests are checked in app-name order, and `up` reports the first fault it finds and stops there. Every refusal in this group is found while `up` checks the checkout, before a port is taken and before anything is built, so nothing has changed: no app is built, no file, unit or registry entry is written (a sandbox not yet known stays unknown), nothing is started or restarted, and a sandbox that is already up keeps running its previous build unchanged. The secrets file is read only when some app's manifest lists at least one secret.
+What `up` does with the checkout's apps: which directories it takes for apps, how it builds them, where each one runs, what each one is given, and every manifest or secret it refuses. The stories share one setting unless they say otherwise: the worktree is `/home/me/src/ikigenba/wip`, its sandbox is `wip` on port `7400`, its data is under `/home/me/.local/state/ikigenba/sandbox/wip/`, the developer is `me` with `XDG_CONFIG_HOME` and `XDG_STATE_HOME` unset, and the checkout holds two apps, `auth` and `dummy`, whose manifests are below. An app is an immediate subdirectory of the checkout root holding `etc/manifest.toml`; its directory name is the app's name, and its `main` package is `cmd/<app>/` inside it. Each app runs as a socket unit and a service unit, `sandbox-wip-<app>.socket` and `sandbox-wip-<app>.service`. Manifests are checked in app-name order, and `up` reports the first fault it finds and stops there. Every refusal in this group is found while `up` checks the checkout, before a port is taken and before anything is built, so nothing has changed: no app is built, no file, unit or registry entry is written (a sandbox not yet known stays unknown), nothing is started or restarted, and a sandbox that is already up keeps running its previous build unchanged. An app's secrets come from the environment `sandbox up` itself runs with: each secret a manifest lists is read from the environment variable of the same name, except that `GOOGLE_CLIENT_ID` is read from `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from `GOOGLE_LOCALHOST_CLIENT_SECRET`, for whichever app lists them; no other name is translated. A variable is consulted only for a secret some app's manifest lists.
 
 `auth/etc/manifest.toml`:
 
@@ -27,12 +27,11 @@ mcp = true
 secrets = []
 ```
 
-The secrets file, `/home/me/.config/ikigenba/sandbox/secrets.toml`, is kept by the developer outside the repository and shared by every sandbox, one table per app:
+The developer's shell exports, for every sandbox alike:
 
-```toml
-[auth]
-GOOGLE_CLIENT_ID = "1234-abc.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "GOCSPX-example"
+```
+export GOOGLE_LOCALHOST_CLIENT_ID=1234-abc.apps.googleusercontent.com
+export GOOGLE_LOCALHOST_CLIENT_SECRET=GOCSPX-example
 ```
 
 ## A developer brings up every app the checkout holds
@@ -59,7 +58,7 @@ Preconditions:
 - The current directory is `/home/me/src/ikigenba/wip` or any directory below it.
 - `auth/etc/manifest.toml` and `dummy/etc/manifest.toml` hold the manifests above, and `auth/cmd/auth/` and `dummy/cmd/dummy/` are `main` packages that build.
 - `sandbox/` and `docs/` sit beside them and hold no `etc/manifest.toml`; `tools/widget/etc/manifest.toml` exists, one level deeper than an app.
-- The secrets file holds the `[auth]` table above.
+- The environment `sandbox up` runs with exports `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_LOCALHOST_CLIENT_SECRET` as above.
 
 Postconditions:
 
@@ -162,7 +161,7 @@ Postconditions:
 
 ## auth reads its secrets and its own settings
 
-An app also gets its manifest's `[env]` entries, and, from the secrets file, the values of the secrets its manifest lists, by name, and no others. A secret is given only to the app whose manifest declares it: a key in an app's table that its manifest does not list, and a table for an app the checkout does not hold, are ignored. Secret values reach the app's environment and nowhere else: no output of `sandbox`, no unit file, and no command line carries them.
+An app also gets its manifest's `[env]` entries and the secrets its manifest lists, by name, and no others. sandbox takes secrets the way everything else on the developer's machine gets them, from variables exported in the developer's shell, and the way production does, from the variable the manifest's secret names. The one exception is Google's: production signs in through a web OAuth client, whose redirect URIs cannot cover a sandbox's arbitrary port, so a sandbox signs in through a Google Desktop OAuth client, which accepts any `localhost` port, and the developer exports its credentials as `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_LOCALHOST_CLIENT_SECRET`. The app still receives them as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, so neither app code nor manifest changes. A secret is given only to the app whose manifest declares it, and no other variable of the developer's environment reaches an app. Secrets are read each time `up` runs, so a changed variable reaches the app at the next `up`. Secret values reach the app's environment and nowhere else: no output of `sandbox`, no unit file, and no command line carries them.
 
 Command:
 
@@ -188,23 +187,24 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `wip` is up, with `auth` and `dummy`, and `sandbox-wip-auth.service` is active.
-- The secrets file holds:
+- The `sandbox up` that brought it up ran with an environment exporting:
 
-  ```toml
-  [auth]
-  GOOGLE_CLIENT_ID = "1234-abc.apps.googleusercontent.com"
-  GOOGLE_CLIENT_SECRET = "GOCSPX-example"
-  SIGNING_KEY = "unused"
-
-  [billing]
-  STRIPE_KEY = "sk_test_example"
   ```
+  GOOGLE_LOCALHOST_CLIENT_ID=1234-abc.apps.googleusercontent.com
+  GOOGLE_LOCALHOST_CLIENT_SECRET=GOCSPX-example
+  GOOGLE_CLIENT_ID=9999-web.apps.googleusercontent.com
+  GOOGLE_CLIENT_SECRET=GOCSPX-production
+  SIGNING_KEY=unused
+  ```
+
+- The user's systemd manager's own environment holds none of these variables.
 
 Postconditions:
 
 - Nothing has changed.
-- auth's environment holds no `SIGNING_KEY`, since its manifest does not list it, and no `STRIPE_KEY`, since the checkout holds no `billing`.
-- dummy's environment holds none of these secrets.
+- auth's `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` hold the values of `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_LOCALHOST_CLIENT_SECRET`; the developer's own `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` were not read.
+- auth's environment holds no `GOOGLE_LOCALHOST_CLIENT_ID`, `GOOGLE_LOCALHOST_CLIENT_SECRET` or `SIGNING_KEY`.
+- dummy's environment holds none of these variables.
 - auth's working directory is `/home/me/.local/state/ikigenba/sandbox/wip/apps/auth/`, so its database is `/home/me/.local/state/ikigenba/sandbox/wip/apps/auth/state/auth.db`.
 
 ## The default app reads its own public origin
@@ -304,7 +304,7 @@ Postconditions:
 
 ## A developer keeps their configuration somewhere other than `~/.config`
 
-`up` reads the secrets file from `$XDG_CONFIG_HOME/ikigenba/sandbox/secrets.toml` and writes its units to `$XDG_CONFIG_HOME/systemd/user/`. When `XDG_CONFIG_HOME` is unset, empty, or not an absolute path, both are under `/home/me/.config` instead.
+`up` writes its units to `$XDG_CONFIG_HOME/systemd/user/`. When `XDG_CONFIG_HOME` is unset, empty, or not an absolute path, they are under `/home/me/.config` instead.
 
 Command:
 
@@ -324,12 +324,11 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- `/home/me/cfg/ikigenba/sandbox/secrets.toml` holds the `[auth]` table above.
-- `/home/me/.config/ikigenba/sandbox/secrets.toml` does not exist.
+- `wip` is not yet known, and `/home/me/.config/systemd/user/` holds no `sandbox-wip-*` unit.
 
 Postconditions:
 
-- auth was given the secrets from `/home/me/cfg/ikigenba/sandbox/secrets.toml`; nothing under `/home/me/.config/ikigenba/` was read.
+- No `sandbox-wip-*` unit was written to `/home/me/.config/systemd/user/`.
 - `sandbox-wip-auth.socket`, `sandbox-wip-auth.service`, `sandbox-wip-dummy.socket`, `sandbox-wip-dummy.service`, and `sandbox-wip-nginx.service` are in `/home/me/cfg/systemd/user/`.
 
 ## A developer brings up an app whose manifest names a port
@@ -812,7 +811,7 @@ Postconditions:
 
 ## A developer brings up an app whose secrets they have not provided
 
-Every secret a manifest lists must have a value. A secret the file lacks, or sets to the empty string, is missing, and a secrets file that does not exist is missing every secret. `up` names every missing secret at once, one line each, sorted by app and then by name, so the developer can fix them all before trying again. It never prints a secret's value. Had only `GOOGLE_CLIENT_SECRET` been missing, only its line would follow.
+Every secret a manifest lists must have a value. A secret whose variable is unset, or set to the empty string, in the environment `sandbox up` runs with is missing; sandbox looks nowhere else for it. `up` names every missing secret at once, one line each, sorted by app and then by secret name, each naming the variable it was read from, so the developer can export them all before trying again. A secret listed by several apps is read from the same variable for each, and is named once for each app that lists it. A secret not translated is read from its own name: had dummy also listed `FOO` with `FOO` unset, the line `dummy FOO from FOO` would follow. Had only `GOOGLE_LOCALHOST_CLIENT_SECRET` been missing, only its line would follow. It never prints a secret's value.
 
 Command:
 
@@ -823,10 +822,10 @@ $ sandbox up
 Output:
 
 ```
-sandbox: secrets missing from /home/me/.config/ikigenba/sandbox/secrets.toml
+sandbox: secrets missing from the environment
 
-auth GOOGLE_CLIENT_ID
-auth GOOGLE_CLIENT_SECRET
+auth GOOGLE_CLIENT_ID from GOOGLE_LOCALHOST_CLIENT_ID
+auth GOOGLE_CLIENT_SECRET from GOOGLE_LOCALHOST_CLIENT_SECRET
 ```
 
 Exits 2. The text is on stderr; stdout is empty.
@@ -835,46 +834,16 @@ Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
 - auth's manifest lists `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `secrets`.
-- `/home/me/.config/ikigenba/sandbox/secrets.toml` does not exist; or it has no `[auth]` table; or its `[auth]` table sets neither key, or sets both to `""`.
+- Neither `GOOGLE_LOCALHOST_CLIENT_ID` nor `GOOGLE_LOCALHOST_CLIENT_SECRET` is set in the environment `sandbox up` runs with, or both are set to the empty string; whether `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set, and to what, makes no difference.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:
 
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
-- The secrets file was not created or changed.
-
-## A developer brings up the sandbox with a secrets file that is not valid TOML
-
-A secrets file that is not valid TOML is refused with only the line where the fault was found, never the parser's own description of it, which can quote the text near the fault, and that text may be a secret. No value from the file is printed.
-
-Command:
-
-```
-$ sandbox up
-```
-
-Output:
-
-```
-sandbox: /home/me/.config/ikigenba/sandbox/secrets.toml: not valid TOML at line 2
-```
-
-Exits 2. The line is on stderr; stdout is empty.
-
-Preconditions:
-
-- The current directory is `/home/me/src/ikigenba/wip`.
-- `/home/me/.config/ikigenba/sandbox/secrets.toml` is not valid TOML: its first line reads `[auth` and its second `GOOGLE_CLIENT_ID = "1234-abc.apps.googleusercontent.com"`.
-- `wip` is up from an earlier `up`, or is not yet known.
-
-Postconditions:
-
-- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
-- The secrets file was not changed.
 
 ## A developer brings up the sandbox with a secret that holds a line break
 
-A secret pasted with its line ending is easy to miss. The platform refuses a secret whose value holds a NUL, a carriage return or a line feed, and the sandbox refuses those too, along with a byte-order mark (U+FEFF) and a Unicode noncharacter, which systemd cannot read from an env file. A line break anywhere in the value is refused, a trailing one included. The refusal names the app and the secret, never the value. It is made only for a secret some app's manifest lists; a key the manifests do not list is ignored whatever it holds.
+A secret pasted with its line ending is easy to miss. The platform refuses a secret whose value holds a carriage return or a line feed, and the sandbox refuses those too, along with a byte-order mark (U+FEFF) and a Unicode noncharacter, which systemd cannot read from an env file. A line break anywhere in the value is refused, a trailing one included. The refusal names the variable, the app and the secret, never the value. It is made only for a variable read for a secret some app's manifest lists; any other variable is ignored whatever it holds.
 
 Command:
 
@@ -885,7 +854,7 @@ $ sandbox up
 Output:
 
 ```
-sandbox: /home/me/.config/ikigenba/sandbox/secrets.toml: 'auth.GOOGLE_CLIENT_SECRET' holds a character an env file cannot hold
+sandbox: environment variable GOOGLE_LOCALHOST_CLIENT_SECRET, read for auth's GOOGLE_CLIENT_SECRET, holds a character an env file cannot hold
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -893,18 +862,17 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- The secrets file's `[auth]` table sets `GOOGLE_CLIENT_ID` as above and `GOOGLE_CLIENT_SECRET = "GOCSPX-example\n"`, or `GOOGLE_CLIENT_SECRET = "GOCSPX-example\r\n"`.
+- The environment `sandbox up` runs with exports `GOOGLE_LOCALHOST_CLIENT_ID` as above and `GOOGLE_LOCALHOST_CLIENT_SECRET` holding `GOCSPX-example` followed by a line feed, or by a carriage return and a line feed.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:
 
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
-- The secrets file was not changed.
 - Nothing `sandbox` printed holds `GOCSPX-example`.
 
 ## A developer brings up apps that declare no secrets
 
-When no app's manifest lists a secret, `up` does not read the secrets file at all, so it does not matter whether the file exists or whether it parses.
+When no app's manifest lists a secret, `up` consults no secret variable at all, so it does not matter whether `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_LOCALHOST_CLIENT_SECRET` are set, or what they hold.
 
 Command:
 
@@ -925,10 +893,10 @@ Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
 - The checkout holds `auth` and `dummy`: auth's manifest is the one above with `secrets = []` in place of its `secrets` line, dummy's is the one above (`secrets = []`), and both `auth/cmd/auth/` and `dummy/cmd/dummy/` build.
-- `/home/me/.config/ikigenba/sandbox/secrets.toml` does not exist; or it is not valid TOML, its first line reading `[auth`.
+- `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_LOCALHOST_CLIENT_SECRET` are unset in the environment `sandbox up` runs with; or `GOOGLE_LOCALHOST_CLIENT_SECRET` holds `GOCSPX-example` followed by a line feed.
 - The other preconditions of a first `up` hold.
 
 Postconditions:
 
 - `wip` is up with `auth` and `dummy`.
-- The secrets file was not read, created or changed.
+- No app's environment holds `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_LOCALHOST_CLIENT_ID` or `GOOGLE_LOCALHOST_CLIENT_SECRET`.
