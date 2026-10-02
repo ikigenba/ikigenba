@@ -287,3 +287,18 @@ func TestMainFollowInterrupt(t *testing.T) {
 		t.Fatalf("additional stdout=%q stderr=%q", rest.String(), stderr.String())
 	}
 }
+
+// R-HQRI-SGZT
+func TestMainSecretEnvironment(t *testing.T) {
+	root, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	worktree := filepath.Join(root, "wip")
+	etc := filepath.Join(worktree, "auth", "etc")
+	if err := os.MkdirAll(etc, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(etc, "manifest.toml"), []byte("app=\"auth\"\nsecrets=[\"GOOGLE_CLIENT_ID\",\"GOOGLE_CLIENT_SECRET\"]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	script(t, bin, "git", "printf '%s\\n' \"$TEST_WORKTREE\"\n")
+	expectChild(t, child(t, worktree, []string{"HOME=" + home, "PATH=" + bin, "TEST_WORKTREE=" + worktree, "GOOGLE_LOCALHOST_CLIENT_ID=desktop-id", "GOOGLE_CLIENT_SECRET=production-secret"}, []string{"up"}), 2, "", "sandbox: secrets missing from the environment\n\nauth GOOGLE_CLIENT_SECRET from GOOGLE_LOCALHOST_CLIENT_SECRET\n")
+}

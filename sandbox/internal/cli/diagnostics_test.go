@@ -57,7 +57,7 @@ func TestRunnerDiagnostics(t *testing.T) {
 	}
 }
 
-// R-E7YN-RFPC
+// R-AE6H-QEEG
 func TestFileDiagnostics(t *testing.T) {
 	state := t.TempDir()
 	registry := filepath.Join(state, "ikigenba", "sandbox", "registry.json")

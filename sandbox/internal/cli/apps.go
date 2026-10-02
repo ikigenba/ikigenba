@@ -293,44 +293,22 @@ func svgImage(b []byte) bool {
 		}
 	}
 }
-func checkSecrets(configRoot string, apps []appInfo) error {
-	needed := false
-	for _, a := range apps {
-		needed = needed || len(a.Secrets) > 0
+func secretSource(secret string) string {
+	switch secret {
+	case "GOOGLE_CLIENT_ID":
+		return "GOOGLE_LOCALHOST_CLIENT_ID"
+	case "GOOGLE_CLIENT_SECRET":
+		return "GOOGLE_LOCALHOST_CLIENT_SECRET"
+	default:
+		return secret
 	}
-	if !needed {
-		return nil
-	}
-	p := filepath.Join(configRoot, "ikigenba/sandbox/secrets.toml")
-	b, err := appReadFile(p)
-	var m map[string]any
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("%s: %s", p, appOSReason(err))
-	}
-	if err == nil {
-		if _, err = toml.Decode(string(b), &m); err != nil {
-			var pe toml.ParseError
-			if errors.As(err, &pe) {
-				return fmt.Errorf("%s: not valid TOML at line %d", p, pe.Position.Line)
-			}
-			return fmt.Errorf("%s: not valid TOML", p)
-		}
-	}
+}
+
+func checkSecrets(getenv func(string) string, apps []appInfo) error {
 	var missing []string
 	for i := range apps {
 		a := &apps[i]
-		if len(a.Secrets) == 0 {
-			continue
-		}
 		a.SecretValues = map[string]string{}
-		table := map[string]any{}
-		if v, ok := m[a.Name]; ok {
-			var good bool
-			table, good = v.(map[string]any)
-			if !good {
-				return fmt.Errorf("%s: '%s' must be a table", p, a.Name)
-			}
-		}
 		keys := append([]string(nil), a.Secrets...)
 		sort.Strings(keys)
 		last := ""
@@ -339,27 +317,20 @@ func checkSecrets(configRoot string, apps []appInfo) error {
 				continue
 			}
 			last = k
-			v, ok := table[k]
-			if !ok {
-				missing = append(missing, a.Name+" "+k)
-				continue
+			source := secretSource(k)
+			value := getenv(source)
+			if invalidValue(value) {
+				return fmt.Errorf("environment variable %s, read for %s's %s, holds a character an env file cannot hold", source, a.Name, k)
 			}
-			s, ok := v.(string)
-			if !ok {
-				return fmt.Errorf("%s: '%s.%s' must be a string", p, a.Name, k)
-			}
-			if invalidValue(s) {
-				return fmt.Errorf("%s: '%s.%s' holds a character an env file cannot hold", p, a.Name, k)
-			}
-			if s == "" {
-				missing = append(missing, a.Name+" "+k)
+			if value == "" {
+				missing = append(missing, a.Name+" "+k+" from "+source)
 			} else {
-				a.SecretValues[k] = s
+				a.SecretValues[k] = value
 			}
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("secrets missing from %s\n\n%s", p, strings.Join(missing, "\n"))
+		return fmt.Errorf("secrets missing from the environment\n\n%s", strings.Join(missing, "\n"))
 	}
 	return nil
 }

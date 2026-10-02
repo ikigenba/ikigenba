@@ -24,6 +24,7 @@ type upFixture struct {
 	calls                                      []seam.Cmd
 	active                                     bool
 	exec                                       func(seam.Cmd) (seam.Result, error)
+	environment                                map[string]string
 }
 
 func newUpFixture(t *testing.T, names ...string) *upFixture {
@@ -88,7 +89,7 @@ func (f *upFixture) run(args ...string) (int, string, string) {
 		case "XDG_CONFIG_HOME":
 			return f.config
 		}
-		return ""
+		return f.environment[key]
 	}, Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
 		f.calls = append(f.calls, c)
 		if f.exec != nil {
@@ -204,9 +205,11 @@ func upSnapshot(t *testing.T, root string) map[string]string {
 func TestUpSuccessfulDeployment(t *testing.T) {
 	// R-RGOI-M8C3 R-RHWF-002S R-XXC9-Z9PP R-XYK6-D1GE R-Y0ZZ-4KXS
 	// R-Y4NO-9W5V R-U16K-JJPF R-RQFP-OE9N R-RRNM-260C R-ZFIX-V9WF
-	// R-YRTR-JJ92 R-KSXM-UDTO R-YU9K-B2QG R-YVHG-OUH5 R-Z2SU-ZGXB R-IJUW-KM7L
+	// R-YRTR-JJ92 R-SCTY-Y264 R-YU9K-B2QG R-YVHG-OUH5 R-Z2SU-ZGXB R-IJUW-KM7L
 	// R-Z58N-R0EP R-ZINJ-YHKC R-YGUO-3LKT R-S1ET-4BXW R-RP7T-AMIY
 	f := newUpFixture(t, "dummy", "auth")
+	f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app=\"auth\"\nsecrets=[\"GOOGLE_CLIENT_SECRET\"]\n[env]\nWORKSPACE_DOMAIN=\"example.test\"\n", 0644)
+	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_SECRET": "desktop-secret"}
 	f.exec = func(c seam.Cmd) (seam.Result, error) {
 		if c.Path == "go" {
 			entries := f.records()
@@ -236,7 +239,14 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 				if info, err := os.Stat(filepath.Join(f.data, "apps", app, "state")); err != nil || !info.IsDir() {
 					t.Fatalf("app state: %v", err)
 				}
-				want := string(renderAppEnv(f.data, "wip", 7400, appInfo{Name: app}))
+				want := "DRAIN_SECONDS=\"5\"\n"
+				if app == "auth" {
+					want += "GOOGLE_CLIENT_SECRET=\"desktop-secret\"\n"
+				}
+				want += "IKIGENBA_CALLBACK_URL=\"http://localhost:7400\"\nIKIGENBA_PUBLIC_URL=\"http://" + app + ".wip.localhost:7400\"\nIKIGENBA_SANDBOX=\"wip\"\nIKIGENBA_SERVICES=\"" + strings.ReplaceAll(filepath.Join(f.data, "services.json"), "$", "\\$") + "\"\n"
+				if app == "auth" {
+					want += "WORKSPACE_DOMAIN=\"example.test\"\n"
+				}
 				if upRead(t, filepath.Join(f.data, "env", app+".env")) != want {
 					t.Fatal("deployed env mismatch")
 				}
@@ -247,7 +257,8 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 					t.Fatal("service mismatch")
 				}
 			}
-			if upRead(t, filepath.Join(f.data, "services.json")) != string(renderServices("wip", 7400, 1000, []appInfo{{Name: "auth"}, {Name: "dummy"}})) {
+			wantServices := "{\n  \"services\": [\n    { \"name\": \"auth\", \"url\": \"http://auth.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/auth.sock\", \"enabled\": true, \"mcp\": false },\n    { \"name\": \"dummy\", \"url\": \"http://dummy.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/dummy.sock\", \"enabled\": true, \"mcp\": false }\n  ]\n}\n"
+			if upRead(t, filepath.Join(f.data, "services.json")) != wantServices {
 				t.Fatal("services mismatch")
 			}
 			if upRead(t, filepath.Join(f.units, "sandbox-wip-nginx.service")) != string(renderNginxUnit(f.data, "wip")) {
@@ -705,9 +716,9 @@ func TestUpIgnoresFragmentContents(t *testing.T) {
 }
 
 func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
-	// R-RKC7-RJK6 R-RLK4-5BAV
+	// R-AAIS-L36D R-S969-SQY1
 	for _, known := range []bool{false, true} {
-		for _, fault := range []string{"noapps", "manifest", "icon", "secrets", "clash", "ports"} {
+		for _, fault := range []string{"noapps", "manifest", "icon", "badvalue", "secrets", "clash", "ports"} {
 			if known && fault == "ports" {
 				continue
 			}
@@ -768,9 +779,13 @@ func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
 					f.put(manifest, "app = \"b-c\"\nsecrets = [\"MISSING\"]\n", 0644)
 					f.put(filepath.Join(f.worktree, "b-c", "share", "icon.svg"), "<svg/>", 0000)
 					want = "sandbox: b-c: share/icon.svg: permission denied\n"
+				case "badvalue":
+					f.put(manifest, "app = \"b-c\"\nsecrets = [\"BAD\"]\n", 0644)
+					f.environment = map[string]string{"BAD": "x\n"}
+					want = "sandbox: environment variable BAD, read for b-c's BAD, holds a character an env file cannot hold\n"
 				case "secrets":
 					f.put(manifest, "app = \"b-c\"\nsecrets = [\"MISSING\"]\n", 0644)
-					want = "sandbox: secrets missing from " + filepath.Join(f.config, "ikigenba", "sandbox", "secrets.toml") + "\n\nb-c MISSING\n"
+					want = "sandbox: secrets missing from the environment\n\nb-c MISSING from MISSING\n"
 				case "clash":
 					want = "sandbox: unit 'sandbox-a-b-c.service' would also belong to sandbox 'a-b'\n\nrename this worktree or the app, or wipe sandbox 'a-b' once it is down\n"
 				case "ports":
@@ -780,7 +795,9 @@ func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
 				beforeUnits := upSnapshot(t, f.units)
 				registryPath := filepath.Join(f.state, "ikigenba", "sandbox", "registry.json")
 				beforeRegistry, registryErr := upReadBytes(registryPath)
+				before := upRefusalEntries(t, f.root)
 				code, out, diagnostic := f.run("up")
+				upCheckRefusalSnapshot(t, f, before)
 				if code != 2 || out != "" || diagnostic != want {
 					t.Fatalf("%d %q %q want %q", code, out, diagnostic, want)
 				}
@@ -812,6 +829,66 @@ func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func upRefusalEntries(t *testing.T, root string) map[string]string {
+	t.Helper()
+	entries := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			entries[rel] = "directory"
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		entries[rel] = info.Mode().String()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func upCheckRefusalSnapshot(t *testing.T, f *upFixture, before map[string]string) {
+	t.Helper()
+	after := upRefusalEntries(t, f.root)
+	for path, content := range before {
+		if after[path] != content {
+			t.Fatalf("check changed %s: %q -> %q", path, content, after[path])
+		}
+		delete(after, path)
+	}
+	lockRoot := filepath.Join(f.state, "ikigenba", "sandbox")
+	for _, name := range []string{filepath.Base(f.worktree) + ".lock", "registry.json.lock"} {
+		rel, err := filepath.Rel(f.root, filepath.Join(lockRoot, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		delete(after, rel)
+	}
+	for parent := lockRoot; parent != f.root; parent = filepath.Dir(parent) {
+		rel, err := filepath.Rel(f.root, parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if content, ok := after[rel]; ok && content != "directory" {
+			t.Fatalf("check created non-directory parent %s", rel)
+		}
+		delete(after, rel)
+	}
+	if len(after) != 0 {
+		t.Fatalf("check created unexpected entries: %v", after)
 	}
 }
 
@@ -1017,8 +1094,8 @@ func TestUpGatedManifestMCPVariants(t *testing.T) {
 }
 
 func TestUpCheckRefusalsLeaveAbsentRegistry(t *testing.T) {
-	// R-RLK4-5BAV
-	for _, fault := range []string{"noapps", "manifest", "icon", "secrets"} {
+	// R-S969-SQY1
+	for _, fault := range []string{"noapps", "manifest", "icon", "badvalue", "secrets"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newUpFixture(t, "dummy")
 			manifest := filepath.Join(f.worktree, "dummy", "etc", "manifest.toml")
@@ -1031,10 +1108,15 @@ func TestUpCheckRefusalsLeaveAbsentRegistry(t *testing.T) {
 				f.put(manifest, "app = 1\n", 0644)
 			case "icon":
 				f.put(filepath.Join(f.worktree, "dummy", "share", "icon.svg"), "<svg/>", 0000)
+			case "badvalue":
+				f.put(manifest, "app = \"dummy\"\nsecrets = [\"BAD\"]\n", 0644)
+				f.environment = map[string]string{"BAD": "x\n"}
 			case "secrets":
 				f.put(manifest, "app = \"dummy\"\nsecrets = [\"MISSING\"]\n", 0644)
 			}
+			before := upRefusalEntries(t, f.root)
 			code, out, diagnostic := f.run("up")
+			upCheckRefusalSnapshot(t, f, before)
 			if code != 2 || out != "" || diagnostic == "" {
 				t.Fatalf("%d %q %q", code, out, diagnostic)
 			}

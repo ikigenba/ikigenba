@@ -246,21 +246,33 @@ func coreReadyForCommand(f *coreFixture, args []string) {
 	}
 }
 
-// R-YUXC-MI4L
+// R-ACYL-CMNR
 func TestEveryCommandIgnoresProcessLocations(t *testing.T) {
 	sentinel := newCoreFixture(t)
-	coreWrite(t, filepath.Join(sentinel.config, "ikigenba", "sandbox", "secrets.toml"), "[dummy]\nKEY = \"sentinel secret\"\n")
 	before := coreSnapshot(t, sentinel.base)
 	for _, args := range coreCommands {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			f := newCoreFixture(t)
 			coreReadyForCommand(f, args)
+			if args[0] == "up" {
+				coreWrite(t, filepath.Join(f.worktree, "dummy", "etc", "manifest.toml"), "app=\"dummy\"\nsecrets=[\"GOOGLE_CLIENT_ID\",\"GOOGLE_CLIENT_SECRET\"]\n")
+				getenv := f.deps.Getenv
+				f.deps.Getenv = func(key string) string {
+					if key == "GOOGLE_LOCALHOST_CLIENT_ID" || key == "GOOGLE_LOCALHOST_CLIENT_SECRET" {
+						return "injected-secret"
+					}
+					return getenv(key)
+				}
+			}
 			input := coreSnapshot(t, f.base)
 			c1, o1, e1 := coreCall(t, args, f.deps)
 			if c1 != 0 {
 				t.Fatalf("baseline command failed: %d %q %q", c1, o1, e1)
 			}
 			coreRestore(t, f.base, input)
+			for _, key := range []string{"GOOGLE_LOCALHOST_CLIENT_ID", "GOOGLE_LOCALHOST_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"} {
+				t.Setenv(key, "sentinel secret")
+			}
 			t.Setenv("HOME", sentinel.base)
 			t.Setenv("XDG_CONFIG_HOME", sentinel.config)
 			t.Setenv("XDG_STATE_HOME", sentinel.state)

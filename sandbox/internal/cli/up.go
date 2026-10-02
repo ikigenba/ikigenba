@@ -19,7 +19,7 @@ func (i invocation) runUp() (code int) {
 	if err != nil {
 		return i.diagnostic(err.Error())
 	}
-	if err = checkSecrets(t.paths.config, apps); err != nil {
+	if err = checkSecrets(i.deps.Getenv, apps); err != nil {
 		return i.diagnostic(err.Error())
 	}
 	recorded := make([]registryApp, 0, len(apps))

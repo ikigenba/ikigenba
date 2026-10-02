@@ -273,8 +273,8 @@ func TestTokenReadAndAbsent(t *testing.T) {
 	}
 }
 
-// R-FAZG-03FK R-FC7C-DV69 R-F8JN-8JY6 R-F9RJ-MBOV
-func TestTokenFileErrors(t *testing.T) {
+// R-AJ23-9HD8
+func TestTokenInvalidStoredContent(t *testing.T) {
 	for _, value := range []string{"", "ikp_a\n", "hunter2"} {
 		t.Run(value, func(t *testing.T) {
 			f := newReportFixture(t, "wip", nil, 7400)
@@ -282,43 +282,52 @@ func TestTokenFileErrors(t *testing.T) {
 			f.expect(f.run(context.Background(), []string{"token"}, nil), 1, "", "sandbox: "+filepath.Join(f.data, "token")+": does not hold a bearer token\n")
 		})
 	}
-	t.Run("directory-token", func(t *testing.T) {
-		f := newReportFixture(t, "wip", nil, 7400)
-		path := filepath.Join(f.data, "token")
-		if err := os.MkdirAll(path, 0700); err != nil {
-			t.Fatal(err)
+}
+
+// R-AK9Z-N93X
+func TestTokenUnreadableFile(t *testing.T) {
+	f := newReportFixture(t, "wip", nil, 7400)
+	path := filepath.Join(f.data, "token")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f.expect(f.run(context.Background(), []string{"token"}, nil), 1, "", "sandbox: "+path+": is a directory\n")
+}
+
+// R-AFEE-4655
+func TestTokenDataCannotBeCreated(t *testing.T) {
+	f := newReportFixture(t, "wip", nil, 7400)
+	if err := os.WriteFile(f.data, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.expect(f.run(context.Background(), []string{"token", "set"}, strings.NewReader("ikp_a")), 1, "", "sandbox: "+f.data+": not a directory\n")
+}
+
+// R-AGMA-HXVU
+func TestTokenCannotBeWritten(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Fatal("permission proof requires non-root test process")
+	}
+	f := newReportFixture(t, "wip", nil, 7400)
+	f.writeToken("ikp_previous", 0600)
+	dir, err := os.OpenRoot(f.data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := dir.Chmod(".", 0700); err != nil {
+			t.Error(err)
 		}
-		f.expect(f.run(context.Background(), []string{"token"}, nil), 1, "", "sandbox: "+path+": is a directory\n")
+		if err := dir.Close(); err != nil {
+			t.Error(err)
+		}
 	})
-	t.Run("file-data", func(t *testing.T) {
-		f := newReportFixture(t, "wip", nil, 7400)
-		if err := os.WriteFile(f.data, []byte("file"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		f.expect(f.run(context.Background(), []string{"token", "set"}, strings.NewReader("ikp_a")), 1, "", "sandbox: "+f.data+": not a directory\n")
-	})
-	t.Run("permission", func(t *testing.T) {
-		if os.Geteuid() == 0 {
-			t.Fatal("permission proof requires non-root test process")
-		}
-		f := newReportFixture(t, "wip", nil, 7400)
-		f.writeToken("ikp_previous", 0600)
-		original, statErr := os.Stat(f.data)
-		if statErr != nil {
-			t.Fatal(statErr)
-		}
-		if err := os.Chmod(f.data, original.Mode().Perm()&^0200); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if err := os.Chmod(f.data, original.Mode().Perm()); err != nil {
-				t.Error(err)
-			}
-		})
-		f.expect(f.run(context.Background(), []string{"token", "set"}, strings.NewReader("ikp_a")), 1, "", "sandbox: "+filepath.Join(f.data, "token")+": permission denied\n")
-		got, err := os.ReadFile(filepath.Join(f.data, "token"))
-		if err != nil || string(got) != "ikp_previous" {
-			t.Fatalf("earlier token %q %v", got, err)
-		}
-	})
+	if err := dir.Chmod(".", 0500); err != nil {
+		t.Fatal(err)
+	}
+	f.expect(f.run(context.Background(), []string{"token", "set"}, strings.NewReader("ikp_a")), 1, "", "sandbox: "+filepath.Join(f.data, "token")+": permission denied\n")
+	got, err := dir.ReadFile("token")
+	if err != nil || string(got) != "ikp_previous" {
+		t.Fatalf("earlier token %q %v", got, err)
+	}
 }

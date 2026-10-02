@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,7 +15,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/BurntSushi/toml"
 	"github.com/ikigenba/ikigenba/sandbox/internal/seam"
 )
 
@@ -24,6 +22,9 @@ type appFixture struct {
 	t                         *testing.T
 	root, work, config, state string
 	commands                  []seam.Cmd
+	environment               map[string]string
+	getenvKeys                []string
+	getenvOther               string
 }
 
 func newAppFixture(t *testing.T) *appFixture {
@@ -48,23 +49,12 @@ func (f *appFixture) write(rel, content string) {
 	}
 }
 func (f *appFixture) manifest(app, body string) { f.write(app+"/etc/manifest.toml", body) }
-func (f *appFixture) secrets(body string) {
-	f.t.Helper()
-	p := f.secretPath()
-	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
-		f.t.Fatal(err)
-	}
-	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
-		f.t.Fatal(err)
-	}
-}
-func (f *appFixture) secretPath() string {
-	return filepath.Join(f.config, "ikigenba/sandbox/secrets.toml")
-}
 func (f *appFixture) run() (int, string, string) {
 	f.t.Helper()
 	f.commands = nil
+	f.getenvKeys = nil
 	deps := seam.Deps{Dir: f.work, EUID: 1000, Getenv: func(k string) string {
+		f.getenvKeys = append(f.getenvKeys, k)
 		switch k {
 		case "HOME":
 			return f.root
@@ -73,7 +63,10 @@ func (f *appFixture) run() (int, string, string) {
 		case "XDG_STATE_HOME":
 			return f.state
 		}
-		return ""
+		if v, ok := f.environment[k]; ok {
+			return v
+		}
+		return f.getenvOther
 	}, Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
 		f.commands = append(f.commands, c)
 		switch c.Path {
@@ -532,103 +525,80 @@ func svgOfSize(n int) string {
 	return "<svg>" + strings.Repeat(" ", n-11) + "</svg>"
 }
 
-// R-UHV8-1C73 R-VG0E-QWYJ R-VH8B-4OP8 R-VIG7-IGFX R-B0G3-8U0V R-VKW0-9ZXB R-VM3W-NRO0 R-VNBT-1JEP R-O1MT-O4NU R-B1NZ-MLRK R-VQZI-6UMS
-func TestAppSecrets(t *testing.T) {
-	fNoSecrets := newAppFixture(t)
-	fNoSecrets.manifest("dummy", appManifest("dummy"))
-	baselineCode, baselineOut, baselineErr := fNoSecrets.run()
-	if baselineCode != 0 || baselineErr != "" {
-		t.Fatalf("baseline: %d %s", baselineCode, baselineErr)
-	}
-	baselineFiles := fNoSecrets.writtenFiles()
-	for _, kind := range []string{"directory", "unreadable", "invalid"} {
-		fNoSecrets.secrets("[auth\n")
-		switch kind {
-		case "directory":
-			if err := os.Remove(fNoSecrets.secretPath()); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Mkdir(fNoSecrets.secretPath(), 0700); err != nil {
-				t.Fatal(err)
-			}
-		case "unreadable":
-			if err := os.Chmod(fNoSecrets.secretPath(), 0000); err != nil {
-				t.Fatal(err)
-			}
-		}
-		code, out, stderr := fNoSecrets.run()
-		if code != baselineCode || out != baselineOut || stderr != baselineErr {
-			t.Fatalf("%s output changed: %d %q %q", kind, code, out, stderr)
-		}
-		if !maps.Equal(baselineFiles, fNoSecrets.writtenFiles()) {
-			t.Fatalf("%s changed written files", kind)
-		}
-		if err := os.Remove(fNoSecrets.secretPath()); err != nil {
-			t.Fatal(err)
+// R-HVN4-BJYL
+func TestAppNoSecretsEnvironment(t *testing.T) {
+	f := newAppFixture(t)
+	f.manifest("dummy", appManifest("dummy"))
+	f.getenvOther = "non-empty"
+	f.success()
+	for _, key := range f.getenvKeys {
+		if key != "HOME" && key != "XDG_CONFIG_HOME" && key != "XDG_STATE_HOME" {
+			t.Fatalf("unlisted secret consulted: %s", key)
 		}
 	}
+}
 
-	for _, body := range []string{"[auth\nGOOGLE_CLIENT_ID = \"1234-abc.apps.googleusercontent.com\"\n", "[auth]\nGOOGLE_CLIENT_SECRET = GOCSPX-example\n"} {
+// R-A0RL-IX8T R-A1ZH-WOZI R-PKCY-6WJV
+func TestAppSecretUsableValues(t *testing.T) {
+	for _, value := range []string{"local-secret\n", "local-secret\r\n", "local-\rsecret", "local-secret\x00", "local-secret\ufffe"} {
 		f := newAppFixture(t)
 		f.manifest("auth", appManifest("auth")+"secrets=[\"GOOGLE_CLIENT_ID\",\"GOOGLE_CLIENT_SECRET\"]\n")
-		f.secrets(body)
-		var m map[string]any
-		_, err := toml.Decode(body, &m)
-		var pe toml.ParseError
-		if err == nil {
-			t.Fatal("fixture must be malformed")
-		}
-		if !errors.As(err, &pe) {
-			t.Fatalf("unexpected parser error %T", err)
-		}
-		f.refuse(fmt.Sprintf("%s: not valid TOML at line %d", f.secretPath(), pe.Position.Line))
+		f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_SECRET": value}
+		f.refuse("environment variable GOOGLE_LOCALHOST_CLIENT_SECRET, read for auth's GOOGLE_CLIENT_SECRET, holds a character an env file cannot hold")
 	}
-	cases := []struct{ body, want string }{{"auth=1\n", "'auth' must be a table"}, {"[auth]\nGOOGLE_CLIENT_ID=1\nGOOGLE_CLIENT_SECRET=1\n", "'auth.GOOGLE_CLIENT_ID' must be a string"}, {"[auth]\nGOOGLE_CLIENT_ID=\"valid\"\nGOOGLE_CLIENT_SECRET=1\n", "'auth.GOOGLE_CLIENT_SECRET' must be a string"}}
-	for _, c := range cases {
-		f := newAppFixture(t)
-		f.manifest("auth", appManifest("auth")+"secrets=[\"GOOGLE_CLIENT_SECRET\",\"GOOGLE_CLIENT_ID\"]\n")
-		f.secrets(c.body)
-		f.refuse(f.secretPath() + ": " + c.want)
-	}
-	for _, v := range []string{"GOCSPX-example\n", "GOCSPX-example\r\n", "GOCSPX-\rexample", "GOCSPX-example\x00", "GOCSPX-example\ufffe"} {
-		f := newAppFixture(t)
-		f.manifest("auth", appManifest("auth")+"secrets=[\"GOOGLE_CLIENT_SECRET\"]\n")
-		f.secrets("[auth]\nGOOGLE_CLIENT_SECRET=" + appTOMLString(v) + "\n")
-		f.refuse(f.secretPath() + ": 'auth.GOOGLE_CLIENT_SECRET' holds a character an env file cannot hold")
-	}
-	for _, body := range []string{"absent", "[billing]\nSTRIPE_KEY=[]\n", "[auth]\nSIGNING_KEY=1\n", "[auth]\nGOOGLE_CLIENT_ID=\"\"\nGOOGLE_CLIENT_SECRET=\"\"\n"} {
+	f := newAppFixture(t)
+	f.manifest("dummy", appManifest("dummy")+"secrets=[\"FOO\"]\n")
+	f.manifest("auth", appManifest("auth")+"secrets=[\"GOOGLE_CLIENT_SECRET\",\"GOOGLE_CLIENT_ID\"]\n")
+	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_ID": "x\n", "GOOGLE_LOCALHOST_CLIENT_SECRET": "x\n", "FOO": "x\n"}
+	f.refuse("environment variable GOOGLE_LOCALHOST_CLIENT_ID, read for auth's GOOGLE_CLIENT_ID, holds a character an env file cannot hold")
+	f = newAppFixture(t)
+	f.manifest("dummy", appManifest("dummy")+"secrets=[\"FOO\"]\n")
+	f.environment = map[string]string{"FOO": "x\n"}
+	f.refuse("environment variable FOO, read for dummy's FOO, holds a character an env file cannot hold")
+}
+
+// R-PMSQ-YG19 R-A5N7-207L
+func TestAppMissingSecrets(t *testing.T) {
+	for _, values := range []map[string]string{nil, {"GOOGLE_LOCALHOST_CLIENT_ID": "", "GOOGLE_LOCALHOST_CLIENT_SECRET": ""}, {"GOOGLE_CLIENT_ID": "9999-web.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "production-secret"}} {
 		f := newAppFixture(t)
 		f.manifest("auth", appManifest("auth")+"secrets=[\"GOOGLE_CLIENT_SECRET\",\"GOOGLE_CLIENT_ID\",\"GOOGLE_CLIENT_ID\"]\n")
-		if body != "absent" {
-			f.secrets(body)
-		}
-		f.refuse("secrets missing from " + f.secretPath() + "\n\nauth GOOGLE_CLIENT_ID\nauth GOOGLE_CLIENT_SECRET")
+		f.environment = values
+		f.refuse("secrets missing from the environment\n\nauth GOOGLE_CLIENT_ID from GOOGLE_LOCALHOST_CLIENT_ID\nauth GOOGLE_CLIENT_SECRET from GOOGLE_LOCALHOST_CLIENT_SECRET")
 	}
 	f := newAppFixture(t)
 	f.manifest("auth", appManifest("auth")+"secrets=[\"GOOGLE_CLIENT_ID\",\"GOOGLE_CLIENT_SECRET\"]\n")
-	f.secrets("[auth]\nGOOGLE_CLIENT_ID=\"valid\"\nSIGNING_KEY=1\n[billing]\nSTRIPE_KEY=[]\n")
-	f.refuse("secrets missing from " + f.secretPath() + "\n\nauth GOOGLE_CLIENT_SECRET")
-	f.secrets("[auth]\nGOOGLE_CLIENT_ID=\"valid\"\nGOOGLE_CLIENT_SECRET=\"valid\"\nSIGNING_KEY=1\n[billing]\nSTRIPE_KEY=[]\n")
+	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_ID": "valid"}
+	f.refuse("secrets missing from the environment\n\nauth GOOGLE_CLIENT_SECRET from GOOGLE_LOCALHOST_CLIENT_SECRET")
+	f.manifest("dummy", appManifest("dummy")+"secrets=[\"GOOGLE_CLIENT_ID\",\"FOO\"]\n")
+	f.environment = nil
+	f.refuse("secrets missing from the environment\n\nauth GOOGLE_CLIENT_ID from GOOGLE_LOCALHOST_CLIENT_ID\nauth GOOGLE_CLIENT_SECRET from GOOGLE_LOCALHOST_CLIENT_SECRET\ndummy FOO from FOO\ndummy GOOGLE_CLIENT_ID from GOOGLE_LOCALHOST_CLIENT_ID")
+	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_ID": "valid", "GOOGLE_LOCALHOST_CLIENT_SECRET": "valid", "FOO": "bar", "GOOGLE_CLIENT_SECRET": "x\n", "SIGNING_KEY": "x\n"}
 	f.success()
-	f = newAppFixture(t)
-	f.manifest("auth", appManifest("auth")+"secrets=[\"X\"]\n")
-	f.manifest("dummy", appManifest("dummy")+"secrets=[\"A\"]\n")
-	f.secrets("[dummy]\nA=1\n")
-	f.refuse(f.secretPath() + ": 'dummy.A' must be a string")
-	f.secrets("auth=1\n[dummy]\nA=1\n")
-	f.refuse(f.secretPath() + ": 'auth' must be a table")
-	f.secrets("[auth]\nX=\"\"\n[dummy]\nA=\"\"\n")
-	f.refuse("secrets missing from " + f.secretPath() + "\n\nauth X\ndummy A")
-	if err := os.Remove(f.secretPath()); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(f.secretPath(), 0700); err != nil {
-		t.Fatal(err)
-	}
-	f.refuse(f.secretPath() + ": is a directory")
 }
 
-// R-VESI-D57U R-O2UQ-1WEJ R-VUN7-C5UV R-B43S-E58Y R-M8XN-4HEB R-MA5J-I950 R-W0QP-90KC R-O5AI-TFVX
+// R-9X3W-DM0Q R-S32R-VW8K
+func TestAppSecretEnvironment(t *testing.T) {
+	f := newAppFixture(t)
+	f.manifest("auth", appManifest("auth")+"secrets=[\"GOOGLE_CLIENT_ID\",\"GOOGLE_CLIENT_SECRET\"]\n")
+	f.manifest("dummy", appManifest("dummy")+"secrets=[\"FOO\",\"GOOGLE_CLIENT_ID\"]\n")
+	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_ID": "1234-abc.apps.googleusercontent.com", "GOOGLE_LOCALHOST_CLIENT_SECRET": "local-secret", "GOOGLE_CLIENT_ID": "9999-web.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "production-secret", "FOO": "bar"}
+	f.success()
+	for _, app := range []string{"auth", "dummy"} {
+		if !strings.Contains(f.read("env/"+app+".env"), "GOOGLE_CLIENT_ID=\"1234-abc.apps.googleusercontent.com\"\n") {
+			t.Fatal("wrong Google source")
+		}
+	}
+	if !strings.Contains(f.read("env/auth.env"), "GOOGLE_CLIENT_SECRET=\"local-secret\"\n") || !strings.Contains(f.read("env/dummy.env"), "FOO=\"bar\"\n") {
+		t.Fatal("secret not delivered")
+	}
+	f.environment["GOOGLE_LOCALHOST_CLIENT_SECRET"] = "rotated-secret"
+	f.success()
+	if !strings.Contains(f.read("env/auth.env"), "GOOGLE_CLIENT_SECRET=\"rotated-secret\"\n") {
+		t.Fatal("secret not refreshed")
+	}
+}
+
+// R-VESI-D57U R-O2UQ-1WEJ R-VUN7-C5UV R-B43S-E58Y R-S6QH-17GN R-W0QP-90KC R-O5AI-TFVX
 func TestAppDeploymentFiles(t *testing.T) {
 	for _, def := range []bool{false, true} {
 		f := newAppFixture(t)
@@ -636,13 +606,13 @@ func TestAppDeploymentFiles(t *testing.T) {
 		f.manifest("dummy", appManifest("dummy")+fmt.Sprintf("default=%t\nmcp=true\ndescription=\"Demo widgets to list and create\"\n", def))
 		icon := "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n"
 		f.write("dummy/share/icon.svg", icon)
-		f.secrets("[auth]\nGOOGLE_CLIENT_ID=\"1234-abc.apps.googleusercontent.com\"\nGOOGLE_CLIENT_SECRET=\"GOCSPX-example\"\nSIGNING_KEY=\"ignored\"\n[aaa]\nGOOGLE_CLIENT_ID=\"other\"\n[billing]\nGOOGLE_CLIENT_ID=\"other\"\nSTRIPE_KEY=\"ignored\"\n")
+		f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_ID": "1234-abc.apps.googleusercontent.com", "GOOGLE_LOCALHOST_CLIENT_SECRET": "local-secret", "GOOGLE_CLIENT_ID": "9999-web.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "production-secret", "SIGNING_KEY": "ignored", "STRIPE_KEY": "ignored"}
 		f.success()
 		servicesPath := filepath.Join(f.state, "ikigenba/sandbox/wip/services.json")
 		base := func(app string) string {
 			return "IKIGENBA_CALLBACK_URL=\"http://localhost:7400\"\nIKIGENBA_PUBLIC_URL=\"http://" + app + ".wip.localhost:7400\"\nIKIGENBA_SANDBOX=\"wip\"\nIKIGENBA_SERVICES=\"" + servicesPath + "\"\n"
 		}
-		authEnv := "DRAIN_SECONDS=\"5\"\nGOOGLE_CLIENT_ID=\"1234-abc.apps.googleusercontent.com\"\nGOOGLE_CLIENT_SECRET=\"GOCSPX-example\"\n" + base("auth") + "WORKSPACE_DOMAIN=\"michaelgreenly.dev\"\n"
+		authEnv := "DRAIN_SECONDS=\"5\"\nGOOGLE_CLIENT_ID=\"1234-abc.apps.googleusercontent.com\"\nGOOGLE_CLIENT_SECRET=\"local-secret\"\n" + base("auth") + "WORKSPACE_DOMAIN=\"michaelgreenly.dev\"\n"
 		if got := f.read("env/auth.env"); got != authEnv {
 			t.Fatalf("auth env %q", got)
 		}
@@ -689,36 +659,18 @@ func TestAppDeploymentFiles(t *testing.T) {
 	}
 }
 
-// R-B2VW-0DI9
+// R-A6V3-FRYA
 func TestAppSecretNonLeakage(t *testing.T) {
 	sentinel := "SENTINEL-secret-token"
-	for _, kind := range []string{"success", "invalidTOML", "invalidTable", "invalidType", "invalidValue", "missing", "unreadable"} {
+	for _, kind := range []string{"success", "invalidValue", "missing"} {
 		f := newAppFixture(t)
 		f.manifest("auth", appManifest("auth")+"secrets=[\"TOKEN\",\"Z\"]\n")
-		body := "[auth]\nTOKEN=\"" + sentinel + "\"\nZ=\"good\"\n"
-		switch kind {
-		case "invalidTOML":
-			body = "[auth]\nTOKEN=" + sentinel + "\n"
-		case "invalidTable":
-			body = "auth=\"" + sentinel + "\"\n"
-		case "invalidType":
-			body = "[auth]\nTOKEN=[\"" + sentinel + "\"]\n"
-		case "invalidValue":
-			body = "[auth]\nTOKEN=\"" + sentinel + "\\n\"\n"
-		case "missing":
-			body = "[auth]\nTOKEN=\"" + sentinel + "\"\n"
+		f.environment = map[string]string{"TOKEN": sentinel, "Z": "good"}
+		if kind == "invalidValue" {
+			f.environment["Z"] = "bad\n"
 		}
-		f.secrets(body)
-		if kind == "unreadable" {
-			if os.Geteuid() == 0 {
-				t.Fatal("permission evidence requires ordinary user")
-			}
-			if err := os.Chmod(f.secretPath(), 0000); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.ReadFile(filepath.Clean(f.secretPath())); !errors.Is(err, os.ErrPermission) {
-				t.Fatalf("need genuine read refusal: %v", err)
-			}
+		if kind == "missing" {
+			delete(f.environment, "Z")
 		}
 
 		code, out, stderr := f.run()
@@ -769,44 +721,4 @@ func TestAppSecretNonLeakage(t *testing.T) {
 			}
 		}
 	}
-}
-
-func (f *appFixture) writtenFiles() map[string]string {
-	f.t.Helper()
-	result := map[string]string{}
-	for _, root := range []string{f.state, filepath.Join(f.config, "systemd")} {
-		scoped, openErr := os.OpenRoot(root)
-		if openErr != nil {
-			f.t.Fatal(openErr)
-		}
-		err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !d.Type().IsRegular() {
-				return nil
-			}
-			relative, relErr := filepath.Rel(root, p)
-			if relErr != nil {
-				return relErr
-			}
-			b, err := scoped.ReadFile(relative)
-			if err != nil {
-				return err
-			}
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			result[p] = fmt.Sprintf("%o:", info.Mode().Perm()) + string(b)
-			return nil
-		})
-		if closeErr := scoped.Close(); closeErr != nil {
-			f.t.Error(closeErr)
-		}
-		if err != nil {
-			f.t.Fatal(err)
-		}
-	}
-	return result
 }
