@@ -40,16 +40,16 @@ The token is written to a complete new file that is renamed over `<data>/token`,
 
 - R-CY06-2SXP: `token set` MUST leave `<root>/registry.json` unchanged: the same file, as `os.SameFile` judges it against a `FileInfo` taken before the command, holding the same bytes.
 
-- R-F8JN-8JY6: When `<data>` cannot be created, `token set` MUST fail with D02's file-error diagnostic (R-E7YN-RFPC) for the path `<data>` and return 1, verified with `<data>` an existing regular file, writing `sandbox: <data>: not a directory`.
+- R-AFEE-4655: When `<data>` cannot be created, `token set` MUST fail with D02's file-error diagnostic (R-AE6H-QEEG) for the path `<data>` and return 1, verified with `<data>` an existing regular file, writing `sandbox: <data>: not a directory`.
 
-- R-F9RJ-MBOV: When `<data>` exists but the token cannot be written to `<data>/token`, `token set` MUST fail with D02's file-error diagnostic (R-E7YN-RFPC) for the path `<data>/token` and return 1, verified with `<data>` a directory of mode 0500 holding an earlier token, writing `sandbox: <data>/token: permission denied` and leaving the earlier token unchanged.
+- R-AGMA-HXVU: When `<data>` exists but the token cannot be written to `<data>/token`, `token set` MUST fail with D02's file-error diagnostic (R-AE6H-QEEG) for the path `<data>/token` and return 1, verified with `<data>` a directory of mode 0500 holding an earlier token, writing `sandbox: <data>/token: permission denied` and leaving the earlier token unchanged.
 
 - R-QXFP-4K8H: When `<data>/token` holds a bearer token, `token` MUST write exactly those bytes followed by one newline to stdout, write nothing to stderr, and make `cli.Run` return 0.
 
 - R-QZVH-W3PV: When `<data>/token` does not exist, `<data>` absent included, `token` MUST write the no-token-stored diagnostic, exactly the four lines `sandbox: no token stored for sandbox '<name>'`, an empty line, `Ask the human to sign in at <auth origin>, create a bearer`, and `token, and store it with: printf '%s' '<token>' | sandbox token set`, each ending in a newline, to stderr, where `<name>` is the sandbox name and `<auth origin>` is the origin D03 gives the app `auth` (R-0QNY-FX6R) with the port the registry records, whether or not `auth` is a recorded app, and `<token>` is that literal text; MUST write nothing to stdout; and MUST make `cli.Run` return 2; verified at least by sandbox `wip` with port 7400, naming `http://auth.wip.localhost:7400`, and by sandbox `feature-x` with port 7412 and no recorded apps, naming `http://auth.feature-x.localhost:7412`.
 
-- R-FAZG-03FK: When `<data>/token` exists but its whole content is not a bearer token, `token` MUST fail with D02's file-error diagnostic (R-E7YN-RFPC) for the path `<data>/token` with the reason `does not hold a bearer token`, write nothing to stdout, and return 1, verified at least by an empty file, by `ikp_a` followed by `\n`, and by `hunter2`.
+- R-AJ23-9HD8: When `<data>/token` exists but its whole content is not a bearer token, `token` MUST fail with D02's file-error diagnostic (R-AE6H-QEEG) for the path `<data>/token` with the reason `does not hold a bearer token`, write nothing to stdout, and return 1, verified at least by an empty file, by `ikp_a` followed by `\n`, and by `hunter2`.
 
-- R-FC7C-DV69: When `<data>/token` cannot be read, `token` MUST fail with D02's file-error diagnostic (R-E7YN-RFPC) for the path `<data>/token` and return 1, verified with `<data>/token` a directory, writing `sandbox: <data>/token: is a directory`.
+- R-AK9Z-N93X: When `<data>/token` cannot be read, `token` MUST fail with D02's file-error diagnostic (R-AE6H-QEEG) for the path `<data>/token` and return 1, verified with `<data>/token` a directory, writing `sandbox: <data>/token: is a directory`.
 
 - R-R3J7-1EXY: `token` MUST NOT read stdin, verified with a stdin that fails the test when read, both when a token is stored and when none is.
