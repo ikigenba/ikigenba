@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit 9df8909. The design lab's
+   Copied from design/ikigenba/theme.css at commit c8a2cf9. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -140,7 +140,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 
 /* ---------------------------------------------------------------- banner */
 /* The banner every app emits: product mark, service, profile, sign out.
-   The profile is a user-circle icon button linking to the user's auth
+   The mark's black square opens the row unless the launcher's grid button
+   does, in its place. The profile is a user-circle icon button linking to the user's auth
    profile, titled with their email; it sits right, muted like the launcher. */
 body > header {
   display: flex; align-items: center; gap: var(--s4);
@@ -156,6 +157,7 @@ body > header > strong, .mark {
 body > header > strong::before, .mark::before {
   content: ""; width: 14px; height: 14px; border-radius: 4px; background: var(--accent);
 }
+body > header > .launcher + .mark::before { display: none; }
 .mark[data-service]::after {
   content: attr(data-service); font-weight: 450; color: var(--muted); margin-left: 4px;
   padding-left: var(--s3); border-left: 1px solid var(--line);
@@ -177,16 +179,14 @@ a.profile:hover { background: var(--line-soft); color: var(--fg); text-decoratio
 a.profile svg.ico { width: 20px; height: 20px; }
 
 /* -------------------------------------------------------------- launcher */
-/* The service launcher: a grid button in the banner, left of the user, opens
-   a panel of every service on the space — an icon over its name, A to Z, the
+/* The service launcher: a grid button opening the banner, before the mark,
+   opens a panel of every service on the space — an icon over its name, A to Z, the
    current one marked in black, a disabled one faint. The panel is a popover,
    so it opens, closes on Escape or an outside click, and returns focus on its
-   own. It hangs under the banner, its right edge on the banner's; the tile
+   own. It hangs under the banner, its left edge on the banner's; the tile
    grid scrolls under the search field. */
-body > header > .launcher { margin-left: auto; }
-body > header > .launcher ~ :is(span, a:not([class]), .profile) { margin-left: 0; }
 button.launcher {
-  width: 36px; height: 36px; padding: 0; margin-right: calc(-1 * var(--s2));
+  width: 36px; height: 36px; padding: 0; margin-left: calc(-1 * var(--s2)); margin-right: calc(-1 * var(--s2));
   background: transparent; color: var(--muted); box-shadow: none;
 }
 button.launcher:hover, body:has(nav.services:popover-open) button.launcher { background: var(--line-soft); color: var(--fg); }
@@ -199,7 +199,7 @@ nav.services {
 }
 nav.services[popover] {
   position: fixed; inset: auto; margin: 0;
-  top: calc(56px + var(--s2)); right: max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
+  top: calc(56px + var(--s2)); left: max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
   max-width: calc(100% - 2 * var(--s4));
 }
 nav.services[popover]:not(:popover-open) { display: none; }
@@ -627,7 +627,7 @@ main > section.card { margin-top: var(--s5); }
 
 @media (max-width: 640px) {
   body > header > form.inline { margin-left: auto; }
-  body > header > .launcher ~ form.inline { margin-left: 0; }
+  body > header > .profile ~ form.inline { margin-left: 0; }
   nav.services[popover] {
     top: 56px; right: 0; left: 0; width: auto; max-width: none;
     border-width: 0 0 1px; border-radius: 0 0 var(--r-lg) var(--r-lg);
