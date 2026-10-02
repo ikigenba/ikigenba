@@ -261,7 +261,7 @@ Postconditions:
 
 ## An agent asks for a token none has stored
 
-The agent cannot create a token itself; only a signed-in human can. The diagnostic tells the agent exactly what to ask for and how to store the answer, naming this sandbox's auth URL.
+The agent cannot create a token itself; only a signed-in human can. The diagnostic tells the agent exactly what to ask for and how to store the answer, naming this sandbox's auth URL. The diagnostic and exit code are the same whether or not the sandbox's last `up` recorded `auth`: the URL is made from the sandbox's name and port.
 
 Command:
 
@@ -283,7 +283,7 @@ Exits 2. The text is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- The registry holds `wip`, port `7400`, and its last `up` recorded `auth`; no token is stored for it.
+- The registry holds `wip` with port `7400`; no token is stored for it.
 
 Postconditions:
 
@@ -476,7 +476,7 @@ Exits 2. The text is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- A token was stored for `wip`; then `sandbox down`, `sandbox wipe` and `sandbox up` ran, and the new `up` took port `7400` and recorded `auth`.
+- A token was stored for `wip`; then `sandbox down`, `sandbox wipe` and `sandbox up` ran, and the new `up` took port `7400`.
 
 Postconditions:
 
