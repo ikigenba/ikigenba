@@ -74,7 +74,8 @@ requirement-id tag.
   `io.Writer` the test supplies, and the test asserts on it; a test never
   reads the process's real stderr.
 - Hooks, not layout: tests assert on the hooks design names and on visible
-  text, never on markup structure or styles.
+  text, never on styles, nor on markup structure beyond the containment and
+  order that design names as hooks.
 
 There are no live tests.
 
