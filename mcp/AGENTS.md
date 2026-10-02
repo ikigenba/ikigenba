@@ -10,14 +10,19 @@ named services. At `/` it serves a connect page that tells a person how to
 point a client at it. It holds no state: on every request it reads the
 services file afresh, and it reaches each backend directly on the socket that
 file names, with appkit's MCP client, forwarding the caller's identity and
-giving up after 50 seconds. On a host it runs as `/opt/mcp/bin/mcp` with
+giving up after 50 seconds. It records what it does as a trail of events
+sent to the suite's telemetry service, and writes to stderr only trouble: a
+condition it cannot continue from, or an event it could not deliver. On a
+host it runs as `/opt/mcp/bin/mcp` with
 `/opt/mcp` as its working directory. The module path is
 `github.com/ikigenba/ikigenba/mcp`. It requires one other module, appkit
 (`github.com/ikigenba/ikigenba/appkit`), and uses its packages `page` (the
 banner, launcher and footer, and the shared static files under `/_appkit/`),
 `services` (the services file), `identity` (the caller nginx authenticated,
-required on every request and forwarded on every backend call), and `mcp` (the
-server mounted at `/mcp` and the client that calls the backends). The contract
+required on every request and forwarded on every backend call), `mcp` (the
+server mounted at `/mcp` and the client that calls the backends), and
+`telemetry` (the writer that records and delivers the trail, the request
+middleware, and the sibling client every backend request goes through). The contract
 is the documents in `specs/design/`. This file restates none of it.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
@@ -56,15 +61,38 @@ human-authored; the build run never writes it. `devctl build` packs it beside
 - a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
   without one gate 4 fails with `go: -race requires cgo`. The release build
   itself is cgo-free, which gate 3 proves.
-- the appkit module at the version `go.mod` requires, in the Go module cache
-  (`go mod download` fetches it once, online); `go.sum` is committed, and the
-  gates themselves run offline. `go.mod` requires appkit `v0.5.0`, the first
-  release with the packages `page`, `services`, `identity` and `mcp`; the
-  build run writes its `go.sum` lines, and moves to a later appkit release
-  only when this file names one
+- the appkit module at the version `go.mod` requires, in the Go module cache;
+  `go.sum` is committed, and the gates themselves run offline. The appkit
+  release is `v0.7.0`, the first with the package `telemetry`, with
+  `identity.Require` taking only the handler it guards, and with
+  `mcp.ServerConfig` carrying `Telemetry` in place of `Stderr`; the build run
+  sets the requirement and writes its `go.sum` lines, and moves to a later
+  appkit release only when this file names one (see Adopting the appkit
+  release)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
+
+## Adopting the appkit release
+
+appkit `v0.7.0` is tagged locally and not pushed, so it is fetched from the
+local repository rather than the module proxy. Three steps, in order:
+
+1. A human, after appkit's own build of the release has landed, tags it
+   locally: `git tag appkit/v0.7.0 <commit>`.
+2. A human seeds the module cache once, online:
+
+   ```
+   GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@v0.7.0
+   ```
+
+3. The build run sets the requirement with
+   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@v0.7.0`;
+   the build run's shell must export `GONOSUMDB=github.com/ikigenba/ikigenba`.
+
+Once `go.sum` holds the release's lines, the gates and ordinary builds work
+offline from the cache. The tag `appkit/v0.7.0` must be pushed before any
+other machine builds mcp.
 
 ## Test files
 
@@ -100,8 +128,9 @@ These rules govern the unit tests: everything `go test ./...` runs.
 
 **The run seam carries the process.** The gateway binds nothing itself; it
 serves on the listener it is passed. Arguments, environment lookup and
-removal, the pid, the inherited listener, and the output streams come in
-through the run seam design declares, and tests inject them. A test never
+removal, the pid, the inherited listener, the output streams, and the sink the
+trail is delivered to come in through the run seam design declares, and tests
+inject them. A test never
 reads or changes the real environment and never leaves the inherited-listener
 step unset, since that would take the test process's real descriptor 3. A
 test learns that the server is ready the way systemd does: it binds a Unix
@@ -112,9 +141,27 @@ fails the test. Drain tests are the one place a test waits on the clock,
 because the drain deadline is the behavior, and they keep that wait to a few
 seconds. The gates run offline as an ordinary user, with no systemd.
 
+**The trail is a capture the test holds.** No test reaches a live telemetry
+service. A test of the run seam passes a `*telemetry.Capture` (appkit's
+capturing sink) as the seam's sink and reads `Capture.Events` once `Run` has
+returned; a test of the gateway's handler builds its own writer with
+`telemetry.New` over a `*telemetry.Capture`, calls `Writer.Flush` before it
+reads `Capture.Events`, and calls `Writer.Shutdown` on every writer it builds
+before it ends. A test asserts on events by name, attributes, request id and
+user, never on `time`, and on `duration_us` only with a clock it injected
+through `telemetry.Config.Now` and advances by hand. Undelivered events are
+proved with a sink of the test's own that rejects every event (its error
+wrapping `telemetry.ErrRejected`, so nothing is retried); a sink that blocks
+until the test releases it proves that no answer waits on the trail and that
+the drain bounds delivery. A test that leaves the seam's sink nil stands in
+for the telemetry service itself: it serves appkit's `telemetry.IngestHandler`
+over a `*telemetry.Capture` on a Unix socket in a short temporary directory
+and names that socket as the `telemetry` entry of a services file of its own.
+
 **Backends are servers the test builds.** A test that needs backends stands
 each one up in process: an appkit `mcp.Server` with tools of the test's own,
-served on a Unix socket in a short temporary directory. It writes a services
+and a telemetry writer of the test's own over a `*telemetry.Capture`, served
+on a Unix socket in a short temporary directory. It writes a services
 file in its temporary directory naming those sockets, with whatever `mcp`,
 `enabled` and `description` values the case needs, and may rewrite it between
 requests, since the gateway reads it afresh each time. An unreachable backend
@@ -138,10 +185,12 @@ within the short budget; like a drain test, it keeps that wait to a few
 seconds.
 
 **One environment variable, set by the test.** appkit's constructors read
-`IKIGENBA_SERVICES` (`services.Variable`) from the process environment; it is
-the one environment read the gateway cannot route through the run seam, and in
-the binary only `main` makes it. A test that reaches such a read, directly or
-through a gateway constructor, first sets that variable with
+`IKIGENBA_SERVICES` (`services.Variable`) from the process environment, and
+appkit's socket sink reads it on every delivery; it is the one environment
+read the gateway cannot route through the run seam, and in the binary only
+code `main` supplies, and the socket sink when the seam's sink is nil, makes
+it. A test that reaches such a read, directly, through a gateway constructor,
+or by leaving the seam's sink nil, first sets that variable with
 `testing.T.Setenv` to a services file it wrote or to the empty string, so the
 developer's environment never decides a result. Such a test does not call
 `t.Parallel`.
@@ -161,8 +210,9 @@ or empty identity header, a malformed scope path, a method other than POST, a
 request on an earlier protocol revision, `initialize` or `server/discover`)
 and for comparing the gateway's answer with appkit's server's answer to the
 same request; never a substitute for the client.
-Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns, and
-on the diagnostics the test captured in a buffer of its own. The gateway's
+Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns, on
+the events the test's capture holds, and on what the test captured in a
+buffer of its own. The gateway's
 tests never re-prove appkit's transport.
 
 **No test runs the page's scripts.** The gates have no browser and no
@@ -186,7 +236,11 @@ child through `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`,
 because `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's.
 It waits for `READY=1`, makes the requests design names for the binary, over
 the socket and with the identity headers, then stops the child with `SIGTERM`,
-and in a second run with `SIGINT`, asserting what design states. The child's
+and in a second run with `SIGINT`, asserting what design states. Where design
+names the binary's trail, the services file the test composes names, as its
+`telemetry` entry, a socket on which the test serves appkit's
+`telemetry.IngestHandler` over a `*telemetry.Capture`, and the test reads the
+events the binary delivered there once it has exited. The child's
 environment is one the test composes, never the developer's. Any other test
 that builds, execs, waits on, or signals a process is a bug.
 

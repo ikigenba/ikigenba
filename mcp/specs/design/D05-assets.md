@@ -12,7 +12,7 @@ The careless mounts are the ones Go's `http.ServeMux` would supply: a pattern fo
 
 ## Inside the identity gate
 
-The shared files are routes like any other. The gateway's handler wraps its whole surface in appkit's `identity.Require` (`D03-serve`, R-WXPC-OZXZ), so a request under `/_appkit/` with no `X-User-Id`, or an empty one, gets the missing-identity 500 and its line on the handler's stderr, and is never answered by appkit's static handler: a stylesheet is never sent to a request that has no identity. This design adds nothing to that rule. A request under `/_appkit/` contacts no backend and sets no cookie, which `D04-connect` states for every path outside the MCP endpoint.
+The shared files are routes like any other. The gateway's handler wraps its whole surface in appkit's `identity.Require` (`D03-serve`, R-1TFD-KEAM), so a request under `/_appkit/` with no `X-User-Id`, or an empty one, gets the missing-identity 500, recorded in the trail by its `request.finished` (R-25MD-E3PK), and is never answered by appkit's static handler: a stylesheet is never sent to a request that has no identity. This design adds nothing to that rule. A request under `/_appkit/` contacts no backend and sets no cookie, which `D04-connect` states for every path outside the MCP endpoint.
 
 ## REQUIREMENTS
 
