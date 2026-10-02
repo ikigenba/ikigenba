@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"sync"
 )
 
 // Caller identifies a user and the request made on their behalf.
@@ -30,21 +29,10 @@ func FromContext(ctx context.Context) (Caller, bool) {
 }
 
 // Require requires the caller headers nginx supplies before invoking next.
-func Require(app string, stderr io.Writer, next http.Handler) http.Handler {
-	var diagnostics sync.Mutex
+func Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := Caller{r.Header.Get("X-User-Id"), r.Header.Get("X-User-Email"), r.Header.Get("X-Request-Id")}
 		if c.UserID == "" {
-			if stderr != nil {
-				requestID := c.RequestID
-				if requestID == "" {
-					requestID = "-"
-				}
-				line := []byte(app + ": request " + requestID + ": X-User-Id is missing\n")
-				diagnostics.Lock()
-				_, _ = stderr.Write(line)
-				diagnostics.Unlock()
-			}
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
 			if r.Method != http.MethodHead {

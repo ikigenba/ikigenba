@@ -18,7 +18,9 @@ import (
 
 type schemaEmpty struct{}
 
-func schemaServer() *mcp.Server { return mcp.NewServer(mcp.ServerConfig{Name: "schema"}) }
+func schemaServer(t *testing.T) *mcp.Server {
+	return mcp.NewServer(mcp.ServerConfig{Telemetry: mcpTestWriter(t, nil, nil), Name: "schema"})
+}
 func schemaRequest(t *testing.T, s *mcp.Server, method, params string) json.RawMessage {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "http://schema/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"`+method+`","params":`+params+`}`))
@@ -85,9 +87,9 @@ func schemaMustPanic(t *testing.T, fn func()) {
 }
 func schemaRejectIn[T any](t *testing.T) {
 	t.Helper()
-	schemaMustPanic(t, func() { schemaRegister(schemaServer(), func(T) schemaEmpty { return schemaEmpty{} }) })
-	schemaMustPanic(t, func() { schemaRawRegister(schemaServer(), func(T) {}) })
-	schemaMustPanic(t, func() { schemaRegister(schemaServer(), func(schemaEmpty) T { var v T; return v }) })
+	schemaMustPanic(t, func() { schemaRegister(schemaServer(t), func(T) schemaEmpty { return schemaEmpty{} }) })
+	schemaMustPanic(t, func() { schemaRawRegister(schemaServer(t), func(T) {}) })
+	schemaMustPanic(t, func() { schemaRegister(schemaServer(t), func(schemaEmpty) T { var v T; return v }) })
 }
 
 type schemaChoice string
@@ -121,14 +123,14 @@ type schemaModel struct {
 func TestSchemaObjectsAndOrdering(t *testing.T) {
 	// R-6MRV-S1RK R-TRVR-1U87 R-TT3N-FLYW R-TVJG-75GA R-TWRC-KX6Z
 	// R-TPFY-AAQT R-TXZ8-YOXO R-TZ75-CGOD R-TQNU-O2HI R-U0F1-Q8F2 R-U1MY-405R
-	s := schemaServer()
+	s := schemaServer(t)
 	schemaRegister(s, func(in schemaModel) schemaModel { in.hidden = "ignored"; return in })
 	in, out := schemaList(t, s)
 	want := `{"type":"object","properties":{"text":{"type":"string","description":"verbatim\n description"},"flag":{"type":"boolean"},"signed":{"type":"integer"},"unsigned":{"type":"integer","minimum":0},"number":{"type":"number"},"choice":{"type":"string","enum":["second","first\nquoted\""]},"pointer_choice":{"type":"string","enum":["pointer","value"]},"list":{"type":"array","items":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"boolean"}},"required":["z"],"additionalProperties":false}},"nested":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"boolean"}},"required":["z"],"additionalProperties":false},"optional":{"type":"string","description":"optional description"},"raw":{"type":"object"}},"required":["text"],"additionalProperties":false}`
 	if string(in) != want || string(out) != want {
 		t.Fatalf("schemas:\n%s\n%s\nwant %s", in, out, want)
 	}
-	empty := schemaServer()
+	empty := schemaServer(t)
 	schemaRegister(empty, func(in schemaEmpty) schemaEmpty { return in })
 	a, b := schemaList(t, empty)
 	if string(a) != `{"type":"object","additionalProperties":false}` || !bytes.Equal(a, b) {
@@ -147,7 +149,7 @@ func TestSchemaIntegerKinds(t *testing.T) {
 		G uint16 `json:"g"`
 		H uint32 `json:"h"`
 	}
-	s := schemaServer()
+	s := schemaServer(t)
 	schemaRegister(s, func(in all) all { return in })
 	in, _ := schemaList(t, s)
 	if string(in) != `{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"},"c":{"type":"integer"},"d":{"type":"integer"},"e":{"type":"integer","minimum":0},"f":{"type":"integer","minimum":0},"g":{"type":"integer","minimum":0},"h":{"type":"integer","minimum":0}},"additionalProperties":false}` {
@@ -277,8 +279,8 @@ func TestSchemaRequiredOutputPointer(t *testing.T) {
 	type nestedOutput struct {
 		N []nested `json:"n"`
 	}
-	schemaMustPanic(t, func() { schemaRegister(schemaServer(), func(schemaEmpty) nested { return nested{} }) })
-	schemaMustPanic(t, func() { schemaRegister(schemaServer(), func(schemaEmpty) nestedOutput { return nestedOutput{} }) })
+	schemaMustPanic(t, func() { schemaRegister(schemaServer(t), func(schemaEmpty) nested { return nested{} }) })
+	schemaMustPanic(t, func() { schemaRegister(schemaServer(t), func(schemaEmpty) nestedOutput { return nestedOutput{} }) })
 }
 func TestSchemaUnsupportedKinds(t *testing.T) {
 	// R-MJHL-D11C
@@ -347,7 +349,7 @@ func TestSchemaCustomEncodingRejected(t *testing.T) {
 
 func schemaInvalid[In any](t *testing.T, args, want string) {
 	t.Helper()
-	s := schemaServer()
+	s := schemaServer(t)
 	called := false
 	schemaRawRegister(s, func(In) { called = true })
 	text, _, failure := schemaCall(t, s, args)
@@ -400,7 +402,7 @@ func TestSchemaIntegerValidation(t *testing.T) {
 		schemaInvalid[input](t, c.args, "invalid arguments:\n"+c.want)
 	}
 	for _, number := range []string{"3", "3.0", "3e0", "30e-1", "0.03e2", "300.000e-2"} {
-		s := schemaServer()
+		s := schemaServer(t)
 		var got input
 		schemaRawRegister(s, func(in input) { got = in })
 		text, _, bad := schemaCall(t, s, `{"i":`+number+`,"u":18446744073709551615}`)
@@ -420,7 +422,7 @@ func TestSchemaFloatAndEnumValidation(t *testing.T) {
 		schemaInvalid[input](t, `{"n":`+number+`}`, "invalid arguments:\nn: out of range for a 64-bit float, got "+number)
 	}
 	for _, number := range []string{"1.7976931348623157e308", "0.10000000000000001", "1e-4000", "-0"} {
-		s := schemaServer()
+		s := schemaServer(t)
 		var got input
 		schemaRawRegister(s, func(in input) { got = in })
 		text, _, bad := schemaCall(t, s, `{"n":`+number+`,"c":"second"}`)
@@ -449,7 +451,7 @@ func TestSchemaRawAndPointerInput(t *testing.T) {
 	for _, raw := range []string{"null", "[]", "1", "true", `"x"`} {
 		schemaInvalid[input](t, `{"p":null,"raw":`+raw+`}`, "invalid arguments:\nraw: expected object, got "+map[string]string{"null": "null", "[]": "array", "1": "number", "true": "boolean", `"x"`: "string"}[raw])
 	}
-	s := schemaServer()
+	s := schemaServer(t)
 	var got input
 	schemaRawRegister(s, func(in input) { got = in })
 	raw := `{ "anything" : [1, {"duplicate":0,"duplicate":1}], "x": null }`
@@ -457,13 +459,13 @@ func TestSchemaRawAndPointerInput(t *testing.T) {
 	if bad || text != "ok" || string(got.Raw) != raw || got.P != nil || got.O == nil || *got.O != (schemaLeaf{Z: "nested", A: true}) || got.S != "unaltered\ntext" || !reflect.DeepEqual(got.A, []int{3, 2}) || got.N != (schemaLeaf{Z: "leaf"}) {
 		t.Fatalf("decoded: %#v %s", got, text)
 	}
-	absent := schemaServer()
+	absent := schemaServer(t)
 	schemaRawRegister(absent, func(in input) { got = in })
 	schemaCall(t, absent, `{"p":null}`)
 	if got.Raw != nil || got.O != nil || got.A != nil || got.S != "" || got.N != (schemaLeaf{}) {
 		t.Fatalf("absent: %#v", got)
 	}
-	present := schemaServer()
+	present := schemaServer(t)
 	schemaRawRegister(present, func(in input) { got = in })
 	schemaCall(t, present, `{"p":3e0}`)
 	if got.P == nil || *got.P != 3 {
@@ -490,7 +492,7 @@ func TestSchemaOutputEncoding(t *testing.T) {
 	str := "present"
 	raw := json.RawMessage(`{ "kept": [1, 2] }`)
 	value := output{S: string([]byte{'a', 0xff, 0xfe, 'b'}), B: true, I: math.MinInt64, U: math.MaxUint64, F: math.SmallestNonzeroFloat64, Values: []int{2, 1}, Present: &str, Raw: raw, Required: json.RawMessage(`{}`), N: schemaLeaf{Z: "nested"}}
-	s := schemaServer()
+	s := schemaServer(t)
 	schemaRegister(s, func(schemaEmpty) output { return value })
 	text, structured, bad := schemaCall(t, s, `{}`)
 	var members map[string]json.RawMessage
@@ -531,7 +533,7 @@ func TestSchemaUnencodableValues(t *testing.T) {
 		values = append(values, output{C: "second", R: json.RawMessage(raw)})
 	}
 	for _, value := range values {
-		s := schemaServer()
+		s := schemaServer(t)
 		schemaRegister(s, func(schemaEmpty) output { return value })
 		text, _, bad := schemaCall(t, s, `{}`)
 		if !bad || text != mcp.PanicText {

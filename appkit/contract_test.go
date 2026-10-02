@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,14 +17,16 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-YFJ3-L9UN
+// R-XGNF-EE1K
 func TestConsumerOwnsOutput(t *testing.T) {
 	root := t.TempDir()
 	stdout := contractFile(t)
@@ -51,7 +54,7 @@ func TestConsumerOwnsOutput(t *testing.T) {
 	}
 }
 
-// R-9TRL-4U3V
+// R-XHVB-S5S9
 func TestPublicAPIWorkingDirectoryIndependence(t *testing.T) {
 	root := t.TempDir()
 	first, second := filepath.Join(root, "first"), filepath.Join(root, "second")
@@ -160,28 +163,21 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 	c, ok = identity.FromContext(context.Background())
 	note("FromContext absent", c, ok)
 	for _, present := range []bool{true, false} {
-		for _, logging := range []bool{true, false} {
-			var supplied bytes.Buffer
-			var writer io.Writer
-			if logging {
-				writer = &supplied
-			}
-			handler := identity.Require("sample", writer, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				c, ok := identity.FromContext(r.Context())
-				note("Require next", c, ok)
-				w.WriteHeader(http.StatusNoContent)
-			}))
-			req := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
-			if present {
-				identity.Forward(caller, req)
-			} else {
-				identity.Forward(identity.Caller{}, req)
-			}
-			note("Forward", req.Header)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-			note("Require", rec.Code, rec.Body.String(), supplied.String())
+		handler := identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c, ok := identity.FromContext(r.Context())
+			note("Require next", c, ok)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		req := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+		if present {
+			identity.Forward(caller, req)
+		} else {
+			identity.Forward(identity.Caller{}, req)
 		}
+		note("Forward", req.Header)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		note("Require", rec.Code, rec.Body.String())
 	}
 	for _, r := range []mcp.Result{mcp.TextResult("text"), mcp.ErrorResult("failure"), {}} {
 		data, err := r.MarshalJSON()
@@ -205,11 +201,13 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 	t.Setenv(services.Variable, path)
 	for _, logging := range []bool{true, false} {
 		var supplied bytes.Buffer
-		var writer io.Writer
+		var diagnostics io.Writer
 		if logging {
-			writer = &supplied
+			diagnostics = &supplied
 		}
-		server := mcp.NewServer(mcp.ServerConfig{Name: "sample", Version: "consumer-version", Stderr: writer})
+		capture := &telemetry.Capture{}
+		writer, pauses := contractWriter(t, capture, diagnostics)
+		server := mcp.NewServer(mcp.ServerConfig{Name: "sample", Version: "consumer-version", Telemetry: writer})
 		mcp.AddTool(server, mcp.Tool[contractInput, contractOutput]{Name: "typed", Description: "Echo input.", Effect: mcp.Read, Handler: func(_ context.Context, _ identity.Caller, in contractInput) (contractOutput, error) {
 			return contractOutput(in), nil
 		}})
@@ -233,8 +231,9 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 		req = req.WithContext(ctx)
 		server.ServeHTTP(rec, req)
 		note("ServeHTTP invalid", rec.Code, rec.Header(), rec.Body.String())
-		host := httptest.NewServer(identity.Require("sample", writer, server))
-		client := mcp.NewClient(mcp.ClientConfig{Endpoint: host.URL, HTTPClient: host.Client(), Name: "consumer", Version: "consumer-version"})
+		host := httptest.NewServer(telemetry.Middleware(writer, identity.Require(server)))
+		t.Cleanup(host.Close)
+		client := mcp.NewClient(mcp.ClientConfig{Endpoint: host.URL, HTTPClient: telemetry.SiblingClient(writer, "sample", host.Client().Transport), Name: "consumer", Version: "consumer-version"})
 		tools, err := client.ListTools(ctx, caller)
 		// JSON records schema bytes and pointer annotation values rather than pointer addresses.
 		data, jsonErr := json.Marshal(tools)
@@ -247,6 +246,8 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 		_, err = client.CallTool(ctx, caller, "typed", json.RawMessage("{"))
 		note("CallTool invalid args", err)
 		host.Close()
+		writer.Shutdown(context.Background(), "done")
+		note("MCP telemetry", capture.Events(), *pauses)
 		note("supplied mcp diagnostics", supplied.String())
 	}
 	for _, cfg := range []mcp.ClientConfig{{}, {Endpoint: "://invalid"}} {
@@ -257,6 +258,7 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 		data, jsonErr := result.MarshalJSON()
 		note("CallTool invalid endpoint", string(data), err, jsonErr)
 	}
+	contractTelemetryExercise(ctx, t, root, note)
 	return observed
 }
 
@@ -264,4 +266,166 @@ func contractPanic(fn func()) (value any) {
 	defer func() { value = recover() }()
 	fn()
 	return nil
+}
+
+// R-XFFJ-0MAV
+func TestTelemetryPackageImport(*testing.T) {
+	// The unaliased import and calls prove the published package path and name by use.
+	var capture telemetry.Capture
+	_ = capture.Events()
+}
+
+func contractWriter(t *testing.T, sink telemetry.Sink, stderr io.Writer) (*telemetry.Writer, *[]time.Duration) {
+	t.Helper()
+	var pauses []time.Duration
+	writer := telemetry.New(telemetry.Config{
+		Service: "sample", Version: "consumer-version", Sink: sink, Stderr: stderr,
+		Now:   func() time.Time { return time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC) },
+		Sleep: func(_ context.Context, duration time.Duration) { pauses = append(pauses, duration) },
+		Rand:  strings.NewReader(strings.Repeat("0123456789abcdef", 64)),
+	})
+	t.Cleanup(func() { writer.Shutdown(context.Background(), "cleanup") })
+	return writer, &pauses
+}
+
+type contractSink func(context.Context, telemetry.Event) error
+
+func (sink contractSink) Deliver(ctx context.Context, event telemetry.Event) error {
+	return sink(ctx, event)
+}
+
+func contractTelemetryExercise(ctx context.Context, t *testing.T, root string, note func(string, ...any)) {
+	t.Helper()
+	capture := &telemetry.Capture{}
+	var supplied bytes.Buffer
+	writer, pauses := contractWriter(t, capture, &supplied)
+	note("Writer.Now", writer.Now())
+	writer.Ready()
+	writer.Ready()
+	writer.Emit(ctx, "sample.observed", telemetry.Attrs{"value": "metadata"})
+	writer.Emit(ctx, "bad name", telemetry.Attrs{"value": []string{"invalid"}})
+	note("Writer.Flush", writer.Flush(context.Background()))
+	writer.Shutdown(context.Background(), "done")
+	writer.Emit(ctx, "sample.observed", nil)
+	note("Writer/Capture", capture.Events(), supplied.String(), *pauses)
+	event := telemetry.Event{Time: writer.Now(), Service: "sample", Name: "sample.observed", Attrs: telemetry.Attrs{"value": int64(1)}}
+	data, err := event.MarshalJSON()
+	note("Event.MarshalJSON", string(data), err)
+	note("Capture.Deliver", capture.Deliver(ctx, event))
+	note("Capture.Events", capture.Events())
+	_, err = (telemetry.Event{}).MarshalJSON()
+	note("Event invalid", err)
+	note("New invalid", contractPanic(func() { telemetry.New(telemetry.Config{}) }))
+	note("Middleware invalid", contractPanic(func() { telemetry.Middleware(nil, http.NotFoundHandler()) }))
+	note("SiblingClient invalid", contractPanic(func() { telemetry.SiblingClient(nil, "sample", nil) }))
+	note("IngestHandler invalid", contractPanic(func() { telemetry.IngestHandler(nil) }))
+	for _, failure := range []error{errors.New("sink unavailable"), telemetry.ErrRejected} {
+		for _, logging := range []bool{true, false} {
+			var diagnostics bytes.Buffer
+			var output io.Writer
+			if logging {
+				output = &diagnostics
+			}
+			reject := contractSink(func(context.Context, telemetry.Event) error { return failure })
+			failed, failedPauses := contractWriter(t, reject, output)
+			failed.Emit(ctx, "sample.observed", nil)
+			note("Failed writer Flush", failed.Flush(context.Background()))
+			failed.Shutdown(context.Background(), "done")
+			note("Failed writer diagnostics", diagnostics.String(), *failedPauses)
+		}
+	}
+	middlewareCapture := &telemetry.Capture{}
+	middlewareWriter, middlewarePauses := contractWriter(t, middlewareCapture, &supplied)
+	for _, authenticated := range []bool{true, false} {
+		handler := telemetry.Middleware(middlewareWriter, identity.Require(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			middlewareWriter.Emit(req.Context(), "sample.observed", nil)
+			w.WriteHeader(http.StatusNoContent)
+		})))
+		req := httptest.NewRequest(http.MethodGet, "http://example.test/path?private=value", nil)
+		if authenticated {
+			identity.Forward(identity.Caller{UserID: "person", Email: "person@example.com", RequestID: "request"}, req)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		note("Middleware Require", rec.Code, rec.Header(), rec.Body.String())
+	}
+	middlewareWriter.Shutdown(context.Background(), "done")
+	note("Middleware events", middlewareCapture.Events(), *middlewarePauses)
+	wireCapture := &telemetry.Capture{}
+	ingest := telemetry.IngestHandler(wireCapture)
+	for _, body := range []string{string(data), "{", strings.Repeat(" ", telemetry.MaxEventBytes+1)} {
+		for _, method := range []string{http.MethodPost, http.MethodGet} {
+			for _, mediaType := range []string{"application/json", "text/plain"} {
+				req := httptest.NewRequest(method, "http://telemetry"+telemetry.IngestPath, strings.NewReader(body))
+				req.Header.Set("Content-Type", mediaType)
+				rec := httptest.NewRecorder()
+				ingest.ServeHTTP(rec, req)
+				note("IngestHandler", rec.Code, rec.Header(), rec.Body.String())
+			}
+		}
+	}
+	socket := filepath.Join(root, "wire.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle(telemetry.IngestPath, ingest)
+	mux.HandleFunc("/sibling", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("X-User-Id", req.Header.Get("X-User-Id"))
+		w.WriteHeader(http.StatusNoContent)
+	})
+	host := &http.Server{Handler: mux, ErrorLog: log.New(&supplied, "", 0), ReadHeaderTimeout: time.Second}
+	done := make(chan error, 1)
+	go func() { done <- host.Serve(listener) }()
+	defer func() {
+		if err := host.Close(); err != nil {
+			t.Error(err)
+		}
+		if err := <-done; !errors.Is(err, http.ErrServerClosed) {
+			t.Error(err)
+		}
+	}()
+	path := filepath.Join(root, "telemetry.json")
+	content, err := json.Marshal(map[string]any{"services": []map[string]any{{"name": telemetry.ServiceName, "url": "http://telemetry", "description": "Trail.", "socket": socket, "enabled": true, "mcp": false}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(services.Variable, path)
+	sink := telemetry.NewSocketSink()
+	note("NewSocketSink Deliver", sink.Deliver(ctx, event))
+	note("NewSocketSink invalid", sink.Deliver(ctx, telemetry.Event{}))
+	defaultWriter, defaultPauses := contractWriter(t, nil, &supplied)
+	defaultWriter.Ready()
+	defaultWriter.Emit(ctx, "sample.observed", nil)
+	note("Socket writer Flush", defaultWriter.Flush(context.Background()))
+	defaultWriter.Shutdown(context.Background(), "done")
+	note("Wire events", wireCapture.Events(), *defaultPauses)
+	transport := telemetry.SocketTransport(socket)
+	defer transport.CloseIdleConnections()
+	siblingCapture := &telemetry.Capture{}
+	siblingWriter, siblingPauses := contractWriter(t, siblingCapture, &supplied)
+	client := telemetry.SiblingClient(siblingWriter, "sibling", transport)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://sibling/sibling?private=value", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	note("SocketTransport/SiblingClient", response.StatusCode, response.Header.Get("X-User-Id"))
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	siblingWriter.Shutdown(context.Background(), "done")
+	note("Sibling events", siblingCapture.Events(), *siblingPauses)
+	for _, missing := range []string{"", filepath.Join(root, "missing"), filepath.Join(root, "bad.json")} {
+		t.Setenv(services.Variable, missing)
+		note("Socket sink unavailable", sink.Deliver(ctx, event))
+	}
+	note("Supplied telemetry diagnostics", supplied.String())
 }

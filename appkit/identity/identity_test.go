@@ -3,7 +3,6 @@ package identity_test
 import (
 	"bytes"
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -26,8 +25,8 @@ func TestPublicContract(t *testing.T) {
 	if body != "identity header missing\n" {
 		t.Fatalf("missing body: %q", body)
 	}
-	// R-KCLS-L7AZ R-KDTO-YZ1O R-KF1L-CQSD R-KG9H-QIJ2: exact public signatures used below.
-	var require func(string, io.Writer, http.Handler) http.Handler
+	// R-2LZM-O9RP R-KDTO-YZ1O R-KF1L-CQSD R-KG9H-QIJ2: exact public signatures used below.
+	var require func(http.Handler) http.Handler
 	var fromContext func(context.Context) (identity.Caller, bool)
 	var newContext func(context.Context, identity.Caller) context.Context
 	var forward func(identity.Caller, *http.Request)
@@ -35,7 +34,7 @@ func TestPublicContract(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	forward(c, r)
 	w := httptest.NewRecorder()
-	require("app", nil, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	require(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got, ok := fromContext(newContext(r.Context(), c))
 		if !ok || got != c {
 			t.Fatalf("caller: %+v, %v", got, ok)
@@ -43,17 +42,8 @@ func TestPublicContract(t *testing.T) {
 	})).ServeHTTP(w, r)
 }
 
-type writes struct {
-	values [][]byte
-}
-
-func (w *writes) Write(p []byte) (int, error) {
-	w.values = append(w.values, bytes.Clone(p))
-	return len(p), nil
-}
-
 func TestRequireMissingIdentity(t *testing.T) {
-	// R-KHHE-4A9R R-KIPA-I20G
+	// R-KHHE-4A9R
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		for _, user := range [][]string{nil, {""}, {"", "second-user"}} {
 			for _, requestID := range [][]string{nil, {""}, {"", "second-id"}, {" req ", "ignored"}} {
@@ -61,8 +51,7 @@ func TestRequireMissingIdentity(t *testing.T) {
 				r.Header["X-User-Id"] = user
 				r.Header["X-Request-Id"] = requestID
 				w := httptest.NewRecorder()
-				var log writes
-				identity.Require("sample", &log, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				identity.Require(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 					t.Error("missing identity reached next")
 				})).ServeHTTP(w, r)
 				wantBody := identity.MissingBody
@@ -72,38 +61,13 @@ func TestRequireMissingIdentity(t *testing.T) {
 				if w.Code != http.StatusInternalServerError || !slices.Equal(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) || w.Body.String() != wantBody {
 					t.Fatalf("missing response: %d %v %q", w.Code, w.Header(), w.Body.String())
 				}
-				id := r.Header.Get("X-Request-Id")
-				if id == "" {
-					id = "-"
-				}
-				wantLog := "sample: request " + id + ": X-User-Id is missing\n"
-				if len(log.values) != 1 || string(log.values[0]) != wantLog {
-					t.Fatalf("diagnostic writes: %q, want one %q", log.values, wantLog)
-				}
 			}
 		}
 	}
 }
 
-func TestRequireNilDiagnostics(t *testing.T) {
-	// R-KJX6-VTR5
-	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		w := httptest.NewRecorder()
-		identity.Require("sample", nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-			t.Error("missing identity reached next")
-		})).ServeHTTP(w, httptest.NewRequest(method, "/", nil))
-		body := identity.MissingBody
-		if method == http.MethodHead {
-			body = ""
-		}
-		if w.Code != http.StatusInternalServerError || !slices.Equal(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) || w.Body.String() != body {
-			t.Fatalf("nil diagnostic response: %d %v %q", w.Code, w.Header(), w.Body.String())
-		}
-	}
-}
-
-func TestRequireCallerAndResponse(t *testing.T) {
-	// R-KL53-9LHU R-KNKW-14Z8
+func TestRequireCaller(t *testing.T) {
+	// R-KL53-9LHU
 	for _, optional := range []bool{false, true} {
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
 		r.Header["X-User-Id"] = []string{" user ", "ignored"}
@@ -114,9 +78,8 @@ func TestRequireCallerAndResponse(t *testing.T) {
 			want.Email, want.RequestID = " email ", " request "
 		}
 		w := httptest.NewRecorder()
-		var log bytes.Buffer
 		calls := 0
-		identity.Require("app", &log, http.HandlerFunc(func(gotWriter http.ResponseWriter, gotRequest *http.Request) {
+		identity.Require(http.HandlerFunc(func(gotWriter http.ResponseWriter, gotRequest *http.Request) {
 			calls++
 			if gotWriter != w {
 				t.Error("response writer replaced")
@@ -125,12 +88,61 @@ func TestRequireCallerAndResponse(t *testing.T) {
 			if !ok || got != want {
 				t.Errorf("caller: %+v, %v; want %+v", got, ok, want)
 			}
-			gotWriter.Header().Set("X-Next", "yes")
-			gotWriter.WriteHeader(http.StatusAccepted)
-			_, _ = io.WriteString(gotWriter, "next's body")
 		})).ServeHTTP(w, r)
-		if calls != 1 || log.Len() != 0 || w.Code != http.StatusAccepted || len(w.Header()) != 1 || w.Header().Get("X-Next") != "yes" || w.Body.String() != "next's body" {
-			t.Fatalf("next result: calls=%d log=%q status=%d headers=%v body=%q", calls, log.String(), w.Code, w.Header(), w.Body.String())
+		if calls != 1 {
+			t.Fatalf("next called %d times, want once", calls)
+		}
+	}
+}
+
+type responseWrites struct {
+	*httptest.ResponseRecorder
+	statuses []int
+	bodies   []string
+}
+
+func (w *responseWrites) WriteHeader(status int) {
+	w.statuses = append(w.statuses, status)
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *responseWrites) Write(body []byte) (int, error) {
+	w.bodies = append(w.bodies, string(body))
+	return w.ResponseRecorder.Write(body)
+}
+
+func TestRequireWritesOnlyNextResponse(t *testing.T) {
+	// R-2N7J-21IE
+	for _, next := range []http.Handler{
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Next", "header only")
+		}),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Next", "yes")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte("next's body"))
+		}),
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-User-Id", "user")
+		want := &responseWrites{ResponseRecorder: httptest.NewRecorder()}
+		got := &responseWrites{ResponseRecorder: httptest.NewRecorder()}
+		next.ServeHTTP(want, r)
+		identity.Require(next).ServeHTTP(got, r)
+		if !slices.Equal(got.statuses, want.statuses) || !slices.Equal(got.bodies, want.bodies) {
+			t.Fatalf("response writes: statuses=%v bodies=%q, want statuses=%v bodies=%q", got.statuses, got.bodies, want.statuses, want.bodies)
+		}
+		if got.Body.String() != want.Body.String() {
+			t.Fatalf("response body: %q, want %q", got.Body.String(), want.Body.String())
+		}
+		if len(got.Header()) != len(want.Header()) {
+			t.Fatalf("response headers: %v, want %v", got.Header(), want.Header())
+		}
+		for name, values := range want.Header() {
+			if !slices.Equal(got.Header().Values(name), values) {
+				t.Fatalf("response header %s: %q, want %q", name, got.Header().Values(name), values)
+			}
 		}
 	}
 }
@@ -145,7 +157,7 @@ func TestRequirePreservesRequestContext(t *testing.T) {
 	r.Header.Set("X-User-Id", "user")
 	r.Trailer = http.Header{"X-Trailer": {"value"}}
 	var got *http.Request
-	identity.Require("app", nil, http.HandlerFunc(func(_ http.ResponseWriter, next *http.Request) {
+	identity.Require(http.HandlerFunc(func(_ http.ResponseWriter, next *http.Request) {
 		got = next
 	})).ServeHTTP(httptest.NewRecorder(), r)
 	if got == nil {
@@ -245,8 +257,7 @@ func TestForward(t *testing.T) {
 
 func TestRequireConcurrent(t *testing.T) {
 	// R-KUWA-BRFE
-	var log writes
-	h := identity.Require("app", &log, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, ok := identity.FromContext(r.Context())
 		if !ok || c.UserID != r.Header.Get("X-User-Id") || c.RequestID != r.Header.Get("X-Request-Id") {
 			t.Errorf("concurrent caller: %+v %v", c, ok)
@@ -271,7 +282,4 @@ func TestRequireConcurrent(t *testing.T) {
 		})
 	}
 	group.Wait()
-	if len(log.values) != 32 {
-		t.Fatalf("concurrent diagnostic count: %d", len(log.values))
-	}
 }

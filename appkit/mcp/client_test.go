@@ -533,14 +533,14 @@ func TestClientConcurrent(t *testing.T) {
 
 func TestClientServerCrossing(t *testing.T) {
 	caller := identity.Caller{UserID: "user", Email: "email", RequestID: "request"}
-	backend := mcp.NewServer(mcp.ServerConfig{Name: "backend"})
+	backend := mcp.NewServer(mcp.ServerConfig{Telemetry: mcpTestWriter(t, nil, nil), Name: "backend"})
 	mcp.AddRawTool(backend, mcp.RawTool[struct{}]{Name: "ping", Description: "Ping.", Effect: mcp.Read, Handler: func(_ context.Context, got identity.Caller, _ struct{}) (mcp.Result, error) {
 		if got != caller {
 			t.Errorf("caller crossing: %+v", got)
 		}
 		return mcp.TextResult("pong"), nil
 	}})
-	server := httptest.NewServer(identity.Require("backend", nil, backend))
+	server := httptest.NewServer(identity.Require(backend))
 	defer server.Close()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL, HTTPClient: server.Client(), Name: "gateway", Version: "test"})
 	tools, err := client.ListTools(context.Background(), caller)

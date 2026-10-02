@@ -8,10 +8,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 // Effect declares how a tool changes the service data.
@@ -44,7 +46,41 @@ type RawTool[In any] struct {
 type registeredTool struct {
 	name string
 	info json.RawMessage
-	call func(context.Context, identity.Caller, json.RawMessage) Result
+	kind string
+	call func(context.Context, identity.Caller, json.RawMessage) toolCall
+}
+
+type toolCall struct {
+	result   Result
+	outcome  string
+	duration int64
+}
+
+func toolKind(effect Effect) string {
+	switch effect {
+	case Read:
+		return "read"
+	case Additive:
+		return "additive"
+	default:
+		return "destructive"
+	}
+}
+
+func invokeHandler[T any](w *telemetry.Writer, handler func() (T, error)) (value T, panicked bool, duration int64, err error) {
+	start := w.Now()
+	defer func() {
+		end := w.Now()
+		duration = int64(end.Sub(start) / time.Microsecond)
+		if duration < 0 {
+			duration = 0
+		}
+		if recover() != nil {
+			panicked = true
+		}
+	}()
+	value, err = handler()
+	return
 }
 
 var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
@@ -108,28 +144,29 @@ func AddTool[In, Out any](s *Server, t Tool[In, Out]) {
 	if err != nil {
 		panic(err)
 	}
-	tool := registeredTool{name: t.Name, info: toolInfo(t.Name, t.Description, t.Effect, in, out)}
-	tool.call = func(ctx context.Context, c identity.Caller, args json.RawMessage) (result Result) {
-		defer recoverTool(s, t.Name, c, &result)
+	tool := registeredTool{name: t.Name, kind: toolKind(t.Effect), info: toolInfo(t.Name, t.Description, t.Effect, in, out)}
+	tool.call = func(ctx context.Context, c identity.Caller, args json.RawMessage) toolCall {
 		if len(args) == 0 {
 			args = json.RawMessage(`{}`)
 		}
 		v, text := in.decodeArguments(args)
 		if text != "" {
-			return ErrorResult(text)
+			return toolCall{result: ErrorResult(text), outcome: "invalid_arguments"}
 		}
-		value, err := t.Handler(ctx, c, v.Interface().(In))
+		value, panicked, duration, err := invokeHandler(s.cfg.Telemetry, func() (Out, error) { return t.Handler(ctx, c, v.Interface().(In)) })
+		if panicked {
+			return toolCall{ErrorResult(PanicText), "panicked", duration}
+		}
 		if err != nil {
-			return ErrorResult(err.Error())
+			return toolCall{ErrorResult(err.Error()), "error", duration}
 		}
 		encoded, err := out.encode(reflect.ValueOf(value))
 		if err != nil {
-			s.logLine(toolLogPrefix(s, t.Name, c) + " returned unencodable output: " + singleLine(err) + "\n")
-			return ErrorResult(PanicText)
+			return toolCall{ErrorResult(PanicText), "unencodable_output", duration}
 		}
-		result = TextResult(string(encoded))
+		result := TextResult(string(encoded))
 		result.members = append(result.members, jsonMember{name: "structuredContent", value: encoded})
-		return result
+		return toolCall{result, "ok", duration}
 	}
 	if err := s.registerTool(tool); err != nil {
 		panic(err)
@@ -144,40 +181,29 @@ func AddRawTool[In any](s *Server, t RawTool[In]) {
 	if err != nil {
 		panic(err)
 	}
-	tool := registeredTool{name: t.Name, info: toolInfo(t.Name, t.Description, t.Effect, in, nil)}
-	tool.call = func(ctx context.Context, c identity.Caller, args json.RawMessage) (result Result) {
-		defer recoverTool(s, t.Name, c, &result)
+	tool := registeredTool{name: t.Name, kind: toolKind(t.Effect), info: toolInfo(t.Name, t.Description, t.Effect, in, nil)}
+	tool.call = func(ctx context.Context, c identity.Caller, args json.RawMessage) toolCall {
 		if len(args) == 0 {
 			args = json.RawMessage(`{}`)
 		}
 		v, text := in.decodeArguments(args)
 		if text != "" {
-			return ErrorResult(text)
+			return toolCall{result: ErrorResult(text), outcome: "invalid_arguments"}
 		}
-		result, err := t.Handler(ctx, c, v.Interface().(In))
+		result, panicked, duration, err := invokeHandler(s.cfg.Telemetry, func() (Result, error) { return t.Handler(ctx, c, v.Interface().(In)) })
+		if panicked {
+			return toolCall{ErrorResult(PanicText), "panicked", duration}
+		}
 		if err != nil {
-			return ErrorResult(err.Error())
+			return toolCall{ErrorResult(err.Error()), "error", duration}
 		}
-		return result
+		outcome := "ok"
+		if result.IsError() {
+			outcome = "error"
+		}
+		return toolCall{result, outcome, duration}
 	}
 	if err := s.registerTool(tool); err != nil {
 		panic(err)
-	}
-}
-
-func singleLine(value any) string {
-	return strings.NewReplacer("\r", " ", "\n", " ").Replace(fmt.Sprint(value))
-}
-func toolLogPrefix(s *Server, name string, c identity.Caller) string {
-	id := c.RequestID
-	if id == "" {
-		id = "-"
-	}
-	return s.cfg.Name + ": request " + id + ": tool " + name
-}
-func recoverTool(s *Server, name string, c identity.Caller, result *Result) {
-	if p := recover(); p != nil {
-		s.logLine(toolLogPrefix(s, name, c) + " panicked: " + singleLine(p) + "\n")
-		*result = ErrorResult(PanicText)
 	}
 }

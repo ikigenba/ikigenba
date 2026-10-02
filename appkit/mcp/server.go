@@ -17,6 +17,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 // MissingCallerBody, the error codes, and ProtocolVersion name wire values consumers use.
@@ -37,10 +38,10 @@ const serverCapabilitiesKey = "io.modelcontextprotocol/clientCapabilities"
 const serverInfoKey = "io.modelcontextprotocol/serverInfo"
 const serverSupported = `["2026-07-28","2025-11-25","2025-06-18"]`
 
-// ServerConfig supplies the service identity and diagnostic destination.
+// ServerConfig supplies the service identity and telemetry writer.
 type ServerConfig struct {
 	Name, Version string
-	Stderr        io.Writer
+	Telemetry     *telemetry.Writer
 	Instructions  func(ctx context.Context) string
 }
 
@@ -52,7 +53,6 @@ type Server struct {
 	started      bool
 	tools        []registeredTool
 	index        map[string]registeredTool
-	logMu        sync.Mutex
 }
 
 // NewServer constructs a server and captures its services-file path.
@@ -60,8 +60,8 @@ func NewServer(cfg ServerConfig) *Server {
 	if cfg.Name == "" {
 		panic("mcp: server name is empty")
 	}
-	if cfg.Stderr == nil {
-		cfg.Stderr = io.Discard
+	if cfg.Telemetry == nil {
+		panic("mcp: telemetry writer is nil")
 	}
 	return &Server{cfg: cfg, servicesPath: os.Getenv(services.Variable), index: make(map[string]registeredTool)}
 }
@@ -80,24 +80,13 @@ func (s *Server) registerTool(t registeredTool) error {
 	return nil
 }
 
-func (s *Server) logLine(line string) {
-	s.logMu.Lock()
-	defer s.logMu.Unlock()
-	_, _ = s.cfg.Stderr.Write([]byte(line))
-}
-
 // ServeHTTP answers one protocol message, independently of earlier messages.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.started = true
 	s.mu.Unlock()
 	caller, ok := identity.FromContext(r.Context())
-	if !ok {
-		id := r.Header.Get("X-Request-Id")
-		if id == "" {
-			id = "-"
-		}
-		s.logLine(s.cfg.Name + ": request " + id + ": identity middleware missing\n")
+	if !ok || caller.UserID == "" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		if r.Method != http.MethodHead {
@@ -338,7 +327,10 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, caller identit
 			break
 		}
 		callResult := tool.call(r.Context(), caller, params["arguments"])
-		result, _ = callResult.MarshalJSON()
+		result, _ = callResult.result.MarshalJSON()
+		s.cfg.Telemetry.Emit(r.Context(), "tool.called", telemetry.Attrs{
+			"tool": name, "kind": tool.kind, "outcome": callResult.outcome, "duration_us": callResult.duration,
+		})
 	default:
 		code, message = CodeMethodNotFound, "Method not found"
 	}

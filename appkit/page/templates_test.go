@@ -186,7 +186,29 @@ func templateExecute(t *testing.T, set *template.Template, name string, data any
 
 func templateRender(t *testing.T, name string, data Banner) *templateElement {
 	t.Helper()
-	return templateDocument(t, templateExecute(t, Templates(), name, data))
+	return templateDocument(t, templateOutputWithoutIcons(t, name, data))
+}
+
+// Fixture Icons contain distinctive complete values, so removing one complete
+// value per service cannot remove a hook merely sharing part of an Icon's bytes.
+func templateOutputWithoutIcons(t *testing.T, name string, data Banner) string {
+	t.Helper()
+	output := templateExecute(t, Templates(), name, data)
+	if name == "footer" {
+		return output
+	}
+	for _, service := range data.Services {
+		icon := string(service.Icon)
+		if icon == "" {
+			continue
+		}
+		before, after, found := strings.Cut(output, icon)
+		if !found {
+			t.Fatalf("missing unaltered Icon insertion %q", icon)
+		}
+		output = before + after
+	}
+	return output
 }
 
 func templateFixture() Banner {
@@ -471,9 +493,7 @@ func TestLauncherContainer(t *testing.T) {
 		var found bool
 		for _, tile := range templateFind(nav, "li") {
 			for _, link := range templateFind(tile, "a") {
-				content := strings.TrimLeft(link.content, " \t\r\n")
-				icon := string(service.Icon)
-				if strings.HasPrefix(content, icon) && strings.TrimSpace(templateDocument(t, strings.TrimPrefix(content, icon)).rawText) == templateEscape(t, "{{.}}", service.Name) {
+				if strings.TrimSpace(link.rawText) == templateEscape(t, "{{.}}", service.Name) {
 					found = true
 				}
 			}
@@ -507,14 +527,18 @@ func TestLauncherTiles(t *testing.T) {
 		}
 		for index, tile := range tiles {
 			link := templateOne(t, tile, "a")
+			name := templateEscape(t, "{{.}}", services[index].Name)
+			if strings.TrimSpace(link.content) != name {
+				t.Fatalf("tile %d name changed: %q", index, link.content)
+			}
+		}
+		// Icon placement is checked separately on raw output, before stripping.
+		raw := templateDocument(t, templateExecute(t, Templates(), "launcher", data))
+		for index, link := range templateTileLinks(t, raw, services) {
 			icon := string(services[index].Icon)
 			content := strings.TrimLeft(link.content, " \t\r\n")
-			if !strings.HasPrefix(content, icon) {
-				t.Fatalf("tile %d icon changed: %q", index, link.content)
-			}
-			name := templateEscape(t, "{{.}}", services[index].Name)
-			if strings.TrimSpace(strings.TrimPrefix(content, icon)) != name {
-				t.Fatalf("tile %d name changed: %q", index, link.content)
+			if !strings.HasPrefix(content, icon) || strings.TrimSpace(strings.TrimPrefix(content, icon)) != templateEscape(t, "{{.}}", services[index].Name) {
+				t.Fatalf("tile %d Icon must precede its name: %q", index, link.content)
 			}
 		}
 	}
@@ -652,10 +676,80 @@ func TestLauncherIconUnaltered(t *testing.T) {
 	// R-IZTT-ADN7
 	icons := []template.HTML{`<svg data-icon="a&b"><path d="M0 1"/></svg>`, `<svg><title> A &amp; B </title></svg>`}
 	data := Banner{Services: []Service{{Name: "first", Icon: icons[0]}, {Name: "second", Icon: icons[1]}}}
-	links := templateTileLinks(t, templateRender(t, "launcher", data), data.Services)
+	links := templateTileLinks(t, templateDocument(t, templateExecute(t, Templates(), "launcher", data)), data.Services)
 	for index, link := range links {
 		if !strings.HasPrefix(strings.TrimLeft(link.content, " \t\r\n"), string(icons[index])) {
 			t.Fatalf("icon %d changed: %q", index, link.content)
+		}
+	}
+}
+
+func TestTemplatesIconOutputScope(t *testing.T) {
+	// R-G687-LP8Y
+	for _, icon := range []template.HTML{
+		`<!--fixture-icon-start--><li><a href="/icon" aria-current="page">icon text</a></li><a class="profile">extra profile</a><button class="launcher">extra launcher</button><script></script><link><input><p hidden>No service matches <q>extra</q>.</p><!--fixture-icon-end-->`,
+		`<!--fixture-icon-start--></a></li></ul></nav><header><strong class="mark">extra mark</strong></header><nav id="services" class="services"><li><a<!--fixture-icon-end-->`,
+		`<!--fixture-icon-start--><nav<!--fixture-icon-end-->`,
+		`<!--fixture-icon-start-->No service matches <!--fixture-icon-end-->`,
+	} {
+		data := templateFixture()
+		// Repeated identical icons are distinct insertions; bytes such as <nav
+		// and the no-match text also occur outside those insertions.
+		for index := range data.Services {
+			data.Services[index].Icon = icon
+		}
+		for _, name := range []string{"banner", "launcher"} {
+			root := templateRender(t, name, data)
+			if name == "banner" {
+				if len(templateFind(root, "link")) != 0 {
+					t.Fatal("banner counted a link from an Icon")
+				}
+				templateCheckBannerIdentity(t, root, data)
+				templateOne(t, root, "script")
+				button := templateHook(t, root, "button", map[string]string{"class": "launcher"}, "")
+				mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "ikigenba")
+				var adjacent bool
+				for _, header := range templateFind(root, "header") {
+					index := slices.Index(header.children, mark)
+					adjacent = adjacent || index > 0 && header.children[index-1] == button
+				}
+				if !adjacent {
+					t.Fatal("Icon changed launcher/mark placement")
+				}
+			}
+			nav := templateHook(t, root, "nav", map[string]string{"class": "services", "id": "services", "aria-label": "Services"}, "", "popover")
+			templateAttr(t, nav, "id", "services")
+			templateHook(t, nav, "input", map[string]string{"type": "search", "placeholder": "Find a service", "aria-label": "Find a service"}, "")
+			links := templateTileLinks(t, nav, data.Services)
+			for index, link := range links {
+				service := data.Services[index]
+				if strings.TrimSpace(link.text) != service.Name {
+					t.Fatalf("Icon text counted toward service %q: %q", service.Name, link.text)
+				}
+				if service.Enabled {
+					templateAttr(t, link, "href", service.URL)
+					templateNoAttr(t, link, "aria-disabled")
+				} else {
+					templateNoAttr(t, link, "href")
+					templateAttr(t, link, "aria-disabled", "true")
+					templateAttr(t, link, "title", service.Name+" is unavailable")
+				}
+				if service.Current {
+					templateAttr(t, link, "aria-current", "page")
+				} else {
+					templateNoAttr(t, link, "aria-current")
+				}
+			}
+			paragraph := templateHook(t, nav, "p", nil, "No service matches .", "hidden")
+			templatePresentAttr(t, paragraph, "hidden")
+			quote := templateOne(t, paragraph, "q")
+			if paragraph.text != "No service matches ." || quote.content != "" {
+				t.Fatal("Icon changed no-match text")
+			}
+		}
+		footer := templateOne(t, templateRender(t, "footer", data), "footer")
+		if footer.text != data.Service+" "+data.Version {
+			t.Fatal("Icon changed footer text")
 		}
 	}
 }

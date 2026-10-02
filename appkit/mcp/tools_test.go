@@ -1,7 +1,6 @@
 package mcp_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,11 +29,8 @@ type toolsEnum string
 
 func (toolsEnum) Enum() []string { return []string{"one", "two"} }
 
-func toolsServer(stderr *bytes.Buffer) *mcp.Server {
-	if stderr == nil {
-		return mcp.NewServer(mcp.ServerConfig{Name: "test"})
-	}
-	return mcp.NewServer(mcp.ServerConfig{Name: "test", Stderr: stderr})
+func toolsServer(t *testing.T) *mcp.Server {
+	return mcp.NewServer(mcp.ServerConfig{Name: "test", Telemetry: mcpTestWriter(t, nil, nil)})
 }
 func toolsRequest(ctx context.Context, s *mcp.Server, method, params string) json.RawMessage {
 	body := `{"jsonrpc":"2.0","id":1,"method":` + strconv.Quote(method) + `,"params":` + params + `}`
@@ -94,7 +90,7 @@ func TestToolPublicShapes(t *testing.T) {
 		t.Fatal("enumerator contract")
 	}
 	// R-K7CI-YUVF R-KB08-463I: unkeyed construction checks field ordering and handler signature by use.
-	s := toolsServer(nil)
+	s := toolsServer(t)
 	add := mcp.AddTool[toolsEmpty, toolsEmpty]
 	add(s, toolsTyped("read_typed"))
 	// R-K8KF-CMM4 R-KC84-HXU7
@@ -133,7 +129,7 @@ func TestToolRegistrationFailures(t *testing.T) {
 	for _, c := range cases {
 		for _, raw := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/raw=%t", c.name, raw), func(t *testing.T) {
-				s := toolsServer(nil)
+				s := toolsServer(t)
 				a, b := toolsTyped("read_data"), toolsRaw("read_data")
 				c.mutate(&a, &b)
 				var name string
@@ -163,7 +159,7 @@ func TestToolNameRules(t *testing.T) {
 	// R-KJJI-SKAD
 	for _, name := range []string{"", "Read", "_read", "read_", "read__data", "read-data", "read data", "écho", "read.thing", strings.Repeat("a", 65)} {
 		for _, raw := range []bool{false, true} {
-			s := toolsServer(nil)
+			s := toolsServer(t)
 			if p := toolsPanic(func() {
 				if raw {
 					mcp.AddRawTool(s, toolsRaw(name))
@@ -176,7 +172,7 @@ func TestToolNameRules(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"r", "read", "read_1", strings.Repeat("a", 64)} {
-		s := toolsServer(nil)
+		s := toolsServer(t)
 		mcp.AddRawTool(s, toolsRaw(name))
 		if len(toolsList(s)) != 1 {
 			t.Fatal(name)
@@ -189,7 +185,7 @@ func TestToolDescriptionRules(t *testing.T) {
 	descriptions := []string{"", "\nDetails.", " Read data.", "Read data. ", "\tRead data.", "Read data.\u00a0", "Read data", "Read data. More data.", strings.Repeat("a", 120) + ".", "Read data.\n\xff"}
 	for _, description := range descriptions {
 		for _, raw := range []bool{false, true} {
-			s := toolsServer(nil)
+			s := toolsServer(t)
 			a, b := toolsTyped("read_data"), toolsRaw("read_data")
 			a.Description = description
 			b.Description = description
@@ -205,7 +201,7 @@ func TestToolDescriptionRules(t *testing.T) {
 		}
 	}
 	for _, description := range []string{"Read data.\nFurther details.", strings.Repeat("é", 119) + "."} {
-		s := toolsServer(nil)
+		s := toolsServer(t)
 		tool := toolsRaw("read_data")
 		tool.Description = description
 		mcp.AddRawTool(s, tool)
@@ -216,7 +212,7 @@ func TestToolDuplicateAndClosedRegistry(t *testing.T) {
 	// R-KKRF-6C12
 	for _, firstRaw := range []bool{false, true} {
 		for _, secondRaw := range []bool{false, true} {
-			s := toolsServer(nil)
+			s := toolsServer(t)
 			if firstRaw {
 				mcp.AddRawTool(s, toolsRaw("read_data"))
 			} else {
@@ -238,7 +234,7 @@ func TestToolDuplicateAndClosedRegistry(t *testing.T) {
 	}
 	// R-KPN0-PEZU: even an unauthenticated request closes registration.
 	for _, raw := range []bool{false, true} {
-		s := toolsServer(nil)
+		s := toolsServer(t)
 		s.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 		if p := toolsPanic(func() {
 			if raw {
@@ -255,7 +251,7 @@ func TestToolDuplicateAndClosedRegistry(t *testing.T) {
 func TestToolConcurrentRegistration(t *testing.T) {
 	// R-KQUX-36QJ
 	for range 40 {
-		s := toolsServer(nil)
+		s := toolsServer(t)
 		start := make(chan struct{})
 		var wg sync.WaitGroup
 		wg.Go(func() { <-start; _ = toolsPanic(func() { mcp.AddTool(s, toolsTyped("read_typed")) }) })
@@ -291,7 +287,7 @@ func TestToolListObjects(t *testing.T) {
 	} {
 		for _, raw := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/raw=%t", effect.name, raw), func(t *testing.T) {
-				s := toolsServer(nil)
+				s := toolsServer(t)
 				if raw {
 					mcp.AddRawTool(s, mcp.RawTool[in]{Name: effect.name, Description: description, Effect: effect.value, Handler: func(context.Context, identity.Caller, in) (mcp.Result, error) { return mcp.TextResult("ok"), nil }})
 				} else {
@@ -312,8 +308,7 @@ func TestToolListObjects(t *testing.T) {
 }
 
 func TestToolArgumentsAndResults(t *testing.T) {
-	var log bytes.Buffer
-	s := toolsServer(&log)
+	s := toolsServer(t)
 	calls := 0
 	mcp.AddTool(s, mcp.Tool[toolsIn, toolsOut]{Name: "read_data", Description: "Read data.", Effect: mcp.Read, Handler: func(_ context.Context, _ identity.Caller, in toolsIn) (toolsOut, error) {
 		calls++
@@ -343,17 +338,12 @@ func TestToolArgumentsAndResults(t *testing.T) {
 	if got := toolsCall(s, "read_data", `{"value":"hello"}`); got != `{"content":[{"type":"text","text":"{\"value\":\"hello\"}"}],"structuredContent":{"value":"hello"}}` {
 		t.Fatal(got)
 	}
-	// R-LNS7-EZRA
-	if log.Len() != 0 {
-		t.Fatal(log.String())
-	}
 }
 
 func TestToolHandlerErrors(t *testing.T) {
 	// R-LIWL-VWSI
 	for _, raw := range []bool{false, true} {
-		var log bytes.Buffer
-		s := toolsServer(&log)
+		s := toolsServer(t)
 		if raw {
 			mcp.AddRawTool(s, mcp.RawTool[toolsEmpty]{Name: "read_data", Description: "Read data.", Effect: mcp.Read, Handler: func(context.Context, identity.Caller, toolsEmpty) (mcp.Result, error) {
 				return mcp.TextResult("discard"), errors.New("explain failure")
@@ -366,19 +356,14 @@ func TestToolHandlerErrors(t *testing.T) {
 		if got := toolsCall(s, "read_data", `{}`); got != resultBytes(t, mcp.ErrorResult("explain failure")) {
 			t.Fatal(got)
 		}
-		// R-LNS7-EZRA
-		if log.Len() != 0 {
-			t.Fatal(log.String())
-		}
 	}
 }
 
-func TestToolPanicsRecoverAndLog(t *testing.T) {
-	// R-LK4I-9OJ7 R-LLCE-NG9W
+func TestToolPanicsRecover(t *testing.T) {
+	// R-LK4I-9OJ7
 	for _, raw := range []bool{false, true} {
 		for _, requestID := range []string{"request", ""} {
-			var log bytes.Buffer
-			s := toolsServer(&log)
+			s := toolsServer(t)
 			if raw {
 				mcp.AddRawTool(s, mcp.RawTool[toolsEmpty]{Name: "read_data", Description: "Read data.", Effect: mcp.Read, Handler: func(context.Context, identity.Caller, toolsEmpty) (mcp.Result, error) { panic("bad\r\nthing") }})
 			} else {
@@ -390,13 +375,6 @@ func TestToolPanicsRecoverAndLog(t *testing.T) {
 			if got != resultBytes(t, mcp.ErrorResult(mcp.PanicText)) {
 				t.Fatal(got)
 			}
-			id := requestID
-			if id == "" {
-				id = "-"
-			}
-			if got := log.String(); got != "test: request "+id+": tool read_data panicked: bad  thing\n" {
-				t.Fatal(got)
-			}
 			if got := toolsCall(s, "read_later", `{}`); got != resultBytes(t, mcp.TextResult("ok")) {
 				t.Fatal(got)
 			}
@@ -405,26 +383,16 @@ func TestToolPanicsRecoverAndLog(t *testing.T) {
 }
 
 func TestToolUnencodableOutput(t *testing.T) {
-	// R-LMKB-180L
+	// R-2UIX-CNYK
 	type out struct {
 		Float float64   `json:"float"`
 		Enum  toolsEnum `json:"enum"`
 	}
 	for _, value := range []out{{Float: math.NaN(), Enum: "one"}, {Float: math.Inf(1), Enum: "one"}, {Enum: "invalid"}} {
-		var log bytes.Buffer
-		s := toolsServer(&log)
+		s := toolsServer(t)
 		mcp.AddTool(s, mcp.Tool[toolsEmpty, out]{Name: "read_data", Description: "Read data.", Effect: mcp.Read, Handler: func(context.Context, identity.Caller, toolsEmpty) (out, error) { return value, nil }})
 		if got := toolsCall(s, "read_data", `{}`); got != resultBytes(t, mcp.ErrorResult(mcp.PanicText)) {
 			t.Fatal(got)
-		}
-		prefix := "test: request request: tool read_data returned unencodable output: "
-		line := log.String()
-		if !strings.HasPrefix(line, prefix) || !strings.HasSuffix(line, "\n") {
-			t.Fatal(line)
-		}
-		reason := strings.TrimSuffix(strings.TrimPrefix(line, prefix), "\n")
-		if reason == "" || strings.ContainsAny(reason, "\r\n") {
-			t.Fatal(line)
 		}
 	}
 }
@@ -435,7 +403,7 @@ func TestRawToolPassthrough(t *testing.T) {
 	if err := answer.UnmarshalJSON([]byte(`{"custom":{"ordered":1},"content":[{"type":"image","data":"abc","mimeType":"image/png"}],"isError":true,"_meta":{"extra":"kept"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	s := toolsServer(nil)
+	s := toolsServer(t)
 	mcp.AddRawTool(s, mcp.RawTool[toolsEmpty]{Name: "read_data", Description: "Read data.", Effect: mcp.Read, Handler: func(context.Context, identity.Caller, toolsEmpty) (mcp.Result, error) { return answer, nil }})
 	if got := toolsCall(s, "read_data", `{}`); got != resultBytes(t, answer) {
 		t.Fatal(got)
@@ -449,7 +417,7 @@ func TestToolHandlerContext(t *testing.T) {
 	base, cancel := context.WithDeadline(context.WithValue(context.Background(), contextKey{}, "value"), deadline)
 	defer cancel()
 	ctx := identity.NewContext(base, identity.Caller{UserID: "user", RequestID: "context"})
-	s := toolsServer(nil)
+	s := toolsServer(t)
 	var received context.Context
 	mcp.AddRawTool(s, mcp.RawTool[toolsEmpty]{Name: "read_data", Description: "Read data.", Effect: mcp.Read, Handler: func(c context.Context, _ identity.Caller, _ toolsEmpty) (mcp.Result, error) {
 		received = c
@@ -470,7 +438,7 @@ func TestToolHandlerContext(t *testing.T) {
 
 func TestToolHandlersRunConcurrently(t *testing.T) {
 	// R-M173-MGWX
-	s := toolsServer(nil)
+	s := toolsServer(t)
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
 	mcp.AddRawTool(s, mcp.RawTool[toolsEmpty]{Name: "read_data", Description: "Read data.", Effect: mcp.Read, Handler: func(context.Context, identity.Caller, toolsEmpty) (mcp.Result, error) {
