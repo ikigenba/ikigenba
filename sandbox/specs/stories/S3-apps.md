@@ -129,7 +129,7 @@ Postconditions:
 
 ## An app reads the environment the sandbox gives it
 
-An app learns everything it knows about the sandbox from its environment: the sandbox's name, its own public origin, the bare-localhost origin whose every request is sent on to auth (for an app that needs an OAuth redirect Google accepts), where the services file is, and how long it has to drain. These names are the same in every sandbox, and no app needs to know which apps are in the checkout to read them. The app has no `PORT`: it is handed its socket by systemd, as on a host. dummy declares no secrets and no `[env]`, so it gets the sandbox's variables alone.
+An app learns everything it knows about the sandbox from its environment: the sandbox's name, its own public origin, the bare-localhost origin, whose every request is sent on to auth when the checkout holds `auth` (for an app that needs an OAuth redirect Google accepts), where the services file is, and how long it has to drain. These names are the same in every sandbox, and no app needs to know which apps are in the checkout to read them. The app has no `PORT`: it is handed its socket by systemd, as on a host. dummy declares no secrets and no `[env]`, so it gets the sandbox's variables alone.
 
 Command:
 

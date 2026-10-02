@@ -283,7 +283,7 @@ Exits 2. The text is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- The registry holds `wip`, port `7400`, and no token is stored for it.
+- The registry holds `wip`, port `7400`, and its last `up` recorded `auth`; no token is stored for it.
 
 Postconditions:
 
@@ -476,7 +476,7 @@ Exits 2. The text is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- A token was stored for `wip`; then `sandbox down`, `sandbox wipe` and `sandbox up` ran, and the new `up` took port `7400`.
+- A token was stored for `wip`; then `sandbox down`, `sandbox wipe` and `sandbox up` ran, and the new `up` took port `7400` and recorded `auth`.
 
 Postconditions:
 

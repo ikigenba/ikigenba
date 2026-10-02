@@ -1,8 +1,8 @@
 # Stories — up
 
-Bringing a worktree's sandbox up and asking where it answers: `up` and `url`. Both act on this worktree's sandbox. They find the worktree with `git rev-parse --show-toplevel` from the current directory, so any subdirectory of the checkout works. The sandbox's name is the basename of that toplevel, lowercased, with every run of characters other than `a-z` and `0-9` turned into one `-` and any leading or trailing `-` dropped: `wip` stays `wip`, `Feature_X` becomes `feature-x`. Sandboxes are recorded in a registry at `$XDG_STATE_HOME/ikigenba/sandbox/registry.json`, one entry per sandbox holding its name, its port, its worktree path, and the apps of its last `up` that got as far as starting units (the default app marked among them); a sandbox is known while the registry holds its name. `url` prints from that list of apps, so it survives `down`. Its data lives in `$XDG_STATE_HOME/ikigenba/sandbox/<name>/`, and each app's working directory, where its `state/` lives, is `<data>/apps/<app>/`. An unset, empty or relative `XDG_STATE_HOME` or `XDG_CONFIG_HOME` means `~/.local/state` or `~/.config`. The first `up` of a sandbox takes the lowest port from `7400` to `7499` that no registry entry holds and records it; the sandbox keeps that port until `wipe`. The registry entry is written when that port is taken, and stays even if a later step of the same `up` fails.
+Bringing a worktree's sandbox up and asking where it answers: `up` and `url`. Both act on this worktree's sandbox. They find the worktree with `git rev-parse --show-toplevel` from the current directory, so any subdirectory of the checkout works. The sandbox's name is the basename of that toplevel, lowercased, with every run of characters other than `a-z` and `0-9` turned into one `-` and any leading or trailing `-` dropped: `wip` stays `wip`, `Feature_X` becomes `feature-x`. Sandboxes are recorded in a registry at `$XDG_STATE_HOME/ikigenba/sandbox/registry.json`, one entry per sandbox holding its name, its port, its worktree path, and the apps of its last `up` whose builds all succeeded (the default app marked among them), recorded before that `up` writes any unit; a sandbox is known while the registry holds its name. `url` prints from that list of apps, so it survives `down`. Its data lives in `$XDG_STATE_HOME/ikigenba/sandbox/<name>/`, and each app's working directory, where its `state/` lives, is `<data>/apps/<app>/`. An unset, empty or relative `XDG_STATE_HOME` or `XDG_CONFIG_HOME` means `~/.local/state` or `~/.config`. The first `up` of a sandbox takes the lowest port from `7400` to `7499` that no registry entry holds and records it; the sandbox keeps that port until `wipe`. The registry entry is written when that port is taken, and stays even if a later step of the same `up` fails.
 
-An app is an immediate subdirectory of the checkout holding `etc/manifest.toml`; its directory name is the app's name and its `main` package is `cmd/<app>/`. `up` runs in a fixed order: first it checks, in this order, the worktree, the name, that the registry does not give the name to another worktree, the apps (that there are some, and that one of them is `auth`), every manifest, and the secrets each manifest declares (the manifest and secrets checks are told in the apps group); last it takes a port, if the sandbox has none yet. Then it builds every app in name order with `go build` from the worktree as it is, uncommitted edits included, then it writes the generated files and units, runs `systemctl --user daemon-reload`, and starts or restarts the units. A check that fails changes nothing: a sandbox not yet known gets no registry entry. A build that fails writes no unit or generated file and starts nothing; a first `up` that fails there keeps the registry entry and port it has just been given, with no apps recorded, and a sandbox that was already up keeps running its previous build. A step after the builds that fails leaves what it had done so far. Units go in `$XDG_CONFIG_HOME/systemd/user/`, named `sandbox-<name>-<app>.socket` and `sandbox-<name>-<app>.service` per app and `sandbox-<name>-nginx.service` for the sandbox's nginx; they are never enabled, so nothing starts at login. A sandbox is up while `sandbox-<name>-nginx.service` is active and down otherwise. `up` takes the sandbox's lock, so a second `up` (or `down`, `wipe`, `token set`) on the same sandbox waits for it to finish; ports are handed out one sandbox at a time. Both commands print the same text: one line per app in name order, the app's name padded to the longest name plus two spaces, then its URL; the app whose manifest sets `default = true` gets a second line with the sandbox's bare URL directly after its own.
+An app is an immediate subdirectory of the checkout holding `etc/manifest.toml`; its directory name is the app's name and its `main` package is `cmd/<app>/`. `up` runs in a fixed order: first it checks, in this order, the worktree, the name, that the registry does not give the name to another worktree, the apps, every manifest, and the secrets each manifest declares (the manifest and secrets checks are told in the apps group); last it takes a port, if the sandbox has none yet. Then it builds every app in name order with `go build` from the worktree as it is, uncommitted edits included, then it writes the generated files and units, has nginx test the configuration it has written, runs `systemctl --user daemon-reload`, and starts or restarts the units. A check that fails changes nothing: a sandbox not yet known gets no registry entry. A build that fails writes no unit or generated file and starts nothing; a first `up` that fails there keeps the registry entry and port it has just been given, with no apps recorded, and a sandbox that was already up keeps running its previous build. A step after the builds that fails leaves what it had done so far. Units go in `$XDG_CONFIG_HOME/systemd/user/`, named `sandbox-<name>-<app>.socket` and `sandbox-<name>-<app>.service` per app and `sandbox-<name>-nginx.service` for the sandbox's nginx; they are never enabled, so nothing starts at login. A sandbox is up while `sandbox-<name>-nginx.service` is active and down otherwise. `up` takes the sandbox's lock, so a second `up` (or `down`, `wipe`, `token set`) on the same sandbox waits for it to finish; ports are handed out one sandbox at a time. Both commands print the same text: one line per app in name order, the app's name padded to the longest name plus two spaces, then its URL; the app whose manifest sets `default = true` gets a second line with the sandbox's bare URL directly after its own.
 
 The examples use the worktree `/home/me/src/ikigenba/wip` (sandbox `wip`), the developer `me` with home `/home/me`, and a checkout holding two apps, `auth` and `dummy`:
 
@@ -247,7 +247,7 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - The current directory is inside `/home/me/src/ikigenba/wip`.
-- `wip` is known with port `7400` and is up; the worktree has changed since its last `up`.
+- `wip` is known with port `7400` and is up, and its last `up` recorded `auth` and `dummy`; the worktree has changed since that `up`.
 - A client requests `http://dummy.wip.localhost:7400/` while the `up` runs.
 
 Postconditions:
@@ -340,7 +340,7 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - The current directory is inside `/home/me/src/ikigenba/wip`.
-- The registry holds `wip` with port `7400` and worktree `/home/me/src/ikigenba/wip`.
+- The registry holds `wip` with port `7400`, worktree `/home/me/src/ikigenba/wip`, and the apps `auth` and `dummy` from its last `up`.
 - `sandbox-wip-nginx.service` is not active, so `wip` is down.
 - The registry also holds `other` with port `7401`.
 
@@ -786,35 +786,6 @@ Postconditions:
 
 - Nothing has changed. Nothing was built, and no registry entry was created: the check for apps comes before a port is taken.
 
-## A developer runs up in a checkout with no auth app
-
-The suite's apps learn who their user is only from the identity auth's check gives them, and answer 500 without one, so a sandbox without `auth` would serve nothing. `up` refuses a checkout with no app named `auth`. A sandbox that is already up stays as it was, running its previous build.
-
-Command:
-
-```
-$ cd /home/me/src/ikigenba/wip && sandbox up
-```
-
-Output:
-
-```
-sandbox: no app named 'auth' in /home/me/src/ikigenba/wip
-
-every other app needs auth to tell it who its user is
-```
-
-Exits 2. The text is on stderr; stdout is empty.
-
-Preconditions:
-
-- `/home/me/src/ikigenba/wip` is the top level of a git worktree whose checkout holds `dummy/etc/manifest.toml` as above and no `auth/etc/manifest.toml`.
-- The registry holds no entry for `wip`.
-
-Postconditions:
-
-- Nothing has changed. Nothing was built, and no registry entry was created: the check for `auth` comes before a port is taken.
-
 ## A developer brings up a sandbox whose code does not compile
 
 Apps are built in name order and the builds stop at the first that fails; go's output is quoted so the developer sees why. No unit or generated file is written and nothing is started, so a sandbox that was already up keeps running its previous build.
@@ -946,6 +917,38 @@ Postconditions:
 - `sandbox-wip-nginx.service` is failed, so `wip` is down, and `sandbox status` shows `nginx failed`.
 - Units started before the failure stay started. The registry entry, the port, the generated files and the unit files stay.
 
+## A developer brings up a sandbox whose app's nginx configuration nginx refuses
+
+An app's own nginx configuration goes into the sandbox's nginx configuration as the checkout holds it, as the routing group tells, so a mistake in it is found by nginx, not by `up`. `up` has nginx test the configuration it has written and, when nginx refuses it, quotes nginx's output, which names the file and line at fault. Here dummy's `etc/nginx.conf` misspells a directive.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: test nginx configuration: exit status 1
+
+> nginx: [emerg] unknown directive "client_max_body_sise" in /home/me/src/ikigenba/wip/dummy/etc/nginx.conf:1
+> nginx: configuration file /home/me/.local/state/ikigenba/sandbox/wip/nginx/nginx.conf test failed
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is inside `/home/me/src/ikigenba/wip`.
+- `wip` is known with port `7400` and is down, and its last `up` recorded `auth` and `dummy`.
+- Every app builds, and `dummy/etc/nginx.conf` holds the one line `client_max_body_sise 1k;`.
+
+Postconditions:
+
+- Every app was built, and the generated files and unit files were written.
+- No unit was started or restarted; `wip` is still down. The registry is unchanged.
+
 ## A developer runs up with no systemd user manager
 
 `up` reaches systemd only through `systemctl --user`. With no user manager to talk to, as in a shell with no login session, the first systemctl run fails and its output is quoted.
@@ -969,10 +972,10 @@ Exits 1. The text is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is inside `/home/me/src/ikigenba/wip`.
-- `wip` is known with port `7400` and is down.
+- `wip` is known with port `7400` and is down, and its last `up` recorded `auth` and `dummy`.
 - No systemd user manager is reachable for `me`.
 
 Postconditions:
 
 - Every app was built, and the generated files and unit files were written.
-- No unit was started; `wip` is still down. The registry is unchanged.
+- No unit was started or restarted; `wip` is still down. The registry is unchanged.
