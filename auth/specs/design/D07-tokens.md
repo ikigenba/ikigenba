@@ -14,8 +14,9 @@ re-declares none of them.
 Every request in this design carries a valid `ikigenba_session` cookie (D05
 owns the cookie; this design only reads it to identify the acting user), and
 every state-changing request is a POST that also carries an `Origin` header
-equal to the service's own origin (D05 owns how that origin is derived from the
-request Host). A POST whose `Origin` is not the service's own origin is refused
+equal to the service's own origin (D05 owns how that origin is derived: from
+the request Host as `https://auth.<space>` on a host, and exactly
+`IKIGENBA_PUBLIC_URL` in a sandbox that sets it). A POST whose `Origin` is not the service's own origin is refused
 outright, and nothing is changed. That refusal and the 404 for a token that is
 not the user's are auth's own failures, not pages: one line of plain text,
 with no banner.
@@ -134,9 +135,13 @@ and writes it to the clipboard with `navigator.clipboard.writeText`. The
 Clipboard API's `writeText` "writes the specified text to the system
 clipboard" and is available only in a secure context (MDN,
 `Clipboard.writeText()`; the W3C Clipboard API declares the interface
-`[SecureContext, Exposed=Window]`). auth's pages qualify: a space serves auth
-over `https`, the only way auth is reached, and a document delivered over
-`https` is a secure context (MDN, Secure contexts).
+`[SecureContext, Exposed=Window]`). auth's pages qualify, because every page
+auth serves is a secure context: a space serves auth over `https`, and a
+document delivered over `https` is a secure context (MDN, Secure contexts);
+a sandbox serves auth over plain `http`, but at a name under `localhost`,
+which the W3C Secure Contexts specification (§3.1, "Is origin potentially
+trustworthy?") counts as potentially trustworthy and browsers treat as a
+secure context.
 Firefox and Safari require transient activation for a write and Chromium
 requires it or the `clipboard-write` permission (MDN, Clipboard API, security
 considerations); the write happens in the handler of the button's own click,

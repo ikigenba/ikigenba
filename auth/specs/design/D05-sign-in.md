@@ -22,8 +22,17 @@ being reachable — so both `AuthCodeURL` (starting a sign-in) and `Exchange`
 (finishing one) can fail when Google cannot be reached, and each surfaces that as
 an error. The `redirect_uri` is not fixed at construction — auth has no startup
 config for its space host, and OAuth needs the same `redirect_uri` at
-authorization and exchange — so it is derived per request from the `Host` and
-threaded into both `AuthCodeURL` and `Exchange`. Because the client is
+authorization and exchange — so the server works it out per request and
+threads it into both `AuthCodeURL` and `Exchange`. On a host it comes from the
+`Host`. In a sandbox it comes from `IKIGENBA_CALLBACK_URL` (D03), carried in
+`server.Config.CallbackURL`: Google accepts a sign-in redirect to
+`http://localhost:<port>` but never to a name under `localhost`, so the
+sandbox asks Google to send the browser to bare `localhost`, and the sandbox's
+nginx bounces that request, path and query unchanged, to auth's own name. The
+callback that reaches auth therefore carries auth's own `Host`, yet the
+exchange must name the address the code was issued for, so with `CallbackURL`
+set the `redirect_uri` is that origin plus `/login/google/callback` at both
+ends, whatever the `Host`. Because the client is
 constructed with an issuer taken from `Process.OIDCIssuer`, a loopback fake
 Google can stand in for tests while production points at Google itself. Every
 Google fact stated as a requirement below is proven by the evidence gathered for
@@ -38,8 +47,17 @@ leading `auth.` label removed, and from the space auth derives the callback
 `redirect_uri`, the cookie `Domain`, its own origin (for the token routes'
 `Origin` check, D07), which origins are *on this space* (for the logout
 `Origin` check), and which return URLs count as being under the space. Every
-request is on a space: auth is reached only through nginx on a space, never by
-a browser directly, so there is no other form of request to tell apart. Users
+request is on a space: auth is reached only through nginx, on a host's space
+or in a sandbox, never by a browser directly, so there is no other form of
+request to tell apart. In a sandbox the space still comes from the `Host`
+(`auth.wip.localhost:7400` gives the space `wip.localhost:7400`, its cookie
+domain and apex `wip.localhost`), and two of those derivations take the
+sandbox's scheme and port from configuration instead of assuming `https`
+with no port: with `server.Config.PublicURL` set (from `IKIGENBA_PUBLIC_URL`,
+D03), auth's own origin is exactly that value, and the origins on this space
+are those with its scheme and port. The callback `redirect_uri` follows
+`CallbackURL` as above. With both fields empty, as on a host, every
+derivation is the `Host`-based one, unchanged. Users
 are keyed by the verified ID
 token's `(issuer, subject)`; the email is a copy refreshed on every login; auth's
 own `X-User-Id` is a fresh opaque id minted by `idcodec.NewID`, never Google's
@@ -73,7 +91,7 @@ unvalidated; only the callback decides whether to honor it.
 
 Sign-out is the one state-changing route any app on the space may drive: an
 app renders a form that POSTs to auth's `/logout`, so its `Origin` is the
-app's, not auth's. The logout check accepts `https://<space>` and
+app's, not auth's. On a host, where `PublicURL` is empty, the logout check accepts `https://<space>` and
 `https://<prefix>.<space>` for any non-empty prefix, with no port. These are
 the story's forms, and they are where the session cookie goes: it carries
 `Domain=` the *cookie domain*, the space with any `:port` removed (a
@@ -91,6 +109,28 @@ it sends `Origin` on every `POST` (Fetch standard, "append a request `Origin`
 header"); a request with no `Origin`, the opaque origin `null`, or more than
 one `Origin` field cannot show that it came from this space and is refused.
 The token routes keep the narrower own-origin check.
+
+In a sandbox the same rule is kept, with the scheme and port taken from
+`PublicURL` instead of `https` and none: a sandbox serves every app at
+`http://<app>.<name>.localhost:<port>`, so a sign-out from another app's
+banner carries that app's origin, with `http` and the sandbox's port, and its
+host is under the cookie domain. An origin with another scheme (the `https`
+a host would use), another port (another sandbox's), or no port is refused,
+as is one whose host is not under the cookie domain, such as the bare
+`http://localhost:<port>` the callback bounces through. The port is compared
+as written, with no default-port folding: a browser omits a default port when
+it serializes an origin, so a `PublicURL` that wrote `:80` would match no
+browser's `Origin`, and a sandbox never uses one.
+
+The session cookie stays `Secure` in a sandbox too, though the sandbox speaks
+plain HTTP. The W3C Secure Contexts specification (§3.1, "Is origin
+potentially trustworthy?") counts a host of `localhost` or one ending in
+`.localhost` as potentially trustworthy, and Chrome and Firefox treat such an
+`http` origin as a secure context, keeping a `Secure` cookie it sets and
+sending it back to names under it. So the cookie requirements need no
+sandbox variant: the attributes are the same, and the cookie domain already
+drops the port (`Domain=wip.localhost`). What a browser does with the cookie
+is the browser's, and no requirement here asserts it.
 
 ## Pages
 
@@ -322,10 +362,12 @@ host's `/` with the sign-in page, and what that page carries.
 - R-J2U9-7NPS: On logout the response MUST clear the `SessionCookieName` cookie with an empty value, `Max-Age=0`, and the same domain, path, and security attributes as the login cookie (`Domain=<cookie domain>` (R-9Y8U-AAQ2), `Path=/`, `Secure`, `HttpOnly`, `SameSite=Lax`), so that a cookie jar following RFC 6265 that holds the login cookie, given the response for the request's own `https` URL, no longer returns it.
 - R-ILH9-35UU: auth MUST derive the *space* for a request as the request's `Host` with a single leading `auth.` label removed.
 - R-9Y8U-AAQ2: auth's design defines the **cookie domain** of a request as its space (R-ILH9-35UU) with a trailing `:` followed by one or more ASCII digits removed, and as the space itself when it has no such suffix, so that `Host: auth.green.example:8443`, `Host: auth.green.example:443`, and `Host: auth.green.example` all give `green.example`.
-- R-3K0O-TESB: The callback `redirect_uri` auth sends to Google MUST be `https://auth.<space>/login/google/callback`.
-- R-3L8L-76J0: auth's own origin (used for the token routes' `Origin` check, D07) MUST be `https://auth.<space>`.
+- R-T8R1-7SBK: When the `CallbackURL` field of the `server.Config` passed to `server.New` (D03) is empty, the callback `redirect_uri` auth sends to Google MUST be `https://auth.<space>/login/google/callback`.
+- R-T9YX-LK29: When the `CallbackURL` field of the `server.Config` passed to `server.New` (D03) is non-empty, the callback `redirect_uri` auth sends to Google, both in the `Location` it answers `GET /login/google` with and in the code exchange it makes for `GET /login/google/callback`, MUST be that `CallbackURL` followed by `/login/google/callback`, whatever `Host` the request carries.
+- R-TCEQ-D3JN: When the `PublicURL` field of the `server.Config` passed to `server.New` (D03) is empty, auth's own origin (used for the token routes' `Origin` check, D07) MUST be `https://auth.<space>`.
+- R-TDMM-QVAC: When the `PublicURL` field of the `server.Config` passed to `server.New` (D03) is non-empty, auth's own origin (used for the token routes' `Origin` check, D07) MUST be exactly that `PublicURL`, whatever `Host` the request carries.
 - R-LAND-R94N: `GET /` with a live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a form that POSTs to `/logout` and a form that POSTs to `/tokens` with fields `name` and `expires`; it MUST resolve the identity via `LookupSessionIdentity` (no touch), MUST ignore any `?return`, and MUST NOT change any state.
-- R-KY4E-8B7G: `GET /login/google` MUST mint a PKCE verifier from `Process.Rand`, derive the `redirect_uri` from the request `Host`, record a login state via `CreateLoginState` carrying that verifier and any return URL carried from the sign-in page, and obtain the authorization redirect URL via `AuthCodeURL(state, verifier, redirectURI)` for the recorded login state's `State` and that derived `redirectURI`; when `AuthCodeURL` returns a nil error it MUST respond `302` whose `Location` is that URL, so that the `state` value in `Location` names that login state.
+- R-TB6T-ZBSY: `GET /login/google` MUST mint a PKCE verifier from `Process.Rand`, take the callback `redirect_uri` for the request (R-T8R1-7SBK, R-T9YX-LK29), record a login state via `CreateLoginState` carrying that verifier and any return URL carried from the sign-in page, and obtain the authorization redirect URL via `AuthCodeURL(state, verifier, redirectURI)` for the recorded login state's `State` and that `redirect_uri` as `redirectURI`; when `AuthCodeURL` returns a nil error it MUST respond `302` whose `Location` is that URL, so that the `state` value in `Location` names that login state.
 - R-XXPJ-ZJU1: When `AuthCodeURL` returns a non-nil error during `GET /login/google` (the `issuer`'s endpoints could not be discovered), auth MUST respond `502` with `Content-Type: text/plain; charset=utf-8` and a single line of body, MUST write the line R-XV9R-80CN states with that error as its reason, MUST create no user, session, or cookie, and MUST leave no login state recorded — removing via `ConsumeLoginState` any login state it created for the request.
 - R-IV8G-5BSE: `GET /login/google/callback` whose `state` matches no recorded login state, including a request with no `state`, MUST respond `400` with `Content-Type: text/plain; charset=utf-8` and a single line of body, and MUST create no user, session, or cookie.
 - R-Y05C-R3BF: `GET /login/google/callback` carrying `error=access_denied` MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`, MUST send no `Set-Cookie`, MUST consume the login state named by `state` if one exists, and MUST create no user or session, unless a store operation it makes to read or consume that login state fails, in which case it MUST answer as R-CCQE-EHNR states and write the line R-XV9R-80CN states; this `error=access_denied` response takes precedence over the unknown/missing-state `400` case (R-IV8G-5BSE), so when `error=access_denied` is present and no such store operation fails the response is `200` whether or not `state` matches a recorded login state.
@@ -333,9 +375,10 @@ host's `/` with the sign-in page, and what that page carries.
 - R-IYW5-AN0H: On a member sign-in the `issuer`, `subject`, and `email` passed to `UpsertUserOnLogin` MUST be the verified ID token's `Claims.Issuer`, `Claims.Subject`, and `Claims.Email`, so that users are keyed by the verified `(issuer, subject)` and the stored email is refreshed to the token's value on every login.
 - R-U14O-MUY4: A callback result MUST be treated as a member if and only if the verified `Claims.HostedDomain` equals `WORKSPACE_DOMAIN` and `Claims.EmailVerified` is true (an absent `hd` claim, i.e. empty `HostedDomain`, is not a member); a non-member result MUST respond `403` with `Content-Type: text/html; charset=utf-8`, send no `Set-Cookie`, consume the login state, and create or change no user, session, or cookie.
 - R-XYXG-DBKQ: When a matched-state callback's token exchange fails or Google is unreachable, auth MUST respond `502` with `Content-Type: text/plain; charset=utf-8` and a single line of body, MUST write the line R-XV9R-80CN states with the `Exchange` error as its reason, and MUST create no user, session, or cookie.
-- R-3MGH-KY9P: An `Origin` value MUST be treated as *on this space* if and only if it has the serialized shape `https://` followed by a host `H` and nothing else, where `H` contains none of `/`, `?`, `#`, `@`, or `:` (so the value carries no path, query, fragment, userinfo, or port), and `H`, compared with the space ASCII case-insensitively, either equals the space or ends in `.` followed by the space with a non-empty prefix before that `.`; the scheme `https` MUST be matched ASCII case-insensitively, and every other value — including an `http://` origin naming the space's hosts, any value carrying a port (`:443` included), a host with a trailing `.`, a host that merely ends in the space without a separating `.` (`evil<space>`), a host that only contains the space (`<space>.evil.com`), and `null` — MUST be treated as not on this space.
-- R-3NOD-YQ0E: `POST /logout` carrying exactly one `Origin` header field whose value is on this space (R-3MGH-KY9P) MUST respond `302` with `Location: /`, clear the session cookie, delete the session server-side via `DeleteSession`, and leave the user row and the user's tokens untouched; the response MUST be the same whichever on-this-space origin the request carries, auth's own origin (R-3L8L-76J0) among them.
-- R-3OWA-CHR3: `POST /logout` carrying no `Origin` header field, more than one `Origin` header field, or one whose value is not on this space (R-3MGH-KY9P) MUST respond `403` with `Content-Type: text/plain; charset=utf-8` and a single line of body, send no `Set-Cookie`, not call `DeleteSession`, and leave the session untouched; this `Origin` check is the second line of cross-site defense after the cookie's `SameSite=Lax`.
+- R-TEUJ-4N11: When the `PublicURL` field of the `server.Config` passed to `server.New` (D03) is empty, an `Origin` value MUST be treated as *on this space* if and only if it has the serialized shape `https://` followed by a host `H` and nothing else, where `H` contains none of `/`, `?`, `#`, `@`, or `:` (so the value carries no path, query, fragment, userinfo, or port), and `H`, compared with the space ASCII case-insensitively, either equals the space or ends in `.` followed by the space with a non-empty prefix before that `.`; the scheme `https` MUST be matched ASCII case-insensitively, and every other value — including an `http://` origin naming the space's hosts, any value carrying a port (`:443` included), a host with a trailing `.`, a host that merely ends in the space without a separating `.` (`evil<space>`), a host that only contains the space (`<space>.evil.com`), and `null` — MUST be treated as not on this space.
+- R-ZIUD-4FIE: When the `PublicURL` field of the `server.Config` passed to `server.New` (D03) is non-empty, an `Origin` value MUST be treated as *on this space* if and only if it is exactly the concatenation of `PublicURL`'s scheme, matched ASCII case-insensitively, then `://`, then a non-empty host `H` that contains none of `/`, `?`, `#`, `@`, or `:`, then `PublicURL`'s port part — `:` followed by its port exactly as `PublicURL` writes it when it has a port, and nothing when it has none — where `H`, compared with the request's cookie domain (R-9Y8U-AAQ2) ASCII case-insensitively, either equals it or ends in `.` followed by it with a non-empty prefix before that `.`; every other value — including one with another scheme, another port, no port when `PublicURL` has one, a port when it has none, a path, query, fragment, or userinfo, a host with a trailing `.`, `evil<cookie domain>`, `<cookie domain>.evil.com`, and `null` — MUST be treated as not on this space.
+- R-ZK29-I793: `POST /logout` carrying exactly one `Origin` header field whose value is on this space (R-TEUJ-4N11, R-ZIUD-4FIE) MUST respond `302` with `Location: /`, clear the session cookie, delete the session server-side via `DeleteSession`, and leave the user row and the user's tokens untouched; the response MUST be the same whichever on-this-space origin the request carries, auth's own origin (R-TCEQ-D3JN, R-TDMM-QVAC) among them whenever it is on this space.
+- R-ZLA5-VYZS: `POST /logout` carrying no `Origin` header field, more than one `Origin` header field, or one whose value is not on this space (R-TEUJ-4N11, R-ZIUD-4FIE) MUST respond `403` with `Content-Type: text/plain; charset=utf-8` and a single line of body, send no `Set-Cookie`, not call `DeleteSession`, and leave the session untouched; this `Origin` check is the second line of cross-site defense after the cookie's `SameSite=Lax`.
 - R-TQ5L-6X9V: When auth serves its own host on a space, `GET https://auth.<space>/` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`.
 - R-VWSW-YH7W: auth's design defines, scanning an auth page from left to right, a **tag span** as a `<` that lies outside the content of every `script` element and outside every quoted run of an earlier tag span and is immediately followed by an ASCII letter, running through the first `>` after it that lies outside every **quoted run** of the span (a `"` and the text through the next `"`, the runs taken left to right); a tag span's **name** as the run of ASCII letters, ASCII digits, and `-` after its `<`; a **start tag** for a lowercase element name `N` as a tag span whose name is exactly `N`; and an **end tag** for `N` as the characters `</`, `N`, `>`; every requirement of auth's design that names these MUST denote that.
 - R-BSTK-NA80: auth's design defines an **occurrence** of an attribute `A` in a tag span (a start tag included) as `A` starting at a place outside the span's quoted runs, preceded by ASCII whitespace, and immediately followed by `="`; the **read value** of that occurrence as the text of the quoted run that this `"` opens, from after it up to the next `"`, with every character reference decoded as the WHATWG HTML tokenizer decodes one inside an attribute value (HTML Living Standard §13.2.5.77 onward: numeric references, and named references with or without their trailing `;` exactly where the tokenizer decodes them); and a start tag that **carries** `A` **reading** `v` as one holding exactly one occurrence of `A` whose read value is exactly `v`; every requirement of auth's design that names these MUST denote that.
