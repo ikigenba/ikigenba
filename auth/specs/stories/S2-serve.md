@@ -30,14 +30,15 @@ banner of auth's signed-in pages (`S3-sign-in.md`). On a host, opsctl sets it
 in the environment the host gives auth, normally
 `/var/lib/ikigenba/services.json`; on a host that has no services file it is
 unset, and auth's pages then carry no launcher. auth reads the variable once,
-when it starts, and never fails to start over it: unset, empty, or naming a
-file that is missing or unreadable, auth starts and serves all the same, and
-says nothing about it. auth checks its environment first — `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, then `DRAIN_SECONDS` — then looks
-for its socket, and only then opens its SQLite database at `state/auth.db`,
-relative to its working directory. So a start refused as a usage error has
-touched nothing, not even the database. Starting touches no network: the
-Google settings are read and required at startup, but Google itself is reached
+when it starts, and never fails to start over it: unset, empty, a path not in
+its plain form (`S3-sign-in.md`), or naming a file that is missing or
+unreadable, auth starts and serves all the same, and says nothing about it.
+auth checks its environment first — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`WORKSPACE_DOMAIN`, then `DRAIN_SECONDS` — then looks for its socket, and only
+then opens its SQLite database at `state/auth.db`, relative to its working
+directory. So a start refused as a usage error has touched nothing, not even
+the database. Starting touches no network: the Google settings are read and
+required at startup, but Google itself is reached
 only when a human signs in (`S3-sign-in.md`), so auth serves even while Google
 is unreachable, and `/check` and `/me` keep answering from the local database
 (`S4-check.md`). In the stories below that run `auth` directly, its

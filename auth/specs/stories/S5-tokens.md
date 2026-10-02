@@ -25,10 +25,11 @@ card, and the two pages token creation draws.
 
 Every HTML page these stories fix is drawn with the banner (S3): its
 `<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet and
-declares the phone-width viewport, it opens with the banner — the mark, the
-profile icon titled with the user's email as a link to `/`, the `Sign out`
-button POSTing to `/logout`, and, when auth's services file lists services,
-the launcher (S3) — its content sits in the page's one `<main>`, and it ends
+declares the phone-width viewport, it opens with the banner — when auth's
+services file lists services with an icon, the launcher (S3), whose button
+comes first, immediately before the mark; then the mark, the profile icon
+titled with the user's email as a link to `/`, and the `Sign out` button
+POSTing to `/logout` — its content sits in the page's one `<main>`, and it ends
 with the page footer reading `auth <version>` (S3). A card is a
 `<section class="card">` whose `<header>` holds an `<h2>` naming it. An icon
 is an inline `<svg class="ico" aria-hidden="true">` drawn before a button's

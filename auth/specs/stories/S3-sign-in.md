@@ -60,9 +60,10 @@ footer, and its `<body>` holds `<main class="auth-page">`, which holds one
 page for a signed-in user — the profile here, and the token-created page and
 the rejected-create page (`S5-tokens.md`) — is drawn with the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
-mark, the profile icon, and a sign-out button; on a host with a services file
-it also holds the launcher button (below). The mark's text is `ikigenba`, and
-it names the service it fronts, `auth`, which a browser shows as
+mark, the profile icon, and a sign-out button, in that order; when the page
+has a launcher (below), the launcher button comes first, immediately before
+the mark, and without a launcher there is no such button. The mark's text is
+`ikigenba`, and it names the service it fronts, `auth`, which a browser shows as
 `ikigenba │ auth`; the mark is not a link. The profile icon is a link to `/`,
 auth's own profile: `<a class="profile">`, labelled `Profile` for assistive
 technology and titled with the user's email address, which a browser shows as
@@ -84,21 +85,29 @@ The launcher is the banner's way to the platform's other services. It is
 there only when the host's services file lists services: auth takes the
 file's path from `IKIGENBA_SERVICES`, which it reads once, when it starts
 (`S2-serve.md`), and it reads the file itself afresh for every page, so a
-rewrite of the file shows on the next page without a restart. The file is a
-JSON object whose `services` member is an array; each entry is an object with
-`name`, a non-empty string; `url`, a string; `icon`, a string holding the SVG
-text of the service's icon; and `enabled`, `true` or `false`, `false` for a
-service switched off. The array's order is the launcher's order. Members the
-launcher does not know are ignored, and an entry that lacks one of the four,
-or holds one of the wrong kind, is left out while the rest are still shown.
-With no variable, no readable file, a file that is not such an object, or no
-usable entry, the page has no launcher, and is otherwise the same page; auth
-writes nothing about it, since a broken launcher never breaks a page. When
-the launcher is there, the banner holds a launcher button labelled
-`Services`; pressing it opens the list of the services, which is closed when
-the page loads. The list holds a search field labelled `Find a service`, with
-the placeholder `Find a service`, and one entry per service in the file's
-order, each showing the service's icon and then its name. An enabled
+rewrite of the file shows on the next page without a restart. The file is
+opsctl's: a JSON object whose `services` member is an array; each entry is an
+object with `name`, a non-empty string; `url`, `description`, and `socket`,
+strings; `enabled`, `true` or `false`, `false` for a service switched off;
+`mcp`, `true` or `false`; and, optionally, `icon`, a string holding the SVG
+text of the service's icon. The file lists every service on the host, but the
+launcher offers only the entries that carry an icon: an entry with no `icon`,
+or one that is not a string, stays out of the launcher. The array's order is
+the launcher's order. Members the launcher does not know are ignored, and an
+entry that lacks one of the six others, or holds one of the wrong kind, is
+left out while the rest are still shown. The path is used exactly as given and
+must already be in its plain form: a path with a `.` element, a `..` after a
+named element, a doubled `/`, or a trailing `/` is not read at all.
+With no variable, a path
+not in its plain form, no readable file, a file that is not such an object, or
+no usable entry that carries an icon, the page has no launcher, and is
+otherwise the same page; auth writes nothing about it, since a broken launcher
+never breaks a page. When the launcher is there, the banner opens with a
+launcher button labelled `Services`, immediately before the mark; pressing it
+opens the list of the services, which is closed when the page loads. The list
+holds a search field labelled `Find a service`, with the placeholder
+`Find a service`, and one entry per service that carries an icon, in the
+file's order, each showing the service's icon and then its name. An enabled
 service's entry is a link to its `url`. A service switched off keeps its place
 but is not a working link, and its entry is titled `<name> is unavailable`,
 which a browser shows as its tooltip; its visible text is still its icon and
@@ -875,15 +884,17 @@ Postconditions:
 On a host, the services file lists the platform's services, and the launcher
 is how a user gets from their profile to any of them without typing an
 address. A developer stands in for the host by writing a services file and
-naming it when serving auth. The file here, `/tmp/services.json`, lists three
-services, one of them switched off:
+naming it when serving auth. The file here, `/tmp/services.json`, lists four
+services: three with an icon, one of them switched off, and `mcp`, the
+platform's MCP gateway, which has no icon and so is not in the launcher:
 
 ```
 {
   "services": [
-    {"name": "auth", "url": "https://auth.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/></svg>", "enabled": true},
-    {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>", "enabled": true},
-    {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>", "enabled": false}
+    {"name": "auth", "url": "https://auth.sbx.ikigenba.dev/", "description": "Sign in to the space", "socket": "/run/ikigenba/auth.sock", "enabled": true, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/></svg>"},
+    {"name": "mcp", "url": "https://mcp.sbx.ikigenba.dev/", "description": "The space's MCP gateway", "socket": "/run/ikigenba/mcp.sock", "enabled": true, "mcp": false},
+    {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "description": "Demo widgets to list and create", "socket": "/run/ikigenba/dummy.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>"},
+    {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "description": "Ledger", "socket": "/run/ikigenba/ledger.sock", "enabled": false, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>"}
   ]
 }
 ```
@@ -915,14 +926,16 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is the profile page of `A user asks for the profile`,
 with the same banner, and the banner also holds the launcher button labelled
-`Services`. The page carries the list of services labelled `Services`,
-holding the search field labelled `Find a service` with the placeholder
-`Find a service` and three entries in the file's order: `auth`, showing its
+`Services`, first in the banner, immediately before the mark. The page
+carries the list of services labelled `Services`, holding the search field
+labelled `Find a service` with the placeholder `Find a service` and three
+entries in the file's order: `auth`, showing its
 icon and then its name, a link to `https://auth.sbx.ikigenba.dev/`, marked as
 the current page; `dummy`, showing its icon and then its name, a link to
 `https://dummy.sbx.ikigenba.dev/`; and `ledger`, showing its icon and then its
-name, not a working link, titled `ledger is unavailable`. The no-match line
-is in the page and hidden. The page loads the script `/_appkit/launcher.js`.
+name, not a working link, titled `ledger is unavailable`. There is no entry
+for `mcp`, which has no icon. The no-match line is in the page and hidden.
+The page loads the script `/_appkit/launcher.js`.
 
 Preconditions:
 
@@ -983,9 +996,10 @@ Postconditions:
 `IKIGENBA_SERVICES` names a file, but there is nothing there to read. A
 broken launcher never breaks a page, so auth draws the page without one and
 reports nothing: this is not a fault of the request, and auth's answer is the
-same as when no file is named at all. A file that exists but cannot be read,
-is not a JSON object with a `services` array, or has no usable entry is
-answered the same way.
+same as when no file is named at all. A path not in its plain form, and a
+file that exists but cannot be read, is not a JSON object with a `services`
+array, or has no usable entry that carries an icon, are answered the same
+way.
 
 Request:
 

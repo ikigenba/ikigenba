@@ -61,8 +61,9 @@ Postconditions:
 ## A user on a space opens the service launcher
 
 On a space the host sets `IKIGENBA_SERVICES` in auth's environment to the
-path of its services file (`S2-serve.md`), and that file lists auth because
-auth's package ships `share/icon.svg` (`S6-package.md`). So the profile a
+path of its services file (`S2-serve.md`), and that file lists auth with an
+icon because auth's package ships `share/icon.svg` (`S6-package.md`).
+So the profile a
 signed-in user reaches at auth's own hostname carries the launcher in its
 banner, and auth is one of the services it offers. The launcher's text and
 behavior are `S3-sign-in.md`'s; this story fixes only what the user sees on a
@@ -100,7 +101,7 @@ Preconditions:
   active active -`.
 - `auth/dist/auth-v<semver>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
 - The host sets `IKIGENBA_SERVICES` in auth's environment to the path of its
-  services file, and that file lists auth.
+  services file, and that file lists auth with its icon.
 - The request carries an `ikigenba_session` cookie naming a live session on
   this space, from a sign-in through Google at
   `https://auth.sbx.ikigenba.dev/`.
