@@ -34,8 +34,8 @@ against; it is human-authored and read-only to the run.
 The only third-party module the code may require is
 `github.com/BurntSushi/toml`, for reading app manifests and the secrets
 file; the D05 tests need it, since their expected diagnostics come from its
-`toml.ParseError`. Adding it still
-awaits the user's approval; until it is given, `go.mod` requires nothing.
+`toml.ParseError`. Its addition is approved; the build run adds it to
+`go.mod` when the code first needs it.
 Everything else is the standard library. Once required, the module sits in
 the Go module cache (`go mod download` fetches it once, online), `go.sum` is
 committed, and the gates themselves run offline.
