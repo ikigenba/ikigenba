@@ -10,8 +10,9 @@ behind the sandbox's nginx instead, and the runner sets the optional
 `IKIGENBA_PUBLIC_URL` and `IKIGENBA_CALLBACK_URL` (D03); a host sets
 neither. The module path is `github.com/ikigenba/ikigenba/auth`. It requires appkit
 (`github.com/ikigenba/ikigenba/appkit`), which supplies the banner, the
-service launcher, and the shared stylesheet, fonts, licences and launcher
-script under `/_appkit/`. Its version declaration and run seam are
+service launcher, the shared stylesheet, fonts, licences and launcher
+script under `/_appkit/`, and the telemetry writer, request middleware and
+socket sink through which auth records its trail of events. Its version declaration and run seam are
 design D01 (`specs/design/D01-layout-and-run-seam.md`); this file does not
 restate them.
 
@@ -37,8 +38,8 @@ a launcher icon. It is human-authored; the build run never writes it.
   without one gate 4 fails with `go: -race requires cgo`. The release build
   itself is cgo-free, which gate 3 proves.
 - the appkit module at the version `go.mod` requires, in the Go module cache
-  (`go mod download` fetches it once, online); `go.sum` is committed, and the
-  gates themselves run offline
+  (see appkit release below for how it gets there); `go.sum` is committed,
+  and the gates themselves run offline
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
@@ -48,6 +49,28 @@ a launcher icon. It is human-authored; the build run never writes it.
 The toolchain names the tools the gates and the `Makefile` need; it pins no Go
 library. Library
 release selection is `go.mod`'s job, and the build run writes it.
+
+## appkit release
+
+The design consumes appkit release `v0.7.0` (module
+`github.com/ikigenba/ikigenba/appkit`, tag `appkit/v0.7.0`): the release whose
+`telemetry` package and `identity.NewContext`/`identity.FromContext` the
+design names. It is
+adopted locally, without a push, by this procedure:
+
+1. A human, after appkit's build run has committed the release, tags that
+   commit locally: `git tag appkit/v0.7.0 <commit>`.
+2. A human seeds the module cache once, from the local repository:
+   `GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@v0.7.0`
+3. The build run sets the requirement with
+   `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@v0.7.0`.
+   The shell the build run is started from must export
+   `GONOSUMDB=github.com/ikigenba/ikigenba`, so no step consults the checksum
+   database for a release it has never seen.
+
+Once `go.sum` holds the release's lines, ordinary builds and the gates work
+offline from the module cache. The tag `appkit/v0.7.0` must be pushed before
+any other machine builds auth.
 
 ## Test files
 
@@ -64,12 +87,14 @@ documents never enter the test side of the grep.
 
 **No id-shaped-literal hazard.** A requirement tag has the shape
 `R-XXXX-XXXX`: an `R-` prefix and two hyphen-separated groups. auth's opaque
-values carry no such shape. Its ids (user, session, login-state, token) are
+values carry no such shape. Its user, session, and login-state ids are
 26-char Crockford base32 (`internal/idcodec`, alphabet excludes I L O U, no
-hyphen); its token secrets are `ikp_` + 52 Crockford chars; its stored secret
-hashes are 64 lowercase-hex chars. None contains the hyphenated `R-....-....`
-pattern the grep matches, so no auth literal — id, secret, or hash — can be
-mistaken for a requirement tag.
+hyphen); its token ids are `tok_` + 26 Crockford chars; its token secrets are
+`ikp_` + 52 Crockford chars; its stored secret hashes are 64 lowercase-hex
+chars; the request ids its trail carries are 32 lowercase-hex chars. None
+contains the hyphenated `R-....-....` pattern the grep matches, so no auth
+literal — id, secret, hash, or request id — can be mistaken for a requirement
+tag.
 
 ## Test discipline
 
@@ -88,7 +113,7 @@ tests follow Live tests below.
 as an ordinary user, with no systemd. Every input reaches the code through the
 run seam (`cli.Process`, design D01) — `Args`, `LookupEnv`, `Unsetenv`, `Pid`,
 `Stdout`, `Stderr`, `Inherit`, `Now`, `Rand`, `OIDCIssuer`, `DBSource`,
-`Banner` — and tests supply each one; a test never reads or changes the real environment,
+`Banner`, `Sink` — and tests supply each one; a test never reads or changes the real environment,
 clock, or randomness, or accesses filesystem or network state outside the
 isolated fixtures described below. A test whose result depends on the
 developer's machine, wall-clock, environment, or a port already in use is a
@@ -109,7 +134,12 @@ bug.
   database failure mid-request (the `500` of D03) is produced the same way,
   by making the test's own database fail after the server has it — for
   example by closing the `*store.Store` a server-level test handed
-  `server.New`.
+  `server.New`. A store test may build an old-shape database within its own
+  temporary tree, the fixture for D04's token-id migration: it opens a store
+  with `store.Open`, creates a token with `CreateToken`, closes it, and then,
+  through the SQLite driver, strips the `tok_` prefix from that token's id
+  wherever the database stores it (the tables and columns located through
+  `sqlite_master`), before opening the store again.
 - **The clock is injected.** `Process.Now` supplies every timestamp. Time-based
   behaviour — session idle (15m) and cap (18h), the 30d token login window,
   token expiry (30d/90d/365d) — is tested by advancing the value `Now` returns,
@@ -122,6 +152,30 @@ bug.
   services the case needs (D01, D05); no test calls `page.New`, which reads
   `IKIGENBA_SERVICES` from the real environment. A test may call appkit's
   other exported functions, to render the banner it expects, for instance.
+- **The trail is captured, never sent.** Events reach a test through a sink
+  it supplies, never through a socket (the one exec'ing test below excepted).
+  A `cli.Run`-level test passes `&telemetry.Capture{}` (appkit's
+  `telemetry` package) as `Process.Sink` and reads `Capture.Events` after
+  `Run` has returned, when every event has been delivered or written out; or
+  a sink of its own — one that returns an error wrapping
+  `telemetry.ErrRejected`, so each event is written to `Stderr` at once with
+  no retry and no pause, or one that holds `Deliver` until its context is
+  done, for the drain-window test below. A test never leaves `Process.Sink`
+  nil, since that is not contract. A `server.New`-level test builds its own
+  writer, `telemetry.New` with `Service` `auth`, a `*telemetry.Capture` as
+  `Sink`, its own `Now` and `Rand`, and a buffer as `Stderr`, passes it as
+  `server.Config.Telemetry`, drives the handler, calls `Writer.Flush`, asserts
+  on `Capture.Events`, and shuts the writer down with `Writer.Shutdown`
+  before it ends. A test that wants a particular stop reason cancels `Run`'s
+  context with a cause of its own (`context.WithCancelCause`).
+- **stderr is asserted only for trouble.** A handled failure — a 500 from a
+  failed store, a 502 from a failed Google — is asserted through the
+  `request.finished` status and the domain events it records, and through
+  `Stderr` staying empty; no test expects a line on `Stderr` for a request.
+  Exact `Stderr` bytes are asserted only for a condition auth cannot continue
+  from (a refused start, a database that will not open, a failed `READY=1`,
+  a failed or overrun `Serve`) and for the writer's
+  `auth: undelivered event: ` lines.
 - **No test runs the page's scripts.** The pages carry the Copy button's
   inline script and, when there are services, appkit's launcher script. The
   gates have no browser and no JavaScript engine, and adding one is an
@@ -154,7 +208,12 @@ with a deadline that fails the test rather than a sleep that hopes. It stops
 `Run` by cancelling the context it passed, never by a signal.
 
 **The drain tests wait on the clock, and only they do**, because the drain
-deadline is the behavior. A `Serve`-level test passes a drain of a few
+deadline is the behavior. The drain window also bounds how long auth waits to
+deliver its last events: the one `Run`-level drain-window test sets
+`DRAIN_SECONDS=1`, passes a sink whose `Deliver` returns only once its context
+is done, cancels `Run` with no request in flight, and asserts that `Run`
+returns `0` with `service.stopping` written to `Stderr` as an undelivered
+event, within the drain and a margin of real time. A `Serve`-level test passes a drain of a few
 milliseconds and a handler that blocks on a channel. The one `Run`-level
 overrun test sets `DRAIN_SECONDS=1` and holds a sign-in callback open inside
 the fake Google: it starts a sign-in with `GET /login/google`, reads the
@@ -166,7 +225,7 @@ endpoint after `Run` has returned.
 
 **One exec'ing test, and only one.** Tests under `internal/` never start a real
 process; the run seam exists so they need not. The wiring in `cmd/auth` (D01's run
-with no command, R-2B1J-WL7R) can be proved no other way, so exactly one kind of test that
+with no command, R-AUXO-9DST) can be proved no other way, so exactly one kind of test that
 execs the binary is admissible, and it lives in `cmd/auth`. It builds the
 binary into a temporary directory and runs it with `--version`, with
 `manifest`, with a bogus command, and bare with the three Google settings set
@@ -178,7 +237,7 @@ descriptor 3, and starts the child through
 `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. It sets
 `NOTIFY_SOCKET` to a datagram socket it bound and waits for `READY=1`, never a
 fixed sleep; then it sends `SIGTERM` and asserts exit 0 and silence on both
-streams, that the socket's path still exists and still accepts a
+streams — which holds because the child's trail has somewhere to go (below) — that the socket's path still exists and still accepts a
 connection into its queue after the child has exited, and that its working
 directory then holds nothing but `state/`, `state/auth.db`, and SQLite's
 `auth.db-journal`, `auth.db-wal`, and `auth.db-shm`. It runs the serve case a
@@ -188,15 +247,32 @@ temporary working directory, where it creates `state/auth.db`. Its environment
 is one the test composes, never the developer's — the three Google settings
 set to placeholder values — and it runs offline like everything else: its
 serve case needs no Google, since readiness is the datagram, not a completed
-login. In the first serve case that environment also names, in
+login. In both serve cases that environment also names, in
 `IKIGENBA_SERVICES`, a services file the test wrote in its temporary
-directory, and before starting the child the test seeds `state/auth.db` in
-the child's working directory with a user and a live session through
-`internal/store`. Before signalling, it makes one request of the child:
-`GET /` with that session's cookie, over the socket. It asserts only that the
-page carries the launcher and ends with the footer reading `auth` and the
-`Version` that `internal/version` declares, which proves `main` handed
-appkit's kit, with auth's version, to the server. Everything else auth answers is decided in process, and the exec'ing
+directory, holding an entry named `telemetry` (with all six members) whose
+`socket` is a Unix socket in a short temporary directory, outside the child's
+working directory, on which the test serves, in process, appkit's
+`telemetry.IngestHandler` over a sink of its own that records each event and
+signals a channel. The child delivers its trail there, so its stderr stays
+empty, and the test reads the trail from that sink after the child has
+exited: `service.started` first, carrying the `Version` `internal/version`
+declares, and `service.stopping` last, with `reason` `SIGTERM` or `SIGINT`
+for the signal it sent. In the first serve case the services file also lists
+a service with an icon, for the launcher, and before starting the child the
+test seeds `state/auth.db` in the child's working directory with a user and
+a live session through `internal/store`. In that case, once its sink has
+received `service.started` (a channel receive, not a sleep), the test
+atomically replaces the services file with a file identical but for its
+`telemetry` entry's socket, which names a second socket it serves the same
+way (the banner reads the file afresh for every page, so the icon-carrying
+entry must stay), and then makes one request of the
+child: `GET /` with that session's cookie, over the socket. It asserts that
+the page carries the launcher and ends with the footer reading `auth` and
+the `Version` that `internal/version` declares, which proves `main` handed
+appkit's kit, with auth's version, to the server; and that the events of
+that request and `service.stopping` reached the second socket and not the
+first, which proves `main` handed `Run` appkit's socket sink, reading the
+services file at each delivery. Everything else auth answers is decided in process, and the exec'ing
 test exists only to prove the wiring. Any other test
 that builds, execs, waits on, or signals a process is a bug.
 
