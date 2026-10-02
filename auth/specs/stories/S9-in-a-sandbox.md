@@ -27,6 +27,19 @@ sub-project), named here only by their observable effect, as
 `$ curl -si` line to the sandbox, standing in for the browser's own request;
 responses pass through the sandbox's nginx over HTTP/1.1.
 
+auth records its trail in a sandbox as on a host (`S2-serve.md`), delivering
+each event to the entry named `telemetry` in the services file
+`IKIGENBA_SERVICES` names. That file lists every app of the sandbox, so when
+the sandbox also holds the `telemetry` app auth's events reach its trail;
+a sandbox without it gives auth nowhere to deliver them, and auth writes each
+to stderr as an undelivered event (`S2-serve.md`), where `sandbox logs auth`
+shows it. The sandbox's routing through `/check` names the request it decides
+on the subrequest as a space's does (`S4-check.md`): `X-Original-Method`, its
+method; `X-Original-Host`, its host name without the port, such as
+`dummy.wip.localhost`; and `X-Original-URI`, its path and query. So auth's
+check events in a sandbox record `host=dummy.wip.localhost` for a request to
+`http://dummy.wip.localhost:7400`.
+
 ## A visitor reaches auth in a sandbox
 
 A visitor with no session opens auth's own name in the sandbox and gets the
@@ -395,15 +408,15 @@ the same own origin, `http://auth.wip.localhost:7400`, and otherwise behave as
 Request:
 
 ```
-$ curl -si -X POST -H 'Origin: http://auth.wip.localhost:7400' --cookie 'ikigenba_session=<opaque>' http://auth.wip.localhost:7400/tokens/<id>/disable
+$ curl -si -X POST -H 'Origin: http://auth.wip.localhost:7400' --cookie 'ikigenba_session=<opaque>' http://auth.wip.localhost:7400/tokens/<token-id>/disable
 ```
 
 ```
-$ curl -si -X POST -H 'Origin: http://auth.wip.localhost:7400' --cookie 'ikigenba_session=<opaque>' http://auth.wip.localhost:7400/tokens/<id>/enable
+$ curl -si -X POST -H 'Origin: http://auth.wip.localhost:7400' --cookie 'ikigenba_session=<opaque>' http://auth.wip.localhost:7400/tokens/<token-id>/enable
 ```
 
 ```
-$ curl -si -X POST -H 'Origin: http://auth.wip.localhost:7400' --cookie 'ikigenba_session=<opaque>' http://auth.wip.localhost:7400/tokens/<id>/delete
+$ curl -si -X POST -H 'Origin: http://auth.wip.localhost:7400' --cookie 'ikigenba_session=<opaque>' http://auth.wip.localhost:7400/tokens/<token-id>/delete
 ```
 
 Response (each):
@@ -420,7 +433,8 @@ Preconditions:
 - The sandbox above is up, and auth's environment carries
   `IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400`.
 - The request carries an `ikigenba_session` cookie naming a live session.
-- `<id>` names a token the user owns.
+- `<token-id>` is the id of a token the user owns: `tok_` followed by 26
+  Crockford base32 characters (`S5-tokens.md`), never its secret.
 
 Postconditions:
 
@@ -435,7 +449,7 @@ In a sandbox auth's own origin is exactly `IKIGENBA_PUBLIC_URL`, so a token
 the origin a host would use, `https://auth.wip.localhost:7400`; another app in
 the same sandbox, `http://dummy.wip.localhost:7400`; and auth's name on
 another port, `http://auth.wip.localhost:7401`. Every token action URL
-(`/tokens/<id>/enable`, `/disable`, `/delete`) is refused the same way.
+(`/tokens/<token-id>/enable`, `/disable`, `/delete`) is refused the same way.
 
 Request:
 

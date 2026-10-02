@@ -14,15 +14,26 @@ and otherwise `https://auth.<space>`, here `https://auth.sbx.ikigenba.dev`. A
 user may hold many tokens. A token's secret has the form `ikp_` followed by 52
 Crockford base32 characters (`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`),
 the encoding of 32 random bytes; it is shown once at creation and never again,
-and only a hash of it is stored. Separately, each token carries its own random
-Crockford identifier used in the action URLs (`POST /tokens/<id>/enable`,
-`/disable`, `/delete`); this id is not the secret. Every action is a POST:
+and only a hash of it is stored. Separately, each token carries its own id,
+`tok_` followed by 26 random Crockford base32 characters, written `<token-id>`
+below; it is the segment of the action URLs (`POST /tokens/<token-id>/enable`,
+`/disable`, `/delete`), and it is not the secret. Every action is a POST:
 acting on a token id that is not the user's own or does not exist answers 404,
 and a POST whose `Origin` is not the service's own origin answers 403. Those
 failures, like every text/plain failure auth answers, are one line of plain
 text with no banner. The whole profile page is S3's story; the stories here fix
 the token table and its empty state, the `Create a token` card, and the two
 pages token creation draws.
+
+Every request here is in the trail through the request events every request
+records (`S2-serve.md`). An action that changes a token also records one token
+event, under the request's id and the acting user's id: `token.minted` when a
+token is created, `token.disabled`, `token.enabled`, and `token.deleted` when
+one is disabled, enabled, or deleted. Each carries exactly one attribute,
+`token`, the token's `<token-id>`. None carries the token's secret, its name,
+or its expiry. A request that changes no token — a rejected submission, a 404,
+a 403, or a 500 because auth's database failed (`S4-check.md`) — records no
+token event.
 
 Every HTML page these stories fix is drawn with the banner (S3): its
 `<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet and
@@ -113,6 +124,9 @@ Postconditions:
   name, with its created-at set, its last-used empty, and its expiry set from
   the chosen `expires`.
 - Only a hash of the secret is stored; the plaintext is not persisted.
+- The new token has a fresh id, `<token-id>`.
+- auth records `token.minted` with `token=<token-id>`, under the request's id
+  and the user's id.
 
 ## A user creates a token with no name
 
@@ -154,7 +168,7 @@ Preconditions:
 
 Postconditions:
 
-- No token record is created.
+- No token record is created. auth records no `token.minted`.
 
 ## A user creates a token with a name longer than 64 characters
 
@@ -197,7 +211,7 @@ Preconditions:
 
 Postconditions:
 
-- No token record is created.
+- No token record is created. auth records no `token.minted`.
 
 ## A caller creates a token with an expiry that is not offered
 
@@ -244,7 +258,7 @@ Preconditions:
 
 Postconditions:
 
-- No token record is created.
+- No token record is created. auth records no `token.minted`.
 
 ## A caller creates a token with both fields wrong
 
@@ -287,7 +301,7 @@ Preconditions:
 
 Postconditions:
 
-- No token record is created.
+- No token record is created. auth records no `token.minted`.
 
 ## A user lists their tokens
 
@@ -354,11 +368,11 @@ recently used first — for the example, `ci-deploy`, `nightly-sync`,
   (`old-backup`).
 - The last cell is `<td class="row-actions">` holding two inline forms whose
   method is POST, each with one `<button class="ghost small">`. The first's
-  action is the token's disable URL (`/tokens/<id>/disable`) with the button
-  reading `Disable` when the token is enabled, or its enable URL
-  (`/tokens/<id>/enable`) with the button reading `Enable` when it is
+  action is the token's disable URL (`/tokens/<token-id>/disable`) with the
+  button reading `Disable` when the token is enabled, or its enable URL
+  (`/tokens/<token-id>/enable`) with the button reading `Enable` when it is
   disabled. The second's action is the token's delete URL
-  (`/tokens/<id>/delete`) with the button reading `Delete`.
+  (`/tokens/<token-id>/delete`) with the button reading `Delete`.
 
 No plaintext secret appears anywhere on the page.
 
@@ -481,13 +495,13 @@ the check endpoint is S4's story; it is not re-proven here.
 Request:
 
 ```
-POST /tokens/<id>/disable HTTP/1.1
+POST /tokens/<token-id>/disable HTTP/1.1
 Cookie: ikigenba_session=<id>
 Origin: https://auth.sbx.ikigenba.dev
 ```
 
 ```
-POST /tokens/<id>/enable HTTP/1.1
+POST /tokens/<token-id>/enable HTTP/1.1
 Cookie: ikigenba_session=<id>
 Origin: https://auth.sbx.ikigenba.dev
 ```
@@ -507,7 +521,7 @@ Preconditions:
 
 - The user is signed in; the cookie names a live session.
 - The `Origin` header equals the service's own origin.
-- The `<id>` names a token the user owns; before the first request it is
+- The `<token-id>` names a token the user owns; before the first request it is
   enabled.
 
 Postconditions:
@@ -515,6 +529,9 @@ Postconditions:
 - After the disable request the token is disabled; after the enable request it
   is enabled again. A disabled token is rejected by `/check` exactly as an
   unknown one is (S4).
+- The disable request records `token.disabled` and the enable request records
+  `token.enabled`, each with `token=<token-id>`, under its own request's id
+  and the user's id.
 
 ## A user deletes a token
 
@@ -524,7 +541,7 @@ authenticate.
 Request:
 
 ```
-POST /tokens/<id>/delete HTTP/1.1
+POST /tokens/<token-id>/delete HTTP/1.1
 Cookie: ikigenba_session=<id>
 Origin: https://auth.sbx.ikigenba.dev
 ```
@@ -542,12 +559,14 @@ Preconditions:
 
 - The user is signed in; the cookie names a live session.
 - The `Origin` header equals the service's own origin.
-- The `<id>` names a token the user owns.
+- The `<token-id>` names a token the user owns.
 
 Postconditions:
 
 - The token record is gone. Its secret no longer authenticates any request
   (S4).
+- auth records `token.deleted` with `token=<token-id>`, under the request's id
+  and the user's id.
 
 ## A user acts on a token that is not theirs
 
@@ -557,7 +576,7 @@ the user's to act on. All three actions behave the same way.
 Request:
 
 ```
-POST /tokens/<id>/disable HTTP/1.1
+POST /tokens/<token-id>/disable HTTP/1.1
 Cookie: ikigenba_session=<id>
 Origin: https://auth.sbx.ikigenba.dev
 ```
@@ -576,11 +595,11 @@ Preconditions:
 
 - The user is signed in; the cookie names a live session.
 - The `Origin` header equals the service's own origin.
-- The `<id>` names a token owned by a different user or names no token.
+- The `<token-id>` names a token owned by a different user or names no token.
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed. auth records no token event.
 
 ## Another site posts to the profile
 
@@ -607,8 +626,8 @@ HTTP/1.1 403 Forbidden
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 403. A POST to any token action URL (`/tokens/<id>/enable`, `/disable`,
-`/delete`) with a foreign `Origin` is refused the same way.
+Status 403. A POST to any token action URL (`/tokens/<token-id>/enable`,
+`/disable`, `/delete`) with a foreign `Origin` is refused the same way.
 
 Preconditions:
 
@@ -618,4 +637,52 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed. auth records no token event.
+
+## A user's token from before ids were prefixed keeps working
+
+An auth that predates the `tok_` prefix gave a token a bare 26-character
+Crockford id. When auth opens a database holding such tokens, it gives each
+the prefixed id, `tok_` followed by the same 26 characters, and changes
+nothing else about it, so a token minted before keeps its secret, name,
+times, and state, and keeps authenticating. Opening the database again
+changes nothing more. From then on the token's URLs and events name it by the
+prefixed id; its bare id names no token, so an action URL carrying it answers
+404 as any unknown id does.
+
+Request:
+
+```
+GET / HTTP/1.1
+Cookie: ikigenba_session=<id>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile page (S3) whose `API tokens` table holds
+a row for the token, as in `A user lists their tokens`, with its name,
+times, and status as they were. The row's forms POST to
+`/tokens/tok_<bare-id>/disable` and `/tokens/tok_<bare-id>/delete`, where
+`<bare-id>` is the 26-character id the token had before.
+
+Preconditions:
+
+- auth's database was written by an earlier auth, and holds a token the user
+  owns, enabled, whose id is the bare `<bare-id>` and whose secret is
+  `ikp_<token>`.
+- auth has since been started on that database and is serving.
+- The user is signed in; the cookie names a live session.
+
+Postconditions:
+
+- Nothing has changed by this request. The token's id has been
+  `tok_<bare-id>` since auth opened the database; its secret, name, times, and
+  state are unchanged.
+- `ikp_<token>` still authenticates: `/check` honors it as in `nginx checks a
+  request with a token` (S4), and records `check.allowed` with
+  `token=tok_<bare-id>`.

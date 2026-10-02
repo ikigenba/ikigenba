@@ -5,14 +5,17 @@ of the platform: one Go binary that serves the auth service. On a host it runs
 as `/opt/auth/bin/auth` with `/opt/auth` as its working directory and its
 environment read from `/opt/auth/etc/env`; a developer runs the same binary
 from the checkout. With no command it serves (`S2-serve.md`); the commands
-here are what the build asks of it.
+here are what the build asks of it. They serve nothing and record no event:
+the trail of events is what auth records while it serves (`S2-serve.md`).
 
 ## A developer asks which version they have
 
 The version is a `var` in the source, never injected at build time, so a
 developer's build and a deployed binary report the same string. Its shape is
 `v<semver>`: a `v`, then a semantic version, prerelease and build metadata
-included. Its value is data and is not fixed here.
+included. Its value is data and is not fixed here. It is also the `version`
+auth records in `service.started` each time it starts serving
+(`S2-serve.md`), so the trail names the release that was running.
 
 Command:
 

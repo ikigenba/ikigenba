@@ -14,7 +14,14 @@ other apps through `/check` is a property of the space, not of auth: it is
 added by opsctl's nginx generation (a separate sub-project) and is named here
 only by its observable effect, the way dummy's `S7-on-a-space.md` names devctl
 and opsctl only by their published commands. `dummy` is the example protected
-app, deployed on the same space through its own `S7-on-a-space.md` chain.
+app, deployed on the same space through its own `S7-on-a-space.md` chain. The
+`telemetry` service is deployed and active on the same space too, so the
+host's services file has an entry named `telemetry`, and every event auth
+records reaches the trail (`S2-serve.md`). On the `/check` subrequest the
+space's nginx names the request it is deciding in `X-Original-Method`,
+`X-Original-Host`, and `X-Original-URI` (`S4-check.md`), and gives it the same
+`X-Request-Id` as the request it forwards to the app, so auth's check event
+and the app's own record of the request share one request id.
 
 ## A visitor reaches auth on a space
 
@@ -57,6 +64,10 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+- auth records `request.started` with `method=GET` and `path=/`, then
+  `request.finished` with `status=200` and `duration_us=<microseconds>`, both
+  under request id `<request-id>`, the one nginx gave the request, and no
+  user.
 
 ## A user on a space opens the service launcher
 
@@ -146,10 +157,12 @@ Preconditions:
   `S7-on-a-space.md` chain, so `space status` also shows `dummy v<semver>
   active active -`.
 - The host's nginx routes every app other than auth through auth's `/check`
-  before serving it: a request with no accepted credential is answered by a
-  redirect to `https://auth.sbx.ikigenba.dev/?return=<original URL>`. This
-  routing is a property of the space, added by opsctl's nginx generation (a
-  separate sub-project); a space without it serves apps unauthenticated.
+  before serving it, naming the request on the subrequest in
+  `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`: a request with
+  no accepted credential is answered by a redirect to
+  `https://auth.sbx.ikigenba.dev/?return=<original URL>`. This routing is a
+  property of the space, added by opsctl's nginx generation (a separate
+  sub-project); a space without it serves apps unauthenticated.
 - The request carries no `ikigenba_session` cookie and no `Authorization`
   header.
 
@@ -157,6 +170,12 @@ Postconditions:
 
 - Nothing has changed. No session was created; `/check` had no credential to
   count as use.
+- auth records `check.refused` with `outcome=unauthenticated`,
+  `credential=none`, `method=GET`, `host=dummy.sbx.ikigenba.dev`, and
+  `path=/`, under request id `<request-id>`, the one nginx gave the request,
+  and no user. It comes between the `request.started` and `request.finished`
+  of the `/check` subrequest, whose `request.finished` has `status=401`. dummy
+  never saw the request, so this is the trail's only record of it.
 
 ## An agent reaches an app on a space with a token
 
@@ -193,17 +212,26 @@ Preconditions:
 - The auth deploy chain above holds, and `dummy` is deployed and active on the
   same space through its own `S7-on-a-space.md` chain.
 - The host's nginx routes every app other than auth through auth's `/check`
-  before serving it: a request that `/check` approves is forwarded to the app
-  with `X-User-Id` and `X-User-Email` set from auth's answer and any
-  client-supplied `X-User-*` removed. This routing is a property of the space,
-  added by opsctl's nginx generation (a separate sub-project).
-- The agent holds a valid token `ikp_<token>` (`S5-tokens.md`) whose owner
-  signed in through Google within the last 30 days, so the token is honored.
+  before serving it, naming the request on the subrequest in
+  `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`: a request that
+  `/check` approves is forwarded to the app with `X-User-Id` and
+  `X-User-Email` set from auth's answer and any client-supplied `X-User-*`
+  removed. This routing is a property of the space, added by opsctl's nginx
+  generation (a separate sub-project).
+- The agent holds a valid token `ikp_<token>` (`S5-tokens.md`) whose id is
+  `<token-id>`, `tok_` followed by 26 Crockford base32 characters, and whose
+  owner, the user `<user-id>`, signed in through Google within the last 30
+  days, so the token is honored.
 
 Postconditions:
 
 - The token's last-used time is updated by the `/check` subrequest
   (`S4-check.md`); nothing else has changed.
+- auth records `check.allowed` with `outcome=allowed`, `credential=token`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, `path=/widgets`, and
+  `token=<token-id>`, under request id `<request-id>`, the one nginx gave the
+  request, and user `<user-id>`. The token's secret appears nowhere in the
+  trail.
 
 ## A visitor asks a space for the check endpoint
 
@@ -254,3 +282,5 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+- Neither request reached auth, so auth records no event for either: no check
+  event, and no `request.started`.

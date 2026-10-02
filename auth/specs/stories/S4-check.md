@@ -3,9 +3,13 @@
 The two endpoints auth serves for deciding who a request belongs to.
 `GET /check` is the subrequest endpoint nginx calls for every routed app: nginx
 forwards the original request's `Cookie` and `Authorization` headers with no
-body and with its own `X-Request-Id` for the request, and acts on the status
-auth returns — 200 means copy the identity headers onto the upstream request,
-401 means redirect the browser to sign in, 403 means pass the refusal through.
+body and with its own `X-Request-Id` for the request, written `<request-id>`
+below, and names the request it is deciding in three headers of its own
+making: `X-Original-Method`, its method; `X-Original-Host`, its host name; and
+`X-Original-URI`, its path and query exactly as the client sent them. nginx
+acts on the status auth returns — 200 means copy the identity headers onto the
+upstream request, 401 means redirect the browser to sign in, 403 means pass
+the refusal through.
 `GET /me` is the public "who am I" endpoint an agent or a signed-in user can
 call directly. The requests, standing in for nginx or for the caller, go to a
 running auth (`S2-serve.md`), started with its Google settings; they reach it
@@ -23,8 +27,31 @@ subject, never the email; written here as `<user-id>`), and `X-User-Email`, the
 user's email. A session ends at the earlier of 18 hours after login and 15
 minutes after its last use, and every request through `/check` counts as use. A
 token is honored only while its owner has logged in through Google within the
-last 30 days. The last-use time of a session and the last-used time of a token
-are updated in `/check` and nowhere else; `/me` never mutates anything.
+last 30 days. Besides its secret, a token has an id, `tok_` followed by 26
+Crockford base32 characters (`S5-tokens.md`), written `<token-id>` below; the
+id is not the secret and authenticates nothing. The last-use time of a session
+and the last-used time of a token are updated in `/check` and nowhere else;
+`/me` never mutates anything.
+
+Every `GET /check` records exactly one check event in the trail, beside the
+request events every request records (`S2-serve.md`), because a request
+`/check` refuses never reaches an app and the check is the only place that
+sees it. The event is `check.allowed` when auth answers 200, `check.refused`
+when it answers 401 or 403, and `check.failed` when it answers 500. It carries
+the request id `<request-id>`, and the user the check resolved to when it is
+`check.allowed`; a refused or failed check names no user. Its attributes are
+exactly these strings: `outcome` — `allowed` for 200, `unauthenticated` for
+401, `forbidden` for 403, `failed` for 500; `credential` — `token` when the
+request presented `Authorization: Bearer`, otherwise `session` when it
+presented an `ikigenba_session` cookie, otherwise `none`; `method`, `host`, and
+`path`, from `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`, the
+path being the URI with everything from its first `?` removed, so no query
+string enters the trail; and `token`, the honored token's `<token-id>`, only
+when the credential is a token auth honored. A header nginx did not send is
+recorded as the empty string and never fails the check. The event never
+carries a token's secret, a session id, or an email, and a refused token's
+causes stay as indistinguishable in the trail as they are to nginx. `/me` is
+not a check: it records no check event, only the request events.
 
 `/check` is only meant to be called by nginx as its internal subrequest; it is not
 reachable from the public side of a space, and that unreachability (a request to
@@ -40,6 +67,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Cookie: ikigenba_session=<session-id>
 ```
 
@@ -64,6 +95,10 @@ Preconditions:
 Postconditions:
 
 - The session's last-use time is updated to now (the session is touched).
+- auth records `check.allowed` with `outcome=allowed`, `credential=session`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and user `<user-id>`. The query `?page=2` is not in
+  the trail.
 - Nothing else has changed.
 
 ## nginx checks a request with no credential
@@ -72,6 +107,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 ```
 
 Response:
@@ -90,7 +129,10 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- auth records `check.refused` with `outcome=unauthenticated`,
+  `credential=none`, `method=GET`, `host=dummy.sbx.ikigenba.dev`, and
+  `path=/widgets`, under request id `<request-id>` and no user.
+- Nothing else has changed.
 
 ## nginx checks a request with a session idle too long
 
@@ -101,6 +143,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Cookie: ikigenba_session=<session-id>
 ```
 
@@ -123,6 +169,9 @@ Postconditions:
 
 - The session is expired. Its last-use time is not updated; the request does not
   count as use.
+- auth records `check.refused` with `outcome=unauthenticated`,
+  `credential=session`, `method=GET`, `host=dummy.sbx.ikigenba.dev`, and
+  `path=/widgets`, under request id `<request-id>` and no user.
 
 ## nginx checks a request with a session past its cap
 
@@ -133,6 +182,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Cookie: ikigenba_session=<session-id>
 ```
 
@@ -153,6 +206,9 @@ Preconditions:
 Postconditions:
 
 - The session is expired. Its last-use time is not updated.
+- auth records `check.refused` with `outcome=unauthenticated`,
+  `credential=session`, `method=GET`, `host=dummy.sbx.ikigenba.dev`, and
+  `path=/widgets`, under request id `<request-id>` and no user.
 
 ## nginx checks a request with a token
 
@@ -163,6 +219,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Authorization: Bearer ikp_<token>
 ```
 
@@ -179,8 +239,8 @@ headers.
 
 Preconditions:
 
-- A token exists whose value is `ikp_<token>`: it is enabled, and it is either
-  unexpired or has no expiry.
+- A token exists whose value is `ikp_<token>` and whose id is `<token-id>`: it
+  is enabled, and it is either unexpired or has no expiry.
 - The token's owner has id `<user-id>` and email `<email>`, and that owner's
   most recent Google login was 3 days ago (within the last 30 days).
 - The request carries no `ikigenba_session` cookie.
@@ -188,6 +248,10 @@ Preconditions:
 Postconditions:
 
 - The token's last-used time is updated to now.
+- auth records `check.allowed` with `outcome=allowed`, `credential=token`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, `path=/widgets`, and
+  `token=<token-id>`, under request id `<request-id>` and user `<user-id>`.
+  Neither the secret nor the email is in the trail.
 - Nothing else has changed.
 
 ## nginx checks a request with a token that is unknown, disabled, or expired
@@ -201,6 +265,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Authorization: Bearer ikp_<token>
 ```
 
@@ -221,7 +289,13 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No token's last-used time is updated.
+- No token's last-used time is updated.
+- auth records `check.refused` with `outcome=forbidden`, `credential=token`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user. It carries no `token` attribute, even
+  when the secret matched a stored token, so the three cases are as
+  indistinguishable in the trail as at the door.
+- Nothing else has changed.
 
 ## nginx checks a request with a token whose owner has not signed in for 30 days
 
@@ -234,6 +308,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Authorization: Bearer ikp_<token>
 ```
 
@@ -254,7 +332,12 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. The token's last-used time is not updated.
+- The token's last-used time is not updated.
+- auth records `check.refused` with `outcome=forbidden`, `credential=token`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user, with no `token` attribute, exactly as
+  for a bad token.
+- Nothing else has changed.
 
 ## nginx checks a request carrying both a cookie and a token
 
@@ -267,6 +350,10 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Cookie: ikigenba_session=<session-id>
 Authorization: Bearer ikp_<token>
 ```
@@ -287,15 +374,60 @@ Preconditions:
 - A session exists, named by `ikigenba_session=<session-id>`, that is live
   (within both the idle window and the cap) and belongs to the user with id
   `<session-user-id>` and email `<session-email>`.
-- A token exists whose value is `ikp_<token>`: enabled, unexpired, with an owner
-  (id `<token-user-id>`, email `<token-email>`) whose most recent Google login
-  was within the last 30 days.
+- A token exists whose value is `ikp_<token>` and whose id is `<token-id>`:
+  enabled, unexpired, with an owner (id `<token-user-id>`, email
+  `<token-email>`) whose most recent Google login was within the last 30 days.
 
 Postconditions:
 
 - The token's last-used time is updated to now.
 - The session is untouched: its last-use time is unchanged, and the request does
   not count as use of it.
+- auth records `check.allowed` with `outcome=allowed`, `credential=token`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, `path=/widgets`, and
+  `token=<token-id>`, under request id `<request-id>` and user
+  `<token-user-id>`: the bearer token decides the credential as it decides the
+  identity.
+
+## nginx checks a request without naming the original request
+
+A subrequest that does not carry `X-Original-Method`, `X-Original-Host`, or
+`X-Original-URI` — a developer calling `/check` by hand, say — is decided
+exactly as it would be with them. The headers only describe the request in the
+trail; a missing one is recorded as the empty string.
+
+Request:
+
+```
+GET /check HTTP/1.1
+X-Request-Id: <request-id>
+Cookie: ikigenba_session=<session-id>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+X-User-Id: <user-id>
+X-User-Email: <email>
+```
+
+Status 200, exactly as in `nginx checks a request with a live session`.
+
+Preconditions:
+
+- A session exists, named by `ikigenba_session=<session-id>`, that is live
+  (within both the idle window and the cap) and belongs to the user with id
+  `<user-id>` and email `<email>`.
+- The request carries none of the three `X-Original-` headers.
+
+Postconditions:
+
+- The session's last-use time is updated to now.
+- auth records `check.allowed` with `outcome=allowed`, `credential=session`,
+  `method=""`, `host=""`, and `path=""`, under request id `<request-id>` and
+  user `<user-id>`.
+- Nothing else has changed.
 
 ## An agent asks who it is
 
@@ -329,6 +461,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `/me` does not touch the token's last-used time.
+- auth records no check event; the request is in the trail only through its
+  request events (`S2-serve.md`).
 
 ## A user asks who they are
 
@@ -362,6 +496,8 @@ Postconditions:
 
 - Nothing has changed. `/me` does not count as use, so the session's last-use
   time is not updated.
+- auth records no check event; the request is in the trail only through its
+  request events (`S2-serve.md`).
 
 ## An agent asks who it is with a bad token
 
@@ -408,6 +544,9 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+- auth records no check event; the request is in the trail only through its
+  request events (`S2-serve.md`), whose `request.finished` carries the 401 or
+  403.
 
 ## nginx checks a request while auth cannot use its database
 
@@ -415,18 +554,22 @@ auth decides every request from its database, so when the database fails the
 read or write a request needs, auth cannot decide it and answers 500: the
 fault is auth's, not the caller's. nginx treats any answer from `/check` other
 than 200, 401, and 403 as its own failure, so the visitor sees an error and
-the app is never reached. auth writes one line naming the request by the
-`X-Request-Id` nginx gave the subrequest, so the operator reading the journal
-can find the same request in nginx's log (`S2-serve.md`). The developer here
-stands in for nginx by sending the id by hand. `/me`, and every route of
-`S3-sign-in.md` and `S5-tokens.md`, answers a database failure the same way,
-with the same line.
+the app is never reached. The failure is a handled one, so it is in the trail,
+not on stderr: auth records `check.failed`, so the method, host, and path of a
+request that never reached an app are still on record, and the request's
+`request.finished` carries the 500 (`S2-serve.md`). `/me`, and every route of
+`S3-sign-in.md` and `S5-tokens.md`, answers a database failure with the same
+500 and writes nothing to stderr either; being no check, it records no check
+event, and its `request.finished` carries the 500.
 
 Request:
 
 ```
 GET /check HTTP/1.1
-X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
 Cookie: ikigenba_session=<session-id>
 ```
 
@@ -443,13 +586,14 @@ one line of plain text saying the server failed.
 Preconditions:
 
 - auth is serving.
-- The request carries `X-Request-Id` and a credential.
+- The request carries a credential, here a session cookie.
 - auth's database fails the read the request needs.
 
 Postconditions:
 
-- Nothing has changed. No session or token was touched.
-- auth wrote one line to stderr,
-  `auth: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: <reason>`, where
-  `<reason>` is the database's failure. A request that carries no
-  `X-Request-Id` is named `-`: `auth: request -: <reason>`.
+- No session or token was touched.
+- auth records `check.failed` with `outcome=failed`, `credential=session`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user.
+- auth wrote nothing to stderr.
+- Nothing else has changed.

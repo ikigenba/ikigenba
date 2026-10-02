@@ -3,9 +3,12 @@
 The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
 and sign-out at `/logout`. The requests go to a running auth (`S2-serve.md`),
-started with its Google settings, no services file, and neither
-`IKIGENBA_PUBLIC_URL` nor `IKIGENBA_CALLBACK_URL` set, as on a host, unless a
-story says otherwise; they reach it through nginx on a space. Each request is
+started with its Google settings, `IKIGENBA_SERVICES` naming a services file
+whose one entry is the telemetry service's, named `telemetry`, carrying no
+icon, and accepting events at its socket — so the trail is reachable and the
+banner has no launcher — and neither `IKIGENBA_PUBLIC_URL` nor
+`IKIGENBA_CALLBACK_URL` set, as on a host, unless a story says otherwise;
+they reach it through nginx on a space. Each request is
 shown as the HTTP request auth receives, with the headers the story depends on.
 Every request is on a space: the space is auth's own hostname without its
 leading `auth.` label, and the stories below use the space `sbx.ikigenba.dev`,
@@ -109,8 +112,8 @@ named element, a doubled `/`, or a trailing `/` is not read at all.
 With no variable, a path
 not in its plain form, no readable file, a file that is not such an object, or
 no usable entry that carries an icon, the page has no launcher, and is
-otherwise the same page; auth writes nothing about it, since a broken launcher
-never breaks a page. When the launcher is there, the banner opens with a
+otherwise the same page; auth writes nothing to stderr about the launcher,
+since a broken launcher never breaks a page. When the launcher is there, the banner opens with a
 launcher button labelled `Services`, immediately before the mark; pressing it
 opens the list of the services, which is closed when the page loads. The list
 holds a search field labelled `Find a service`, with the placeholder
@@ -129,6 +132,22 @@ auth's failures that are not pages — the 400, the 502s, and the 403 sign-out
 refusals below — stay one line of plain text in neither frame, because the
 visitor may not be signed in. A response block shows the status line and
 only the headers the story fixes; a header it does not show is not fixed.
+
+Every request here is in the trail through the request events every request
+records (`S2-serve.md`), and none of these routes records a check event. The
+flow adds its own events, each under the request's id. A sign-in that completes
+records `user.signed_in`, under the signed-in user's id; the first sign-in of an
+account records `user.created` before it, under the new user's id. A sign-out
+records `user.signed_out`, under the id of the user whose session it ends. A
+callback that signs no one in records `sign_in.refused`, under no user, with one
+attribute, `reason`, which is one of: `unknown_state`, the callback's `state`
+matched no login state; `cancelled`, the visitor declined at Google;
+`not_member`, the account is outside the Workspace; and `provider_failed`,
+Google failed the exchange or could not be reached. None of these events carries
+any other attribute: never an email, a session id, a Google code, or a `state`
+value. A request answered 500 because auth's database failed (`S4-check.md`)
+records none of these events. The 502s are handled failures: auth writes nothing
+to stderr for them, and the request's `request.finished` carries the 502.
 
 ## A visitor asks for the sign-in page
 
@@ -323,10 +342,7 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 502. The body is one line of plain text saying the sign-in provider
-could not be reached. auth writes one line to stderr,
-`auth: request <id>: <reason>`, where `<reason>` is the underlying error — the
-unreachable host or Google's failure to answer — and `<id>` is the request's
-`X-Request-Id`, or `-` when it carries none, as here (`S2-serve.md`).
+could not be reached.
 
 Preconditions:
 
@@ -337,6 +353,9 @@ Postconditions:
 
 - No login state is recorded. No user, no session, and no cookie are created.
   Nothing has changed.
+- No sign-in had begun, so auth records no flow event; the request's
+  `request.finished` carries status `502` (`S2-serve.md`).
+- auth wrote nothing to stderr.
 
 ## Google returns a member for the first time
 
@@ -380,6 +399,8 @@ Postconditions:
   `/` over HTTPS, so the user sees the profile without signing in again.
 - The user's last-Google-login time is set.
 - The in-flight login state is consumed.
+- auth records `user.created`, then `user.signed_in`, each with no attributes,
+  under the request's id and the new user's id.
 
 ## Google returns a member who has signed in before
 
@@ -421,6 +442,8 @@ Postconditions:
   to `/` over HTTPS, so the user sees the profile.
 - The user's last-Google-login time is updated.
 - The in-flight login state is consumed. No duplicate user exists.
+- auth records `user.signed_in` with no attributes, under the request's id and
+  the user's unchanged id. It records no `user.created`.
 
 ## Google returns a member with a return URL waiting
 
@@ -463,6 +486,9 @@ Postconditions:
   as in `S7-on-a-space.md`, that app's request authenticates with the session
   without another sign-in.
 - The in-flight login state is consumed.
+- auth records `user.signed_in`, preceded by `user.created` when the account
+  was provisioned, as in the member stories. The return URL is not in the
+  trail.
 
 ## Google returns a member with a return URL outside the space
 
@@ -503,6 +529,8 @@ Postconditions:
 - The in-flight login state is consumed. The return URL was not used.
 - The browser sends the new cookie when following the fallback redirect to `/`
   over HTTPS, so the user sees the profile.
+- auth records `user.signed_in`, preceded by `user.created` when the account
+  was provisioned, as in the member stories.
 
 ## Google returns a callback with an unknown state
 
@@ -534,6 +562,8 @@ Preconditions:
 Postconditions:
 
 - No user row, no session, and no cookie are created. Nothing has changed.
+- auth records `sign_in.refused` with `reason=unknown_state`, under the
+  request's id and no user.
 
 ## A visitor cancels at Google
 
@@ -574,6 +604,8 @@ Postconditions:
 
 - No user row is created or changed; no session and no cookie exist. The
   in-flight login state, if any, is consumed.
+- auth records `sign_in.refused` with `reason=cancelled`, under the request's
+  id and no user, whether or not `<state>` named a login state.
 
 ## Google returns an account outside the Workspace
 
@@ -616,7 +648,10 @@ Preconditions:
 Postconditions:
 
 - No user row is created; no session and no cookie exist. The in-flight login
-  state is consumed. Nothing else has changed.
+  state is consumed.
+- auth records `sign_in.refused` with `reason=not_member`, under the request's
+  id and no user. The account's email is not in the trail.
+- Nothing else has changed.
 
 ## Google does not answer
 
@@ -638,10 +673,7 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 502. The body is one line of plain text saying the sign-in provider
-could not be reached. auth writes one line to stderr,
-`auth: request <id>: <reason>`, where `<reason>` is the underlying error — the
-failed token exchange or the unreachable host — and `<id>` is the request's
-`X-Request-Id`, or `-` when it carries none, as here (`S2-serve.md`).
+could not be reached.
 
 Preconditions:
 
@@ -652,6 +684,10 @@ Preconditions:
 Postconditions:
 
 - No user row, no session, and no cookie are created.
+- auth records `sign_in.refused` with `reason=provider_failed`, under the
+  request's id and no user; the request's `request.finished` carries status
+  `502` (`S2-serve.md`).
+- auth wrote nothing to stderr.
 
 ## A user asks for the profile
 
@@ -703,8 +739,8 @@ link and viewport every page has, drawn with the banner: the mark's text
 `ikigenba`, naming the service `auth` and not a link, the profile icon
 labelled `Profile` and titled `ada@michaelgreenly.dev` as a link to `/`, and
 the `Sign out` button in the form that POSTs to `/logout`. The banner holds no
-launcher button, and the page loads no `/_appkit/launcher.js`, since auth has
-no services file here. Inside the page's one
+launcher button, and the page loads no `/_appkit/launcher.js`, since auth's
+services file lists no service with an icon here. Inside the page's one
 `<main>` its visible text is the heading `Your account` with the subtitle
 `You're signed in to ikigenba.dev.`; the `Account` card reading `Email`
 `ada@michaelgreenly.dev`, `Workspace` `michaelgreenly.dev`, and
@@ -719,7 +755,8 @@ Preconditions:
 
 - auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with `IKIGENBA_SERVICES`
-  unset.
+  naming a services file whose one entry is `telemetry`, with no icon, and
+  whose socket accepts events.
 - The request carries an `ikigenba_session` cookie naming a live session for a
   provisioned user whose email is `ada@michaelgreenly.dev`; that user holds
   zero or more tokens.
@@ -768,6 +805,8 @@ Postconditions:
   sends that cookie to auth or the space's other apps. Following the redirect
   shows the sign-in page.
 - The user row and the user's tokens are untouched.
+- auth records `user.signed_out` with no attributes, under the request's id
+  and the id of the user whose session it deleted.
 
 ## A user signs out from an app on the space
 
@@ -817,6 +856,8 @@ Postconditions:
   sends that cookie to auth, the app the user signed out from, or the space's
   other apps. Following the redirect shows auth's sign-in page.
 - The user row and the user's tokens are untouched.
+- auth records `user.signed_out` with no attributes, under the request's id
+  and the id of the user whose session it deleted.
 
 ## A user signs out from another site
 
@@ -854,6 +895,8 @@ Preconditions:
 Postconditions:
 
 - The session still exists; nothing has changed.
+- auth records no `user.signed_out`; the request's `request.finished`
+  carries the 403 (`S2-serve.md`).
 
 ## A user signs out with no Origin
 
@@ -886,15 +929,18 @@ Preconditions:
 Postconditions:
 
 - The session still exists; nothing has changed.
+- auth records no `user.signed_out`; the request's `request.finished`
+  carries the 403 (`S2-serve.md`).
 
 ## A user on a host with services opens the launcher
 
 On a host, the services file lists the platform's services, and the launcher
 is how a user gets from their profile to any of them without typing an
 address. A developer stands in for the host by writing a services file and
-naming it when serving auth. The file here, `/tmp/services.json`, lists four
-services: three with an icon, one of them switched off, and `mcp`, the
-platform's MCP gateway, which has no icon and so is not in the launcher:
+naming it when serving auth. The file here, `/tmp/services.json`, lists five
+services: three with an icon, one of them switched off; `mcp`, the platform's
+MCP gateway; and `telemetry`, whose socket accepts auth's events. Neither of
+the last two has an icon, so neither is in the launcher:
 
 ```
 {
@@ -902,7 +948,8 @@ platform's MCP gateway, which has no icon and so is not in the launcher:
     {"name": "auth", "url": "https://auth.sbx.ikigenba.dev/", "description": "Sign in to the space", "socket": "/run/ikigenba/auth.sock", "enabled": true, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/></svg>"},
     {"name": "mcp", "url": "https://mcp.sbx.ikigenba.dev/", "description": "The space's MCP gateway", "socket": "/run/ikigenba/mcp.sock", "enabled": true, "mcp": false},
     {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "description": "Demo widgets to list and create", "socket": "/run/ikigenba/dummy.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>"},
-    {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "description": "Ledger", "socket": "/run/ikigenba/ledger.sock", "enabled": false, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>"}
+    {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "description": "Ledger", "socket": "/run/ikigenba/ledger.sock", "enabled": false, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>"},
+    {"name": "telemetry", "url": "https://telemetry.sbx.ikigenba.dev/", "description": "The space's trail of events", "socket": "/run/ikigenba/telemetry.sock", "enabled": true, "mcp": true}
   ]
 }
 ```
@@ -942,7 +989,7 @@ icon and then its name, a link to `https://auth.sbx.ikigenba.dev/`, marked as
 the current page; `dummy`, showing its icon and then its name, a link to
 `https://dummy.sbx.ikigenba.dev/`; and `ledger`, showing its icon and then its
 name, not a working link, titled `ledger is unavailable`. There is no entry
-for `mcp`, which has no icon. The no-match line is in the page and hidden.
+for `mcp` or `telemetry`, which have no icon. The no-match line is in the page and hidden.
 The page loads the script `/_appkit/launcher.js`.
 
 Preconditions:
@@ -997,17 +1044,21 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- auth wrote nothing to stderr.
+- auth wrote nothing to stderr about the launcher. With no services file
+  there is no `telemetry` entry, so the request's own events are undelivered:
+  stderr holds one `auth: undelivered event: <event>` line for each of its
+  `request.started` and `request.finished` (`S2-serve.md`), and nothing else
+  for this request.
 
 ## A user on a host whose services file is missing sees no launcher
 
-`IKIGENBA_SERVICES` names a file, but there is nothing there to read. A
-broken launcher never breaks a page, so auth draws the page without one and
-reports nothing: this is not a fault of the request, and auth's answer is the
-same as when no file is named at all. A path not in its plain form, and a
-file that exists but cannot be read, is not a JSON object with a `services`
-array, or has no usable entry that carries an icon, are answered the same
-way.
+`IKIGENBA_SERVICES` names a file, but there is nothing there to read. A broken
+launcher never breaks a page, so auth draws the page without one and writes
+nothing to stderr about the launcher: this is not a fault of the request, and
+auth's answer is the same as when no file is named at all. A path not in its
+plain form, and a file that exists but cannot be read, is not a JSON object with
+a `services` array, or has no usable entry that carries an icon, are answered
+the same way.
 
 Request:
 
@@ -1039,7 +1090,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- auth wrote nothing to stderr.
+- auth wrote nothing to stderr about the launcher. With no services file
+  there is no `telemetry` entry, so the request's own events are undelivered:
+  stderr holds one `auth: undelivered event: <event>` line for each of its
+  `request.started` and `request.finished` (`S2-serve.md`), and nothing else
+  for this request.
 
 ## A user sees the launcher follow a change to the services file
 

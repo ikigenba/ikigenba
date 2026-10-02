@@ -27,13 +27,16 @@ settings in opsctl's configuration, opsctl writes the drain into every app's
 drain) into every service unit, and an app's manifest never sets either.
 `IKIGENBA_SERVICES` is the path of the host's services file, which lists the
 platform's services for the launcher in the banner of auth's signed-in pages
-(`S3-sign-in.md`). On a host, opsctl sets it in the environment the host gives
-auth, normally `/var/lib/ikigenba/services.json`; on a host that has no
-services file it is unset, and auth's pages then carry no launcher. auth reads
-the variable once, when it starts, and never fails to start over it: unset,
-empty, a path not in its plain form (`S3-sign-in.md`), or naming a file that is
-missing or unreadable, auth starts and serves all the same, and says nothing
-about it.
+(`S3-sign-in.md`) and names the telemetry service auth delivers its events to
+(below). On a host, opsctl sets it in the environment the host gives auth,
+normally `/var/lib/ikigenba/services.json`; on a host that has no services
+file it is unset, and auth's pages then carry no launcher. For the banner auth
+reads the variable once, when it starts, and never fails to start over it:
+unset, empty, a path not in its plain form (`S3-sign-in.md`), or naming a file
+that is missing or unreadable, auth starts and serves all the same, and says
+nothing about the launcher. A services file it cannot use also leaves auth no
+telemetry service to deliver its events to, which is trouble of its own (see
+`The host starts auth where telemetry cannot be reached`).
 
 `IKIGENBA_PUBLIC_URL` and `IKIGENBA_CALLBACK_URL` are optional, and each is
 independent of the other. Each is an origin: `http` or `https`, then `://`, a
@@ -76,15 +79,61 @@ the stories below that run `auth` directly, its environment sets
 `WORKSPACE_DOMAIN=michaelgreenly.dev`, and leaves `IKIGENBA_PUBLIC_URL` and
 `IKIGENBA_CALLBACK_URL` unset, unless a story says otherwise.
 
-A healthy auth prints nothing, so under systemd the journal holds only
-trouble. A diagnostic auth writes about a request names that request by its
-`X-Request-Id`, as `auth: request <id>: <reason>` on stderr, so a line in the
-journal can be matched to nginx's log of the same request; a request that
-carries no `X-Request-Id` is named `-`. auth writes one such line for each
-request it answers with a 5xx, any status from 500 through 599 — its own are a
-500, when its own database fails the request, and a 502, when Google fails a
-sign-in (`S3-sign-in.md`) — and nothing for any other answer: a 4xx is the
-caller's to fix, not trouble.
+auth records what it does as a trail of events, which it delivers to the
+platform's telemetry service: the entry named `telemetry` in the services file
+`IKIGENBA_SERVICES` names, at that entry's socket. Each event carries its
+time, the service `auth`, its name, a request id, a user, and attributes; the
+request id and the user are empty for an event that has none. auth delivers
+its events one at a time, in the order it records them, and never holds up an
+answer to do it. It reads the services file afresh for every delivery, so a
+telemetry service installed after auth started is reached without restarting
+auth. In every group's stories, "auth records `<event>` with `<key>=<value>`,
+…, under request id `<request-id>` and user `<user-id>`" means auth records
+that event with exactly those attributes and that request id and user ("no
+request id", "no user" when they are empty), and unless a story says
+otherwise the telemetry service is reachable, so every event auth records
+reaches the trail.
+
+- Once auth is serving, as it reports ready, it records `service.started` with
+  `version`, the string `auth --version` prints (`S1-bootstrap.md`); its
+  request id and user are empty. A start that fails before auth is serving
+  records no event.
+- Every request auth serves — its pages, `/check`, `/me`, the files under
+  `/_appkit/`, a 404 — is recorded twice: `request.started` with `method` and
+  `path`, the request's method and its URL path without the query, when it
+  arrives, and `request.finished` with `status`, the status auth answered, and
+  `duration_us`, how long auth took to answer in whole microseconds, once it
+  has answered. Both carry the request's id, its `X-Request-Id`, and the user
+  named by its `X-User-Id`, empty when it carries none. Every event auth
+  records while answering a request comes between the two and carries the
+  same request id. A request that arrives
+  without an `X-Request-Id`, as one does when no nginx stands in front of auth,
+  is given an id of the same shape, 32 lowercase hexadecimal characters, and
+  is recorded under it.
+- When auth is stopped, it finishes the requests it accepted, so each has
+  recorded its `request.finished`, and then records `service.stopping` with
+  `reason`, the name of the signal that stopped it, `SIGTERM` or `SIGINT`; its
+  request id and user are empty. It is the last event auth records, and auth
+  waits for its events to be delivered within the same drain deadline before
+  it exits.
+
+auth's stderr holds only trouble, so under systemd the journal shows nothing
+else. Trouble is of two kinds. One is a condition auth cannot continue
+from: a start it refuses, a database it cannot open, a stop that cut requests
+off; each has its own diagnostic in the stories below. The other is an event
+auth could not deliver: when the telemetry service does not take an event
+after a few quick tries — there is no services file, no entry named
+`telemetry` in it, or nothing accepting on its socket — or when auth's events
+queue up faster than it can deliver them, auth writes the event to stderr as
+one line, `auth: undelivered event: <event>`, where `<event>` is the event as
+it would have been delivered, a single-line JSON object whose members are, in
+order, `time`, `service`, `event`, `request_id`, `user`, and `attrs`. auth
+then goes on serving: telemetry being unreachable never stops auth from
+starting or answering. A request auth answers is not trouble, whatever its
+status. A handled failure — a 500 when auth's own database fails a request
+(`S4-check.md`), a 502 when Google fails a sign-in (`S3-sign-in.md`) — writes
+nothing to stderr; its `request.finished` records the status, and the request
+id ties it to nginx's log of the same request.
 
 auth serves on the terms every app of the platform serves on. The socket it is
 passed is its only way in. Only nginx and the suite's own apps can reach it;
@@ -124,6 +173,8 @@ Preconditions:
   `WORKSPACE_DOMAIN`, and `DRAIN_SECONDS`, each to a valid value.
 - `ikigenba-auth.socket` is active, so the socket it holds accepts
   connections.
+- `/opt/auth/etc/env` sets `IKIGENBA_SERVICES` to the host's services file,
+  which has an entry named `telemetry` whose socket accepts events.
 - `/opt/auth/state/auth.db` exists, from an earlier start.
 - `ikigenba-auth.service` is not running.
 
@@ -136,6 +187,8 @@ Postconditions:
 - `/opt/auth/state/auth.db` is the database it opened; it existed already.
 - No network call to Google was made; the Google settings were read from the
   environment, not checked against Google.
+- auth records `service.started` with `version=v<semver>`, the version
+  `/opt/auth/bin/auth --version` prints, under no request id and no user.
 - auth has written nothing to the journal.
 - It keeps running until it is signalled.
 
@@ -169,6 +222,8 @@ Preconditions:
 - `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
   socket is passed in, as file descriptor 3.
 - `NOTIFY_SOCKET` is unset, so auth reports readiness to nobody.
+- `IKIGENBA_SERVICES` names a services file with an entry named `telemetry`
+  whose socket accepts events.
 - `state/auth.db` does not exist.
 - Either `state/` is absent and auth can create it in its working directory,
   or `state/` is an existing directory in which auth can create the database.
@@ -178,7 +233,52 @@ Postconditions:
 - `state/` exists, created by auth if it was absent.
 - `state/auth.db` now exists, with its schema, created by this start.
 - auth is serving on the socket it was passed, and on no other.
+- auth records `service.started` with `version=v<semver>`, the version
+  `auth --version` prints, under no request id and no user.
 - It keeps running until it is signalled.
+
+## The host starts auth where telemetry cannot be reached
+
+A developer running auth at a terminal, or a host with no telemetry service
+installed, gives auth nowhere to deliver its events. auth serves all the same:
+each event it records, from `service.started` on, goes to stderr instead,
+once a few quick tries to deliver it have failed. That is trouble, so it is on
+stderr; it is not a reason to stop.
+
+Command:
+
+```
+$ auth
+```
+
+Output:
+
+```
+auth: undelivered event: {"time":"<time>","service":"auth","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+```
+
+Does not exit. The line is on stderr; stdout is empty. `<time>` is when auth
+became ready, in UTC, as `2026-10-02T14:03:09.123456Z`: six fractional digits
+and a `Z`. `v<semver>` is what `auth --version` prints. Every later event auth
+records — the two of every request it serves, and `service.stopping` when it
+is stopped — is written the same way, one line each, in the order recorded.
+
+Preconditions:
+
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `IKIGENBA_SERVICES` is unset, or names a services file that has no entry
+  named `telemetry`, or whose `telemetry` entry names a socket nothing accepts
+  on.
+
+Postconditions:
+
+- auth is serving on the socket it was passed, and answers every request as
+  it would with telemetry reachable.
+- Nothing reached the trail.
 
 ## The host starts auth where its state directory cannot be created
 
@@ -214,7 +314,8 @@ Preconditions:
 Postconditions:
 
 - The existing `state` file is unchanged.
-- No database was created. auth served nothing and told systemd nothing.
+- No database was created. auth served nothing, told systemd nothing, and
+  recorded no event.
 
 ## The host starts auth with a database it cannot open
 
@@ -252,14 +353,16 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. auth served nothing and told systemd nothing.
+- Nothing has changed. auth served nothing, told systemd nothing, and recorded
+  no event.
 
 ## The host stops auth
 
 `systemctl stop` and `systemctl restart` send `SIGTERM`; a developer's `Ctrl-C`
 sends `SIGINT`, which auth treats the same way. auth stops taking new
-connections, finishes the requests it has already accepted, and exits. It
-closes its own copy of the socket and nothing more: the socket belongs to
+connections, finishes the requests it has already accepted, records
+`service.stopping`, and exits once its events are delivered. It closes its
+own copy of the socket and nothing more: the socket belongs to
 systemd, which keeps it open, and auth never removes it. It waits at most
 `DRAIN_SECONDS` for requests to finish, which on a host is always less than the
 time the service unit allows before systemd kills it.
@@ -281,11 +384,17 @@ Preconditions:
 
 - auth is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
+- `IKIGENBA_SERVICES` names a services file with an entry named `telemetry`
+  whose socket accepts events.
 - Every request auth has accepted finishes within 5 seconds of the signal.
 
 Postconditions:
 
-- Every request accepted before the signal received its full response.
+- Every request accepted before the signal received its full response, and
+  auth recorded its `request.finished`.
+- After the last of those, auth records `service.stopping` with
+  `reason=SIGTERM`, under no request id and no user, the last event it
+  records. Stopped with `SIGINT` instead, it records `reason=SIGINT`.
 - The socket auth was passed still exists, and connections made to it after
   auth exited wait in the socket's queue for the next auth to answer.
 
@@ -295,9 +404,13 @@ auth waits for accepted requests only until its drain deadline,
 `DRAIN_SECONDS` after the signal, so that it always exits before the service
 unit's stop timeout and is never killed mid-write by systemd. A request
 still running at the deadline — a sign-in callback still waiting on Google,
-say — is cut off: its connection is closed without the rest of its response.
-Losing a request is trouble, so auth says how many it lost and exits
-non-zero.
+say — is cut off: its connection is closed without the rest of its response,
+and its `request.finished` never reaches the trail, so in the trail it is a
+request that started and never finished. Losing a request is trouble, so auth
+says how many it lost and exits non-zero. The drain deadline has passed by
+then, so auth does not wait to deliver `service.stopping`: it writes it to
+stderr as an undelivered event, after any other event it had not yet
+delivered.
 
 Command:
 
@@ -305,15 +418,25 @@ Command:
 $ kill -TERM <pid>
 ```
 
-Output:
+Output: the two lines below, and possibly further `auth: undelivered event:`
+lines, as described after the block.
 
 ```
+auth: undelivered event: {"time":"<time>","service":"auth","event":"service.stopping","request_id":"","user":"","attrs":{"reason":"SIGTERM"}}
 auth: stopped with <n> requests unfinished
 ```
 
-auth exits 1, 5 seconds after the signal. The line is on stderr; stdout is
-empty. `<n>` is the number of requests still running at the deadline. When
-`<n>` is 1 the line reads `auth: stopped with 1 request unfinished`.
+auth exits 1, 5 seconds after the signal. The lines are on stderr; stdout is
+empty. `<time>` is when auth recorded `service.stopping`, in UTC with six
+fractional digits and a `Z`. `<n>` is the number of requests still running at
+the deadline. When `<n>` is 1 the `stopped with` line reads
+`auth: stopped with 1 request unfinished`. Any event auth recorded but had not
+delivered by the deadline comes before the `service.stopping` line, in the
+order recorded, one `auth: undelivered event:` line each. A cut-off request
+whose handler ends before auth exits records its `request.finished` too late
+for the trail, and it appears as one more `auth: undelivered event:` line;
+where that line falls relative to the `service.stopping` line and to the
+`stopped with` line is not fixed.
 
 Preconditions:
 
@@ -321,11 +444,16 @@ Preconditions:
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
 - `<n>` of the requests auth has accepted are still running 5 seconds after
   the signal.
+- `IKIGENBA_SERVICES` names a services file with an entry named `telemetry`
+  whose socket accepts events.
 
 Postconditions:
 
 - Every request that finished within 5 seconds of the signal received its
-  full response; the `<n>` that did not were cut off.
+  full response, and auth recorded its `request.finished`; the `<n>` that did
+  not were cut off, and the trail holds their `request.started` and no
+  `request.finished`; any `request.finished` of theirs is only on stderr.
+- `service.stopping` did not reach the trail; it is on stderr.
 - The socket auth was passed still exists, and connections made to it after
   auth exited wait in the socket's queue for the next auth to answer.
 
@@ -359,11 +487,18 @@ Preconditions:
   `ikigenba-auth.socket` passed it.
 - nginx is sending requests to auth, for auth's own pages and as `/check`
   subrequests, throughout the restart.
+- The host's services file has an entry named `telemetry` whose socket
+  accepts events.
 
 Postconditions:
 
 - Every request nginx sent was answered, by the old auth or the new one;
-  none was refused and none was cut off.
+  none was refused and none was cut off. Each is recorded by the auth that
+  answered it, with its `request.started` and `request.finished`.
+- The old auth recorded `service.stopping` with `reason=SIGTERM`, after the
+  `request.finished` of every request it answered; the new auth recorded
+  `service.started` with `version=v<semver>`, the version of the binary the
+  deploy installed, so the trail shows the deploy as a new version in a start event.
 - A new auth process is serving on the same socket, over the same
   `state/auth.db`.
 
