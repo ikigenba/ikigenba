@@ -19,7 +19,7 @@ import (
 )
 
 // Version is the release identity shared by every gateway surface.
-var Version = "v0.1.1"
+var Version = "v0.1.2"
 
 // Manifest is the platform application declaration.
 const Manifest = "app = \"mcp\"\ndescription = \"Connect AI assistants to your services\"\ndefault = false\nmcp = false\nsecrets = []\n"
