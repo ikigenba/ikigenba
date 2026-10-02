@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,21 +23,18 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 type backendBuffer struct {
-	mu     sync.Mutex
-	b      bytes.Buffer
-	writes chan string
+	mu sync.Mutex
+	b  bytes.Buffer
 }
 
 func (b *backendBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	n, err := b.b.Write(p)
-	if b.writes != nil {
-		b.writes <- string(p)
-	}
 	return n, err
 }
 func (b *backendBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
@@ -50,6 +49,9 @@ type backendFixture struct {
 	client   *mcp.Client
 	caller   identity.Caller
 	logs     *backendBuffer
+	writer   *telemetry.Writer
+	capture  *telemetry.Capture
+	finished chan struct{}
 	requests []backendRequest
 	mu       sync.Mutex
 	path     string
@@ -102,7 +104,16 @@ func backendSetup(t *testing.T, budget time.Duration, answer func(http.ResponseW
 	}))
 	f.path = filepath.Join(t.TempDir(), "services.json")
 	backendEntries(t, f.path, socket, true, true)
-	f.server = httptest.NewServer(Handler(Config{MCP: NewServer("test-version", io.Discard), ServicesPath: f.path, Budget: budget, Stderr: f.logs, Banner: func(page.User) page.Banner { return page.Banner{} }}))
+	f.writer, f.capture = backendTelemetry(t, nil, f.logs, nil)
+	f.finished = make(chan struct{}, 10)
+	handler := Handler(Config{MCP: NewServer("test-version", f.writer), ServicesPath: f.path, Budget: budget, Telemetry: f.writer, Banner: func(page.User) page.Banner { return page.Banner{} }})
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.ServeHTTP(w, r)
+		select {
+		case f.finished <- struct{}{}:
+		default:
+		}
+	}))
 	t.Cleanup(f.server.Close)
 	f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: f.server.URL + "/mcp"})
 	return f
@@ -251,7 +262,7 @@ func backendComparableJSON(t *testing.T, raw []byte) string {
 	return value()
 }
 
-// R-JMKA-0LPZ R-JTVO-B865 R-JV3K-OZWU
+// R-JMKA-0LPZ R-2K95-ZCLW R-2LH2-D4CL
 func TestBackendPreflight(t *testing.T) {
 	for _, tc := range []struct {
 		name, scope, args, want string
@@ -289,7 +300,7 @@ func TestBackendDescribe(t *testing.T) {
 	}
 }
 
-// R-RQGJ-3WDU R-KELY-TBRY R-DIZE-6PAE
+// R-RQGJ-3WDU
 func TestBackendPagedFirstTool(t *testing.T) {
 	f := backendSetup(t, 0, func(w http.ResponseWriter, _ *http.Request, r backendRequest) {
 		if _, next := r.Params["cursor"]; next {
@@ -300,12 +311,12 @@ func TestBackendPagedFirstTool(t *testing.T) {
 	})
 	backendObject(t, f.call(t, "describe", `{"service":"alpha","tool":"read"}`), `{"service":"alpha","tool":{"name":"read","description":"First.","kind":"read","inputSchema":{}}}`)
 	backendObject(t, f.call(t, "describe", `{"service":"alpha"}`), `{"service":"alpha","tools":[{"name":"read","summary":"First.","kind":"read"},{"name":"read","summary":"Second.","kind":"write"},{"name":"tail","summary":"","kind":"write"}]}`)
-	if len(f.snapshot()) != 4 || f.logs.String() != strings.Repeat("mcp: request trace: alpha tools/list: ok\n", 2) {
+	if len(f.snapshot()) != 4 || len(f.siblings(t)) != 4 || f.logs.String() != "" {
 		t.Fatalf("requests/logs: %v %q", f.snapshot(), f.logs.String())
 	}
 }
 
-// R-JWBH-2RNJ R-B0U1-6ZZR R-DHRH-SXJP R-KLXD-3Y84
+// R-JWBH-2RNJ R-2MOY-QW3A R-DHRH-SXJP R-KLXD-3Y84
 func TestBackendHopAndArguments(t *testing.T) {
 	f := backendSetup(t, 0, backendStatic(backendReadList, `{"content":[]}`))
 	for _, args := range []string{`{"service":"alpha","tool":"read"}`, `{"service":"alpha","tool":"read","args":{"extra":[true,2,{"nested":"value"}]}}`} {
@@ -342,13 +353,13 @@ func TestBackendHopAndArguments(t *testing.T) {
 	f.caller.RequestID = ""
 	f.call(t, "call", `{"service":"alpha","tool":"read"}`)
 	for _, r := range f.snapshot()[4:] {
-		if len(r.Header.Values("X-User-Email")) != 0 || len(r.Header.Values("X-Request-Id")) != 0 {
+		if len(r.Header.Values("X-User-Email")) != 0 || len(r.Header.Values("X-Request-Id")) != 1 || r.Header.Get("X-Request-Id") == "" {
 			t.Fatal("invented identity")
 		}
 	}
 }
 
-// R-RROF-HO4J R-KKPG-Q6HF R-K62O-4XL3
+// R-RFLE-24TT R-KKPG-Q6HF R-K62O-4XL3
 func TestBackendKindAndMissing(t *testing.T) {
 	for _, tc := range []struct{ op, tool, list, want string }{{"call", "write", backendWriteList, "Tool write of service alpha is a write tool. Use mutate to run it."}, {"mutate", "read", backendReadList, "Tool read of service alpha is a read tool. Use call to run it."}, {"call", "missing", backendReadList, "Service alpha has no tool missing. Call describe with service alpha to see its tools."}} {
 		t.Run(tc.op+tc.tool, func(t *testing.T) {
@@ -409,10 +420,10 @@ func backendFreshRun(t *testing.T, f *backendFixture, operation string) {
 	}
 }
 
-// R-DGJL-F5T0
+// R-2J19-LKV7
 func TestBackendArgumentRefusals(t *testing.T) {
 	f := backendSetup(t, 0, backendStatic(backendReadList, `{"content":[]}`))
-	reference := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: "test-version"})
+	reference := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: "test-version", Telemetry: f.writer})
 	mcp.AddRawTool(reference, mcp.RawTool[describeInput]{Name: "describe", Description: describeDescription, Effect: mcp.Read, Handler: func(context.Context, identity.Caller, describeInput) (mcp.Result, error) {
 		t.Error("invalid args accepted")
 		return mcp.Result{}, nil
@@ -423,7 +434,7 @@ func TestBackendArgumentRefusals(t *testing.T) {
 			return mcp.Result{}, nil
 		}})
 	}
-	server := httptest.NewServer(identity.Require(ServiceName, io.Discard, reference))
+	server := httptest.NewServer(identity.Require(reference))
 	defer server.Close()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
 	for _, op := range []string{"describe", "call", "mutate"} {
@@ -448,7 +459,7 @@ func TestBackendArgumentRefusals(t *testing.T) {
 	}
 }
 
-// R-RP8M-Q4N5 R-KI9N-YN01 R-K172-LUMB R-K3MV-DE3P R-K4UR-R5UE R-KPL2-99G7
+// R-BN10-HXNQ R-KI9N-YN01 R-K172-LUMB R-K3MV-DE3P R-K4UR-R5UE R-KPL2-99G7
 func TestBackendFailures(t *testing.T) {
 	for _, stage := range []string{"tools/list", "tools/call"} {
 		for _, failure := range []string{"unreachable", "rpc", "http", "broken", "malformed"} {
@@ -498,20 +509,15 @@ func TestBackendFailures(t *testing.T) {
 					backendEntries(t, f.path, filepath.Join(t.TempDir(), "absent.sock"), true, true)
 				}
 				result := f.call(t, "call", `{"service":"alpha","tool":"read"}`)
-				outcome, want := "", ""
+				want := ""
 				switch failure {
 				case "unreachable":
-					outcome = "unreachable"
 					want = "Service alpha could not be reached. Retry later."
 				case "rpc":
-					outcome = "rpc error -32123: Backend refusal unchanged"
 					want = "Service alpha answered with an error: Backend\nrefusal\runchanged"
 				case "http":
-					outcome = "bad response (status 503)"
 				case "broken":
-					outcome = "bad response"
 				case "malformed":
-					outcome = "bad response"
 				}
 				if want == "" {
 					want = "Service alpha gave an answer the gateway could not read. Retry later."
@@ -520,27 +526,40 @@ func TestBackendFailures(t *testing.T) {
 					}
 				}
 				backendError(t, result, want)
-				expected := "mcp: request trace: alpha tools/list: " + outcome + "\n"
 				count := 1
 				if failure == "unreachable" {
 					count = 0
 				}
 				if stage == "tools/call" {
-					count = 2
-					if failure == "unreachable" {
-						count = 1
+					count++
+					if failure != "unreachable" {
+						count = 2
 					}
-					expected = "mcp: request trace: alpha tools/list: ok\nmcp: request trace: alpha tools/call read: " + outcome + "\n"
 				}
-				if f.logs.String() != expected || len(f.snapshot()) != count {
-					t.Fatalf("logs=%q requests=%v", f.logs.String(), f.snapshot())
+				statuses := []int64{200}
+				status := int64(200)
+				if failure == "unreachable" || failure == "broken" {
+					status = 0
 				}
+				if failure == "http" {
+					status = 503
+				}
+				if stage == "tools/call" {
+					statuses = append(statuses, status)
+				} else {
+					statuses[0] = status
+				}
+				f.assertStatuses(t, statuses...)
+				if len(f.snapshot()) != count {
+					t.Fatalf("requests=%v", f.snapshot())
+				}
+
 			})
 		}
 	}
 }
 
-// R-KN59-HPYT R-DIZE-6PAE R-KELY-TBRY
+// R-KN59-HPYT R-JWEF-2VJ7 R-JXMB-GN9W R-JYU7-UF0L
 func TestBackendRelay(t *testing.T) {
 	for _, toolError := range []bool{false, true} {
 		t.Run(fmt.Sprint(toolError), func(t *testing.T) {
@@ -557,9 +576,10 @@ func TestBackendRelay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ref := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: "test-version"})
+			refWriter, _ := backendTelemetry(t, nil, io.Discard, nil)
+			ref := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: "test-version", Telemetry: refWriter})
 			mcp.AddRawTool(ref, mcp.RawTool[struct{}]{Name: "relay", Description: "Relay answer.", Effect: mcp.Destructive, Handler: func(context.Context, identity.Caller, struct{}) (mcp.Result, error) { return backendResult, nil }})
-			server := httptest.NewServer(identity.Require(ServiceName, io.Discard, ref))
+			server := httptest.NewServer(identity.Require(ref))
 			defer server.Close()
 			client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
 			want, err := client.CallTool(context.Background(), f.caller, "relay", nil)
@@ -572,18 +592,29 @@ func TestBackendRelay(t *testing.T) {
 			if !bytes.Equal(a, b) {
 				t.Fatalf("relay %s != %s", a, b)
 			}
+			f.assertStatuses(t, 200, 200)
+			events := f.capture.Events()
+			if len(events) != 5 || events[0].Name != "request.started" || events[1].Name != "sibling.called" || events[2].Name != "sibling.called" || events[3].Name != "tool.called" || events[4].Name != "request.finished" {
+				t.Fatalf("trail=%v", events)
+			}
 			outcome := "ok"
 			if toolError {
-				outcome = "tool error"
+				outcome = "error"
 			}
-			if f.logs.String() != "mcp: request trace: alpha tools/list: ok\nmcp: request trace: alpha tools/call write: "+outcome+"\n" {
-				t.Fatal(f.logs.String())
+			attrs := events[3].Attrs
+			if len(attrs) != 4 || attrs["tool"] != "mutate" || attrs["kind"] != "destructive" || attrs["outcome"] != outcome || attrs["duration_us"] == nil {
+				t.Fatalf("tool=%v", events[3])
+			}
+			for _, e := range events {
+				if e.RequestID != "trace" || e.User != "user" {
+					t.Fatalf("correlation=%v", e)
+				}
 			}
 		})
 	}
 }
 
-// R-VOL2-JHIA R-JRFV-JOOR R-K2EY-ZMD0 R-KOD5-VHPI R-DMN3-C0IH R-DNUZ-PS96 R-DK7A-KH13
+// R-VOL2-JHIA R-JRFV-JOOR R-K2EY-ZMD0 R-KOD5-VHPI R-DMN3-C0IH R-DNUZ-PS96 R-2NWV-4NTZ
 func TestBackendBudget(t *testing.T) {
 	for _, stage := range []string{"tools/list", "tools/call"} {
 		t.Run(stage, func(t *testing.T) {
@@ -607,7 +638,7 @@ func TestBackendBudget(t *testing.T) {
 					}
 					return
 				}
-				if stage == "tools/call" && f.logs.String() != "mcp: request trace: alpha tools/list: ok\n" {
+				if stage == "tools/call" && len(f.siblings(t)) != 1 {
 					t.Error("list log missing before call")
 				}
 				close(entered)
@@ -621,10 +652,8 @@ func TestBackendBudget(t *testing.T) {
 			result := f.call(t, "call", `{"service":"alpha","tool":"read"}`)
 			elapsed := time.Since(started)
 			want := "Service alpha did not answer within 0.2 s. Retry later."
-			expected := "mcp: request trace: alpha tools/list: timed out\n"
 			if stage == "tools/call" {
 				want = "Service alpha did not answer within 0.2 s; the call may still have completed."
-				expected = "mcp: request trace: alpha tools/list: ok\nmcp: request trace: alpha tools/call read: timed out\n"
 			}
 			backendError(t, result, want)
 			if elapsed > budget+100*time.Millisecond {
@@ -640,8 +669,10 @@ func TestBackendBudget(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("backend connection not closed")
 			}
-			if f.logs.String() != expected {
-				t.Fatalf("logs %q", f.logs.String())
+			if stage == "tools/list" {
+				f.assertStatuses(t, 0)
+			} else {
+				f.assertStatuses(t, 200, 0)
 			}
 			if len(f.snapshot()) != map[string]int{"tools/list": 1, "tools/call": 2}[stage] {
 				t.Fatal("further backend requests")
@@ -669,14 +700,14 @@ func TestBackendDoesNotTimeoutEarly(t *testing.T) {
 				}
 			})
 			result := f.call(t, "describe", `{"service":"alpha"}`)
-			if result.IsError() || f.logs.String() != "mcp: request trace: alpha tools/list: ok\n" {
+			if result.IsError() || f.logs.String() != "" {
 				t.Fatalf("early timeout %v %q", result, f.logs.String())
 			}
 		})
 	}
 }
 
-// R-KDE2-FK19 R-DLF6-Y8RS R-RP8M-Q4N5
+// R-KDE2-FK19 R-K024-86RA R-BN10-HXNQ
 func TestBackendCancellation(t *testing.T) {
 	for _, stage := range []string{"tools/list", "tools/call"} {
 		t.Run(stage, func(t *testing.T) {
@@ -696,7 +727,6 @@ func TestBackendCancellation(t *testing.T) {
 				case <-release:
 				}
 			})
-			f.logs.writes = make(chan string, 3)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
@@ -723,25 +753,35 @@ func TestBackendCancellation(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("backend cancellation delayed")
 			}
-			expected := []string{"mcp: request trace: alpha tools/list: cancelled\n"}
+			select {
+			case <-f.finished:
+			case <-time.After(time.Second):
+				t.Fatal("gateway cancellation delayed")
+			}
 			count := 1
 			if stage == "tools/call" {
-				expected = []string{"mcp: request trace: alpha tools/list: ok\n", "mcp: request trace: alpha tools/call read: cancelled\n"}
 				count = 2
+				f.assertStatuses(t, 200, 0)
+			} else {
+				f.assertStatuses(t, 0)
 			}
-			for _, want := range expected {
-				select {
-				case got := <-f.logs.writes:
-					if got != want {
-						t.Fatalf("log=%q want=%q", got, want)
-					}
-				case <-time.After(time.Second):
-					t.Fatal("cancelled request log delayed")
+			if len(f.snapshot()) != count {
+				t.Fatal("extra backend request")
+			}
+			events := f.capture.Events()
+			var tool, finished bool
+			for _, e := range events {
+				if e.Name == "tool.called" {
+					tool = e.Attrs["outcome"] == "error"
+				}
+				if e.Name == "request.finished" {
+					finished = e.Attrs["status"] == int64(200)
 				}
 			}
-			if len(f.snapshot()) != count || f.logs.String() != strings.Join(expected, "") {
-				t.Fatal("extra backend request/log")
+			if !tool || !finished {
+				t.Fatalf("cancelled trail=%v", events)
 			}
+
 		})
 	}
 }
@@ -759,7 +799,7 @@ func (tr backendHeaderTransport) RoundTrip(req *http.Request) (*http.Response, e
 	return tr.base.RoundTrip(req)
 }
 
-// R-B0U1-6ZZR
+// R-2MOY-QW3A
 func TestBackendFirstHeaderValues(t *testing.T) {
 	for _, empty := range []bool{false, true} {
 		t.Run(fmt.Sprint(empty), func(t *testing.T) {
@@ -777,6 +817,12 @@ func TestBackendFirstHeaderValues(t *testing.T) {
 				for _, name := range []string{"X-User-Email", "X-Request-Id"} {
 					want := []string{first}
 					if empty {
+						if name == "X-Request-Id" {
+							if len(r.Header.Values(name)) != 1 || r.Header.Get(name) == "" {
+								t.Fatal("request id not minted")
+							}
+							continue
+						}
 						want = nil
 					}
 					if !reflect.DeepEqual(r.Header.Values(name), want) {
@@ -788,24 +834,171 @@ func TestBackendFirstHeaderValues(t *testing.T) {
 	}
 }
 
-// R-KELY-TBRY
-func TestBackendSingleLineVariables(t *testing.T) {
-	name := "alpha\nservice\rname"
-	tool := "tool\nwith\rbreaks"
-	list := fmt.Sprintf(`{"tools":[{"name":%q,"inputSchema":{},"annotations":{"readOnlyHint":true}}]}`, tool)
-	f := backendSetup(t, 0, backendStatic(list, `{"content":[]}`))
-	entries, err := services.Read(f.path)
-	if err != nil {
+func (f *backendFixture) siblings(t *testing.T) []telemetry.Event {
+	t.Helper()
+	if err := f.writer.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(map[string]any{"services": []map[string]any{{"name": name, "url": "", "description": "", "socket": entries[0].Socket, "enabled": true, "mcp": true}}})
-	if err = os.WriteFile(f.path, raw, 0600); err != nil {
-		t.Fatal(err)
+	var events []telemetry.Event
+	for _, e := range f.capture.Events() {
+		if e.Name == "sibling.called" {
+			events = append(events, e)
+		}
 	}
-	f.caller.RequestID = ""
-	f.call(t, "call", fmt.Sprintf(`{"service":%q,"tool":%q}`, name, tool))
-	want := "mcp: request -: alpha service name tools/list: ok\nmcp: request -: alpha service name tools/call tool with breaks: ok\n"
-	if f.logs.String() != want {
-		t.Fatalf("logs=%q", f.logs.String())
+	return events
+}
+func (f *backendFixture) assertStatuses(t *testing.T, statuses ...int64) {
+	t.Helper()
+	events := f.siblings(t)
+	if len(events) != len(statuses) {
+		t.Fatalf("siblings=%v want statuses=%v", events, statuses)
+	}
+	nextStatus, stop := iter.Pull(slices.Values(statuses))
+	defer stop()
+	for _, e := range events {
+		status, ok := nextStatus()
+		if !ok {
+			t.Fatal("unexpected sibling event")
+			return
+		}
+		if e.Attrs["status"] != status || e.Attrs["target"] != "alpha" || e.Attrs["method"] != "POST" || e.Attrs["path"] != "/mcp" || len(e.Attrs) != 5 || e.RequestID != "trace" || e.User != "user" {
+			t.Fatalf("sibling=%v", e)
+		}
+	}
+
+	if f.logs.String() != "" {
+		t.Fatalf("backend wrote stderr: %q", f.logs.String())
+	}
+}
+
+// R-BPGT-9H54 R-K1A0-LYHZ R-3WBT-7JY3 R-BN10-HXNQ R-2NWV-4NTZ
+func TestBackendResponseStatuses(t *testing.T) {
+	for _, status := range []int{301, 302, 307, 308, 500, 502} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			reached := make(chan struct{}, 1)
+			destination := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached <- struct{}{} }))
+			defer destination.Close()
+			f := backendSetup(t, 0, func(w http.ResponseWriter, _ *http.Request, _ backendRequest) {
+				w.Header().Set("Location", destination.URL)
+				w.WriteHeader(status)
+				_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32123,"message":"refused"}}`, w.Header().Get("Test-RPC-ID"))
+			})
+			want := "Service alpha gave an answer the gateway could not read. Retry later."
+			if status == 500 || status == 502 {
+				want = "Service alpha answered with an error: refused"
+			}
+			backendError(t, f.call(t, "describe", `{"service":"alpha"}`), want)
+			f.assertStatuses(t, int64(status))
+			select {
+			case <-reached:
+				t.Fatal("redirect followed")
+			default:
+			}
+			if len(f.snapshot()) != 1 {
+				t.Fatal("extra backend request")
+			}
+		})
+	}
+	for _, head := range []string{"", "HTTP/1.1 200 OK\r\nPartial: unfinished", "HTTP/1.1 100 Continue\r\n\r\n"} {
+		t.Run(fmt.Sprintf("incomplete-%q", head), func(t *testing.T) {
+			f := backendSetup(t, 0, func(w http.ResponseWriter, _ *http.Request, _ backendRequest) {
+				conn, buf, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				_, _ = buf.WriteString(head)
+				_ = buf.Flush()
+			})
+			backendError(t, f.call(t, "describe", `{"service":"alpha"}`), "Service alpha gave an answer the gateway could not read. Retry later.")
+			f.assertStatuses(t, 0)
+		})
+	}
+}
+
+// R-2QCN-W7BD R-2NWV-4NTZ
+func TestBackendDuration(t *testing.T) {
+	for _, delta := range []time.Duration{123456 * time.Microsecond, -time.Second} {
+		t.Run(delta.String(), func(t *testing.T) {
+			var clockMu sync.Mutex
+			clock := time.Unix(1, 0)
+			now := func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return clock }
+			f := backendSetup(t, 0, backendStatic(backendReadList, `{"content":[]}`))
+			f.server.Close()
+			writer, capture := backendTelemetry(t, nil, f.logs, now)
+			entries, err := services.Read(f.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			socket := backendUnix(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var msg struct{ ID json.RawMessage }
+				if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+					t.Error(err)
+					return
+				}
+				clockMu.Lock()
+				clock = clock.Add(delta)
+				clockMu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Test-RPC-ID", string(msg.ID))
+				backendReply(w, backendReadList)
+			}))
+			backendEntries(t, f.path, socket, entries[0].Enabled, true)
+			f.writer, f.capture = writer, capture
+			server := httptest.NewServer(Handler(Config{MCP: NewServer("test-version", writer), Telemetry: writer, ServicesPath: f.path, Banner: func(page.User) page.Banner { return page.Banner{} }}))
+			defer server.Close()
+			f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
+			f.call(t, "describe", `{"service":"alpha"}`)
+			f.assertStatuses(t, 200)
+			want := int64(delta / time.Microsecond)
+			if want < 0 {
+				want = 0
+			}
+			if got := f.siblings(t)[0].Attrs["duration_us"]; got != want {
+				t.Fatalf("duration=%v want=%d", got, want)
+			}
+		})
+	}
+}
+
+func backendTelemetry(t testing.TB, sink telemetry.Sink, stderr io.Writer, now func() time.Time) (*telemetry.Writer, *telemetry.Capture) {
+	t.Helper()
+	capture := &telemetry.Capture{}
+	if sink == nil {
+		sink = capture
+	}
+	writer := telemetry.New(telemetry.Config{Service: ServiceName, Version: "test-version", Sink: sink, Stderr: stderr, Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0xab}, 4096))})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		writer.Shutdown(ctx, "test ended")
+	})
+	return writer, capture
+}
+
+// R-JWEF-2VJ7 R-JXMB-GN9W R-JYU7-UF0L
+func TestBackendArgumentErrorTrail(t *testing.T) {
+	f := backendSetup(t, 0, backendStatic(backendReadList, `{"content":[{"type":"text","text":"invalid tool arguments"}],"isError":true}`))
+	result := f.call(t, "call", `{"service":"alpha","tool":"read","args":{"wrong":true}}`)
+	if !result.IsError() {
+		t.Fatal("backend argument error lost")
+	}
+	f.assertStatuses(t, 200, 200)
+	events := f.capture.Events()
+	if len(events) != 5 {
+		t.Fatalf("events=%v", events)
+	}
+	if events[0].Name != "request.started" || events[1].Name != "sibling.called" || events[2].Name != "sibling.called" || events[3].Name != "tool.called" || events[4].Name != "request.finished" {
+		t.Fatalf("event order=%v", events)
+	}
+	attrs := events[3].Attrs
+	if len(attrs) != 4 || attrs["tool"] != "call" || attrs["kind"] != "read" || attrs["outcome"] != "error" || attrs["duration_us"] == nil {
+		t.Fatalf("tool event=%v", events[3])
+	}
+	for _, e := range events {
+		if e.RequestID != "trace" || e.User != "user" {
+			t.Fatalf("correlation=%v", e)
+		}
 	}
 }

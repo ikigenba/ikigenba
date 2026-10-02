@@ -26,7 +26,8 @@ import (
 func pageConfig(t *testing.T, path string, banner func(page.User) page.Banner) gateway.Config {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	return gateway.Config{ServicesPath: path, Banner: banner, MCP: gateway.NewServer("test", nil)}
+	writer, _ := handlerTelemetry(t, nil)
+	return gateway.Config{ServicesPath: path, Banner: banner, MCP: gateway.NewServer("test", writer), Telemetry: writer}
 }
 
 type markupTag struct {
@@ -564,7 +565,7 @@ func TestUnknownPathsReturnExact404(t *testing.T) {
 	}
 }
 
-// R-SSNH-STJW R-STVE-6LAL
+// R-SSNH-STJW R-R3W9-7NFO
 func TestNonMCPRoutesNeitherSetCookiesNorContactBackends(t *testing.T) {
 	dir, err := os.MkdirTemp("", "mcp-page-")
 	if err != nil {

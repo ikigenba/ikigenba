@@ -14,6 +14,7 @@ import (
 
 	appkitmcp "github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 	"github.com/ikigenba/ikigenba/mcp/internal/server"
 )
@@ -37,7 +38,8 @@ type Process struct {
 	Stderr    io.Writer
 	Inherit   func(fd uintptr) (net.Listener, error)
 	Banner    func(u page.User) page.Banner
-	MCP       *appkitmcp.Server
+	MCP       func(*telemetry.Writer) *appkitmcp.Server
+	Sink      telemetry.Sink
 }
 
 // Exit codes distinguish successful work, host failure, and usage failure.
@@ -141,9 +143,54 @@ func Run(ctx context.Context, p Process) int {
 			return diagnostic(err.Error(), ExitServerFailed)
 		}
 	}
-	handler := gateway.Handler(gateway.Config{Banner: p.Banner, MCP: p.MCP, ServicesPath: servicesPath, Stderr: stderr})
-	if err = server.Serve(ctx, ln, handler, drain); err != nil {
-		return diagnostic(err.Error(), ExitServerFailed)
+	sink := p.Sink
+	if sink == nil {
+		sink = telemetry.NewSocketSink()
+	}
+	gate := &drainSink{sink: sink}
+	writer := telemetry.New(telemetry.Config{Service: gateway.ServiceName, Version: Version, Sink: gate, Stderr: stderr})
+	handler := gateway.Handler(gateway.Config{Banner: p.Banner, MCP: p.MCP(writer), ServicesPath: servicesPath, Telemetry: writer})
+	writer.Ready()
+	serving, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	var failure error
+	var stopMu sync.Mutex
+	stop := func(err error, failed bool) {
+		stopMu.Lock()
+		defer stopMu.Unlock()
+		if serving.Err() != nil {
+			return
+		}
+		if failed {
+			failure = err
+		}
+		gate.stop(drain)
+		cancel(err)
+	}
+	stopped := context.AfterFunc(ctx, func() { stop(context.Cause(ctx), false) })
+	defer stopped()
+	if ctx.Err() != nil {
+		stop(context.Cause(ctx), false)
+	}
+	listener := &runListener{Listener: ln, ctx: ctx, stop: stop}
+	err = server.Serve(serving, listener, handler, drain)
+	stopMu.Lock()
+	acceptErr := failure
+	stopMu.Unlock()
+	reason := "failed"
+	if acceptErr == nil && context.Cause(ctx) != nil {
+		reason = context.Cause(ctx).Error()
+	}
+	shutdown, done := context.WithDeadline(context.Background(), gate.deadline())
+	writer.Shutdown(shutdown, reason)
+	done()
+	if acceptErr != nil {
+		stderr.final([]byte("mcp: " + acceptErr.Error() + "\n"))
+		return ExitServerFailed
+	}
+	if err != nil {
+		stderr.final([]byte("mcp: " + err.Error() + "\n"))
+		return ExitServerFailed
 	}
 	return ExitSuccess
 }
@@ -173,4 +220,79 @@ func notify(address string) error {
 	defer func() { _ = conn.Close() }()
 	_, err = conn.Write([]byte("READY=1"))
 	return err
+}
+
+// drainSink refuses to begin delivery after the shared drain deadline.
+type drainSink struct {
+	mu    sync.Mutex
+	sink  telemetry.Sink
+	until time.Time
+}
+
+func (s *drainSink) stop(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.until.IsZero() {
+		s.until = time.Now().Add(d)
+	}
+}
+func (s *drainSink) deadline() time.Time { s.mu.Lock(); defer s.mu.Unlock(); return s.until }
+func (s *drainSink) Deliver(ctx context.Context, e telemetry.Event) error {
+	s.mu.Lock()
+	until := s.until
+	if !until.IsZero() && !time.Now().Before(until) {
+		s.mu.Unlock()
+		return telemetry.ErrRejected
+	}
+	s.mu.Unlock()
+	return s.sink.Deliver(ctx, e)
+}
+
+type runListener struct {
+	net.Listener
+	ctx  context.Context
+	stop func(error, bool)
+}
+
+func (l *runListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err == nil {
+			return conn, nil
+		}
+		if l.ctx.Err() != nil {
+			return nil, err
+		}
+		if temporaryAccept(err) {
+			continue
+		}
+		l.stop(err, true)
+		return nil, err
+	}
+}
+func (w *runWriter) final(b []byte) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.closed && w.dst != nil {
+		_, _ = w.dst.Write(b)
+	}
+	w.closed = true
+}
+
+func temporaryAccept(err error) bool {
+	if temporary, ok := err.(interface{ Temporary() bool }); ok && temporary.Temporary() {
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return temporaryAccept(wrapped.Unwrap())
+	}
+	if wrapped, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, nested := range wrapped.Unwrap() {
+			if temporaryAccept(nested) {
+				return true
+			}
+		}
+	}
+
+	return false
 }

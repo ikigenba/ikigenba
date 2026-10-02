@@ -13,6 +13,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 func serveBackend(ctx context.Context, caller identity.Caller, service string, tool *string, args json.RawMessage, operation, version string) (mcp.Result, error) {
@@ -34,14 +35,14 @@ func serveBackend(ctx context.Context, caller identity.Caller, service string, t
 	}
 	callCtx, cancel := context.WithDeadline(ctx, state.received.Add(budget))
 	defer cancel()
-	transport := &http.Transport{DialContext: func(c context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(c, "unix", entry.Socket)
-	}}
+	transport := telemetry.SocketTransport(entry.Socket)
 	defer transport.CloseIdleConnections()
-	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://backend/mcp", HTTPClient: &http.Client{Transport: transport}, Name: ServiceName, Version: version})
+	httpClient := telemetry.SiblingClient(state.cfg.Telemetry, service, transport)
+	httpClient.Transport = backendStatusTransport{httpClient.Transport}
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://backend/mcp", HTTPClient: httpClient, Name: ServiceName, Version: version})
 	tools, err := client.ListTools(callCtx, caller)
 	outcome := backendOutcome(ctx, callCtx, err, false)
-	backendLine(state, caller, service, "tools/list", outcome)
 	if err != nil {
 		return backendRefusal(service, budgetSeconds(budget.Seconds()), false, outcome, err), nil
 	}
@@ -78,11 +79,21 @@ func serveBackend(ctx context.Context, caller identity.Caller, service string, t
 	}
 	result, err := client.CallTool(callCtx, caller, *tool, args)
 	outcome = backendOutcome(ctx, callCtx, err, result.IsError())
-	backendLine(state, caller, service, "tools/call "+*tool, outcome)
 	if err != nil {
 		return backendRefusal(service, budgetSeconds(budget.Seconds()), true, outcome, err), nil
 	}
 	return result, nil
+}
+
+type backendStatusTransport struct{ base http.RoundTripper }
+
+func (tr backendStatusTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	response, err := tr.base.RoundTrip(r)
+	if err == nil && response.StatusCode >= 300 && response.StatusCode < 400 {
+		_ = response.Body.Close()
+		return nil, &mcp.HTTPError{StatusCode: response.StatusCode}
+	}
+	return response, err
 }
 
 func budgetSeconds(seconds float64) string { return strconv.FormatFloat(seconds, 'f', -1, 64) }
@@ -143,17 +154,6 @@ func backendRefusal(service, seconds string, called bool, outcome string, err er
 }
 func backendSingleLine(value string) string {
 	return strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
-}
-func backendLine(state *requestState, caller identity.Caller, service, method, outcome string) {
-	if state.cfg.Stderr == nil {
-		return
-	}
-	id := caller.RequestID
-	if id == "" {
-		id = "-"
-	}
-	line := ServiceName + ": request " + backendSingleLine(id) + ": " + backendSingleLine(service) + " " + backendSingleLine(method) + ": " + outcome + "\n"
-	_, _ = state.cfg.Stderr.Write([]byte(line))
 }
 func describeResult(service string, tools []mcp.ToolInfo, selected *mcp.ToolInfo) mcp.Result {
 	type summary struct {

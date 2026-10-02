@@ -3,11 +3,11 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 type servicesInput struct{}
@@ -44,8 +44,8 @@ func instructions(ctx context.Context) string {
 }
 
 // NewServer constructs the appkit transport and registers the gateway tools.
-func NewServer(version string, stderr io.Writer) *mcp.Server {
-	s := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: version, Stderr: stderr, Instructions: instructions})
+func NewServer(version string, writer *telemetry.Writer) *mcp.Server {
+	s := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: version, Telemetry: writer, Instructions: instructions})
 	mcp.AddTool(s, mcp.Tool[servicesInput, servicesOutput]{Name: "services", Description: servicesDescription, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, _ servicesInput) (servicesOutput, error) {
 		out := servicesOutput{Services: []serviceOutput{}}
 		if state := requestStateFrom(ctx); state != nil {

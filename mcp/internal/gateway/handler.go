@@ -3,16 +3,15 @@ package gateway
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 // ServiceName is the gateway's platform name.
@@ -27,18 +26,7 @@ type Config struct {
 	MCP          *mcp.Server
 	ServicesPath string
 	Budget       time.Duration
-	Stderr       io.Writer
-}
-
-type lockedWriter struct {
-	mu  sync.Mutex
-	out io.Writer
-}
-
-func (w *lockedWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.out.Write(p)
+	Telemetry    *telemetry.Writer
 }
 
 type requestState struct {
@@ -56,10 +44,6 @@ func requestStateFrom(ctx context.Context) *requestState {
 
 // Handler builds the gateway HTTP surface and requires nginx's caller identity.
 func Handler(cfg Config) http.Handler {
-	if cfg.Stderr == nil {
-		cfg.Stderr = io.Discard
-	}
-	cfg.Stderr = &lockedWriter{out: cfg.Stderr}
 	if cfg.Budget <= 0 {
 		cfg.Budget = DefaultBudget
 	}
@@ -90,5 +74,5 @@ func Handler(cfg Config) http.Handler {
 		}
 		serveConnect(w, r, cfg, entries)
 	})
-	return identity.Require(ServiceName, cfg.Stderr, routes)
+	return telemetry.Middleware(cfg.Telemetry, identity.Require(routes))
 }

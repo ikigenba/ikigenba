@@ -2,18 +2,13 @@ package gateway_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
-	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 )
 
@@ -38,10 +33,10 @@ func endpointHeadersEqual(t *testing.T, ax, ay http.Header) {
 	}
 }
 func TestEndpointAppkitEquivalence(t *testing.T) {
-	// R-TMAS-F0JM R-TNIO-SSAB R-TQ6Z-2X2K
-	cfg := endpointConfig(t, "", nil)
+	// R-TQ6Z-2X2K R-29A2-JEXN R-2AHY-X6OC
+	cfg := endpointConfig(t, "")
 	h := gateway.Handler(cfg)
-	reference := identity.Require(gateway.ServiceName, io.Discard, cfg.MCP)
+	reference := identity.Require(cfg.MCP)
 	for _, path := range []string{"/mcp", "/mcp/dummy,notes"} {
 		for _, tc := range []struct{ method, body, revision string }{{"GET", "", ""}, {"DELETE", "", ""}, {"POST", `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`, "2025-11-25"}, {"POST", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_widgets","arguments":{}}}`, mcp.ProtocolVersion}, {"POST", `{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`, "2025-11-25"}, {"POST", "invalid", mcp.ProtocolVersion}} {
 			endpointSame(t, h, reference, path, tc.method, tc.body, tc.revision, endpointIdentity())
@@ -121,100 +116,5 @@ func TestEndpointAppkitEquivalence(t *testing.T) {
 	}
 	if b := endpointCall(t, endpointClient(t, h, "/mcp"), ""); !bytes.Contains(b, []byte(`"services":[]`)) {
 		t.Fatal(string(b))
-	}
-}
-func TestEndpointMissingCallerServer(t *testing.T) {
-	// R-Q12L-59E7
-	t.Setenv(services.Variable, "")
-	var a, b bytes.Buffer
-	srv := gateway.NewServer("odd-version", &a)
-	reference := mcp.NewServer(mcp.ServerConfig{Name: gateway.ServiceName, Version: "odd-version", Stderr: &b})
-	for _, method := range []string{"GET", "POST", "HEAD"} {
-		endpointSame(t, srv, reference, "/mcp", method, `{}`, mcp.ProtocolVersion, http.Header{})
-		if a.String() != b.String() {
-			t.Fatal(a.String(), b.String())
-		}
-	}
-}
-func TestHandlerIdentity(t *testing.T) {
-	// R-WXPC-OZXZ R-WYX9-2ROO
-	var actual, want bytes.Buffer
-	cfg := endpointConfig(t, "", &actual)
-	h := gateway.Handler(cfg)
-	reference := identity.Require(gateway.ServiceName, &want, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("identity gate bypassed") }))
-	for _, path := range []string{"/", "/mcp", "/mcp/a,,b", "/_appkit/theme.css", "/unknown"} {
-		for _, method := range []string{"GET", "POST", "HEAD"} {
-			for _, headers := range []http.Header{{}, {"X-User-Id": []string{"", "later"}, "X-Request-Id": []string{"req"}}} {
-				endpointSame(t, h, reference, path, method, `bogus`, mcp.ProtocolVersion, headers)
-			}
-		}
-	}
-	nilCfg := cfg
-	nilCfg.Stderr = nil
-	nilHandler := gateway.Handler(nilCfg)
-	endpointSame(t, nilHandler, h, "/mcp", "GET", "", "", http.Header{})
-	// The comparison above makes one additional missing-identity write only to h.
-	endpointRaw(reference, "/mcp", "GET", "", "", http.Header{})
-	if actual.String() != want.String() {
-		t.Fatal(actual.String(), want.String())
-	}
-	actual.Reset()
-	c := endpointClient(t, h, "/mcp")
-	if _, err := c.ListTools(context.Background(), endpointCaller); err != nil {
-		t.Fatal(err)
-	}
-	endpointCall(t, c, "")
-	endpointCall(t, c, `{"bogus":true}`)
-	endpointRaw(h, "/unknown", "GET", "", "", endpointIdentity())
-	if actual.Len() != 0 {
-		t.Fatal(actual.String())
-	}
-}
-
-type endpointWriter struct {
-	in      atomic.Int32
-	overlap atomic.Bool
-	mu      sync.Mutex
-	lines   [][]byte
-}
-
-func (w *endpointWriter) Write(p []byte) (int, error) {
-	if w.in.Add(1) != 1 {
-		w.overlap.Store(true)
-	}
-	defer w.in.Add(-1)
-	w.mu.Lock()
-	w.lines = append(w.lines, append([]byte(nil), p...))
-	w.mu.Unlock()
-	return len(p), nil
-}
-func TestHandlerConcurrent(t *testing.T) {
-	// R-X055-GJFD R-WYX9-2ROO
-	writer := &endpointWriter{}
-	h := gateway.Handler(endpointConfig(t, "", writer))
-	c := endpointClient(t, h, "/mcp")
-	var group sync.WaitGroup
-	for i := 0; i < 40; i++ {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			result, err := c.CallTool(context.Background(), endpointCaller, "services", nil)
-			if err != nil || result.IsError() {
-				t.Errorf("call: %v %v", result, err)
-			}
-			endpointRaw(h, "/mcp", "GET", "", "", http.Header{})
-		}()
-	}
-	group.Wait()
-	if writer.overlap.Load() {
-		t.Fatal("concurrent writes")
-	}
-	if len(writer.lines) != 40 {
-		t.Fatal(len(writer.lines))
-	}
-	for _, line := range writer.lines {
-		if string(line) != "mcp: request -: X-User-Id is missing\n" {
-			t.Fatal(string(line))
-		}
 	}
 }

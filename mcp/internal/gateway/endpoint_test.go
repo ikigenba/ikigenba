@@ -23,10 +23,11 @@ import (
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 )
 
-func endpointConfig(t *testing.T, path string, stderr io.Writer) gateway.Config {
+func endpointConfig(t *testing.T, path string) gateway.Config {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	return gateway.Config{Banner: func(_ page.User) page.Banner { return page.Banner{} }, MCP: gateway.NewServer("test-version", io.Discard), ServicesPath: path, Budget: time.Second, Stderr: stderr}
+	writer, _ := handlerTelemetry(t, nil)
+	return gateway.Config{Banner: func(_ page.User) page.Banner { return page.Banner{} }, MCP: gateway.NewServer("test-version", writer), ServicesPath: path, Budget: time.Second, Telemetry: writer}
 }
 func endpointClient(t *testing.T, h http.Handler, path string) *mcp.Client {
 	t.Helper()
@@ -145,13 +146,13 @@ func endpointOrderedEqual(t *testing.T, actual, expected []byte) {
 }
 
 func TestEndpointDeclarations(t *testing.T) {
-	// R-VH9O-8V24 R-VIHK-MMST R-THNO-EIVP R-VM59-RY0W R-VND6-5PRL
+	// R-VH9O-8V24 R-VIHK-MMST R-1H8D-QOVO R-VM59-RY0W
 	const name = gateway.ServiceName
 	const budget time.Duration = gateway.DefaultBudget
 	if name != "mcp" || budget != 50*time.Second {
 		t.Fatal(name, budget)
 	}
-	cfg := endpointConfig(t, "", nil)
+	cfg := endpointConfig(t, "")
 	h := gateway.Handler(cfg)
 	if got := endpointCall(t, endpointClient(t, h, "/mcp"), ""); !bytes.Contains(got, []byte(`"services":[]`)) {
 		t.Fatal(string(got))
@@ -161,11 +162,11 @@ func TestEndpointDeclarations(t *testing.T) {
 func TestEndpointCatalogue(t *testing.T) {
 	// R-VPSY-X98Z R-VR0V-B0ZO R-VTGO-2KH2 R-VUOK-GC7R R-3SC8-IDER R-3CHJ-JCRQ
 	path := endpointFile(t, `[{"name":"zeta","mcp":true,"enabled":false,"description":"Z"},{"name":"alpha","mcp":true,"enabled":true,"description":"A"},{"name":"alpha","mcp":false,"enabled":false},{"name":"web","mcp":false,"enabled":true},{"name":"mcp","mcp":true,"enabled":true}]`)
-	cfg := endpointConfig(t, path, nil)
+	cfg := endpointConfig(t, path)
 	h := gateway.Handler(cfg)
-	referenceServer := mcp.NewServer(mcp.ServerConfig{Name: "reference", Version: "test", Stderr: io.Discard})
+	referenceServer := mcp.NewServer(mcp.ServerConfig{Name: "reference", Version: "test", Telemetry: cfg.Telemetry})
 	mcp.AddTool(referenceServer, mcp.Tool[struct{}, struct{}]{Name: "services", Description: "List fixture data.", Effect: mcp.Read, Handler: func(context.Context, identity.Caller, struct{}) (struct{}, error) { return struct{}{}, nil }})
-	reference := endpointClient(t, identity.Require("reference", io.Discard, referenceServer), "/mcp")
+	reference := endpointClient(t, identity.Require(referenceServer), "/mcp")
 	var allowedMembers map[string]json.RawMessage
 	if err := json.Unmarshal(endpointCall(t, reference, ""), &allowedMembers); err != nil {
 		t.Fatal(err)
@@ -230,7 +231,7 @@ func TestEndpointCatalogue(t *testing.T) {
 
 func TestEndpointScopes(t *testing.T) {
 	// R-VS8R-OSQD R-ZBX8-V01U
-	h := gateway.Handler(endpointConfig(t, "", nil))
+	h := gateway.Handler(endpointConfig(t, ""))
 	for _, scope := range []string{"", "a,,b", ",dummy", "dummy,", "dummy,dummy", "du_mmy", "dummy/", "-dummy", "dummy-", strings.Repeat("x", 64), "/dummy", "./dummy", "a/../dummy", "é"} {
 		for _, method := range []string{"GET", "POST", "DELETE"} {
 			w := endpointRaw(h, "/mcp/"+scope, method, `{}`, mcp.ProtocolVersion, endpointIdentity())
@@ -248,9 +249,9 @@ func TestEndpointScopes(t *testing.T) {
 }
 
 func TestEndpointInstructions(t *testing.T) {
-	// R-3R4C-4LO2 R-TOQL-6K10
+	// R-3R4C-4LO2 R-2BPV-AYF1
 	path := endpointFile(t, `[{"name":"zeta","mcp":true,"enabled":false},{"name":"alpha","mcp":true,"enabled":true}]`)
-	h := gateway.Handler(endpointConfig(t, path, nil))
+	h := gateway.Handler(endpointConfig(t, path))
 	for _, tc := range []struct{ path, names string }{{"/mcp", "alpha, zeta"}, {"/mcp/Z,unknown", "Z, unknown"}} {
 		for _, method := range []string{"initialize", "server/discover"} {
 			params := `{}`
@@ -291,7 +292,7 @@ func TestEndpointInstructions(t *testing.T) {
 
 func TestEndpointServicesArgumentRefusal(t *testing.T) {
 	// R-TPYH-KBRP
-	h := gateway.Handler(endpointConfig(t, "", nil))
+	h := gateway.Handler(endpointConfig(t, ""))
 	b := endpointCall(t, endpointClient(t, h, "/mcp"), `{"bogus":true}`)
 	expected, _ := mcp.ErrorResult("invalid arguments:\nbogus: unknown field").MarshalJSON()
 	var actual, want map[string]json.RawMessage
@@ -310,7 +311,7 @@ func TestEndpointServicesArgumentRefusal(t *testing.T) {
 }
 
 func TestEndpointNoBackend(t *testing.T) {
-	// R-TR6D-Y3IE
+	// R-R545-LF6D
 	dir, err := os.MkdirTemp("", "gateway-sock-")
 	if err != nil {
 		t.Fatal(err)
@@ -330,8 +331,8 @@ func TestEndpointNoBackend(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	body, _ := json.Marshal([]map[string]any{{"name": "dummy", "mcp": true, "enabled": true, "socket": socket}})
-	cfg := endpointConfig(t, endpointFile(t, string(body)), nil)
+	body, _ := json.Marshal([]map[string]any{{"name": "dummy", "mcp": true, "enabled": true, "socket": socket}, {"name": "disabled", "mcp": true, "enabled": false, "socket": socket}, {"name": "web", "mcp": false, "enabled": true, "socket": socket}, {"name": "off", "mcp": false, "enabled": false, "socket": socket}})
+	cfg := endpointConfig(t, endpointFile(t, string(body)))
 	h := gateway.Handler(cfg)
 	server := httptest.NewServer(h)
 	c := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp/dummy", HTTPClient: server.Client(), Name: "test", Version: "test"})
@@ -344,6 +345,7 @@ func TestEndpointNoBackend(t *testing.T) {
 	for _, tc := range []struct{ path, method, body string }{{"/mcp", "GET", ""}, {"/mcp/a,,b", "POST", `{}`}, {"/mcp", "POST", `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}`}, {"/mcp", "POST", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"unknown","arguments":{}}}`}} {
 		endpointRaw(h, tc.path, tc.method, tc.body, mcp.ProtocolVersion, endpointIdentity())
 	}
+	endpointRaw(h, "/mcp", "POST", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"call","arguments":{"service":"dummy","tool":"thing"}}}`, mcp.ProtocolVersion, http.Header{})
 	server.Close()
 	if err := ln.SetDeadline(time.Now().Add(-time.Second)); err != nil {
 		t.Fatal(err)
@@ -363,7 +365,7 @@ func TestEndpointNoBackend(t *testing.T) {
 
 func TestEndpointTools(t *testing.T) {
 	// R-3DPF-X4IF R-3EXC-AW94 R-ZAPC-H8B5 R-3HD5-2FQI R-3IL1-G7H7 R-3JSX-TZ7W
-	h := gateway.Handler(endpointConfig(t, endpointFile(t, `[{"name":"dummy","enabled":true,"mcp":true}]`), nil))
+	h := gateway.Handler(endpointConfig(t, endpointFile(t, `[{"name":"dummy","enabled":true,"mcp":true}]`)))
 	expected := []string{
 		`{"name":"services","description":"List the services this connection reaches, and whether each is available.\n\nAn unavailable service says why: disabled or not installed. Call describe to see a service's tools.","inputSchema":{"type":"object","additionalProperties":false},"outputSchema":{"type":"object","properties":{"services":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string","description":"The service's name."},"description":{"type":"string","description":"What the service is for, from the services file; empty when it is not installed."},"available":{"type":"boolean","description":"Whether the service can be used now."},"reason":{"type":"string","description":"Why the service is unavailable: disabled or not installed. Present only when available is false."}},"required":["name","description","available"],"additionalProperties":false},"description":"Every service this connection reaches, in name order."}},"required":["services"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,
 		`{"name":"describe","description":"Show a service's tools, or one tool's full description and schemas.\n\nWithout tool, lists each tool of the service with its one-line summary and its kind: a read tool runs with call, a write tool with mutate. With tool, gives that tool's full description, its input schema, its output schema when it has one, and its kind. Call describe before call or mutate.","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"The service's name, as services lists it."},"tool":{"type":"string","description":"A tool's name, as describe lists it. Leave it out to list the service's tools."}},"required":["service"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,

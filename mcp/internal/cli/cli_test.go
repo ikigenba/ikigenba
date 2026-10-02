@@ -13,7 +13,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +27,7 @@ import (
 	appkitmcp "github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/mcp/internal/cli"
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 )
@@ -68,7 +71,7 @@ func (w *writes) Write(p []byte) (int, error) {
 }
 func (w *writes) String() string { return string(bytes.Join(w.calls, nil)) }
 
-// R-TF7V-MZEB R-TGFS-0R50 R-X3SU-LUNG R-X68N-DE4U R-X7GJ-R5VJ
+// R-1ESK-Z5EA R-TGFS-0R50 R-X3SU-LUNG R-X68N-DE4U R-X7GJ-R5VJ
 // R-X8OG-4XM8 R-X9WC-IPCX R-XB48-WH3M R-XCC5-A8UB R-XDK1-O0L0 R-VDLZ-3JU1
 func TestCommands(t *testing.T) {
 	for _, tc := range []struct {
@@ -84,7 +87,7 @@ func TestCommands(t *testing.T) {
 			var out bytes.Buffer
 			var errout writes
 			forbidden := func() { t.Fatal("command touched process environment/socket") }
-			p := cli.Process{Args: tc.args, LookupEnv: func(string) (string, bool) { forbidden(); return "", false }, Unsetenv: func(string) error { forbidden(); return nil }, Pid: 42, Stdout: &out, Stderr: &errout, Inherit: func(uintptr) (net.Listener, error) { forbidden(); return nil, nil }, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: nil}
+			p := cli.Process{Args: tc.args, LookupEnv: func(string) (string, bool) { forbidden(); return "", false }, Unsetenv: func(string) error { forbidden(); return nil }, Pid: 42, Stdout: &out, Stderr: &errout, Inherit: func(uintptr) (net.Listener, error) { forbidden(); return nil, nil }, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(*telemetry.Writer) *appkitmcp.Server { forbidden(); return nil }, Sink: sinkFunc(func(context.Context, telemetry.Event) error { forbidden(); return nil })}
 			run := cli.Run
 			code := run(context.Background(), p)
 			if code != tc.code || out.String() != tc.out {
@@ -161,16 +164,18 @@ func TestInheritanceFailure(t *testing.T) {
 }
 
 type harness struct {
-	p      cli.Process
-	env    map[string]string
-	ln     net.Listener
-	notify *net.UnixConn
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan int
-	out    bytes.Buffer
-	errout bytes.Buffer
-	dir    string
+	writer  *telemetry.Writer
+	capture *telemetry.Capture
+	p       cli.Process
+	env     map[string]string
+	ln      net.Listener
+	notify  *net.UnixConn
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan int
+	out     bytes.Buffer
+	errout  bytes.Buffer
+	dir     string
 }
 
 func setup(t *testing.T) *harness {
@@ -203,7 +208,11 @@ func setup(t *testing.T) *harness {
 			t.Errorf("fd=%d", fd)
 		}
 		return h.ln, nil
-	}, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: gateway.NewServer(cli.Version, io.Discard)}
+	}, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *appkitmcp.Server { return gateway.NewServer(cli.Version, w) }, Sink: &telemetry.Capture{}}
+
+	h.capture = &telemetry.Capture{}
+	h.p.Sink = h.capture
+	h.p.MCP = func(w *telemetry.Writer) *appkitmcp.Server { h.writer = w; return gateway.NewServer(cli.Version, w) }
 	return h
 }
 func (h *harness) start(t *testing.T) {
@@ -255,7 +264,7 @@ func readBody(t *testing.T, r *http.Response) string {
 	return string(b)
 }
 
-// R-WJ2K-3R1N R-WQDY-EDHT R-TMJ9-XLUH
+// R-U8EY-8T0H R-G9BZ-FZJE R-TMJ9-XLUH
 func TestServeAndCleanStop(t *testing.T) {
 	h := setup(t)
 	h.start(t)
@@ -383,7 +392,7 @@ type failListener struct {
 
 func (l failListener) Accept() (net.Conn, error) { return nil, l.err }
 
-// R-WNY5-MU0F
+// R-G6W6-OG20
 func TestAcceptFailure(t *testing.T) {
 	h := setup(t)
 	delete(h.env, "NOTIFY_SOCKET")
@@ -393,7 +402,7 @@ func TestAcceptFailure(t *testing.T) {
 	}
 }
 
-// R-WV9J-XGGL R-W6VK-A1MP
+// R-U9MU-MKR6 R-W6VK-A1MP
 func TestServicesAndLargeDrainCannotRefuseStart(t *testing.T) {
 	for _, v := range []string{"", "1", strings.Repeat("9", 100)} {
 		for _, path := range []string{"", "absent", "bad"} {
@@ -420,11 +429,10 @@ func TestServicesAndLargeDrainCannotRefuseStart(t *testing.T) {
 	}
 }
 
-// R-BFHU-UIZS
+// R-FVX3-8IDR
 func TestGatewayConfiguration(t *testing.T) {
 	h := setup(t)
-	var actualDiagnostics writes
-	h.p.Stderr = &actualDiagnostics
+
 	var calls atomic.Int32
 	h.p.Banner = func(page.User) page.Banner { calls.Add(1); return page.Banner{} }
 	first := filepath.Join(h.dir, "first")
@@ -444,8 +452,10 @@ func TestGatewayConfiguration(t *testing.T) {
 	// Changing the seam's later answer cannot change the captured path.
 	// The second file is absent; the captured file remains populated.
 	changed.Store(true)
+	referenceWriter := telemetry.New(telemetry.Config{Service: gateway.ServiceName, Sink: &telemetry.Capture{}})
+	defer referenceWriter.Shutdown(context.Background(), "test")
 	for _, path := range []string{"/", "/missing", "/mcp/bad,", "/_appkit/no-file"} {
-		cfg := gateway.Config{Banner: h.p.Banner, MCP: h.p.MCP, ServicesPath: first, Stderr: io.Discard}
+		cfg := gateway.Config{Banner: h.p.Banner, MCP: gateway.NewServer(cli.Version, referenceWriter), ServicesPath: first, Telemetry: referenceWriter}
 		reference := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("X-User-Id", "person")
@@ -475,26 +485,17 @@ func TestGatewayConfiguration(t *testing.T) {
 		t.Fatal(string(wire))
 	}
 
-	var expectedDiagnostics writes
 	ref := httptest.NewRecorder()
 	missing := httptest.NewRequest(http.MethodGet, "/missing", nil)
 	missing.Host = h.ln.Addr().String()
-	gateway.Handler(gateway.Config{Banner: h.p.Banner, MCP: h.p.MCP, ServicesPath: first, Stderr: &expectedDiagnostics}).ServeHTTP(ref, missing)
+	gateway.Handler(gateway.Config{Banner: h.p.Banner, MCP: gateway.NewServer(cli.Version, referenceWriter), ServicesPath: first, Telemetry: referenceWriter}).ServeHTTP(ref, missing)
 	actualMissing := h.get(t, "/missing", false)
-	missingBody := readBody(t, actualMissing)
-	if actualMissing.StatusCode != ref.Code || missingBody != ref.Body.String() {
-		t.Fatal("missing identity response differs")
+	if actualMissing.StatusCode != ref.Code || readBody(t, actualMissing) != ref.Body.String() {
+		t.Fatal("missing identity differs")
 	}
 	h.cancel()
 	h.finish(t, 0)
-	if len(expectedDiagnostics.calls) == 0 || len(actualDiagnostics.calls) != len(expectedDiagnostics.calls) {
-		t.Fatalf("writes actual=%q expected=%q", actualDiagnostics.calls, expectedDiagnostics.calls)
-	}
-	for i := range expectedDiagnostics.calls {
-		if !bytes.Equal(actualDiagnostics.calls[i], expectedDiagnostics.calls[i]) {
-			t.Fatalf("write %d actual=%q expected=%q", i, actualDiagnostics.calls[i], expectedDiagnostics.calls[i])
-		}
-	}
+
 	if calls.Load() != 2 {
 		t.Fatalf("banner calls=%d", calls.Load())
 	}
@@ -548,11 +549,25 @@ func TestServingDoesNotUseDefaultLogger(t *testing.T) {
 	}
 }
 
-// R-WRLU-S58I
+type overlapWriter struct {
+	writing atomic.Bool
+	overlap atomic.Bool
+}
+
+func (w *overlapWriter) Write(p []byte) (int, error) {
+	if !w.writing.CompareAndSwap(false, true) {
+		w.overlap.Store(true)
+	}
+	defer w.writing.Store(false)
+	return len(p), nil
+}
+
+// R-FZKS-DTLU
 func TestConcurrentDiagnostics(t *testing.T) {
 	h := setup(t)
-	var output bytes.Buffer
+	var output overlapWriter
 	h.p.Stderr = &output
+	h.p.Sink = rejectSink{}
 	h.start(t)
 	var wg sync.WaitGroup
 	for range 20 {
@@ -561,12 +576,12 @@ func TestConcurrentDiagnostics(t *testing.T) {
 	wg.Wait()
 	h.cancel()
 	h.finish(t, 0)
-	if strings.Count(output.String(), "\n") != 20 {
-		t.Fatal(output.String())
+	if output.overlap.Load() {
+		t.Fatal("overlapping stderr writes")
 	}
 }
 
-// R-W9BD-1L43 R-WAJ9-FCUS R-TOZ2-P5BV
+// R-GFFH-CU8V R-FYCW-01V5 R-U771-V19S
 func TestDrainDeadlineAndNoLaterWrites(t *testing.T) {
 	for _, drain := range []string{"1", "unset", ""} {
 		t.Run(strconv.Quote(drain), func(t *testing.T) {
@@ -611,19 +626,20 @@ func TestDrainDeadlineAndNoLaterWrites(t *testing.T) {
 				t.Fatalf("cut connection body=%q err=%v", b, err)
 			}
 			want := "mcp: stopped with 1 request unfinished\n"
-			if h.errout.String() != want || h.out.Len() != 0 {
+			if !strings.HasSuffix(h.errout.String(), want) || h.out.Len() != 0 {
 				t.Fatal(h.errout.String())
 			}
+			before := h.errout.String()
 			close(release)
 			<-exited
-			if h.errout.String() != want {
+			if h.errout.String() != before {
 				t.Fatal("wrote after return")
 			}
 		})
 	}
 }
 
-// R-W9BD-1L43
+// R-GFFH-CU8V
 func TestDrainCompletesFullResponse(t *testing.T) {
 	h := setup(t)
 	h.env["DRAIN_SECONDS"] = "1"
@@ -656,7 +672,7 @@ func TestDrainCompletesFullResponse(t *testing.T) {
 	h.finish(t, 0)
 }
 
-// R-TOZ2-P5BV R-WAJ9-FCUS
+// R-U771-V19S R-FYCW-01V5
 func TestBackendDrainCannotWriteAfterReturn(t *testing.T) {
 	h := setup(t)
 	h.env["DRAIN_SECONDS"] = "1"
@@ -709,5 +725,446 @@ func TestBackendDrainCannotWriteAfterReturn(t *testing.T) {
 	}
 	if h.errout.String() != before {
 		t.Fatal("late backend diagnostic", h.errout.String())
+	}
+}
+
+type sinkFunc func(context.Context, telemetry.Event) error
+
+func (s sinkFunc) Deliver(ctx context.Context, e telemetry.Event) error { return s(ctx, e) }
+
+type rejectSink struct{}
+
+func (rejectSink) Deliver(context.Context, telemetry.Event) error {
+	return fmt.Errorf("refused: %w", telemetry.ErrRejected)
+}
+
+// R-1X32-PPIP R-1ZIV-H903 R-G38H-J4TX
+func TestRunWriterLifecycle(t *testing.T) {
+	h := setup(t)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	h.ctx = ctx
+	defer cancel(nil)
+	var calls int
+	h.p.MCP = func(w *telemetry.Writer) *appkitmcp.Server {
+		calls++
+		if w == nil {
+			t.Error("nil writer")
+		}
+		return gateway.NewServer(cli.Version, w)
+	}
+	h.start(t)
+	readBody(t, h.get(t, "/", true))
+	cancel(errors.New("SIGINT"))
+	h.finish(t, cli.ExitSuccess)
+	events := h.capture.Events()
+	if calls != 1 || len(events) != 4 {
+		t.Fatalf("calls=%d events=%v", calls, events)
+	}
+	want := []string{"service.started", "request.started", "request.finished", "service.stopping"}
+	for i, e := range events {
+		if e.Service != gateway.ServiceName || e.Name != want[i] {
+			t.Fatal(events)
+		}
+	}
+	for _, i := range []int{0, 3} {
+		if events[i].RequestID != "" || events[i].User != "" {
+			t.Fatal(events[i])
+		}
+	}
+	if !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"version": cli.Version}) || !reflect.DeepEqual(events[3].Attrs, telemetry.Attrs{"reason": "SIGINT"}) {
+		t.Fatal(events)
+	}
+}
+
+// R-G20L-5D38
+func TestUndeliveredEventEnvelope(t *testing.T) {
+	h := setup(t)
+	var output writes
+	h.p.Stderr = &output
+	var rejected []telemetry.Event
+	h.p.Sink = sinkFunc(func(_ context.Context, e telemetry.Event) error {
+		rejected = append(rejected, e)
+		return fmt.Errorf("no: %w", telemetry.ErrRejected)
+	})
+	h.start(t)
+	readBody(t, h.get(t, "/", true))
+	h.cancel()
+	h.finish(t, 0)
+	if len(output.calls) != len(rejected) {
+		t.Fatal(len(output.calls), len(rejected))
+	}
+	for i, e := range rejected {
+		raw, err := e.MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "mcp: undelivered event: " + string(raw) + "\n"
+		if string(output.calls[i]) != want {
+			t.Fatalf("%q want %q", output.calls[i], want)
+		}
+	}
+}
+
+// R-20QR-V0QS
+func TestRefusedStartDoesNotDeliver(t *testing.T) {
+	for _, mode := range []string{"command", "drain", "socket", "many", "inherit", "notify"} {
+		t.Run(mode, func(t *testing.T) {
+			h := setup(t)
+			h.p.Sink = sinkFunc(func(context.Context, telemetry.Event) error { t.Error("refused start delivered"); return nil })
+			if mode == "command" {
+				h.p.MCP = func(*telemetry.Writer) *appkitmcp.Server { t.Error("command constructed server"); return nil }
+			}
+			switch mode {
+			case "command":
+				h.p.Args = []string{"--help"}
+			case "drain":
+				h.env["DRAIN_SECONDS"] = "0"
+			case "socket":
+				delete(h.env, "LISTEN_FDS")
+			case "many":
+				h.env["LISTEN_FDS"] = "2"
+			case "inherit":
+				h.p.Inherit = func(uintptr) (net.Listener, error) { return nil, errors.New("inherit failed") }
+			case "notify":
+				h.env["NOTIFY_SOCKET"] = filepath.Join(h.dir, "absent")
+			}
+			_ = cli.Run(h.ctx, h.p)
+		})
+	}
+}
+
+// R-FUP6-UQN2 R-G5OA-AOBB R-8XD8-XO8M R-G9BZ-FZJE
+func TestBlockedTrailDoesNotBlockReadinessOrAnswers(t *testing.T) {
+	h := setup(t)
+	h.env["DRAIN_SECONDS"] = "1"
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	returned := make(chan struct{})
+	var deliveries atomic.Int32
+	h.p.Sink = sinkFunc(func(context.Context, telemetry.Event) error {
+		deliveries.Add(1)
+		close(entered)
+		<-release
+		close(returned)
+		return nil
+	})
+	h.start(t)
+	<-entered
+	readBody(t, h.get(t, "/", true))
+	start := time.Now()
+	h.cancel()
+	h.finish(t, 0)
+	if elapsed := time.Since(start); elapsed < time.Second || elapsed >= 2*time.Second {
+		t.Fatal(elapsed)
+	}
+	lines := strings.Split(strings.TrimSuffix(h.errout.String(), "\n"), "\n")
+	names := []string{}
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "mcp: undelivered event: ") {
+			t.Fatal(line)
+		}
+		var e struct {
+			Name string `json:"event"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "mcp: undelivered event: ")), &e); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, e.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"service.started", "request.started", "request.finished", "service.stopping"}) {
+		t.Fatal(names)
+	}
+	if h.out.Len() != 0 {
+		t.Fatal(h.out.String())
+	}
+	close(release)
+	<-returned
+	if deliveries.Load() != 1 {
+		t.Fatal(deliveries.Load())
+	}
+}
+
+type controlledFailure struct {
+	net.Listener
+	failure   chan struct{}
+	accepted  chan struct{}
+	closed    chan struct{}
+	closeOnce sync.Once
+	once      sync.Once
+}
+
+func (l *controlledFailure) Accept() (net.Conn, error) {
+	first := false
+	l.once.Do(func() { first = true })
+	if first {
+		c, e := l.Listener.Accept()
+		close(l.accepted)
+		return c, e
+	}
+	<-l.failure
+	return nil, errors.New("accept stopped")
+}
+
+func (l *controlledFailure) Close() error {
+	if l.closed != nil {
+		l.closeOnce.Do(func() { close(l.closed) })
+	}
+	return l.Listener.Close()
+}
+
+// R-GBRS-7J0S R-GCZO-LARH R-GGND-QLZK R-G6W6-OG20
+func TestAcceptFailureDrainsCompleteResponse(t *testing.T) {
+	h := setup(t)
+	h.env["DRAIN_SECONDS"] = "1"
+	fail := make(chan struct{})
+	accepted := make(chan struct{})
+	listenerClosed := make(chan struct{})
+	h.p.Inherit = func(uintptr) (net.Listener, error) {
+		return &controlledFailure{Listener: h.ln, failure: fail, accepted: accepted, closed: listenerClosed}, nil
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	h.p.Banner = func(page.User) page.Banner { close(entered); <-release; return page.Banner{} }
+	h.start(t)
+	answer := make(chan string, 1)
+	go func() { answer <- readBody(t, h.get(t, "/", true)) }()
+	<-accepted
+	<-entered
+	close(fail)
+	<-listenerClosed
+	h.cancel()
+	// Listener closure proves that the failure was classified before the later signal.
+	select {
+	case code := <-h.done:
+		t.Fatalf("returned with active request: %d", code)
+	default:
+	}
+	close(release)
+	if body := <-answer; !strings.Contains(body, "</html>") {
+		t.Fatal("incomplete response")
+	}
+	h.finish(t, 1)
+	h.cancel()
+	if h.errout.String() != "mcp: accept stopped\n" {
+		t.Fatal(h.errout.String())
+	}
+	events := h.capture.Events()
+	if len(events) != 4 || events[2].Name != "request.finished" || events[3].Name != "service.stopping" || !reflect.DeepEqual(events[3].Attrs, telemetry.Attrs{"reason": "failed"}) {
+		t.Fatal(events)
+	}
+}
+
+// R-GE7K-Z2I6 R-GBRS-7J0S R-8XD8-XO8M R-G6W6-OG20
+func TestAcceptFailureBoundsBlockedTrail(t *testing.T) {
+	h := setup(t)
+	h.env["DRAIN_SECONDS"] = "1"
+	delete(h.env, "NOTIFY_SOCKET")
+	h.p.Inherit = func(uintptr) (net.Listener, error) { return failListener{h.ln, errors.New("accept failed")}, nil }
+	release := make(chan struct{})
+	returned := make(chan struct{})
+	var calls atomic.Int32
+	h.p.Sink = sinkFunc(func(context.Context, telemetry.Event) error { calls.Add(1); <-release; close(returned); return nil })
+	start := time.Now()
+	code := cli.Run(h.ctx, h.p)
+	if code != 1 || time.Since(start) < time.Second || time.Since(start) >= 2*time.Second {
+		t.Fatal(code, time.Since(start))
+	}
+	lines := strings.Split(strings.TrimSuffix(h.errout.String(), "\n"), "\n")
+	if len(lines) != 3 || lines[2] != "mcp: accept failed" {
+		t.Fatal(lines)
+	}
+	for i, name := range []string{"service.started", "service.stopping"} {
+		var e struct {
+			Name string `json:"event"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(lines[i], "mcp: undelivered event: ")), &e); err != nil {
+			t.Fatal(err)
+		}
+		if e.Name != name {
+			t.Fatal(e)
+		}
+	}
+	close(release)
+	if calls.Load() > 0 {
+		<-returned
+	}
+	if calls.Load() > 1 {
+		t.Fatal(calls.Load())
+	}
+}
+
+// R-GBRS-7J0S R-GE7K-Z2I6 R-8XD8-XO8M R-U771-V19S
+func TestAcceptFailureCutsOffActiveRequest(t *testing.T) {
+	h := setup(t)
+	h.env["DRAIN_SECONDS"] = "1"
+	fail := make(chan struct{})
+	accepted := make(chan struct{})
+	closed := make(chan struct{})
+	h.p.Inherit = func(uintptr) (net.Listener, error) {
+		return &controlledFailure{Listener: h.ln, failure: fail, accepted: accepted, closed: closed}, nil
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	exited := make(chan struct{})
+	h.p.Banner = func(page.User) page.Banner { close(entered); <-release; defer close(exited); return page.Banner{} }
+	h.start(t)
+	conn, err := net.Dial("tcp", h.ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err = io.WriteString(conn, "GET / HTTP/1.1\r\nHost: test\r\nX-User-Id: person\r\nConnection: close\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	<-accepted
+	<-entered
+	start := time.Now()
+	close(fail)
+	<-closed
+	h.cancel() // An accept failure owns the stop even if the signal follows it.
+	h.finish(t, cli.ExitServerFailed)
+	if elapsed := time.Since(start); elapsed < time.Second || elapsed >= 2*time.Second {
+		t.Fatal(elapsed)
+	}
+	if err = conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(conn)
+	if err != nil || len(body) != 0 {
+		t.Fatalf("body=%q error=%v", body, err)
+	}
+	before := h.errout.String()
+	if !strings.HasSuffix(before, "mcp: accept stopped\n") {
+		t.Fatal(before)
+	}
+	events := h.capture.Events()
+	for _, e := range events {
+		if e.Name == "service.stopping" {
+			t.Fatal("delivered stopping past deadline")
+		}
+	}
+	close(release)
+	<-exited
+	if h.errout.String() != before {
+		t.Fatal("late stderr write")
+	}
+	if !reflect.DeepEqual(h.capture.Events(), events) {
+		t.Fatal("late delivery")
+	}
+}
+
+type wrappedRetryListener struct {
+	errorToReturn error
+	net.Listener
+	once sync.Once
+}
+
+func (l *wrappedRetryListener) Accept() (net.Conn, error) {
+	first := false
+	l.once.Do(func() { first = true })
+	if first {
+		return nil, l.errorToReturn
+	}
+	return l.Listener.Accept()
+}
+
+// R-G6W6-OG20
+func TestWrappedTemporaryAcceptIsRetried(t *testing.T) {
+	for _, err := range []error{
+		fmt.Errorf("wrapped: %w", temporaryError{}),
+		nonTemporaryWrapper{temporaryError{}},
+		errors.Join(nonTemporaryWrapper{errors.New("fatal branch")}, nonTemporaryWrapper{temporaryError{}}),
+	} {
+		t.Run(err.Error(), func(t *testing.T) {
+			h := setup(t)
+			h.p.Inherit = func(uintptr) (net.Listener, error) {
+				return &wrappedRetryListener{Listener: h.ln, errorToReturn: err}, nil
+			}
+			h.start(t)
+			readBody(t, h.get(t, "/", true))
+			h.cancel()
+			h.finish(t, 0)
+			if h.errout.Len() != 0 {
+				t.Fatal(h.errout.String())
+			}
+		})
+	}
+}
+
+type nonTemporaryWrapper struct{ err error }
+
+func (e nonTemporaryWrapper) Error() string   { return "outer non-temporary: " + e.err.Error() }
+func (e nonTemporaryWrapper) Temporary() bool { return false }
+func (e nonTemporaryWrapper) Unwrap() error   { return e.err }
+
+type finalOverlapWriter struct {
+	writing atomic.Bool
+	overlap atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (w *finalOverlapWriter) Write(p []byte) (int, error) {
+	if !w.writing.CompareAndSwap(false, true) {
+		w.overlap.Store(true)
+	}
+	defer w.writing.Store(false)
+	if strings.HasPrefix(string(p), "mcp: stopped with ") {
+		close(w.entered)
+		<-w.release
+	}
+	return len(p), nil
+}
+
+// R-FZKS-DTLU
+func TestFinalDiagnosticAndLateEventsNeverOverlap(t *testing.T) {
+	h := setup(t)
+	h.env["DRAIN_SECONDS"] = "1"
+	output := &finalOverlapWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	h.p.Stderr = output
+	requestEntered := make(chan struct{})
+	requestRelease := make(chan struct{})
+	h.p.Banner = func(page.User) page.Banner { close(requestEntered); <-requestRelease; return page.Banner{} }
+	h.start(t)
+	conn, err := net.Dial("tcp", h.ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err = io.WriteString(conn, "GET / HTTP/1.1\r\nHost: test\r\nX-User-Id: person\r\nConnection: close\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	<-requestEntered
+	h.cancel()
+	select {
+	case <-output.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("final diagnostic not reached")
+	}
+	// Shutdown has completed. Late request events now contend with Run's own diagnostic.
+	start := make(chan struct{})
+	var begun, finished sync.WaitGroup
+	for range 64 {
+		begun.Add(1)
+		finished.Add(1)
+		go func() {
+			defer finished.Done()
+			<-start
+			begun.Done()
+			h.writer.Emit(context.Background(), "request.finished", telemetry.Attrs{"status": 200, "duration_us": 0})
+		}()
+	}
+	close(start)
+	begun.Wait()
+	// Give runnable emitters their turn while the injected diagnostic remains in progress.
+	for range 64 {
+		runtime.Gosched()
+	}
+	close(output.release)
+	h.finish(t, cli.ExitServerFailed)
+	close(requestRelease)
+	finished.Wait()
+	if output.overlap.Load() {
+		t.Fatal("an event write overlapped Run's final diagnostic")
 	}
 }
