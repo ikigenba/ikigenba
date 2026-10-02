@@ -69,8 +69,9 @@ systems. The product name is **Ikigenba**. The example space is
   ("Widget created." + `Back to widgets`).
 
 **launcher.html** — the service launcher, shown from dummy.
-- Banner and footer as in app.html, with the launcher's grid button between
-  the mark and the profile icon; the panel open on load.
+- Banner and footer as in app.html, with the launcher's grid button opening
+  the row in place of the mark's black square; the panel open on load,
+  hanging from the banner's left edge.
 - The panel: a `Find a service` search field over a 4-column grid of 30
   services, A to Z, each a Tabler icon over its name, linking to
   `https://<name>.acme.ikigenba.com/`; `dummy` marked current. The services
