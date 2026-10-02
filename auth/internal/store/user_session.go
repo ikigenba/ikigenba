@@ -10,14 +10,15 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 )
 
-// UpsertUserOnLogin updates the matching user, or inserts one, and returns it.
-func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, error) {
+// UpsertUserOnLogin returns the refreshed user and whether it was created.
+func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, bool, error) {
 	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
-		return User{}, fmt.Errorf("begin user upsert: %w", err)
+		return User{}, false, fmt.Errorf("begin user upsert: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var created bool
 	var id string
 	err = tx.QueryRowContext(
 		context.Background(),
@@ -34,12 +35,13 @@ func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) 
 			now.UnixNano(),
 			id,
 		); err != nil {
-			return User{}, fmt.Errorf("update user on login: %w", err)
+			return User{}, false, fmt.Errorf("update user on login: %w", err)
 		}
 	case errors.Is(err, sql.ErrNoRows):
+		created = true
 		id, err = idcodec.NewID(s.rand)
 		if err != nil {
-			return User{}, fmt.Errorf("create user id: %w", err)
+			return User{}, false, fmt.Errorf("create user id: %w", err)
 		}
 		if _, err := tx.ExecContext(
 			context.Background(),
@@ -50,14 +52,14 @@ func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) 
 			email,
 			now.UnixNano(),
 		); err != nil {
-			return User{}, fmt.Errorf("insert user on login: %w", err)
+			return User{}, false, fmt.Errorf("insert user on login: %w", err)
 		}
 	default:
-		return User{}, fmt.Errorf("find user on login: %w", err)
+		return User{}, false, fmt.Errorf("find user on login: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return User{}, fmt.Errorf("commit user upsert: %w", err)
+		return User{}, false, fmt.Errorf("commit user upsert: %w", err)
 	}
 
 	return User{
@@ -66,7 +68,7 @@ func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) 
 		Subject:         subject,
 		Email:           email,
 		LastGoogleLogin: now,
-	}, nil
+	}, created, nil
 }
 
 // CreateSession stores a session for the user and returns it.

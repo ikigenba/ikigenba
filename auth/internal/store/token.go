@@ -27,7 +27,7 @@ func (s *Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (
 	}
 
 	token := Token{
-		ID:        id,
+		ID:        idcodec.TokenIDPrefix + id,
 		UserID:    userID,
 		Name:      name,
 		Hash:      idcodec.HashSecret(secret),
@@ -112,7 +112,7 @@ func (s *Store) LookupTokenIdentity(secret string, now time.Time) (Identity, err
 	var identity Identity
 	err := s.db.QueryRowContext(
 		context.Background(),
-		`SELECT users.id, users.email
+		`SELECT users.id, users.email, tokens.id
 		 FROM tokens
 		 JOIN users ON users.id = tokens.user_id
 		 WHERE tokens.hash = ?
@@ -122,7 +122,7 @@ func (s *Store) LookupTokenIdentity(secret string, now time.Time) (Identity, err
 		idcodec.HashSecret(secret),
 		now.UnixNano(),
 		now.Add(-TokenLoginWindow).UnixNano(),
-	).Scan(&identity.UserID, &identity.Email)
+	).Scan(&identity.UserID, &identity.Email, &identity.TokenID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Identity{}, ErrNotFound
 	}
@@ -141,6 +141,7 @@ func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, erro
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var identity Identity
 	var userID string
 	err = tx.QueryRowContext(
 		context.Background(),
@@ -154,12 +155,12 @@ func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, erro
 		       WHERE users.id = tokens.user_id
 		         AND users.last_google_login >= ?
 		   )
-		 RETURNING user_id`,
+		 RETURNING user_id, id`,
 		now.UnixNano(),
 		idcodec.HashSecret(secret),
 		now.UnixNano(),
 		now.Add(-TokenLoginWindow).UnixNano(),
-	).Scan(&userID)
+	).Scan(&userID, &identity.TokenID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Identity{}, ErrNotFound
 	}
@@ -167,7 +168,6 @@ func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, erro
 		return Identity{}, fmt.Errorf("touch token: %w", err)
 	}
 
-	var identity Identity
 	if err := tx.QueryRowContext(context.Background(), `SELECT id, email FROM users WHERE id = ?`, userID).Scan(
 		&identity.UserID,
 		&identity.Email,

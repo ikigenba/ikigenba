@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"io"
 	"net"
@@ -12,10 +14,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
@@ -29,7 +33,7 @@ func TestMainWiring(t *testing.T) {
 	// R-M6Y4-3SXT
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
-	// R-2B1J-WL7R: the serve cases run the binary bare with the Google settings
+	// R-AUXO-9DST: the serve cases run the binary bare with the Google settings
 	// and a socket on descriptor 3; they prove it opens state/auth.db in its
 	// working directory, draws its banner from IKIGENBA_SERVICES, and stops
 	// silently with exit 0 on SIGTERM and on SIGINT.
@@ -155,19 +159,24 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	cmd := &exec.Cmd{Path: "/bin/sh", Args: []string{"/bin/sh", "-c", "LISTEN_PID=$$ LISTEN_FDS=1 exec \"$0\"", binary}}
 	cmd.Dir = work
 	cmd.Env = append(googleEnv(), "NOTIFY_SOCKET="+notifyPath)
+	// R-AZT9-SGRL R-B116-68IA: the child's events cross the socket sink,
+	// and a services-file replacement redirects later events without restart.
+	first := new(wiringSink)
+	second := new(wiringSink)
+	firstSocket := serveTrail(t, shortDir, "first.sock", first)
+	secondSocket := serveTrail(t, shortDir, "second.sock", second)
+	services := filepath.Join(shortDir, "services.json")
+	writeServices(t, services, firstSocket)
+	cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+services)
 	var sessionID string
 	if sig == syscall.SIGTERM {
-		services := filepath.Join(shortDir, "services.json")
-		if err := os.WriteFile(services, []byte(`{"services":[{"name":"auth","url":"/","description":"Auth service","socket":"/run/auth.sock","enabled":true,"mcp":false,"icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M3 3h18v18H3z\"/></svg>"},{"name":"Wiring probe","url":"https://probe.example.test/","description":"Main wiring fixture","socket":"/run/probe.sock","enabled":true,"mcp":false,"icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M3 3h18v18H3z\"/></svg>"}]}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+services)
+
 		st, err := store.Open(filepath.Join(work, "state", "auth.db"), bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)))
 		if err != nil {
 			t.Fatal(err)
 		}
 		now := time.Now()
-		u, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject", "user@example.test", now)
+		u, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject", "user@example.test", now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -209,10 +218,12 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
 		t.Fatalf("database %s: %v", dbPath, err)
 	}
+	first.wait(t, "service.started")
 	if sessionID != "" {
+		writeServices(t, services, secondSocket)
 		// R-GNC2-6SEM: main leaves Inherit nil; the response comes from
 		// the listening socket supplied as descriptor 3.
-		// R-9ZGQ-O2GR: the cgo-free executable serves the live session from
+		// R-AXDH-0XA7: the cgo-free executable serves the live session from
 		// a working directory containing only state/auth.db.
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -240,7 +251,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		if !bytes.Contains(body, []byte(`popovertarget="services"`)) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
 			t.Fatalf("main banner source has no launcher drawn from IKIGENBA_SERVICES: %s", body)
 		}
-		// R-1O20-M7FN: the real executable's banner page ends its body with
+		// R-AW5K-N5JI: the real executable's banner page ends its body with
 		// the footer carrying the release value exported by internal/version.
 		bodyContent := regexp.MustCompile(`(?s)<body\b[^>]*>(.*)</body>`).FindSubmatch(body)
 		if len(bodyContent) != 2 {
@@ -256,6 +267,9 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		}
 	}
 
+	if sessionID != "" {
+		second.wait(t, "request.finished")
+	}
 	if err := cmd.Process.Signal(sig); err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +277,33 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	if code != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("%s code=%d stdout=%q stderr=%q", sig, code, stdout.String(), stderr.String())
 	}
-	// R-A0ON-1U7G: after either signal, only the database and its named
+	firstEvents := first.capture.Events()
+	if len(firstEvents) == 0 {
+		t.Fatal("missing service.started")
+	}
+	started := firstEvents[0]
+	if started.Name != "service.started" || started.Service != "auth" || started.RequestID != "" || started.User != "" || len(started.Attrs) != 1 || started.Attrs["version"] != version.Version {
+		t.Fatalf("start=%+v", started)
+	}
+	events := firstEvents
+	if sessionID != "" {
+		if len(firstEvents) != 1 {
+			t.Fatalf("events sent to old socket: %+v", firstEvents)
+		}
+		events = second.capture.Events()
+		if len(events) < 3 || events[0].Name != "request.started" || events[len(events)-2].Name != "request.finished" {
+			t.Fatalf("replacement trail=%+v", events)
+		}
+	}
+	last := events[len(events)-1]
+	reason := "SIGTERM"
+	if sig == syscall.SIGINT {
+		reason = "SIGINT"
+	}
+	if last.Name != "service.stopping" || last.RequestID != "" || last.User != "" || len(last.Attrs) != 1 || last.Attrs["reason"] != reason {
+		t.Fatalf("stop=%+v", last)
+	}
+	// R-AYLD-EP0W: after either signal, only the database and its named
 	// SQLite auxiliary files remain in the working directory.
 	assertRuntimeFiles(t, work, true, true)
 	// R-NI60-D0O6
@@ -317,5 +357,62 @@ func assertRuntimeFiles(t *testing.T, work string, wantDatabase, allowAuxiliary 
 	}
 	if !wantDatabase && len(entries) != 0 {
 		t.Fatalf("initial state directory must be empty: %v", entries)
+	}
+}
+
+type wiringSink struct {
+	capture telemetry.Capture
+	mu      sync.Mutex
+	notify  chan string
+}
+
+func (s *wiringSink) Deliver(ctx context.Context, e telemetry.Event) error {
+	_ = s.capture.Deliver(ctx, e)
+	s.mu.Lock()
+	if s.notify != nil {
+		s.notify <- e.Name
+	}
+	s.mu.Unlock()
+	return nil
+}
+func (s *wiringSink) wait(t *testing.T, name string) {
+	t.Helper()
+	select {
+	case got := <-s.notify:
+		if got != name {
+			s.wait(t, name)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("missing event %s", name)
+	}
+}
+func serveTrail(t *testing.T, dir, name string, sink *wiringSink) string {
+	t.Helper()
+	sink.notify = make(chan string, 32)
+	path := filepath.Join(dir, name)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: telemetry.IngestHandler(sink), ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = server.Serve(ln) }()
+	t.Cleanup(func() { _ = server.Close() })
+	return path
+}
+func writeServices(t *testing.T, path, socket string) {
+	t.Helper()
+	services := map[string]any{"services": []map[string]any{
+		{"name": "telemetry", "url": "/", "description": "Trail", "socket": socket, "enabled": true, "mcp": false},
+		{"name": "Wiring probe", "url": "https://probe.example.test/", "description": "Main wiring fixture", "socket": "/run/probe.sock", "enabled": true, "mcp": false, "icon": "<svg viewBox=\"0 0 24 24\"><path d=\"M3 3h18v18H3z\"/></svg>"},
+	}}
+	data, err := json.Marshal(services)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".new", data, 0o600); err != nil {
+		t.Fatal(fmt.Errorf("services fixture: %w", err))
+	}
+	if err := os.Rename(path+".new", path); err != nil {
+		t.Fatal(err)
 	}
 }

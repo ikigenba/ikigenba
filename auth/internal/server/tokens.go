@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
@@ -41,12 +42,13 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, secret, err := s.st.CreateToken(identity.UserID, name, expiry, s.now())
+	token, secret, err := s.st.CreateToken(identity.UserID, name, expiry, s.now())
 	if err != nil {
 		s.writeServerError(w, r, err)
 		return
 	}
 
+	s.record(r, "token.minted", identity.UserID, telemetry.Attrs{"token": token.ID})
 	writeAuthPage(w, http.StatusOK, authPageData{Banner: s.pageBanner(identity.Email), Created: &tokenCreatedData{Name: name, Secret: secret}})
 }
 
@@ -66,12 +68,30 @@ func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch r.PathValue("action") {
+	action := r.PathValue("action")
+	event := ""
+	if action == "enable" || action == "disable" {
+		tokens, lookupErr := s.st.ListTokens(identity.UserID)
+		if lookupErr != nil {
+			s.writeServerError(w, r, lookupErr)
+			return
+		}
+		for _, token := range tokens {
+			if token.ID == r.PathValue("id") && token.Enabled != (action == "enable") {
+				event = "token.enabled"
+				if action == "disable" {
+					event = "token.disabled"
+				}
+			}
+		}
+	}
+	switch action {
 	case "enable":
 		err = s.st.SetTokenEnabled(identity.UserID, r.PathValue("id"), true)
 	case "disable":
 		err = s.st.SetTokenEnabled(identity.UserID, r.PathValue("id"), false)
 	case "delete":
+		event = "token.deleted"
 		err = s.st.DeleteToken(identity.UserID, r.PathValue("id"))
 	default:
 		writeTokenError(w, http.StatusNotFound, "not found")
@@ -86,6 +106,9 @@ func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if event != "" {
+		s.record(r, event, identity.UserID, telemetry.Attrs{"token": r.PathValue("id")})
+	}
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 

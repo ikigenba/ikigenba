@@ -4,19 +4,31 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/cli"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 func main() {
 	kit := page.New("auth", version.Version)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		sig := <-signals
+		reason := "SIGTERM"
+		if sig == syscall.SIGINT {
+			reason = "SIGINT"
+		}
+		cancel(errors.New(reason))
+	}()
 	code := cli.Run(ctx, cli.Process{
 		Args:       os.Args[1:],
 		LookupEnv:  os.LookupEnv,
@@ -29,7 +41,8 @@ func main() {
 		OIDCIssuer: "https://accounts.google.com",
 		DBSource:   "state/auth.db",
 		Banner:     kit.Banner,
+		Sink:       telemetry.NewSocketSink(),
 	})
-	stop()
+	signal.Stop(signals)
 	os.Exit(code)
 }

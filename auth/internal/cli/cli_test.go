@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -64,7 +65,7 @@ path = "state/auth.db"
 const wantSocketHint = "\n\nrun it under systemd, with a listening socket passed in\n"
 
 func TestSurface(t *testing.T) {
-	// R-4WVH-WX70
+	// R-ASHV-HUBF
 	// An unkeyed literal fixes the field set, order, and types at compile time;
 	// reading each field back into a variable of its declared type fixes them exactly.
 	var (
@@ -80,12 +81,14 @@ func TestSurface(t *testing.T) {
 		issuer    string
 		dbSource  string
 		banner    func(page.User) page.Banner
+		sink      telemetry.Sink
 	)
-	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner}
+	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner, sink}
 	args, lookupEnv, unsetenv, pid = p.Args, p.LookupEnv, p.Unsetenv, p.Pid
 	stdout, stderr, inherit, now = p.Stdout, p.Stderr, p.Inherit, p.Now
 	rnd, issuer, dbSource, banner = p.Rand, p.OIDCIssuer, p.DBSource, p.Banner
-	_, _, _, _, _, _, _, _, _, _, _, _ = args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner
+	sink = p.Sink
+	_, _, _, _, _, _, _, _, _, _, _, _, _ = args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner, sink
 	// R-LUR4-A3IV R-3XVE-I7OD
 	runFn := Run
 	if code := runFn(t.Context(), Process{Args: []string{"--version"}, Stdout: io.Discard, Stderr: io.Discard}); code != 0 {
@@ -129,26 +132,10 @@ type countWriter struct {
 	calls int
 }
 
-type safeRecordWriter struct {
-	mu sync.Mutex
-	bytes.Buffer
-}
-
-func (w *safeRecordWriter) Write(b []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.Buffer.Write(b)
-}
-func (w *safeRecordWriter) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.Buffer.String()
-}
-
 func (w *countWriter) Write(b []byte) (int, error) { w.calls++; return w.Buffer.Write(b) }
 
 func baseProcess(env map[string]string, source string, ln net.Listener) Process {
-	return Process{LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 42, Stdout: new(bytes.Buffer), Stderr: new(countWriter), Inherit: func(fd uintptr) (net.Listener, error) {
+	return Process{Sink: &telemetry.Capture{}, LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 42, Stdout: new(bytes.Buffer), Stderr: new(countWriter), Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			return nil, fmt.Errorf("fd %d", fd)
 		}
@@ -408,7 +395,7 @@ func TestRunClosesListenerOnLaterFailure(t *testing.T) {
 }
 
 func TestServeReadinessAndInjectedSeam(t *testing.T) {
-	// R-T07Q-JE4P R-NII7-0UUW R-SRCY-E4WP R-N1FL-O2H6 R-N3VE-FLYK R-N6B7-75FY R-T1FM-X5VE R-OYUS-DBTQ
+	// R-2KBY-P3V1 R-NII7-0UUW R-B4OV-BJQD R-N1FL-O2H6 R-N3VE-FLYK R-N6B7-75FY R-B74O-337R R-OYUS-DBTQ
 	for _, preexisting := range []bool{false, true} {
 		t.Run(strconv.FormatBool(preexisting), func(t *testing.T) {
 			source := testSource(t)
@@ -489,7 +476,7 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 }
 
 func TestRunWiresIssuerAndRandomness(t *testing.T) {
-	// R-SRCY-E4WP R-T07Q-JE4P: serve a request through Run's inherited listener.
+	// R-B4OV-BJQD R-2KBY-P3V1: serve a request through Run's inherited listener.
 	var issuerCalls atomic.Int32
 	credentials := make(chan [2]string, 1)
 	var issuer *httptest.Server
@@ -544,7 +531,7 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u, err := st.UpsertUserOnLogin("issuer", "subject", "user@example.test", p.Now())
+	u, _, err := st.UpsertUserOnLogin("issuer", "subject", "user@example.test", p.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,9 +622,18 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	if code := <-done; code != 0 {
 		t.Fatalf("Run=%d diagnostic=%q", code, p.Stderr)
 	}
-	// R-T1FM-X5VE: the server's one diagnostic is forwarded once, unaltered.
-	if got := p.Stderr.(*countWriter); got.String() != "auth: request wiring: "+exchangeErr.Error()+"\n" || got.calls != 1 || p.Stdout.(*bytes.Buffer).Len() != 0 {
+	// R-B74O-337R R-2J42-BC4C: handled provider trouble records its status without a diagnostic.
+	if got := p.Stderr.(*countWriter); got.String() != "" || got.calls != 0 || p.Stdout.(*bytes.Buffer).Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q calls=%d", p.Stdout, got.String(), got.calls)
+	}
+	foundFailure := false
+	for _, e := range p.Sink.(*telemetry.Capture).Events() {
+		if e.Name == "request.finished" && e.RequestID == "wiring" {
+			foundFailure = e.Attrs["status"] == int64(502)
+		}
+	}
+	if !foundFailure {
+		t.Fatal("no request.finished status for handled provider failure")
 	}
 	if bannerCalls == 0 || !bytes.Contains(body, []byte("injected-banner")) {
 		t.Fatalf("banner calls=%d page=%s", bannerCalls, body)
@@ -685,7 +681,7 @@ func TestDrainDuration(t *testing.T) {
 }
 
 func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
-	// R-MP8L-UD28: hold a callback inside Google so Run must use Serve's drain.
+	// R-MP8L-UD28 R-KON7-OYQU: hold a callback inside Google so Run must use Serve's drain.
 	for _, tc := range []struct {
 		name, setting string
 		want          time.Duration
@@ -731,11 +727,14 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 				env["DRAIN_SECONDS"] = tc.setting
 			}
 			p := baseProcess(env, testSource(t), ln)
-			output := new(safeRecordWriter)
+			callbackFinished := make(chan struct{}, 1)
+			output := &overrunWriter{finished: callbackFinished}
 			p.Stderr = output
+			sink := &overrunSink{finished: callbackFinished}
+			p.Sink = sink
 			p.OIDCIssuer = issuer.URL
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(errors.New("cleanup"))
 			done := make(chan int, 1)
 			go func() { done <- Run(ctx, p) }()
 			if err := ready.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
@@ -752,6 +751,7 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			login.Header.Set("X-Request-Id", "drain-login")
 			response, err := client.Do(login)
 			if err != nil {
 				t.Fatal(err)
@@ -770,6 +770,7 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			callback.Header.Set("X-Request-Id", "drain-callback")
 			callbackDone := make(chan struct{})
 			go func() {
 				resp, err := client.Do(callback)
@@ -784,7 +785,7 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 				t.Fatal("callback did not reach token endpoint")
 			}
 			started := time.Now()
-			cancel()
+			cancel(errors.New("overrun test stop"))
 			select {
 			case code := <-done:
 				t.Fatalf("Run returned early: %d", code)
@@ -801,10 +802,87 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 			if elapsed := time.Since(started); elapsed < tc.want-100*time.Millisecond || elapsed > tc.want+2*time.Second {
 				t.Fatalf("drain elapsed %s, want %s", elapsed, tc.want)
 			}
-			if got := output.String(); !strings.HasPrefix(got, "auth: stopped with 1 request unfinished\n") {
-				t.Fatalf("diagnostic %q", got)
+			// A closed connection cancels the held callback; wait for its final
+			// event whether it reaches the sink or the fallback stream.
+			select {
+			case <-callbackFinished:
+			case <-time.After(5 * time.Second):
+				t.Fatal("callback did not record its final event")
 			}
-			// The held issuer is released by the deferred close after Run has returned.
+			got := output.String()
+			wantEvents := []telemetry.Event{
+				{Time: p.Now(), Service: "auth", Name: "service.started", Attrs: telemetry.Attrs{"version": version.Version}},
+				{Time: p.Now(), Service: "auth", Name: "request.started", RequestID: "drain-login", Attrs: telemetry.Attrs{"method": "GET", "path": "/login/google"}},
+				{Time: p.Now(), Service: "auth", Name: "request.finished", RequestID: "drain-login", Attrs: telemetry.Attrs{"status": 302, "duration_us": 0}},
+				{Time: p.Now(), Service: "auth", Name: "request.started", RequestID: "drain-callback", Attrs: telemetry.Attrs{"method": "GET", "path": "/login/google/callback"}},
+				{Time: p.Now(), Service: "auth", Name: "sign_in.refused", RequestID: "drain-callback", Attrs: telemetry.Attrs{"reason": "provider_failed"}},
+				{Time: p.Now(), Service: "auth", Name: "request.finished", RequestID: "drain-callback", Attrs: telemetry.Attrs{"status": 502, "duration_us": 0}},
+				{Time: p.Now(), Service: "auth", Name: "service.stopping", Attrs: telemetry.Attrs{"reason": context.Cause(ctx).Error()}},
+			}
+			wantLines := make([]string, len(wantEvents))
+			for i, e := range wantEvents {
+				data, err := e.MarshalJSON()
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantLines[i] = "auth: undelivered event: " + string(data)
+			}
+			if !strings.HasSuffix(got, "\n") {
+				t.Fatalf("unterminated diagnostic: %q", got)
+			}
+			lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+			calls := output.Calls()
+			if len(calls) != len(lines) {
+				t.Fatalf("fallback writes=%d lines=%d", len(calls), len(lines))
+			}
+			for i, line := range lines {
+				if calls[i] != line+"\n" {
+					t.Fatalf("non-atomic diagnostic: %q", calls[i])
+				}
+			}
+			if len(lines) != len(wantEvents)+1 {
+				t.Fatalf("event accounting: %q", got)
+			}
+			positions := make([]int, len(wantEvents))
+			for i, want := range wantLines {
+				positions[i] = -1
+				for j, line := range lines {
+					if line == want {
+						if positions[i] >= 0 {
+							t.Fatalf("duplicate event: %q", line)
+						}
+						positions[i] = j
+					}
+				}
+				if positions[i] < 0 {
+					t.Fatalf("missing exact fallback %q in %q", want, got)
+				}
+			}
+			// These four events were all recorded before cancellation and could not
+			// be delivered: the sink held its first call until that call's context ended.
+			for i := range 4 {
+				if positions[i] != i {
+					t.Fatalf("pre-overrun event order: %q", got)
+				}
+			}
+			stop := positions[6]
+			if stop < 4 || positions[4] > positions[5] {
+				t.Fatalf("event order: %q", got)
+			}
+			diagnostic := -1
+			for i, line := range lines {
+				if line == "auth: stopped with 1 request unfinished" {
+					diagnostic = i
+				}
+			}
+			if diagnostic <= stop {
+				t.Fatalf("stopping must precede the diagnostic: %q", got)
+			}
+			if events := sink.capture.Events(); len(events) != 0 {
+				t.Fatalf("done-context delivery accepted events: %+v", events)
+			}
+			// Callback domain/finished events may fall on either side of Serve's
+			// return; writer-after-Shutdown rejection is proved separately below.
 			_ = callbackDone
 		})
 	}
@@ -865,7 +943,7 @@ func (w *overlapWriter) Write(b []byte) (int, error) {
 }
 
 func TestDiagnosticWriterSerializesCalls(t *testing.T) {
-	// R-T2NJ-AXM3: concurrent HTTP failures exercise the writer passed by Run.
+	// R-2RNC-ZQB7: a full trail queue sends concurrent request events to the shared diagnostic writer.
 	underlying := new(overlapWriter)
 	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
 	defer issuer.Close()
@@ -890,6 +968,8 @@ func TestDiagnosticWriterSerializesCalls(t *testing.T) {
 	p := baseProcess(env, testSource(t), ln)
 	p.OIDCIssuer = issuer.URL
 	p.Stderr = underlying
+	sink := &blockingRejectSink{entered: make(chan struct{}), release: make(chan struct{})}
+	p.Sink = sink
 	p.Rand = &synchronizedRand{}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -902,6 +982,20 @@ func TestDiagnosticWriterSerializesCalls(t *testing.T) {
 	if _, _, err := ready.ReadFromUnix(buf); err != nil {
 		t.Fatal(err)
 	}
+	<-sink.entered
+	client := &http.Client{Timeout: 5 * time.Second}
+	for range telemetry.QueueCapacity / 2 {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+"/missing", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
 	const count = 30
 	var wg sync.WaitGroup
 	wg.Add(count)
@@ -911,7 +1005,7 @@ func TestDiagnosticWriterSerializesCalls(t *testing.T) {
 			defer wg.Done()
 			reqCtx, reqCancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer reqCancel()
-			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "http://"+ln.Addr().String()+"/login/google", nil)
+			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "http://"+ln.Addr().String()+"/missing", nil)
 			if err != nil {
 				problems <- err
 				return
@@ -922,7 +1016,7 @@ func TestDiagnosticWriterSerializesCalls(t *testing.T) {
 				return
 			}
 			_ = resp.Body.Close()
-			if resp.StatusCode != http.StatusBadGateway {
+			if resp.StatusCode != http.StatusNotFound {
 				problems <- fmt.Errorf("status %d", resp.StatusCode)
 			}
 		}()
@@ -932,11 +1026,12 @@ func TestDiagnosticWriterSerializesCalls(t *testing.T) {
 	for err := range problems {
 		t.Error(err)
 	}
+	close(sink.release)
 	cancel()
 	if code := <-done; code != 0 {
 		t.Fatalf("Run=%d", code)
 	}
-	if underlying.calls.Load() != count {
+	if underlying.calls.Load() < count {
 		t.Fatalf("writes=%d", underlying.calls.Load())
 	}
 	if underlying.overlapped.Load() {
@@ -1010,5 +1105,95 @@ func assertNoNotification(t *testing.T, notifications *net.UnixConn) {
 	}
 	if !errors.Is(receiveErr, syscall.EAGAIN) {
 		t.Fatalf("notification queue was not empty: %v", receiveErr)
+	}
+}
+
+// overrunSink holds the first delivery until its context ends. Every call
+// completing with a live context succeeds, and every done-context call fails.
+type overrunSink struct {
+	entered chan struct{}
+	doneAwareSink
+	first    bool
+	finished chan struct{}
+}
+
+func (s *overrunSink) Deliver(ctx context.Context, e telemetry.Event) error {
+	if !s.first {
+		s.first = true
+		if s.entered != nil {
+			close(s.entered)
+		}
+		<-ctx.Done()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	err := s.doneAwareSink.Deliver(ctx, e)
+	if e.Name == "request.finished" && e.RequestID == "drain-callback" {
+		s.finished <- struct{}{}
+	}
+	return err
+}
+
+type overrunWriter struct {
+	calls []string
+	mu    sync.Mutex
+	bytes.Buffer
+	finished chan struct{}
+}
+
+func (w *overrunWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.Buffer.Write(b)
+	w.calls = append(w.calls, string(b))
+	if bytes.Contains(b, []byte(`"event":"request.finished"`)) && bytes.Contains(b, []byte(`"request_id":"drain-callback"`)) {
+		w.finished <- struct{}{}
+	}
+	return n, err
+}
+func (w *overrunWriter) String() string { w.mu.Lock(); defer w.mu.Unlock(); return w.Buffer.String() }
+
+func (w *overrunWriter) Calls() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.calls)
+}
+
+func TestOverrunWriterRejectsEventsAfterShutdown(t *testing.T) {
+	// R-KON7-OYQU R-WDMN-5QBC: Run's expired shutdown uses this published
+	// writer behavior for any request event recorded after Serve has returned.
+	sink := &overrunSink{entered: make(chan struct{})}
+	var output bytes.Buffer
+	now := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
+	writer := telemetry.New(telemetry.Config{Service: "auth", Version: version.Version, Sink: sink, Stderr: &output, Now: now, Rand: zeroRand{}})
+	writer.Ready()
+	<-sink.entered
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	writer.Shutdown(ctx, "overrun")
+	writer.Emit(t.Context(), "sign_in.refused", telemetry.Attrs{"reason": "provider_failed"})
+	writer.Emit(t.Context(), "request.finished", telemetry.Attrs{"status": 502, "duration_us": 0})
+	expected := []telemetry.Event{
+		{Time: now(), Service: "auth", Name: "service.started", Attrs: telemetry.Attrs{"version": version.Version}},
+		{Time: now(), Service: "auth", Name: "service.stopping", Attrs: telemetry.Attrs{"reason": "overrun"}},
+		{Time: now(), Service: "auth", Name: "sign_in.refused", Attrs: telemetry.Attrs{"reason": "provider_failed"}},
+		{Time: now(), Service: "auth", Name: "request.finished", Attrs: telemetry.Attrs{"status": 502, "duration_us": 0}},
+	}
+	var want strings.Builder
+	for _, event := range expected {
+		data, err := event.MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want.WriteString("auth: undelivered event: ")
+		want.Write(data)
+		want.WriteByte('\n')
+	}
+	if got := output.String(); got != want.String() {
+		t.Fatalf("fallback=%q want=%q", got, want.String())
+	}
+	if events := sink.capture.Events(); len(events) != 0 {
+		t.Fatalf("late events delivered: %+v", events)
 	}
 }

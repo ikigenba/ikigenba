@@ -14,7 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
@@ -26,7 +28,7 @@ type Config struct {
 	Google          *google.Client
 	Now             func() time.Time
 	Rand            io.Reader
-	Stderr          io.Writer
+	Telemetry       *telemetry.Writer
 	WorkspaceDomain string
 	PublicURL       string
 	CallbackURL     string
@@ -35,12 +37,11 @@ type Config struct {
 
 // Server is auth's HTTP service.
 type Server struct {
-	st     *store.Store
-	gc     *google.Client
-	now    func() time.Time
-	rand   io.Reader
-	stderr io.Writer
-	cfg    Config
+	st   *store.Store
+	gc   *google.Client
+	now  func() time.Time
+	rand io.Reader
+	cfg  Config
 
 	httpServer *http.Server
 }
@@ -48,12 +49,11 @@ type Server struct {
 // New constructs the router used by auth's HTTP service.
 func New(cfg Config) *Server {
 	s := &Server{
-		st:     cfg.Store,
-		gc:     cfg.Google,
-		now:    cfg.Now,
-		rand:   cfg.Rand,
-		stderr: cfg.Stderr,
-		cfg:    cfg,
+		st:   cfg.Store,
+		gc:   cfg.Google,
+		now:  cfg.Now,
+		rand: cfg.Rand,
+		cfg:  cfg,
 	}
 
 	mux := http.NewServeMux()
@@ -67,13 +67,13 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("POST /tokens/{id}/{action}", s.handleTokenAction)
 
 	static := page.Static()
-	s.httpServer = &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s.httpServer = &http.Server{Handler: telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, page.StaticPrefix) {
 			static.ServeHTTP(w, r)
 			return
 		}
 		mux.ServeHTTP(w, r)
-	}), ReadHeaderTimeout: 10 * time.Second}
+	})), ReadHeaderTimeout: 10 * time.Second}
 	return s
 }
 
@@ -84,22 +84,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // writeServerError answers a failed operation without exposing identity or
 // implementation details to the client.
-func (s *Server) writeServerError(w http.ResponseWriter, r *http.Request, err error) {
+func (s *Server) writeServerError(w http.ResponseWriter, _ *http.Request, _ error) {
 	w.Header().Del(HeaderUserID)
 	w.Header().Del(HeaderUserEmail)
-	s.writeDiagnostic(r, err)
 	writePlainError(w, http.StatusInternalServerError, "internal server error")
 }
 
-func (s *Server) writeDiagnostic(r *http.Request, err error) {
-	if s.stderr == nil || err == nil {
-		return
-	}
-	id := r.Header.Get("X-Request-Id")
-	if id == "" {
-		id = "-"
-	}
-	_, _ = s.stderr.Write([]byte("auth: request " + id + ": " + err.Error() + "\n"))
+// record attaches the identity auth resolved without altering middleware's envelope.
+func (s *Server) record(r *http.Request, name, user string, attrs telemetry.Attrs) {
+	caller, _ := identity.FromContext(r.Context())
+	caller.UserID, caller.Email = user, ""
+	s.cfg.Telemetry.Emit(identity.NewContext(r.Context(), caller), name, attrs)
 }
 
 // DrainError reports requests still in progress after the drain deadline.

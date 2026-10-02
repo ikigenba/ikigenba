@@ -66,13 +66,13 @@ func openIdentityFixture(t *testing.T) identityFixture {
 	return identityFixture{store: st, path: path}
 }
 
-func (f identityFixture) server() *Server {
-	return New(Config{Store: f.store, Now: func() time.Time { return identityNow }})
+func (f identityFixture) server(t *testing.T) *Server {
+	return newTestServer(t, Config{Store: f.store, Now: func() time.Time { return identityNow }})
 }
 
 func (f identityFixture) user(t *testing.T, subject, email string, login time.Time) store.User {
 	t.Helper()
-	user, err := f.store.UpsertUserOnLogin("issuer", subject, email, login)
+	user, _, err := f.store.UpsertUserOnLogin("issuer", subject, email, login)
 	if err != nil {
 		t.Fatalf("UpsertUserOnLogin() error = %v", err)
 	}
@@ -140,7 +140,7 @@ func serveIdentity(handler func(http.ResponseWriter, *http.Request), req *http.R
 	return response
 }
 
-func TestIdentityStoreFailureReturns500AndOneDiagnostic(t *testing.T) {
+func TestIdentityStoreFailureReturns500AndStaysSilent(t *testing.T) {
 	fixture := openIdentityFixture(t)
 	user := fixture.user(t, "failure-owner", "failure@example.com", identityNow)
 	session := fixture.session(t, user.ID, identityNow, identityNow)
@@ -167,27 +167,20 @@ func TestIdentityStoreFailureReturns500AndOneDiagnostic(t *testing.T) {
 				t.Fatal("closed store unexpectedly succeeded")
 			}
 			var stderr identityDiagnosticWrites
-			srv := New(Config{Store: fixture.store, Now: func() time.Time { return identityNow }, Stderr: &stderr})
+			srv := newStatusTestServer(t, 500, Config{Store: fixture.store, Now: func() time.Time { return identityNow }}, &stderr)
 			req := identityRequest(tc.path, tc.sessionID, tc.bearer)
 			req.Header.Set("X-Request-Id", tc.requestID)
 			response := serveIdentity(srv.ServeHTTP, req)
 
-			// R-CCQE-EHNR: a store failure overrides credential refusals on both routes.
-			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+			// R-B9KG-UMP5: a store failure overrides credential refusals on both routes.
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(response.Body.String()) {
 				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 			}
 			if response.Header().Get(HeaderUserID) != "" || response.Header().Get(HeaderUserEmail) != "" {
 				t.Fatalf("identity headers on 500: %v", response.Header())
 			}
-			id := tc.requestID
-			if id == "" {
-				id = "-"
-			}
-			want := "auth: request " + id + ": " + tc.reason.Error() + "\n"
-			// R-XV9R-80CN: the exact reason and request id go in one Write call.
-			// R-XWHN-LS3C: a 5xx emits exactly one line.
-			if len(stderr.writes) != 1 || string(stderr.writes[0]) != want {
-				t.Fatalf("stderr writes = %q, want one %q", stderr.writes, want)
+			if len(stderr.writes) != 0 {
+				t.Fatalf("handled failure wrote stderr: %q", stderr.writes)
 			}
 		})
 	}
@@ -196,7 +189,7 @@ func TestIdentityStoreFailureReturns500AndOneDiagnostic(t *testing.T) {
 func TestIdentityRefusalsWriteNoDiagnostic(t *testing.T) {
 	fixture := openIdentityFixture(t)
 	var stderr identityDiagnosticWrites
-	srv := New(Config{Store: fixture.store, Now: func() time.Time { return identityNow }, Stderr: &stderr})
+	srv := newTestServer(t, Config{Store: fixture.store, Now: func() time.Time { return identityNow }}, &stderr)
 	for _, tc := range []struct {
 		path, bearer string
 		status       int
@@ -209,7 +202,6 @@ func TestIdentityRefusalsWriteNoDiagnostic(t *testing.T) {
 			t.Fatalf("%s response = %d, want %d", tc.path, response.Code, tc.status)
 		}
 	}
-	// R-XWHN-LS3C: ordinary refusals emit no diagnostics.
 	if len(stderr.writes) != 0 {
 		t.Fatalf("stderr writes for refusals = %q", stderr.writes)
 	}
@@ -234,7 +226,7 @@ func TestCheckSessionOutcomes(t *testing.T) {
 	live := fixture.session(t, user.ID, identityNow.Add(-3*time.Hour), identityNow.Add(-time.Minute))
 	idle := fixture.session(t, user.ID, identityNow.Add(-3*time.Hour), identityNow.Add(-20*time.Minute))
 	capped := fixture.session(t, user.ID, identityNow.Add(-18*time.Hour-30*time.Minute), identityNow.Add(-time.Minute))
-	srv := fixture.server()
+	srv := fixture.server(t)
 
 	t.Run("live", func(t *testing.T) {
 		before := fixture.snapshot(t)
@@ -284,7 +276,7 @@ func TestCheckBearerWinsAndTouchesOnlyToken(t *testing.T) {
 	fixture.setTokenSecret(t, token.ID, secret)
 	before := fixture.snapshot(t)
 
-	response := serveIdentity(fixture.server().handleCheck, identityRequest("/check", session.ID, secret))
+	response := serveIdentity(fixture.server(t).handleCheck, identityRequest("/check", session.ID, secret))
 
 	// R-FDE0-46YG: an honored bearer emits its identity and records request-time use.
 	// R-FH1P-9I6J: the honored bearer wins over a different live session, which is untouched.
@@ -330,7 +322,7 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 				}
 			}
 			before := fixture.snapshot(t)
-			response := serveIdentity(fixture.server().handleCheck, identityRequest("/check", session.ID, secret))
+			response := serveIdentity(fixture.server(t).handleCheck, identityRequest("/check", session.ID, secret))
 
 			// R-FFTS-VQFU: every refusal cause is 403 with neither identity header,
 			// changes no stored session or token, and is the same response bytes —
@@ -387,10 +379,10 @@ func TestBearerDoesNotConsultSession(t *testing.T) {
 		handler              func(http.ResponseWriter, *http.Request)
 		status               int
 	}{
-		{name: "me honored", target: "/me", bearer: secret, handler: fixture.server().handleMe, status: http.StatusOK},
-		{name: "me refused", target: "/me", bearer: "ikp_unknown", handler: fixture.server().handleMe, status: http.StatusForbidden},
-		{name: "check honored", target: "/check", bearer: secret, handler: fixture.server().handleCheck, status: http.StatusOK},
-		{name: "check refused", target: "/check", bearer: "ikp_unknown", handler: fixture.server().handleCheck, status: http.StatusForbidden},
+		{name: "me honored", target: "/me", bearer: secret, handler: fixture.server(t).handleMe, status: http.StatusOK},
+		{name: "me refused", target: "/me", bearer: "ikp_unknown", handler: fixture.server(t).handleMe, status: http.StatusForbidden},
+		{name: "check honored", target: "/check", bearer: secret, handler: fixture.server(t).handleCheck, status: http.StatusOK},
+		{name: "check refused", target: "/check", bearer: "ikp_unknown", handler: fixture.server(t).handleCheck, status: http.StatusForbidden},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			identitySessionProbeCalls.Store(0)
@@ -425,7 +417,7 @@ func TestMeHonoredCredentialsReturnCompactJSONWithoutMutation(t *testing.T) {
 				before = fixture.snapshot(t)
 			}
 
-			response := serveIdentity(fixture.server().handleMe, identityRequest("/me", session.ID, secret))
+			response := serveIdentity(fixture.server(t).handleMe, identityRequest("/me", session.ID, secret))
 			wantUser := tokenUser
 			if credential == "session" {
 				wantUser = sessionUser
@@ -448,7 +440,7 @@ func TestMeMissingAndDeadSessionsArePlain401WithoutMutation(t *testing.T) {
 		t.Run(sessionID, func(t *testing.T) {
 			fixture := openIdentityFixture(t)
 			before := fixture.snapshot(t)
-			response := serveIdentity(fixture.server().handleMe, identityRequest("/me", sessionID, ""))
+			response := serveIdentity(fixture.server(t).handleMe, identityRequest("/me", sessionID, ""))
 
 			// R-GAHD-7316: absent and non-live sessions return a single plain-text line, not JSON.
 			// R-2UUB-27PR: unsuccessful session /me paths perform no write.
@@ -492,7 +484,7 @@ func TestMeRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 				}
 			}
 			before := fixture.snapshot(t)
-			response := serveIdentity(fixture.server().handleMe, identityRequest("/me", session.ID, secret))
+			response := serveIdentity(fixture.server(t).handleMe, identityRequest("/me", session.ID, secret))
 
 			// R-2TME-OFZ2: all refusal causes yield the same single-line token-refused response.
 			// R-F7AI-7C8Z: a refused bearer does not fall back to a live session.
@@ -523,7 +515,7 @@ func TestCheckAndMePassUnmodifiedBearerAndSession(t *testing.T) {
 	// lowercasing this suffix yields a different hash than the one stored.
 	const exactSuffix = "ikp_AbC secret "
 	fixture.setTokenSecret(t, token.ID, exactSuffix)
-	srv := fixture.server()
+	srv := fixture.server(t)
 
 	cookies := []*http.Cookie{
 		{Name: "session", Value: decoy.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode},
@@ -584,7 +576,7 @@ func TestCheckIdentityIsOnlyTheTwoHeaders(t *testing.T) {
 	idle := fixture.session(t, user.ID, identityNow.Add(-time.Hour), identityNow.Add(-20*time.Minute))
 	tokenUser := fixture.user(t, "header-token", "header-token@example.com", identityNow)
 	_, secret := fixture.token(t, tokenUser.ID, "header", store.ExpiryNever, identityNow.Add(-time.Hour))
-	srv := fixture.server()
+	srv := fixture.server(t)
 
 	cases := []struct {
 		name         string
@@ -645,7 +637,7 @@ func TestCheckAndMeStatusFollowsCredentialKind(t *testing.T) {
 	_, expiredSecret := fixture.token(t, expiredOwner.ID, "expired", store.Expiry30d, identityNow.Add(-31*24*time.Hour))
 	staleOwner := fixture.user(t, "stale-owner", "stale@example.com", identityNow.Add(-store.TokenLoginWindow-time.Second))
 	_, staleSecret := fixture.token(t, staleOwner.ID, "stale", store.ExpiryNever, identityNow.Add(-time.Hour))
-	srv := fixture.server()
+	srv := fixture.server(t)
 
 	handlers := []struct {
 		name    string

@@ -678,7 +678,7 @@ func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	user, err := st.UpsertUserOnLogin("issuer", "subject", email, signInNow)
+	user, _, err := st.UpsertUserOnLogin("issuer", "subject", email, signInNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,7 +766,7 @@ func TestSignInPagesFixVisibleText(t *testing.T) {
 	// R-QC0I-YLM5 R-QEGB-Q53J R-EFN2-4PHY R-EGUY-IH8N R-QI40-VGBM
 	workspace := `workspace<&".example`
 	st := openSignInStore(t)
-	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
+	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
 	for _, tc := range []struct{ host, returnURL, display string }{
 		{"auth.sbx.ikigenba.dev:443", "", ""}, {"localhost:3001", "", ""}, {"auth.sbx.ikigenba.dev", "https://elsewhere.test/path", ""},
 		{"auth.sbx.ikigenba.dev", "HTTPS://App.SBX.Ikigenba.Dev:0080/path?x=1", "App.SBX.Ikigenba.Dev:0080"}, {"localhost:3001", "http://LOCALHOST:3000/path", "LOCALHOST:3000"}, {"auth.green.example", "https://app.green.example:/", "app.green.example"},
@@ -798,7 +798,7 @@ func TestSignInPagesFixVisibleText(t *testing.T) {
 }
 
 func TestCancelledAndNonmemberCards(t *testing.T) {
-	// R-QLRQ-0RJP R-QMZM-EJAE R-QO7I-SB13 R-QPFF-62RS R-EI2U-W8ZC R-EJAR-A0Q1
+	// R-U5UQ-751L R-QMZM-EJAE R-QO7I-SB13 R-QPFF-62RS R-EI2U-W8ZC R-EJAR-A0Q1
 	host := "auth.sbx.ikigenba.dev:443"
 	workspace := `green<&".example`
 	email := `visitor<&"@other.test`
@@ -847,7 +847,7 @@ func TestProfileFrameAndAccount(t *testing.T) {
 	st := openSignInStore(t)
 	email := `member<&"@example.com`
 	workspace := `workspace<&".test`
-	user, err := st.UpsertUserOnLogin("issuer", "profile", email, signInNow)
+	user, _, err := st.UpsertUserOnLogin("issuer", "profile", email, signInNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -855,7 +855,7 @@ func TestProfileFrameAndAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
+	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
 	cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	before := formatSignInIdentity(t, st)
 	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Felsewhere.test", "auth.sbx.ikigenba.dev", cookie, "")
@@ -967,7 +967,7 @@ func TestAuthPagePreservesExternalBytes(t *testing.T) {
 	if got := pageText(pageContent(anonymous.Body.String(), paragraph)); got != "Access is limited to Google accounts in the "+workspace+" workspace." {
 		t.Fatalf("workspace text changed bytes: %q", got)
 	}
-	user, err := st.UpsertUserOnLogin("issuer", "byte-value-subject", email, signInNow)
+	user, _, err := st.UpsertUserOnLogin("issuer", "byte-value-subject", email, signInNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1018,7 +1018,7 @@ func TestPagesShowRequestApex(t *testing.T) {
 	} {
 		t.Run(host, func(t *testing.T) {
 			st := openSignInStore(t)
-			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
+			s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 			for _, target := range []string{"/", "/login/google/callback?error=access_denied"} {
 				w := serveSignIn(s, http.MethodGet, target, host, nil, "")
 				body := w.Body.String()
@@ -1026,7 +1026,7 @@ func TestPagesShowRequestApex(t *testing.T) {
 					t.Fatalf("%s heading = %q, want %q", target, got, "Sign in to "+want)
 				}
 			}
-			user, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
+			user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"io"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -197,12 +196,11 @@ func (f *signInIssuer) formCount() int {
 func signInServer(t *testing.T, st *store.Store, issuer *signInIssuer, now func() time.Time) *Server {
 	t.Helper()
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
-	return New(Config{Banner: testPageBanner,
+	return newTestServer(t, Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             now,
 		Rand:            &signInRand{next: 1},
-		Stderr:          io.Discard,
 		WorkspaceDomain: "green.example",
 	})
 }
@@ -246,7 +244,7 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	}
 
 	st := openSignInStore(t)
-	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
+	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Fapp.green.example%2Fwork", "auth.green.example", nil, "")
 	// R-TQ5L-6X9V: auth's own space host serves an anonymous sign-in page.
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != signInHTMLContentType || !strings.Contains(w.Body.String(), `href="/login/google?return=`) {
@@ -287,7 +285,7 @@ func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
 			assertEmptySignInTables(t, st)
 			assertReturnNotPersisted(t, st, returnURL)
 
-			user, err := st.UpsertUserOnLogin("https://accounts.google.com", "root-subject", "root@green.example", signInNow)
+			user, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "root-subject", "root@green.example", signInNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -297,7 +295,7 @@ func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
 			}
 			before := formatSignInIdentity(t, st)
 			deadAt := signInNow.Add(store.SessionIdle + time.Nanosecond)
-			dead := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return deadAt }})
+			dead := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return deadAt }})
 			deadCookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 			deadPage := serveSignIn(dead, http.MethodGet, "/?return="+url.QueryEscape(returnURL), host, deadCookie, "")
 			assertHTMLStatus(t, deadPage, http.StatusOK)
@@ -336,7 +334,7 @@ func TestOwnSpaceHostAnonymousRootLinksToLogin(t *testing.T) {
 	// R-TQ5L-6X9V: an anonymous HTTPS request to auth's own space host
 	// reaches the sign-in page, with a link directly to the login start.
 	st := openSignInStore(t)
-	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
+	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 	w := serveSignIn(s, http.MethodGet, "https://auth.green.example/", "auth.green.example", nil, "")
 	assertHTMLStatus(t, w, http.StatusOK)
 	if !hasExactSignInLink(w.Body.String(), "/login/google") {
@@ -356,12 +354,11 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
 	verifierBytes := bytes.Repeat([]byte{0x2a}, pkceVerifierBytes)
 	serverRand := bytes.NewReader(append([]byte(nil), verifierBytes...))
-	s := New(Config{Banner: testPageBanner,
+	s := newTestServer(t, Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
 		Rand:            serverRand,
-		Stderr:          io.Discard,
 		WorkspaceDomain: "green.example",
 	})
 
@@ -404,20 +401,19 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 		t.Fatalf("server Rand unread bytes = %d, want 0", serverRand.Len())
 	}
 
-	// R-UR0L-ZVDJ: the minted verifier is a function of cfg.Rand, not of the
-	// store's reader and not of a global source.
+	// A different injected reader produces a different verifier.
 	otherBytes := bytes.Repeat([]byte{0x5c}, pkceVerifierBytes)
 	secondStore, err := store.Open(t.TempDir()+"/auth.db", &signInRand{next: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = secondStore.Close() })
-	second := New(Config{Banner: testPageBanner,
-		Store:           secondStore,
-		Google:          gc,
-		Now:             func() time.Time { return signInNow },
-		Rand:            bytes.NewReader(otherBytes),
-		Stderr:          io.Discard,
+	second := newTestServer(t, Config{Banner: testPageBanner,
+		Store:  secondStore,
+		Google: gc,
+		Now:    func() time.Time { return signInNow },
+		Rand:   bytes.NewReader(otherBytes),
+
 		WorkspaceDomain: "green.example",
 	})
 	againResponse := serveSignIn(second, http.MethodGet, "/login/google", "auth.green.example", nil, "")
@@ -432,47 +428,44 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	}
 }
 
-func TestLoginStartDiscoveryFailureRemovesStateAndWritesDiagnostic(t *testing.T) {
+func TestLoginStartDiscoveryFailureRemovesState(t *testing.T) {
 	st := openSignInStore(t)
 	issuer := newSignInIssuer(t)
 	issuer.server.Close()
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
 	var stderr signInDiagnosticWrites
-	s := New(Config{Banner: testPageBanner,
+	s := newStatusTestServer(t, 502, Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
 		Rand:            &signInRand{next: 7},
-		Stderr:          &stderr,
 		WorkspaceDomain: "green.example",
-	})
+	}, &stderr)
 
 	w := serveSignInWithRequestID(s, "/login/google?return=https%3A%2F%2Fapp.green.example%2Fafter", "start-request")
-	// R-XXPJ-ZJU1: an AuthCodeURL error is a single-line 502, a diagnostic on
-	// cfg.Stderr, and no user, session, cookie, or leftover login state.
-	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 || len(w.Result().Cookies()) != 0 {
+	// R-2YYR-ACRD: discovery failure is a single-line 502 with no identity, cookie, or leftover state.
+	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("discovery failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
 	_, discoveryErr := gc.AuthCodeURL("another-state", "another-verifier", redirectURI("auth.green.example", ""))
 	if discoveryErr == nil {
 		t.Fatal("closed issuer unexpectedly discovered")
 	}
-	wantDiagnostic := "auth: request start-request: " + discoveryErr.Error() + "\n"
-	if len(stderr.writes) != 1 || string(stderr.writes[0]) != wantDiagnostic {
-		t.Fatalf("stderr writes = %q, want exactly %q", stderr.writes, wantDiagnostic)
+	if len(stderr.writes) != 0 {
+		t.Fatalf("handled failure wrote stderr: %q", stderr.writes)
 	}
 	assertEmptySignInTables(t, st)
 }
 
 func TestCallbackAccessDeniedPrecedesStateValidation(t *testing.T) {
-	// R-Y05C-R3BF: access_denied is a cookie-free sign-in page, consumes only
+	// R-T8XF-VC0U: access_denied is a cookie-free sign-in page, consumes only
 	// the named login state, and does not create a user or session. It wins
 	// over the unknown-state 400.
 	issuer := newSignInIssuer(t)
 	issuer.issue("denied-code", "subject-denied", "denied@green.example")
 	st := openSignInStore(t)
 	s := signInServer(t, st, issuer, func() time.Time { return signInNow })
-	user, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-denied", "before@green.example", signInNow)
+	user, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-denied", "before@green.example", signInNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +524,7 @@ func TestCallbackAccessDeniedPrecedesStateValidation(t *testing.T) {
 }
 
 func TestCallbackAccessDeniedReportsStoreFailure(t *testing.T) {
-	// R-Y05C-R3BF: failure to consume a named state takes the store-error
+	// R-T8XF-VC0U: failure to consume a named state takes the store-error
 	// response path, even though a normal access_denied response is 200.
 	st := openSignInStore(t)
 	state, err := st.CreateLoginState("verifier", "")
@@ -539,12 +532,12 @@ func TestCallbackAccessDeniedReportsStoreFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr signInDiagnosticWrites
-	s := New(Config{Banner: testPageBanner, Store: st, Stderr: &stderr})
+	s := newStatusTestServer(t, 500, Config{Banner: testPageBanner, Store: st}, &stderr)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
 	w := serveSignIn(s, http.MethodGet, "/login/google/callback?error=access_denied&state="+state.State, "auth.green.example", nil, "")
-	if w.Code != http.StatusInternalServerError || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 {
+	if w.Code != http.StatusInternalServerError || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) {
 		t.Fatalf("store failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
 	assertNoSetCookie(t, w)
@@ -552,9 +545,8 @@ func TestCallbackAccessDeniedReportsStoreFailure(t *testing.T) {
 	if consumeErr == nil {
 		t.Fatal("closed store unexpectedly consumed login state")
 	}
-	wantDiagnostic := "auth: request -: " + consumeErr.Error() + "\n"
-	if len(stderr.writes) != 1 || string(stderr.writes[0]) != wantDiagnostic {
-		t.Fatalf("stderr writes = %q, want exactly %q", stderr.writes, wantDiagnostic)
+	if len(stderr.writes) != 0 {
+		t.Fatalf("handled failure wrote stderr: %q", stderr.writes)
 	}
 }
 
@@ -565,7 +557,7 @@ func TestCallbackRejectsMissingUnknownAndExchangeFailure(t *testing.T) {
 	for _, target := range []string{"/login/google/callback", "/login/google/callback?state=unknown"} {
 		w := serveSignIn(s, http.MethodGet, target, "auth.green.example", nil, "")
 		// R-IV8G-5BSE: missing and unknown state are indistinguishable 400 single-line responses without cookies.
-		if w.Code != http.StatusBadRequest || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 || len(w.Result().Cookies()) != 0 {
+		if w.Code != http.StatusBadRequest || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) || len(w.Result().Cookies()) != 0 {
 			t.Fatalf("invalid callback = %d %#v %q", w.Code, w.Header(), w.Body.String())
 		}
 	}
@@ -575,52 +567,46 @@ func TestCallbackRejectsMissingUnknownAndExchangeFailure(t *testing.T) {
 	}
 	var stderr signInDiagnosticWrites
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
-	s = New(Config{Banner: testPageBanner,
+	s = newStatusTestServer(t, 502, Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
 		Rand:            &signInRand{next: 1},
-		Stderr:          &stderr,
 		WorkspaceDomain: "green.example",
-	})
+	}, &stderr)
 	w := serveSignInWithRequestID(s, "/login/google/callback?state="+state.State+"&code=rejected", "exchange-request")
-	// R-XYXG-DBKQ: a failed exchange is a single-line 502, the underlying error
-	// on cfg.Stderr, and no user, session, or cookie.
-	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 || len(w.Result().Cookies()) != 0 {
+	// R-TA5C-93RJ: a failed exchange is a single-line 502 with no user, session, or cookie.
+	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("exchange failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
 	_, exchangeErr := gc.Exchange(context.Background(), "rejected", "verifier", redirectURI("auth.green.example", ""))
 	if exchangeErr == nil {
 		t.Fatal("rejected token unexpectedly exchanged")
 	}
-	wantDiagnostic := "auth: request exchange-request: " + exchangeErr.Error() + "\n"
-	if len(stderr.writes) != 1 || string(stderr.writes[0]) != wantDiagnostic {
-		t.Fatalf("stderr writes = %q, want exactly %q", stderr.writes, wantDiagnostic)
+	if len(stderr.writes) != 0 {
+		t.Fatalf("handled failure wrote stderr: %q", stderr.writes)
 	}
-	// R-UR0L-ZVDJ: the exchange diagnostic is a function of the writer given to
-	// New, not of a global stream or a writer assigned after construction.
 	otherState, err := st.CreateLoginState("verifier", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var otherStderr bytes.Buffer
-	other := New(Config{Banner: testPageBanner,
+	other := newStatusTestServer(t, 502, Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL),
 		Now:             func() time.Time { return signInNow },
 		Rand:            &signInRand{next: 1},
-		Stderr:          &otherStderr,
 		WorkspaceDomain: "green.example",
-	})
+	}, &otherStderr)
 	otherResponse := serveSignIn(other, http.MethodGet, "/login/google/callback?state="+otherState.State+"&code=rejected", "auth.green.example", nil, "")
 	if otherResponse.Code != http.StatusBadGateway {
 		t.Fatalf("second exchange failure = %d", otherResponse.Code)
 	}
-	if !strings.Contains(otherStderr.String(), "exchange rejected") || len(stderr.writes) != 1 {
+	if otherStderr.Len() != 0 || len(stderr.writes) != 0 {
 		t.Fatalf("diagnostics leaked across writers: first %q second %q", stderr.writes, otherStderr.String())
 	}
 	assertEmptySignInTables(t, st)
-	if user, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-rejected", "rejected@green.example", signInNow); err != nil || user.Email != "rejected@green.example" {
+	if user, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-rejected", "rejected@green.example", signInNow); err != nil || user.Email != "rejected@green.example" {
 		t.Fatalf("probing for a created user failed: %#v %v", user, err)
 	}
 }
@@ -683,7 +669,7 @@ func TestMemberCallbackCreatesIdentitySessionCookieAndSafeRedirect(t *testing.T)
 				t.Fatalf("session identity = %#v, %v", identity, err)
 			}
 			// R-IYW5-AN0H: exact verified issuer/subject key returns the callback-created user id.
-			user, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-1", "refreshed@green.example", signInNow.Add(time.Minute))
+			user, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-1", "refreshed@green.example", signInNow.Add(time.Minute))
 			if err != nil || user.ID != identity.UserID {
 				t.Fatalf("verified identity was not used exactly: %#v %v", user, err)
 			}
@@ -821,12 +807,12 @@ func TestCallbackMembershipIsHostedDomainAndVerifiedEmail(t *testing.T) {
 			st := openSignInStore(t)
 			gc := googleclient.NewClient("client-id", "client-secret", "not-the-workspace.example", issuer.server.URL)
 			callbackNow := signInNow.Add(time.Minute)
-			s := New(Config{Banner: testPageBanner,
-				Store:           st,
-				Google:          gc,
-				Now:             func() time.Time { return callbackNow },
-				Rand:            &signInRand{next: 1},
-				Stderr:          io.Discard,
+			s := newTestServer(t, Config{Banner: testPageBanner,
+				Store:  st,
+				Google: gc,
+				Now:    func() time.Time { return callbackNow },
+				Rand:   &signInRand{next: 1},
+
 				WorkspaceDomain: workspace,
 			})
 			sibling, err := st.CreateLoginState("sibling-verifier", "https://app.green.example/stay")
@@ -835,7 +821,7 @@ func TestCallbackMembershipIsHostedDomainAndVerifiedEmail(t *testing.T) {
 			}
 			var seededEmail string
 			if !tc.member {
-				seeded, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-person", "before@example.test", signInNow)
+				seeded, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-person", "before@example.test", signInNow)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -911,7 +897,7 @@ func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
 	// R-LAND-R94N: live-session GET / resolves without touching state, ignores
 	// return, and supplies logout and token-creation forms in a 200 HTML page.
 	st := openSignInStore(t)
-	user, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
+	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -922,7 +908,7 @@ func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
 	if _, _, err := st.CreateToken(user.ID, "profile token", store.ExpiryNever, signInNow); err != nil {
 		t.Fatal(err)
 	}
-	other, err := st.UpsertUserOnLogin("issuer", "other", "other@green.example", signInNow)
+	other, _, err := st.UpsertUserOnLogin("issuer", "other", "other@green.example", signInNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -932,7 +918,7 @@ func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
 	if _, err := st.CreateLoginState("keep verifier", "https://app.green.example/keep"); err != nil {
 		t.Fatal(err)
 	}
-	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow.Add(10 * time.Minute) }})
+	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow.Add(10 * time.Minute) }})
 	cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	before := profileStateSnapshot(t, st)
 	baseline := serveSignIn(s, http.MethodGet, "/", "auth.green.example", cookie, "")
@@ -1040,7 +1026,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 	} {
 		t.Run(tc.host+"/"+tc.origin, func(t *testing.T) {
 			st := openSignInStore(t)
-			user, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.test", signInNow)
+			user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.test", signInNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1052,7 +1038,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
+			s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 			cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 			beforeUser := signInUserRows(t, st)
 			jar, err := cookiejar.New(nil)
@@ -1127,7 +1113,7 @@ func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := openSignInStore(t)
-			user, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.test", signInNow)
+			user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.test", signInNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1135,7 +1121,7 @@ func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
+			s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/logout", nil)
 			req.Host = tc.host
 			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
@@ -1144,7 +1130,7 @@ func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, req)
-			if w.Code != http.StatusForbidden || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Header().Get("Set-Cookie") != "" || strings.Count(w.Body.String(), "\n") != 1 || !strings.HasSuffix(w.Body.String(), "\n") {
+			if w.Code != http.StatusForbidden || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Header().Get("Set-Cookie") != "" || !singlePlainLine(w.Body.String()) || !strings.HasSuffix(w.Body.String(), "\n") {
 				t.Fatalf("rejected logout = %d %#v %q", w.Code, w.Header(), w.Body.String())
 			}
 			if _, err := st.LookupSessionIdentity(session.ID, signInNow); err != nil {
@@ -1367,32 +1353,32 @@ func assertEmptySignInTables(t *testing.T, st *store.Store) {
 	}
 }
 
-func assertSignInStoreFailure(t *testing.T, w *httptest.ResponseRecorder, writes signInDiagnosticWrites, requestID string, cause error) {
+func assertSignInStoreFailure(t *testing.T, w *httptest.ResponseRecorder, writes signInDiagnosticWrites, cause error) {
 	t.Helper()
-	// R-CCQE-EHNR: failed store operations on D05 routes produce a plain,
+	if cause == nil {
+		t.Fatal("injected store operation did not fail")
+	}
+	// R-B9KG-UMP5: failed store operations on D05 routes produce a plain,
 	// single-line 500 without identity headers or a session cookie.
-	if w.Code != http.StatusInternalServerError || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 || w.Header().Get(HeaderUserID) != "" || w.Header().Get(HeaderUserEmail) != "" {
+	if w.Code != http.StatusInternalServerError || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) || w.Header().Get(HeaderUserID) != "" || w.Header().Get(HeaderUserEmail) != "" {
 		t.Fatalf("store failure response = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
 	assertNoSetCookie(t, w)
-	// R-XV9R-80CN, R-XWHN-LS3C: one Write carries exactly the request id
-	// and the causal error, with no second diagnostic for this request.
-	want := "auth: request " + requestID + ": " + cause.Error() + "\n"
-	if len(writes.writes) != 1 || string(writes.writes[0]) != want {
-		t.Fatalf("diagnostic writes = %q, want one write %q", writes.writes, want)
+	if len(writes.writes) != 0 {
+		t.Fatalf("handled failure wrote stderr: %q", writes.writes)
 	}
 }
 
-func TestSignInStoreFailuresReportTheirCause(t *testing.T) {
+func TestSignInStoreFailuresStaySilent(t *testing.T) {
 	issuer := newSignInIssuer(t)
 	issuer.issue("member-code", "subject-failure", "member@green.example")
 
 	newServer := func(st *store.Store, writes *signInDiagnosticWrites) *Server {
-		return New(Config{Banner: testPageBanner,
+		return newStatusTestServer(t, 500, Config{Banner: testPageBanner,
 			Store: st, Google: googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL),
 			Now: func() time.Time { return signInNow }, Rand: &signInRand{next: 1},
-			Stderr: writes, WorkspaceDomain: "green.example",
-		})
+			WorkspaceDomain: "green.example",
+		}, writes)
 	}
 
 	t.Run("callback consumes state", func(t *testing.T) {
@@ -1408,7 +1394,7 @@ func TestSignInStoreFailuresReportTheirCause(t *testing.T) {
 		}
 		w := serveSignInWithRequestID(s, "/login/google/callback?state="+state.State, "consume-request")
 		_, cause := st.ConsumeLoginState(state.State)
-		assertSignInStoreFailure(t, w, writes, "consume-request", cause)
+		assertSignInStoreFailure(t, w, writes, cause)
 		if issuer.formCount() != 0 {
 			t.Fatal("callback exchanged after store failure")
 		}
@@ -1427,8 +1413,8 @@ func TestSignInStoreFailuresReportTheirCause(t *testing.T) {
 		}
 		var writes signInDiagnosticWrites
 		w := serveSignInWithRequestID(newServer(st, &writes), "/login/google/callback?state="+state.State+"&code=member-code", "user-request")
-		_, cause := st.UpsertUserOnLogin(issuer.server.URL, "subject-failure", "member@green.example", signInNow)
-		assertSignInStoreFailure(t, w, writes, "user-request", cause)
+		_, _, cause := st.UpsertUserOnLogin(issuer.server.URL, "subject-failure", "member@green.example", signInNow)
+		assertSignInStoreFailure(t, w, writes, cause)
 		if got := signInUserRows(t, st); len(got) != 0 {
 			t.Fatalf("users = %#v", got)
 		}
@@ -1455,7 +1441,7 @@ func TestSignInStoreFailuresReportTheirCause(t *testing.T) {
 			t.Fatalf("users = %#v", users)
 		}
 		_, cause := st.CreateSession(users[0].id, signInNow)
-		assertSignInStoreFailure(t, w, writes, "session-request", cause)
+		assertSignInStoreFailure(t, w, writes, cause)
 		if got := signInSessionRows(t, st); len(got) != 0 {
 			t.Fatalf("sessions = %#v", got)
 		}
@@ -1476,7 +1462,7 @@ func TestSignInStoreFailuresReportTheirCause(t *testing.T) {
 		w := httptest.NewRecorder()
 		s.httpServer.Handler.ServeHTTP(w, req)
 		cause := st.DeleteSession("session")
-		assertSignInStoreFailure(t, w, writes, "logout-request", cause)
+		assertSignInStoreFailure(t, w, writes, cause)
 	})
 }
 
@@ -1484,7 +1470,7 @@ func TestProfileStoreFailuresArePlain500(t *testing.T) {
 	for _, step := range []string{"identity", "tokens"} {
 		t.Run(step, func(t *testing.T) {
 			st := openSignInStore(t)
-			user, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
+			user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1493,7 +1479,7 @@ func TestProfileStoreFailuresArePlain500(t *testing.T) {
 				t.Fatal(err)
 			}
 			var writes signInDiagnosticWrites
-			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, Stderr: &writes})
+			s := newStatusTestServer(t, 500, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }}, &writes)
 			if step == "identity" {
 				if err := st.Close(); err != nil {
 					t.Fatal(err)
@@ -1517,12 +1503,12 @@ func TestProfileStoreFailuresArePlain500(t *testing.T) {
 			} else {
 				_, cause = st.ListTokens(user.ID)
 			}
-			assertSignInStoreFailure(t, w, writes, "profile-request", cause)
+			assertSignInStoreFailure(t, w, writes, cause)
 		})
 	}
 }
 
-func TestLoginStartCleanupFailureKeepsDiscoveryDiagnostic(t *testing.T) {
+func TestLoginStartCleanupFailureKeeps502(t *testing.T) {
 	st := openSignInStore(t)
 	db := openSignInSQL(t, st)
 	defer func() { _ = db.Close() }()
@@ -1533,11 +1519,11 @@ func TestLoginStartCleanupFailureKeepsDiscoveryDiagnostic(t *testing.T) {
 	issuer.server.Close()
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
 	var writes signInDiagnosticWrites
-	s := New(Config{Banner: testPageBanner, Store: st, Google: gc, Rand: &signInRand{next: 1}, Stderr: &writes})
+	s := newStatusTestServer(t, 502, Config{Banner: testPageBanner, Store: st, Google: gc, Rand: &signInRand{next: 1}}, &writes)
 	w := serveSignInWithRequestID(s, "/login/google", "discovery-request")
-	// R-CCQE-EHNR: the cleanup store error is the declared exception to the
+	// R-B9KG-UMP5: the cleanup store error is the declared exception to the
 	// general store-error 500 rule; discovery remains a 502.
-	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Count(w.Body.String(), "\n") != 1 {
+	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) {
 		t.Fatalf("discovery with cleanup failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
 	assertNoSetCookie(t, w)
@@ -1545,18 +1531,15 @@ func TestLoginStartCleanupFailureKeepsDiscoveryDiagnostic(t *testing.T) {
 	if cause == nil {
 		t.Fatal("closed issuer unexpectedly discovered")
 	}
-	// R-XV9R-80CN, R-XWHN-LS3C: the sole 502 diagnostic names the
-	// discovery error, never the cleanup error.
-	want := "auth: request discovery-request: " + cause.Error() + "\n"
-	if len(writes.writes) != 1 || string(writes.writes[0]) != want {
-		t.Fatalf("diagnostic writes = %q, want one write %q", writes.writes, want)
+	if len(writes.writes) != 0 {
+		t.Fatalf("handled failure wrote stderr: %q", writes.writes)
 	}
 }
 
 func TestSignInNonServerResponsesStaySilent(t *testing.T) {
 	st := openSignInStore(t)
 	var writes signInDiagnosticWrites
-	s := New(Config{Banner: testPageBanner, Store: st, Stderr: &writes})
+	s := newTestServer(t, Config{Banner: testPageBanner, Store: st}, &writes)
 	for _, tc := range []struct {
 		method, target, origin string
 		status                 int
@@ -1571,7 +1554,6 @@ func TestSignInNonServerResponsesStaySilent(t *testing.T) {
 			t.Fatalf("%s %s = %d, want %d", tc.method, tc.target, w.Code, tc.status)
 		}
 	}
-	// R-XWHN-LS3C: normal and 4xx responses do not write to cfg.Stderr.
 	if len(writes.writes) != 0 {
 		t.Fatalf("non-server diagnostics = %q", writes.writes)
 	}

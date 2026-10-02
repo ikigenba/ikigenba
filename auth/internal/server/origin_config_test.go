@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,7 +28,7 @@ func TestConfiguredCallbackReachesAuthorizationAndExchange(t *testing.T) {
 			issuer := newSignInIssuer(t)
 			issuer.issue("configured-code", "configured-subject", "member@green.example")
 			st := openSignInStore(t)
-			s := New(Config{Store: st, Google: googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL), Now: func() time.Time { return signInNow }, Rand: &signInRand{next: 1}, Stderr: io.Discard, WorkspaceDomain: "green.example", CallbackURL: tc.callback, Banner: testPageBanner})
+			s := newTestServer(t, Config{Store: st, Google: googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL), Now: func() time.Time { return signInNow }, Rand: &signInRand{next: 1}, WorkspaceDomain: "green.example", CallbackURL: tc.callback, Banner: testPageBanner})
 			w := serveSignIn(s, http.MethodGet, "/login/google", tc.startHost, nil, "")
 			location, err := url.Parse(w.Header().Get("Location"))
 			if err != nil {
@@ -65,7 +64,7 @@ func TestOwnOriginControlsEveryTokenRoute(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				s := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, PublicURL: tc.public, Banner: testPageBanner})
+				s := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, PublicURL: tc.public, Banner: testPageBanner})
 				target := "/tokens/" + token.ID + "/" + action
 				form := url.Values(nil)
 				if action == "create" {
@@ -127,7 +126,7 @@ func TestLogoutConfiguredOriginsAndRejectedShapes(t *testing.T) {
 		run := func(origins []string, accepted bool) {
 			t.Helper()
 			st := openSignInStore(t)
-			user, err := st.UpsertUserOnLogin("issuer", "owner", "member@green.example", signInNow)
+			user, _, err := st.UpsertUserOnLogin("issuer", "owner", "member@green.example", signInNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -145,7 +144,7 @@ func TestLogoutConfiguredOriginsAndRejectedShapes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s := New(Config{Store: st, Now: func() time.Time { return signInNow.Add(time.Minute) }, PublicURL: tc.public, Banner: testPageBanner})
+			s := newTestServer(t, Config{Store: st, Now: func() time.Time { return signInNow.Add(time.Minute) }, PublicURL: tc.public, Banner: testPageBanner})
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/logout", nil)
 			req.Host = tc.host
 			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})

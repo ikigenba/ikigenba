@@ -157,7 +157,7 @@ func TestRunOptionalOriginsThroughHTTP(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			u, err := st.UpsertUserOnLogin("issuer", "subject", "user@example.test", p.Now())
+			u, _, err := st.UpsertUserOnLogin("issuer", "subject", "user@example.test", p.Now())
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -60,10 +60,11 @@ func TestFoundationContract(t *testing.T) {
 		LastUsedAt *time.Time
 	}{})
 
-	// R-4DQ3-H8BE
+	// R-SWQG-1MLW
 	_ = Identity(struct {
-		UserID string
-		Email  string
+		UserID  string
+		Email   string
+		TokenID string
 	}{})
 
 	if ExpiryNever != "never" || Expiry30d != "30d" || Expiry90d != "90d" || Expiry365d != "365d" {
@@ -568,7 +569,7 @@ func TestOpenReportsCreationAndDatabaseFailures(t *testing.T) {
 }
 
 func TestErrNotFoundForMissingAndOtherOwnerRows(t *testing.T) {
-	// R-4HDS-MJJH
+	// R-2SV9-DI1W
 	st := openTokenTestStore(t, bytes.NewReader(nil))
 	now := tokenTestNow()
 	insertTokenUser(t, st, "owner", "owner@example.com", now)

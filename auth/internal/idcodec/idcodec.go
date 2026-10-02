@@ -12,6 +12,8 @@ import (
 const (
 	// Alphabet is the Crockford base32 alphabet.
 	Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	// TokenIDPrefix identifies token entities.
+	TokenIDPrefix = "tok_"
 	// SecretPrefix is the prefix of a minted secret.
 	SecretPrefix = "ikp_"
 )

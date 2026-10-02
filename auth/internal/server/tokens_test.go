@@ -50,7 +50,7 @@ func openTokenTestStore(t *testing.T) *store.Store {
 
 func tokenTestIdentity(t *testing.T, st *store.Store, subject string) (store.User, store.Session) {
 	t.Helper()
-	user, err := st.UpsertUserOnLogin("issuer", subject, subject+"@example.com", tokenTestNow)
+	user, _, err := st.UpsertUserOnLogin("issuer", subject, subject+"@example.com", tokenTestNow)
 	if err != nil {
 		t.Fatalf("UpsertUserOnLogin() error = %v", err)
 	}
@@ -61,8 +61,8 @@ func tokenTestIdentity(t *testing.T, st *store.Store, subject string) (store.Use
 	return user, session
 }
 
-func tokenTestServer(st *store.Store) *Server {
-	return New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }})
+func tokenTestServer(t *testing.T, st *store.Store) *Server {
+	return newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }})
 }
 
 func tokenRequest(target, sessionID string, form url.Values) *http.Request {
@@ -93,7 +93,7 @@ func tokenActionRequest(sessionID, tokenID, action string) *http.Request {
 	return req
 }
 
-func TestTokenRoutesReportClosedStoreOnce(t *testing.T) {
+func TestTokenRoutesClosedStoreReturns500(t *testing.T) {
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "closed")
 	if err := st.Close(); err != nil {
@@ -112,23 +112,20 @@ func TestTokenRoutesReportClosedStoreOnce(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var stderr identityDiagnosticWrites
-			srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+			srv := newStatusTestServer(t, 500, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }}, &stderr)
 			tc.req.Header.Set("X-Request-Id", "token-42")
 			response := httptest.NewRecorder()
 			srv.ServeHTTP(response, tc.req)
 
-			// R-CCQE-EHNR: a failed store lookup is 500 plain text with no identity headers.
-			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+			// R-B9KG-UMP5: a failed store lookup is 500 plain text with no identity headers.
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(response.Body.String()) {
 				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 			}
 			if response.Header().Get(HeaderUserID) != "" || response.Header().Get(HeaderUserEmail) != "" {
 				t.Fatalf("identity headers on 500: %v", response.Header())
 			}
-			want := "auth: request token-42: " + reason.Error() + "\n"
-			// R-XV9R-80CN: the request id and underlying error are written together.
-			// R-XWHN-LS3C: one 5xx request produces one diagnostic Write call.
-			if len(stderr.writes) != 1 || string(stderr.writes[0]) != want {
-				t.Fatalf("stderr writes = %q, want one %q", stderr.writes, want)
+			if len(stderr.writes) != 0 {
+				t.Fatalf("handled failure wrote stderr: %q", stderr.writes)
 			}
 		})
 	}
@@ -175,19 +172,16 @@ func TestTokenMutationStoreFailuresReport500(t *testing.T) {
 				t.Fatal("trigger did not fail store operation")
 			}
 			var stderr identityDiagnosticWrites
-			srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+			srv := newStatusTestServer(t, 500, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }}, &stderr)
 			response := httptest.NewRecorder()
 			srv.ServeHTTP(response, tc.req)
 
-			// R-CCQE-EHNR: token write failures return one plain-text line.
-			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+			// R-B9KG-UMP5: token write failures return one plain-text line.
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(response.Body.String()) {
 				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 			}
-			// R-XV9R-80CN: the actual SQLite failure is retained in the diagnostic.
-			// R-XWHN-LS3C: the response causes exactly one Write call.
-			want := "auth: request -: " + tc.err.Error() + "\n"
-			if len(stderr.writes) != 1 || string(stderr.writes[0]) != want {
-				t.Fatalf("stderr writes = %q, want one %q", stderr.writes, want)
+			if len(stderr.writes) != 0 {
+				t.Fatalf("handled failure wrote stderr: %q", stderr.writes)
 			}
 		})
 	}
@@ -197,7 +191,7 @@ func TestTokenRefusalsWriteNoDiagnostic(t *testing.T) {
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "refused")
 	var stderr identityDiagnosticWrites
-	srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+	srv := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }}, &stderr)
 	missing := tokenActionRequest(session.ID, "missing", "delete")
 	badOrigin := tokenRequest("/tokens", session.ID, url.Values{"name": {"new"}, "expires": {"never"}})
 	badOrigin.Header.Set("Origin", "https://foreign.example")
@@ -211,7 +205,6 @@ func TestTokenRefusalsWriteNoDiagnostic(t *testing.T) {
 			t.Fatalf("status = %d, want %d", response.Code, tc.status)
 		}
 	}
-	// R-XWHN-LS3C: 403 and 404 responses write nothing to cfg.Stderr.
 	if len(stderr.writes) != 0 {
 		t.Fatalf("stderr writes for refusals = %q", stderr.writes)
 	}
@@ -232,7 +225,7 @@ func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
 		t.Run(tt.value, func(t *testing.T) {
 			st := openTokenTestStore(t)
 			user, session := tokenTestIdentity(t, st, "member-"+tt.value)
-			srv := tokenTestServer(st)
+			srv := tokenTestServer(t, st)
 			req := tokenRequest("/tokens", session.ID, url.Values{
 				"name":    {"  deploy token  "},
 				"expires": {tt.value},
@@ -283,7 +276,7 @@ func TestCreateTokenRejectsInvalidNameAndExpiryWithoutMutation(t *testing.T) {
 		t.Run(fmt.Sprintf("name=%q/expires=%q", tt.name, tt.expires), func(t *testing.T) {
 			st := openTokenTestStore(t)
 			user, session := tokenTestIdentity(t, st, "invalid")
-			srv := tokenTestServer(st)
+			srv := tokenTestServer(t, st)
 			req := tokenRequest("/tokens", session.ID, url.Values{
 				"name": {tt.name}, "expires": {tt.expires},
 			})
@@ -316,7 +309,7 @@ func TestTokenToggleAndDeleteEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := tokenTestServer(st)
+	srv := tokenTestServer(t, st)
 
 	for _, tt := range []struct {
 		action      string
@@ -374,7 +367,7 @@ func TestTokenActionsHideOwnershipAndDoNotMutateOnNotFound(t *testing.T) {
 				beforeOther, _ := st.ListTokens(other.ID)
 
 				response := httptest.NewRecorder()
-				tokenTestServer(st).handleTokenAction(response, tokenActionRequest(session.ID, tokenID, action))
+				tokenTestServer(t, st).handleTokenAction(response, tokenActionRequest(session.ID, tokenID, action))
 
 				// R-NGQV-0352: foreign and nonexistent ids are indistinguishable 404s with no mutation.
 				if response.Code != http.StatusNotFound || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
@@ -430,7 +423,7 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 				}
 				req.Header.Set("Origin", origin.value)
 				response := httptest.NewRecorder()
-				tokenTestServer(st).httpServer.Handler.ServeHTTP(response, req)
+				tokenTestServer(t, st).httpServer.Handler.ServeHTTP(response, req)
 
 				// R-NHYR-DUVR: an Origin that is not the service's own is 403 plain
 				// text and does not create, enable, disable, or delete.
@@ -476,7 +469,7 @@ func TestCreateTokenRejectsMissingAndNonMemberExpiry(t *testing.T) {
 			st := openTokenTestStore(t)
 			user, session := tokenTestIdentity(t, st, "member")
 			response := httptest.NewRecorder()
-			tokenTestServer(st).httpServer.Handler.ServeHTTP(response, tokenRequest("/tokens", session.ID, tc.form))
+			tokenTestServer(t, st).httpServer.Handler.ServeHTTP(response, tokenRequest("/tokens", session.ID, tc.form))
 
 			// R-G35Y-WGL0: a valid name with a missing or non-member expires is a
 			// 400 HTML create form and stores nothing.

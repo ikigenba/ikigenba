@@ -90,7 +90,7 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 		user, session := tokenTestIdentity(t, st, "banner")
 		calls := []page.User{}
 		returned := page.Banner{Service: "returned service", Version: "fixture<& version", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services}
-		srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(u page.User) page.Banner { calls = append(calls, u); return returned }})
+		srv := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(u page.User) page.Banner { calls = append(calls, u); return returned }})
 		requests := []*http.Request{tokenProfileRequest(session.ID), tokenRequest("/tokens", session.ID, url.Values{"name": {""}, "expires": {"bad"}}), tokenRequest("/tokens", session.ID, url.Values{"name": {"banner token"}, "expires": {"never"}}), tokenProfileRequest(session.ID)}
 		for i, req := range requests {
 			returned.Service = []string{"profile", "rejected", "created", "refreshed"}[i] + " <& service"

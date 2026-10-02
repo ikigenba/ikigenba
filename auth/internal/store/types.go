@@ -38,10 +38,11 @@ type Token struct {
 	LastUsedAt *time.Time
 }
 
-// Identity is the user id and email returned by a successful lookup.
+// Identity is the user and, for token authentication, the honored token.
 type Identity struct {
-	UserID string
-	Email  string
+	UserID  string
+	Email   string
+	TokenID string
 }
 
 // Expiry names how long a created token stays valid.

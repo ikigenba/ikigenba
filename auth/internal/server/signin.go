@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
@@ -57,7 +58,6 @@ func (s *Server) handleLoginGoogle(w http.ResponseWriter, r *http.Request) {
 	redirect := redirectURI(r.Host, s.cfg.CallbackURL)
 	authURL, err := s.gc.AuthCodeURL(loginState.State, verifier, redirect)
 	if err != nil {
-		s.writeDiagnostic(r, err)
 		_, _ = s.st.ConsumeLoginState(loginState.State)
 		writePlainError(w, http.StatusBadGateway, "Google sign-in failed")
 		return
@@ -94,12 +94,14 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 				return
 			}
 		}
+		s.record(r, "sign_in.refused", "", telemetry.Attrs{"reason": "cancelled"})
 		writeCancelledPage(w, r.Host)
 		return
 	}
 
 	loginState, err := s.st.ConsumeLoginState(stateValue)
 	if errors.Is(err, store.ErrNotFound) {
+		s.record(r, "sign_in.refused", "", telemetry.Attrs{"reason": "unknown_state"})
 		writePlainError(w, http.StatusBadRequest, "invalid login state")
 		return
 	}
@@ -110,16 +112,17 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 
 	claims, err := s.gc.Exchange(r.Context(), r.URL.Query().Get("code"), loginState.Verifier, redirectURI(r.Host, s.cfg.CallbackURL))
 	if err != nil {
-		s.writeDiagnostic(r, err)
+		s.record(r, "sign_in.refused", "", telemetry.Attrs{"reason": "provider_failed"})
 		writePlainError(w, http.StatusBadGateway, "Google sign-in failed")
 		return
 	}
 	if !claims.EmailVerified || claims.HostedDomain != s.cfg.WorkspaceDomain {
+		s.record(r, "sign_in.refused", "", telemetry.Attrs{"reason": "not_member"})
 		writeNonMemberPage(w, r.Host, s.cfg.WorkspaceDomain, claims.Email)
 		return
 	}
 
-	user, err := s.st.UpsertUserOnLogin(claims.Issuer, claims.Subject, claims.Email, s.now())
+	user, created, err := s.st.UpsertUserOnLogin(claims.Issuer, claims.Subject, claims.Email, s.now())
 	if err != nil {
 		s.writeServerError(w, r, err)
 		return
@@ -129,6 +132,10 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 		s.writeServerError(w, r, err)
 		return
 	}
+	if created {
+		s.record(r, "user.created", user.ID, nil)
+	}
+	s.record(r, "user.signed_in", user.ID, nil)
 	http.SetCookie(w, cookieForHost(r.Host, session.ID, false))
 
 	location := "/"
@@ -145,12 +152,22 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user := ""
 	if cookie, err := r.Cookie(SessionCookieName); err == nil {
+		resolved, err := s.st.LookupSessionIdentity(cookie.Value, s.now())
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.writeServerError(w, r, err)
+			return
+		}
+		if err == nil {
+			user = resolved.UserID
+		}
 		if err := s.st.DeleteSession(cookie.Value); err != nil {
 			s.writeServerError(w, r, err)
 			return
 		}
 	}
+	s.record(r, "user.signed_out", user, nil)
 	http.SetCookie(w, cookieForHost(r.Host, "", true))
 	http.Redirect(w, r, "/", http.StatusFound)
 }

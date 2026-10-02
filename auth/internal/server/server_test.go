@@ -23,49 +23,24 @@ import (
 )
 
 func TestConfigAndNew(t *testing.T) {
-	// R-SMSU-BWZ2: Config is exactly the process dependencies handlers need.
-	// An unkeyed literal fixes the field set, order, and types at compile time;
-	// reading each exported field back into a variable of its declared type
-	// fixes them exactly.
-	var (
-		st              *store.Store
-		gClient         *google.Client
-		nowFn           func() time.Time
-		rnd             io.Reader
-		errOut          io.Writer
-		workspaceDomain = "workspace.example"
-		publicURL       = "http://auth.public.example:7400"
-		callbackURL     = "https://callback.example"
-		bannerFn        func(page.User) page.Banner
-	)
-	fields := Config{st, gClient, nowFn, rnd, errOut, workspaceDomain, publicURL, callbackURL, bannerFn}
-	st, gClient, nowFn, rnd = fields.Store, fields.Google, fields.Now, fields.Rand
-	errOut, workspaceDomain, bannerFn = fields.Stderr, fields.WorkspaceDomain, fields.Banner
-	publicURL, callbackURL = fields.PublicURL, fields.CallbackURL
-	if workspaceDomain != "workspace.example" || publicURL != "http://auth.public.example:7400" || callbackURL != "https://callback.example" {
-		t.Fatal("Config string fields changed order")
-	}
-	_, _, _, _, _, _, _ = st, gClient, nowFn, rnd, errOut, workspaceDomain, bannerFn
-
 	// R-KWD9-PBZI: New is func(Config) *Server and the result's type is the
 	// exported Server; pinNew accepts New only with that exact signature.
 	constructor := pinNew(New)
 	now := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 	gc := google.NewClient("client", "secret", "space.example", "http://127.0.0.1:1")
-	var stderr bytes.Buffer
 	cfg := Config{
 		Store:           nil,
 		Google:          gc,
 		Now:             now,
 		Rand:            bytes.NewReader(nil),
-		Stderr:          &stderr,
 		WorkspaceDomain: "space.example",
 	}
+	cfg.Telemetry, _ = testServerWriter(t, &bytes.Buffer{})
 	s := pinServer(constructor(cfg))
 	if s == nil || s.httpServer == nil || s.httpServer.Handler == nil {
 		t.Fatal("New did not initialize the HTTP server and router")
 	}
-	if s.now() != now() || s.gc != gc || s.rand != cfg.Rand || s.stderr != cfg.Stderr || s.cfg.WorkspaceDomain != "space.example" {
+	if s.now() != now() || s.gc != gc || s.rand != cfg.Rand || s.cfg.WorkspaceDomain != "space.example" {
 		t.Fatal("New did not retain its injected handler dependencies")
 	}
 }
@@ -333,7 +308,7 @@ func TestServeFailureAndSilence(t *testing.T) {
 }
 
 func TestRouterRegistersContractRoutes(t *testing.T) {
-	s := New(Config{Now: fixedNow})
+	s := newTestServer(t, Config{Now: fixedNow})
 	for _, target := range []struct {
 		method string
 		path   string
@@ -387,17 +362,16 @@ func TestContractRoutesServed(t *testing.T) {
 	}))
 	t.Cleanup(issuer.Close)
 
-	s := New(Config{
+	s := newTestServer(t, Config{
 		Store:           st,
 		Google:          google.NewClient("client-id", "client-secret", "example.test", issuer.URL),
 		Now:             fixedNow,
 		Rand:            bytes.NewReader(bytes.Repeat([]byte{5}, 64)),
-		Stderr:          &bytes.Buffer{},
 		WorkspaceDomain: "example.test",
 		Banner: func(u page.User) page.Banner {
 			return page.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 		},
-	})
+	}, &bytes.Buffer{})
 
 	root := serveRoute(s, http.MethodGet, "/", nil)
 	if root.Code != http.StatusOK || root.Header().Get("Content-Type") != "text/html; charset=utf-8" || !strings.Contains(root.Body.String(), `href="/login/google"`) {
@@ -450,12 +424,9 @@ func (w *diagnosticWrites) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestCrossRouteFailureDiagnostics(t *testing.T) {
-	// R-CCQE-EHNR: failed store operations on D05, D06, and D07 routes
+func TestCrossRouteStoreFailuresStaySilent(t *testing.T) {
+	// R-B9KG-UMP5: failed store operations on D05, D06, and D07 routes
 	// produce the same plain 500 without identity headers.
-	// R-XV9R-80CN: each 500's diagnostic carries the request id (or "-")
-	// and the exact underlying error in one Write call.
-	// R-XWHN-LS3C: requests outside the 5xx range leave Stderr untouched.
 	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{1}, 128)))
 	if err != nil {
 		t.Fatal(err)
@@ -465,21 +436,21 @@ func TestCrossRouteFailureDiagnostics(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name, method, target, cookie, origin, id, reason string
+		name, method, target, cookie, origin, id string
 	}{
-		{"root", http.MethodGet, "/", "session", "", "root-id", "lookup session identity: sql: database is closed"},
-		{"login start", http.MethodGet, "/login/google", "", "", "", "insert login state: sql: database is closed"},
-		{"callback", http.MethodGet, "/login/google/callback?state=recorded", "", "", "callback-id", "consume login state: sql: database is closed"},
-		{"denied callback", http.MethodGet, "/login/google/callback?error=access_denied&state=recorded", "", "", "denied-id", "consume login state: sql: database is closed"},
-		{"logout", http.MethodPost, "/logout", "session", "https://auth.green.example", "logout-id", "delete session: sql: database is closed"},
-		{"check", http.MethodGet, "/check", "session", "", "check-id", "begin session touch: sql: database is closed"},
-		{"me", http.MethodGet, "/me", "session", "", "me-id", "lookup session identity: sql: database is closed"},
-		{"token create", http.MethodPost, "/tokens", "session", "https://auth.green.example", "create-id", "lookup session identity: sql: database is closed"},
-		{"token action", http.MethodPost, "/tokens/a/enable", "session", "https://auth.green.example", "action-id", "lookup session identity: sql: database is closed"},
+		{"root", http.MethodGet, "/", "session", "", "root-id"},
+		{"login start", http.MethodGet, "/login/google", "", "", ""},
+		{"callback", http.MethodGet, "/login/google/callback?state=recorded", "", "", "callback-id"},
+		{"denied callback", http.MethodGet, "/login/google/callback?error=access_denied&state=recorded", "", "", "denied-id"},
+		{"logout", http.MethodPost, "/logout", "session", "https://auth.green.example", "logout-id"},
+		{"check", http.MethodGet, "/check", "session", "", "check-id"},
+		{"me", http.MethodGet, "/me", "session", "", "me-id"},
+		{"token create", http.MethodPost, "/tokens", "session", "https://auth.green.example", "create-id"},
+		{"token action", http.MethodPost, "/tokens/a/enable", "session", "https://auth.green.example", "action-id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var writes diagnosticWrites
-			s := New(Config{Store: st, Now: fixedNow, Rand: bytes.NewReader(bytes.Repeat([]byte{2}, 128)), Stderr: &writes})
+			s := newStatusTestServer(t, 500, Config{Store: st, Now: fixedNow, Rand: bytes.NewReader(bytes.Repeat([]byte{2}, 128))}, &writes)
 			r := httptest.NewRequestWithContext(context.Background(), tc.method, tc.target, nil)
 			r.Host = "auth.green.example"
 			if tc.cookie != "" {
@@ -507,21 +478,16 @@ func TestCrossRouteFailureDiagnostics(t *testing.T) {
 			if response.Header().Get(HeaderUserID) != "" || response.Header().Get(HeaderUserEmail) != "" {
 				t.Fatalf("identity headers leaked: %v", response.Header())
 			}
-			id := tc.id
-			if id == "" {
-				id = "-"
-			}
-			want := "auth: request " + id + ": " + tc.reason + "\n"
-			if len(writes.calls) != 1 || writes.calls[0] != want {
-				t.Fatalf("diagnostic writes = %q, want one %q", writes.calls, want)
+			if len(writes.calls) != 0 {
+				t.Fatalf("handled failure wrote stderr: %q", writes.calls)
 			}
 		})
 	}
 
 	var writes diagnosticWrites
-	s := New(Config{Store: st, Now: fixedNow, Stderr: &writes, Banner: func(u page.User) page.Banner {
+	s := newTestServer(t, Config{Store: st, Now: fixedNow, Banner: func(u page.User) page.Banner {
 		return page.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
-	}})
+	}}, &writes)
 	for _, tc := range []struct{ method, target, origin string }{
 		{http.MethodGet, "/", ""},
 		{http.MethodGet, "/check", ""},
@@ -598,7 +564,7 @@ func fixedNow() time.Time {
 
 func TestRetiredAssetsPaths(t *testing.T) {
 	// R-TQGG-VYEV: flat legacy asset paths are missing for every method.
-	s := New(Config{})
+	s := newTestServer(t, Config{})
 	for _, name := range []string{"theme.css", "launcher.js", "InterVariable.woff2", "unknown", ".hidden", "...", "%74heme.css", "a%20b"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT", "CUSTOM"} {
 			w := assetRequest(s, method, "/assets/"+name, nil)

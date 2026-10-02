@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
+
 	// Register the pure-Go sqlite driver opened by name "sqlite".
 	_ "modernc.org/sqlite"
 )
@@ -60,6 +62,22 @@ func Open(source string, rand io.Reader) (*Store, error) {
 		if _, err := db.ExecContext(context.Background(), `UPDATE users SET id = id WHERE 0`); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("verify sqlite database is writable: %w", err)
+		}
+	}
+
+	var needsMigration bool
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT EXISTS(SELECT 1 FROM tokens WHERE length(id) = 26 AND id NOT GLOB ?)`,
+		"*[^"+idcodec.Alphabet+"]*").Scan(&needsMigration); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("find old token ids: %w", err)
+	}
+	if needsMigration {
+		if _, err := db.ExecContext(context.Background(),
+			`UPDATE tokens SET id = ? || id WHERE length(id) = 26 AND id NOT GLOB ?`,
+			idcodec.TokenIDPrefix, "*[^"+idcodec.Alphabet+"]*"); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("migrate token ids: %w", err)
 		}
 	}
 

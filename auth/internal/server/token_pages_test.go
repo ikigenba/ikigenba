@@ -51,11 +51,11 @@ func TestTokenRefusalBodiesAreSingleLines(t *testing.T) {
 			r = tokenActionRequest(session.ID, token.ID, action)
 		}
 		r.Header.Set("Origin", "wrong")
-		tokenAssertPlainLine(t, tokenTestServer(st), r, http.StatusForbidden)
+		tokenAssertPlainLine(t, tokenTestServer(t, st), r, http.StatusForbidden)
 	}
 	for _, action := range []string{"enable", "disable", "delete"} {
 		for _, id := range []string{token.ID, "missing"} {
-			tokenAssertPlainLine(t, tokenTestServer(st), tokenActionRequest(session.ID, id, action), http.StatusNotFound)
+			tokenAssertPlainLine(t, tokenTestServer(t, st), tokenActionRequest(session.ID, id, action), http.StatusNotFound)
 		}
 	}
 }
@@ -382,7 +382,7 @@ func tokenCreatedFinalChild(t *testing.T, content string, header, warn, secret, 
 func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "forms")
-	srv := tokenTestServer(st)
+	srv := tokenTestServer(t, st)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, tokenProfileRequest(session.ID))
 	body := w.Body.String()
@@ -484,7 +484,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	}
 	calls := 0
 	var readings []time.Time
-	srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time {
+	srv := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time {
 		calls++
 		value := tokenTestNow.Add(time.Duration(calls-1) * time.Hour)
 		readings = append(readings, value)
@@ -537,7 +537,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 		if strings.Count(row, `action="/tokens/`+token.ID+`/delete"`) != 1 {
 			t.Fatalf("row %d does not uniquely identify %s: %s", i, name, row)
 		}
-		// R-1FIP-XT8S: exactly six cells in defined order, with normalized token name.
+		// R-U4MT-TDAW: exactly six cells in defined order, with normalized token name.
 		cells := tokenElements(row, "td")
 		if len(cells) != 6 {
 			t.Fatalf("cells=%v", cells)
@@ -582,7 +582,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 			tokenNoMark(t, spans[0], "data-kind")
 		}
 		tokenRead(t, spans[0], word)
-		// R-187B-N6SM: exactly ordered inline toggle/delete forms with small ghost submit buttons.
+		// R-U3EX-FLK7: exactly ordered inline toggle/delete forms with small ghost submit buttons.
 		tokenAttrs(t, cells[5], map[string]string{"class": "row-actions"})
 		forms := tokenElements(cells[5], "form")
 		if len(forms) != 2 {
@@ -640,7 +640,7 @@ func tokenAssertTime(t *testing.T, cell string, x time.Time, last bool, text str
 func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "created")
-	srv := tokenTestServer(st)
+	srv := tokenTestServer(t, st)
 	name := "  deploy <&\"'\n token  "
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{"name": {name}, "expires": {"never"}}))
@@ -840,7 +840,7 @@ func TestTokenRejectedMissingName(t *testing.T) {
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "omitted")
 	w := httptest.NewRecorder()
-	tokenTestServer(st).ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{}))
+	tokenTestServer(t, st).ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{}))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d", w.Code)
 	}
@@ -850,14 +850,14 @@ func TestTokenRejectedMissingName(t *testing.T) {
 func TestTokenNameNormalisationAndSecretExceptions(t *testing.T) {
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "name-normalisation")
-	srv := tokenTestServer(st)
+	srv := tokenTestServer(t, st)
 	_, secret, err := st.CreateToken(user.ID, " \t build\n\r\f agent \t ", store.ExpiryNever, tokenTestNow)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, tokenProfileRequest(session.ID))
-	// R-1FIP-XT8S: row names collapse ASCII whitespace and trim the resulting spaces.
+	// R-U4MT-TDAW: row names collapse ASCII whitespace and trim the resulting spaces.
 	rows := tokenElements(tokenCard(t, w.Body.String(), "API tokens"), "tbody")
 	if len(rows) != 1 {
 		t.Fatalf("tbody count=%d", len(rows))

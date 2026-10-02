@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	// R-4JTL-E30V
-	_ func(*Store, string, string, string, time.Time) (User, error) = (*Store).UpsertUserOnLogin
+	// R-SZ68-T63A
+	_ func(*Store, string, string, string, time.Time) (User, bool, error) = (*Store).UpsertUserOnLogin
 	// R-4L1H-RURK
 	_ func(*Store, string, time.Time) (Session, error) = (*Store).CreateSession
 	// R-4M9E-5MI9
@@ -36,7 +36,7 @@ func TestFirstUpsertUserOnLoginPersistsMintedUser(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	now := time.Date(2026, time.January, 15, 8, 9, 10, 11, time.UTC)
-	got, err := st.UpsertUserOnLogin("https://accounts.google.com", "google-subject", "member@example.com", now)
+	got, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "google-subject", "member@example.com", now)
 	if err != nil {
 		t.Fatalf("UpsertUserOnLogin() error = %v", err)
 	}
@@ -90,7 +90,7 @@ func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	}
 
 	firstNow := time.Date(2026, time.March, 1, 2, 3, 4, 5, time.UTC)
-	first, err := st.UpsertUserOnLogin("https://issuer.example", "subject-1", "old@example.com", firstNow)
+	first, _, err := st.UpsertUserOnLogin("https://issuer.example", "subject-1", "old@example.com", firstNow)
 	if err != nil {
 		t.Fatalf("first UpsertUserOnLogin() error = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	// Updating an existing identity must not need or consume fresh randomness.
 	st.rand = bytes.NewReader(nil)
 	secondNow := firstNow.Add(7 * time.Hour)
-	second, err := st.UpsertUserOnLogin("https://issuer.example", "subject-1", "new@example.com", secondNow)
+	second, _, err := st.UpsertUserOnLogin("https://issuer.example", "subject-1", "new@example.com", secondNow)
 	if err != nil {
 		t.Fatalf("second UpsertUserOnLogin() error = %v", err)
 	}
@@ -163,7 +163,7 @@ func TestCreateSessionUsesInjectedIDAndPersistsExactTimes(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	now := sessionTestNow()
-	user, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", now)
+	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", now)
 	if err != nil {
 		t.Fatalf("UpsertUserOnLogin() error = %v", err)
 	}
@@ -198,7 +198,7 @@ func TestSessionLivenessBoundariesAndLookupNeverMutates(t *testing.T) {
 	// R-5GQV-PW1M
 	st := openUserSessionTestStore(t, bytes.NewReader(sequentialStoreBytes(16)))
 	now := sessionTestNow()
-	user, err := st.UpsertUserOnLogin("issuer", "subject", "identity@example.com", now.Add(-24*time.Hour))
+	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "identity@example.com", now.Add(-24*time.Hour))
 	if err != nil {
 		t.Fatalf("UpsertUserOnLogin() error = %v", err)
 	}
@@ -248,7 +248,7 @@ func TestTouchSessionConditionallyUpdatesOnlyLiveSession(t *testing.T) {
 	// R-5HYS-3NSB
 	st := openUserSessionTestStore(t, bytes.NewReader(sequentialStoreBytes(16)))
 	now := sessionTestNow()
-	user, err := st.UpsertUserOnLogin("issuer", "subject", "identity@example.com", now)
+	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "identity@example.com", now)
 	if err != nil {
 		t.Fatalf("UpsertUserOnLogin() error = %v", err)
 	}
@@ -292,7 +292,7 @@ func TestDeleteSessionIsIdempotentAndLeavesUser(t *testing.T) {
 	// R-5J6O-HFJ0
 	st := openUserSessionTestStore(t, bytes.NewReader(sequentialStoreBytes(32)))
 	now := sessionTestNow()
-	user, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", now)
+	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", now)
 	if err != nil {
 		t.Fatalf("UpsertUserOnLogin() error = %v", err)
 	}

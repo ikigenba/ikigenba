@@ -6,16 +6,26 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
 func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	identity, bearer, err := s.identity(r, true)
 	if err != nil {
+		outcome := "failed"
+		if errors.Is(err, store.ErrNotFound) {
+			outcome = "unauthenticated"
+			if bearer {
+				outcome = "forbidden"
+			}
+		}
+		s.recordCheck(r, outcome, store.Identity{})
 		s.writeIdentityError(w, r, bearer, err)
 		return
 	}
 
+	s.recordCheck(r, "allowed", identity)
 	w.Header().Set(HeaderUserID, identity.UserID)
 	w.Header().Set(HeaderUserEmail, identity.Email)
 	w.WriteHeader(http.StatusOK)
@@ -74,4 +84,26 @@ func (s *Server) writeIdentityError(w http.ResponseWriter, r *http.Request, bear
 		return
 	}
 	writePlainError(w, http.StatusUnauthorized, "sign in required")
+}
+
+func (s *Server) recordCheck(r *http.Request, outcome string, resolved store.Identity) {
+	credential := "none"
+	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		credential = "token"
+	} else if _, err := r.Cookie(SessionCookieName); err == nil {
+		credential = "session"
+	}
+	path, _, _ := strings.Cut(r.Header.Get("X-Original-URI"), "?")
+	attrs := telemetry.Attrs{"outcome": outcome, "credential": credential, "method": r.Header.Get("X-Original-Method"), "host": r.Header.Get("X-Original-Host"), "path": path}
+	name := "check.refused"
+	switch outcome {
+	case "allowed":
+		name = "check.allowed"
+		if credential == "token" {
+			attrs["token"] = resolved.TokenID
+		}
+	case "failed":
+		name = "check.failed"
+	}
+	s.record(r, name, resolved.UserID, attrs)
 }

@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -33,6 +35,7 @@ type Process struct {
 	OIDCIssuer string
 	DBSource   string
 	Banner     func(u page.User) page.Banner
+	Sink       telemetry.Sink
 }
 
 const usageText = `Usage: auth [command]
@@ -170,17 +173,47 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 	}
 	defer func() { _ = st.Close() }()
 	client := google.NewClient(values[0], values[1], values[2], p.OIDCIssuer)
-	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Stderr: stderr, WorkspaceDomain: values[2], PublicURL: origins[0], CallbackURL: origins[1], Banner: p.Banner})
+
 	if addr, ok := lookup("NOTIFY_SOCKET"); ok && addr != "" {
 		if err := notify(addr); err != nil {
 			_, _ = fmt.Fprintf(stderr, "auth: %s\n", err)
 			return 1
 		}
 	}
-	if err := server.Serve(ctx, ln, h, drain); err != nil {
+	trail := telemetry.New(telemetry.Config{Service: "auth", Version: version.Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Rand: p.Rand})
+	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Telemetry: trail, WorkspaceDomain: values[2], PublicURL: origins[0], CallbackURL: origins[1], Banner: p.Banner})
+	trail.Ready()
+	stopped := make(chan time.Time, 1)
+	finished := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			stopped <- time.Now()
+		case <-finished:
+		}
+
+	}()
+	err = server.Serve(ctx, ln, h, drain)
+	ended := time.Now()
+	reason := "failed"
+	if cause := context.Cause(ctx); cause != nil {
+		reason = cause.Error()
+		ended = <-stopped
+	}
+	close(finished)
+	deadline := ended.Add(drain)
+	var overrun *server.DrainError
+	if errors.As(err, &overrun) {
+		deadline = time.Now()
+	}
+	shutdown, cancel := context.WithDeadline(context.Background(), deadline)
+	trail.Shutdown(shutdown, reason)
+	cancel()
+	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "auth: %s\n", err)
 		return 1
 	}
+
 	return 0
 }
 

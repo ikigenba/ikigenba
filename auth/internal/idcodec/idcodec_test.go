@@ -411,3 +411,12 @@ func (r *partialErrorReader) Read(p []byte) (int, error) {
 
 	return n, errors.New("partial error")
 }
+
+func TestTokenIDPrefixIsUntypedStringConstant(t *testing.T) {
+	// R-SVIJ-NUV7
+	type entityPrefix string
+	const prefix entityPrefix = TokenIDPrefix
+	if prefix != "tok_" {
+		t.Fatalf("TokenIDPrefix = %q, want tok_", prefix)
+	}
+}

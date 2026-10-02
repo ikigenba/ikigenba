@@ -54,7 +54,7 @@ func withCreateToken(t *testing.T, create func(*Store, string, string, Expiry, t
 	}
 
 	got, err := st.LookupTokenIdentity(secret, now)
-	wantIdentity := Identity{UserID: "owner", Email: "owner@example.com"}
+	wantIdentity := Identity{UserID: "owner", Email: "owner@example.com", TokenID: token.ID}
 	if err != nil || got != wantIdentity {
 		t.Fatalf("LookupTokenIdentity(plaintext) = %#v, %v; want %#v", got, err, wantIdentity)
 	}
@@ -84,7 +84,7 @@ func withCreateToken(t *testing.T, create func(*Store, string, string, Expiry, t
 }
 
 func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
-	// R-5MUD-MQR3
+	// R-T1M1-KPKO
 	// R-5O2A-0IHS
 	// R-G99G-TBAH (persisted representation only)
 	now := tokenTestNow()
@@ -112,7 +112,7 @@ func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 			}
 			wantSecret := idcodec.SecretPrefix + idcodec.Encode(random[16:])
 			want := Token{
-				ID:        idcodec.Encode(random[:16]),
+				ID:        idcodec.TokenIDPrefix + idcodec.Encode(random[:16]),
 				UserID:    "owner",
 				Name:      "deploy token",
 				Hash:      idcodec.HashSecret(wantSecret),
@@ -268,7 +268,7 @@ func TestLookupTokenIdentityBoundariesAndNoMutation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := st.LookupTokenIdentity(tt.secret, now)
 			if tt.live {
-				want := Identity{UserID: "fresh", Email: "fresh@example.com"}
+				want := Identity{UserID: "fresh", Email: "fresh@example.com", TokenID: tt.name}
 				if err != nil || got != want {
 					t.Fatalf("LookupTokenIdentity() = %#v, %v; want %#v, nil", got, err, want)
 				}
@@ -307,7 +307,7 @@ func TestTouchTokenIdentityUpdatesOnlyAuthenticatingToken(t *testing.T) {
 	}
 
 	got, err := st.TouchTokenIdentity("live-secret", now)
-	want := Identity{UserID: "fresh", Email: "fresh@example.com"}
+	want := Identity{UserID: "fresh", Email: "fresh@example.com", TokenID: "live"}
 	if err != nil || got != want {
 		t.Fatalf("TouchTokenIdentity(live) = %#v, %v; want %#v, nil", got, err, want)
 	}
