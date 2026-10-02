@@ -20,7 +20,7 @@ One leniency is deliberate and recorded: a pointer field accepts JSON `null` as 
 
 ## Writing Out
 
-An `Out` value is written as the object its schema describes: members in field order, non-pointer members always present, nil pointers omitted, nil slices written as empty arrays so `type: "array"` holds. A value the schema cannot carry — a non-finite float, or an enum-typed string outside its list — makes the value unencodable, which D08 turns into a generic error result and a log line.
+An `Out` value is written as the object its schema describes: members in field order, non-pointer members always present, nil pointers omitted, nil slices written as empty arrays so `type: "array"` holds. A value the schema cannot carry — a non-finite float, or an enum-typed string outside its list — makes the value unencodable, which D08 turns into a generic error result and a `tool.called` event with the outcome `unencodable_output`; nothing is written to standard error.
 
 ## REQUIREMENTS
 
