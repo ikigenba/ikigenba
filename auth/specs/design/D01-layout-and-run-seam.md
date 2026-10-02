@@ -47,7 +47,10 @@ an icon. `Banner` returns no services when the path is
 empty or not already clean (`services.Read` refuses a path `filepath.Clean`
 would change), or the file is missing, unreadable or malformed; it never
 writes anything or returns an error. A test that writes a services file — the
-one exec'ing test — writes it in that format. Reading the real environment
+one exec'ing test — writes it in that format, at a path that is already clean:
+an entry with only `name`, `url`, `icon` and `enabled` is skipped, so a file of
+such entries draws no launcher, and the entry the test looks for in the
+launcher carries all six members and an `icon`. Reading the real environment
 is exactly what the run seam keeps out of everything below `main`, so
 `page.New("auth", version.Version)` is called in `main` and nowhere else,
 once, at start: that is the one read of `IKIGENBA_SERVICES` the serve story
