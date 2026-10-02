@@ -12,8 +12,8 @@ structurally, by a method with the right shape. The import direction runs one
 way, from those two packages to this one, which is what lets every rule below
 be decided by calling a function rather than by driving a handler or a client.
 
-A widget is three fields: a name, a whole-number count, and a status that is
-one of three words. The status is an enumeration rather than a bare string so
+A widget is four fields: an id, a name, a whole-number count, and a status
+that is one of three words. The status is an enumeration rather than a bare string so
 that the three words exist in exactly one place, and `Statuses` hands them out
 in the order the form offers them. It is a function and not a package-level
 slice because a slice would be mutable shared state. `Status` also has an
@@ -34,6 +34,24 @@ three first and every accepted creation after them in the order it was
 accepted, so a new widget is last. `All` hands back a fresh slice, which is
 what makes "the set was left exactly as it was, down to its order" something a
 test can decide without a back door.
+
+Every widget has an id, given by the store when the widget is made and never
+changed: `wgt_` and 16 lowercase hexadecimal digits, the encoding of 8 bytes
+read from the store's random source. The id is how dummy's telemetry trail
+names a widget, since an event never carries a widget's name, count or status
+(appkit's D11 registers the prefix `wgt_` for the entity type `widget`, owned
+by dummy). It is drawn at random rather than counted so that two widgets, in
+one run or across runs, never share one in practice, and the fixture widgets
+get fresh ids each time a store is made. The source is a parameter of
+`NewStore` so a test hands in known bytes and knows every id in advance; the
+running binary passes nil, which means `crypto/rand.Reader`. The store reads
+8 bytes for each widget it makes — three when it is built, one for each
+accepted creation, none for a refused one — and never from two goroutines at
+once, so a test's `bytes.Reader` is a safe source. Should a draw repeat an id
+the store already holds, it draws again; should the source fail, the store
+takes the bytes from `crypto/rand` instead, so a widget is never refused for
+want of an id. The id is shown to MCP clients (`D09-mcp`) and is not shown on
+the panel or in the table.
 
 Two callers create widgets, and they arrive with different material. The form
 receives three strings exactly as a browser or `curl` sent them; an MCP
@@ -116,18 +134,24 @@ messages; this one declares them.
 - R-ZMK6-SZTW: The `internal/widget` package MUST export `type Status string` together with these values of that type: `StatusActive Status = "active"`, `StatusPaused Status = "paused"`, and `StatusRetired Status = "retired"`.
 - R-VLG5-AAL9: The `internal/widget` package MUST export `func Statuses() []Status`.
 - R-AN9G-B7UI: The `internal/widget` package MUST export `func (s Status) Enum() []string`.
-- R-I2W8-NTQ6: The `internal/widget` package MUST export `type Widget` as a struct with the fields `Name string`, `Count int`, and `Status Status`.
+- R-KVZI-S6MW: The `internal/widget` package MUST export `type Widget` as a struct with the fields `ID string`, `Name string`, `Count int`, and `Status Status`.
 - R-W66F-SE72: The `internal/widget` package MUST export `const MaxNameRunes = 40`.
 - R-ISI4-P0AR: The `internal/widget` package MUST export `type Submission` as a struct with the fields `Name string`, `Count string`, and `Status string`.
 - R-APP9-2RBW: The `internal/widget` package MUST export `type Draft` as a struct with the fields `Name string`, `Count int`, and `Status Status`.
 - R-EBQ5-GVM3: The `internal/widget` package MUST export `type FieldErrors` as a struct with the fields `Name string`, `Count string`, and `Status string`, each holding at most one message for the field it names, the empty string meaning that field was accepted.
 - R-WPOT-WQ26: The `internal/widget` package MUST export `func (e FieldErrors) Any() bool`.
 - R-XBN0-SLEO: The `internal/widget` package MUST export six string constants with exactly these values: `NameRequiredMessage = "a name is required"`, `NameTooLongMessage = "the name is too long; the limit is 40 characters"`, `NameTakenMessage = "that name is already taken"`, `CountNotWholeMessage = "the count must be a whole number"`, `CountNegativeMessage = "the count cannot be negative"`, and `StatusNotAllowedMessage = "the status must be one of active, paused, or retired"`.
-- R-EFDU-M6U6: The `internal/widget` package MUST export `func NewStore() *Store`.
+- R-KX7F-5YDL: The `internal/widget` package MUST export `func NewStore(src io.Reader) *Store`, where `io` is the standard library's `io`; the reader passed as `src` is the store's **source**.
 - R-EJ1J-RI29: The `internal/widget` package MUST export `func (s *Store) All() []Widget`.
 - R-EMP8-WTAC: The `internal/widget` package MUST export `func ParseSubmission(sub Submission) (Draft, FieldErrors)`.
 - R-ENX5-AL11: The `internal/widget` package MUST export `func (s *Store) Check(d Draft) FieldErrors`.
 - R-EQCY-24IF: The `internal/widget` package MUST export `func (s *Store) Create(d Draft) (Widget, FieldErrors)`.
+- R-KYFB-JQ4A: Every widget a store holds MUST have an `ID` that is `wgt_` followed by `hex.EncodeToString` (the standard library's `encoding/hex`) of 8 bytes, which, unless R-L0V4-B9LO or R-L230-P1CD applies, are the 8 bytes one `io.ReadFull` call on the store's source returns; `NewStore` MUST make three such calls before it returns, whose bytes give the `ID` of `alpha`, of `beta` and of `gamma`, in that order.
+- R-KZN7-XHUZ: `Create` MUST make one `io.ReadFull` call for 8 bytes on the store's source, giving the `ID` of the widget it adds, when it adds a widget, unless R-L0V4-B9LO or R-L230-P1CD applies, and MUST NOT read from the source when it adds none; `Check` and `All` MUST NOT read from the source.
+- R-L0V4-B9LO: When the `ID` the 8 bytes read for a widget would give is the `ID` of a widget the store already holds, the store MUST make another `io.ReadFull` call for 8 bytes on its source and use those instead, until the `ID` is held by no widget of the store, so that no two widgets a store holds share an `ID`.
+- R-L230-P1CD: When an `io.ReadFull` call on the store's source returns a non-nil error, the store MUST still give the widget an `ID` of the form R-KYFB-JQ4A states, held by no other widget of the store, from 8 bytes that do not depend on any bytes that call read, and MUST otherwise behave as when the call succeeds, so that `NewStore` still returns a store holding its three widgets and `Create` still adds its widget.
+- R-L3AX-2T32: A store MUST NOT read from its source from two goroutines at once, whatever calls are made on it concurrently, so that a source that is not safe for concurrent use, such as a `*bytes.Reader`, is safe to pass to `NewStore`.
+- R-L4IT-GKTR: When `NewStore` is passed a nil `src`, it MUST NOT panic, its store MUST give every widget an `ID` of the form R-KYFB-JQ4A states, held by no other widget of the store, and the `ID` of `alpha` in two stores so made MUST differ.
 - R-XV5E-WX9S: `Statuses` MUST return a slice of exactly three elements whose values are `StatusActive`, `StatusPaused`, and `StatusRetired`, in that order.
 - R-YH3L-SSMA: Each call to `Statuses` MUST return a slice the caller may modify in place without changing the values a later call to `Statuses` returns.
 - R-EU0N-7FQI: `Enum`, called on any `Status` value, the zero `Status` and values equal to none of `StatusActive`, `StatusPaused` and `StatusRetired` included, MUST return a slice of exactly three strings: the string values of the three elements `Statuses` returns, in the order `Statuses` returns them.
