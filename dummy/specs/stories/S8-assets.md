@@ -476,5 +476,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
-  as it does for every request it answers with a 500 (`S3`).
+- dummy wrote nothing to stderr about the 500. Its trail records the
+  request as it records every request (`S3`): a `request.started` with the
+  `method` `GET` and the `path` `/_appkit/theme.css`, and a `request.finished` with
+  the `status` 500, both with an empty user, under the id dummy gave the
+  request (`S2`).

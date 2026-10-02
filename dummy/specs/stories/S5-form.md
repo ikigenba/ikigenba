@@ -14,7 +14,20 @@ each: `name`, text, required, 1 to 40 characters and unique across widgets;
 reset at process start, holding exactly three widgets in this order: `alpha`
 count 3 status `active`; `beta` count 0 status `paused`; `gamma` count 12
 status `retired`. Rows appear in creation order, so a newly created widget is
-last in the table (`S4`).
+last in the table (`S4`). dummy gives each widget it creates an id of its own,
+`wgt_` and 16 lowercase hexadecimal digits (`S3`); the form neither shows nor
+takes one.
+
+Creating a widget is the one domain event dummy records in its trail, beside
+the events every app records for its start, its stop, its requests, and its
+tool calls (`S2`, `S3`, `S9-mcp.md`). When a widget is created, from the form or
+from `create_widget` (`S9-mcp.md`), dummy records `widget.created`, whose one
+attribute, `widget`, is the new widget's id; it carries the request's id and
+the caller's `X-User-Id` like every event of the request, and falls between
+the request's `request.started` and `request.finished`. It never carries the
+widget's name, count, or status: those are the widgets' to answer. A rejected
+submission creates nothing and records no `widget.created`; its
+`request.finished` carries the `422` or `415` it was answered with.
 
 A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
@@ -79,15 +92,26 @@ Status 303. The body is empty.
 
 Preconditions:
 
-- dummy is serving.
+- dummy is serving, and telemetry takes every event (`S2`).
 - The widgets are the fixture set as the process started it, so no widget is
   named `delta`.
 
 Postconditions:
 
-- A widget named `delta`, count 7, status `active`, now exists.
+- A widget named `delta`, count 7, status `active`, now exists, with an id
+  `<widget-id>` dummy gave it.
 - The fixture set holds four widgets. `delta` is last, after `gamma`, because
   rows appear in creation order.
+- telemetry has received the request's three events, in this order, where
+  `<request-id>` is the request's id (`S2`):
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/widgets"}}
+  {"time":"<time>","service":"dummy","event":"widget.created","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"widget":"<widget-id>"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":303}}
+  ```
+
+  The name `delta`, its count, and its status are in none of them.
 
 ## A user submits the form with no name
 
@@ -167,7 +191,7 @@ name field saying that name is already taken.
 
 Preconditions:
 
-- dummy is serving.
+- dummy is serving, and telemetry takes every event (`S2`).
 - The widgets are the fixture set as the process started it, so a widget named
   `alpha` exists.
 
@@ -177,6 +201,9 @@ Postconditions:
   `gamma`, in that order, with the counts and statuses they started with. In
   particular the existing `alpha` still has count 3 and status `active`; a
   duplicate name is refused, never merged into the widget that holds it.
+- dummy recorded no `widget.created`. telemetry has received the request's
+  `request.started`, with the `method` `POST` and the `path` `/widgets`, and
+  its `request.finished`, with the `status` 422, and nothing between them.
 
 ## A user submits a name longer than 40 characters
 
@@ -487,5 +514,8 @@ Postconditions:
 
 - Nothing has changed. No widget was created, and the fixture set is
   unchanged.
-- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
-  as it does for every request it answers with a 500 (`S3`).
+- dummy wrote nothing to stderr about the 500. Its trail records the
+  request as it records every request (`S3`): a `request.started` with the
+  `method` `POST` and the `path` `/widgets`, and a `request.finished` with
+  the `status` 500, both with an empty user, under the id dummy gave the
+  request (`S2`).

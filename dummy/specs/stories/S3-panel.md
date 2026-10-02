@@ -18,7 +18,9 @@ that arrives without `X-User-Id`, or with it empty, means the gate or a
 sibling is misconfigured — a server fault, not a bad request. On a developer's
 laptop there is no gate, so the headers are passed by hand, and every request
 below that needs identity shows them. The requests go to a running dummy
-(`S2`), started with no services file unless a story says otherwise. Each is
+(`S2`), started, unless a story says otherwise, with a services file whose
+one entry is the telemetry service's, which carries no icon and takes every
+event (`S2`), so the page has no launcher. Each is
 shown as the HTTP request dummy receives, with the headers the story depends
 on; a request that shows no `Host` header carries one with no `dummy.` label.
 
@@ -27,7 +29,13 @@ a `status` that is one of `active`, `paused`, or `retired`. The widgets are an
 in-memory fixture set, reset every time the process starts and surviving
 nothing; at startup it holds exactly three, in this order: `alpha` count 3
 status `active`, `beta` count 0 status `paused`, `gamma` count 12 status
-`retired`.
+`retired`. Every widget also has an id, which dummy gives it when the widget
+is made: `wgt_` followed by 16 lowercase hexadecimal digits, drawn at random,
+so in practice no two widgets, in one run or across runs, ever share one. The
+fixture widgets are given fresh ids each time the process starts. The id is
+how dummy's trail names a widget (`S2`), since the trail never carries a
+widget's name; the MCP tools show it beside the name (`S9-mcp.md`), and the
+panel and the table fragment do not show it.
 
 Every page dummy serves is drawn in one common frame, the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
@@ -124,10 +132,23 @@ dummy under `/_appkit/` (`S8`); a page makes no request to any third party.
 dummy serves nothing under `/assets/`: a path there is a path that does not
 exist, like any other.
 
-dummy writes one line to stderr for each request it answers with a 5xx, in
-the form `S2` fixes, `dummy: request <id>: <reason>` — its only 5xx is the
-missing-header 500 below — and nothing for any other answer: a 404, a 405, a 415, or a 422 is the caller's mistake, not
-trouble, and a healthy dummy stays silent.
+dummy records every request it serves in its trail (`S2`), whatever the
+route and whatever the answer, the shared files under `/_appkit/`, `/mcp`,
+and the missing-header 500 included. When the request arrives it records
+`request.started`, whose attributes are the request's `method`, as sent, and
+its `path`, never its query: `GET /widgets?sort=name` records the `path`
+`/widgets`. When the answer is complete it records `request.finished`, whose
+attributes are the answer's `status`, a number, and `duration_us`, how long
+dummy took to answer, in whole microseconds. Both carry the request's
+`X-Request-Id`, or the id dummy gave a request that came without one (`S2`),
+and the caller's `X-User-Id`, empty when there is none; anything dummy records
+while answering, a widget it creates (`S5`) or a tool call (`S9-mcp.md`),
+falls between the two under the same request id and user. A request with a
+`request.started` and no `request.finished` is one dummy never finished
+answering. No answer earns a line on stderr: a 404, a 405, a 415, or a 422 is
+the caller's mistake, and dummy's only 5xx, the missing-header 500 below, is
+recorded by its `request.finished` like every other answer, so a dummy
+whose telemetry takes every event writes nothing to stderr at all (`S2`).
 
 The routes are `GET /`, which sends the caller to the panel; `GET /widgets`,
 the panel page; `GET /widgets/table`, the table fragment (`S4`); `POST
@@ -333,6 +354,93 @@ Postconditions:
 - Nothing has changed.
 - dummy set no cookie.
 
+## An operator finds a user's visit to the panel in dummy's trail
+
+An operator who knows a request's id — from nginx's log, say, or from the
+trail of another service the request passed through — finds in dummy's trail
+what dummy did with it: who asked, for what, how dummy answered, and how
+long it took. The request id is the one nginx set, carried unchanged, so the
+same id finds the request in every service it touched. The developer here
+stands in for nginx by sending the id by hand.
+
+Request:
+
+```
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the panel page of `A user opens the panel`.
+
+Preconditions:
+
+- dummy is serving, and telemetry takes every event.
+
+Postconditions:
+
+- The widgets are unchanged.
+- telemetry has received the request's two events, in this order:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  ```
+
+  The caller's email is in neither.
+- dummy wrote nothing to stderr.
+
+## A developer's request without a request id is recorded under an id dummy gives it
+
+A developer's request reaches dummy without nginx, so it carries no
+`X-Request-Id`. dummy gives it one, in nginx's shape, so the request is as
+traceable in the trail as one nginx forwarded. Each such request gets an id of
+its own; an `X-Request-Id` that is present but empty is treated as absent.
+
+Request:
+
+```
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the panel page of `A user opens the panel`.
+
+Preconditions:
+
+- dummy is serving, and telemetry takes every event.
+- The request carries no `X-Request-Id` header.
+
+Postconditions:
+
+- The widgets are unchanged.
+- telemetry has received the request's two events, in this order:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  ```
+
+  `<request-id>` is 32 lowercase hexadecimal digits, the same in both events,
+  and differs from the id of every other request dummy gave one to.
+- dummy wrote nothing to stderr.
+
 ## A request arrives without the identity headers
 
 In production this cannot happen from outside: the gate sets the headers on
@@ -372,16 +480,25 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No widget was read and none was created.
-- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
-  naming the request `-` because it carried no `X-Request-Id`.
+- dummy wrote nothing to stderr about the 500.
+- telemetry has received the request's two events, under the id dummy gave
+  the request, since it carried no `X-Request-Id` (`S2`), and with an empty
+  user, since it carried no `X-User-Id`:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"","attrs":{"method":"GET","path":"/widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"","attrs":{"duration_us":<n>,"status":500}}
+  ```
+
+  `<request-id>` is the same 32 lowercase hexadecimal digits in both.
 
 ## A request from nginx arrives without the identity headers
 
 nginx sets `X-Request-Id` on every request it forwards, so when the gate is
-misconfigured and forwards a request without `X-User-Id`, the line dummy
-writes names the request by the id nginx gave it, and the operator reading the
-journal can find the same request in nginx's log. The developer here stands in
-for such an nginx by sending the id by hand.
+misconfigured and forwards a request without `X-User-Id`, dummy's trail
+records the request under the id nginx gave it, and the operator who finds
+the 500 in the trail can find the same request in nginx's log. The developer
+here stands in for such an nginx by sending the id by hand.
 
 Request:
 
@@ -408,8 +525,14 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No widget was read and none was created.
-- dummy wrote one line to stderr,
-  `dummy: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: X-User-Id is missing`.
+- dummy wrote nothing to stderr about the 500.
+- telemetry has received the request's two events under the id nginx gave
+  it, with an empty user:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"","attrs":{"method":"GET","path":"/widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"","attrs":{"duration_us":<n>,"status":500}}
+  ```
 
 ## A caller asks for a path that does not exist
 
@@ -603,7 +726,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy wrote nothing to stderr.
+- dummy wrote nothing to stderr about the launcher. With no services file it
+  has no telemetry to send to (`S2`), so stderr holds the request's two
+  events, `request.started` and `request.finished`, each as a
+  `dummy: undelivered event: <event>` line, and nothing else for this
+  request.
 
 ## A user on a host whose services file is missing sees no launcher
 
@@ -641,7 +768,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy wrote nothing to stderr.
+- dummy wrote nothing to stderr about the launcher. With no services file to
+  read it has no telemetry to send to (`S2`), so stderr holds the request's
+  two events, `request.started` and `request.finished`, each as a
+  `dummy: undelivered event: <event>` line, and nothing else for this
+  request.
 
 ## A user sees the launcher follow a change to the services file
 

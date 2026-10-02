@@ -30,7 +30,8 @@ The widgets are an in-memory fixture set, reset at process start, holding
 exactly three widgets in this order: `alpha` count 3 status `active`; `beta`
 count 0 status `paused`; `gamma` count 12 status `retired`. A widget has a
 `name` (text), a `count` (integer), and a `status`, which is one of `active`,
-`paused`, and `retired`. Rows appear in creation order, so the fixture widgets
+`paused`, and `retired`, and an id the table does not show (`S3`). Rows
+appear in creation order, so the fixture widgets
 come first and a newly created widget is last. Status is a word in its own
 column, never colour alone, so a caller reading the fragment with `curl`
 understands a row the same way a person looking at the browser does. The
@@ -252,8 +253,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
-  as it does for every request it answers with a 500 (`S3`).
+- dummy wrote nothing to stderr about the 500. Its trail records the
+  request as it records every request (`S3`): a `request.started` with the
+  `method` `GET` and the `path` `/widgets/table`, and a `request.finished` with
+  the `status` 500, both with an empty user, under the id dummy gave the
+  request (`S2`).
 
 ## A caller sends the fragment a method it does not take
 

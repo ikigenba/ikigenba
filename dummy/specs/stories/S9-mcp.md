@@ -13,14 +13,20 @@ remove a widget, as there is no form for either. Both tools work on the same
 widgets the panel shows: one in-memory set, reset every time the process
 starts, holding at startup exactly three, in this order: `alpha` count 3
 status `active`; `beta` count 0 status `paused`; `gamma` count 12 status
-`retired`. A widget has a `name`, an integer `count`, and a `status` that is
-one of `active`, `paused`, or `retired`, and the widgets are always in
+`retired`. A widget has a `name`, an integer `count`, a `status` that is
+one of `active`, `paused`, or `retired`, and an `id`, `wgt_` and 16 lowercase
+hexadecimal digits, which dummy gives it when the widget is made and which
+names the widget in dummy's trail (`S3`); the tools show the id, so a model
+that knows a widget by its name can find it in the trail, and no tool takes
+one. The widgets are always in
 creation order, so a widget created through either way in — the form or
 `create_widget` — is last, and shows to the other at once.
 
 The actor is a model working through an MCP client, or the client itself.
 Each request is shown as the HTTP request the client sends to a running dummy
-(`S2`), started with no services file unless a story says otherwise. `/mcp` is behind the same
+(`S2`), started, unless a story says otherwise, with a services file whose
+one entry is the telemetry service's, which takes every event (`S2`), so dummy
+has no description to give as instructions. `/mcp` is behind the same
 identity rule as every other route: the gate sets `X-User-Id` and
 `X-User-Email`, a sibling forwards them (`S2`), and a request without
 `X-User-Id` is answered 500 before anything else is looked at. The requests
@@ -71,8 +77,25 @@ A response body below is laid out for reading: its white space is not fixed.
 The order of members within a tool and within its schemas is fixed as shown;
 elsewhere the order of members is not. A response block shows the status line
 and the headers the story fixes; a header it does not show is not fixed.
-dummy writes nothing to stderr for any answer in this group except the
-missing-header 500.
+No answer in this group earns a line on stderr, the missing-header 500
+included (`S2`, `S3`).
+
+Every request to `/mcp` is recorded in dummy's trail as every request is,
+by its `request.started` and `request.finished` (`S3`). A `tools/call` that
+reaches one of the two tools and is answered with a `result`, a refusal
+included, also records `tool.called`, after anything the tool recorded and
+before the request's `request.finished`. Its attributes are `tool`, the
+tool's name; `kind`, `read` for `list_widgets` and `additive` for
+`create_widget`; `outcome`, which says how the call was answered: `ok` for a
+result with no `isError`, `invalid_arguments` when the arguments were refused
+as they were read against the input schema, and `error` when they passed
+that but broke dummy's rules for a widget; and `duration_us`, how long the
+tool took, in whole microseconds, 0 when the arguments were refused as they
+were read and the tool never ran. The arguments themselves, and the text of a
+refusal, are never recorded. A call answered with a protocol error, such as
+an unknown tool, reached no tool and records no `tool.called`; nor does any
+other method. A `create_widget` call that creates a widget records
+`widget.created` with the new widget's id, as the form does (`S5`).
 
 ## An MCP client lists dummy's tools
 
@@ -138,10 +161,12 @@ order:
 ```
 
 The output schemas are not quoted whole. `create_widget`'s describes one
-widget: an object closed to other members, with the properties `name`, a
-string; `count`, an integer; and `status`, a string whose `enum` is `active`,
-`paused`, `retired`; each with the same description as the input property of
-the same name. `list_widgets`'s describes an object closed to other members
+widget: an object closed to other members, with the properties, in this
+order, `id`, a string, with a description of its own that this story does not
+fix; `name`, a string; `count`, an integer; and `status`, a string whose
+`enum` is `active`, `paused`, `retired`; each of the last three with the same
+description as the input property of the same name. `list_widgets`'s
+describes an object closed to other members
 whose one property, `widgets`, is an array of such widgets. Which members
 each output schema marks required, and whether `widgets` carries a
 description, are not fixed here. The schemas carry no `$schema` member.
@@ -185,26 +210,40 @@ Status 200. The body is a JSON-RPC response with `id` 2 whose `result` has
 no `isError` member, a `structuredContent` of
 
 ```
-{"widgets":[{"name":"alpha","count":3,"status":"active"},{"name":"beta","count":0,"status":"paused"},{"name":"gamma","count":12,"status":"retired"}]}
+{"widgets":[{"id":"<alpha-id>","name":"alpha","count":3,"status":"active"},{"id":"<beta-id>","name":"beta","count":0,"status":"paused"},{"id":"<gamma-id>","name":"gamma","count":12,"status":"retired"}]}
 ```
 
 and a `content` array of one text block, `{"type":"text","text":<text>}`,
-whose text is exactly that line.
+whose text is exactly that line. `<alpha-id>`, `<beta-id>`, and `<gamma-id>`
+are the ids dummy gave the three widgets when the process started: three
+different values, each `wgt_` and 16 lowercase hexadecimal digits, the same in
+every listing until the process stops.
 
 Preconditions:
 
-- dummy is serving.
+- dummy is serving, and telemetry takes every event.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
 
 - Nothing has changed.
+- telemetry has received the request's three events, in this order, where
+  `<request-id>` is the request's id (`S2`):
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  {"time":"<time>","service":"dummy","event":"tool.called","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"list_widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  ```
+
+  No widget's id is in them: listing touches every widget and records none.
 
 ## A model creates a widget
 
 The ordinary case, and the one `create_widget` exists for. The answer is the
-widget as dummy stored it, so the model need not list the widgets to learn
-what it made.
+widget as dummy stored it, its id included, so the model need not list the
+widgets to learn what it made, and holds the id the trail names the widget
+by.
 
 Request:
 
@@ -231,24 +270,38 @@ Status 200. The body is a JSON-RPC response with `id` 3 whose `result` has
 no `isError` member, a `structuredContent` of
 
 ```
-{"name":"delta","count":7,"status":"active"}
+{"id":"<delta-id>","name":"delta","count":7,"status":"active"}
 ```
 
 and a `content` array of one text block whose text is exactly that line.
+`<delta-id>` is the id dummy gave the new widget, `wgt_` and 16 lowercase
+hexadecimal digits, different from every other widget's.
 
 Preconditions:
 
-- dummy is serving.
+- dummy is serving, and telemetry takes every event.
 - The widgets are the fixture set as the process started it, so no widget is
   named `delta`.
 
 Postconditions:
 
-- A widget named `delta`, count 7, status `active`, now exists.
+- A widget named `delta`, count 7, status `active`, with the id
+  `<delta-id>`, now exists.
 - The set holds four widgets, `delta` last, after `gamma`. The panel's table
   and the table fragment show it as their last row from the next request on
   (`S3`, `S4`), and a fragment poll that carries the `ETag` from before the
   call is answered with the new table, not `304`.
+- telemetry has received the request's four events, in this order, where
+  `<request-id>` is the request's id (`S2`):
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  {"time":"<time>","service":"dummy","event":"widget.created","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"widget":"<delta-id>"}}
+  {"time":"<time>","service":"dummy","event":"tool.called","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"additive","outcome":"ok","tool":"create_widget"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  ```
+
+  The name `delta`, its count, and its status are in none of them.
 
 ## A model lists the widgets after creating one
 
@@ -281,10 +334,12 @@ Status 200. The body is a JSON-RPC response with `id` 4 whose `result` has
 no `isError` member, a `structuredContent` of
 
 ```
-{"widgets":[{"name":"alpha","count":3,"status":"active"},{"name":"beta","count":0,"status":"paused"},{"name":"gamma","count":12,"status":"retired"},{"name":"delta","count":7,"status":"active"}]}
+{"widgets":[{"id":"<alpha-id>","name":"alpha","count":3,"status":"active"},{"id":"<beta-id>","name":"beta","count":0,"status":"paused"},{"id":"<gamma-id>","name":"gamma","count":12,"status":"retired"},{"id":"<delta-id>","name":"delta","count":7,"status":"active"}]}
 ```
 
 and a `content` array of one text block whose text is exactly that line.
+`<alpha-id>`, `<beta-id>`, and `<gamma-id>` are the ids of `A model lists the
+widgets`, and `<delta-id>` is the id `A model creates a widget` answered with.
 
 Preconditions:
 
@@ -364,10 +419,11 @@ Status 200. The body is a JSON-RPC response with `id` 5 whose `result` has
 no `isError` member, a `structuredContent` of
 
 ```
-{"name":"big delta","count":0,"status":"paused"}
+{"id":"<widget-id>","name":"big delta","count":0,"status":"paused"}
 ```
 
 and a `content` array of one text block whose text is exactly that line.
+`<widget-id>` is the id dummy gave the new widget.
 
 Preconditions:
 
@@ -429,13 +485,20 @@ name: a name is required
 
 Preconditions:
 
-- dummy is serving.
+- dummy is serving, and telemetry takes every event.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
 
 - No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
   `gamma`, in that order, with the counts and statuses they started with.
+- dummy recorded no `widget.created`. Between the request's `request.started`
+  and its `request.finished`, whose `status` is 200, telemetry has received
+  one event, where `<request-id>` is the request's id (`S2`):
+
+  ```
+  {"time":"<time>","service":"dummy","event":"tool.called","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"additive","outcome":"error","tool":"create_widget"}}
+  ```
 
 ## A model creates a widget with a name longer than 40 characters
 
@@ -840,12 +903,20 @@ status: missing required field
 
 Preconditions:
 
-- dummy is serving.
+- dummy is serving, and telemetry takes every event.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
 
 - No widget was created. The fixture set is unchanged.
+- dummy recorded no `widget.created`. Between the request's `request.started`
+  and its `request.finished`, whose `status` is 200, telemetry has received
+  one event, where `<request-id>` is the request's id (`S2`); the tool never
+  ran, so its `duration_us` is 0:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"tool.called","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":0,"kind":"additive","outcome":"invalid_arguments","tool":"create_widget"}}
+  ```
 
 ## A model sends a field the tool does not have
 
@@ -1020,13 +1091,16 @@ whose `error` has `code` `-32602` and `message` `Unknown tool: delete_widget`.
 
 Preconditions:
 
-- dummy is serving.
+- dummy is serving, and telemetry takes every event.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
 
 - Nothing has changed. `alpha` still exists.
 - dummy wrote nothing to stderr.
+- No tool ran, so dummy recorded no `tool.called`: telemetry has received
+  only the request's `request.started` and its `request.finished`, whose
+  `status` is 400.
 
 ## A request to /mcp arrives without the identity headers
 
@@ -1068,8 +1142,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No widget named `delta` exists.
-- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
-  as it does on every route (`S3`).
+- dummy wrote nothing to stderr about the 500. Its trail records the request
+  as it records every request (`S3`): a `request.started` with the `method`
+  `POST` and the `path` `/mcp`, and a `request.finished` with the `status`
+  500, both with an empty user, under the id dummy gave the request (`S2`).
+  No tool ran, so there is no `tool.called` and no `widget.created`.
 
 ## A browser opens /mcp
 
@@ -1113,12 +1190,14 @@ services file gives it, so they are written once, in dummy's manifest
 request that asks, as it does for the launcher (`S3`), so a rewrite of the
 file shows in the next answer without a restart. A developer stands in for
 the host by writing a services file and naming it when serving dummy. The
-file here, `/tmp/services.json`, lists dummy:
+file here, `/tmp/services.json`, lists dummy, and the telemetry service, at a
+socket where the developer's stand-in takes every event (`S2`):
 
 ```
 {
   "services": [
-    {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "description": "Demo widgets to list and create", "socket": "/run/ikigenba/dummy.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>"}
+    {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "description": "Demo widgets to list and create", "socket": "/run/ikigenba/dummy.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>"},
+    {"name": "telemetry", "url": "https://telemetry.sbx.ikigenba.dev/", "description": "The suite's event trail", "socket": "/tmp/telemetry.sock", "enabled": true, "mcp": true}
   ]
 }
 ```
@@ -1205,7 +1284,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy wrote nothing to stderr.
+- dummy wrote nothing to stderr about the missing instructions. With no
+  services file it has no telemetry to send to (`S2`), so stderr holds the
+  request's two events, `request.started` and `request.finished`, each as a
+  `dummy: undelivered event: <event>` line, and nothing else for this
+  request.
 
 ## A client speaking an earlier revision opens with initialize
 
@@ -1422,18 +1505,28 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no
 `isError` member and whose `structuredContent` is an object whose one member,
 `widgets`, is an array of every widget dummy holds, oldest first, each with
-its `name`, `count`, and `status`, with one text content block holding the
-same object encoded compactly, as in `A model lists the widgets`.
+its `id`, `name`, `count`, and `status`, with one text content block
+holding the same object encoded compactly, as in `A model lists the widgets`.
 
 Preconditions:
 
 - dummy `v<semver>` is deployed and active on the host, serving on
   `/run/ikigenba/dummy.sock`.
 - The host's services file lists dummy with `"mcp": true` and the socket
-  `/run/ikigenba/dummy.sock`.
+  `/run/ikigenba/dummy.sock`, and lists the telemetry service, which takes
+  every event.
 - The caller runs as the `ikigenba` user, which can reach the socket.
 
 Postconditions:
 
 - Nothing has changed.
 - dummy wrote nothing to stderr.
+- telemetry has received dummy's three events for the call under the id the
+  gateway forwarded and the user it forwarded, so a trace of that id shows
+  the gateway's forward and dummy's execution together:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  {"time":"<time>","service":"dummy","event":"tool.called","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"list_widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  ```

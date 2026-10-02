@@ -27,16 +27,54 @@ developer's laptop it is normally unset, and dummy's pages then carry no
 launcher and its MCP endpoint no instructions. dummy reads the variable once,
 when it starts, and never fails to start over it: unset, empty, or naming a
 file that is missing or unreadable, dummy starts and serves all the same, and
-says nothing about it. A healthy
-dummy prints nothing, so under systemd the journal holds only trouble. A
-diagnostic dummy writes about a request names that request by its
-`X-Request-Id`, as `dummy: request <id>: <reason>` on stderr, so a line in the
-journal can be matched to nginx's log of the same request; a request that
-carries no `X-Request-Id` is named `-`. An app writes one such line for each
-request it answers with a 5xx, any status from 500 through 599, and nothing
-for any other answer: a 4xx is the caller's to fix, not trouble. The actor in
-these stories is the host, whether that is systemd or a developer at a
-terminal standing in for it.
+says nothing about the file itself. The actor in these stories is the host,
+whether that is systemd or a developer at a terminal standing in for it.
+
+dummy keeps a trail: it records what it does as events it sends to the
+platform's telemetry service, where an operator, or an agent working for one,
+follows what happened from one thing they know — a request id, a user, a
+widget's id, or a time. dummy finds telemetry in the services file
+`IKIGENBA_SERVICES` names, as the entry named `telemetry`, and sends each
+event to that entry's socket; it looks the entry up afresh for every event,
+so a telemetry installed after dummy started is found without a restart.
+What telemetry does with an event is told in telemetry's own stories. The
+stories here show each event as the JSON object telemetry receives:
+
+```
+{"time":"<time>","service":"dummy","event":"<event>","request_id":"<request-id>","user":"<user>","attrs":{<attributes>}}
+```
+
+`<time>` is when dummy recorded the event, in UTC to the microsecond, as
+`2026-10-02T14:03:07.123456Z`; `service` is always `dummy`; `<request-id>`
+and `<user>` are the id of the request that caused the event and the
+caller's `X-User-Id`, each empty when there is none, as for an event no
+request caused; and `attrs` holds the event's attributes, flat. Attributes
+name what happened and the ids of what it touched, never data: no event
+carries a widget's name, count, or status, a request's query, a caller's
+email, or a tool's arguments. dummy sends its events one at a time, in the
+order it recorded them, and an answer never waits for its events to be sent.
+Telemetry takes an event by answering `204`. When it cannot be reached —
+the services file is unset, unreadable, or has no `telemetry` entry, or
+nothing answers on its socket — or it answers anything other than `204` or a
+`4xx`, dummy tries the event a few times over a fraction of a second. When it
+answers `4xx`, it has refused the event itself, and sending it again cannot
+help, so dummy does not retry it. Either way dummy then writes the event to
+stderr as one line, `dummy: undelivered event: <event>`, where `<event>` is
+the JSON telemetry would have received, and carries on serving, so nothing in
+the trail is lost without trace. A developer whose environment names no
+services file therefore sees every event on stderr. A developer
+stands in for telemetry with a services file whose `telemetry` entry names a
+socket that a listener of their own holds and that takes every event it is
+sent; a story that says telemetry takes every event means that, or, on a
+host, the telemetry service itself.
+
+stderr holds only trouble: a condition dummy cannot go on from — the start-up
+refusals and the requests lost to a drain cut short, below — and an event
+dummy could not deliver. A failure dummy handles is not trouble: a request
+answered 500, like a request answered any other way, is recorded by its
+`request.finished` event with the status (`S3`) and earns no line on stderr.
+So while telemetry takes every event, a running dummy writes nothing to stdout
+or stderr, and under systemd the journal holds only trouble.
 
 These are the terms every app of the platform serves on, and a new app copies
 them from here. The socket is the app's only way in. Every app runs as the one
@@ -50,7 +88,10 @@ calls it to have forwarded them. An app that calls a sibling while serving a
 request calls it directly at `http://unix:/run/ikigenba/<app>.sock:`, not
 through nginx, and copies `X-User-Id`, `X-User-Email`, and `X-Request-Id` from
 the request it is serving onto the call, so the sibling cannot tell the call
-from one nginx made. dummy has no sibling to call. Work no live request
+from one nginx made. dummy has no sibling to call. A request that reaches an
+app with no `X-Request-Id`, or an empty one, as a developer's request does, is
+given an id of the same shape by the app, a new one for each such request, so
+every event about a request names it. Work no live request
 started, such as a scheduled job, has no caller to forward and is not covered
 by these terms.
 
@@ -62,7 +103,10 @@ loopback port, and only the `ikigenba` user and nginx can connect to
 `/run/ikigenba/dummy.sock`. systemd owns the socket, so it exists, and
 accepts connections into its queue, before dummy starts and while it is
 stopped; dummy's part is to serve what arrives on it. `systemctl start`
-returns once dummy has reported that it is ready.
+returns once dummy has reported that it is ready. At that moment dummy
+records `service.started`, the first event of its trail, with the version it
+is running: a new version in a start event is how a deploy shows in the
+trail.
 
 Command:
 
@@ -84,6 +128,8 @@ Preconditions:
 - `ikigenba-dummy.socket` is active, so `/run/ikigenba/dummy.sock` exists and
   accepts connections.
 - `ikigenba-dummy.service` is not running.
+- The host's services file lists the telemetry service, which takes every
+  event.
 
 Postconditions:
 
@@ -91,6 +137,13 @@ Postconditions:
   `/run/ikigenba/dummy.sock`: a connection there, and every connection queued
   before dummy started, is answered by dummy.
 - dummy listens on no other socket and no port.
+- telemetry has received one event from dummy, with no request id and no
+  user, whose `version` is the version `dummy --version` prints (`S1`):
+
+  ```
+  {"time":"<time>","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+  ```
+
 - dummy has written nothing to the journal.
 - It keeps running until it is signalled.
 
@@ -103,7 +156,13 @@ It closes its own copy of the socket and nothing more: the socket belongs to
 systemd, which keeps it open, and dummy never removes
 `/run/ikigenba/dummy.sock`. It waits at most `DRAIN_SECONDS` for requests to
 finish, which on a host is always less than the time the service unit allows
-before systemd kills it.
+before systemd kills it. Once its requests have finished, and each has
+recorded its `request.finished` (`S3`), dummy records `service.stopping` with
+the reason it is stopping, the name of the signal it received, `SIGTERM` or
+`SIGINT`. That is the last event of its trail: dummy sends everything it
+recorded before exiting, within the same drain deadline. A `service.started`
+with no `service.stopping` before the next one is how the trail shows a
+dummy that died rather than stopped.
 
 Command:
 
@@ -123,10 +182,20 @@ Preconditions:
 - dummy is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
 - Every request dummy has accepted finishes within 5 seconds of the signal.
+- telemetry takes every event.
 
 Postconditions:
 
 - Every request accepted before the signal received its full response.
+- telemetry has received every event dummy recorded. The last is
+  `service.stopping`, after the `request.finished` of every request accepted
+  before the signal:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"service.stopping","request_id":"","user":"","attrs":{"reason":"SIGTERM"}}
+  ```
+
+  With `SIGINT` the `reason` is `SIGINT`.
 - `/run/ikigenba/dummy.sock` still exists, and connections made to it after
   dummy exited wait in the socket's queue for the next dummy to answer.
 
@@ -137,7 +206,11 @@ dummy waits for accepted requests only until its drain deadline,
 unit's stop timeout and is never killed mid-write by systemd. A request still running at
 the deadline is cut off: its connection is closed without the rest of its
 response. Losing a request is trouble, so dummy says how many it lost and
-exits non-zero.
+exits non-zero. The drain has used the whole deadline, so dummy has no time
+left to send `service.stopping`, or any other event not yet sent, to
+telemetry: each goes to stderr as an `undelivered event` line instead.
+telemetry never receives a `request.finished` for a request cut off: its
+`request.started` with no finish is how the trail shows it was cut off.
 
 Command:
 
@@ -148,12 +221,22 @@ $ kill -TERM <pid>
 Output:
 
 ```
+dummy: undelivered event: {"time":"<time>","service":"dummy","event":"service.stopping","request_id":"","user":"","attrs":{"reason":"SIGTERM"}}
 dummy: stopped with <n> requests unfinished
 ```
 
-dummy exits 1, 5 seconds after the signal. The line is on stderr; stdout is
+dummy exits 1, 5 seconds after the signal. The text is on stderr; stdout is
 empty. `<n>` is the number of requests still running at the deadline. When
-`<n>` is 1 the line reads `dummy: stopped with 1 request unfinished`.
+`<n>` is 1 the line reads `dummy: stopped with 1 request unfinished`. The
+`service.stopping` line above is always written. Any other event dummy had
+recorded and not yet delivered when the deadline came is written as an
+`undelivered event` line too; those lines are in the order the events were
+recorded, `service.stopping` last of them. The position of the
+`stopped with` line among them is not fixed. stderr may also hold, for a
+cut-off request, an `undelivered event` line carrying its
+`request.finished`, recorded after the deadline and before dummy exited;
+whether it does, and where that line falls, is not fixed. stderr holds no
+other line.
 
 Preconditions:
 
@@ -161,11 +244,16 @@ Preconditions:
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
 - `<n>` of the requests dummy has accepted are still running 5 seconds after
   the signal.
+- telemetry takes every event.
 
 Postconditions:
 
 - Every request that finished within 5 seconds of the signal received its
   full response; the `<n>` that did not were cut off.
+- Each of the `<n>` cut-off requests has its `request.started` recorded
+  (delivered to telemetry, written to stderr as undelivered, or both, when it
+  was being delivered as the deadline came). telemetry has received no
+  `request.finished` for any of them, and no `service.stopping`.
 - `/run/ikigenba/dummy.sock` still exists, and connections made to it after
   dummy exited wait in the socket's queue for the next dummy to answer.
 
@@ -198,12 +286,66 @@ Preconditions:
   `ikigenba-dummy.service`.
 - A client is sending requests to `/run/ikigenba/dummy.sock` throughout the
   restart.
+- The host's services file lists the telemetry service, which takes every
+  event.
 
 Postconditions:
 
 - Every request the client sent was answered, by the old dummy or the new
   one; none was refused and none was cut off.
 - A new dummy process is serving on `/run/ikigenba/dummy.sock`.
+- telemetry has received the old dummy's `service.stopping`, with `reason`
+  `SIGTERM`, and after it the new dummy's `service.started`, whose `version`
+  is the version the new binary's `dummy --version` prints. Every request the
+  old dummy answered is recorded before its `service.stopping`, and every
+  request the new one answered after its `service.started`.
+
+## The host starts dummy where telemetry cannot be reached
+
+The trail is not a reason to stop serving. When dummy cannot deliver its
+events — telemetry is not installed yet, is stopped, or the services file
+names no `telemetry` entry — dummy starts and serves exactly as it does
+otherwise, and its events go to the journal as `undelivered event` lines
+(above). No answer waits on telemetry, so a client sees no difference.
+dummy keeps looking for telemetry with every event, so once telemetry takes
+events again, dummy's next events go to it without a restart; an event
+already written to the journal is not sent again.
+
+Command:
+
+```
+$ sudo systemctl start ikigenba-dummy.service
+```
+
+Output:
+
+```
+```
+
+Exits 0. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `opsctl install` has installed dummy, and `ikigenba-dummy.socket` is
+  active, as in `The host starts dummy`.
+- `ikigenba-dummy.service` is not running.
+- The host's services file lists no `telemetry` entry, or nothing accepts
+  connections on the socket that entry names.
+
+Postconditions:
+
+- `ikigenba-dummy.service` is `active`, and dummy is serving on
+  `/run/ikigenba/dummy.sock`, as in `The host starts dummy`.
+- The journal holds one line from dummy, written after it reported that it
+  was ready:
+
+  ```
+  dummy: undelivered event: {"time":"<time>","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+  ```
+
+- Every event dummy records while telemetry cannot be reached is written to
+  the journal the same way, one line each, and every request is answered as
+  it would be with telemetry taking events.
 
 ## The host starts dummy without a socket
 
@@ -238,7 +380,8 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. dummy listened on nothing and told systemd nothing.
+- Nothing has changed. dummy listened on nothing, told systemd nothing, and
+  sent telemetry nothing.
 
 ## The host passes dummy more than one socket
 
@@ -270,8 +413,8 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. dummy served on neither socket and told systemd
-  nothing.
+- Nothing has changed. dummy served on neither socket, told systemd
+  nothing, and sent telemetry nothing.
 
 ## The host gives dummy a drain deadline that is not a number of seconds
 
@@ -304,4 +447,5 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. dummy served nothing and told systemd nothing.
+- Nothing has changed. dummy served nothing, told systemd nothing, and sent
+  telemetry nothing.
