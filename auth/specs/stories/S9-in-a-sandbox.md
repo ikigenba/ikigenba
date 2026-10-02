@@ -274,7 +274,8 @@ POSTs to auth's `/logout`. The `Origin` is dummy's own,
 `http://dummy.wip.localhost:7400`. In a sandbox an origin is on this space
 when it has the scheme and the port of `IKIGENBA_PUBLIC_URL` — `http` and
 `7400` — and its host is the space's host name, `wip.localhost`, or any name
-under it. One click signs the user out of the whole sandbox.
+under it, never one with an empty label or a trailing `.`. One click signs the
+user out of the whole sandbox.
 
 Request:
 

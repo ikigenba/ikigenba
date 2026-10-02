@@ -57,7 +57,10 @@ whatever `Host` the request names. Either way the space is still read from the
 request's `Host`. auth does not read `IKIGENBA_SANDBOX`, which a sandbox also
 sets. Only an unset variable is absent: one present in the environment with an
 empty value is not an origin, and like any other value that is not one it stops
-auth from starting.
+auth from starting. A value is an origin only as a browser writes one: its host
+is lowercase, with no empty label and no trailing `.`, and its port, if any, has
+no leading zero, is 1 to 65535, and is not the scheme's default (`80` for
+`http`, `443` for `https`).
 
 auth checks its environment first — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 `WORKSPACE_DOMAIN`, then `DRAIN_SECONDS`, then `IKIGENBA_PUBLIC_URL`, then
@@ -479,8 +482,12 @@ auth reads `IKIGENBA_PUBLIC_URL` before it serves, so a bad value is found at
 start rather than at the first request that needs auth's own origin. A value
 that is not an origin — `http://auth.wip.localhost:7400/` with its trailing
 `/`, a path, a query, a fragment, a user part, a scheme other than `http` or
-`https`, no host, or a port that is not digits — is the caller's mistake, so it
-is a usage error and auth serves nothing. A variable present with an empty
+`https`, no host, a host with an uppercase letter
+(`http://Auth.wip.localhost:7400`) or with an empty label or a trailing `.`
+(`http://auth.wip.localhost.:7400`), or a port that is not digits, has a
+leading zero, is `0` or above `65535`, or is the scheme's default
+(`http://auth.wip.localhost:80`) — is the caller's mistake, so it is a usage
+error and auth serves nothing. A variable present with an empty
 value is refused the same way, as `IKIGENBA_PUBLIC_URL is '', not an origin`;
 only an unset variable means auth's own origin is `https://auth.<space>`. The
 value is quoted back verbatim. auth checks it after `DRAIN_SECONDS` and before

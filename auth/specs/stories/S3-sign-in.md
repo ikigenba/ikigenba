@@ -33,7 +33,9 @@ cross-site defense and an `Origin` check is the second. For `/logout` that check
 is that the origin is on this space, so any app on the space can sign its user
 out: the accepted origins are exactly the hosts the session cookie reaches —
 the space's host and any host ending in `.` followed by it, a subdomain at
-any depth, auth's own among them — over one scheme and port. With
+any depth, auth's own among them — over one scheme and port. A host with an
+empty label or a trailing `.` is never one, whatever `Host` the request
+carries. With
 `IKIGENBA_PUBLIC_URL` unset, as on a host, that is `https` with no port:
 `https://<space>` and `https://<host>.<space>`, auth's own
 `https://auth.<space>` among them. With it set, as in a sandbox, it is the
