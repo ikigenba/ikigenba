@@ -413,6 +413,50 @@ Postconditions:
   request.finished status=400
   ```
 
+## A model calls a tool while telemetry cannot read its trail
+
+Every tool answers from the trail, so a tool that cannot read it has nothing true to say. It does not answer as if the trail were empty, which would tell the model nothing happened; it refuses, in the same words whichever of the four tools was called, and quotes nothing of the database's own error. The model can tell this from a refusal of its arguments and may try again later. telemetry keeps serving.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: catalog
+
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"catalog","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 6 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+
+```
+cannot read the trail
+```
+
+A `search`, `count` or `trace` call whose arguments the tool would otherwise answer is refused with the same text. A call the tool refuses whatever the trail holds — arguments refused as they are read against the input schema, a time that is not RFC 3339, a `limit` out of range, a cursor no search issued, a `by` it does not know — is refused as its own group says.
+
+Preconditions:
+
+- telemetry is serving on the socket it was passed.
+- telemetry's database cannot be read: `state/telemetry.db` has become unreadable since telemetry opened it, its storage failing reads, say.
+
+Postconditions:
+
+- Nothing has changed but the trail, which gained only telemetry's records of the call, its `tool.called` with `outcome=error` among them, under user `u_7f3a9c21` and request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59`. When the database cannot be written either, those records go to stderr as `undelivered event` lines instead (`S12`), and telemetry writes nothing else to stderr.
+- telemetry is still serving.
+
 ## The mcp gateway calls telemetry over its socket
 
 The platform's MCP gateway offers the tools of every service whose entry in the services file is marked for MCP, and telemetry's is. A model asks the gateway to `call` the service `telemetry` and the tool it wants, and the gateway calls telemetry directly on its socket, not through nginx, on behalf of the caller it is serving: it speaks `2026-07-28` and forwards that caller's `X-User-Id`, `X-User-Email`, and `X-Request-Id`, as any sibling does (`S02`). telemetry answers the gateway exactly as it answers a client through nginx; it cannot tell the two apart and does not try. Here a developer on the host, as the `ikigenba` user, stands in for the gateway; what the gateway does with the answer is the gateway's, told in its own stories.
