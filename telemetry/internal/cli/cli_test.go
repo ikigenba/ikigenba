@@ -1,0 +1,196 @@
+package cli_test
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
+)
+
+type writes struct{ calls [][]byte }
+
+func (w *writes) Write(b []byte) (int, error) {
+	w.calls = append(w.calls, bytes.Clone(b))
+	return len(b), nil
+}
+func (w *writes) text() string { return string(bytes.Join(w.calls, nil)) }
+
+type forbiddenReader struct{ t *testing.T }
+
+func (r forbiddenReader) Read([]byte) (int, error) {
+	r.t.Error("randomness consulted")
+	return 0, io.EOF
+}
+
+func refusedProcess(t *testing.T) (cli.Process, *bytes.Buffer, *writes) {
+	t.Helper()
+	stdout := new(bytes.Buffer)
+	stderr := new(writes)
+	p := cli.Process{Stdout: stdout, Stderr: stderr, Pid: 42, DBSource: filepath.Join(t.TempDir(), "absent", "trail.db"), Rand: forbiddenReader{t}, Now: func() time.Time { t.Error("clock consulted"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Error("sleep consulted") }, Inherit: func(uintptr) (net.Listener, error) {
+		t.Error("descriptor inherited")
+		return nil, errors.New("unexpected")
+	}, Unsetenv: func(string) error { t.Error("environment changed"); return nil }}
+	return p, stdout, stderr
+}
+func assertAbsent(t *testing.T, source string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Dir(source)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database parent exists or failed: %v", err)
+	}
+}
+
+// R-U3IP-MTPS R-U4QM-0LGH R-U5YI-ED76 R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-ONDD-GG0V
+func TestDeclarations(t *testing.T) {
+	version := &cli.Version
+	semanticVersion := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
+	if !semanticVersion.MatchString(*version) {
+		t.Fatalf("invalid version %q", *version)
+	}
+	// These examples exercise SemVer syntax; none declares the application's release.
+	for _, candidate := range []string{"v1.2.3-01", "v1.2.3-alpha.00", "v01.2.3", "v1.2.3-", "v1.2.3-alpha..1", "v1.2.3+", "v1.2.3+build..1", "v1.2.3-alpha_1"} {
+		if semanticVersion.MatchString(candidate) {
+			t.Fatalf("invalid SemVer accepted: %q", candidate)
+		}
+	}
+	for _, candidate := range []string{"v0.0.0", "v1.2.3-0", "v1.2.3-alpha.1", "v1.2.3-01a", "v1.2.3-999999999999999999999999999999999999999", "v1.2.3+01.build", "v1.2.3-alpha-1+metadata"} {
+		if !semanticVersion.MatchString(candidate) {
+			t.Fatalf("valid SemVer refused: %q", candidate)
+		}
+	}
+	const manifest = cli.Manifest
+	if manifest != "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n" {
+		t.Fatal("manifest")
+	}
+	const nginx = cli.NginxConf
+	if nginx != "location = /ingest { return 404; }\n" {
+		t.Fatal("nginx")
+	}
+	const usage = cli.Usage
+	if usage != "Usage: telemetry [command]\n\nServe the suite's trail of events: ingest at /ingest, MCP tools at /mcp, and\na landing page at /, on the socket systemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n" {
+		t.Fatal("usage")
+	}
+	const success, failed, usageExit = cli.ExitSuccess, cli.ExitServerFailed, cli.ExitUsage
+	if success != 0 || failed != 1 || usageExit != 2 {
+		t.Fatal("exit constants")
+	}
+}
+
+// R-OOL9-U7RK R-OPT6-7ZI9 R-OR12-LR8Y R-OS8Y-ZIZN R-OTGV-DAQC R-OUOR-R2H1 R-OVWO-4U7Q R-OYCG-WDP4 R-UC20-B7WN R-QJNQ-VLJR
+func TestCommands(t *testing.T) {
+	cases := []struct {
+		args                []string
+		product, diagnostic string
+		code                int
+	}{
+		{[]string{"--version"}, cli.Version + "\n", "", cli.ExitSuccess},
+		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
+		{[]string{"--help"}, cli.Usage, "", cli.ExitSuccess},
+	}
+	for _, args := range [][]string{{"bogus"}, {"--bad"}, {""}, {"--help", "--version"}, {"manifest", "tail", "more"}, {"--version", "-extra"}, {"bogus", "--help"}} {
+		arg := args[0]
+		if arg == "--help" || arg == "manifest" || arg == "--version" {
+			arg = args[1]
+		}
+		kind := "command"
+		if strings.HasPrefix(arg, "-") {
+			kind = "option"
+		}
+		cases = append(cases, struct {
+			args                []string
+			product, diagnostic string
+			code                int
+		}{args, "", "telemetry: unknown " + kind + " '" + arg + "'\n\nsee 'telemetry --help' for usage\n", cli.ExitUsage})
+	}
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
+			p, out, errout := refusedProcess(t)
+			p.Args = tc.args
+			p.LookupEnv = func(string) (string, bool) { t.Error("environment consulted"); return "", false }
+			code := cli.Run(context.Background(), p)
+			if code != tc.code || out.String() != tc.product || errout.text() != tc.diagnostic {
+				t.Fatalf("got %d %q %q", code, out.String(), errout.text())
+			}
+			if tc.diagnostic != "" && len(errout.calls) != 1 {
+				t.Fatal("fragmented diagnostic")
+			}
+			assertAbsent(t, p.DBSource)
+		})
+	}
+}
+
+// R-PAJG-Q342 R-PBRD-3UUR R-PCZ9-HMLG R-PE75-VEC5 R-PFF2-962U R-PGMY-MXTJ R-PJ2R-EHAX R-PKAN-S91M R-PLIK-60SB
+func TestRefusedEnvironment(t *testing.T) {
+	invalid := []string{"0", "-1", "+1", "2.5", "5s", "05", " 5", "5 ", "abc", "５", "1\n"}
+	for _, key := range []string{"DRAIN_SECONDS", "RETENTION_DAYS"} {
+		for _, value := range invalid {
+			t.Run(key+"/"+value, func(t *testing.T) {
+				p, out, errout := refusedProcess(t)
+				var looked []string
+				p.LookupEnv = func(k string) (string, bool) {
+					looked = append(looked, k)
+					if k == key {
+						return value, true
+					}
+					return "", false
+				}
+				code := cli.Run(context.Background(), p)
+				unit := "seconds"
+				expectedKeys := []string{"DRAIN_SECONDS"}
+				if key == "RETENTION_DAYS" {
+					unit = "days"
+					expectedKeys = append(expectedKeys, key)
+				}
+				want := "telemetry: " + key + " is '" + value + "', not a positive whole number of " + unit + "\n"
+				if code != cli.ExitUsage || out.Len() != 0 || errout.text() != want || len(errout.calls) != 1 || !reflect.DeepEqual(looked, expectedKeys) {
+					t.Fatalf("got %d %q keys %v", code, errout.text(), looked)
+				}
+				assertAbsent(t, p.DBSource)
+			})
+		}
+	}
+	for _, env := range []map[string]string{{}, {"LISTEN_PID": "41", "LISTEN_FDS": "1"}, {"LISTEN_PID": "042", "LISTEN_FDS": "1"}, {"LISTEN_PID": "42"}, {"LISTEN_PID": "42", "LISTEN_FDS": "0"}, {"LISTEN_PID": "42", "LISTEN_FDS": "-1"}, {"LISTEN_PID": "42", "LISTEN_FDS": "1x"}, {"LISTEN_PID": "42", "LISTEN_FDS": "2"}, {"LISTEN_PID": "42", "LISTEN_FDS": "0002"}, {"LISTEN_PID": "42", "LISTEN_FDS": "999999999999999999999999999999999"}} {
+		p, out, errout := refusedProcess(t)
+		p.LookupEnv = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+		want := "telemetry: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"
+		if env["LISTEN_PID"] == "42" && (env["LISTEN_FDS"] == "2" || env["LISTEN_FDS"] == "0002" || len(env["LISTEN_FDS"]) > 20) {
+			want = "telemetry: " + env["LISTEN_FDS"] + " sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in\n"
+		}
+		if cli.Run(context.Background(), p) != cli.ExitUsage || out.Len() != 0 || errout.text() != want || len(errout.calls) != 1 {
+			t.Fatalf("env %v: %q", env, errout.text())
+		}
+		assertAbsent(t, p.DBSource)
+	}
+}
+
+// R-PMQG-JSJ0 R-PNYC-XK9P R-PP69-BC0E R-U9M7-JOF9
+func TestInheritedFailure(t *testing.T) {
+	for _, fds := range []string{"1", "001"} {
+		p, out, errout := refusedProcess(t)
+		env := map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": fds, "LISTEN_FDNAMES": "trail"}
+		p.LookupEnv = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+		var unset []string
+		p.Unsetenv = func(k string) error { unset = append(unset, k); delete(env, k); return errors.New("ignored") }
+		calls := 0
+		p.Inherit = func(fd uintptr) (net.Listener, error) {
+			calls++
+			if fd != 3 {
+				t.Errorf("descriptor %d", fd)
+			}
+			return nil, errors.New("descriptor unavailable")
+		}
+		if cli.Run(context.Background(), p) != cli.ExitServerFailed || out.Len() != 0 || errout.text() != "telemetry: descriptor unavailable\n" || len(errout.calls) != 1 || calls != 1 || !reflect.DeepEqual(unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) || len(env) != 0 {
+			t.Fatalf("inherit failure %q %v", errout.text(), unset)
+		}
+		assertAbsent(t, p.DBSource)
+	}
+}

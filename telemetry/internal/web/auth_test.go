@@ -1,0 +1,204 @@
+package web_test
+
+import (
+	"bytes"
+	"errors"
+	"html/template"
+	"net"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"syscall"
+	"testing"
+
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	assets "github.com/ikigenba/ikigenba/telemetry"
+	"github.com/ikigenba/ikigenba/telemetry/internal/web"
+)
+
+func TestPageRenderingAndMethods(t *testing.T) {
+	// R-S2J8-39X0 R-S3R4-H1NP R-S4Z0-UTEE R-S66X-8L53 R-S7ET-MCVS R-RJ0T-YY1W
+	f := newFixture(t)
+	calls := 0
+	var user page.User
+	f.cfg.Banner = func(u page.User) page.Banner {
+		calls++
+		user = u
+		return page.Banner{Service: "chosen-service", Version: "chosen-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	}
+	h := web.Handler(freshServer(t, f, f.cfg))
+	templates := template.Must(page.Templates().ParseFS(assets.Assets(), "*.html"))
+	for _, tc := range []struct{ path, name string }{{"/", "landing"}, {"/about", "about"}} {
+		before := calls
+		get := request(h, "GET", tc.path+"?ignored=1", "u")
+		if calls != before+1 {
+			t.Fatal(calls)
+		}
+		banner := f.cfg.Banner(user)
+		calls--
+		var expected bytes.Buffer
+		var data any = struct{ Banner page.Banner }{banner}
+		if tc.name == "about" {
+			data = struct {
+				Banner      page.Banner
+				Description string
+			}{banner, web.Description}
+		}
+		if err := templates.ExecuteTemplate(&expected, tc.name, data); err != nil {
+			t.Fatal(err)
+		}
+		if get.Code != 200 || !reflect.DeepEqual(get.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"}) || get.Body.String() != expected.String() {
+			t.Fatal(get.Code, get.Header(), get.Body.String())
+		}
+		before = calls
+		head := request(h, "HEAD", tc.path+"?ignored=1", "u")
+		if calls != before+1 || head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 {
+			t.Fatal(head)
+		}
+		for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+			before = calls
+			out := request(h, method, tc.path, "u")
+			if out.Code != 405 || !reflect.DeepEqual(out.Header().Values("Allow"), []string{"GET, HEAD"}) || out.Body.Len() != 0 || calls != before {
+				t.Fatal(out, calls)
+			}
+		}
+		r := httptest.NewRequest("GET", "http://example"+tc.path, nil)
+		r.Header.Set("X-User-Id", "u")
+		empty := r.Clone(r.Context())
+		empty.Header.Set("X-User-Email", "")
+		a, b := httptest.NewRecorder(), httptest.NewRecorder()
+		h.ServeHTTP(a, r)
+		h.ServeHTTP(b, empty)
+		equalResponse(t, a, b)
+		if a.Code == 500 {
+			t.Fatal("email required")
+		}
+	}
+	for _, tc := range []struct{ method, path, user string }{{"GET", "/", ""}, {"GET", "/about", ""}, {"GET", "/missing", "u"}, {"GET", "/_appkit/theme.css", "u"}, {"GET", "/mcp", "u"}, {"GET", "/ingest", "u"}} {
+		before := calls
+		request(h, tc.method, tc.path, tc.user)
+		if calls != before {
+			t.Fatal("banner called", tc)
+		}
+	}
+}
+
+func freshServer(t *testing.T, f *fixture, cfg web.Config) web.Config {
+	t.Helper()
+	cfg.MCP = mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "test-version", Telemetry: f.w})
+	return cfg
+}
+func TestAuthOriginsReadPerRequest(t *testing.T) {
+	// R-RRK4-NC8R R-RSS1-13ZG R-RTZX-EVQ5 R-RV7T-SNGU R-RWFQ-6F7J
+	f := newFixture(t)
+	var got page.User
+	f.cfg.Banner = func(u page.User) page.Banner {
+		got = u
+		return page.Banner{Service: web.ServiceName, Version: "test-version"}
+	}
+	f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")
+	h := web.Handler(freshServer(t, f, f.cfg))
+	for _, tc := range []struct{ host, proto, origin string }{{"telemetry.sbx.ikigenba.dev:443", "https", "https://auth.sbx.ikigenba.dev"}, {"telemetry.sbx.ikigenba.dev", "", "https://auth.sbx.ikigenba.dev"}, {"telemetry.sbx.ikigenba.dev", "HTTPS", "https://auth.sbx.ikigenba.dev"}, {"sbx.ikigenba.dev", "", "https://auth.sbx.ikigenba.dev"}, {"telemetry.sbx.ikigenba.dev", "http", "http://auth.sbx.ikigenba.dev"}, {"telemetry.", "invalid", "https://auth.telemetry."}, {"telemetry.site:abc", "https", "https://auth.site:abc"}, {"telemetry.site:", "https", "https://auth.site"}} {
+		for _, path := range []string{"/", "/about"} {
+			r := httptest.NewRequest("GET", "http://example"+path, nil)
+			r.Host = tc.host
+			r.Header.Set("X-Forwarded-Proto", tc.proto)
+			r.Header.Set("X-User-Id", "u")
+			r.Header.Set("X-User-Email", "caller@example")
+			h.ServeHTTP(httptest.NewRecorder(), r)
+			want := page.User{Email: "caller@example", ProfileURL: tc.origin + "/", LogoutURL: tc.origin + "/logout"}
+			if got != want {
+				t.Fatal(got, want)
+			}
+		}
+	}
+	for _, origin := range []string{"http://auth.custom/path/", "https://another.example", ""} {
+		body := `{"services":[{"name":"auth","url":"` + origin + `","description":"auth","socket":"/unused","enabled":true,"mcp":false}]}`
+		if err := os.WriteFile(f.cfg.ServicesPath, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		request(h, "GET", "/", "u")
+		want := origin
+		if want == "" {
+			want = "https://auth.example"
+		}
+		if got.ProfileURL != want+"/" || got.LogoutURL != want+"/logout" || got.Email != "" {
+			t.Fatal(got)
+		}
+	}
+	for _, body := range []string{`not json`, `{}`, `{"services":[]}`} {
+		if err := os.WriteFile(f.cfg.ServicesPath, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		request(h, "GET", "/about", "u")
+		if got.ProfileURL != "https://auth.example/" {
+			t.Fatal(got)
+		}
+	}
+}
+func TestPagesDoNotConnectToServices(t *testing.T) {
+	// R-S8MQ-04MH
+	f := newFixture(t)
+	dir, err := os.MkdirTemp("", "telemetry-sock-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	path := filepath.Join(dir, "s")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := listener.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")
+	body := `{"services":[{"name":"auth","url":"https://auth.example","description":"auth","socket":"` + path + `","enabled":true,"mcp":false}]}`
+	if err := os.WriteFile(f.cfg.ServicesPath, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := web.Handler(freshServer(t, f, f.cfg))
+	for _, path := range []string{"/", "/about"} {
+		for _, method := range []string{"GET", "HEAD", "POST"} {
+			for _, user := range []string{"", "u"} {
+				request(h, method, path, user)
+			}
+		}
+	}
+	file, err := listener.File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := unixNonblockingNoPending(file); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func unixNonblockingNoPending(file *os.File) error {
+	fd := int(file.Fd())
+	if err := syscall.SetNonblock(fd, true); err != nil {
+		return err
+	}
+	accepted, _, err := syscall.Accept(fd)
+	if err == nil {
+		_ = syscall.Close(accepted)
+		return errors.New("page connected to service")
+	}
+	if !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, syscall.EWOULDBLOCK) {
+		return err
+	}
+	return nil
+}

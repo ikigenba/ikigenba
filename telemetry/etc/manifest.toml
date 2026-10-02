@@ -1,0 +1,12 @@
+app = "telemetry"
+description = "The suite's trail of events"
+default = false
+mcp = true
+secrets = []
+
+[env]
+RETENTION_DAYS = "15"
+
+[database]
+engine = "sqlite"
+path = "state/telemetry.db"
