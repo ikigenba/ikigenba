@@ -278,7 +278,7 @@ func TestWriterLifecycle(t *testing.T) {
 	}
 }
 
-// R-VXRY-6POB R-W9YY-0F39 R-DZYK-CK7E R-WII8-OTA4 R-E3M9-HVFH R-WEUJ-JI21 R-E4U5-VN66
+// R-VXRY-6POB R-W9YY-0F39 R-DZYK-CK7E R-WII8-OTA4 R-LOYL-PZYW R-WEUJ-JI21 R-E4U5-VN66
 func TestWriterBlockedShutdown(t *testing.T) {
 	entered := make(chan context.Context, 1)
 	release := make(chan struct{})
@@ -524,7 +524,7 @@ func TestWriterSingleWrite(t *testing.T) {
 	}
 }
 
-// R-E3M9-HVFH R-E4U5-VN66
+// R-LOYL-PZYW R-E4U5-VN66
 func TestWriterShutdownCancelsPause(t *testing.T) {
 	paused := make(chan context.Context, 1)
 	release := make(chan struct{})
@@ -741,7 +741,7 @@ func TestWriterMalformedShutdown(t *testing.T) {
 	}
 }
 
-// R-E3M9-HVFH
+// R-LOYL-PZYW
 func TestWriterRetryContexts(t *testing.T) {
 	emitCtx, cancelEmit := context.WithCancel(context.Background())
 	cancelEmit()
@@ -844,5 +844,132 @@ func TestWriterBoundedCallsAfterShutdown(t *testing.T) {
 				t.Fatal(got)
 			}
 		})
+	}
+}
+
+// R-LOYL-PZYW
+func TestWriterIdleShutdownWithDoneContext(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, cancelDeadline := context.WithDeadline(context.Background(), time.Unix(0, 0))
+	defer cancelDeadline()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+	}{{"canceled", canceled}, {"expired", expired}} {
+		t.Run(tc.name, func(t *testing.T) {
+			const repetitions = 20000
+			live := 0
+			for i := 0; i < repetitions; i++ {
+				cfg := writerConfig(writerSinkFunc(func(ctx context.Context, _ Event) error {
+					// Read Err first: later cancellation cannot hide a live context on entry.
+					entryErr := ctx.Err()
+					began := time.Now()
+					deadline, ok := ctx.Deadline()
+					if !ok || deadline.After(began.Add(AttemptTimeout)) {
+						t.Error("attempt has no bounded deadline", deadline)
+					}
+					if entryErr == nil {
+						live++
+					}
+					return nil
+				}), nil)
+				w := testWriter(t, cfg)
+				w.Shutdown(tc.ctx, "already done")
+				<-w.senderDone
+			}
+			if live != 0 {
+				t.Fatalf("%d idle stopping deliveries entered with a live context across %d shutdowns", live, repetitions)
+			}
+		})
+	}
+}
+
+// delayedShutdownContext holds the cancellation callback and Shutdown's wait
+// until the test lets the sender observe the canceled parent directly.
+type delayedShutdownContext struct {
+	context.Context
+	registered      chan struct{}
+	waiting         chan struct{}
+	releaseWait     chan struct{}
+	releaseCallback chan struct{}
+	callbackDone    chan struct{}
+	once            sync.Once
+}
+
+func (c *delayedShutdownContext) Value(any) any { return nil }
+
+func (c *delayedShutdownContext) Done() <-chan struct{} {
+	select {
+	case <-c.registered:
+		c.once.Do(func() { close(c.waiting) })
+		<-c.releaseWait
+	default:
+	}
+	return c.Context.Done()
+}
+
+func (c *delayedShutdownContext) AfterFunc(f func()) func() bool {
+	go func() {
+		defer close(c.callbackDone)
+		<-c.Context.Done()
+		<-c.releaseCallback
+		f()
+	}()
+	close(c.registered)
+	return func() bool { return false }
+}
+
+// R-LOYL-PZYW
+func TestWriterDeliverySeesShutdownBeforeCallback(t *testing.T) {
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondEntered := make(chan struct{})
+	var entryErr error
+	var doneOnEntry bool
+	cfg := writerConfig(writerSinkFunc(func(ctx context.Context, e Event) error {
+		switch e.Name {
+		case "first.done":
+			close(firstEntered)
+			<-releaseFirst
+		case "second.done":
+			entryErr = ctx.Err()
+			select {
+			case <-ctx.Done():
+				doneOnEntry = true
+			default:
+			}
+			close(secondEntered)
+		}
+		return nil
+	}), nil)
+	w := testWriter(t, cfg)
+	parent, cancel := context.WithCancel(context.Background())
+	ctx := &delayedShutdownContext{Context: parent, registered: make(chan struct{}), waiting: make(chan struct{}), releaseWait: make(chan struct{}), releaseCallback: make(chan struct{}), callbackDone: make(chan struct{})}
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseFirst)
+			close(ctx.releaseWait)
+			close(ctx.releaseCallback)
+		})
+	}
+	t.Cleanup(func() { cancel(); release() })
+	w.Emit(context.Background(), "first.done", nil)
+	<-firstEntered
+	w.Emit(context.Background(), "second.done", nil)
+	shutdownDone := make(chan struct{})
+	go func() { w.Shutdown(ctx, "done"); close(shutdownDone) }()
+	<-ctx.waiting
+	cancel()
+	close(releaseFirst)
+	<-secondEntered
+	// releaseFirst is already closed; release the two remaining gates once.
+	releaseOnce.Do(func() { close(ctx.releaseWait); close(ctx.releaseCallback) })
+	<-shutdownDone
+	<-ctx.callbackDone
+	<-w.senderDone
+	if entryErr == nil || !doneOnEntry {
+		t.Fatal("delivery entered before cancellation was visible", entryErr, doneOnEntry)
 	}
 }

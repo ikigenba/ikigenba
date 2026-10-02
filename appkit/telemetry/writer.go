@@ -58,6 +58,7 @@ type Writer struct {
 	changed                  chan struct{}
 	wake                     chan struct{}
 	ctx                      context.Context
+	shutdownCtx              context.Context
 	cancel                   context.CancelFunc
 }
 
@@ -218,14 +219,20 @@ func (w *Writer) Shutdown(ctx context.Context, reason string) {
 		return
 	}
 	w.stopping = true
+	w.shutdownCtx = ctx
 	e, valid := w.form(ctx, "service.stopping", Attrs{"reason": reason})
 	if valid {
 		w.enqueue(e)
 	} else {
 		w.writeEvent("malformed", e)
 	}
-	w.mu.Unlock()
 	stop := context.AfterFunc(ctx, w.cancel)
+	// AfterFunc runs asynchronously even when ctx is already done. Cancel
+	// synchronously before the sender can take the newly queued stop event.
+	if ctx.Err() != nil {
+		w.cancel()
+	}
+	w.mu.Unlock()
 	defer stop()
 	_ = w.Flush(ctx)
 	w.mu.Lock()
@@ -289,14 +296,43 @@ func (w *Writer) deliver(e Event) error {
 			return w.ctx.Err()
 		}
 		ctx, cancel := context.WithTimeout(w.ctx, AttemptTimeout)
-		err = w.cfg.Sink.Deliver(ctx, e)
+		err = w.cfg.Sink.Deliver(writerDeliveryContext{Context: ctx, writer: w}, e)
 		cancel()
 		if err == nil || errors.Is(err, ErrRejected) {
 			return err
 		}
 		if attempt+1 < Attempts && w.ctx.Err() == nil {
-			w.cfg.Sleep(w.ctx, RetryBackoff<<attempt)
+			w.cfg.Sleep(writerDeliveryContext{Context: w.ctx, writer: w}, RetryBackoff<<attempt)
 		}
 	}
 	return err
+}
+
+// Cancellation callbacks may run after a sink observes its context. Read the
+// shutdown context directly so cancellation is already visible on entry.
+type writerDeliveryContext struct {
+	context.Context
+	writer *Writer
+}
+
+func (c writerDeliveryContext) shutdownContext() context.Context {
+	c.writer.mu.Lock()
+	defer c.writer.mu.Unlock()
+	return c.writer.shutdownCtx
+}
+
+func (c writerDeliveryContext) Err() error {
+	if shutdown := c.shutdownContext(); shutdown != nil {
+		if shutdown.Err() != nil {
+			c.writer.cancel()
+		}
+	}
+	return c.Context.Err()
+}
+
+func (c writerDeliveryContext) Done() <-chan struct{} {
+	if shutdown := c.shutdownContext(); shutdown != nil && shutdown.Err() != nil {
+		c.writer.cancel()
+	}
+	return c.Context.Done()
 }
