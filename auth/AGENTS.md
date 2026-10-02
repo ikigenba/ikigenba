@@ -116,7 +116,7 @@ bug.
   reproducible.
 - **The banner source is the test's own.** `Process.Banner` and
   `server.Config.Banner` are a function the test writes, returning whatever
-  services the case needs (D01, D05); no test calls `appkit.New`, which reads
+  services the case needs (D01, D05); no test calls `page.New`, which reads
   `IKIGENBA_SERVICES` from the real environment. A test may call appkit's
   other exported functions, to render the banner it expects, for instance.
 - **No test runs the page's scripts.** The pages carry the Copy button's
