@@ -97,7 +97,7 @@ may also have no expiry, which never expires.
 - R-J5A1-Z776: `internal/store` MUST export `SessionIdle` as a constant of type `time.Duration` whose value is `15 * time.Minute`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-J6HY-CYXV: `internal/store` MUST export `SessionMax` as a constant of type `time.Duration` whose value is `18 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-J7PU-QQOK: `internal/store` MUST export `TokenLoginWindow` as a constant of type `time.Duration` whose value is `30 * 24 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
-- R-4HDS-MJJH: `internal/store` MUST export `var ErrNotFound error`, the sentinel every operation returns (wrapped or as-is, matchable with `errors.Is`) when the row it was asked for does not exist or is not the caller's.
+- R-2SV9-DI1W: `internal/store` MUST export `var ErrNotFound error`, the sentinel an operation returns (wrapped or as-is, matchable with `errors.Is`) wherever a requirement of this design states that the operation returns `ErrNotFound`.
 - R-4ILP-0BA6: `internal/store` MUST export `type Store`, `func Open(source string, rand io.Reader) (*Store, error)`, and `func (*Store) Close() error`.
 - R-SZ68-T63A: `internal/store` MUST export `func (*Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, bool, error)`, whose second result reports whether the call created the user.
 - R-4L1H-RURK: `internal/store` MUST export `func (*Store) CreateSession(userID string, now time.Time) (Session, error)`.
