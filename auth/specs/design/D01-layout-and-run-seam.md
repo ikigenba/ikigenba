@@ -14,12 +14,17 @@ encoding (D04).
 
 ## The one platform dependency
 
-auth depends on `github.com/ikigenba/ikigenba/appkit`, the platform's shared
-banner kit, beside its Google and SQLite libraries. appkit is a sibling
-sub-project, so auth reaches it only through its published package, whose exported surface is
-`StaticPrefix = "/_appkit/"`, `Static() http.Handler`, `Templates()
-*template.Template`, `New(service, version string) *Kit`, `(*Kit).Banner(User)
-Banner`, and the plain data types `User`, `Banner` and `Service`. appkit owns
+auth depends on `github.com/ikigenba/ikigenba/appkit/page`, the banner kit:
+the `page` package of appkit, the platform's shared library, beside auth's
+Google and SQLite libraries. appkit is a sibling sub-project, so auth reaches
+it only through its published packages, and of them it imports only `page`,
+whose exported surface is `StaticPrefix = "/_appkit/"`, `Static()
+http.Handler`, `Templates() *template.Template`, `New(service, version string)
+*Kit`, `(*Kit).Banner(User) Banner`, and the plain data types `User`,
+`Banner` and `Service`. appkit's other packages are not auth's: auth is the
+identity provider, so no identity gate stands in front of it (D08), and its
+own code never reads the services file, which `page` reads through appkit's
+`services` package. appkit owns
 the banner's markup, the launcher's markup and script, the page footer's
 markup, the stylesheet, the fonts and their licences; auth authors none of
 them and carries no copy.
@@ -28,17 +33,26 @@ The style files come from appkit, which serves them itself (D08). The pages
 auth draws are its own templates in `internal/server` (D05, D07), drawn around
 appkit's banner templates.
 
-`appkit.New` is the one place the kit touches the process: its documentation
+`page.New` is the one place the kit touches the process: its documentation
 says "New captures the host services path for the named app", and it reads
-`IKIGENBA_SERVICES` from the real environment when it is called and offers no
-form that takes the path from a caller. Each call to `(*Kit).Banner` then
-reads that file afresh and returns no services when the path is empty or the
-file is missing, unreadable or malformed; it never writes anything or returns
-an error. Reading the real environment is exactly what the run seam keeps out
-of everything below `main`, so `appkit.New("auth", version.Version)` is
-called in `main` and nowhere else, once, at start: that is the one read of
-`IKIGENBA_SERVICES` the serve story describes, and since `New` cannot fail,
-the variable can never stop auth starting. auth's own code never reads the
+`IKIGENBA_SERVICES` (`services.Variable`) from the real environment when it is
+called and offers no form that takes the path from a caller. Each call to
+`(*Kit).Banner` then reads that file afresh through appkit's `services.Read`,
+whose format is opsctl's published one: a JSON object whose `services` array
+holds one entry per service, each carrying `name`, `url`, `description` and
+`socket` (strings), `enabled` and `mcp` (booleans), and optionally `icon`. An
+entry missing one of those six members, holding one of the wrong type, or with
+an empty `name` is skipped, and the launcher shows only the entries that carry
+an icon. `Banner` returns no services when the path is
+empty or not already clean (`services.Read` refuses a path `filepath.Clean`
+would change), or the file is missing, unreadable or malformed; it never
+writes anything or returns an error. A test that writes a services file — the
+one exec'ing test — writes it in that format. Reading the real environment
+is exactly what the run seam keeps out of everything below `main`, so
+`page.New("auth", version.Version)` is called in `main` and nowhere else,
+once, at start: that is the one read of `IKIGENBA_SERVICES` the serve story
+describes, and since `New` cannot fail, the variable can never stop auth
+starting. auth's own code never reads the
 variable. The second argument is auth's release version, the value of
 `Version` in `internal/version`, the same value `--version` prints (D02);
 appkit hands it back unaltered in every `Banner` it returns, and its `footer`
@@ -48,7 +62,7 @@ reading the footer of the page it requests and comparing it with
 `version.Version`, which it imports; it never writes a version literal.
 
 What crosses the seam is not the kit but a function, the banner source,
-`func(appkit.User) appkit.Banner`. `main` passes the `Banner` method of the
+`func(page.User) page.Banner`. `main` passes the `Banner` method of the
 kit it made; a test passes a closure of its own that returns whatever banner
 data the case needs, a launcher's services included, without a services file
 and without touching the environment. `internal/cli` hands the source on,
@@ -90,7 +104,7 @@ buffers, a map, a pid of its choosing, a listener it made itself and a banner
 source of its own, and cancels the context itself; `Run`'s behaviour when it
 serves with a nil `Banner` is not contract, so a test that serves supplies
 one. Nothing below `main` reads `os.Args`, the real environment, the real pid
-or the real streams, changes the real environment, calls `appkit.New`, or
+or the real streams, changes the real environment, calls `page.New`, or
 installs a signal handler,
 so a test that drives `Run` sees the whole program's behaviour and nothing
 leaks past it. auth needs more injected than a plain app, because it reads the
@@ -118,7 +132,7 @@ waits for, so an in-process test and the host learn readiness the same way.
 There is no listen factory and no readiness callback in the seam: auth binds
 nothing, so there is no bind to fake, and the datagram is the readiness
 signal. auth opens no listening socket of its own, which is how "auth
-listens on no other socket" is kept: the seam's `Process` (R-SITN-PQPU)
+listens on no other socket" is kept: the seam's `Process` (R-4WVH-WX70)
 carries exactly one way to come by a listener, `Inherit`, and nothing that
 binds one, and `Run` takes every input and produces every output through that
 `Process` (R-SRCY-E4WP). No requirement asserts the absence of other sockets in a running
@@ -156,7 +170,7 @@ The version is a value: `internal/version` exports it as a `var` of shape
 - R-2B1J-WL7R: When the `auth` executable runs with no command, the three Google settings in its environment, and a listening socket passed as file descriptor 3 by the socket-activation protocol, it MUST open its database at `state/auth.db` relative to its working directory, MUST draw its pages' banner from the services file that `IKIGENBA_SERVICES` names in its environment at start, and on `SIGTERM` or `SIGINT` MUST stop, write nothing to stdout or stderr, and exit `0`.
 - R-1O20-M7FN: When the `auth` executable serves as R-2B1J-WL7R describes, every page it draws with the banner MUST end its `body` element's content, apart from trailing ASCII whitespace, with a `footer` element whose content reads `auth`, a single space, and the value of `Version` from `internal/version`.
 - R-3O47-G1QT: Package `internal/version` MUST own the release version value and export it as `Version`.
-- R-SITN-PQPU: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; DBSource string; Banner func(u appkit.User) appkit.Banner }`, with exactly those fields in that order, where `appkit` is the package `github.com/ikigenba/ikigenba/appkit`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, and `Banner` is the banner source from which every page auth draws with the banner is drawn.
+- R-4WVH-WX70: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; DBSource string; Banner func(u page.User) page.Banner }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, and `Banner` is the banner source from which every page auth draws with the banner is drawn.
 - R-LUR4-A3IV: `internal/cli` MUST export `func Run(ctx context.Context, p Process) int`.
 - R-2C9G-ACYG: `internal/version` MUST export `var Version string` whose value is a leading `v` followed by a semantic version.
 - R-3WNI-4FXO: `main` MUST terminate the process with the exact integer that `cli.Run` returns as the process exit status.

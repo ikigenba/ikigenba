@@ -160,8 +160,8 @@ combinator) that passes the text of that div's `code` child to
 secret div's mentions `secret` in any letter case, and no tag there holds a
 character reference that could spell it; the banner above it is appkit's
 markup, whose own classes are fixed by appkit's design, and whose launcher
-icons are written only by opsctl, which validates each (appkit's D2). So the
-selectors find the Copy button and the secret and nothing else.
+icons are written only by opsctl, which validates each (appkit's D02 and
+D05). So the selectors find the Copy button and the secret and nothing else.
 Pinning the text apart from whitespace is the only form a text test can
 decide; a looser rule admits an extra listener or a wrapper that never runs.
 The source is further held to whitespace, letters, a short list of

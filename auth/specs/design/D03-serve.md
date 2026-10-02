@@ -51,10 +51,12 @@ and sets no upper limit of its own. The environment opsctl gives auth also
 carries `IKIGENBA_SERVICES`, the path of the host's services file, normally
 `/var/lib/ikigenba/services.json`; on a host that has no services file it is
 unset. auth reads
-it once, at start, through `appkit.New` in `main` (`D01-layout-and-run-seam`
+it once, at start, through `page.New` in `main` (`D01-layout-and-run-seam`
 explains why that read happens there and cannot fail), and auth's own code
-never reads it: unset, empty, or naming a file that is missing or unreadable,
-auth starts, serves, and says nothing about it.
+never reads it; each banner reads the file through appkit's `services.Read`,
+in the format opsctl publishes. Unset, empty, not a clean path, or naming a
+file that is missing, unreadable or malformed, auth starts, serves its
+pages without a launcher, and says nothing about it.
 
 The socket is auth's only way in. Only nginx and the suite's own apps can
 reach it; keeping everything else out is the host's job, not auth's. The suite
@@ -191,8 +193,8 @@ could cut a response short inside the drain.
 ## Routing
 
 The server divides every request by its path before anything else. A path
-beginning with `/_appkit/`, appkit's `StaticPrefix`, is handed unchanged to
-the handler `appkit.Static()` returns, ahead of every route of auth's own:
+beginning with `/_appkit/`, `page.StaticPrefix`, is handed unchanged to
+the handler `page.Static()` returns, ahead of every route of auth's own:
 that handler compares the whole `URL.Path` itself, so nothing is stripped, and
 what it answers — the seven shared files, their 404s and 405s — is D08's. No
 identity is decided and the store is never called for such a request, so a
@@ -235,7 +237,7 @@ a `bytes.Buffer` that the race detector watches.
 
 ## REQUIREMENTS
 
-- R-SXGG-AZM6: The `internal/server` package MUST export `type Config struct { Store *store.Store; Google *google.Client; Now func() time.Time; Rand io.Reader; Stderr io.Writer; WorkspaceDomain string; Banner func(u appkit.User) appkit.Banner }`, with exactly those fields in that order, where `appkit` is the package `github.com/ikigenba/ikigenba/appkit`.
+- R-4Y3E-AOXP: The `internal/server` package MUST export `type Config struct { Store *store.Store; Google *google.Client; Now func() time.Time; Rand io.Reader; Stderr io.Writer; WorkspaceDomain string; Banner func(u page.User) page.Banner }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`.
 - R-KWD9-PBZI: The `internal/server` package MUST export `type Server` and `func New(cfg Config) *Server`.
 - R-MALT-945W: `Serve` MUST accept connections on `ln` and answer every request received on them over HTTP/1.1 with the response `h` produces for that request, and MUST NOT return while `ctx` is not done and serving has not failed.
 - R-MBTP-MVWL: When `ctx` is done, `Serve` MUST stop accepting connections and close `ln`, and MUST close every connection that carries no request.

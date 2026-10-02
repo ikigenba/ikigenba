@@ -108,7 +108,7 @@ and the **icon**; and the **apex name** a page shows.
 Every auth page is titled `auth`, links the stylesheet at `/_appkit/theme.css`
 and declares the phone-width viewport. The stylesheet, the fonts it loads, and
 the launcher's script are appkit's shared files, served by auth under
-`/_appkit/` through `appkit.Static()`; the asset-serving design (D08) owns
+`/_appkit/` through `page.Static()`; the asset-serving design (D08) owns
 that, and this design refers to the stylesheet only by its URL. appkit's
 `banner` template never links the stylesheet, so
 each page links it in its own head.
@@ -240,11 +240,11 @@ text, in the order S3 lists it, with one space between the pieces.
 
 A page for a signed-in user is drawn with the banner, which is no longer
 auth's markup: it is the platform's, the same for every app, shipped by appkit
-as the template named `banner` in the set `appkit.Templates()` returns. auth
+as the template named `banner` in the set `page.Templates()` returns. auth
 decides what goes into it and where it goes; appkit decides how it is drawn.
 The data comes from the `Banner` function in `server.Config` (D03): in the
 running binary the `Banner` method of the kit `main` made with
-`appkit.New("auth", version.Version)` (D01), which adds the service's name,
+`page.New("auth", version.Version)` (D01), which adds the service's name,
 auth's release version, and the launcher's services, read afresh from the
 host's services file on every call; in a test,
 a closure returning whatever the case needs. auth calls it once per page it
@@ -254,23 +254,24 @@ because auth is its own profile and its own sign-out, on its own origin. auth
 never calls it for anything else, so a sign-in card never has a banner or a
 launcher and never causes a read of the services file.
 
-appkit's design fixes what the banner then shows (its D3): the `ikigenba` mark
-naming the service, which is not a link; the profile icon, a link to the
-profile URL with no text, labelled `Profile` and titled with the email,
-escaped; a sign-out form POSTing to the sign-out target, whose button
+appkit's design fixes what the banner then shows (its D03-page-templates):
+the `ikigenba` mark naming the service, which is not a link; the profile icon,
+a link to the profile URL with no text, labelled `Profile` and titled with the
+email, escaped; a sign-out form POSTing to the sign-out target, whose button
 reads `Sign out` after its `logout` icon; and, exactly when the services are
-not empty, the launcher button labelled `Services`, the list of services with
-its `Find a service` field, one entry per service in order, the hidden no-match
-line, and a deferred `script` loading `/_appkit/launcher.js`. With no services
-none of those appear. appkit's `footer` template, given the same data, writes
-the page's footer: the service's name and the version, separated by one
-space. So auth states only that the page carries, at the top of its body,
+not empty, the launcher button labelled `Services` (it opens the banner row, as
+the mark's immediately preceding sibling), the list of services
+with its `Find a service` field, one entry per service in order, the hidden
+no-match line, and a deferred `script` loading `/_appkit/launcher.js`. With no
+services none of those appear. appkit's `footer` template, given the same
+data, writes the page's footer: the service's name and the version, separated
+by one space. So auth states only that the page carries, at the top of its body,
 exactly the text the `banner` template writes for the data the call returned
 — the **appkit banner** — and, at the end of its body, exactly the text the
 `footer` template writes for that same data — the **appkit footer** — and
 that everything between them is one `main`. A test builds the server with its
 own `Banner` closure, renders the expected banner and footer itself with
-`appkit.Templates()`, and compares; it finds the email a page was drawn for
+`page.Templates()`, and compares; it finds the email a page was drawn for
 from the page's own data (the store, or the `Account` card), never from the
 banner's markup. The profile,
 D07's token-created page, and D07's rejected-create page are drawn with the
@@ -354,12 +355,12 @@ host's `/` with the sign-in page, and what that page carries.
 - R-PZTJ-4W77: A page drawn as a sign-in card MUST hold exactly one `h1` start tag, inside its card, and that `h1` element's content MUST read `Sign in to <apex>`, where `<apex>` is the request's apex name.
 - R-Q11F-INXW: The card of a page drawn as a sign-in card MUST hold exactly one `a` start tag, and that start tag MUST carry `class` reading `button secondary large google`; that `a` element is the page's **card link**.
 - R-Q29B-WFOL: The card of a page drawn as a sign-in card MUST hold at most one `footer` start tag, and when it holds one, the card's content MUST end, apart from trailing ASCII whitespace, with that `footer` element's end tag; the card **holds a footer reading** `s` when it holds a `footer` element whose content reads `s`.
-- R-02QQ-MZL0: auth's design defines the **banner user** for a user as the `appkit.User` value, where `appkit` is the package `github.com/ikigenba/ikigenba/appkit`, whose `Email` is that user's email — the `Email` of the `store.Identity` (D04) the request's session resolves to — whose `ProfileURL` is `/`, and whose `LogoutURL` is `/logout`; every requirement of auth's design that names the banner user for a user MUST denote that.
-- R-03YN-0RBP: auth's design defines the **appkit banner** of a response as the text written by executing the template named `banner` in a set that `appkit.Templates()` returns, with its data the `appkit.Banner` value that the `Banner` field of the `server.Config` passed to `server.New` (D03) returned from the call the server made to it while answering that response's request; every requirement of auth's design that names the appkit banner MUST denote that.
-- R-1MU4-8FOY: auth's design defines the **appkit footer** of a response as the text written by executing the template named `footer` in a set that `appkit.Templates()` returns, with its data the same `appkit.Banner` value the response's appkit banner is written from; every requirement of auth's design that names the appkit footer MUST denote that.
+- R-4ZBA-OGOE: auth's design defines the **banner user** for a user as the `page.User` value, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`, whose `Email` is that user's email — the `Email` of the `store.Identity` (D04) the request's session resolves to — whose `ProfileURL` is `/`, and whose `LogoutURL` is `/logout`; every requirement of auth's design that names the banner user for a user MUST denote that.
+- R-50J7-28F3: auth's design defines the **appkit banner** of a response as the text written by executing the template named `banner` in a set that `page.Templates()` returns, with its data the `page.Banner` value that the `Banner` field of the `server.Config` passed to `server.New` (D03) returned from the call the server made to it while answering that response's request; every requirement of auth's design that names the appkit banner MUST denote that.
+- R-51R3-G05S: auth's design defines the **appkit footer** of a response as the text written by executing the template named `footer` in a set that `page.Templates()` returns, with its data the same `page.Banner` value the response's appkit banner is written from; every requirement of auth's design that names the appkit footer MUST denote that.
 - R-056J-EJ2E: auth's design defines the **written markup** of an auth page as the page's bytes with its appkit banner removed when the page holds its appkit banner beginning immediately after the `>` of the page's first `body` start tag (that one occurrence removed), and with its appkit footer removed when the page holds its appkit footer ending immediately before the `<` of the page's last `</body>` end tag (that one occurrence removed), and nothing else removed, and as the page itself when it holds neither; every requirement of auth's design that names the written markup of a page MUST denote that, so that those requirements govern the markup auth writes and not the markup appkit's `banner` and `footer` templates write.
 - R-06EF-SAT3: auth's design defines an auth page **drawn with the banner** for a user as a response body answering a request during which the server called the `Banner` field of its `server.Config` with the banner user for that user as the argument, whose bytes hold that call's appkit banner beginning immediately after the `>` of the page's first `body` start tag and that call's appkit footer ending immediately before the `<` of the page's last `</body>` end tag, and whose written markup's `body` element's content consists of exactly one `main` element, which holds everything else on the page; every page a requirement of auth's design states is drawn with the banner for a user MUST be so.
-- R-07MC-62JS: While answering a request whose response body a requirement of auth's design states is drawn with the banner for a user, the server MUST call the `Banner` field of its `server.Config` exactly once, with the banner user for that user as the argument; while answering any other request it MUST NOT call it, so that a sign-in card, a plain-text failure, a redirect, `/check`, and a request under `appkit.StaticPrefix` never cause a read of the services file.
+- R-52YZ-TRWH: While answering a request whose response body a requirement of auth's design states is drawn with the banner for a user, the server MUST call the `Banner` field of its `server.Config` exactly once, with the banner user for that user as the argument; while answering any other request it MUST NOT call it, so that a sign-in card, a plain-text failure, a redirect, `/check`, and a request under `page.StaticPrefix` never cause a read of the services file.
 - R-0USF-FPMZ: auth's design defines a **card titled** `T` as a `section` element whose content begins with a `header` element that holds an `h2` element whose content reads `T`, and a requirement that places a card titled `T` also states the `class` its `section` start tag carries or names the design that states it; every requirement of auth's design that names a card titled `T` MUST denote that.
 - R-4TZY-0Z0K: auth's design defines an **alert titled** `T` **reading** `X` as a `div` element whose content consists of a `strong` element whose content reads `T` followed by a `p` element whose content reads `X`, and a requirement that places an alert also states the attributes its `div` start tag carries; every requirement of auth's design that names an alert titled `T` reading `X` MUST denote that.
 - R-ED79-D60K: auth's design defines the **percent-encoding** of a value as the value's bytes (a text's UTF-8 encoding, or the byte sequence itself when it is not valid UTF-8) with every byte other than an ASCII letter, an ASCII digit, `-`, `.`, `_`, or `~` written as `%` followed by that byte's two uppercase hexadecimal digits; every requirement of auth's design that names the percent-encoding of a value MUST denote that.
