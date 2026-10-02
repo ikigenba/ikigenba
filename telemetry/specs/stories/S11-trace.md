@@ -1,8 +1,8 @@
 # Stories — trace
 
-`trace`, the tool that tells one request's story: every record in the trail that carries a request id, from every service the request touched, oldest first. Its one argument, `request_id`, is required: the id as a string, matched exactly as given, in whatever shape it has, the 32 lowercase hexadecimal digits nginx and the suite's services use (dummy's `S2`) or anything else a service recorded. The result is `{"records":[...]}`, each record exactly as it was ingested (`S06`), `{"time","service","event","request_id","user","attrs"}` in that order, ordered by `time` oldest first; records with the same `time` are in the order telemetry received them, so the sequence reads as the services lived it, auth's check before the gateway's forward before the backend's execution. The result has no page: a request's records are few, and all of them come. An id no retained record carries answers `{"records":[]}`, not an error, since an id the agent found in a log may be older than the retention window (`S07`) or belong to a request that reached no service. `request_id` left out is refused as every tool of the suite refuses a missing field, with `invalid arguments:` and `request_id: missing required field` (`S05`).
+`trace`, the tool that tells one request's story: every record in the trail that carries a request id, from every service the request touched, oldest first. Its one argument, `request_id`, is required: the id as a string, matched exactly as given, in whatever shape it has, the 32 lowercase hexadecimal digits nginx and the suite's services use (dummy's `S2`) or anything else a service recorded; the empty string answers every record that carries no request id. The result is `{"records":[...]}`, each record exactly as it was ingested (`S06`), `{"time","service","event","request_id","user","attrs"}` in that order, ordered by `time` oldest first; records with the same `time` are in the order telemetry received them, so the sequence reads as the services lived it, auth's check before the gateway's forward before the backend's execution. The result has no page: a request's records are few, and all of them come. An id no retained record carries answers `{"records":[]}`, not an error, since an id the agent found in a log may be older than the retention window (`S07`) or belong to a request that reached no service. `request_id` left out is refused as every tool of the suite refuses a missing field, with `invalid arguments:` and `request_id: missing required field` (`S05`).
 
-The actor, the request shape, the result envelope, the fixture, and the preconditions are those of `S08`: an agent reaches telemetry through the gateway's `call` with `service` `telemetry` and `tool` `trace`, under request id `e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c`, and the trail holds exactly the twenty-five fixture records `S08` lists. Every story is read-only and adds to the trail only telemetry's own records of the call (`S08`, `S12`), whose `tool.called` names `tool=trace`; telemetry writes nothing to stderr for any answer in this group.
+The actor, the request shape, the result envelope, the fixture, and the preconditions are those of `S08`: an agent reaches telemetry through the gateway's `call` with `service` `telemetry` and `tool` `trace`, under request id `e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c`, and the trail holds exactly the twenty-five fixture records `S08` lists. Every story is read-only and adds to the trail only telemetry's and the gateway's records of the call (`S08`, `S12`, mcp's `S08`), whose `tool.called` names `tool=trace`; telemetry writes nothing to stderr for any answer in this group.
 
 ## An agent traces a request across the services it touched
 
@@ -57,7 +57,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent traces a call it made to telemetry
 
@@ -109,7 +109,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`), under `f0e1d2c3b4a5968778695a4b3c2d1e0f`.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`), under `f0e1d2c3b4a5968778695a4b3c2d1e0f`.
 
 ## An agent traces a request whose records share a time
 
@@ -154,7 +154,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent traces a request id no record carries
 
@@ -196,7 +196,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent leaves out the request id
 
@@ -237,7 +237,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`), whose `tool.called` has `outcome=invalid_arguments` and `duration_us` 0, since the tool never ran.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`), whose `tool.called` has `outcome=invalid_arguments` and `duration_us` 0, since the tool never ran.
 
 ## An agent traces a request the sweep has removed
 
@@ -279,4 +279,4 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`). The fixture records were removed by the sweep, not by this call.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`). The fixture records were removed by the sweep, not by this call.

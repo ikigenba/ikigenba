@@ -2,9 +2,9 @@
 
 `search`, the tool that lists the records matching a filter, newest first, a page at a time. Its arguments are all optional. The filters: `since`, an RFC 3339 time, keeps records whose `time` is at or after it; `until`, an RFC 3339 time, keeps records whose `time` is before it; `services`, an array of service names, keeps records of any of them; `events`, an array of event names, keeps records of any of them; `user`, a string, keeps records whose `user` is exactly it; `request_id`, a string, keeps records whose `request_id` is exactly it; `attrs`, an object whose values are strings, numbers, or booleans, keeps records that carry every one of its keys with exactly that value, a number matching a number and a string a string. A filter left out is unbounded; the filters given are ANDed. The page: `limit`, a whole number from 1 to 500, 50 when left out, is the most records one answer holds; `cursor`, the value a previous answer gave, continues from where that answer stopped, with the same filters. A time is compared as an instant, so `since` written in another offset means the same thing as in UTC, and a `since` that is not before `until` matches nothing. Every record is answered exactly as it was ingested (`S06`): `{"time","service","event","request_id","user","attrs"}`, members in that order, `attrs` sorted by key. Records are newest first; records with the same `time` are in the reverse of the order telemetry received them, so a search reads the trail backwards exactly. Only retained records are found (`S07`).
 
-The result is `{"records":[...]}` and, when more records match than the page holds, a second member, `"cursor":"<cursor>"`, an opaque string; passing it back as `cursor`, with the same filters, answers the next page, and the last page has no `cursor` member. A page carries `limit` records, or fewer only on the last page. A refusal the tool makes is an `isError` result with one text block: `since is not an RFC 3339 time: '<value>'` and `until is not an RFC 3339 time: '<value>'` for a time the tool cannot read; `limit must be between 1 and 500, got <n>` for a limit outside the range; `cursor is not one search issued` for a cursor that no search answered. A filter that matches nothing is an empty page, `{"records":[]}`, never an error.
+The result is `{"records":[...]}` and, when more records match than the page holds, a second member, `"cursor":"<cursor>"`, an opaque string; passing it back as `cursor`, with the same filters, answers the next page, and the last page has no `cursor` member. A page carries `limit` records, or fewer only on the last page. A refusal the tool makes is an `isError` result with one text block: `since is not an RFC 3339 time: '<value>'` and `until is not an RFC 3339 time: '<value>'` for a time the tool cannot read; `limit must be between 1 and 500, got <n>` for a limit outside the range; `cursor is not one search issued` for a cursor that no search answered. An empty `cursor` is the same as leaving it out: the first page. A filter that matches nothing is an empty page, `{"records":[]}`, never an error.
 
-The actor, the request shape, the result envelope, the fixture, and the preconditions are those of `S08`: an agent reaches telemetry through the gateway's `call` with `service` `telemetry` and `tool` `search`, under request id `e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c`, and the trail holds exactly the twenty-five fixture records `S08` lists, which these stories name by their request ids: `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59`, the gateway call of 2026-10-02 14:03 (thirteen records, auth's three first, mcp's `request.finished` last); `9b2e4d6f8a1c3e5b7d9f0a2c4e6b8d1f`, the panel visit of 2026-10-02 13:41 (five); `c7d1e3f5a9b2c4d6e8f0a1b3c5d7e9f2`, the panel visit of 2026-09-30 (five); and the two `service.started` records of 2026-09-30, which carry no request id. Every story is read-only and adds to the trail only telemetry's own records of the call (`S08`, `S12`), whose `tool.called` names `tool=search`; telemetry writes nothing to stderr for any answer in this group.
+The actor, the request shape, the result envelope, the fixture, and the preconditions are those of `S08`: an agent reaches telemetry through the gateway's `call` with `service` `telemetry` and `tool` `search`, under request id `e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c`, and the trail holds exactly the twenty-five fixture records `S08` lists, which these stories name by their request ids: `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59`, the gateway call of 2026-10-02 14:03 (thirteen records, auth's three first, mcp's `request.finished` last); `9b2e4d6f8a1c3e5b7d9f0a2c4e6b8d1f`, the panel visit of 2026-10-02 13:41 (five); `c7d1e3f5a9b2c4d6e8f0a1b3c5d7e9f2`, the panel visit of 2026-09-30 (five); and the two `service.started` records of 2026-09-30, which carry no request id. Every story is read-only and adds to the trail only telemetry's and the gateway's records of the call (`S08`, `S12`, mcp's `S08`), whose `tool.called` names `tool=search`; telemetry writes nothing to stderr for any answer in this group.
 
 ## An agent searches by request id
 
@@ -51,7 +51,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent searches by user
 
@@ -87,7 +87,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent searches by services and events
 
@@ -132,7 +132,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent searches by an attribute's value
 
@@ -174,7 +174,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent searches a time range
 
@@ -210,7 +210,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent searches with no filter and gets the first page
 
@@ -246,7 +246,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent pages through a search to its end
 
@@ -310,7 +310,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the three calls (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the three calls (`S08`).
 
 ## An agent asks for a page outside the range
 
@@ -352,7 +352,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`), whose `tool.called` has `outcome=error`.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`), whose `tool.called` has `outcome=error`.
 
 ## An agent gives a time the tool cannot read
 
@@ -394,7 +394,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`), whose `tool.called` has `outcome=error`.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`), whose `tool.called` has `outcome=error`.
 
 ## An agent passes a cursor no search issued
 
@@ -434,7 +434,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`), whose `tool.called` has `outcome=error`.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`), whose `tool.called` has `outcome=error`.
 
 ## An agent gives a range that ends before it starts
 
@@ -476,7 +476,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent's filters match nothing
 
@@ -518,4 +518,4 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).

@@ -35,7 +35,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A browser fetches a font
 
@@ -66,7 +66,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A browser fetches the launcher's script
 
@@ -97,7 +97,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A reader reads a licence
 
@@ -128,7 +128,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A browser revalidates an asset that has not changed
 
@@ -190,7 +190,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A browser revalidates an asset whose copy is out of date
 
@@ -231,7 +231,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A client asks for an asset's headers
 
@@ -262,7 +262,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A caller asks for an asset that does not exist
 
@@ -326,7 +326,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A caller sends an asset a method it does not take
 
@@ -355,7 +355,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A request for an asset arrives without the identity headers
 
@@ -383,7 +383,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr. The trail holds two events for the request, with an empty user and a request id telemetry made up for it, as for every request that arrives without identity (`S03`):
 
   ```

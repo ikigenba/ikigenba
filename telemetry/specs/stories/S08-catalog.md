@@ -1,6 +1,6 @@
 # Stories — catalog
 
-`catalog`, the first of telemetry's four read tools (`S05`): what the trail holds, by name. It answers the services that have records in the trail, the events each of them has recorded, and for each event how many records it has, when its newest record is from, and which attribute keys its records carry. It is how an agent learns what it can filter on before it reaches for `search` (`S09`) or `count` (`S10`). Its arguments are `service`, optional, a service's name, and `event`, optional, an event's name; both are exact names, matched as given, and either narrows the answer to that name. Its result is `{"services":[...]}`: one entry per service, `{"service":"<name>","events":[...]}`, sorted by service name, each holding one entry per event, `{"event":"<name>","count":<n>,"last_seen":"<time>","attrs":["<key>",...]}`, sorted by event name. `count` is how many records of that service and event the trail holds; `last_seen` is the `time` of the newest of them, as stored; `attrs` is every attribute key that appears on any of them, each key once, sorted. Only retained records count: a record the sweep has removed (`S07`) is in no entry, and a service or event with no retained record has none. A filter that matches no record answers `{"services":[]}`, not an error.
+`catalog`, the first of telemetry's four read tools (`S05`): what the trail holds, by name. It answers the services that have records in the trail, the events each of them has recorded, and for each event how many records it has, when its newest record is from, and which attribute keys its records carry. It is how an agent learns what it can filter on before it reaches for `search` (`S09`) or `count` (`S10`). Its arguments are `service`, optional, a service's name, and `event`, optional, an event's name; both are exact names, matched as given, and either narrows the answer to that name; an empty name is the same as leaving the argument out. Its result is `{"services":[...]}`: one entry per service, `{"service":"<name>","events":[...]}`, sorted by service name, each holding one entry per event, `{"event":"<name>","count":<n>,"last_seen":"<time>","attrs":["<key>",...]}`, sorted by event name. `count` is how many records of that service and event the trail holds; `last_seen` is the `time` of the newest of them, as stored; `attrs` is every attribute key that appears on any of them, each key once, sorted. Only retained records count: a record the sweep has removed (`S07`) is in no entry, and a service or event with no retained record has none. A filter that matches no record answers `{"services":[]}`, not an error.
 
 The actor is an agent working through an MCP client, reaching telemetry the way agents do: through the MCP gateway's `call` (mcp's `S08`), with `service` `telemetry`, `tool` `catalog`, and the tool's own arguments as `args`. Each request is the HTTP request the client sends to a running mcp, on revision `2026-07-28`, with the headers and `_meta` that revision fixes and `Mcp-Name: call`, carrying the caller's `X-User-Id`, `X-User-Email`, and `X-Request-Id` by hand. The request id is `e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c`, an id of this call's own, not one the fixture holds. The gateway forwards those headers and the `tools/call` to telemetry on `/run/ikigenba/telemetry.sock` and relays telemetry's result verbatim, `isError` included, under its own `resultType` and `_meta`; a client that reaches telemetry's `/mcp` directly with the same `tools/call`, as a developer on the host can, gets the same `result` member for member, with telemetry's own `_meta` (`S05`). A successful result carries the answer twice: as `structuredContent`, a JSON object, and as one text content block whose text is that object encoded compactly, with no white space between its tokens. A refusal is status 200 with `isError` `true`, no `structuredContent`, and one text block saying why; arguments that do not fit the tool's input schema, an unknown field say, are refused as every tool of the suite refuses them, with `invalid arguments:` and one `<field>: <reason>` line per offence (`S05`). A response body below is laid out for reading: its white space is not fixed. The order of members within a result is fixed as shown; elsewhere the order of members is not. A response block shows the status line and the headers the story fixes; a header it does not show is not fixed.
 
@@ -34,7 +34,7 @@ The trail fixture is the same in this group and in `S09`, `S10`, and `S11`: twen
 {"time":"2026-10-02T14:03:07.118000Z","service":"mcp","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":8000,"status":200}}
 ```
 
-Every story's preconditions are the same unless it says otherwise: mcp is serving, with the suite's services file, whose `telemetry` entry is marked for MCP and names the socket `/run/ikigenba/telemetry.sock`; telemetry is serving on that socket with `RETENTION_DAYS` unset, and its trail holds exactly the fixture. It is `2026-10-02T15:00:00Z` when the agent's first call is made, and every call in this group and in `S09` to `S11` is made after that, so every record the fixture holds is before that instant and every record the calls add is at or after it. Every story is read-only: nothing in the trail changes but the records telemetry keeps of its own requests (`S12`), which are under the call's own request id and user: `request.started method=POST path=/mcp` and `request.finished status=200` for each of the gateway's two requests, and between the second pair `tool.called tool=catalog kind=read outcome=ok`, or `outcome=error` for a refusal the tool made, or `outcome=invalid_arguments` for arguments refused as they were read. The gateway adds its own records under the same id (mcp's `S08`). telemetry stores its own records off the request's path, shortly after each event, and a tool answers from what is in the store when it runs, so whether the records of the call in progress, and the gateway's records of the hop just before it, are already in the trail is not fixed (`S12`); a story whose answer could take them in bounds the call with `until` before `2026-10-02T15:00:00Z`, or says which of its entries are not fixed. telemetry writes nothing to stderr for any answer in this group.
+Every story's preconditions are the same unless it says otherwise: mcp is serving, with the suite's services file, whose `telemetry` entry is marked for MCP and names the socket `/run/ikigenba/telemetry.sock`; telemetry is serving on that socket with `RETENTION_DAYS` unset, and its trail holds exactly the fixture. It is `2026-10-02T15:00:00Z` when the agent's first call is made, and every call in this group and in `S09` to `S11` is made after that, so every record the fixture holds is before that instant and every record the calls add is at or after it. Every story is read-only: nothing in the trail changes but the records telemetry keeps of its own requests (`S12`) and the gateway's records of the call (mcp's `S08`); telemetry's own are under the call's own request id and user: `request.started method=POST path=/mcp` and `request.finished status=200` for each of the gateway's two requests, and between the second pair `tool.called tool=catalog kind=read outcome=ok`, or `outcome=error` for a refusal the tool made, or `outcome=invalid_arguments` for arguments refused as they were read. The gateway adds its own records under the same id (mcp's `S08`). telemetry stores its own records off the request's path, shortly after each event, and a tool answers from what is in the store when it runs, so whether the records of the call in progress, and the gateway's records of the hop just before it, are already in the trail is not fixed (`S12`); a story whose answer could take them in bounds the call with `until` before `2026-10-02T15:00:00Z`, or says which of its entries are not fixed. telemetry writes nothing to stderr for any answer in this group.
 
 ## An agent reads the whole catalog
 
@@ -95,7 +95,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (preamble).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (preamble).
 
 ## An agent reads the catalog of one service
 
@@ -142,7 +142,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (preamble).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (preamble).
 
 ## An agent reads the catalog of one event across services
 
@@ -188,7 +188,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (preamble).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (preamble).
 
 ## An agent reads the catalog of one event of one service
 
@@ -230,7 +230,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (preamble).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (preamble).
 
 ## An agent reads the catalog of a service that has no records
 
@@ -272,4 +272,4 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (preamble).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (preamble).

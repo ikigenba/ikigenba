@@ -99,5 +99,5 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed by this request. The record was removed by the sweep, not by the search: a `trace` of `8c4d1e2f3a5b4c6d9e0f1a2b3c4d5e6f` (`S11-trace.md`) answers `{"records":[]}` too, and `count` with that `request_id` answers `{"total":0}`.
+- Nothing has changed but the trail, which gained only telemetry's own records of the request (`S12`). The record was removed by the sweep, not by the search: a `trace` of `8c4d1e2f3a5b4c6d9e0f1a2b3c4d5e6f` (`S11-trace.md`) answers `{"records":[]}` too, and `count` with that `request_id` answers `{"total":0}`.
 - telemetry has written nothing to stdout or stderr since it started.

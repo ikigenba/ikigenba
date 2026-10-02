@@ -1,8 +1,8 @@
 # Stories — count
 
-`count`, the tool that says how many records match a filter, and how they split. It takes the filters of `search` (`S09`), with the same meaning: `since` inclusive and `until` exclusive, `services` and `events` any-of, `user` and `request_id` exact, `attrs` every pair equal; all optional, ANDed, unbounded when left out. It takes one more, `by`, optional: how to group what matched. `by` is a field, `service`, `event`, `user`, or `request_id`; a time bucket, `minute`, `hour`, or `day`; or an attribute, `attrs.<key>`. Without `by` the result is `{"total":<n>}`. With `by` it is `{"total":<n>,"groups":[{"key":<value>,"count":<n>},...]}`, where `total` is the same number as without `by`. For a field, every matching record is in exactly one group, the group's `key` is the field's value as stored, the empty string included, and the groups are ordered by `count` descending, then `key` ascending. For an attribute, a record that carries the key is in the group of its value, as stored, a string, number, or boolean, and a record without the key is in `total` but in no group; the groups are ordered the same way. For a time bucket, `key` is the bucket's start, RFC 3339 UTC without a fraction, `2026-10-02T14:00:00Z` say, a record is in the bucket its `time` falls in, a bucket with no record is left out, and the buckets are oldest first, so the agent reads them as a timeline. Only retained records are counted (`S07`). A `by` that is none of these is refused with `by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got '<value>'`; a time the tool cannot read with `since is not an RFC 3339 time: '<value>'` or the same for `until`, as `search` refuses them. A filter that matches nothing is `{"total":0}`, with `"groups":[]` when `by` was given.
+`count`, the tool that says how many records match a filter, and how they split. It takes the filters of `search` (`S09`), with the same meaning: `since` inclusive and `until` exclusive, `services` and `events` any-of, `user` and `request_id` exact, `attrs` every pair equal; all optional, ANDed, unbounded when left out. It takes one more, `by`, optional: how to group what matched. `by` is a field, `service`, `event`, `user`, or `request_id`; a time bucket, `minute`, `hour`, or `day`; or an attribute, `attrs.<key>`. Without `by` the result is `{"total":<n>}`. With `by` it is `{"total":<n>,"groups":[{"key":<text>,"count":<n>},...]}`, where a group's `key` is always a JSON string and `total` is the same number as without `by`. For a field, every matching record is in exactly one group, the group's `key` is the field's value as stored, the empty string included, and the groups are ordered by `count` descending, then `key` ascending. For an attribute, a record that carries the key is in the group of its value's text, a string as itself and a number or boolean as its JSON text, so a record with `"status":200` is in the group whose key is `"200"`, and a record without the key is in `total` but in no group; the groups are ordered the same way. For a time bucket, `key` is the bucket's start, RFC 3339 UTC without a fraction, `2026-10-02T14:00:00Z` say, a record is in the bucket its `time` falls in, a bucket with no record is left out, and the buckets are oldest first, so the agent reads them as a timeline. Only retained records are counted (`S07`). A `by` that is none of these is refused with `by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got '<value>'`; a time the tool cannot read with `since is not an RFC 3339 time: '<value>'` or the same for `until`, as `search` refuses them. A filter that matches nothing is `{"total":0}`, with `"groups":[]` when `by` was given.
 
-The actor, the request shape, the result envelope, the fixture, and the preconditions are those of `S08`: an agent reaches telemetry through the gateway's `call` with `service` `telemetry` and `tool` `count`, under request id `e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c`, and the trail holds exactly the twenty-five fixture records `S08` lists. Every story is read-only and adds to the trail only telemetry's own records of the call (`S08`, `S12`), whose `tool.called` names `tool=count`; telemetry writes nothing to stderr for any answer in this group.
+The actor, the request shape, the result envelope, the fixture, and the preconditions are those of `S08`: an agent reaches telemetry through the gateway's `call` with `service` `telemetry` and `tool` `count`, under request id `e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c`, and the trail holds exactly the twenty-five fixture records `S08` lists. Every story is read-only and adds to the trail only telemetry's and the gateway's records of the call (`S08`, `S12`, mcp's `S08`), whose `tool.called` names `tool=count`; telemetry writes nothing to stderr for any answer in this group.
 
 ## An agent counts the whole trail
 
@@ -44,7 +44,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent counts by service
 
@@ -86,7 +86,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent counts by event
 
@@ -128,7 +128,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent counts by user
 
@@ -170,7 +170,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent counts by request id
 
@@ -212,11 +212,11 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent counts by an attribute
 
-`attrs.outcome` is carried by `check.allowed` and `tool.called` only; the other twenty records are in `total` and in no group. An attribute whose values are numbers, `attrs.status`, has number keys.
+`attrs.outcome` is carried by `check.allowed` and `tool.called` only; the other twenty records are in `total` and in no group. An attribute whose values are numbers, `attrs.status`, has their JSON text as its keys, still strings.
 
 Request:
 
@@ -249,7 +249,7 @@ Status 200. The body is a JSON-RPC response with `id` 6 whose `result` has no `i
 and a `content` array of one text block whose text is exactly that line. With `"by":"attrs.status"` the `structuredContent` is
 
 ```
-{"total":25,"groups":[{"key":200,"count":9},{"key":500,"count":1}]}
+{"total":25,"groups":[{"key":"200","count":9},{"key":"500","count":1}]}
 ```
 
 the nine being the seven `request.finished` answered 200 and the two `sibling.called`. With `"by":"attrs.widget"`, a key no record carries, it is `{"total":25,"groups":[]}`.
@@ -260,7 +260,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent counts by hour
 
@@ -302,7 +302,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`).
 
 ## An agent counts by day and by minute
 
@@ -363,7 +363,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the two calls (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the two calls (`S08`).
 
 ## An agent narrows a count with filters
 
@@ -424,7 +424,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the two calls (`S08`).
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the two calls (`S08`).
 
 ## An agent groups by something the tool cannot group by
 
@@ -464,7 +464,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`), whose `tool.called` has `outcome=error`.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`), whose `tool.called` has `outcome=error`.
 
 ## An agent gives a time the tool cannot read
 
@@ -506,4 +506,4 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed but telemetry's own records of the call (`S08`), whose `tool.called` has `outcome=error`.
+- Nothing has changed but the trail, which gained only telemetry's and the gateway's records of the call (`S08`), whose `tool.called` has `outcome=error`.

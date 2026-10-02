@@ -48,7 +48,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML document titled `telemetry` that links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport. Its banner holds the mark, whose text is `ikigenba` and which names the service `telemetry`; the profile link, labelled `Profile` and titled `mg@example.com`, leading to `https://auth.sbx.ikigenba.dev/`; and the sign-out button reading `Sign out` in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`, since no entry in the file carries an icon. Beneath the banner is the page's top-level heading, `telemetry`, then the summary `The suite's trail of events. Every service on this host records what it does here: each request it serves, each call it makes to a sibling, each MCP tool it runs, and the events of its own domain.` Below that is the section headed `MCP tools`, reading `Agents search the trail with these tools, through the MCP gateway's call.`, in which `call` is code, and a list of exactly four tools, in this order, each named as code and followed by its description: `catalog`, `The services, the events each records, and the attribute keys each carries.`; `search`, `The records that match a filter, newest first.`; `count`, `How many records match a filter, grouped by a field or a time bucket.`; and `trace`, `Every record of one request, from every service it touched, oldest first.` After the section is the link `About telemetry`, leading to `/about`. Last on the page is the footer reading `telemetry v<semver>`, where `v<semver>` is what `telemetry --version` prints. The address `mg@example.com` is not in the page's visible text. The text `Telemetry` appears nowhere.
+Status 200. The body is an HTML document titled `telemetry` that links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport. Its banner holds the mark, whose text is `ikigenba` and which names the service `telemetry`; the profile link, labelled `Profile` and titled `mg@example.com`, leading to `https://auth.sbx.ikigenba.dev/`; and the sign-out button reading `Sign out` in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`, since no entry in the file carries an icon. Beneath the banner is the page's top-level heading, `telemetry`, then the summary `The suite's trail of events. Every service on this host records what it does here: each request it serves, each call it makes to a sibling, each MCP tool it runs, and the events of its own domain.` Below that is the section headed `MCP tools`, reading `Agents search the trail with these tools, through the MCP gateway's call.`, and a list of exactly four tools, in this order, each named and followed by its description: `catalog`, `The services, the events each records, and the attribute keys each carries.`; `search`, `The records that match a filter, newest first.`; `count`, `How many records match a filter, grouped by a field or a time bucket.`; and `trace`, `Every record of one request, from every service it touched, oldest first.` After the section is the link `About telemetry`, leading to `/about`. Last on the page is the footer reading `telemetry v<semver>`, where `v<semver>` is what `telemetry --version` prints. The address `mg@example.com` is not in the page's visible text. The text `Telemetry` appears nowhere.
 
 Preconditions:
 
@@ -57,7 +57,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. The services file is as it was, and no record of the trail was read.
+- Nothing has changed but the trail. The services file is as it was, and no record of the trail was read.
 - telemetry wrote nothing to stderr and set no cookie.
 - The trail holds two events for the request, both under user `u_7f3a9c21` and a request id telemetry made up for it, 32 lowercase hexadecimal characters, since the request carried no `X-Request-Id`:
 
@@ -96,7 +96,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A user opens the about screen
 
@@ -128,7 +128,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr and set no cookie.
 - The trail holds two events for the request, under user `u_7f3a9c21` and a request id telemetry made up for it:
 
@@ -169,7 +169,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. The services file is as it was.
+- Nothing has changed but the trail. The services file is as it was.
 
 ## A user on a host whose services file is missing sees no launcher
 
@@ -201,7 +201,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr about the services file. Its own events need no services file (`S02`), so the trail holds the request's two events as it holds every page's, `request.started` with `method=GET path=/` and `request.finished` with `status=200`, under user `u_7f3a9c21` and a request id telemetry made up for it.
 
 ## A user sees the launcher follow a change to the services file
@@ -234,7 +234,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 
 ## A user on a host whose services file names no auth still gets auth's links
 
@@ -289,7 +289,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry set no cookie.
 
 ## A request arrives without the identity headers
@@ -319,7 +319,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr. The 500 is a handled failure, so it is in the trail and not the journal: the trail holds two events for the request, with an empty user and a request id telemetry made up for it, 32 lowercase hexadecimal characters, because it carried no `X-Request-Id`:
 
   ```
@@ -355,7 +355,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr. The trail holds two events for the request, under request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and an empty user, so `trace` with that id finds them (`S11`):
 
   ```
@@ -412,7 +412,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr. The trail holds the request's two events, the second with `status=404`.
 
 ## A caller sends a page a method it does not take
@@ -450,5 +450,5 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr. The trail holds the request's two events, the second with `status=405`.

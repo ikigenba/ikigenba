@@ -95,7 +95,7 @@ Postconditions:
 
 ## The host starts telemetry with no services file
 
-A developer running telemetry at a terminal, or a host whose services file is not there, gives telemetry no list of services. It serves all the same, and unlike its siblings it loses nothing of its trail: its own events go into its own store, not to a socket the file would name, so nothing reaches stderr. What the file would have given — the launcher in its pages' banner (`S03`) and the description its MCP endpoint gives as instructions (`S05`) — is simply absent. A services file that exists but has no entry named `telemetry` is the same for the trail and the launcher, and only the instructions differ as `S05` tells. Siblings posting to `/ingest` are unaffected either way: they find telemetry through their own services file, not telemetry's.
+A developer running telemetry at a terminal, or a host whose services file is not there, gives telemetry no list of services. It serves all the same, and unlike its siblings it loses nothing of its trail: its own events go into its own store, not to a socket the file would name, so nothing reaches stderr. What the file would have given — the launcher in its pages' banner (`S03`) and the description its MCP endpoint gives as instructions (`S05`) — is simply absent. A services file that exists but has no entry named `telemetry` is the same for the trail; its launcher still lists the other entries that carry an icon (`S03`), and the instructions are absent as `S05` tells. Siblings posting to `/ingest` are unaffected either way: they find telemetry through their own services file, not telemetry's.
 
 Command:
 
@@ -114,7 +114,7 @@ Preconditions:
 
 - `bin/telemetry` exists and is on the `PATH` as `telemetry`.
 - `LISTEN_PID` is telemetry's process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `IKIGENBA_SERVICES` is unset, or names a file that does not exist, or names a services file that has no entry named `telemetry`.
+- `IKIGENBA_SERVICES` is unset, or names a file that does not exist, or names a services file that has no entry named `telemetry` and no entry that carries an icon.
 - `state/telemetry.db` exists, from an earlier start, or can be created as in `The host starts telemetry for the first time`.
 
 Postconditions:

@@ -112,7 +112,7 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `n
 ]
 ```
 
-Each input property also carries a `description` of its own, written for the model, which this story does not fix. Only `trace` marks an argument required. The output schemas are not quoted whole. `search`'s and `trace`'s each describe an object closed to other members whose `records` property is an array of records, each an object with the properties, in this order, `time`, a string; `service`, a string; `event`, a string; `request_id`, a string; `user`, a string; and `attrs`, an object; `search`'s also has `cursor`, a string. `count`'s describes an object with `total`, an integer, and `groups`, an array of objects with `key` and `count`, an integer. `catalog`'s describes an object whose one property, `services`, is an array of objects with `service`, a string, and `events`, an array of objects with `event`, a string, `count`, an integer, `last_seen`, a string, and `attrs`, an array of strings. Which members each output schema marks required, and which carry a description, are not fixed here. The schemas carry no `$schema` member.
+Each input property also carries a `description` of its own, written for the model, which this story does not fix. Only `trace` marks an argument required. The output schemas are not quoted whole. `search`'s and `trace`'s each describe an object closed to other members whose `records` property is an array of records, each an object with the properties, in this order, `time`, a string; `service`, a string; `event`, a string; `request_id`, a string; `user`, a string; and `attrs`, an object; `search`'s also has `cursor`, a string. `count`'s describes an object with `total`, an integer, and `groups`, an array of objects with `key`, a string, and `count`, an integer. `catalog`'s describes an object whose one property, `services`, is an array of objects with `service`, a string, and `events`, an array of objects with `event`, a string, `count`, an integer, `last_seen`, a string, and `attrs`, an array of strings. Which members each output schema marks required, and which carry a description, are not fixed here. The schemas carry no `$schema` member.
 
 Preconditions:
 
@@ -120,7 +120,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr. The trail holds the request's two events, under user `u_7f3a9c21` and a request id telemetry made up for it, and no `tool.called`, since no tool ran:
 
   ```
@@ -169,7 +169,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. The services file is as it was.
+- Nothing has changed but the trail. The services file is as it was.
 - telemetry wrote nothing to stderr.
 
 ## A client asks telemetry what it is for on a host with no services file
@@ -204,7 +204,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr about the missing instructions. The trail holds the request's two events, `request.started` with `method=POST path=/mcp` and `request.finished` with `status=200`, under user `u_7f3a9c21` and a request id telemetry made up for it, and nothing else for this request.
 
 ## A client speaking an earlier revision opens with initialize
@@ -249,7 +249,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr.
 
 ## A client speaking an earlier revision lists the tools
@@ -293,7 +293,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr.
 
 ## A browser opens /mcp
@@ -329,7 +329,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr.
 
 ## A request to /mcp arrives without the identity headers
@@ -364,7 +364,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No record of the trail was read.
+- Nothing has changed but the trail. No record of the trail was read.
 - telemetry wrote nothing to stderr about the 500. Its trail records the request as it records every request but an ingest (`S02`), with an empty user, under the id telemetry gave the request; no tool ran, so there is no `tool.called`:
 
   ```
@@ -405,7 +405,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. Every record of the trail is as it was.
+- Nothing has changed but the trail. Every record the trail held before is as it was.
 - telemetry wrote nothing to stderr. No tool ran, so the trail holds no `tool.called` for the request, only its two events, under user `u_7f3a9c21` and a request id telemetry made up for it:
 
   ```
@@ -451,7 +451,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed but the trail.
 - telemetry wrote nothing to stderr.
 - The trail holds telemetry's three events for the call, under the id and the user the developer sent as the gateway would forward them, and nothing else under that id, since no gateway made the call; a `trace` of `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` answers those three, in this order (`S11`, `S12`):
 

@@ -266,7 +266,7 @@ Status 500. The body is not fixed.
 Preconditions:
 
 - telemetry is serving on the socket it was passed.
-- telemetry's database cannot be written to: `state/telemetry.db` has been made read-only since telemetry opened it, or the filesystem holding it is full.
+- telemetry's database cannot be written to: the directory holding `state/telemetry.db` has been made unwritable since telemetry opened it, or the filesystem holding it is full.
 
 Postconditions:
 
