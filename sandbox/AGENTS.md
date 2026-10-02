@@ -32,8 +32,8 @@ against; it is human-authored and read-only to the run.
   `make install`, `make fmt`, `make live`); no gate runs through it
 
 The only third-party module the code may require is
-`github.com/BurntSushi/toml`, for reading app manifests and the secrets
-file; the D05 tests need it, since their expected diagnostics come from its
+`github.com/BurntSushi/toml`, for reading app manifests; the D05 tests
+need it, since their expected diagnostics come from its
 `toml.ParseError`. Its addition is approved; the build run adds it to
 `go.mod` when the code first needs it.
 Everything else is the standard library. Once required, the module sits in
@@ -94,7 +94,7 @@ real systemd unit, an nginx, a `go build` of an app, or a `git` command
 against the developer's checkout. The working directory, the environment
 (`HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and the rest), the clock, the
 output streams and every process runner come in through that seam. A test
-that needs a checkout, a secrets file, a sandbox's data or the registry
+that needs a checkout, a sandbox's data or the registry
 builds them under its own temporary directory and points the seam there; it
 never reads or writes the developer's real `~/.config`, `~/.local/state`, or
 systemd user directory. A Unix socket a test binds lives in a short temporary
