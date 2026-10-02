@@ -162,7 +162,8 @@ reads and never writes. Go's `embed` reaches only files at or below the
 embedding package's directory, so neither `internal/panel` nor any other
 package under `internal/` can embed `assets/`; the root package, the directory
 holding `go.mod`, is the one that can. It exports one name, `Assets`, a file
-system holding exactly those four files and nothing else, and `internal/panel`
+system holding exactly those four files and nothing else, each embedded from
+the file of the same name in `assets/`, and `internal/panel`
 parses them from it into the set `page.Templates()` returns. Nothing else
 lives at the root.
 
@@ -326,7 +327,7 @@ handler answers is `D04-panel` and the designs it leads to.
 - R-K55Q-D8BM: When the `dummy` binary serves as R-K2PX-LOU8 describes and is stopped by `SIGTERM` or `SIGINT` with no request being handled, it MUST write nothing to its standard output or its standard error from its start to its exit, and the last event that sink receives MUST be a `service.stopping` event.
 - R-K7LJ-4RT0: When the `dummy` binary serves with `IKIGENBA_SERVICES` absent from its environment and is stopped by `SIGTERM` or `SIGINT` with no request being handled, it MUST write nothing to its standard output, and everything it writes to its standard error MUST be lines each consisting of `dummy: undelivered event: `, a JSON object, and a newline, of which the first holds the member `event` with the value `service.started` and the last holds the member `event` with the value `service.stopping`.
 - R-MRE2-JOZN: Two processes of the `dummy` binary, each serving and each answering a `CallTool` call for `list_widgets` as R-E051-E4GO describes before any widget is created, MUST report different `id` values for the widget named `alpha`.
-- R-DKAC-F3TN: The module's root package, imported from the path `github.com/ikigenba/ikigenba/dummy` with the package name `dummy`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `page.html`, `table.html`, `form.html` and `script.html` and no other entry, each embedded from the file of the same name in the module's `assets/` directory.
+- R-E5L5-F828: The module's root package, imported from the path `github.com/ikigenba/ikigenba/dummy` with the package name `dummy`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `page.html`, `table.html`, `form.html` and `script.html` and no other entry.
 - R-DNY1-KF1Q: Every call to `dummy.Assets` MUST return a file system holding the same four files with the same contents, whatever the process working directory is, a directory that holds no `assets/` directory included.
 - R-JWQT-BFRO: The `internal/cli` package MUST export `var Version string`.
 - R-KHH3-TJDH: `Version` MUST be the letter `v` followed by a valid Semantic Versioning version as defined at semver.org, prerelease and build metadata included when present.
