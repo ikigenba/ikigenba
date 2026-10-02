@@ -174,9 +174,9 @@ Preconditions:
 - The sandbox above is up, and auth's environment carries
   `IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400` and
   `IKIGENBA_CALLBACK_URL=http://localhost:7400`.
-- The Google OAuth client named by `GOOGLE_CLIENT_ID` lists
-  `http://localhost:7400/login/google/callback` among its authorized redirect
-  URIs.
+- The Google OAuth client named by `GOOGLE_CLIENT_ID` accepts
+  `http://localhost:7400/login/google/callback` as a redirect URI, as a
+  Desktop client does for every `http://localhost` port.
 - An in-flight login state exists named by `<state>`, carrying no return URL,
   and `<code>` is the code Google issued for it after the bounce in
   `Google sends a visitor in a sandbox back through the bare localhost address`.
