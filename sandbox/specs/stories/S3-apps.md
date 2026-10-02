@@ -416,6 +416,62 @@ Postconditions:
 
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
 
+## A developer brings up an app whose description is not one line
+
+The platform refuses a manifest whose `description` is not one line of text, and the sandbox refuses it too. A `description` is one line of text when it holds no control character (U+0000–U+001F, U+007F): no line break, not even a trailing one, and no tab. An empty `description`, or one of only spaces, is one line. This fault is reported whatever `mcp` is, so an MCP app whose `description` is a line break alone gets this refusal, not the one for an empty description.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'description' must be one line of text
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above with `description = "Demo widgets\nto list and create"` in place of its `description`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an MCP app that does not say what it offers
+
+The platform refuses an app whose manifest sets `mcp = true` but gives no `description` to say what it offers, and the sandbox refuses it too. A `description` that is missing, empty, or only whitespace is empty. An app that does not set `mcp`, or sets `mcp = false`, may leave its `description` out or empty, as auth does. When its manifest has another fault as well, such as a `port`, a key of the wrong type, or a `description` that is not one line, that other fault is the one reported.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'mcp' is true but 'description' is empty; an MCP service must say what it offers
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above without its `description` line; or with `description = ""` or `description = "   "` in its place.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
 ## A developer brings up an app whose manifest names another app
 
 An app's name is its directory's name, and its manifest must agree.
@@ -556,6 +612,174 @@ Postconditions:
 
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
 
+## A developer brings up an app whose setting holds a line break
+
+The platform refuses a setting whose value holds a NUL, a carriage return or a line feed, and the sandbox refuses those too, along with the characters systemd cannot read from an env file: a byte-order mark (U+FEFF) and a Unicode noncharacter. A line break anywhere in the value is refused, a trailing one included. The refusal names the `[env]` key, never its value.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'BANNER' holds a character an env file cannot hold
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus an `[env]` table setting `BANNER = "line one\nline two"`, or `BANNER = "line one\r"`, or `BANNER = "a\u0000b"`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose icon is not a regular file
+
+The platform publishes only an icon that is a regular file, and the sandbox holds the same line. Anything else at `share/icon.svg` is refused: a directory, a symbolic link (which is never followed, so a link to a good SVG and a link to nothing are both refused), a socket or a named pipe. An app with nothing at `share/icon.svg` has no icon and is not refused. An app's icon is checked last, after its manifest has passed, and in this order: that it is a regular file, that it can be read, that it is at most 64 KiB, that it is valid UTF-8, and that it is an SVG image. Only the first fault is reported.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: share/icon.svg is not a regular file
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/share/icon.svg` is a directory; or it is a symbolic link, either to `../../auth/share/logo.svg`, a regular file that exists and is a valid SVG image of at most 64 KiB, or to a path that does not exist.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose icon cannot be read
+
+An icon that is a regular file but cannot be read is refused with the operating system's reason.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: share/icon.svg: permission denied
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/share/icon.svg` is a regular file holding a valid SVG image of at most 64 KiB, with mode 000.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose icon is larger than 64 KiB
+
+Every app reads the services file, which carries every icon in it, so the platform holds each icon to 64 KiB (65,536 bytes), and the sandbox does too. An icon of exactly 65,536 bytes is accepted. Size is judged before content, so an icon that is both too large and not an SVG image gets this refusal.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: share/icon.svg is larger than 64 KiB
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/share/icon.svg` is a regular file of 65,537 bytes or more: an SVG image, or anything else.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose icon is not UTF-8
+
+The platform refuses to publish an icon whose bytes are not valid UTF-8, and the sandbox refuses it too: the icon goes into the services file verbatim as a JSON string. A leading UTF-8 byte-order mark is valid UTF-8.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: share/icon.svg is not valid UTF-8
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/share/icon.svg` is an SVG saved in Latin-1, at most 64 KiB: its `<title>` holds `Café`, the `é` the single byte 0xE9.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose icon is not an SVG image
+
+The platform refuses an icon that is not an SVG image, and the sandbox refuses it too. An icon is an SVG image when, after one leading UTF-8 byte-order mark is set aside, it is one well-formed XML document, read strictly: its one top-level element is named `svg`, in any namespace or none; no element carries the same attribute twice; and outside that element there is nothing but whitespace, comments, processing instructions (an XML declaration among them) and directives such as a `DOCTYPE`. So an empty file, plain text, an XML declaration naming an encoding other than UTF-8, an unclosed tag, an undefined entity, a duplicate attribute, a root element other than `svg`, a second top-level element, and text after the root element are each refused this way, while an SVG image that begins with a byte-order mark is accepted.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: share/icon.svg is not an SVG image
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/share/icon.svg` is a regular file of at most 64 KiB, valid UTF-8, that is not an SVG image: the plain text `widget icon`, say, or `<svg xmlns="http://www.w3.org/2000/svg"><circle r="1" r="2"/></svg>`, whose `circle` carries `r` twice.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
 ## A developer brings up two apps whose manifests are both faulty
 
 Manifests are checked in app-name order, and `up` stops at the first fault: only that one is reported. Once it is fixed, the next `up` reports the next.
@@ -648,6 +872,36 @@ Postconditions:
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
 - The secrets file was not changed.
 
+## A developer brings up the sandbox with a secret that holds a line break
+
+A secret pasted with its line ending is easy to miss. The platform refuses a secret whose value holds a NUL, a carriage return or a line feed, and the sandbox refuses those too, along with a byte-order mark (U+FEFF) and a Unicode noncharacter, which systemd cannot read from an env file. A line break anywhere in the value is refused, a trailing one included. The refusal names the app and the secret, never the value. It is made only for a secret some app's manifest lists; a key the manifests do not list is ignored whatever it holds.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: /home/me/.config/ikigenba/sandbox/secrets.toml: 'auth.GOOGLE_CLIENT_SECRET' holds a character an env file cannot hold
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- The secrets file's `[auth]` table sets `GOOGLE_CLIENT_ID` as above and `GOOGLE_CLIENT_SECRET = "GOCSPX-example\n"`, or `GOOGLE_CLIENT_SECRET = "GOCSPX-example\r\n"`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+- The secrets file was not changed.
+- Nothing `sandbox` printed holds `GOCSPX-example`.
+
 ## A developer brings up apps that declare no secrets
 
 When no app's manifest lists a secret, `up` does not read the secrets file at all, so it does not matter whether the file exists or whether it parses.
@@ -661,6 +915,7 @@ $ sandbox up
 Output:
 
 ```
+auth   http://auth.wip.localhost:7400
 dummy  http://dummy.wip.localhost:7400
 ```
 
@@ -669,11 +924,11 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- The checkout holds `dummy` alone, with the manifest above (`secrets = []`), and `dummy/cmd/dummy/` builds.
+- The checkout holds `auth` and `dummy`: auth's manifest is the one above with `secrets = []` in place of its `secrets` line, dummy's is the one above (`secrets = []`), and both `auth/cmd/auth/` and `dummy/cmd/dummy/` build.
 - `/home/me/.config/ikigenba/sandbox/secrets.toml` does not exist; or it is not valid TOML, its first line reading `[auth`.
 - The other preconditions of a first `up` hold.
 
 Postconditions:
 
-- `wip` is up with `dummy` alone.
+- `wip` is up with `auth` and `dummy`.
 - The secrets file was not read, created or changed.

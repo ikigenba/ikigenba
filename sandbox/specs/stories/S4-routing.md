@@ -1,6 +1,6 @@
 # Stories — routing
 
-Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, and neither is the default app. When `auth` is present, every request for another app is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body; what `/check` answers decides the request. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app sees no user at all.
+Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth` standing between every other app and the outside; `up` refuses a checkout without it. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, and neither is the default app. Every request for an app other than `auth` is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body; what `/check` answers decides the request. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included.
 
 ## A browser reaches an app at its own name
 
@@ -9,7 +9,7 @@ Each app answers at `http://<app>.wip.localhost:7400`, and nginx passes the requ
 Request:
 
 ```
-$ curl -si -H 'Cookie: session=<session>' 'http://dummy.wip.localhost:7400/widgets?page=2'
+$ curl -si -H 'Cookie: ikigenba_session=<session>' 'http://dummy.wip.localhost:7400/widgets?page=2'
 ```
 
 Response:
@@ -38,7 +38,7 @@ The app whose manifest sets `default = true` answers at `http://wip.localhost:74
 Request:
 
 ```
-$ curl -si -H 'Cookie: session=<session>' http://wip.localhost:7400/widgets
+$ curl -si -H 'Cookie: ikigenba_session=<session>' http://wip.localhost:7400/widgets
 ```
 
 Response:
@@ -121,7 +121,7 @@ Google accepts a sign-in redirect to `http://localhost:<port>/...` but never to 
 Request:
 
 ```
-$ curl -si 'http://localhost:7400/callback?code=4/0Ab&state=xyz'
+$ curl -si 'http://localhost:7400/login/google/callback?code=4/0Ab&state=xyz'
 ```
 
 ```
@@ -132,7 +132,7 @@ Response:
 
 ```
 HTTP/1.1 302 Moved Temporarily
-Location: http://auth.wip.localhost:7400/callback?code=4/0Ab&state=xyz
+Location: http://auth.wip.localhost:7400/login/google/callback?code=4/0Ab&state=xyz
 ```
 
 Status 302. For the second form `Location` is `http://auth.wip.localhost:7400/`. The body is not fixed.
@@ -180,7 +180,7 @@ auth's `/check` answers 200 for the browser's session and says who the user is i
 Request:
 
 ```
-$ curl -si -H 'Cookie: session=<session>' http://dummy.wip.localhost:7400/widgets
+$ curl -si -H 'Cookie: ikigenba_session=<session>' http://dummy.wip.localhost:7400/widgets
 ```
 
 Response:
@@ -205,12 +205,12 @@ Postconditions:
 
 ## An agent reaches an app with a bearer token
 
-A program that cannot sign in through a browser sends the bearer token a human created at auth. auth's `/check` sees the `Authorization` header and decides the request exactly as it decides a session.
+A program that cannot sign in through a browser sends the bearer token a human created at auth. auth's `/check` sees the `Authorization` header and decides the request exactly as it decides a session. Here the program is an MCP client asking dummy's `/mcp` for its tools; `/mcp` answers only `POST`.
 
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:7400/mcp
+$ curl -si -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://dummy.wip.localhost:7400/mcp
 ```
 
 Response:
@@ -225,13 +225,13 @@ Preconditions:
 
 - `wip` is up with `auth` and `dummy`, and both services are active.
 - auth's `/check` answers 200 for `ikp_<token>`, with `X-User-Id: 7` and `X-User-Email: me@michaelgreenly.dev`.
-- dummy answers `GET /mcp` with 200.
+- dummy answers that `POST /mcp` with 200.
 
 Postconditions:
 
 - Nothing has changed.
 - auth's `/check` received the request's `Authorization` header and no body.
-- dummy received `GET /mcp` with `X-User-Id: 7` and `X-User-Email: me@michaelgreenly.dev`.
+- dummy received `POST /mcp` with the request's body, `X-User-Id: 7` and `X-User-Email: me@michaelgreenly.dev`.
 
 ## An MCP client reaches an app without a credential
 
@@ -304,7 +304,7 @@ An app trusts `X-User-Id` and `X-User-Email` because only auth's answer can set 
 Request:
 
 ```
-$ curl -si -H 'Cookie: session=<session>' -H 'X-User-Id: 1' -H 'X-User-Email: boss@michaelgreenly.dev' http://dummy.wip.localhost:7400/widgets
+$ curl -si -H 'Cookie: ikigenba_session=<session>' -H 'X-User-Id: 1' -H 'X-User-Email: boss@michaelgreenly.dev' http://dummy.wip.localhost:7400/widgets
 ```
 
 Response:
@@ -333,7 +333,7 @@ nginx gives every request it passes to an app an `X-Request-Id` of its own makin
 Request:
 
 ```
-$ curl -si -H 'Cookie: session=<session>' -H 'X-Request-Id: mine' http://dummy.wip.localhost:7400/widgets
+$ curl -si -H 'Cookie: ikigenba_session=<session>' -H 'X-Request-Id: mine' http://dummy.wip.localhost:7400/widgets
 ```
 
 Response:
@@ -392,7 +392,7 @@ Postconditions:
 Request:
 
 ```
-$ curl -si -H 'Cookie: session=<session>' http://auth.wip.localhost:7400/check
+$ curl -si -H 'Cookie: ikigenba_session=<session>' http://auth.wip.localhost:7400/check
 ```
 
 Response:
@@ -410,34 +410,6 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing reached auth's socket.
-
-## A browser reaches an app in a sandbox without auth
-
-A checkout with no app named `auth` has no authenticator: no request is put to a `/check`, and every request goes straight to its app. Identity headers a client sends are still dropped, so an app in such a sandbox sees no user at all.
-
-Request:
-
-```
-$ curl -si -H 'X-User-Id: 1' -H 'X-User-Email: boss@michaelgreenly.dev' http://dummy.wip.localhost:7400/widgets
-```
-
-Response:
-
-```
-HTTP/1.1 200 OK
-```
-
-Status 200. The body is dummy's own answer.
-
-Preconditions:
-
-- The checkout holds `dummy` and no `auth`, and `wip` is up from an `up` run with it so.
-- dummy answers `GET /widgets` with 200.
-
-Postconditions:
-
-- Nothing has changed.
-- dummy received `GET /widgets` with no `X-User-Id` and no `X-User-Email` header, and with an `X-Request-Id` nginx made.
 
 ## Another machine on the network tries to reach the sandbox
 
