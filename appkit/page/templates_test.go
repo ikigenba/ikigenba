@@ -381,6 +381,29 @@ func TestBannerLauncherButton(t *testing.T) {
 	}
 }
 
+func TestBannerLauncherImmediatelyPrecedesMark(t *testing.T) {
+	// R-P85C-FHTU
+	for _, test := range []struct {
+		name  string
+		count int
+	}{{"one service", 1}, {"multiple services", 2}} {
+		t.Run(test.name, func(t *testing.T) {
+			data := templateFixture()
+			data.Services = data.Services[:test.count]
+			root := templateRender(t, "banner", data)
+			button := templateHook(t, root, "button", map[string]string{"class": "launcher"}, "")
+			mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "")
+			for _, header := range templateFind(root, "header") {
+				index := slices.Index(header.children, mark)
+				if index > 0 && header.children[index-1] == button {
+					return
+				}
+			}
+			t.Fatal("launcher button must immediately precede the mark as direct children of the same header")
+		})
+	}
+}
+
 func TestBannerInvokesLauncherOnce(t *testing.T) {
 	// R-IL70-P4QV
 	data := templateFixture()
