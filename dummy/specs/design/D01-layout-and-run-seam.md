@@ -83,10 +83,12 @@ nil `Telemetry`; dummy's name is the constant `panel.ServiceName`, and its
 
 `main` builds:
 
+- the gate, `cli.NewGate(telemetry.NewSocketSink())`, and passes it as
+  `Process.Gate`;
 - the writer, `telemetry.New(telemetry.Config{Service: panel.ServiceName,
-  Version: cli.Version, Stderr: os.Stderr})`, with no `Sink`, so events go to
-  the telemetry service, and the real clock, pause and random source, and
-  passes it as `Process.Telemetry`;
+  Version: cli.Version, Sink: gate, Stderr: os.Stderr})`, over that gate, so
+  events go to the telemetry service through it, and the real clock, pause
+  and random source, and passes it as `Process.Telemetry`;
 - the kit, `page.New(panel.ServiceName, cli.Version)`, and passes its `Banner`
   method as `Process.Banner`;
 - the server, `mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName,
@@ -108,6 +110,38 @@ sink, with a clock, a pause and a random source it controls, a buffer as its
 sink the writer uses in the binary reads `IKIGENBA_SERVICES` from the real
 environment on every delivery; it is never used below `main` in a test,
 because a test always names a sink.
+
+The gate is dummy's own sink, standing between the writer and the sink
+behind it, because the writer is built before `Run` and `Run` has no other
+way to keep a late delivery from reaching telemetry. appkit's writer hands a
+delivery a done context only once the context passed to `Shutdown` is done,
+and when the drain runs out `Run` calls `Shutdown` with a context that is
+already done. appkit's own design forbids what follows, but the code of the
+release dummy requires does it: its writer can still hand the
+`service.stopping` it has just queued to its sink with a context that is not
+yet done, and a sink that answers at once delivers it. dummy therefore does
+not rely on that part of appkit's design until a release keeps it. The gate passes every
+`Deliver` straight to the sink behind it, its **next sink**, until the
+drain deadline: the moment `Run`'s context is done, `Run` tells the gate the
+deadline, and from that instant on (or from the moment `Run`'s stop function
+finds the drain's context already done, if that comes first, so that the
+gate's deadline is never later than the one `Serve` gives `stop` and the gate
+refuses before any `Shutdown` with a done context begins), whenever `Shutdown` is called and
+whether or not `Run` has returned, the gate refuses every `Deliver` with an
+error, calling nothing behind it, so the writer counts each such event
+undelivered and writes its line (`D03-serve`). A nil `Gate` takes away only
+the two guarantees `D03-serve` states of the gate, never makes `Run` panic,
+and changes nothing else `Run` does. Three `Run`-level tests wrap their own
+sink in `cli.NewGate`, build the writer over the gate, and hand both to
+`Run`: the overrun test, which observes both guarantees; a test that holds a
+request open, cancels the context and at once calls `Deliver` on the gate,
+finding it passed through to the sink, since the deadline is still a whole
+drain away, then completes the request, lets `Run` return well before the
+deadline, and finds that the sink behind the gate received
+`service.stopping`, which a gate keyed to `Shutdown` rather than to the
+deadline would have refused (R-HT8M-I3MS); and the test whose sink blocks until its context
+is done, which calls `Deliver` on the gate after `Run` has returned and finds
+it refused. Any other test may build the writer over its sink directly.
 
 `Instructions` is nil on purpose: appkit then gives each client, as the
 server's instructions, the `description` of dummy's own entry in the host's
@@ -133,8 +167,13 @@ unchanged and never calls either itself.
 
 That `main` hands appkit the right name and version and the right
 `Instructions` is wiring, proved by the one exec'ing test against the running
-binary: the page it serves carries the launcher when the services file lists
-services with icons and a footer naming `ServiceName` and `Version`; an
+binary: the page it serves opens with exactly the banner and ends with
+exactly the footer that appkit's templates draw for the data a kit made with
+`ServiceName` and `Version` over the same services file returns, which the
+test computes by making such a kit itself after setting `IKIGENBA_SERVICES`
+as dummy's `AGENTS.md` allows, so the comparison rests only on what appkit
+promises for `page.New`, `Kit.Banner` and the two templates, never on how
+appkit's markup is written; an
 `mcp.Client` call to `list_widgets` over the socket succeeds and names the
 same two values in its `serverInfo`; and a `server/discover` request answers
 with dummy's description from the services file, read when the request is
@@ -260,14 +299,16 @@ from the two environment-reading constructors: the arguments without the
 program name, an environment lookup, a way to remove a variable from the
 environment, the process's own id, the two output streams, a way to turn an
 inherited file descriptor into a listener, the banner source, the MCP
-server, the telemetry writer, and the random source widget ids are drawn
-from. Its return value is the process exit code. `main` fills the `Process`
+server, the telemetry writer, the gate that writer delivers through, and the
+random source widget ids are drawn from. Its return value is the process exit
+code. `main` fills the `Process`
 from the real process and cancels the context on `SIGTERM` or `SIGINT`; a test
 fills it with buffers, a map, a pid of its choosing, a listener it made
 itself, a banner source of its own and a server it made, and cancels the
 context itself. `Run`'s behaviour when it serves with a nil `Banner`, a nil
 `MCP` or a nil `Telemetry` is not contract, so a test that serves supplies
-all three, and an `MCP` that
+all three; a nil `Gate`, or a `Telemetry` not built over `Gate`, only takes
+away the two guarantees `D03-serve` states of the gate; and an `MCP` that
 already has tools registered or has already served is not one `Run` can serve
 with, since the handler registers dummy's tools on it (`D04-panel`). Nothing
 below `main` reads `os.Args`, the real environment, the real pid or the real
@@ -317,8 +358,7 @@ handler answers is `D04-panel` and the designs it leads to.
 
 - R-49MF-7KF1: The `dummy` binary MUST behave as `cli.Run` does when given the binary's arguments after the program name, the process's environment, its process id, and its standard output and standard error, and MUST exit with the value `Run` returns.
 - R-K1I1-7X3J: When the `dummy` binary is serving and receives `SIGTERM` or `SIGINT`, it MUST stop as `Run` does when its context is cancelled with a cause whose `Error` method returns `SIGTERM` or `SIGINT` respectively.
-- R-DXP8-MKZA: When the `dummy` binary starts with `IKIGENBA_SERVICES` naming a services file in which appkit's `services.Read` finds one or more entries whose `HasIcon` is true, the page it serves in answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST carry the appkit launcher: a `button` start tag whose `class` is `launcher`.
-- R-JC0I-TC5V: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file no part of which contains the sequence `footer` compared case-insensitively, the page it serves in answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST, read as a whole body, contain exactly one `footer` start tag, as `D04-panel` defines start tags and end tags (R-LPDH-LA2H), and the normalisation (`D04-panel` R-NGS9-HCML) of the characters from that start tag's `>` up to the `<` of the first `</footer>` end tag following it MUST be exactly the value of `panel.ServiceName` (`D04-panel`), one space, and the value of `Version`.
+- R-HVOF-9N46: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file, the body of its answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST contain, beginning immediately after the `>` of its first `body` start tag, as `D04-panel` defines start tags and end tags (R-LPDH-LA2H), with nothing but ASCII whitespace between them, the text that executing the template `banner` of a set `page.Templates()` returns writes for `b`, and, ending immediately before the `<` of its last `</body>` end tag with nothing but ASCII whitespace between them, the text that executing the template `footer` of such a set writes for `b`, where `b` is the `page.Banner` that the `Banner` method of the `Kit` `page.New(panel.ServiceName, Version)` returns, in a process whose `IKIGENBA_SERVICES` has the same value, returns for the banner user (`D04-panel` R-YV2Y-1CAU) of that request while the services file holds what it held when the request was answered.
 - R-E051-E4GO: When the `dummy` binary is serving, a `CallTool` call for the tool `list_widgets` with nil `args`, made by an appkit `mcp.Client` whose requests reach the socket the binary serves on with the URL path `/mcp`, on behalf of an `identity.Caller` whose `UserID` is not empty, MUST return a nil error and a `Result` whose `IsError` is false and whose `MarshalJSON` output is an object with a member `_meta` whose member `io.modelcontextprotocol/serverInfo` is exactly the JSON object `{"name":<n>,"version":<v>}`, where `<n>` is the value of `panel.ServiceName` (`D04-panel`) and `<v>` the value of `Version`, each as a JSON string.
 - R-E3SQ-JFOR: When the `dummy` binary is serving with `IKIGENBA_SERVICES` naming a services file, a `server/discover` request POSTed over the socket the binary serves on to the URL path `/mcp` with a non-empty `X-User-Id` header, `Content-Type: application/json`, `MCP-Protocol-Version` and `Mcp-Method` headers equal to `mcp.ProtocolVersion` and `server/discover`, and a body whose `params._meta` holds `io.modelcontextprotocol/protocolVersion` equal to `mcp.ProtocolVersion` and `io.modelcontextprotocol/clientCapabilities` equal to `{}`, MUST be answered with status 200 and a JSON-RPC result whose `instructions` member is exactly the `Description` of the entry that appkit's `List.Find` returns for `panel.ServiceName` in what `services.Read` returns for that file at the time the request is answered, whenever that `Description` is not empty, so that rewriting the file's description between two such requests changes the second answer.
 - R-E68J-AZ65: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset, a `server/discover` request as R-E3SQ-JFOR describes it MUST be answered with status 200 and a JSON-RPC result that has no `instructions` member.
@@ -333,7 +373,9 @@ handler answers is `D04-panel` and the designs it leads to.
 - R-KHH3-TJDH: `Version` MUST be the letter `v` followed by a valid Semantic Versioning version as defined at semver.org, prerelease and build metadata included when present.
 - R-DV9F-V1HW: The `internal/cli` package MUST export `const Manifest = "app = \"dummy\"\ndescription = \"Demo widgets to list and create\"\ndefault = false\nmcp = true\nsecrets = []\n"`.
 - R-F2D6-M8QD: The `internal/cli` package MUST export `Usage` as a string constant, holding the usage text whose value `D02-cli` fixes.
-- R-K0A4-U5CU: The `internal/cli` package MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Banner func(u page.User) page.Banner; MCP *mcp.Server; Telemetry *telemetry.Writer; Rand io.Reader }` and `func Run(ctx context.Context, p Process) int`, where `page`, `mcp` and `telemetry` are the packages `github.com/ikigenba/ikigenba/appkit/page`, `github.com/ikigenba/ikigenba/appkit/mcp` and `github.com/ikigenba/ikigenba/appkit/telemetry`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Banner` is the source of the banner data every page the handler draws with the banner is drawn from, `MCP` is the server the handler registers dummy's tools on and mounts at `/mcp`, `Telemetry` is the writer every event the handler records goes through and on which `Run` calls `Ready` and `Shutdown`, and `Rand` is the source of the ids of the widgets `Run` serves, nil meaning `crypto/rand.Reader`.
+- R-HPKX-CSEP: The `internal/cli` package MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Banner func(u page.User) page.Banner; MCP *mcp.Server; Telemetry *telemetry.Writer; Gate *Gate; Rand io.Reader }` and `func Run(ctx context.Context, p Process) int`, where `page`, `mcp` and `telemetry` are the packages `github.com/ikigenba/ikigenba/appkit/page`, `github.com/ikigenba/ikigenba/appkit/mcp` and `github.com/ikigenba/ikigenba/appkit/telemetry`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Banner` is the source of the banner data every page the handler draws with the banner is drawn from, `MCP` is the server the handler registers dummy's tools on and mounts at `/mcp`, `Telemetry` is the writer every event the handler records goes through and on which `Run` calls `Ready` and `Shutdown`, `Gate` is the gate (R-HS0Q-4BW3) that `Telemetry` delivers its events through, and `Rand` is the source of the ids of the widgets `Run` serves, nil meaning `crypto/rand.Reader`.
+- R-HS0Q-4BW3: The `internal/cli` package MUST export `type Gate struct`, with no exported field, `func NewGate(next telemetry.Sink) *Gate`, and `func (g *Gate) Deliver(ctx context.Context, e telemetry.Event) error`, so that `*Gate` implements `telemetry.Sink`, where `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`; the sink passed as `next` is that gate's **next sink**.
+- R-HT8M-I3MS: Every `Deliver(ctx, e)` call on a `*Gate` that `NewGate(next)` returned MUST call the `Deliver` method of its next sink exactly once, with `ctx` and `e`, and return the error that call returns, unless the call begins after the drain deadline (`D03-serve` R-PE6U-PF31) of a `Run` that was given that gate as `p.Gate` has elapsed since that `Run`'s `ctx` was done.
 - R-EBJE-7AF3: The `internal/cli` package MUST export `ExitSuccess`, `ExitServerFailed` and `ExitUsage` as constants, so that each of the three names is usable as an operand of a constant expression — the initializer of a `const` declaration in a package that imports `internal/cli` included — and their constant values MUST be 0, 1 and 2 respectively.
 - R-L27E-BMZA: `Run` MUST return one of `ExitSuccess`, `ExitServerFailed`, or `ExitUsage`, and no other value.
 - R-K8TF-IJJP: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration, stop func(ctx context.Context)) error`.

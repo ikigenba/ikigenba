@@ -187,9 +187,9 @@ and that is deliberate — it costs an implementation nothing and makes the list
 split sound. The contract fixes the *relation* — equal content yields an equal
 tag, and the tag changes when a widget is created — and never the value; no
 story fixes the value, and a requirement that did would be fixing an
-implementation. It is carried by the 200 and the 304 and by nothing else. S4's
-preamble says "Every response carries an `ETag`", but its missing-identity 500
-explicitly says no `ETag` is sent. S4 does not fix whether the 405 carries one:
+implementation. It is carried by the 200 and the 304 and by nothing else. The missing-identity 500 is the gate's, not this
+route's, and appkit promises nothing about its validators, so this document
+states none for it. S4 does not fix whether the 405 carries one:
 its response block omits the header, and omitted headers are unspecified there.
 This design leaves the 405 without a validator because it does not represent
 table content for a caller to validate.
@@ -274,5 +274,5 @@ but `FormView`, which `D07-form` declares, and nothing that computes the `ETag` 
 - R-ICU6-ZKUQ: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries an `If-None-Match` field no entry of which — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is `*`, the `ETag` value the same request would be answered with were the field absent, or `W/` followed by that value, MUST be answered exactly as it would be were the field absent, and the `ETag` value it is answered with MUST be such that no entry of that field is that value or `W/` followed by it.
 - R-IF9Z-R4C4: A request whose path is `/widgets/table` and whose `X-User-Id` header is absent or present with an empty value MUST be answered with status 500 and a response in the plain failure shape (`D04-panel`) for appkit's `identity.MissingBody`, never in the banner failure shape.
 - R-IIXO-WFK7: A request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table` and whose method is neither `GET` nor `HEAD`, MUST be answered with status 405, the header `Allow: GET, HEAD`, no `Location` header, and a response in the plain failure shape (`D04-panel`) for `MethodNotAllowedBody`, never in the banner failure shape.
-- R-ILDH-NZ1L: A response to a request whose path is `/widgets/table` whose status is neither 200 nor 304 MUST carry no `ETag` header.
+- R-0142-4LXJ: A response to a request carrying a non-empty `X-User-Id` header whose path is `/widgets/table` and whose status is neither 200 nor 304 MUST carry no `ETag` header.
 - R-INTA-FIIZ: Handling a request whose path is `/widgets/table` MUST leave the widget set unchanged, whatever the request's method and whatever status it is answered with: the slice `D05-widgets`'s `Store.All` returns immediately before the request and the slice it returns immediately after are equal element for element and in the same order.

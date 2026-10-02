@@ -3,8 +3,8 @@
 The serve path: what happens between `cli.Run` being called with no
 arguments and the process being gone. `D01-layout-and-run-seam` declares the
 names this design behaves through: `cli.Process` with its `Pid`, `Unsetenv`,
-`Inherit`, `Banner`, `MCP`, `Telemetry` and `Rand`, `cli.Run`, the exit codes,
-`server.Serve` and `server.DrainError`. `D02-cli` decides that an empty `Args`
+`Inherit`, `Banner`, `MCP`, `Telemetry`, `Gate` and `Rand`, `cli.Gate`,
+`cli.Run`, the exit codes, `server.Serve` and `server.DrainError`. `D02-cli` decides that an empty `Args`
 means serve and that nothing else touches the environment; `D04-panel`
 decides what the handler answers and what each request records in the
 trail. This design says how `Run`
@@ -215,7 +215,24 @@ all, so they record nothing, and `Telemetry` may be nil for them.
 
 When the drain runs out, its deadline has passed, so `Shutdown` has no time
 left: `service.stopping`, and anything else not yet delivered, goes to the
-writer's standard error as an `undelivered event` line at once. Because
+writer's standard error as an `undelivered event` line at once. appkit's
+writer alone does not promise that much: given a context that is already
+done, it may still hand the `service.stopping` it has just queued to its sink
+with a context that is not yet done, and a sink that answers at once would
+then take it and no line would be written. So `Run` tells `Process.Gate`
+(`D01-layout-and-run-seam`) the drain deadline as soon as `ctx` is done, and
+from that deadline on the gate refuses every delivery without passing it on,
+whenever `Shutdown` runs; since `Shutdown` is called with a done context
+only once the deadline has passed, the gate refuses that delivery; the writer counts the event undelivered and writes its line before
+`Shutdown` returns. The overrun test therefore builds its writer over a gate
+wrapped around its own sink, and the outcome does not depend on which of the
+writer's goroutines gets there first. That the gate is shut before
+`Shutdown` runs is observed deterministically from inside `Shutdown` itself:
+the test's stderr writer, when it is handed the `service.stopping` line,
+calls `Deliver` on the gate and finds it refused, with nothing reaching the
+sink behind it; a gate shut only after `Shutdown` returned would pass that
+call through. After `Run` returns the test calls `Deliver` again and finds
+it refused too. Because
 `stop` runs before `Serve` cuts the remaining requests off, a cut-off request
 cannot finish while the writer still delivers: its `request.finished`, if it
 is recorded at all before the process exits, arrives after `Shutdown` began
@@ -283,5 +300,7 @@ could cut a response short inside the drain.
 - R-KG4T-T5ZV: When `Run` has taken file descriptor 3 as a listener and has not failed to send `READY=1`, the first event `p.Telemetry` records after `Run` is called MUST be one `service.started` event, the event `Writer.Ready` records, recorded before any event of any request that arrived on that listener.
 - R-KHCQ-6XQK: When `Run` returns without having taken a listener — `Args` not empty, or a start R-1XHC-TE94, R-JI4Z-UR8P, R-JJCW-8IZE or R-3OW4-PGT8 refuses — or after failing to send `READY=1` (R-EQYT-T2RY), it MUST NOT have called any method of `p.Telemetry`, so that `Run` does not panic when `p.Telemetry` is nil, a writer passed as `p.Telemetry` has recorded no event from that call, and that writer's `Ready` called afterwards records `service.started`.
 - R-E80Y-6RJM: When `Run` returns `ExitSuccess` after `ctx` was done, the handling of every request that arrived on the listener `Run` took having ended at least one second before the drain deadline of R-PE6U-PF31 elapsed since `ctx` was done, and `p.Telemetry`'s sink answers every `Deliver` call with a nil error at once, the events that sink has received when `Run` returns MUST end with exactly one `service.stopping` event, whose `reason` attribute is the string `context.Cause(ctx).Error()` returns, received after the `request.finished` event of every request that arrived on the listener `Run` took.
-- R-WGRO-GGMY: When `Run` cuts off requests as R-PFER-36TQ states, and `p.Telemetry`'s sink answers every `Deliver` call whose context is done with a non-nil error and every other `Deliver` call with a nil error, that sink MUST NOT have answered nil for a `service.stopping` event; `p.Telemetry` MUST write to its `Stderr` the `undelivered event` line (appkit's telemetry writer) of a `service.stopping` event whose `reason` attribute is the string `context.Cause(ctx).Error()` returns, and MUST have written it before any connection of a cut-off request is closed, so that a cut-off request's `request.finished`, recorded only after its connection closes, is recorded after `Shutdown` began and never reaches the sink; and `Run` MUST write the line R-PFER-36TQ states to `Stderr` only after that `service.stopping` line has been written and after the line of every other event recorded before the drain deadline elapsed that the sink did not answer nil for.
+- R-HUGI-VVDH: When `Run` cuts off requests as R-PFER-36TQ states and `p.Telemetry` is a writer `telemetry.New` made with `p.Gate` as its `Sink`, the next sink of `p.Gate` (`D01-layout-and-run-seam` R-HS0Q-4BW3) MUST receive no `Deliver` call for a `service.stopping` event, whatever it answers to other calls; `p.Telemetry` MUST write to its `Stderr` the `undelivered event` line (appkit's telemetry writer) of a `service.stopping` event whose `reason` attribute is the string `context.Cause(ctx).Error()` returns, and MUST have written it before any connection of a cut-off request is closed, so that a cut-off request's `request.finished`, recorded only after its connection closes, is recorded after `Shutdown` began and reaches neither `p.Gate` nor its next sink; and `Run` MUST write the line R-PFER-36TQ states to `Stderr` only after that `service.stopping` line has been written and after the line of every other event recorded before the drain deadline elapsed that the next sink did not answer nil for.
+- R-IWRG-RPL0: When `ctx` is done while `Run` is serving with a non-nil `p.Gate`, every `Deliver` call on `p.Gate` that begins once the drain deadline of R-PE6U-PF31 has elapsed since `ctx` was done MUST return a non-nil error without calling the `Deliver` method of its next sink (`D01-layout-and-run-seam` R-HS0Q-4BW3), whether `Run` has returned or not, so that such a call made while `p.Telemetry` is writing the `service.stopping` line R-HUGI-VVDH states, or after `Run` has returned, is refused.
+- R-IXZD-5HBP: When `p.Gate` is nil, `Run` MUST NOT panic, and every requirement on `Run` other than R-HUGI-VVDH and R-IWRG-RPL0 MUST hold as it holds when `p.Gate` is not nil.
 - R-KL0F-C8YN: The widgets `Run` serves on the listener it took MUST start as the store `widget.NewStore(p.Rand)` (`D05-widgets`) makes, their ids included, so that a `tools/call` of `list_widgets` that `Run` answers there before accepting any widget reports as the `id` of `alpha`, `beta` and `gamma` the `ID` R-KYFB-JQ4A states for the first, second and third 8 bytes read from `p.Rand`, and so that `p.Rand` may be nil.

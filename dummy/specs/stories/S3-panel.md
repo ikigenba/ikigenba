@@ -42,8 +42,7 @@ banner every app of the platform draws, at the top of the page. It holds the
 mark, a profile icon linking to the caller's profile in auth, and a sign-out
 button; on a host with a services file it also holds the launcher button
 (below). The mark's text is `ikigenba`, and
-it names the service it fronts, `dummy`, which a browser shows as
-`ikigenba │ dummy`; the service's name is lowercase `dummy` everywhere it
+it names the service it fronts, `dummy`; the service's name is lowercase `dummy` everywhere it
 appears, and every page's title, the one a browser shows on its tab, is
 `dummy`. Because the caller's identity
 is what the banner is drawn from, a failure on a page that dummy can name to
@@ -57,25 +56,20 @@ can tell which release is serving the page. The version is data, and no
 story fixes its value. The missing-header 500, being bare text, has no
 footer, and neither does the table fragment (`S4`).
 
-The profile link in the banner is an icon, the `user-circle` icon, with no
-text of its own: it is labelled `Profile` for assistive technology and titled
-with the caller's `X-User-Email` value, exactly as it arrived, which a browser
-shows as its tooltip, so hovering the icon shows who is signed in. The email
-is in no visible text on the page; the link's title is the one place it
-appears.
+The profile link in the banner has no text of its own: it is labelled
+`Profile` for assistive technology and titled with the caller's
+`X-User-Email` value, exactly as it arrived, which a browser shows as its
+tooltip, so hovering the link shows who is signed in. Outside the banner,
+nothing on the page shows the email.
 
 The profile link's target is
 `<auth-profile>`, auth's root on the same space, an absolute URL derived from
 the request as `<auth-logout>` is (below), so following it leaves dummy for
 auth; what auth shows there is auth's behaviour, told in auth's own stories.
-Apart from the launcher, which may list auth among the platform's services,
-this link is the banner's one link to auth.
 
 The sign-out button signs the caller out of the whole space in one click. It
-follows the profile link in the banner, and it is a form, not a link: pressing it
-POSTs to `<auth-logout>`. The `logout` icon is drawn before the text and
-hidden from assistive technology, so the button's accessible text is
-`Sign out` alone. `<auth-logout>` is auth's `/logout` on the same space, an
+is in a form, not a link: pressing it POSTs to `<auth-logout>`. The button
+reads `Sign out`. `<auth-logout>` is auth's `/logout` on the same space, an
 absolute URL, so submitting the form leaves dummy: the browser POSTs to auth,
 carrying the space-wide `ikigenba_session` cookie, and what that POST does —
 ending the session and sending the browser to auth's sign-in page — is auth's
@@ -120,7 +114,9 @@ visible text is still its icon and name. dummy's own entry, the one named
 `dummy`, is marked as the current page. The list, the search field, and a
 hidden no-match line are all in the page as served; the one script the
 launcher adds is `/_appkit/launcher.js`, and without a launcher the page loads
-no such script.
+no such script. The banner, its launcher and the launcher's script are the
+platform's, drawn by the platform's shared page kit for every app; dummy
+decides what goes into the banner, and the platform how it is drawn.
 
 Every HTML page dummy sends — the panel and every page with the banner: the
 404, the 405, the 415, and the 422 redraw (`S5`) — links
@@ -225,8 +221,9 @@ for each of a widget's three fields and a button reading `Add widget` behind
 its hidden `plus` icon. The banner holds no launcher button, and the page
 loads no `/_appkit/launcher.js`, since dummy has no services file. Last on
 the page is the footer reading `dummy v<semver>`, where `v<semver>` is what
-`dummy --version` prints. The address `mg@example.com` is not in the page's
-visible text. The text `Dummy` appears nowhere.
+`dummy --version` prints. Outside the banner, the address `mg@example.com`
+is not in the page's visible text. Outside the banner and the footer, the
+text `Dummy` appears nowhere.
 
 Preconditions:
 
@@ -270,7 +267,9 @@ Postconditions:
 ## A user's client asks for the panel's headers
 
 A `HEAD` is answered exactly as the `GET` would be, headers and status alike,
-with no body. The panel is what a monitor or a proxy reaches for when it wants
+with no body, on every route dummy answers itself; the shared files under
+`/_appkit/` answer it as `S8` tells, and `/mcp` as `S9-mcp.md` tells. The
+panel is what a monitor or a proxy reaches for when it wants
 to know dummy is up without paying for the page.
 
 Request:
@@ -342,8 +341,7 @@ reading `Sign out` is in a form whose method is `post` and whose action is
 `mg@example.com`, leads to `https://auth.sbx.ikigenba.dev/`. With
 `X-Forwarded-Proto: http` and the same `Host`, the action is
 `http://auth.sbx.ikigenba.dev/logout` and the profile link leads to
-`http://auth.sbx.ikigenba.dev/`. There is no launcher here, so the profile
-link is the banner's only link to auth.
+`http://auth.sbx.ikigenba.dev/`. There is no launcher here.
 
 Preconditions:
 
@@ -438,7 +436,7 @@ Postconditions:
   ```
 
   `<request-id>` is 32 lowercase hexadecimal digits, the same in both events,
-  and differs from the id of every other request dummy gave one to.
+  and is drawn afresh for each request that came without one.
 - dummy wrote nothing to stderr.
 
 ## A request arrives without the identity headers
@@ -465,8 +463,8 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 500. The body is exactly the one line `identity header missing`,
-ending in a newline. A `HEAD` is answered with the same status and headers
-and an empty body. An `X-User-Id` header whose value is empty is answered the
+ending in a newline. A `HEAD` is answered with the same status and
+`Content-Type` and an empty body. An `X-User-Id` header whose value is empty is answered the
 same way as no header at all. Every route answers this way, the root, the
 fragment, the shared files under `/_appkit/`, and the MCP endpoint `/mcp`
 included; the identity check runs before dummy looks at the path or the
@@ -644,7 +642,9 @@ platform's MCP gateway, which has no icon and so is not in the launcher:
 ```
 
 In a browser, the list is closed when the page loads, and pressing the
-launcher button opens it. Typing in the search field keeps only the entries
+launcher button opens it. What the list does as the user types is the
+platform's launcher script's, not dummy's, and is meant to go like this:
+typing in the search field keeps only the entries
 whose name contains the typed text, ignoring case and any spaces around it;
 clearing the field shows them all again. When the text matches no entry, the
 no-match line appears, reading `No service matches “<text>”.` with the typed
@@ -716,8 +716,8 @@ Content-Type: text/html; charset=utf-8
 Status 200. The body is the panel page of `A user opens the panel`: the banner
 holds the mark, the profile link titled `mg@example.com` leading to
 `http://localhost:3001/`, and the sign-out button POSTing to
-`http://localhost:3001/logout`, and no launcher button. The page carries no list of services, no `Find a service` field, and
-no no-match line, and it loads no `/_appkit/launcher.js`.
+`http://localhost:3001/logout`, and no launcher button. The page carries no list of services and no `Find a service` field,
+and it loads no `/_appkit/launcher.js`.
 
 Preconditions:
 

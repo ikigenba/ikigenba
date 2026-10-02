@@ -221,7 +221,7 @@ what was submitted.
 
 Echoing arbitrary caller bytes into markup is exactly where a design can hand
 a caller a tag, and the requirement that closes that is `D04-panel`'s
-R-0RDB-GHTQ: the tag-name sequence of a document dummy sends cannot depend on
+R-HZC4-EYC9: the tag-name sequence of a document dummy sends cannot depend on
 the echoed `Name`, `Count` or `Status`, and neither does how many `>`
 characters it holds, so whatever the caller submits comes back as a value and
 never as structure. That rule is D04's and is not restated

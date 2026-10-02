@@ -47,7 +47,7 @@ fixture set changes only when a widget is created, by a POST to `/widgets`
 (`S5`) or by the MCP tool `create_widget` (`S9-mcp.md`); nothing in this group
 changes it.
 
-Every response carries an `ETag`. Its value is opaque — no story fixes it, and
+Every 200 and 304 carries an `ETag`. Its value is opaque — no story fixes it, and
 `"<etag>"` below stands for whatever the server sent. What is fixed is the
 relation: the same table content always yields the same value, and different
 table content yields a different one. That is what makes a poll cheap at rest
@@ -242,8 +242,7 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 500. The body is exactly the one line `identity header missing`,
-ending in a newline, as on every route (`S3`). No table markup and no `ETag`
-are sent.
+ending in a newline, as on every route (`S3`). No table markup is sent.
 
 Preconditions:
 

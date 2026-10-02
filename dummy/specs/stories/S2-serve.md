@@ -160,7 +160,11 @@ before systemd kills it. Once its requests have finished, and each has
 recorded its `request.finished` (`S3`), dummy records `service.stopping` with
 the reason it is stopping, the name of the signal it received, `SIGTERM` or
 `SIGINT`. That is the last event of its trail: dummy sends everything it
-recorded before exiting, within the same drain deadline. A `service.started`
+recorded before exiting, within the same drain deadline. Sending takes time,
+so a stop is silent when the requests leave dummy at least a second of the
+drain for it; a request that finishes later still gets its whole response,
+but an event dummy has not sent when the deadline comes goes to stderr as an
+`undelivered event` line instead. A `service.started`
 with no `service.stopping` before the next one is how the trail shows a
 dummy that died rather than stopped.
 
@@ -181,8 +185,10 @@ Preconditions:
 
 - dummy is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
-- Every request dummy has accepted finishes within 5 seconds of the signal.
-- telemetry takes every event.
+- Every request dummy has accepted finishes at least a second before the
+  drain deadline, within 4 seconds of the signal, so dummy has that second
+  left to send what it recorded.
+- telemetry takes every event as soon as it is sent.
 
 Postconditions:
 
@@ -285,7 +291,8 @@ Preconditions:
 - dummy is serving on `/run/ikigenba/dummy.sock` under
   `ikigenba-dummy.service`.
 - A client is sending requests to `/run/ikigenba/dummy.sock` throughout the
-  restart.
+  restart, and every request the old dummy accepted finishes at least a
+  second before its drain deadline.
 - The host's services file lists the telemetry service, which takes every
   event.
 

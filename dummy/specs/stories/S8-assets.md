@@ -308,9 +308,10 @@ Postconditions:
 
 ## A client asks for an asset's headers
 
-A `HEAD` is answered exactly as the `GET` would be, headers and status alike,
-with no body, as on every route. A client learns the type and the tag of a
-file without paying for its bytes.
+A `HEAD` is answered with the `GET`'s status, its `Content-Type`, `ETag`,
+and `Cache-Control`, and no body. A client learns the type and the tag of a
+file without paying for its bytes. No story fixes whether the `HEAD` carries
+any other header the `GET` does.
 
 Request:
 
@@ -464,9 +465,8 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 500. The body is exactly the one line `identity header missing`,
-ending in a newline, as on every route (`S3`). No stylesheet and no `ETag`
-are sent. A `HEAD` is answered with the same status and headers and an empty
-body.
+ending in a newline, as on every route (`S3`). No stylesheet is sent. A `HEAD` is answered with the same status and `Content-Type` and
+an empty body.
 
 Preconditions:
 

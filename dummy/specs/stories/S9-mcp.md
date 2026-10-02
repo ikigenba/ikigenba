@@ -1383,8 +1383,9 @@ Content-Type: application/json
 ```
 
 Status 200. The body is a JSON-RPC response with `id` 2 whose `result` has
-exactly one member, `tools`, the array of `An MCP client lists dummy's
-tools`, member for member.
+`tools`, the array of `An MCP client lists dummy's tools`, member for
+member, and no `nextCursor`, `resultType`, `_meta`, `ttlMs` or
+`cacheScope`.
 
 Preconditions:
 
