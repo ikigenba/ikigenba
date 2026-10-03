@@ -1,6 +1,6 @@
 # Design document format
 
-See `../SKILL.md` for the layout and id rules. This file defines what a design document is: its scope, its shape, and the rules its requirements follow. It is read by whoever authors one — the `draft-design` skill or a human — and by the build run, `audit-spec`, and `check-spec` when they judge a requirement against it. How a draft is produced is the `draft-design` skill.
+See `../SKILL.md` for the layout and id rules. This file defines what a design document is: its scope, its shape, and the rules its requirements follow. It is read by whoever authors one — the `draft-design` skill or a human — and by the build run and `audit-spec` when they judge a requirement against it. How a draft is produced is the `draft-design` skill.
 
 A design document defines a feature or subsystem. It defines the public contract between modules and nothing about how modules are implemented internally.
 

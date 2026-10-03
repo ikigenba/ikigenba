@@ -7,7 +7,7 @@ Skills follow the [Agent Skills](https://agentskills.io) open standard.
 The format is specified at https://agentskills.io/specification.
 
 One skill per subdirectory: `spec`, `draft-stories`, `draft-design`,
-`build-spec`, `audit-spec`, `check-spec`, `fanout`, `grill-me`, `handoff`.
+`build-spec`, `audit-spec`, `fanout`, `grill-me`, `handoff`.
 
 `spec` is the shared foundation (layout, ids, the gap, issue filing, the
 story and design formats); `draft-stories`, `draft-design`, and the three

@@ -35,7 +35,7 @@ current target, not a compatibility obligation. Respect spec's sub-project
 boundary; do not inspect sibling internals.
 
 Repository writes are limited to `specs/design/`. No source, test, story,
-issue, or review-file changes. Do not start `build-spec` or `check-spec`.
+issue, or review-file changes. Do not start `build-spec`.
 The root commits the design once verification passes (see "Committing").
 Report blockers and unresolved decisions to the user, not `specs/issues/`.
 
