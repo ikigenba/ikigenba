@@ -364,6 +364,37 @@ Postconditions:
 - `wip` is up with `auth` and `dummy`, both services active.
 - `sandbox-wip-dummy.service` sets no CPU weight, memory ceiling, or IO weight: `systemctl --user show sandbox-wip-dummy.service -p MemoryMax` prints `MemoryMax=infinity`, as it does for an app with no `[resources]`.
 
+## A developer brings up an app that welcomes guests
+
+An app that serves guests, visitors who bring no credential, says so with a top-level `guests = true` in its manifest. A request with no credential to such an app's paths other than `/mcp`, those under `/mcp/`, and git's smart-HTTP paths then reaches the app with no `X-User-Id` and no `X-User-Email`, instead of being sent to sign in. An app whose manifest does not set `guests` is treated as `guests = false`. The setting changes nothing `up` prints and nothing in the services file.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+auth   http://auth.wip.localhost:7400
+dummy  http://dummy.wip.localhost:7400
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a top-level `guests = true`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- `wip` is up with `auth` and `dummy`, both services active.
+- A request with no credential to a path of `http://dummy.wip.localhost:7400` other than `/mcp`, those under `/mcp/`, and git's smart-HTTP paths reaches dummy with no `X-User-Id` and no `X-User-Email` and is not redirected to sign in.
+- The services file is what it is for this checkout without `guests`; no service carries a `guests` member.
+
 ## A developer brings up an app whose manifest names a port
 
 On the platform an app never chooses a port, and the sandbox holds the same line: it hands each app its socket.
@@ -422,7 +453,7 @@ Postconditions:
 
 ## A developer brings up an app whose manifest gives a key the wrong type
 
-A key sandbox reads that holds a value of the wrong type is refused in sandbox's own words, which say what the key must be: `app` and `description` a string, `default` and `mcp` a boolean, `secrets` an array of strings, `env` a table of strings, `resources` a table.
+A key sandbox reads that holds a value of the wrong type is refused in sandbox's own words, which say what the key must be: `app` and `description` a string, `default`, `mcp` and `guests` a boolean, `secrets` an array of strings, `env` a table of strings, `resources` a table.
 
 Command:
 
@@ -442,6 +473,34 @@ Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
 - `dummy/etc/manifest.toml` holds the manifest above with `mcp = "yes"` in place of `mcp = true`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose guests setting is not a boolean
+
+`guests` is refused like any other key of the wrong type.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'guests' must be a boolean
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a top-level `guests = "yes"`.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:

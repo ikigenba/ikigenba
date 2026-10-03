@@ -1,6 +1,6 @@
 # Stories — routing
 
-Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, and neither is the default app. When `auth` is present, every request for an app other than `auth` is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect, as on a host, and a 401 on a path of git's smart HTTP protocol, one ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, draws a Basic challenge in its place. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does.
+Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, neither is the default app, and neither manifest sets `guests = true`. When `auth` is present, every request for an app other than `auth` is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` (or, on the general paths of an app that welcomes guests, `/check/open`) answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect, as on a host, and a 401 on a path of git's smart HTTP protocol, one ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, draws a Basic challenge in its place. On the server of an app whose manifest sets `guests = true`, every other path puts the same subrequest to auth's `/check/open` instead, which answers as `/check` does except that where `/check` would answer 401 it answers 200 with no `X-User-Id` and no `X-User-Email`, so no 401 arises there and no browser is sent to sign in; `/mcp`, every path under `/mcp/`, and git's three paths keep `/check` and their challenges. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does.
 
 ## A browser reaches an app at its own name
 
@@ -415,6 +415,223 @@ Postconditions:
 - dummy received exactly one `X-Request-Id`, an id nginx made for this request, not `mine`.
 - auth's `/check` subrequest carried the same `X-Request-Id` dummy received.
 
+## A browser that has not signed in reaches an app that welcomes guests
+
+An app whose manifest sets `guests = true` serves visitors who bring no credential. On its general paths nginx asks auth's `/check/open` in place of `/check`, and `/check/open` answers 200 with no `X-User-Id` and no `X-User-Email` where `/check` would answer 401. The request passes to the app with no user, so the app serves a guest; nothing sends the browser to sign in.
+
+Request:
+
+```
+$ curl -si 'http://dummy.wip.localhost:7400/widgets?page=2'
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+```
+
+Status 200. The body is dummy's own answer.
+
+Preconditions:
+
+- dummy's manifest sets `guests = true`, and `wip` is up from an `up` run with it so; both services are active.
+- The request carries no cookie and no `Authorization` header, so auth's `/check/open` answers 200 with no `X-User-Id` and no `X-User-Email`.
+- dummy answers `GET /widgets?page=2` with 200 when the request carries no user.
+
+Postconditions:
+
+- Nothing has changed.
+- auth's `/check/open` received `X-Original-Method: GET`, `X-Original-Host: dummy.wip.localhost` and `X-Original-URI: /widgets?page=2`; no `/check` subrequest was made.
+- dummy received `GET /widgets?page=2` with no `X-User-Id` and no `X-User-Email` header, and with an `X-Request-Id` nginx made.
+
+## A signed-in browser reaches an app that welcomes guests as its user
+
+An app that welcomes guests still knows a user who brings a credential. auth's `/check/open` answers 200 for the browser's session and says who the user is, as `/check` does, and nginx sets those two headers on the request it passes to the app.
+
+Request:
+
+```
+$ curl -si -H 'Cookie: ikigenba_session=<session>' http://dummy.wip.localhost:7400/widgets
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+```
+
+Status 200. The body is dummy's own answer.
+
+Preconditions:
+
+- dummy's manifest sets `guests = true`, and `wip` is up from an `up` run with it so; both services are active.
+- auth's `/check/open` answers 200 for that cookie, with `X-User-Id: 7` and `X-User-Email: me@michaelgreenly.dev`.
+- dummy answers `GET /widgets` with 200.
+
+Postconditions:
+
+- Nothing has changed.
+- auth's `/check/open` received the request's `Cookie` header and no body; no `/check` subrequest was made.
+- dummy received `GET /widgets` with `X-User-Id: 7` and `X-User-Email: me@michaelgreenly.dev`.
+
+## A client whose credential auth refuses reaches an app that welcomes guests
+
+Welcoming guests admits a request `/check` would answer 401, not one auth refuses with 403. A client sending a token that is revoked or expired gets auth's 403 unchanged, from `/check` under `/mcp` and from `/check/open` everywhere else.
+
+Request:
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:7400/mcp
+```
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:7400/widgets
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+Status 403. The body is not fixed.
+
+Preconditions:
+
+- dummy's manifest sets `guests = true`, and `wip` is up from an `up` run with it so; both services are active.
+- auth's `/check` and `/check/open` each answer 403 for `ikp_<token>`.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached dummy's socket.
+- The first request was put to `/check`, the second to `/check/open`.
+
+## An MCP client reaches an app that welcomes guests without a credential
+
+Welcoming guests opens an app's general paths only. Under `/mcp` the request is still put to `/check`, and its 401 still draws the bearer challenge, as on any other app's server.
+
+Request:
+
+```
+$ curl -si http://dummy.wip.localhost:7400/mcp
+```
+
+```
+$ curl -si http://dummy.wip.localhost:7400/mcp/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: send Authorization: Bearer <token>` ending in a newline, where `<token>` is those seven characters as written, not a value filled in.
+
+Preconditions:
+
+- dummy's manifest sets `guests = true`, and `wip` is up from an `up` run with it so; both services are active.
+- The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached dummy's socket, and no `/check/open` subrequest was made.
+
+## A git client reaches an app that welcomes guests without a credential
+
+On a path ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack` the request is still put to `/check`, and its 401 still draws the Basic challenge, as on any other app's server.
+
+Request:
+
+```
+$ curl -si 'http://dummy.wip.localhost:7400/notes.git/info/refs?service=git-upload-pack'
+```
+
+```
+$ curl -si -X POST http://dummy.wip.localhost:7400/notes.git/git-receive-pack
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Basic realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: send your token as the password` ending in a newline. `/notes.git/git-upload-pack` answers the same.
+
+Preconditions:
+
+- dummy's manifest sets `guests = true`, and `wip` is up from an `up` run with it so; both services are active.
+- The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached dummy's socket, and no `/check/open` subrequest was made.
+
+## A client without a credential forges the identity headers at an app that welcomes guests
+
+A guest reaches the app with no user, and cannot make one up: whatever a client sends in `X-User-Id` and `X-User-Email` itself is dropped before the request reaches the app or auth's `/check/open`.
+
+Request:
+
+```
+$ curl -si -H 'X-User-Id: 1' -H 'X-User-Email: boss@michaelgreenly.dev' http://dummy.wip.localhost:7400/widgets
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+```
+
+Status 200. The body is dummy's own answer.
+
+Preconditions:
+
+- dummy's manifest sets `guests = true`, and `wip` is up from an `up` run with it so; both services are active.
+- The request carries no cookie and no `Authorization` header, so auth's `/check/open` answers 200 with no `X-User-Id` and no `X-User-Email`.
+- dummy answers `GET /widgets` with 200 when the request carries no user.
+
+Postconditions:
+
+- Nothing has changed.
+- dummy received `GET /widgets` with no `X-User-Id` and no `X-User-Email` header; neither `1` nor `boss@michaelgreenly.dev` reached dummy or auth's `/check/open`.
+
+## A browser that has not signed in reaches the default app that welcomes guests at the sandbox's bare name
+
+The default app's bare name is served as its own name is, so when the default app welcomes guests, `http://wip.localhost:7400` welcomes them too.
+
+Request:
+
+```
+$ curl -si http://wip.localhost:7400/widgets
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+```
+
+Status 200. The body is dummy's own answer.
+
+Preconditions:
+
+- dummy's manifest sets `default = true` and `guests = true`, and `wip` is up from an `up` run with it so; both services are active.
+- The request carries no cookie and no `Authorization` header, so auth's `/check/open` answers 200 with no `X-User-Id` and no `X-User-Email`.
+- dummy answers `GET /widgets` with 200 when the request carries no user.
+
+Postconditions:
+
+- Nothing has changed.
+- auth's `/check/open` received `X-Original-Method: GET`, `X-Original-Host: wip.localhost` and `X-Original-URI: /widgets`; no `/check` subrequest was made.
+- dummy received `GET /widgets` on its socket, with `Host: wip.localhost:7400`, no `X-User-Id` and no `X-User-Email` header, and an `X-Request-Id` nginx made.
+
 ## A browser that has not signed in reaches auth itself
 
 auth is where a browser signs in, so its own name is never put to `/check`: every request to it goes straight to auth.
@@ -452,6 +669,32 @@ Request:
 
 ```
 $ curl -si -H 'Cookie: ikigenba_session=<session>' http://auth.wip.localhost:7400/check
+```
+
+Response:
+
+```
+HTTP/1.1 404 Not Found
+```
+
+Status 404. The body is not fixed.
+
+Preconditions:
+
+- `wip` is up with `auth` and `dummy`, and both services are active.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached auth's socket.
+
+## A client asks for auth's `/check/open` from outside
+
+`/check/open` is for nginx's subrequests alone, as `/check` is. Asked for directly at auth's name, nginx answers it itself and auth never sees the request.
+
+Request:
+
+```
+$ curl -si -H 'Cookie: ikigenba_session=<session>' http://auth.wip.localhost:7400/check/open
 ```
 
 Response:
