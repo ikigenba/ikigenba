@@ -44,6 +44,17 @@ func Require(next http.Handler) http.Handler {
 	})
 }
 
+// Optional carries the caller headers nginx supplies, allowing guests through.
+func Optional(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := Caller{r.Header.Get("X-User-Id"), r.Header.Get("X-User-Email"), r.Header.Get("X-Request-Id")}
+		if c.UserID == "" {
+			c.Email = ""
+		}
+		next.ServeHTTP(w, r.WithContext(NewContext(r.Context(), c)))
+	})
+}
+
 // Forward replaces the outgoing request's identity headers with c.
 func Forward(c Caller, r *http.Request) {
 	if r.Header == nil {
