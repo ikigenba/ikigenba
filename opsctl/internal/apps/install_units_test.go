@@ -20,7 +20,7 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-USUN-ZP5Y R-EN8B-K8GR R-UJVC-3EEF R-UMB4-UXVT
+	// R-USUN-ZP5Y R-EN8B-K8GR R-81CI-RJCX R-UMB4-UXVT
 	root := t.TempDir()
 	statePath := filepath.Join(root, "opt", "notes", "state", "db")
 	cachePath := filepath.Join(root, "opt", "notes", "cache", "item")
@@ -348,7 +348,7 @@ func assertLastAndOnlyStageReport(t *testing.T, reports []installReport, stage s
 }
 
 func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-UJVC-3EEF, R-OXY2-H0UX
+	// R-OXY2-H0UX
 	tests := []struct {
 		name       string
 		target     string
@@ -510,7 +510,7 @@ func TestInstallStartsOrRestartsAndReportsBinaryVersion(t *testing.T) {
 }
 
 func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
-	// R-UJVC-3EEF R-UMB4-UXVT R-UNJ1-8PMI
+	// R-81CI-RJCX R-UMB4-UXVT R-UNJ1-8PMI
 	root := t.TempDir()
 	servicePath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
 	socketPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket")

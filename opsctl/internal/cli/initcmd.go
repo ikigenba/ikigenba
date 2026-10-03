@@ -30,6 +30,7 @@ nothing runs and init exits 2. Safe to re-run.
 Checks, in order:
   nginx, certbot, systemctl  each found on PATH
   litestream                 found on PATH
+  git                        found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
   timeouts                   apps.drain_seconds and apps.stop_seconds are positive
@@ -46,7 +47,8 @@ Sequence:
                whose period is set and the renewal timer always
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
-               disabled app is rewritten and left disabled
+               disabled app is rewritten and left disabled. The resources
+               an app's manifest declares are kept as install wrote them
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -130,7 +132,7 @@ type initPreflight struct {
 }
 
 func (p *initPreflight) checkTools() {
-	for _, name := range []string{"nginx", "certbot", "systemctl", "litestream"} {
+	for _, name := range []string{"nginx", "certbot", "systemctl", "litestream", "git"} {
 		path, err := p.deps.lookPath(name)
 		if err != nil {
 			_, _ = fmt.Fprintf(&p.output, "%s: failed: not found on PATH\n", name)

@@ -25,6 +25,7 @@ nothing runs and init exits 2. Safe to re-run.
 Checks, in order:
   nginx, certbot, systemctl  each found on PATH
   litestream                 found on PATH
+  git                        found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
   timeouts                   apps.drain_seconds and apps.stop_seconds are positive
@@ -41,7 +42,8 @@ Sequence:
                whose period is set and the renewal timer always
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
-               disabled app is rewritten and left disabled
+               disabled app is rewritten and left disabled. The resources
+               an app's manifest declares are kept as install wrote them
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -50,7 +52,7 @@ Configuration keys:
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-X0W0-0NJ4
+	// R-782X-L1K9
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -270,7 +272,7 @@ func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
 }
 
 func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
-	// R-X23W-EF9T R-X4JP-5YR7
+	// R-X4JP-5YR7
 	for _, tc := range []struct {
 		name, drain, stop, finding string
 	}{
@@ -305,6 +307,7 @@ func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
 				"certbot: failed: not found on PATH\n" +
 				"systemctl: ok (/bin/systemctl)\n" +
 				"litestream: ok (/bin/litestream)\n" +
+				"git: ok (/bin/git)\n" +
 				"dns.provider: failed: not set\n" +
 				"dns.zones: failed: not set\n" +
 				"host.name: ok (example.com)\n" +
@@ -324,8 +327,8 @@ func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
 }
 
 func TestInitHealthyPreflight(t *testing.T) {
-	// R-X4JP-5YR7 R-X23W-EF9T R-V0E8-TY5K
-	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
+	// R-X4JP-5YR7 R-V0E8-TY5K
+	// R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-ZIB1-SI40
 	// R-YZO5-RZU6 R-5E43-77RM
@@ -419,6 +422,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
 		"litestream: ok (/bin/litestream)\n" +
+		"git: ok (/bin/git)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (example.com,deep.example.com)\n" +
 		"host.name: ok (api.deep.example.com)\ntimeouts: ok (drain 7s, stop 19s)\n" +
@@ -430,8 +434,8 @@ func TestInitHealthyPreflight(t *testing.T) {
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("exit %d stdout %q stderr %q, want exit 0 stdout %q", code, stdout, stderr, want)
 	}
-	if !reflect.DeepEqual(lookedUp, []string{"nginx", "certbot", "systemctl", "litestream"}) {
-		t.Errorf("LookPath calls = %v, want nginx, certbot, systemctl, litestream", lookedUp)
+	if !reflect.DeepEqual(lookedUp, []string{"nginx", "certbot", "systemctl", "litestream", "git"}) {
+		t.Errorf("LookPath calls = %v, want nginx, certbot, systemctl, litestream, git", lookedUp)
 	}
 	if !reflect.DeepEqual(resolved, []string{"api.deep.example.com", "_opsctl-preflight.api.deep.example.com"}) {
 		t.Errorf("LookupHost calls = %v", resolved)
@@ -506,6 +510,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
 		"litestream: ok (/bin/litestream)\n" +
+		"git: ok (/bin/git)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (example.com)\n" +
 		"host.name: ok (api.example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
@@ -876,6 +881,7 @@ func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
 		"litestream: ok (/bin/litestream)\n" +
+		"git: ok (/bin/git)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (localhost)\n" +
 		"host.name: ok (localhost)\ntimeouts: ok (drain 5s, stop 10s)\n" +
@@ -892,7 +898,7 @@ func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
 }
 
 func TestInitAggregatesIndependentFailures(t *testing.T) {
-	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
+	// R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	deps := initDeps(t, map[string]string{dns.KeyZones: "example.com:ZONE"})
 	deps.LookPath = func(name string) (string, error) {
 		if name == "certbot" {
@@ -913,6 +919,7 @@ func TestInitAggregatesIndependentFailures(t *testing.T) {
 		"certbot: failed: not found on PATH\n" +
 		"systemctl: ok (/usr/bin/systemctl)\n" +
 		"litestream: ok (/usr/bin/litestream)\n" +
+		"git: ok (/usr/bin/git)\n" +
 		"dns.provider: failed: not set\n" +
 		"dns.zones: ok (example.com)\n" +
 		"host.name: failed: not set\ntimeouts: ok (drain 5s, stop 10s)\n"
@@ -944,7 +951,7 @@ func TestInitClassifiesDNSOpenFailures(t *testing.T) {
 				return &fakeDNSProvider{}, nil
 			}
 			stdout, stderr, code := invoke([]string{"init"}, deps)
-			want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
+			want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\ngit: ok (/bin/git)\n" +
 				tc.wantDNS + "host.name: failed: not set\ntimeouts: ok (drain 5s, stop 10s)\n"
 			if code != 2 || stderr != "" || stdout != want {
 				t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
@@ -984,7 +991,7 @@ func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
 		t.Fatalf("dns check: exit %d stdout %q stderr %q", dnsCode, dnsStdout, dnsStderr)
 	}
 
-	prefix := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
+	prefix := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\ngit: ok (/bin/git)\n" +
 		"dns.provider: ok (route53)\ndns.zones: ok (wrong.test,undelegated.test,error.test)\n" +
 		"host.name: ok (outside.example)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"zone wrong.test: failed: provider zone name is provider.test\n" +
@@ -1046,6 +1053,7 @@ func TestInitReportEscapesExternalLineBreaks(t *testing.T) {
 		"certbot: ok (/tools/certbot\\nspoof\\rline)\n" +
 		"systemctl: ok (/tools/systemctl\\nspoof\\rline)\n" +
 		"litestream: ok (/tools/litestream\\nspoof\\rline)\n" +
+		"git: ok (/tools/git\\nspoof\\rline)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (example.com)\n" +
 		"host.name: ok (example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
@@ -1056,8 +1064,8 @@ func TestInitReportEscapesExternalLineBreaks(t *testing.T) {
 	if code != 2 || stdout != want || stderr != "" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
 	}
-	if lines := strings.Count(stdout, "\n"); lines != 11 {
-		t.Errorf("init wrote %d lines for eleven eligible checks: %q", lines, stdout)
+	if lines := strings.Count(stdout, "\n"); lines != 12 {
+		t.Errorf("init wrote %d lines for twelve eligible checks: %q", lines, stdout)
 	}
 }
 
@@ -1095,6 +1103,7 @@ func TestInitReportEscapesRereadZoneConfiguration(t *testing.T) {
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
 		"litestream: ok (/bin/litestream)\n" +
+		"git: ok (/bin/git)\n" +
 		"dns.provider: ok (route\\n53)\n" +
 		"dns.zones: ok (exa\\nmple.com)\n" +
 		"host.name: failed: not set\ntimeouts: ok (drain 5s, stop 10s)\n" +
@@ -1103,8 +1112,8 @@ func TestInitReportEscapesRereadZoneConfiguration(t *testing.T) {
 	if code != 2 || stdout != want || stderr != "" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
 	}
-	if lines := strings.Count(stdout, "\n"); lines != 9 {
-		t.Errorf("init wrote %d lines for nine eligible checks: %q", lines, stdout)
+	if lines := strings.Count(stdout, "\n"); lines != 10 {
+		t.Errorf("init wrote %d lines for ten eligible checks: %q", lines, stdout)
 	}
 }
 
@@ -1126,6 +1135,7 @@ func TestInitReportEscapesProviderAndHostLookupErrors(t *testing.T) {
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
 		"litestream: ok (/bin/litestream)\n" +
+		"git: ok (/bin/git)\n" +
 		"dns.provider: failed: provider\\nfailed\\rhard\n" +
 		"dns.zones: failed: not set\n" +
 		"host.name: ok (example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
@@ -1134,8 +1144,8 @@ func TestInitReportEscapesProviderAndHostLookupErrors(t *testing.T) {
 	if code != 2 || stdout != want || stderr != "" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
 	}
-	if lines := strings.Count(stdout, "\n"); lines != 9 {
-		t.Errorf("init wrote %d lines for nine eligible checks: %q", lines, stdout)
+	if lines := strings.Count(stdout, "\n"); lines != 10 {
+		t.Errorf("init wrote %d lines for ten eligible checks: %q", lines, stdout)
 	}
 }
 
@@ -1144,7 +1154,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 	deps.LookPath = foundInitTools
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
 
-	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
+	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\ngit: ok (/bin/git)\n" +
 		"dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: ok (example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"wildcard example.com: failed: example.com resolves to  but _opsctl-preflight.example.com resolves to \n"
 	stdout, stderr, code := invoke([]string{"init"}, deps)
@@ -1154,7 +1164,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-K6Y1-HOHH R-YZO5-RZU6 R-K85X-VG86 R-V0E8-TY5K
+	// R-K6Y1-HOHH R-YZO5-RZU6 R-V0E8-TY5K
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -1242,7 +1252,7 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	stdout2, stderr2, code2 := invoke([]string{"init"}, deps)
 	secondCommands := append([]string(nil), appCommands[len(firstCommands):]...)
 	afterSecond := treeState(t, deps.Root)
-	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
+	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\ngit: ok (/bin/git)\n" +
 		"dns.provider: ok (route53)\ndns.zones: ok (example.com)\nhost.name: ok (example.com)\ntimeouts: ok (drain 7s, stop 19s)\n" +
 		"zone example.com: ok (route53 ZONE, 1 nameservers delegated)\n" +
 		"host example.com: ok (zone example.com)\nwildcard example.com: ok (192.0.2.1)\n"

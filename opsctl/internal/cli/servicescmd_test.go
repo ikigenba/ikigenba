@@ -238,7 +238,7 @@ func TestLifecycleServicesStageRunsOnceAfterNginx(t *testing.T) {
 }
 
 func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
-	// R-K6Y1-HOHH R-K85X-VG86 R-8SVM-0ZF3
+	// R-K6Y1-HOHH R-8SVM-0ZF3
 	for _, failure := range []string{"", "nginx", "services"} {
 		for _, disabled := range []bool{false, true} {
 			t.Run(failure+fmt.Sprint(disabled), func(t *testing.T) {

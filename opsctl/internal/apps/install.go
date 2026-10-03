@@ -868,7 +868,7 @@ func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifa
 		return operationalFailure(err)
 	}
 	unitName := appUnitName(manifest.App)
-	if err := writeAppUnit(env.Root, manifest.App, stopSeconds); err != nil {
+	if err := writeAppUnit(env.Root, manifest.App, stopSeconds, manifest.Resources); err != nil {
 		return operationalFailure(err)
 	}
 	if err := executeInstallCommand(ctx, env, "reload systemd units", host.Command{
@@ -979,7 +979,7 @@ func makeAppRootWritable(root, app string) error {
 	return filesystem.Chmod(path.Join("opt", app), 0o750)
 }
 
-func writeAppUnit(root, app string, stopSeconds int64) error {
+func writeAppUnit(root, app string, stopSeconds int64, resources Resources) error {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
 		return err
@@ -994,7 +994,7 @@ func writeAppUnit(root, app string, stopSeconds int64) error {
 		data []byte
 	}{
 		{socketUnitName(app), socketUnitBytes(root, app)},
-		{appUnitName(app), serviceUnitBytes(root, app, stopSeconds)},
+		{appUnitName(app), serviceUnitBytes(root, app, stopSeconds, resources)},
 	} {
 		unitPath := path.Join(unitDirectory, unit.name)
 		if info, statErr := filesystem.Lstat(unitPath); statErr == nil {
@@ -1022,13 +1022,23 @@ func socketUnitBytes(root, app string) []byte {
 		"[Install]\nWantedBy=sockets.target\n")
 }
 
-func serviceUnitBytes(root, app string, stopSeconds int64) []byte {
+func serviceUnitBytes(root, app string, stopSeconds int64, resources Resources) []byte {
 	appRoot := rootedHostPath(root, "opt", app)
 	socket := socketUnitName(app)
+	var limits strings.Builder
+	if resources.CPUWeight != 0 {
+		fmt.Fprintf(&limits, "CPUWeight=%d\n", resources.CPUWeight)
+	}
+	if resources.MemoryMax != 0 {
+		fmt.Fprintf(&limits, "MemoryMax=%d\n", resources.MemoryMax)
+	}
+	if resources.IOWeight != 0 {
+		fmt.Fprintf(&limits, "IOWeight=%d\n", resources.IOWeight)
+	}
 	return []byte("[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + "\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
 		"WorkingDirectory=" + appRoot + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
-		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stopSeconds, 10) + "\n\n" +
+		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stopSeconds, 10) + "\n" + limits.String() + "\n" +
 		"[Install]\nWantedBy=multi-user.target\n")
 }
 
@@ -1172,6 +1182,7 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 	}
 	var changed []changedApp
 	unitChanged := false
+	var installed []Service
 	for _, service := range services {
 		if ValidateName(service.Name) != nil {
 			continue
@@ -1187,6 +1198,12 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 		if !info.Mode().IsRegular() {
 			continue
 		}
+		if service.ManifestError != nil {
+			return fmt.Errorf("%s: %w", service.Name, service.ManifestError)
+		}
+		installed = append(installed, service)
+	}
+	for _, service := range installed {
 		envPath := rootedHostPath(env.Root, "opt", service.Name, "etc", "env")
 		current, readErr := readTimeoutFile(env.Root, envPath)
 		if readErr != nil {
@@ -1207,7 +1224,11 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 			}
 		}
 		unitPath := rootedHostPath(env.Root, "etc", "systemd", "system", appUnitName(service.Name))
-		unit := serviceUnitBytes(env.Root, service.Name, timeouts.StopSeconds)
+		var resources Resources
+		if service.Manifest != nil {
+			resources = service.Manifest.Resources
+		}
+		unit := serviceUnitBytes(env.Root, service.Name, timeouts.StopSeconds, resources)
 		oldUnit, readErr := readTimeoutFile(env.Root, unitPath)
 		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 			return readErr

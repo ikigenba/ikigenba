@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -110,7 +111,7 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 
 // R-78QR-PFQ3
 // R-WILI-A3EP
-// R-EQJK-2PQY
+// R-7HU4-N7HT
 // R-WOP0-6Y46
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
@@ -151,7 +152,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-EQJK-2PQY
+// R-7HU4-N7HT
 // R-WOP0-6Y46
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
@@ -224,9 +225,9 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-EQJK-2PQY
+// R-7HU4-N7HT
 // R-7CEG-UQY6
-// R-EMVU-XEIV
+// R-7E6F-HW9Q
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -333,12 +334,12 @@ func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	}
 }
 
-// R-ESZC-U98C
+// R-7FEB-VO0F
 func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
 		block := serverBlockFor(t, got, name+".space.example.test")
-		for _, location := range []string{"= /mcp", "^~ /mcp/", "/"} {
+		for _, location := range []string{"= /mcp", "^~ /mcp/", "~ /(info/refs|git-upload-pack|git-receive-pack)$", "/"} {
 			section := locationFor(t, block, location)
 			for _, directive := range []string{
 				"auth_request     /_ikigenba/check;",
@@ -371,7 +372,7 @@ func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	}
 }
 
-// R-EZ2U-R3XT
+// R-7J21-0Z8I
 func TestRenderOriginalRequestHeadersOnlyInAuthenticatorSubrequest(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1226,8 +1227,14 @@ func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexNa
 		"        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\"' always;\n" +
 		"        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n" +
 		"    }\n\n" +
+		"    location @git_unauthorized {\n" +
+		"        default_type text/plain;\n" +
+		"        add_header   WWW-Authenticate 'Basic realm=\"ikigenba\"' always;\n" +
+		"        return       401 \"authentication required: send your token as the password\\n\";\n" +
+		"    }\n\n" +
 		wiredProxyLocation(name, "= /mcp", "@mcp_unauthorized") + "\n" +
 		wiredProxyLocation(name, "^~ /mcp/", "@mcp_unauthorized") + "\n" +
+		wiredProxyLocation(name, "~ /(info/refs|git-upload-pack|git-receive-pack)$", "@git_unauthorized") + "\n" +
 		wiredProxyLocation(name, "/", "@auth_redirect") + "}\n"
 }
 
@@ -1429,7 +1436,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-7B6K-GZ7H R-EQJK-2PQY R-78QR-PFQ3
+// R-7B6K-GZ7H R-7HU4-N7HT R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")
@@ -1491,7 +1498,7 @@ func TestRenderAndUpdatePropagateDisabledQueryFailure(t *testing.T) {
 	assertPublishedConfiguration(t, filepath.Dir(destination), []byte("previous"), 0o600)
 }
 
-// R-7HA2-DTWY
+// R-7GM8-9FR4
 func TestRenderSetsRequestIDAndLogsEveryAnsweringServer(t *testing.T) {
 	for _, authenticated := range []bool{false, true} {
 		root := t.TempDir()
@@ -1527,7 +1534,7 @@ func TestRenderSetsRequestIDAndLogsEveryAnsweringServer(t *testing.T) {
 		notes := serverBlockFor(t, got, "notes.space.example.test")
 		locations := []string{"/"}
 		if authenticated {
-			locations = append(locations, "= /mcp", "^~ /mcp/", "= /_ikigenba/check")
+			locations = append(locations, "= /mcp", "^~ /mcp/", "~ /(info/refs|git-upload-pack|git-receive-pack)$", "= /_ikigenba/check")
 		}
 		for _, location := range locations {
 			section := locationFor(t, notes, location)
@@ -1618,8 +1625,8 @@ func TestUpdateRejectsInvalidApexBeforeHostWork(t *testing.T) {
 	}
 }
 
-// R-EWN1-ZKGF
-func TestRenderMCPReservationsIgnoreManifestMCP(t *testing.T) {
+// R-7K9X-EQZ7
+func TestRenderMCPAndGitReservationsIgnoreManifestMCP(t *testing.T) {
 	for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
 		t.Run(strings.TrimSpace(manifestMCP), func(t *testing.T) {
 			root := t.TempDir()
@@ -1637,13 +1644,15 @@ func TestRenderMCPReservationsIgnoreManifestMCP(t *testing.T) {
 				t.Fatal(err)
 			}
 			wired := serverBlockFor(t, string(got), "notes.space.example.test")
-			for _, location := range []string{"@mcp_unauthorized", "= /mcp", "^~ /mcp/"} {
+			for _, location := range []string{"@mcp_unauthorized", "@git_unauthorized", "= /mcp", "^~ /mcp/", "~ /(info/refs|git-upload-pack|git-receive-pack)$"} {
 				locationFor(t, wired, location)
 			}
 			for _, name := range []string{"auth", "disabled"} {
 				block := serverBlockFor(t, string(got), name+".space.example.test")
-				if strings.Contains(block, "/mcp") || strings.Contains(block, "@mcp_unauthorized") {
-					t.Fatalf("%s carries MCP locations: %s", name, block)
+				for _, reserved := range []string{"/mcp", "@mcp_unauthorized", "@git_unauthorized", "info/refs", "git-upload-pack", "git-receive-pack"} {
+					if strings.Contains(block, reserved) {
+						t.Fatalf("%s carries reserved %q: %s", name, reserved, block)
+					}
 				}
 			}
 			if err := os.RemoveAll(filepath.Join(root, "opt", "auth")); err != nil {
@@ -1653,14 +1662,16 @@ func TestRenderMCPReservationsIgnoreManifestMCP(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(plain), "/mcp") || strings.Contains(string(plain), "@mcp_unauthorized") {
-				t.Fatalf("plain config carries MCP: %s", plain)
+			for _, reserved := range []string{"/mcp", "@mcp_unauthorized", "@git_unauthorized", "info/refs", "git-upload-pack", "git-receive-pack"} {
+				if strings.Contains(string(plain), reserved) {
+					t.Fatalf("plain config carries reserved %q: %s", reserved, plain)
+				}
 			}
 		})
 	}
 }
 
-// R-7KXR-J551
+// R-L0DL-6GWV
 func TestRenderMCP401MappingAndPathBoundaries(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
@@ -1671,7 +1682,8 @@ func TestRenderMCP401MappingAndPathBoundaries(t *testing.T) {
 				t.Fatalf("MCP status mapping: %s", section)
 			}
 		}
-		if strings.Count(block, "    location ") != 6 {
+		// R-7E6F-HW9Q: the complete wired shape adds the two git locations.
+		if strings.Count(block, "    location ") != 8 {
 			t.Fatalf("unexpected location overrides: %s", block)
 		}
 		browser := locationFor(t, block, "/")
@@ -1693,6 +1705,110 @@ func TestRenderMCPUnauthorizedExactResponse(t *testing.T) {
 		block := serverBlockFor(t, got, name+".space.example.test")
 		if section := locationFor(t, block, "@mcp_unauthorized"); section != want {
 			t.Fatalf("unauthorized response = %q, want %q", section, want)
+		}
+	}
+}
+
+// R-7LHT-SIPW
+func TestRenderGitLocationBoundariesAndCredentialRelay(t *testing.T) {
+	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
+	for _, name := range []string{"beta", "notes", "web"} {
+		block := serverBlockFor(t, got, name+".space.example.test")
+		location := "~ /(info/refs|git-upload-pack|git-receive-pack)$"
+		section := locationFor(t, block, location)
+		if strings.Count(section, "error_page") != 1 || !strings.Contains(section, "error_page       401 = @git_unauthorized;") || strings.Contains(section, "@auth_redirect") || strings.Contains(section, "@mcp_unauthorized") {
+			t.Fatalf("git status mapping: %s", section)
+		}
+		if !strings.Contains(section, "auth_request     /_ikigenba/check;") || !strings.Contains(section, "proxy_pass       http://unix:/run/ikigenba/"+name+".sock:;") {
+			t.Fatalf("git must check and proxy the original target: %s", section)
+		}
+		for _, forbidden := range []string{"proxy_set_header Authorization", "proxy_pass_request_headers off", "rewrite "} {
+			if strings.Contains(block, forbidden) {
+				t.Fatalf("git request altered by %q: %s", forbidden, block)
+			}
+		}
+		include := strings.Index(block, "include /opt/"+name+"/etc/nginx.conf*;")
+		if include < 0 || include > strings.Index(block, "    location "+location) {
+			t.Fatal("app fragment must precede generated regular expressions")
+		}
+		// R-7E6F-HW9Q: these generated locations have this exact order.
+		mcpExact := strings.Index(block, "    location = /mcp {\n")
+		mcpPrefix := strings.Index(block, "    location ^~ /mcp/ {\n")
+		git := strings.Index(block, "    location "+location+" {\n")
+		browser := strings.Index(block, "    location / {\n")
+		if mcpExact < 0 || mcpPrefix < mcpExact || git < mcpPrefix || browser < git {
+			t.Fatalf("MCP exact and protected prefix must precede git, then browser: %s", block)
+		}
+		pattern, _, _ := strings.Cut(strings.TrimPrefix(section, "    location ~ "), " {\n")
+		matcher, err := regexp.Compile(pattern)
+		if err != nil {
+			t.Fatalf("generated git expression: %v", err)
+		}
+		for _, test := range []struct {
+			target string
+			match  bool
+		}{
+			{"/notes.git/info/refs?service=git-upload-pack", true},
+			{"/notes.git/git-upload-pack", true},
+			{"/notes.git/git-receive-pack", true},
+			{"/notes/info/refs", true},
+			{"/info/refs", true},
+			{"/notes.git/info/refsx", false},
+			{"/notes.git/info/refs/", false},
+			{"/mcpx", false},
+		} {
+			uriPath, _, _ := strings.Cut(test.target, "?")
+			if actual := matcher.MatchString(uriPath); actual != test.match {
+				t.Fatalf("git expression matches %q = %v, want %v", test.target, actual, test.match)
+			}
+		}
+	}
+}
+
+// R-7MPQ-6AGL
+func TestRenderGitUnauthorizedExactResponse(t *testing.T) {
+	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
+	want := "    location @git_unauthorized {\n" +
+		"        default_type text/plain;\n" +
+		"        add_header   WWW-Authenticate 'Basic realm=\"ikigenba\"' always;\n" +
+		"        return       401 \"authentication required: send your token as the password\\n\";\n" +
+		"    }\n"
+	for _, name := range []string{"beta", "notes", "web"} {
+		block := serverBlockFor(t, got, name+".space.example.test")
+		if section := locationFor(t, block, "@git_unauthorized"); section != want {
+			t.Fatalf("git unauthorized response = %q, want %q", section, want)
+		}
+	}
+}
+
+// R-7NXM-K27A
+func TestRenderLeavesUploadLimitsAndBufferingToAppFragments(t *testing.T) {
+	directives := []string{"client_max_body_size", "client_body_timeout", "proxy_read_timeout", "proxy_send_timeout", "proxy_request_buffering", "proxy_buffering"}
+	for _, authenticated := range []bool{false, true} {
+		root := t.TempDir()
+		writeManifest(t, root, "notes", "app = \"notes\"\n")
+		writeManifest(t, root, "disabled", "app = \"disabled\"\n")
+		if authenticated {
+			writeManifest(t, root, "auth", "app = \"auth\"\n")
+		}
+		fragment := filepath.Join(root, "opt", "notes", "etc", "nginx.conf")
+		if err := os.WriteFile(fragment, []byte("client_max_body_size 0;\nproxy_read_timeout 3600s;\nproxy_request_buffering off;\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+			if command.Args[3] == "ikigenba-disabled.socket" {
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+			}
+			return host.Result{}, nil
+		}}
+		got, err := nginx.Render(context.Background(), env, "space.example.test", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, directive := range directives {
+			if strings.Contains(string(got), directive) {
+				t.Fatalf("generated configuration sets %s: %s", directive, got)
+			}
 		}
 	}
 }

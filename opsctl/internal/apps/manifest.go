@@ -3,7 +3,9 @@ package apps
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +47,7 @@ type manifestDecoder struct {
 	result     Manifest
 	portSeen   bool
 	firstError error
+	resources  map[string]tomlValue
 }
 
 const portError = "'port' is not allowed; the host gives the app its socket"
@@ -165,6 +168,11 @@ func (decoder *manifestDecoder) manifest() (Manifest, error) {
 			return Manifest{}, errors.New("'description' must be one line of text")
 		}
 	}
+	resources, err := parseResources(decoder.resources)
+	if err != nil {
+		return Manifest{}, err
+	}
+	decoder.result.Resources = resources
 	if decoder.result.MCP && strings.TrimSpace(decoder.result.Description) == "" {
 		return Manifest{}, errors.New("'mcp' is true but 'description' is empty; an MCP service must say what it offers")
 	}
@@ -221,6 +229,13 @@ func (decoder *manifestDecoder) decodeTable() error {
 		case "database":
 			if arrayTable {
 				return decoder.errorf("database must be a table")
+			}
+		case "resources":
+			if len(keys) == 1 && arrayTable {
+				return decoder.errorf("resources must be a table")
+			}
+			if len(keys) > 1 {
+				decoder.setResource(keys[1], tomlValue{kind: tomlTable})
 			}
 		}
 	}
@@ -312,6 +327,13 @@ func (decoder *manifestDecoder) rememberError(err error) {
 }
 
 func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
+	if len(path) > 1 && path[0] == "resources" {
+		if len(path) > 2 {
+			value = tomlValue{kind: tomlTable}
+		}
+		decoder.setResource(path[1], value)
+		return nil
+	}
 	if len(path) > 1 {
 		if isRecognizedScalarRoot(path[0]) {
 			return decoder.scalarRootTypeError(path[0])
@@ -382,6 +404,13 @@ func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
 					return err
 				}
 			}
+		case "resources":
+			if value.kind != tomlTable {
+				return decoder.errorf("resources must be a table")
+			}
+			for key, item := range value.table {
+				decoder.setResource(key, item)
+			}
 		}
 	}
 	if len(path) == 2 && path[0] == "env" {
@@ -405,6 +434,82 @@ func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
 		}
 	}
 	return nil
+}
+
+func (decoder *manifestDecoder) setResource(key string, value tomlValue) {
+	if decoder.resources == nil {
+		decoder.resources = make(map[string]tomlValue)
+	}
+	decoder.resources[key] = value
+}
+
+func parseResources(values map[string]tomlValue) (Resources, error) {
+	var result Resources
+	for _, key := range []string{"cpu_weight", "memory_max", "io_weight"} {
+		value, exists := values[key]
+		if !exists {
+			continue
+		}
+		if key == "memory_max" {
+			memory, ok := memoryBytes(value)
+			if !ok {
+				return Resources{}, errors.New("'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G")
+			}
+			result.MemoryMax = memory
+			continue
+		}
+		if value.kind != tomlInteger || value.integer < 1 || value.integer > 10000 {
+			return Resources{}, fmt.Errorf("'resources.%s' must be a whole number from 1 to 10000", key)
+		}
+		if key == "cpu_weight" {
+			result.CPUWeight = int(value.integer)
+		} else {
+			result.IOWeight = int(value.integer)
+		}
+	}
+	var unknown []string
+	for key := range values {
+		if key != "cpu_weight" && key != "memory_max" && key != "io_weight" {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return Resources{}, fmt.Errorf("'resources.%s' is not allowed; the resources are cpu_weight, memory_max, and io_weight", unknown[0])
+	}
+	return result, nil
+}
+
+func memoryBytes(value tomlValue) (int64, bool) {
+	if value.kind != tomlString || value.text == "" {
+		return 0, false
+	}
+	digits := value.text
+	multiplier := int64(1)
+	switch digits[len(digits)-1] {
+	case 'K':
+		multiplier = 1024
+	case 'M':
+		multiplier = 1048576
+	case 'G':
+		multiplier = 1073741824
+	}
+	if multiplier > 1 {
+		digits = digits[:len(digits)-1]
+	}
+	if digits == "" {
+		return 0, false
+	}
+	for i := range len(digits) {
+		if digits[i] < '0' || digits[i] > '9' {
+			return 0, false
+		}
+	}
+	number, err := strconv.ParseInt(strings.TrimLeft(digits, "0"), 10, 64)
+	if err != nil || number < 1 || number > math.MaxInt64/multiplier {
+		return 0, false
+	}
+	return number * multiplier, true
 }
 
 func (decoder *manifestDecoder) decodeValue(inArray bool) (tomlValue, error) {

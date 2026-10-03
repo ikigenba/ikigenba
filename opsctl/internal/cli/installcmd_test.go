@@ -29,6 +29,11 @@ ships share/icon.svg appears in the service launcher and an app that declares
 a [database] is replicated from the moment it is installed. litestream.service
 is restarted only when its configuration changed.
 
+The manifest's [resources] table, if any, sets the service's CPU weight
+(cpu_weight, 1-10000), memory ceiling (memory_max, bytes with an optional K, M
+or G), and IO weight (io_weight, 1-10000). They bound the app and every
+process it starts together. A key left out leaves systemd's default.
+
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
   host.name           the fully-qualified name this host answers at
@@ -37,7 +42,7 @@ Configuration keys:
 `
 
 func TestInstallHelpIsInert(t *testing.T) {
-	// R-UMR6-2UGH
+	// R-804M-DRM8
 	for _, uid := range []int{0, 1, -1, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			t.Run(fmt.Sprintf("%s/%d", option, uid), func(t *testing.T) {

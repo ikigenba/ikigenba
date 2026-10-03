@@ -16,6 +16,13 @@ type Database struct {
 	Path   string
 }
 
+// Resources holds optional systemd resource limits; zero leaves the default.
+type Resources struct {
+	CPUWeight int
+	MemoryMax int64
+	IOWeight  int
+}
+
 // Manifest describes the capabilities declared by an installed app.
 type Manifest struct {
 	App         string
@@ -25,6 +32,7 @@ type Manifest struct {
 	Secrets     []string
 	Env         map[string]string
 	Database    *Database
+	Resources   Resources
 }
 
 // Timeouts are the space-wide drain and systemd stop periods in seconds.

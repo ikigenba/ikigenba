@@ -8,13 +8,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
 func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
-	// R-UUUF-JC2O R-UXQ9-IS4Q R-Y1GZ-HRRY
+	// R-UUUF-JC2O R-82KF-5B3M R-Y1GZ-HRRY
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{
 		"apps.drain_seconds": "7", "apps.stop_seconds": "19",
@@ -56,6 +57,7 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("commands = %#v, want %#v", calls, want)
 	}
+	setTimeoutFileTimes(t, filepath.Join(appRoot, "etc", "env"), unit)
 	beforeEnv, err := os.Stat(filepath.Join(appRoot, "etc", "env"))
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +81,7 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !os.SameFile(beforeEnv, afterEnv) || !os.SameFile(beforeUnit, afterUnit) {
+	if !os.SameFile(beforeEnv, afterEnv) || !beforeEnv.ModTime().Equal(afterEnv.ModTime()) || !os.SameFile(beforeUnit, afterUnit) || !beforeUnit.ModTime().Equal(afterUnit.ModTime()) {
 		t.Fatal("unchanged files were rewritten")
 	}
 	if err := store.Set("apps.drain_seconds", "8"); err != nil {
@@ -98,13 +100,13 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 		t.Fatalf("drain-only commands = %#v, want %#v", calls, want)
 	}
 	newUnit, err := os.Stat(unit)
-	if err != nil || !os.SameFile(beforeUnit, newUnit) {
+	if err != nil || !os.SameFile(beforeUnit, newUnit) || !beforeUnit.ModTime().Equal(newUnit.ModTime()) {
 		t.Fatalf("drain-only change rewrote unit: %v", err)
 	}
 }
 
 func TestSetupTimeoutsUpdatesOnlyInstalledAppsInNameOrder(t *testing.T) {
-	// R-UXQ9-IS4Q R-Y1GZ-HRRY R-UYI4-ONAR
+	// R-82KF-5B3M R-Y1GZ-HRRY R-UYI4-ONAR
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{"apps.drain_seconds": "8", "apps.stop_seconds": "20"})
 	for name, content := range map[string]string{
@@ -198,7 +200,7 @@ func TestSetupTimeoutsStopsAfterReloadFailure(t *testing.T) {
 }
 
 func TestSetupTimeoutsReturnsMissingEnvWithoutWritingUnit(t *testing.T) {
-	// R-UYI4-ONAR
+	// R-82KF-5B3M R-UYI4-ONAR
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	appRoot := filepath.Join(root, "opt", "notes")
@@ -246,7 +248,7 @@ func TestSetupTimeoutsLeavesDisabledAppInactive(t *testing.T) {
 }
 
 func TestSetupTimeoutsIgnoresServicesWithoutBinary(t *testing.T) {
-	// R-UXQ9-IS4Q
+	// R-82KF-5B3M
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	state := filepath.Join(root, "opt", "notes", "state", "keep")
@@ -264,7 +266,7 @@ func TestSetupTimeoutsIgnoresServicesWithoutBinary(t *testing.T) {
 }
 
 func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T) {
-	// R-UXQ9-IS4Q
+	// R-82KF-5B3M
 	tests := []struct{ name, before, after string }{
 		{"replace both", "# header\nIKIGENBA_SERVICES=\"old\"\nKEEP='literal'\nDRAIN_SECONDS=0005\nTAIL=x", "# header\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\nKEEP='literal'\nDRAIN_SECONDS=5\nTAIL=x"},
 		{"append drain", "IKIGENBA_SERVICES=old\nKEEP=x", "IKIGENBA_SERVICES=/var/lib/ikigenba/services.json\nKEEP=x\nDRAIN_SECONDS=5\n"},
@@ -285,6 +287,7 @@ func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			setTimeoutFileTimes(t, envPath, unitPath)
 			beforeEnv, err := os.Stat(envPath)
 			if err != nil {
 				t.Fatal(err)
@@ -305,12 +308,12 @@ func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T
 			assertMode(t, envPath, 0o600)
 			assertFile(t, unitPath, string(unitBytes))
 			afterUnit, err := os.Stat(unitPath)
-			if err != nil || !os.SameFile(beforeUnit, afterUnit) {
+			if err != nil || !os.SameFile(beforeUnit, afterUnit) || !beforeUnit.ModTime().Equal(afterUnit.ModTime()) {
 				t.Fatalf("unchanged unit rewritten: %v", err)
 			}
 			if test.before == test.after {
 				afterEnv, err := os.Stat(envPath)
-				if err != nil || !os.SameFile(beforeEnv, afterEnv) {
+				if err != nil || !os.SameFile(beforeEnv, afterEnv) || !beforeEnv.ModTime().Equal(afterEnv.ModTime()) {
 					t.Fatalf("unchanged env rewritten: %v", err)
 				}
 			}
@@ -319,13 +322,14 @@ func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T
 }
 
 func TestSetupTimeoutsRejectsTimingBeforeWritingAndNonAppsStayUntouched(t *testing.T) {
-	// R-UXQ9-IS4Q
+	// R-82KF-5B3M
 	root := t.TempDir()
 	fixture := newCompletedInstallFixture(t, root, false)
 	if err := fixture.run(); err != nil {
 		t.Fatal(err)
 	}
 	envPath := filepath.Join(root, "opt", "notes", "etc", "env")
+	setTimeoutFileTimes(t, envPath)
 	before, err := os.Stat(envPath)
 	if err != nil {
 		t.Fatal(err)
@@ -339,7 +343,7 @@ func TestSetupTimeoutsRejectsTimingBeforeWritingAndNonAppsStayUntouched(t *testi
 		t.Fatal("invalid timing accepted")
 	}
 	after, err := os.Stat(envPath)
-	if err != nil || !os.SameFile(before, after) {
+	if err != nil || !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) {
 		t.Fatalf("timing error rewrote env: %v", err)
 	}
 
@@ -371,6 +375,16 @@ func TestSetupTimeoutsRejectsTimingBeforeWritingAndNonAppsStayUntouched(t *testi
 		assertFile(t, filepath.Join(root, "opt", name, "etc", "env"), "KEEP=x\n")
 		if _, err := os.Stat(filepath.Join(root, "etc", "systemd", "system", "ikigenba-"+name+".service")); !os.IsNotExist(err) {
 			t.Fatalf("unit for %s: %v", name, err)
+		}
+	}
+}
+
+func setTimeoutFileTimes(t *testing.T, paths ...string) {
+	t.Helper()
+	past := time.Unix(946684800, 0)
+	for _, name := range paths {
+		if err := os.Chtimes(name, past, past); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

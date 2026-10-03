@@ -35,7 +35,7 @@ func TestDatabaseFields(t *testing.T) {
 	}
 }
 
-// R-Y6EK-LI1I
+// R-7RLB-PDFD
 func TestManifestFields(t *testing.T) {
 	database := &apps.Database{Engine: "sqlite", Path: "state/app.db"}
 	manifest := apps.Manifest{
@@ -46,6 +46,7 @@ func TestManifestFields(t *testing.T) {
 		Secrets:     []string{"TOKEN"},
 		Env:         map[string]string{"MODE": "production"},
 		Database:    database,
+		Resources:   apps.Resources{CPUWeight: 100, MemoryMax: 1048576, IOWeight: 200},
 	}
 	var (
 		app         string
@@ -55,9 +56,11 @@ func TestManifestFields(t *testing.T) {
 		secrets     []string
 		env         map[string]string
 		db          *apps.Database
+		resources   apps.Resources
 	)
 	app, description, mcp, isDefault, secrets, env, db = manifest.App, manifest.Description, manifest.MCP, manifest.Default, manifest.Secrets, manifest.Env, manifest.Database
-	if app != "notes" || description != "Offers notes tools" || !mcp || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database {
+	resources = manifest.Resources
+	if app != "notes" || description != "Offers notes tools" || !mcp || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database || resources != (apps.Resources{CPUWeight: 100, MemoryMax: 1048576, IOWeight: 200}) {
 		t.Fatalf("Manifest = %#v", manifest)
 	}
 }
@@ -220,7 +223,7 @@ func TestParseManifestRejectsMalformedTOMLWithoutPartialResult(t *testing.T) {
 	}
 }
 
-// R-Y7MG-Z9S7
+// R-7ST8-3562 R-7U14-GWWR R-XSFU-AXFW
 func TestParseManifestMapsFieldsAndSuppliesEmptyCollections(t *testing.T) {
 	data := []byte(`app = "crm"
 description = "  Offers CRM tools  "
@@ -234,6 +237,11 @@ OUTBOX_RETENTION_DAYS = "7"
 [database]
 engine = "sqlite"
 path = "state/crm.db"
+
+[resources]
+cpu_weight = 100
+memory_max = "512M"
+io_weight = 200
 `)
 	manifest, err := apps.ParseManifest(data)
 	if err != nil {
@@ -246,6 +254,7 @@ path = "state/crm.db"
 		Default:     true,
 		Secrets:     []string{"CRM_API_KEY", "CRM_API_SECRET"},
 		Env:         map[string]string{"OUTBOX_RETENTION_DAYS": "7"},
+		Resources:   apps.Resources{CPUWeight: 100, MemoryMax: 536870912, IOWeight: 200},
 		Database: &apps.Database{
 			Engine: "sqlite",
 			Path:   "state/crm.db",
@@ -259,7 +268,7 @@ path = "state/crm.db"
 	if err != nil {
 		t.Fatalf("ParseManifest(empty) returned error: %v", err)
 	}
-	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Default || minimal.Database != nil {
+	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Default || minimal.Database != nil || minimal.Resources != (apps.Resources{}) {
 		t.Fatalf("ParseManifest(empty) did not retain scalar zero values: %#v", minimal)
 	}
 	if minimal.Secrets == nil || len(minimal.Secrets) != 0 || minimal.Env == nil || len(minimal.Env) != 0 {
@@ -275,6 +284,7 @@ env = { OUTBOX_RETENTION_DAYS = """7""" }
 database.engine = '''sqlite'''
 database.path = """
 state/crm.db"""
+resources = { cpu_weight = 100, memory_max = "512M", io_weight = 200 }
 `)
 	decoded, err := apps.ParseManifest(equivalent)
 	if err != nil {
@@ -399,7 +409,7 @@ state/crm.db"""
 	}
 }
 
-// R-Y8UD-D1IW
+// R-7U14-GWWR R-7ST8-3562 R-XSFU-AXFW R-YBA6-4L0A
 func TestParseManifestValidatesRecognizedFieldsAndIgnoresOthers(t *testing.T) {
 	valid := []byte(`title = """unrelated
 title"""
@@ -452,7 +462,7 @@ MODE = "production"
 			}
 		}
 	}
-	for _, data := range []string{"[[env]]", "[[database]]"} {
+	for _, data := range []string{"[[env]]", "[[database]]", "[[resources]]"} {
 		manifest, err := apps.ParseManifest([]byte(data))
 		if err == nil {
 			t.Errorf("ParseManifest(%q) accepted recognized table root as an array table", data)
@@ -470,6 +480,8 @@ MODE = "production"
 		name string
 		data string
 	}{
+		{name: "resources type", data: "resources = 3"},
+		{name: "resources array", data: "resources = []"},
 		{name: "description type", data: "description = 3"},
 		{name: "mcp type", data: "mcp = 3"},
 		{name: "app type", data: "app = 3"},
