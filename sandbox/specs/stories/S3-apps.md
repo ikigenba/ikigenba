@@ -331,6 +331,39 @@ Postconditions:
 - No `sandbox-wip-*` unit was written to `/home/me/.config/systemd/user/`.
 - `sandbox-wip-auth.socket`, `sandbox-wip-auth.service`, `sandbox-wip-dummy.socket`, `sandbox-wip-dummy.service`, and `sandbox-wip-nginx.service` are in `/home/me/cfg/systemd/user/`.
 
+## A developer brings up an app that declares its resources
+
+On the platform a manifest's `[resources]` table bounds the app's CPU weight, memory, and IO weight, and every process the app starts with it. The sandbox accepts the table and checks it by the platform's rule, so a manifest a host would refuse is refused here first, but it does not apply the limits: the sandbox's units carry no resource settings, because a developer's user manager need not be able to enforce them and the sandbox is not where an app's load is measured. The table's keys are `cpu_weight`, a whole number from 1 to 10000; `memory_max`, a string holding a positive whole number of bytes optionally followed by `K`, `M`, or `G`; and `io_weight`, a whole number from 1 to 10000. Each is optional.
+
+`dummy/etc/manifest.toml` holds the manifest above plus:
+
+```toml
+[resources]
+cpu_weight = 50
+memory_max = "512M"
+io_weight = 50
+```
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output: what `up` prints for this checkout without the table; the table changes nothing in it.
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- `wip` is up with `auth` and `dummy`, both services active.
+- `sandbox-wip-dummy.service` sets no CPU weight, memory ceiling, or IO weight: `systemctl --user show sandbox-wip-dummy.service -p MemoryMax` prints `MemoryMax=infinity`, as it does for an app with no `[resources]`.
+
 ## A developer brings up an app whose manifest names a port
 
 On the platform an app never chooses a port, and the sandbox holds the same line: it hands each app its socket.
@@ -389,7 +422,7 @@ Postconditions:
 
 ## A developer brings up an app whose manifest gives a key the wrong type
 
-A key sandbox reads that holds a value of the wrong type is refused in sandbox's own words, which say what the key must be: `app` and `description` a string, `default` and `mcp` a boolean, `secrets` an array of strings, `env` a table of strings.
+A key sandbox reads that holds a value of the wrong type is refused in sandbox's own words, which say what the key must be: `app` and `description` a string, `default` and `mcp` a boolean, `secrets` an array of strings, `env` a table of strings, `resources` a table.
 
 Command:
 
@@ -465,6 +498,34 @@ Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
 - `dummy/etc/manifest.toml` holds the manifest above without its `description` line; or with `description = ""` or `description = "   "` in its place.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose resources are not valid
+
+The platform refuses a `[resources]` table it cannot apply, and the sandbox refuses it too, in the same words.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'resources.cpu_weight' must be a whole number from 1 to 10000
+```
+
+Exits 2. The line is on stderr; stdout is empty. Each fault names its key the same way: `'resources.io_weight' must be a whole number from 1 to 10000`; `'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G`, for a value such as `"512MB"`, `"1.5G"`, `"50%"`, `"0"`, or an integer; and, for a key the table does not know, `'resources.cpu_quota' is not allowed; the resources are cpu_weight, memory_max, and io_weight`. When the table holds more than one fault, the first in the order `cpu_weight`, `memory_max`, `io_weight`, then unknown keys in name order, is the one reported.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a `[resources]` table with `cpu_weight = 0`, or `20000`, or `"50"`.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:

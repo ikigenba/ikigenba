@@ -34,7 +34,12 @@ by the app's socket unit (`S7-apps.md`), readable and writable by nginx and by
 no process outside the platform, so nginx is the only way in from the network.
 The app's file is included first, so a longer prefix in it — static files out
 of `share/`, say — wins over the proxy; the glob makes the include harmless
-when there is no such file.
+when there is no such file. It is included at the level of the server block,
+so a directive in it that nginx allows there and does not set in a location
+— a body-size limit, a proxy timeout, request buffering — reaches every
+location in the block, the generated ones included, and so every request for
+the app. That is how an app that takes large, slow uploads widens the limits
+for itself alone; no manifest key and no configuration key does it.
 
 Every request gets one id. nginx sets `X-Request-Id` to its own `$request_id`
 on every request it proxies to an app, and on the subrequest to `auth`'s
@@ -75,6 +80,22 @@ paths are the suite's, not an app's opt-in. Only `/mcp` itself and paths
 under `/mcp/` are reserved — `/mcpx` is an ordinary path and redirects to sign
 in like any other. Plain blocks on a host with no authenticator, `auth`'s own
 block, and a disabled app's block are unchanged.
+
+git's smart HTTP protocol is reserved the same way. A git client sends no
+credential until the server challenges it, and the challenge must be `401`
+with `WWW-Authenticate: Basic`; a redirect to sign in is something git cannot
+follow. So every wired block answers a path ending `/info/refs`,
+`/git-upload-pack`, or `/git-receive-pack` — the three a clone, fetch, or
+push asks for — with the same subrequest to `/check` and identity relay as
+`location /`, except that a 401 from `auth` is answered `401` with
+`WWW-Authenticate: Basic realm="ikigenba"` and the one line of plain text
+`authentication required: send your token as the password`. Git then asks its
+credential helper and sends the token as the Basic password, which `auth`
+accepts as it accepts a bearer token. A 403 still reaches the client
+unchanged. Like `/mcp`, these paths are the suite's, carried whatever the
+manifest says, and absent from plain, unwired, and disabled blocks. The match
+is on the path's end alone, so `/notes/info/refs` is reserved too, while
+`/info/refsx` is an ordinary path.
 
 One host in the account also answers at the root domain's apex,
 `ikigenba.dev`. Which host that is, and which app answers there, is a
@@ -136,7 +157,8 @@ host.apex names also answers at the parent of host.name; until that app is
 routed, the parent answers 404. A routed app named auth is the authenticator:
 every other app's block then requires a valid session, checked against auth's
 /check, while auth's own name is not gated. Under /mcp, a request without a
-valid credential is answered 401 instead of being sent to sign in.
+valid credential is answered 401 instead of being sent to sign in; so is a
+git smart HTTP request, with a Basic challenge so git asks for the token.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -505,8 +527,11 @@ URL as `return=`; a 403 reaches the client unchanged. Between the redirect and
 `location /`, each wired block carries the MCP locations: `/mcp` exactly and
 everything under `/mcp/` are checked and relayed like `location /`, but a 401
 from `auth` is answered by `@mcp_unauthorized` — the `401` with its
-`WWW-Authenticate` header and one-line body — instead of the redirect. The `\n`
-in that `return` is the two characters backslash and `n` in the file.
+`WWW-Authenticate` header and one-line body — instead of the redirect. After
+them comes the git location: a path ending `/info/refs`, `/git-upload-pack`,
+or `/git-receive-pack` is checked and relayed the same way, and a 401 from
+`auth` is answered by `@git_unauthorized`, a Basic challenge. The `\n` in
+each `return` is the two characters backslash and `n` in the file.
 
 Command:
 
@@ -601,6 +626,12 @@ server {
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
+    location @git_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Basic realm="ikigenba"' always;
+        return       401 "authentication required: send your token as the password\n";
+    }
+
     location = /mcp {
         auth_request     /_ikigenba/check;
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
@@ -622,6 +653,22 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/crm.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ~ /(info/refs|git-upload-pack|git-receive-pack)$ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @git_unauthorized;
 
         proxy_pass       http://unix:/run/ikigenba/crm.sock:;
         proxy_set_header Host              $host;
@@ -682,6 +729,12 @@ server {
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
+    location @git_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Basic realm="ikigenba"' always;
+        return       401 "authentication required: send your token as the password\n";
+    }
+
     location = /mcp {
         auth_request     /_ikigenba/check;
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
@@ -703,6 +756,22 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ~ /(info/refs|git-upload-pack|git-receive-pack)$ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @git_unauthorized;
 
         proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
         proxy_set_header Host              $host;
@@ -751,8 +820,9 @@ Postconditions:
 - `auth` alone carries no `auth_request`; every other routed app carries it,
   purely because a routed `auth` is present — there is no per-app opt-in or
   opt-out.
-- `crm` and `dashboard` carry the MCP locations whether their manifests set
-  `mcp = true`, `mcp = false`, or no `mcp` at all; `auth`'s block carries none.
+- `crm` and `dashboard` carry the MCP locations and the git location whether
+  their manifests set `mcp = true`, `mcp = false`, or no `mcp` at all, and
+  whether or not either serves git; `auth`'s block carries none.
 - Once applied, the subrequest to `/check` and the request it admits carry the
   same `X-Request-Id`: nginx's id for the client's request, never the
   client's own value. This holds under `/mcp` as under `/`: a request to
@@ -919,6 +989,134 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
+
+## A git client reaches a wired app without a credential
+
+git asks for a repository's refs before anything else and sends no
+credential until it is challenged. On a wired app, `auth` answers that first
+request 401, and nginx turns it into the Basic challenge rather than a
+redirect, so git asks its credential helper for a username and password and
+tries again. The same answer meets the pack requests a fetch or push makes
+when they arrive without a credential.
+
+Request:
+
+```
+$ curl -si 'https://crm.sbx.ikigenba.dev/notes.git/info/refs?service=git-upload-pack'
+```
+
+```
+$ curl -si -X POST https://crm.sbx.ikigenba.dev/notes.git/git-receive-pack
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Basic realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: send your
+token as the password`, ending in a newline. `/notes.git/git-upload-pack`
+answers the same.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
+- `https://crm.sbx.ikigenba.dev/notes.git/info/refsx` is an ordinary path:
+  without a credential it redirects to sign in, as `/mcpx` does in the
+  `browser reaches a wired app outside /mcp` story.
+
+## A git client sends its token as the password to a wired app
+
+Once challenged, git sends `Authorization: Basic` holding a username and the
+token as the password. `auth` decides it as it decides a bearer token, and
+the request reaches the app as a request at `/` does once admitted, with the
+identity `auth` gave. A token `auth` refuses gets its 403 unchanged, as under
+`/mcp`.
+
+Request:
+
+```
+$ curl -si -u 'git:ikp_<token>' 'https://crm.sbx.ikigenba.dev/notes.git/info/refs?service=git-upload-pack'
+```
+
+Response: not fixed here; it is `crm`'s answer to the request.
+
+Status is whatever `crm` answers; nginx adds no status of its own.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- `auth`'s `/check` admits a Basic credential whose password is
+  `ikp_<token>`, whatever the username.
+
+Postconditions:
+
+- `crm` received `GET /notes.git/info/refs?service=git-upload-pack` with
+  `X-User-Id` and `X-User-Email` set from `auth`'s answer, `X-Request-Id`
+  set by nginx, and the client's `Authorization` header as it was sent.
+- The subrequest to `/check` carried `X-Original-URI:
+  /notes.git/info/refs?service=git-upload-pack`.
+
+## An app widens the request limits for its own requests
+
+An app that takes large uploads over slow connections — git pushes, say —
+needs nginx to accept a body larger than its default 1 MiB, to wait longer
+than its default 60 seconds for the app to answer, and to pass the body on as
+it arrives rather than spooling it to disk first. The app says so in its own
+`etc/nginx.conf`, and opsctl changes nothing to let it: the file is included
+in the app's server block, and these three directives are ones nginx allows
+there and the generated locations do not set, so each location inherits them.
+
+`/opt/crm/etc/nginx.conf`:
+
+```
+client_max_body_size    0;
+proxy_read_timeout      3600s;
+proxy_request_buffering off;
+```
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output: the configuration of the `host running apps behind the authenticator`
+story, byte for byte. The fragment is not copied into the file; the line
+`include /opt/crm/etc/nginx.conf*;` already in `crm`'s block is what brings
+it in.
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is the one in the `host running apps behind the authenticator`
+  story, and `/opt/crm/etc/nginx.conf` holds the three lines above.
+
+Postconditions:
+
+- Nothing has changed.
+- Once applied, `nginx -t` passes, and in `crm`'s block every location —
+  `/`, `/mcp`, `/mcp/`, and the git location — accepts a request body of any
+  size, waits up to an hour between reads from `crm`'s socket, and passes a
+  request body to `crm` as it arrives. A push of several hundred MiB to
+  `crm` is admitted by `/check` and streamed to the app.
+- The subrequest to `/check` carries no body whatever the fragment says, so
+  `auth` is unaffected.
+- `dashboard`'s and `auth`'s blocks keep nginx's defaults: a body larger
+  than 1 MiB sent to `dashboard` is refused `413`. The fragment reaches only
+  the app that ships it.
 
 ## An operator applies the configuration
 

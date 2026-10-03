@@ -18,9 +18,21 @@ receives, with the headers the story depends on. Every request is on a space;
 a request that shows no `Host` header carries `Host: auth.sbx.ikigenba.dev`,
 on the space `sbx.ikigenba.dev` (`S3-sign-in.md`).
 
-A credential reaches these endpoints one of two ways: the session cookie
-`ikigenba_session=<session-id>`, or `Authorization: Bearer ikp_<token>`. Both
-name the same kind of user; apps cannot tell a cookie login from a token login.
+A credential reaches these endpoints one of three ways: the session cookie
+`ikigenba_session=<session-id>`; `Authorization: Bearer ikp_<token>`; or
+`Authorization: Basic <base64>`, where `<base64>` is the standard base64 of
+`<username>:ikp_<token>`. Basic is how git sends a credential over HTTP. In a
+Basic credential the password, everything after the first `:`, is the token,
+and it is decided exactly as the same token sent as a bearer: the same
+identity, the same refusals, the same use recorded. The username is ignored:
+any value, including empty, is accepted, and it is never compared, stored, or
+recorded. Both header forms are token credentials; wherever a story below
+speaks of a token, it holds for either form. All three name the same kind of
+user; apps cannot tell a cookie login from a token login, nor a Basic token
+from a bearer one. auth's answers issue no challenge: a 401 or 403 from
+either endpoint carries no `WWW-Authenticate` header. A client that waits for
+a challenge before sending its credential, as git does for Basic, gets it
+from the space's nginx in front of the app it is calling, not from auth.
 On success the identity is two values: `X-User-Id`, an opaque id auth minted for
 the user (16 random bytes in Crockford base32, 26 characters — never Google's
 subject, never the email; written here as `<user-id>`), and `X-User-Email`, the
@@ -42,14 +54,17 @@ the request id `<request-id>`, and the user the check resolved to when it is
 `check.allowed`; a refused or failed check names no user. Its attributes are
 exactly these strings: `outcome` — `allowed` for 200, `unauthenticated` for
 401, `forbidden` for 403, `failed` for 500; `credential` — `token` when the
-request presented `Authorization: Bearer`, otherwise `session` when it
-presented an `ikigenba_session` cookie, otherwise `none`; `method`, `host`, and
+request presented `Authorization: Bearer`, `basic` when it presented
+`Authorization: Basic`, otherwise `session` when it presented an
+`ikigenba_session` cookie, otherwise `none`; `method`, `host`, and
 `path`, from `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`, the
 path being the URI with everything from its first `?` removed, so no query
 string enters the trail; and `token`, the honored token's `<token-id>`, only
-when the credential is a token auth honored. A header nginx did not send is
+when the credential is a token auth honored, whether it came as `token` or
+`basic`. A header nginx did not send is
 recorded as the empty string and never fails the check. The event never
-carries a token's secret, a session id, or an email, and a refused token's
+carries a token's secret, a Basic credential's username or encoded value, a
+session id, or an email, and a refused token's
 causes stay as indistinguishable in the trail as they are to nginx. `/me` is
 not a check: it records no check event, only the request events.
 
@@ -339,12 +354,157 @@ Postconditions:
   for a bad token.
 - Nothing else has changed.
 
+## nginx checks a request with a token sent as Basic
+
+git over HTTP sends its credential as Basic, so a user who gives git their
+personal access token as the password reaches the app as themselves. auth
+decodes the credential, takes the password as the token, ignores the
+username, and answers exactly as for the same token sent as a bearer.
+
+Request:
+
+```
+GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Authorization: Basic <base64>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+X-User-Id: <user-id>
+X-User-Email: <email>
+```
+
+Status 200. The response fixes no body; nginx reads only the two identity
+headers. They are byte for byte the headers the same token earns as
+`Authorization: Bearer ikp_<token>`.
+
+Preconditions:
+
+- `<base64>` is the standard base64 of `<username>:ikp_<token>`, where
+  `<username>` is any string without a `:`, `git` or empty for instance; it
+  matches no user and is not looked at.
+- A token exists whose value is `ikp_<token>` and whose id is `<token-id>`: it
+  is enabled, and it is either unexpired or has no expiry.
+- The token's owner has id `<user-id>` and email `<email>`, and that owner's
+  most recent Google login was 3 days ago (within the last 30 days).
+- The request carries no `ikigenba_session` cookie.
+
+Postconditions:
+
+- The token's last-used time is updated to now.
+- auth records `check.allowed` with `outcome=allowed`, `credential=basic`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, `path=/widgets`, and
+  `token=<token-id>`, under request id `<request-id>` and user `<user-id>`.
+  Neither the secret, the username, the encoded `<base64>`, nor the email is
+  in the trail.
+- Nothing else has changed.
+
+## nginx checks a request with a Basic token that cannot be honored
+
+A token sent as Basic is refused for exactly the reasons a bearer token is:
+it matches no stored token, it is disabled, it is expired, or its owner's last
+Google login is older than 30 days. auth answers 403, and nginx passes the
+403 through. The four causes are indistinguishable from outside and in the
+trail, as they are for a bearer token. A Basic password that is not
+`ikp_`-shaped, or is empty, is simply a value matching no stored token.
+
+Request:
+
+```
+GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Authorization: Basic <base64>
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+Status 403. The response sets no `X-User-Id` or `X-User-Email`, and is the
+same response a bearer token refused for the same cause gets.
+
+Preconditions:
+
+- `<base64>` is the standard base64 of `<username>:<password>`, where
+  `<password>` is one of: a value matching no stored token; a stored token
+  that is disabled; a stored token whose expiry is in the past; or an enabled,
+  unexpired stored token whose owner's most recent Google login was 31 days
+  ago. All four are handled the same way.
+
+Postconditions:
+
+- No token's last-used time is updated.
+- auth records `check.refused` with `outcome=forbidden`, `credential=basic`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user. It carries no `token` attribute, even
+  when the password matched a stored token, and neither the password nor the
+  username.
+- Nothing else has changed.
+
+## nginx checks a request with a malformed Basic credential
+
+An `Authorization: Basic` header auth cannot read a username and password
+from is refused like a token it cannot honor: the request presented a token
+credential, so the answer is 403, never the 401 that sends a browser to sign
+in. A malformed credential is one whose value after `Basic ` is empty, is
+not valid standard base64, or decodes to bytes containing no `:`. It is
+indistinguishable from a refused Basic token, at the door and in the trail.
+
+Request:
+
+```
+GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Authorization: Basic <malformed>
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+Status 403. The response sets no identity headers and is the same response
+as in `nginx checks a request with a Basic token that cannot be honored`.
+
+Preconditions:
+
+- `<malformed>` is one of: empty; not valid standard base64 (`%%%`, say); or
+  the base64 of a string with no `:` (`aWtwX3Rva2Vu`, the base64 of
+  `ikp_token`). All three are handled the same way.
+- The request carries no `ikigenba_session` cookie.
+
+Postconditions:
+
+- No session or token was touched.
+- auth records `check.refused` with `outcome=forbidden`, `credential=basic`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user, with no `token` attribute. The
+  header's value is not in the trail.
+- Nothing else has changed.
+
 ## nginx checks a request carrying both a cookie and a token
 
 When a request carries both a valid session cookie and a valid bearer token, the
 bearer token decides who the request belongs to. The identity is the token
 owner's, and the cookie's session is left alone — not touched, not counted as
-use.
+use. A token sent as Basic decides the same way, with `credential=basic`, and
+so does one auth refuses or a malformed Basic credential: the answer is then
+the 403 of the token's own story and the session is still not consulted.
 
 Request:
 
@@ -539,7 +699,9 @@ Preconditions:
   `Authorization` header.
 - For the 403 form, the request carries `Authorization: Bearer ikp_<token>`
   where the token is unknown, disabled, expired, or its owner's Google login is
-  older than 30 days — all indistinguishable from outside.
+  older than 30 days — all indistinguishable from outside. The same token sent
+  as `Authorization: Basic <base64>`, and a malformed Basic credential, get the
+  same 403 and the same body.
 
 Postconditions:
 

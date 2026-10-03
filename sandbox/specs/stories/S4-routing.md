@@ -1,6 +1,6 @@
 # Stories — routing
 
-Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, and neither is the default app. When `auth` is present, every request for an app other than `auth` is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect, as on a host. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does.
+Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, and neither is the default app. When `auth` is present, every request for an app other than `auth` is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect, as on a host, and a 401 on a path of git's smart HTTP protocol, one ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, draws a Basic challenge in its place. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does.
 
 ## A browser reaches an app at its own name
 
@@ -267,9 +267,67 @@ Postconditions:
 
 - Nothing has changed. Nothing reached dummy's socket.
 
+## A git client reaches an app without a credential
+
+git sends no credential until the server challenges it, and the challenge it understands is `401` with `WWW-Authenticate: Basic`; it cannot follow a redirect to a sign-in page. So on a path ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, the three a clone, fetch, or push asks for, a 401 from `/check` is answered `401` by nginx itself with a Basic challenge and one line saying what to send. git then asks its credential helper and sends the token as the password. The match is on the path's end alone, whatever comes before it; a path such as `/notes.git/info/refsx` is sent to sign in like any other. The challenge is given on every app's server auth stands in front of, whatever the app's manifest holds, as on a host.
+
+Request:
+
+```
+$ curl -si 'http://dummy.wip.localhost:7400/notes.git/info/refs?service=git-upload-pack'
+```
+
+```
+$ curl -si -X POST http://dummy.wip.localhost:7400/notes.git/git-receive-pack
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Basic realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: send your token as the password` ending in a newline. `/notes.git/git-upload-pack` answers the same.
+
+Preconditions:
+
+- `wip` is up with `auth` and `dummy`, and both services are active.
+- The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached dummy's socket.
+
+## A git client sends its token as the password
+
+Once challenged, git sends `Authorization: Basic` with a username and the token as the password. auth's `/check` sees the `Authorization` header and decides the request as it decides a bearer token; the request then reaches the app with the identity auth gave, as any admitted request does.
+
+Request:
+
+```
+$ curl -si -u 'git:ikp_<token>' 'http://dummy.wip.localhost:7400/notes.git/info/refs?service=git-upload-pack'
+```
+
+Response: not fixed here; it is dummy's answer to the request.
+
+Status is whatever dummy answers; nginx adds no status of its own.
+
+Preconditions:
+
+- `wip` is up with `auth` and `dummy`, and both services are active.
+- auth's `/check` admits a Basic credential whose password is `ikp_<token>`, whatever the username.
+
+Postconditions:
+
+- Nothing has changed beyond what dummy itself does.
+- auth's `/check` received the request's `Authorization` header and no body, with `X-Original-Method: GET`, `X-Original-Host: dummy.wip.localhost` and `X-Original-URI: /notes.git/info/refs?service=git-upload-pack`.
+- dummy received `GET /notes.git/info/refs?service=git-upload-pack` with `X-User-Id` and `X-User-Email` set from auth's answer.
+
 ## A client whose credential auth refuses reaches an app
 
-A client auth knows but will not let in, such as one sending a token that is revoked or expired, gets auth's 403 unchanged, under `/mcp` and everywhere else. Only a 401 sends a browser to sign in or draws the MCP challenge.
+A client auth knows but will not let in, such as one sending a token that is revoked or expired, gets auth's 403 unchanged, under `/mcp` and everywhere else. Only a 401 sends a browser to sign in or draws the MCP or git challenge.
 
 Request:
 

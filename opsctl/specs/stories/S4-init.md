@@ -44,6 +44,14 @@ themselves when they change what they answer to (see `S7-apps.md` and
 `S8-backup.md`); `init` remains the only
 command that enables the units behind them.
 
+The host's programs — `nginx`, `certbot`, `systemctl`, `litestream`, and
+`git` — are installed by the space's first boot, not by opsctl. `init` only
+finds each on PATH and reports where it is, so a host that lacks one is told
+so before anything runs, and the fix is the package manager followed by
+`init` again. `git` is there for the apps rather than for opsctl itself: an
+app may run it, as one that serves git repositories does, and every app may
+rely on finding it.
+
 Every check runs; none short-circuits another, so one run shows an agent
 everything that is missing rather than one thing per run. A check whose input
 is another check's output is simply absent when what it depends on failed,
@@ -75,6 +83,7 @@ nothing runs and init exits 2. Safe to re-run.
 Checks, in order:
   nginx, certbot, systemctl  each found on PATH
   litestream                 found on PATH
+  git                        found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
   timeouts                   apps.drain_seconds and apps.stop_seconds are positive
@@ -91,7 +100,8 @@ Sequence:
                whose period is set and the renewal timer always
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
-               disabled app is rewritten and left disabled
+               disabled app is rewritten and left disabled. The resources
+               an app's manifest declares are kept as install wrote them
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -128,6 +138,7 @@ nginx: ok (/usr/sbin/nginx)
 certbot: ok (/usr/bin/certbot)
 systemctl: ok (/usr/bin/systemctl)
 litestream: ok (/usr/bin/litestream)
+git: ok (/usr/bin/git)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: ok (sbx.ikigenba.dev)
@@ -142,7 +153,8 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `nginx`, `certbot`, `systemctl`, and `litestream` are on the host's PATH.
+- `nginx`, `certbot`, `systemctl`, `litestream`, and `git` are on the
+  host's PATH.
 - `dns.provider`, `dns.zones`, and `host.name` are set, and the host's
   credentials can read the configured zone.
 - `apps.drain_seconds` and `apps.stop_seconds` are unset, so the defaults
@@ -161,8 +173,9 @@ Postconditions:
   is under `/opt`, and which apps are disabled. No line reports it.
 - Every installed app's `etc/env` holds `DRAIN_SECONDS=5` and
   `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit a
-  stop timeout of `10` seconds. An app that already held those values was not
-  restarted.
+  stop timeout of `10` seconds and the CPU weight, memory ceiling, and IO
+  weight its installed manifest declares (`S7-apps.md`). An app that already
+  held those values was not restarted.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
@@ -194,6 +207,7 @@ nginx: ok (/usr/sbin/nginx)
 certbot: failed: not found on PATH
 systemctl: ok (/usr/bin/systemctl)
 litestream: ok (/usr/bin/litestream)
+git: ok (/usr/bin/git)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: failed: not set
@@ -228,7 +242,7 @@ $ sudo opsctl config set host.name=sbx.ikigenba.dev
 $ sudo opsctl init; echo "exit $?"
 ```
 
-Output: the eleven `ok` lines of the ready host, and `exit 0`.
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
 
 Exits 0. The lines are on stdout; stderr is empty.
 
@@ -258,7 +272,7 @@ $ sudo opsctl config set apps.stop_seconds=30
 $ sudo opsctl init; echo "exit $?"
 ```
 
-Output: the eleven `ok` lines of the ready host, with the `timeouts` line
+Output: the twelve `ok` lines of the ready host, with the `timeouts` line
 reading
 
 ```
@@ -282,8 +296,9 @@ Postconditions:
 
 - `/opt/crm/etc/env`, `/opt/dashboard/etc/env`, and `/opt/notes/etc/env`
   hold `DRAIN_SECONDS=20`; every other line in them is as it was. All three
-  service units stop with a timeout of `30` seconds. systemd has been
-  reloaded.
+  service units stop with a timeout of `30` seconds, and each still carries
+  the resources its app's manifest declares, as install wrote them. systemd
+  has been reloaded.
 - `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted,
   so each now runs with the new values. Their sockets were not restarted.
 - `notes` was not started, restarted, or enabled: both its units are still
@@ -365,7 +380,7 @@ Postconditions:
 
 ## An agent initialises a host whose config file is corrupt
 
-This is the one case where `init` writes no report at all. Only the three PATH
+This is the one case where `init` writes no report at all. Only the PATH
 lookups could run; every check from `dns.provider` down reads the store, so
 the report would be missing everything it is for. A corrupt store is a failure
 of the command, not a finding about the host, so it goes to stderr and stdout
