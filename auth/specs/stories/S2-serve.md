@@ -4,17 +4,17 @@ The bare binary serves, and it serves only on a listening socket it inherits:
 auth never opens one of its own. It takes the socket the way systemd socket
 activation passes it — `LISTEN_PID` names auth's own process, `LISTEN_FDS` is
 `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*`
-variables from its environment once it has taken it. What kind of socket it
-is, and where it lives, is the host's business: auth serves whatever it is
-passed the same way. On a host, opsctl publishes `ikigenba-auth.socket`
-beside `ikigenba-auth.service`, which runs `/opt/auth/bin/auth` with no
-arguments as the `ikigenba` user, with `/opt/auth` as its working directory
-and `/opt/auth/etc/env` as its environment file; the host's nginx sends auth
-the requests for auth's own hostname and the identity subrequest, `/check`,
-for every other app. The service is `Type=notify`: auth tells systemd it is
-ready, by sending `READY=1` to `$NOTIFY_SOCKET`, once it is serving. The actor
-in these stories is the host, whether that is systemd or a developer at a
-terminal standing in for it.
+variables from its environment once it has taken it. What kind of socket it is,
+and where it lives, is the host's business: auth serves whatever it is passed
+the same way. On a host, opsctl publishes `ikigenba-auth.socket` beside
+`ikigenba-auth.service`, which runs `/opt/auth/bin/auth` with no arguments as
+the `ikigenba` user, with `/opt/auth` as its working directory and
+`/opt/auth/etc/env` as its environment file; the host's nginx sends auth the
+requests for auth's own hostname and the identity subrequest, `/check`, for
+every other app, or `/check/open` for an app that serves guests. The service is
+`Type=notify`: auth tells systemd it is ready, by sending `READY=1` to
+`$NOTIFY_SOCKET`, once it is serving. The actor in these stories is the host,
+whether that is systemd or a developer at a terminal standing in for it.
 
 The environment auth reads is the two Google secrets `GOOGLE_CLIENT_ID` and
 `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, `DRAIN_SECONDS`,
@@ -98,20 +98,19 @@ reaches the trail.
   `version`, the string `auth --version` prints (`S1-bootstrap.md`); its
   request id and user are empty. A start that fails before auth is serving
   records no event.
-- Every request auth serves — its pages, `/check`, `/me`, the files under
-  `/_appkit/`, a 404 — is recorded twice: `request.started` with `method` and
-  `path`, the request's method and its URL path without the query, when it
-  arrives, and `request.finished` with `status`, the status auth answered,
-  `duration_us`, how long auth took to answer in whole microseconds,
+- Every request auth serves — its pages, `/check`, `/check/open`, `/me`, the
+  files under `/_appkit/`, a 404 — is recorded twice: `request.started` with
+  `method` and `path`, the request's method and its URL path without the query,
+  when it arrives, and `request.finished` with `status`, the status auth
+  answered, `duration_us`, how long auth took to answer in whole microseconds,
   `request_bytes`, how many bytes of the request's body auth read, and
   `response_bytes`, how many bytes of body its answer carried, once it has
-  answered. Both carry the request's id, its `X-Request-Id`, and the user
-  named by its `X-User-Id`, empty when it carries none. Every event auth
-  records while answering a request comes between the two and carries the
-  same request id. A request that arrives
-  without an `X-Request-Id`, as one does when no nginx stands in front of auth,
-  is given an id of the same shape, 32 lowercase hexadecimal characters, and
-  is recorded under it.
+  answered. Both carry the request's id, its `X-Request-Id`, and the user named
+  by its `X-User-Id`, empty when it carries none. Every event auth records while
+  answering a request comes between the two and carries the same request id. A
+  request that arrives without an `X-Request-Id`, as one does when no nginx
+  stands in front of auth, is given an id of the same shape, 32 lowercase
+  hexadecimal characters, and is recorded under it.
 - When auth is stopped, it finishes the requests it accepted, so each has
   recorded its `request.finished`, and then records `service.stopping` with
   `reason`, the name of the signal that stopped it, `SIGTERM` or `SIGINT`; its
@@ -139,13 +138,13 @@ id ties it to nginx's log of the same request.
 
 auth serves on the terms every app of the platform serves on. The socket it is
 passed is its only way in. Only nginx and the suite's own apps can reach it;
-keeping everything else out is the host's job, not auth's. The suite is a
-closed system that only we deploy services into, and auth trusts it:
-`X-Request-Id`, 32 lowercase hexadecimal characters, is set by nginx on every
-request it forwards to auth and on every `/check` subrequest, overwriting
-whatever a client sent, and a sibling that calls auth directly copies it from
-the request it is serving. auth decides identity itself, from the session
-cookie or a token, and calls no sibling.
+keeping everything else out is the host's job, not auth's. The suite is a closed
+system that only we deploy services into, and auth trusts it: `X-Request-Id`, 32
+lowercase hexadecimal characters, is set by nginx on every request it forwards
+to auth and on every `/check` and `/check/open` subrequest, overwriting whatever
+a client sent, and a sibling that calls auth directly copies it from the request
+it is serving. auth decides identity itself, from the session cookie or a token,
+and calls no sibling.
 
 ## The host starts auth
 
@@ -462,12 +461,12 @@ Postconditions:
 ## The host restarts auth during a deploy
 
 A deploy replaces auth's binary and restarts `ikigenba-auth.service` alone;
-`ikigenba-auth.socket` stays up throughout. Between the old auth exiting and
-the new one being ready, connections wait in the socket's queue instead of
-being refused — nginx's `/check` subrequests for every other app among them —
-so neither a visitor to auth nor a visitor to any app auth guards sees auth
-missing. That holds because auth finishes what it accepted before it exits
-and leaves the socket where systemd put it.
+`ikigenba-auth.socket` stays up throughout. Between the old auth exiting and the
+new one being ready, connections wait in the socket's queue instead of being
+refused — nginx's `/check` and `/check/open` subrequests for every other app
+among them — so neither a visitor to auth nor a visitor to any app auth guards
+sees auth missing. That holds because auth finishes what it accepted before it
+exits and leaves the socket where systemd put it.
 
 Command:
 

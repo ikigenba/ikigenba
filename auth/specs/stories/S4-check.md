@@ -1,76 +1,88 @@
 # Stories — check
 
-The two endpoints auth serves for deciding who a request belongs to.
+The three endpoints auth serves for deciding who a request belongs to.
 `GET /check` is the subrequest endpoint nginx calls for every routed app: nginx
 forwards the original request's `Cookie` and `Authorization` headers with no
 body and with its own `X-Request-Id` for the request, written `<request-id>`
-below, and names the request it is deciding in three headers of its own
-making: `X-Original-Method`, its method; `X-Original-Host`, its host name; and
-`X-Original-URI`, its path and query exactly as the client sent them. nginx
-acts on the status auth returns — 200 means copy the identity headers onto the
-upstream request, 401 means redirect the browser to sign in, 403 means pass
-the refusal through.
+below, and names the request it is deciding in three headers of its own making:
+`X-Original-Method`, its method; `X-Original-Host`, its host name; and
+`X-Original-URI`, its path and query exactly as the client sent them. nginx acts
+on the status auth returns — 200 means copy the identity headers onto the
+upstream request, 401 means redirect the browser to sign in, 403 means pass the
+refusal through.
+`GET /check/open` is the subrequest endpoint nginx calls instead for an app that
+serves guests. nginx calls it exactly as it calls `/check`, with the same
+headers and no body, and auth answers it exactly as `/check` answers, except
+that where `/check` answers 401 — no credential, or a session idle too long or
+past its cap — `/check/open` answers 200 with neither `X-User-Id` nor
+`X-User-Email`: the request is a guest's, and nginx serves it with no identity.
+Every request to `/check/open` the stories below do not show — a token sent as
+Basic, a cookie with a token, a request not naming the original request, and any
+other — is answered and recorded exactly as `/check` answers and records it,
+apart from the guest exception above.
 `GET /me` is the public "who am I" endpoint an agent or a signed-in user can
 call directly. The requests, standing in for nginx or for the caller, go to a
 running auth (`S2-serve.md`), started with its Google settings; they reach it
 through nginx on a space. Each request is shown as the HTTP request auth
-receives, with the headers the story depends on. Every request is on a space;
-a request that shows no `Host` header carries `Host: auth.sbx.ikigenba.dev`,
-on the space `sbx.ikigenba.dev` (`S3-sign-in.md`).
+receives, with the headers the story depends on. Every request is on a space; a
+request that shows no `Host` header carries `Host: auth.sbx.ikigenba.dev`, on
+the space `sbx.ikigenba.dev` (`S3-sign-in.md`).
 
 A credential reaches these endpoints one of three ways: the session cookie
 `ikigenba_session=<session-id>`; `Authorization: Bearer ikp_<token>`; or
 `Authorization: Basic <base64>`, where `<base64>` is the standard base64 of
 `<username>:ikp_<token>`. Basic is how git sends a credential over HTTP. In a
-Basic credential the password, everything after the first `:`, is the token,
-and it is decided exactly as the same token sent as a bearer: the same
-identity, the same refusals, the same use recorded. The username is ignored:
-any value, including empty, is accepted, and it is never compared, stored, or
-recorded. Both header forms are token credentials; wherever a story below
-speaks of a token, it holds for either form. All three name the same kind of
-user; apps cannot tell a cookie login from a token login, nor a Basic token
-from a bearer one. auth's answers issue no challenge: a 401 or 403 from
-either endpoint carries no `WWW-Authenticate` header. A client that waits for
-a challenge before sending its credential, as git does for Basic, gets it
-from the space's nginx in front of the app it is calling, not from auth.
-On success the identity is two values: `X-User-Id`, an opaque id auth minted for
-the user (16 random bytes in Crockford base32, 26 characters — never Google's
-subject, never the email; written here as `<user-id>`), and `X-User-Email`, the
-user's email. A session ends at the earlier of 18 hours after login and 15
-minutes after its last use, and every request through `/check` counts as use. A
-token is honored only while its owner has logged in through Google within the
-last 30 days. Besides its secret, a token has an id, `tok_` followed by 26
-Crockford base32 characters (`S5-tokens.md`), written `<token-id>` below; the
-id is not the secret and authenticates nothing. The last-use time of a session
-and the last-used time of a token are updated in `/check` and nowhere else;
-`/me` never mutates anything.
+Basic credential the password, everything after the first `:`, is the token, and
+it is decided exactly as the same token sent as a bearer: the same identity, the
+same refusals, the same use recorded. The username is ignored: any value,
+including empty, is accepted, and it is never compared, stored, or recorded.
+Both header forms are token credentials; wherever a story below speaks of a
+token, it holds for either form. All three name the same kind of user; apps
+cannot tell a cookie login from a token login, nor a Basic token from a bearer
+one. auth's answers issue no challenge: a 401 or 403 from any endpoint carries
+no `WWW-Authenticate` header. A client that waits for a challenge before sending
+its credential, as git does for Basic, gets it from the space's nginx in front
+of the app it is calling, not from auth. On success the identity is two values:
+`X-User-Id`, an opaque id auth minted for the user (16 random bytes in Crockford
+base32, 26 characters — never Google's subject, never the email; written here as
+`<user-id>`), and `X-User-Email`, the user's email. A session ends at the
+earlier of 18 hours after login and 15 minutes after its last use, and every
+request through `/check` or `/check/open` counts as use. A token is honored only
+while its owner has logged in through Google within the last 30 days. Besides
+its secret, a token has an id, `tok_` followed by 26 Crockford base32 characters
+(`S5-tokens.md`), written `<token-id>` below; the id is not the secret and
+authenticates nothing. The last-use time of a session and the last-used time of
+a token are updated in `/check` and `/check/open` and nowhere else; `/me` never
+mutates anything.
 
-Every `GET /check` records exactly one check event in the trail, beside the
-request events every request records (`S2-serve.md`), because a request
-`/check` refuses never reaches an app and the check is the only place that
-sees it. The event is `check.allowed` when auth answers 200, `check.refused`
-when it answers 401 or 403, and `check.failed` when it answers 500. It carries
-the request id `<request-id>`, and the user the check resolved to when it is
-`check.allowed`; a refused or failed check names no user. Its attributes are
-exactly these strings: `outcome` — `allowed` for 200, `unauthenticated` for
-401, `forbidden` for 403, `failed` for 500; `credential` — `token` when the
-request presented `Authorization: Bearer`, `basic` when it presented
+Every `GET /check` and `GET /check/open` records exactly one check event in the
+trail, beside the request events every request records (`S2-serve.md`), because
+a request `/check` refuses never reaches an app and the check is the only place
+that sees it. The event is `check.allowed` when auth answers 200,
+`check.refused` when it answers 401 or 403, and `check.failed` when it answers
+500. It carries the request id `<request-id>`, and the user the check resolved
+to when it is `check.allowed` with a user; a guest, refused, or failed check
+names no user. Its attributes are exactly these strings: `outcome` — `allowed`
+for 200 with a user, `guest` for 200 with no user, `unauthenticated` for 401,
+`forbidden` for 403, `failed` for 500; `credential` — `token` when the request
+presented `Authorization: Bearer`, `basic` when it presented
 `Authorization: Basic`, otherwise `session` when it presented an
-`ikigenba_session` cookie, otherwise `none`; `method`, `host`, and
-`path`, from `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`, the
-path being the URI with everything from its first `?` removed, so no query
-string enters the trail; and `token`, the honored token's `<token-id>`, only
-when the credential is a token auth honored, whether it came as `token` or
-`basic`. A header nginx did not send is
-recorded as the empty string and never fails the check. The event never
-carries a token's secret, a Basic credential's username or encoded value, a
-session id, or an email, and a refused token's
-causes stay as indistinguishable in the trail as they are to nginx. `/me` is
-not a check: it records no check event, only the request events.
+`ikigenba_session` cookie, otherwise `none`; `method`, `host`, and `path`,
+from `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`, the path
+being the URI with everything from its first `?` removed, so no query string
+enters the trail; and `token`, the honored token's `<token-id>`, only when the
+credential is a token auth honored, whether it came as `token` or `basic`.
+A header nginx did not send is recorded as the empty string and never fails the
+check. The event never carries a token's secret, a Basic credential's username
+or encoded value, a session id, or an email, and a refused token's causes stay
+as indistinguishable in the trail as they are to nginx. `/me` is not a check: it
+records no check event, only the request events.
 
-`/check` is only meant to be called by nginx as its internal subrequest; it is not
-reachable from the public side of a space, and that unreachability (a request to
-`https://<space>/check` gets 404) is proven in `S7-on-a-space.md`, not here.
+`/check` and `/check/open` are only meant to be called by nginx as its internal
+subrequest; neither is reachable from the public side of a space, and that
+unreachability (a request to `https://<space>/check` or
+`https://<space>/check/open` gets 404) is proven in `S7-on-a-space.md`, not
+here.
 
 ## nginx checks a request with a live session
 
@@ -728,6 +740,308 @@ Request:
 
 ```
 GET /check HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Cookie: ikigenba_session=<session-id>
+```
+
+Response:
+
+```
+HTTP/1.1 500 Internal Server Error
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 500. The response sets no `X-User-Id` or `X-User-Email`. The body is
+one line of plain text saying the server failed.
+
+Preconditions:
+
+- auth is serving.
+- The request carries a credential, here a session cookie.
+- auth's database fails the read the request needs.
+
+Postconditions:
+
+- No session or token was touched.
+- auth records `check.failed` with `outcome=failed`, `credential=session`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user.
+- auth wrote nothing to stderr.
+- Nothing else has changed.
+
+## nginx checks an open request with no credential
+
+A guest asks an app that serves guests for a page. Where `/check` would answer
+401 and nginx would send the visitor to sign in, `/check/open` answers 200 with
+no identity, so the guest is served and never sent to sign in.
+
+Request:
+
+```
+GET /check/open HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+```
+
+Status 200. The response sets no `X-User-Id` or `X-User-Email` and fixes no
+body; nginx serves the request with no identity.
+
+Preconditions:
+
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header.
+
+Postconditions:
+
+- auth records `check.allowed` with `outcome=guest`, `credential=none`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user.
+- Nothing else has changed.
+
+## nginx checks an open request with a session idle too long or past its cap
+
+A session that has expired, by idling more than 15 minutes or by reaching its
+18-hour cap, is no identity on `/check/open` either; but where `/check` would
+answer 401, `/check/open` serves the request as a guest's. The visitor is not
+sent to sign in, and the expired session is not revived.
+
+Request:
+
+```
+GET /check/open HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Cookie: ikigenba_session=<session-id>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+```
+
+Status 200. The response sets no identity headers, exactly as for no
+credential; from nginx's side the two are the same.
+
+Preconditions:
+
+- A session exists, named by `ikigenba_session=<session-id>`, that is one of:
+  last used 20 minutes ago (more than 15 minutes) with its login 3 hours ago
+  (within the 18-hour cap); or logged in 18 hours and 30 minutes ago (past the
+  18-hour cap) with its last use 1 minute ago (well within the 15-minute idle
+  window). Both are handled the same way.
+
+Postconditions:
+
+- The session is expired. Its last-use time is not updated; the request does not
+  count as use.
+- auth records `check.allowed` with `outcome=guest`, `credential=session`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user.
+
+## nginx checks an open request with a live session
+
+A signed-in user who visits an app that serves guests is still recognised:
+`/check/open` answers a live session exactly as `/check` does, with the
+identity headers, and counts the request as use of the session.
+
+Request:
+
+```
+GET /check/open HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Cookie: ikigenba_session=<session-id>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+X-User-Id: <user-id>
+X-User-Email: <email>
+```
+
+Status 200. The response fixes no body; nginx reads only `X-User-Id` and
+`X-User-Email` and copies them onto the upstream request.
+
+Preconditions:
+
+- A session exists, named by `ikigenba_session=<session-id>`, whose last use was
+  5 minutes ago (within the 15-minute idle window) and whose login was 2 hours
+  ago (within the 18-hour cap).
+- That session belongs to the user with id `<user-id>` and email `<email>`.
+
+Postconditions:
+
+- The session's last-use time is updated to now (the session is touched).
+- auth records `check.allowed` with `outcome=allowed`, `credential=session`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and user `<user-id>`. The query `?page=2` is not in
+  the trail.
+- Nothing else has changed.
+
+## nginx checks an open request with a token
+
+An agent with a personal access token is recognised on an app that serves
+guests exactly as on any other app: auth answers 200 with the token owner's
+identity and records the token's use.
+
+Request:
+
+```
+GET /check/open HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Authorization: Bearer ikp_<token>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+X-User-Id: <user-id>
+X-User-Email: <email>
+```
+
+Status 200. The response fixes no body; nginx reads only the two identity
+headers.
+
+Preconditions:
+
+- A token exists whose value is `ikp_<token>` and whose id is `<token-id>`: it
+  is enabled, and it is either unexpired or has no expiry.
+- The token's owner has id `<user-id>` and email `<email>`, and that owner's
+  most recent Google login was 3 days ago (within the last 30 days).
+- The request carries no `ikigenba_session` cookie.
+
+Postconditions:
+
+- The token's last-used time is updated to now.
+- auth records `check.allowed` with `outcome=allowed`, `credential=token`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, `path=/widgets`, and
+  `token=<token-id>`, under request id `<request-id>` and user `<user-id>`.
+  Neither the secret nor the email is in the trail.
+- Nothing else has changed.
+
+## nginx checks an open request with a token that cannot be honored
+
+A request that presents a token auth refuses is not served as a guest's: it
+presented a credential, and the credential is refused. `/check/open` answers
+403 exactly as `/check` does, and nginx passes the 403 through. An unknown
+token, a disabled token, an expired token, and a token whose owner's last
+Google login is older than 30 days are indistinguishable from outside — the
+same status, no identity headers, and no hint of which case applied.
+
+Request:
+
+```
+GET /check/open HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Authorization: Bearer ikp_<token>
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+Status 403. The response sets no `X-User-Id` or `X-User-Email`.
+
+Preconditions:
+
+- The request carries `Authorization: Bearer ikp_<token>`, where `ikp_<token>`
+  is one of: a value matching no stored token; a stored token that is disabled;
+  a stored token whose expiry is in the past; or an enabled, unexpired stored
+  token whose owner's most recent Google login was 31 days ago. All four are
+  handled the same way.
+
+Postconditions:
+
+- No token's last-used time is updated.
+- auth records `check.refused` with `outcome=forbidden`, `credential=token`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user. It carries no `token` attribute, even
+  when the secret matched a stored token, so the four cases are as
+  indistinguishable in the trail as at the door.
+- Nothing else has changed.
+
+## nginx checks an open request with a malformed Basic credential
+
+An `Authorization: Basic` header auth cannot read a username and password from
+is a credential presented and refused, not a guest: `/check/open` answers 403
+exactly as `/check` does. A malformed credential is one whose value after
+`Basic ` is empty, is not valid standard base64, or decodes to bytes containing
+no `:`.
+
+Request:
+
+```
+GET /check/open HTTP/1.1
+X-Request-Id: <request-id>
+X-Original-Method: GET
+X-Original-Host: dummy.sbx.ikigenba.dev
+X-Original-URI: /widgets?page=2
+Authorization: Basic <malformed>
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+Status 403. The response sets no identity headers and is the same response
+as in `nginx checks a request with a malformed Basic credential`.
+
+Preconditions:
+
+- `<malformed>` is one of: empty; not valid standard base64 (`%%%`, say); or
+  the base64 of a string with no `:` (`aWtwX3Rva2Vu`, the base64 of
+  `ikp_token`). All three are handled the same way.
+- The request carries no `ikigenba_session` cookie.
+
+Postconditions:
+
+- No session or token was touched.
+- auth records `check.refused` with `outcome=forbidden`, `credential=basic`,
+  `method=GET`, `host=dummy.sbx.ikigenba.dev`, and `path=/widgets`, under
+  request id `<request-id>` and no user, with no `token` attribute. The
+  header's value is not in the trail.
+- Nothing else has changed.
+
+## nginx checks an open request while auth cannot use its database
+
+When the database fails the read or write a request needs, `/check/open`
+cannot decide whether the request is a user's or a guest's, so it does not
+fall back to serving a guest: it answers 500 exactly as `/check` does, and
+the app is never reached.
+
+Request:
+
+```
+GET /check/open HTTP/1.1
 X-Request-Id: <request-id>
 X-Original-Method: GET
 X-Original-Host: dummy.sbx.ikigenba.dev
