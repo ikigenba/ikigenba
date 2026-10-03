@@ -32,7 +32,9 @@ with the user. Report proposed intent changes for authoring through
 `draft-stories`; this operation's output is design. User-supplied external
 story sources may be read without broadening output authority. Existing design and relevant code establish the
 current target, not a compatibility obligation. Respect spec's sub-project
-boundary; do not inspect sibling internals.
+boundary; do not inspect sibling internals. A sibling's `specs/` and
+`AGENTS.md` are precedent: read them to match their patterns, never to cite
+them.
 
 Repository writes are limited to `specs/design/`. No source, test, story,
 issue, or review-file changes. Do not start `build-spec`.
@@ -76,7 +78,8 @@ user's authorized scope and according to the design format's proof rules,
 before writing that requirement. A requirement already in the design is not
 proven again.
 Use installed public interfaces and published documentation for sibling tools,
-never their source or design. Do not invent evidence or claim drafting
+never their source or design; precedent read from a sibling's design proves
+nothing about its behavior. Do not invent evidence or claim drafting
 performed a check.
 
 ## User decisions

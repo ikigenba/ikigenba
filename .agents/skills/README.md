@@ -7,7 +7,7 @@ Skills follow the [Agent Skills](https://agentskills.io) open standard.
 The format is specified at https://agentskills.io/specification.
 
 One skill per subdirectory: `spec`, `draft-stories`, `draft-design`,
-`build-spec`, `audit-spec`, `fanout`, `grill-me`, `handoff`.
+`build-spec`, `audit-spec`, `deliver`, `fanout`, `grill-me`, `handoff`.
 
 `spec` is the shared foundation (layout, ids, the gap, issue filing, the
 story and design formats); `draft-stories`, `draft-design`, and the three
@@ -15,6 +15,8 @@ story and design formats); `draft-stories`, `draft-design`, and the three
 `draft-stories`, `draft-design`, `build-spec`, and `audit-spec` load `fanout`
 internally for delegation and independent verification; the user need not
 name both skills.
+`deliver` sits above them: it takes a decisions document and drives the
+whole cycle, delegating each operation and dispatching `build-spec`.
 
 ## Who loads this path
 
