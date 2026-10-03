@@ -756,7 +756,11 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			loginResponseBytes, err := io.Copy(io.Discard, response.Body)
 			_ = response.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
 			if response.StatusCode != http.StatusFound {
 				t.Fatalf("login status=%d", response.StatusCode)
 			}
@@ -810,13 +814,39 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 				t.Fatal("callback did not record its final event")
 			}
 			got := output.String()
+			// The callback's connection was cut off, so its response body is
+			// unavailable here. Keep its reported count in the exact fallback
+			// comparison; the server tests prove body-byte count correctness.
+			callbackResponseBytes := int64(-1)
+			for _, line := range strings.Split(got, "\n") {
+				data, ok := strings.CutPrefix(line, "auth: undelivered event: ")
+				if !ok {
+					continue
+				}
+				var event struct {
+					Name      string `json:"event"`
+					RequestID string `json:"request_id"`
+					Attrs     struct {
+						ResponseBytes int64 `json:"response_bytes"`
+					} `json:"attrs"`
+				}
+				if err := json.Unmarshal([]byte(data), &event); err != nil {
+					t.Fatal(err)
+				}
+				if event.Name == "request.finished" && event.RequestID == "drain-callback" {
+					callbackResponseBytes = event.Attrs.ResponseBytes
+				}
+			}
+			if callbackResponseBytes < 0 {
+				t.Fatalf("callback response byte count=%d, want nonnegative count", callbackResponseBytes)
+			}
 			wantEvents := []telemetry.Event{
 				{Time: p.Now(), Service: "auth", Name: "service.started", Attrs: telemetry.Attrs{"version": version.Version}},
 				{Time: p.Now(), Service: "auth", Name: "request.started", RequestID: "drain-login", Attrs: telemetry.Attrs{"method": "GET", "path": "/login/google"}},
-				{Time: p.Now(), Service: "auth", Name: "request.finished", RequestID: "drain-login", Attrs: telemetry.Attrs{"status": 302, "duration_us": 0}},
+				{Time: p.Now(), Service: "auth", Name: "request.finished", RequestID: "drain-login", Attrs: telemetry.Attrs{"status": 302, "duration_us": 0, "request_bytes": 0, "response_bytes": loginResponseBytes}},
 				{Time: p.Now(), Service: "auth", Name: "request.started", RequestID: "drain-callback", Attrs: telemetry.Attrs{"method": "GET", "path": "/login/google/callback"}},
 				{Time: p.Now(), Service: "auth", Name: "sign_in.refused", RequestID: "drain-callback", Attrs: telemetry.Attrs{"reason": "provider_failed"}},
-				{Time: p.Now(), Service: "auth", Name: "request.finished", RequestID: "drain-callback", Attrs: telemetry.Attrs{"status": 502, "duration_us": 0}},
+				{Time: p.Now(), Service: "auth", Name: "request.finished", RequestID: "drain-callback", Attrs: telemetry.Attrs{"status": 502, "duration_us": 0, "request_bytes": 0, "response_bytes": callbackResponseBytes}},
 				{Time: p.Now(), Service: "auth", Name: "service.stopping", Attrs: telemetry.Attrs{"reason": context.Cause(ctx).Error()}},
 			}
 			wantLines := make([]string, len(wantEvents))

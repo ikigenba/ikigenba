@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,17 +12,17 @@ import (
 )
 
 func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
-	identity, bearer, err := s.identity(r, true)
+	identity, token, err := s.identity(r, true)
 	if err != nil {
 		outcome := "failed"
 		if errors.Is(err, store.ErrNotFound) {
 			outcome = "unauthenticated"
-			if bearer {
+			if token {
 				outcome = "forbidden"
 			}
 		}
 		s.recordCheck(r, outcome, store.Identity{})
-		s.writeIdentityError(w, r, bearer, err)
+		s.writeIdentityError(w, r, token, err)
 		return
 	}
 
@@ -32,9 +33,9 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	identity, bearer, err := s.identity(r, false)
+	identity, token, err := s.identity(r, false)
 	if err != nil {
-		s.writeIdentityError(w, r, bearer, err)
+		s.writeIdentityError(w, r, token, err)
 		return
 	}
 
@@ -52,8 +53,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) identity(r *http.Request, touch bool) (store.Identity, bool, error) {
-	if authorization := r.Header.Get("Authorization"); strings.HasPrefix(authorization, "Bearer ") {
-		secret := strings.TrimPrefix(authorization, "Bearer ")
+	if kind, secret, malformed := tokenCredential(r); kind != "" {
+		if malformed {
+			return store.Identity{}, true, store.ErrNotFound
+		}
 		if touch {
 			identity, err := s.st.TouchTokenIdentity(secret, s.now())
 			return identity, true, err
@@ -74,12 +77,25 @@ func (s *Server) identity(r *http.Request, touch bool) (store.Identity, bool, er
 	return identity, false, err
 }
 
-func (s *Server) writeIdentityError(w http.ResponseWriter, r *http.Request, bearer bool, err error) {
+func tokenCredential(r *http.Request) (kind, secret string, malformed bool) {
+	authorization := r.Header.Get("Authorization")
+	if secret, ok := strings.CutPrefix(authorization, "Bearer "); ok {
+		return "token", secret, false
+	}
+	if encoded, ok := strings.CutPrefix(authorization, "Basic "); ok {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		_, secret, colon := strings.Cut(string(decoded), ":")
+		return "basic", secret, encoded == "" || err != nil || !colon
+	}
+	return "", "", false
+}
+
+func (s *Server) writeIdentityError(w http.ResponseWriter, r *http.Request, token bool, err error) {
 	if !errors.Is(err, store.ErrNotFound) {
 		s.writeServerError(w, r, err)
 		return
 	}
-	if bearer {
+	if token {
 		writePlainError(w, http.StatusForbidden, "token refused")
 		return
 	}
@@ -88,8 +104,8 @@ func (s *Server) writeIdentityError(w http.ResponseWriter, r *http.Request, bear
 
 func (s *Server) recordCheck(r *http.Request, outcome string, resolved store.Identity) {
 	credential := "none"
-	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
-		credential = "token"
+	if kind, _, _ := tokenCredential(r); kind != "" {
+		credential = kind
 	} else if _, err := r.Cookie(SessionCookieName); err == nil {
 		credential = "session"
 	}
@@ -99,7 +115,7 @@ func (s *Server) recordCheck(r *http.Request, outcome string, resolved store.Ide
 	switch outcome {
 	case "allowed":
 		name = "check.allowed"
-		if credential == "token" {
+		if credential == "token" || credential == "basic" {
 			attrs["token"] = resolved.TokenID
 		}
 	case "failed":

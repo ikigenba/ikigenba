@@ -100,8 +100,13 @@ func assertTrail(t *testing.T, events []telemetry.Event, r *http.Request, status
 		t.Fatalf("start attrs=%#v", events[0].Attrs)
 	}
 	end := events[len(events)-1]
-	if !reflect.DeepEqual(end.Attrs, telemetry.Attrs{"status": int64(status), "duration_us": int64(0)}) {
+	if len(end.Attrs) != 4 || end.Attrs["status"] != int64(status) || end.Attrs["duration_us"] != int64(0) {
 		t.Fatalf("finish attrs=%#v", end.Attrs)
+	}
+	for _, key := range []string{"request_bytes", "response_bytes"} {
+		if count, ok := end.Attrs[key].(int64); !ok || count < 0 {
+			t.Fatalf("finish %s=%v, want nonnegative byte count", key, end.Attrs[key])
+		}
 	}
 	for _, e := range []telemetry.Event{events[0], end} {
 		if e.User != r.Header.Get("X-User-Id") {
@@ -111,7 +116,7 @@ func assertTrail(t *testing.T, events []telemetry.Event, r *http.Request, status
 }
 
 func TestRequestTrailEveryRoute(t *testing.T) {
-	// R-2HW5-XKDN R-3HP0-MB1R: shared files, pages, refusals, unknown routes, and handled store failures share the outer middleware.
+	// R-ORBB-5N5F R-3HP0-MB1R: shared files, pages, refusals, unknown routes, and handled store failures share the outer middleware.
 	st := openSignInStore(t)
 	f := newTrail(t, Config{Store: st, WorkspaceDomain: "green.example"}, nil)
 	for _, tc := range []struct {
@@ -163,20 +168,34 @@ type failedTrailReader struct{}
 func (failedTrailReader) Read([]byte) (int, error) { return 0, errors.New("random failed") }
 
 func TestRequestIDRandomness(t *testing.T) {
-	// R-DWO7-CX19 R-DRSL-TU2H: minted request ids read the writer's random source; a failed read still yields an opaque 32-digit id.
-	for _, random := range []io.Reader{bytes.NewReader(bytes.Repeat([]byte{0xab}, 16)), failedTrailReader{}} {
-		f := newTrail(t, Config{}, random)
-		r := trailRequest("GET", "/_appkit/theme.css")
-		r.Header.Del("X-Request-Id")
-		w, events := f.request(t, r)
-		assertTrail(t, events, r, w.Code)
-		id := events[0].RequestID
-		if !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(id) {
-			t.Fatalf("id=%q", id)
-		}
-		if _, ok := random.(*bytes.Reader); ok && id != strings.Repeat("ab", 16) {
-			t.Fatalf("deterministic id=%q", id)
-		}
+	// R-ORBB-5N5F R-DWO7-CX19 R-DRSL-TU2H: absent or empty first ids mint one shared boundary id; a failed random read still yields 32 lowercase hex digits.
+	for _, tc := range []struct {
+		name   string
+		values []string
+	}{
+		{"absent", nil},
+		{"empty", []string{""}},
+		{"empty-first", []string{"", "ignored-id"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, random := range []io.Reader{bytes.NewReader(bytes.Repeat([]byte{0xab}, 16)), failedTrailReader{}} {
+				f := newTrail(t, Config{}, random)
+				r := trailRequest("GET", "/_appkit/theme.css")
+				r.Header.Del("X-Request-Id")
+				for _, value := range tc.values {
+					r.Header.Add("X-Request-Id", value)
+				}
+				w, events := f.request(t, r)
+				assertTrail(t, events, r, w.Code)
+				id := events[0].RequestID
+				if !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(id) {
+					t.Fatalf("id=%q", id)
+				}
+				if _, ok := random.(*bytes.Reader); ok && id != strings.Repeat("ab", 16) {
+					t.Fatalf("deterministic id=%q", id)
+				}
+			}
+		})
 	}
 }
 
@@ -375,19 +394,23 @@ func TestTokenAndCheckTrail(t *testing.T) {
 
 func testCheckTrail(t *testing.T, f *trailFixture, st *store.Store, user store.User, session store.Session, token store.Token, secret string) {
 	t.Helper()
-	// R-TJWJ-B9P3 R-TL4F-P1FS R-TMCC-2T6H R-TNK8-GKX6 R-TOS4-UCNV R-TQ01-84EK R-TSFT-ZNVY R-TUVM-R7DC: checks resolve credentials; /me only has boundary events.
+	// R-TJWJ-B9P3 R-TL4F-P1FS R-OGC7-PPH6 R-TNK8-GKX6 R-OIS0-H8YK R-TQ01-84EK R-OMFP-MK6N R-TUVM-R7DC: checks resolve credentials; /me only has boundary events.
 	for _, tc := range []struct {
 		credential, value, outcome string
 		status                     int
-	}{{"token", secret, "allowed", 200}, {"session", session.ID, "allowed", 200}, {"none", "", "unauthenticated", 401}, {"token", "unknown", "forbidden", 403}} {
+	}{{"token", secret, "allowed", 200}, {"basic", basicAuthorization("private-user", secret), "allowed", 200}, {"session", session.ID, "allowed", 200}, {"none", "", "unauthenticated", 401}, {"token", "unknown", "forbidden", 403}, {"basic", basicAuthorization("another-private-user", "unknown"), "forbidden", 403}, {"basic", "Basic !", "forbidden", 403}} {
 		r := trailRequest("GET", "/check")
 		r.Header.Set("X-Original-Method", "POST")
 		r.Header.Add("X-Original-Method", "ignored")
 		r.Header.Set("X-Original-Host", "app.green.example")
 		r.Header.Set("X-Original-URI", "/private?hide-this")
 		r.Header.Add("X-Original-URI", "ignored")
-		if tc.credential == "token" {
-			r.Header.Set("Authorization", "Bearer "+tc.value)
+		if tc.credential == "token" || tc.credential == "basic" {
+			authorization := tc.value
+			if tc.credential == "token" {
+				authorization = "Bearer " + tc.value
+			}
+			r.Header.Set("Authorization", authorization)
 			r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		}
 		if tc.credential == "session" {
@@ -405,7 +428,7 @@ func testCheckTrail(t *testing.T, f *trailFixture, st *store.Store, user store.U
 		}
 		assertTrail(t, events, r, w.Code, name)
 		attrs := telemetry.Attrs{"outcome": tc.outcome, "credential": tc.credential, "method": "POST", "host": "app.green.example", "path": "/private"}
-		if tc.credential == "token" && w.Code == 200 {
+		if (tc.credential == "token" || tc.credential == "basic") && w.Code == 200 {
 			attrs["token"] = token.ID
 		}
 		if events[1].User != wantUser || !reflect.DeepEqual(events[1].Attrs, attrs) {
@@ -473,6 +496,79 @@ func testCheckTrail(t *testing.T, f *trailFixture, st *store.Store, user store.U
 	assertTrail(t, events, r, 500, "check.failed")
 	if events[1].User != "" || !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"outcome": "failed", "credential": "token", "method": "", "host": "", "path": ""}) {
 		t.Fatalf("failed=%#v", events[1])
+	}
+}
+
+func TestBasicRefusalTrailHidesUsernameAndCause(t *testing.T) {
+	// R-OOVI-E3O1: all Basic refusal causes, malformed forms, and usernames have identical check events apart from Time.
+	var expected *telemetry.Event
+	for _, cause := range []string{"unknown", "disabled", "expired", "stale-owner", "malformed"} {
+		fixture, session, secret := basicOutcomeFixture(t, cause)
+		authorizations := []string{basicAuthorization("", secret), basicAuthorization("private-username", secret), basicAuthorization("different-username\x00", secret)}
+		if cause == "malformed" {
+			authorizations = malformedBasicValues()
+		}
+		f := newTrail(t, Config{Store: fixture.store, Now: func() time.Time { return identityNow }}, nil)
+		for _, authorization := range authorizations {
+			r := trailRequest("GET", "/check")
+			r.Header.Set("Authorization", authorization)
+			r.Header.Set("X-Original-Method", "POST")
+			r.Header.Set("X-Original-Host", "app.green.example")
+			r.Header.Set("X-Original-URI", "/path?private")
+			r.AddCookie(cookieForHost(r.Host, session.ID, false))
+			w, events := f.request(t, r)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("%s Basic answer=%d", cause, w.Code)
+			}
+			current := events[1]
+			current.Time = time.Time{}
+			if expected == nil {
+				expected = &current
+			} else if !reflect.DeepEqual(current, *expected) {
+				t.Fatalf("%s check event=%#v, want %#v", cause, current, *expected)
+			}
+		}
+	}
+}
+
+func TestCheckCredentialKindForIgnoredSchemesAndDatabaseFailure(t *testing.T) {
+	// R-OGC7-PPH6 R-OIS0-H8YK: the exact check attributes reflect precedence for ignored schemes, malformed Basic, and store failures.
+	for _, tc := range []struct {
+		authorization string
+		cookie        bool
+		closed        bool
+		credential    string
+		outcome       string
+		status        int
+	}{
+		{"basic !", true, false, "session", "allowed", 200},
+		{"basic !", false, false, "none", "unauthenticated", 401},
+		{"Digest ignored", true, false, "session", "allowed", 200},
+		{"Basic !", true, true, "basic", "forbidden", 403},
+		{basicAuthorization("ignored", "secret"), true, true, "basic", "failed", 500},
+		{"Bearer secret", true, true, "token", "failed", 500},
+		{"Digest ignored", true, true, "session", "failed", 500},
+	} {
+		fixture, session, _ := basicOutcomeFixture(t, "honored")
+		if tc.closed {
+			if err := fixture.store.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		f := newTrail(t, Config{Store: fixture.store, Now: func() time.Time { return identityNow }}, nil)
+		r := trailRequest("GET", "/check")
+		r.Header.Set("Authorization", tc.authorization)
+		if tc.cookie {
+			r.AddCookie(cookieForHost(r.Host, session.ID, false))
+		}
+		w, events := f.request(t, r)
+		if w.Code != tc.status {
+			t.Fatalf("%q closed=%v status=%d, want %d", tc.authorization, tc.closed, w.Code, tc.status)
+		}
+		want := telemetry.Attrs{"outcome": tc.outcome, "credential": tc.credential, "method": "", "host": "", "path": ""}
+		if !reflect.DeepEqual(events[1].Attrs, want) {
+			t.Fatalf("check attrs=%#v, want %#v", events[1].Attrs, want)
+		}
 	}
 }
 
@@ -644,7 +740,7 @@ func TestDomainFailuresRecordOnlyRequiredEvents(t *testing.T) {
 }
 
 func TestRequestTrailPanicStatus(t *testing.T) {
-	// R-3HP0-MB1R R-2HW5-XKDN: a panic before writing a response finishes the recorded request with status 500.
+	// R-3HP0-MB1R R-ORBB-5N5F: a panic before writing a response finishes the recorded request with status 500.
 	st := openSignInStore(t)
 	user, _, err := st.UpsertUserOnLogin("issuer", "panic-user", "panic@green.example", signInNow)
 	if err != nil {

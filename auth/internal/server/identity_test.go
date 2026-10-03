@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -232,7 +233,7 @@ func TestCheckSessionOutcomes(t *testing.T) {
 		before := fixture.snapshot(t)
 		response := serveIdentity(srv.handleCheck, identityRequest("/check", live.ID, ""))
 
-		// R-F8IE-L3ZO: a live cookie authenticates, emits both identity headers,
+		// R-NQQB-OIWL: a live cookie authenticates, emits both identity headers,
 		// and advances last use to the injected request time.
 		if response.Code != http.StatusOK || response.Header().Get(HeaderUserID) != user.ID || response.Header().Get(HeaderUserEmail) != user.Email {
 			t.Fatalf("response = %d, headers %#v", response.Code, response.Header())
@@ -252,7 +253,7 @@ func TestCheckSessionOutcomes(t *testing.T) {
 	t.Run("idle", func(t *testing.T) {
 		before := fixture.snapshot(t)
 		response := serveIdentity(srv.handleCheck, identityRequest("/check", idle.ID, ""))
-		// R-FAY7-CNH2: 20 idle minutes inside the 18-hour cap is a non-mutating 401.
+		// R-NT64-G2DZ: 20 idle minutes inside the 18-hour cap is a non-mutating 401.
 		assertCheckRefusal(t, response, http.StatusUnauthorized)
 		assertSnapshotEqual(t, fixture.snapshot(t), before)
 	})
@@ -260,7 +261,7 @@ func TestCheckSessionOutcomes(t *testing.T) {
 	t.Run("capped", func(t *testing.T) {
 		before := fixture.snapshot(t)
 		response := serveIdentity(srv.handleCheck, identityRequest("/check", capped.ID, ""))
-		// R-FC63-QF7R: 18.5 hours since login is a non-mutating 401 despite recent use.
+		// R-NWTT-LDM2: 18.5 hours since login is a non-mutating 401 despite recent use.
 		assertCheckRefusal(t, response, http.StatusUnauthorized)
 		assertSnapshotEqual(t, fixture.snapshot(t), before)
 	})
@@ -280,7 +281,7 @@ func TestCheckBearerWinsAndTouchesOnlyToken(t *testing.T) {
 
 	// R-FDE0-46YG: an honored bearer emits its identity and records request-time use.
 	// R-FH1P-9I6J: the honored bearer wins over a different live session, which is untouched.
-	// R-F7AI-7C8Z: token resolution is exclusive whenever the Bearer scheme is present.
+	// R-NN2M-J7OI: token resolution is exclusive whenever the Bearer scheme is present.
 	if response.Code != http.StatusOK || response.Header().Get(HeaderUserID) != tokenUser.ID || response.Header().Get(HeaderUserEmail) != tokenUser.Email {
 		t.Fatalf("response = %d, headers %#v", response.Code, response.Header())
 	}
@@ -327,7 +328,7 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 			// R-FFTS-VQFU: every refusal cause is 403 with neither identity header,
 			// changes no stored session or token, and is the same response bytes —
 			// status, headers, and body — without pinning what the body says.
-			// R-F7AI-7C8Z: even a refused bearer prevents fallback to the live cookie.
+			// R-NN2M-J7OI: even a refused bearer prevents fallback to the live cookie.
 			assertCheckRefusal(t, response, http.StatusForbidden)
 			assertSnapshotEqual(t, fixture.snapshot(t), before)
 			got := result{code: response.Code, header: response.Header().Clone(), body: response.Body.String()}
@@ -340,7 +341,7 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 	}
 }
 
-func TestBearerDoesNotConsultSession(t *testing.T) {
+func TestTokenCredentialsDoNotConsultSession(t *testing.T) {
 	identitySessionProbeRegisterOnce.Do(func() {
 		identitySessionProbeRegisterErr = sqlite.RegisterScalarFunction(
 			"identity_session_probe",
@@ -375,19 +376,25 @@ func TestBearerDoesNotConsultSession(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name, target, bearer string
-		handler              func(http.ResponseWriter, *http.Request)
-		status               int
+		name, target, authorization string
+		handler                     func(http.ResponseWriter, *http.Request)
+		status                      int
 	}{
-		{name: "me honored", target: "/me", bearer: secret, handler: fixture.server(t).handleMe, status: http.StatusOK},
-		{name: "me refused", target: "/me", bearer: "ikp_unknown", handler: fixture.server(t).handleMe, status: http.StatusForbidden},
-		{name: "check honored", target: "/check", bearer: secret, handler: fixture.server(t).handleCheck, status: http.StatusOK},
-		{name: "check refused", target: "/check", bearer: "ikp_unknown", handler: fixture.server(t).handleCheck, status: http.StatusForbidden},
+		{name: "me honored", target: "/me", authorization: "Bearer " + secret, handler: fixture.server(t).handleMe, status: http.StatusOK},
+		{name: "me refused", target: "/me", authorization: "Bearer ikp_unknown", handler: fixture.server(t).handleMe, status: http.StatusForbidden},
+		{name: "check honored", target: "/check", authorization: "Bearer " + secret, handler: fixture.server(t).handleCheck, status: http.StatusOK},
+		{name: "check refused", target: "/check", authorization: "Bearer ikp_unknown", handler: fixture.server(t).handleCheck, status: http.StatusForbidden},
+		{name: "me basic honored", target: "/me", authorization: basicAuthorization("ignored", secret), handler: fixture.server(t).handleMe, status: http.StatusOK},
+		{name: "me basic refused", target: "/me", authorization: basicAuthorization("ignored", "unknown"), handler: fixture.server(t).handleMe, status: http.StatusForbidden},
+		{name: "me basic malformed", target: "/me", authorization: "Basic !", handler: fixture.server(t).handleMe, status: http.StatusForbidden},
+		{name: "check basic honored", target: "/check", authorization: basicAuthorization("ignored", secret), handler: fixture.server(t).handleCheck, status: http.StatusOK},
+		{name: "check basic refused", target: "/check", authorization: basicAuthorization("ignored", "unknown"), handler: fixture.server(t).handleCheck, status: http.StatusForbidden},
+		{name: "check basic malformed", target: "/check", authorization: "Basic !", handler: fixture.server(t).handleCheck, status: http.StatusForbidden},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			identitySessionProbeCalls.Store(0)
-			response := serveIdentity(test.handler, identityRequest(test.target, session.ID, test.bearer))
-			// R-F7AI-7C8Z: with either an honored or refused bearer, the
+			response := serveIdentity(test.handler, credentialRequest(test.target, []*http.Cookie{{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}, test.authorization))
+			// R-NN2M-J7OI: honored, refused, and malformed token credentials, the
 			// instrumented real session query is never reached by /me or /check
 			// despite a live cookie.
 			if response.Code != test.status {
@@ -423,8 +430,8 @@ func TestMeHonoredCredentialsReturnCompactJSONWithoutMutation(t *testing.T) {
 				wantUser = sessionUser
 			}
 			// R-FJHI-11NX: an honored token yields exact compact token-owner JSON.
-			// R-FKPE-ETEM: a live session yields exact compact session-owner JSON.
-			// R-F7AI-7C8Z: in the bearer case, the token owner wins over the cookie owner.
+			// R-NZ9M-CX3G: a live session yields exact compact session-owner JSON.
+			// R-NN2M-J7OI: in the bearer case, the token owner wins over the cookie owner.
 			// R-2UUB-27PR: successful /me paths do not change any stored row.
 			wantBody := fmt.Sprintf(`{"id":%q,"email":%q}`, wantUser.ID, wantUser.Email)
 			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/json" || response.Body.String() != wantBody {
@@ -442,9 +449,11 @@ func TestMeMissingAndDeadSessionsArePlain401WithoutMutation(t *testing.T) {
 			before := fixture.snapshot(t)
 			response := serveIdentity(fixture.server(t).handleMe, identityRequest("/me", sessionID, ""))
 
-			// R-GAHD-7316: absent and non-live sessions return a single plain-text line, not JSON.
+			// R-O2XB-I8BJ: absent and non-live sessions return a single plain-text line, not JSON.
 			// R-2UUB-27PR: unsuccessful session /me paths perform no write.
-			assertPlainRefusal(t, response, http.StatusUnauthorized, "sign in required\n")
+			if response.Code != http.StatusUnauthorized || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(response.Body.String()) || strings.HasPrefix(strings.TrimSpace(response.Body.String()), "{") {
+				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+			}
 			assertSnapshotEqual(t, fixture.snapshot(t), before)
 		})
 	}
@@ -487,7 +496,7 @@ func TestMeRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 			response := serveIdentity(fixture.server(t).handleMe, identityRequest("/me", session.ID, secret))
 
 			// R-2TME-OFZ2: all refusal causes yield the same single-line token-refused response.
-			// R-F7AI-7C8Z: a refused bearer does not fall back to a live session.
+			// R-NN2M-J7OI: a refused bearer does not fall back to a live session.
 			// R-2UUB-27PR: refused /me paths do not change any stored row.
 			assertPlainRefusal(t, response, http.StatusForbidden, "token refused\n")
 			assertSnapshotEqual(t, fixture.snapshot(t), before)
@@ -513,7 +522,7 @@ func TestCheckAndMePassUnmodifiedBearerAndSession(t *testing.T) {
 	token, _ := fixture.token(t, tokenUser.ID, "deploy", store.ExpiryNever, identityNow.Add(-time.Hour))
 	// Internal space plus a trailing space: trimming, field-splitting, or
 	// lowercasing this suffix yields a different hash than the one stored.
-	const exactSuffix = "ikp_AbC secret "
+	const exactSuffix = "ikp_AbC secret:tail\x00 "
 	fixture.setTokenSecret(t, token.ID, exactSuffix)
 	srv := fixture.server(t)
 
@@ -528,30 +537,33 @@ func TestCheckAndMePassUnmodifiedBearerAndSession(t *testing.T) {
 		{name: "/check", handler: srv.handleCheck},
 		{name: "/me", handler: srv.handleMe},
 	} {
-		t.Run(endpoint.name+"/bearer", func(t *testing.T) {
-			before := fixture.snapshot(t)
-			response := serveIdentity(endpoint.handler, credentialRequest(endpoint.name, cookies, "Bearer "+exactSuffix))
+		for _, authorization := range []string{"Bearer " + exactSuffix, basicAuthorization("ignored", exactSuffix), basicAuthorization("", exactSuffix), basicAuthorization("ignored", exactSuffix) + "\r\n"} {
+			t.Run(endpoint.name+"/"+authorization, func(t *testing.T) {
+				before := fixture.snapshot(t)
+				response := serveIdentity(endpoint.handler, credentialRequest(endpoint.name, cookies, authorization))
 
-			// R-F62L-TKIA: both handlers hash the entire Bearer suffix, spaces included.
-			if endpoint.name == "/check" {
-				if response.Code != http.StatusOK || response.Header().Get(HeaderUserID) != tokenUser.ID || response.Header().Get(HeaderUserEmail) != tokenUser.Email {
-					t.Fatalf("response = %d, headers %#v", response.Code, response.Header())
+				// R-NKMT-RO74: both schemes pass the exact secret to hashing; Basic ignores usernames and uses standard base64.
+				if endpoint.name == "/check" {
+					if response.Code != http.StatusOK || response.Header().Get(HeaderUserID) != tokenUser.ID || response.Header().Get(HeaderUserEmail) != tokenUser.Email {
+						t.Fatalf("response = %d, headers %#v", response.Code, response.Header())
+					}
+					assertOnlyTokenTouch(t, before, fixture.snapshot(t), token.ID, identityNow)
+					return
 				}
-				assertOnlyTokenTouch(t, before, fixture.snapshot(t), token.ID, identityNow)
-				return
-			}
-			wantBody := fmt.Sprintf(`{"id":%q,"email":%q}`, tokenUser.ID, tokenUser.Email)
-			if response.Code != http.StatusOK || response.Body.String() != wantBody {
-				t.Fatalf("response = %d %q, want token owner", response.Code, response.Body.String())
-			}
-			assertSnapshotEqual(t, fixture.snapshot(t), before)
-		})
+				wantBody := fmt.Sprintf(`{"id":%q,"email":%q}`, tokenUser.ID, tokenUser.Email)
+				if response.Code != http.StatusOK || response.Body.String() != wantBody {
+					t.Fatalf("response = %d %q, want token owner", response.Code, response.Body.String())
+				}
+				assertSnapshotEqual(t, fixture.snapshot(t), before)
+			})
+
+		}
 
 		t.Run(endpoint.name+"/session", func(t *testing.T) {
 			before := fixture.snapshot(t)
 			response := serveIdentity(endpoint.handler, credentialRequest(endpoint.name, cookies, ""))
 
-			// R-F62L-TKIA: both handlers pass the ikigenba_session value, not a
+			// R-NKMT-RO74: both handlers pass the ikigenba_session value, not a
 			// differently named cookie and not a normalized form of the id.
 			if endpoint.name == "/check" {
 				if response.Code != http.StatusOK || response.Header().Get(HeaderUserID) != sessionUser.ID || response.Header().Get(HeaderUserEmail) != sessionUser.Email {
@@ -662,7 +674,7 @@ func TestCheckAndMeStatusFollowsCredentialKind(t *testing.T) {
 		for _, tc := range sessionCases {
 			t.Run(handler.name+"/session/"+tc.name, func(t *testing.T) {
 				response := serveIdentity(handler.handler, identityRequest(handler.name, tc.sessionID, ""))
-				// R-2W27-FZGG: a missing or dead session, with no bearer, is 401 on both routes.
+				// R-O5D4-9RSX: a missing or dead session, with no bearer, is 401 on both routes.
 				if response.Code != http.StatusUnauthorized {
 					t.Fatalf("status = %d, want 401, not a bearer-style 403", response.Code)
 				}
@@ -671,9 +683,9 @@ func TestCheckAndMeStatusFollowsCredentialKind(t *testing.T) {
 				req := identityRequest(handler.name, tc.sessionID, "")
 				req.Header.Set("Authorization", "Basic x")
 				response := serveIdentity(handler.handler, req)
-				// R-2W27-FZGG: a non-bearer Authorization header is not a token refusal.
-				if response.Code != http.StatusUnauthorized {
-					t.Fatalf("status = %d, want 401", response.Code)
+				// R-O5D4-9RSX: malformed Basic is a token refusal whatever the session state.
+				if response.Code != http.StatusForbidden {
+					t.Fatalf("status = %d, want 403", response.Code)
 				}
 			})
 		}
@@ -687,7 +699,7 @@ func TestCheckAndMeStatusFollowsCredentialKind(t *testing.T) {
 				}
 				t.Run(name, func(t *testing.T) {
 					response := serveIdentity(handler.handler, identityRequest(handler.name, cookie, tc.secret))
-					// R-2W27-FZGG: a bearer the store will not honor is 403, including
+					// R-O5D4-9RSX: a bearer the store will not honor is 403, including
 					// when no live session exists to fall back on.
 					if response.Code != http.StatusForbidden {
 						t.Fatalf("status = %d, want 403, not a session-style 401", response.Code)
@@ -707,6 +719,184 @@ func credentialRequest(target string, cookies []*http.Cookie, authorization stri
 		req.Header.Set("Authorization", authorization)
 	}
 	return req
+}
+
+func basicAuthorization(username, secret string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+secret))
+}
+
+func basicOutcomeFixture(t *testing.T, cause string) (identityFixture, store.Session, string) {
+	t.Helper()
+	f := openIdentityFixture(t)
+	cookieOwner := f.user(t, "cookie-owner", "cookie@example.com", identityNow)
+	session := f.session(t, cookieOwner.ID, identityNow.Add(-time.Hour), identityNow.Add(-time.Minute))
+	login := identityNow
+	if cause == "stale-owner" {
+		login = identityNow.Add(-store.TokenLoginWindow - time.Nanosecond)
+	}
+	owner := f.user(t, "token-owner", "token@example.com", login)
+	created, expiry := identityNow.Add(-time.Hour), store.ExpiryNever
+	if cause == "expired" {
+		created, expiry = identityNow.Add(-31*24*time.Hour), store.Expiry30d
+	}
+	token, secret := f.token(t, owner.ID, "token", expiry, created)
+	switch cause {
+	case "unknown":
+		secret = "unknown"
+	case "disabled":
+		if err := f.store.SetTokenEnabled(owner.ID, token.ID, false); err != nil {
+			t.Fatal(err)
+		}
+	case "empty-password":
+		secret = ""
+		f.setTokenSecret(t, token.ID, secret)
+	case "colon-password":
+		secret = "secret:with:colons \x00"
+		f.setTokenSecret(t, token.ID, secret)
+	}
+	return f, session, secret
+}
+
+type identityAnswer struct {
+	status  int
+	headers http.Header
+	body    string
+}
+
+func comparableIdentityAnswer(path string, response *httptest.ResponseRecorder) identityAnswer {
+	header := http.Header{}
+	for _, name := range []string{HeaderUserID, HeaderUserEmail, "Content-Type"} {
+		if values, ok := response.Header()[http.CanonicalHeaderKey(name)]; ok {
+			header[name] = append([]string(nil), values...)
+		}
+	}
+	answer := identityAnswer{status: response.Code, headers: header}
+	if path == "/me" {
+		answer.body = response.Body.String()
+	}
+	return answer
+}
+
+func TestBasicAndBearerHaveIdenticalIdentityAndState(t *testing.T) {
+	// R-O7SX-1BAB: replacing Basic with its decoded password as Bearer preserves every contracted response field and all stored state.
+	for _, path := range []string{"/check", "/me"} {
+		for _, cause := range []string{"honored", "unknown", "disabled", "expired", "stale-owner", "empty-password", "colon-password"} {
+			t.Run(path+"/"+cause, func(t *testing.T) {
+				var expectedAnswer identityAnswer
+				var expectedState identitySnapshot
+				for i, username := range []string{"bearer-control", "", "arbitrary-user", "different-user\x00"} {
+					fixture, session, secret := basicOutcomeFixture(t, cause)
+					authorization := "Bearer " + secret
+					if i != 0 {
+						authorization = basicAuthorization(username, secret)
+					}
+					r := credentialRequest(path, []*http.Cookie{{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}, authorization)
+					w := serveIdentity(fixture.server(t).ServeHTTP, r)
+					answer, state := comparableIdentityAnswer(path, w), fixture.snapshot(t)
+					if i == 0 {
+						expectedAnswer, expectedState = answer, state
+					} else if !reflect.DeepEqual(answer, expectedAnswer) || !reflect.DeepEqual(state, expectedState) {
+						t.Fatalf("Basic differs from Bearer: answer=%#v want %#v, state=%#v want %#v", answer, expectedAnswer, state, expectedState)
+					}
+				}
+			})
+		}
+	}
+}
+
+func malformedBasicValues() []string {
+	return []string{"Basic ", "Basic !", "Basic " + base64.StdEncoding.EncodeToString([]byte("no-colon")), "Basic dTpw!", "Basic dTo", "Basic _zpw"}
+}
+
+func TestMalformedBasicMatchesUnknownBearerWithoutMutation(t *testing.T) {
+	// R-OBGM-6MIE: malformed Basic matches an unknown Bearer on both routes and never updates stored state.
+	// R-O5D4-9RSX: malformed Basic is always a token refusal, including with a live cookie.
+	for _, path := range []string{"/check", "/me"} {
+		for _, cookie := range []bool{false, true} {
+			fixture, session, _ := basicOutcomeFixture(t, "honored")
+			var cookies []*http.Cookie
+			if cookie {
+				cookies = []*http.Cookie{{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}
+			}
+			control := serveIdentity(fixture.server(t).ServeHTTP, credentialRequest(path, cookies, "Bearer unknown"))
+			expected := comparableIdentityAnswer(path, control)
+			for _, authorization := range malformedBasicValues() {
+				t.Run(fmt.Sprintf("%s/cookie=%v/%q", path, cookie, authorization), func(t *testing.T) {
+					// Honor the partial decoded bytes if parsing mistakenly ignores a decoding error or a missing colon.
+					decoded, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(authorization, "Basic "))
+					candidate := string(decoded)
+					if _, password, colon := strings.Cut(candidate, ":"); colon {
+						candidate = password
+					}
+					fixture.setTokenSecret(t, fixture.snapshot(t).tokens[0].id, candidate)
+					before := fixture.snapshot(t)
+					w := serveIdentity(fixture.server(t).ServeHTTP, credentialRequest(path, cookies, authorization))
+					if w.Code != http.StatusForbidden {
+						t.Fatalf("status=%d, want 403", w.Code)
+					}
+					if got := comparableIdentityAnswer(path, w); !reflect.DeepEqual(got, expected) {
+						t.Fatalf("malformed Basic answer=%#v, want %#v", got, expected)
+					}
+					assertSnapshotEqual(t, fixture.snapshot(t), before)
+				})
+			}
+		}
+	}
+}
+
+func TestAuthorizationFirstValueAndExactScheme(t *testing.T) {
+	// R-NKMT-RO74: only the first header value and the byte-exact scheme determine a token credential.
+	for _, path := range []string{"/check", "/me"} {
+		for _, authorization := range []string{"", "bearer unknown", "BEARER unknown", "basic !", "BASIC !", "Basic", "Bearer", "Digest value", " Bearer unknown", "Basic\t!"} {
+			fixture, session, _ := basicOutcomeFixture(t, "honored")
+			r := credentialRequest(path, []*http.Cookie{{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}, "")
+			r.Header["Authorization"] = []string{authorization, "Basic !"}
+			w := serveIdentity(fixture.server(t).ServeHTTP, r)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s first Authorization %q: status=%d, want cookie success", path, authorization, w.Code)
+			}
+		}
+		fixture, session, secret := basicOutcomeFixture(t, "honored")
+		r := credentialRequest(path, []*http.Cookie{{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}, "Basic !")
+		r.Header.Add("Authorization", "Bearer "+secret)
+		if w := serveIdentity(fixture.server(t).ServeHTTP, r); w.Code != http.StatusForbidden {
+			t.Fatalf("%s first malformed Basic fell through: %d", path, w.Code)
+		}
+	}
+}
+
+func TestIdentityEndpointsNeverChallenge(t *testing.T) {
+	// R-ODWE-Y5ZS: every answer on both endpoints omits the WWW-Authenticate field.
+	for _, path := range []string{"/check", "/me"} {
+		for _, cause := range []string{"honored", "unknown", "disabled", "expired", "stale-owner", "malformed", "session", "absent", "database-failure"} {
+			for _, scheme := range []string{"Bearer", "Basic"} {
+				fixture, session, secret := basicOutcomeFixture(t, cause)
+				cookies := []*http.Cookie{{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}
+				authorization := "Bearer " + secret
+				if scheme == "Basic" {
+					authorization = basicAuthorization("user", secret)
+				}
+				switch cause {
+				case "malformed":
+					authorization = "Basic !"
+				case "session":
+					authorization = ""
+				case "absent":
+					authorization, cookies = "", nil
+				case "database-failure":
+					if err := fixture.store.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				w := serveIdentity(fixture.server(t).ServeHTTP, credentialRequest(path, cookies, authorization))
+				for name := range w.Header() {
+					if strings.EqualFold(name, "WWW-Authenticate") {
+						t.Fatalf("%s %s %s challenged: %#v", path, cause, scheme, w.Header())
+					}
+				}
+			}
+		}
+	}
 }
 
 func assertHeaderCarriesOnly(t *testing.T, header http.Header, name, value string) {
