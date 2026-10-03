@@ -2,7 +2,7 @@
 # First boot of a space host. Packages only; the host learns nothing about
 # itself here. Managed by Terraform via the ikigenba-space launch template.
 set -euo pipefail
-dnf install -y -q nginx certbot awscli-2 jq
+dnf install -y -q nginx certbot awscli-2 jq git
 systemctl enable nginx
 
 # litestream is not in the distribution's repositories. Its RPM brings the

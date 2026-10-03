@@ -38,7 +38,7 @@ Every story's preconditions are the same unless it says otherwise: mcp is servin
 
 ## An agent reads the whole catalog
 
-No arguments: the whole trail, by service and event. `check.allowed` carries `token` on one of its three records and not on the other two, and the key is listed once. `telemetry` lists itself, since its own records are in the trail like any other's: its `service.started` from the fixture, exactly as shown, and `request.started`, `request.finished`, and `tool.called` from the agent's own calls through the gateway, which the fixture does not hold, so their `count` and `last_seen` are not fixed; `<n>` is at least 1 and `<time>` is at or after `2026-10-02T15:00:00Z`. `mcp`'s entry is the same way: the gateway records `request.started`, two `sibling.called`, `tool.called`, and `request.finished` for every call the agent makes through it (mcp's `S08`), so each of its four events holds the fixture's records and the agent's own calls' as well, and their `count` and `last_seen` are not fixed either; `<n>` is more than the fixture's 1, 1, 2, and 1, and `<time>` is at or after `2026-10-02T15:00:00Z`. The attribute keys of both are fixed: the agent's calls add records of the same shape and no new key. Every other service's entry is exact.
+No arguments: the whole trail, by service and event. `check.allowed` carries `token` on one of its three records and not on the other two, and the key is listed once. `telemetry` lists itself, since its own records are in the trail like any other's: its `service.started` from the fixture, exactly as shown, and `request.started`, `request.finished`, and `tool.called` from the agent's own calls through the gateway, which the fixture does not hold, so their `count` and `last_seen` are not fixed; `<n>` is at least 1 and `<time>` is at or after `2026-10-02T15:00:00Z`. `mcp`'s entry is the same way: the gateway records `request.started`, two `sibling.called`, `tool.called`, and `request.finished` for every call the agent makes through it (mcp's `S08`), so each of its four events holds the fixture's records and the agent's own calls' as well, and their `count` and `last_seen` are not fixed either; `<n>` is more than the fixture's 1, 1, 2, and 1, and `<time>` is at or after `2026-10-02T15:00:00Z`. The attribute keys of both are fixed: the agent's calls add records of the same shape, except that their `request.finished` also carries `request_bytes` and `response_bytes` (`S02`), which the fixture's records predate, so both list those keys. Every other service's entry is exact.
 
 Request:
 
@@ -76,12 +76,12 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is teleme
     {"event":"service.started","count":1,"last_seen":"2026-09-30T08:00:02.000000Z","attrs":["version"]},
     {"event":"tool.called","count":1,"last_seen":"2026-10-02T14:03:07.116000Z","attrs":["duration_us","kind","outcome","tool"]}]},
   {"service":"mcp","events":[
-    {"event":"request.finished","count":<n>,"last_seen":"<time>","attrs":["duration_us","status"]},
+    {"event":"request.finished","count":<n>,"last_seen":"<time>","attrs":["duration_us","request_bytes","response_bytes","status"]},
     {"event":"request.started","count":<n>,"last_seen":"<time>","attrs":["method","path"]},
     {"event":"sibling.called","count":<n>,"last_seen":"<time>","attrs":["duration_us","method","path","status","target"]},
     {"event":"tool.called","count":<n>,"last_seen":"<time>","attrs":["duration_us","kind","outcome","tool"]}]},
   {"service":"telemetry","events":[
-    {"event":"request.finished","count":<n>,"last_seen":"<time>","attrs":["duration_us","status"]},
+    {"event":"request.finished","count":<n>,"last_seen":"<time>","attrs":["duration_us","request_bytes","response_bytes","status"]},
     {"event":"request.started","count":<n>,"last_seen":"<time>","attrs":["method","path"]},
     {"event":"service.started","count":1,"last_seen":"2026-09-30T08:00:00.000000Z","attrs":["version"]},
     {"event":"tool.called","count":<n>,"last_seen":"<time>","attrs":["duration_us","kind","outcome","tool"]}]}]}

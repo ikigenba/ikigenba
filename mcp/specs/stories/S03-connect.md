@@ -174,11 +174,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote nothing to stderr about the services file. Without one, though, mcp cannot find the telemetry service either, so no event of the request reaches the trail, and stderr holds one `undelivered event` line for each (`S02`), in this order, where `<id>` is the request id mcp made up for the request, each `<time>` is when mcp recorded that event, and each `<us>` a duration in whole microseconds:
+- mcp wrote nothing to stderr about the services file. Without one, though, mcp cannot find the telemetry service either, so no event of the request reaches the trail, and stderr holds one `undelivered event` line for each (`S02`), in this order, where `<id>` is the request id mcp made up for the request, each `<time>` is when mcp recorded that event, each `<us>` a duration in whole microseconds, and each `<bytes>` a count of body bytes:
 
   ```
   mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.started","request_id":"<id>","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/"}}
-  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.finished","request_id":"<id>","user":"u_7f3a9c21","attrs":{"duration_us":<us>,"status":200}}
+  mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.finished","request_id":"<id>","user":"u_7f3a9c21","attrs":{"duration_us":<us>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
   ```
 
 ## A user does not see the gateway in its own list

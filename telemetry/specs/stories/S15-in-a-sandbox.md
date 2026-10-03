@@ -80,7 +80,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is telemetry's answer to `search` (`S09-search.md`), relayed by the gateway: no `isError` member, a `structuredContent` of
 
 ```
-{"records":[{"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"<user-id>","attrs":{"duration_us":<n>,"status":200}},{"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"<user-id>","attrs":{"method":"GET","path":"/widgets"}}],"cursor":"<cursor>"}
+{"records":[{"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"<user-id>","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}},{"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"<user-id>","attrs":{"method":"GET","path":"/widgets"}}],"cursor":"<cursor>"}
 ```
 
 and a `content` array of one text block holding that same object encoded compactly. `<request-id>` is the id the sandbox's nginx gave the panel request, the same in both records; `<user-id>` is the token's owner; `cursor` is present when dummy has recorded more than two such events in the sandbox, and absent otherwise. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"v<semver>"}`.

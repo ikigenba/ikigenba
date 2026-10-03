@@ -65,9 +65,9 @@ Postconditions:
 
 - Nothing has changed.
 - auth records `request.started` with `method=GET` and `path=/`, then
-  `request.finished` with `status=200` and `duration_us=<microseconds>`, both
-  under request id `<request-id>`, the one nginx gave the request, and no
-  user.
+  `request.finished` with `status=200`, `duration_us=<microseconds>`,
+  `request_bytes=0`, and `response_bytes=<bytes>`, both under request id
+  `<request-id>`, the one nginx gave the request, and no user.
 
 ## A user on a space opens the service launcher
 

@@ -134,8 +134,10 @@ and the missing-header 500 included. When the request arrives it records
 `request.started`, whose attributes are the request's `method`, as sent, and
 its `path`, never its query: `GET /widgets?sort=name` records the `path`
 `/widgets`. When the answer is complete it records `request.finished`, whose
-attributes are the answer's `status`, a number, and `duration_us`, how long
-dummy took to answer, in whole microseconds. Both carry the request's
+attributes are the answer's `status`, a number; `duration_us`, how long
+dummy took to answer, in whole microseconds; `request_bytes`, how many bytes
+of the request's body dummy read; and `response_bytes`, how many bytes of
+body its answer carried. Both carry the request's
 `X-Request-Id`, or the id dummy gave a request that came without one (`S2`),
 and the caller's `X-User-Id`, empty when there is none; anything dummy records
 while answering, a widget it creates (`S5`) or a tool call (`S9-mcp.md`),
@@ -390,7 +392,7 @@ Postconditions:
 
   ```
   {"time":"<time>","service":"dummy","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/widgets"}}
-  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
   ```
 
   The caller's email is in neither.
@@ -432,7 +434,7 @@ Postconditions:
 
   ```
   {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/widgets"}}
-  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
   ```
 
   `<request-id>` is 32 lowercase hexadecimal digits, the same in both events,
@@ -485,7 +487,7 @@ Postconditions:
 
   ```
   {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"","attrs":{"method":"GET","path":"/widgets"}}
-  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"","attrs":{"duration_us":<n>,"status":500}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":500}}
   ```
 
   `<request-id>` is the same 32 lowercase hexadecimal digits in both.
@@ -529,7 +531,7 @@ Postconditions:
 
   ```
   {"time":"<time>","service":"dummy","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"","attrs":{"method":"GET","path":"/widgets"}}
-  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"","attrs":{"duration_us":<n>,"status":500}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":500}}
   ```
 
 ## A caller asks for a path that does not exist

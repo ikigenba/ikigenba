@@ -892,6 +892,7 @@ devctl: init: ssh ec2-user@18.118.7.42 sudo opsctl init: exit status 2
 > certbot: failed: not found on PATH
 > systemctl: ok (/usr/bin/systemctl)
 > litestream: ok (/usr/bin/litestream)
+> git: ok (/usr/bin/git)
 > dns.provider: ok (route53)
 > dns.zones: ok (ikigenba.dev)
 > host.name: ok (sbx1.ikigenba.dev)

@@ -101,9 +101,11 @@ reaches the trail.
 - Every request auth serves — its pages, `/check`, `/me`, the files under
   `/_appkit/`, a 404 — is recorded twice: `request.started` with `method` and
   `path`, the request's method and its URL path without the query, when it
-  arrives, and `request.finished` with `status`, the status auth answered, and
-  `duration_us`, how long auth took to answer in whole microseconds, once it
-  has answered. Both carry the request's id, its `X-Request-Id`, and the user
+  arrives, and `request.finished` with `status`, the status auth answered,
+  `duration_us`, how long auth took to answer in whole microseconds,
+  `request_bytes`, how many bytes of the request's body auth read, and
+  `response_bytes`, how many bytes of body its answer carried, once it has
+  answered. Both carry the request's id, its `X-Request-Id`, and the user
   named by its `X-User-Id`, empty when it carries none. Every event auth
   records while answering a request comes between the two and carries the
   same request id. A request that arrives

@@ -108,7 +108,7 @@ Postconditions:
   ```
   {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/widgets"}}
   {"time":"<time>","service":"dummy","event":"widget.created","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"widget":"<widget-id>"}}
-  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":303}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":303}}
   ```
 
   The name `delta`, its count, and its status are in none of them.

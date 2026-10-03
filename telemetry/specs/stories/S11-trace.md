@@ -91,17 +91,17 @@ Status 200. The body is a JSON-RPC response with `id` 2 whose `result` has no `i
 {"records":[
   {"time":"<time>","service":"mcp","event":"request.started","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}},
   {"time":"<time>","service":"telemetry","event":"request.started","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}},
-  {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}},
+  {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}},
   {"time":"<time>","service":"mcp","event":"sibling.called","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"method":"POST","path":"/mcp","status":200,"target":"telemetry"}},
   {"time":"<time>","service":"telemetry","event":"request.started","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}},
   {"time":"<time>","service":"telemetry","event":"tool.called","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"catalog"}},
-  {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}},
+  {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}},
   {"time":"<time>","service":"mcp","event":"sibling.called","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"method":"POST","path":"/mcp","status":200,"target":"telemetry"}},
   {"time":"<time>","service":"mcp","event":"tool.called","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"call"}},
-  {"time":"<time>","service":"mcp","event":"request.finished","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}]}
+  {"time":"<time>","service":"mcp","event":"request.finished","request_id":"e4b1c7d9a2f3485e9c0d1b2a3f4e5d6c","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}]}
 ```
 
-and a `content` array of one text block whose text is that object encoded compactly. Each `<time>` is the record's time as stored, ascending down the list; each `<n>` a whole number of microseconds. The first telemetry pair is its answer to the gateway's `tools/list`, the second its answer to the `tools/call`, with the `tool.called` between. The order shown is one the trail can hold; what is fixed is each service's own order, mcp's `request.started` first and `request.finished` last, as `S12` tells, and the third and fourth records, like the seventh and eighth, may be the other way round, since each service stamps its own time.
+and a `content` array of one text block whose text is that object encoded compactly. Each `<time>` is the record's time as stored, ascending down the list; each `<n>` a whole number of microseconds; each `<bytes>` a whole number of body bytes. The first telemetry pair is its answer to the gateway's `tools/list`, the second its answer to the `tools/call`, with the `tool.called` between. The order shown is one the trail can hold; what is fixed is each service's own order, mcp's `request.started` first and `request.finished` last, as `S12` tells, and the third and fourth records, like the seventh and eighth, may be the other way round, since each service stamps its own time.
 
 Preconditions:
 

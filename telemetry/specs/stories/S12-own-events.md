@@ -83,7 +83,7 @@ Postconditions:
   ```
   {"time":"<time>","service":"telemetry","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
   {"time":"<time>","service":"telemetry","event":"tool.called","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"count"}}
-  {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
   ```
 
   The tool's arguments and its answer are in none of them, and neither is the caller's email.
@@ -120,14 +120,14 @@ Status 200. The body is a JSON-RPC response with `id` 3 whose `result` has no `i
 ```
 {"time":"<time>","service":"mcp","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
 {"time":"<time>","service":"telemetry","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
-{"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+{"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
 {"time":"<time>","service":"mcp","event":"sibling.called","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"method":"POST","path":"/mcp","status":200,"target":"telemetry"}}
 {"time":"<time>","service":"telemetry","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
 {"time":"<time>","service":"telemetry","event":"tool.called","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"search"}}
-{"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+{"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
 {"time":"<time>","service":"mcp","event":"sibling.called","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"method":"POST","path":"/mcp","status":200,"target":"telemetry"}}
 {"time":"<time>","service":"mcp","event":"tool.called","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"call"}}
-{"time":"<time>","service":"mcp","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+{"time":"<time>","service":"mcp","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
 ```
 
 The `content` is one text block holding that same object encoded compactly. The first and second `telemetry` pairs are the gateway's `tools/list` and `tools/call` hops; only the second ran a tool. The third and fourth records may be the other way round, and so may the seventh and eighth.
@@ -210,7 +210,7 @@ Postconditions:
 
   ```
   telemetry: undelivered event: {"time":"<time>","service":"telemetry","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/"}}
-  telemetry: undelivered event: {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"status":200}}
+  telemetry: undelivered event: {"time":"<time>","service":"telemetry","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
   ```
 
   Nothing is on stdout.
