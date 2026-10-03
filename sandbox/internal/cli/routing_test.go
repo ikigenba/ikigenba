@@ -242,111 +242,124 @@ func TestRoutingRuntimeAndContexts(t *testing.T) {
 func TestRoutingServersAndUngated(t *testing.T) {
 	// R-4Y09-SJNV R-T0LE-QYFU R-T1TB-4Q6J R-RN6J-D5LA
 	// R-ROEF-QXBZ R-52VV-BMMN R-T5H0-A1EM R-RLYM-ZDUL
-	// R-56JK-GXUQ R-T94P-FCMP R-TACL-T4DE R-41XG-TMPN R-5A79-M92T
+	// R-56JK-GXUQ R-T94P-FCMP R-TACL-T4DE R-4H5B-RWN4 R-5A79-M92T R-GPR8-TLS0
 	for _, auth := range []bool{false, true} {
 		for _, defaultApp := range []bool{false, true} {
-			t.Run(fmt.Sprintf("auth=%t,default=%t", auth, defaultApp), func(t *testing.T) {
-				apps := []appInfo{{Name: "dummy", Default: defaultApp}}
-				if auth {
-					apps = append(apps, appInfo{Name: "auth"})
-				}
-				nodes := parseRoutingConfig(t, string(renderNginxConfig("/data", "/checkout", "wip", 7011, 42, apps)))
-				http := routingFind(t, nodes, "http")
-				defaults := 0
-				for _, n := range http.children {
-					if n.words[0] != "server" {
-						continue
+			for _, guests := range []bool{false, true} {
+				t.Run(fmt.Sprintf("auth=%t,default=%t,guests=%t", auth, defaultApp, guests), func(t *testing.T) {
+					f := newUpFixture(t, "dummy")
+					setting := ""
+					if guests {
+						setting = "guests = true\n"
 					}
-					listens := 0
-					for _, d := range n.children {
-						if d.words[0] != "listen" {
+					f.put(filepath.Join(f.worktree, "dummy", "etc", "manifest.toml"), fmt.Sprintf("app = \"dummy\"\ndefault = %t\n", defaultApp)+setting, 0644)
+					if auth {
+						f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app = \"auth\"\n"+setting, 0644)
+					}
+					if code, _, diagnostic := f.run("up"); code != 0 || diagnostic != "" {
+						t.Fatalf("up: %d %q", code, diagnostic)
+					}
+					nodes := parseRoutingConfig(t, upRead(t, filepath.Join(f.data, "nginx", "nginx.conf")))
+					http := routingFind(t, nodes, "http")
+					defaults := 0
+					for _, n := range http.children {
+						if n.words[0] != "server" {
 							continue
 						}
-						listens++
-						if reflect.DeepEqual(d.words, []string{"listen", "127.0.0.1:7011", "default_server"}) {
-							defaults++
-							routingKeys(t, n.children, "listen", "return")
-							routingFind(t, n.children, "return", "404")
-						} else if !reflect.DeepEqual(d.words, []string{"listen", "127.0.0.1:7011"}) {
-							t.Fatalf("unexpected listen %v", d.words)
-						}
-					}
-					if listens != 1 {
-						t.Fatalf("server holds %d listens", listens)
-					}
-				}
-				if defaults != 1 {
-					t.Fatalf("default servers %d", defaults)
-				}
-				var checkListen func([]nginxNode, string)
-				checkListen = func(ns []nginxNode, parent string) {
-					for _, n := range ns {
-						if n.words[0] == "listen" && parent != "server" {
-							t.Fatal("listen outside server")
-						}
-						checkListen(n.children, n.words[0])
-					}
-				}
-				checkListen(nodes, "")
-				if auth {
-					local := routingServer(t, http, "localhost")
-					routingKeys(t, local.children, "listen", "server_name", "return")
-					routingFind(t, local.children, "return", "302", "http://auth.wip.localhost:7011$request_uri")
-				} else {
-					for _, n := range http.children {
+						listens := 0
 						for _, d := range n.children {
-							if d.words[0] == "server_name" {
-								for _, v := range d.words[1:] {
-									if v == "localhost" {
-										t.Fatal("localhost server without auth")
+							if d.words[0] != "listen" {
+								continue
+							}
+							listens++
+							if reflect.DeepEqual(d.words, []string{"listen", "127.0.0.1:7400", "default_server"}) {
+								defaults++
+								routingKeys(t, n.children, "listen", "return")
+								routingFind(t, n.children, "return", "404")
+							} else if !reflect.DeepEqual(d.words, []string{"listen", "127.0.0.1:7400"}) {
+								t.Fatalf("unexpected listen %v", d.words)
+							}
+						}
+						if listens != 1 {
+							t.Fatalf("server holds %d listens", listens)
+						}
+					}
+					if defaults != 1 {
+						t.Fatalf("default servers %d", defaults)
+					}
+					var checkListen func([]nginxNode, string)
+					checkListen = func(ns []nginxNode, parent string) {
+						for _, n := range ns {
+							if n.words[0] == "listen" && parent != "server" {
+								t.Fatal("listen outside server")
+							}
+							checkListen(n.children, n.words[0])
+						}
+					}
+					checkListen(nodes, "")
+					if auth {
+						local := routingServer(t, http, "localhost")
+						routingKeys(t, local.children, "listen", "server_name", "return")
+						routingFind(t, local.children, "return", "302", "http://auth.wip.localhost:7400$request_uri")
+					} else {
+						for _, n := range http.children {
+							for _, d := range n.children {
+								if d.words[0] == "server_name" {
+									for _, v := range d.words[1:] {
+										if v == "localhost" {
+											t.Fatal("localhost server without auth")
+										}
 									}
 								}
 							}
 						}
 					}
-				}
-				names := []string{"dummy.wip.localhost"}
-				if defaultApp {
-					names = append(names, "wip.localhost")
-				}
-				dummy := routingServer(t, http, names...)
-				if !defaultApp {
-					for _, n := range http.children {
-						for _, d := range n.children {
-							if d.words[0] == "server_name" {
-								for _, v := range d.words[1:] {
-									if v == "wip.localhost" {
-										t.Fatal("bare sandbox name without default")
+					names := []string{"dummy.wip.localhost"}
+					if defaultApp {
+						names = append(names, "wip.localhost")
+					}
+					dummy := routingServer(t, http, names...)
+					if !defaultApp {
+						for _, n := range http.children {
+							for _, d := range n.children {
+								if d.words[0] == "server_name" {
+									for _, v := range d.words[1:] {
+										if v == "wip.localhost" {
+											t.Fatal("bare sandbox name without default")
+										}
 									}
 								}
 							}
 						}
 					}
-				}
-				var ungated nginxNode
-				if auth {
-					ungated = routingServer(t, http, "auth.wip.localhost")
-					routingFind(t, dummy.children, "location", "=", "/_sandbox/auth")
-				} else {
-					ungated = dummy
-				}
-				keys := []string{"listen", "server_name", "include", "location"}
-				if auth {
-					keys = append(keys, "location")
-					check := routingFind(t, ungated.children, "location", "=", "/check")
-					routingKeys(t, check.children, "return")
-					routingFind(t, check.children, "return", "404")
-				}
-				routingKeys(t, ungated.children, keys...)
-				loc := routingFind(t, ungated.children, "location", "/")
-				routingKeys(t, loc.children, "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
-				appName := "dummy"
-				if auth {
-					appName = "auth"
-				}
-				routingFind(t, loc.children, "proxy_pass", "http://app_"+appName)
-				routingHeaders(t, loc, "", "")
-			})
+					var ungated nginxNode
+					if auth {
+						ungated = routingServer(t, http, "auth.wip.localhost")
+						routingFind(t, dummy.children, "location", "=", "/_sandbox/auth")
+					} else {
+						ungated = dummy
+					}
+					keys := []string{"listen", "server_name", "include", "location"}
+					if auth {
+						keys = append(keys, "location", "location")
+						check := routingFind(t, ungated.children, "location", "=", "/check")
+						routingKeys(t, check.children, "return")
+						routingFind(t, check.children, "return", "404")
+						open := routingFind(t, ungated.children, "location", "=", "/check/open")
+						routingKeys(t, open.children, "return")
+						routingFind(t, open.children, "return", "404")
+					}
+					routingKeys(t, ungated.children, keys...)
+					loc := routingFind(t, ungated.children, "location", "/")
+					routingKeys(t, loc.children, "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
+					appName := "dummy"
+					if auth {
+						appName = "auth"
+					}
+					routingFind(t, loc.children, "proxy_pass", "http://app_"+appName)
+					routingHeaders(t, loc, "", "")
+				})
+			}
 		}
 	}
 }
@@ -386,11 +399,19 @@ func TestRoutingFragmentEscaping(t *testing.T) {
 }
 
 func TestRoutingGatedLocations(t *testing.T) {
-	// R-EBCD-K7ZY R-8H77-QJZY R-8IF4-4BQN R-RWXQ-FBIU
+	// R-EBCD-K7ZY R-GS71-L59E R-4ID8-5ODT R-GVUQ-QGHH R-GX2N-4886 R-GQZ5-7DIP R-GKVN-AIT8 R-GH7Y-57L5
 	// R-8JN0-I3HC R-8KUW-VV81 R-8M2T-9MYQ
 	// R-5GAR-J3SA R-TF87-C7C6 R-5IQK-AN9O R-56JK-GXUQ R-T94P-FCMP
-	for _, setting := range []struct{ name, manifest string }{
-		{"unset", ""}, {"false", "mcp = false\n"}, {"true", "mcp = true\n"},
+	for _, setting := range []struct {
+		name, manifest     string
+		guests, defaultApp bool
+	}{
+		{"unset", "", false, false}, {"false", "mcp = false\n", false, false}, {"true", "mcp = true\n", false, false},
+		{"guests-false", "guests = false\n", false, false},
+		{"guests-true", "guests = true\n", true, false},
+		{"guests-mcp-false", "guests = true\nmcp = false\n", true, false},
+		{"guests-mcp-true", "guests = true\nmcp = true\n", true, false},
+		{"guests-default", "guests = true\ndefault = true\n", true, true},
 	} {
 		t.Run(setting.name, func(t *testing.T) {
 			f := newUpFixture(t, "auth", "dummy")
@@ -399,30 +420,54 @@ func TestRoutingGatedLocations(t *testing.T) {
 				t.Fatalf("up: code %d, diagnostic %q", code, diagnostic)
 			}
 			http := routingFind(t, parseRoutingConfig(t, upRead(t, filepath.Join(f.data, "nginx", "nginx.conf"))), "http")
-			server := routingServer(t, http, "dummy.wip.localhost")
-			routingKeys(t, server.children, "listen", "server_name", "include", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location")
+			names := []string{"dummy.wip.localhost"}
+			if setting.defaultApp {
+				names = append(names, "wip.localhost")
+			}
+			server := routingServer(t, http, names...)
+			keys := []string{"listen", "server_name", "include", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location"}
+			if setting.guests {
+				keys = append(keys, "location")
+			}
+			routingKeys(t, server.children, keys...)
 			routingFind(t, server.children, "listen", "127.0.0.1:7400")
 			routingFind(t, server.children, "include", filepath.Join(f.worktree, "dummy", "etc", "nginx.conf*"))
-			check := routingFind(t, server.children, "location", "=", "/_sandbox/auth")
-			routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
-			routingFind(t, check.children, "internal")
-			routingFind(t, check.children, "proxy_pass", "http://app_auth/check")
-			routingFind(t, check.children, "proxy_pass_request_body", "off")
-			routingFind(t, check.children, "proxy_set_header", "Content-Length", "")
-			routingFind(t, check.children, "proxy_set_header", "X-Original-Method", "$request_method")
-			routingFind(t, check.children, "proxy_set_header", "X-Original-Host", "$host")
-			routingFind(t, check.children, "proxy_set_header", "X-Original-URI", "$request_uri")
-			routingHeaders(t, check, "", "")
+			checks := [][2]string{{"/_sandbox/auth", "/check"}}
+			if setting.guests {
+				checks = append(checks, [2]string{"/_sandbox/auth_open", "/check/open"})
+			}
+			for _, pair := range checks {
+				check := routingFind(t, server.children, "location", "=", pair[0])
+				routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
+				routingFind(t, check.children, "internal")
+				routingFind(t, check.children, "proxy_pass", "http://app_auth"+pair[1])
+				routingFind(t, check.children, "proxy_pass_request_body", "off")
+				routingFind(t, check.children, "proxy_set_header", "Content-Length", "")
+				routingFind(t, check.children, "proxy_set_header", "X-Original-Method", "$request_method")
+				routingFind(t, check.children, "proxy_set_header", "X-Original-Host", "$host")
+				routingFind(t, check.children, "proxy_set_header", "X-Original-URI", "$request_uri")
+				routingHeaders(t, check, "", "")
+			}
 			for _, spec := range []struct {
 				args    []string
 				handler string
 			}{{[]string{"location", "/"}, "signin"}, {[]string{"location", "=", "/mcp"}, "bearer"}, {[]string{"location", "^~", "/mcp/"}, "bearer"}, {[]string{"location", "~", "/(info/refs|git-upload-pack|git-receive-pack)$"}, "git"}} {
 				loc := routingFind(t, server.children, spec.args...)
-				routingKeys(t, loc.children, "auth_request", "auth_request_set", "auth_request_set", "error_page", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
-				routingFind(t, loc.children, "auth_request", "/_sandbox/auth")
+				open := setting.guests && spec.handler == "signin"
+				keys := []string{"auth_request", "auth_request_set", "auth_request_set", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
+				checkPath := "/_sandbox/auth"
+				if open {
+					checkPath = "/_sandbox/auth_open"
+				} else {
+					keys = append(keys, "error_page")
+				}
+				routingKeys(t, loc.children, keys...)
+				routingFind(t, loc.children, "auth_request", checkPath)
 				routingFind(t, loc.children, "auth_request_set", "$sandbox_user_id", "$upstream_http_x_user_id")
 				routingFind(t, loc.children, "auth_request_set", "$sandbox_user_email", "$upstream_http_x_user_email")
-				routingFind(t, loc.children, "error_page", "401", "=", "@sandbox_"+spec.handler)
+				if !open {
+					routingFind(t, loc.children, "error_page", "401", "=", "@sandbox_"+spec.handler)
+				}
 				routingFind(t, loc.children, "proxy_pass", "http://app_dummy")
 				routingHeaders(t, loc, "$sandbox_user_id", "$sandbox_user_email")
 			}

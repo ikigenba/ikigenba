@@ -24,6 +24,7 @@ type appInfo struct {
 	Default      bool
 	Description  string
 	MCP          bool
+	Guests       bool
 	Env          map[string]string
 	Secrets      []string
 	SecretValues map[string]string
@@ -130,7 +131,7 @@ func readManifest(worktree string, a *appInfo) error {
 	if _, ok := m["port"]; ok {
 		return manifestError(a.Name, "'port' is not allowed; the sandbox gives the app its socket")
 	}
-	types := []struct{ k, kind string }{{"app", "a string"}, {"description", "a string"}, {"default", "a boolean"}, {"mcp", "a boolean"}, {"secrets", "an array of strings"}, {"env", "a table of strings"}, {"resources", "a table"}}
+	types := []struct{ k, kind string }{{"app", "a string"}, {"description", "a string"}, {"default", "a boolean"}, {"mcp", "a boolean"}, {"guests", "a boolean"}, {"secrets", "an array of strings"}, {"env", "a table of strings"}, {"resources", "a table"}}
 	for _, item := range types {
 		v, ok := m[item.k]
 		if !ok {
@@ -140,7 +141,7 @@ func readManifest(worktree string, a *appInfo) error {
 		switch item.k {
 		case "app", "description":
 			_, valid = v.(string)
-		case "default", "mcp":
+		case "default", "mcp", "guests":
 			_, valid = v.(bool)
 		case "secrets":
 			if arr, ok := v.([]any); ok {
@@ -177,6 +178,7 @@ func readManifest(worktree string, a *appInfo) error {
 	a.Description, _ = m["description"].(string)
 	a.Default, _ = m["default"].(bool)
 	a.MCP, _ = m["mcp"].(bool)
+	a.Guests, _ = m["guests"].(bool)
 	for _, r := range a.Description {
 		if r < 32 || r == 127 {
 			return manifestError(a.Name, "'description' must be one line of text")

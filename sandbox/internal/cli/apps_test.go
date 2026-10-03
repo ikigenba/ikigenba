@@ -118,7 +118,7 @@ func (f *appFixture) read(rel string) string {
 }
 func appManifest(app string) string { return "app = " + strconv.Quote(app) + "\n" }
 
-// R-AUCL-BZBE R-UE7I-W0Z0 R-UFFF-9SPP R-RKQQ-LM3W R-UP6M-BYN9 R-UNYP-Y6WK R-8507-WUL0 R-VDKL-ZDH5
+// R-AUCL-BZBE R-UE7I-W0Z0 R-UFFF-9SPP R-RKQQ-LM3W R-UP6M-BYN9 R-UNYP-Y6WK R-GH7Y-57L5 R-VDKL-ZDH5
 func TestAppsDiscovery(t *testing.T) {
 	f := newAppFixture(t)
 	for _, a := range []string{"dummy", "auth"} {
@@ -203,10 +203,10 @@ func TestAppNames(t *testing.T) {
 	}
 }
 
-// R-UXPX-0CU4 R-UYXT-E4KT R-V05P-RWBI R-87G0-OE2E R-V2LI-JFSW R-AY0A-HAJH
+// R-UXPX-0CU4 R-UYXT-E4KT R-V05P-RWBI R-GJNQ-WR2J R-V2LI-JFSW R-AY0A-HAJH
 func TestManifestRefusals(t *testing.T) {
 	cases := []struct{ body, want string }{{"app = \"dummy\n", "line 1 (last key \"app\"): strings cannot contain newlines"}, {"port = 8080\napp = \"demo\"\n", "'port' is not allowed; the sandbox gives the app its socket"}, {"port = \"8080\"\n", "'port' is not allowed; the sandbox gives the app its socket"}, {"", "'app' is missing"}, {"app = \"demo\"\n", "app 'demo' does not match its directory 'dummy'"}, {"app = \"\"\n", "app '' does not match its directory 'dummy'"}, {"app = \"de\\nmo\"\n", "app 'de\\x0amo' does not match its directory 'dummy'"}}
-	for _, c := range []struct{ k, v, kind string }{{"app", "5", "a string"}, {"description", "5", "a string"}, {"default", "1", "a boolean"}, {"mcp", "\"yes\"", "a boolean"}, {"secrets", "\"A\"", "an array of strings"}, {"secrets", "[1]", "an array of strings"}, {"env", "\"x\"", "a table of strings"}, {"env", "{X = 4}", "a table of strings"}, {"resources", "5", "a table"}, {"resources", "\"x\"", "a table"}} {
+	for _, c := range []struct{ k, v, kind string }{{"app", "5", "a string"}, {"description", "5", "a string"}, {"default", "1", "a boolean"}, {"mcp", "\"yes\"", "a boolean"}, {"guests", "\"yes\"", "a boolean"}, {"secrets", "\"A\"", "an array of strings"}, {"secrets", "[1]", "an array of strings"}, {"env", "\"x\"", "a table of strings"}, {"env", "{X = 4}", "a table of strings"}, {"resources", "5", "a table"}, {"resources", "\"x\"", "a table"}} {
 		body := appManifest("dummy")
 		if c.k == "app" {
 			body = ""
@@ -341,7 +341,7 @@ func appTOMLString(s string) string {
 	return q
 }
 
-// R-8684-AMBP R-VCCP-LLQG
+// R-4EPJ-0D5Q R-VCCP-LLQG
 func TestManifestPrecedence(t *testing.T) {
 	cases := []struct {
 		body, want string
@@ -351,6 +351,8 @@ func TestManifestPrecedence(t *testing.T) {
 		{"app=\"dummy\"\ndescription=1\ndefault=1\n", "'description' must be a string"},
 		{"app=\"dummy\"\ndefault=1\nmcp=1\n", "'default' must be a boolean"},
 		{"app=\"dummy\"\nmcp=1\nsecrets=1\n", "'mcp' must be a boolean"},
+		{"app=\"dummy\"\nmcp=\"yes\"\nguests=\"yes\"\n", "'mcp' must be a boolean"},
+		{"app=\"dummy\"\nguests=\"yes\"\nsecrets=\"A\"\n", "'guests' must be a boolean"},
 		{"app=\"dummy\"\nsecrets=1\nenv=1\n", "'secrets' must be an array of strings"},
 		{"app=\"demo\"\nenv=1\n", "'env' must be a table of strings"},
 		{"app=\"dummy\"\nenv=1\nresources=1\n", "'env' must be a table of strings"},
@@ -393,13 +395,13 @@ func TestManifestPrecedence(t *testing.T) {
 	f.refuse("dummy: etc/manifest.toml: app 'demo' does not match its directory 'dummy'")
 }
 
-// R-8507-WUL0
+// R-GH7Y-57L5
 func TestManifestReadKeys(t *testing.T) {
 	f := newAppFixture(t)
 	f.manifest("dummy", appManifest("dummy"))
 	f.success()
 	beforeEnv, beforeServices := f.read("env/dummy.env"), f.read("services.json")
-	f.manifest("dummy", appManifest("dummy")+"description=\"\"\ndefault=false\nmcp=false\nsecrets=[]\nenv={}\nresources={}\n")
+	f.manifest("dummy", appManifest("dummy")+"description=\"\"\ndefault=false\nmcp=false\nguests=false\nsecrets=[]\nenv={}\nresources={}\n")
 	f.success()
 	if f.read("env/dummy.env") != beforeEnv || f.read("services.json") != beforeServices {
 		t.Fatal("absent keys did not use empty defaults")
@@ -531,7 +533,47 @@ func TestResourcesDoNotChangeDeployment(t *testing.T) {
 	}
 }
 
-// R-8684-AMBP R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
+// R-GM3J-OAJX
+func TestGuestsDoNotChangeDeployment(t *testing.T) {
+	f := newAppFixture(t)
+	f.manifest("auth", appManifest("auth"))
+	f.manifest("dummy", appManifest("dummy"))
+	f.success()
+	files := func() map[string]map[string]string {
+		data := upSnapshot(t, filepath.Join(f.state, "ikigenba/sandbox/wip"))
+		delete(data, "nginx/nginx.conf")
+		return map[string]map[string]string{
+			"data":     data,
+			"units":    upSnapshot(t, filepath.Join(f.config, "systemd/user")),
+			"registry": {"content": upRead(t, filepath.Join(f.state, "ikigenba/sandbox/registry.json"))},
+		}
+	}
+	code, beforeOut, stderr := f.run()
+	if code != 0 || stderr != "" {
+		t.Fatalf("baseline: %d %s", code, stderr)
+	}
+	beforeFiles := files()
+	beforeCommands := append([]seam.Cmd(nil), f.commands...)
+	f.manifest("dummy", appManifest("dummy")+"guests = true\n")
+	code, afterOut, stderr := f.run()
+	if code != 0 || stderr != "" {
+		t.Fatalf("with guests: %d %s", code, stderr)
+	}
+	if beforeOut != afterOut || !reflect.DeepEqual(beforeCommands, f.commands) || !reflect.DeepEqual(beforeFiles, files()) {
+		t.Fatal("guests changed deployment output, commands, or files other than nginx configuration")
+	}
+	var services struct{ Services []map[string]any }
+	if err := json.Unmarshal([]byte(f.read("services.json")), &services); err != nil {
+		t.Fatal(err)
+	}
+	for _, service := range services.Services {
+		if _, present := service["guests"]; present {
+			t.Fatal("service carries guests member")
+		}
+	}
+}
+
+// R-4EPJ-0D5Q R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
 func TestAppIcons(t *testing.T) {
 	for _, emptyShare := range []bool{false, true} {
 		f := newAppFixture(t)

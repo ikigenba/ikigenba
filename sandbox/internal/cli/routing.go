@@ -74,27 +74,40 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			forward(`""`, `""`)
 			b.WriteString("    }\n")
 			if app.Name == "auth" {
-				b.WriteString("    location = /check {\n      return 404;\n    }\n")
+				b.WriteString("    location = /check {\n      return 404;\n    }\n    location = /check/open {\n      return 404;\n    }\n")
 			}
 		} else {
-			b.WriteString("    location = /_sandbox/auth {\n      internal;\n")
-			directive("      ", "proxy_pass", "http://app_auth/check")
-			directive("      ", "proxy_pass_request_body", "off")
-			directive("      ", "proxy_set_header", "Content-Length", `""`)
-			directive("      ", "proxy_set_header", "X-Original-Method", "$request_method")
-			directive("      ", "proxy_set_header", "X-Original-Host", "$host")
-			directive("      ", "proxy_set_header", "X-Original-URI", "$request_uri")
-			forward(`""`, `""`)
-			b.WriteString("    }\n")
+			checks := []struct{ location, path string }{{"/_sandbox/auth", "/check"}}
+			if app.Guests {
+				checks = append(checks, struct{ location, path string }{"/_sandbox/auth_open", "/check/open"})
+			}
+			for _, check := range checks {
+				fmt.Fprintf(&b, "    location = %s {\n      internal;\n", check.location)
+				directive("      ", "proxy_pass", "http://app_auth"+check.path)
+				directive("      ", "proxy_pass_request_body", "off")
+				directive("      ", "proxy_set_header", "Content-Length", `""`)
+				directive("      ", "proxy_set_header", "X-Original-Method", "$request_method")
+				directive("      ", "proxy_set_header", "X-Original-Host", "$host")
+				directive("      ", "proxy_set_header", "X-Original-URI", "$request_uri")
+				forward(`""`, `""`)
+				b.WriteString("    }\n")
+			}
 			for _, location := range []struct{ path, handler string }{
 				{"/", "signin"}, {"= /mcp", "bearer"}, {"^~ /mcp/", "bearer"},
 				{"~ /(info/refs|git-upload-pack|git-receive-pack)$", "git"},
 			} {
 				fmt.Fprintf(&b, "    location %s {\n", location.path)
-				directive("      ", "auth_request", "/_sandbox/auth")
+				check := "/_sandbox/auth"
+				open := app.Guests && location.path == "/"
+				if open {
+					check = "/_sandbox/auth_open"
+				}
+				directive("      ", "auth_request", check)
 				directive("      ", "auth_request_set", "$sandbox_user_id", "$upstream_http_x_user_id")
 				directive("      ", "auth_request_set", "$sandbox_user_email", "$upstream_http_x_user_email")
-				directive("      ", "error_page", "401", "=", "@sandbox_"+location.handler)
+				if !open {
+					directive("      ", "error_page", "401", "=", "@sandbox_"+location.handler)
+				}
 				directive("      ", "proxy_pass", "http://app_"+app.Name)
 				forward("$sandbox_user_id", "$sandbox_user_email")
 				b.WriteString("    }\n")

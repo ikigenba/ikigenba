@@ -716,7 +716,7 @@ func TestUpIgnoresFragmentContents(t *testing.T) {
 }
 
 func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
-	// R-8FZB-CS99
+	// R-4FXF-E4WF
 	for _, fault := range []string{"earlier-icon", "later-manifest", "icon-before-defaults"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newUpFixture(t, "auth", "dummy")
@@ -742,7 +742,7 @@ func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
 }
 
 func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
-	// R-8FZB-CS99 R-S969-SQY1
+	// R-4FXF-E4WF R-S969-SQY1
 	for _, known := range []bool{false, true} {
 		for _, fault := range []string{"noapps", "manifest", "icon", "defaults", "badvalue", "secrets", "clash", "ports"} {
 			if known && fault == "ports" {
@@ -1099,7 +1099,7 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 }
 
 func TestUpGatedManifestMCPVariants(t *testing.T) {
-	// R-8IF4-4BQN
+	// R-4ID8-5ODT
 	for _, setting := range []string{"mcp = true\n", "mcp = false\n", ""} {
 		t.Run(strings.TrimSpace(setting), func(t *testing.T) {
 			f := newUpFixture(t, "auth", "dummy")
