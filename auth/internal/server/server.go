@@ -62,6 +62,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET /login/google/callback", s.handleLoginGoogleCallback)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /check", s.handleCheck)
+	mux.HandleFunc("GET /check/open", s.handleCheck)
 	mux.HandleFunc("GET /me", s.handleMe)
 	mux.HandleFunc("POST /tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /tokens/{id}/{action}", s.handleTokenAction)

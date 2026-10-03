@@ -16,6 +16,11 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		outcome := "failed"
 		if errors.Is(err, store.ErrNotFound) {
+			if !token && r.URL.Path == "/check/open" {
+				s.recordCheck(r, "guest", store.Identity{})
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			outcome = "unauthenticated"
 			if token {
 				outcome = "forbidden"
@@ -113,9 +118,9 @@ func (s *Server) recordCheck(r *http.Request, outcome string, resolved store.Ide
 	attrs := telemetry.Attrs{"outcome": outcome, "credential": credential, "method": r.Header.Get("X-Original-Method"), "host": r.Header.Get("X-Original-Host"), "path": path}
 	name := "check.refused"
 	switch outcome {
-	case "allowed":
+	case "allowed", "guest":
 		name = "check.allowed"
-		if credential == "token" || credential == "basic" {
+		if outcome == "allowed" && (credential == "token" || credential == "basic") {
 			attrs["token"] = resolved.TokenID
 		}
 	case "failed":
