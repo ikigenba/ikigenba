@@ -1,0 +1,24 @@
+app = "repos"
+description = "Git repositories for the suite's content"
+default = false
+mcp = true
+secrets = []
+
+[env]
+READ_SLOTS = "8"
+WRITE_SLOTS = "2"
+QUEUE_LENGTH = "16"
+QUEUE_SECONDS = "30"
+OPERATION_SECONDS = "600"
+PUSH_MAX_BYTES = "104857600"
+REPO_MAX_BYTES = "1073741824"
+MAINTENANCE_HOURS = "24"
+
+[database]
+engine = "sqlite"
+path = "state/repos.db"
+
+[resources]
+cpu_weight = 50
+memory_max = "1G"
+io_weight = 50

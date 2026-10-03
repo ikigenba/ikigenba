@@ -1,0 +1,166 @@
+package web
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/ikigenba/ikigenba/appkit/page"
+)
+
+var webSharedFiles = map[string]string{
+	"theme.css":                  "text/css; charset=utf-8",
+	"launcher.js":                "text/javascript; charset=utf-8",
+	"InterVariable.woff2":        "font/woff2",
+	"InterVariable-Italic.woff2": "font/woff2",
+	"JetBrainsMono.woff2":        "font/woff2",
+	"OFL.txt":                    "text/plain; charset=utf-8",
+	"TABLER-LICENSE.txt":         "text/plain; charset=utf-8",
+}
+
+// R-75L8-90Y9 R-76T4-MSOY
+func TestStaticDelegation(t *testing.T) {
+	f := newWebFixture(t)
+	h := Handler(f.cfg)
+	paths := []string{"/_appkit/", "/_appkit/nope", "/_appkit/THEME.CSS", "/_appkit/theme.css/", "/_appkit/theme.css/x"}
+	for name := range webSharedFiles {
+		paths = append(paths, page.StaticPrefix+name)
+	}
+	for _, path := range paths {
+		for _, method := range []string{"GET", "HEAD", "POST", "PATCH"} {
+			for _, headers := range []http.Header{{}, {"Range": {"bytes=0-7"}}, {"If-None-Match": {"*"}}, {"If-Match": {"\"absent\""}}} {
+				r := httptest.NewRequest(method, path, strings.NewReader("body"))
+				r.Header = headers.Clone()
+				r.Header.Set("X-User-Id", "user")
+				got, want := httptest.NewRecorder(), httptest.NewRecorder()
+				h.ServeHTTP(got, r.Clone(r.Context()))
+				page.Static().ServeHTTP(want, r.Clone(r.Context()))
+				if got.Code != want.Code || !reflect.DeepEqual(got.Header(), want.Header()) || got.Body.String() != want.Body.String() {
+					t.Fatalf("%s %s headers %v: got %d %v, want %d %v", method, path, headers, got.Code, got.Header(), want.Code, want.Header())
+				}
+			}
+		}
+	}
+}
+
+// R-7811-0KFN R-798X-EC6C R-7AGT-S3X1 R-7FCF-B6VT
+func TestSharedFilesAndHead(t *testing.T) {
+	f := newWebFixture(t)
+	h := Handler(f.cfg)
+	other := newWebFixture(t)
+	h2 := Handler(other.cfg)
+	for name, mime := range webSharedFiles {
+		path := page.StaticPrefix + name
+		get := webRequest(h, "GET", path, "user", "one", nil)
+		if get.Code != 200 || get.Body.Len() == 0 || !reflect.DeepEqual(get.Header().Values("Content-Type"), []string{mime}) {
+			t.Fatalf("%s: %d %v bytes %d", path, get.Code, get.Header(), get.Body.Len())
+		}
+		assertWebETag(t, get.Header())
+		for _, another := range []http.Handler{h, h2} {
+			again := webRequest(another, "GET", path, "user", "two", nil)
+			if again.Body.String() != get.Body.String() || again.Header().Get("ETag") != get.Header().Get("ETag") {
+				t.Fatalf("%s changes between responses", path)
+			}
+		}
+		head := webRequest(h, "HEAD", path, "user", "head", nil)
+		if head.Code != 200 || head.Body.Len() != 0 {
+			t.Fatalf("HEAD %s: %d %q", path, head.Code, head.Body.String())
+		}
+		for _, key := range []string{"Content-Type", "ETag", "Cache-Control"} {
+			if !reflect.DeepEqual(head.Header().Values(key), get.Header().Values(key)) {
+				t.Fatalf("HEAD %s differs for %s", path, key)
+			}
+		}
+	}
+}
+
+func assertWebETag(t *testing.T, h http.Header) {
+	t.Helper()
+	tags := h.Values("ETag")
+	if len(tags) != 1 || len(tags[0]) < 2 || tags[0][0] != '"' || tags[0][len(tags[0])-1] != '"' {
+		t.Fatalf("not one strong entity tag: %v", tags)
+	}
+	for _, b := range []byte(tags[0][1 : len(tags[0])-1]) {
+		if b != 0x21 && (b < 0x23 || b > 0x7e) && b < 0x80 {
+			t.Fatalf("invalid entity tag byte %x", b)
+		}
+	}
+	if !reflect.DeepEqual(h.Values("Cache-Control"), []string{"no-cache"}) {
+		t.Fatalf("Cache-Control %v", h.Values("Cache-Control"))
+	}
+}
+
+// R-7BOQ-5VNQ R-069F-Z5YM
+func TestSharedRevalidation(t *testing.T) {
+	f := newWebFixture(t)
+	h := Handler(f.cfg)
+	for name := range webSharedFiles {
+		path := page.StaticPrefix + name
+		get := webRequest(h, "GET", path, "user", "initial", nil)
+		tag := get.Header().Get("ETag")
+		for _, method := range []string{"GET", "HEAD"} {
+			for _, match := range []string{"*", tag, "W/" + tag, ", \"other\",\tW/" + tag + " ,"} {
+				for _, modified := range []string{"", "Mon, 01 Jan 1900 00:00:00 GMT", "Tue, 01 Jan 2100 00:00:00 GMT"} {
+					r := httptest.NewRequest(method, path, nil)
+					r.Header.Set("X-User-Id", "user")
+					r.Header.Set("If-None-Match", match)
+					r.Header.Set("If-Modified-Since", modified)
+					w := httptest.NewRecorder()
+					h.ServeHTTP(w, r)
+					if w.Code != 304 || w.Body.Len() != 0 || w.Header().Get("ETag") != tag {
+						t.Fatalf("%s %s %q: %d %v", method, path, match, w.Code, w.Header())
+					}
+					assertWebETag(t, w.Header())
+				}
+			}
+		}
+		for _, miss := range []string{"\"other\"", ", W/\"first\", \"second\", "} {
+			for _, modified := range []string{"Mon, 01 Jan 1900 00:00:00 GMT", "Tue, 01 Jan 2100 00:00:00 GMT"} {
+				r := httptest.NewRequest("GET", path, nil)
+				r.Header.Set("X-User-Id", "user")
+				r.Header.Set("If-None-Match", miss)
+				r.Header.Set("If-Modified-Since", modified)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				if w.Code != 200 || w.Header().Get("ETag") != tag || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{webSharedFiles[name]}) || w.Body.String() != get.Body.String() {
+					t.Fatalf("nonmatching validator %s %q: %d %v", path, miss, w.Code, w.Header())
+				}
+				assertWebETag(t, w.Header())
+			}
+		}
+	}
+}
+
+// R-7GKB-OYMI R-7HS8-2QD7
+func TestStaticRefusals(t *testing.T) {
+	f := newWebFixture(t)
+	h := Handler(f.cfg)
+	for _, validator := range []string{"", "*", "\"anything\""} {
+		for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+			for name := range webSharedFiles {
+				r := httptest.NewRequest(method, page.StaticPrefix+name, nil)
+				r.Header.Set("X-User-Id", "user")
+				r.Header.Set("If-None-Match", validator)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				if w.Code != 405 || !reflect.DeepEqual(w.Header().Values("Allow"), []string{"GET, HEAD"}) {
+					t.Fatalf("%s %s: %d %v", method, name, w.Code, w.Header())
+				}
+			}
+		}
+		for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS"} {
+			for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
+				r := httptest.NewRequest(method, path, nil)
+				r.Header.Set("X-User-Id", "user")
+				r.Header.Set("If-None-Match", validator)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				if w.Code != 404 {
+					t.Fatalf("%s %s: %d", method, path, w.Code)
+				}
+			}
+		}
+	}
+}
