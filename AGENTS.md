@@ -53,6 +53,11 @@ removed afterwards. Reach for the cheapest instrument that answers the
 question first — a shell command, or asking the user what state something was
 in, usually beats writing a program.
 
+In `rm` commands use literal absolute paths or `"${VAR:?}"` guards, never
+globs, bare variables, or command substitution. The harness cannot resolve
+those targets, so it stops for the human's approval and blocks autonomous
+work.
+
 Every commit an agent makes ends with a `Co-Authored-By:` trailer naming the
 agent that made it, in whatever form that agent identifies itself. This is the
 only commit attribution rule in the repository; no sub-project AGENTS.md
