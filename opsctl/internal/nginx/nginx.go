@@ -286,7 +286,7 @@ func writeServiceBlocks(output *strings.Builder, hostName, apexApp, apexName str
 			writeUnwiredLocations(output, service.Name)
 		default:
 			writeInclude(output, service.Name)
-			writeWiredLocations(output, service.Name, hostName)
+			writeWiredLocations(output, service.Name, hostName, service.Manifest.Guests)
 		}
 		output.WriteString("}\n")
 	}
@@ -322,6 +322,9 @@ func writeUnwiredLocations(output *strings.Builder, name string) {
 	output.WriteString("    location = /check {\n")
 	output.WriteString("        return 404;\n")
 	output.WriteString("    }\n\n")
+	output.WriteString("    location = /check/open {\n")
+	output.WriteString("        return 404;\n")
+	output.WriteString("    }\n\n")
 	writeUpstreamLocation(output, name)
 }
 
@@ -342,10 +345,14 @@ func writeProxy(output *strings.Builder, name string) {
 	output.WriteString(".sock:;\n")
 }
 
-func writeWiredLocations(output *strings.Builder, name, hostName string) {
-	output.WriteString("    location = /_ikigenba/check {\n")
+func writeAuthCheck(output *strings.Builder, open bool) {
+	suffix := ""
+	if open {
+		suffix = "/open"
+	}
+	output.WriteString("    location = /_ikigenba/check" + suffix + " {\n")
 	output.WriteString("        internal;\n")
-	output.WriteString("        proxy_pass              http://unix:/run/ikigenba/auth.sock:/check;\n")
+	output.WriteString("        proxy_pass              http://unix:/run/ikigenba/auth.sock:/check" + suffix + ";\n")
 	output.WriteString("        proxy_pass_request_body off;\n")
 	output.WriteString("        proxy_set_header        Content-Length \"\";\n")
 	output.WriteString("        proxy_set_header        X-User-Id    \"\";\n")
@@ -355,6 +362,13 @@ func writeWiredLocations(output *strings.Builder, name, hostName string) {
 	output.WriteString("        proxy_set_header        X-Original-Host   $host;\n")
 	output.WriteString("        proxy_set_header        X-Original-URI    $request_uri;\n")
 	output.WriteString("    }\n\n")
+}
+
+func writeWiredLocations(output *strings.Builder, name, hostName string, guests bool) {
+	writeAuthCheck(output, false)
+	if guests {
+		writeAuthCheck(output, true)
+	}
 	output.WriteString("    location @auth_redirect {\n")
 	output.WriteString("        return 302 https://auth.")
 	output.WriteString(hostName)
@@ -370,21 +384,28 @@ func writeWiredLocations(output *strings.Builder, name, hostName string) {
 	output.WriteString("        add_header   WWW-Authenticate 'Basic realm=\"ikigenba\"' always;\n")
 	output.WriteString("        return       401 \"authentication required: send your token as the password\\n\";\n")
 	output.WriteString("    }\n\n")
-	writeAuthenticatedLocation(output, name, "= /mcp", "@mcp_unauthorized")
+	writeAuthenticatedLocation(output, name, "= /mcp", "@mcp_unauthorized", false)
 	output.WriteByte('\n')
-	writeAuthenticatedLocation(output, name, "^~ /mcp/", "@mcp_unauthorized")
+	writeAuthenticatedLocation(output, name, "^~ /mcp/", "@mcp_unauthorized", false)
 	output.WriteByte('\n')
-	writeAuthenticatedLocation(output, name, "~ /(info/refs|git-upload-pack|git-receive-pack)$", "@git_unauthorized")
+	writeAuthenticatedLocation(output, name, "~ /(info/refs|git-upload-pack|git-receive-pack)$", "@git_unauthorized", false)
 	output.WriteByte('\n')
-	writeAuthenticatedLocation(output, name, "/", "@auth_redirect")
+	writeAuthenticatedLocation(output, name, "/", "@auth_redirect", guests)
 }
 
-func writeAuthenticatedLocation(output *strings.Builder, name, location, unauthorized string) {
+func writeAuthenticatedLocation(output *strings.Builder, name, location, unauthorized string, open bool) {
+	suffix := ""
+	if open {
+		suffix = "/open"
+	}
 	output.WriteString("    location " + location + " {\n")
-	output.WriteString("        auth_request     /_ikigenba/check;\n")
+	output.WriteString("        auth_request     /_ikigenba/check" + suffix + ";\n")
 	output.WriteString("        auth_request_set $auth_user_id    $upstream_http_x_user_id;\n")
 	output.WriteString("        auth_request_set $auth_user_email $upstream_http_x_user_email;\n")
-	output.WriteString("        error_page       401 = " + unauthorized + ";\n\n")
+	if !open {
+		output.WriteString("        error_page       401 = " + unauthorized + ";\n")
+	}
+	output.WriteByte('\n')
 	writeProxy(output, name)
 	output.WriteString("        proxy_set_header Host              $host;\n")
 	output.WriteString("        proxy_set_header X-Real-IP         $remote_addr;\n")

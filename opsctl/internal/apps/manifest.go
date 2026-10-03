@@ -367,6 +367,11 @@ func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
 				return decoder.errorf("mcp must be a Boolean")
 			}
 			decoder.result.MCP = value.boolean
+		case "guests":
+			if value.kind != tomlBoolean {
+				return decoder.errorf("guests must be a Boolean")
+			}
+			decoder.result.Guests = value.boolean
 		case "default":
 			if value.kind != tomlBoolean {
 				return decoder.errorf("default must be a Boolean")
@@ -871,7 +876,7 @@ func (decoder *manifestDecoder) scalarRootTypeError(root string) error {
 		return decoder.errorf("%s must be a string", root)
 	case "port":
 		return decoder.errorf("port must be an integer from 1 through 65535")
-	case "default", "mcp":
+	case "default", "mcp", "guests":
 		return decoder.errorf("%s must be a Boolean", root)
 	case "secrets":
 		return decoder.errorf("secrets must be an array of strings")
@@ -882,7 +887,7 @@ func (decoder *manifestDecoder) scalarRootTypeError(root string) error {
 
 func isRecognizedScalarRoot(root string) bool {
 	switch root {
-	case "app", "description", "port", "default", "mcp", "secrets":
+	case "app", "description", "port", "default", "mcp", "guests", "secrets":
 		return true
 	default:
 		return false

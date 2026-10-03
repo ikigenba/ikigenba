@@ -111,7 +111,7 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 
 // R-78QR-PFQ3
 // R-WILI-A3EP
-// R-7HU4-N7HT
+// R-EKHF-6EW1
 // R-WOP0-6Y46
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
@@ -152,7 +152,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-7HU4-N7HT
+// R-EKHF-6EW1
 // R-WOP0-6Y46
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
@@ -225,9 +225,9 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-7HU4-N7HT
-// R-7CEG-UQY6
-// R-7E6F-HW9Q
+// R-EKHF-6EW1
+// R-EPD0-PHUT
+// R-ET0P-UT2W
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -241,7 +241,7 @@ func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 			}
 		}
 		want := baseForHost(hostName, true) +
-			unwiredServiceBlock("auth", 4401, false, hostName, "") +
+			unwiredServiceBlock(false, hostName, "") +
 			wiredServiceBlock("beta", 5200, false, hostName, "", 4401) +
 			wiredServiceBlock("notes", 8100, true, hostName, "", 4401) +
 			wiredServiceBlock("web", 9100, false, hostName, apexName, 4401)
@@ -268,7 +268,7 @@ func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Run("authenticator may be default and apex", func(t *testing.T) {
 		got := renderAuthenticatedServices(t, hostName, "auth", true)
 		want := baseForHost(hostName, true) +
-			unwiredServiceBlock("auth", 3307, true, hostName, apexName) +
+			unwiredServiceBlock(true, hostName, apexName) +
 			wiredServiceBlock("beta", 5200, false, hostName, "", 3307)
 		if got != want {
 			t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
@@ -282,14 +282,14 @@ func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Render: %v", err)
 		}
-		want := baseForHost(hostName, false) + unwiredServiceBlock("auth", 4401, false, hostName, "")
+		want := baseForHost(hostName, false) + unwiredServiceBlock(false, hostName, "")
 		if string(got) != want {
 			t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
 		}
 	})
 }
 
-// R-WL1B-1MW3
+// R-EO54-BQ44
 func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -334,7 +334,7 @@ func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	}
 }
 
-// R-7FEB-VO0F
+// R-EZ47-RNSD
 func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
@@ -372,7 +372,7 @@ func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	}
 }
 
-// R-7J21-0Z8I
+// R-F1K0-J79R
 func TestRenderOriginalRequestHeadersOnlyInAuthenticatorSubrequest(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1200,9 +1200,11 @@ func serviceBlock(name string, _ int, defaultService bool, hostName, apexName st
 	return serverBlockPrefix(name, defaultService, hostName, apexName) + proxyLocation(name) + "}\n"
 }
 
-func unwiredServiceBlock(name string, _ int, defaultService bool, hostName, apexName string) string {
+func unwiredServiceBlock(defaultService bool, hostName, apexName string) string {
+	const name = "auth"
 	return serverBlockPrefix(name, defaultService, hostName, apexName) +
-		"    location = /check {\n        return 404;\n    }\n\n" + proxyLocation(name) + "}\n"
+		"    location = /check {\n        return 404;\n    }\n\n" +
+		"    location = /check/open {\n        return 404;\n    }\n\n" + proxyLocation(name) + "}\n"
 }
 
 func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexName string, _ int) string {
@@ -1255,11 +1257,9 @@ func wiredProxyLocation(name, location, unauthorized string) string {
 		"    }\n"
 }
 
-func disabledServiceBlock(name string, defaultService bool, hostName, apexName string) string {
+func disabledServiceBlock(name, apexName string) string {
+	const hostName = "space.example.test"
 	names := name + "." + hostName
-	if defaultService {
-		names += " " + hostName
-	}
 	if apexName != "" {
 		names += " " + apexName
 	}
@@ -1436,7 +1436,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-7B6K-GZ7H R-7HU4-N7HT R-78QR-PFQ3
+// R-7B6K-GZ7H R-EKHF-6EW1 R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")
@@ -1458,9 +1458,9 @@ func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := baseForHost("space.example.test", true) +
-		disabledServiceBlock("auth", false, "space.example.test", "") +
+		disabledServiceBlock("auth", "") +
 		wiredServiceBlock("notes", 0, true, "space.example.test", "", 0) +
-		disabledServiceBlock("web", false, "space.example.test", "example.test")
+		disabledServiceBlock("web", "example.test")
 	if string(got) != want {
 		t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
 	}
@@ -1498,7 +1498,7 @@ func TestRenderAndUpdatePropagateDisabledQueryFailure(t *testing.T) {
 	assertPublishedConfiguration(t, filepath.Dir(destination), []byte("previous"), 0o600)
 }
 
-// R-7GM8-9FR4
+// R-F57P-OIHU
 func TestRenderSetsRequestIDAndLogsEveryAnsweringServer(t *testing.T) {
 	for _, authenticated := range []bool{false, true} {
 		root := t.TempDir()
@@ -1625,7 +1625,7 @@ func TestUpdateRejectsInvalidApexBeforeHostWork(t *testing.T) {
 	}
 }
 
-// R-7K9X-EQZ7
+// R-F7NI-G1Z8
 func TestRenderMCPAndGitReservationsIgnoreManifestMCP(t *testing.T) {
 	for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
 		t.Run(strings.TrimSpace(manifestMCP), func(t *testing.T) {
@@ -1682,7 +1682,7 @@ func TestRenderMCP401MappingAndPathBoundaries(t *testing.T) {
 				t.Fatalf("MCP status mapping: %s", section)
 			}
 		}
-		// R-7E6F-HW9Q: the complete wired shape adds the two git locations.
+		// R-ET0P-UT2W: the complete wired shape adds the two git locations.
 		if strings.Count(block, "    location ") != 8 {
 			t.Fatalf("unexpected location overrides: %s", block)
 		}
@@ -1731,7 +1731,7 @@ func TestRenderGitLocationBoundariesAndCredentialRelay(t *testing.T) {
 		if include < 0 || include > strings.Index(block, "    location "+location) {
 			t.Fatal("app fragment must precede generated regular expressions")
 		}
-		// R-7E6F-HW9Q: these generated locations have this exact order.
+		// R-ET0P-UT2W: these generated locations have this exact order.
 		mcpExact := strings.Index(block, "    location = /mcp {\n")
 		mcpPrefix := strings.Index(block, "    location ^~ /mcp/ {\n")
 		git := strings.Index(block, "    location "+location+" {\n")

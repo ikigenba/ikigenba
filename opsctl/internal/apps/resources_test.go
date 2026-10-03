@@ -25,7 +25,7 @@ func TestResourcesFields(t *testing.T) {
 	}
 }
 
-// R-7ST8-3562
+// R-RHJO-G1CM
 func TestParseManifestPartialResourcesHaveZeroDefaults(t *testing.T) {
 	for _, test := range []struct {
 		data string

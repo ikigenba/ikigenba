@@ -29,6 +29,7 @@ type Manifest struct {
 	Description string
 	Default     bool
 	MCP         bool
+	Guests      bool
 	Secrets     []string
 	Env         map[string]string
 	Database    *Database

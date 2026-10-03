@@ -35,13 +35,14 @@ func TestDatabaseFields(t *testing.T) {
 	}
 }
 
-// R-7RLB-PDFD
+// R-RGBS-29LX
 func TestManifestFields(t *testing.T) {
 	database := &apps.Database{Engine: "sqlite", Path: "state/app.db"}
 	manifest := apps.Manifest{
 		App:         "notes",
 		Description: "Offers notes tools",
 		MCP:         true,
+		Guests:      true,
 		Default:     true,
 		Secrets:     []string{"TOKEN"},
 		Env:         map[string]string{"MODE": "production"},
@@ -51,6 +52,7 @@ func TestManifestFields(t *testing.T) {
 	var (
 		app         string
 		description string
+		guests      bool
 		mcp         bool
 		isDefault   bool
 		secrets     []string
@@ -59,8 +61,9 @@ func TestManifestFields(t *testing.T) {
 		resources   apps.Resources
 	)
 	app, description, mcp, isDefault, secrets, env, db = manifest.App, manifest.Description, manifest.MCP, manifest.Default, manifest.Secrets, manifest.Env, manifest.Database
+	guests = manifest.Guests
 	resources = manifest.Resources
-	if app != "notes" || description != "Offers notes tools" || !mcp || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database || resources != (apps.Resources{CPUWeight: 100, MemoryMax: 1048576, IOWeight: 200}) {
+	if app != "notes" || description != "Offers notes tools" || !mcp || !guests || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database || resources != (apps.Resources{CPUWeight: 100, MemoryMax: 1048576, IOWeight: 200}) {
 		t.Fatalf("Manifest = %#v", manifest)
 	}
 }
@@ -223,11 +226,12 @@ func TestParseManifestRejectsMalformedTOMLWithoutPartialResult(t *testing.T) {
 	}
 }
 
-// R-7ST8-3562 R-7U14-GWWR R-XSFU-AXFW
+// R-RHJO-G1CM R-RIRK-TT3B R-XSFU-AXFW
 func TestParseManifestMapsFieldsAndSuppliesEmptyCollections(t *testing.T) {
 	data := []byte(`app = "crm"
 description = "  Offers CRM tools  "
 mcp = true
+guests = true
 default = true
 secrets = ["CRM_API_KEY", "CRM_API_SECRET"]
 
@@ -251,6 +255,7 @@ io_weight = 200
 		App:         "crm",
 		Description: "  Offers CRM tools  ",
 		MCP:         true,
+		Guests:      true,
 		Default:     true,
 		Secrets:     []string{"CRM_API_KEY", "CRM_API_SECRET"},
 		Env:         map[string]string{"OUTBOX_RETENTION_DAYS": "7"},
@@ -268,7 +273,7 @@ io_weight = 200
 	if err != nil {
 		t.Fatalf("ParseManifest(empty) returned error: %v", err)
 	}
-	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Default || minimal.Database != nil || minimal.Resources != (apps.Resources{}) {
+	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Guests || minimal.Default || minimal.Database != nil || minimal.Resources != (apps.Resources{}) {
 		t.Fatalf("ParseManifest(empty) did not retain scalar zero values: %#v", minimal)
 	}
 	if minimal.Secrets == nil || len(minimal.Secrets) != 0 || minimal.Env == nil || len(minimal.Env) != 0 {
@@ -278,6 +283,7 @@ io_weight = 200
 	equivalent := []byte(`"app" = '''crm'''
 description = '  Offers CRM tools  '
 mcp = true
+guests = true
 default = true
 secrets = ["""CRM_API_KEY""", '''CRM_API_SECRET''']
 env = { OUTBOX_RETENTION_DAYS = """7""" }
@@ -409,7 +415,7 @@ resources = { cpu_weight = 100, memory_max = "512M", io_weight = 200 }
 	}
 }
 
-// R-7U14-GWWR R-7ST8-3562 R-XSFU-AXFW R-YBA6-4L0A
+// R-RIRK-TT3B R-RHJO-G1CM R-XSFU-AXFW R-YBA6-4L0A
 func TestParseManifestValidatesRecognizedFieldsAndIgnoresOthers(t *testing.T) {
 	valid := []byte(`title = """unrelated
 title"""
@@ -431,6 +437,7 @@ enabled = true
 app = "host"
 description = 3
 mcp = "yes"
+guests = "yes"
 port = 70000
 default = "yes"
 secrets = [1]
@@ -443,14 +450,14 @@ MODE = "production"
 	if err != nil {
 		t.Fatalf("ParseManifest rejected capability-only manifest: %v", err)
 	}
-	if manifest.App != "" || manifest.Description != "" || manifest.MCP || manifest.Default || len(manifest.Secrets) != 0 || manifest.Database != nil || !reflect.DeepEqual(manifest.Env, map[string]string{"MODE": "production"}) {
+	if manifest.App != "" || manifest.Description != "" || manifest.MCP || manifest.Guests || manifest.Default || len(manifest.Secrets) != 0 || manifest.Database != nil || !reflect.DeepEqual(manifest.Env, map[string]string{"MODE": "production"}) {
 		t.Fatalf("unexpected model from unrelated fields: %#v", manifest)
 	}
 	quotedDot, err := apps.ParseManifest([]byte("[env]\n\"foo.bar\" = \"x\""))
 	if err != nil || !reflect.DeepEqual(quotedDot.Env, map[string]string{"foo.bar": "x"}) {
 		t.Fatalf("ParseManifest(direct quoted env key) = %#v, %v", quotedDot, err)
 	}
-	for _, root := range []string{"app", "description", "port", "default", "mcp", "secrets"} {
+	for _, root := range []string{"app", "description", "port", "default", "mcp", "guests", "secrets"} {
 		for _, format := range []string{"[%s]", "[[%s]]", "%s.child = \"x\"", "%s.child.value = 1"} {
 			data := fmt.Sprintf(format, root)
 			manifest, err := apps.ParseManifest([]byte(data))
@@ -484,6 +491,7 @@ MODE = "production"
 		{name: "resources array", data: "resources = []"},
 		{name: "description type", data: "description = 3"},
 		{name: "mcp type", data: "mcp = 3"},
+		{name: "guests type", data: "guests = 3"},
 		{name: "app type", data: "app = 3"},
 		{name: "app value", data: "app = \"host\""},
 		{name: "port type", data: "port = \"3100\""},
