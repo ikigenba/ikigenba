@@ -31,7 +31,9 @@ An attribute naming an entity has the entity's type as its key (`token`, `widget
 | Prefix | Entity type | Owning service |
 |---|---|---|
 | `rep_` | `repo` | `repos` |
+| `sit_` | `site` | `sites` |
 | `tok_` | `token` | `auth` |
+| `vis_` | `visitor` | `sites` |
 | `wgt_` | `widget` | `dummy` |
 
 This table is the registry, and it exists only here: appkit exports no code for it, so adding a row is a design change to this document alone, with no change to appkit's code and no appkit release. A service that adds an entity type adds its row in that change, and its own design then holds the testable requirements: that its ids begin with its registered prefix and that its events name the entity under its registered type. The convention every service follows: an entity attribute's key is the entity type's name exactly as registered (itself a valid attribute key), and its value is a string that begins with the registered prefix, lowercase ASCII letters followed by `_`. appkit's own framework events name no entity, so the convention places no requirement on appkit's code.
