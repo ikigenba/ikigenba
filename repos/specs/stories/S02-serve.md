@@ -205,7 +205,7 @@ Postconditions:
 
 ## The host starts repos where git is not installed
 
-repos serves every repository by running git, so without git it can serve none of them, and it says so at start rather than with a failed request later. git is looked for on the `PATH` repos was started with, as a shell would find it: an executable file named `git` in one of its directories. This is not the caller's usage but a host missing a dependency opsctl provisions, so it exits 1, and it does so before it opens the database, so a host without git keeps its state as it was.
+repos serves every repository by running git, so without git it can serve none of them, and it says so at start rather than with a failed request later. git is looked for on the `PATH` repos was started with, in the order of its directories as a shell would look: an executable file named `git` in one of them. Unlike a shell, repos skips an empty or relative entry, so it never runs a `git` it finds through its working directory. This is not the caller's usage but a host missing a dependency opsctl provisions, so it exits 1, and it does so before it opens the database, so a host without git keeps its state as it was.
 
 Command:
 
@@ -297,7 +297,7 @@ Preconditions:
 
 - repos is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds, and `QUEUE_SECONDS` is unset, so it is 30.
-- A client's push to `notes` (`rep_3f9a0c1d2e4b5a69`) is running at the signal and is still running 5 seconds after it; `refs/heads/main` of `notes` names `<old>`.
+- A client's push to `notes` (`rep_3f9a0c1d2e4b5a69`) is running at the signal and is still sending its pack 5 seconds after it; `refs/heads/main` of `notes` names `<old>`.
 - A second client's push to `notes` is waiting for the repository's lock at the signal.
 - `<n>` of the requests repos has accepted, the first push among them, are still running 5 seconds after the signal.
 - telemetry takes every event.
@@ -311,7 +311,7 @@ Postconditions:
   Retry-After: 30
   ```
 
-  with the body `repos is stopping; try again later`; its `git push` failed and changed nothing. telemetry has received its `request.started`, then `operation.rejected` with `repo` `rep_3f9a0c1d2e4b5a69`, `operation` `push`, and `limit` `draining`, then its `request.finished` with `status` `503`.
+  with the body exactly the one line `repos is stopping; try again later`, ending in a newline; its `git push` failed and changed nothing. telemetry has received its `request.started`, then `operation.rejected` with `repo` `rep_3f9a0c1d2e4b5a69`, `operation` `push`, and `limit` `draining`, then its `request.finished` with `status` `503`.
 - Every request that finished within 5 seconds of the signal received its full response; the `<n>` that did not were cut off. The first push's git was killed and its client's `git push` failed.
 - `refs/heads/main` of `notes` still names `<old>`, and every other ref of it is as it was; the push recorded no `repo.pushed`. `git fsck` in the repository's directory finds nothing wrong.
 - No git process repos started is still running.

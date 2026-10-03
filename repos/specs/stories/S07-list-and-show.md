@@ -1,6 +1,6 @@
 # Stories — list and show
 
-`list` and `show`, the two tools that tell the caller what repositories it has. Both are of kind `read`, change nothing, and see only the caller's own repositories: another user's is not in a listing, and asking for it by name or by id is the same as asking for one that does not exist. `list` takes no arguments and answers `{"repos":[...]}`, one entry per repository the caller owns, sorted by name ascending, each with the members, in this order, `id`, `name`, `size_bytes`, `head`, and `available`; a caller with none gets `{"repos":[]}`. `show` takes one argument, `repo`, required, a string: the repository's id or its name. A value that begins `rep_` is read as an id and anything else as a name, and either is looked up among the caller's repositories only. It answers the members `create` answers (`S06`), in the same order: `id`, `name`, `default_branch`, `head`, `size_bytes`, `available`, `created`, `clone_url`, and `credentials`, with `clone_url` and `credentials` built for the request it answers as `S06` fixes. `head` is the 40-digit hexadecimal sha `refs/heads/main` points at, or `null` when the repository has no commit on it; `size_bytes` is the size of the repository's directory on disk in bytes as it is when the call runs; `available` is `false` for a repository startup verification found missing or broken (`S14`), whose `head` is then `null`, since it cannot be read, and whose `size_bytes` is what its directory holds, 0 when there is none. A `repo` that names none of the caller's repositories is refused with `repo: no repository '<repo>'`, quoting the value as sent, as a rule offence (`S05`).
+`list` and `show`, the two tools that tell the caller what repositories it has. Both are of kind `read`, change nothing, and see only the caller's own repositories: another user's is not in a listing, and asking for it by name or by id is the same as asking for one that does not exist. `list` takes no arguments and answers `{"repos":[...]}`, one entry per repository the caller owns, sorted by name ascending, each with the members, in this order, `id`, `name`, `size_bytes`, `head`, and `available`; a caller with none gets `{"repos":[]}`. `show` takes one argument, `repo`, required, a string: the repository's id or its name. A value that begins `rep_` is read as an id and anything else as a name, and either is looked up among the caller's repositories only. It answers the members `create` answers (`S06`), in the same order: `id`, `name`, `default_branch`, `head`, `size_bytes`, `available`, `created`, `clone_url`, and `credentials`, with `clone_url` and `credentials` built for the request it answers as `S06` fixes. `head` is the 40-digit hexadecimal sha `refs/heads/main` points at, and is absent when the repository has no commit on it; `size_bytes` is the size of the repository's directory on disk in bytes as it is when the call runs; `available` is `false` for a repository startup verification found missing or broken (`S14`), whose `head` is then absent, since it cannot be read, and whose `size_bytes` is what its directory holds, 0 when there is none. A `repo` that names none of the caller's repositories is refused with `repo: no repository '<repo>'`, quoting the value as sent, as a rule offence (`S05`).
 
 The actor, the request shape, the result envelope, and the fixture are those of `S06`: the caller `u_7f3a9c21` owns `notes` (`rep_3f9a0c1d2e4b5a69`, `refs/heads/main` at `a3f1c9e27b4d6058e1c2a9b7d3f5e8016c4b2a9d`, created `2026-09-30T10:15:00Z`) and `site` (`rep_8c21d4e0f7a3b915`, no commits, created `2026-10-01T09:00:00Z`), and `u_2b8e1d04` owns `journal` (`rep_d41c7a9e05b28f63`). Every story is read-only: nothing changes but the trail, which gains the request's `request.started`, its `tool.called` with `tool` `list` or `show`, `kind` `read`, and the outcome `S05` fixes, and its `request.finished`; neither tool records a domain event. repos writes nothing to stderr for any answer in this group.
 
@@ -32,7 +32,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"repos":[{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","size_bytes":<notes-size>,"head":"a3f1c9e27b4d6058e1c2a9b7d3f5e8016c4b2a9d","available":true},{"id":"rep_8c21d4e0f7a3b915","name":"site","size_bytes":<site-size>,"head":null,"available":true}]}
+{"repos":[{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","size_bytes":<notes-size>,"head":"a3f1c9e27b4d6058e1c2a9b7d3f5e8016c4b2a9d","available":true},{"id":"rep_8c21d4e0f7a3b915","name":"site","size_bytes":<site-size>,"available":true}]}
 ```
 
 and a `content` array of one text block whose text is exactly that object encoded compactly. `<notes-size>` and `<site-size>` are the sizes of `state/repos/rep_3f9a0c1d2e4b5a69.git` and `state/repos/rep_8c21d4e0f7a3b915.git` on disk, in bytes, each more than 0.
@@ -97,7 +97,7 @@ Postconditions:
 
 ## A model lists its repositories when one is unavailable
 
-A repository startup verification could not open stays in the catalog and in the listing, marked unavailable, so the model learns it exists and is broken rather than finding it gone. Its `head` cannot be read and is `null`.
+A repository startup verification could not open stays in the catalog and in the listing, marked unavailable, so the model learns it exists and is broken rather than finding it gone. Its `head` cannot be read and is absent.
 
 Request:
 
@@ -123,7 +123,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 3 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"repos":[{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","size_bytes":0,"head":null,"available":false},{"id":"rep_8c21d4e0f7a3b915","name":"site","size_bytes":<site-size>,"head":null,"available":true}]}
+{"repos":[{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","size_bytes":0,"available":false},{"id":"rep_8c21d4e0f7a3b915","name":"site","size_bytes":<site-size>,"available":true}]}
 ```
 
 and a `content` array of one text block whose text is exactly that object encoded compactly.
@@ -255,7 +255,7 @@ Postconditions:
 
 ## A model shows a repository that has no commits
 
-A repository nobody has pushed to has no `refs/heads/main`, so its `head` is `null`; it is still available and still has a clone URL to push the first commit to.
+A repository nobody has pushed to has no `refs/heads/main`, so its result has no `head`; it is still available and still has a clone URL to push the first commit to.
 
 Request:
 
@@ -281,7 +281,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 7 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"id":"rep_8c21d4e0f7a3b915","name":"site","default_branch":"main","head":null,"size_bytes":<site-size>,"available":true,"created":"2026-10-01T09:00:00Z","clone_url":"https://repos.sbx.ikigenba.dev/site.git","credentials":"<credentials>"}
+{"id":"rep_8c21d4e0f7a3b915","name":"site","default_branch":"main","size_bytes":<site-size>,"available":true,"created":"2026-10-01T09:00:00Z","clone_url":"https://repos.sbx.ikigenba.dev/site.git","credentials":"<credentials>"}
 ```
 
 and a `content` array of one text block whose text is that object encoded compactly; `<credentials>` is as in `A model shows a repository by name`.
@@ -296,7 +296,7 @@ Postconditions:
 
 ## A model shows a repository that is unavailable
 
-An unavailable repository is still the caller's and still shown, so the model can tell it is broken rather than gone, and can delete it (`S09`). Its `head` is `null`; its clone URL is given, though git requests to it are answered `503` until it verifies again (`S11`, `S14`).
+An unavailable repository is still the caller's and still shown, so the model can tell it is broken rather than gone, and can delete it (`S09`). Its `head` is absent; its clone URL is given, though git requests to it are answered `503` until it verifies again (`S11`, `S14`).
 
 Request:
 
@@ -322,7 +322,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 8 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","default_branch":"main","head":null,"size_bytes":0,"available":false,"created":"2026-09-30T10:15:00Z","clone_url":"https://repos.sbx.ikigenba.dev/notes.git","credentials":"<credentials>"}
+{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","default_branch":"main","size_bytes":0,"available":false,"created":"2026-09-30T10:15:00Z","clone_url":"https://repos.sbx.ikigenba.dev/notes.git","credentials":"<credentials>"}
 ```
 
 and a `content` array of one text block whose text is that object encoded compactly.

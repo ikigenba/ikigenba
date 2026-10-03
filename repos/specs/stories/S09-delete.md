@@ -46,7 +46,7 @@ Postconditions:
 - The catalog no longer holds `rep_3f9a0c1d2e4b5a69`. `list` (`S07`) answers `site` alone; `show` with `notes` or with `rep_3f9a0c1d2e4b5a69` is refused with `repo: no repository '<repo>'`.
 - `state/repos/rep_3f9a0c1d2e4b5a69.git` no longer exists. `site`'s and `journal`'s directories are untouched.
 - A git request to `/notes.git/...` is answered `404` with `repository not found` (`S11`).
-- The name is free: the caller may create a new `notes` (`S06`), which is empty and gets a new id; `rep_3f9a0c1d2e4b5a69` is never minted again.
+- The name is free: the caller may create a new `notes` (`S06`), which is empty and gets a new id, never `rep_3f9a0c1d2e4b5a69` while that id is still catalogued or its directory still exists; ids are random, so a deleted id coming back is vanishingly unlikely rather than ruled out.
 - telemetry has received the request's four events, in this order, where `<request-id>` is the request's id (`S02`):
 
   ```

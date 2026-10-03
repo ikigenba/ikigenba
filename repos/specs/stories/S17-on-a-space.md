@@ -191,7 +191,7 @@ content-type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is repos' answer to `create` (`S06-create.md`), relayed: no `isError` member, a `structuredContent` of
 
 ```
-{"id":"<id>","name":"drafts","default_branch":"main","head":null,"size_bytes":<n>,"available":true,"created":"<created>","clone_url":"https://repos.sbx.ikigenba.dev/drafts.git","credentials":"<guidance>"}
+{"id":"<id>","name":"drafts","default_branch":"main","size_bytes":<n>,"available":true,"created":"<created>","clone_url":"https://repos.sbx.ikigenba.dev/drafts.git","credentials":"<guidance>"}
 ```
 
 and a `content` array of one text block holding that same object encoded compactly. `<id>` is `rep_` followed by 16 lowercase hexadecimal digits; `<guidance>` is the credential guidance of `S06-create.md`, naming `credential.https://*.sbx.ikigenba.dev.helper`; neither `clone_url` nor anything else in the result holds the token. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"v<semver>"}`, not repos'.
@@ -235,4 +235,4 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing reached `/run/ikigenba/repos.sock`, and repos recorded no event.
-- auth recorded `check.refused` with `outcome=forbidden`, `credential=basic`, `host=repos.sbx.ikigenba.dev`, and `path=/notes.git/info/refs`, under no user and with no `token` attribute; neither the password nor the username is in the trail or in the host's nginx logs.
+- auth recorded `check.refused` with `outcome=forbidden`, `credential=basic`, `host=repos.sbx.ikigenba.dev`, and `path=/notes.git/info/refs`, under no user and with no `token` attribute; neither the password nor the encoded credential is in the trail or in the host's nginx logs; the host's access log holds the Basic username, as opsctl's `S5-nginx.md` log format records it.

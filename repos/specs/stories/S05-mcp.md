@@ -50,14 +50,14 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `n
 [
   {
     "name": "list",
-    "description": "The repositories you own, by name.\n\nTakes no arguments. Each repository has its id, its name, size_bytes, its size on disk, head, the sha its main branch points at (null before the first push), and available, false when repos found it damaged at startup and will not serve it. Use show for one repository's clone URL.",
+    "description": "The repositories you own, by name.\n\nTakes no arguments. Each repository has its id, its name, size_bytes, its size on disk, head, the sha its main branch points at (absent before the first push), and available, false when repos found it damaged at startup and will not serve it. Use show for one repository's clone URL.",
     "inputSchema": {"type": "object", "additionalProperties": false},
     "outputSchema": <the list output schema>,
     "annotations": {"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false}
   },
   {
     "name": "show",
-    "description": "One of your repositories, with its clone URL and how to give git your token.\n\nPass repo, the repository's id or its name. The result has its id, name, default_branch (always main), head (null before the first push), size_bytes, available, created, clone_url, and credentials. The clone URL never holds a credential: credentials tells how to give git your personal access token without putting it in the URL or on a command line. Do not use credential.helper store, which writes the token to disk.",
+    "description": "One of your repositories, with its clone URL and how to give git your token.\n\nPass repo, the repository's id or its name. The result has its id, name, default_branch (always main), head (absent before the first push), size_bytes, available, created, clone_url, and credentials. The clone URL never holds a credential: credentials tells how to give git your personal access token without putting it in the URL or on a command line. Do not use credential.helper store, which writes the token to disk.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -122,7 +122,7 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `n
 ]
 ```
 
-The output schemas are not quoted whole; each describes an object closed to other members, with its properties in the order given here. The show output schema, which `show`, `create`, and `rename` all carry, describes one repository: `id`, a string; `name`, a string; `default_branch`, a string; `head`, whose `type` is `["string", "null"]`; `size_bytes`, an integer; `available`, a boolean; `created`, a string; `clone_url`, a string; and `credentials`, a string. `list`'s has one property, `repos`, an array of objects, each closed to other members, with `id`, a string; `name`, a string; `size_bytes`, an integer; `head`, whose `type` is `["string", "null"]`; and `available`, a boolean. `status`'s has `read` and `write`, each an object closed to other members with `slots`, `active`, and `queued`, integers; and `repos`, an array of objects, each closed to other members, with `id`, a string; `name`, a string; `size_bytes`, an integer; `limit_bytes`, an integer; `available`, a boolean; and `busy`, a boolean. `delete`'s has `id`, a string, and `name`, a string. Which members each output schema marks required, and which carry a description, are not fixed here. The schemas carry no `$schema` member.
+The output schemas are not quoted whole; each describes an object closed to other members, with its properties in the order given here. The show output schema, which `show`, `create`, and `rename` all carry, describes one repository: `id`, a string; `name`, a string; `default_branch`, a string; `head`, a string, the one member not always present; `size_bytes`, an integer; `available`, a boolean; `created`, a string; `clone_url`, a string; and `credentials`, a string. `list`'s has one property, `repos`, an array of objects, each closed to other members, with `id`, a string; `name`, a string; `size_bytes`, an integer; `head`, a string, not always present; and `available`, a boolean. `status`'s has `read` and `write`, each an object closed to other members with `slots`, `active`, and `queued`, integers; and `repos`, an array of objects, each closed to other members, with `id`, a string; `name`, a string; `size_bytes`, an integer; `limit_bytes`, an integer; `available`, a boolean; and `busy`, a boolean. `delete`'s has `id`, a string, and `name`, a string. Which members each output schema marks required, and which carry a description, are not fixed here. The schemas carry no `$schema` member.
 
 Preconditions:
 
@@ -503,7 +503,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"repos":[{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","size_bytes":<n>,"head":"<sha>","available":true},{"id":"rep_8c21d4e0f7a3b915","name":"site","size_bytes":<n>,"head":null,"available":true}]}
+{"repos":[{"id":"rep_3f9a0c1d2e4b5a69","name":"notes","size_bytes":<n>,"head":"<sha>","available":true},{"id":"rep_8c21d4e0f7a3b915","name":"site","size_bytes":<n>,"available":true}]}
 ```
 
 and a `content` array of one text block whose text is exactly that line, as `S07` tells. `<sha>` is the 40 lowercase hexadecimal digits `refs/heads/main` of `notes` points at, and each `<n>` is that repository's size on disk in bytes. `ann@example.com`'s repository is not in it.

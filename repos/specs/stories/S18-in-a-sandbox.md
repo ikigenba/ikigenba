@@ -86,7 +86,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is repos' answer to `create` (`S06-create.md`), relayed by the gateway: no `isError` member, a `structuredContent` of
 
 ```
-{"id":"<id>","name":"notes","default_branch":"main","head":null,"size_bytes":<n>,"available":true,"created":"<created>","clone_url":"http://repos.wip.localhost:7400/notes.git","credentials":"<guidance>"}
+{"id":"<id>","name":"notes","default_branch":"main","size_bytes":<n>,"available":true,"created":"<created>","clone_url":"http://repos.wip.localhost:7400/notes.git","credentials":"<guidance>"}
 ```
 
 and a `content` array of one text block holding that same object encoded compactly, where `<guidance>` is the credential guidance naming `credential.http://*.wip.localhost:7400.helper`. Then, in the developer's shell:
