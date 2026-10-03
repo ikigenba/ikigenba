@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -117,7 +118,7 @@ func (f *appFixture) read(rel string) string {
 }
 func appManifest(app string) string { return "app = " + strconv.Quote(app) + "\n" }
 
-// R-AUCL-BZBE R-UE7I-W0Z0 R-UFFF-9SPP R-RKQQ-LM3W R-UP6M-BYN9 R-UNYP-Y6WK R-UJ34-F3XS R-VDKL-ZDH5
+// R-AUCL-BZBE R-UE7I-W0Z0 R-UFFF-9SPP R-RKQQ-LM3W R-UP6M-BYN9 R-UNYP-Y6WK R-8507-WUL0 R-VDKL-ZDH5
 func TestAppsDiscovery(t *testing.T) {
 	f := newAppFixture(t)
 	for _, a := range []string{"dummy", "auth"} {
@@ -202,10 +203,10 @@ func TestAppNames(t *testing.T) {
 	}
 }
 
-// R-UXPX-0CU4 R-UYXT-E4KT R-V05P-RWBI R-V1DM-5O27 R-V2LI-JFSW R-AY0A-HAJH
+// R-UXPX-0CU4 R-UYXT-E4KT R-V05P-RWBI R-87G0-OE2E R-V2LI-JFSW R-AY0A-HAJH
 func TestManifestRefusals(t *testing.T) {
 	cases := []struct{ body, want string }{{"app = \"dummy\n", "line 1 (last key \"app\"): strings cannot contain newlines"}, {"port = 8080\napp = \"demo\"\n", "'port' is not allowed; the sandbox gives the app its socket"}, {"port = \"8080\"\n", "'port' is not allowed; the sandbox gives the app its socket"}, {"", "'app' is missing"}, {"app = \"demo\"\n", "app 'demo' does not match its directory 'dummy'"}, {"app = \"\"\n", "app '' does not match its directory 'dummy'"}, {"app = \"de\\nmo\"\n", "app 'de\\x0amo' does not match its directory 'dummy'"}}
-	for _, c := range []struct{ k, v, kind string }{{"app", "5", "a string"}, {"description", "5", "a string"}, {"default", "1", "a boolean"}, {"mcp", "\"yes\"", "a boolean"}, {"secrets", "\"A\"", "an array of strings"}, {"secrets", "[1]", "an array of strings"}, {"env", "\"x\"", "a table of strings"}, {"env", "{X = 4}", "a table of strings"}} {
+	for _, c := range []struct{ k, v, kind string }{{"app", "5", "a string"}, {"description", "5", "a string"}, {"default", "1", "a boolean"}, {"mcp", "\"yes\"", "a boolean"}, {"secrets", "\"A\"", "an array of strings"}, {"secrets", "[1]", "an array of strings"}, {"env", "\"x\"", "a table of strings"}, {"env", "{X = 4}", "a table of strings"}, {"resources", "5", "a table"}, {"resources", "\"x\"", "a table"}} {
 		body := appManifest("dummy")
 		if c.k == "app" {
 			body = ""
@@ -340,7 +341,7 @@ func appTOMLString(s string) string {
 	return q
 }
 
-// R-U6S0-HHI7 R-VCCP-LLQG
+// R-8684-AMBP R-VCCP-LLQG
 func TestManifestPrecedence(t *testing.T) {
 	cases := []struct {
 		body, want string
@@ -352,6 +353,11 @@ func TestManifestPrecedence(t *testing.T) {
 		{"app=\"dummy\"\nmcp=1\nsecrets=1\n", "'mcp' must be a boolean"},
 		{"app=\"dummy\"\nsecrets=1\nenv=1\n", "'secrets' must be an array of strings"},
 		{"app=\"demo\"\nenv=1\n", "'env' must be a table of strings"},
+		{"app=\"dummy\"\nenv=1\nresources=1\n", "'env' must be a table of strings"},
+		{"app=\"demo\"\nresources=1\n", "'resources' must be a table"},
+		{"resources=1\n", "'resources' must be a table"},
+		{"app=\"dummy\"\nmcp=true\n[env]\nIKIGENBA_X=\"x\"\n[resources]\ncpu_weight=0\n", "'IKIGENBA_X' is set by the sandbox"},
+		{"app=\"dummy\"\nmcp=true\n[resources]\ncpu_weight=0\n", "'resources.cpu_weight' must be a whole number from 1 to 10000"},
 	} {
 		cases = append(cases, struct {
 			body, want string
@@ -370,6 +376,12 @@ func TestManifestPrecedence(t *testing.T) {
 		f.refuse("dummy: etc/manifest.toml: " + c.want)
 	}
 	f := newAppFixture(t)
+	f.manifest("dummy", "app=\"dummy\"\nmcp=true\n[resources]\ncpu_weight=50\n")
+	if err := os.MkdirAll(filepath.Join(f.work, "dummy/share/icon.svg"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	f.refuse("dummy: etc/manifest.toml: 'mcp' is true but 'description' is empty; an MCP service must say what it offers")
+	f = newAppFixture(t)
 	f.manifest("auth", appManifest("auth")+"port=8080\n")
 	f.manifest("dummy", appManifest("demo"))
 	f.refuse("auth: etc/manifest.toml: 'port' is not allowed; the sandbox gives the app its socket")
@@ -381,7 +393,145 @@ func TestManifestPrecedence(t *testing.T) {
 	f.refuse("dummy: etc/manifest.toml: app 'demo' does not match its directory 'dummy'")
 }
 
-// R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
+// R-8507-WUL0
+func TestManifestReadKeys(t *testing.T) {
+	f := newAppFixture(t)
+	f.manifest("dummy", appManifest("dummy"))
+	f.success()
+	beforeEnv, beforeServices := f.read("env/dummy.env"), f.read("services.json")
+	f.manifest("dummy", appManifest("dummy")+"description=\"\"\ndefault=false\nmcp=false\nsecrets=[]\nenv={}\nresources={}\n")
+	f.success()
+	if f.read("env/dummy.env") != beforeEnv || f.read("services.json") != beforeServices {
+		t.Fatal("absent keys did not use empty defaults")
+	}
+	f.environment = map[string]string{"TOKEN": "from-environment"}
+	f.manifest("dummy", appManifest("dummy")+"description=\"Demo service\"\ndefault=true\nmcp=true\nsecrets=[\"TOKEN\"]\n[env]\nSETTING=\"configured\"\n[resources]\ncpu_weight=50\n")
+	code, out, stderr := f.run()
+	if code != 0 || stderr != "" || !strings.Contains(out, "http://wip.localhost:7400\n") {
+		t.Fatalf("default app: %d %q %q", code, out, stderr)
+	}
+	var services struct {
+		Services []struct {
+			Name, Description string
+			MCP               bool
+		}
+	}
+	if err := json.Unmarshal([]byte(f.read("services.json")), &services); err != nil {
+		t.Fatal(err)
+	}
+	if len(services.Services) != 1 || services.Services[0].Name != "dummy" || services.Services[0].Description != "Demo service" || !services.Services[0].MCP {
+		t.Fatalf("read keys missing from services: %#v", services)
+	}
+	env := f.read("env/dummy.env")
+	if !strings.Contains(env, "SETTING=\"configured\"\n") || !strings.Contains(env, "TOKEN=\"from-environment\"\n") {
+		t.Fatal("manifest env or secret was not read")
+	}
+}
+
+// R-89VT-FXJS
+func TestResourceWeights(t *testing.T) {
+	for _, key := range []string{"cpu_weight", "io_weight"} {
+		for _, value := range []string{"0", "-1", "10001", "20000", "\"50\"", "50.0", "true", "[]", "{}"} {
+			t.Run(key+"="+value, func(t *testing.T) {
+				f := newAppFixture(t)
+				f.manifest("dummy", appManifest("dummy")+"[resources]\n"+key+"="+value+"\n")
+				f.refuse("dummy: etc/manifest.toml: 'resources." + key + "' must be a whole number from 1 to 10000")
+			})
+		}
+		for _, value := range []string{"1", "50", "10000"} {
+			f := newAppFixture(t)
+			f.manifest("dummy", appManifest("dummy")+"[resources]\n"+key+"="+value+"\n")
+			f.success()
+		}
+	}
+}
+
+// R-8B3P-TPAH
+func TestResourceMemoryMax(t *testing.T) {
+	for _, value := range []string{"\"0\"", "\"512MB\"", "\"512m\"", "\"1.5G\"", "\"50%\"", "\"\"", "\"9999999999G\"", "\"17179869185G\"", "536870912", "\"9223372036854775808\"", "\"8589934592G\"", "\"K\"", "\"+1\"", "\"-1\"", "\" 1\"", "\"1 \"", "\"١\"", "true", "{}"} {
+		t.Run(value, func(t *testing.T) {
+			f := newAppFixture(t)
+			f.manifest("dummy", appManifest("dummy")+"[resources]\nmemory_max="+value+"\n")
+			f.refuse("dummy: etc/manifest.toml: 'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G")
+		})
+	}
+	for _, value := range []string{"512M", "1G", "1048576", "1", "1K", "0001", "9223372036854775807", "8589934591G", "8796093022207M", "9007199254740991K"} {
+		f := newAppFixture(t)
+		f.manifest("dummy", appManifest("dummy")+"[resources]\nmemory_max="+appTOMLString(value)+"\n")
+		f.success()
+	}
+}
+
+// R-8CBM-7H16
+func TestResourceUnknownKeys(t *testing.T) {
+	for _, value := range []string{"50", "\"50\"", "false", "[]", "{}"} {
+		f := newAppFixture(t)
+		f.manifest("dummy", appManifest("dummy")+"[resources]\ncpu_quota="+value+"\n")
+		f.refuse("dummy: etc/manifest.toml: 'resources.cpu_quota' is not allowed; the resources are cpu_weight, memory_max, and io_weight")
+	}
+	f := newAppFixture(t)
+	f.manifest("dummy", appManifest("dummy")+"[resources]\n\"bad\\nkey\\t\\u007f\"=1\n")
+	f.refuse("dummy: etc/manifest.toml: 'resources.bad\\x0akey\\x09\\x7f' is not allowed; the resources are cpu_weight, memory_max, and io_weight")
+}
+
+// R-8DJI-L8RV
+func TestResourcesPrecedence(t *testing.T) {
+	for _, c := range []struct{ entries, want string }{
+		{"memory_max=\"512MB\"\ncpu_weight=0\n", "'resources.cpu_weight' must be a whole number from 1 to 10000"},
+		{"io_weight=0\nmemory_max=\"512MB\"\n", "'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G"},
+		{"cpu_quota=1\nio_weight=0\n", "'resources.io_weight' must be a whole number from 1 to 10000"},
+		{"zz=1\ncpu_quota=1\n", "'resources.cpu_quota' is not allowed; the resources are cpu_weight, memory_max, and io_weight"},
+	} {
+		f := newAppFixture(t)
+		f.manifest("dummy", appManifest("dummy")+"[resources]\n"+c.entries)
+		f.refuse("dummy: etc/manifest.toml: " + c.want)
+	}
+}
+
+// R-8ERE-Z0IK
+func TestResourcesDoNotChangeDeployment(t *testing.T) {
+	f := newAppFixture(t)
+	f.manifest("auth", appManifest("auth"))
+	f.manifest("dummy", appManifest("dummy"))
+	f.success()
+	files := func() map[string]string {
+		result := map[string]string{}
+		for _, rel := range []string{"env/auth.env", "env/dummy.env", "services.json", "nginx/nginx.conf"} {
+			result[rel] = f.read(rel)
+		}
+		for _, unit := range []string{"auth.socket", "auth.service", "dummy.socket", "dummy.service", "nginx.service"} {
+			filename := "sandbox-wip-" + unit
+			b, err := os.ReadFile(filepath.Clean(filepath.Join(f.config, "systemd/user", filename)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result[filename] = string(b)
+		}
+		return result
+	}
+	code, beforeOut, stderr := f.run()
+	if code != 0 || stderr != "" {
+		t.Fatalf("baseline: %d %s", code, stderr)
+	}
+	beforeFiles := files()
+	beforeCommands := append([]seam.Cmd(nil), f.commands...)
+	f.manifest("dummy", appManifest("dummy")+"[resources]\ncpu_weight=50\nmemory_max=\"512M\"\nio_weight=50\n")
+	code, afterOut, stderr := f.run()
+	if code != 0 || stderr != "" {
+		t.Fatalf("with resources: %d %s", code, stderr)
+	}
+	afterFiles := files()
+	if beforeOut != afterOut || !reflect.DeepEqual(beforeCommands, f.commands) || !reflect.DeepEqual(beforeFiles, afterFiles) {
+		t.Fatal("resources changed deployment output or commands")
+	}
+	for _, setting := range []string{"CPUWeight=", "MemoryMax=", "IOWeight="} {
+		if strings.Contains(afterFiles["sandbox-wip-dummy.service"], setting) {
+			t.Fatalf("resource setting applied: %s", setting)
+		}
+	}
+}
+
+// R-8684-AMBP R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
 func TestAppIcons(t *testing.T) {
 	for _, emptyShare := range []bool{false, true} {
 		f := newAppFixture(t)

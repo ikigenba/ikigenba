@@ -88,6 +88,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			b.WriteString("    }\n")
 			for _, location := range []struct{ path, handler string }{
 				{"/", "signin"}, {"= /mcp", "bearer"}, {"^~ /mcp/", "bearer"},
+				{"~ /(info/refs|git-upload-pack|git-receive-pack)$", "git"},
 			} {
 				fmt.Fprintf(&b, "    location %s {\n", location.path)
 				directive("      ", "auth_request", "/_sandbox/auth")
@@ -98,7 +99,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 				forward("$sandbox_user_id", "$sandbox_user_email")
 				b.WriteString("    }\n")
 			}
-			for _, handler := range []string{"signin", "bearer"} {
+			for _, handler := range []string{"signin", "bearer", "git"} {
 				fmt.Fprintf(&b, "    location @sandbox_%s {\n", handler)
 				directive("      ", "satisfy", "any")
 				directive("      ", "allow", "all")
@@ -111,6 +112,10 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			directive("      ", "default_type", "text/plain")
 			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Bearer realm="ikigenba"`), "always")
 			directive("      ", "return", "401", `"authentication required: send Authorization: Bearer <token>\n"`)
+			b.WriteString("    }\n    location @sandbox_git_reply {\n")
+			directive("      ", "default_type", "text/plain")
+			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Basic realm="ikigenba"`), "always")
+			directive("      ", "return", "401", `"authentication required: send your token as the password\n"`)
 			b.WriteString("    }\n")
 		}
 		b.WriteString("  }\n")

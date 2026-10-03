@@ -130,7 +130,7 @@ func readManifest(worktree string, a *appInfo) error {
 	if _, ok := m["port"]; ok {
 		return manifestError(a.Name, "'port' is not allowed; the sandbox gives the app its socket")
 	}
-	types := []struct{ k, kind string }{{"app", "a string"}, {"description", "a string"}, {"default", "a boolean"}, {"mcp", "a boolean"}, {"secrets", "an array of strings"}, {"env", "a table of strings"}}
+	types := []struct{ k, kind string }{{"app", "a string"}, {"description", "a string"}, {"default", "a boolean"}, {"mcp", "a boolean"}, {"secrets", "an array of strings"}, {"env", "a table of strings"}, {"resources", "a table"}}
 	for _, item := range types {
 		v, ok := m[item.k]
 		if !ok {
@@ -160,6 +160,8 @@ func readManifest(worktree string, a *appInfo) error {
 					}
 				}
 			}
+		case "resources":
+			_, valid = v.(map[string]any)
 		}
 		if !valid {
 			return manifestError(a.Name, fmt.Sprintf("'%s' must be %s", item.k, item.kind))
@@ -222,11 +224,75 @@ func readManifest(worktree string, a *appInfo) error {
 			return manifestError(a.Name, reason)
 		}
 	}
+	if resources, ok := m["resources"].(map[string]any); ok {
+		if err := checkResources(a.Name, resources); err != nil {
+			return err
+		}
+	}
 	if a.MCP && strings.TrimFunc(a.Description, unicode.IsSpace) == "" {
 		return manifestError(a.Name, "'mcp' is true but 'description' is empty; an MCP service must say what it offers")
 	}
 	return readAppIcon(worktree, a)
 }
+
+func checkResources(name string, resources map[string]any) error {
+	keys := []string{"cpu_weight", "memory_max", "io_weight"}
+	var unknown []string
+	for key := range resources {
+		if key != "cpu_weight" && key != "memory_max" && key != "io_weight" {
+			unknown = append(unknown, key)
+		}
+	}
+	sort.Strings(unknown)
+	keys = append(keys, unknown...)
+	for _, key := range keys {
+		value, present := resources[key]
+		if !present {
+			continue
+		}
+		switch key {
+		case "cpu_weight", "io_weight":
+			weight, ok := value.(int64)
+			if !ok || weight < 1 || weight > 10000 {
+				return manifestError(name, fmt.Sprintf("'resources.%s' must be a whole number from 1 to 10000", key))
+			}
+		case "memory_max":
+			memory, ok := value.(string)
+			if !ok || !validMemoryMax(memory) {
+				return manifestError(name, "'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G")
+			}
+		default:
+			return manifestError(name, fmt.Sprintf("'resources.%s' is not allowed; the resources are cpu_weight, memory_max, and io_weight", appPrinted(key)))
+		}
+	}
+	return nil
+}
+
+func validMemoryMax(memory string) bool {
+	if memory == "" {
+		return false
+	}
+	multiplier := uint64(1)
+	switch memory[len(memory)-1] {
+	case 'K':
+		multiplier = 1024
+	case 'M':
+		multiplier = 1048576
+	case 'G':
+		multiplier = 1073741824
+	}
+	if multiplier != 1 {
+		memory = memory[:len(memory)-1]
+	}
+	for _, digit := range []byte(memory) {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	count, err := strconv.ParseUint(memory, 10, 63)
+	return err == nil && count > 0 && count <= (1<<63-1)/multiplier
+}
+
 func readAppIcon(worktree string, a *appInfo) error {
 	p := filepath.Join(worktree, a.Name, "share/icon.svg")
 	st, err := os.Lstat(p)

@@ -715,10 +715,36 @@ func TestUpIgnoresFragmentContents(t *testing.T) {
 	}
 }
 
+func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
+	// R-8FZB-CS99
+	for _, fault := range []string{"earlier-icon", "later-manifest", "icon-before-defaults"} {
+		t.Run(fault, func(t *testing.T) {
+			f := newUpFixture(t, "auth", "dummy")
+			f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app = \"auth\"\ndefault = true\nsecrets = [\"MISSING\"]\n", 0644)
+			dummy := "app = \"dummy\"\ndefault = true\n"
+			want := "sandbox: auth: share/icon.svg: permission denied\n"
+			if fault != "icon-before-defaults" {
+				dummy = "app = \"demo\"\ndefault = true\n"
+			}
+			f.put(filepath.Join(f.worktree, "dummy", "etc", "manifest.toml"), dummy, 0644)
+			if fault == "later-manifest" {
+				f.put(filepath.Join(f.worktree, "auth", "share", "icon.svg"), "<svg/>", 0644)
+				want = "sandbox: dummy: etc/manifest.toml: app 'demo' does not match its directory 'dummy'\n"
+			} else {
+				f.put(filepath.Join(f.worktree, "auth", "share", "icon.svg"), "<svg/>", 0000)
+			}
+			code, out, diagnostic := f.run("up")
+			if code != 2 || out != "" || diagnostic != want {
+				t.Fatalf("%d %q %q want %q", code, out, diagnostic, want)
+			}
+		})
+	}
+}
+
 func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
-	// R-AAIS-L36D R-S969-SQY1
+	// R-8FZB-CS99 R-S969-SQY1
 	for _, known := range []bool{false, true} {
-		for _, fault := range []string{"noapps", "manifest", "icon", "badvalue", "secrets", "clash", "ports"} {
+		for _, fault := range []string{"noapps", "manifest", "icon", "defaults", "badvalue", "secrets", "clash", "ports"} {
 			if known && fault == "ports" {
 				continue
 			}
@@ -779,6 +805,10 @@ func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
 					f.put(manifest, "app = \"b-c\"\nsecrets = [\"MISSING\"]\n", 0644)
 					f.put(filepath.Join(f.worktree, "b-c", "share", "icon.svg"), "<svg/>", 0000)
 					want = "sandbox: b-c: share/icon.svg: permission denied\n"
+				case "defaults":
+					f.put(manifest, "app = \"b-c\"\ndefault = true\nsecrets = [\"MISSING\"]\n", 0644)
+					f.put(filepath.Join(f.worktree, "zeta", "etc", "manifest.toml"), "app = \"zeta\"\ndefault = true\n", 0644)
+					want = "sandbox: more than one default app: b-c, zeta\n"
 				case "badvalue":
 					f.put(manifest, "app = \"b-c\"\nsecrets = [\"BAD\"]\n", 0644)
 					f.environment = map[string]string{"BAD": "x\n"}
@@ -1069,7 +1099,7 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 }
 
 func TestUpGatedManifestMCPVariants(t *testing.T) {
-	// R-RVPU-1JS5
+	// R-8IF4-4BQN
 	for _, setting := range []string{"mcp = true\n", "mcp = false\n", ""} {
 		t.Run(strings.TrimSpace(setting), func(t *testing.T) {
 			f := newUpFixture(t, "auth", "dummy")
@@ -1080,7 +1110,7 @@ func TestUpGatedManifestMCPVariants(t *testing.T) {
 			}
 			http := routingFind(t, parseRoutingConfig(t, upRead(t, filepath.Join(f.data, "nginx", "nginx.conf"))), "http")
 			server := routingServer(t, http, "dummy.wip.localhost")
-			for _, words := range [][]string{{"location", "/"}, {"location", "=", "/mcp"}, {"location", "^~", "/mcp/"}} {
+			for _, words := range [][]string{{"location", "/"}, {"location", "=", "/mcp"}, {"location", "^~", "/mcp/"}, {"location", "~", "/(info/refs|git-upload-pack|git-receive-pack)$"}} {
 				location := routingFind(t, server.children, words...)
 				routingKeys(t, location.children, "auth_request", "auth_request_set", "auth_request_set", "error_page", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
 				routingFind(t, location.children, "auth_request", "/_sandbox/auth")
