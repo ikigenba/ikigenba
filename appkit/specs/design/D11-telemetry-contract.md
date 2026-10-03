@@ -18,7 +18,7 @@ An event's JSON form, `Event.MarshalJSON`, is the exact body posted to telemetry
 
 Event names are lowercase and dotted, a noun then a past-tense verb: `request.started`, `token.minted`, `check.refused`. There is no service prefix, since the service is in the envelope. The mechanically checkable part is enforced everywhere an event is formed: exactly two words joined by one dot, each word lowercase ASCII letters and digits in parts joined by single underscores, starting with a letter (`api_key.minted` is valid; `Token.Minted`, `minted`, `auth.token.minted`, and `token..minted` are not). That the first word is a noun and the second a past-tense verb is the emitting service's design to get right; no code can check grammar.
 
-Attribute keys are snake_case: lowercase ASCII letters and digits in parts joined by single underscores, starting with a letter. Durations are integer microseconds under a key ending `_us`.
+Attribute keys are snake_case: lowercase ASCII letters and digits in parts joined by single underscores, starting with a letter. Durations are integer microseconds under a key ending `_us`. Sizes are integer bytes under a key ending `_bytes`.
 
 ## Metadata, never data
 
@@ -44,7 +44,7 @@ appkit records these for every service, and a service cannot switch them off: ev
 | `service.started` | the service is ready (D12) | `version` |
 | `service.stopping` | the writer's drain begins; the last event out (D12) | `reason` |
 | `request.started` | a request arrives (D14) | `method`, `path` |
-| `request.finished` | its answer is complete (D14) | `status`, `duration_us` |
+| `request.finished` | its answer is complete (D14) | `status`, `duration_us`, `request_bytes`, `response_bytes` |
 | `sibling.called` | a call to a sibling service returns (D14) | `target`, `method`, `path`, `status`, `duration_us` |
 | `tool.called` | an MCP tool call is answered (D07, D08) | `tool`, `kind`, `outcome`, `duration_us` |
 
@@ -63,6 +63,6 @@ The request id and the user travel in the envelope, never as attributes. This do
 - R-VALU-X2L4: Every `service.started` event appkit produces MUST have `Attrs` holding exactly the key `version`, whose value is a `string`.
 - R-VBTR-AUBT: Every `service.stopping` event appkit produces MUST have `Attrs` holding exactly the key `reason`, whose value is a `string`.
 - R-VD1N-OM2I: Every `request.started` event appkit produces MUST have `Attrs` holding exactly the keys `method` and `path`, both `string` values, where `method` is the request's method as received and `path` is the request URL's path as the standard library's `url.URL.Path` holds it, with no query.
-- R-WKDK-1PQS: Every `request.finished` event appkit produces MUST have `Attrs` holding exactly the keys `status` and `duration_us`, both `int64` values, where `status` is the status D14 records for the request (R-3HP0-MB1R) and `duration_us` is a number of whole microseconds no less than zero.
+- R-PRAG-ZMSZ: Every `request.finished` event appkit produces MUST have `Attrs` holding exactly the keys `status`, `duration_us`, `request_bytes`, and `response_bytes`, all `int64` values, where `status` is the status D14 records for the request (R-3HP0-MB1R), `duration_us` is a number of whole microseconds no less than zero, and `request_bytes` and `response_bytes` are the numbers of bytes D14 records for the request (R-PW62-IPRR, R-PXDY-WHIG), each no less than zero.
 - R-VFHG-G5JW: Every `sibling.called` event appkit produces MUST have `Attrs` holding exactly the keys `target`, `method`, `path`, `status`, and `duration_us`, where `target` (the called service's name), `method` (the outgoing request's method), and `path` (the outgoing request URL's path as `url.URL.Path` holds it, with no query) are `string` values, and `status` and `duration_us` are `int64` values, `status` being the HTTP status code of the sibling's response, or 0 when no response was received, and `duration_us` a number of whole microseconds no less than zero.
 - R-VHX9-7P1A: Every `tool.called` event appkit produces MUST have `Attrs` holding exactly the keys `tool`, `kind`, `outcome`, and `duration_us`, where `tool`, `kind`, and `outcome` are `string` values and `duration_us` is an `int64` number of whole microseconds no less than zero.
