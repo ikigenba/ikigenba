@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -220,19 +221,35 @@ func TestIngestWiring(t *testing.T) {
 	}
 }
 func TestRequestEvents(t *testing.T) {
-	// R-BSND-TIOP R-R81Q-J0DN R-O075-CZ1C R-RCXC-23CF R-B6J6-YLTM
+	// R-8EEY-XQ1D R-R81Q-J0DN R-O075-CZ1C R-RCXC-23CF R-B6J6-YLTM
 	f := newFixture(t)
 	for _, tc := range []struct {
-		path, user string
-		status     int
-	}{{"/", "u", 200}, {"/", "", 500}, {"/nope", "u", 404}, {"/_appkit/theme.css", "u", 200}, {"/mcp", "u", 405}} {
+		method, path, user, body string
+		status                   int
+	}{
+		{"GET", "/", "u", "", 200},
+		{"GET", "/", "", "", 500},
+		{"GET", "/nope", "u", "", 404},
+		{"GET", "/_appkit/theme.css", "u", "", 200},
+		{"GET", "/mcp", "u", "", 405},
+		{"HEAD", "/about", "u", "", 200},
+		{"HEAD", "/nope", "u", "", 404},
+		{"POST", "/", "u", "unread body", 405},
+		{"POST", "/mcp", "", "unread body", 500},
+	} {
 		before := len(flush(t, f))
-		out := request(f.h, "GET", tc.path, tc.user)
+		r := httptest.NewRequest(tc.method, "http://example"+tc.path, strings.NewReader(tc.body))
+		r.Header.Set("X-Request-Id", "fixed-request")
+		if tc.user != "" {
+			r.Header.Set("X-User-Id", tc.user)
+		}
+		out := httptest.NewRecorder()
+		f.h.ServeHTTP(out, r)
 		ev := flush(t, f)[before:]
 		if out.Code != tc.status || len(ev) != 2 {
 			t.Fatal(out.Code, ev)
 		}
-		if ev[0].Name != "request.started" || !reflect.DeepEqual(ev[0].Attrs, at.Attrs{"method": "GET", "path": tc.path}) || ev[1].Name != "request.finished" || !reflect.DeepEqual(ev[1].Attrs, at.Attrs{"status": int64(tc.status), "duration_us": int64(0)}) {
+		if ev[0].Name != "request.started" || !reflect.DeepEqual(ev[0].Attrs, at.Attrs{"method": tc.method, "path": tc.path}) || ev[1].Name != "request.finished" || !reflect.DeepEqual(ev[1].Attrs, at.Attrs{"status": int64(tc.status), "duration_us": int64(0), "request_bytes": int64(0), "response_bytes": int64(out.Body.Len())}) {
 			t.Fatal(ev)
 		}
 		for _, e := range ev {
@@ -379,19 +396,90 @@ func TestConcurrentRequests(t *testing.T) {
 }
 
 func TestRequestEventOrderBeforeAnswer(t *testing.T) {
-	// R-BSND-TIOP
+	// R-8EEY-XQ1D
 	f := newFixture(t)
-	f.cfg.Banner = func(_ page.User) page.Banner {
+	beforeWrite := func() {
 		events := flush(t, f)
 		if len(events) != 1 || events[0].Name != "request.started" {
 			t.Fatalf("before response: %v", events)
 		}
-		return page.Banner{Service: web.ServiceName, Version: "test-version"}
 	}
-	h := web.Handler(freshServer(t, f, f.cfg))
-	request(h, "GET", "/", "u")
+	r := httptest.NewRequest("GET", "http://example/", nil)
+	r.Header.Set("X-User-Id", "u")
+	out := &observedResponse{ResponseRecorder: httptest.NewRecorder(), beforeWrite: beforeWrite}
+	f.h.ServeHTTP(out, r)
 	events := flush(t, f)
 	if len(events) != 2 || events[1].Name != "request.finished" {
 		t.Fatal(events)
+	}
+}
+
+type observedResponse struct {
+	*httptest.ResponseRecorder
+	beforeWrite func()
+}
+
+func (w *observedResponse) WriteHeader(status int) {
+	w.beforeWrite()
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func (w *observedResponse) Write(body []byte) (int, error) {
+	w.beforeWrite()
+	return w.ResponseRecorder.Write(body)
+}
+
+type observedBody struct {
+	io.ReadCloser
+	bytesRead int64
+}
+
+func (b *observedBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.bytesRead += int64(n)
+	return n, err
+}
+
+func TestMCPRequestEventBytesAndOrder(t *testing.T) {
+	// R-8EEY-XQ1D
+	f := newFixture(t)
+	type answer struct {
+		requestBytes int64
+		response     *httptest.ResponseRecorder
+	}
+	answers := make(chan answer, 1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := &observedBody{ReadCloser: r.Body}
+		r.Body = body
+		out := httptest.NewRecorder()
+		f.h.ServeHTTP(out, r)
+		for name, values := range out.Header() {
+			w.Header()[name] = values
+		}
+		w.WriteHeader(out.Code)
+		_, _ = w.Write(out.Body.Bytes())
+		answers <- answer{requestBytes: body.bytesRead, response: out}
+	}))
+	defer ts.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: ts.URL + "/mcp", HTTPClient: ts.Client()})
+	caller := identity.Caller{UserID: "reader", RequestID: "mcp-byte-request"}
+	result, err := client.CallTool(context.Background(), caller, "count", json.RawMessage(`{}`))
+	if err != nil || result.IsError() {
+		t.Fatal(result, err)
+	}
+	out := <-answers
+	events := flush(t, f)
+	if len(events) != 3 || events[0].Name != "request.started" || events[1].Name != "tool.called" || events[2].Name != "request.finished" {
+		t.Fatal(events)
+	}
+	if !reflect.DeepEqual(events[0].Attrs, at.Attrs{"method": "POST", "path": "/mcp"}) {
+		t.Fatal(events[0])
+	}
+	if out.requestBytes == 0 || out.response.Body.Len() == 0 {
+		t.Fatal("MCP did not read and write bodies", out)
+	}
+	want := at.Attrs{"status": int64(out.response.Code), "duration_us": int64(0), "request_bytes": out.requestBytes, "response_bytes": int64(out.response.Body.Len())}
+	if !reflect.DeepEqual(events[2].Attrs, want) {
+		t.Fatal(events[2], want)
 	}
 }
