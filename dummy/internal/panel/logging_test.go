@@ -34,44 +34,62 @@ func panelTestStore() *widget.Store {
 
 func panelTestTelemetry(t *testing.T, stderr io.Writer) (*telemetry.Writer, *telemetry.Capture, *bytes.Buffer) {
 	t.Helper()
+	return panelTestTelemetryWithClock(t, stderr, func() time.Time { return time.Unix(1700000000, 0) })
+}
+
+func panelTestTelemetryWithClock(t *testing.T, stderr io.Writer, now func() time.Time) (*telemetry.Writer, *telemetry.Capture, *bytes.Buffer) {
+	t.Helper()
 	capture := &telemetry.Capture{}
 	diagnostics := &bytes.Buffer{}
-	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: cli.Version, Sink: capture, Stderr: io.MultiWriter(diagnostics, stderr), Now: func() time.Time { return time.Unix(1700000000, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 65536))})
+	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: cli.Version, Sink: capture, Stderr: io.MultiWriter(diagnostics, stderr), Now: now, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 65536))})
 	t.Cleanup(func() { writer.Shutdown(context.Background(), "cleanup") })
 	return writer, capture, diagnostics
 }
 
-// R-CMTA-3ATT R-KSBT-MVET R-KTJQ-0N5I
+// R-8AR9-SETA R-KSBT-MVET R-KTJQ-0N5I
 // R-CO16-H2KI R-L5QP-UCKG R-L6YM-84B5
 func TestPanelRequestTrail(t *testing.T) {
 	cases := []struct {
 		method, path, body, media, user string
 		status                          int
-		created                         bool
+		created, readsBody              bool
 	}{
-		{"GET", "/widgets?secret=query", "", "", "reader", 200, false},
-		{"HEAD", "/widgets/table", "", "", "reader", 200, false},
-		{"GET", "/missing", "", "", "reader", 404, false},
-		{"PUT", "/widgets", "", "", "reader", 405, false},
-		{"POST", "/widgets", "name=new&count=4&status=active", "application/x-www-form-urlencoded", "reader", 303, true},
-		{"POST", "/widgets", "name=alpha&count=4&status=active", "application/x-www-form-urlencoded", "reader", 422, false},
-		{"POST", "/widgets", "name=new&count=4&status=active", "text/plain", "reader", 415, false},
-		{"GET", "/_appkit/theme.css", "", "", "reader", 200, false},
-		{"POST", "/mcp", "broken", "application/json", "reader", 400, false},
-		{"GET", "/widgets", "", "", "", 500, false},
-		{"POST", "/mcp", "", "", "", 500, false},
-		{"GET", "/_appkit/theme.css", "", "", "", 500, false},
+		{"GET", "/widgets?secret=query", "unread body", "", "reader", 200, false, false},
+		{"GET", "/", "unread body", "", "reader", 303, false, false},
+		{"HEAD", "/widgets", "", "", "reader", 200, false, false},
+		{"HEAD", "/widgets/table", "", "", "reader", 200, false, false},
+		{"GET", "/missing", "", "", "reader", 404, false, false},
+		{"PUT", "/widgets", "", "", "reader", 405, false, false},
+		{"POST", "/widgets", "name=new&count=4&status=active", "application/x-www-form-urlencoded", "reader", 303, true, true},
+		{"POST", "/widgets", "name=alpha&count=4&status=active", "application/x-www-form-urlencoded", "reader", 422, false, true},
+		{"POST", "/widgets", "name=new&count=4&status=active", "text/plain", "reader", 415, false, false},
+		{"GET", "/_appkit/theme.css", "", "", "reader", 200, false, false},
+		{"HEAD", "/_appkit/theme.css", "", "", "reader", 200, false, false},
+		{"GET", "/_appkit/unknown", "", "", "reader", 404, false, false},
+		{"POST", "/mcp", "broken", "application/json", "reader", 400, false, true},
+		{"GET", "/widgets", "", "", "", 500, false, false},
+		{"HEAD", "/widgets", "", "", "", 500, false, false},
+		{"POST", "/widgets", "name=unread&count=4&status=active", "application/x-www-form-urlencoded", "", 500, false, false},
+		{"POST", "/mcp", "unread body", "application/json", "", 500, false, false},
+		{"GET", "/_appkit/theme.css", "", "", "", 500, false, false},
 	}
 	for _, tc := range cases {
-		for _, requestID := range []string{"trace", ""} {
-			t.Run(tc.method+tc.path+tc.user+requestID, func(t *testing.T) {
+		for _, headers := range []struct {
+			name, requestID string
+			present         bool
+		}{{"provided", "trace", true}, {"empty", "", true}, {"absent", "", false}} {
+			t.Run(tc.method+tc.path+tc.user+headers.name, func(t *testing.T) {
 				t.Setenv(services.Variable, "")
 				writer, capture, diagnostics := panelTestTelemetry(t, io.Discard)
 				store := panelTestStore()
 				h := panel.Handler(store, pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
 				r := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-				r.Header["X-User-Id"] = []string{tc.user, "ignored"}
-				r.Header["X-Request-Id"] = []string{requestID, "ignored"}
+				if headers.present || tc.user != "" {
+					r.Header["X-User-Id"] = []string{tc.user, "ignored"}
+				}
+				if headers.present {
+					r.Header["X-Request-Id"] = []string{headers.requestID, "ignored"}
+				}
 				r.Header.Set("X-User-Email", "private@example.test")
 				r.Header.Set("Content-Type", tc.media)
 				out := httptest.NewRecorder()
@@ -90,7 +108,7 @@ func TestPanelRequestTrail(t *testing.T) {
 				if len(events) != count {
 					t.Fatalf("events %#v", events)
 				}
-				id := requestID
+				id := headers.requestID
 				if id == "" {
 					id = hex.EncodeToString(bytes.Repeat([]byte{7}, 16))
 				}
@@ -102,8 +120,12 @@ func TestPanelRequestTrail(t *testing.T) {
 				if events[0].Name != "request.started" || !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"method": tc.method, "path": r.URL.Path}) {
 					t.Fatalf("start %#v", events[0])
 				}
+				requestBytes := int64(0)
+				if tc.readsBody {
+					requestBytes = int64(len(tc.body))
+				}
 				last := events[len(events)-1]
-				if last.Name != "request.finished" || !reflect.DeepEqual(last.Attrs, telemetry.Attrs{"status": int64(tc.status), "duration_us": int64(0)}) {
+				if last.Name != "request.finished" || !reflect.DeepEqual(last.Attrs, telemetry.Attrs{"status": int64(tc.status), "duration_us": int64(0), "request_bytes": requestBytes, "response_bytes": int64(out.Body.Len())}) {
 					t.Fatalf("finish %#v", last)
 				}
 				if tc.created {
@@ -121,26 +143,35 @@ func TestPanelRequestTrail(t *testing.T) {
 	}
 }
 
-// R-CMTA-3ATT
+// R-8AR9-SETA
 func TestPanelPanicTrail(t *testing.T) {
-	t.Setenv(services.Variable, "")
-	writer, capture, _ := panelTestTelemetry(t, io.Discard)
-	h := panel.Handler(panelTestStore(), func(page.User) page.Banner { panic("banner failed") }, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
-	r := pageTestRequest("GET", "/widgets")
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("no panic")
+	for _, tc := range []struct{ method, body string }{
+		{"GET", ""},
+		{"POST", "name=new&count=bad&status=active"},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
+			t.Setenv(services.Variable, "")
+			writer, capture, _ := panelTestTelemetry(t, io.Discard)
+			h := panel.Handler(panelTestStore(), func(page.User) page.Banner { panic("banner failed") }, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+			r := pageTestRequest(tc.method, "/widgets")
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Body = io.NopCloser(strings.NewReader(tc.body))
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Error("no panic")
+					}
+				}()
+				h.ServeHTTP(httptest.NewRecorder(), r)
+			}()
+			if err := writer.Flush(context.Background()); err != nil {
+				t.Fatal(err)
 			}
-		}()
-		h.ServeHTTP(httptest.NewRecorder(), r)
-	}()
-	if err := writer.Flush(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	events := capture.Events()
-	if len(events) != 2 || events[0].Name != "request.started" || events[1].Name != "request.finished" || events[1].Attrs["status"] != int64(500) {
-		t.Fatalf("events %#v", events)
+			events := capture.Events()
+			if len(events) != 2 || events[0].Name != "request.started" || !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"method": tc.method, "path": r.URL.Path}) || events[1].Name != "request.finished" || !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"status": int64(500), "duration_us": int64(0), "request_bytes": int64(len(tc.body)), "response_bytes": int64(0)}) {
+				t.Fatalf("events %#v", events)
+			}
+		})
 	}
 }
 
@@ -182,7 +213,7 @@ func (w panelObservedResponse) Write(p []byte) (int, error) {
 	return w.ResponseWriter.Write(p)
 }
 
-// R-CMTA-3ATT
+// R-8AR9-SETA
 func TestPanelStartsTrailBeforeIO(t *testing.T) {
 	for _, tc := range []struct{ method, path, media, body, user string }{
 		{"POST", "/widgets", "application/x-www-form-urlencoded", "name=created&count=2&status=active", "caller"},
@@ -225,18 +256,33 @@ func TestPanelStartsTrailBeforeIO(t *testing.T) {
 	}
 }
 
-// R-CMTA-3ATT R-KSBT-MVET
+// R-8AR9-SETA R-KSBT-MVET
 func TestPanelMCPDomainTrail(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	writer, capture, diagnostics := panelTestTelemetry(t, io.Discard)
 	store := panelTestStore()
-	server := httptest.NewServer(panel.Handler(store, pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer))
+	h := panel.Handler(store, pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+	counts := make(chan telemetry.Attrs, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var requestBody bytes.Buffer
+		original := r.Body
+		defer func() {
+			if err := original.Close(); err != nil {
+				t.Errorf("close MCP request body: %v", err)
+			}
+		}()
+		r.Body = io.NopCloser(io.TeeReader(original, &requestBody))
+		var responseBytes int64
+		h.ServeHTTP(panelCountingResponse{ResponseWriter: w, bytes: &responseBytes}, r)
+		counts <- telemetry.Attrs{"status": int64(http.StatusOK), "duration_us": int64(0), "request_bytes": int64(requestBody.Len()), "response_bytes": responseBytes}
+	}))
 	defer server.Close()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
 	_, err := client.CallTool(context.Background(), identity.Caller{UserID: "reader", RequestID: "tool-trace", Email: "private@example.test"}, "create_widget", json.RawMessage(`{"name":"new","count":1,"status":"active"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
+	measured := <-counts
 	if err = writer.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -250,24 +296,42 @@ func TestPanelMCPDomainTrail(t *testing.T) {
 			t.Fatalf("event %#v", e)
 		}
 	}
+	if !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"method": http.MethodPost, "path": "/mcp"}) || !reflect.DeepEqual(events[len(events)-1].Attrs, measured) {
+		t.Fatalf("MCP request trail: %#v; measured %#v", events, measured)
+	}
 	if diagnostics.Len() != 0 {
 		t.Fatalf("stderr %q", diagnostics.String())
 	}
 }
 
+type panelCountingResponse struct {
+	http.ResponseWriter
+	bytes *int64
+}
+
+func (w panelCountingResponse) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	*w.bytes += int64(n)
+	return n, err
+}
+
 type panelCanceledBody struct {
 	ctx     context.Context
 	reading chan struct{}
+	body    io.Reader
 }
 
-func (b panelCanceledBody) Read([]byte) (int, error) {
+func (b panelCanceledBody) Read(p []byte) (int, error) {
+	if n, err := b.body.Read(p); n > 0 || err != io.EOF {
+		return n, err
+	}
 	close(b.reading)
 	<-b.ctx.Done()
 	return 0, b.ctx.Err()
 }
 func (panelCanceledBody) Close() error { return nil }
 
-// R-CMTA-3ATT R-CO16-H2KI
+// R-8AR9-SETA R-CO16-H2KI
 func TestPanelTrailForInterruptedRequest(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	writer, capture, diagnostics := panelTestTelemetry(t, io.Discard)
@@ -277,7 +341,9 @@ func TestPanelTrailForInterruptedRequest(t *testing.T) {
 	r := pageTestRequest(http.MethodPost, "/widgets").WithContext(ctx)
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	reading := make(chan struct{})
-	r.Body = panelCanceledBody{ctx: ctx, reading: reading}
+	partialBody := "name=cut"
+	r.Body = panelCanceledBody{ctx: ctx, reading: reading, body: strings.NewReader(partialBody)}
+	r.ContentLength = int64(len(partialBody) + 100)
 	out := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() { defer close(done); h.ServeHTTP(out, r) }()
@@ -295,10 +361,44 @@ func TestPanelTrailForInterruptedRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	events = capture.Events()
-	if len(events) != 2 || events[1].Name != "request.finished" || !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"status": int64(out.Code), "duration_us": int64(0)}) {
+	if len(events) != 2 || events[1].Name != "request.finished" || !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"status": int64(out.Code), "duration_us": int64(0), "request_bytes": int64(len(partialBody)), "response_bytes": int64(out.Body.Len())}) {
 		t.Fatalf("interrupted request trail: %#v", events)
 	}
 	if diagnostics.Len() != 0 {
 		t.Fatalf("stderr %q", diagnostics.String())
+	}
+}
+
+type panelShortResponse struct {
+	*httptest.ResponseRecorder
+}
+
+func (w panelShortResponse) Write(p []byte) (int, error) {
+	n, _ := w.ResponseRecorder.Write(p[:7])
+	return n, io.ErrShortWrite
+}
+
+// R-8AR9-SETA
+func TestPanelTrailCountsWrittenBytesAndDuration(t *testing.T) {
+	t.Setenv(services.Variable, "")
+	now := time.Unix(1700000000, 0)
+	writer, capture, _ := panelTestTelemetryWithClock(t, io.Discard, func() time.Time { return now })
+	banner := func(u page.User) page.Banner {
+		now = now.Add(23 * time.Microsecond)
+		return pageTestBanner(u)
+	}
+	h := panel.Handler(panelTestStore(), banner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+	r := pageTestRequest(http.MethodGet, "/widgets")
+	out := panelShortResponse{httptest.NewRecorder()}
+	h.ServeHTTP(out, r)
+	if err := writer.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	events := capture.Events()
+	if len(events) != 2 || events[0].Name != "request.started" || !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"method": r.Method, "path": r.URL.Path}) || events[1].Name != "request.finished" || !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"status": int64(out.Code), "duration_us": int64(23), "request_bytes": int64(0), "response_bytes": int64(out.Body.Len())}) {
+		t.Fatalf("short answer trail: %#v", events)
+	}
+	if out.Body.Len() != 7 {
+		t.Fatalf("accepted body has %d bytes, want 7", out.Body.Len())
 	}
 }
