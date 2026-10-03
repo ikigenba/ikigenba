@@ -52,7 +52,13 @@ the app offers, and `mcp`, a Boolean that is `false` when absent: `true` means
 the app's tools belong in the suite's MCP catalog. An app that sets `mcp =
 true` must say what it offers, so its `description` may not be missing, empty,
 or only whitespace. A `description` is one line of text when it holds no
-control character (U+0000–U+001F, U+007F), so no line break. The manifest
+control character (U+0000–U+001F, U+007F), so no line break. It may also carry
+`guests`, a Boolean that is `false` when absent: `true` means the app serves
+guests, visitors with no credential. On a host with an authenticator, such a
+visitor reaches the app's pages, with no identity, instead of being sent to
+sign in, while `/mcp` and git paths stay challenged (see `S5-nginx.md`). On a
+host without one every app is already open, and `guests` changes nothing.
+`guests` is not in the services file and no command shows it. The manifest
 names no port: no app listens on one, and a manifest that carries a `port` is
 refused.
 
@@ -105,9 +111,9 @@ choice, made in the store rather than the manifest (`host.apex`, see
 `S5-nginx.md`): the app it names answers at `ikigenba.dev` as well, and
 `install` and `uninstall` report that name the way they report the space's.
 
-`install` reads the app, `default`, `secrets`, `description`, and `mcp`. The
-`[env]` table it writes out, and the `[resources]` table into the service
-unit. The `[database]` table it reads for one purpose only: to
+`install` reads the app, `default`, `secrets`, `description`, `mcp`, and
+`guests`. The `[env]` table it writes out, and the `[resources]` table into
+the service unit. The `[database]` table it reads for one purpose only: to
 regenerate `/etc/litestream.yml` from every manifest on the host, the way it
 regenerates nginx, so that a database arrives on the host and starts being
 replicated in the same command. What the table means, and what replication
@@ -284,7 +290,9 @@ Postconditions:
   `/run/ikigenba/crm.sock`.
 - Were the installed app named `auth`, the same regeneration would wire every
   other app's server block to the authenticator's `/check` (`S5-nginx.md`), so
-  each begins requiring a valid session. The `nginx:` line still reports only
+  each begins requiring a valid session, except that an app whose manifest
+  sets `guests = true` still lets a visitor with none reach its pages. The
+  `nginx:` line still reports only
   the installed app's own name.
 - `/var/lib/ikigenba/services.json` has been rewritten and now lists `crm`,
   with the URL `https://crm.sbx.ikigenba.dev`, the description `Customers,
@@ -575,6 +583,71 @@ Postconditions:
   manifest with no `[resources]` gives a unit with none of the three, which is
   every other story's case.
 
+## An agent installs an app that serves guests
+
+`sites` serves public static sites to anyone, so its manifest sets
+`guests = true`. The output is the same nine kinds of line as any install;
+`guests` is in the nginx configuration the `nginx` step regenerates, and in
+no line. `sites` declares no database and ships no icon, so the regenerated
+`/etc/litestream.yml` is what it was and its new entry in the services file
+keeps it out of the launcher.
+
+```toml
+app = "sites"
+guests = true
+secrets = []
+```
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/sites-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (sites-v0.1.0.tar.xz, 4.3 MiB)
+file: ok (sites)
+secrets: ok (0 keys)
+unpack: ok (/opt/sites)
+unit: ok (ikigenba-sites.socket, ikigenba-sites.service)
+nginx: ok (sites.sbx.ikigenba.dev)
+services: ok (sites added)
+litestream: ok (unchanged)
+service: ok (sites v0.1.0 active)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `host.name` is `sbx.ikigenba.dev`, and `init` reported the host ready.
+- `auth` is installed, so every other app's server block is wired to the
+  authenticator (`S5-nginx.md`).
+- The file's manifest is the one above, and it ships no `share/icon.svg`.
+- `sites` has never been installed on this host.
+
+Postconditions:
+
+- Everything the first install's postconditions say, for `sites`, except
+  that `/etc/litestream.yml` is byte for byte as it was and
+  `litestream.service` was not restarted.
+- `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded,
+  so a visitor with no credential who asks for a page at
+  `https://sites.sbx.ikigenba.dev` reaches `sites`, with no identity, rather
+  than being sent to sign in. A request to its `/mcp`, or to a git path, is
+  still challenged. Every other app's block is as it was, so its visitors are
+  still sent to sign in.
+- `/var/lib/ikigenba/services.json` has been rewritten and now lists `sites`,
+  with the URL `https://sites.sbx.ikigenba.dev`, the description `""`, the
+  socket `/run/ikigenba/sites.sock`, enabled, `mcp` false, and no icon. The
+  entry says nothing about guests.
+- Installing a later release whose manifest differs only in `guests` produces
+  the same nine kinds of line with `services: ok (unchanged)`: only the nginx
+  configuration changes. With `guests` false or absent, `sites` is behind
+  sign-in like every other app.
+
 ## An operator installs a second default app
 
 Only one app answers at the host's own name. `install` reads the manifest of
@@ -789,6 +862,42 @@ Postconditions:
 - Nothing has changed. `/opt/crm/` was neither created nor touched, no unit
   was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
   was not rewritten. An installed `crm` keeps running the release it had.
+
+## An agent installs an app whose guests flag is not a Boolean
+
+Whether an app lets visitors in without signing in is not something install
+guesses at. A `guests` that is not `true` or `false` is refused the way any
+other key of the wrong type is, before anything is written.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/sites-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (sites-v0.1.0.tar.xz, 4.3 MiB)
+file: failed: sites-v0.1.0.tar.xz: etc/manifest.toml: <decoder complaint>
+opsctl: install failed
+```
+
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on
+stderr. `<decoder complaint>` is the TOML decoder's own words for the key and
+the type it found, so it varies with the value.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- The file's `etc/manifest.toml` sets `guests = "yes"`, or `guests = 1`, or
+  any other value that is not a Boolean.
+
+Postconditions:
+
+- Nothing has changed. `/opt/sites/` was neither created nor touched, no unit
+  was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
+  was not rewritten. An installed `sites` keeps running the release it had.
 
 ## An agent installs an app whose resources are not valid
 

@@ -43,7 +43,7 @@ for itself alone; no manifest key and no configuration key does it.
 
 Every request gets one id. nginx sets `X-Request-Id` to its own `$request_id`
 on every request it proxies to an app, and on the subrequest to `auth`'s
-`/check`, always overwriting whatever the client sent, so the id an app sees
+`/check` or `/check/open`, always overwriting whatever the client sent, so the id an app sees
 is nginx's and never the client's. The same id ends every line nginx writes
 to its access log, in the `ikigenba` format the file declares, so an app's
 diagnostic naming a request and the access-log line for it can be matched.
@@ -52,15 +52,16 @@ One routed app is set apart by its name. A routed app named `auth` is the
 platform's authenticator, and its presence rewrites every other routed app's
 block: each gains an `auth_request` subrequest to `auth`'s `/check`, so a
 request reaches the app only once `auth` has answered it a valid session — the
-*wired* shape. In a wired block the client's own `X-User-Id` and `X-User-Email`
+*wired* shape, save for an app that serves guests (below). In a wired block the client's own `X-User-Id` and `X-User-Email`
 never reach the app; nginx sets them from `auth`'s answer instead, turns a 401
 into a redirect to `auth`, and passes a 403 through. The subrequest tells
 `auth` which request it is checking: the client's method, host, and request
 target — path and any query string — as `X-Original-Method`,
 `X-Original-Host`, and `X-Original-URI`, always overwriting whatever the
 client sent under those names. `auth`'s own block is left
-*unwired*, and its `/check` answers 404 to any public request — it is reachable
-only as that internal subrequest. Recognition is by a routed manifest, not the
+*unwired*, and its `/check` and `/check/open` answer 404 to any public request
+— each is reachable only as an internal subrequest, and the guard is there
+whether or not any app serves guests. Recognition is by a routed manifest, not the
 name alone: an `/opt/auth/` with no `etc/manifest.toml` naming its `app` is
 not the authenticator, and with no routed `auth` on the host every block is unwired
 — the fail-open frame, which is what these stories show unless one says a
@@ -96,6 +97,25 @@ unchanged. Like `/mcp`, these paths are the suite's, carried whatever the
 manifest says, and absent from plain, unwired, and disabled blocks. The match
 is on the path's end alone, so `/notes/info/refs` is reserved too, while
 `/info/refsx` is an ordinary path.
+
+An app that serves guests — visitors with no credential at all — says so with
+`guests = true` in its manifest (`S7-apps.md`); with no `guests`, or `guests =
+false`, it does not. On a host with a routed `auth`, such an app's wired block
+differs from any other in two places. It gains a second internal check,
+`/_ikigenba/check/open`, beside `/_ikigenba/check` and identical to it except
+that it asks `auth`'s `/check/open`, which answers exactly as `/check` does
+except that where `/check` would answer 401 it answers 200 with no identity.
+And its `location /` asks that check instead and has no `error_page 401`, so
+nothing there is sent to sign in: a guest reaches the app with no `X-User-Id`
+or `X-User-Email` and with nginx's request id, a signed-in visitor reaches it
+with the identity `auth` relays, and a 403 from `auth` still reaches the client
+unchanged. `/mcp`, `/mcp/...`, and the git paths are not part of it: they keep
+the strict `/_ikigenba/check` and their 401 challenges, exactly as on any
+wired block. When the app also holds the apex, the apex is a name on that same
+block and is served the same way. `guests` changes nothing else: on a host
+with no authenticator the app gets the plain block every app gets, a disabled
+app's block answers 503 as any other, and `auth`'s own block is the same with
+or without such an app.
 
 One host in the account also answers at the root domain's apex,
 `ikigenba.dev`. Which host that is, and which app answers there, is a
@@ -158,7 +178,9 @@ routed, the parent answers 404. A routed app named auth is the authenticator:
 every other app's block then requires a valid session, checked against auth's
 /check, while auth's own name is not gated. Under /mcp, a request without a
 valid credential is answered 401 instead of being sent to sign in; so is a
-git smart HTTP request, with a Basic challenge so git asks for the token.
+git smart HTTP request, with a Basic challenge so git asks for the token. An
+app whose manifest sets guests admits a request without a credential
+elsewhere, checked against auth's /check/open.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -515,8 +537,9 @@ to it. `auth` is not the default, so it answers only at
 `auth.sbx.ikigenba.dev`; `crm` is still the default and still answers at the
 space's name; `dashboard` answers at its own name.
 The blocks come in ascending name order — `auth`, `crm`, `dashboard` — and
-`auth`'s own is the one left unwired: its `/check` answers 404 to any direct
-request and is reached only as the other blocks' internal subrequest. In each
+`auth`'s own is the one left unwired: its `/check` and `/check/open` answer
+404 to any direct request, and `/check` is reached only as the other blocks'
+internal subrequest. In each
 wired block a client cannot forge identity: the subrequest to `/check` carries
 no client `X-User-Id` or `X-User-Email`, and on a valid session nginx sets
 those two headers on the upstream from `auth`'s answer. The subrequest also
@@ -581,6 +604,10 @@ server {
     include /opt/auth/etc/nginx.conf*;
 
     location = /check {
+        return 404;
+    }
+
+    location = /check/open {
         return 404;
     }
 
@@ -819,7 +846,8 @@ Postconditions:
 - Nothing has changed. `show` writes no file and reloads nothing.
 - `auth` alone carries no `auth_request`; every other routed app carries it,
   purely because a routed `auth` is present — there is no per-app opt-in or
-  opt-out.
+  opt-out. Neither manifest sets `guests`, so neither block carries
+  `/_ikigenba/check/open`; `auth`'s block guards `/check/open` all the same.
 - `crm` and `dashboard` carry the MCP locations and the git location whether
   their manifests set `mcp = true`, `mcp = false`, or no `mcp` at all, and
   whether or not either serves git; `auth`'s block carries none.
@@ -834,6 +862,234 @@ Postconditions:
   `auth` with `X-Original-Method: POST`, `X-Original-Host:
   crm.sbx.ikigenba.dev`, and `X-Original-URI: /notes?page=2`, whatever the
   client itself sent under those names.
+
+## An operator reads the configuration of a host running an app that serves guests
+
+`sites` serves public pages to anyone, so its manifest sets `guests = true`,
+and `devctl apex set sites.sbx` has made it the apex app. A routed `auth` is
+on the host, so `sites` is wired; no app is the default, so the space's name
+stays on the 404 block with the wildcard. `sites`'s block is the wired block
+of the `host running apps behind the authenticator` story with two
+differences: the internal `/_ikigenba/check/open` location follows
+`/_ikigenba/check`, asking `auth`'s `/check/open`, and `location /` asks it
+with no `error_page 401` line. Its `/mcp` locations and git location are
+unchanged, still asking `/_ikigenba/check` and still answering 401 with their
+challenges, and `@auth_redirect` is still there though `location /` no longer
+uses it. The apex, `ikigenba.dev`, is a name on the same block, so it is
+served the same way. `auth`'s block is the one every wired host gets.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output:
+
+```
+# Generated by opsctl. Do not edit; run 'opsctl nginx apply'.
+
+log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" $request_id';
+
+server {
+    listen      80 default_server;
+    listen      [::]:80 default_server;
+    server_name _;
+    access_log  /var/log/nginx/access.log ikigenba;
+    return      301 https://$host$request_uri;
+}
+
+server {
+    listen              443 ssl default_server;
+    listen              [::]:443 ssl default_server;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen              443 ssl;
+    server_name         sbx.ikigenba.dev *.sbx.ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+    return              404;
+}
+
+server {
+    listen              443 ssl;
+    server_name         auth.sbx.ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+
+    include /opt/auth/etc/nginx.conf*;
+
+    location = /check {
+        return 404;
+    }
+
+    location = /check/open {
+        return 404;
+    }
+
+    location / {
+        proxy_pass       http://unix:/run/ikigenba/auth.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+    }
+}
+
+server {
+    listen              443 ssl;
+    server_name         sites.sbx.ikigenba.dev ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+
+    include /opt/sites/etc/nginx.conf*;
+
+    location = /_ikigenba/check {
+        internal;
+        proxy_pass              http://unix:/run/ikigenba/auth.sock:/check;
+        proxy_pass_request_body off;
+        proxy_set_header        Content-Length "";
+        proxy_set_header        X-User-Id    "";
+        proxy_set_header        X-User-Email "";
+        proxy_set_header        X-Request-Id $request_id;
+        proxy_set_header        X-Original-Method $request_method;
+        proxy_set_header        X-Original-Host   $host;
+        proxy_set_header        X-Original-URI    $request_uri;
+    }
+
+    location = /_ikigenba/check/open {
+        internal;
+        proxy_pass              http://unix:/run/ikigenba/auth.sock:/check/open;
+        proxy_pass_request_body off;
+        proxy_set_header        Content-Length "";
+        proxy_set_header        X-User-Id    "";
+        proxy_set_header        X-User-Email "";
+        proxy_set_header        X-Request-Id $request_id;
+        proxy_set_header        X-Original-Method $request_method;
+        proxy_set_header        X-Original-Host   $host;
+        proxy_set_header        X-Original-URI    $request_uri;
+    }
+
+    location @auth_redirect {
+        return 302 https://auth.sbx.ikigenba.dev/?return=$scheme://$host$request_uri;
+    }
+
+    location @mcp_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Bearer realm="ikigenba"' always;
+        return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location @git_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Basic realm="ikigenba"' always;
+        return       401 "authentication required: send your token as the password\n";
+    }
+
+    location = /mcp {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/sites.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ^~ /mcp/ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/sites.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ~ /(info/refs|git-upload-pack|git-receive-pack)$ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @git_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/sites.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location / {
+        auth_request     /_ikigenba/check/open;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+
+        proxy_pass       http://unix:/run/ikigenba/sites.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- `host.name` is `sbx.ikigenba.dev` and `host.apex` is `sites`.
+- `/opt/auth/etc/manifest.toml` names `app = "auth"` and no `default`, or
+  `default = false`.
+- `/opt/sites/etc/manifest.toml` names `app = "sites"` and `guests = true`,
+  and no `default`, or `default = false`.
+- No app ships an `etc/nginx.conf`; each include matches nothing and nginx
+  accepts it.
+- The host's certificate covers `ikigenba.dev` as well (see
+  `S6-certificates.md`); `show` does not check, since it writes nothing.
+
+Postconditions:
+
+- Nothing has changed. `show` writes no file and reloads nothing.
+- `guests` reaches only the block of the app that sets it. Had `crm` of the
+  `host running apps behind the authenticator` story been installed beside
+  `sites`, its block would be exactly as that story shows.
+- Had no routed `auth` been on the host, `sites`'s block would be the plain
+  proxy block of the `host running apps` story, answering at the same names,
+  with no `auth_request` of either kind: with no authenticator every app is
+  fail-open, and `guests` changes nothing there.
+- Had systemd reported `ikigenba-sites.socket` disabled, `sites`'s block would
+  be the `503` block of the `app is disabled` story, answering at
+  `sites.sbx.ikigenba.dev ikigenba.dev`.
+- Once applied, the subrequest to `/check/open` carries the same
+  `X-Request-Id`, `X-Original-Method`, `X-Original-Host`, and
+  `X-Original-URI` the subrequest to `/check` would, and no client
+  `X-User-Id` or `X-User-Email`.
 
 ## An operator reads the configuration where auth is present but not routed
 
@@ -1067,6 +1323,129 @@ Postconditions:
   set by nginx, and the client's `Authorization` header as it was sent.
 - The subrequest to `/check` carried `X-Original-URI:
   /notes.git/info/refs?service=git-upload-pack`.
+
+## A guest reaches an app that serves guests
+
+A visitor with no credential at all asks for a page of an app that serves
+guests. `auth`'s `/check/open` admits the request with no identity, so nginx
+proxies it to the app with no identity headers and sends nobody to sign in.
+The apex answers from the same block, so a guest reaches `sites` there too.
+
+Request:
+
+```
+$ curl -si https://sites.sbx.ikigenba.dev/
+```
+
+```
+$ curl -si https://ikigenba.dev/
+```
+
+Response: not fixed here; it is `sites`'s answer to the request.
+
+Status is whatever `sites` answers; nginx adds no status of its own. The
+response is never a redirect to `auth.sbx.ikigenba.dev`.
+
+Preconditions:
+
+- The configuration of the `host running an app that serves guests` story has
+  been applied, and `auth` and `sites` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check/open` answers 200 with neither `X-User-Id` nor
+  `X-User-Email`.
+
+Postconditions:
+
+- `sites` received `GET /` with no `X-User-Id` and no `X-User-Email`, and with
+  `X-Request-Id` set by nginx, the same id the subrequest to `/check/open`
+  carried and the access-log line for the request ends with. Had the client
+  sent its own `X-User-Id` or `X-User-Email`, `sites` would not have received
+  it.
+- Any path outside `/mcp`, `/mcp/...`, and the git paths behaves the same:
+  `https://sites.sbx.ikigenba.dev/mcpx` reaches `sites` as a guest too.
+- A signed-in visitor, whose session `auth` honors, reaches `sites` the same
+  way but with `X-User-Id` and `X-User-Email` set from `auth`'s answer, as on
+  any wired app.
+- A visitor whose token `auth` refuses gets `auth`'s 403 unchanged, and
+  nothing reaches `/run/ikigenba/sites.sock`.
+
+## An MCP client reaches an app that serves guests without a credential
+
+Serving guests opens only `location /`. `/mcp` and everything under `/mcp/`
+are checked against the strict `/check` on every wired block, so an MCP client
+with no credential gets the same challenge here as at any wired app. A git
+client with no credential likewise gets the Basic challenge of the `git
+client reaches a wired app without a credential` story.
+
+Request:
+
+```
+$ curl -si https://sites.sbx.ikigenba.dev/mcp
+```
+
+```
+$ curl -si https://sites.sbx.ikigenba.dev/mcp/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: send
+Authorization: Bearer <token>`, ending in a newline, where `<token>` is those
+seven characters as written, not a value filled in.
+
+Preconditions:
+
+- The configuration of the `host running an app that serves guests` story has
+  been applied, and `auth` and `sites` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/sites.sock`; the request
+  was decided by the `/check` subrequest alone, and `/check/open` was not
+  asked.
+- `https://ikigenba.dev/mcp` answers the same.
+
+## A client asks auth's /check directly
+
+`/check` and `/check/open` are `auth`'s answers to nginx's internal
+subrequests, not pages. Asked from outside, each answers 404 from nginx
+itself, whether or not any app on the host serves guests.
+
+Request:
+
+```
+$ curl -si https://auth.sbx.ikigenba.dev/check
+```
+
+```
+$ curl -si https://auth.sbx.ikigenba.dev/check/open
+```
+
+Response:
+
+```
+HTTP/1.1 404 Not Found
+```
+
+Status 404. The body is not fixed.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator`
+  story, or of the `host running an app that serves guests` story, has been
+  applied, and `auth` is active.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/auth.sock`.
 
 ## An app widens the request limits for its own requests
 
