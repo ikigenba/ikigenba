@@ -333,7 +333,7 @@ show their message in an alert — a `strong` title over a `p`, which is how the
 stylesheet lays an alert out — marked `warn` with `role="status"` for the
 cancelled sign-in and `err` with `role="alert"` for the refused one.
 
-The identity headers `X-User-Id`/`X-User-Email` and bearer parsing are
+The identity headers `X-User-Id`/`X-User-Email` and credential parsing are
 D06's. Server construction and Google-config validation are D03's, and so is
 the rule that a request auth handles, a 5xx included, writes nothing to
 stderr: the request is in the trail instead. The two `502`s here — Google
