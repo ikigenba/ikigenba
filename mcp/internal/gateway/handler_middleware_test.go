@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -63,7 +65,7 @@ func TestHandlerIdentity(t *testing.T) {
 	}
 }
 func TestHandlerRequestTrail(t *testing.T) {
-	// R-26U9-RVG9 R-JV6I-P3SI R-2826-5N6Y R-2SSG-NQSR R-3HP0-MB1R
+	// R-26U9-RVG9 R-O1E7-TCYD R-PW62-IPRR R-PXDY-WHIG R-2826-5N6Y R-2SSG-NQSR R-3HP0-MB1R
 	writer, capture := handlerTelemetry(t, nil)
 	h := gateway.Handler(handlerConfig(t, writer))
 	cases := []struct{ path, method, user, id string }{
@@ -81,7 +83,7 @@ func TestHandlerRequestTrail(t *testing.T) {
 		if !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"method": tc.method, "path": tc.path}) {
 			t.Fatal(events[0])
 		}
-		if len(events[1].Attrs) != 2 || events[1].Attrs["status"] != int64(answer.Code) {
+		if !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"status": int64(answer.Code), "duration_us": int64(0), "request_bytes": int64(0), "response_bytes": int64(answer.Body.Len())}) {
 			t.Fatal(events[1], answer.Code)
 		}
 		if _, ok := events[1].Attrs["duration_us"].(int64); !ok {
@@ -100,6 +102,136 @@ func TestHandlerRequestTrail(t *testing.T) {
 				t.Fatal(event)
 			}
 		}
+	}
+}
+
+type handlerReadBody struct {
+	io.ReadCloser
+	bytes int64
+}
+
+func (b *handlerReadBody) Read(p []byte) (int, error) {
+	if len(p) > 3 {
+		p = p[:3]
+	}
+	n, err := b.ReadCloser.Read(p)
+	b.bytes += int64(n)
+	return n, err
+}
+
+type handlerWriteCounter struct {
+	http.ResponseWriter
+	bytes int64
+}
+
+func (w *handlerWriteCounter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	w.bytes += int64(n)
+	return n, err
+}
+
+func TestHandlerReadRequestBytes(t *testing.T) {
+	// R-O1E7-TCYD R-PW62-IPRR R-PXDY-WHIG
+	for _, path := range []string{"/mcp", "/mcp/missing"} {
+		t.Run(path, func(t *testing.T) {
+			writer, capture := handlerTelemetry(t, nil)
+			h := gateway.Handler(handlerConfig(t, writer))
+			type counts struct{ request, response int64 }
+			completed := make(chan counts, 1)
+			c := endpointClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body := &handlerReadBody{ReadCloser: r.Body}
+				r.Body = body
+				// A declared length is not a body-byte count.
+				r.ContentLength = 1
+				out := &handlerWriteCounter{ResponseWriter: w}
+				h.ServeHTTP(out, r)
+				completed <- counts{body.bytes, out.bytes}
+			}), path)
+			result, err := c.CallTool(context.Background(), endpointCaller, "services", nil)
+			if err != nil || result.IsError() {
+				t.Fatal(result, err)
+			}
+			got := <-completed
+			handlerFlush(t, writer)
+			events := capture.Events()
+			if len(events) != 3 || events[0].Name != "request.started" || events[1].Name != "tool.called" || events[2].Name != "request.finished" {
+				t.Fatal(events)
+			}
+			if got.request <= 1 || got.response <= 0 || !reflect.DeepEqual(events[2].Attrs, telemetry.Attrs{"status": int64(200), "duration_us": int64(0), "request_bytes": got.request, "response_bytes": got.response}) {
+				t.Fatal(events[2], got)
+			}
+		})
+	}
+}
+
+type handlerShortWriter struct{ *httptest.ResponseRecorder }
+
+func (w handlerShortWriter) Write(p []byte) (int, error) {
+	if len(p) > 3 {
+		_, _ = w.ResponseRecorder.Write(p[:3])
+		return 3, io.ErrShortWrite
+	}
+	return w.ResponseRecorder.Write(p)
+}
+
+func TestHandlerUnreadAndShortResponseBytes(t *testing.T) {
+	// R-O1E7-TCYD R-PW62-IPRR R-PXDY-WHIG
+	for _, nilBody := range []bool{false, true} {
+		t.Run(fmt.Sprint(nilBody), func(t *testing.T) {
+			writer, capture := handlerTelemetry(t, nil)
+			h := gateway.Handler(handlerConfig(t, writer))
+			r := httptest.NewRequest("CUSTOM", "/unknown", strings.NewReader("unread body"))
+			if nilBody {
+				r.Body = nil
+			}
+			r.ContentLength = 999
+			r.Header.Set("X-User-Id", "person")
+			answer := httptest.NewRecorder()
+			h.ServeHTTP(handlerShortWriter{answer}, r)
+			handlerFlush(t, writer)
+			events := capture.Events()
+			if len(events) != 2 || events[0].Name != "request.started" || events[1].Name != "request.finished" || answer.Body.String() != "not" {
+				t.Fatal(events, answer.Body.String())
+			}
+			if !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"status": int64(404), "duration_us": int64(0), "request_bytes": int64(0), "response_bytes": int64(3)}) {
+				t.Fatal(events[1])
+			}
+		})
+	}
+}
+
+type handlerCopyWriter struct {
+	*httptest.ResponseRecorder
+	written, copied int64
+}
+
+func (w *handlerCopyWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseRecorder.Write(p)
+	w.written += int64(n)
+	return n, err
+}
+
+func (w *handlerCopyWriter) ReadFrom(r io.Reader) (int64, error) {
+	n, err := io.Copy(w.ResponseRecorder, r)
+	w.copied += n
+	return n, err
+}
+
+func TestHandlerAssetResponseBytes(t *testing.T) {
+	// R-O1E7-TCYD R-PW62-IPRR R-PXDY-WHIG
+	writer, capture := handlerTelemetry(t, nil)
+	h := gateway.Handler(handlerConfig(t, writer))
+	r := httptest.NewRequest("GET", "/_appkit/theme.css", strings.NewReader("unread body"))
+	r.Header.Set("X-User-Id", "person")
+	answer := &handlerCopyWriter{ResponseRecorder: httptest.NewRecorder()}
+	h.ServeHTTP(answer, r)
+	handlerFlush(t, writer)
+	events := capture.Events()
+	if len(events) != 2 || events[0].Name != "request.started" || events[1].Name != "request.finished" || answer.Code != 200 || answer.Body.Len() == 0 {
+		t.Fatal(events, answer.Code, answer.Body.Len())
+	}
+	if !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"status": int64(200), "duration_us": int64(0), "request_bytes": int64(0), "response_bytes": answer.written + answer.copied}) {
+		t.Fatal(events[1], answer.written, answer.copied)
 	}
 }
 func TestHandlerConcurrent(t *testing.T) {

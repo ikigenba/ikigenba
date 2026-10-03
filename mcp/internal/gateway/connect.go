@@ -24,6 +24,7 @@ type connectData struct {
 	Banner   page.Banner
 	Endpoint string
 	Services []connectService
+	GitScope string
 }
 
 func serveAssets(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +58,11 @@ func serveConnect(w http.ResponseWriter, r *http.Request, cfg Config, entries se
 		origin = entry.URL
 	}
 	u := page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: origin + "/", LogoutURL: origin + "/logout"}
-	data := connectData{Banner: cfg.Banner(u), Endpoint: scheme + "://" + r.Host + "/mcp"}
+	gitSpace := r.Host
+	if strings.HasPrefix(gitSpace, "mcp.") && len(gitSpace) > 4 {
+		gitSpace = gitSpace[4:]
+	}
+	data := connectData{Banner: cfg.Banner(u), Endpoint: scheme + "://" + r.Host + "/mcp", GitScope: scheme + "://*." + gitSpace}
 	seen := make(map[string]bool)
 	var names []string
 	for _, entry := range entries {

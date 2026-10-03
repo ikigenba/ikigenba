@@ -405,7 +405,7 @@ func TestConnectReadsRewrittenServices(t *testing.T) {
 	}
 }
 
-// R-PG32-LER3 R-SNRW-9QL4
+// R-O69T-CFX5 R-SNRW-9QL4
 func TestConnectKeepsRequestCatalogueSnapshot(t *testing.T) {
 	path := servicesFile(t, []map[string]any{service("alpha", "before banner", true, true)})
 	cfg := pageConfig(t, path, func(u page.User) page.Banner {
@@ -468,15 +468,15 @@ func TestGatewayTemplateSet(t *testing.T) {
 		t.Fatal("connect template absent")
 	}
 	var out bytes.Buffer
-	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "Services": []any{}}); err != nil {
+	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "Services": []any{}, "GitScope": "https://*.example.test"}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// R-SNRW-9QL4 R-PG32-LER3 R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
+// R-SNRW-9QL4 R-O69T-CFX5 R-O7HP-Q7NU R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
 func TestConnectExactlyRendersRequestData(t *testing.T) {
 	for _, proto := range []string{"", "http", "https", "HTTP", "http, https", " https"} {
-		for _, host := range []string{"mcp.space.test:8443", "mcp.space.test:", "mcp.", "space.test:word", "mcp.mcp.space.test"} {
+		for _, host := range []string{"mcp.space.test:8443", "mcp.space.test:", "mcp.", "space.test:word", "mcp.mcp.space.test", "mcp.space<&>.test:8443"} {
 			for _, authURL := range []string{"", "https://accounts.test/base/"} {
 				t.Run(proto+"/"+host+"/"+authURL, func(t *testing.T) {
 					first := service("zeta", "<b> &amp; text", false, true)
@@ -496,7 +496,8 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 					if proto == "http" {
 						scheme = "http"
 					}
-					spaces := map[string]string{"mcp.space.test:8443": "space.test", "mcp.space.test:": "space.test", "mcp.": "mcp.", "space.test:word": "space.test:word", "mcp.mcp.space.test": "mcp.space.test"}
+					spaces := map[string]string{"mcp.space.test:8443": "space.test", "mcp.space.test:": "space.test", "mcp.": "mcp.", "space.test:word": "space.test:word", "mcp.mcp.space.test": "mcp.space.test", "mcp.space<&>.test:8443": "space<&>.test"}
+					gitSpaces := map[string]string{"mcp.space.test:8443": "space.test:8443", "mcp.space.test:": "space.test:", "mcp.": "mcp.", "space.test:word": "space.test:word", "mcp.mcp.space.test": "mcp.space.test", "mcp.space<&>.test:8443": "space<&>.test:8443"}
 					origin := authURL
 					if origin == "" {
 						origin = scheme + "://auth." + spaces[host]
@@ -506,7 +507,7 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 						t.Fatalf("banner calls: %#v want %#v", users, u)
 					}
 					endpoint := scheme + "://" + host + "/mcp"
-					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "Services": []map[string]any{
+					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "GitScope": scheme + "://*." + gitSpaces[host], "Services": []map[string]any{
 						{"Name": "alpha", "Description": "enabled", "URL": endpoint + "/alpha", "Available": true, "Reason": ""},
 						{"Name": "zeta", "Description": "<b> &amp; text", "URL": endpoint + "/zeta", "Available": false, "Reason": "disabled"},
 					}}

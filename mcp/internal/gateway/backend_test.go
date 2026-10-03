@@ -559,7 +559,7 @@ func TestBackendFailures(t *testing.T) {
 	}
 }
 
-// R-KN59-HPYT R-JWEF-2VJ7 R-JXMB-GN9W R-JYU7-UF0L
+// R-KN59-HPYT R-O3U0-KWFR R-JQW7-8JSX R-JS43-MBJM
 func TestBackendRelay(t *testing.T) {
 	for _, toolError := range []bool{false, true} {
 		t.Run(fmt.Sprint(toolError), func(t *testing.T) {
@@ -707,7 +707,7 @@ func TestBackendDoesNotTimeoutEarly(t *testing.T) {
 	}
 }
 
-// R-KDE2-FK19 R-K024-86RA R-BN10-HXNQ
+// R-KDE2-FK19 R-O51W-YO6G R-BN10-HXNQ
 func TestBackendCancellation(t *testing.T) {
 	for _, stage := range []string{"tools/list", "tools/call"} {
 		t.Run(stage, func(t *testing.T) {
@@ -727,6 +727,16 @@ func TestBackendCancellation(t *testing.T) {
 				case <-release:
 				}
 			})
+			answers := make(chan []byte, 1)
+			handler := f.server.Config.Handler
+			f.server.Close()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				out := &backendAnswerWriter{ResponseWriter: w}
+				handler.ServeHTTP(out, r)
+				answers <- out.body.Bytes()
+			}))
+			defer server.Close()
+			f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
@@ -758,6 +768,18 @@ func TestBackendCancellation(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("gateway cancellation delayed")
 			}
+			var answer struct {
+				Result mcp.Result
+				Error  json.RawMessage
+			}
+			select {
+			case raw := <-answers:
+				if err := json.Unmarshal(raw, &answer); err != nil || answer.Error != nil || !answer.Result.IsError() {
+					t.Fatalf("cancelled answer=%s error=%v", raw, err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("gateway did not produce its cancelled result")
+			}
 			count := 1
 			if stage == "tools/call" {
 				count = 2
@@ -784,6 +806,16 @@ func TestBackendCancellation(t *testing.T) {
 
 		})
 	}
+}
+
+type backendAnswerWriter struct {
+	http.ResponseWriter
+	body bytes.Buffer
+}
+
+func (w *backendAnswerWriter) Write(p []byte) (int, error) {
+	_, _ = w.body.Write(p)
+	return w.ResponseWriter.Write(p)
 }
 
 type backendHeaderTransport struct {
@@ -977,7 +1009,7 @@ func backendTelemetry(t testing.TB, sink telemetry.Sink, stderr io.Writer, now f
 	return writer, capture
 }
 
-// R-JWEF-2VJ7 R-JXMB-GN9W R-JYU7-UF0L
+// R-O3U0-KWFR R-JQW7-8JSX R-JS43-MBJM
 func TestBackendArgumentErrorTrail(t *testing.T) {
 	f := backendSetup(t, 0, backendStatic(backendReadList, `{"content":[{"type":"text","text":"invalid tool arguments"}],"isError":true}`))
 	result := f.call(t, "call", `{"service":"alpha","tool":"read","args":{"wrong":true}}`)
@@ -1000,5 +1032,46 @@ func TestBackendArgumentErrorTrail(t *testing.T) {
 		if e.RequestID != "trace" || e.User != "user" {
 			t.Fatalf("correlation=%v", e)
 		}
+	}
+}
+
+func TestBackendSuccessfulToolTrail(t *testing.T) {
+	// R-O3U0-KWFR R-JQW7-8JSX R-JS43-MBJM
+	for _, tc := range []struct{ tool, args, result string }{
+		{"describe", `{"service":"alpha"}`, `{"content":[]}`},
+		{"call", `{"service":"alpha","tool":"read"}`, `{"content":[]}`},
+		{"call", `{"service":"alpha","tool":"read"}`, `{"content":[],"isError":false}`},
+	} {
+		t.Run(tc.tool+tc.result, func(t *testing.T) {
+			f := backendSetup(t, 0, backendStatic(backendReadList, tc.result))
+			if result := f.call(t, tc.tool, tc.args); result.IsError() {
+				t.Fatal(result)
+			}
+			handlerCount := 1
+			if tc.tool == "call" {
+				handlerCount = 2
+			}
+			handlerCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := f.writer.Flush(handlerCtx); err != nil {
+				t.Fatal(err)
+			}
+			events := f.capture.Events()
+			if len(events) != handlerCount+3 || events[0].Name != "request.started" || events[len(events)-1].Name != "request.finished" {
+				t.Fatal(events)
+			}
+			for _, event := range events[1 : handlerCount+1] {
+				if event.Name != "sibling.called" {
+					t.Fatal(events)
+				}
+			}
+			event := events[handlerCount+1]
+			if event.Name != "tool.called" || len(event.Attrs) != 4 || event.Attrs["tool"] != tc.tool || event.Attrs["kind"] != "read" || event.Attrs["outcome"] != "ok" {
+				t.Fatal(event)
+			}
+			if _, ok := event.Attrs["duration_us"]; !ok {
+				t.Fatal(event)
+			}
+		})
 	}
 }
