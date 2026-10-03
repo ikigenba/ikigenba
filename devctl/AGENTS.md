@@ -1,6 +1,6 @@
 # devctl
 
-devctl is the developer's CLI; it creates and destroys spaces on the substrate. It is a Go binary built and run on the developer's own machine, as an ordinary user under the developer's own AWS identity; it never runs as root and holds no host-side secrets. The platform is one root domain in one AWS account, and devctl has no configuration of its own: it takes the root and its region from `infra/terraform.tfvars.json` at the top of the checkout it runs inside, the same file Terraform reads. It manages the platform's spaces, each complete on one Linux host, through AWS APIs and, over ssh, through `opsctl` installed on the host, reached only by its published interface. The module path is `github.com/ikigenba/ikigenba/devctl`. The contract is `specs/design/`; this file restates none of it.
+devctl is the developer's CLI; it creates and destroys spaces on the substrate. It is a Go binary built and run on the developer's own machine, as an ordinary user under the developer's own AWS identity; it never runs as root and holds no host-side secrets. It has no configuration of its own: the root domain and region come from `infra/terraform.tfvars.json` at the top of the checkout it runs inside, the same file Terraform reads. It manages spaces, each complete on one Linux host, through AWS APIs and, over ssh, through the `opsctl` installed on the host, reached only by its published interface. The module path is `github.com/ikigenba/ikigenba/devctl`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -11,15 +11,17 @@ devctl is the developer's CLI; it creates and destroys spaces on the substrate. 
 ## Toolchain
 
 - Go 1.26 or later.
-- The modules `go.mod` requires (the AWS SDK v2 modules and `github.com/BurntSushi/toml`), in the module cache; `go.sum` is committed and the gates run offline. Prefer the standard library, then a widely used public module; adding one needs human approval.
+- The modules `go.mod` requires, in the module cache: the AWS SDK v2 modules and `github.com/BurntSushi/toml`. `go.sum` is committed and the gates run offline.
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-The gates fake every external process, so they need nothing beyond Go and `golangci-lint`. Running the built `devctl` also needs on `PATH`: `git` (finds the checkout with `git rev-parse`), `ssh` (reaches a space's host as `ec2-user`), `tar` with `xz` support (`build` writes and `deploy` reads `.tar.xz` archives with `tar -J`), `secret-tool` (libsecret, the developer's keyring) and `curl` (fetches opsctl's published releases).
+Prefer the standard library, then a widely used public module; adding one needs human approval.
+
+The gates fake every external process. Running the built `devctl` also needs on `PATH`: `git` (finds the checkout), `ssh` (reaches a space's host as `ec2-user`), `tar` with `xz` support (`build` writes and `deploy` reads `.tar.xz` archives with `tar -J`), `secret-tool` (libsecret, the developer's keyring) and `curl` (fetches opsctl's published releases).
 
 ## Operator setup
 
-What the operator, human or agent, supplies when running the built `devctl` against the real platform. What devctl does with the root file, the profile and the operands is design's business.
+What the operator, human or agent, supplies when running the built `devctl` against the real platform. What devctl does with it is design's business.
 
 - **Run from inside the checkout.** Every command that touches AWS or a host runs from a directory inside this repository's checkout; its `infra/terraform.tfvars.json` is the one statement of the root domain and region.
 - **One AWS profile, named after the root.** `~/.aws/config` holds a profile named exactly as the root file spells the root domain (`ikigenba.dev`), with a live SSO session before any cloud command (`aws sso login --profile ikigenba.dev`). No account id is configured anywhere; the account is whatever that profile reaches.
@@ -34,33 +36,26 @@ The test files are every `*_test.go` under `cmd/` and `internal/`. The canonical
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort -u
 ```
 
-devctl neither mints nor emits `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a requirement tag.
+**No id-shaped literal in a fixture.** devctl neither mints nor emits `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a requirement tag.
 
 ## Test discipline
 
 These rules govern everything `go test ./...` runs. Tests are offline (loopback only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state.
 
-**No network and no real identity in the gates.** Tests never make a network call, never load the AWS SDK's default credential chain, and never read `~/.aws`, the developer's home, environment, keyring, ssh configuration or checkout: in particular never the real `infra/terraform.tfvars.json`, and never the real git checkout. The working directory, the effective uid, the environment, the clock, every cloud client and every process runner come in through the run seam design D01 defines (`seam.Deps`), and tests inject fakes. A test that needs a checkout builds a temporary one, with its own root file, under a temporary directory and passes a directory inside it as the working directory. A test that reaches a real AWS endpoint, or whose result depends on the developer's credentials, checkout or machine, is a bug. The gates run offline as an ordinary user.
+**No network and no real identity in the gates.** Tests never make a network call, never load the AWS SDK's default credential chain, and never read `~/.aws`, the developer's home, environment, keyring, ssh configuration or checkout, the real `infra/terraform.tfvars.json` and git checkout included. The working directory, the effective uid, the environment, the clock, every cloud client and every process runner come in through the run seam D01 defines (`seam.Deps`), and tests inject fakes. A test that needs a checkout builds a temporary one, with its own root file, and passes a directory inside it as the working directory. A test that reaches a real AWS endpoint, or whose result depends on the developer's credentials, checkout or machine, is a bug. The gates run offline as an ordinary user.
 
 ## Live tests
 
-Live tests are the only tests that connect to external services; every other test follows Test discipline.
-
-- Minimal: a live test proves lightly that the whole is glued together end to end, about one per external service. Behavior, edge cases and error paths are the unit tests' job.
-- Separate: `*_live_test.go` files behind `//go:build live`, with `TestLive*` functions. `go test ./...` never runs them; `make live` runs `go test -tags live -count=1 -run '^TestLive' ./...`.
-- Designed: a live test carries the requirement id it proves, and the gap counts it like any other test.
-- Local: the code under test runs on the developer's machine; only the external service is real.
-- Credentials: read from the environment. A missing credential fails the test, never skips it. No credential appears in the repo or in test output.
-- Run: only as the conditional `make live` gate below.
+A live test is the only kind that reaches an external service. It is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions, which `go test ./...` never runs and `make live` runs as `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together, about one per external service, leaving behavior, edge cases and error paths to the unit tests; it carries the id it proves and the gap counts it; the code under test runs locally and only the external service is real; it reads credentials from the environment, fails rather than skips when one is missing, and no credential appears in the repository or in test output. It runs only as gate 5.
 
 ## Gates
 
-Run from `devctl/`, in order; every command must exit 0. No skipped tests and no disabled linters.
+Run from `devctl/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding suppression (`//nolint` and the like) is a skip the run never adds; a finding it cannot fix or believes wrong is filed as an issue.
 
-1. `test -z "$(gofmt -l .)"` (`go fmt` always exits 0, so the check form is the gate; fix with `make fmt`)
+1. `test -z "$(gofmt -l .)"` (fix with `make fmt`)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and stops applying `//nolint` and `.golangci.yml` suppressions), and with a private cache `--allow-parallel-runners` skips the machine-wide lock so several sub-projects can lint at once (`make lint` runs this form)
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it, and parallel runners let several sub-projects lint at once (`make lint` runs this form)
 5. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.
 
 ## Commit conventions
@@ -81,17 +76,11 @@ The `Requirements:` trailer lists the phase's ids so history stays greppable by 
 
 ## Releasing
 
-Release machinery, the version bump, tags, `Makefile`, `install.sh`, `.goreleaser.yaml` and `.github/workflows/release-devctl.yml` at the repo root, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
+Release machinery, the version bump, tags, `install.sh`, `.goreleaser.yaml` and `.github/workflows/release-devctl.yml` at the repo root, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
 
-1. Set the version in `internal/cli/run.go` to `vX.Y.Z`. It is a source literal the binary reports verbatim, and the deploy refuses a tag that does not match what the built binary's `--version` prints.
+1. Set the version in `internal/cli/run.go` to `vX.Y.Z`. The binary reports it verbatim, and the release refuses a tag that does not match.
 2. Commit on `main` and push `main`.
-3. Tag the commit `devctl/vX.Y.Z` and push the tag. The workflow builds with GoReleaser and publishes linux/darwin amd64/arm64 archives and checksums; a prerelease tag (`devctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
-4. Wait for the release (`gh release view devctl/vX.Y.Z` succeeds), then install it on the developer's machine from this directory. A release is not done until this step is:
-
-   ```
-   DEVCTL_VERSION=vX.Y.Z sh install.sh
-   ```
-
-   The installer puts the binary in `~/.local/bin`. Plain `sh install.sh` installs the newest stable release.
+3. Tag the commit `devctl/vX.Y.Z` and push the tag. The workflow builds with GoReleaser and publishes linux and darwin amd64 and arm64 archives and checksums; a prerelease tag (`devctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
+4. Once `gh release view devctl/vX.Y.Z` succeeds, install it from this directory with `DEVCTL_VERSION=vX.Y.Z sh install.sh`, which puts the binary in `~/.local/bin`. A release is not done until this step is. Plain `sh install.sh` installs the newest stable release.
 
 `devctl --version` then prints `vX.Y.Z`.

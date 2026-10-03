@@ -75,7 +75,7 @@ These rules govern everything `go test ./...` runs. Tests are offline (loopback 
 
 ## Live tests
 
-telemetry calls no external service; its callers are sibling services the unit tests stand in for, so it has no live tests. Should design ever call for one, it is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions; it proves lightly that the whole is glued together, carries the id it proves, reads credentials from the environment, fails rather than skips when one is missing, and runs only as gate 6.
+telemetry calls no external service: its callers are sibling services, which the unit tests stand in for, so it has no live tests. Should design ever call for one, it is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions; it proves lightly that the whole is glued together, carries the id it proves, reads credentials from the environment, fails rather than skips when one is missing, and runs only as gate 6.
 
 ## Gates
 

@@ -1,6 +1,6 @@
 # appkit
 
-appkit holds what every app shares: page chrome, identity, the MCP server and client, and telemetry. It is a Go library, module path `github.com/ikigenba/ikigenba/appkit`, with one concern per package and no package privileged; the module root exports nothing. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
+appkit holds what every app shares: page chrome, identity, the MCP server and client, and telemetry. It is a Go library with one concern per package and no package privileged; the module root exports nothing. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -21,8 +21,9 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - Go 1.26 or later.
 - A C compiler cgo can use, such as `gcc`: `go test -race` needs it.
 - `golangci-lint` v2, configured by `.golangci.yml` here.
+- GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. Today `go.mod` requires nothing.
+Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires nothing today.
 
 ## Test files
 
@@ -56,12 +57,12 @@ There are none.
 
 ## Gates
 
-Run from `appkit/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding `//nolint` is a disabled linter the run never adds; a finding that is wrong, or cannot be fixed below the contract seam without changing an exported name, signature or observable behavior, is filed as an issue under `specs/issues/` for a human to adjudicate by restructuring the code or amending the design.
+Run from `appkit/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding suppression (`//nolint` and the like) is a skip the run never adds; a finding it cannot fix without changing an exported name, signature or observable behavior, or believes wrong, is filed as an issue.
 
 1. `test -z "$(gofmt -l .)"` (fix with `make fmt`)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (`make lint` runs this form)
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it, and parallel runners let several sub-projects lint at once (`make lint` runs this form)
 
 ## Commit conventions
 
@@ -81,7 +82,7 @@ The `Requirements:` trailer lists the phase's ids so history stays greppable by 
 
 ## Releasing
 
-Release machinery, the tags, is hand-maintained and outside the spec system: the build run never reads, edits or tests it. appkit is a library consumed by module path; there is no binary to ship, and the spec fixes its shape, never its version number.
+Release machinery, the tags, is hand-maintained and outside the spec system: the build run never reads, edits or tests it. appkit is a library consumed by module path: there is no binary to ship, and the spec fixes its shape, never its version.
 
 1. Tag a green `main` `appkit/vX.Y.Z` and push the tag.
 2. A consumer pins it with an ordinary `require github.com/ikigenba/ikigenba/appkit vX.Y.Z` in its own `go.mod`.

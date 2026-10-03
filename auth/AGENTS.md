@@ -23,7 +23,7 @@ auth holds no stylesheet, fonts or licences; appkit's `page` package serves them
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. The toolchain names tools, not library releases: release selection is `go.mod`'s job, and the build run writes it.
+Prefer the standard library, then a widely used public module; adding one needs human approval. Release selection is `go.mod`'s job.
 
 ### Adopting appkit
 
@@ -33,7 +33,7 @@ appkit is released from this repository. Until its tag `appkit/<version>` is on 
 GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>
 ```
 
-and sets the requirement with `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`, with that `GONOSUMDB` exported in the build run's shell so no step consults the checksum database. The tag must be pushed before any other machine builds auth.
+and sets the requirement with `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`, with that `GONOSUMDB` exported in the build run's shell. The tag must be pushed before any other machine builds auth.
 
 ## Test files
 
@@ -45,11 +45,11 @@ grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 
 `specs/` holds no `*_test.go`.
 
-**No id-shaped literal hazard.** A requirement tag is `R-` and two hyphenated groups, and no auth value carries that shape: user, session and login-state ids are 26 Crockford base32 chars (`internal/idcodec`, no hyphen), token ids `tok_` plus 26, token secrets `ikp_` plus 52, stored secret hashes 64 lowercase hex chars, and request ids 32 lowercase hex chars. No auth literal can be mistaken for a tag.
+**No id-shaped literal in a fixture.** No auth value has a requirement tag's shape: user, session and login-state ids are 26 Crockford base32 chars (`internal/idcodec`, no hyphen), token ids `tok_` plus 26, token secrets `ikp_` plus 52, stored secret hashes 64 lowercase hex chars, and request ids 32 lowercase hex chars. No auth literal can be mistaken for a tag.
 
 ## Test discipline
 
-These rules govern everything `go test ./...` runs; live tests follow Live tests below. Tests are offline (loopback only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state. The gates run offline as an ordinary user with no systemd.
+These rules govern everything `go test ./...` runs. Tests are offline (loopback only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state. The gates run offline as an ordinary user with no systemd.
 
 **Every input comes through the run seam.** `cli.Process` (D01) carries `Args`, `LookupEnv`, `Unsetenv`, `Pid`, `Stdout`, `Stderr`, `Inherit`, `Now`, `Rand`, `OIDCIssuer`, `DBSource`, `Banner` and `Sink`, and tests supply each one. A test never reads or changes the real environment, clock or randomness, and touches no filesystem or network state outside the fixtures below. A test whose result depends on the developer's machine, wall clock, environment or a port in use is a bug.
 
@@ -79,17 +79,17 @@ These rules govern everything `go test ./...` runs; live tests follow Live tests
 
 ## Live tests
 
-Live tests are the only tests that connect to external services; everything else is a unit test under Test discipline. A live test is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions, which `go test ./...` never runs and `make live` runs as `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together, about one per external service, with behavior, edge cases and error paths left to the unit tests; it carries the id it proves and the gap counts it; the code under test runs locally and only the external service is real; it reads credentials from the environment, fails rather than skips when one is missing, and no credential appears in the repo or in test output. It runs only as gate 6.
+A live test is the only kind that reaches an external service. It is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions, which `go test ./...` never runs and `make live` runs as `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together, about one per external service, leaving behavior, edge cases and error paths to the unit tests; it carries the id it proves and the gap counts it; the code under test runs locally and only the external service is real; it reads credentials from the environment, fails rather than skips when one is missing, and no credential appears in the repository or in test output. It runs only as gate 6.
 
 ## Gates
 
-Run from `auth/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding suppression (`//nolint` and the like) is a skip the run never adds; a finding it cannot fix below the contract seam, or believes wrong, is filed as an issue.
+Run from `auth/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding suppression (`//nolint` and the like) is a skip the run never adds; a finding it cannot fix or believes wrong is filed as an issue.
 
-1. `test -z "$(gofmt -l .)"` (`go fmt` always exits 0, so this is the gate; fix with `make fmt`)
+1. `test -z "$(gofmt -l .)"` (fix with `make fmt`)
 2. `go build ./...`
 3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/auth`, the release build, static and cgo-free, which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
-5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and stops applying `//nolint` and `.golangci.yml` suppressions), and parallel runners let several sub-projects lint at once (`make lint` runs this form)
+5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it, and parallel runners let several sub-projects lint at once (`make lint` runs this form)
 6. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.
 
 Gate 5 flags an `http.Server` without `ReadHeaderTimeout` (`gosec` G112); it is fixed in code, never suppressed.
