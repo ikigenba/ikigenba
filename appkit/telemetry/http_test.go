@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -47,9 +48,9 @@ func httpEvents(t *testing.T, w *Writer, c *Capture) []Event {
 	return c.Events()
 }
 
-// R-34A4-ETW4 R-DU8E-LDJV R-DWO7-CX19 R-3BLI-PGCA R-E0BW-I89C
-// R-E2RP-9RQQ R-3GH4-8JB2 R-JJPG-PM2B R-3LCP-RM9U
-// R-VD1N-OM2I R-WKDK-1PQS
+// R-34A4-ETW4 R-DU8E-LDJV R-DWO7-CX19 R-PSID-DEJO R-E0BW-I89C
+// R-E2RP-9RQQ R-PTQ9-R6AD R-JJPG-PM2B R-3LCP-RM9U
+// R-VD1N-OM2I R-PRAG-ZMSZ
 func TestMiddlewareContextAndTrail(t *testing.T) {
 	for _, present := range []bool{false, true} {
 		t.Run(fmt.Sprint(present), func(t *testing.T) {
@@ -135,7 +136,7 @@ func TestMiddlewareContextAndTrail(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
-			if !reflect.DeepEqual(events[0].Attrs, Attrs{"method": "PATCH", "path": "/a b"}) || !reflect.DeepEqual(events[2].Attrs, Attrs{"status": int64(202), "duration_us": int64(1234)}) {
+			if !reflect.DeepEqual(events[0].Attrs, Attrs{"method": "PATCH", "path": "/a b"}) || !reflect.DeepEqual(events[2].Attrs, Attrs{"status": int64(202), "duration_us": int64(1234), "request_bytes": int64(7), "response_bytes": int64(6)}) {
 				t.Fatal(events)
 			}
 		})
@@ -216,7 +217,7 @@ func TestMiddlewareRandomFailure(t *testing.T) {
 	}
 }
 
-// R-3HP0-MB1R R-3K4T-DUJ5 R-3GH4-8JB2 R-JJPG-PM2B R-WKDK-1PQS
+// R-3HP0-MB1R R-PUY6-4Y12 R-PTQ9-R6AD R-JJPG-PM2B R-PRAG-ZMSZ
 func TestMiddlewareStatusesAndPanic(t *testing.T) {
 	panicValue := &struct{ message string }{"original"}
 	for _, tc := range []struct {
@@ -254,10 +255,303 @@ func TestMiddlewareStatusesAndPanic(t *testing.T) {
 				t.Fatalf("panic changed: %v", got)
 			}
 			events := httpEvents(t, w, c)
-			if len(events) != 2 || !reflect.DeepEqual(events[1].Attrs, Attrs{"status": int64(tc.status), "duration_us": int64(0)}) {
+			wantBytes := int64(0)
+			if tc.name == "body" || tc.name == "panic body" {
+				wantBytes = 2
+			}
+			if len(events) != 2 || !reflect.DeepEqual(events[1].Attrs, Attrs{"status": int64(tc.status), "duration_us": int64(0), "request_bytes": int64(0), "response_bytes": wantBytes}) {
 				t.Fatal(events)
 			}
 		})
+	}
+}
+
+type httpBodyRead struct {
+	data string
+	err  error
+}
+
+type httpScriptBody struct {
+	reads    []httpBodyRead
+	next     int
+	closed   int
+	closeErr error
+}
+
+func (b *httpScriptBody) Read(p []byte) (int, error) {
+	result := b.reads[b.next]
+	b.next++
+	return copy(p, result.data), result.err
+}
+
+func (b *httpScriptBody) Close() error {
+	b.closed++
+	return b.closeErr
+}
+
+// R-PSID-DEJO R-PW62-IPRR
+func TestMiddlewareRequestBodyReadsAndClose(t *testing.T) {
+	readErr := errors.New("body read failed")
+	closeErr := errors.New("body close failed")
+	closeErrors := map[error]bool{closeErr: true}
+	for _, tc := range []struct {
+		name  string
+		nil   bool
+		reads []httpBodyRead
+	}{
+		{name: "nil", nil: true},
+		{name: "unread"},
+		{name: "partial", reads: []httpBodyRead{{data: "ab"}}},
+		{name: "errors", reads: []httpBodyRead{{data: "ab"}, {data: "c", err: readErr}, {err: io.EOF}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, c := httpWriter(t, nil, nil)
+			body := &httpScriptBody{reads: tc.reads, closeErr: closeErr}
+			r := httptest.NewRequest("POST", "/", nil)
+			r.ContentLength = 999999
+			r.Header.Set("X-Request-Id", "known")
+			if tc.nil {
+				r.Body = nil
+			} else {
+				r.Body = body
+			}
+			var wantBytes int64
+			calls := 0
+			Middleware(w, http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+				calls++
+				if (request.Body == nil) != tc.nil {
+					t.Fatal("nil body changed")
+				}
+				for _, want := range tc.reads {
+					// Reads by another caller still belong to this request.
+					got := make(chan httpBodyRead, 1)
+					go func() {
+						var p [16]byte
+						n, err := request.Body.Read(p[:])
+						got <- httpBodyRead{data: string(p[:n]), err: err}
+					}()
+					if result := <-got; result != want {
+						t.Fatalf("read=%+v, want %+v", result, want)
+					}
+					wantBytes += int64(len(want.data))
+				}
+				if !tc.nil && !closeErrors[request.Body.Close()] {
+					t.Fatal("close error changed")
+				}
+			})).ServeHTTP(httptest.NewRecorder(), r)
+			if calls != 1 || body.next != len(tc.reads) || !tc.nil && body.closed != 1 {
+				t.Fatalf("calls=%d body=%+v", calls, body)
+			}
+			events := httpEvents(t, w, c)
+			if len(events) != 2 || events[1].Attrs["request_bytes"] != wantBytes {
+				t.Fatal(events)
+			}
+		})
+	}
+}
+
+type httpByteResponse struct {
+	header  http.Header
+	body    bytes.Buffer
+	writes  int
+	flushes int
+	err     error
+}
+
+func (r *httpByteResponse) Header() http.Header { return r.header }
+
+func (*httpByteResponse) WriteHeader(int) {}
+
+func (r *httpByteResponse) Write(p []byte) (int, error) {
+	r.writes++
+	if r.writes == 1 {
+		_, _ = r.body.Write(p[:2])
+		return 2, r.err
+	}
+	return r.body.Write(p)
+}
+
+func (r *httpByteResponse) ReadFrom(src io.Reader) (int64, error) {
+	n, err := io.CopyN(&r.body, src, 3)
+	if err != nil {
+		return n, err
+	}
+	return n, r.err
+}
+
+func (r *httpByteResponse) Flush() { r.flushes++ }
+
+// R-PXDY-WHIG R-PYLV-A995
+func TestMiddlewareResponseByteCounts(t *testing.T) {
+	writeErr := errors.New("response failed")
+	w, c := httpWriter(t, nil, nil)
+	out := &httpByteResponse{header: make(http.Header), err: writeErr}
+	var wantBytes int64
+	Middleware(w, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		rw.Header().Set("Large-Header", strings.Repeat("h", 1024))
+		rw.WriteHeader(http.StatusCreated)
+		// The underlying writer accepts only two bytes and returns an error
+		// on its first Write. Count what the handler's calls return.
+		n, _ := rw.Write([]byte("abcd"))
+		wantBytes += int64(n)
+		n, _ = rw.Write([]byte("xyz"))
+		wantBytes += int64(n)
+		// Copy may use Write or an optional ReadFrom; either count applies.
+		copied, _ := io.Copy(rw, struct{ io.Reader }{strings.NewReader("stream")})
+		wantBytes += copied
+		flusher, ok := rw.(http.Flusher)
+		if !ok {
+			t.Fatal("direct flusher missing")
+		}
+		flusher.Flush()
+		if out.flushes != 1 {
+			t.Fatal("flush did not reach underlying writer")
+		}
+		if unwrapper, ok := rw.(interface{ Unwrap() http.ResponseWriter }); ok {
+			_, _ = unwrapper.Unwrap().Write([]byte("bypass"))
+		}
+	})).ServeHTTP(out, httptest.NewRequest("GET", "/", nil))
+	events := httpEvents(t, w, c)
+	if len(events) != 2 || events[1].Attrs["response_bytes"] != wantBytes {
+		t.Fatal(events, out.body.String())
+	}
+}
+
+// R-PXDY-WHIG
+func TestMiddlewareReadFromWithoutFlusher(t *testing.T) {
+	w, c := httpWriter(t, nil, nil)
+	out := &httpByteResponse{header: make(http.Header), err: errors.New("copy failed")}
+	var wantBytes int64
+	// Expose ReaderFrom while omitting the optional Flush method.
+	writer := struct {
+		http.ResponseWriter
+		io.ReaderFrom
+	}{out, out}
+	Middleware(w, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		if reader, ok := rw.(io.ReaderFrom); ok {
+			wantBytes, _ = reader.ReadFrom(strings.NewReader("stream"))
+		} else {
+			wantBytes, _ = io.Copy(rw, struct{ io.Reader }{strings.NewReader("stream")})
+		}
+	})).ServeHTTP(writer, httptest.NewRequest("GET", "/", nil))
+	events := httpEvents(t, w, c)
+	if len(events) != 2 || events[1].Attrs["response_bytes"] != wantBytes {
+		t.Fatal(events)
+	}
+}
+
+// R-PXDY-WHIG R-PYLV-A995
+func TestMiddlewareDirectFlushAndCopyWrites(t *testing.T) {
+	w, c := httpWriter(t, nil, nil)
+	out := httptest.NewRecorder()
+	var wantBytes int64
+	Middleware(w, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		rw.(http.Flusher).Flush()
+		if !out.Flushed {
+			t.Fatal("direct flush did not reach recorder")
+		}
+		wantBytes, _ = io.Copy(rw, struct{ io.Reader }{strings.NewReader("copied")})
+	})).ServeHTTP(out, httptest.NewRequest("GET", "/", nil))
+	events := httpEvents(t, w, c)
+	if len(events) != 2 || events[1].Attrs["response_bytes"] != wantBytes {
+		t.Fatal(events)
+	}
+}
+
+type httpHijackResponse struct {
+	httpRecordingResponse
+	conn net.Conn
+}
+
+func (r *httpHijackResponse) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return r.conn, bufio.NewReadWriter(bufio.NewReader(r.conn), bufio.NewWriter(r.conn)), nil
+}
+
+// R-PW62-IPRR R-PXDY-WHIG
+func TestMiddlewareHijackedBytesBypassCounts(t *testing.T) {
+	w, c := httpWriter(t, nil, nil)
+	conn, peer := net.Pipe()
+	peerDone := make(chan struct{})
+	result := make(chan httpBodyRead, 1)
+	t.Cleanup(func() {
+		_ = conn.Close()
+		_ = peer.Close()
+		<-peerDone
+	})
+	go func() {
+		defer close(peerDone)
+		if _, err := peer.Write([]byte("socket-in")); err != nil {
+			result <- httpBodyRead{err: err}
+			return
+		}
+		var p [10]byte
+		n, err := io.ReadFull(peer, p[:])
+		result <- httpBodyRead{data: string(p[:n]), err: err}
+	}()
+	out := &httpHijackResponse{httpRecordingResponse: httpRecordingResponse{header: make(http.Header)}, conn: conn}
+	Middleware(w, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		var body [2]byte
+		if n, err := r.Body.Read(body[:]); n != 2 || err != nil {
+			t.Fatalf("body read=%d, %v", n, err)
+		}
+		_, _ = rw.Write([]byte("before"))
+		hijacked, _, err := http.NewResponseController(rw).Hijack()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p [9]byte
+		if _, err := io.ReadFull(hijacked, p[:]); err != nil || string(p[:]) != "socket-in" {
+			t.Fatalf("connection read=%q, %v", p, err)
+		}
+		if n, err := hijacked.Write([]byte("socket-out")); n != 10 || err != nil {
+			t.Fatalf("connection write=%d, %v", n, err)
+		}
+		if got := <-result; got.data != "socket-out" || got.err != nil {
+			t.Fatal(got)
+		}
+	})).ServeHTTP(out, httptest.NewRequest("POST", "/", strings.NewReader("request")))
+	events := httpEvents(t, w, c)
+	if len(events) != 2 || events[1].Attrs["request_bytes"] != int64(2) || events[1].Attrs["response_bytes"] != int64(6) {
+		t.Fatal(events)
+	}
+}
+
+// R-PTQ9-R6AD R-PUY6-4Y12 R-PRAG-ZMSZ R-PW62-IPRR R-PXDY-WHIG
+func TestMiddlewarePanicTrailAndByteCounts(t *testing.T) {
+	now := time.Unix(100, 0)
+	w, c := httpWriter(t, func() time.Time { return now }, nil)
+	r := httptest.NewRequest("POST", "/", strings.NewReader("request"))
+	r.Header.Set("X-Request-Id", "request-id")
+	r.Header.Set("X-User-Id", "user-id")
+	panicValue := &struct{}{}
+	var got any
+	func() {
+		defer func() { got = recover() }()
+		Middleware(w, http.HandlerFunc(func(rw http.ResponseWriter, request *http.Request) {
+			var body [3]byte
+			if n, err := request.Body.Read(body[:]); n != 3 || err != nil {
+				t.Fatalf("read=%d, %v", n, err)
+			}
+			_, _ = rw.Write([]byte("part"))
+			w.Emit(request.Context(), "domain.changed", nil)
+			now = now.Add(25 * time.Microsecond)
+			panic(panicValue)
+		})).ServeHTTP(httptest.NewRecorder(), r)
+	}()
+	if got != panicValue {
+		t.Fatalf("panic changed: %v", got)
+	}
+	events := httpEvents(t, w, c)
+	if len(events) != 3 || events[0].Name != "request.started" || events[1].Name != "domain.changed" || events[2].Name != "request.finished" {
+		t.Fatal(events)
+	}
+	for _, e := range events {
+		if e.RequestID != "request-id" || e.User != "user-id" {
+			t.Fatal(e)
+		}
+	}
+	if !reflect.DeepEqual(events[2].Attrs, Attrs{"status": int64(200), "duration_us": int64(25), "request_bytes": int64(3), "response_bytes": int64(4)}) {
+		t.Fatal(events[2])
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -32,8 +33,14 @@ func Middleware(w *Writer, next http.Handler) http.Handler {
 		}
 		caller := identity.Caller{UserID: r.Header.Get("X-User-Id"), Email: r.Header.Get("X-User-Email"), RequestID: id}
 		r = r.WithContext(identity.NewContext(r.Context(), caller))
+		var body *countingBody
+		if r.Body != nil {
+			body = &countingBody{ReadCloser: r.Body}
+			r.Body = body
+		}
 		w.Emit(r.Context(), "request.started", Attrs{"method": r.Method, "path": r.URL.Path})
 		response := &statusWriter{ResponseWriter: out}
+		wrapped := wrapStatusWriter(response)
 		start := w.Now()
 		returned := false
 		defer func() {
@@ -45,16 +52,35 @@ func Middleware(w *Writer, next http.Handler) http.Handler {
 					status = http.StatusInternalServerError
 				}
 			}
-			w.Emit(r.Context(), "request.finished", Attrs{"status": int64(status), "duration_us": elapsedUS(start, end)})
+			var requestBytes int64
+			if body != nil {
+				requestBytes = body.bytes
+			}
+			w.Emit(r.Context(), "request.finished", Attrs{
+				"status": int64(status), "duration_us": elapsedUS(start, end),
+				"request_bytes": requestBytes, "response_bytes": response.bytes,
+			})
 		}()
-		next.ServeHTTP(response, r)
+		next.ServeHTTP(wrapped, r)
 		returned = true
 	})
+}
+
+type countingBody struct {
+	io.ReadCloser
+	bytes int64
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.bytes += int64(n)
+	return n, err
 }
 
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	bytes  int64
 }
 
 func (w *statusWriter) WriteHeader(status int) {
@@ -68,10 +94,48 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	return w.ResponseWriter.Write(b)
+	n, err := w.ResponseWriter.Write(b)
+	w.bytes += int64(n)
+	return n, err
 }
 
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+type flushingStatusWriter struct {
+	*statusWriter
+	http.Flusher
+}
+
+type readFromStatusWriter struct {
+	*statusWriter
+	reader io.ReaderFrom
+}
+
+func (w *readFromStatusWriter) ReadFrom(r io.Reader) (int64, error) {
+	n, err := w.reader.ReadFrom(r)
+	w.bytes += n
+	return n, err
+}
+
+type flushingReadFromStatusWriter struct {
+	*readFromStatusWriter
+	http.Flusher
+}
+
+func wrapStatusWriter(w *statusWriter) http.ResponseWriter {
+	flusher, flushes := w.ResponseWriter.(http.Flusher)
+	if reader, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		wrapped := &readFromStatusWriter{statusWriter: w, reader: reader}
+		if flushes {
+			return &flushingReadFromStatusWriter{readFromStatusWriter: wrapped, Flusher: flusher}
+		}
+		return wrapped
+	}
+	if flushes {
+		return &flushingStatusWriter{statusWriter: w, Flusher: flusher}
+	}
+	return w
+}
 
 func elapsedUS(start, end time.Time) int64 {
 	d := int64(end.Sub(start) / time.Microsecond)
