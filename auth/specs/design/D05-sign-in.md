@@ -342,7 +342,8 @@ handled failures whose `request.finished` event carries the `502`. auth's failur
 that are not pages — the unknown-state `400`, the `502`s, and the `403` sign-out
 refusals — stay one line of plain text, neither a sign-in card nor a page
 drawn with the banner, because the visitor may not be signed in. S7's routing
-of *other* apps through `/check`, the public `/check` 404, and the nginx-side
+of *other* apps through `/check` or `/check/open`, the public `/check` and
+`/check/open` 404s, and the nginx-side
 redirect that carries `?return` are properties of the space produced by
 opsctl, a separate sub-project, and are out
 of scope here; the S7 facts this design owns are that auth answers its own

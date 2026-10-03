@@ -29,8 +29,9 @@ publishes `ikigenba-auth.socket` beside `ikigenba-auth.service`, a
 `ikigenba` user, with `/opt/auth` as its working directory and
 `/opt/auth/etc/env` as its environment file. The host's nginx sends auth the
 requests for auth's own hostname and the identity subrequest, `/check`, for
-every other app; to auth each is an ordinary HTTP request. A deploy restarts
-the service alone, so the socket, and the connections queued on it — `/check`
+every other app, or `/check/open` for an app that serves guests; to auth each
+is an ordinary HTTP request. A deploy restarts the service alone, so the
+socket, and the connections queued on it — `/check` and `/check/open`
 subrequests for every app auth guards among them — outlive every restart.
 
 auth takes the socket the way `sd_listen_fds(3)` documents: `LISTEN_PID` is
@@ -74,7 +75,7 @@ space. With both unset auth behaves exactly as it does on a host.
 The socket is auth's only way in. Only nginx and the suite's own apps can
 reach it; keeping everything else out is the host's job, not auth's. The suite
 is a closed system: auth trusts `X-Request-Id` as nginx sets it — on every
-request it forwards to auth and on every `/check` subrequest, overwriting
+request it forwards to auth and on every `/check` and `/check/open` subrequest, overwriting
 whatever a client sent — and trusts a sibling that calls auth directly to have
 copied it from the request it is serving. auth decides identity itself, from
 the session cookie or a token, and calls no sibling. Every request auth
@@ -257,7 +258,8 @@ could cut a response short inside the drain.
 
 Every request the server receives, whatever its path, first passes through
 appkit's request middleware, `telemetry.Middleware` with the server's writer,
-the outermost layer of auth's handler tree: auth's own pages, `/check`, `/me`,
+the outermost layer of auth's handler tree: auth's own pages, `/check`,
+`/check/open`, `/me`,
 the shared files and a path no route defines alike. It records
 `request.started` when the request arrives and `request.finished`, with the
 status appkit's D14 defines for auth's answer — the status auth answered,
@@ -313,8 +315,8 @@ A store failure is the same failure on every route: whatever the route, a
 store operation that fails with anything other than `store.ErrNotFound` —
 which each route already answers as its own 400, 401, 403 or 404 — is
 answered 500 with a single plain-text line saying the server failed, and no
-identity headers. So nginx, which treats any `/check` answer other than 200,
-401 and 403 as its own failure, shows the visitor an error and never reaches
+identity headers. So nginx, which treats any `/check` or `/check/open` answer
+other than 200, 401 and 403 as its own failure, shows the visitor an error and never reaches
 the app.
 
 `Run` makes sure no two writes to `Stderr` are ever in progress at once, the

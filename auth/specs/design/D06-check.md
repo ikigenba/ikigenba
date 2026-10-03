@@ -1,7 +1,7 @@
 # D06-check
 
-The two identity endpoints auth serves, `GET /check` and `GET /me`, both
-attached in `internal/server`. `/check` is the subrequest nginx issues for
+The three identity endpoints auth serves, `GET /check`, `GET /check/open`, and
+`GET /me`, all attached in `internal/server`. `/check` is the subrequest nginx issues for
 every routed app, an HTTP request for `/check` like any other: nginx forwards
 the original request's `Cookie` and `Authorization` headers with no body and
 with its own `X-Request-Id` for the request, names the request it is
@@ -9,10 +9,18 @@ deciding in three headers of its own making — `X-Original-Method`, its method;
 `X-Original-Host`, its host name; and `X-Original-URI`, its path and query as
 the client sent them — and acts on the status auth returns — 200 means copy the identity headers onto the upstream request, 401
 means redirect the browser to sign in, 403 means pass the refusal through.
+`GET /check/open` is the subrequest nginx issues instead for an app that
+serves guests, called exactly as `/check` is. It answers exactly as `/check`
+answers, with one exception: where `/check` answers 401 — no token credential,
+and no live session — `/check/open` answers 200 with no identity header, and
+nginx serves the request as a guest's. A token auth refuses, a malformed Basic
+credential, and a database failure are never a guest: `/check/open` answers
+them 403, 403, and 500, as `/check` does, because a guest is a request that presented
+no credential auth could honor, never one auth refused or could not decide.
 `/me` is the public "who am I" endpoint an agent or a signed-in user calls
 directly.
 
-A credential reaches either endpoint one of three ways: the session cookie
+A credential reaches any of the endpoints one of three ways: the session cookie
 named by D05 (`ikigenba_session=<session-id>`); an `Authorization: Bearer
 ikp_<secret>` header whose whole `ikp_`-prefixed value is the personal access
 token secret; or an `Authorization: Basic <base64>` header, the form git sends
@@ -27,21 +35,21 @@ refused 403 like a token auth will not honor, never answered 401. Neither
 scheme is matched in any other letter case, as git and every other client
 send them as written here; an `Authorization` header with any other scheme is
 not a credential, and the request is decided by its cookie. auth issues no
-challenge: no answer either endpoint gives carries `WWW-Authenticate`. A
+challenge: no answer any of the endpoints gives carries `WWW-Authenticate`. A
 client that waits for a challenge before sending Basic, as git does, gets it
 from the space's nginx in front of the app it calls, not from auth. This design owns the two identity-header names auth emits on
 success and the rule for reading a credential off the request; it references
 the session cookie name (D05), the `internal/store` `Identity` type and its
 liveness rules (D04), and the touching / non-touching store operations (D04).
 
-The dividing line between the two endpoints is mutation. `/check` counts a
-request as use: it resolves identity through the touching store operations
+The dividing line between the check endpoints and `/me` is mutation. `/check`
+and `/check/open` count a request as use: they resolve identity through the touching store operations
 (`TouchSession`, `TouchTokenIdentity`), which update last-use. `/me` never
 mutates: it resolves through the read-only operations (`LookupSessionIdentity`,
 `LookupTokenIdentity`). The dividing line between 401 and 403 is which
 credential failed: a request with no token credential is decided by the
 session cookie, and a missing or no-longer-live session is answerable by
-signing in again (401); a request that presents a token credential, bearer or
+signing in again (401, or a guest's 200 on `/check/open`); a request that presents a token credential, bearer or
 Basic, is decided by that token alone, and a token the store will not honor,
 or a malformed Basic credential, is a refusal to pass through (403).
 A token, when present, wins outright — the session cookie is never consulted —
@@ -49,30 +57,32 @@ so the two never disagree. Unknown, disabled, expired, and stale-owner tokens
 are one indistinguishable `ErrNotFound` from D04, so all four refuse
 identically with no hint of which applied.
 
-Both endpoints decide every request from the database, so when the database
+All three endpoints decide every request from the database, so when the database
 fails the read or write a request needs, auth cannot decide it: that is auth's
 fault, not the caller's, and D03 answers it `500` with no identity header.
 It is a handled failure, so it is in the trail rather than on stderr: the
 request's `request.finished` carries the `500`, and the check records
-`check.failed`. nginx treats any `/check` answer other than 200, 401 and 403
+`check.failed`; `/check/open` answers it the same way, never as a guest's.
+nginx treats any `/check` answer other than 200, 401 and 403
 as its own failure, so the visitor sees an error and the app is never
 reached. No answer this design states writes anything to stderr.
 
 ## What the check records
 
-Every `GET /check` records exactly one check event, beside the request events
+Every `GET /check` and every `GET /check/open` records exactly one check event, beside the request events
 every request records (D03), because a request `/check` refuses never reaches
 an app and the check is the only place that sees it. The event is
-`check.allowed` for a 200, `check.refused` for a 401 or 403, and
+`check.allowed` for a 200, a guest's included, `check.refused` for a 401 or 403, and
 `check.failed` for a 500 — the last so that the method, host, and path of a
 request that never reached an app are still on record when auth's database
 fails. It carries the request's id, and, only when the check allowed it, the
 user the check resolved to: nginx sends no `X-User-Id` on the subrequest, so
 the middleware's context names no user, and the check supplies the resolved
-one itself, keeping the request id. A refused or failed check names no user.
+one itself, keeping the request id. A guest, refused, or failed check names no user.
 
-Its attributes are all strings: `outcome` (`allowed`, `unauthenticated`,
-`forbidden`, or `failed`, one per status); `credential`, the kind presented
+Its attributes are all strings: `outcome` (`allowed`, `guest`,
+`unauthenticated`, `forbidden`, or `failed`: `allowed` for a 200 with a user,
+`guest` for a `/check/open` 200 with none, and one per remaining status); `credential`, the kind presented
 (`token` for a bearer token, `basic` for a Basic one, malformed or not, else
 `session` for a session cookie, else `none`), following the same precedence
 that decides the identity; `method`,
@@ -80,7 +90,8 @@ that decides the identity; `method`,
 its query cut off at the first `?` because a query can carry data and the
 trail carries metadata only; and `token`, the honored token's `tok_` id, only
 when a token was honored, whether it came as `token` or `basic`. A header nginx did not send is recorded as the empty
-string and never changes the answer — a developer calling `/check` by hand is
+string and never changes the answer — a developer calling `/check` or
+`/check/open` by hand is
 decided as nginx's subrequest would be. A refused token carries no `token`
 attribute even when its secret matched a stored token, so a refused token's
 four causes stay as indistinguishable in the trail as they are at the door.
@@ -93,7 +104,10 @@ No further attribute distinguishes one actor from another, by decision: the
 concurrent actors after the fact. Each agent holds its own token, so its
 requests carry a distinct token id, while all of one user's browser sessions
 share `credential=session` and are deliberately not told apart, because a
-session id is a secret. An app's own events join to the check by request id.
+session id is a secret. A `/check/open` event carries exactly what the same
+request's `/check` event would, but that a guest's 200 is `check.allowed` with
+`outcome=guest`, keeping the `credential` it presented: `none` with no
+cookie, `session` with an idle, capped, or unknown one. An app's own events join to the check by request id.
 
 `/me` is not a check: it records only its request events.
 
@@ -130,3 +144,10 @@ session id is a secret. An app's own events join to the check by request id.
 - R-2XQU-WL0O: For any two `GET /check` requests whose first `X-Request-Id` values are the same non-empty value, that carry the same `X-Original-Method`, `X-Original-Host`, and `X-Original-URI` values, and that carry an `Authorization: Bearer` credential that `TouchTokenIdentity` (D04) does not honor, for any of the D04 `ErrNotFound` causes — unknown, disabled, expired, or owner's last Google login older than the D04 login window — the check events auth records MUST be identical apart from their `Time`.
 - R-OOVI-E3O1: For any two `GET /check` requests whose first `X-Request-Id` values are the same non-empty value, that carry the same `X-Original-Method`, `X-Original-Host`, and `X-Original-URI` values, and each of which presents a token credential of kind `basic` (R-NKMT-RO74) that is either a malformed Basic credential or one whose token secret `TouchTokenIdentity` (D04) does not honor, for any of the D04 `ErrNotFound` causes — unknown, disabled, expired, or owner's last Google login older than the D04 login window — whatever their usernames, the check events auth records MUST be identical apart from their `Time`.
 - R-TUVM-R7DC: For a `GET /me` request, whatever auth answers, auth MUST record no event other than its `request.started` and `request.finished` events.
+- R-390Q-CH5D: A `GET /check/open` presenting no token credential (R-NKMT-RO74) whose `ikigenba_session` cookie is absent or names a session that is unknown or not live, for which `TouchSession` (D04) returns `ErrNotFound` (testable cases: no cookie; a cookie whose value names no stored session; a session last used 20 minutes ago whose login was 3 hours ago; a session whose login was 18 hours 30 minutes ago and whose last use was 1 minute ago) MUST respond `200` with neither `HeaderUserID` nor `HeaderUserEmail` set, and MUST update no stored session or token.
+- R-3BGJ-40MR: A `GET /check/open` that R-390Q-CH5D does not cover MUST be answered with the same status and the same `HeaderUserID`, `HeaderUserEmail`, and `Content-Type` values, each absent exactly when it is absent there, and MUST change the same stored session and token state, as the same request with its path `/check`.
+- R-3F48-9BUU: A `GET /check/open` presenting no token credential (R-NKMT-RO74) and carrying an `ikigenba_session` cookie, received when a store operation the `*Server` calls for it returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)` (testable case: the `*store.Store` handed to `server.New` has been closed), MUST respond `500` with neither `HeaderUserID` nor `HeaderUserEmail` set, and MUST NOT respond `200`.
+- R-3IRX-EN2X: A response to `GET /check/open` MUST convey identity only through the `HeaderUserID` and `HeaderUserEmail` headers; the body of a `200` answer to `GET /check/open` is not part of the contract and tests MUST NOT assert its content.
+- R-3L7Q-66KB: No answer auth gives to a request for `/check/open`, whatever its status, MUST carry a `WWW-Authenticate` header field.
+- R-3OVF-BHSE: For each `GET /check/open` auth answers, auth MUST record (D05) exactly one event whose name begins `check.` — named `check.allowed` when it answers `200`, whether or not it sets `HeaderUserID`, `check.refused` when it answers `401` or `403`, and `check.failed` when it answers `500` — and MUST record no event for that request other than that one and its `request.started` and `request.finished` events; that event's envelope request id MUST be the request's request id (D05), and its envelope user MUST be the value of the response's `HeaderUserID` when the answer is `200` and sets it, and empty otherwise.
+- R-3RB8-319S: The attributes of the check event R-3OVF-BHSE requires MUST be exactly the keys, each with the same `string` value, that the check event R-TJWJ-B9P3 requires carries for the same request with its path `/check`, except that, when auth answers the `GET /check/open` `200` with neither `HeaderUserID` nor `HeaderUserEmail` set, its `outcome` attribute MUST be `guest`.

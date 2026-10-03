@@ -70,8 +70,8 @@ provisioning a user on login, minting and ending sessions,
 recording and consuming login state, and creating, listing, scoping, and
 authenticating tokens. Two reads deliberately do not mutate — the identity
 lookups behind `/me` and the profile — while their touching counterparts behind
-`/check` update a last-use time, because a `/check` counts as use and a `/me`
-does not.
+`/check` and `/check/open` update a last-use time, because a check counts as
+use and a `/me` does not.
 
 Three windows bound validity, and their numbers are the contract. A session is
 live only while its last use is within 15 minutes and its login is within 18
