@@ -30,6 +30,7 @@ An attribute naming an entity has the entity's type as its key (`token`, `widget
 
 | Prefix | Entity type | Owning service |
 |---|---|---|
+| `rep_` | `repo` | `repos` |
 | `tok_` | `token` | `auth` |
 | `wgt_` | `widget` | `dummy` |
 
