@@ -1,7 +1,6 @@
 package smarthttp_test
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -40,15 +39,79 @@ type streamHTTP struct {
 	done      chan string
 	cancels   chan context.CancelFunc
 	transport *http.Transport
+	received  atomic.Int64
 }
 
 type smallListener struct{ net.Listener }
+
+type streamObservedConn struct {
+	net.Conn
+	received *atomic.Int64
+}
+
+func (c streamObservedConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	c.received.Add(int64(n))
+	return n, err
+}
 
 type streamServerOption struct {
 	closeGate <-chan struct{}
 	context   func(context.Context) context.Context
 	header    func(int)
+	hold      *streamHoldObserver
 }
+
+type streamHoldObserver struct {
+	eof, early atomic.Bool
+	t          *testing.T
+	trace      string
+}
+
+type streamHeldBody struct {
+	io.ReadCloser
+	hold *streamHoldObserver
+}
+
+func (b streamHeldBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF {
+		b.hold.eof.Store(true)
+	}
+	return n, err
+}
+
+type streamHeldWriter struct {
+	http.ResponseWriter
+	hold *streamHoldObserver
+}
+
+func (w streamHeldWriter) observe() {
+	if !w.hold.eof.Load() {
+		events := streamTrace(w.hold.t, w.hold.trace)
+		_, exited := streamExit(events, streamBackend(w.hold.t, events))
+		if !exited {
+			w.hold.early.Store(true)
+		}
+	}
+}
+
+func (w streamHeldWriter) WriteHeader(status int) {
+	w.observe()
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w streamHeldWriter) Write(p []byte) (int, error) {
+	w.observe()
+	return w.ResponseWriter.Write(p)
+}
+
+func (w streamHeldWriter) FlushError() error {
+	w.observe()
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w streamHeldWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 type streamResponseObserver struct {
 	http.ResponseWriter
@@ -100,6 +163,10 @@ func streamServer(f *fixture, small bool, options ...streamServerOption) *stream
 		defer func() { x.done <- r.Header.Get("X-Request-Id") }()
 		x.cancels <- cancel
 		if len(options) != 0 {
+			if options[0].hold != nil {
+				r.Body = streamHeldBody{r.Body, options[0].hold}
+				w = streamHeldWriter{w, options[0].hold}
+			}
 			if options[0].closeGate != nil && r.Header.Get("X-Request-Id") == "first" {
 				r.Body = streamCloseGate{r.Body, options[0].closeGate, ctx}
 			}
@@ -127,7 +194,10 @@ func streamServer(f *fixture, small bool, options ...streamServerOption) *stream
 				}
 			}
 		}
-		return c, err
+		if err != nil {
+			return nil, err
+		}
+		return streamObservedConn{c, &x.received}, nil
 	}}
 	f.t.Cleanup(func() { x.transport.CloseIdleConnections(); x.server.Close() })
 	return x
@@ -187,6 +257,18 @@ func streamBody(t *testing.T, response *http.Response) []byte {
 	return b
 }
 
+func streamAborted(t *testing.T, reply <-chan streamReply) {
+	t.Helper()
+	r := streamTake(t, reply)
+	if r.err != nil {
+		return
+	}
+	defer func() { _ = r.response.Body.Close() }()
+	if _, err := io.ReadAll(r.response.Body); err == nil || errors.Is(err, io.EOF) {
+		t.Fatalf("aborted response was complete: %v", err)
+	}
+}
+
 func streamPack(f *fixture, work, sha string) []byte {
 	f.t.Helper()
 	cmd := exec.CommandContext(deadline(f.t), f.executable, "pack-objects", "--stdout", "--revs")
@@ -235,11 +317,12 @@ func streamPushed(f *fixture, requestID, id string, want map[string][2]string) {
 }
 
 func TestStreamCompletePushBeforeInputEOF(t *testing.T) {
-	// R-D750-DRE3 R-3QZ3-P5MW
+	// R-2BTM-M9KJ R-D750-DRE3 R-3QZ3-P5MW
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
 	sha := f.commit(work, "open input")
+	trace := streamTraceConfig(f, "complete")
 	x := streamServer(f, false)
 	wr, reply := x.pipe(t, "git-receive-pack", "complete")
 	streamWrite(t, wr, streamPush(zeroSHA, sha, "refs/heads/main", streamPack(f, work, sha)))
@@ -249,6 +332,10 @@ func TestStreamCompletePushBeforeInputEOF(t *testing.T) {
 		t.Fatalf("missing successful ref report: %q", b)
 	}
 	same(t, streamTake(t, x.done), "complete")
+	sid := streamBackend(t, streamTrace(t, trace))
+	code, exited := streamExit(streamTrace(t, trace), sid)
+	same(t, exited, true)
+	same(t, code, 0)
 	same(t, f.refs(repo.ID), "refs/heads/main "+sha+"\n")
 	streamPushed(f, "complete", repo.ID, map[string][2]string{"refs/heads/main": {zeroSHA, sha}})
 	// The writer has remained open through receipt of the whole answer and refs.
@@ -256,28 +343,34 @@ func TestStreamCompletePushBeforeInputEOF(t *testing.T) {
 }
 
 func TestStreamPartialPushHeadersAndRename(t *testing.T) {
-	// R-D8CW-RJ4S R-3TEW-GP4A R-3QZ3-P5MW
+	// R-2BTM-M9KJ R-3TEW-GP4A R-3QZ3-P5MW
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
 	sha := f.commit(work, "renamed in flight")
 	request := streamPush(zeroSHA, sha, "refs/heads/main", streamPack(f, work, sha))
-	x := streamServer(f, false)
+	trace := streamTraceConfig(f, "rename")
+	hold := &streamHoldObserver{t: t, trace: trace}
+	x := streamServer(f, false, streamServerOption{hold: hold})
 	wr, reply := x.pipe(t, "git-receive-pack", "rename")
 	streamWrite(t, wr, request[:len(request)-16])
-	r := streamHeaders(t, reply, "git-receive-pack")
+	streamAwaitChild(t, trace, "receive-pack")
 	same(t, f.refs(repo.ID), "")
+	same(t, x.received.Load(), int64(0))
 	call := f.clock.take(t)
 	same(t, call.duration, time.Duration(f.settings.OperationSeconds)*time.Second)
 	_, err := f.store.Rename(deadline(t), repo.ID, "renamed")
 	must(t, err)
+	same(t, x.received.Load(), int64(0))
 	streamWrite(t, wr, request[len(request)-16:])
 	must(t, wr.Close())
+	r := streamHeaders(t, reply, "git-receive-pack")
 	b := streamBody(t, r)
 	if !bytes.Contains(b, []byte("ok refs/heads/main")) {
 		t.Fatalf("renamed push failed: %q", b)
 	}
 	same(t, streamTake(t, x.done), "rename")
+	same(t, hold.early.Load(), false)
 	same(t, f.refs(repo.ID), "refs/heads/main "+sha+"\n")
 	streamPushed(f, "rename", repo.ID, map[string][2]string{"refs/heads/main": {zeroSHA, sha}})
 	for _, e := range f.events() {
@@ -285,6 +378,86 @@ func TestStreamPartialPushHeadersAndRename(t *testing.T) {
 			same(t, e.Attrs["repo"], repo.ID)
 		}
 	}
+}
+
+func TestStreamFetchHoldsResponseUntilInputEOF(t *testing.T) {
+	// R-2BTM-M9KJ
+	f := setup(t)
+	repo := f.create("notes")
+	work := f.working("source")
+	sha := f.commit(work, "held fetch")
+	f.gitRun(work, "push", f.store.Dir(repo.ID), "main")
+	trace := streamTraceConfig(f, "held-fetch")
+	hold := &streamHoldObserver{t: t, trace: trace}
+	x := streamServer(f, false, streamServerOption{hold: hold})
+	wr, reply := x.pipe(t, "git-upload-pack", "held-fetch")
+	streamWrite(t, wr, []byte(packet("want "+sha+" side-band-64k ofs-delta no-progress\n")+"0000"+packet("done\n")))
+	streamAwaitChild(t, trace, "upload-pack")
+	same(t, f.refs(repo.ID), "refs/heads/main "+sha+"\n")
+	same(t, x.received.Load(), int64(0))
+	must(t, wr.Close())
+	body := streamBody(t, streamHeaders(t, reply, "git-upload-pack"))
+	pack := streamSideband(t, body)
+	received := f.working("received")
+	cmd := exec.CommandContext(deadline(t), f.executable, "index-pack", "--stdin")
+	cmd.Dir, cmd.Env, cmd.Stdin = received, append([]string(nil), f.env...), bytes.NewReader(pack)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("received fetch is incomplete: %v: %s", err, output)
+	}
+	f.gitRun(received, "cat-file", "-e", sha)
+	same(t, streamTake(t, x.done), "held-fetch")
+	same(t, hold.early.Load(), false)
+}
+
+func TestStreamPushReleasesFullOutputBufferBeforeInputEOF(t *testing.T) {
+	// R-2FHB-RKSM R-2BTM-M9KJ
+	f := setup(t)
+	repo := f.create("notes")
+	work := f.working("source")
+	sha := f.commit(work, "bounded report")
+	f.gitRun("", "config", "--file", filepath.Join(f.root, "global"), "receive.keepAlive", "0")
+	trace := streamTraceConfig(f, "bounded-report")
+	var commands, report strings.Builder
+	report.WriteString(packet("unpack ok\n"))
+	const refs = 8000
+	for i := range refs {
+		ref := fmt.Sprintf("refs/heads/branch-%05d-with-long-fixture-name", i)
+		line := zeroSHA + " " + sha + " " + ref
+		if i == 0 {
+			line += "\x00report-status quiet"
+		}
+		commands.WriteString(packet(line + "\n"))
+		report.WriteString(packet("ok " + ref + "\n"))
+	}
+	commands.WriteString("0000")
+	report.WriteString("0000")
+	x := streamServer(f, true)
+	wr, reply := x.pipe(t, "git-receive-pack", "bounded-report")
+	streamWrite(t, wr, append([]byte(commands.String()), streamPack(f, work, sha)...))
+	r := streamHeaders(t, reply, "git-receive-pack")
+	first := make([]byte, 16)
+	_, err := io.ReadFull(r.Body, first)
+	must(t, err)
+	same(t, string(first), report.String()[:len(first)])
+	sid := streamBackend(t, streamTrace(t, trace))
+	if _, exited := streamExit(streamTrace(t, trace), sid); exited {
+		t.Fatal("http-backend exited before the client resumed reading its report")
+	}
+	if len(report.String()) <= 2*65536+65536+git.CopyBufferSize {
+		t.Fatal("report does not exceed the socket, pipe and copy buffers")
+	}
+	// Input is still open and git has not exited: only the bounded hold's
+	// release can let these report bytes reach the client.
+	first = append(first, streamBody(t, r)...)
+	body := first
+	same(t, string(body), report.String())
+	must(t, wr.Close())
+	same(t, streamTake(t, x.done), "bounded-report")
+	code, exited := streamExit(streamTrace(t, trace), sid)
+	same(t, exited, true)
+	same(t, code, 0)
+	same(t, len(strings.Split(strings.TrimSpace(f.refs(repo.ID)), "\n")), refs)
 }
 
 func TestStreamPushEventsMatchRefChanges(t *testing.T) {
@@ -384,6 +557,7 @@ func TestStreamClientDisconnectWithOpenInput(t *testing.T) {
 			repo := f.create("notes")
 			work := f.working("source")
 			sha := f.commit(work, "disconnect")
+			trace := streamTraceConfig(f, "disconnect")
 			x := streamServer(f, false)
 			conn, err := net.Dial("tcp", x.server.Listener.Addr().String())
 			must(t, err)
@@ -414,9 +588,7 @@ func TestStreamClientDisconnectWithOpenInput(t *testing.T) {
 			}()
 			streamWrite(t, wr, input)
 			must(t, streamTake(t, written))
-			r, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "POST"})
-			must(t, err)
-			same(t, r.StatusCode, 200)
+			streamAwaitChild(t, trace, strings.TrimPrefix(route, "git-"))
 			f.clock.take(t) // Merely observes the deadline; no timer is fired.
 			must(t, conn.Close())
 			same(t, streamTake(t, x.done), "disconnect")
@@ -439,6 +611,7 @@ func TestStreamDeadlineAndRequestCancellation(t *testing.T) {
 				repo := f.create("notes")
 				work := f.working("source")
 				sha := f.commit(work, "cancelled")
+				trace := streamTraceConfig(f, "cancel")
 				x := streamServer(f, false)
 				wr, reply := x.pipe(t, route, "cancel")
 				input := []byte(packet("want " + sha + " side-band-64k\n"))[:12]
@@ -447,7 +620,7 @@ func TestStreamDeadlineAndRequestCancellation(t *testing.T) {
 					input = full[:len(full)-16]
 				}
 				streamWrite(t, wr, input)
-				r := streamHeaders(t, reply, route)
+				streamAwaitChild(t, trace, strings.TrimPrefix(route, "git-"))
 				timer := f.clock.take(t)
 				cancel := streamTake(t, x.cancels)
 				if cause == "deadline" {
@@ -456,9 +629,6 @@ func TestStreamDeadlineAndRequestCancellation(t *testing.T) {
 					cancel()
 				}
 				same(t, streamTake(t, x.done), "cancel")
-				if _, err := io.ReadAll(r.Body); err == nil || errors.Is(err, io.EOF) {
-					t.Fatalf("aborted response was complete: %v", err)
-				}
 				if cause == "context" {
 					timer.fire <- epoch // A later timeout cannot relabel context cancellation.
 				}
@@ -482,6 +652,7 @@ func TestStreamDeadlineAndRequestCancellation(t *testing.T) {
 				assertIdle(t, f, repo.ID)
 				// Input is closed only after all cancellation observations.
 				must(t, wr.Close())
+				streamAborted(t, reply)
 			})
 		}
 	}
@@ -556,7 +727,7 @@ func TestStreamDeadlineWithOptionalObserverDelay(t *testing.T) {
 	wr, reply := x.pipe(t, "git-receive-pack", "incomplete-deadline")
 	input := streamPush(zeroSHA, sha, "refs/heads/main", streamPack(f, work, sha))
 	streamWrite(t, wr, input[:len(input)-16])
-	r := streamHeaders(t, reply, "git-receive-pack")
+	streamAwaitChild(t, trace, "receive-pack")
 	timer := f.clock.take(t)
 	events := streamTrace(t, trace)
 	sid := streamBackend(t, events)
@@ -565,15 +736,11 @@ func TestStreamDeadlineWithOptionalObserverDelay(t *testing.T) {
 	}
 	same(t, f.refs(repo.ID), "")
 	// A context getter after public headers is an optional scheduling seam.
-	// A handler using an already-derived/cached channel need never call it.
-	// Keep the pack incomplete regardless: an independent observer is free
-	// to handle the timeout promptly while this getter is paused.
+	// With the incomplete pack's headers held, timeout must also work before
+	// that optional seam is ever reached.
 	timer.fire <- epoch
 	gate.release()
 	same(t, streamTake(t, x.done), "incomplete-deadline")
-	if _, err := io.ReadAll(r.Body); err == nil || errors.Is(err, io.EOF) {
-		t.Fatalf("deadline delivered before Git exit returned a complete response: %v", err)
-	}
 	var timedOut []telemetry.Event
 	for _, event := range f.events() {
 		if event.RequestID == "incomplete-deadline" && event.Name == "operation.timed_out" {
@@ -587,6 +754,7 @@ func TestStreamDeadlineWithOptionalObserverDelay(t *testing.T) {
 	streamObjectsAbsent(f, repo.ID, work, sha)
 	assertIdle(t, f, repo.ID)
 	must(t, wr.Close())
+	streamAborted(t, reply)
 }
 
 func streamAwaitNaturalExit(t *testing.T, trace, sid string) {
@@ -667,6 +835,33 @@ func streamTrace(t *testing.T, path string) []map[string]any {
 		}
 	}
 	return events
+}
+
+func streamTraceConfig(f *fixture, name string) string {
+	f.t.Helper()
+	trace := filepath.Join(f.root, name+"-trace.json")
+	f.gitRun("", "config", "--file", filepath.Join(f.root, "global"), "trace2.eventTarget", trace)
+	must(f.t, os.WriteFile(trace, nil, 0600))
+	return trace
+}
+
+func streamAwaitChild(t *testing.T, trace, service string) {
+	t.Helper()
+	ctx := deadline(t)
+	for {
+		for _, event := range streamTrace(t, trace) {
+			argv, _ := event["argv"].([]any)
+			if event["event"] == "child_start" && len(argv) == 4 && argv[0] == "git" && argv[1] == service && argv[2] == "--stateless-rpc" && argv[3] == "." {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("git did not start %s", service)
+		default:
+			runtime.Gosched()
+		}
+	}
 }
 
 func streamBackend(t *testing.T, events []map[string]any) string {
@@ -865,7 +1060,6 @@ func TestStreamPushEventsBeforeLockHandover(t *testing.T) {
 	x := streamServer(f, false, streamServerOption{closeGate: firstClosed})
 	first, firstReply := x.pipe(t, "git-receive-pack", "first")
 	streamWrite(t, first, request[:len(request)-16])
-	firstResponse := streamHeaders(t, firstReply, "git-receive-pack")
 	f.clock.take(t)
 	second, secondReply := x.pipe(t, "git-receive-pack", "second")
 	queue := f.clock.take(t)
@@ -876,6 +1070,7 @@ func TestStreamPushEventsBeforeLockHandover(t *testing.T) {
 	handover.Store(true)
 	streamWrite(t, first, request[len(request)-16:])
 	must(t, first.Close())
+	firstResponse := streamHeaders(t, firstReply, "git-receive-pack")
 	close(firstClosed)
 	streamTake(t, blocked)
 	must(t, f.writer.Flush(deadline(t)))

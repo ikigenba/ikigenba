@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -64,10 +65,11 @@ type serveResponse struct {
 	err     error
 }
 type heldServePush struct {
-	writer  *io.PipeWriter
-	rest    []byte
-	headers chan serveResponse
-	done    chan serveResponse
+	writer *io.PipeWriter
+	rest   []byte
+	done   chan serveResponse
+	trace  string
+	offset int
 }
 
 func startServePush(t *testing.T, f *serveFixture, id string, body []byte, partial bool) *heldServePush {
@@ -78,7 +80,14 @@ func startServePush(t *testing.T, f *serveFixture, id string, body []byte, parti
 func startServePushNamed(t *testing.T, f *serveFixture, name, id string, body []byte, partial bool) *heldServePush {
 	t.Helper()
 	reader, writer := io.Pipe()
-	p := &heldServePush{writer: writer, headers: make(chan serveResponse, 1), done: make(chan serveResponse, 1)}
+	p := &heldServePush{writer: writer, done: make(chan serveResponse, 1), trace: filepath.Join(f.dir, "held-push-trace.json")}
+	if partial {
+		trace, err := os.ReadFile(p.trace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.offset = len(trace)
+	}
 	t.Cleanup(func() { _ = writer.Close(); _ = reader.Close() })
 	req, err := http.NewRequestWithContext(t.Context(), "POST", "http://"+f.listener.Addr().String()+"/"+name+".git/git-receive-pack", reader)
 	if err != nil {
@@ -91,12 +100,10 @@ func startServePushNamed(t *testing.T, f *serveFixture, name, id string, body []
 		resp, err := f.client().Do(req)
 		if err != nil {
 			result := serveResponse{err: err}
-			p.headers <- result
 			p.done <- result
 			return
 		}
 		result := serveResponse{status: resp.StatusCode, headers: resp.Header.Clone()}
-		p.headers <- result
 		result.body, result.err = io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		p.done <- result
@@ -123,6 +130,11 @@ func startServePushNamed(t *testing.T, f *serveFixture, name, id string, body []
 }
 func finishServePush(t *testing.T, p *heldServePush) serveResponse {
 	t.Helper()
+	// An aborted header-held request can leave net/http waiting for its client
+	// body writer; callers have already observed the server outcome at this point.
+	if len(p.rest) != 0 {
+		_ = p.writer.Close()
+	}
 	select {
 	case r := <-p.done:
 		return r
@@ -144,18 +156,45 @@ func takeServeTimer(t *testing.T, f *serveFixture, want time.Duration) serveTime
 		return serveTimer{}
 	}
 }
-func pushServeHeaders(t *testing.T, p *heldServePush) {
+func serveHeldPushTrace(t *testing.T, f *serveFixture) {
 	t.Helper()
-	select {
-	case h := <-p.headers:
-		if h.err != nil {
-			t.Fatal(h.err)
+	trace := filepath.Join(f.dir, "held-push-trace.json")
+	global := filepath.Join(f.dir, "held-push-global")
+	serveGit(t, f, f.dir, nil, "config", "--file", global, "trace2.eventTarget", trace)
+	if err := os.WriteFile(trace, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for i, value := range f.gitEnv {
+		if strings.HasPrefix(value, "GIT_CONFIG_GLOBAL=") {
+			f.gitEnv[i] = "GIT_CONFIG_GLOBAL=" + global
 		}
-		if h.status != 200 {
-			t.Fatalf("push headers %d", h.status)
+	}
+}
+
+func awaitServePushStarted(t *testing.T, p *heldServePush) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	for {
+		trace, err := os.ReadFile(p.trace)
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("git did not begin answering held push")
+		for _, line := range bytes.Split(trace[p.offset:], []byte{'\n'}) {
+			var event struct {
+				Event string
+				Argv  []string
+			}
+			if json.Unmarshal(line, &event) == nil && event.Event == "child_start" && len(event.Argv) == 4 && event.Argv[1] == "receive-pack" && event.Argv[2] == "--stateless-rpc" {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("git did not start the held push")
+		default:
+			runtime.Gosched()
+		}
 	}
 }
 
@@ -284,6 +323,7 @@ func TestServeSelectedGitAndComposedEnvironmentReachChildren(t *testing.T) {
 // R-RAID-H7PG
 func TestServeInjectedQueueAndOperationTimersControlOutcomes(t *testing.T) {
 	f := newServeFixture(t)
+	serveHeldPushTrace(t, f)
 	f.set("QUEUE_SECONDS", "19")
 	f.set("OPERATION_SECONDS", "23")
 	f.start(t)
@@ -293,7 +333,7 @@ func TestServeInjectedQueueAndOperationTimersControlOutcomes(t *testing.T) {
 	body := servePushBody(sha, pack)
 	first := startServePush(t, f, "running", body, true)
 	operation := takeServeTimer(t, f, 23*time.Second)
-	pushServeHeaders(t, first)
+	awaitServePushStarted(t, first)
 	second := startServePush(t, f, "queued", body, false)
 	queue := takeServeTimer(t, f, 19*time.Second)
 	queue.ch <- f.p.Now()

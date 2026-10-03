@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -621,6 +622,19 @@ func TestMutationDeleteBusyFetchAndPushLeaveRealGitRunning(t *testing.T) {
 				request = append([]byte(mutationPacket(strings.Repeat("0", 40)+" "+sha+" refs/heads/main\x00report-status side-band-64k quiet\n")+"0000"), pack...)
 			}
 			ended := make(chan struct{})
+			trace := filepath.Join(t.TempDir(), "busy-git-trace.json")
+			global := filepath.Join(t.TempDir(), "busy-git-global")
+			f.git(t, f.Root, "config", "--file", global, "trace2.eventTarget", trace)
+			toolsMust(t, os.WriteFile(trace, nil, 0600))
+			env := append([]string(nil), f.Env...)
+			for i, value := range env {
+				if strings.HasPrefix(value, "GIT_CONFIG_GLOBAL=") {
+					env[i] = "GIT_CONFIG_GLOBAL=" + global
+				}
+			}
+			g, err := git.Find(filepath.Dir(f.GitPath), func() []string { return append([]string(nil), env...) })
+			toolsMust(t, err)
+			f.Git = g
 			handler := identity.Require(smarthttp.Handler(smarthttp.Config{Store: f.Store, Git: f.Git, Limits: f.Limits, Telemetry: f.Writer}))
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				defer close(ended)
@@ -640,13 +654,9 @@ func TestMutationDeleteBusyFetchAndPushLeaveRealGitRunning(t *testing.T) {
 				replies <- mutationHTTPReply{response, err}
 			}()
 			// A partial pkt-line keeps git waiting on the held request, before a
-			// push can write any object or ref. CGI headers prove git started.
+			// push can write any object or ref. Trace2 proves real git started.
 			mutationPipeWrite(t, writer, request[:12])
-			reply := mutationTake(t, replies)
-			toolsMust(t, reply.err)
-			t.Cleanup(func() { _ = reply.response.Body.Close() })
-			toolsEqual(t, reply.response.StatusCode, http.StatusOK)
-			toolsEqual(t, reply.response.Header.Get("Content-Type"), "application/x-"+route+"-result")
+			mutationAwaitGit(t, trace, strings.TrimPrefix(route, "git-"))
 			toolsEqual(t, f.Limits.Busy(r.ID), true)
 			for _, ref := range []string{r.Name, r.ID} {
 				mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(ref), "repository 'notes' is busy; try again once its git operations finish")
@@ -659,6 +669,11 @@ func TestMutationDeleteBusyFetchAndPushLeaveRealGitRunning(t *testing.T) {
 			}
 			mutationPipeWrite(t, writer, request[12:])
 			toolsMust(t, writer.Close())
+			reply := mutationTake(t, replies)
+			toolsMust(t, reply.err)
+			t.Cleanup(func() { _ = reply.response.Body.Close() })
+			toolsEqual(t, reply.response.StatusCode, http.StatusOK)
+			toolsEqual(t, reply.response.Header.Get("Content-Type"), "application/x-"+route+"-result")
 			body, err := io.ReadAll(reply.response.Body)
 			toolsMust(t, err)
 			toolsMust(t, reply.response.Body.Close())
@@ -675,6 +690,30 @@ func TestMutationDeleteBusyFetchAndPushLeaveRealGitRunning(t *testing.T) {
 			successObject(t, f.call(t, "delete", toolsRepoArgument(r.ID)))
 			mutationHoldReleased(t, f, r.ID)
 		})
+	}
+}
+
+func mutationAwaitGit(t *testing.T, trace, service string) {
+	t.Helper()
+	ctx := toolsContext(t)
+	for {
+		data, err := os.ReadFile(filepath.Clean(trace))
+		toolsMust(t, err)
+		for _, line := range bytes.Split(data, []byte{'\n'}) {
+			var event struct {
+				Event string
+				Argv  []string
+			}
+			if json.Unmarshal(line, &event) == nil && event.Event == "child_start" && len(event.Argv) == 4 && event.Argv[0] == "git" && event.Argv[1] == service && event.Argv[2] == "--stateless-rpc" && event.Argv[3] == "." {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("real git did not start the held operation")
+		default:
+			runtime.Gosched()
+		}
 	}
 }
 

@@ -25,6 +25,7 @@ func TestServeGracefulPushAndImmediateQueuedDrain(t *testing.T) {
 	for _, duration := range []string{"1", "9999999999999999999999999"} {
 		t.Run(duration, func(t *testing.T) {
 			f := newServeFixture(t)
+			serveHeldPushTrace(t, f)
 			f.set("DRAIN_SECONDS", duration)
 			marker := "SERVE_DRAIN_MARKER=" + f.dir
 			f.gitEnv = append(f.gitEnv, marker)
@@ -35,7 +36,7 @@ func TestServeGracefulPushAndImmediateQueuedDrain(t *testing.T) {
 			body := servePushBody(sha, pack)
 			first := startServePush(t, f, "finishing", body, true)
 			takeServeTimer(t, f, 600*time.Second)
-			pushServeHeaders(t, first)
+			awaitServePushStarted(t, first)
 			if len(serveProcesses(t, marker)) == 0 {
 				t.Fatal("held real git not found by test environment marker")
 			}
@@ -183,6 +184,7 @@ func (c *drainConnection) Close() error {
 // R-QC9D-1MWH R-QM0K-3SU1 R-QJKR-C9CN R-QPO9-9424 R-4FLE-JOQW
 func TestServeDeadlineFallbackBeforeClosingAndGitCleanup(t *testing.T) {
 	f := newServeFixture(t)
+	serveHeldPushTrace(t, f)
 	marker := "SERVE_CUT_MARKER=" + f.dir
 	f.gitEnv = append(f.gitEnv, marker)
 	var deliveriesMu sync.Mutex
@@ -238,7 +240,7 @@ func TestServeDeadlineFallbackBeforeClosingAndGitCleanup(t *testing.T) {
 	sha, pack := servePack(t, f)
 	first := startServePush(t, f, "cut-off", servePushBody(sha, pack), true)
 	takeServeTimer(t, f, 600*time.Second)
-	pushServeHeaders(t, first)
+	awaitServePushStarted(t, first)
 	if len(serveProcesses(t, marker)) == 0 {
 		t.Fatal("held git process not observed")
 	}
@@ -369,6 +371,7 @@ func TestServeNoNotifyStaysAliveAndFinishesWithoutDeadlineWait(t *testing.T) {
 // R-QC9D-1MWH R-4FLE-JOQW
 func TestServeDeadlineCountsEachUnfinishedRequest(t *testing.T) {
 	f := newServeFixture(t)
+	serveHeldPushTrace(t, f)
 	marker := "SERVE_MANY_MARKER=" + f.dir
 	f.gitEnv = append(f.gitEnv, marker)
 	f.start(t)
@@ -381,7 +384,7 @@ func TestServeDeadlineCountsEachUnfinishedRequest(t *testing.T) {
 	for _, name := range []string{"alpha", "beta"} {
 		push := startServePushNamed(t, f, name, "held-"+name, body, true)
 		takeServeTimer(t, f, 600*time.Second)
-		pushServeHeaders(t, push)
+		awaitServePushStarted(t, push)
 		pushes = append(pushes, push)
 	}
 	cancelled := time.Now()

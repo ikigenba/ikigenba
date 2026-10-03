@@ -89,6 +89,7 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	var mu sync.Mutex
 	ended, interrupted, timedOut := false, false, false
 	bodyDone := make(chan struct{})
+	bodyWritten := make(chan struct{})
 	processDone := make(chan struct{})
 	watchDone := make(chan struct{})
 	interrupt := func(timeout bool) {
@@ -114,8 +115,6 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	case <-requestDone:
 		interrupt(false)
 	case <-deadline:
-		w.WriteHeader(http.StatusOK)
-		_ = rc.Flush()
 		interrupt(true)
 	default:
 	}
@@ -164,8 +163,11 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	if feed {
 		go func() {
 			defer close(bodyDone)
-			_, _ = io.CopyBuffer(inWrite, r.Body, make([]byte, git.CopyBufferSize))
+			_, err := io.CopyBuffer(inWrite, r.Body, make([]byte, git.CopyBufferSize))
 			_ = inWrite.Close()
+			if err == nil {
+				close(bodyWritten)
+			}
 		}()
 	} else {
 		close(bodyDone)
@@ -174,7 +176,14 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	var counter wireCounter
 	var copyErr error
 	var unwritten bool
+	var pending <-chan outputRead
 	if headerErr == nil {
+		buffer := make([]byte, git.CopyBufferSize)
+		var held int
+		var readErr error
+		if r.Method == http.MethodPost {
+			held, pending, readErr = holdOutput(body, buffer, bodyWritten, waitResult)
+		}
 		for name, values := range header {
 			for _, value := range values {
 				w.Header().Add(name, value)
@@ -183,7 +192,9 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 		w.WriteHeader(status)
 		copyErr = rc.Flush()
 		if copyErr == nil {
-			unwritten, copyErr = relay(w, rc, body, &counter)
+			unwritten, copyErr = relay(w, rc, body, &counter, buffer, held, &pending, readErr)
+		} else if held != 0 || pending != nil {
+			unwritten = true
 		}
 	}
 	if headerErr != nil || copyErr != nil {
@@ -191,6 +202,10 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	}
 	<-processDone
 	<-watchDone
+	if pending != nil {
+		read := <-pending
+		unwritten = unwritten || read.n != 0
+	}
 	// Deadline wakes an HTTP body read. Direct handler callers' bodies must
 	// also be closed, since their reads have no connection deadline.
 	_ = r.Body.Close()
@@ -228,10 +243,47 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	}
 }
 
-func relay(w http.ResponseWriter, rc *http.ResponseController, body io.Reader, counter *wireCounter) (unwritten bool, err error) {
-	buffer := make([]byte, git.CopyBufferSize)
+type outputRead struct {
+	n   int
+	err error
+}
+
+// Only one read is in flight, into the unused suffix of the same buffer the
+// relay later writes. A release may happen while that read waits for git;
+// already-held bytes can then be sent without waiting for another output byte.
+func holdOutput(body io.Reader, buffer []byte, bodyWritten, processDone <-chan struct{}) (held int, pending <-chan outputRead, err error) {
+	for held < len(buffer) {
+		select {
+		case <-bodyWritten:
+			return held, nil, nil
+		case <-processDone:
+			return held, nil, nil
+		default:
+		}
+		result := make(chan outputRead, 1)
+		remaining := buffer[held:]
+		go func() {
+			n, err := body.Read(remaining)
+			result <- outputRead{n, err}
+		}()
+		select {
+		case read := <-result:
+			held += read.n
+			if read.err != nil {
+				return held, nil, read.err
+			}
+		case <-bodyWritten:
+			return held, result, nil
+		case <-processDone:
+			return held, result, nil
+		}
+	}
+	return held, nil, nil
+}
+
+func relay(w http.ResponseWriter, rc *http.ResponseController, body io.Reader, counter *wireCounter, buffer []byte, held int, pending *<-chan outputRead, readErr error) (unwritten bool, err error) {
+	n := held
 	for {
-		n, err := body.Read(buffer)
 		if n > 0 {
 			written, writeErr := w.Write(buffer[:n])
 			counter.observe(buffer[:written])
@@ -248,11 +300,18 @@ func relay(w http.ResponseWriter, rc *http.ResponseController, body io.Reader, c
 				return false, flushErr
 			}
 		}
-		if err == io.EOF {
+		if readErr == io.EOF {
 			return false, nil
 		}
-		if err != nil {
-			return false, err
+		if readErr != nil {
+			return false, readErr
+		}
+		if *pending != nil {
+			read := <-*pending
+			*pending = nil
+			n, readErr = copy(buffer, buffer[held:held+read.n]), read.err
+		} else {
+			n, readErr = body.Read(buffer)
 		}
 	}
 }
