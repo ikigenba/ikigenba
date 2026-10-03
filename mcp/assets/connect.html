@@ -1,14 +1,17 @@
 {{/* The connect page at GET /: how to point an MCP client at the gateway.
      Data: .Banner (a page.Banner, for banner and footer); .Endpoint (the
      unscoped URL, <scheme>://<Host>/mcp); .Banner.ProfileURL (auth's profile
-     page, where API tokens are made); .Services, in name order, each with
-     .Name, .Description, .URL (its scoped endpoint, <endpoint>/<name>),
-     .Available (bool) and .Reason ("disabled", set only
-     when unavailable). Hooks: code#endpoint; a#profile-link; table#mcp-services
+     page, where API tokens are made); .GitScope (<scheme>://*.<space>,
+     the Host with one leading "mcp." dropped and its port kept);
+     .Services, in name order, each with .Name, .Description, .URL (its
+     scoped endpoint, <endpoint>/<name>), .Available (bool) and .Reason
+     ("disabled", set only when unavailable). Hooks: code#endpoint; a#profile-link; table#mcp-services
      with one tr[data-service=<name>][data-available=true|false] per service,
      whose td code holds .URL and whose span.badge holds "available" or the
      reason, with data-reason=<reason> when unavailable; p#no-services when
-     .Services is empty, in place of the table. No script. */}}
+     .Services is empty, in place of the table; after the services, an h2
+     "Git" and code#git-helper holding the git credential-helper command
+     scoped to .GitScope. No script. */}}
 {{define "connect"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>mcp</title></head>
@@ -29,6 +32,12 @@
 </tbody>
 </table>
 </div>{{else}}<div class="empty"><p id="no-services">No MCP services are installed.</p></div>{{end}}
+</section>
+<section>
+<div class="section-head"><div><h2>Git</h2><p>The same token works for git over HTTPS. Keep it in the environment variable <code>IKIGENBA_TOKEN</code> and give it to git with this credential helper, which reads the variable whenever git asks:</p></div></div>
+<pre><code id="git-helper">git config --global credential.{{.GitScope}}.helper '!f() { test "$1" = get &amp;&amp; printf "username=token\npassword=%s\n" "$IKIGENBA_TOKEN"; }; f'</code></pre>
+<p>Or set <code>GIT_ASKPASS</code> to a program that prints <code>$IKIGENBA_TOKEN</code>.</p>
+<p>Never put the token in a remote's URL, and never use <code>credential.helper store</code>: both write it to disk in plain text.</p>
 </section>
 </main>
 {{template "footer" .Banner}}
