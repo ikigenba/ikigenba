@@ -46,8 +46,11 @@ it existed.
 The `file` step parses the manifest with D08's `ParseManifest`, so every
 manifest rule D08 states is an install refusal before anything is written: a
 `port`, a `description` that is not one line of text, an `mcp = true` whose
-`description` is empty, or a `description` or `mcp` of the wrong type each
-fail the step as `<file>: etc/manifest.toml: <reason>` with exit 2.
+`description` is empty, or a `description`, `mcp`, or `guests` of the wrong
+type each fail the step as `<file>: etc/manifest.toml: <reason>` with exit 2.
+`guests` itself appears on no install line; it reaches the host only through
+the nginx configuration the `nginx` step regenerates (D06), so a reinstall
+that changes only `guests` reports `services: ok (unchanged)` (D15).
 
 A package that ships `share/icon.svg` puts its app in the service launcher.
 The `file` step checks the icon with D08's `CheckIcon` before anything is
