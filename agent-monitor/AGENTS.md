@@ -1,107 +1,50 @@
 # agent-monitor
 
-A local development tool: a Go binary run on a developer's own Linux machine,
-as that developer, to observe the coding agents working on it (Claude Code,
-Codex, and Grok). It reads the logs
-those agents keep under the developer's home directory and the process facts
-in `/proc`, and never writes to either. It is never deployed to a host.
-Module path `github.com/ikigenba/ikigenba/agent-monitor`.
+agent-monitor watches the coding agents running on the developer's machine. Nothing depends on it. It is a Go binary run on a developer's own Linux machine, as that developer, to observe Claude Code, Codex and Grok at work: it reads the logs those agents keep under the developer's home directory and the process facts in `/proc`, and never writes to either. It is never deployed to a host. The module path is `github.com/ikigenba/ikigenba/agent-monitor`. The contract is `specs/design/`; this file restates none of it.
 
-This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run brings `cmd/`, `internal/`, and `go.mod` into agreement with that
-target. See the `spec` and `build-spec` skills. Everything below is what the
-build run computes the gap and runs the gates against; it is human-authored
-and read-only to the run.
+## Layout
+
+- `specs/` is the contract: `stories/` and `design/`.
+- `cmd/agent-monitor` is the binary. `internal/` is everything else, one package per concern.
+- The build run writes `cmd/`, `internal/` and `go.mod`. `Makefile`, `.golangci.yml`, `install.sh`, `.goreleaser.yaml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Toolchain
 
-- Linux (the program reads `/proc`)
-- Go 1.26 (`go version` must report 1.26+)
-- a C compiler `cgo` can use (`gcc`, say): without one, gate 3 fails with
-  `go: -race requires cgo`
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- Linux: the program reads `/proc`.
+- Go 1.26 or later.
+- A C compiler cgo can use, such as `gcc`: `go test -race` needs it (gate 3).
+- `golangci-lint` v2, configured by `.golangci.yml` here.
+- Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires nothing today.
 
 ## Test files
 
-The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
-This is the file set the canonical gap greps for requirement ids:
+The test files are every `*_test.go` under `cmd/` and `internal/`. The canonical gap greps them for ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort -u
 ```
 
-**No id-shaped literal in a fixture.** agent-monitor echoes arguments, ids,
-paths, and transcript text back unchanged in shape, so a test that feeds in a
-string matching the pattern lands a literal the grep counts as a covered id.
-No test argument, expected output, fixture name, or fixture content carries
-one.
+**No id-shaped literal in a fixture.** The grep cannot tell a requirement tag from any other string of that shape, and agent-monitor echoes arguments, ids, paths and transcript text back unchanged in shape, so no test argument, expected output, fixture name or fixture content carries one.
 
 ## Test discipline
 
-These rules govern the unit tests: everything `go test ./...` runs. Live
-tests follow Live tests below.
+These rules govern everything `go test ./...` runs. Tests are offline (loopback only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state.
 
-- Offline: no network beyond loopback, no real credentials.
-- Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
-- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
-  temporary directory.
-- Isolated: a test touches only its own temporary directory, never the
-  developer's home, config, or real state.
-
-**No real machine in the gates.** The machine reaches the program only through
-the run seam the design defines: tests drive it with buffers, injected
-writers, a `testing/fstest.MapFS` root, and a fixture home, and fake faults
-with wrapper filesystems over that `MapFS`. No test reads the real filesystem,
-`/proc`, `HOME`, environment, or streams, and none sleeps. No test starts a
-process or reads a file of the checkout: a test proves the design by using
-what it declares (importing, calling, constructing, driving `Run`), never by
-reading the module's source, layout, or `go.mod`. The gates run offline as an
-ordinary user.
+**No real machine in the gates.** The machine reaches the program only through the run seam design defines: tests drive it with buffers, injected writers, a `testing/fstest.MapFS` root and a fixture home, and fake faults with wrapper filesystems over that `MapFS`. No test reads the real filesystem, `/proc`, `HOME`, environment or streams. No test starts a process or reads a file of the checkout: it proves what design declares by using it (importing, calling, constructing, driving `Run`), never by reading the module's source, layout or `go.mod`. The gates run offline as an ordinary user.
 
 ## Live tests
 
-Live tests are the only tests that connect to external services. Every other
-test is a unit test and follows Test discipline.
-
-- Minimal: a live test proves lightly that the whole application or library
-  is glued together and works end to end, about one per external service,
-  never an exhaustive suite. Behavior, edge cases, and error paths are the
-  unit tests' job.
-- Separate: live tests are `*_live_test.go` files guarded by
-  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
-  never runs them; `make live` runs
-  `go test -tags live -count=1 -run '^TestLive' ./...`.
-- Designed: a live test carries the requirement id it proves, and the gap
-  counts it like any other test.
-- Local: the code under test runs on the developer's machine; only the
-  external service is real.
-- Credentials: a live test reads its credentials from the environment. It
-  never skips: a missing credential fails it. No credential appears in the
-  repo or in test output.
-- Run: live tests run only as the conditional `make live` gate below.
+Live tests are the only tests that reach an external service; every other test follows Test discipline. A live test is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions, which `go test ./...` never runs; `make live` runs `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together end to end, about one per external service, and leaves behavior, edge cases and error paths to the unit tests. It carries the id it proves and the gap counts it like any other test. The code under test runs on the developer's machine; only the external service is real. It reads its credentials from the environment and fails rather than skips when one is missing; no credential appears in the repo or in test output. It runs only as gate 5.
 
 ## Gates
 
-Run from this directory (`agent-monitor/`), in order; every command must exit
-0. No skipped tests, no disabled linters laundering a failure.
+Run from `agent-monitor/`, in order; every command must exit 0. No skipped tests and no disabled linters.
 
-1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (`go fmt`
-   itself always exits 0, so the check form is the gate; fix with `make fmt`)
+1. `test -z "$(gofmt -l .)"` (fix with `make fmt`; `go fmt` itself always exits 0, so the check form is the gate)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
-   — the cache lives in this worktree's git directory, so worktrees never
-   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
-   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
-   this form; since the cache is private, `--allow-parallel-runners` skips
-   golangci-lint's machine-wide lock so gates for several sub-projects can lint
-   at once)
-5. `make live` — **conditional**: run only when the phase's diff (the working
-   tree against the last phase commit) adds or modifies a `*_live_test.go`
-   file; otherwise it is not run and not counted. When it applies and a
-   credential is absent, that is a missing tool: file an issue, do not pass or
-   skip.
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and stops applying `//nolint` and `.golangci.yml` suppressions), and parallel runners skip golangci-lint's machine-wide lock so several sub-projects can lint at once (`make lint` runs this form)
+5. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.
 
 ## Commit conventions
 
@@ -113,33 +56,19 @@ Run from this directory (`agent-monitor/`), in order; every command must exit
 Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 ```
 
-The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id.
+The `Requirements:` trailer lists the phase's ids so history stays greppable by id.
 
-## Deploy
+## Build
 
-Deploy machinery — the version bump, tags, the `Makefile`, `install.sh`,
-`.goreleaser.yaml`, and `.github/workflows/release-agent-monitor.yml` (repo
-root) — is hand-maintained infrastructure outside the spec system: the build
-run never reads, edits, or tests it.
+`make build` (the default) builds the binary; `make fmt` formats; `make test` and `make lint` run those gates; `make install` runs `go install ./cmd/agent-monitor`.
 
-1. Set the version in `internal/cli/version.go` (D03) to `vX.Y.Z`. It is a
-   source literal the binary reports verbatim, and the deploy refuses a tag
-   that does not match what the built binary's `--version` prints.
-2. Commit that on `main` and push `main`.
-3. Tag that commit `agent-monitor/vX.Y.Z` and push the tag.
-   `.github/workflows/release-agent-monitor.yml` builds with GoReleaser and
-   publishes linux amd64/arm64 archives and checksums. A tag with a prerelease
-   part (`agent-monitor/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
-4. Wait for the workflow to publish the release (`gh release view
-   agent-monitor/vX.Y.Z` succeeds), then install it on the developer's machine
-   from this directory. A release is not done until this step is:
+## Releasing
 
-   ```
-   AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh
-   ```
+Release machinery, the version bump, tags, `install.sh`, `.goreleaser.yaml` and `.github/workflows/release-agent-monitor.yml` at the repo root, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
 
-   The installer puts the binary in `~/.local/bin`. Plain `sh install.sh`
-   installs the newest stable release.
+1. Set the version in `internal/cli/version.go` (D03) to `vX.Y.Z`. It is a source literal the binary reports verbatim, and the release refuses a tag that does not match what the built binary's `--version` prints.
+2. Commit on `main` and push `main`.
+3. Tag the commit `agent-monitor/vX.Y.Z` and push the tag. The workflow builds with GoReleaser and publishes linux amd64 and arm64 archives and checksums; a tag with a prerelease part (`agent-monitor/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
+4. Wait for the release (`gh release view agent-monitor/vX.Y.Z` succeeds), then install it on the developer's machine from this directory with `AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh`, which puts the binary in `~/.local/bin`. A release is not done until this step is. Plain `sh install.sh` installs the newest stable release.
 
 `agent-monitor --version` then prints `vX.Y.Z`.

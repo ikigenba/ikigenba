@@ -1,121 +1,64 @@
 # agentkit
 
-A Go library that talks to LLM chat/completions APIs and runs an agentic tool
-loop. It decomposes the old "provider" axis into three orthogonal pieces — a
-built-in wire codec, an opaque `Endpoint` (base URL plus auth), and a free-form `Model` string —
-so a new vendor or a day-one model needs no library release. Module path
-`github.com/ikigenba/ikigenba/agentkit`.
+agentkit is a Go library over LLM chat APIs with an agentic tool loop. A vendor is three orthogonal pieces, a built-in wire codec, an opaque `Endpoint` (base URL plus auth) and a free-form `Model` string, so a new vendor or a day-one model needs no library release. The module path is `github.com/ikigenba/ikigenba/agentkit`. The contract is `specs/design/`; this file restates none of it.
 
-This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the code (the root package, `retry/`, and `go.mod`'s
-dependency graph fill in as it does). See the `spec` and
-`build-spec` skills. Everything below
-is what the build run computes the gap and runs the gates against; it is
-human-authored and read-only to the run.
+## Layout
+
+- `specs/` is the contract: `design/`, and `_data/` (see Static data).
+- The module root is the `agentkit` package; `retry/` is its one subpackage.
+- `testdata/` holds the tests' own fixtures: request, schema and SSE files per wire.
+- `docs/` holds probe notes; nothing reads them.
+- The build run writes the Go source, the tests and `go.mod`. `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Static data
 
-`specs/_data/catalog_table.go` is the user-authorized authoritative project
-ground for versioned catalog records. The design contract projects this data
-without repeating release values in requirements, tests, or fixtures; the
-build run installs it verbatim as the root package's `catalog_table.go`.
+`specs/_data/catalog_table.go` is the authoritative source of the versioned catalog records. Design projects this data without repeating release values in requirements, tests or fixtures, and the build run installs it verbatim as the root package's `catalog_table.go`.
 
 ## Toolchain
 
-- Go 1.26 (`go version` must report 1.26+)
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- GNU Make 4.4.1
-- For the conditional live gate (below): `ANTHROPIC_API_KEY`,
-  `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, and `OPENROUTER_API_KEY`
-  in the environment; and OAuth token files at
-  `~/.agentkit/openai-auth.json` and `~/.agentkit/x-ai-auth.json` written by
-  the `oauth` CLI. Judge a credential present or absent by running `make live`
-  as written, never by inspecting the environment: a missing credential fails
-  the subtest that needs it with a message naming it.
+- Go 1.26 or later.
+- `golangci-lint` v2, configured by `.golangci.yml` here.
+- GNU Make 4.4.1.
+- For the conditional live gate: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY` and `OPENROUTER_API_KEY` in the environment, and OAuth token files at `~/.agentkit/openai-auth.json` and `~/.agentkit/x-ai-auth.json` written by the `oauth` CLI. Judge a credential present or absent by running `make live` as written, never by inspecting the environment: a missing credential fails the subtest that needs it with a message naming it.
+
+Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires nothing today.
 
 ## Test files
 
-The sub-project's spec tests are all `*_test.go` files under this module,
-live tests included. This is the file set the canonical gap greps for
-requirement ids:
+The test files are every `*_test.go` in the module, live tests included. The canonical gap greps them for ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-A golden SSE fixture lives under `testdata/` and carries no id-shaped literal
-that is not a genuine requirement-id tag.
+The fixtures under `testdata/` carry no id-shaped literal that is not a genuine requirement tag.
 
 ## Test discipline
 
-These rules govern the unit tests: everything `go test ./...` runs. Live
-tests follow Live tests below.
+These rules govern everything `go test ./...` runs; live tests follow Live tests below. Tests are offline (loopback only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state.
 
-- Offline: no network beyond loopback, no real credentials.
-- Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
-- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
-  temporary directory.
-- Isolated: a test touches only its own temporary directory, never the
-  developer's home, config, or real state.
-- Proof by use: a test reads no checkout file — never the module's source,
-  layout, `go.mod`/`go.sum`, or `specs/`; the only files a test reads are its
-  own fixtures under `testdata/`. Running a documented `make` target and
-  observing its outcome is use, not reading. A test never runs the Go
-  toolchain (`go build`, `go list`, `go vet`, `go test`) and never builds a
-  separate consumer module; consumer use is proved by an external
-  `package agentkit_test` test that imports and calls agentkit. A test never
-  asserts that a name is absent or that a type cannot be implemented.
+**Proof by use.** A test reads no checkout file: not the module's source, layout, `go.mod`, `go.sum` or `specs/`. The only files it reads are its own fixtures under `testdata/`. Running a documented `make` target and observing its outcome is use, not reading. A test never runs the Go toolchain (`go build`, `go list`, `go vet`, `go test`) and never builds a separate consumer module; consumer use is proved by an external `package agentkit_test` test that imports and calls agentkit. A test never asserts that a name is absent or that a type cannot be implemented.
 
 ## Live tests
 
-Live tests are the only tests that connect to external services. Every other
-test is a unit test and follows Test discipline.
+Live tests are the only tests that reach an external service; every other test follows Test discipline.
 
-- Minimal: a live test proves lightly that the whole application or library
-  is glued together and works end to end, about one per external service,
-  never an exhaustive suite. Behavior, edge cases, and error paths are the
-  unit tests' job.
-- Separate: live tests are `*_live_test.go` files guarded by
-  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
-  never runs them; `make live` runs
-  `go test -tags live -count=1 -run '^TestLive' ./...`.
-- Designed: a live test carries the requirement id it proves, and the gap
-  counts it like any other test.
-- Local: the code under test runs on the developer's machine; only the
-  external service is real.
-- Credentials: a live test reads its credentials from the environment. It
-  never skips: a missing credential fails it. No credential appears in the
-  repo or in test output.
-- Run: live tests run only as the conditional `make live` gate below.
+- Minimal: a live test proves lightly that the whole is glued together end to end, about one per external service. Behavior, edge cases and error paths are the unit tests' job.
+- Separate: live tests are `*_live_test.go` files behind `//go:build live`, with `TestLive*` functions. `go test ./...` never runs them; `make live` runs `go test -tags live -count=1 -run '^TestLive' ./...` with the OAuth file variables set.
+- Designed: a live test carries the id it proves, and the gap counts it like any other test.
+- Local: the code under test runs on the developer's machine; only the external service is real.
+- Credentials: read from the environment. A missing one fails the test, never skips it. No credential appears in the repository or in test output.
+- Run only as the conditional `make live` gate below.
 
 ## Gates
 
-Run from this directory (`agentkit/`), in order; every command must exit 0. No
-skipped tests, no disabled linters laundering a failure.
+Run from `agentkit/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding `//nolint` is a disabled linter the run never adds; a finding that cannot be fixed below the contract seam without changing an exported name, signature or observable behavior, or that is wrong, is filed as an issue under `specs/issues/` for a human to adjudicate.
 
-1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (`go fmt`
-   itself always exits 0, so the check form is the gate; fix with `make fmt`)
+1. `test -z "$(gofmt -l .)"` (`go fmt` always exits 0, so the check form is the gate; fix with `make fmt`)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
-   — the cache lives in this worktree's git directory, so worktrees never
-   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
-   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
-   this form; since the cache is private, `--allow-parallel-runners` skips
-   golangci-lint's machine-wide lock so gates for several sub-projects can lint
-   at once)
-5. `make live` — **conditional**: run only when the phase's diff (the working
-   tree against the last phase commit) adds or modifies a `*_live_test.go`
-   file; otherwise it is not run and not counted. When it applies and a
-   credential is absent, that is a missing tool: file an issue, do not pass or
-   skip.
-
-A per-finding `//nolint` comment counts as a disabled linter. Never add one
-to make a gate pass. A finding that cannot be fixed below the contract
-seam without changing an exported name, signature, or observable behavior, or
-that is wrong, is filed as an issue under `specs/issues/` so a human can
-adjudicate — restructure the code or amend the design.
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and stops applying suppressions), and since the cache is private `--allow-parallel-runners` lets several sub-projects lint at once (`make lint` runs this form)
+5. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.
 
 ## Commit conventions
 
@@ -127,20 +70,14 @@ adjudicate — restructure the code or amend the design.
 Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 ```
 
-The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id.
+The `Requirements:` trailer lists the phase's ids so history stays greppable by id.
+
+## Build
+
+`make build` runs `go build ./...`; `make fmt` formats; `make test` and `make lint` run those gates; `make install` runs `go install ./...`. The gates themselves call the Go tool directly.
 
 ## Releasing
 
-Release machinery — the tags — is hand-maintained infrastructure outside the
-spec system: the build run never reads, edits, or tests it.
+Release machinery, the tags, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
 
-agentkit is a library consumed by module path; there is no binary to ship. The
-spec fixes its shape, never its version number.
-
-1. Tag a green `main` `agentkit/vX.Y.Z` and push the tag.
-2. A consumer pins it with an ordinary `require
-   github.com/ikigenba/ikigenba/agentkit vX.Y.Z` in its own `go.mod`.
-
-The latest release is
-`git tag --list 'agentkit/v*' --sort=-v:refname | head -1`.
+agentkit is a library consumed by module path; there is no binary to ship, and the spec fixes its shape, never its version number. Tag a green `main` `agentkit/vX.Y.Z` and push the tag; a consumer pins it with an ordinary `require github.com/ikigenba/ikigenba/agentkit vX.Y.Z` in its own `go.mod`. The latest release is `git tag --list 'agentkit/v*' --sort=-v:refname | head -1`.

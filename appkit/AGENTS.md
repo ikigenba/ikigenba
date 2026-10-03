@@ -1,113 +1,67 @@
 # appkit
 
-The shared Go library of the Ikigenba services: any functionality that more
-than one service needs lives here, one concern per package, and no package is
-privileged; the module root holds no exported name. Module path
-`github.com/ikigenba/ikigenba/appkit`. The packages:
+appkit holds what every app shares: page chrome, identity, the MCP server and client, and telemetry. It is a Go library, module path `github.com/ikigenba/ikigenba/appkit`, with one concern per package and no package privileged; the module root exports nothing. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
 
-- `page` — the page chrome every app shows a signed-in user: the banner,
-  launcher, and footer templates, and the shared stylesheet, fonts, and
-  launcher script served from one fixed path prefix.
-- `services` — the one reader of the host's services file
-  (`IKIGENBA_SERVICES`, owned by opsctl).
-- `identity` — the caller nginx authenticated (`X-User-Id`, `X-User-Email`,
-  `X-Request-Id`): the middleware that requires it, and forwarding it on a
-  call to a sibling service.
-- `mcp` — the Model Context Protocol: the server a service mounts at `/mcp`
-  with its tools, and the client the gateway and service tests use.
-- `telemetry` — the suite's event trail: the event contract, the writer
-  that queues and delivers a service's events, its sinks, the wire to the
-  telemetry service, and the request middleware and sibling client that
-  record every request and sibling call.
+## Layout
 
-appkit knows nothing about authentication: nginx and auth establish who the
-caller is, and appkit only carries it.
-
-This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the Go source and tests. See the `spec` and `build-spec`
-skills. Everything below is what the build run computes the gap and runs the
-gates against; it is human-authored and read-only to the run.
+- `specs/` is the contract: `design/`.
+- `page` is the chrome every app shows a signed-in user: the banner, launcher and footer templates, and the shared stylesheet, fonts and launcher script served from one fixed path prefix. `page/assets/` is its markup and static files (see Assets).
+- `services` is the one reader of the host's services file (`IKIGENBA_SERVICES`, owned by opsctl).
+- `identity` is the caller nginx authenticated (`X-User-Id`, `X-User-Email`, `X-Request-Id`): the middleware that requires it, and forwarding it on a call to a sibling service.
+- `mcp` is the Model Context Protocol: the server a service mounts at `/mcp` with its tools, and the client the gateway and service tests use.
+- `telemetry` is the suite's event trail: the event contract, the writer that queues and delivers a service's events, its sinks, the wire to the telemetry service, and the request middleware and sibling client that record every request and sibling call.
+- The build run writes the Go source and the tests. `page/assets/`, `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets
 
-`page/assets/` is human-authored and read-only to the build run. It sits
-inside the `page` package directory because Go's `embed` reaches only files
-at or below the embedding package. It holds the markup templates
-(`banner.html`), the launcher script (`launcher.js`), and copies of the repository's `design/` files: the stylesheet, fonts, and their
-licences. The interactive agent that changes `design/` refreshes the copies in
-the same session. The copied stylesheet replaces the Google Fonts import with
-`@font-face` rules for the files beside it, and its header names the `design/`
-commit it came from, so that commit lands first. Package `page`
-embeds `page/assets/` and never writes markup of its own.
+`page/assets/` sits inside the `page` package directory because Go's `embed` reaches only files at or below the embedding package. It holds the banner template (`banner.html`), the launcher script (`launcher.js`), and copies of the repository's `design/` files: the stylesheet, fonts and their licences. The build run never writes it; it changes only on explicit, direct instruction from a human, and the session that changes `design/` refreshes the copies. The copied stylesheet replaces the Google Fonts import with `@font-face` rules for the files beside it, and its header names the `design/` commit it came from, so that commit lands first. Package `page` embeds `page/assets/` and never writes markup of its own.
 
 ## Toolchain
 
-- Go 1.26 (`go version` must report 1.26+)
-- a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- Go 1.26 or later.
+- A C compiler cgo can use, such as `gcc`: `go test -race` needs it.
+- `golangci-lint` v2, configured by `.golangci.yml` here.
 
-The module depends on the Go standard library only. Adding any other
-dependency requires human approval.
+Prefer the standard library, then a widely used public module; adding one needs human approval. Today `go.mod` requires nothing.
 
 ## Test files
 
-The sub-project's tests are all `*_test.go` files under this module. This is the
-file set the canonical gap greps for requirement ids:
+The test files are every `*_test.go` in the module. The canonical gap greps them for ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-Test files MUST NOT contain any id-shaped literal that is not a genuine
-requirement-id tag.
+**No id-shaped literal in a fixture.** The grep cannot tell a requirement tag from any other string of that shape, so no test file carries one that is not a genuine tag.
 
 ## Test discipline
 
-- Offline: no network beyond loopback. MCP, identity, and telemetry tests
-  talk HTTP to an `httptest` server on loopback, or to a unix socket created
-  in the test's own temporary directory (keep its path short: a unix socket
-  path is limited to 107 bytes); never to `/run/ikigenba` or a real service.
-  A socket-sink test names its socket in a services file it writes there.
-- Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something. A telemetry writer under test gets a fixed
-  `Config.Now` (advanced by hand where a duration is checked), a
-  `Config.Rand` of known bytes where a minted request id is checked, and a
-  `Config.Sleep` that records each pause and returns at once; a test waits
-  for delivery with `Writer.Flush` or with a sink that signals on a
-  channel, never with a timer. Every writer a test builds is shut down
-  before the test ends (`t.Cleanup`), so no sender outlives it.
-- No fixed ports: a test uses `httptest` or binds `127.0.0.1:0`.
-- Isolated: a test touches only its own temporary directory, never the
-  developer's home, config, or real state, and never `/var/lib/ikigenba`.
-  A services file a test needs is written there and named through
-  `IKIGENBA_SERVICES` with `testing.T.Setenv`.
-- Logs are captured: anything appkit writes as a diagnostic goes to an
-  `io.Writer` the test supplies, and the test asserts on it; a test never
-  reads the process's real stderr.
-- Hooks, not layout: tests assert on the hooks design names and on visible
-  text, never on styles, nor on markup structure beyond the containment and
-  order that design names as hooks.
+These rules govern everything `go test ./...` runs.
 
-There are no live tests.
+**Offline.** No network beyond loopback. MCP, identity and telemetry tests talk HTTP to an `httptest` server on loopback, or to a Unix socket in the test's own temporary directory (keep the path short: a Unix socket path is limited to 107 bytes), never to `/run/ikigenba` or a real service. A socket-sink test names its socket in a services file it writes there.
+
+**Deterministic.** Time, randomness and environment are injected; no test sleeps to wait. A telemetry writer under test gets a fixed `Config.Now` (advanced by hand where a duration is checked), a `Config.Rand` of known bytes where a minted request id is checked, and a `Config.Sleep` that records each pause and returns at once. A test waits for delivery with `Writer.Flush` or a sink that signals on a channel, never a timer. Every writer a test builds is shut down before the test ends (`t.Cleanup`), so no sender outlives it.
+
+**No fixed ports.** A test uses `httptest` or binds `127.0.0.1:0`.
+
+**Isolated.** A test touches only its own temporary directory, never the developer's home, config or real state, and never `/var/lib/ikigenba`. A services file a test needs is written there and named through `IKIGENBA_SERVICES` with `t.Setenv`.
+
+**Logs are captured.** Anything appkit writes as a diagnostic goes to an `io.Writer` the test supplies, and the test asserts on it; no test reads the process's real stderr.
+
+**Hooks, not layout.** Tests assert on the hooks design names and on visible text, never on styles, nor on markup structure beyond the containment and order design names as hooks.
+
+## Live tests
+
+There are none.
 
 ## Gates
 
-Run from this directory (`appkit/`), in order; every command must exit 0. No
-skipped tests, no disabled linters laundering a failure.
+Run from `appkit/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding `//nolint` is a disabled linter the run never adds; a finding that is wrong, or cannot be fixed below the contract seam without changing an exported name, signature or observable behavior, is filed as an issue under `specs/issues/` for a human to adjudicate by restructuring the code or amending the design.
 
-1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (fix with
-   `make fmt`)
+1. `test -z "$(gofmt -l .)"` (fix with `make fmt`)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
-   — the cache lives in this worktree's git directory, so worktrees never
-   share it; `make lint` runs this form
-
-A per-finding `//nolint` comment counts as a disabled linter. Never add one
-to make a gate pass. A finding that cannot be fixed below the contract
-seam without changing an exported name, signature, or observable behavior, or
-that is wrong, is filed as an issue under `specs/issues/` so a human can
-adjudicate — restructure the code or amend the design.
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (`make lint` runs this form)
 
 ## Commit conventions
 
@@ -119,20 +73,17 @@ adjudicate — restructure the code or amend the design.
 Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 ```
 
-The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id.
+The `Requirements:` trailer lists the phase's ids so history stays greppable by id.
+
+## Build
+
+`make build` builds the module; `make fmt` formats; `make test` and `make lint` run those gates. The gates themselves call the Go tool directly.
 
 ## Releasing
 
-Release machinery — the tags — is hand-maintained infrastructure outside the
-spec system: the build run never reads, edits, or tests it.
-
-appkit is a library consumed by module path; there is no binary to ship. The
-spec fixes its shape, never its version number.
+Release machinery, the tags, is hand-maintained and outside the spec system: the build run never reads, edits or tests it. appkit is a library consumed by module path; there is no binary to ship, and the spec fixes its shape, never its version number.
 
 1. Tag a green `main` `appkit/vX.Y.Z` and push the tag.
-2. A consumer pins it with an ordinary `require
-   github.com/ikigenba/ikigenba/appkit vX.Y.Z` in its own `go.mod`.
+2. A consumer pins it with an ordinary `require github.com/ikigenba/ikigenba/appkit vX.Y.Z` in its own `go.mod`.
 
-The latest release is
-`git tag --list 'appkit/v*' --sort=-v:refname | head -1`.
+The latest release is `git tag --list 'appkit/v*' --sort=-v:refname | head -1`.

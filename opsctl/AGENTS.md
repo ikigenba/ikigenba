@@ -1,115 +1,60 @@
 # opsctl
 
-The operator CLI for the Ikigenba platform: a Go binary installed to
-`/usr/local/bin` on a Linux host that runs one complete deployment of the
-platform, and run there (typically over ssh) by humans and agents to
-bootstrap and manage that deployment. A project runs many such hosts over
-time, each created and torn down independently; `opsctl` reasons only about
-the one it runs on. Module path `github.com/ikigenba/ikigenba/opsctl`.
+opsctl is the operator's CLI on a host; it bootstraps and manages that one deployment. It is a Go binary installed to `/usr/local/bin` on a Linux host that runs one complete deployment of the platform, run there as root, typically over ssh, by humans and agents. A project runs many such hosts over time, each created and torn down independently, and opsctl reasons only about the one it runs on. The module path is `github.com/ikigenba/ikigenba/opsctl`. The contract is `specs/design/`; this file restates none of it.
 
-This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run brings the existing `cmd/`, `internal/`, and `go.mod` into agreement
-with that target. See the `spec` and `build-spec` skills. Everything below is
-what the build run computes the gap and runs the gates against; it is
-human-authored and read-only to the run.
+## Layout
 
-## Host
-
-opsctl runs on a space's host, as root. It is not designed to run on the
-developer's machine, and there is no permanent test host.
+- `specs/` is the contract: `stories/` and `design/`.
+- `cmd/opsctl` is the binary. `internal/` is everything else, one package per concern.
+- `bootstrap.md` tells an agent how to bring a fresh host to the point where opsctl can be installed; `setup.md` picks up from there and installs and configures it.
+- The build run writes the Go source, the tests, `go.mod` and `go.sum`. `Makefile`, `.golangci.yml`, `install.sh`, `.goreleaser.yaml`, the two documents above and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Toolchain
 
-- Go 1.26 (`go version` must report 1.26+)
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- Go 1.26 or later.
+- The modules `go.mod` requires, in the module cache: `github.com/aws/aws-sdk-go-v2` with its `config`, `service/route53`, `service/s3` and `service/ssm` modules. `go.sum` is committed and the gates run offline.
+- `golangci-lint` v2, configured by `.golangci.yml` here.
+- GNU `make`, for the developer targets; no gate runs through it.
 
-Production host tools such as nginx, certbot, systemctl, Litestream, and
-archive utilities are observed on `dev`, not invoked against the gate host.
-Tests use the injected D01 boundaries and controlled process fixtures.
-Mere tool availability is not
-proof of its protocol or of a successful platform operation.
+Prefer the standard library, then a widely used public module; adding one needs human approval.
+
+Production host tools such as nginx, certbot, systemctl, Litestream and archive utilities are observed on a host, never invoked against the gate machine. Tests go through the injected D01 boundaries and controlled process fixtures; a tool's presence proves neither its protocol nor a successful operation.
+
+## Host
+
+opsctl runs on a space's host, as root. It is not designed to run on the developer's machine, and there is no permanent test host.
 
 ## Test files
 
-The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
-This is the file set the canonical gap greps for requirement ids:
+The test files are every `*_test.go` under `cmd/` and `internal/`. The canonical gap greps them for ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort -u
 ```
 
-**No id-shaped-literal hazard.** opsctl neither mints nor emits
-`PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a
-requirement tag.
+**No id-shaped-literal hazard.** opsctl neither mints nor emits `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a requirement tag.
 
 ## Test discipline
 
-These rules govern the unit tests: everything `go test ./...` runs. Live
-tests follow Live tests below.
+These rules govern everything `go test ./...` runs. Tests are offline (loopback only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state.
 
-- Offline: no network beyond loopback, no real credentials.
-- Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
-- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
-  temporary directory.
-- Isolated: a test touches only its own temporary directory, never the
-  developer's home, config, or real state.
-
-**No root and no deployment-host paths in the gates.** Commands invoked
-through `cli.Run` resolve host paths under `cli.Deps.Root` (design D01), and
-the root check reads `cli.Deps.EUID`. Domain operations preserve the root
-boundary, including paths sent through `host.Env.Execute`. Tests supply a
-temporary root, explicit effective uid, process and cloud fixtures, DNS
-fixtures, and deterministic time. They never depend on the gate process's
-real effective uid or call real cloud, DNS, service, or certificate systems.
-The gates run as an ordinary user.
+**No root and no deployment-host paths in the gates.** Commands invoked through `cli.Run` resolve host paths under `cli.Deps.Root` (design D01), and the root check reads `cli.Deps.EUID`. Domain operations keep that boundary, paths sent through `host.Env.Execute` included. Tests supply a temporary root, an explicit effective uid, process, cloud and DNS fixtures, and deterministic time; they never depend on the gate process's real effective uid or call real cloud, DNS, service or certificate systems. The gates run as an ordinary user.
 
 ## Live tests
 
-Live tests are the only tests that connect to external services. Every other
-test is a unit test and follows Test discipline.
+Live tests are the only tests that reach an external service; every other test follows Test discipline. A live test is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions, which `go test ./...` never runs and `make live` runs as `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together end to end, about one per external service; behavior, edge cases and error paths are the unit tests' job. It carries the id it proves and the gap counts it like any other test. The code under test runs on the developer's machine; only the service is real. It reads credentials from the environment and fails rather than skips when one is missing; no credential appears in the repo or in test output. It runs only as the conditional gate below.
 
-- Minimal: a live test proves lightly that the whole application or library
-  is glued together and works end to end, about one per external service,
-  never an exhaustive suite. Behavior, edge cases, and error paths are the
-  unit tests' job.
-- Separate: live tests are `*_live_test.go` files guarded by
-  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
-  never runs them; `make live` runs
-  `go test -tags live -count=1 -run '^TestLive' ./...`.
-- Designed: a live test carries the requirement id it proves, and the gap
-  counts it like any other test.
-- Local: the code under test runs on the developer's machine; only the
-  external service is real.
-- Credentials: a live test reads its credentials from the environment. It
-  never skips: a missing credential fails it. No credential appears in the
-  repo or in test output.
-- Run: live tests run only as the conditional `make live` gate below.
-
-opsctl has none yet: its external system is the host itself, and there is no
-throwaway space to run against.
+opsctl has none yet: its external system is the host itself, and there is no throwaway space to run against.
 
 ## Gates
 
-Run from this directory (`opsctl/`), in order; every command must exit 0. No
-skipped tests, no disabled linters laundering a failure.
+Run from `opsctl/`, in order; every command must exit 0. No skipped tests and no disabled linters.
 
-1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (`go fmt`
-   itself always exits 0, so the check form is the gate; fix with `make fmt`)
+1. `test -z "$(gofmt -l .)"` (`go fmt` always exits 0, so this check form is the gate; fix with `make fmt`)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
-   — the cache lives in this worktree's git directory, so worktrees never
-   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
-   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
-   this form; since the cache is private, `--allow-parallel-runners` skips
-   golangci-lint's machine-wide lock so gates for several sub-projects can lint
-   at once)
-5. `make live` — **conditional**: run only when the phase's diff (the working
-   tree against the last phase commit) adds or modifies a `*_live_test.go`
-   file; otherwise it is not run and not counted. When it applies and a
-   credential is absent, that is a missing tool: file an issue, do not pass or
-   skip.
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and stops applying `//nolint` and `.golangci.yml` suppressions), and with a private cache `--allow-parallel-runners` skips the machine-wide lock so several sub-projects can lint at once (`make lint` runs this form)
+5. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.
 
 ## Commit conventions
 
@@ -121,24 +66,19 @@ skipped tests, no disabled linters laundering a failure.
 Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 ```
 
-The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id.
+The `Requirements:` trailer lists the phase's ids so history stays greppable by id.
 
-## Deploy
+## Build
 
-Deploy machinery — the version bump, tags, `install.sh`, `.goreleaser.yaml`,
-and `.github/workflows/release-opsctl.yml` (repo root) — is hand-maintained
-infrastructure outside the spec system: the build run never reads, edits, or
-tests it.
+`make build` builds the binary from the checkout; `make install` runs `go install ./cmd/opsctl`; `make fmt` formats; `make test` and `make lint` run those gates. `make deploy` builds a linux/amd64 binary and installs it on `DEPLOY_HOST` as `DEPLOY_USER` over ssh, for trying a change on a host without a release. The gates themselves call the Go tool directly.
 
-1. Set the version in `internal/cli/cli.go` to `vX.Y.Z`. It is a
-   source literal the binary reports verbatim, and the deploy refuses a tag
-   that does not match what the built binary's `--version` prints.
-2. Commit that on `main` and push `main`.
-3. Tag that commit `opsctl/vX.Y.Z` and push the tag.
-   `.github/workflows/release-opsctl.yml` builds with GoReleaser and publishes
-   `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt`, and `install.sh`. A tag with
-   a prerelease part (`opsctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
+## Releasing
+
+Release machinery, the version bump, tags, `install.sh`, `.goreleaser.yaml` and `.github/workflows/release-opsctl.yml` at the repo root, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
+
+1. Set the version literal in `internal/cli/cli.go` to `vX.Y.Z`; the binary reports it verbatim and the deploy refuses a tag that does not match what `--version` prints.
+2. Commit on `main` and push `main`.
+3. Tag the commit `opsctl/vX.Y.Z` and push the tag. The workflow builds with GoReleaser and publishes `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt` and `install.sh`; a tag with a prerelease part (`opsctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
 4. On the host, as root, run that release's installer with the same version:
 
 ```

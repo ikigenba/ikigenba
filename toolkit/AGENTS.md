@@ -1,96 +1,57 @@
 # toolkit
 
-A Go library that gives consumers of `github.com/ikigenba/ikigenba/agentkit` a
-standard set of local tools — `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep` —
-as ready-made `agentkit.Tool` values, each built against an explicit root
-directory. Module path `github.com/ikigenba/ikigenba/toolkit`.
+toolkit is agentkit's standard local tools: Bash, Read, Write, Edit, Glob and Grep. It is a Go library that hands consumers of `github.com/ikigenba/ikigenba/agentkit` each tool as a ready-made `agentkit.Tool` value built against an explicit root directory, behaving like the Claude Code tool of the same name so a model already knows how to use it. There is no binary; consumers require the module path `github.com/ikigenba/ikigenba/toolkit`. The contract is `specs/design/`; this file restates none of it.
 
-This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the code (the `toolkit` package and `go.mod`'s dependency
-graph fill in as it does). See the `spec` and `build-spec` skills. Everything
-below is what the build run computes the gap and runs the gates against; it is
-human-authored and read-only to the run.
+## Layout
+
+- `specs/` is the contract: `design/`.
+- The module root is the one package, `toolkit`: its source and tests sit flat beside `go.mod`.
+- The build run writes the Go source, the tests, `go.mod` and `go.sum`. `Makefile`, `.golangci.yml`, `README.md` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Toolchain
 
-- Go 1.26 (`go version` must report 1.26+)
-- `bash` on PATH (the `Bash` tool shells out to it; its tests run real commands)
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- Go 1.26 or later.
+- `bash` on the `PATH`: the `Bash` tool shells out to it, and its tests run real commands.
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: agentkit at the release `go.mod` requires, `github.com/bmatcuk/doublestar/v4` and `github.com/boyter/gocodewalker`.
+- `golangci-lint` v2, configured by `.golangci.yml` here.
+- GNU `make`, for the developer targets; no gate runs through it.
+
+Prefer the standard library, then a widely used public module; adding one needs human approval.
 
 ## Test files
 
-The sub-project's tests are all `*_test.go` files under this module. This is the
-file set the canonical gap greps for requirement ids:
+The test files are every `*_test.go` in the module. The canonical gap greps them for ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-Test files MUST NOT contain any id-shaped literal that is not a genuine
-requirement-id tag.
+No test file carries an id-shaped literal that is not a genuine requirement tag.
 
 ## Test discipline
 
-These rules govern the unit tests: everything `go test ./...` runs. Live
-tests follow Live tests below.
-
-- Offline: no network beyond loopback, no real credentials.
-- Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
-- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
-  temporary directory.
-- Isolated: a test touches only its own temporary directory, never the
-  developer's home, config, or real state.
+These rules govern everything `go test ./...` runs; live tests follow Live tests below. Tests are offline (loopback only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state.
 
 ## Live tests
 
-Live tests are the only tests that connect to external services. Every other
-test is a unit test and follows Test discipline.
+Live tests are the only tests that reach an external service; every other test is a unit test under Test discipline.
 
-- Minimal: a live test proves lightly that the whole application or library
-  is glued together and works end to end, about one per external service,
-  never an exhaustive suite. Behavior, edge cases, and error paths are the
-  unit tests' job.
-- Separate: live tests are `*_live_test.go` files guarded by
-  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
-  never runs them; `make live` runs
-  `go test -tags live -count=1 -run '^TestLive' ./...`.
-- Designed: a live test carries the requirement id it proves, and the gap
-  counts it like any other test.
-- Local: the code under test runs on the developer's machine; only the
-  external service is real.
-- Credentials: a live test reads its credentials from the environment. It
-  never skips: a missing credential fails it. No credential appears in the
-  repo or in test output.
-- Run: live tests run only as the conditional `make live` gate below.
+- Minimal: a live test proves lightly that the whole is glued together end to end, about one per external service. Behavior, edge cases and error paths are the unit tests' job.
+- Separate: a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions. `go test ./...` never runs them; `make live` runs `go test -tags live -count=1 -run '^TestLive' ./...`.
+- Designed: it carries the requirement id it proves, and the gap counts it like any other test.
+- Local: the code under test runs on the developer's machine; only the external service is real.
+- Credentials: read from the environment. A missing one fails the test, never skips it, and none appears in the repository or in test output.
+- Run: only as the conditional `make live` gate below.
 
 ## Gates
 
-Run from this directory (`toolkit/`), in order; every command must exit 0. No
-skipped tests, no disabled linters laundering a failure.
+Run from `toolkit/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding suppression (`//nolint` and the like) is a skip the run never adds; a finding that cannot be fixed below the contract seam without changing an exported name, signature or observable behavior, or that is wrong, is filed as an issue under `specs/issues/` for a human to adjudicate.
 
-1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (`go fmt`
-   itself always exits 0, so the check form is the gate; fix with `make fmt`)
+1. `test -z "$(gofmt -l .)"` (`go fmt` always exits 0, so the check form is the gate; fix with `make fmt`)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
-   — the cache lives in this worktree's git directory, so worktrees never
-   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
-   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
-   this form; since the cache is private, `--allow-parallel-runners` skips
-   golangci-lint's machine-wide lock so gates for several sub-projects can lint
-   at once)
-5. `make live` — **conditional**: run only when the phase's diff (the working
-   tree against the last phase commit) adds or modifies a `*_live_test.go`
-   file; otherwise it is not run and not counted. When it applies and a
-   credential is absent, that is a missing tool: file an issue, do not pass or
-   skip.
-
-A per-finding `//nolint` comment counts as a disabled linter. Never add one
-to make a gate pass. A finding that cannot be fixed below the contract
-seam without changing an exported name, signature, or observable behavior, or
-that is wrong, is filed as an issue under `specs/issues/` so a human can
-adjudicate — restructure the code or amend the design.
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and stops applying `//nolint` and `.golangci.yml` suppressions), and since it is private, `--allow-parallel-runners` skips golangci-lint's machine-wide lock so several sub-projects can lint at once (`make lint` runs this form)
+5. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.
 
 ## Commit conventions
 
@@ -102,24 +63,18 @@ adjudicate — restructure the code or amend the design.
 Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 ```
 
-The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id.
+The `Requirements:` trailer lists the phase's ids so history stays greppable by id.
+
+## Build
+
+`make build` builds the package; `make fmt` formats; `make test` and `make lint` run those gates. The gates themselves call the Go tool directly.
 
 ## Releasing
 
-Release machinery — the tags — is hand-maintained infrastructure outside the
-spec system: the build run never reads, edits, or tests it.
-
-toolkit is a library consumed by module path; there is no binary to ship. The
-spec fixes its shape, never its version number.
+Release machinery, the tags, is hand-maintained and outside the spec system: the build run never reads, edits or tests it. toolkit is a library consumed by module path, so there is no binary to ship, and the spec fixes its shape, never its version number.
 
 1. Tag a green `main` `toolkit/vX.Y.Z` and push the tag.
-2. A consumer pins it with an ordinary `require
-   github.com/ikigenba/ikigenba/toolkit vX.Y.Z` in its own `go.mod`.
-3. toolkit pins agentkit the same way (`agentkit/v*` tags). The pin lives
-   only in `go.mod`, never in a design document: D1 names the module, and the
-   build run moves the pin to whatever release carries the surface the current
-   designs use.
+2. A consumer pins it with an ordinary `require github.com/ikigenba/ikigenba/toolkit vX.Y.Z` in its own `go.mod`.
+3. toolkit pins agentkit the same way, by its `agentkit/v*` tags. The pin lives only in `go.mod`, never in a design document: D1 names the module, and the build run moves the pin to whatever release carries the surface the current designs use.
 
-The latest release is
-`git tag --list 'toolkit/v*' --sort=-v:refname | head -1`.
+The latest release is `git tag --list 'toolkit/v*' --sort=-v:refname | head -1`.

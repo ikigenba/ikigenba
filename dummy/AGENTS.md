@@ -1,368 +1,92 @@
 # dummy
 
-An app of the Ikigenba platform: one Go binary that serves a control panel on
-the socket systemd passes it (`/run/ikigenba/dummy.sock` on a host), behind the
-host's nginx. The panel is a page with the banner
-listing widgets, an HTML table fragment the page re-fetches and that answers a
-conditional GET, and a form that creates a widget. The same widgets are offered
-to MCP clients at `/mcp`: a tool that lists them and a tool that creates one,
-under the same rules as the form. The widgets live in an
-in-memory set built at process start and dying with the process: dummy's
-handler is built over that set and holds it, so requests share mutable state.
-On a host it runs as `/opt/dummy/bin/dummy` with `/opt/dummy` as its working
-directory; a developer runs the same binary from the checkout. The module path
-is `github.com/ikigenba/ikigenba/dummy`. It requires one other module, appkit
-(`github.com/ikigenba/ikigenba/appkit`), and uses its packages `page` (the
-banner, launcher and footer templates, and the shared stylesheet, fonts,
-licences and launcher script under `/_appkit/`), `identity` (the caller nginx
-authenticated, required on every request), `mcp` (the MCP server mounted
-at `/mcp`, and the client the tests drive it with), and `telemetry` (the
-writer every event of dummy's trail goes through, the middleware that records
-every request, and the capturing sink the tests read events from). Its version and manifest
-declarations and run seam are design D01
-(`specs/design/D01-layout-and-run-seam.md`); the rest of the contract — the
-panel, the widgets, the table, the form and the MCP tools — is the other
-documents in `specs/design/`. This file restates none of them.
+dummy is the reference app: a control panel over in-memory widgets that shows the patterns. One Go binary serves on the socket systemd passes it (`/run/ikigenba/dummy.sock` on a host), behind the host's nginx. The panel is a page listing widgets, a table fragment the page re-fetches that answers a conditional GET, and a form that creates a widget; the same widgets are offered as MCP tools at `/mcp` under the same rules. The widgets live in an in-memory set built at process start and dying with it, so requests share mutable state. It is built on appkit for pages, identity, MCP and telemetry. The contract is `specs/design/`; this file restates none of it.
 
-This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the Go source, the tests, and `etc/manifest.toml`. It never
-writes `assets/` or `share/`. See the `spec` and `build-spec` skills.
-Everything below is what the build run computes the gap and runs the gates
-against; it is human-authored and read-only to the run.
+## Layout
+
+- `specs/` is the contract: `stories/` and `design/`. D01 declares the version, the manifest and the run seam.
+- `assets/` is the page markup and `share/icon.svg` the launcher icon. The build run never writes them; an agent changes them only on explicit, direct instruction from a human.
+- `assets.go` is the root package, which embeds `assets/`. `cmd/dummy` is the binary. `internal/` is everything else, one package per concern.
+- `etc/` is what the host needs: `manifest.toml`.
+- The build run writes the Go source, the tests, `go.mod`, `go.sum` and `etc/`. `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets
 
-`assets/` holds dummy's markup: the Go `html/template` files `page.html`,
-`table.html`, `form.html` and `script.html`. They are written and approved by
-a human in interactive sessions, following the repository's `design/`, and are
-inputs to the spec: human-authored and read-only to the build run, which reads
-them and never writes them. The code embeds them and executes them by
-template name; it never writes markup of its own, not even a fragment or an
-error page. Go's `embed` reaches only files at or below the embedding
-package's directory, so the module's root package (the directory holding
-`go.mod`) is the one that embeds `assets/`, and design D01 names what it
-exports. Design names each template, the data it receives, and the hooks it
-emits; the tests assert on those hooks and on visible text, never on layout. A
-needed template that is missing or wrong, a state a story names that the
-templates cannot show, or a hook design names that the templates lack is an
-issue for a human: the run files it in `specs/issues/` and never edits the
-asset to close it.
+`assets/` holds `page.html`, `table.html`, `form.html` and `script.html`. They follow the repository's `design/` and are inputs to the spec. The root package embeds them, since Go's `embed` reaches only files at or below its own directory, and D01 names what it exports; the code executes them by template name. Code never writes markup of its own, not even a fragment or an error page. Tests assert on the hooks design names and on visible text, never on layout. A template that is missing or wrong, a state a story names that it cannot show, or a hook design names that it lacks is filed in `specs/issues/`; the run never edits an asset to close one.
 
-dummy holds no copy of the stylesheet, fonts, or licences; appkit's `page`
-package embeds and serves them. `share/icon.svg` is dummy's icon in the
-service launcher: the Tabler outline `cube` from
-`design/ikigenba/icons/tabler/`, without its class, width, height, or
-invisible bounding path, as `design/README.md` asks of a launcher icon. It is
-human-authored; the build run never writes it. `devctl build` packs it beside
-`bin/` and `etc/`.
+dummy holds no stylesheet, fonts or licences; appkit's `page` package serves them. `share/icon.svg` is the Tabler outline `cube` from `design/ikigenba/icons/tabler/`, stripped as `design/README.md` asks of a launcher icon. `devctl build` packs it beside `bin/` and `etc/`.
 
 ## Toolchain
 
-- Go 1.26 (`go version` must report 1.26+)
-- a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
-  without one gate 4 fails with `go: -race requires cgo`. The release build
-  itself is cgo-free, which gate 3 proves.
-- the appkit module at the version `go.mod` requires, in the Go module cache;
-  `go.sum` is committed, and the gates themselves run offline. `go.mod`
-  requires an appkit release (written `<version>` below) with the packages `page`,
-  `services`, `identity`, `mcp` and `telemetry`; the build run sets that
-  requirement and its `go.sum` lines, and moves to a later appkit release
-  only when a human asks for one. That release reaches the module cache this way,
-  before the build run:
-  1. once appkit's build of that release is done, a human tags it locally:
-     `git tag appkit/<version> <commit>`;
-  2. a human seeds the module cache once, from the local repository:
-     `GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>`;
-  3. the build run sets the requirement with
-     `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`,
-     its shell exporting `GONOSUMDB=github.com/ikigenba/ikigenba`.
+- Go 1.26 or later.
+- A C compiler cgo can use, such as `gcc`: `go test -race` needs it (gate 4). The release build is cgo-free (gate 3).
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit at the release `go.mod` requires, with the packages `page`, `services`, `identity`, `mcp` and `telemetry` (see Adopting appkit).
+- `golangci-lint` v2, configured by `.golangci.yml` here.
+- A POSIX shell at `/bin/sh`, for the one exec'ing test.
+- GNU `make`, for the developer targets; no gate runs through it.
 
-  Once `go.sum` holds the line, ordinary builds and the gates work offline.
-  The tag `appkit/<version>` must be pushed before any other machine builds
-  dummy.
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
-  it (see Test files)
+Prefer the standard library, then a widely used public module; adding one needs human approval.
+
+### Adopting appkit
+
+appkit is released from this repository. Until its tag `appkit/<version>` is on origin, neither the module proxy nor the checksum database knows it, so the machine that builds dummy tags the release commit locally (`git tag appkit/<version> <commit>`), seeds the module cache once:
+
+```
+GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>
+```
+
+and sets the requirement with `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`, with that `GONOSUMDB` exported in the build run's shell. The tag must be pushed before any other machine builds dummy.
 
 ## Test files
 
-The sub-project's tests are all `*_test.go` files in the module: `cmd/dummy`
-and everything under `internal/`. This is the file set the canonical gap greps
-for requirement ids:
+The test files are every `*_test.go` in the module: the root package, `cmd/dummy` and everything under `internal/`. The canonical gap greps them for ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-`.` covers the module's root package, `cmd/` and `internal/`; `specs/` and
-`assets/` hold no `*_test.go`, so the design documents never enter the test
-side of the grep.
+`specs/` and `assets/` hold no `*_test.go`.
 
-**No id-shaped literal in a fixture.** The grep above cannot tell a
-requirement tag from any other string of that shape: a literal matching the
-pattern anywhere in a `*_test.go` file is counted as a covered id, and the
-gap's arithmetic is wrong by one. dummy mints no such value itself, but it
-does not have to — the 422 re-render echoes the submitted name back in full,
-so a test that submits an id-shaped name lands a matching literal in the test
-file. No test fixture carries one: not a widget name, not a header value, not
-an expected body. This is an obligation on the test author, not a property of
-the program, and it does not lapse because dummy's own output alphabet is
-narrow.
+**No id-shaped literal in a fixture.** The grep cannot tell a requirement tag from any other string of that shape, and the 422 re-render echoes a submitted name back in full, so no fixture carries one: not a widget name, a header value or an expected body. This is an obligation on the test author, and it does not lapse because dummy's own output alphabet is narrow.
 
 ## Test discipline
 
-These rules govern the unit tests: everything `go test ./...` runs. Live
-tests follow Live tests below.
+These rules govern everything `go test ./...` runs. Tests are offline (loopback and Unix sockets only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state.
 
-- Offline: no network beyond loopback, no real credentials.
-- Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
-- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
-  temporary directory.
-- Isolated: a test touches only its own temporary directory, never the
-  developer's home, config, or real state.
+**No fixed ports, no real environment, no sleeping in the gates.** dummy binds nothing; it serves on the listener it is passed (D01, D03). A test that needs a listener makes its own on `127.0.0.1:0` or a Unix socket in a temporary directory. A `cli.Run`-level test of the serve path hands `Run` that listener through `Process.Inherit`, sets `LISTEN_PID` to the `Process.Pid` it chose and `LISTEN_FDS` to `1` in the environment map it passes, and records `Unsetenv` calls with a function of its own; it never leaves `Inherit` nil, which would take the test process's real descriptor 3. Failure paths (a descriptor that is not a listener, an `Accept` that fails) inject an `Inherit` that returns an error or a listener whose `Accept` fails. Arguments, environment lookup and removal, the pid and the output streams come in through the run seam (`cli.Process`, D01); tests inject buffers, a map and a recorder, never the real environment. A test learns that `Run` is serving the way systemd does: it binds a Unix datagram socket in a short temporary directory (`os.MkdirTemp`, since a socket path is limited to 108 bytes and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET` in the environment map, and waits for `READY=1` with a deadline that fails the test. Drain tests are the one place a test waits on the clock, because the drain deadline is the behavior: a `Serve`-level test passes a drain of a few milliseconds and a handler that blocks on a channel, and the `Run`-level overrun tests hold a `POST /widgets` open by sending fewer body bytes than its `Content-Length` declares. There are at most five: one sets `DRAIN_SECONDS=1`; one sets `DRAIN_SECONDS=1`, holds no request open, and serves with a writer whose sink blocks until its context is done, to observe that `Run` still returns within a second of the drain deadline; two observe the 5-second default, with the variable unset and with it empty; and one sets a value too large for a `time.Duration`, observes that the request is not cut off within 7 seconds, then completes the body itself. The last three run as parallel subtests of one parent that sets the environment and builds their servers. A test learns the handler has begun, without sleeping, by sending `Expect: 100-continue` with `X-User-Id` and `Content-Type: application/x-www-form-urlencoded` (so the handler reads the body at all) and waiting for the `100 Continue` that `net/http` sends only when the handler first reads the body; only then does it cancel the context. A test whose result depends on the developer's machine, environment or a port in use is a bug. The gates run offline as an ordinary user with no systemd.
 
-**No fixed ports, no real environment, no sleeping in the gates.** dummy
-binds nothing itself; it serves on the listener it is passed (D01, D03). A
-test that needs a listener makes its own: a loopback TCP listener on
-`127.0.0.1:0`, where the kernel chooses the port, or a Unix socket in a
-temporary directory — never a fixed port such as 3000. A `cli.Run`-level test
-of the serve path hands `Run` that listener through `Process.Inherit`, sets
-`LISTEN_PID` to the `Process.Pid` it chose and `LISTEN_FDS` to `1` in the
-environment map it passes, and records `Unsetenv` calls with a function of its
-own; it never leaves `Inherit` nil, since that would take the test process's
-real descriptor 3. Failure paths (a descriptor that is not a listener, an
-`Accept` that fails) inject an `Inherit` that returns an error or a listener
-whose `Accept` fails. Tests never read or change the real environment:
-arguments, environment lookup and removal, the pid, and the output streams
-come in through the run seam (`cli.Process`, design D01), and tests inject
-buffers, a map and a recorder. A test never sleeps to wait for the server. It
-learns that `Run` is serving the way systemd does: it binds a Unix datagram
-socket in a short temporary directory (`os.MkdirTemp("", ...)`, since a Unix
-socket path is limited to 108 bytes and `t.TempDir()` can exceed it), names it
-in `NOTIFY_SOCKET` in the environment map, and waits for the `READY=1`
-datagram, with a deadline that fails the test rather than a sleep that hopes.
-The drain tests are the one place a test waits on the clock, because the
-drain deadline is the behavior: a `Serve`-level test passes a drain of a few
-milliseconds and a handler that blocks on a channel, and the `Run`-level
-overrun tests hold a `POST /widgets` open by sending fewer body bytes than its
-`Content-Length` declares. There are at most five: one sets
-`DRAIN_SECONDS=1`; one sets `DRAIN_SECONDS=1`, holds no request open, and
-serves with a writer whose sink blocks until its context is done, to observe
-that `Run` still returns within a second of the drain deadline; two observe
-the 5-second default, one with the variable unset and one with it empty; and
-one sets a value too large for a `time.Duration`, observes that the request
-is not cut off within 7 seconds, and then completes the body itself. The
-last three run as parallel subtests
-of one parent that sets the environment and builds their servers. It learns that
-the handler has begun, without sleeping, by sending `Expect: 100-continue`, with `X-User-Id` and
-`Content-Type: application/x-www-form-urlencoded` so the handler reads the
-body at all, and
-waiting for the `100 Continue` that `net/http` sends only when the handler
-first reads the body; only then does it cancel the context. A test whose
-result depends on the developer's machine, environment, or a port already in
-use is a bug. The gates run offline as an ordinary user, with no systemd.
+**The handler is built over a store the test owns.** A handler-level test creates its own store with `widget.NewStore` over a source of known bytes, so it knows every widget's id in advance, seeds it with the widgets the case needs, hands the handler a banner source, an MCP server and a telemetry writer of its own, and drives it in process; it needs no listener except to reach `/mcp`. The banner source is a function the test writes, returning the services the case needs (D04). No test depends on a widget another test created, on test order, or on a package-level set; there is none. The set is shared mutable state that concurrent requests touch, which gate 4's race detector is there to catch: a test may exercise it concurrently, and gate 4 is never reduced to a plain `go test`.
 
-**The handler is built over a store the test owns.** A handler-level test therefore creates its own store,
-with `widget.NewStore` over a source of known bytes, so it knows every
-widget's id in advance, seeds it with whatever widgets the case needs, hands
-the handler a banner source of its own, an MCP server and a telemetry writer
-of its own (below), and drives it in process;
-it needs no listener and no port at all, except to reach `/mcp` (below). Every
-such test builds a fresh store. The banner source is a function the test
-writes, returning whatever services the case needs (D04). No test depends on a
-widget another test created, on the order the tests run in, or on a
-package-level set — there is none. The set is shared mutable state that
-concurrent requests touch, which is what gate 4's race detector is there to
-catch: a test may exercise it concurrently, and gate 4 is never reduced to a
-plain `go test`.
+**Telemetry through a capturing sink.** Every event dummy records goes through the one `*telemetry.Writer` it is handed, and a test builds that writer itself: `telemetry.New` with `Service` set to `panel.ServiceName`, `Version` to `cli.Version`, a `Sink` that is a `&telemetry.Capture{}` (or a sink of the test's own, below), a buffer as `Stderr`, a `Now` it controls, a `Sleep` that records the pause and returns at once, and a `Rand` of known bytes when it asserts a minted request id. The same writer goes to `mcp.NewServer` (`ServerConfig.Telemetry`, which appkit requires) and to `panel.Handler`, or, for a `Run`-level test, as `Process.Telemetry` with that server as `Process.MCP`. The test calls `Writer.Flush`, asserts on `Capture.Events` in order by `Name`, `RequestID`, `User` and `Attrs`, and asserts the writer's `Stderr` buffer empty wherever dummy is healthy. A test whose `Run` did not shut the writer down calls `Writer.Shutdown` itself before it ends. No test leaves the `Sink` nil below `main`: the socket sink would read the real `IKIGENBA_SERVICES` and dial whatever it names. A sink of the test's own is needed in two cases only: one that answers a `Deliver` whose context is done with that context's error and accepts every other (the drain-overrun test), and one that blocks until its context is done (the test that the stop never outlasts the drain). To see the order of `Run`'s own overrun line against the writer's lines, a test hands `Process.Stderr` and the writer's `Stderr` one writer of its own that holds a mutex around each `Write`; otherwise the two are separate buffers. To see that the `service.stopping` line comes before any cut-off connection is closed, the overrun test's `Inherit` returns a loopback listener of its own whose accepted connections append a `Close` record, under the same mutex, to that writer's log. A `Process.Rand` of known bytes makes the fixture widgets' ids known.
 
-**Telemetry through a capturing sink.** Every event dummy records goes
-through the one `*telemetry.Writer` it is handed, and a test always builds
-that writer itself: `telemetry.New` with `Service` set to
-`panel.ServiceName`, `Version` to `cli.Version`, a `Sink` that is a
-`&telemetry.Capture{}` (or a sink of the test's own, below), a buffer as
-`Stderr`, a `Now` it controls, a `Sleep` that records the pause and returns
-at once, and a `Rand` of known bytes when it asserts a minted request id.
-The same writer is handed to `mcp.NewServer` (`ServerConfig.Telemetry`,
-which appkit requires) and to `panel.Handler`, or, for a `Run`-level test, as
-`Process.Telemetry` together with that server as `Process.MCP`. The test
-calls `Writer.Flush` and then asserts on `Capture.Events` in order — by
-`Name`, `RequestID`, `User` and `Attrs` — and asserts the writer's `Stderr`
-buffer empty wherever dummy is healthy. A test whose `Run` did not shut the
-writer down shuts it down itself with `Writer.Shutdown` before it ends. No
-test ever leaves the `Sink` nil below `main`: the socket sink would read the
-real `IKIGENBA_SERVICES` and dial whatever it names. A test needs a sink of
-its own in two cases only: one that answers a `Deliver` whose context is done
-with that context's error and accepts every other (the drain-overrun test,
-where telemetry has no time left), and one that blocks until its context is
-done (the test that the stop never outlasts the drain). To see the order of
-`Run`'s own overrun line against the writer's lines, a test hands
-`Process.Stderr` and the writer's `Stderr` one writer of its own that holds a
-mutex around each `Write`; otherwise the two are separate buffers. To see
-that the `service.stopping` line comes before any cut-off connection is
-closed, the overrun test's `Inherit` returns a loopback listener of its own
-whose accepted connections append a `Close` record, under the same mutex, to
-the log that writer keeps. A
-`Process.Rand` of known bytes makes the fixture widgets' ids known.
+**One environment variable, set by the test.** appkit's `page.New` and `mcp.NewServer` each read `IKIGENBA_SERVICES` (`services.Variable`) from the process environment once, when called; it is the one read dummy cannot route through `cli.Process`, and in the binary only `main` makes it (D01). A test that calls either, directly or through a dummy constructor, first sets that variable with `t.Setenv` to a services file it wrote in its own temporary directory or to the empty string. It is the only variable a test sets, and such a test does not call `t.Parallel`. A test may call appkit's other exported functions, to render the banner it expects, for instance.
 
-**One environment variable, set by the test.** appkit's `page.New` and
-`mcp.NewServer` each read `IKIGENBA_SERVICES` (`services.Variable`) from the
-process environment once, when called; it is the one environment read dummy
-cannot route through `cli.Process`, and in the binary only `main` makes it
-(D01). A test that calls either one, directly or through a dummy constructor
-that does, first sets that variable with `testing.T.Setenv` — to a services
-file it wrote in its own temporary directory, or to the empty string — so the
-developer's environment never decides a result. That is the only variable a
-test sets, and such a test does not call `t.Parallel`. A test may call
-appkit's other exported functions, to render the banner it expects, for
-instance.
+**Identity comes from headers the test sets.** appkit's `identity.Require` wraps dummy's whole handler, so a request reaches a page, the fragment, the form or `/mcp` only with an `X-User-Id` header. A test sets the identity headers, or omits `X-User-Id` to exercise the missing-identity answer; code beneath the middleware that needs a caller is handed one with `identity.NewContext`. The middleware's behavior is appkit's contract; dummy's tests prove only that its handler is wrapped in it. appkit's `telemetry.Middleware` wraps `identity.Require` in turn, so a request's events carry the `X-Request-Id` the test sets or, when it sets none, an id minted from the writer's `Rand`, which the test knows when it supplied known bytes.
 
-**Identity comes from headers the test sets.** appkit's `identity.Require`
-wraps dummy's whole handler, so a request reaches a page, the fragment,
-the form or `/mcp` only with an `X-User-Id` header. A test sets the identity
-headers on the requests it makes, or omits `X-User-Id` to exercise the
-missing-identity answer. Code beneath the middleware that needs a caller is
-handed one with `identity.NewContext`. What the middleware itself does is
-appkit's contract and its tests'; dummy's tests prove only that dummy's
-handler is wrapped in it, by use. appkit's `telemetry.Middleware` wraps
-`identity.Require` in turn, so a request's events carry the `X-Request-Id`
-the test sets, or, when it sets none, an id minted from the writer's `Rand`,
-which the test knows in advance when it supplied known bytes.
+**MCP through appkit's client, in process.** A test proves the MCP tools as a client would: it serves the handler it built on an `httptest` server on loopback, or on a Unix socket in a short temporary directory with an `http.Client` that dials it, and drives `/mcp` with appkit's `mcp.Client` (`ListTools`, `CallTool`), passing the caller whose identity headers the client forwards, asserting on the `mcp.Result` and `mcp.ToolInfo` returned. Raw HTTP to `/mcp` is only for what the client cannot send, such as a missing identity header. dummy's tests never re-prove appkit's transport.
 
-**MCP through appkit's client, in process.** A test proves the MCP tools by
-calling them as a client would: it serves the handler it built on an
-`httptest` server on loopback, or on a Unix socket in a short temporary
-directory with an `http.Client` that dials it, and drives `/mcp` with
-appkit's `mcp.Client` (`ListTools`, `CallTool`), passing the caller whose
-identity headers the client forwards. Raw HTTP to `/mcp` is for what the
-client cannot send — a missing identity header, say — never a substitute for
-it. The tools' behavior is asserted on the `mcp.Result` and
-`mcp.ToolInfo` the client returns, and dummy's tests never re-prove appkit's
-transport, which appkit's own tests cover.
+**No test runs the page's scripts.** The panel page carries an inline script that re-fetches the table fragment and, when there are services, appkit's launcher script. The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it. Nothing in the gates waits on a timer for a poll to come round.
 
-**No test runs the page's scripts.** The panel page carries an inline script
-that re-fetches the table fragment, and, when there are services, appkit's
-launcher script. The gates have no browser and no JavaScript engine, and
-adding one is an external dependency no one has approved, so a test asserts
-what a response body carries and never what a script would do with it.
-Nothing in the gates waits on a timer for a poll to come round.
+**No test reads the checkout.** A test opens no file of this directory, not `.go`, `go.mod`, `go.sum`, `etc/`, `share/` or `assets/`, and never parses source. It proves what design declares by using it: importing, calling, constructing, or running the binary the exec'ing test builds. Handing `cmd/dummy` to `go build` is not reading it.
 
-**No test reads the checkout.** A test opens no file of this directory — no
-`.go` file, not `go.mod` or `go.sum`, nothing under `etc/`, `share/` or `assets/` — and
-never parses or inspects source. It proves what the design declares by using
-it: importing, calling, constructing, or running the binary the exec'ing test
-builds. Handing `cmd/dummy` to `go build` is not the test reading it.
-
-**One exec'ing test, and only one.** Tests under `internal/` never start a
-real process; the run seam exists so they need not. The wiring in `cmd/dummy`
-(D01's requirements on the `dummy` binary) can be proved no other way, so exactly one kind of
-test that execs the binary is admissible, and it lives in `cmd/dummy`. It
-builds the binary into a temporary directory and runs it with `--version`, with
-`bogus`, and bare with no socket passed in (exit 2). For the serve case it
-stands in for systemd without systemd: it makes a Unix socket in a short
-temporary directory, passes it to the child as `exec.Cmd.ExtraFiles[0]`, which
-the child receives as descriptor 3, and starts the child through
-`/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
-`LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. It sets
-`NOTIFY_SOCKET` to a datagram socket it bound and waits for `READY=1`, never a
-fixed sleep; then it sends `SIGTERM` and asserts exit 0, nothing on stdout or
-stderr, and that the socket's path still exists and still accepts a
-connection into its queue after the child has exited. It runs the serve case a
-second time, with a fresh socket, and stops it with `SIGINT`, asserting the
-same of the exit and the socket, because `main` promises both signals. The
-child's environment is one the test composes, never the developer's, and it
-runs offline like everything else. In the first serve case that environment
-names, in `IKIGENBA_SERVICES`, a services file the test wrote in its
-temporary directory, whose entries include dummy's own and one named
-`telemetry` whose socket is a Unix socket in the same short temporary
-directory that the test serves, with `net/http`, using appkit's
-`telemetry.IngestHandler` over a `*telemetry.Capture`: the test stands in for
-the telemetry service, the child's events reach it over that socket and no
-network, and the child has nothing to write to stderr. Before signalling the
-test makes the requests D01's requirements on the `dummy` binary name, over
-the socket and with the identity headers: `GET /widgets`, an MCP call made
-with appkit's `mcp.Client` on behalf of a caller with a request id, and, for
-what that client cannot send (`server/discover`, whose result carries the
-instructions), a raw POST to `/mcp`. After the child exits it asserts on the
-events its stand-in received: `service.started` first, with the version
-`cli.Version` declares; the `tool.called` of its MCP call; and
-`service.stopping` last, with the reason `SIGTERM`. The second serve case's
-environment names no services file, so the child has no telemetry to reach
-and writes every event to stderr: the test asserts that stdout is empty and
-that every stderr line is `dummy: undelivered event: ` and a JSON object, the
-first `service.started` and the last `service.stopping` with the reason
-`SIGINT`. Each such event waits out the writer's real retry pauses (about
-150 milliseconds) before its line appears, well inside the 5-second drain,
-and the test waits on the child's exit, never on a sleep. The second case
-may make the same raw POST to prove the instructions are then absent, and
-makes the same `list_widgets` call with appkit's `mcp.Client`, so the test
-can assert that `alpha`'s id differs between the two cases. It
-asserts only what those requirements state, which proves `main` handed
-appkit's banner kit, MCP server and telemetry writer, with dummy's name and
-version, to the handler. Everything else dummy answers or records is decided
-in process against a handler the test built, and the exec'ing test exists
-only to prove the wiring. Any other test that
-builds, execs, waits on, or signals a
-process is a bug.
+**One exec'ing test, and only one.** Tests under `internal/` never start a process; the run seam exists so they need not. The wiring in `cmd/dummy` (D01's requirements on the binary) can be proved no other way, so exactly one test execs the binary, and it lives in `cmd/dummy`. It builds the binary into a temporary directory and runs it with `--version`, with `bogus`, and bare with no socket (exit 2). For the serve case it stands in for systemd: it makes a Unix socket in a short temporary directory, passes it as `exec.Cmd.ExtraFiles[0]` (descriptor 3 in the child), and starts the child through `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. It sets `NOTIFY_SOCKET` to a datagram socket it bound and waits for `READY=1`; then it sends `SIGTERM` and asserts exit 0, nothing on stdout or stderr, and that the socket's path still exists and still accepts a connection into its queue after the child has exited. It runs the serve case a second time with a fresh socket and stops it with `SIGINT`, asserting the same, because `main` promises both signals. The child's environment is one the test composes, offline like everything else. In the first serve case `IKIGENBA_SERVICES` names a services file the test wrote, whose entries include dummy's own and one named `telemetry` whose socket is a Unix socket in the same short temporary directory that the test serves with `net/http` and appkit's `telemetry.IngestHandler` over a `*telemetry.Capture`: the test stands in for the telemetry service, the child's events reach it over that socket, and the child has nothing to write to stderr. Before signalling, the test makes the requests D01 names, over the socket and with the identity headers: `GET /widgets`, an MCP call made with appkit's `mcp.Client` on behalf of a caller with a request id, and, for what that client cannot send (`server/discover`, whose result carries the instructions), a raw POST to `/mcp`. After the child exits it asserts on the events its stand-in received: `service.started` first, with the version `cli.Version` declares; the `tool.called` of its MCP call; and `service.stopping` last, with the reason `SIGTERM`. The second serve case names no services file, so the child writes every event to stderr: the test asserts that stdout is empty and that every stderr line is `dummy: undelivered event: ` and a JSON object, the first `service.started` and the last `service.stopping` with the reason `SIGINT`. Each such event waits out the writer's real retry pauses (about 150 milliseconds) before its line appears, well inside the 5-second drain, and the test waits on the child's exit, never on a sleep. The second case may make the same raw POST to prove the instructions are then absent, and makes the same `list_widgets` call with `mcp.Client` to assert that `alpha`'s id differs between the two cases. It asserts only what those requirements state, which proves `main` handed appkit's banner kit, MCP server and telemetry writer, with dummy's name and version, to the handler; everything else is proved in process. Any other test that builds, execs, waits on or signals a process is a bug.
 
 ## Live tests
 
-Live tests are the only tests that connect to external services. Every other
-test is a unit test and follows Test discipline. dummy calls no external
-service — nginx and auth stand in front of it, its MCP tools answer from its
-own store, and the telemetry service it sends events to is stood in for by a
-capturing sink or by appkit's ingest handler on a socket the test serves — so
-it has no live tests, and the MCP tests above are unit
-tests. The rules below govern one should a design ever call for it.
-
-- Minimal: a live test proves lightly that the whole application or library
-  is glued together and works end to end, about one per external service,
-  never an exhaustive suite. Behavior, edge cases, and error paths are the
-  unit tests' job.
-- Separate: live tests are `*_live_test.go` files guarded by
-  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
-  never runs them; `make live` runs
-  `go test -tags live -count=1 -run '^TestLive' ./...`.
-- Designed: a live test carries the requirement id it proves, and the gap
-  counts it like any other test.
-- Local: the code under test runs on the developer's machine; only the
-  external service is real.
-- Credentials: a live test reads its credentials from the environment. It
-  never skips: a missing credential fails it. No credential appears in the
-  repo or in test output.
-- Run: live tests run only as the conditional `make live` gate below.
+dummy calls no external service: nginx and auth stand in front of it, its MCP tools answer from its own store, and the telemetry service is stood in for by a capturing sink or appkit's ingest handler on a socket the test serves. It has no live tests, and the MCP tests above are unit tests. Should design ever call for one, it is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions; `go test ./...` never runs it and `make live` runs `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together, about one per external service, leaving behavior and error paths to the unit tests; it carries the id it proves; the code under test runs locally and only the external service is real; it reads credentials from the environment, fails rather than skips when one is missing, and no credential appears in the repo or test output; and it runs only as gate 6.
 
 ## Gates
 
-Run from this directory (`dummy/`), in order; every command must exit 0. No
-skipped tests, no disabled linters laundering a failure. A per-finding
-suppression comment (`//nolint` and the like) is a skip: the run never adds
-one; a finding it cannot fix, or believes is wrong, is filed as an issue.
+Run from `dummy/`, in order; every command must exit 0. No skipped tests and no disabled linters. A per-finding suppression (`//nolint` and the like) is a skip the run never adds; a finding it cannot fix or believes wrong is filed as an issue.
 
-1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (`go fmt`
-   itself always exits 0, so the check form is the gate; fix with `make fmt`)
+1. `test -z "$(gofmt -l .)"` (`go fmt` itself always exits 0, so the check form is the gate; fix with `make fmt`)
 2. `go build ./...`
-3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/dummy` —
-   the release build: proves `cmd/dummy` builds static for the host without
-   cgo, the way `devctl build` builds it
+3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/dummy`, the release build as `devctl build` makes it, static and cgo-free
 4. `go test -race ./...`
-5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
-   — the cache lives in this worktree's git directory, so worktrees never
-   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
-   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
-   this form; since the cache is private, `--allow-parallel-runners` skips
-   golangci-lint's machine-wide lock so gates for several sub-projects can lint
-   at once)
-6. `make live` — **conditional**: run only when the phase's diff (the working
-   tree against the last phase commit) adds or modifies a `*_live_test.go`
-   file; otherwise it is not run and not counted. When it applies and a
-   credential is absent, that is a missing tool: file an issue, do not pass or
-   skip.
+5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory, since a shared one keeps other worktrees' paths and stops applying suppressions, and `--allow-parallel-runners` lets several sub-projects lint at once (`make lint` runs this form)
+6. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.
 
-Gate 5's `formatters` (`gofmt`, `goimports`) repeat gate 1 harmlessly. It also
-flags an undocumented `package main` (`revive`) and an `http.Server` without
-`ReadHeaderTimeout` (`gosec` G112); both are fixed in code, never suppressed.
+Gate 5's formatters (`gofmt`, `goimports`) repeat gate 1 harmlessly. It also flags an undocumented `package main` (`revive`) and an `http.Server` without `ReadHeaderTimeout` (`gosec` G112); both are fixed in code, never suppressed.
 
 ## Commit conventions
 
@@ -374,42 +98,22 @@ flags an undocumented `package main` (`revive`) and an `http.Server` without
 Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 ```
 
-The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id.
+The `Requirements:` trailer lists the phase's ids so history stays greppable by id.
 
 ## Build
 
-`make` builds `bin/dummy` from the checkout (`make build`, the `Makefile` in
-this directory). `make fmt` rewrites unformatted files, and `make test` and
-`make lint` run the test and lint gates. The gates do not go through `make`:
-they call the Go tool directly, and the one test that needs a binary builds
-its own into a temporary directory.
+`make build` (the default) builds `bin/dummy`; `make fmt` formats; `make test` and `make lint` run those gates. The gates themselves call the Go tool directly, and the exec'ing test builds its own binary.
 
 ## Deploy
 
-Deploy machinery — the version bump, tags, and the `devctl build`/`devctl
-deploy` steps — is hand-maintained infrastructure outside the spec system: the
-build run never reads, edits, or tests it.
+Deploy machinery, the version bump, tags and `devctl build`/`devctl deploy`, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
 
-dummy is an app, not a self-installing CLI: it is built into a release tarball
-and pushed to a space's host by `devctl`, which drives `opsctl install` there.
+dummy is an app, not a self-installing CLI: `devctl` builds it into a release tarball and pushes it to a space's host, where `opsctl install` installs it.
 
-1. Set the version in `internal/cli/release.go` (D01) to `vX.Y.Z`. It is a
-   source literal the binary reports verbatim, and the deploy refuses a tag
-   that does not match it.
-2. Commit that on `main` and push `main`.
-3. Tag that commit `dummy/vX.Y.Z` and push the tag.
-4. `devctl build dummy` at that tag writes `dummy/dist/dummy-vX.Y.Z.tar.xz`,
-   holding `bin/dummy`, `etc/`, and `share/icon.svg`, with no version recorded
-   anywhere inside.
-   It refuses a binary whose `manifest` disagrees with the committed
-   `etc/manifest.toml`.
-5. `devctl deploy <space> dummy/dist/dummy-vX.Y.Z.tar.xz` uploads the tarball
-   to the space's `deploy/` prefix and runs `opsctl install` over ssh; the host
-   fetches it, writes `etc/env` (with the space's `DRAIN_SECONDS`), replaces
-   the release, publishes `ikigenba-dummy.socket` (the Unix socket
-   `/run/ikigenba/dummy.sock`) and the `Type=notify` `ikigenba-dummy.service`,
-   regenerates the host's nginx configuration, and restarts the service alone;
-   the socket stays up, so requests queue on it across the restart.
+1. Set the version in `internal/cli/release.go` (D01) to `vX.Y.Z`; the binary reports it verbatim and the deploy refuses a tag that does not match.
+2. Commit on `main` and push `main`.
+3. Tag the commit `dummy/vX.Y.Z` and push the tag.
+4. `devctl build dummy` at that tag writes `dummy/dist/dummy-vX.Y.Z.tar.xz` holding `bin/dummy`, `etc/` and `share/icon.svg`, with no version recorded inside; it refuses a binary whose `manifest` disagrees with the committed `etc/manifest.toml`.
+5. `devctl deploy <space> dummy/dist/dummy-vX.Y.Z.tar.xz` uploads it to the space's `deploy/` prefix and runs `opsctl install` over ssh. The host writes `etc/env` (with the space's `DRAIN_SECONDS`), replaces the release, publishes `ikigenba-dummy.socket` (`/run/ikigenba/dummy.sock`) and the `Type=notify` `ikigenba-dummy.service`, regenerates nginx, and restarts the service alone; the socket stays up, so requests queue on it across the restart.
 
-`dummy --version` then prints `vX.Y.Z`, and `space status` reports it.
+`dummy --version` then prints `vX.Y.Z`, and `devctl space status <space>` reports it.
