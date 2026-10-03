@@ -1,0 +1,26 @@
+version: "2"
+
+linters:
+  # The v2 standard set (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus a curated strict layer.
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    gosec:
+      excludes:
+        # G204 flags every exec.Command with variable arguments. sites runs
+        # the host's git to read a repository by design, with arguments it
+        # builds itself and never through a shell.
+        - G204
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

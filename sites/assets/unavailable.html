@@ -1,0 +1,18 @@
+{{/* The unavailable page, answered with status 503 to any visitor, signed in
+     or not, when a site's published commit cannot be served right now. No
+     banner, because a guest may see it; footer only. Data: .Banner (a
+     page.Banner, for the footer; its .Email may be empty). Hooks: h1 with
+     text "Site unavailable"; p#unavailable with text "This site is not
+     available right now. Try again in a moment."; no banner; no script. */}}
+{{define "unavailable"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>Site unavailable</title></head>
+<body>
+<main>
+<h1>Site unavailable</h1>
+<p id="unavailable" class="lede">This site is not available right now. Try again in a moment.</p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

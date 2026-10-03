@@ -1,0 +1,67 @@
+{{/* The landing page at GET /: what the service is, the space's sites, and
+     the tools that manage them. Shown only to a signed-in user. Data:
+     .Banner (a page.Banner, for banner and footer); .SitesURL
+     (<sites-url>: the services file's sites url less one trailing "/", else
+     <scheme>://<Host>); .Sites, the sites the caller may see (every listed
+     site, and the caller's own unlisted ones), sorted by name, each with
+     .Slug, .Name, .URL ("<.SitesURL>/<slug>/"), .Visibility ("public" or
+     "private"), .Listed (bool), .Published (bool: a commit is published) and
+     .Mine (bool: the caller owns it). Hooks: h1 with text "sites";
+     p#summary; section#sites with h2 "Sites" and either p#no-sites (text
+     "No sites yet.") when .Sites is empty, or table#site-list with one
+     tr[data-site=<slug>] per site holding td.site-name > a.site-link (href
+     .URL, text .Name), td.site-visibility > span.badge[data-kind=<.Visibility>]
+     (text .Visibility), td.site-listing holding span.badge[data-kind=unlisted]
+     (text "unlisted") only when not .Listed, td.site-state holding
+     span.status[data-status=published] (text "published") or
+     span.status[data-status=unpublished] (text "not published"), and
+     td.site-owner holding span.badge[data-kind=mine] (text "yours") only
+     when .Mine; a section with h2 "MCP tools" and dl#tools.kv holding one
+     dt[data-tool=<name>] per MCP tool, in the order list, show, create,
+     publish, update, delete, apex, each holding the tool's name in a code
+     element and followed by a dd holding the first line of its description;
+     p#site-url whose code element holds "<.SitesURL>/<slug>/";
+     a#about-link whose href is "/about". No script. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>sites</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>sites</h1>
+<p id="summary" class="lede">Static sites for the suite, served from repositories that repos holds. An agent creates a site from one of your repositories and publishes it at a commit; a public site is open to anyone, and a private one asks a visitor to sign in to this space.</p>
+<section id="sites" class="card">
+<header><h2>Sites</h2><p id="site-url">Every site answers at <code>{{.SitesURL}}/&lt;slug&gt;/</code>, where &lt;slug&gt; is its slug.</p></header>
+{{if .Sites}}<div class="table-scroll">
+<table id="site-list">
+<thead><tr><th>Site</th><th>Visibility</th><th>Listing</th><th>State</th><th>Owner</th></tr></thead>
+<tbody>
+{{range .Sites}}<tr data-site="{{.Slug}}">
+<td class="site-name"><a class="site-link" href="{{.URL}}">{{.Name}}</a></td>
+<td class="site-visibility"><span class="badge" data-kind="{{.Visibility}}">{{.Visibility}}</span></td>
+<td class="site-listing">{{if not .Listed}}<span class="badge" data-kind="unlisted">unlisted</span>{{end}}</td>
+<td class="site-state">{{if .Published}}<span class="status" data-status="published">published</span>{{else}}<span class="status" data-status="unpublished">not published</span>{{end}}</td>
+<td class="site-owner">{{if .Mine}}<span class="badge" data-kind="mine">yours</span>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
+</section>
+<section class="card">
+<header><h2>MCP tools</h2><p>Agents manage sites with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
+<dl id="tools" class="kv">
+<dt data-tool="list"><code>list</code></dt><dd>The sites you own, by name.</dd>
+<dt data-tool="show"><code>show</code></dt><dd>One of your sites, with its URL, its repository, and what is published.</dd>
+<dt data-tool="create"><code>create</code></dt><dd>Create a site from one of your repositories and return it; publish it to make it live.</dd>
+<dt data-tool="publish"><code>publish</code></dt><dd>Publish one of your sites at a commit of its repository: the ref it tracks, or a ref or commit you name.</dd>
+<dt data-tool="update"><code>update</code></dt><dd>Change one of your sites' visibility, whether it is listed, or the ref it tracks.</dd>
+<dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your sites; its repository is untouched.</dd>
+<dt data-tool="apex"><code>apex</code></dt><dd>Show, set or clear the site the space's apex domain redirects to.</dd>
+</dl>
+</section>
+<p><a id="about-link" href="/about">About sites</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
