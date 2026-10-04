@@ -5,7 +5,6 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -16,17 +15,10 @@ import (
 var connectTemplates = template.Must(page.Templates().ParseFS(assets.Assets(), "*.html"))
 var appkitStatic = page.Static()
 
-type connectService struct {
-	Name, Description, URL, Reason string
-	Available                      bool
-}
-
 type connectData struct {
 	Banner   page.Banner
 	Endpoint string
 	SetupURL string
-	Services []connectService
-	GitScope string
 }
 
 func serveAssets(w http.ResponseWriter, r *http.Request) {
@@ -57,35 +49,9 @@ func serveConnect(w http.ResponseWriter, r *http.Request, cfg Config, entries se
 		w.WriteHeader(http.StatusFound)
 		return
 	}
-	scheme := requestScheme(r)
 	origin := strings.TrimSuffix(addresses.TokenURL, "/")
-	u := page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: origin + "/", LogoutURL: origin + "/logout"}
-	gitSpace := r.Host
-	if strings.HasPrefix(gitSpace, "mcp.") && len(gitSpace) > 4 {
-		gitSpace = gitSpace[4:]
-	}
-	data := connectData{Banner: cfg.Banner(u), Endpoint: addresses.Endpoint, SetupURL: addresses.Origin + "/setup.txt", GitScope: scheme + "://*." + gitSpace}
-	seen := make(map[string]bool)
-	var names []string
-	for _, entry := range entries {
-		if entry.Name == ServiceName || seen[entry.Name] {
-			continue
-		}
-		seen[entry.Name] = true
-		first, _ := entries.Find(entry.Name)
-		if first.MCP {
-			names = append(names, entry.Name)
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		entry, _ := entries.Find(name)
-		service := connectService{Name: name, Description: entry.Description, URL: data.Endpoint + "/" + name, Available: entry.Enabled}
-		if !entry.Enabled {
-			service.Reason = "disabled"
-		}
-		data.Services = append(data.Services, service)
-	}
+	u := page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: addresses.TokenURL, LogoutURL: origin + "/logout"}
+	data := connectData{Banner: cfg.Banner(u), Endpoint: addresses.Endpoint, SetupURL: addresses.Origin + "/setup.txt"}
 	var body bytes.Buffer
 	if err := connectTemplates.ExecuteTemplate(&body, "connect", data); err != nil {
 		panic(err)

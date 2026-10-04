@@ -204,9 +204,9 @@ func renderAppkit(t *testing.T, name string, b page.Banner) string {
 
 // R-S31L-RMZB R-S49I-5EQ0 R-S5HE-J6GP R-S6PA-WY7E R-S7X7-APY3
 // R-TDDS-AX5P R-S953-OHOS R-SAD0-29FH
-// R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-SYQZ-PO9D R-T16S-H7QR
-// R-T2EO-UZHG R-YMEL-UH05 R-YNMI-88QU R-YOUE-M0HJ R-T4UH-MIYU R-96RZ-EUVY R-TC5V-X5F0
-// R-T7AA-E2G8 R-T8I6-RU6X R-T9Q3-5LXM
+// R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-UM2L-JL3C R-T16S-H7QR
+// R-UDJA-V6WH R-UIEW-E9V9 R-UER7-8YN6 R-UH70-0I4K R-UFZ3-MQDV
+// R-UKUP-5TCN R-T4UH-MIYU R-TC5V-X5F0
 func TestPlainPageMarkupHooksAndText(t *testing.T) {
 	for _, installed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "empty", true: "services"}[installed], func(t *testing.T) {
@@ -252,8 +252,10 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 			if viewport.name != "meta" || viewport.end > writtenBody.start || !slices.Contains(viewport.attrs["content"], "width=device-width, initial-scale=1") {
 				t.Fatalf("viewport %#v", viewport)
 			}
-			if len(readTags(written, "script", false)) != 0 {
-				t.Fatal("page script")
+			for _, script := range readTags(written, "script", false) {
+				if len(script.attrs["src"]) != 0 {
+					t.Fatal("page loads script file")
+				}
 			}
 			for _, tag := range readTags(written, "", false) {
 				if len(tag.attrs["style"]) != 0 || len(tag.attrs["srcset"]) != 0 {
@@ -271,7 +273,8 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 					}
 				}
 			}
-			checkContent(t, written, oneTag(t, readTags(written, "h1", false)), "Connect an MCP client")
+			h1 := oneTag(t, readTags(written, "h1", false))
+			checkContent(t, written, h1, "Connect MCP Client")
 			endpoint := "https://mcp.space.test:8443/mcp"
 			endpointTag := oneTag(t, attributed(written, "id", "endpoint"))
 			if endpointTag.name != "code" {
@@ -282,159 +285,57 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 			if profile.name != "a" || !slices.Contains(profile.attrs["href"], b.ProfileURL) {
 				t.Fatalf("profile link %#v", profile)
 			}
-			checkContent(t, written, profile, "your profile")
-			var setupHeads []markupTag
-			for _, heading := range readTags(written, "h2", false) {
-				content, _ := elementContent(written, heading)
-				if normalise(content) == "Connect your agent to ikigenba" {
-					setupHeads = append(setupHeads, heading)
-				}
+			checkContent(t, written, profile, "profile")
+			headings := readTags(written, "h2", false)
+			if len(headings) != 2 {
+				t.Fatalf("headings: %d", len(headings))
 			}
-			setupHead := oneTag(t, setupHeads)
+			checkContent(t, written, headings[0], "Automatic Install")
+			checkContent(t, written, headings[1], "Manual Install")
 			setupURL := oneTag(t, attributed(written, "id", "setup-url"))
-			if setupURL.name != "code" || setupHead.start <= profile.start || setupURL.start <= setupHead.start {
-				t.Fatal("setup section hooks out of order")
+			if setupURL.name != "code" || headings[0].start <= h1.start || headings[1].start <= h1.start || setupURL.start <= headings[0].start || setupURL.start >= headings[1].start || endpointTag.start <= headings[1].start || profile.start <= headings[1].start {
+				t.Fatal("section hooks out of order")
 			}
-			for _, hook := range []string{"mcp-services", "no-services"} {
-				for _, tag := range attributed(written, "id", hook) {
-					if tag.start <= setupHead.start {
-						t.Fatal("setup heading after services")
+			setupAddress := "https://mcp.space.test:8443/setup.txt"
+			checkContent(t, written, setupURL, setupAddress)
+			var blocks []markupTag
+			for _, tag := range readTags(written, "", false) {
+				for _, classes := range tag.attrs["class"] {
+					if slices.Contains(strings.FieldsFunc(classes, func(r rune) bool { return strings.ContainsRune(" \t\n\r\f\v", r) }), "secret") {
+						blocks = append(blocks, tag)
+						break
 					}
 				}
 			}
-			checkContent(t, written, setupURL, "https://mcp.space.test:8443/setup.txt")
+			if len(blocks) != 2 {
+				t.Fatalf("copy blocks: %d", len(blocks))
+			}
+			for i, block := range blocks {
+				content, found := elementContent(written, block)
+				if !found {
+					t.Fatal("copy block content missing")
+				}
+				oneTag(t, readTags(content, "code", false))
+				button := oneTag(t, readTags(content, "button", false))
+				if !slices.Contains(button.attrs["type"], "button") {
+					t.Fatal("copy button type")
+				}
+				checkContent(t, content, button, "Copy")
+				id := []string{"setup-url", "endpoint"}[i]
+				oneTag(t, attributed(content, "id", id))
+			}
 			text := visibleText(written)
 			if strings.Contains(text, normalise(r.Header.Get("X-User-Email"))) {
 				t.Fatal("email in written visible text")
 			}
-			for _, phrase := range []string{"Connect an MCP client", "Add this server to your client as a remote (Streamable HTTP) MCP server.", endpoint, "Every request must send the header Authorization: Bearer <token>. Create a token on your profile.", "Connect your agent to ikigenba", "Ask it to read https://mcp.space.test:8443/setup.txt", "Services", "The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: " + endpoint + "/a,b."} {
+			for _, phrase := range []string{"Connect MCP Client", "Automatic Install", "Ask your agent to follow these instructions:", setupAddress, "Copy", "Manual Install", endpoint, "Copy", "Every request must send the header Authorization: Bearer <token>.", "Create a token on your profile."} {
 				i := strings.Index(text, phrase)
 				if i < 0 {
 					t.Fatalf("missing/out of order visible phrase %q in %q", phrase, text)
 				}
 				text = text[i+len(phrase):]
 			}
-			if !installed {
-				if len(readTags(written, "table", false)) != 0 || len(attributed(written, "id", "mcp-services")) != 0 {
-					t.Fatal("table with empty services")
-				}
-				empty := oneTag(t, attributed(written, "id", "no-services"))
-				if empty.name != "p" {
-					t.Fatal("empty services not p")
-				}
-				checkContent(t, written, empty, "No MCP services are installed.")
-				return
-			}
-			table := oneTag(t, attributed(written, "id", "mcp-services"))
-			if table.name != "table" || len(attributed(written, "id", "no-services")) != 0 || strings.Contains(visibleText(written), "No MCP services are installed.") {
-				t.Fatal("incorrect services table state")
-			}
-			content, found := elementContent(written, table)
-			if !found {
-				t.Fatal("table content absent")
-			}
-			ths := readTags(content, "th", false)
-			if len(ths) != 4 {
-				t.Fatalf("headers %d", len(ths))
-			}
-			for i, name := range []string{"Name", "Description", "Endpoint", "Status"} {
-				checkContent(t, content, ths[i], name)
-			}
-			var rows []markupTag
-			for _, row := range readTags(content, "tr", false) {
-				if len(row.attrs["data-service"]) > 0 {
-					rows = append(rows, row)
-				}
-			}
-			if len(rows) != 2 {
-				t.Fatalf("service rows %d", len(rows))
-			}
-			for i, expected := range []struct{ name, description, status, available string }{{"alpha", "Enabled & ready", "available", "true"}, {"zeta", "Disabled <service> &amp;", "disabled", "false"}} {
-				row := rows[i]
-				if !slices.Contains(row.attrs["data-service"], expected.name) || !slices.Contains(row.attrs["data-available"], expected.available) {
-					t.Fatalf("row %#v", row)
-				}
-				rowBody, found := elementContent(content, row)
-				if !found {
-					t.Fatal("row content absent")
-				}
-				tds := readTags(rowBody, "td", false)
-				if len(tds) != 4 {
-					t.Fatalf("cells %d", len(tds))
-				}
-				for j, value := range []string{expected.name, expected.description, endpoint + "/" + expected.name, expected.status} {
-					checkContent(t, rowBody, tds[j], value)
-				}
-				checkContent(t, rowBody, oneTag(t, readTags(rowBody, "code", false)), endpoint+"/"+expected.name)
-				var badges []markupTag
-				for _, span := range readTags(rowBody, "span", false) {
-					hasBadge := false
-					for _, classes := range span.attrs["class"] {
-						for _, class := range strings.FieldsFunc(classes, func(r rune) bool { return strings.ContainsRune(" \t\n\r\f\v", r) }) {
-							if class == "badge" {
-								hasBadge = true
-							}
-						}
-					}
-					if hasBadge {
-						badges = append(badges, span)
-					}
-				}
-				badge := oneTag(t, badges)
-				checkContent(t, rowBody, badge, expected.status)
-				if expected.available == "true" {
-					if len(badge.attrs["data-reason"]) != 0 {
-						t.Fatal("reason on enabled service")
-					}
-				} else if !slices.Contains(badge.attrs["data-reason"], "disabled") {
-					t.Fatal("disabled reason absent")
-				}
-			}
 		})
-	}
-}
-
-// R-T9Q3-5LXM
-func TestUnreadableCataloguesShowEmptyServices(t *testing.T) {
-	dir := t.TempDir()
-	malformed := filepath.Join(dir, "malformed")
-	if err := os.WriteFile(malformed, []byte("not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"", filepath.Join(dir, "absent"), dir, malformed} {
-		w := answer(gateway.Handler(pageConfig(t, path, basicBanner)), pageRequest("GET", "/"))
-		if w.Code != 200 || len(readTags(w.Body.String(), "table", false)) != 0 {
-			t.Fatalf("invalid catalogue response %d %s", w.Code, w.Body.String())
-		}
-		p := oneTag(t, attributed(w.Body.String(), "id", "no-services"))
-		if p.name != "p" {
-			t.Fatal("empty hook not p")
-		}
-		checkContent(t, w.Body.String(), p, "No MCP services are installed.")
-	}
-}
-
-func TestConnectReadsRewrittenServices(t *testing.T) {
-	path := servicesFile(t, []map[string]any{service("alpha", "before", true, true)})
-	h := gateway.Handler(pageConfig(t, path, basicBanner))
-	first := answer(h, pageRequest("GET", "/"))
-	writeServices(t, path, []map[string]any{service("beta", "after", false, true)})
-	second := answer(h, pageRequest("GET", "/"))
-	if len(attributed(first.Body.String(), "data-service", "alpha")) != 1 || len(attributed(second.Body.String(), "data-service", "alpha")) != 0 || len(attributed(second.Body.String(), "data-service", "beta")) != 1 {
-		t.Fatal("catalogue not read afresh")
-	}
-}
-
-// R-YHJ0-BE1D R-SNRW-9QL4
-func TestConnectKeepsRequestCatalogueSnapshot(t *testing.T) {
-	path := servicesFile(t, []map[string]any{service("alpha", "before banner", true, true)})
-	cfg := pageConfig(t, path, func(u page.User) page.Banner {
-		writeServices(t, path, []map[string]any{service("beta", "after banner", false, true)})
-		return basicBanner(u)
-	})
-	w := answer(gateway.Handler(cfg), pageRequest("GET", "/"))
-	if w.Code != 200 || len(attributed(w.Body.String(), "data-service", "alpha")) != 1 || len(attributed(w.Body.String(), "data-service", "beta")) != 0 {
-		t.Fatal("page data was not built from the request's listed entries")
 	}
 }
 
@@ -488,12 +389,12 @@ func TestGatewayTemplateSet(t *testing.T) {
 		t.Fatal("connect template absent")
 	}
 	var out bytes.Buffer
-	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "SetupURL": "https://mcp.example.test/setup.txt", "Services": []any{}, "GitScope": "https://*.example.test"}); err != nil {
+	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "SetupURL": "https://mcp.example.test/setup.txt"}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// R-SNRW-9QL4 R-YHJ0-BE1D R-O7HP-Q7NU R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
+// R-SNRW-9QL4 R-UCBE-HF5S R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
 func TestConnectExactlyRendersRequestData(t *testing.T) {
 	for _, proto := range []string{"", "http", "https", "HTTP", "http, https", " https"} {
 		for _, host := range []string{"mcp.space.test:8443", "mcp.space.test:", "mcp.", "space.test:word", "mcp.mcp.space.test", "mcp.space<&>.test:8443"} {
@@ -517,7 +418,6 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 						scheme = "http"
 					}
 					spaces := map[string]string{"mcp.space.test:8443": "space.test", "mcp.space.test:": "space.test", "mcp.": "mcp.", "space.test:word": "space.test:word", "mcp.mcp.space.test": "mcp.space.test", "mcp.space<&>.test:8443": "space<&>.test"}
-					gitSpaces := map[string]string{"mcp.space.test:8443": "space.test:8443", "mcp.space.test:": "space.test:", "mcp.": "mcp.", "space.test:word": "space.test:word", "mcp.mcp.space.test": "mcp.space.test", "mcp.space<&>.test:8443": "space<&>.test:8443"}
 					origin := authURL
 					if origin == "" {
 						origin = scheme + "://auth." + spaces[host]
@@ -527,10 +427,7 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 						t.Fatalf("banner calls: %#v want %#v", users, u)
 					}
 					endpoint := scheme + "://" + host + "/mcp"
-					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "SetupURL": scheme + "://" + host + "/setup.txt", "GitScope": scheme + "://*." + gitSpaces[host], "Services": []map[string]any{
-						{"Name": "alpha", "Description": "enabled", "URL": endpoint + "/alpha", "Available": true, "Reason": ""},
-						{"Name": "zeta", "Description": "<b> &amp; text", "URL": endpoint + "/zeta", "Available": false, "Reason": "disabled"},
-					}}
+					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "SetupURL": scheme + "://" + host + "/setup.txt"}
 					set, err := page.Templates().ParseFS(assets.Assets(), "*.html")
 					if err != nil {
 						t.Fatal(err)
@@ -647,5 +544,64 @@ func TestNonMCPRoutesNeitherSetCookiesNorContactBackends(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// R-IA1Y-Z12O
+func TestConnectWrittenMarkupIgnoresOtherServices(t *testing.T) {
+	for _, authState := range []string{"absent", "empty", "url"} {
+		var authEntries []map[string]any
+		if authState != "absent" {
+			auth := service("auth", "authentication", true, false)
+			if authState == "url" {
+				auth["url"] = "http://accounts.test/base/"
+			}
+			authEntries = append(authEntries, auth)
+		}
+		cfg := pageConfig(t, "", basicBanner)
+		var want string
+		for i, other := range [][]map[string]any{
+			{},
+			{service("alpha", "Enabled & ready", true, true), service("zeta", "Disabled <service> &amp;", false, true)},
+			{service("zeta", "Different service", true, false), service("mcp", "gateway", true, true), service("alpha", "Unavailable", false, true), service("alpha", "Duplicate", true, true)},
+		} {
+			entries := append(append([]map[string]any{}, authEntries...), other...)
+			cfg.ServicesPath = servicesFile(t, entries)
+			r := pageRequest("GET", "/")
+			body := answer(gateway.Handler(cfg), r).Body.String()
+			profileURL := "https://auth.space.test/"
+			if authState == "url" {
+				profileURL = "http://accounts.test/base//"
+			}
+			b := basicBanner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: profileURL, LogoutURL: strings.TrimSuffix(profileURL, "/") + "/logout"})
+			written := strings.Replace(body, renderAppkit(t, "banner", b), "", 1)
+			written = strings.Replace(written, renderAppkit(t, "footer", b), "", 1)
+			if i == 0 {
+				want = written
+			} else if written != want {
+				t.Fatalf("%s: written markup depends on services", authState)
+			}
+		}
+	}
+}
+
+// R-UFZ3-MQDV
+func TestConnectProfileHookUsesBannerProfileURL(t *testing.T) {
+	for _, url := range []string{"", "http://accounts.test:8080/base/", "https://accounts.test/base/"} {
+		cfg := pageConfig(t, "", func(u page.User) page.Banner {
+			b := basicBanner(u)
+			b.ProfileURL = url
+			return b
+		})
+		r := pageRequest("GET", "/")
+		b := basicBanner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: url, LogoutURL: "https://auth.space.test/logout"})
+		body := answer(gateway.Handler(cfg), r).Body.String()
+		written := strings.Replace(body, renderAppkit(t, "banner", b), "", 1)
+		written = strings.Replace(written, renderAppkit(t, "footer", b), "", 1)
+		profile := oneTag(t, attributed(written, "id", "profile-link"))
+		if profile.name != "a" || !slices.Contains(profile.attrs["href"], url) {
+			t.Fatalf("profile hook %#v, want href %q", profile, url)
+		}
+		checkContent(t, written, profile, "profile")
 	}
 }

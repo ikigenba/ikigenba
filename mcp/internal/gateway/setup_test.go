@@ -73,15 +73,16 @@ func TestSetupTemplateSet(t *testing.T) {
 			t.Fatalf("missing %s", name)
 		}
 		var out bytes.Buffer
-		data := struct{ Origin, Endpoint, TokenURL string }{"https://mcp.example.test", "https://mcp.example.test/mcp", "https://auth.example.test/"}
+		data := struct{ Space, Origin, Endpoint, TokenURL, Variable, Server string }{"example.test", "https://mcp.example.test", "https://mcp.example.test/mcp", "https://auth.example.test/", "IKIGENBA_TOKEN_EXAMPLE_TEST", "ikigenba-example-test"}
 		if err := set.ExecuteTemplate(&out, name, data); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-// R-YSI3-RBPM R-YXDP-AEOE R-YYLL-O6F3 R-Z11E-FPWH R-YQ2A-ZS88
-// R-Z9KP-443C R-Z5WZ-YSV9 R-Z74W-CKLY R-Z8CS-QCCN R-Z29A-THN6
+// R-YSI3-RBPM R-UPQA-OWBF R-YYLL-O6F3 R-Z11E-FPWH R-YQ2A-ZS88
+// R-UQY7-2O24 R-US63-GFST R-Z74W-CKLY R-UTDZ-U7JI R-Z29A-THN6
+// R-UNAH-XCU1 R-UOIE-B4KQ
 func TestSetupExactlyRendersRequestData(t *testing.T) {
 	set, err := template.ParseFS(assets.Assets(), "setup.txt", "setup.sh")
 	if err != nil {
@@ -104,7 +105,16 @@ func TestSetupExactlyRendersRequestData(t *testing.T) {
 				}
 				origin := scheme + "://" + host
 				endpoint, tokenURL := origin+"/mcp", auth+"/"
-				data := map[string]any{"Origin": origin, "Endpoint": endpoint, "TokenURL": tokenURL}
+				names := map[string][2]string{
+					"space.test":      {"IKIGENBA_TOKEN_SPACE_TEST", "ikigenba-space-test"},
+					"mcp.space.test":  {"IKIGENBA_TOKEN_MCP_SPACE_TEST", "ikigenba-mcp-space-test"},
+					"space.test:word": {"IKIGENBA_TOKEN_SPACE_TEST_WORD", "ikigenba-space-test-word"},
+					"mcp.":            {"IKIGENBA_TOKEN_MCP_", "ikigenba-mcp-"},
+					"space<&>.test":   {"IKIGENBA_TOKEN_SPACE____TEST", "ikigenba-space----test"},
+				}
+				space := spaces[host]
+				variable, server := names[space][0], names[space][1]
+				data := map[string]any{"Space": space, "Origin": origin, "Endpoint": endpoint, "TokenURL": tokenURL, "Variable": variable, "Server": server}
 				for _, route := range []struct{ path, name string }{{"/setup.txt", "instructions"}, {"/setup.sh", "installer"}} {
 					var expected bytes.Buffer
 					if err := set.ExecuteTemplate(&expected, route.name, data); err != nil {
@@ -123,13 +133,31 @@ func TestSetupExactlyRendersRequestData(t *testing.T) {
 							t.Fatal("addresses absent")
 						}
 						if route.name == "instructions" {
-							for _, text := range []string{"curl -fsSL " + origin + "/setup.sh | bash -s -- --client <client> --scope <scope>", "codex-cli", "codex-desktop", "claude-cli", "claude-desktop", "grok-cli"} {
+							command := "curl -fsSL " + origin + "/setup.sh | bash"
+							found := false
+							lines := strings.Split(w.Body.String(), "\n")
+							for _, line := range lines[1 : len(lines)-1] {
+								if strings.TrimLeft(line, " ") == command {
+									found = true
+								}
+							}
+							if !found {
+								t.Fatal("fetch command absent as its own line")
+							}
+							for _, text := range []string{variable, server, "${XDG_CONFIG_HOME:-~/.config}/ikigenba/" + space + "/"} {
 								if !strings.Contains(w.Body.String(), text) {
 									t.Fatalf("missing %q", text)
 								}
 							}
-						} else if !strings.HasPrefix(w.Body.String(), "#!/usr/bin/env bash\n") {
-							t.Fatal("installer shebang absent")
+						} else {
+							if !strings.HasPrefix(w.Body.String(), "#!/usr/bin/env bash\n") {
+								t.Fatal("installer shebang absent")
+							}
+							for _, value := range []string{space, endpoint, tokenURL, variable, server} {
+								if !strings.Contains(w.Body.String(), "'"+value+"'") {
+									t.Fatalf("missing single-quoted value %q", value)
+								}
+							}
 						}
 						headRequest := r.Clone(r.Context())
 						headRequest.Method = "HEAD"
@@ -173,6 +201,30 @@ func TestSetupReadsRewrittenAuth(t *testing.T) {
 		after := answer(h, pageRequest("GET", route))
 		if !strings.Contains(before.Body.String(), "https://auth.space.test/") || !strings.Contains(after.Body.String(), "https://new-auth.test/") || strings.Contains(after.Body.String(), "https://auth.space.test/") {
 			t.Fatal("setup auth not read afresh")
+		}
+	}
+}
+
+// R-UNAH-XCU1 R-UOIE-B4KQ
+func TestSetupNamesNormalizeEachSpaceCharacter(t *testing.T) {
+	h := gateway.Handler(pageConfig(t, "", basicBanner))
+	for _, tc := range []struct{ host, variable, server string }{
+		{"mcp.sbx.ikigenba.dev", "IKIGENBA_TOKEN_SBX_IKIGENBA_DEV", "ikigenba-sbx-ikigenba-dev"},
+		{"mcp.wip-mcp.localhost:7403", "IKIGENBA_TOKEN_WIP_MCP_LOCALHOST", "ikigenba-wip-mcp-localhost"},
+		{"mcp.Az09_-é界.test:12", "IKIGENBA_TOKEN_AZ09_____TEST", "ikigenba-az09-----test"},
+		{"mcp.a\xff\xfe.test", "IKIGENBA_TOKEN_A___TEST", "ikigenba-a---test"},
+		{"MCP.A.Test", "IKIGENBA_TOKEN_MCP_A_TEST", "ikigenba-mcp-a-test"},
+		{"mcp.mcp.A.Test:", "IKIGENBA_TOKEN_MCP_A_TEST", "ikigenba-mcp-a-test"},
+		{"mcp.a.test:port", "IKIGENBA_TOKEN_A_TEST_PORT", "ikigenba-a-test-port"},
+		{"mcp.", "IKIGENBA_TOKEN_MCP_", "ikigenba-mcp-"},
+	} {
+		r := pageRequest("GET", "/setup.sh")
+		r.Host = tc.host
+		body := answer(h, r).Body.String()
+		for _, value := range []string{tc.variable, tc.server} {
+			if !strings.Contains(body, "'"+value+"'") {
+				t.Fatalf("host %q: missing name %q", tc.host, value)
+			}
 		}
 	}
 }

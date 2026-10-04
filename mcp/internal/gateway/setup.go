@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"net/http"
+	"strings"
 	"text/template"
 
 	"github.com/ikigenba/ikigenba/appkit/services"
@@ -12,7 +13,7 @@ import (
 var setupTemplates = template.Must(template.ParseFS(assets.Assets(), "setup.txt", "setup.sh"))
 
 type setupData struct {
-	Origin, Endpoint, TokenURL string
+	Space, Origin, Endpoint, TokenURL, Variable, Server string
 }
 
 func requestScheme(r *http.Request) string {
@@ -30,7 +31,27 @@ func requestAddresses(r *http.Request, entries services.List) setupData {
 	if entry, found := entries.Find("auth"); found && entry.URL != "" {
 		auth = entry.URL
 	}
-	return setupData{Origin: origin, Endpoint: origin + "/mcp", TokenURL: auth + "/"}
+	space := requestSpace(r.Host)
+	var variable, server strings.Builder
+	variable.WriteString("IKIGENBA_TOKEN_")
+	server.WriteString("ikigenba-")
+	for _, c := range space {
+		switch {
+		case c >= 'a' && c <= 'z':
+			variable.WriteRune(c - 'a' + 'A')
+			server.WriteRune(c)
+		case c >= 'A' && c <= 'Z':
+			variable.WriteRune(c)
+			server.WriteRune(c - 'A' + 'a')
+		case c >= '0' && c <= '9':
+			variable.WriteRune(c)
+			server.WriteRune(c)
+		default:
+			variable.WriteByte('_')
+			server.WriteByte('-')
+		}
+	}
+	return setupData{Space: space, Origin: origin, Endpoint: origin + "/mcp", TokenURL: auth + "/", Variable: variable.String(), Server: server.String()}
 }
 
 func serveSetup(w http.ResponseWriter, r *http.Request, entries services.List) {
