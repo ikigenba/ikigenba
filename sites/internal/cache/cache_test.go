@@ -962,6 +962,7 @@ func TestRunningGitStop(t *testing.T) {
 					want = limits.ErrTimedOut
 				case "halt":
 					f.l.Halt()
+					held.exited(t)
 					want = limits.ErrHalted
 				case "cancel":
 					cancel(cause)
@@ -971,7 +972,9 @@ func TestRunningGitStop(t *testing.T) {
 				if !errors.Is(err, want) {
 					t.Fatal(err)
 				}
-				held.exited(t)
+				if stop != "halt" {
+					held.exited(t)
+				}
 				absent(t, filepath.Join(f.root, site))
 			})
 		}

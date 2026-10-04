@@ -113,6 +113,12 @@ func (c *Cache) archive(ctx context.Context, u *unpack, repo string) error {
 	if err != nil {
 		return err
 	}
+	// The Operation cancellation function may be called before Wait when a
+	// stream is refused. Register actual process lifetime independently.
+	if begin, ok := op.Value([1]string{"sites.git.lifetime"}).(func() func()); ok {
+		finish := begin()
+		defer finish()
+	}
 	if err = cmd.Start(); err != nil {
 		if cause := context.Cause(op); cause != nil {
 			return cause

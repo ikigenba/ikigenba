@@ -24,6 +24,7 @@ type Limits struct {
 	draining bool
 	halted   bool
 	active   map[*operation]struct{}
+	gitRuns  map[chan struct{}]struct{}
 }
 
 type operation struct {
@@ -45,7 +46,7 @@ func New(s settings.Settings, c Clock) *Limits {
 	if c.After == nil {
 		c.After = time.After
 	}
-	return &Limits{settings: s, clock: c, active: make(map[*operation]struct{})}
+	return &Limits{settings: s, clock: c, active: make(map[*operation]struct{}), gitRuns: make(map[chan struct{}]struct{})}
 }
 
 // Settings returns the configuration supplied to New.
@@ -94,7 +95,28 @@ func (l *Limits) Operation(ctx context.Context) (context.Context, context.Cancel
 		delete(l.active, op)
 		l.mu.Unlock()
 	}()
-	return opctx, func() {
+	// An internal git consumer marks an actual start attempt separately from
+	// releasing its cancellation context. Halt joins only those real attempts.
+	tracked := context.WithValue(opctx, [1]string{"sites.git.lifetime"}, func() func() {
+		l.mu.Lock()
+		if l.halted || context.Cause(opctx) != nil {
+			l.mu.Unlock()
+			return func() {}
+		}
+		done := make(chan struct{})
+		l.gitRuns[done] = struct{}{}
+		l.mu.Unlock()
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				l.mu.Lock()
+				delete(l.gitRuns, done)
+				close(done)
+				l.mu.Unlock()
+			})
+		}
+	})
+	return tracked, func() {
 		l.mu.Lock()
 		cancel(context.Canceled)
 		delete(l.active, op)
@@ -123,11 +145,18 @@ func (l *Limits) Draining() bool { l.mu.Lock(); defer l.mu.Unlock(); return l.dr
 // Halt ends every open operation before returning and forbids new operations.
 func (l *Limits) Halt() {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.halted = true
 	for op := range l.active {
 		l.finishReady(op)
 		op.cancel(ErrHalted)
 		delete(l.active, op)
+	}
+	pending := make([]chan struct{}, 0, len(l.gitRuns))
+	for done := range l.gitRuns {
+		pending = append(pending, done)
+	}
+	l.mu.Unlock()
+	for _, done := range pending {
+		<-done
 	}
 }

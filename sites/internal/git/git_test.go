@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/sites/internal/git"
+	"github.com/ikigenba/ikigenba/sites/internal/limits"
+	"github.com/ikigenba/ikigenba/sites/internal/settings"
 )
 
 type fixture struct {
@@ -366,4 +368,56 @@ func TestSilentStreams(t *testing.T) {
 			t.Fatalf("process stream wrote %q: %v", data, err)
 		}
 	}
+}
+
+// Preparing a command concurrently with Halt must not start a late process;
+// unrelated operation users continue to be free to release after Halt returns.
+func TestHaltDuringGitPreparation(t *testing.T) {
+	f := setup(t)
+	l := limits.New(settings.Defaults(), limits.Clock{After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
+	op, release := l.Operation(t.Context())
+	defer release()
+	prepared, proceed := make(chan struct{}), make(chan struct{})
+	trace := filepath.Join(f.root, "trace")
+	g, err := git.Find(filepath.Dir(f.executable), func() []string {
+		close(prepared)
+		<-proceed
+		return append(slices.Clone(f.env), "GIT_TRACE="+trace)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() { _, err := g.Output(op, f.root, "--version"); result <- err }()
+	select {
+	case <-prepared:
+	case <-time.After(5 * time.Second):
+		t.Fatal("git was not prepared")
+	}
+	l.Halt()
+	close(proceed)
+	select {
+	case err := <-result:
+		if !errors.Is(err, limits.ErrHalted) {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("late git did not return")
+	}
+	if _, err := os.Stat(trace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("late git started: %v", err)
+	}
+	// Removing the selected binary must complete a tracked start failure, so a
+	// later Halt can still return without an outstanding completion token.
+	l = limits.New(settings.Defaults(), limits.Clock{After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
+	op, release = l.Operation(t.Context())
+	defer release()
+	if err := os.Remove(f.executable); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.g.Output(op, f.root, "--version")
+	if !errors.Is(err, git.ErrNotFound) {
+		t.Fatal(err)
+	}
+	l.Halt()
 }

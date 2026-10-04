@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	// Register the approved database/sql driver for catalog connections.
@@ -139,18 +140,11 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 				return nil, databaseError{ce}
 			}
 		}
-		probe, err := os.CreateTemp(parent, ".sites-write-")
-		if err != nil {
+		// Check directory write and search access without creating an entry.
+		// The service runs as an ordinary user, with equal real and effective IDs.
+		const writeAndSearch = 2 | 1
+		if err := syscall.Access(parent, writeAndSearch); err != nil {
 			return nil, databaseError{err}
-		}
-		name := probe.Name()
-		err = probe.Close()
-		removeErr := os.Remove(name)
-		if err != nil {
-			return nil, databaseError{err}
-		}
-		if removeErr != nil {
-			return nil, databaseError{removeErr}
 		}
 		f, err := os.OpenFile(filepath.Clean(source), os.O_RDWR|os.O_CREATE, 0600)
 		if err != nil {

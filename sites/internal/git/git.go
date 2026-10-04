@@ -70,6 +70,12 @@ func (g *Git) Output(ctx context.Context, dir string, args ...string) ([]byte, e
 	cmd := g.Command(ctx, dir, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	// Limits' private context registration joins this actual start attempt,
+	// without treating cancellation-context release as process completion.
+	if begin, ok := ctx.Value([1]string{"sites.git.lifetime"}).(func() func()); ok {
+		finish := begin()
+		defer finish()
+	}
 	output, err := cmd.Output()
 	if cause := context.Cause(ctx); cause != nil {
 		return output, cause
