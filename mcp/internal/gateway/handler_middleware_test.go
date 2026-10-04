@@ -52,11 +52,11 @@ func handlerConfig(t *testing.T, writer *telemetry.Writer) gateway.Config {
 	return gateway.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: gateway.NewServer("test", writer), ServicesPath: "", Budget: time.Second, Telemetry: writer}
 }
 func TestHandlerIdentity(t *testing.T) {
-	// R-1TFD-KEAM
+	// R-YDVB-62TA
 	writer, _ := handlerTelemetry(t, nil)
 	h := gateway.Handler(handlerConfig(t, writer))
 	reference := identity.Require(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("identity gate bypassed") }))
-	for _, path := range []string{"/", "/mcp", "/mcp/a,,b", "/_appkit/theme.css", "/unknown"} {
+	for _, path := range []string{"/mcp", "/mcp/", "/mcp/a", "/mcp/a,,b", "/mcp/a/b", "/mcp/../"} {
 		for _, method := range []string{"GET", "POST", "HEAD", "CUSTOM"} {
 			for _, headers := range []http.Header{{}, {"X-User-Id": []string{"", "later"}, "X-Request-Id": []string{"req"}}} {
 				endpointSame(t, h, reference, path, method, "bogus", "", headers)
@@ -69,7 +69,7 @@ func TestHandlerRequestTrail(t *testing.T) {
 	writer, capture := handlerTelemetry(t, nil)
 	h := gateway.Handler(handlerConfig(t, writer))
 	cases := []struct{ path, method, user, id string }{
-		{"/", "GET", "first", "provided"}, {"/", "HEAD", "", ""}, {"/_appkit/theme.css", "GET", "person", ""}, {"/unknown", "CUSTOM", "person", ""}, {"/mcp/a,,b", "POST", "person", ""}, {"/mcp", "DELETE", "person", ""},
+		{"/", "GET", "first", "provided"}, {"/", "HEAD", "", ""}, {"/", "POST", "", ""}, {"/setup.txt", "GET", "", ""}, {"/setup.sh", "GET", "person", ""}, {"/setup.sh", "HEAD", "", ""}, {"/setup.txt", "POST", "", ""}, {"/_appkit/theme.css", "GET", "person", ""}, {"/_appkit/theme.css", "GET", "", ""}, {"/unknown", "CUSTOM", "person", ""}, {"/setup.txt/x", "GET", "", ""}, {"/mcp/a,,b", "POST", "person", ""}, {"/mcp", "DELETE", "person", ""}, {"/mcp/a,,b", "POST", "", ""},
 	}
 	for _, tc := range cases {
 		before := len(capture.Events())

@@ -205,7 +205,7 @@ func renderAppkit(t *testing.T, name string, b page.Banner) string {
 // R-S31L-RMZB R-S49I-5EQ0 R-S5HE-J6GP R-S6PA-WY7E R-S7X7-APY3
 // R-TDDS-AX5P R-S953-OHOS R-SAD0-29FH
 // R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-SYQZ-PO9D R-T16S-H7QR
-// R-T2EO-UZHG R-T3ML-8R85 R-T4UH-MIYU R-96RZ-EUVY R-TC5V-X5F0
+// R-T2EO-UZHG R-YMEL-UH05 R-YNMI-88QU R-YOUE-M0HJ R-T4UH-MIYU R-96RZ-EUVY R-TC5V-X5F0
 // R-T7AA-E2G8 R-T8I6-RU6X R-T9Q3-5LXM
 func TestPlainPageMarkupHooksAndText(t *testing.T) {
 	for _, installed := range []bool{false, true} {
@@ -283,11 +283,31 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 				t.Fatalf("profile link %#v", profile)
 			}
 			checkContent(t, written, profile, "your profile")
+			var setupHeads []markupTag
+			for _, heading := range readTags(written, "h2", false) {
+				content, _ := elementContent(written, heading)
+				if normalise(content) == "Connect your agent to ikigenba" {
+					setupHeads = append(setupHeads, heading)
+				}
+			}
+			setupHead := oneTag(t, setupHeads)
+			setupURL := oneTag(t, attributed(written, "id", "setup-url"))
+			if setupURL.name != "code" || setupHead.start <= profile.start || setupURL.start <= setupHead.start {
+				t.Fatal("setup section hooks out of order")
+			}
+			for _, hook := range []string{"mcp-services", "no-services"} {
+				for _, tag := range attributed(written, "id", hook) {
+					if tag.start <= setupHead.start {
+						t.Fatal("setup heading after services")
+					}
+				}
+			}
+			checkContent(t, written, setupURL, "https://mcp.space.test:8443/setup.txt")
 			text := visibleText(written)
 			if strings.Contains(text, normalise(r.Header.Get("X-User-Email"))) {
 				t.Fatal("email in written visible text")
 			}
-			for _, phrase := range []string{"Connect an MCP client", "Add this server to your client as a remote (Streamable HTTP) MCP server.", endpoint, "Every request must send the header Authorization: Bearer <token>. Create a token on your profile.", "Services", "The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: " + endpoint + "/a,b."} {
+			for _, phrase := range []string{"Connect an MCP client", "Add this server to your client as a remote (Streamable HTTP) MCP server.", endpoint, "Every request must send the header Authorization: Bearer <token>. Create a token on your profile.", "Connect your agent to ikigenba", "Ask it to read https://mcp.space.test:8443/setup.txt", "Services", "The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: " + endpoint + "/a,b."} {
 				i := strings.Index(text, phrase)
 				if i < 0 {
 					t.Fatalf("missing/out of order visible phrase %q in %q", phrase, text)
@@ -405,7 +425,7 @@ func TestConnectReadsRewrittenServices(t *testing.T) {
 	}
 }
 
-// R-O69T-CFX5 R-SNRW-9QL4
+// R-YHJ0-BE1D R-SNRW-9QL4
 func TestConnectKeepsRequestCatalogueSnapshot(t *testing.T) {
 	path := servicesFile(t, []map[string]any{service("alpha", "before banner", true, true)})
 	cfg := pageConfig(t, path, func(u page.User) page.Banner {
@@ -458,7 +478,7 @@ func answer(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-// R-SIWA-QNMC R-SK47-4FD1
+// R-YF37-JUJZ R-SK47-4FD1
 func TestGatewayTemplateSet(t *testing.T) {
 	templates, err := page.Templates().ParseFS(assets.Assets(), "*.html")
 	if err != nil {
@@ -468,12 +488,12 @@ func TestGatewayTemplateSet(t *testing.T) {
 		t.Fatal("connect template absent")
 	}
 	var out bytes.Buffer
-	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "Services": []any{}, "GitScope": "https://*.example.test"}); err != nil {
+	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "SetupURL": "https://mcp.example.test/setup.txt", "Services": []any{}, "GitScope": "https://*.example.test"}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// R-SNRW-9QL4 R-O69T-CFX5 R-O7HP-Q7NU R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
+// R-SNRW-9QL4 R-YHJ0-BE1D R-O7HP-Q7NU R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
 func TestConnectExactlyRendersRequestData(t *testing.T) {
 	for _, proto := range []string{"", "http", "https", "HTTP", "http, https", " https"} {
 		for _, host := range []string{"mcp.space.test:8443", "mcp.space.test:", "mcp.", "space.test:word", "mcp.mcp.space.test", "mcp.space<&>.test:8443"} {
@@ -507,7 +527,7 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 						t.Fatalf("banner calls: %#v want %#v", users, u)
 					}
 					endpoint := scheme + "://" + host + "/mcp"
-					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "GitScope": scheme + "://*." + gitSpaces[host], "Services": []map[string]any{
+					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "SetupURL": scheme + "://" + host + "/setup.txt", "GitScope": scheme + "://*." + gitSpaces[host], "Services": []map[string]any{
 						{"Name": "alpha", "Description": "enabled", "URL": endpoint + "/alpha", "Available": true, "Reason": ""},
 						{"Name": "zeta", "Description": "<b> &amp; text", "URL": endpoint + "/zeta", "Available": false, "Reason": "disabled"},
 					}}
@@ -538,29 +558,37 @@ func TestConnectHEADMatchesGET(t *testing.T) {
 	}
 }
 
-// R-SQ7P-1A2I
+// R-YIQW-P5S2
 func TestConnectRejectsOtherMethods(t *testing.T) {
 	h := gateway.Handler(pageConfig(t, "", basicBanner))
 	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT", "TRACE", "CUSTOM"} {
-		w := answer(h, pageRequest(method, "/"))
-		if w.Code != 405 || !reflect.DeepEqual(w.Header().Values("Allow"), []string{"GET, HEAD"}) || w.Body.Len() != 0 {
-			t.Fatalf("%s: %d %v %q", method, w.Code, w.Header(), w.Body.String())
+		for _, identity := range []string{"signed", "absent", "empty"} {
+			r := pageRequest(method, "/")
+			setPageIdentity(r, identity)
+			w := answer(h, r)
+			if w.Code != 405 || !reflect.DeepEqual(w.Header().Values("Allow"), []string{"GET, HEAD"}) || w.Body.Len() != 0 {
+				t.Fatalf("%s: %d %v %q", method, w.Code, w.Header(), w.Body.String())
+			}
 		}
 	}
 }
 
-// R-SMJZ-VYUF R-SRFL-F1T7
+// R-SMJZ-VYUF R-YL6P-GP9G
 func TestUnknownPathsReturnExact404(t *testing.T) {
 	h := gateway.Handler(pageConfig(t, "", basicBanner))
-	for _, path := range []string{"/_appkit", "/assets/", "/assets/connect.html", "/logout", "/index.html", "//", "/nope/", "/x/../", "/./", "/x/%2e%2e/", "/%61ssets/theme.css"} {
+	for _, path := range []string{"/_appkit", "/assets/", "/assets/connect.html", "/logout", "/index.html", "/setup", "/setup.txt/", "/setup.sh/", "/setup.txt/x", "/setup.sh/x", "//", "/nope/", "/x/../", "/./", "/x/%2e%2e/", "/%61ssets/theme.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "OPTIONS"} {
-			w := answer(h, pageRequest(method, path+"?ignored=yes"))
-			body := "not found\n"
-			if method == "HEAD" {
-				body = ""
-			}
-			if w.Code != 404 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) || w.Body.String() != body || w.Header().Get("Location") != "" {
-				t.Fatalf("%s %s: %d %v %q", method, path, w.Code, w.Header(), w.Body.String())
+			for _, identity := range []string{"signed", "absent", "empty"} {
+				r := pageRequest(method, path+"?ignored=yes")
+				setPageIdentity(r, identity)
+				w := answer(h, r)
+				body := "not found\n"
+				if method == "HEAD" {
+					body = ""
+				}
+				if w.Code != 404 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) || w.Body.String() != body || w.Header().Get("Location") != "" {
+					t.Fatalf("%s %s: %d %v %q", method, path, w.Code, w.Header(), w.Body.String())
+				}
 			}
 		}
 	}
@@ -590,7 +618,7 @@ func TestNonMCPRoutesNeitherSetCookiesNorContactBackends(t *testing.T) {
 	entry := service("alpha", "backend", true, true)
 	entry["socket"] = socket
 	h := gateway.Handler(pageConfig(t, servicesFile(t, []map[string]any{entry}), basicBanner))
-	for _, path := range []string{"/", "/_appkit/theme.css", "/_appkit/../theme.css", "/logout", "/assets/connect.html", "/unknown"} {
+	for _, path := range []string{"/", "/setup.txt", "/setup.sh", "/_appkit/theme.css", "/_appkit/../theme.css", "/logout", "/assets/connect.html", "/unknown"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			for _, user := range []string{"person", ""} {
 				r := pageRequest(method, path)

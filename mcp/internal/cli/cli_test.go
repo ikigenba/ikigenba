@@ -47,7 +47,7 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// R-V8QD-KGV9 R-V9Y9-Y8LY R-X2KY-82WR R-VCE2-PS3C
+// R-YCNE-SB2L R-V9Y9-Y8LY R-X2KY-82WR R-VCE2-PS3C
 func TestConstants(t *testing.T) {
 	const manifest = cli.Manifest
 	const usage = cli.Usage
@@ -55,7 +55,7 @@ func TestConstants(t *testing.T) {
 	if a != 0 || b != 1 || c != 2 {
 		t.Fatal(a, b, c)
 	}
-	if manifest != "app = \"mcp\"\ndescription = \"Connect AI assistants to your services\"\ndefault = false\nmcp = false\nsecrets = []\n" {
+	if manifest != "app = \"mcp\"\ndescription = \"Connect AI assistants to your services\"\ndefault = false\nmcp = false\nguests = true\nsecrets = []\n" {
 		t.Fatal(manifest)
 	}
 	if usage != "Usage: mcp [command]\n\nServe the MCP gateway at /mcp, and its connect page at /, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n" {

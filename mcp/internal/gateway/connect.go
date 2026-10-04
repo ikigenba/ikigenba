@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -23,6 +24,7 @@ type connectService struct {
 type connectData struct {
 	Banner   page.Banner
 	Endpoint string
+	SetupURL string
 	Services []connectService
 	GitScope string
 }
@@ -49,20 +51,20 @@ func serveConnect(w http.ResponseWriter, r *http.Request, cfg Config, entries se
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	scheme := r.Header.Get("X-Forwarded-Proto")
-	if scheme != "http" && scheme != "https" {
-		scheme = "https"
+	addresses := requestAddresses(r, entries)
+	if r.Header.Get("X-User-Id") == "" {
+		w.Header().Set("Location", addresses.TokenURL+"?return="+url.QueryEscape(addresses.Origin+r.URL.RequestURI()))
+		w.WriteHeader(http.StatusFound)
+		return
 	}
-	origin := scheme + "://auth." + requestSpace(r.Host)
-	if entry, found := entries.Find("auth"); found && entry.URL != "" {
-		origin = entry.URL
-	}
+	scheme := requestScheme(r)
+	origin := strings.TrimSuffix(addresses.TokenURL, "/")
 	u := page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: origin + "/", LogoutURL: origin + "/logout"}
 	gitSpace := r.Host
 	if strings.HasPrefix(gitSpace, "mcp.") && len(gitSpace) > 4 {
 		gitSpace = gitSpace[4:]
 	}
-	data := connectData{Banner: cfg.Banner(u), Endpoint: scheme + "://" + r.Host + "/mcp", GitScope: scheme + "://*." + gitSpace}
+	data := connectData{Banner: cfg.Banner(u), Endpoint: addresses.Endpoint, SetupURL: addresses.Origin + "/setup.txt", GitScope: scheme + "://*." + gitSpace}
 	seen := make(map[string]bool)
 	var names []string
 	for _, entry := range entries {

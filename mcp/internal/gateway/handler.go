@@ -42,7 +42,7 @@ func requestStateFrom(ctx context.Context) *requestState {
 	return state
 }
 
-// Handler builds the gateway HTTP surface and requires nginx's caller identity.
+// Handler builds the gateway HTTP surface with identity protection per route.
 func Handler(cfg Config) http.Handler {
 	if cfg.Budget <= 0 {
 		cfg.Budget = DefaultBudget
@@ -68,11 +68,23 @@ func Handler(cfg Config) http.Handler {
 			cfg.MCP.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestStateKey{}, state)))
 			return
 		}
-		if strings.HasPrefix(path, "/_appkit/") {
+		if path == "/setup.txt" || path == "/setup.sh" {
+			serveSetup(w, r, entries)
+			return
+		}
+		if strings.HasPrefix(path, page.StaticPrefix) {
 			serveAssets(w, r)
 			return
 		}
 		serveConnect(w, r, cfg, entries)
 	})
-	return telemetry.Middleware(cfg.Telemetry, identity.Require(routes))
+	required := identity.Require(routes)
+	optional := identity.Optional(routes)
+	return telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/") {
+			required.ServeHTTP(w, r)
+			return
+		}
+		optional.ServeHTTP(w, r)
+	}))
 }
