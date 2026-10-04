@@ -3,9 +3,12 @@
      unscoped URL, <scheme>://<Host>/mcp); .Banner.ProfileURL (auth's profile
      page, where API tokens are made); .GitScope (<scheme>://*.<space>,
      the Host with one leading "mcp." dropped and its port kept);
-     .Services, in name order, each with .Name, .Description, .URL (its
+     .SetupURL (<scheme>://<Host>/setup.txt, the instructions an agent
+     reads); .Services, in name order, each with .Name, .Description, .URL (its
      scoped endpoint, <endpoint>/<name>), .Available (bool) and .Reason
-     ("disabled", set only when unavailable). Hooks: code#endpoint; a#profile-link; table#mcp-services
+     ("disabled", set only when unavailable). Hooks: code#endpoint; a#profile-link; after it and
+     before the services, an h2 "Connect your agent to ikigenba" and
+     code#setup-url holding .SetupURL; table#mcp-services
      with one tr[data-service=<name>][data-available=true|false] per service,
      whose td code holds .URL and whose span.badge holds "available" or the
      reason, with data-reason=<reason> when unavailable; p#no-services when
@@ -22,6 +25,9 @@
 <p>Add this server to your client as a remote (Streamable HTTP) MCP server.</p>
 <pre><code id="endpoint">{{.Endpoint}}</code></pre>
 <p>Every request must send the header <code>Authorization: Bearer &lt;token&gt;</code>. Create a token on <a id="profile-link" href="{{.Banner.ProfileURL}}">your profile</a>.</p>
+<section>
+<div class="section-head"><div><h2>Connect your agent to ikigenba</h2><p>Ask it to read <code id="setup-url">{{.SetupURL}}</code></p></div></div>
+</section>
 <section>
 <div class="section-head"><div><h2>Services</h2><p>The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: <code>{{.Endpoint}}/a,b</code>.</p></div></div>
 {{if .Services}}<div class="table-scroll">

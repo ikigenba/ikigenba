@@ -1,0 +1,67 @@
+{{/* GET /setup.txt: plain-text instructions an agent reads and follows to
+     have its user connect the agent's own client to the gateway.
+     Data: .Origin (<scheme>://<Host>, the gateway origin); .Endpoint
+     (<Origin>/mcp, the MCP endpoint); .TokenURL (auth's profile page,
+     where a user creates a token). Text the tests read: .Endpoint,
+     .TokenURL, the command "curl -fsSL <Origin>/setup.sh | bash -s --
+     --client <client> --scope <scope>", and the five client names
+     codex-cli, codex-desktop, claude-cli, claude-desktop, grok-cli. */}}
+{{- define "instructions"}}# Connect your client to ikigenba
+
+These instructions are for you, the agent. Follow them to have your user connect the client they are talking to you through to the ikigenba MCP gateway.
+
+Endpoint: {{.Endpoint}}
+Token page: {{.TokenURL}}
+
+The gateway takes a personal access token as the header "Authorization: Bearer <token>". The user creates the token at the token page. The installer below keeps it in the environment variable IKIGENBA_TOKEN and points the client's configuration at that variable.
+
+Never ask for the token in the chat, and never accept it there. If the user pastes it into the chat anyway, tell them to revoke it at {{.TokenURL}} and create another.
+
+## 1. Check where you run
+
+Set up only the client the user is talking to you through, on the user's own machine.
+
+- If you have your own way to add a remote MCP server and take a secret outside the chat, as grokbot does, use it instead of the installer: add a server named "ikigenba" at {{.Endpoint}} with the header "Authorization: Bearer <token>", tell the user to create a token at {{.TokenURL}} and enter it there, not in the chat, and go to step 4 once they have approved.
+- Otherwise, if you run somewhere other than the user's machine, such as a hosted or cloud sandbox, tell the user where you are running, say you cannot set up their machine from there, and stop. Give no command.
+
+## 2. Work out the client, the OS and the scope
+
+- Client: from your own instructions, including whether you are a command-line tool or a desktop app. It is one of these, given as <client> and named as <Client>:
+  - codex-cli, Codex CLI: the Codex command-line tool
+  - codex-desktop, Codex desktop: the Codex desktop app
+  - claude-cli, Claude CLI: the Claude Code command-line tool
+  - claude-desktop, Claude desktop: the Code tab of the Claude desktop app
+  - grok-cli, Grok CLI: the Grok command-line tool
+  Any other client is not supported by the installer: tell the user so and stop.
+- OS: from your own instructions, confirmed with a command where you can, such as "uname -s". The installer runs on Linux only. On any other OS, tell the user the installer supports Linux only, and stop.
+- Scope: "user" sets up the client for the user's account; "project" for the project in the current working directory only. Use what the user said. If they have not said, ask, for example: "Should I set up ikigenba for your user account, or just for this project?"
+
+Ask the user only what you cannot tell, in one question, and nothing more.
+
+## 3. Give the user one message
+
+Send the user exactly this message, with <Client>, <client> and <scope> filled in, and the first line ending "for your user account" for the user scope or "for this project" for the project scope:
+
+I'll set up <Client> for your user account.
+
+1. Create a token at {{.TokenURL}} and copy it.
+2. Open a terminal and run:
+
+   curl -fsSL {{.Origin}}/setup.sh | bash -s -- --client <client> --scope <scope>
+
+   It will ask for the token. Paste it; it shows as asterisks.
+3. Restart <Client> and tell me when it's back.
+
+The user must run the command in their own terminal, in the project's directory for the project scope. Do not run it yourself: it reads the token from the terminal. Then wait for the user.
+
+If the installer stops, it has changed nothing and its last lines say why; help the user act on them and run the command again.
+
+## 4. Check the connection
+
+When the user says the client is back:
+
+1. Call the gateway's "services" tool.
+2. Call the gateway's "call" tool once, running a read-only tool of a service "services" lists as available. Never use "mutate" for this check. A client with no token may still list tools, so only the call proves the token works.
+
+If both succeed, tell the user they are connected and name the services you can reach. If either fails, or the gateway's tools are missing, tell the user the connection did not work, quote the gateway's error exactly, and point them back to the installer command in step 3.
+{{end}}
