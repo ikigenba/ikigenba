@@ -53,7 +53,7 @@ Content-Type: text/plain; charset=utf-8
 
 Status 200. The body is plain text, the same for both requests, naming the space `sbx.ikigenba.dev`. It tells the agent:
 
-- that it must be running on the user's own machine, and, when it runs anywhere else, to tell the user it cannot configure their machine from there and stop; and that an agent whose client has its own way to add a remote MCP server with a secret typed outside the chat uses that way instead;
+- that it must be running on the user's own machine, and, when it runs anywhere else, to tell the user it cannot configure their machine from there and stop; that the script runs on Linux only, and, when the user's machine runs any other OS, to tell the user so and stop; and that an agent whose client has its own way to add a remote MCP server with a secret typed outside the chat uses that way instead;
 - first, to ask the user to create a token at `https://auth.sbx.ikigenba.dev/` and run `curl -fsSL https://mcp.sbx.ikigenba.dev/setup.sh | bash` in a terminal on their machine, and to wait until they say it is done;
 - that the script saves `config` and `token` in `${XDG_CONFIG_HOME:-~/.config}/ikigenba/sbx.ikigenba.dev/`, written out in full; that the agent reads `config` and uses its values, deriving none itself; and that it never reads, prints or copies `token`, into the chat or into a command it shows;
 - then, to make four outcomes true: the variable `IKIGENBA_TOKEN_SBX_IKIGENBA_DEV` holds the token in the environment the client gets when it is restarted the way it is running now, a terminal session for a command-line client and the desktop session for a desktop app, and no command that moves the token prints it; the client has an MCP server named `ikigenba-sbx-ikigenba-dev`, at `https://mcp.sbx.ikigenba.dev/mcp`, that sends `Authorization: Bearer <token>` by referring to the variable, never holding the token itself unless the client cannot read a variable or a file and the user agrees; nothing else in the user's configuration is lost or changed, other servers, other spaces' entries and other variables included, and another ikigenba entry or token variable found is left as it is and mentioned to the user; and, when the client has both a user scope and a project scope, the user has chosen which;
@@ -271,6 +271,21 @@ Preconditions:
 
 - The agent has read `https://mcp.sbx.ikigenba.dev/setup.txt`.
 - The agent runs on a machine that is not the user's.
+
+Postconditions:
+
+- Nothing has changed. The agent gave the user no command to run.
+
+## An agent on a machine that is not Linux stops
+
+The agent runs on the user's own machine, but `uname -s` prints `Darwin`. The script supports Linux only (`A user runs the script on another OS`), so the agent tells the user, in its own words, that setup supports Linux only for now, and stops, giving no command.
+
+No command is run and nothing exits; the agent acts as `/setup.txt` directs it, and what it says is its reply to the user in the chat.
+
+Preconditions:
+
+- The agent has read `https://mcp.sbx.ikigenba.dev/setup.txt`.
+- The agent runs on the user's own machine, whose OS is not Linux.
 
 Postconditions:
 
