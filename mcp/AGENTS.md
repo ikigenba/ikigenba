@@ -29,13 +29,7 @@ Prefer the standard library, then a widely used public module; adding one needs 
 
 ### Adopting appkit
 
-appkit is released from this repository. Until its tag `appkit/<version>` is on origin, neither the module proxy nor the checksum database knows it, so the machine that builds mcp tags the release commit locally (`git tag appkit/<version> <commit>`), seeds the module cache once:
-
-```
-GOPROXY=direct GONOSUMDB=github.com/ikigenba/ikigenba GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url./mnt/projects/ikigenba.insteadOf GIT_CONFIG_VALUE_0=https://github.com/ikigenba/ikigenba go mod download github.com/ikigenba/ikigenba/appkit@<version>
-```
-
-and sets the requirement with `GONOSUMDB=github.com/ikigenba/ikigenba go get github.com/ikigenba/ikigenba/appkit@<version>`, with that `GONOSUMDB` exported in the build run's shell. The tag must be pushed before any other machine builds mcp.
+appkit is required only at a published release, `appkit/<version>` on origin (see the root `AGENTS.md`); the build run sets it with `go get github.com/ikigenba/ikigenba/appkit@<version>`.
 
 ## Test files
 

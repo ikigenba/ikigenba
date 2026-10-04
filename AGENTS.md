@@ -47,6 +47,8 @@ Versions are data. No test, fixture or requirement names a release version; a te
 
 Adding an external dependency needs human approval. Ask first.
 
+A library in this repository (appkit, agentkit, toolkit) is consumed only as a published release: tag it `<lib>/vX.Y.Z` on `main`, push the tag, then require that version through the ordinary module proxy and checksum database. Never build against the local tree: no `replace` directives, no `go.work`, no locally tagged or seeded module cache, no `GONOSUMDB` or `GOPROXY=direct` workarounds. A change that needs a new library feature lands and releases the library first.
+
 Push only `main` and release tags to origin, and only when asked. Commit only to the branch checked out where you started; unless asked, move no other branch and create no branch or worktree for the work you were given. Land work, when asked, with `git fetch . <branch>:main`. Never `git stash`: the stack is shared across worktrees. Set work aside with a WIP commit or a local branch.
 
 Investigate outside the tree: a probe or scratch script goes in a temporary directory, or in a throwaway worktree when it must import the code, removed afterwards and never committed. Try the cheapest instrument first; a shell command or a question usually beats a program.
