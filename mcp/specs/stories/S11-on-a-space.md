@@ -1,6 +1,6 @@
 # Stories — on a space
 
-The gateway reached through a space: the file `S10` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `mcp.<space>` over TLS. A space is one label under the root domain and an app is `<app>.<space>`, so mcp on the space `sbx.ikigenba.dev` answers at `mcp.sbx.ikigenba.dev`. nginx on the space proxies to mcp's socket, `/run/ikigenba/mcp.sock` (`S02`). The space authenticates every request before it reaches mcp and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`; mcp itself has no unauthenticated case, so a request that arrives at all is one of a known caller. A page request without a credential is the gate's to answer, as for every app. The host's services file is `/var/lib/ikigenba/services.json`, which opsctl writes and names in mcp's environment (`S02`). The gateway reaches each MCP service directly on the socket its entry names, never through nginx, forwarding the caller's `X-User-Id`, `X-User-Email`, and `X-Request-Id` (`S08`). The stories prove the whole path from checkout to client and nothing about mcp that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The MCP requests below are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision (`S05`) are not repeated.
+The gateway reached through a space: the file `S10` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `mcp.<space>` over TLS. A space is one label under the root domain and an app is `<app>.<space>`, so mcp on the space `sbx.ikigenba.dev` answers at `mcp.sbx.ikigenba.dev`. nginx on the space proxies to mcp's socket, `/run/ikigenba/mcp.sock` (`S02`). The space authenticates every request that carries a credential and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`. mcp serves guests (`S01`), so a request outside `/mcp` with no credential reaches mcp with no caller, and mcp answers it: the setup files are served (`S12`) and the connect page sends the visitor to sign in (`S03`). A request to `/mcp` without a credential is the gate's to answer, as for every app. The host's services file is `/var/lib/ikigenba/services.json`, which opsctl writes and names in mcp's environment (`S02`). The gateway reaches each MCP service directly on the socket its entry names, never through nginx, forwarding the caller's `X-User-Id`, `X-User-Email`, and `X-Request-Id` (`S08`). The stories prove the whole path from checkout to client and nothing about mcp that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The MCP requests below are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision (`S05`) are not repeated.
 
 ## A visitor reaches the connect page on a space
 
@@ -28,7 +28,7 @@ Preconditions:
 - `devctl --account 602773793009 deploy sbx.ikigenba.dev mcp/dist/mcp-v<semver>.tar.xz` exited 0.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows `mcp v<semver> active active -`.
 - auth and dummy are deployed and active on the space, and dummy's manifest has `mcp = true`, so the host's services file lists `auth`, and lists `dummy` enabled and marked for MCP.
-- The space routes `mcp.sbx.ikigenba.dev` through its authenticating gate: the gate admits the request and sets `X-User-Id` and `X-User-Email` on what it passes to mcp, and refuses a request it cannot authenticate before mcp sees it.
+- The space routes `mcp.sbx.ikigenba.dev` through its authenticating gate: the gate admits the request and sets `X-User-Id` and `X-User-Email` on what it passes to mcp.
 - The caller holds a credential the gate accepts, and the email that credential names is the one the page's profile link is titled with.
 
 Postconditions:
@@ -64,6 +64,66 @@ Postconditions:
 
 - Nothing has changed.
 
+## A visitor on a space without a credential is sent to sign in
+
+A browser with no session asks for the connect page. The space lets it through to mcp, since mcp serves guests, and mcp sends it to auth's sign-in with the page's address to come back to (`S03`).
+
+Request:
+
+```
+$ curl -si https://mcp.sbx.ikigenba.dev/
+```
+
+Response:
+
+```
+HTTP/2 302
+location: https://auth.sbx.ikigenba.dev/?return=https%3A%2F%2Fmcp.sbx.ikigenba.dev%2F
+```
+
+Status 302. No story fixes the body.
+
+Preconditions:
+
+- mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
+- The request carries no credential.
+
+Postconditions:
+
+- Nothing has changed. mcp wrote nothing to stderr.
+
+## An agent on a space reads the setup instructions without a credential
+
+An agent the user has asked to read the setup instructions has no token yet; getting one set up is what the instructions are for. The space lets the request through to mcp, which serves the file to anyone (`S12`), and the installer the same way.
+
+Request:
+
+```
+$ curl -si https://mcp.sbx.ikigenba.dev/setup.txt
+```
+
+```
+$ curl -si https://mcp.sbx.ikigenba.dev/setup.sh
+```
+
+Response:
+
+```
+HTTP/2 200
+content-type: text/plain; charset=utf-8
+```
+
+Status 200. The body is the file `S12` describes, naming the endpoint `https://mcp.sbx.ikigenba.dev/mcp` and the token page `https://auth.sbx.ikigenba.dev/`.
+
+Preconditions:
+
+- mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
+- The request carries no credential.
+
+Postconditions:
+
+- Nothing has changed. mcp wrote nothing to stderr.
+
 ## A client on a space lists the gateway's tools
 
 On a space, the gateway's MCP endpoint is `https://mcp.<space>/mcp`, the endpoint the connect page shows, through the space's nginx, which authenticates the request — with a bearer token or the space's session cookie, as auth decides — and passes the caller to mcp in `X-User-Id`, `X-User-Email`, and `X-Request-Id`, as for the page. The client sends no identity headers of its own; whatever it sent would be replaced. Both forms below behave identically.
@@ -98,7 +158,7 @@ Postconditions:
 
 ## A client on a space without a credential is refused before the gateway
 
-The space's gate answers an unauthenticated request to `/mcp`, or to any path beneath it, itself, with a challenge an MCP client understands, rather than redirecting to a sign-in page as it does for a page. That answer is the gate's, the same for every app's `/mcp`; mcp never sees the request, so a scoped endpoint is refused the same way, well-formed or not.
+The space's gate answers an unauthenticated request to `/mcp`, or to any path beneath it, itself, with a challenge an MCP client understands, rather than the sign-in redirect mcp's connect page gives a guest (`S03`). That answer is the gate's, the same for every app's `/mcp`; mcp never sees the request, so a scoped endpoint is refused the same way, well-formed or not.
 
 Request:
 

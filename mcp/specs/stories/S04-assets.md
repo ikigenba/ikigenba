@@ -4,7 +4,7 @@ The files that give the connect page the platform's visual style and its service
 
 Every served file answered 200 or 304 carries a strong `ETag` and exactly one `Cache-Control: no-cache`, so a browser keeps its copy but asks each time whether it is still current, and an unchanged file costs a `304` rather than the bytes again. The `ETag`'s value is opaque — no story fixes it, and `"<etag>"` below stands for whatever the server sent. What is fixed is the relation: the value follows from the file's content alone, so the same content always yields the same value and different content a different one. A body is the same bytes on every request to the same mcp binary; no story fixes its content. The stories do not fix how mcp answers a `Range` request, whether it sends `Last-Modified`, how it treats `If-Match`, `If-Unmodified-Since`, `If-Range`, an `If-Modified-Since` with no `If-None-Match`, or an `If-None-Match` that is not a well-formed list of tags.
 
-The asset routes are routes like any other. Every request reaching mcp comes through the host's nginx gate, which sets `X-User-Id` and `X-User-Email` on each upstream request, and the identity check runs first here as on every route (`S03`). The requests below therefore carry both headers explicitly, and go to a running mcp (`S02`). Every request here, whatever its answer, adds `request.started` and `request.finished` to the trail, and mcp writes nothing to stderr about it; only an event it cannot deliver reaches stderr, as on every route (`S03`). A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
+The shared files are served to guests and users alike, with no identity required: the files hold nothing of anyone's, and any page of the platform may ask for them. A request from a signed-in user carries `X-User-Id` and `X-User-Email`, and a guest's carries neither (`S03`); the answer is the same for both, byte for byte. The requests below carry a user's headers unless a story says otherwise, and go to a running mcp (`S02`). Every request here, whatever its answer, adds `request.started` and `request.finished` to the trail, and mcp writes nothing to stderr about it; only an event it cannot deliver reaches stderr, as on every route (`S03`). A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A browser fetches the connect page's stylesheet
 
@@ -357,36 +357,39 @@ Postconditions:
 
 - Nothing has changed.
 
-## A request for an asset arrives without the identity headers
+## A guest's browser fetches the stylesheet
 
-The nginx gate sets `X-User-Id` on every upstream request, so a request without it did not come through the gate as it should, and mcp cannot say who is asking. The identity check runs before mcp looks at the path or the method, on the asset routes as on every other (`S03`), so a stylesheet is never sent to a request that has no identity.
+nginx lets a guest's browser through with no identity, as it does for every path of mcp but `/mcp`, the paths beneath it, and git's paths (`S03`), and mcp serves the stylesheet as it would to a signed-in user, rather than sending the guest to sign in for a file that holds nothing of anyone's.
 
 Request:
 
 ```
 GET /_appkit/theme.css HTTP/1.1
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
 ```
 
 Response:
 
 ```
-HTTP/1.1 500 Internal Server Error
-Content-Type: text/plain; charset=utf-8
+HTTP/1.1 200 OK
+Content-Type: text/css; charset=utf-8
+ETag: "<etag>"
+Cache-Control: no-cache
 ```
 
-Status 500. The body is exactly the one line `identity header missing`, ending in a newline, as on every route (`S03`). No stylesheet and no `ETag` are sent. A `HEAD` is answered with the same status and headers and an empty body.
+Status 200. The body is the platform style's stylesheet, the same bytes as in `A browser fetches the connect page's stylesheet`, and the `ETag` is the same tag. Every served file is served to a guest this way, the fonts, the launcher's script, and the licences included, and a guest's `HEAD`, revalidation, refused method, and missing file are answered as the stories above answer a user's. An empty `X-User-Id`, or an `X-User-Email` with no `X-User-Id`, is a guest's request all the same.
 
 Preconditions:
 
 - mcp is serving.
-- The request carries no `X-User-Id` header.
+- The request carries no `X-User-Id` and no `X-User-Email`, as nginx forwards a guest's request, and the `X-Request-Id` nginx gave it.
 
 Postconditions:
 
 - Nothing has changed.
-- mcp wrote nothing to stderr. The trail holds two events for the request, with an empty user and a request id mcp made up for it, as for every request that arrives without identity (`S03`):
+- mcp wrote nothing to stderr. The trail holds two events for the request, under request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and an empty user:
 
   ```
   request.started method=GET path=/_appkit/theme.css
-  request.finished status=500
+  request.finished status=200
   ```

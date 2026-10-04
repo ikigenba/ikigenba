@@ -4,7 +4,7 @@ The gateway's MCP interface: `/mcp`, where an MCP client reaches every one of th
 
 `/mcp` reaches every MCP service. `/mcp/<a>,<b>` reaches exactly the services named, in whatever order the path gives them; they are listed in name order. A scope is one or more names separated by commas, each name 1 to 63 ASCII letters, digits, and hyphens, beginning and ending with a letter or digit, and no name twice. A name is matched against the file exactly, letter case counting. A scoped name that is not in the file, whose entry has `mcp` `false`, or that is `mcp` itself is listed all the same, as unavailable for the reason `not installed`. A path beneath `/mcp` that is not a well-formed scope does not exist and is answered 404, as any path the gateway does not serve is (`S03`).
 
-The actor is a model working through an MCP client, or the client itself. Each request is shown as the HTTP request the client sends to a running gateway (`S02`), started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, the host's services file, which holds the suite's services file below unless a story says otherwise. `/mcp` and every path beneath it are behind the same identity rule as every other route: the gate sets `X-User-Id` and `X-User-Email`, and a request without `X-User-Id` is answered 500 before anything else, the path, the method, or the scope, is looked at. The requests below carry both headers by hand, and only the missing-header story carries neither.
+The actor is a model working through an MCP client, or the client itself. Each request is shown as the HTTP request the client sends to a running gateway (`S02`), started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, the host's services file, which holds the suite's services file below unless a story says otherwise. mcp serves guests its other paths (`S03`), but not `/mcp` or any path beneath it: nginx keeps its strict check there (opsctl's `S5-nginx.md`), so a request reaches them only with the caller nginx authenticated in `X-User-Id` and `X-User-Email`, and a request without `X-User-Id` is answered 500 before anything else, the method or the scope, is looked at. The requests below carry both headers by hand, and only the missing-header story carries neither.
 
 The suite's services file:
 
@@ -532,7 +532,7 @@ Postconditions:
 
 ## A request to /mcp arrives without the identity headers
 
-`/mcp` follows the rule every route follows: the gate sets `X-User-Id` on every request it forwards, so a request without it says the gate is misconfigured, a server fault answered 500. The identity check runs before anything else is looked at, the scope included, so the answer is the same plain text every route gives, not a JSON-RPC response and not the 404 of a malformed scope, and no tool runs, whatever the body asked for. Without `X-User-Id` the gateway has no caller to forward to a backend, and it contacts none.
+Every other route of mcp serves guests, but `/mcp` does not: every tool works for its caller. nginx never lets a request without a credential through to `/mcp`, so a request without `X-User-Id` here says the gate or a sibling is misconfigured, a server fault answered 500. The identity check runs before anything else is looked at, the scope included, so the answer is plain text, not a JSON-RPC response and not the 404 of a malformed scope, and no tool runs, whatever the body asked for. Without `X-User-Id` the gateway has no caller to forward to a backend, and it contacts none.
 
 Request:
 
@@ -572,7 +572,7 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No backend was contacted, and no tool ran, so the trail holds no `tool.called`.
-- The gateway wrote nothing to stderr. The trail holds two events for each request, with an empty user and a request id mcp made up for it, as on every route (`S03`); for the first request:
+- The gateway wrote nothing to stderr. The trail holds two events for each request, with an empty user and a request id mcp made up for it (`S02`); for the first request:
 
   ```
   request.started method=POST path=/mcp

@@ -1,6 +1,6 @@
 # Stories — connect
 
-The connect page and the gateway's routing outside MCP: what a running mcp answers at every path but `/mcp` and `/mcp/<scope>`, and the frame its one page is drawn in. The connect page, at `/`, tells a person how to point an MCP client at the gateway: the endpoint to add, the credential every request needs, and the MCP services the endpoint reaches; and it tells them how to use that same credential with git over HTTPS without writing it to disk. It is server-rendered HTML, and the whole of its content arrives in the response body, the list of services and the launcher's list included; the page carries no script of its own, and the one script it may load is the launcher's, `/_appkit/launcher.js`, which only filters the launcher's list as the user types. An nginx gate in front of mcp authenticates every request and sets `X-User-Id` and `X-User-Email` on the request it passes upstream, with the request's id in `X-Request-Id`. mcp trusts those headers absolutely and has no unauthenticated case, so there is no sign-in page and no signed-out banner. Only nginx and the suite's own apps can reach mcp's socket, so a request that arrives without `X-User-Id`, or with it empty, means the gate or a sibling is misconfigured — a server fault, not a bad request. The requests go to a running mcp (`S02`), each shown as the HTTP request mcp receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. mcp is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
+The connect page and the gateway's routing outside MCP: what a running mcp answers at every path but `/mcp` and `/mcp/<scope>`, and the frame its one page is drawn in. The connect page, at `/`, tells a person how to point an MCP client at the gateway: the endpoint to add, the credential every request needs, and the MCP services the endpoint reaches; and it tells them how to use that same credential with git over HTTPS without writing it to disk. It is server-rendered HTML, and the whole of its content arrives in the response body, the list of services and the launcher's list included; the page carries no script of its own, and the one script it may load is the launcher's, `/_appkit/launcher.js`, which only filters the launcher's list as the user types. The page also tells the person how to have their agent set itself up, by reading `<scheme>://<host>/setup.txt` (`S12`). The host's nginx lets guests through to every path of mcp but `/mcp`, the paths beneath it, and git's smart HTTP paths (its manifest sets `guests = true`, `S01`; opsctl's `S5-nginx.md`): a request from a signed-in user carries `X-User-Id` and `X-User-Email`, which the gate sets from auth's answer, and a guest's carries neither, while every request nginx forwards carries the request's id in `X-Request-Id`. A request whose `X-User-Id` is absent or empty is a guest's, whatever `X-User-Email` it carries. mcp trusts those headers absolutely. The connect page is for signed-in users only, and a guest who asks for it is sent to auth's sign-in with the page's URL to come back to, so mcp draws no signed-out banner; the shared files (`S04`) and the setup files (`S12`) are served to guests and users alike, and a path that does not exist is answered the same for both. The requests go to a running mcp (`S02`), each shown as the HTTP request mcp receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. mcp is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
 
 ```
 {
@@ -35,9 +35,9 @@ The launcher is the banner's way to the platform's other services, and it is the
 
 The page links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport, so a phone shows it at the phone's own width. The stylesheet, its fonts, and the launcher's script are the platform's shared files, which mcp serves under `/_appkit/` (`S04`); the page makes no request to any third party. Last on the page is the footer, whose text is `mcp v<semver>`: the service's name, one space, and the version `mcp --version` prints (`S01`), exactly as it prints it. The version is data, and no story fixes its value.
 
-The connect page is mcp's only HTML. Every other answer in this group is bare: the missing-header 500 and the 404 are one line of plain text, and the 405 has an empty body; none has a banner or a footer. mcp writes nothing to stderr about any answer in this group, the missing-header 500 included; only an event it cannot deliver reaches stderr (`S02`): every request it answers here adds exactly two events to its trail (`S02`), `request.started` with its method and path as it arrives and `request.finished` with the status mcp answered once the answer is complete, and serving the page contacts no backend.
+The connect page is mcp's only HTML. Every other answer in this group is bare: the 404 is one line of plain text, and the 405 and a guest's redirect fix no body; none has a banner or a footer. mcp writes nothing to stderr about any answer in this group; only an event it cannot deliver reaches stderr (`S02`): every request it answers here adds exactly two events to its trail (`S02`), `request.started` with its method and path as it arrives and `request.finished` with the status mcp answered once the answer is complete, and serving the page contacts no backend.
 
-The routes are `/`, the connect page, which takes `GET` and `HEAD`; `/_appkit/<name>`, the platform's shared files (`S04`); and `/mcp` and `/mcp/<scope>`, the MCP endpoint, whose answers, to every method, are `S05`'s and never one of the answers below. A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
+The routes are `/`, the connect page, which takes `GET` and `HEAD` and sends a guest to sign in; `/setup.txt` and `/setup.sh`, the setup files (`S12`); `/_appkit/<name>`, the platform's shared files (`S04`); and `/mcp` and `/mcp/<scope>`, the MCP endpoint, whose answers, to every method, are `S05`'s and never one of the answers below. A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A user opens the connect page
 
@@ -60,7 +60,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML document titled `mcp` that links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport. Its banner holds the mark, whose text is `ikigenba` and which names the service `mcp`; the profile link, labelled `Profile` and titled `mg@example.com`, leading to `https://auth.sbx.ikigenba.dev/`; and the sign-out button reading `Sign out` in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`, since no entry in the file carries an icon. Beneath the banner is the page's top-level heading, `Connect an MCP client`, then the line `Add this server to your client as a remote (Streamable HTTP) MCP server.`, then the endpoint `https://mcp.sbx.ikigenba.dev/mcp` as code a user can copy, then the line `Every request must send the header Authorization: Bearer <token>. Create a token on your profile.`, in which `your profile` is a link to `https://auth.sbx.ikigenba.dev/`. Below that is the section headed `Services`, reading `The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: https://mcp.sbx.ikigenba.dev/mcp/a,b.`, and a table whose header cells read `Name`, `Description`, `Endpoint`, and `Status`, with exactly two rows, in this order: `dummy`, `Demo widgets to list and create`, `https://mcp.sbx.ikigenba.dev/mcp/dummy`, `available`; and `notes`, `Notes to keep and search`, `https://mcp.sbx.ikigenba.dev/mcp/notes`, `disabled`. There is no row for `auth` or `mcp`, and the line `No MCP services are installed.` is not on the page. Below that is the section headed `Git`, reading `The same token works for git over HTTPS. Keep it in the environment variable IKIGENBA_TOKEN and give it to git with this credential helper, which reads the variable whenever git asks:`, then the command `git config --global credential.https://*.sbx.ikigenba.dev.helper '!f() { test "$1" = get && printf "username=token\npassword=%s\n" "$IKIGENBA_TOKEN"; }; f'` as code a user can copy, then the line `Or set GIT_ASKPASS to a program that prints $IKIGENBA_TOKEN.`, then the line `Never put the token in a remote's URL, and never use credential.helper store: both write it to disk in plain text.` Last on the page is the footer reading `mcp v<semver>`, where `v<semver>` is what `mcp --version` prints. The address `mg@example.com` is not in the page's visible text.
+Status 200. The body is an HTML document titled `mcp` that links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport. Its banner holds the mark, whose text is `ikigenba` and which names the service `mcp`; the profile link, labelled `Profile` and titled `mg@example.com`, leading to `https://auth.sbx.ikigenba.dev/`; and the sign-out button reading `Sign out` in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`, since no entry in the file carries an icon. Beneath the banner is the page's top-level heading, `Connect an MCP client`, then the line `Add this server to your client as a remote (Streamable HTTP) MCP server.`, then the endpoint `https://mcp.sbx.ikigenba.dev/mcp` as code a user can copy, then the line `Every request must send the header Authorization: Bearer <token>. Create a token on your profile.`, in which `your profile` is a link to `https://auth.sbx.ikigenba.dev/`. Below that is the section headed `Connect your agent to ikigenba`, reading `Ask it to read https://mcp.sbx.ikigenba.dev/setup.txt`, the address as code a user can copy. Below that is the section headed `Services`, reading `The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: https://mcp.sbx.ikigenba.dev/mcp/a,b.`, and a table whose header cells read `Name`, `Description`, `Endpoint`, and `Status`, with exactly two rows, in this order: `dummy`, `Demo widgets to list and create`, `https://mcp.sbx.ikigenba.dev/mcp/dummy`, `available`; and `notes`, `Notes to keep and search`, `https://mcp.sbx.ikigenba.dev/mcp/notes`, `disabled`. There is no row for `auth` or `mcp`, and the line `No MCP services are installed.` is not on the page. Below that is the section headed `Git`, reading `The same token works for git over HTTPS. Keep it in the environment variable IKIGENBA_TOKEN and give it to git with this credential helper, which reads the variable whenever git asks:`, then the command `git config --global credential.https://*.sbx.ikigenba.dev.helper '!f() { test "$1" = get && printf "username=token\npassword=%s\n" "$IKIGENBA_TOKEN"; }; f'` as code a user can copy, then the line `Or set GIT_ASKPASS to a program that prints $IKIGENBA_TOKEN.`, then the line `Never put the token in a remote's URL, and never use credential.helper store: both write it to disk in plain text.` Last on the page is the footer reading `mcp v<semver>`, where `v<semver>` is what `mcp --version` prints. The address `mg@example.com` is not in the page's visible text.
 
 Preconditions:
 
@@ -335,75 +335,49 @@ Postconditions:
 
 - Nothing has changed. The services file is as it was.
 
-## A request arrives without the identity headers
+## A guest asks for the connect page and is sent to sign in
 
-In production this cannot happen from outside: the gate sets the headers on every request it forwards, and nothing but nginx and the suite's apps can reach mcp's socket. So a request without `X-User-Id` says the gate or a sibling is misconfigured, which is mcp's fault to report, not the caller's to fix — hence a 500 and not a 400 or a 401. A developer meets it by forgetting the headers, as here.
-
-Request:
-
-```
-GET / HTTP/1.1
-Host: mcp.sbx.ikigenba.dev
-```
-
-Response:
-
-```
-HTTP/1.1 500 Internal Server Error
-Content-Type: text/plain; charset=utf-8
-```
-
-Status 500. The body is exactly the one line `identity header missing`, ending in a newline. A `HEAD` is answered with the same status and headers and an empty body. An `X-User-Id` header whose value is empty is answered the same way as no header at all. Every path answers this way — `/`, the shared files under `/_appkit/` (`S04`), the MCP endpoint `/mcp` and every `/mcp/<scope>`, well-formed or not (`S05`), and every path that does not exist; the identity check runs before mcp looks at the path, the method, or a scope, so a request with no identity is never a 404 or a 405.
-
-Preconditions:
-
-- mcp is serving.
-- The request carries no `X-User-Id` header, or one whose value is empty.
-
-Postconditions:
-
-- Nothing has changed. No backend was contacted.
-- mcp wrote nothing to stderr. The 500 is a handled failure, so it is in the trail and not the journal: the trail holds two events for the request, with an empty user and a request id mcp made up for it, 32 lowercase hexadecimal characters, because it carried no `X-Request-Id`:
-
-  ```
-  request.started method=GET path=/
-  request.finished status=500
-  ```
-
-## A request from nginx arrives without the identity headers
-
-nginx sets `X-Request-Id` on every request it forwards, so when the gate is misconfigured and forwards a request without `X-User-Id`, mcp records the 500 under the id nginx gave the request, and the operator who finds the 500 in the trail can find the same request in nginx's log. The developer here stands in for such an nginx by sending the id by hand.
+The connect page names the caller in its banner and lists the space's MCP services, so it is for signed-in users. A guest — a browser with no session, which nginx lets through because mcp serves guests the setup files — is sent to auth's sign-in, carrying the URL it asked for so auth can bring it back once it has signed in. The sign-in address is `<auth-profile>`, derived as for the page's profile link, followed by `?return=` and the URL to return to, `<scheme>://<Host><path and query>`, percent-encoded as a query component, the scheme chosen as for the endpoint. The request carries no `X-User-Id`; one with an empty `X-User-Id`, or an `X-User-Email` and no `X-User-Id`, is a guest's all the same.
 
 Request:
 
 ```
 GET / HTTP/1.1
 Host: mcp.sbx.ikigenba.dev
+X-Forwarded-Proto: https
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+```
+
+```
+HEAD / HTTP/1.1
+Host: mcp.sbx.ikigenba.dev
+X-Forwarded-Proto: https
 X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
 ```
 
 Response:
 
 ```
-HTTP/1.1 500 Internal Server Error
-Content-Type: text/plain; charset=utf-8
+HTTP/1.1 302 Found
+Location: https://auth.sbx.ikigenba.dev/?return=https%3A%2F%2Fmcp.sbx.ikigenba.dev%2F
 ```
 
-Status 500. The body is exactly the same one line, `identity header missing`, ending in a newline.
+Status 302. No story fixes the body. The response sets no cookie. `GET /?from=launcher` is answered with `Location: https://auth.sbx.ikigenba.dev/?return=https%3A%2F%2Fmcp.sbx.ikigenba.dev%2F%3Ffrom%3Dlauncher`, and with `X-Forwarded-Proto: http` and a services file naming no `auth`, both addresses are `http`: `Location: http://auth.sbx.ikigenba.dev/?return=http%3A%2F%2Fmcp.sbx.ikigenba.dev%2F`.
 
 Preconditions:
 
-- mcp is serving.
-- The request carries `X-Request-Id` and no `X-User-Id` header.
+- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
+- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- The request carries no `X-User-Id` and no `X-User-Email`, as nginx forwards a guest's request, and the `X-Request-Id` nginx gave it.
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed. No page was drawn and no backend was contacted.
 - mcp wrote nothing to stderr. The trail holds two events for the request, under request id `3f9c2a7be1d04c6a8b5e0f1d2c3b4a59` and an empty user:
 
   ```
   request.started method=GET path=/
-  request.finished status=500
+  request.finished status=302
   ```
 
 ## A caller asks for a path that does not exist
@@ -440,7 +414,7 @@ HTTP/1.1 404 Not Found
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 404. The body is exactly the one line `not found`, ending in a newline. It has no banner and no footer.
+Status 404. The body is exactly the one line `not found`, ending in a newline. It has no banner and no footer. A guest's request for such a path is answered the same, not sent to sign in.
 
 Preconditions:
 
@@ -478,7 +452,7 @@ HTTP/1.1 405 Method Not Allowed
 Allow: GET, HEAD
 ```
 
-Status 405. The body is empty. `PUT`, `PATCH`, and every other method but `GET` and `HEAD` are refused the same way.
+Status 405. The body is empty. `PUT`, `PATCH`, and every other method but `GET` and `HEAD` are refused the same way, a guest's included.
 
 Preconditions:
 
