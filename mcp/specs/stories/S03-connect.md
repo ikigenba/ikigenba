@@ -1,6 +1,6 @@
 # Stories — connect
 
-The connect page and the gateway's routing outside MCP: what a running mcp answers at every path but `/mcp` and `/mcp/<scope>`, and the frame its one page is drawn in. The connect page, at `/`, tells a person how to point an MCP client at the gateway: the endpoint to add, the credential every request needs, and the MCP services the endpoint reaches; and it tells them how to use that same credential with git over HTTPS without writing it to disk. It is server-rendered HTML, and the whole of its content arrives in the response body, the list of services and the launcher's list included; the page carries no script of its own, and the one script it may load is the launcher's, `/_appkit/launcher.js`, which only filters the launcher's list as the user types. The page also tells the person how to have their agent set itself up, by reading `<scheme>://<host>/setup.txt` (`S12`). The host's nginx lets guests through to every path of mcp but `/mcp`, the paths beneath it, and git's smart HTTP paths (its manifest sets `guests = true`, `S01`; opsctl's `S5-nginx.md`): a request from a signed-in user carries `X-User-Id` and `X-User-Email`, which the gate sets from auth's answer, and a guest's carries neither, while every request nginx forwards carries the request's id in `X-Request-Id`. A request whose `X-User-Id` is absent or empty is a guest's, whatever `X-User-Email` it carries. mcp trusts those headers absolutely. The connect page is for signed-in users only, and a guest who asks for it is sent to auth's sign-in with the page's URL to come back to, so mcp draws no signed-out banner; the shared files (`S04`) and the setup files (`S12`) are served to guests and users alike, and a path that does not exist is answered the same for both. The requests go to a running mcp (`S02`), each shown as the HTTP request mcp receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. mcp is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
+The connect page and the gateway's routing outside MCP: what a running mcp answers at every path but `/mcp` and `/mcp/<scope>`, and the frame its one page is drawn in. The connect page, at `/`, tells a person how to connect an MCP client to the gateway, in two ways: automatically, by asking their agent to follow the setup instructions at `<scheme>://<host>/setup.txt` (`S12`), and by hand, with the endpoint to add and the credential every request needs. It is server-rendered HTML, and the whole of its content arrives in the response body, the launcher's list included. The page's own script does one thing: it makes the `Copy` button put the setup instructions' address on the clipboard. The one script file it may load is the launcher's, `/_appkit/launcher.js`, which only filters the launcher's list as the user types. The host's nginx lets guests through to every path of mcp but `/mcp`, the paths beneath it, and git's smart HTTP paths (its manifest sets `guests = true`, `S01`; opsctl's `S5-nginx.md`): a request from a signed-in user carries `X-User-Id` and `X-User-Email`, which the gate sets from auth's answer, and a guest's carries neither, while every request nginx forwards carries the request's id in `X-Request-Id`. A request whose `X-User-Id` is absent or empty is a guest's, whatever `X-User-Email` it carries. mcp trusts those headers absolutely. The connect page is for signed-in users only, and a guest who asks for it is sent to auth's sign-in with the page's URL to come back to, so mcp draws no signed-out banner; the shared files (`S04`) and the setup files (`S12`) are served to guests and users alike, and a path that does not exist is answered the same for both. The requests go to a running mcp (`S02`), each shown as the HTTP request mcp receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. mcp is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
 
 ```
 {
@@ -13,23 +13,15 @@ The connect page and the gateway's routing outside MCP: what a running mcp answe
 }
 ```
 
-mcp takes the file's path from `IKIGENBA_SERVICES`, which it reads once, when it starts (`S02`), and it reads the file itself afresh for every request, so a rewrite of the file shows on the next page without a restart. The file is a JSON object whose `services` member is an array; each entry is an object with `name`, a non-empty string; `url`, `description`, and `socket`, strings; `enabled`, `true` or `false`, `false` for a service switched off; `mcp`, `true` or `false`; and, optionally, `icon`, a string holding the SVG text of the service's icon. Members mcp does not know are ignored, and an entry that lacks one of the six others, or holds one of the wrong kind, is left out while the rest are still used. With no variable, no readable file, or a file that is not such an object, mcp treats the file as listing no services and writes nothing about it, since a broken services file never breaks the page.
+The page reads the file for two things: auth's address, for the banner's links and the page's `profile` link, and the launcher's list. mcp takes the file's path from `IKIGENBA_SERVICES`, which it reads once, when it starts (`S02`), and it reads the file itself afresh for every request, so a rewrite of the file shows on the next page without a restart. The file is a JSON object whose `services` member is an array; each entry is an object with `name`, a non-empty string; `url`, `description`, and `socket`, strings; `enabled`, `true` or `false`, `false` for a service switched off; `mcp`, `true` or `false`; and, optionally, `icon`, a string holding the SVG text of the service's icon. Members mcp does not know are ignored, and an entry that lacks one of the six others, or holds one of the wrong kind, is left out while the rest are still used. With no variable, no readable file, or a file that is not such an object, mcp treats the file as listing no services and writes nothing about it, since a broken services file never breaks the page.
 
-The page's list of services is the gateway's catalogue: the entries whose `mcp` is `true`, leaving out any entry named `mcp` — the gateway never lists itself, whatever its own entry says — in bytewise order of name. Each is shown with its name, its `description` from the file, its scoped endpoint, and its status: `available` when its `enabled` is `true`, and `disabled` when it is `false`. These are the same services the gateway's `services` tool lists on the unscoped endpoint (`S06`).
+The page lists no services: what the endpoint reaches is the gateway's `services` tool's to say (`S06`).
 
-The endpoint the page shows is `<scheme>://<host>/mcp`. `<host>` is the request's `Host` exactly as it arrived, port included. The scheme is the request's `X-Forwarded-Proto` when that header is exactly `http` or exactly `https`, and `https` otherwise — `HTTPS`, `https, http`, an empty value, or no header at all. A service's scoped endpoint is the endpoint followed by `/` and the service's name; how the gateway answers at a scoped endpoint is `S05`'s.
+The endpoint the page shows is `<scheme>://<host>/mcp`, and the setup instructions' address is `<scheme>://<host>/setup.txt`. `<host>` is the request's `Host` exactly as it arrived, port included. The scheme is the request's `X-Forwarded-Proto` when that header is exactly `http` or exactly `https`, and `https` otherwise — `HTTPS`, `https, http`, an empty value, or no header at all.
 
 The page is drawn in the banner every app of the platform draws, at the top of the page. It holds the mark, whose text is `ikigenba` and which names the service it fronts, `mcp`, so a browser shows `ikigenba │ mcp`; a profile link; and a sign-out button; and, when the services file lists services that carry an icon, the launcher button (below). The service's name is lowercase `mcp` everywhere it appears, and the page's title, the one a browser shows on its tab, is `mcp`. The profile link is the `user-circle` icon with no text of its own, labelled `Profile` for assistive technology and titled with the caller's `X-User-Email` value, exactly as it arrived, so hovering it shows who is signed in; the email is in no visible text on the page. The sign-out button is a form, not a link: pressing it POSTs to `<auth-logout>`, and its `logout` icon is drawn before the text and hidden from assistive technology, so its accessible text is `Sign out` alone. Following the profile link or submitting the form leaves mcp for auth; what auth does there is told in auth's own stories. mcp serves no logout route and sets no cookie.
 
-`<auth-profile>`, where the banner's profile link and the page's own `your profile` link lead, is auth's profile page: the `url` of the services file's entry named `auth`, followed by `/`, so `https://auth.sbx.ikigenba.dev/` for the suite's services file; `<auth-logout>` is that same `url` followed by `/logout`. When the file has no entry named `auth`, or that entry's `url` is empty, mcp reads the space from the request's own `Host`: a trailing port is dropped, then a single leading `mcp.` label; what remains is the space, `<auth-profile>` is `<scheme>://auth.<space>/`, and `<auth-logout>` is `<scheme>://auth.<space>/logout`, the scheme chosen as for the endpoint. A `Host` with no `mcp.` label is the space whole. There is no fixed fallback address.
-
-The page's `Git` section is for a user, or an agent working for them, who reaches the suite's git repositories over HTTPS. Git sends its credential as a username and password; the suite ignores the username and takes the password as the same token the gateway needs. The section tells the user to keep the token in the environment variable `IKIGENBA_TOKEN` and gives, as code a user can copy, one command that installs a credential helper which hands git the token from that variable whenever git asks for a credential for the user's space:
-
-```
-git config --global credential.<scope>.helper '!f() { test "$1" = get && printf "username=token\npassword=%s\n" "$IKIGENBA_TOKEN"; }; f'
-```
-
-`<scope>` is `<scheme>://*.<space>`, where `<scheme>` is the endpoint's scheme and `<space>` is the request's `Host` as it arrived with a single leading `mcp.` label dropped and its port kept; a `Host` with no `mcp.` label is the space whole. So for `Host: mcp.sbx.ikigenba.dev` over `https` the command begins `git config --global credential.https://*.sbx.ikigenba.dev.helper`, and git offers the token to the user's space and to no other host. The helper keeps no copy of the token: it reads the variable each time git asks. The section names `GIT_ASKPASS` as the alternative for a user who would rather not change git's configuration, and it warns against the two ways the token ends up on disk in plain text: putting it in a remote's URL, which git keeps in the repository's configuration, and the `store` credential helper. The section's text is the same whatever the services file holds; it does not depend on whether any service serving git is installed.
+`<auth-profile>`, where the banner's profile link and the page's own `profile` link lead, is auth's profile page: the `url` of the services file's entry named `auth`, followed by `/`, so `https://auth.sbx.ikigenba.dev/` for the suite's services file; `<auth-logout>` is that same `url` followed by `/logout`. When the file has no entry named `auth`, or that entry's `url` is empty, mcp reads the space from the request's own `Host`: a trailing port is dropped, then a single leading `mcp.` label; what remains is the space, `<auth-profile>` is `<scheme>://auth.<space>/`, and `<auth-logout>` is `<scheme>://auth.<space>/logout`, the scheme chosen as for the endpoint. A `Host` with no `mcp.` label is the space whole. There is no fixed fallback address.
 
 The launcher is the banner's way to the platform's other services, and it is the same launcher every app draws. It offers only the services file's entries that carry an icon: an entry with no `icon`, or one that is not a string, stays out of it, and with no such entry the page has no launcher and is otherwise the same page. When the launcher is there, the banner holds a launcher button labelled `Services`; pressing it opens the list, which is closed when the page loads. The list holds a search field labelled `Find a service`, with the placeholder `Find a service`, and one entry per service that carries an icon, in the file's order, each showing the service's icon and then its name. An enabled service's entry is a link to its `url`; a service switched off keeps its place but is not a working link, and is titled `<name> is unavailable`. mcp's own entry, the one named `mcp`, is marked as the current page. The list, the search field, and a hidden no-match line are all in the page as served; the page loads `/_appkit/launcher.js` only when the launcher is there.
 
@@ -41,7 +33,7 @@ The routes are `/`, the connect page, which takes `GET` and `HEAD` and sends a g
 
 ## A user opens the connect page
 
-A user who wants to use the suite's services from an AI assistant opens the gateway's page to learn what to tell the client: the address to add, how to authenticate, and which services that address reaches. Everything a person looking at a browser sees is in the document that arrives, so a reader who fetches the page with `curl` has it all. There are no per-client instructions. `auth` and `mcp` are not in the list because their `mcp` is `false`; `notes` is, switched off, so the user knows it exists and why it does not answer.
+A user who wants to use the suite's services from an AI assistant opens the gateway's page to learn how to connect the client. The page offers two ways: hand the agent the setup instructions' address and let it do the work (`S12`), or add the endpoint to the client by hand. Everything a person looking at a browser sees is in the document that arrives, so a reader who fetches the page with `curl` has it all. There are no per-client instructions.
 
 Request:
 
@@ -60,7 +52,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML document titled `mcp` that links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport. Its banner holds the mark, whose text is `ikigenba` and which names the service `mcp`; the profile link, labelled `Profile` and titled `mg@example.com`, leading to `https://auth.sbx.ikigenba.dev/`; and the sign-out button reading `Sign out` in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`, since no entry in the file carries an icon. Beneath the banner is the page's top-level heading, `Connect an MCP client`, then the line `Add this server to your client as a remote (Streamable HTTP) MCP server.`, then the endpoint `https://mcp.sbx.ikigenba.dev/mcp` as code a user can copy, then the line `Every request must send the header Authorization: Bearer <token>. Create a token on your profile.`, in which `your profile` is a link to `https://auth.sbx.ikigenba.dev/`. Below that is the section headed `Connect your agent to ikigenba`, reading `Ask it to read https://mcp.sbx.ikigenba.dev/setup.txt`, the address as code a user can copy. Below that is the section headed `Services`, reading `The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: https://mcp.sbx.ikigenba.dev/mcp/a,b.`, and a table whose header cells read `Name`, `Description`, `Endpoint`, and `Status`, with exactly two rows, in this order: `dummy`, `Demo widgets to list and create`, `https://mcp.sbx.ikigenba.dev/mcp/dummy`, `available`; and `notes`, `Notes to keep and search`, `https://mcp.sbx.ikigenba.dev/mcp/notes`, `disabled`. There is no row for `auth` or `mcp`, and the line `No MCP services are installed.` is not on the page. Below that is the section headed `Git`, reading `The same token works for git over HTTPS. Keep it in the environment variable IKIGENBA_TOKEN and give it to git with this credential helper, which reads the variable whenever git asks:`, then the command `git config --global credential.https://*.sbx.ikigenba.dev.helper '!f() { test "$1" = get && printf "username=token\npassword=%s\n" "$IKIGENBA_TOKEN"; }; f'` as code a user can copy, then the line `Or set GIT_ASKPASS to a program that prints $IKIGENBA_TOKEN.`, then the line `Never put the token in a remote's URL, and never use credential.helper store: both write it to disk in plain text.` Last on the page is the footer reading `mcp v<semver>`, where `v<semver>` is what `mcp --version` prints. The address `mg@example.com` is not in the page's visible text.
+Status 200. The body is an HTML document titled `mcp` that links `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport. Its banner holds the mark, whose text is `ikigenba` and which names the service `mcp`; the profile link, labelled `Profile` and titled `mg@example.com`, leading to `https://auth.sbx.ikigenba.dev/`; and the sign-out button reading `Sign out` in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`, since no entry in the file carries an icon. Beneath the banner is the page's top-level heading, `Connect MCP Client`, and under it two sections, in this order. The first is headed `Automatic Install`: the line `Ask your agent to follow these instructions`, then the address `https://mcp.sbx.ikigenba.dev/setup.txt` as code, with a button reading `Copy` beside it; pressing `Copy` puts the address, and nothing else, on the clipboard. The second is headed `Manual Install`: the endpoint `https://mcp.sbx.ikigenba.dev/mcp` as code a user can copy, then the line `Every request must send the header Authorization: Bearer <token>`, then the line `Create a token on your profile.`, in which `profile` is a link to `https://auth.sbx.ikigenba.dev/`. The page has no other section: it lists no services, and it says nothing about git. Last on the page is the footer reading `mcp v<semver>`, where `v<semver>` is what `mcp --version` prints. The address `mg@example.com` is not in the page's visible text.
 
 Preconditions:
 
@@ -110,40 +102,7 @@ Postconditions:
 
 - Nothing has changed.
 
-## A user on a host with no MCP services sees none listed
-
-A host may have no service marked for MCP, and the page says so in words rather than showing an empty table. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `dummy` and `notes` entries: it lists only `auth` and `mcp`, both with `mcp` `false`.
-
-Request:
-
-```
-GET / HTTP/1.1
-Host: mcp.sbx.ikigenba.dev
-X-Forwarded-Proto: https
-X-User-Id: u_7f3a9c21
-X-User-Email: mg@example.com
-```
-
-Response:
-
-```
-HTTP/1.1 200 OK
-Content-Type: text/html; charset=utf-8
-```
-
-Status 200. The body is the connect page of `A user opens the connect page`, with the same banner, endpoint, credential line, profile link, `Git` section, and footer, except that in the `Services` section, after the line explaining how to limit a client, there is no table, and in its place the line `No MCP services are installed.`
-
-Preconditions:
-
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` lists `auth` and `mcp` as in the suite's services file, and no other entry but the stand-in `telemetry` entry every story's file holds (`S02`).
-
-Postconditions:
-
-- Nothing has changed.
-- mcp wrote nothing to stderr.
-
-## A user on a host whose services file is missing sees no services listed
+## A user on a host whose services file is missing still gets the page
 
 `IKIGENBA_SERVICES` names a file, but there is nothing there to read. A broken services file never breaks the page, so mcp treats it as listing no services and reports nothing: this is not a fault of the request. A file that exists but cannot be read, or is not a JSON object with a `services` array, and an `IKIGENBA_SERVICES` that is unset or empty, are all answered the same way. With no file there is no `auth` entry either, so auth's links are read from the request's `Host`, which here names the same space.
 
@@ -164,7 +123,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the connect page of `A user on a host with no MCP services sees none listed`: the line `No MCP services are installed.` in place of the table, the endpoint `https://mcp.sbx.ikigenba.dev/mcp`, the profile link and the page's `your profile` link leading to `https://auth.sbx.ikigenba.dev/`, and the sign-out button POSTing to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`.
+Status 200. The body is the connect page of `A user opens the connect page`: the setup instructions' address `https://mcp.sbx.ikigenba.dev/setup.txt`, the endpoint `https://mcp.sbx.ikigenba.dev/mcp`, the profile link and the page's `profile` link leading to `https://auth.sbx.ikigenba.dev/`, and the sign-out button POSTing to `https://auth.sbx.ikigenba.dev/logout`. The banner holds no launcher button, and the page loads no `/_appkit/launcher.js`.
 
 Preconditions:
 
@@ -181,73 +140,9 @@ Postconditions:
   mcp: undelivered event: {"time":"<time>","service":"mcp","event":"request.finished","request_id":"<id>","user":"u_7f3a9c21","attrs":{"duration_us":<us>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
   ```
 
-## A user does not see the gateway in its own list
-
-The gateway's own tools are not services a client reaches through it, and listing them would send the gateway calling itself. So the entry named `mcp` is left out of the list even when the file marks it for MCP, which mcp's own manifest never does (`S01`); `services` likewise never lists it (`S06`). Here `/var/lib/ikigenba/services.json` is the suite's services file with the `mcp` entry's `mcp` `true`.
-
-Request:
-
-```
-GET / HTTP/1.1
-Host: mcp.sbx.ikigenba.dev
-X-Forwarded-Proto: https
-X-User-Id: u_7f3a9c21
-X-User-Email: mg@example.com
-```
-
-Response:
-
-```
-HTTP/1.1 200 OK
-Content-Type: text/html; charset=utf-8
-```
-
-Status 200. The body is the connect page of `A user opens the connect page`: the table's rows are exactly `dummy`, `available`, and `notes`, `disabled`, in that order, and there is no row for `mcp`.
-
-Preconditions:
-
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file, except that the entry named `mcp` has `"mcp": true`.
-
-Postconditions:
-
-- Nothing has changed.
-
-## A user sees the list follow a change to the services file
-
-The host rewrites the services file when a service is installed or switched on or off, and mcp reads the file afresh for every request, so the next page a user loads shows the new list without mcp being restarted. Here the host has switched `notes` on since mcp started: `/var/lib/ikigenba/services.json` is the suite's services file with `notes`'s `enabled` now `true`.
-
-Request:
-
-```
-GET / HTTP/1.1
-Host: mcp.sbx.ikigenba.dev
-X-Forwarded-Proto: https
-X-User-Id: u_7f3a9c21
-X-User-Email: mg@example.com
-```
-
-Response:
-
-```
-HTTP/1.1 200 OK
-Content-Type: text/html; charset=utf-8
-```
-
-Status 200. The body is the connect page of `A user opens the connect page`, except that the `notes` row's status reads `available`.
-
-Preconditions:
-
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment while `/var/lib/ikigenba/services.json` held the suite's services file, with `notes` switched off, and it has not been restarted since.
-- `/var/lib/ikigenba/services.json` now lists `notes` with `enabled` `true`.
-
-Postconditions:
-
-- Nothing has changed.
-
 ## A user on a host whose services file names no auth still gets auth's links
 
-The banner's profile link and sign-out form, and the page's `your profile` link, address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one mcp build serves whichever space it is installed on. The endpoint the page shows is built from the same headers. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry.
+The banner's profile link and sign-out form, and the page's `profile` link, address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one mcp build serves whichever space it is installed on. The endpoint and the setup instructions' address the page shows are built from the same headers. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry.
 
 Request:
 
@@ -289,7 +184,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the connect page, with the same two rows as in `A user opens the connect page`, and for every form above its banner's profile link, titled `mg@example.com`, and the page's `your profile` link both lead to `https://auth.sbx.ikigenba.dev/`, and the sign-out button reading `Sign out` is in a form whose method is `post` and whose action is `https://auth.sbx.ikigenba.dev/logout`. The endpoint names the `Host` as it arrived: `https://mcp.sbx.ikigenba.dev:443/mcp` for the first form, `https://mcp.sbx.ikigenba.dev/mcp` for the second and third, and `https://sbx.ikigenba.dev/mcp` for the fourth, and each row's scoped endpoint and the example in the `Services` section begin with that same endpoint. The `Git` section's command names its scope from the same `Host`, port kept: `credential.https://*.sbx.ikigenba.dev:443.helper` for the first form, and `credential.https://*.sbx.ikigenba.dev.helper` for the second, third, and fourth. With `X-Forwarded-Proto: http` and `Host: mcp.sbx.ikigenba.dev`, the links lead to `http://auth.sbx.ikigenba.dev/`, the form's action is `http://auth.sbx.ikigenba.dev/logout`, the endpoint is `http://mcp.sbx.ikigenba.dev/mcp`, and the command's scope is `credential.http://*.sbx.ikigenba.dev.helper`.
+Status 200. The body is the connect page of `A user opens the connect page`, and for every form above its banner's profile link, titled `mg@example.com`, and the page's `profile` link both lead to `https://auth.sbx.ikigenba.dev/`, and the sign-out button reading `Sign out` is in a form whose method is `post` and whose action is `https://auth.sbx.ikigenba.dev/logout`. The endpoint names the `Host` as it arrived: `https://mcp.sbx.ikigenba.dev:443/mcp` for the first form, `https://mcp.sbx.ikigenba.dev/mcp` for the second and third, and `https://sbx.ikigenba.dev/mcp` for the fourth, and the setup instructions' address is the same with `/setup.txt` in place of `/mcp`: `https://mcp.sbx.ikigenba.dev:443/setup.txt` for the first form, and so on. With `X-Forwarded-Proto: http` and `Host: mcp.sbx.ikigenba.dev`, the links lead to `http://auth.sbx.ikigenba.dev/`, the form's action is `http://auth.sbx.ikigenba.dev/logout`, the endpoint is `http://mcp.sbx.ikigenba.dev/mcp`, and the setup instructions' address is `http://mcp.sbx.ikigenba.dev/setup.txt`.
 
 Preconditions:
 
@@ -303,7 +198,7 @@ Postconditions:
 
 ## A user on a host with services opens the launcher
 
-On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from mcp to any of them without typing an address. Here `/var/lib/ikigenba/services.json` is the suite's services file with an `icon` on each of its four entries, `auth`, `dummy`, `mcp`, and `notes`, each holding the SVG text of that service's icon. The launcher lists every service that carries an icon, not only the MCP services, so `auth` and mcp itself are in it though they are not in the page's table.
+On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from mcp to any of them without typing an address. Here `/var/lib/ikigenba/services.json` is the suite's services file with an `icon` on each of its four entries, `auth`, `dummy`, `mcp`, and `notes`, each holding the SVG text of that service's icon. The launcher lists every service that carries an icon, not only the MCP services, so `auth` and mcp itself are in it.
 
 In a browser, the list is closed when the page loads, and pressing the launcher button opens it. Typing in the search field keeps only the entries whose name contains the typed text, ignoring case and any spaces around it; clearing the field shows them all again. When the text matches no entry, the no-match line appears, reading `No service matches “<text>”.` with the typed text in quotation marks. Pressing Enter in the search field opens the first entry still shown that is a working link, and does nothing when there is none. That filtering is the whole of what `/_appkit/launcher.js` does: every entry, and the no-match line, arrived with the page.
 
@@ -324,7 +219,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the connect page of `A user opens the connect page`, with the same banner, and the banner also holds the launcher button labelled `Services`. The page carries the list of services labelled `Services`, holding the search field labelled `Find a service` with the placeholder `Find a service` and four entries in the file's order, each showing its icon and then its name: `auth`, a link to `https://auth.sbx.ikigenba.dev`; `dummy`, a link to `https://dummy.sbx.ikigenba.dev`; `mcp`, a link to `https://mcp.sbx.ikigenba.dev`, marked as the current page; and `notes`, not a working link, titled `notes is unavailable`. The no-match line is in the page and hidden. The page loads the script `/_appkit/launcher.js`. The table below is unchanged: `dummy` and `notes` only.
+Status 200. The body is the connect page of `A user opens the connect page`, with the same banner, and the banner also holds the launcher button labelled `Services`. The page carries the list of services labelled `Services`, holding the search field labelled `Find a service` with the placeholder `Find a service` and four entries in the file's order, each showing its icon and then its name: `auth`, a link to `https://auth.sbx.ikigenba.dev`; `dummy`, a link to `https://dummy.sbx.ikigenba.dev`; `mcp`, a link to `https://mcp.sbx.ikigenba.dev`, marked as the current page; and `notes`, not a working link, titled `notes is unavailable`. The no-match line is in the page and hidden. The page loads the script `/_appkit/launcher.js`. The rest of the page is unchanged.
 
 Preconditions:
 
@@ -337,7 +232,7 @@ Postconditions:
 
 ## A guest asks for the connect page and is sent to sign in
 
-The connect page names the caller in its banner and lists the space's MCP services, so it is for signed-in users. A guest — a browser with no session, which nginx lets through because mcp serves guests the setup files — is sent to auth's sign-in, carrying the URL it asked for so auth can bring it back once it has signed in. The sign-in address is `<auth-profile>`, derived as for the page's profile link, followed by `?return=` and the URL to return to, `<scheme>://<Host><path and query>`, percent-encoded as a query component, the scheme chosen as for the endpoint. The request carries no `X-User-Id`; one with an empty `X-User-Id`, or an `X-User-Email` and no `X-User-Id`, is a guest's all the same.
+The connect page names the caller in its banner, so it is for signed-in users. A guest — a browser with no session, which nginx lets through because mcp serves guests the setup files — is sent to auth's sign-in, carrying the URL it asked for so auth can bring it back once it has signed in. The sign-in address is `<auth-profile>`, derived as for the page's profile link, followed by `?return=` and the URL to return to, `<scheme>://<Host><path and query>`, percent-encoded as a query component, the scheme chosen as for the endpoint. The request carries no `X-User-Id`; one with an empty `X-User-Id`, or an `X-User-Email` and no `X-User-Id`, is a guest's all the same.
 
 Request:
 
@@ -382,7 +277,7 @@ Postconditions:
 
 ## A caller asks for a path that does not exist
 
-The gateway serves the connect page, the shared files, and the MCP endpoint, and nothing else; it has no widgets, no panel, and no page of its own to send a lost caller to, so a path it does not serve is answered with one line of plain text, whatever the method. A malformed scope under `/mcp/` is answered with the same 404, as `S05` tells.
+The gateway serves the connect page, the setup files, the shared files, and the MCP endpoint, and nothing else; it has no widgets, no panel, and no page of its own to send a lost caller to, so a path it does not serve is answered with one line of plain text, whatever the method. A malformed scope under `/mcp/` is answered with the same 404, as `S05` tells.
 
 Request:
 

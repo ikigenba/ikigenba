@@ -19,7 +19,7 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the connect page (`S03`): an HTML page whose banner's profile link is titled with the email address of the caller the gate authenticated, whose visible text carries the heading `Connect an MCP client`, the endpoint `https://mcp.sbx.ikigenba.dev/mcp`, and the line `Every request must send the header Authorization: Bearer <token>. Create a token on your profile.`, in which `your profile` leads to `https://auth.sbx.ikigenba.dev/`, and whose `Services` section lists the MCP services installed on the space, `dummy` among them, `available`, with its endpoint `https://mcp.sbx.ikigenba.dev/mcp/dummy`. There is no row for `mcp` or `auth`. The footer reads `mcp v<semver>`, the version the deployed binary's `mcp --version` prints (`S01`), the same one `space status` reports for mcp. Its stylesheet is `https://mcp.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that stylesheet loads are under the same `https://mcp.sbx.ikigenba.dev/_appkit/` (`S04`): a browser showing the page requests its style from mcp's own host and from no other origin. In the banner, the profile link leads to `https://auth.sbx.ikigenba.dev/`, and the `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout` (`S03`); submitting it signs the visitor out of the space, as auth's stories tell.
+Status 200. The body is the connect page (`S03`): an HTML page whose banner's profile link is titled with the email address of the caller the gate authenticated, whose visible text carries the heading `Connect MCP Client`; under `Automatic Install`, the setup instructions' address `https://mcp.sbx.ikigenba.dev/setup.txt` with its `Copy` button; and under `Manual Install`, the endpoint `https://mcp.sbx.ikigenba.dev/mcp`, the line `Every request must send the header Authorization: Bearer <token>`, and the line `Create a token on your profile.`, in which `profile` leads to `https://auth.sbx.ikigenba.dev/`. The footer reads `mcp v<semver>`, the version the deployed binary's `mcp --version` prints (`S01`), the same one `space status` reports for mcp. Its stylesheet is `https://mcp.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that stylesheet loads are under the same `https://mcp.sbx.ikigenba.dev/_appkit/` (`S04`): a browser showing the page requests its style from mcp's own host and from no other origin. In the banner, the profile link leads to `https://auth.sbx.ikigenba.dev/`, and the `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout` (`S03`); submitting it signs the visitor out of the space, as auth's stories tell.
 
 Preconditions:
 
@@ -94,7 +94,7 @@ Postconditions:
 
 ## An agent on a space reads the setup instructions without a credential
 
-An agent the user has asked to read the setup instructions has no token yet; getting one set up is what the instructions are for. The space lets the request through to mcp, which serves the file to anyone (`S12`), and the installer the same way.
+An agent the user has asked to read the setup instructions has no token yet; getting one set up is what the instructions are for. The space lets the request through to mcp, which serves the file to anyone (`S12`), and the script the same way.
 
 Request:
 
@@ -113,7 +113,7 @@ HTTP/2 200
 content-type: text/plain; charset=utf-8
 ```
 
-Status 200. The body is the file `S12` describes, naming the endpoint `https://mcp.sbx.ikigenba.dev/mcp` and the token page `https://auth.sbx.ikigenba.dev/`.
+Status 200. The body is the file `S12` describes, naming the space `sbx.ikigenba.dev`, the endpoint `https://mcp.sbx.ikigenba.dev/mcp`, and the token page `https://auth.sbx.ikigenba.dev/`.
 
 Preconditions:
 
