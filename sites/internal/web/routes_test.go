@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/urls"
 )
 
-// R-UXAG-GEV5 R-WL1J-7676 R-XPM2-VTHM R-WNHB-YPOK R-WOP8-CHF9
+// R-UXAG-GEV5 R-3NN6-FZEC R-XPM2-VTHM R-WNHB-YPOK R-WOP8-CHF9
 // R-WPX4-Q95Y R-WR51-40WN R-WUSQ-9C4Q R-WW0M-N3VF R-WX8J-0VM4
 // R-WYGF-ENCT R-XD37-ZW95
 func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
@@ -29,8 +29,17 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 	}
 	sc := serving.Config{Banner: f.cfg.Banner, Pages: p, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Cache: f.cfg.Cache, Telemetry: f.cfg.Telemetry, Rand: f.cfg.Rand}
 	own := map[string]http.Handler{"apex": serving.Apex(sc), "site": serving.Sites(sc), "page": pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: p, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store}), "static": page.Static()}
-	for _, host := range []string{"sites", "sites:80", "Sites.sbx.ikigenba.dev", "sites.sbx.ikigenba.dev:8443", "ikigenba.dev", "ikigenba.dev:443", "sitesx.dev", "www.sites.dev", ""} {
-		apex := host != "sites" && host != "sites:80" && !strings.HasPrefix(strings.ToLower(host), "sites.")
+	for _, test := range []struct {
+		host string
+		apex bool
+	}{
+		{"", false}, {"backend", false}, {"localhost", false}, {"notes:80", false},
+		{"sites", false}, {"sites:80", false}, {"Sites.sbx.ikigenba.dev", false}, {"sites.sbx.ikigenba.dev:8443", false},
+		{"SITES.example", false}, {"sites.", false}, {"backend:80:90", false}, {"[::1]:80", false},
+		{"ikigenba.dev", true}, {"ikigenba.dev:443", true}, {"wip.localhost:7400", true},
+		{"sitesx.dev", true}, {"www.sites.dev", true}, {"example.org:80:90", true}, {"[::ffff:192.0.2.1]:80", true},
+	} {
+		host, apex := test.host, test.apex
 		for _, path := range []string{"/", "/about", "/mcp", "/_appkit/theme.css", "/_appkit", "/about/", "/mcp/", "/mcp/tools", "//", "/blog/../x", "/nope?next=/mcp"} {
 			for _, method := range []string{"GET", "HEAD", "POST"} {
 				for _, user := range []string{"", "user"} {
@@ -74,16 +83,15 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 	}
 }
 
-// R-WTKT-VKE1
+// R-WTKT-VKE1 R-3NN6-FZEC
 func TestToolRegistration(t *testing.T) {
 	f := fresh(t)
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { r.Host = "sites"; f.h.ServeHTTP(w, r) }))
-	defer a.Close()
 	other := mcp.NewServer(mcp.ServerConfig{Name: "sites", Version: "fixture", Telemetry: f.cfg.Telemetry})
 	tools.Register(other, tools.Config{Store: f.cfg.Store, Cache: f.cfg.Cache, Limits: f.cfg.Limits, Telemetry: f.cfg.Telemetry})
 	b := httptest.NewServer(telemetry.Middleware(f.cfg.Telemetry, identity.Require(other)))
 	defer b.Close()
-	get := func(endpoint string) []mcp.ToolInfo {
+	get := func(t *testing.T, endpoint string) []mcp.ToolInfo {
+		t.Helper()
 		client := mcp.NewClient(mcp.ClientConfig{Endpoint: endpoint})
 		list, err := client.ListTools(context.Background(), identity.Caller{UserID: "user", RequestID: "req_123456789abcdef0123456789abcdef0"})
 		if err != nil {
@@ -91,9 +99,16 @@ func TestToolRegistration(t *testing.T) {
 		}
 		return list
 	}
-	got, want := get(a.URL+"/mcp"), get(b.URL)
-	if len(got) != 7 || !reflect.DeepEqual(got, want) {
-		t.Fatalf("registration %v != %v", got, want)
+	want := get(t, b.URL)
+	for _, host := range []string{"", "backend", "localhost", "notes:80", "sites", "sites:80", "Sites.sbx.ikigenba.dev", "sites.sbx.ikigenba.dev:8443"} {
+		t.Run(host, func(t *testing.T) {
+			a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { r.Host = host; f.h.ServeHTTP(w, r) }))
+			defer a.Close()
+			got := get(t, a.URL+"/mcp")
+			if len(got) != 7 || !reflect.DeepEqual(got, want) {
+				t.Fatalf("registration %v != %v", got, want)
+			}
+		})
 	}
 }
 
@@ -121,7 +136,7 @@ func TestCatalogRefusalAndRecovery(t *testing.T) {
 	}
 }
 
-// R-WL1J-7676 R-WOP8-CHF9
+// R-3NN6-FZEC R-WOP8-CHF9
 func TestUnicodeHostsAreApexRequests(t *testing.T) {
 	f := fresh(t)
 	for _, host := range []string{"SİTES.example", "SİTES.example:80"} {

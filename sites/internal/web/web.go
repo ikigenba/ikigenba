@@ -52,7 +52,7 @@ func Handler(cfg Config) http.Handler {
 			host = h
 		}
 		host = asciiLower(host)
-		if host != "sites" && !strings.HasPrefix(host, "sites.") {
+		if strings.Contains(host, ".") && !strings.HasPrefix(host, "sites.") {
 			apex.ServeHTTP(w, r)
 			return
 		}

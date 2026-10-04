@@ -173,10 +173,10 @@ func TestTimerCallsAndSaturation(t *testing.T) {
 }
 
 func TestOperationCausesAndStability(t *testing.T) {
-	// R-TO8G-RL90 R-O2BA-U1V3
+	// R-TO8G-RL90 R-O2BA-U1V3 R-XEK2-4O4V R-XFRY-IFVK
 	for _, first := range []string{"parent", "timer", "cancel", "ready", "parent-ready"} {
 		t.Run(first, func(t *testing.T) {
-			c := &timerClock{ready: first == "ready"}
+			c := &timerClock{ready: first == "ready" || first == "parent-ready"}
 			l := limits.New(settings.Defaults(), limits.Clock{After: c.after})
 			parent, parentCancel := context.WithCancelCause(context.Background())
 			defer parentCancel(context.Canceled)
@@ -207,6 +207,9 @@ func TestOperationCausesAndStability(t *testing.T) {
 				requireDone(op, t, cause)
 			}
 			awaitDone(op, t, cause)
+			if errors.Is(parentCause, cause) && !errors.Is(parentCause, context.Cause(op)) {
+				t.Fatal("operation did not retain the parent's exact cause")
+			}
 			before := context.Cause(op)
 			parentCancel(parentCause)
 			if first != "timer" && first != "ready" {
@@ -216,11 +219,81 @@ func TestOperationCausesAndStability(t *testing.T) {
 			cancel()
 			cancel()
 			requireDone(op, t, cause)
-			if !errors.Is(context.Cause(op), before) {
+			if !errors.Is(before, context.Cause(op)) {
 				t.Fatal("cause changed after later endings")
 			}
 			if errors.Is(cause, limits.ErrTimedOut) && errors.Is(context.Cause(op), limits.ErrHalted) {
 				t.Fatal("timeout also matched halt")
+			}
+		})
+	}
+}
+
+// delayedParent makes propagation wait until release, while its public Done,
+// Err and cause already report cancellation. This exposes a timer observer
+// that chooses a deadline merely because the propagation callback is delayed.
+type delayedParent struct {
+	context.Context
+	done     chan struct{}
+	mu       sync.Mutex
+	callback func()
+}
+
+func (p *delayedParent) Done() <-chan struct{} { return p.done }
+
+func (p *delayedParent) AfterFunc(f func()) func() bool {
+	p.mu.Lock()
+	p.callback = f
+	p.mu.Unlock()
+	return func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		active := p.callback != nil
+		p.callback = nil
+		return active
+	}
+}
+
+func (p *delayedParent) release() {
+	p.mu.Lock()
+	f := p.callback
+	p.callback = nil
+	p.mu.Unlock()
+	if f != nil {
+		f()
+	}
+}
+
+func TestParentCauseWithReadyTimer(t *testing.T) {
+	// R-XEK2-4O4V
+	for _, timing := range []string{"during-after", "after-return"} {
+		t.Run(timing, func(t *testing.T) {
+			parent, stop := context.WithCancelCause(context.Background())
+			defer stop(context.Canceled)
+			p := &delayedParent{Context: parent, done: make(chan struct{})}
+			defer p.release()
+			cause := errors.New("caller cause")
+			timer := make(chan time.Time, 1)
+			cancelParent := func() { stop(cause); close(p.done) }
+			l := limits.New(settings.Defaults(), limits.Clock{After: func(time.Duration) <-chan time.Time {
+				if timing == "during-after" {
+					cancelParent()
+					timer <- time.Time{}
+				}
+				return timer
+			}})
+			op, cancel := l.Operation(p)
+			defer cancel()
+			if timing == "after-return" {
+				requireOpen(op, t)
+				cancelParent()
+				timer <- time.Time{}
+			}
+			awaitDone(op, t, cause)
+			// cause is an errors.New sentinel with no Is or Unwrap method.
+			// Putting it first accepts only that same error, not a wrapper.
+			if !errors.Is(cause, context.Cause(op)) {
+				t.Fatalf("operation cause = %v, parent cause = %v", context.Cause(op), context.Cause(p))
 			}
 		})
 	}

@@ -29,6 +29,7 @@ type Limits struct {
 
 type operation struct {
 	ctx    context.Context
+	parent context.Context
 	cancel context.CancelCauseFunc
 	timer  <-chan time.Time
 }
@@ -58,7 +59,7 @@ func (l *Limits) Clock() Clock { return l.clock }
 // Operation creates the context bounding one git process.
 func (l *Limits) Operation(ctx context.Context) (context.Context, context.CancelFunc) {
 	opctx, cancel := context.WithCancelCause(ctx)
-	op := &operation{ctx: opctx, cancel: cancel}
+	op := &operation{ctx: opctx, parent: ctx, cancel: cancel}
 	l.mu.Lock()
 	if l.halted {
 		// A new operation after Halt always reports the halt, including when its
@@ -86,7 +87,7 @@ func (l *Limits) Operation(ctx context.Context) (context.Context, context.Cancel
 		case <-opctx.Done():
 		case _, ok := <-timer:
 			if ok {
-				cancel(ErrTimedOut)
+				op.finishTimer()
 			} else {
 				<-opctx.Done()
 			}
@@ -130,9 +131,20 @@ func (l *Limits) finishReady(op *operation) {
 	select {
 	case _, ok := <-op.timer:
 		if ok {
-			op.cancel(ErrTimedOut)
+			op.finishTimer()
 		}
 	default:
+	}
+}
+
+// finishTimer preserves a parent cause even when the parent's propagation
+// callback has not yet run and the timer is ready at the same time.
+func (op *operation) finishTimer() {
+	select {
+	case <-op.parent.Done():
+		op.cancel(context.Cause(op.parent))
+	default:
+		op.cancel(ErrTimedOut)
 	}
 }
 

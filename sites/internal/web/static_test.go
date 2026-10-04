@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// R-QGSS-CYWW R-YUJU-KIST R-RH3C-EKZZ R-DMWP-R6AY
+// R-QGSS-CYWW R-YUJU-KIST R-RH3C-EKZZ R-DMWP-R6AY R-F04K-TWPO
 // R-W6K9-QDFF R-B6BE-NEUY R-YWZN-C2A7 R-F506-CZOG R-F682-QRF5
 func TestSharedFiles(t *testing.T) {
 	f := fresh(t)

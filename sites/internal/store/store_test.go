@@ -314,27 +314,26 @@ func TestPersistenceAndWAL(t *testing.T) {
 	}
 }
 func TestOpenFailures(t *testing.T) {
-	// R-1H1G-8CB9 R-1JH8-ZVSN R-I2EZ-KHLO
+	// R-1H1G-8CB9 R-1JH8-ZVSN R-I2EZ-KHLO R-D75E-NBQE
 	root := t.TempDir()
 	block := filepath.Join(root, "block")
+	newlineBlock := filepath.Join(root, "block\n\nwith\r\ttabs")
 	bad := filepath.Join(root, "bad")
-	for _, p := range []string{block, bad} {
+	for _, p := range []string{block, newlineBlock, bad} {
 		if e := os.WriteFile(p, []byte("not sqlite"), 0600); e != nil {
 			t.Fatal(e)
 		}
 	}
-	for _, path := range []string{filepath.Join(block, "child", "db"), bad} {
+	for _, path := range []string{filepath.Join(block, "child", "db"), filepath.Join(newlineBlock, "child", "db"), bad} {
 		s, e := store.Open(ctx, store.Config{Source: path})
 		equal(t, s, (*store.Store)(nil))
 		checkErr(t, e, store.ErrDatabase)
-		if e.Error() == "" || strings.Contains(e.Error(), "\n") {
-			t.Fatal(e)
-		}
+		openErrorText(t, e)
 		if path != bad {
 			expected := os.MkdirAll(filepath.Dir(path), 0700)
-			equal(t, e.Error(), expected.Error())
+			equal(t, e.Error(), strings.ReplaceAll(expected.Error(), "\n", " "))
 		}
-		for _, p := range []string{block, bad} {
+		for _, p := range []string{block, newlineBlock, bad} {
 			b, err := os.ReadFile(filepath.Clean(p))
 			equal(t, err, nil)
 			equal(t, string(b), "not sqlite")
@@ -367,6 +366,7 @@ func TestOpenFailures(t *testing.T) {
 		equal(t, restore, nil)
 		equal(t, s, (*store.Store)(nil))
 		checkErr(t, err, store.ErrDatabase)
+		openErrorText(t, err)
 		b, err := os.ReadFile(filepath.Clean(path))
 		equal(t, err, nil)
 		equal(t, b, original)
@@ -377,9 +377,17 @@ func TestOpenFailures(t *testing.T) {
 		s, e = store.Open(done, store.Config{Source: source})
 		equal(t, s, (*store.Store)(nil))
 		checkErr(t, e, context.Canceled)
+		openErrorText(t, e)
 	}
 	if _, e = os.Stat(filepath.Join(root, "absent", "db")); !os.IsNotExist(e) {
 		t.Fatal(e)
+	}
+}
+
+func openErrorText(t *testing.T, err error) {
+	t.Helper()
+	if err == nil || err.Error() == "" || strings.Contains(err.Error(), "\n") {
+		t.Fatalf("Open error must be nonempty and one line: %q", err)
 	}
 }
 
