@@ -25,8 +25,8 @@
 <p>Create a token on your <a id="profile-link" href="{{.Banner.ProfileURL}}">profile</a>.</p>
 </section>
 </main>
-{{template "footer" .Banner}}
 <script>document.querySelectorAll('.secret>button').forEach(function(b){b.addEventListener('click',function(){navigator.clipboard.writeText(b.parentNode.querySelector('code').textContent);});});</script>
+{{template "footer" .Banner}}
 </body>
 </html>
 {{end}}
