@@ -97,7 +97,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S03-6, S03-23 | the sites address and site URLs | `D06-pages` R-CE8B-DKM7, R-CFG7-RCCW, R-E6UZ-NEX0 |
 | S03-7, S03-14, S03-15 | the landing table, its rows and badges, the empty state | `D06-pages` R-XXK4-4RSW, R-E82W-16NP, R-E9AS-EYEE, R-EAIO-SQ53, R-EBQL-6HVS, R-EE6D-Y1D6, R-EJ1Z-H4BY; `D04-store` R-1WW5-7CYA |
 | S03-8, S03-19, S03-21 | the launcher | `D06-pages` R-E37A-I3OX, R-YY7J-PU0W; what the script does in a browser: space-level check (appkit's script; no test runs it) |
-| S03-10 | routing | `D03-serve` R-WL1J-7676, R-WNHB-YPOK, R-WOP8-CHF9, R-WUSQ-9C4Q, R-WW0M-N3VF, R-WX8J-0VM4, R-WYGF-ENCT |
+| S03-10 | routing | `D03-serve` R-3NN6-FZEC, R-WNHB-YPOK, R-WOP8-CHF9, R-WUSQ-9C4Q, R-WW0M-N3VF, R-WX8J-0VM4, R-WYGF-ENCT |
 | S03-11, S03-13 | a page's events; quiet | `D03-serve` R-X244-JYKW, R-XPM2-VTHM, R-XN6A-4A08; `D08-visitors-and-trail` R-RDFN-99RW |
 | S03-12 | the landing page | `D06-pages` R-XYS0-IJJL, R-DYBO-Z0Q5, R-E4F6-VVFM, R-E5N3-9N6B, R-E6UZ-NEX0, R-EFEA-BT3V, R-EGM6-PKUK, R-EHU3-3CL9 |
 | S03-16 | `HEAD` of a page | `D06-pages` R-DDLE-GX4C, R-IBAF-6046 |
@@ -108,14 +108,14 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S04-1, S04-4, S04-6, S04-8, S04-9, S04-10, S04-11, S04-12, S04-13 | the seven shared files, their types, tags, revalidation and `HEAD` | `D06-pages` R-QGSS-CYWW, R-YUJU-KIST, R-RH3C-EKZZ, R-DMWP-R6AY, R-F04K-TWPO, R-W6K9-QDFF, R-B6BE-NEUY, R-YWZN-C2A7 |
 | S04-2, S04-14, S04-15 | names not served; other methods | `D06-pages` R-F506-CZOG, R-F682-QRF5; `D03-serve` R-WNHB-YPOK, R-WW0M-N3VF; `D08-visitors-and-trail` R-RDFN-99RW |
 | S04-3, S04-5, S04-7 | same to guests; no cookie; only the request pair | `D03-serve` R-WW0M-N3VF, R-X244-JYKW; `D06-pages` R-RH3C-EKZZ; `D08-visitors-and-trail` R-RDFN-99RW |
-| S04-new1 | the apex host, whatever the path | `D03-serve` R-WL1J-7676, R-WOP8-CHF9 |
+| S04-new1 | the apex host, whatever the path | `D03-serve` R-3NN6-FZEC, R-WOP8-CHF9 |
 | S05-1, S05-23 | `/mcp` exactly, `POST` only | `D03-serve` R-WNHB-YPOK, R-WR51-40WN; the `405` and one answer per `POST`: appkit's MCP server design |
 | S05-2, S05-16, S05-17, S05-22 | the seven tools listed: names, descriptions, schemas, annotations | `D09-tools` R-M8I3-SHVY, R-MWW3-FWPU, R-MAXW-K1DC, R-MC5S-XT41, R-MDDP-BKUQ, R-MELL-PCLF, R-MFTI-34C4, R-MH1E-GW2T, R-MI9A-UNTI, R-MJH7-8FK7, R-MKP3-M7AW, R-MLWZ-ZZ1L, R-MN4W-DQSA, R-MOCS-RIIZ, R-MPKP-5A9O, R-MQSL-J20D, R-MS0H-WTR2, R-MUGA-OD8G, R-MVO7-24Z5; `apex`'s `outputSchema` departs (U1, above) |
 | S05-3 | site ids and names | `D04-store` R-1AXY-BHLS, R-1C5U-P9CH, R-1LX1-RFA1, R-UEZD-QS32 |
 | S05-4 | a name resolves among the caller's sites | `D09-tools` R-99D9-RDYQ; `D04-store` R-1T8G-21Q7 |
 | S05-5, S05-9 | the site object; success and failure shapes | `D09-tools` R-N0JS-L7XX, R-FC07-11HE |
 | S05-6, S05-14 | kinds; `tool.called` | `D09-tools` R-MAXW-K1DC, R-XVCP-61ZC |
-| S05-7, S05-24 | identity required on `/mcp`; `Host: sites` never apex | `D03-serve` R-WPX4-Q95Y, R-WL1J-7676 |
+| S05-7, S05-24 | identity required on `/mcp`; `Host: backend` never apex | `D03-serve` R-WPX4-Q95Y, R-3NN6-FZEC |
 | S05-8, S05-21 | protocol revisions, `initialize`, `serverInfo` | appkit's MCP server design; the version `D01-layout-and-run-seam` R-Z1XA-ZPGD |
 | S05-10 | argument refusals | appkit's MCP tools and schema designs; the input schemas `D09-tools` R-MKP3-M7AW to R-MQSL-J20D |
 | S05-11 | sites' refusal texts | `D09-tools` R-N5FE-4AWP, R-Y1G7-2WOT, R-N2ZL-CRFB, R-N47H-QJ60 |
@@ -125,7 +125,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S05-18 | `tools/list` reads nothing | `D09-tools` R-MWW3-FWPU; `D03-serve` R-X244-JYKW |
 | S05-19, S05-20 | `server/discover` and instructions | `D01-layout-and-run-seam` R-Z357-DH72, R-R02K-R24N |
 | S05-25 | unknown tool | `D09-tools` R-9BT2-IXG4 |
-| S05-27 | `list` through `Host: sites` | `D09-tools` R-NIUA-BS2C; `D06-pages` R-CE8B-DKM7 |
+| S05-27 | `list` through `Host: backend` | `D09-tools` R-NIUA-BS2C; `D06-pages` R-CE8B-DKM7 |
 | S06-1, S06-24, S06-25 | `create`'s input and its argument refusals | `D09-tools` R-LYQW-QBYE, R-MN4W-DQSA, R-XVCP-61ZC; appkit's MCP schema design |
 | S06-2, S06-3, S06-18, S06-19 | the name rule; names taken space-wide | `D04-store` R-1C5U-P9CH, R-UEZD-QS32, R-1Y41-L4OZ; `D09-tools` R-N5FE-4AWP, R-LKDI-8SVM, R-PO7P-9OAU |
 | S06-4, S06-21, S06-22 | the repository and its owner | `D05-git-and-cache` R-AXFL-X2LH, R-B4R0-7P1N, R-B5YW-LGSC; `D09-tools` R-L86I-F3GO |
@@ -170,7 +170,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S12-5, S12-12, S12-13, S12-14, S12-15, S12-16 | a user served a private site | `D07-site-serving` R-EJKV-KNRR, R-FAEN-ZM31, R-EY7O-5WO3, R-Y3NM-1MID; `D08-visitors-and-trail` R-LON3-52D8, R-UIHW-892E |
 | S12-6 | quiet | `D03-serve` R-XN6A-4A08 |
 | S13-1 | the apex setting | `D04-store` R-18I5-JY4E, R-2AB1-EU3X, R-2BIX-SLUM, R-2CQU-6DLB, R-2DYQ-K5C0 |
-| S13-2, S13-28 | what an apex request is; `Host: sites` is not | `D03-serve` R-WL1J-7676, R-WOP8-CHF9 |
+| S13-2, S13-28 | what an apex request is; `Host: backend` is not | `D03-serve` R-3NN6-FZEC, R-WOP8-CHF9 |
 | S13-3, S13-25, S13-26, S13-27, S13-29, S13-30 | the apex redirect | `D07-site-serving` R-FK5V-1S0L; `D06-pages` R-CGO4-543L; `D08-visitors-and-trail` R-RDFN-99RW |
 | S13-4, S13-31 | apex unset | `D07-site-serving` R-FIXY-O09W; `D06-pages` R-EQDD-RQS4; `D08-visitors-and-trail` R-RDFN-99RW |
 | S13-5 | no cookie, only the request pair | `D03-serve` R-X244-JYKW; `D08-visitors-and-trail` R-RDFN-99RW |
@@ -227,7 +227,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S21-8 | a token holder at a private site | `D07-site-serving` R-EJKV-KNRR, R-FAEN-ZM31; `D08-visitors-and-trail` R-LON3-52D8, R-FA6U-BB22; auth admitting the token: space-level check (auth) |
 | S21-9 | the landing page on a space | `D06-pages` R-XYS0-IJJL, R-EHU3-3CL9, R-E9AS-EYEE, R-EFEA-BT3V, R-EGM6-PKUK, R-E37A-I3OX, R-DZJL-CSGU, R-CJ3W-WNKZ, R-DX3S-L8ZG; `D01-layout-and-run-seam` R-YZHI-85YZ; `space status` and a browser's fetches: space-level check (devctl, appkit's script) |
 | S21-10 | a guest at the landing page on a space | `D06-pages` R-DG17-8GLQ, R-CKBT-AFBO; `D08-visitors-and-trail` R-RDFN-99RW |
-| S21-11 | the apex host on a space | `D07-site-serving` R-FK5V-1S0L, R-W85P-WL7K; `D06-pages` R-CGO4-543L; `D03-serve` R-WL1J-7676, R-WOP8-CHF9; the root domain reaching sites: space-level check (devctl, opsctl); `D08-visitors-and-trail` R-RDFN-99RW |
+| S21-11 | the apex host on a space | `D07-site-serving` R-FK5V-1S0L, R-W85P-WL7K; `D06-pages` R-CGO4-543L; `D03-serve` R-3NN6-FZEC, R-WOP8-CHF9; the root domain reaching sites: space-level check (devctl, opsctl); `D08-visitors-and-trail` R-RDFN-99RW |
 | S21-12 | `/mcp` with no credential | space-level check (nginx, auth): nothing reaches sites |
 | S21-13 | an agent creates and publishes through the gateway | `D09-tools` R-LVCL-OQJV, R-LQH0-5NL3, R-XJWW-Q6D5; `D08-visitors-and-trail` R-FGAC-85RJ, R-FHI8-LXI8; `D06-pages` R-EBQL-6HVS, R-EE6D-Y1D6; `D03-serve` R-XN6A-4A08; `mutate` and the relay: space-level check (mcp) |
 | S21-new-1 | relayed results carry the gateway's `serverInfo`, not sites' | space-level check (mcp) |
