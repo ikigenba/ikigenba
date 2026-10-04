@@ -1,0 +1,20 @@
+app = "sites"
+description = "Static sites from the suite's repositories"
+default = false
+mcp = true
+guests = true
+secrets = []
+
+[env]
+REPOS_DIR = "../repos/state/repos"
+SITE_MAX_BYTES = "268435456"
+OPERATION_SECONDS = "600"
+
+[database]
+engine = "sqlite"
+path = "state/sites.db"
+
+[resources]
+cpu_weight = 50
+memory_max = "1G"
+io_weight = 50
