@@ -20,6 +20,14 @@ linters:
         # builds itself and never through a shell.
         - G204
 
+  exclusions:
+    rules:
+      # A requirement id (R-XXXX-XXXX) is an opaque token, not prose: the
+      # spellchecker never judges a line that carries one.
+      - linters:
+          - misspell
+        source: 'R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+
 formatters:
   enable:
     - gofmt
