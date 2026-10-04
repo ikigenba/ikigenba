@@ -31,6 +31,8 @@ An attribute naming an entity has the entity's type as its key (`token`, `widget
 | Prefix | Entity type | Owning service |
 |---|---|---|
 | `rep_` | `repo` | `repos` |
+| `run_` | `run` | `scripts` |
+| `scr_` | `script` | `scripts` |
 | `sit_` | `site` | `sites` |
 | `tok_` | `token` | `auth` |
 | `vis_` | `visitor` | `sites` |
