@@ -1,52 +1,32 @@
 {{/* The connect page at GET /: how to point an MCP client at the gateway.
-     Data: .Banner (a page.Banner, for banner and footer); .Endpoint (the
-     unscoped URL, <scheme>://<Host>/mcp); .Banner.ProfileURL (auth's profile
-     page, where API tokens are made); .GitScope (<scheme>://*.<space>,
-     the Host with one leading "mcp." dropped and its port kept);
-     .SetupURL (<scheme>://<Host>/setup.txt, the instructions an agent
-     reads); .Services, in name order, each with .Name, .Description, .URL (its
-     scoped endpoint, <endpoint>/<name>), .Available (bool) and .Reason
-     ("disabled", set only when unavailable). Hooks: code#endpoint; a#profile-link; after it and
-     before the services, an h2 "Connect your agent to ikigenba" and
-     code#setup-url holding .SetupURL; table#mcp-services
-     with one tr[data-service=<name>][data-available=true|false] per service,
-     whose td code holds .URL and whose span.badge holds "available" or the
-     reason, with data-reason=<reason> when unavailable; p#no-services when
-     .Services is empty, in place of the table; after the services, an h2
-     "Git" and code#git-helper holding the git credential-helper command
-     scoped to .GitScope. No script. */}}
+     Data: .Banner (a page.Banner, for banner and footer; .Banner.ProfileURL is
+     auth's profile page, where API tokens are made); .Endpoint (the unscoped
+     URL, <scheme>://<Host>/mcp); .SetupURL (<scheme>://<Host>/setup.txt, the
+     instructions an agent reads). Hooks: h1 "Connect MCP Client"; h2 "Automatic
+     Install" then h2 "Manual Install"; two div.secret copy blocks, each with one
+     code and one button[type=button] "Copy", the first holding code#setup-url
+     (.SetupURL), the second code#endpoint (.Endpoint); a#profile-link "profile"
+     after Manual Install. Inline clipboard script only. */}}
 {{define "connect"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>mcp</title></head>
 <body>
 {{template "banner" .Banner}}
 <main>
-<h1>Connect an MCP client</h1>
-<p>Add this server to your client as a remote (Streamable HTTP) MCP server.</p>
-<pre><code id="endpoint">{{.Endpoint}}</code></pre>
-<p>Every request must send the header <code>Authorization: Bearer &lt;token&gt;</code>. Create a token on <a id="profile-link" href="{{.Banner.ProfileURL}}">your profile</a>.</p>
+<h1>Connect MCP Client</h1>
 <section>
-<div class="section-head"><div><h2>Connect your agent to ikigenba</h2><p>Ask it to read <code id="setup-url">{{.SetupURL}}</code></p></div></div>
+<div class="section-head"><div><h2>Automatic Install</h2><p>Ask your agent to follow these instructions:</p></div></div>
+<div class="secret"><code id="setup-url">{{.SetupURL}}</code><button class="secondary" type="button">Copy</button></div>
 </section>
 <section>
-<div class="section-head"><div><h2>Services</h2><p>The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: <code>{{.Endpoint}}/a,b</code>.</p></div></div>
-{{if .Services}}<div class="table-scroll">
-<table id="mcp-services">
-<thead><tr><th>Name</th><th>Description</th><th>Endpoint</th><th>Status</th></tr></thead>
-<tbody>{{range .Services}}
-<tr data-service="{{.Name}}" data-available="{{.Available}}"><td>{{.Name}}</td><td>{{.Description}}</td><td><code>{{.URL}}</code></td><td>{{if .Available}}<span class="badge" data-kind="ok">available</span>{{else}}<span class="badge" data-kind="warn" data-reason="{{.Reason}}">{{.Reason}}</span>{{end}}</td></tr>{{end}}
-</tbody>
-</table>
-</div>{{else}}<div class="empty"><p id="no-services">No MCP services are installed.</p></div>{{end}}
-</section>
-<section>
-<div class="section-head"><div><h2>Git</h2><p>The same token works for git over HTTPS. Keep it in the environment variable <code>IKIGENBA_TOKEN</code> and give it to git with this credential helper, which reads the variable whenever git asks:</p></div></div>
-<pre><code id="git-helper">git config --global credential.{{.GitScope}}.helper '!f() { test "$1" = get &amp;&amp; printf "username=token\npassword=%s\n" "$IKIGENBA_TOKEN"; }; f'</code></pre>
-<p>Or set <code>GIT_ASKPASS</code> to a program that prints <code>$IKIGENBA_TOKEN</code>.</p>
-<p>Never put the token in a remote's URL, and never use <code>credential.helper store</code>: both write it to disk in plain text.</p>
+<div class="section-head"><div><h2>Manual Install</h2></div></div>
+<div class="secret"><code id="endpoint">{{.Endpoint}}</code><button class="secondary" type="button">Copy</button></div>
+<p>Every request must send the header <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+<p>Create a token on your <a id="profile-link" href="{{.Banner.ProfileURL}}">profile</a>.</p>
 </section>
 </main>
 {{template "footer" .Banner}}
+<script>document.querySelectorAll('.secret>button').forEach(function(b){b.addEventListener('click',function(){navigator.clipboard.writeText(b.parentNode.querySelector('code').textContent);});});</script>
 </body>
 </html>
 {{end}}

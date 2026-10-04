@@ -1,67 +1,66 @@
-{{/* GET /setup.txt: plain-text instructions an agent reads and follows to
-     have its user connect the agent's own client to the gateway.
-     Data: .Origin (<scheme>://<Host>, the gateway origin); .Endpoint
-     (<Origin>/mcp, the MCP endpoint); .TokenURL (auth's profile page,
-     where a user creates a token). Text the tests read: .Endpoint,
-     .TokenURL, the command "curl -fsSL <Origin>/setup.sh | bash -s --
-     --client <client> --scope <scope>", and the five client names
-     codex-cli, codex-desktop, claude-cli, claude-desktop, grok-cli. */}}
-{{- define "instructions"}}# Connect your client to ikigenba
+{{/* The setup instructions at GET /setup.txt. Data: .Space, .Origin, .Endpoint, .TokenURL, .Variable, .Server. */}}{{define "instructions"}}Connect an agent to ikigenba
+============================
 
-These instructions are for you, the agent. Follow them to have your user connect the client they are talking to you through to the ikigenba MCP gateway.
+You are an agent helping your user connect you to the ikigenba MCP gateway for the space {{.Space}}. Your job is to make the four outcomes below true for the client you are running in, then prove they are true. How you get there is up to you; use what you know about your own client and the user's machine, and ask the user only what you cannot find out.
 
-Endpoint: {{.Endpoint}}
-Token page: {{.TokenURL}}
+First: you must be running on the user's own machine. If you run somewhere else (a hosted sandbox, a cloud container), tell the user you cannot configure their machine from there and stop. The script in step 1 runs on Linux only: on any other operating system, say so and stop, and give no command. If your client has its own way to add a remote MCP server with a secret typed outside the chat, use that instead and skip the rest.
 
-The gateway takes a personal access token as the header "Authorization: Bearer <token>". The user creates the token at the token page. The installer below keeps it in the environment variable IKIGENBA_TOKEN and points the client's configuration at that variable.
+Step 1: the user stores a token
+-------------------------------
 
-Never ask for the token in the chat, and never accept it there. If the user pastes it into the chat anyway, tell them to revoke it at {{.TokenURL}} and create another.
+Ask the user to run this in a terminal on their machine:
 
-## 1. Check where you run
+    curl -fsSL {{.Origin}}/setup.sh | bash
 
-Set up only the client the user is talking to you through, on the user's own machine.
+It asks for a token (they create one at {{.TokenURL}}), checks it with the gateway, and saves two files in ${XDG_CONFIG_HOME:-~/.config}/ikigenba/{{.Space}}/:
 
-- If you have your own way to add a remote MCP server and take a secret outside the chat, as grokbot does, use it instead of the installer: add a server named "ikigenba" at {{.Endpoint}} with the header "Authorization: Bearer <token>", tell the user to create a token at {{.TokenURL}} and enter it there, not in the chat, and go to step 4 once they have approved.
-- Otherwise, if you run somewhere other than the user's machine, such as a hosted or cloud sandbox, tell the user where you are running, say you cannot set up their machine from there, and stop. Give no command.
+    config   space, mcp, auth, variable and server, as key=value lines. Read it.
+    token    the token. Never read, print, echo, copy into the chat or into a command line you show.
 
-## 2. Work out the client, the OS and the scope
+Wait for the user to say it is done, then read config. Use its values; do not derive them yourself. For this space they are: mcp {{.Endpoint}}, variable {{.Variable}}, server {{.Server}}.
 
-- Client: from your own instructions, including whether you are a command-line tool or a desktop app. It is one of these, given as <client> and named as <Client>:
-  - codex-cli, Codex CLI: the Codex command-line tool
-  - codex-desktop, Codex desktop: the Codex desktop app
-  - claude-cli, Claude CLI: the Claude Code command-line tool
-  - claude-desktop, Claude desktop: the Code tab of the Claude desktop app
-  - grok-cli, Grok CLI: the Grok command-line tool
-  Any other client is not supported by the installer: tell the user so and stop.
-- OS: from your own instructions, confirmed with a command where you can, such as "uname -s". The installer runs on Linux only. On any other OS, tell the user the installer supports Linux only, and stop.
-- Scope: "user" sets up the client for the user's account; "project" for the project in the current working directory only. Use what the user said. If they have not said, ask, for example: "Should I set up ikigenba for your user account, or just for this project?"
+Step 2: make these true
+-----------------------
 
-Ask the user only what you cannot tell, in one question, and nothing more.
+1. The environment variable named by `variable` holds the contents of `token` in the environment you, this client, get when restarted the way you are running now: a terminal session for a CLI, the desktop session for a desktop app. Any command that moves the token must not print it.
+2. Your client has an MCP server named by `server`, URL `mcp`, that sends `Authorization: Bearer <token>` by referencing the variable. The client's config never holds the token itself, unless the client has no way to read a variable or file and the user agrees.
+3. Nothing else in the user's configuration is lost or changed: edit only the entry named by `server`, and leave other servers, other spaces' entries and other variables alone. If another ikigenba entry or token variable already exists, leave it and tell the user.
+4. If your client supports both user scope (all projects) and project scope (this project only), ask the user which they want. Otherwise use the scope it has.
 
-## 3. Give the user one message
+Then tell the user what you configured: the MCP server name (`server`) and the file and scope it is in, the variable name and where it is set. They may have other ikigenba spaces installed and need the name to tell them apart. Then tell the user exactly what to restart (and whether a new terminal or a fresh login is needed for the variable), and wait for them.
 
-Send the user exactly this message, with <Client>, <client> and <scope> filled in, and the first line ending "for your user account" for the user scope or "for this project" for the project scope:
+Step 3: prove it
+----------------
 
-I'll set up <Client> for your user account.
+After the restart, call the gateway's `services` tool, then one read-only `call` on a service it lists. Both must succeed. A connection alone proves nothing: some clients connect without a token when the variable is missing. If either fails, find out why (is the variable set in your process? is it the right one? does the config reference it?) and fix it.
 
-1. Create a token at {{.TokenURL}} and copy it.
-2. Open a terminal and run:
+Reference
+---------
 
-   curl -fsSL {{.Origin}}/setup.sh | bash -s -- --client <client> --scope <scope>
+These are facts about clients, not steps. Check your client's own docs or `--help` when unsure.
 
-   It will ask for the token. Paste it; it shows as asterisks.
-3. Restart <Client> and tell me when it's back.
+Codex (CLI, desktop app and IDE extension share one file)
+  User config ${CODEX_HOME:-~/.codex}/config.toml; project .codex/config.toml, loaded only for trusted projects.
+  `codex mcp add <server> --url <mcp> --bearer-token-env-var <variable>` writes:
+      [mcp_servers.<server>]
+      url = "<mcp>"
+      bearer_token_env_var = "<variable>"
+  Connects without a token if the variable is unset. Desktop app: Restart in its MCP settings.
 
-The user must run the command in their own terminal, in the project's directory for the project scope. Do not run it yourself: it reads the token from the terminal. Then wait for the user.
+Claude Code (CLI and the Code tab of Claude desktop share files)
+  User and local scope in ~/.claude.json; project scope .mcp.json at the project root. ${VAR} expands in url and headers.
+  `claude mcp add --transport http --scope user <server> <mcp> --header 'Authorization: Bearer ${<variable>}'`
+  `claude mcp add` fails if the name exists; remove it first. An unset variable sends the literal text.
+  On Linux the desktop app's environment is undocumented; check what it actually sees.
 
-If the installer stops, it has changed nothing and its last lines say why; help the user act on them and run the command again.
+Grok CLI
+  User ${GROK_HOME:-~/.grok}/config.toml; project .grok/config.toml (needs folder trust).
+  `grok mcp add -s user <server> <mcp> -H 'Authorization: Bearer ${<variable>}'`
+  Also supports bearer_token_file = "<path to token>", which reads the file per request and needs no variable.
+  ${VAR} expands at load time, so a new value needs a new process.
 
-## 4. Check the connection
-
-When the user says the client is back:
-
-1. Call the gateway's "services" tool.
-2. Call the gateway's "call" tool once, running a read-only tool of a service "services" lists as available. Never use "mutate" for this check. A client with no token may still list tools, so only the call proves the token works.
-
-If both succeed, tell the user they are connected and name the services you can reach. If either fails, or the gateway's tools are missing, tell the user the connection did not work, quote the gateway's error exactly, and point them back to the installer command in step 3.
+Linux environments
+  A terminal-started client inherits the shell's environment (~/.bashrc, ~/.profile, ...). A shell profile can read the file at startup, e.g. export <variable>="$(cat <token path>)".
+  A desktop-launched client gets the systemd user session's environment: ~/.config/environment.d/*.conf (KEY=value, read at login, cannot run commands) and `systemctl --user set-environment` for the current session.
+  A shell profile that sets the same variable overrides the session value in terminals.
 {{end}}
