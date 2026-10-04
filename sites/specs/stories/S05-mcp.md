@@ -145,13 +145,12 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `n
       },
       "additionalProperties": false
     },
-    "outputSchema": <the apex output schema>,
     "annotations": {"readOnlyHint": false, "destructiveHint": false, "openWorldHint": false}
   }
 ]
 ```
 
-The output schemas are not quoted whole; each describes an object closed to other members, with its properties in the order given here. The site output schema, which `show`, `create`, `publish`, and `update` all carry, describes one site: `id`, a string; `name`, a string; `slug`, a string; `url`, a string; `repo`, a string; `ref`, a string; `visibility`, a string; `listed`, a boolean; `commit`, a string, not always present; `created`, a string; and `published`, a string, not always present. `list`'s has one property, `sites`, an array of objects, each closed to other members, with `id`, a string; `name`, a string; `slug`, a string; `url`, a string; `visibility`, a string; `listed`, a boolean; and `commit`, a string, not always present. `delete`'s has `deleted`, a boolean, and `id`, a string. `apex`'s has one property, `apex`, which is either null or an object of the site output schema's shape. Which members each output schema marks required, and which carry a description, are not fixed here. The schemas carry no `$schema` member.
+The output schemas are not quoted whole; each describes an object closed to other members, with its properties in the order given here. The site output schema, which `show`, `create`, `publish`, and `update` all carry, describes one site: `id`, a string; `name`, a string; `slug`, a string; `url`, a string; `repo`, a string; `ref`, a string; `visibility`, a string; `listed`, a boolean; `commit`, a string, not always present; `created`, a string; and `published`, a string, not always present. `list`'s has one property, `sites`, an array of objects, each closed to other members, with `id`, a string; `name`, a string; `slug`, a string; `url`, a string; `visibility`, a string; `listed`, a boolean; and `commit`, a string, not always present. `delete`'s has `deleted`, a boolean, and `id`, a string. `apex` has no output schema, because its result may be `{"apex": null}`. Which members each output schema marks required, and which carry a description, are not fixed here. The schemas carry no `$schema` member.
 
 Preconditions:
 
