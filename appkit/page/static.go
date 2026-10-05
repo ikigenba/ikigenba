@@ -100,6 +100,8 @@ func staticAsset(path string) (name, contentType string) {
 		return "theme.css", "text/css; charset=utf-8"
 	case StaticPrefix + "launcher.js":
 		return "launcher.js", "text/javascript; charset=utf-8"
+	case StaticPrefix + "feedback.js":
+		return "feedback.js", "text/javascript; charset=utf-8"
 	case StaticPrefix + "InterVariable.woff2":
 		return "InterVariable.woff2", "font/woff2"
 	case StaticPrefix + "InterVariable-Italic.woff2":

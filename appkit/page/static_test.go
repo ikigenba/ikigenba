@@ -16,6 +16,7 @@ var staticFiles = []struct {
 }{
 	{"theme.css", "text/css; charset=utf-8"},
 	{"launcher.js", "text/javascript; charset=utf-8"},
+	{"feedback.js", "text/javascript; charset=utf-8"},
 	{"InterVariable.woff2", "font/woff2"},
 	{"InterVariable-Italic.woff2", "font/woff2"},
 	{"JetBrainsMono.woff2", "font/woff2"},
@@ -80,7 +81,7 @@ func TestStaticFactory(t *testing.T) {
 }
 
 func TestStaticGETBytes(t *testing.T) {
-	// R-J5XB-78CO
+	// R-KHOJ-N7A3
 	handler := Static()
 	for _, file := range staticFiles {
 		t.Run(file.name, func(t *testing.T) {
@@ -104,12 +105,26 @@ func TestStaticGETBytes(t *testing.T) {
 }
 
 func TestStaticContentTypes(t *testing.T) {
-	// R-J757-L03D
+	// R-KK4C-EQRH
 	handler := Static()
 	for _, file := range staticFiles {
-		response := staticResponse(handler, http.MethodGet, StaticPrefix+file.name)
-		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != file.contentType {
-			t.Errorf("GET %s: status %d, Content-Type %q; want 200, %q", file.name, response.Code, response.Header().Get("Content-Type"), file.contentType)
+		etag := staticResponse(handler, http.MethodGet, StaticPrefix+file.name).Header().Get("ETag")
+		headers := append(staticNonmatchingHeaders(etag),
+			http.Header{"Range": {"bytes=0-3"}},
+			http.Header{"If-Match": {`"different"`}},
+			http.Header{"If-Unmodified-Since": {"Tue, 01 Jan 1980 00:00:00 GMT"}},
+			http.Header{"If-Range": {`"different"`}},
+			http.Header{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
+		)
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			for _, header := range headers {
+				response := staticConditionalResponse(handler, method, StaticPrefix+file.name, header)
+				if response.Code == http.StatusOK {
+					if values := response.Header().Values("Content-Type"); len(values) != 1 || values[0] != file.contentType {
+						t.Errorf("%s %s with %v: Content-Type %q; want exactly %q", method, file.name, header, values, file.contentType)
+					}
+				}
+			}
 		}
 	}
 }
