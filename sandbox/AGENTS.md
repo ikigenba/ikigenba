@@ -21,6 +21,8 @@ Prefer the standard library, then a widely used public module; adding one needs 
 
 The gates fake every external program, so they need no systemd user manager, nginx or network. Running the built `sandbox`, and `make live`, also needs `git` (finds the worktree with `git rev-parse --show-toplevel`), `go` (builds each app), a running systemd user manager (`systemctl --user`, `journalctl --user`), and `nginx` runnable by an ordinary user and installed where systemd's own executable search path finds a bare name (the standard `bin` and `sbin` directories): the nginx unit's `ExecStart=` names the bare word `nginx`, which the user manager resolves, not the developer's `PATH`.
 
+The `scripts` app also needs `python3.12`: it checks for it at start and refuses to start without it (`scripts: python3.12 not found on PATH`). Its unit inherits the systemd user manager's environment, so `python3.12` must be on the user manager's `PATH` (`systemctl --user show-environment` shows it), not only the developer's shell's. Install it with `uv python install 3.12`, which puts it in `~/.local/bin`; that directory must be on the user manager's `PATH`. The gates do not need it.
+
 ## Test files
 
 The test files are every `*_test.go` in the module: `cmd/` and `internal/`. The canonical gap greps them for ids:
