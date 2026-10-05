@@ -15,4 +15,4 @@ const (
 )
 
 // Version is the release version reported by sites.
-var Version = "v0.1.0"
+var Version = "v0.1.1"

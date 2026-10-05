@@ -14,7 +14,7 @@ import (
 )
 
 // Version is the deployed release identifier.
-var Version = "v0.1.1"
+var Version = "v0.1.2"
 
 // Manifest describes the application's host configuration.
 const Manifest = "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n"
