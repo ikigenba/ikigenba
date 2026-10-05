@@ -5,7 +5,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 ## Layout
 
 - `specs/` is the contract: `design/`.
-- `page` is the chrome every app shows a signed-in user: the banner, launcher and footer templates, and the shared stylesheet, fonts and launcher script served from one fixed path prefix. `page/assets/` is its markup and static files (see Assets).
+- `page` is the chrome every app shows a signed-in user: the banner, launcher and footer templates, and the shared stylesheet, fonts, launcher script and button feedback script served from one fixed path prefix. `page/assets/` is its markup and static files (see Assets).
 - `services` is the one reader of the host's services file (`IKIGENBA_SERVICES`, owned by opsctl).
 - `identity` is the caller nginx authenticated (`X-User-Id`, `X-User-Email`, `X-Request-Id`): the middleware that requires it, and forwarding it on a call to a sibling service.
 - `mcp` is the Model Context Protocol: the server a service mounts at `/mcp` with its tools, and the client the gateway and service tests use.
@@ -14,7 +14,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 
 ## Assets
 
-`page/assets/` sits inside the `page` package directory because Go's `embed` reaches only files at or below the embedding package. It holds the banner template (`banner.html`), the launcher script (`launcher.js`), and copies of the repository's `design/` files: the stylesheet, fonts and their licences. The build run never writes it; it changes only on explicit, direct instruction from a human, and the session that changes `design/` refreshes the copies. The copied stylesheet replaces the Google Fonts import with `@font-face` rules for the files beside it, and its header names the `design/` commit it came from, so that commit lands first. Package `page` embeds `page/assets/` and never writes markup of its own.
+`page/assets/` sits inside the `page` package directory because Go's `embed` reaches only files at or below the embedding package. It holds the banner template (`banner.html`), the launcher script (`launcher.js`), the button feedback script (`feedback.js`), and copies of the repository's `design/` files: the stylesheet, fonts and their licences. The build run never writes it; it changes only on explicit, direct instruction from a human, and the session that changes `design/` refreshes the copies. The copied stylesheet replaces the Google Fonts import with `@font-face` rules for the files beside it, and its header names the `design/` commit it came from, so that commit lands first. Package `page` embeds `page/assets/` and never writes markup of its own.
 
 ## Toolchain
 
