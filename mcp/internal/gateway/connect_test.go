@@ -34,6 +34,7 @@ type markupTag struct {
 	name       string
 	start, end int
 	attrs      map[string][]string
+	bareAttrs  map[string]int
 }
 
 func asciiSpace(c byte) bool {
@@ -70,6 +71,7 @@ func readTags(s string, name string, closing bool) []markupTag {
 		matches := name == "" && tagName != "" || len(name)+begin < end && strings.EqualFold(s[begin:begin+len(name)], name) && !asciiAlnum(s[begin+len(name)])
 		if matches && closing == isClosing {
 			attrs := make(map[string][]string)
+			bareAttrs := make(map[string]int)
 			for i < end {
 				white := i
 				for i < end && asciiSpace(s[i]) {
@@ -101,9 +103,11 @@ func readTags(s string, name string, closing bool) []markupTag {
 					}
 					attrs[attrName] = append(attrs[attrName], html.UnescapeString(s[valueStart:i]))
 					i++
+				} else {
+					bareAttrs[attrName]++
 				}
 			}
-			tags = append(tags, markupTag{name: tagName, start: start, end: end, attrs: attrs})
+			tags = append(tags, markupTag{name: tagName, start: start, end: end, attrs: attrs, bareAttrs: bareAttrs})
 		}
 		offset = end
 	}
@@ -202,9 +206,71 @@ func renderAppkit(t *testing.T, name string, b page.Banner) string {
 	return out.String()
 }
 
+func feedbackScripts(s string) []markupTag {
+	var selected []markupTag
+	for _, tag := range readTags(s, "script", false) {
+		if slices.Contains(tag.attrs["src"], "/_appkit/feedback.js") {
+			selected = append(selected, tag)
+		}
+	}
+	return selected
+}
+
+func TestMarkupFeedbackScriptSelection(t *testing.T) {
+	for _, tc := range []struct {
+		markup string
+		count  int
+	}{
+		{markup: `<script src="/_appkit/feedback.js" defer>`, count: 1},
+		{markup: `<script-extra src="/_appkit/feedback.js" defer>`, count: 1},
+		{markup: `<ScRiPt-EXTRA SRC="/_appkit/feedback.js" defer>`, count: 1},
+		{markup: `<script src="/_appkit/feedback.js" src="/_appkit/feedback.js" defer>`, count: 1},
+		{markup: `<script-extra src="/_appkit/feedback.js"><script src="/_appkit/feedback.js">`, count: 2},
+		{markup: `<script1 src="/_appkit/feedback.js" defer>`, count: 0},
+		{markup: `<script src defer>`, count: 0},
+		{markup: `<script src="other.js" defer>`, count: 0},
+	} {
+		if got := len(feedbackScripts(tc.markup)); got != tc.count {
+			t.Errorf("feedback script count for %q = %d, want %d", tc.markup, got, tc.count)
+		}
+	}
+}
+
+// R-CZG0-KNZV
+func TestMarkupBareAttributeOccurrences(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		markup    string
+		bareDefer int
+		bareSrc   int
+		deferVals []string
+	}{
+		{name: "bare", markup: `<script defer>`, bareDefer: 1},
+		{name: "case and duplicates", markup: `<SCRIPT DeFeR defer DEFER="">`, bareDefer: 2, deferVals: []string{""}},
+		{name: "valued only", markup: `<script defer="defer">`, deferVals: []string{"defer"}},
+		{name: "empty valued source", markup: `<script src="" defer>`, bareDefer: 1},
+		{name: "bare source", markup: `<script src defer>`, bareDefer: 1, bareSrc: 1},
+		{name: "all ASCII whitespace", markup: "<script\tdefer\nsrc\rdefer\fdefer\vdefer>", bareDefer: 4, bareSrc: 1},
+		{name: "whole attribute name", markup: `<script defer-extra srcset>`, bareDefer: 0},
+		{name: "non ASCII whitespace", markup: "<script\u00a0defer>", bareDefer: 0},
+		{name: "missing separating whitespace", markup: `<script src="local"defer>`, bareDefer: 0},
+		{name: "unquoted value stops reading", markup: `<script defer=plain src>`, bareDefer: 0},
+		{name: "single quoted value stops reading", markup: `<script src='local' defer>`, bareDefer: 0},
+		{name: "whitespace before equals", markup: `<script defer ="" src>`, bareDefer: 1},
+		{name: "slash stops reading", markup: `<script defer / src>`, bareDefer: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tag := oneTag(t, readTags(tc.markup, "script", false))
+			if tag.bareAttrs["defer"] != tc.bareDefer || tag.bareAttrs["src"] != tc.bareSrc || !slices.Equal(tag.attrs["defer"], tc.deferVals) {
+				t.Fatalf("bare attributes=%v valued attributes=%v; want defer bare=%d src bare=%d defer values=%q", tag.bareAttrs, tag.attrs, tc.bareDefer, tc.bareSrc, tc.deferVals)
+			}
+		})
+	}
+}
+
 // R-S31L-RMZB R-S49I-5EQ0 R-S5HE-J6GP R-S6PA-WY7E R-S7X7-APY3
 // R-TDDS-AX5P R-S953-OHOS R-SAD0-29FH
-// R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-UM2L-JL3C R-T16S-H7QR
+// R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-D1VT-C7H9 R-D33P-PZ7Y R-T16S-H7QR
 // R-UDJA-V6WH R-UIEW-E9V9 R-UER7-8YN6 R-UH70-0I4K R-UFZ3-MQDV
 // R-UKUP-5TCN R-T4UH-MIYU R-TC5V-X5F0
 func TestPlainPageMarkupHooksAndText(t *testing.T) {
@@ -252,9 +318,18 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 			if viewport.name != "meta" || viewport.end > writtenBody.start || !slices.Contains(viewport.attrs["content"], "width=device-width, initial-scale=1") {
 				t.Fatalf("viewport %#v", viewport)
 			}
+			feedback := oneTag(t, feedbackScripts(written))
+			if feedback.end > writtenBody.start || len(feedback.attrs["defer"]) == 0 && feedback.bareAttrs["defer"] == 0 {
+				t.Fatalf("feedback script position or defer: %#v", feedback)
+			}
 			for _, script := range readTags(written, "script", false) {
-				if len(script.attrs["src"]) != 0 {
-					t.Fatal("page loads script file")
+				if script.bareAttrs["src"] != 0 {
+					t.Fatalf("bare script source: %#v", script)
+				}
+				for _, src := range script.attrs["src"] {
+					if src != "/_appkit/feedback.js" {
+						t.Fatalf("unexpected script source %q", src)
+					}
 				}
 			}
 			for _, tag := range readTags(written, "", false) {
