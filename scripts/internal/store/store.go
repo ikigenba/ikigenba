@@ -493,19 +493,19 @@ func validReason(r string) bool {
 	return false
 }
 func validRun(r Run) bool {
-	if !ValidRunID(r.ID) || r.Ref == "" || r.User == "" || r.Script == "" || r.Trigger != TriggerManual || r.Started.IsZero() || r.StdoutBytes < 0 || r.StderrBytes < 0 || r.SHA != "" && (len(r.SHA) != 40 || !validHex(r.SHA)) {
+	if !ValidRunID(r.ID) || r.Ref == "" || r.User == "" || r.Script == "" || r.Trigger != TriggerManual || normalize(r.Started).IsZero() || r.StdoutBytes < 0 || r.StderrBytes < 0 || r.SHA != "" && (len(r.SHA) != 40 || !validHex(r.SHA)) {
 		return false
 	}
 	switch r.Status {
 	case StatusRunning:
 		return r.SHA != "" && r.ExitCode == 0 && r.StdoutBytes == 0 && r.StderrBytes == 0 && r.Finished.IsZero() && !r.Truncated && r.Reason == ""
 	case StatusFailed:
-		return validReason(r.Reason) && r.ExitCode == 0 && !r.Finished.IsZero() && !normalize(r.Finished).Before(normalize(r.Started))
+		return validReason(r.Reason) && r.ExitCode == 0 && !normalize(r.Finished).IsZero() && !normalize(r.Finished).Before(normalize(r.Started))
 	}
 	return false
 }
 func validEnding(e Ending) bool {
-	return !e.Finished.IsZero() && e.StdoutBytes >= 0 && e.StderrBytes >= 0 && (e.Status == StatusExited && e.ExitCode >= 0 && e.ExitCode <= 255 || (e.Status == StatusKilled || e.Status == StatusTimedOut) && e.ExitCode == 0)
+	return !normalize(e.Finished).IsZero() && e.StdoutBytes >= 0 && e.StderrBytes >= 0 && (e.Status == StatusExited && e.ExitCode >= 0 && e.ExitCode <= 255 || (e.Status == StatusKilled || e.Status == StatusTimedOut) && e.ExitCode == 0)
 }
 
 // AddRun records a newly running or failed run.
