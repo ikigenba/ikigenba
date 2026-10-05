@@ -4,10 +4,13 @@ The panel and dummy's routing: what a running dummy answers, and the frame
 every page it serves is drawn in. dummy is the platform's UI reference
 implementation, so every page is server-rendered HTML — the whole of a page's
 content arrives in the response body, the launcher's list of services
-included, and script never adds content of its own. A page's scripts only act
-on what the server sent: the panel's re-fetches the table (`S4`), and the
+included, and no script adds content a user sees. A page's scripts only act
+on what the server sent: the panel's re-fetches the table (`S4`); the
 launcher's, `/_appkit/launcher.js`, filters the list of services as the user
-types. The stylesheet a page links is not script: it changes how the content
+types; and the platform's button feedback script, `/_appkit/feedback.js`,
+which every page loads with or without a launcher, makes an enabled button
+visibly react when the user presses it. The stylesheet a page links is not
+script: it changes how the content
 looks, never what the content is. An nginx gate in front of dummy
 authenticates every request and sets `X-User-Id` and `X-User-Email` on the
 request it passes upstream; a sibling app calling dummy forwards the ones it
@@ -120,11 +123,13 @@ decides what goes into the banner, and the platform how it is drawn.
 
 Every HTML page dummy sends — the panel and every page with the banner: the
 404, the 405, the 415, and the 422 redraw (`S5`) — links
-`/_appkit/theme.css` as its stylesheet and declares the phone-width viewport, so a phone shows it at the phone's own
+`/_appkit/theme.css` as its stylesheet, loads `/_appkit/feedback.js`, and
+declares the phone-width viewport, so a phone shows it at the phone's own
 width rather than as a shrunken desktop page. The
-missing-header 500, being bare text, has neither. The stylesheet, the fonts
-it loads, and the launcher's script are the platform's shared files, served by
-dummy under `/_appkit/` (`S8`); a page makes no request to any third party.
+missing-header 500, being bare text, has none of them. The stylesheet, the fonts
+it loads, the launcher's script, and the button feedback script are the
+platform's shared files, served by dummy under `/_appkit/` (`S8`); a
+page makes no request to any third party.
 dummy serves nothing under `/assets/`: a path there is a path that does not
 exist, like any other.
 
@@ -151,7 +156,8 @@ whose telemetry takes every event writes nothing to stderr at all (`S2`).
 The routes are `GET /`, which sends the caller to the panel; `GET /widgets`,
 the panel page; `GET /widgets/table`, the table fragment (`S4`); `POST
 /widgets`, which creates a widget (`S5`); `/_appkit/<name>`, the stylesheet,
-launcher script, fonts, and licences that every page shares (`S8`); and
+launcher script, button feedback script, fonts, and licences that every
+page shares (`S8`); and
 `/mcp`, exactly that path, the MCP endpoint that offers the widgets to MCP
 clients, whose answers, to every method, are `S9-mcp.md`'s and never one of
 the pages below. A response block shows the status line and the headers the
@@ -206,7 +212,8 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `dummy` that links
-`/_appkit/theme.css` as its stylesheet and declares the phone-width viewport.
+`/_appkit/theme.css` as its stylesheet, loads `/_appkit/feedback.js`, and
+declares the phone-width viewport.
 Its banner holds the mark, whose text is `ikigenba` and which names the
 service `dummy`; the profile link, labelled `Profile` and titled
 `mg@example.com`, leading to `http://localhost:3001/`; and the sign-out button
@@ -220,9 +227,10 @@ words: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12 `retired`. The
 word is inside a status marker naming that status. Beside the table is the
 card headed `Add widget` holding the form that creates a widget, with a field
 for each of a widget's three fields and a button reading `Add widget` behind
-its hidden `plus` icon. The banner holds no launcher button, and the page
-loads no `/_appkit/launcher.js`, since dummy has no services file. Last on
-the page is the footer reading `dummy v<semver>`, where `v<semver>` is what
+its hidden `plus` icon; in a browser, that button, like `Sign out`, visibly
+reacts as the user presses it. The banner holds no launcher button, and the
+page loads no `/_appkit/launcher.js`, since dummy has no services file. Last
+on the page is the footer reading `dummy v<semver>`, where `v<semver>` is what
 `dummy --version` prints. Outside the banner, the address `mg@example.com`
 is not in the page's visible text. Outside the banner and the footer, the
 text `Dummy` appears nowhere.
@@ -573,9 +581,9 @@ Content-Type: text/html; charset=utf-8
 Status 404. The body is an HTML document with the same banner and footer as
 the panel — the mark, the profile link titled `mg@example.com` leading to
 `http://localhost:3001/`, and the sign-out button POSTing to
-`http://localhost:3001/logout`, with the same title, stylesheet link, and
-viewport as every page (above) — which, between the banner and the footer,
-says the page was not found and carries a link to `/widgets`.
+`http://localhost:3001/logout`, with the same title, stylesheet link, feedback
+script, and viewport as every page (above) — which, between the banner and
+the footer, says the page was not found and carries a link to `/widgets`.
 
 Preconditions:
 
@@ -611,9 +619,10 @@ Content-Type: text/html; charset=utf-8
 Status 405. The body is an HTML document with the same banner and footer as
 the panel — the mark, the profile link titled `mg@example.com` leading to
 `http://localhost:3001/`, and the sign-out button POSTing to
-`http://localhost:3001/logout` — with the same title, stylesheet link, and
-viewport as every page (above), which, between the banner and the footer,
-says the method is not allowed and carries a link to `/widgets`. `PUT` and `PATCH` are refused the same way.
+`http://localhost:3001/logout` — with the same title, stylesheet link, feedback
+script, and viewport as every page (above), which, between the banner and
+the footer, says the method is not allowed and carries a link to `/widgets`.
+`PUT` and `PATCH` are refused the same way.
 
 Preconditions:
 

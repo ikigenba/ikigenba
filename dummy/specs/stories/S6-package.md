@@ -9,8 +9,9 @@ what lists dummy in the platform's service launcher on a space
 (`S7-on-a-space.md`), and no story fixes its content beyond its being an SVG.
 dummy keeps nothing under `etc/` but the manifest and nothing under `share/`
 but the icon, so no other member exists. The files that give the panel its
-style and its launcher — the stylesheet, the fonts, their licences, and the
-launcher's script — are inside the binary (`S8-assets.md`), so no `assets/`
+style, its launcher, and its button feedback — the stylesheet, the fonts,
+their licences, the launcher's script, and the button feedback script — are
+inside the binary (`S8-assets.md`), so no `assets/`
 directory and no font file ships beside it.
 The version is in the file's name and in the binary, never in a member's
 path.

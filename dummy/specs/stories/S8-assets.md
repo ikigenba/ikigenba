@@ -1,13 +1,15 @@
 # Stories — assets
 
-The files that give dummy's pages the platform's visual style and its service
-launcher, and how dummy serves them. They are the platform's shared web
-files, the same for every platform app, and dummy does not author them. dummy
-serves exactly seven of them under `/_appkit/`, each with a fixed
+The files that give dummy's pages the platform's visual style, its service
+launcher and its button feedback, and how dummy serves them. They are the
+platform's shared web files, the same for every platform app, and dummy does
+not author them. dummy serves exactly eight of them under `/_appkit/`, each
+with a fixed
 `Content-Type`: `theme.css`, the platform style's stylesheet, as
 `text/css; charset=utf-8`, whose `@font-face` rules name the font files beside
-it; `launcher.js`, the service launcher's script, as
-`text/javascript; charset=utf-8`; the Inter and JetBrains Mono fonts,
+it; `launcher.js`, the service launcher's script, and `feedback.js`, the
+button feedback script, both as `text/javascript; charset=utf-8`; the Inter
+and JetBrains Mono fonts,
 `InterVariable.woff2`, `InterVariable-Italic.woff2`, and `JetBrainsMono.woff2`,
 as `font/woff2`; and two licences as `text/plain; charset=utf-8`: `OFL.txt`,
 the fonts' licence, and `TABLER-LICENSE.txt`, the licence of the Tabler icons
@@ -117,9 +119,9 @@ Postconditions:
 
 ## A browser fetches the launcher's script
 
-The banner's service launcher runs a script, and every page dummy sends loads
-it from `/_appkit/launcher.js` (`S3`), so a browser drawing the panel asks
-dummy for it as it does for the stylesheet.
+The banner's service launcher runs a script, and every page with a launcher
+loads it from `/_appkit/launcher.js` (`S3`), so a browser drawing such a page
+asks dummy for it as it does for the stylesheet.
 
 Request:
 
@@ -140,6 +142,40 @@ Cache-Control: no-cache
 
 Status 200. The body is the service launcher's script. `Cache-Control`
 appears once.
+
+Preconditions:
+
+- dummy is serving.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A browser fetches the button feedback script
+
+Every page dummy sends loads the platform's button feedback script from
+`/_appkit/feedback.js` (`S3`), with or without a launcher, so a browser
+drawing the panel asks dummy for it as it does for the stylesheet.
+
+Request:
+
+```
+GET /_appkit/feedback.js HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/javascript; charset=utf-8
+ETag: "<etag>"
+Cache-Control: no-cache
+```
+
+Status 200. The body is the button feedback script. `Cache-Control` appears
+once.
 
 Preconditions:
 
@@ -344,7 +380,7 @@ Postconditions:
 
 ## A caller asks for an asset that does not exist
 
-The files under `/_appkit/` are the seven above and nothing more, so the
+The files under `/_appkit/` are the eight above and nothing more, so the
 prefix itself, any other name, a served name with more after it, and a served
 name in other letter case all name nothing, whatever the method: a `POST` to
 a missing file's path is a 404 like a `GET`, never a 405.
@@ -413,7 +449,7 @@ Postconditions:
 ## A caller sends an asset a method it does not take
 
 A served file is read-only: dummy serves it and nothing changes it. This
-holds only for the seven served paths; any method on a missing file's path is
+holds only for the eight served paths; any method on a missing file's path is
 a 404. `Allow` names the two methods a served file takes.
 
 Request:
