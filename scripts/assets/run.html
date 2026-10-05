@@ -1,0 +1,119 @@
+{{/* One run at GET /<name>/runs/<run id>/: its record, its input, output
+     and files. Shown only to the signed-in user who owns its script. The
+     page does not stream; a run still running shows what exists when the
+     page is loaded. Data: .Banner (a page.Banner, for banner and footer);
+     .Script, the run's script, with .Name and .URL ("/<name>/"); .Run, with
+     .ID (its run_ id), .URL (this page's path), .Status (the status word),
+     .Kind (its kind), .Running (bool: still running), .Commit (the full
+     commit hash, empty when the ref never resolved), .Ref (the ref as named
+     when the run started), .Started ("2006-01-02 15:04:05 UTC") and
+     .StartedAt (RFC 3339 UTC), .Finished and .FinishedAt (likewise, empty
+     while running), .Duration (as shown, "12s" or "10m 0s"; empty while
+     running or when the run failed to start), .Trigger (how it started,
+     "manual"), .User (the email of the user who started it), .Request (the
+     req_ id of the request that started it), .StdoutSize and .StderrSize
+     (as shown, "1.2 kB"), .StdoutTruncated and .StderrTruncated (bool: the
+     stream hit the output bound), .Failure (nil unless the run failed to
+     start; else .Title, a short headline, and .Reason, a sentence saying
+     why, both plain text) and .FilesGone (bool: the run's folder is no
+     longer kept); .Input, .Stdout and .Stderr (each nil when its file does
+     not exist; else .Size as shown, .Text, the file's contents, empty when
+     the file is empty, and .URL, its download path); .Files, what the run
+     wrote under out/, sorted by path, each with .Path (relative to out/),
+     .Size as shown and .URL, its download path. Status words and kinds:
+     "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
+     out" and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
+     "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts"), li
+     a[href=.Script.URL] (text .Script.Name), then li[aria-current="page"]
+     (text .Run.ID, no link); h1 with text .Run.ID; p#headline.cluster
+     holding span.status[data-kind=<.Kind>] (text .Status) and a span.muted
+     holding "started" and time[datetime=.StartedAt] (text .Started), then
+     " · " and .Duration when there is one, or, when .Failure is set, the
+     time alone; when .Running, div#running.alert.quiet[data-kind=info]
+     (strong "Running", text "The page does not stream. Reload it to see
+     more output.") and a#reload.button (href .Run.URL, text "Reload"); when
+     .Failure is set, div#failure.alert[data-kind=err] (strong .Failure.Title,
+     p .Failure.Reason); when .FilesGone, div#files-gone.alert.quiet (strong
+     "Files no longer kept"); section#run-card with h2 "Run" and dl#run.kv
+     holding dt "Status" (dd span.status, then span.badge[data-kind=warn]
+     with text "output truncated" when either stream was truncated), dt
+     "Script" (dd a, href .Script.URL, text .Script.Name), dt "Commit" (dd
+     code .Commit, empty when none), dt "Ref" (dd code .Ref), dt "Started"
+     (dd time), dt "Finished" and dt "Duration" (only when finished), dt
+     "Trigger", dt "User", dt "Request" (dd code .Request) and dt "Output"
+     (dd "stdout <size> · stderr <size>", each size followed by
+     " (truncated)" when truncated); unless .FilesGone, section#input,
+     section#stdout and section#stderr, each present only when its file
+     exists, with h2 "Input", "Standard output" or "Standard error", a p
+     naming the file (code "input.json", "stdout" or "stderr") and its size,
+     a.button[download] (href its .URL, text "Download"), and
+     either pre > code holding .Text or, when .Text is empty, p.muted with
+     text "No input." or "No output."; unless .FilesGone, section#files with
+     h2 "Files" and either p#no-files.empty (text "No files.") when .Files is
+     empty, or table#file-list with one tr[data-file=<path>] per file
+     holding td.file-path > code (text .Path), td.file-size.num (text .Size)
+     and td.row-actions > a.button[download] (href .URL, text
+     "Download"). No script. */}}
+{{define "run"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>{{.Run.ID}} · {{.Script.Name}} · scripts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<nav class="crumbs" aria-label="Breadcrumb">
+<ol>
+<li><a href="/">scripts</a></li>
+<li><a href="{{.Script.URL}}">{{.Script.Name}}</a></li>
+<li aria-current="page">{{.Run.ID}}</li>
+</ol>
+</nav>
+{{with .Run}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster"><span class="status" data-kind="{{.Kind}}">{{.Status}}</span><span class="muted">{{if .Failure}}<time datetime="{{.StartedAt}}">{{.Started}}</time>{{else}}started <time datetime="{{.StartedAt}}">{{.Started}}</time>{{with .Duration}} · {{.}}{{end}}{{end}}</span></p>
+{{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong>Running</strong><p>The page does not stream. Reload it to see more output.</p></div>
+<p><a id="reload" class="button secondary small" href="{{.URL}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
+{{end}}{{with .Failure}}<div id="failure" class="alert" data-kind="err"><strong>{{.Title}}</strong><p>{{.Reason}}</p></div>
+{{end}}{{if .FilesGone}}<div id="files-gone" class="alert quiet"><strong>Files no longer kept</strong><p>This run's folder is gone, so its input, output and files cannot be shown. The record stays.</p></div>
+{{end}}<section id="run-card" class="card" aria-labelledby="run-title">
+<header><h2 id="run-title">Run</h2><p>Started by the <code>run</code> tool.</p></header>
+<dl id="run" class="kv">
+<dt>Status</dt><dd><span class="status" data-kind="{{.Kind}}">{{.Status}}</span>{{if or .StdoutTruncated .StderrTruncated}} <span class="badge" data-kind="warn">output truncated</span>{{end}}</dd>
+<dt>Script</dt><dd><a href="{{$.Script.URL}}">{{$.Script.Name}}</a></dd>
+<dt>Commit</dt><dd>{{with .Commit}}<code>{{.}}</code>{{end}}</dd>
+<dt>Ref</dt><dd><code>{{.Ref}}</code></dd>
+<dt>Started</dt><dd><time datetime="{{.StartedAt}}">{{.Started}}</time></dd>
+{{if .Finished}}<dt>Finished</dt><dd><time datetime="{{.FinishedAt}}">{{.Finished}}</time></dd>
+<dt>Duration</dt><dd>{{.Duration}}</dd>
+{{end}}<dt>Trigger</dt><dd>{{.Trigger}}</dd>
+<dt>User</dt><dd>{{.User}}</dd>
+<dt>Request</dt><dd><code>{{.Request}}</code></dd>
+<dt>Output</dt><dd>stdout {{.StdoutSize}}{{if .StdoutTruncated}} (truncated){{end}} · stderr {{.StderrSize}}{{if .StderrTruncated}} (truncated){{end}}</dd>
+</dl>
+</section>
+{{end}}{{if not .Run.FilesGone}}{{with .Input}}<section id="input" class="card" aria-labelledby="input-title">
+<header><h2 id="input-title">Input</h2><p><code>input.json</code>, {{.Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+{{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No input.</p>{{end}}
+</section>
+{{end}}{{with .Stdout}}<section id="stdout" class="card" aria-labelledby="stdout-title">
+<header><h2 id="stdout-title">Standard output</h2><p><code>stdout</code>, {{.Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+{{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No output.</p>{{end}}
+</section>
+{{end}}{{with .Stderr}}<section id="stderr" class="card" aria-labelledby="stderr-title">
+<header><h2 id="stderr-title">Standard error</h2><p><code>stderr</code>, {{.Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+{{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No output.</p>{{end}}
+</section>
+{{end}}<section id="files" class="card flush" aria-labelledby="files-title">
+<header><div><h2 id="files-title">Files</h2><p>What the script wrote under <code>out/</code>. Each downloads as a file.</p></div></header>
+{{if .Files}}<div class="table-scroll">
+<table id="file-list">
+<thead><tr><th>File</th><th class="num">Size</th><th></th></tr></thead>
+<tbody>
+{{range .Files}}<tr data-file="{{.Path}}"><td class="file-path"><code>{{.Path}}</code></td><td class="file-size num">{{.Size}}</td><td class="row-actions"><a class="button ghost small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></td></tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<p id="no-files" class="empty">No files.</p>{{end}}
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

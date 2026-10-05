@@ -1,0 +1,35 @@
+version: "2"
+
+linters:
+  # The v2 standard set (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus a curated strict layer.
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    gosec:
+      excludes:
+        # G204 flags every exec.Command with variable arguments. scripts runs
+        # the host's git to read a repository and python3.12 to run a
+        # script, both by design, with arguments it builds itself and never
+        # through a shell.
+        - G204
+
+  exclusions:
+    rules:
+      # A requirement id (R-XXXX-XXXX) is an opaque token, not prose: the
+      # spellchecker never judges a line that carries one.
+      - linters:
+          - misspell
+        source: 'R-[A-Z0-9]{4}-[A-Z0-9]{4}'
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

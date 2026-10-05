@@ -1,0 +1,86 @@
+{{/* One script at GET /<name>/: its record and its runs, newest first.
+     Shown only to the signed-in user who owns it. Data: .Banner (a
+     page.Banner, for banner and footer); .Script, with .ID (its scr_ id),
+     .Name, .Repo (its repository: .ID, the rep_ id, and .Name, the name read
+     from the repository's directory when the page renders, empty when the
+     directory is gone or the name cannot be read), .Ref, .Created (the
+     creation time as shown, "2006-01-02 15:04 UTC") and .CreatedAt (the same
+     as RFC 3339 UTC), .RunsKept (how many runs are kept), .KeepNewest and
+     .KeepDays (the retention rule: the newest .KeepNewest runs are kept past
+     .KeepDays days); .Runs, the script's runs, newest first, each with .ID
+     (its run_ id), .URL ("/<name>/runs/<id>/"), .Status (the status word),
+     .Kind (its kind), .Commit (the commit's short hash, empty when the ref
+     never resolved), .Started ("2006-01-02 15:04") and .StartedAt (RFC 3339
+     UTC), .Duration (as shown, "12s" or "3m 41s"; empty while running or
+     when the run failed to start) and .Exit (the exit code as text, empty
+     when the process did not exit by itself). Status words and kinds:
+     "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
+     out" and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
+     "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts") then
+     li[aria-current="page"] (text .Script.Name, no link); h1 with text
+     .Script.Name; p#about-script naming the repository (strong, .Repo.Name,
+     or span.muted holding .Repo.ID when the name is empty) and the ref (code,
+     .Ref); section#script-card with h2 "Script" and dl#script.kv holding dt
+     "Id" (dd code .ID), dt "Repository" (dd .Repo.Name over
+     span.secondary-text > code .Repo.ID, or, when the name is empty, dd >
+     span.muted > code .Repo.ID), dt "Ref" (dd code .Ref), dt "Created" (dd
+     time[datetime=.CreatedAt], text .Created) and dt "Runs kept" (dd
+     ".RunsKept · the newest .KeepNewest are kept past .KeepDays days");
+     section#runs with h2 "Runs" and either div#no-runs.empty (h3 text "No
+     runs yet") when .Runs is empty, or table#run-list with one
+     tr[data-run=<id>] per run holding td.run-id > a.run-link (href .URL) >
+     code (text .ID), td.run-status > span.status[data-kind=<.Kind>] (text
+     .Status), td.run-sha holding code .Commit (empty when none),
+     td.run-started > time[datetime=.StartedAt] (text .Started),
+     td.run-duration (text .Duration) and td.run-exit.num (text .Exit). No
+     script. */}}
+{{define "script"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>{{.Script.Name}} · scripts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Script}}<nav class="crumbs" aria-label="Breadcrumb">
+<ol>
+<li><a href="/">scripts</a></li>
+<li aria-current="page">{{.Name}}</li>
+</ol>
+</nav>
+<h1>{{.Name}}</h1>
+<p id="about-script">Runs <code>main.py</code> from the repository {{if .Repo.Name}}<strong>{{.Repo.Name}}</strong>{{else}}<span class="muted" title="the repository is gone">{{.Repo.ID}}</span>{{end}} at <code>{{.Ref}}</code>.</p>
+<section id="script-card" class="card" aria-labelledby="script-title">
+<header><h2 id="script-title">Script</h2><p>Changed by an agent through the <code>update</code> tool.</p></header>
+<dl id="script" class="kv">
+<dt>Id</dt><dd><code>{{.ID}}</code></dd>
+<dt>Repository</dt><dd>{{if .Repo.Name}}{{.Repo.Name}}<span class="secondary-text"><code>{{.Repo.ID}}</code></span>{{else}}<span class="muted" title="the repository is gone"><code>{{.Repo.ID}}</code></span>{{end}}</dd>
+<dt>Ref</dt><dd><code>{{.Ref}}</code></dd>
+<dt>Created</dt><dd><time datetime="{{.CreatedAt}}">{{.Created}}</time></dd>
+<dt>Runs kept</dt><dd>{{.RunsKept}} · the newest {{.KeepNewest}} are kept past {{.KeepDays}} days</dd>
+</dl>
+</section>
+{{end}}<section id="runs" class="card flush" aria-labelledby="runs-title">
+<header><div><h2 id="runs-title">Runs</h2><p>Newest first. A run still running shows its progress when the page is reloaded.</p></div></header>
+{{if .Runs}}<div class="table-scroll">
+<table id="run-list">
+<thead><tr><th>Run</th><th>Status</th><th>Commit</th><th>Started</th><th>Duration</th><th class="num">Exit</th></tr></thead>
+<tbody>
+{{range .Runs}}<tr data-run="{{.ID}}">
+<td class="run-id"><a class="run-link" href="{{.URL}}"><code>{{.ID}}</code></a></td>
+<td class="run-status"><span class="status" data-kind="{{.Kind}}">{{.Status}}</span></td>
+<td class="run-sha">{{with .Commit}}<code>{{.}}</code>{{end}}</td>
+<td class="run-started"><time datetime="{{.StartedAt}}">{{.Started}}</time></td>
+<td class="run-duration">{{.Duration}}</td>
+<td class="run-exit num">{{.Exit}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-runs" class="empty">
+<h3 class="text-md">No runs yet</h3>
+<p>Runs started with the <code>run</code> tool show up here, newest first.</p>
+</div>{{end}}
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

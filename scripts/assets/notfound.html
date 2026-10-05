@@ -1,0 +1,18 @@
+{{/* The not-found page, answered with status 404 to a signed-in user for a
+     path that names nothing of the caller's: no script, no run of it, or no
+     file of a run. No banner, as sites' not-found page has none; footer
+     only. Data: .Banner (a page.Banner, for the footer). Hooks: h1 with text
+     "Not found"; p#notfound with text "There is nothing at this address.";
+     no banner; no script. */}}
+{{define "notfound"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>Not found</title></head>
+<body>
+<main>
+<h1>Not found</h1>
+<p id="notfound" class="lede">There is nothing at this address.</p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

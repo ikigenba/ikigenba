@@ -1,0 +1,18 @@
+{{/* The unavailable page, answered with status 503 to a signed-in user when
+     a page cannot be served right now. No banner, as sites' unavailable page
+     has none; footer only. Data: .Banner (a page.Banner, for the footer).
+     Hooks: h1 with text "Page unavailable"; p#unavailable with text "This
+     page is not available right now. Try again in a moment."; no banner; no
+     script. */}}
+{{define "unavailable"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>Page unavailable</title></head>
+<body>
+<main>
+<h1>Page unavailable</h1>
+<p id="unavailable" class="lede">This page is not available right now. Try again in a moment.</p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
