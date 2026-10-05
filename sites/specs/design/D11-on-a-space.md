@@ -50,7 +50,7 @@ These outcomes are space-level checks: no test of sites can make them, and they 
 - The apex host reaches sites at all: the root domain's record, the certificate and the server block are devctl's and opsctl's (`devctl apex set`).
 - The gateway offers sites' seven tools, runs `create` and `publish` through `mutate`, and relays sites' results under its own `serverInfo` (mcp's `S09-mutate.md` and `S11-on-a-space.md`).
 - In a sandbox, repos makes the repository an agent pushes to, at `<data>/apps/repos/state/repos/<rep>.git`, and records `repo.created` and `repo.pushed` (repos, the sandbox).
-- The launcher a browser opens lists sites with its icon, marked as the current page, and the page's style is fetched from sites' own host and from no other origin (appkit's script; no test runs it).
+- The launcher a browser opens lists sites with its icon, marked as the current page, an enabled button visibly reacts as it is pressed, and the page's style and button-feedback script are fetched from sites' own host and from no other origin (appkit's scripts; no test runs them).
 - The `PATH` the sandbox gives sites holds the developer's own `git` (the sandbox).
 
 ## Story to design
@@ -90,13 +90,13 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S02-new-2 | a failed start leaves the socket up | `D03-serve` R-W7MM-ZP1J; `systemctl` reporting the failure: space-level check (opsctl) |
 | S02-26, S02-27, S02-28, S02-29 | stopping, drain, cut-off, 503 while stopping | `D03-serve` R-UZQ9-7YCJ, R-V0Y5-LQ38, R-LR2V-WLUM, R-SCP2-3J8G, R-W1J5-2UC2, R-W2R1-GM2R, R-WA2F-R8IX, R-WCI8-IS0B, R-V5RR-42IV, R-W7MM-ZP1J, R-WILQ-FMPS, R-BH93-MQG1; `D09-tools` R-XVCP-61ZC, R-LUQL-1X2P; `D01-layout-and-run-seam` R-YX1P-GMHL; `D07-site-serving` R-F6QY-UAUY, R-W5PX-51Q6; `D05-git-and-cache` R-CPD3-L7KN, R-GF0D-G2J5; `D08-visitors-and-trail` R-LM7A-DIVU; `D10-limits` R-TT42-AO7S |
 | S02-30 | restart | `D03-serve` R-V0Y5-LQ38, R-W7MM-ZP1J, R-W8UJ-DGS8; `D04-store` R-1FTJ-UKKK; no request refused across the restart: space-level check (opsctl's socket unit) |
-| S03-1, S03-9 | pages from templates, stylesheet, viewport, no script, footer | `D06-pages` R-D1EE-N7PE, R-D2MB-0ZG3, R-DX3S-L8ZG, R-DZJL-CSGU, R-E0RH-QK7J; `D01-layout-and-run-seam` R-YZHI-85YZ |
+| S03-1, S03-9 | pages from templates, stylesheet, feedback script, viewport, no script of their own, footer | `D06-pages` R-D1EE-N7PE, R-D2MB-0ZG3, R-DX3S-L8ZG, R-DZJL-CSGU, R-5Y7K-QBIS, R-60ND-HV06, R-61V9-VMQV; what the feedback script does in a browser: space-level check (appkit's script; no test runs it); `D01-layout-and-run-seam` R-YZHI-85YZ |
 | S03-2 | who is a guest | `D03-serve` R-WPX4-Q95Y; `D06-pages` R-XWC7-R027; `D07-site-serving` R-EH52-T4AD |
 | S03-3, S03-20 | services file read per request; a broken one is none | `D06-pages` R-CD0E-ZSVI, R-CE8B-DKM7; `D03-serve` R-XMTE-HNSH |
 | S03-4, S03-5, S03-22 | banner, profile and sign-out addresses | `D06-pages` R-D7HW-K2EV, R-DJOW-DRTT, R-DX3S-L8ZG, R-CBSI-M14T, R-CHW0-IVUA, R-CJ3W-WNKZ, R-E1ZE-4BY8 |
 | S03-6, S03-23 | the sites address and site URLs | `D06-pages` R-CE8B-DKM7, R-CFG7-RCCW, R-E6UZ-NEX0 |
 | S03-7, S03-14, S03-15 | the landing table, its rows and badges, the empty state | `D06-pages` R-XXK4-4RSW, R-E82W-16NP, R-E9AS-EYEE, R-EAIO-SQ53, R-EBQL-6HVS, R-EE6D-Y1D6, R-EJ1Z-H4BY; `D04-store` R-1WW5-7CYA |
-| S03-8, S03-19, S03-21 | the launcher | `D06-pages` R-E37A-I3OX, R-YY7J-PU0W; what the script does in a browser: space-level check (appkit's script; no test runs it) |
+| S03-8, S03-19, S03-21 | the launcher | `D06-pages` R-6336-9EHK, R-66QV-EPPN; what the script does in a browser: space-level check (appkit's script; no test runs it) |
 | S03-10 | routing | `D03-serve` R-3NN6-FZEC, R-WNHB-YPOK, R-WOP8-CHF9, R-WUSQ-9C4Q, R-WW0M-N3VF, R-WX8J-0VM4, R-WYGF-ENCT |
 | S03-11, S03-13 | a page's events; quiet | `D03-serve` R-X244-JYKW, R-XPM2-VTHM, R-XN6A-4A08; `D08-visitors-and-trail` R-RDFN-99RW |
 | S03-12 | the landing page | `D06-pages` R-XYS0-IJJL, R-DYBO-Z0Q5, R-E4F6-VVFM, R-E5N3-9N6B, R-E6UZ-NEX0, R-EFEA-BT3V, R-EGM6-PKUK, R-EHU3-3CL9 |
@@ -105,10 +105,11 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S03-18 | a guest sent to sign in | `D06-pages` R-DG17-8GLQ, R-CKBT-AFBO; `D08-visitors-and-trail` R-RDFN-99RW |
 | S03-24 | the catalog unreachable | `D03-serve` R-XP0T-GDM1, R-X0W8-66U7; `D06-pages` R-DKGW-ZMTK |
 | S03-25 | other methods on a page | `D06-pages` R-DETA-UOV1; `D08-visitors-and-trail` R-RDFN-99RW |
-| S04-1, S04-4, S04-6, S04-8, S04-9, S04-10, S04-11, S04-12, S04-13 | the seven shared files, their types, tags, revalidation and `HEAD` | `D06-pages` R-QGSS-CYWW, R-YUJU-KIST, R-RH3C-EKZZ, R-DMWP-R6AY, R-F04K-TWPO, R-W6K9-QDFF, R-B6BE-NEUY, R-YWZN-C2A7 |
+| S04-1, S04-4, S04-6, S04-8, S04-9, S04-10, S04-11, S04-12, S04-13 | the eight shared files, their types, tags, revalidation and `HEAD` | `D06-pages` R-67YR-SHGC, R-696O-6971, R-RH3C-EKZZ, R-DMWP-R6AY, R-F04K-TWPO, R-W6K9-QDFF, R-6AEK-K0XQ, R-6BMG-XSOF |
 | S04-2, S04-14, S04-15 | names not served; other methods | `D06-pages` R-F506-CZOG, R-F682-QRF5; `D03-serve` R-WNHB-YPOK, R-WW0M-N3VF; `D08-visitors-and-trail` R-RDFN-99RW |
 | S04-3, S04-5, S04-7 | same to guests; no cookie; only the request pair | `D03-serve` R-WW0M-N3VF, R-X244-JYKW; `D06-pages` R-RH3C-EKZZ; `D08-visitors-and-trail` R-RDFN-99RW |
 | S04-new1 | the apex host, whatever the path | `D03-serve` R-3NN6-FZEC, R-WOP8-CHF9 |
+| S04-new2 | the button-feedback script, loaded by every page: its type, tag and `no-cache` | `D06-pages` R-67YR-SHGC, R-696O-6971, R-RH3C-EKZZ, R-5Y7K-QBIS, R-5ZFH-439H |
 | S05-1, S05-23 | `/mcp` exactly, `POST` only | `D03-serve` R-WNHB-YPOK, R-WR51-40WN; the `405` and one answer per `POST`: appkit's MCP server design |
 | S05-2, S05-16, S05-17, S05-22 | the seven tools listed: names, descriptions, schemas, annotations | `D09-tools` R-M8I3-SHVY, R-MWW3-FWPU, R-MAXW-K1DC, R-MC5S-XT41, R-MDDP-BKUQ, R-MELL-PCLF, R-MFTI-34C4, R-MH1E-GW2T, R-MI9A-UNTI, R-MJH7-8FK7, R-MKP3-M7AW, R-MLWZ-ZZ1L, R-MN4W-DQSA, R-MOCS-RIIZ, R-MPKP-5A9O, R-MQSL-J20D, R-MS0H-WTR2, R-MUGA-OD8G, R-MVO7-24Z5; `apex`'s `outputSchema` departs (U1, above) |
 | S05-3 | site ids and names | `D04-store` R-1AXY-BHLS, R-1C5U-P9CH, R-1LX1-RFA1, R-UEZD-QS32 |
@@ -158,7 +159,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S11-6, S11-20, S11-21, S11-29, S11-30 | missing files, unknown slug, unpublished | `D07-site-serving` R-F339-OZMV, R-F4B6-2RDK, R-ETC2-MTPB, R-Y3NM-1MID, R-EPOD-HIH8; `D08-visitors-and-trail` R-RDFN-99RW |
 | S11-7, S11-13, S11-14, S11-15, S11-16, S11-17 | served files: bytes, types, length, tag | `D07-site-serving` R-EM0O-C795, R-EZFK-JOES, R-4YFR-E1U4 |
 | S11-8, S11-9, S11-10, S11-31 | `Cache-Control`, cookie, `site.viewed` | `D07-site-serving` R-FAEN-ZM31, R-EJKV-KNRR; `D08-visitors-and-trail` R-1DZ9-ITG2, R-UEU7-2XUB, R-LON3-52D8 |
-| S11-11 | the not-found page | `D06-pages` R-EQDD-RQS4, R-ENXL-07AQ, R-EP5H-DZ1F; `D07-site-serving` R-EPOD-HIH8 |
+| S11-11 | the not-found page | `D06-pages` R-EQDD-RQS4, R-65IZ-0XYY, R-EP5H-DZ1F, R-5ZFH-439H; `D07-site-serving` R-EPOD-HIH8 |
 | S11-12 | serving reads no repository while the tree exists | `D07-site-serving` R-Y4VI-FE92, R-FFA9-IP1T |
 | S11-18 | `/<slug>` redirected | `D07-site-serving` R-Y2FP-NURO |
 | S11-25, S11-26 | `If-None-Match` and `304` | `D07-site-serving` R-EOGH-3QQJ, R-F0NG-XG5H, R-EZFK-JOES |
@@ -192,7 +193,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S15-9, S15-16 | per-request order; non-site requests | `D08-visitors-and-trail` R-RENJ-N1IL, R-RDFN-99RW; `D03-serve` R-X244-JYKW |
 | S16-1, S16-9 | where trees live; default `REPOS_DIR` on a host | `D01-layout-and-run-seam` R-2YD6-O8ZF, R-YIEW-VDL9; `D05-git-and-cache` R-AW7P-JAUS |
 | S16-2, S16-3, S16-4, S16-7, S16-10, S16-11, S16-18 | lazy, shared, atomic rebuild with no memory of failure | `D05-git-and-cache` R-CT0S-QISQ, R-CVGL-I2A4, R-BDAA-W38I, R-XHH3-YMVR, R-UQPP-5LCD, R-UT5H-X4TR; `D07-site-serving` R-Y4VI-FE92 |
-| S16-5, S16-12, S16-13, S16-14, S16-15, S16-16, S16-17 | a failed rebuild: `503`, the page, the reason | `D07-site-serving` R-W4I0-R9ZH, R-W5PX-51Q6; `D06-pages` R-ERLA-5IIT; `D05-git-and-cache` R-CWOH-VU0T, R-AIST-BTP5, R-B9ML-QS0F, R-CKHI-24LV, R-CO57-7FTY |
+| S16-5, S16-12, S16-13, S16-14, S16-15, S16-16, S16-17 | a failed rebuild: `503`, the page, the reason | `D07-site-serving` R-W4I0-R9ZH, R-W5PX-51Q6; `D06-pages` R-ERLA-5IIT, R-65IZ-0XYY, R-5ZFH-439H; `D05-git-and-cache` R-CWOH-VU0T, R-AIST-BTP5, R-B9ML-QS0F, R-CKHI-24LV, R-CO57-7FTY |
 | S16-6 | `site.viewed` then `site.unavailable` | `D08-visitors-and-trail` R-LPUZ-IU3X, R-HENR-6828 |
 | S16-8 | git's stderr discarded; quiet | `D05-git-and-cache` R-TMNE-HL5T; `D03-serve` R-XN6A-4A08 |
 | S16-19 | publish then serve | `D09-tools` R-LQH0-5NL3, R-XJWW-Q6D5; `D07-site-serving` R-FBMK-DDTQ |
@@ -213,7 +214,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S19-7, S19-8, S19-9 | restored catalog, absent repositories | `D03-serve` R-XTWE-ZGKT, R-XQH3-MZ0K; `D01-layout-and-run-seam` R-2ZL3-20Q4; `D05-git-and-cache` R-CT0S-QISQ, R-UQPP-5LCD; `D07-site-serving` R-Y4VI-FE92, R-W4I0-R9ZH; `D09-tools` R-L86I-F3GO |
 | S20-1 | no nginx fragment | `D02-cli` (prose: no nginx constant); `D01-layout-and-run-seam` R-XST0-U70O |
 | S20-2, S20-5 | only the manifest under `etc/`; only the icon under `share/`; exactly three members | `D01-layout-and-run-seam` R-XST0-U70O; `D02-cli` R-SP4Q-LUZT; `share/` and the member list: space-level check (devctl) |
-| S20-3 | templates and appkit's files inside the binary | `D01-layout-and-run-seam` R-XQD8-2NJA, R-XRL4-GF9Z; `D06-pages` R-D06I-9FYP, R-QGSS-CYWW |
+| S20-3 | templates and appkit's files inside the binary | `D01-layout-and-run-seam` R-XQD8-2NJA, R-XRL4-GF9Z; `D06-pages` R-D06I-9FYP, R-67YR-SHGC |
 | S20-4 | state made on first start; `[database]`, `[resources]`; version only in name and binary | `D03-serve` R-VPC5-94X4; `D02-cli` R-SJ18-P0AC; keeping, bounding and naming: space-level check (opsctl, devctl) |
 | S20-6 | the binary's `--version` and `manifest` | `D02-cli` R-SQCM-ZMQI, R-SRKJ-DEH7, R-SJ18-P0AC |
 | S20-new-1 | the binary static `linux/amd64` | the release build gate of `AGENTS.md`, not a requirement (What ships); the built file: space-level check (devctl) |
@@ -225,7 +226,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S21-6 | a guest at a public site on a space | `D07-site-serving` R-EZFK-JOES, R-F0NG-XG5H, R-FAEN-ZM31; `D08-visitors-and-trail` R-UEU7-2XUB, R-UIHW-892E, R-EVK1-Q25Q, R-LON3-52D8; `D05-git-and-cache` R-CT0S-QISQ; HTTP/2, TLS and auth's `check.allowed`: space-level check (nginx, auth) |
 | S21-7 | a guest at a private site on a space | `D07-site-serving` R-W6XT-ITGV; `D06-pages` R-CKBT-AFBO; `D08-visitors-and-trail` R-RDFN-99RW; `D03-serve` R-X244-JYKW |
 | S21-8 | a token holder at a private site | `D07-site-serving` R-EJKV-KNRR, R-FAEN-ZM31; `D08-visitors-and-trail` R-LON3-52D8, R-FA6U-BB22; auth admitting the token: space-level check (auth) |
-| S21-9 | the landing page on a space | `D06-pages` R-XYS0-IJJL, R-EHU3-3CL9, R-E9AS-EYEE, R-EFEA-BT3V, R-EGM6-PKUK, R-E37A-I3OX, R-DZJL-CSGU, R-CJ3W-WNKZ, R-DX3S-L8ZG; `D01-layout-and-run-seam` R-YZHI-85YZ; `space status` and a browser's fetches: space-level check (devctl, appkit's script) |
+| S21-9 | the landing page on a space | `D06-pages` R-XYS0-IJJL, R-EHU3-3CL9, R-E9AS-EYEE, R-EFEA-BT3V, R-EGM6-PKUK, R-6336-9EHK, R-DZJL-CSGU, R-5Y7K-QBIS, R-CJ3W-WNKZ, R-DX3S-L8ZG; `D01-layout-and-run-seam` R-YZHI-85YZ; `space status` and a browser's fetches: space-level check (devctl, appkit's script) |
 | S21-10 | a guest at the landing page on a space | `D06-pages` R-DG17-8GLQ, R-CKBT-AFBO; `D08-visitors-and-trail` R-RDFN-99RW |
 | S21-11 | the apex host on a space | `D07-site-serving` R-FK5V-1S0L, R-W85P-WL7K; `D06-pages` R-CGO4-543L; `D03-serve` R-3NN6-FZEC, R-WOP8-CHF9; the root domain reaching sites: space-level check (devctl, opsctl); `D08-visitors-and-trail` R-RDFN-99RW |
 | S21-12 | `/mcp` with no credential | space-level check (nginx, auth): nothing reaches sites |
@@ -236,7 +237,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S22-3 | sandbox site URLs | `D06-pages` R-CE8B-DKM7; `D09-tools` R-N0JS-L7XX |
 | S22-4 | plain HTTP: `http` addresses, no `Secure`; strict `/mcp` | `D08-visitors-and-trail` R-EVK1-Q25Q, R-EWRY-3TWF; `D06-pages` R-CBSI-M14T; `/mcp`'s check: space-level check (the sandbox) |
 | S22-5 | the token in no record | this design R-DN5E-UIA0, R-DODB-8A0P, R-796D-SRTD, R-DPL7-M1RE |
-| S22-6 | the landing page in a sandbox, no sites yet | `D06-pages` R-XYS0-IJJL, R-EHU3-3CL9, R-E82W-16NP, R-E37A-I3OX |
+| S22-6 | the landing page in a sandbox, no sites yet | `D06-pages` R-XYS0-IJJL, R-EHU3-3CL9, R-E82W-16NP, R-6336-9EHK |
 | S22-7 | an agent publishes from a repository it pushed | `D09-tools` R-LVCL-OQJV, R-LQH0-5NL3; `D05-git-and-cache` R-BC2E-IBHT; `D08-visitors-and-trail` R-FGAC-85RJ, R-FHI8-LXI8; `D03-serve` R-XN6A-4A08; repos and the gateway: space-level check (repos, mcp, the sandbox) |
 | S22-8 | a guest at the published site in a sandbox | `D07-site-serving` R-EZFK-JOES, R-Y2FP-NURO, R-FAEN-ZM31; `D08-visitors-and-trail` R-UEU7-2XUB, R-EWRY-3TWF, R-LON3-52D8 |
 | S22-9 | a guest at a private site in a sandbox | `D09-tools` R-O14S-2C6R; `D07-site-serving` R-W6XT-ITGV; `D06-pages` R-CKBT-AFBO, R-CHW0-IVUA; `D08-visitors-and-trail` R-RDFN-99RW |
