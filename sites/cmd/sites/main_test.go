@@ -29,7 +29,7 @@ import (
 
 // R-YVTT-2UQW R-YX1P-GMHL R-YY9L-UE8A R-YZHI-85YZ R-Z0PE-LXPO
 // R-Z1XA-ZPGD R-Z357-DH72 R-R02K-R24N R-Z4D3-R8XR R-W7MM-ZP1J
-// R-WILQ-FMPS R-YY7J-PU0W
+// R-WILQ-FMPS R-66QV-EPPN
 func TestBinary(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
 	git, err := exec.LookPath("git")
@@ -146,7 +146,6 @@ func TestBinary(t *testing.T) {
 	f := startBinary(t, binary, work, append(append([]string{}, env...), "IKIGENBA_SERVICES="+services))
 	before := binaryTags(f.get(t, "/"))
 	assertTagCount(t, before, "form", "", 1)
-	assertTagCount(t, before, "script", "", 1)
 	assertTagCount(t, before, "", "aria-current", 1)
 	assertTagCount(t, before, "", "aria-disabled", 0)
 	assertTag(t, before, "a", "class", "profile", map[string]string{"title": "mg@example.com", "href": "https://account.example.test/"})

@@ -125,6 +125,15 @@ func (x tag) values(name string) []string {
 	return out
 }
 
+func (x tag) bare(name string) bool {
+	for _, a := range x.attributes() {
+		if !a.equal && asciiLower(a.name) == asciiLower(name) {
+			return true
+		}
+	}
+	return false
+}
+
 func (x tag) has(name, value string) bool {
 	for _, v := range x.values(name) {
 		if v == value {
@@ -264,6 +273,28 @@ func TestMarkupVocabulary(t *testing.T) {
 	}
 }
 
+// R-60ND-HV06
+func TestBareAttributeVocabulary(t *testing.T) {
+	for _, v := range []struct {
+		markup string
+		bare   bool
+	}{
+		{`<script src="/_appkit/feedback.js" DeFeR>`, true},
+		{`<script	DEFER
+src="/_appkit/feedback.js">`, true},
+		{`<script defer="">`, false},
+		{`<script defer="defer">`, false},
+		{`<script deferred defer-other>`, false},
+		{`<script title="defer">`, false},
+		{`<script class ="ignored" defer>`, false},
+	} {
+		x := one(t, tags(v.markup, "script"), "script")
+		if got := x.bare("defer"); got != v.bare {
+			t.Errorf("bare defer in %q = %t, want %t", v.markup, got, v.bare)
+		}
+	}
+}
+
 func whitespaceOnly(s string) bool {
 	for i := range len(s) {
 		if !asciiSpace(s[i]) {
@@ -299,7 +330,7 @@ func written(t *testing.T, body string, b page.Banner) string {
 	return body[:start] + body[start+len(bannerText):f] + body[f+len(footerText):]
 }
 
-// R-XZZW-WBAA R-DYBO-Z0Q5 R-DZJL-CSGU R-E0RH-QK7J R-E1ZE-4BY8
+// R-XZZW-WBAA R-DYBO-Z0Q5 R-DZJL-CSGU R-5Y7K-QBIS R-61V9-VMQV R-E1ZE-4BY8
 func TestPlainPagesCommonMarkup(t *testing.T) {
 	s := catalog(t)
 	cfg := config(t, s)
@@ -322,8 +353,10 @@ func TestPlainPagesCommonMarkup(t *testing.T) {
 		text(t, m, title, want)
 		text(t, m, one(t, tags(m, "h1"), "h1"), want)
 		commonHead(t, m)
-		if len(tags(m, "script")) != 0 || len(tags(m, "style")) != 0 {
-			t.Fatal("page carries script/style")
+		feedbackHead(t, m)
+		onlyFeedbackScripts(t, m)
+		if len(tags(m, "style")) != 0 {
+			t.Fatal("page carries style")
 		}
 		for _, x := range allTags(m) {
 			for _, name := range []string{"style", "srcset", "imagesrcset"} {
@@ -354,6 +387,39 @@ func commonHead(t *testing.T, m string) {
 	}
 }
 
+func feedbackHead(t *testing.T, m string) {
+	t.Helper()
+	var feedback []tag
+	for _, x := range tags(m, "script") {
+		if x.has("src", "/_appkit/feedback.js") {
+			feedback = append(feedback, x)
+		}
+	}
+	x := one(t, feedback, "script")
+	body := one(t, tags(m, "body"), "body")
+	if x.start >= body.start {
+		t.Fatal("feedback script not before body")
+	}
+	if len(x.values("defer")) == 0 && !x.bare("defer") {
+		t.Fatal("feedback script is not deferred")
+	}
+}
+
+func onlyFeedbackScripts(t *testing.T, m string) {
+	t.Helper()
+	for _, x := range tags(m, "script") {
+		attr(t, x, "src", "/_appkit/feedback.js")
+		for _, value := range x.values("src") {
+			if value != "/_appkit/feedback.js" {
+				t.Fatalf("unexpected script src in %s", x.raw)
+			}
+		}
+		if x.bare("src") || len(x.values("href")) != 0 || len(x.values("xlink:href")) != 0 {
+			t.Fatalf("forbidden script attribute in %s", x.raw)
+		}
+	}
+}
+
 func localResources(t *testing.T, m string) {
 	t.Helper()
 	for _, x := range allTags(m) {
@@ -370,7 +436,7 @@ func localResources(t *testing.T, m string) {
 	}
 }
 
-// R-E37A-I3OX
+// R-6336-9EHK
 func TestLauncherFollowsBannerServices(t *testing.T) {
 	s := catalog(t)
 	for _, services := range [][]page.Service{nil, {{Name: "dummy", URL: "https://dummy.test", Icon: "icon", Enabled: true}}} {
@@ -381,9 +447,22 @@ func TestLauncherFollowsBannerServices(t *testing.T) {
 			body := answer(h, request("GET", path, "alice", "")).Body.String()
 			if len(services) != 0 {
 				one(t, byClass(body, "button", "launcher"), "button")
-				attr(t, one(t, tags(body, "script"), "script"), "src", "/_appkit/launcher.js")
-			} else if len(byClass(body, "button", "launcher")) != 0 || len(tags(body, "script")) != 0 || len(tags(body, "input")) != 0 || strings.Contains(body, "/_appkit/launcher.js") {
-				t.Fatal("launcher emitted with empty services")
+				var launchers []tag
+				for _, x := range tags(body, "script") {
+					if x.has("src", "/_appkit/launcher.js") {
+						launchers = append(launchers, x)
+					} else {
+						attr(t, x, "src", "/_appkit/feedback.js")
+					}
+				}
+				one(t, launchers, "script")
+			} else {
+				if len(byClass(body, "button", "launcher")) != 0 || len(tags(body, "input")) != 0 || strings.Contains(body, "/_appkit/launcher.js") {
+					t.Fatal("launcher emitted with empty services")
+				}
+				for _, x := range tags(body, "script") {
+					attr(t, x, "src", "/_appkit/feedback.js")
+				}
 			}
 		}
 	}
@@ -590,7 +669,7 @@ func TestAboutHooks(t *testing.T) {
 	}
 }
 
-// R-EMPO-MFK1 R-ENXL-07AQ R-EP5H-DZ1F R-EQDD-RQS4 R-ERLA-5IIT
+// R-EMPO-MFK1 R-65IZ-0XYY R-5ZFH-439H R-EP5H-DZ1F R-EQDD-RQS4 R-ERLA-5IIT
 func TestNoticeMarkup(t *testing.T) {
 	s := load(t)
 	b := page.Banner{Service: "notice-sites", Version: "test.build+local"}
@@ -603,8 +682,8 @@ func TestNoticeMarkup(t *testing.T) {
 		if f < 0 || len(ends) == 0 || !whitespaceOnly(body[f+len(footer):ends[len(ends)-1].start]) {
 			t.Fatal("notice footer absent or does not end body")
 		}
-		if len(tags(body, "header")) != 0 || len(tags(body, "form")) != 0 || len(byClass(body, "strong", "mark")) != 0 || len(byClass(body, "a", "profile")) != 0 || len(tags(body, "script")) != 0 || len(tags(body, "style")) != 0 {
-			t.Fatal("notice has banner/script/style")
+		if len(tags(body, "header")) != 0 || len(tags(body, "form")) != 0 || len(byClass(body, "strong", "mark")) != 0 || len(byClass(body, "a", "profile")) != 0 || len(tags(body, "style")) != 0 {
+			t.Fatal("notice has banner/style")
 		}
 		for _, x := range allTags(body) {
 			if len(x.values("style")) != 0 {
@@ -612,6 +691,8 @@ func TestNoticeMarkup(t *testing.T) {
 			}
 		}
 		commonHead(t, body)
+		feedbackHead(t, body)
+		onlyFeedbackScripts(t, body)
 		localResources(t, body)
 		title := one(t, tags(body, "title"), "title")
 		end := one(t, tags(body, "/title"), "/title")

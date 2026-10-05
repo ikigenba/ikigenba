@@ -6,13 +6,15 @@ import (
 	"testing"
 )
 
-// R-QGSS-CYWW R-YUJU-KIST R-RH3C-EKZZ R-DMWP-R6AY R-F04K-TWPO
-// R-W6K9-QDFF R-B6BE-NEUY R-YWZN-C2A7 R-F506-CZOG R-F682-QRF5
+// R-67YR-SHGC R-696O-6971 R-RH3C-EKZZ R-DMWP-R6AY R-F04K-TWPO
+// R-W6K9-QDFF R-6AEK-K0XQ R-6BMG-XSOF R-F506-CZOG R-F682-QRF5
 func TestSharedFiles(t *testing.T) {
 	f := fresh(t)
 	other := fresh(t)
+	emptyDirectory := t.TempDir()
 	t.Chdir(f.root)
-	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
+	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
+	identities := []map[string]string{nil, {"X-User-Id": ""}, {"X-User-Id": "user"}}
 	tags := map[string]string{}
 	for name, contentType := range files {
 		path := "/_appkit/" + name
@@ -32,10 +34,15 @@ func TestSharedFiles(t *testing.T) {
 			}
 		}
 		tags[got.Body.String()] = tag
-		for _, h := range []*fixture{f, other} {
-			repeat := h.get(t, "GET", path, "Sites:80", "user", nil)
-			if repeat.Body.String() != got.Body.String() || repeat.Header().Get("ETag") != tag {
-				t.Fatal("shared file varies")
+		for _, directory := range []string{f.root, emptyDirectory} {
+			t.Chdir(directory)
+			for _, h := range []*fixture{f, other} {
+				for _, identity := range identities {
+					repeat := h.get(t, "GET", path, "Sites:80", "", identity)
+					if repeat.Code != 200 || repeat.Body.String() != got.Body.String() || len(repeat.Header().Values("Content-Type")) != 1 || repeat.Header().Get("Content-Type") != contentType || repeat.Header().Get("ETag") != tag {
+						t.Fatalf("shared file %s varies with directory, handler or identity: %d %v", name, repeat.Code, repeat.Header())
+					}
+				}
 			}
 		}
 		for _, method := range []string{"GET", "HEAD"} {
@@ -45,18 +52,31 @@ func TestSharedFiles(t *testing.T) {
 					t.Fatalf("match %s %s: %d", name, match, r.Code)
 				}
 			}
-			r := f.get(t, method, path, "sites", "", map[string]string{"If-None-Match": "W/\"different\", \"other\"", "If-Modified-Since": "Wed, 21 Oct 2099 07:28:00 GMT"})
-			if r.Code != 200 || r.Header().Get("ETag") != tag || r.Header().Get("Content-Type") != contentType || (method == "GET" && r.Body.String() != got.Body.String()) || (method == "HEAD" && r.Body.Len() != 0) {
-				t.Fatalf("nonmatch %s: %d", name, r.Code)
+			for _, identity := range identities {
+				for _, modified := range []string{"", "bad", "Wed, 21 Oct 2015 07:28:00 GMT", "Wed, 21 Oct 2099 07:28:00 GMT"} {
+					headers := map[string]string{"If-None-Match": " , W/\"different-" + tag[1:] + ", \"other-" + tag[1:] + " , "}
+					for key, value := range identity {
+						headers[key] = value
+					}
+					if modified != "" {
+						headers["If-Modified-Since"] = modified
+					}
+					r := f.get(t, method, path, "sites", "", headers)
+					if r.Code != 200 || r.Header().Get("ETag") != tag || len(r.Header().Values("Content-Type")) != 1 || r.Header().Get("Content-Type") != contentType || (method == "GET" && r.Body.String() != got.Body.String()) || (method == "HEAD" && r.Body.Len() != 0) {
+						t.Fatalf("nonmatch %s %s with If-Modified-Since %q: %d %v", name, method, modified, r.Code, r.Header())
+					}
+				}
 			}
 		}
-		head := f.get(t, "HEAD", path, "sites", "", nil)
-		if head.Code != 200 || head.Body.Len() != 0 {
-			t.Fatal("HEAD")
-		}
-		for _, key := range []string{"Content-Type", "ETag", "Cache-Control"} {
-			if head.Header().Get(key) != got.Header().Get(key) {
-				t.Fatal("HEAD header", key)
+		for _, identity := range identities {
+			head := f.get(t, "HEAD", path, "sites", "", identity)
+			if head.Code != 200 || head.Body.Len() != 0 {
+				t.Fatalf("HEAD %s: %d", name, head.Code)
+			}
+			for _, key := range []string{"Content-Type", "ETag", "Cache-Control"} {
+				if len(head.Header().Values(key)) != 1 || head.Header().Get(key) != got.Header().Get(key) {
+					t.Fatalf("HEAD %s header %s: %v", name, key, head.Header())
+				}
 			}
 		}
 		for _, method := range []string{"POST", "PUT", "DELETE", "OPTIONS"} {
@@ -66,7 +86,7 @@ func TestSharedFiles(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS"} {
+	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/feedback.js/", "/_appkit/feedback.js/x", "/_appkit/FEEDBACK.JS"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := f.get(t, method, path, "sites", "", map[string]string{"If-None-Match": "*"})
 			if r.Code != 404 || strings.Contains(r.Body.String(), "There is nothing at this address.") {
