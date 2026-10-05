@@ -273,7 +273,49 @@ func TestServeSelectedGitAndComposedEnvironmentReachChildren(t *testing.T) {
 	f.gitEnv = append(f.gitEnv, "SERVE_TEST_MARKER="+f.dir)
 	f.start(t)
 	f.tool(t, "create", `{"name":"alpha"}`)
-	f.request(t, "/alpha.git/info/refs?service=git-upload-pack", "trace")
+	path := "/alpha.git/info/refs?service=git-upload-pack"
+	if status, _, _ := f.request(t, path, "trace"); status != http.StatusOK {
+		t.Fatalf("selected git advertisement status %d", status)
+	}
+	traceStarts := func() int {
+		data, err := os.ReadFile(filepath.Clean(trace))
+		if err != nil {
+			t.Fatal(err)
+		}
+		starts := 0
+		for _, line := range bytes.Split(data, []byte{'\n'}) {
+			if len(line) == 0 {
+				continue
+			}
+			var event struct{ Event, SID string }
+			if err := json.Unmarshal(line, &event); err != nil {
+				t.Fatal(err)
+			}
+			if event.Event == "start" && !strings.Contains(event.SID, "/") {
+				starts++
+			}
+		}
+		return starts
+	}
+	beforeMissing := traceStarts()
+	// argv[0] names git, not its executable path. Removing the selected
+	// candidate proves Run keeps using it despite the working PATH fallback.
+	if err := os.Remove(selected); err != nil {
+		t.Fatal(err)
+	}
+	f.request(t, path, "selected-missing")
+	if got := traceStarts(); got != beforeMissing {
+		t.Fatalf("git started without selected executable: starts %d want %d", got, beforeMissing)
+	}
+	if err := os.Symlink(f.gitPath, selected); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := f.request(t, path, "selected-restored"); status != http.StatusOK {
+		t.Fatalf("restored selected git advertisement status %d", status)
+	}
+	if traceStarts() <= beforeMissing {
+		t.Fatal("restored selected executable did not start git")
+	}
 	f.stop(t, "trace stop", cli.ExitSuccess)
 	fixtureRoot, err := os.OpenRoot(f.dir)
 	if err != nil {
@@ -304,9 +346,6 @@ func TestServeSelectedGitAndComposedEnvironmentReachChildren(t *testing.T) {
 			params[event.Param] = event.Value
 		}
 		if event.Event == "start" && len(event.Argv) > 0 && !strings.Contains(event.SID, "/") {
-			if event.Argv[0] != selected {
-				t.Fatalf("git executable %s want first PATH entry %s", event.Argv[0], selected)
-			}
 			starts++
 		}
 	}

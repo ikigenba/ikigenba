@@ -13,7 +13,7 @@ import (
 )
 
 func TestRunningGitEndsBeforeCycleOrStopReturns(t *testing.T) {
-	// R-H55V-K9GY R-GRQZ-CSBB R-H0AA-16I6 R-H1I6-EY8V R-IIUM-PSSC R-H0Z0-JODS
+	// R-H55V-K9GY R-GRQZ-CSBB R-H0AA-16I6 R-H1I6-EY8V R-IIUM-PSSC R-1B8Y-PDRY
 	for _, mode := range []string{"cycle", "stop", "operation"} {
 		t.Run(mode, func(t *testing.T) {
 			f := fixture(t, 1)

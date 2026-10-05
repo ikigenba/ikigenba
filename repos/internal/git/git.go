@@ -44,6 +44,7 @@ func Find(path string, environ func() []string) (*Git, error) {
 // Command builds an unstarted git whose process group ends with ctx.
 func (g *Git) Command(ctx context.Context, dir string, env []string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, g.path, args...)
+	cmd.Args[0] = "git"
 	cmd.Dir = dir
 	cmd.Env = make([]string, 0)
 	if g.environ != nil {

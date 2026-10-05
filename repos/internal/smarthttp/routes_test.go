@@ -1,6 +1,7 @@
 package smarthttp_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 )
 
@@ -116,7 +118,7 @@ func TestSmartRouteDefinition(t *testing.T) {
 }
 
 func TestAdvertisementAndGitConfigurationEnvironment(t *testing.T) {
-	// R-0AXP-9L2Q R-L2IS-717R R-6Z4V-K41U R-3S70-2XDL
+	// R-0AXP-9L2Q R-L2IS-717R R-1DOR-GX9C R-3S70-2XDL
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("work")
@@ -163,6 +165,26 @@ func TestAdvertisementAndGitConfigurationEnvironment(t *testing.T) {
 		for _, key := range []string{"CONTENT_LENGTH", "REMOTE_ADDR", "HTTP_AUTHORIZATION"} {
 			same(t, params[key], "")
 		}
+		// Compare every byte with the same real backend's unmediated CGI
+		// output, including capabilities whose order and values git owns.
+		cmd := f.git.Command(deadline(t), "", []string{
+			"GIT_PROJECT_ROOT=" + filepath.Dir(f.store.Dir(repo.ID)),
+			"PATH_INFO=/" + repo.ID + ".git/info/refs", "REQUEST_METHOD=GET",
+			"QUERY_STRING=service=" + service, "CONTENT_TYPE=fixture/type",
+			"REMOTE_USER=alice", "GIT_HTTP_EXPORT_ALL=1", "HTTP_GIT_PROTOCOL=version=0",
+			"HTTP_CONTENT_ENCODING=identity", "LC_ALL=C",
+		}, "-c", "http.getanyfile=false", "-c", "http.uploadpack=true", "-c", "http.receivepack=true",
+			"-c", "receive.maxInputSize="+strconv.FormatInt(f.settings.PushMaxBytes, 10),
+			"-c", "receive.autogc=false", "-c", "gc.auto=0", "http-backend")
+		output, err := cmd.Output()
+		must(t, err)
+		status, header, body, err := git.ReadHeader(bytes.NewReader(output))
+		must(t, err)
+		answer, err := io.ReadAll(body)
+		must(t, err)
+		same(t, w.Code, status)
+		same(t, w.Header(), header)
+		same(t, w.Body.Bytes(), answer)
 	}
 	same(t, len(ownEvents(f.events())), 0)
 }

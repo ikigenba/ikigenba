@@ -425,7 +425,7 @@ func TestRealGCRefsPacksExpiryAndMeasurements(t *testing.T) {
 }
 
 func TestAlreadyDeliveredOperationDeadlineSkipsGitAndContinues(t *testing.T) {
-	// R-H0Z0-JODS R-GYJ7-S4WE R-GSYV-QK20
+	// R-1B8Y-PDRY R-GYJ7-S4WE R-GSYV-QK20
 	f := fixture(t, 2)
 	first := f.repos[0].ID
 	before := gitOut(t, f.g, f.st.Dir(first), "count-objects", "-v")
@@ -451,7 +451,7 @@ func TestAlreadyDeliveredOperationDeadlineSkipsGitAndContinues(t *testing.T) {
 }
 
 func TestFailedGitSilentWithDiscardedOutputAndNextRepository(t *testing.T) {
-	// R-H3ET-B7V6 R-IHMQ-C11N R-GSYV-QK20
+	// R-1EWN-UP01 R-IHMQ-C11N R-GSYV-QK20
 	f := fixture(t, 2)
 	dir := f.st.Dir(f.repos[0].ID)
 	writeFile(t, filepath.Join(dir, "config"), "[broken\n")

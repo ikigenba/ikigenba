@@ -87,7 +87,7 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	_ = inRead.Close()
 	_ = outWrite.Close()
 	var mu sync.Mutex
-	ended, interrupted, timedOut := false, false, false
+	ended, interrupted, timedOut, deadlineReceived := false, false, false, false
 	bodyDone := make(chan struct{})
 	bodyWritten := make(chan struct{})
 	processDone := make(chan struct{})
@@ -98,10 +98,19 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 			mu.Unlock()
 			return
 		}
-		interrupted = true
-		timedOut = timedOut || (timeout && r.Context().Err() == nil)
+		if timeout {
+			deadlineReceived = true
+		} else {
+			interrupted = true
+		}
 		mu.Unlock()
 		cancel()
+		// A delivered deadline must end and reap Git before deciding whether
+		// it ended by itself. Cancellation can race with a successful exit;
+		// changing connection deadlines now would truncate its complete output.
+		if timeout {
+			return
+		}
 		_ = rc.SetReadDeadline(time.Now())
 		_ = rc.SetWriteDeadline(time.Now())
 		_ = inWrite.Close()
@@ -119,19 +128,26 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 	default:
 	}
 	waitResult := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(waitResult) }()
+	go func() {
+		_ = cmd.Wait()
+		mu.Lock()
+		// Wait's error may be the cancellation error even when the process
+		// exited with status 0. Only the reaped status decides natural exit.
+		if deadlineReceived && (cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != 0) {
+			interrupted = true
+			timedOut = r.Context().Err() == nil
+		}
+		ended = true
+		mu.Unlock()
+		close(waitResult)
+	}()
 	go func() {
 		defer close(watchDone)
-		// One arbiter alone receives the deadline and commits completion.
-		// A received deadline cannot disappear into a second consumer before
-		// its interruption has been committed.
+		// One arbiter alone receives the deadline. The Wait goroutine records
+		// completion before publishing it, so a later deadline is ignored even
+		// when this observer has not yet received waitResult.
 		select {
 		case <-waitResult:
-			select {
-			case <-deadline:
-				interrupt(true)
-			default:
-			}
 		case <-requestDone:
 			interrupt(false)
 			<-waitResult
@@ -140,7 +156,6 @@ func (cfg Config) stream(w http.ResponseWriter, r *http.Request, q route, id str
 			<-waitResult
 		}
 		mu.Lock()
-		ended = true
 		stop := interrupted
 		mu.Unlock()
 		if stop {

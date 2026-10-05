@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -164,29 +165,45 @@ func maintain(waitCtx, runCtx context.Context, cfg Config, repo store.Repo) bool
 	if err = cmd.Start(); err != nil {
 		return true
 	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	done := make(chan struct{})
+	const (
+		running int32 = iota
+		expired
+		reaped
+	)
+	var outcome atomic.Int32
 	timedOut := false
+	go func() {
+		_ = cmd.Wait()
+		timedOut = outcome.Swap(reaped) == expired
+		close(done)
+	}()
 	select {
-	case err = <-done:
+	case <-done:
 	case <-runCtx.Done():
 		cancel()
 		<-done
 		return false
 	case <-deadline:
-		timedOut = true
-		cancel()
+		// A deadline observed after Wait has reaped git cannot turn its
+		// completed result into a timeout, regardless of select ordering.
+		if outcome.CompareAndSwap(running, expired) {
+			cancel()
+		}
 		<-done
 	}
 	end := cfg.Limits.Clock().Now()
 	if runCtx.Err() != nil {
 		return false
 	}
-	if timedOut {
+	// Wait can return the cancelled context even when git exited with status
+	// zero before cancellation reached it. The reaped process decides success.
+	succeeded := cmd.ProcessState != nil && cmd.ProcessState.Success()
+	if timedOut && !succeeded {
 		operation(cfg, "operation.timed_out", repo.ID, "operation_seconds", 0)
 		return true
 	}
-	if err != nil {
+	if !succeeded {
 		return true
 	}
 	after, err := cfg.Store.Size(runCtx, repo.ID)

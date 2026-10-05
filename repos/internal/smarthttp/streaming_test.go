@@ -59,6 +59,7 @@ type streamServerOption struct {
 	closeGate <-chan struct{}
 	context   func(context.Context) context.Context
 	header    func(int)
+	write     func()
 	hold      *streamHoldObserver
 }
 
@@ -116,11 +117,21 @@ func (w streamHeldWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter
 type streamResponseObserver struct {
 	http.ResponseWriter
 	header func(int)
+	write  func()
 }
 
 func (w streamResponseObserver) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
-	w.header(status)
+	if w.header != nil {
+		w.header(status)
+	}
+}
+
+func (w streamResponseObserver) Write(p []byte) (int, error) {
+	if w.write != nil {
+		w.write()
+	}
+	return w.ResponseWriter.Write(p)
 }
 
 func (w streamResponseObserver) Unwrap() http.ResponseWriter { return w.ResponseWriter }
@@ -173,8 +184,8 @@ func streamServer(f *fixture, small bool, options ...streamServerOption) *stream
 			if options[0].context != nil {
 				ctx = options[0].context(ctx)
 			}
-			if options[0].header != nil {
-				w = streamResponseObserver{w, options[0].header}
+			if options[0].header != nil || options[0].write != nil {
+				w = streamResponseObserver{w, options[0].header, options[0].write}
 			}
 		}
 		h.ServeHTTP(w, r.WithContext(ctx))
@@ -603,7 +614,7 @@ func TestStreamClientDisconnectWithOpenInput(t *testing.T) {
 }
 
 func TestStreamDeadlineAndRequestCancellation(t *testing.T) {
-	// R-5ESE-4K93 R-5G0A-IBZS R-3UMS-UGUZ R-3QZ3-P5MW R-0H17-6FS7
+	// R-16DD-6AT6 R-5G0A-IBZS R-3UMS-UGUZ R-3QZ3-P5MW R-0H17-6FS7
 	for _, cause := range []string{"deadline", "context"} {
 		for _, route := range []string{"git-receive-pack", "git-upload-pack"} {
 			t.Run(cause+route, func(t *testing.T) {
@@ -659,7 +670,7 @@ func TestStreamDeadlineAndRequestCancellation(t *testing.T) {
 }
 
 func TestStreamAlreadyDeliveredDeadline(t *testing.T) {
-	// R-5ESE-4K93
+	// R-16DD-6AT6
 	f := setup(t)
 	repo := f.create("notes")
 	f.limits = limits.New(f.settings, limits.Clock{Now: f.clock.read, After: func(time.Duration) <-chan time.Time {
@@ -707,7 +718,7 @@ func (g *streamDeadlineGate) Done() <-chan struct{} {
 func (g *streamDeadlineGate) release() { g.once.Do(func() { close(g.resume) }) }
 
 func TestStreamDeadlineWithOptionalObserverDelay(t *testing.T) {
-	// R-5ESE-4K93 R-3QZ3-P5MW
+	// R-16DD-6AT6 R-3QZ3-P5MW
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
@@ -781,46 +792,143 @@ func streamAwaitNaturalExit(t *testing.T, trace, sid string) {
 	}
 }
 
-func TestStreamFetchTimerAfterNaturalExit(t *testing.T) {
-	// R-0H17-6FS7
-	f := setup(t)
-	repo := f.create("notes")
-	trace := filepath.Join(f.root, "late-fetch-trace.json")
-	f.gitRun("", "config", "--file", filepath.Join(f.root, "global"), "trace2.eventTarget", trace)
-	x := streamServer(f, false)
-	body := packet("command=ls-refs\n") + "0001" + packet("peel\n") + packet("symrefs\n") + "0000"
-	r, err := http.NewRequestWithContext(deadline(t), "POST", x.server.URL+"/notes.git/git-upload-pack", strings.NewReader(body))
-	must(t, err)
-	r.Header.Set("X-User-Id", "alice")
-	r.Header.Set("X-Request-Id", "late-fetch")
-	r.Header.Set("Git-Protocol", "version=2")
-	r.Header.Set("Content-Type", "application/x-git-upload-pack-request")
-	response, err := (&http.Client{Transport: x.transport}).Do(r)
-	must(t, err)
-	t.Cleanup(func() { _ = response.Body.Close() })
-	same(t, response.StatusCode, http.StatusOK)
-	// Empty ls-refs writes precisely a flush packet, so these four received
-	// bytes are the complete Git body, without requiring handler completion.
-	answer := make([]byte, 4)
-	_, err = io.ReadFull(response.Body, answer)
-	must(t, err)
-	same(t, string(answer), "0000")
-	timer := f.clock.take(t)
-	sid := streamBackend(t, streamTrace(t, trace))
-	streamAwaitNaturalExit(t, trace, sid)
-	// Delivery is after actual natural exit and all stdout reached the client.
-	// It is equally valid for ServeHTTP to have already returned here.
-	timer.fire <- epoch
-	same(t, string(streamBody(t, response)), "")
-	same(t, streamTake(t, x.done), "late-fetch")
-	var fetched []telemetry.Event
-	for _, event := range f.events() {
-		if event.RequestID == "late-fetch" && event.Name == "repo.fetched" {
-			fetched = append(fetched, event)
-		}
+type streamOutputGate struct {
+	blocked chan struct{}
+	resume  chan struct{}
+	entered sync.Once
+	once    sync.Once
+}
+
+func (g *streamOutputGate) write() {
+	g.entered.Do(func() { close(g.blocked) })
+	<-g.resume
+}
+
+func (g *streamOutputGate) release() { g.once.Do(func() { close(g.resume) }) }
+
+func streamLateServer(t *testing.T, f *fixture, pending bool) (*streamHTTP, *streamOutputGate) {
+	t.Helper()
+	gate := &streamOutputGate{blocked: make(chan struct{}), resume: make(chan struct{})}
+	option := streamServerOption{}
+	if pending {
+		option.write = gate.write
 	}
-	same(t, len(fetched), 1)
-	same(t, fetched[0].Attrs, telemetry.Attrs{"repo": repo.ID, "bytes": int64(0)})
+	x := streamServer(f, false, option)
+	t.Cleanup(gate.release)
+	return x, gate
+}
+
+func streamExactOutput(t *testing.T, response *http.Response, want string) {
+	t.Helper()
+	answer := make([]byte, len(want))
+	_, err := io.ReadFull(response.Body, answer)
+	must(t, err)
+	same(t, string(answer), want)
+}
+
+func streamEOF(t *testing.T, response *http.Response) {
+	t.Helper()
+	var tail [1]byte
+	n, err := response.Body.Read(tail[:])
+	same(t, n, 0)
+	if err != io.EOF {
+		t.Fatalf("response did not end cleanly: %v", err)
+	}
+	must(t, response.Body.Close())
+}
+
+func TestStreamFetchTimerAfterNaturalExit(t *testing.T) {
+	// R-17L9-K2JV R-1DOR-GX9C R-0H17-6FS7
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pending-output=%t", pending), func(t *testing.T) {
+			f := setup(t)
+			repo := f.create("notes")
+			trace := streamTraceConfig(f, "late-fetch")
+			x, gate := streamLateServer(t, f, pending)
+			body := packet("command=ls-refs\n") + "0001" + packet("peel\n") + packet("symrefs\n") + "0000"
+			r, err := http.NewRequestWithContext(deadline(t), "POST", x.server.URL+"/notes.git/git-upload-pack", strings.NewReader(body))
+			must(t, err)
+			r.Header.Set("X-User-Id", "alice")
+			r.Header.Set("X-Request-Id", "late-fetch")
+			r.Header.Set("Git-Protocol", "version=2")
+			r.Header.Set("Content-Type", "application/x-git-upload-pack-request")
+			response, err := (&http.Client{Transport: x.transport}).Do(r)
+			must(t, err)
+			t.Cleanup(func() { _ = response.Body.Close() })
+			same(t, response.StatusCode, http.StatusOK)
+			same(t, response.Header.Get("Content-Type"), "application/x-git-upload-pack-result")
+			// Empty ls-refs writes exactly one flush packet. In the second
+			// case that packet remains held at Write until after the deadline.
+			if pending {
+				streamTake(t, gate.blocked)
+			} else {
+				streamExactOutput(t, response, "0000")
+			}
+			timer := f.clock.take(t)
+			sid := streamBackend(t, streamTrace(t, trace))
+			streamAwaitNaturalExit(t, trace, sid)
+			timer.fire <- epoch
+			gate.release()
+			if pending {
+				streamExactOutput(t, response, "0000")
+			}
+			streamEOF(t, response)
+			same(t, streamTake(t, x.done), "late-fetch")
+			events := ownEvents(f.events())
+			same(t, len(events), 1)
+			same(t, events[0].Name, "repo.fetched")
+			same(t, events[0].RequestID, "late-fetch")
+			same(t, events[0].User, "alice")
+			same(t, events[0].Attrs, telemetry.Attrs{"repo": repo.ID, "bytes": int64(0)})
+			assertIdle(t, f, repo.ID)
+		})
+	}
+}
+
+func TestStreamPushTimerAfterNaturalExit(t *testing.T) {
+	// R-18T5-XUAK R-1DOR-GX9C R-3QZ3-P5MW
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pending-output=%t", pending), func(t *testing.T) {
+			f := setup(t)
+			repo := f.create("notes")
+			work := f.working("source")
+			sha := f.commit(work, "late push")
+			pack := streamPack(f, work, sha)
+			trace := streamTraceConfig(f, "late-push")
+			x, gate := streamLateServer(t, f, pending)
+			wr, reply := x.pipe(t, "git-receive-pack", "late-push")
+			// Without side-band the whole expected report is exact pkt-lines.
+			command := packet(zeroSHA+" "+sha+" refs/heads/main\x00report-status quiet\n") + "0000"
+			streamWrite(t, wr, append([]byte(command), pack...))
+			must(t, wr.Close())
+			response := streamHeaders(t, reply, "git-receive-pack")
+			want := packet("unpack ok\n") + packet("ok refs/heads/main\n") + "0000"
+			if pending {
+				streamTake(t, gate.blocked)
+			} else {
+				streamExactOutput(t, response, want)
+			}
+			timer := f.clock.take(t)
+			sid := streamBackend(t, streamTrace(t, trace))
+			streamAwaitNaturalExit(t, trace, sid)
+			timer.fire <- epoch
+			gate.release()
+			if pending {
+				streamExactOutput(t, response, want)
+			}
+			streamEOF(t, response)
+			same(t, streamTake(t, x.done), "late-push")
+			same(t, f.refs(repo.ID), "refs/heads/main "+sha+"\n")
+			f.gitRun("", "--git-dir="+f.store.Dir(repo.ID), "cat-file", "-e", sha)
+			events := ownEvents(f.events())
+			same(t, len(events), 1)
+			same(t, events[0].Name, "repo.pushed")
+			same(t, events[0].RequestID, "late-push")
+			same(t, events[0].User, "alice")
+			same(t, events[0].Attrs, telemetry.Attrs{"repo": repo.ID, "ref": "refs/heads/main", "old": zeroSHA, "new": sha})
+			assertIdle(t, f, repo.ID)
+		})
+	}
 }
 
 func streamTrace(t *testing.T, path string) []map[string]any {
