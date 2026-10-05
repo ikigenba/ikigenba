@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>run_3f9a1c2e8b7d4a60 · nightly-report · scripts</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<header>
+  <a class="mark" data-service="scripts" href="scripts.html">ikigenba</a>
+  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>Sign out</button></form>
+</header>
+
+<main>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <ol>
+      <li><a href="scripts.html">scripts</a></li>
+      <li><a href="scripts-script.html">nightly-report</a></li>
+      <li aria-current="page">run_3f9a1c2e8b7d4a60</li>
+    </ol>
+  </nav>
+  <h1>run_3f9a1c2e8b7d4a60</h1>
+  <p class="cluster"><span class="status" data-kind="ok">exited 0</span><span class="muted">started <time datetime="2026-10-05T09:14:02Z">2026-10-05 09:14:02 UTC</time> · 12s</span></p>
+
+  <section class="card" aria-labelledby="run-title">
+    <header><h2 id="run-title">Run</h2><p>Started by the <code>run</code> tool.</p></header>
+    <dl id="run" class="kv">
+      <dt>Status</dt><dd><span class="status" data-kind="ok">exited 0</span></dd>
+      <dt>Script</dt><dd><a href="scripts-script.html">nightly-report</a></dd>
+      <dt>Commit</dt><dd><code>e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d</code></dd>
+      <dt>Ref</dt><dd><code>main</code></dd>
+      <dt>Started</dt><dd><time datetime="2026-10-05T09:14:02Z">2026-10-05 09:14:02 UTC</time></dd>
+      <dt>Finished</dt><dd><time datetime="2026-10-05T09:14:14Z">2026-10-05 09:14:14 UTC</time></dd>
+      <dt>Duration</dt><dd>12s</dd>
+      <dt>Trigger</dt><dd>manual</dd>
+      <dt>User</dt><dd>ada@acme.dev</dd>
+      <dt>Request</dt><dd><code>req_2f8e1a9c4b7d3605</code></dd>
+      <dt>Output</dt><dd>stdout 1.2 kB · stderr 0 B</dd>
+    </dl>
+  </section>
+
+  <section id="input" class="card" aria-labelledby="input-title">
+    <header><h2 id="input-title">Input</h2><p><code>input.json</code>, 86 B</p><div class="actions"><a class="button secondary small" href="#" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+<pre><code>{
+  "since": "2026-10-04",
+  "channels": ["sales", "support"],
+  "dry_run": false
+}</code></pre>
+  </section>
+
+  <section id="stdout" class="card" aria-labelledby="stdout-title">
+    <header><h2 id="stdout-title">Standard output</h2><p><code>stdout</code>, 1.2 kB</p><div class="actions"><a class="button secondary small" href="#" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+<pre><code>reading events since 2026-10-04 from telemetry
+  sales:    312 events
+  support:  127 events
+rendering report
+wrote out/report.html (48,211 bytes)
+wrote out/report.csv (7,904 bytes)
+posting summary to crm
+done in 11.6s</code></pre>
+  </section>
+
+  <section id="stderr" class="card" aria-labelledby="stderr-title">
+    <header><h2 id="stderr-title">Standard error</h2><p><code>stderr</code>, 0 B</p><div class="actions"><a class="button secondary small" href="#" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+    <p class="muted">No output.</p>
+  </section>
+
+  <section id="files" class="card flush" aria-labelledby="files-title">
+    <header>
+      <div>
+        <h2 id="files-title">Files</h2>
+        <p>What the script wrote under <code>out/</code>. Each downloads as a file.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="file-list">
+        <thead><tr><th>File</th><th class="num">Size</th><th></th></tr></thead>
+        <tbody>
+          <tr data-file="report.html"><td><code>report.html</code></td><td class="num">48.2 kB</td><td class="row-actions"><a class="button ghost small" href="#" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></td></tr>
+          <tr data-file="report.csv"><td><code>report.csv</code></td><td class="num">7.9 kB</td><td class="row-actions"><a class="button ghost small" href="#" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></td></tr>
+          <tr data-file="charts/sales.svg"><td><code>charts/sales.svg</code></td><td class="num">12.0 kB</td><td class="row-actions"><a class="button ghost small" href="#" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shapes a run takes: the headline and the run card change; the output sections show what exists.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div class="stack">
+        <h3 class="text-md">Still running</h3>
+        <div class="card">
+          <p class="cluster"><span class="status" data-kind="info">running</span><span class="muted">started <time datetime="2026-10-05T09:31:40Z">2026-10-05 09:31:40 UTC</time></span></p>
+          <div class="alert quiet" data-kind="info"><strong>Running</strong><p>The page does not stream. Reload it to see more output.</p></div>
+          <p><a class="button secondary small" href="#"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
+        </div>
+      </div>
+      <div class="stack">
+        <h3 class="text-md">Timed out</h3>
+        <div class="card">
+          <p class="cluster"><span class="status" data-kind="warn">timed out</span><span class="muted">started <time datetime="2026-10-03T09:14:02Z">2026-10-03 09:14:02 UTC</time> · 10m 0s</span></p>
+          <dl class="kv">
+            <dt>Status</dt><dd><span class="status" data-kind="warn">timed out</span> <span class="badge" data-kind="warn">output truncated</span></dd>
+            <dt>Output</dt><dd>stdout 1.0 MB (truncated) · stderr 212 B</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="stack">
+        <h3 class="text-md">Failed to start</h3>
+        <div class="card">
+          <p class="cluster"><span class="status" data-kind="err">failed</span><span class="muted"><time datetime="2026-10-01T09:14:02Z">2026-10-01 09:14:02 UTC</time></span></p>
+          <div class="alert" data-kind="err"><strong>The ref did not resolve</strong><p><code>release</code> names no commit in the repository nightly-report. The script was not started.</p></div>
+        </div>
+      </div>
+      <div class="stack">
+        <h3 class="text-md">Files gone</h3>
+        <div class="card">
+          <p class="cluster"><span class="status" data-kind="ok">exited 0</span><span class="muted">started <time datetime="2026-09-20T09:14:02Z">2026-09-20 09:14:02 UTC</time> · 11s</span></p>
+          <div class="alert quiet"><strong>Files no longer kept</strong><p>This run's folder is gone, so its input, output and files cannot be shown. The record stays.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>scripts v0.1.0</footer>
+<script src="lab.js"></script>
+</body>
+</html>

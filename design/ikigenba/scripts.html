@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scripts</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<header>
+  <a class="mark" data-service="scripts" href="scripts.html">ikigenba</a>
+  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>Sign out</button></form>
+</header>
+
+<main>
+  <h1>scripts</h1>
+  <p id="summary" class="lede">Python scripts run from repositories that repos holds. An agent creates a script from one of your repositories and runs it; every run keeps its folder, output and outcome here.</p>
+
+  <section id="scripts" class="card flush" aria-labelledby="scripts-title">
+    <header>
+      <div>
+        <h2 id="scripts-title">Your scripts</h2>
+        <p>Each one is a repository and a ref. A run checks the ref out and runs <code>main.py</code>.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="script-list">
+        <thead><tr><th>Script</th><th>Repository</th><th>Ref</th><th>Last run</th><th>When</th></tr></thead>
+        <tbody>
+          <tr data-script="nightly-report">
+            <td class="script-name"><a class="script-link" href="scripts-script.html">nightly-report</a></td>
+            <td class="script-repo"><span title="rep_9c2e4b7a1d3f8e05">nightly-report</span></td>
+            <td class="script-ref">main</td>
+            <td class="script-last"><span class="status" data-kind="ok">exited 0</span></td>
+            <td class="script-when"><time datetime="2026-10-05T09:14Z">2026-10-05 09:14</time></td>
+          </tr>
+          <tr data-script="sync-crm">
+            <td class="script-name"><a class="script-link" href="#">sync-crm</a></td>
+            <td class="script-repo"><span title="rep_41d8f0a6b2c97e13">crm-sync</span></td>
+            <td class="script-ref">main</td>
+            <td class="script-last"><span class="status" data-kind="info">running</span></td>
+            <td class="script-when"><time datetime="2026-10-05T09:31Z">2026-10-05 09:31</time></td>
+          </tr>
+          <tr data-script="rotate-keys">
+            <td class="script-name"><a class="script-link" href="#">rotate-keys</a></td>
+            <td class="script-repo"><span title="rep_7b3e9a0c5d1f2846">ops-tools</span></td>
+            <td class="script-ref">release</td>
+            <td class="script-last"><span class="status" data-kind="err">failed</span></td>
+            <td class="script-when"><time datetime="2026-10-04T22:00Z">2026-10-04 22:00</time></td>
+          </tr>
+          <tr data-script="backfill">
+            <td class="script-name"><a class="script-link" href="#">backfill</a></td>
+            <td class="script-repo"><span class="muted" title="the repository is gone">rep_0f6a2d9e8c4b7153</span></td>
+            <td class="script-ref">main</td>
+            <td class="script-last muted">never run</td>
+            <td class="script-when"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="tools-title">
+    <header><h2 id="tools-title">MCP tools</h2><p>Agents manage and run scripts with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
+    <dl id="tools" class="kv">
+      <dt data-tool="list"><code>list</code></dt><dd>The scripts you own, by name.</dd>
+      <dt data-tool="show"><code>show</code></dt><dd>One of your scripts, with its repository, its ref and its last run.</dd>
+      <dt data-tool="create"><code>create</code></dt><dd>Create a script from one of your repositories and a ref.</dd>
+      <dt data-tool="update"><code>update</code></dt><dd>Change the ref one of your scripts runs from.</dd>
+      <dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your scripts and every run it has.</dd>
+      <dt data-tool="run"><code>run</code></dt><dd>Start a run of one of your scripts and return its id, status and commit.</dd>
+      <dt data-tool="runs"><code>runs</code></dt><dd>The runs of one of your scripts, newest first.</dd>
+      <dt data-tool="result"><code>result</code></dt><dd>One run whole: its details, its output so far, and the files it wrote.</dd>
+      <dt data-tool="cancel"><code>cancel</code></dt><dd>End one of your runs that is still running.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shape this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No scripts</h3>
+      <div class="empty">
+        <h3 class="text-md">No scripts yet</h3>
+        <p>A script you create with the <code>create</code> tool, from one of your repositories, shows up here.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>scripts v0.1.0</footer>
+<script src="lab.js"></script>
+</body>
+</html>

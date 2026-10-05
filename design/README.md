@@ -19,6 +19,11 @@ design/
     launcher.html   the banner's service launcher, open, filtered, empty, disabled
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
+    scripts.html    scripts' catalog: your scripts and their last runs
+    scripts-script.html
+                    one script and its runs, under a breadcrumb
+    scripts-run.html
+                    one run: details, input, output, files, other states
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
 ```
@@ -43,6 +48,11 @@ design/
   container.
 - Visible focus states. Errors are stated in words, with an icon, as well as
   in color.
+- A page below the root of a hierarchy opens with a breadcrumb: a
+  `nav.crumbs` labelled `Breadcrumb`, holding an ordered list, root first,
+  each level a link except the last, the current page, which carries
+  `aria-current="page"` and no link. The root page has none; its `h1` is the
+  root. The `h1` beneath repeats the current level's name.
 - Every page ends with the feedback script (`ikigenba/feedback.js`), then the
   lab toolbar script (`ikigenba/lab.js`).
 
@@ -90,6 +100,33 @@ systems. The product name is **Ikigenba**. The example space is
   `svg.ico`, and leaves the icon without `aria-hidden` (the link text names
   the service).
 
+**scripts.html, scripts-script.html, scripts-run.html** — scripts at
+`scripts.acme.ikigenba.com`, three levels deep: the catalog, one script, one
+run. Banner and footer as in app.html, the service `scripts`, `scripts v0.1.0`.
+- The catalog: `h1` scripts, a lede, the user's own scripts (never another
+  user's) as a table of Script / Repository / Ref / Last run / When:
+  `nightly-report` (exited 0), `sync-crm` (running), `rotate-keys` (failed),
+  `backfill` (never run). The catalog stores a repository as its `rep_` id;
+  a page resolves the name from the repository's directory when it renders,
+  the id in the cell's `title`, and shows the id, muted, when the directory
+  is gone (`backfill`). An MCP
+  tools list naming `list`, `show`, `create`, `update`, `delete`, `run`,
+  `runs`, `result`, `cancel`. State: no scripts.
+- One script, `nightly-report`: breadcrumb scripts / nightly-report; a key/
+  value card (id, repository, ref, created, runs kept); the runs table, newest
+  first, Run / Status / Commit / Started / Duration / Exit, with one row per
+  status. The repository shows its name over its id as secondary text.
+  State: no runs.
+- One run: breadcrumb scripts / nightly-report / `run_3f9a1c2e8b7d4a60`; a
+  headline of status, start time and duration; the run card (status, script,
+  commit, ref, started, finished, duration, trigger, user, request, output
+  sizes); then Input, Standard output, Standard error, each a `pre` with a
+  Download button, and Files, the `out/` folder as a table with a download
+  per file. States: still running (reload, no streaming), timed out with
+  output truncated, failed to start with its reason, files gone.
+- Run status reads as a `.status` word: running is info, exited 0 is ok,
+  a non-zero exit, timed out and killed are warn, failed is err.
+
 **login.html** — auth at `auth.acme.ikigenba.com`.
 - Sign-in: product mark, "Sign in to acme", note that access is limited to
   `@acme.dev` Google accounts, `Continue with Google` (links `/login/google`).
@@ -125,6 +162,9 @@ error; a key/value list; a card/panel; an empty state.
   `data-status` (active, paused, retired).
 - Alerts: `.alert` (white card, colored icon), `.alert.callout` (adds a
   colored left edge), `.alert.quiet` (grey fill).
+- Breadcrumbs: `nav.crumbs > ol`, small and muted, levels separated by a
+  faint `/`, the current page in the foreground color. They wrap on a narrow
+  screen.
 - Field errors: message only. The input keeps its normal border; the red
   message with its icon beneath it, matched by `[id$="-error"]`, carries the
   error.
