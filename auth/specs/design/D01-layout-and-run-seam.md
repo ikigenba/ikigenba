@@ -33,8 +33,8 @@ auth's: auth is the identity provider, so no identity gate stands in front of
 it (D08), and its own code never reads the services file, which `page` and
 telemetry's socket sink read through appkit's `services` package. appkit owns
 the banner's markup, the launcher's markup and script, the page footer's
-markup, the stylesheet, the fonts and their licences; auth authors none of
-them and carries no copy.
+markup, the feedback script, the stylesheet, the fonts and their licences;
+auth authors none of them and carries no copy.
 
 The style files come from appkit, which serves them itself (D08). The pages
 auth draws are its own templates in `internal/server` (D05, D07), drawn around

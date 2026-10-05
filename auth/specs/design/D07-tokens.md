@@ -26,9 +26,9 @@ with no banner.
 D05 owns the words every page auth draws is described in, and this design uses
 them by name without restating them: an **auth page** and what it carries in
 its head (the title `auth`, the stylesheet at `/_appkit/theme.css`, the
-phone-width viewport, nothing loaded from another host, every outside value
-escaped); a page **drawn with the banner** for a user, whose banner is
-appkit's, drawn from the data the server's `Banner` function returns, as is
+deferred feedback script at `/_appkit/feedback.js`, the phone-width viewport,
+nothing loaded from another host, every outside value escaped); a page
+**drawn with the banner** for a user, whose banner is appkit's, drawn from the data the server's `Banner` function returns, as is
 the footer that ends it, and the page's **written markup**, the page with that
 banner and footer taken out, which is what
 auth's own markup rules read; a **card titled** a name; an
@@ -149,52 +149,23 @@ page: the button carries no copy of it, and nothing auth sends afterward
 carries it. The plaintext is the second return of `CreateToken`, of the form
 `ikp_` followed by 52 Crockford base32 characters; only its hash is stored.
 
-`Copy` works through one inline script, which reads the `code` element's text
-and writes it to the clipboard with `navigator.clipboard.writeText`. The
-Clipboard API's `writeText` "writes the specified text to the system
-clipboard" and is available only in a secure context (MDN,
-`Clipboard.writeText()`; the W3C Clipboard API declares the interface
-`[SecureContext, Exposed=Window]`). auth's pages qualify, because every page
-auth serves is a secure context: a space serves auth over `https`, and a
-document delivered over `https` is a secure context (MDN, Secure contexts);
-a sandbox serves auth over plain `http`, but at a name under `localhost`,
-which the W3C Secure Contexts specification (§3.1, "Is origin potentially
-trustworthy?") counts as potentially trustworthy and browsers treat as a
-secure context.
-Firefox and Safari require transient activation for a write and Chromium
-requires it or the `clipboard-write` permission (MDN, Clipboard API, security
-considerations); the write happens in the handler of the button's own click,
-which supplies it. The button's `type` is `button`, the type that "does
-nothing" by itself (WHATWG HTML, the `button` element), so a click submits
-nothing.
-
-The script is inline, with no `src`, for the reason the stylesheet is a file:
-the files auth serves under `/_appkit/` are appkit's fixed set of shared files,
-and this script is not one of them. It must also keep D05's promise that
-auth's written markup loads nothing from any other host, which D05's attribute rules cannot see
-inside a script. No gate runs JavaScript, so the script is pinned by what a
-standard-library test can read: its start tag is exactly `<script>`, with no
-`type`, `nomodule`, or other attribute that could keep it from running, and
-its source, apart from ASCII whitespace, is exactly one fixed statement — a
-`click` listener on the `button` child of the `secret` div
-(`document.querySelector`, MDN: "returns the first Element within the
-document that matches the specified selector"; `>` is the CSS child
-combinator) that passes the text of that div's `code` child to
-`navigator.clipboard.writeText`. No tag in the page's written markup but the
-secret div's mentions `secret` in any letter case, and no tag there holds a
+`Copy` works through appkit's button feedback script, which every auth page
+links in its head (D05): it copies the text of the `code` element beside a
+`button` that is a child of a `.secret` element and shows a toast saying it
+did, or, when copying fails, selects that text and shows an error toast. That
+behaviour is appkit's, fixed by appkit's design and not by this one, and no
+test here runs it: the gates have no JavaScript engine. The page carries no
+script of its own beyond that link. What this design fixes is the hook the script keys on: the
+`secret` div holding the `code` element and the `Copy` button, whose `type`
+is `button`, the type that "does nothing" by itself (WHATWG HTML, the
+`button` element), so a click submits nothing. Because the script finds the
+secret by that class, no tag in the page's written markup but the secret
+div's mentions `secret` in any letter case, and no tag there holds a
 character reference that could spell it; the banner above it is appkit's
 markup, whose own classes are fixed by appkit's design, and whose launcher
 icons are written only by opsctl, which validates each (appkit's D02 and
-D05). So the selectors find the Copy button and the secret and nothing else.
-Pinning the text apart from whitespace is the only form a text test can
-decide; a looser rule admits an extra listener or a wrapper that never runs.
-The source is further held to whitespace, letters, a short list of
-punctuation, and twelve fixed words, so that whitespace can never split a word
-(`docu ment`) or pad a quoted string (`'click '`) into something the whitespace-free comparison would accept. That
-statement assigns nothing, names no URL, and reaches no API that fetches,
-navigates, loads, or evaluates code. D05 bars every other script from auth's
-written markup; the one other script a page may carry is the launcher's, which
-is part of appkit's banner.
+D05). So the script's selector finds the Copy button and the secret and
+nothing else.
 
 ## REQUIREMENTS
 
@@ -235,11 +206,10 @@ is part of appkit's banner.
 - R-W12X-XY5J: A create-token form whose name is not in error MUST hold, between its `input` start tag and its `label` start tag for `token-expires`, exactly one `span` element, whose start tag carries `class` reading `hint` and whose content reads `Something that tells you where it's used. Up to 64 characters.`, MUST hold no start tag carrying `id` reading `token-name-error`, and its `input` start tag MUST NOT mark `aria-describedby`; a create-token form whose name is in error MUST hold, between those two start tags, exactly one `span` element, whose start tag carries `id` reading `token-name-error` and whose content reads `the name must be 1 to 64 characters`, MUST hold no `span` start tag carrying `class` reading `hint`, and its `input` start tag MUST carry `aria-describedby` reading `token-name-error`.
 - R-W2AU-BPW8: A create-token form whose expiry is not in error MUST hold no `span` start tag after its `</select>` end tag and no start tag carrying `id` reading `token-expires-error`, and its `select` start tag MUST NOT mark `aria-describedby`; a create-token form whose expiry is in error MUST hold, between its `</select>` end tag and its `button` start tag, exactly one `span` element, whose start tag carries `id` reading `token-expires-error`, and whose content reads `choose one of the listed expiry options`, and its `select` start tag MUST carry `aria-describedby` reading `token-expires-error`.
 - R-TWZ0-QYJY: The rejected-create page's create-token form MUST hold exactly one `div` start tag, which carries `class` reading `actions`, and that `div` element's content MUST consist of the form's `button` element followed by an `a` element whose start tag carries `class` reading `button ghost` and `href` reading `/` and whose content reads `Cancel`; the form MUST hold no other `a` start tag.
-- R-01IU-97UB: The `200 OK` body R-N5RR-K5GT requires — the **token-created page** — MUST be an auth page drawn with the banner for the cookie's user, whose `main` element's content consists of exactly one card titled `Token created`, whose `section` start tag carries `class` reading `card`, followed by exactly one `script` element.
+- R-ZCG2-ZOOK: The `200 OK` body R-N5RR-K5GT requires — the **token-created page** — MUST be an auth page drawn with the banner for the cookie's user, whose `main` element's content consists of exactly one card titled `Token created`, whose `section` start tag carries `class` reading `card`.
 - R-1KEB-GW7K: The token-created page's card MUST have content consisting of, in this order: its `header` element; a `div` element whose start tag carries `class` reading `alert quiet` and `data-kind` reading `warn` and which is an alert titled `Copy it now` reading `This is the only time <name> is shown. Only its hash is stored.`, where `<name>` is the created token's trimmed name with every run of ASCII whitespace in it replaced by a single space; a `div` element whose start tag carries `class` reading `secret`; and either an `a` element or a `p` element whose content consists of an `a` element, that `a` element's start tag carrying `href` reading `/` and its content reading `Back to your account`; and the card MUST hold no other `a` start tag.
 - R-1BV0-SI0P: The content of the token-created page's `div` element whose start tag carries `class` reading `secret` MUST consist of a `code` element whose content is exactly the plaintext secret `CreateToken` (D04) returned as its second result, followed by a `button` element whose start tag carries `class` reading `secondary` and `type` reading `button` and which is drawn with the copy icon and the word `Copy`.
 - R-1LM7-UNY9: The plaintext secret `CreateToken` (D04) returned for a successful `POST /tokens` MUST occur exactly once in the bytes of the token-created page, inside the content of the `code` element of R-1BV0-SI0P, and MUST NOT occur in the bytes of any other response auth sends other than within a value a requirement of auth's design has auth write from that response's request or from a token's `Name`.
-- R-0SCM-O65L: The token-created page's written markup (R-056J-EJ2E) MUST hold exactly one `script` start tag, which MUST be exactly the characters `<script>`, and exactly one `</script>` end tag; in that `script` element's content, every character MUST be ASCII whitespace, an ASCII letter, or one of `.`, `(`, `)`, `{`, `}`, `;`, `,`, `'`, and `>`, and every maximal run of ASCII letters (a **word**) MUST be one of `document`, `querySelector`, `addEventListener`, `click`, `function`, `navigator`, `clipboard`, `writeText`, `textContent`, `secret`, `button`, and `code`; ASCII whitespace MUST NOT lie between the first and second `'` of that content, between its third and fourth `'`, or between any later such pair; and that content with every ASCII whitespace character removed MUST be exactly `document.querySelector('.secret>button').addEventListener('click',function(){navigator.clipboard.writeText(document.querySelector('.secret>code').textContent);});` and nothing else.
 - R-0TKJ-1XWA: In the token-created page's written markup (R-056J-EJ2E), the start tag of the `div` element R-1BV0-SI0P describes MUST be the only tag span that contains `secret` matched ASCII case-insensitively, and every tag span of it MUST NOT contain `&`.
 - R-TW3J-4Z41: For each `POST /tokens` auth answers `200 OK` (R-N5RR-K5GT), auth MUST record (D05) exactly one event named `token.minted`, whose envelope request id is the request's request id (D05), whose envelope user is the user id of the `ikigenba_session` cookie's user, the owner of the created token, and whose attributes are exactly the one key `token` with the `string` value of the created token's `ID`.
 - R-9RMT-85YC: For each `POST /tokens/<id>/enable` (respectively `/disable`) auth answers `302 Found` (R-ND35-URWZ) for which the token `<id>` names had `Enabled` false (respectively true) before the request, auth MUST record exactly one event named `token.enabled` (respectively `token.disabled`), whose envelope request id is the request's request id (D05), whose envelope user is the user id of the `ikigenba_session` cookie's user, and whose attributes are exactly the one key `token` with the `string` value `<id>`; for such a request whose token already had `Enabled` true (respectively false), auth MUST record no `token.enabled` or `token.disabled` event.
