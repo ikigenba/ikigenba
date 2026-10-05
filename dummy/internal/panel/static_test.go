@@ -13,6 +13,7 @@ import (
 var sharedFiles = []struct{ name, contentType string }{
 	{"theme.css", "text/css; charset=utf-8"},
 	{"launcher.js", "text/javascript; charset=utf-8"},
+	{"feedback.js", "text/javascript; charset=utf-8"},
 	{"InterVariable.woff2", "font/woff2"},
 	{"InterVariable-Italic.woff2", "font/woff2"},
 	{"JetBrainsMono.woff2", "font/woff2"},
@@ -36,7 +37,7 @@ func staticStrongTag(tag string) bool {
 	return true
 }
 
-// R-14PZ-ZBP7 R-19LL-IENZ
+// R-HK7I-NVZV R-19LL-IENZ
 func TestSharedStaticDelegation(t *testing.T) {
 	if page.StaticPrefix != "/_appkit/" {
 		t.Fatalf("static prefix = %q", page.StaticPrefix)
@@ -67,7 +68,7 @@ func TestSharedStaticDelegation(t *testing.T) {
 	}
 }
 
-// R-M86B-4IU6 R-1FP3-F9DG R-M9E7-IAKV
+// R-HLFF-1NQK R-1FP3-F9DG R-M9E7-IAKV
 func TestSharedStaticContentAndCache(t *testing.T) {
 	first, second := staticTestHandler(t), staticTestHandler(t)
 	for _, file := range sharedFiles {
@@ -170,7 +171,7 @@ func TestSharedStaticMissingPaths(t *testing.T) {
 	}
 }
 
-// R-I1RX-6HTN
+// R-HMNB-FFH9
 func TestSharedStaticHead(t *testing.T) {
 	h := staticTestHandler(t)
 	for _, file := range sharedFiles {

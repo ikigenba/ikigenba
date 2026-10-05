@@ -688,7 +688,50 @@ func TestPageHeaderValuesPreserveEveryDocumentShape(t *testing.T) {
 	}
 }
 
-// R-YOZG-4HLD R-YSN5-9STG R-0F6B-MSES R-2L7W-43V8
+func pageTestInlineScripts(body string) [][2]int {
+	var inline [][2]int
+	for _, start := range pageTestTags(body, "script", false) {
+		tag := body[start[0]:start[1]]
+		_, hasSource := pageTestAttribute(tag, "src")
+		if !hasSource && !pageTestBareAttribute(tag, "src") {
+			inline = append(inline, start)
+		}
+	}
+	return inline
+}
+
+// R-HGJT-IKRS
+func TestPageDeferredFeedbackScript(t *testing.T) {
+	for _, services := range [][]page.Service{nil, {{Name: "other", URL: "/other", Enabled: true}}} {
+		for _, r := range pageTestDocuments() {
+			h := coreHandler(t, panelTestStore(), pageTestEchoingBanner(services), io.Discard)
+			data := pageTestBannerData(r)
+			data.Services = services
+			body := frameTestWritten(t, pageTestResponse(h, r).Body.String(), data)
+			bodies := pageTestTags(body, "body", false)
+			if len(bodies) == 0 {
+				t.Fatal("document has no body start tag")
+			}
+			count := 0
+			for _, span := range pageTestTags(body, "script", false) {
+				tag := body[span[0]:span[1]]
+				if src, ok := pageTestAttribute(tag, "src"); !ok || src != "/_appkit/feedback.js" {
+					continue
+				}
+				count++
+				_, deferValue := pageTestAttribute(tag, "defer")
+				if span[0] >= bodies[0][0] || !deferValue && !pageTestBareAttribute(tag, "defer") {
+					t.Fatalf("feedback script must precede body and be deferred: %q", tag)
+				}
+			}
+			if count != 1 {
+				t.Fatalf("%s %s: feedback script count = %d", r.Method, r.URL.Path, count)
+			}
+		}
+	}
+}
+
+// R-YOZG-4HLD R-YSN5-9STG R-HIZM-A496
 func TestPageScriptAndDocumentOrder(t *testing.T) {
 	requests := append(pageTestDocuments(), pageTestRequest("GET", "/widgets/table"), pageTestRequest("POST", "/widgets/table"), pageTestRequest("GET", "/"))
 	missing := pageTestRequest("GET", "/widgets")
@@ -713,13 +756,15 @@ func TestPageScriptAndDocumentOrder(t *testing.T) {
 		if r.URL.Path != "/widgets" || (w.Code != 200 && w.Code != 422) {
 			continue
 		}
-		if len(starts) != 1 || len(ends) != 1 {
+		inline := pageTestInlineScripts(body)
+		if len(inline) != 1 {
 			t.Fatal("panel requires exactly one inline script")
 		}
-		script := body[starts[0][1]:ends[0][0]]
-		if _, has := pageTestAttribute(body[starts[0][0]:starts[0][1]], "src"); has {
-			t.Fatal("external script")
+		end := pageTestTags(body[inline[0][1]:], "script", true)
+		if len(end) == 0 {
+			t.Fatal("inline script is not closed")
 		}
+		script := body[inline[0][1] : inline[0][1]+end[0][0]]
 		for _, literal := range []string{"/widgets/table", "widgets-table", "5000"} {
 			if !strings.Contains(script, literal) {
 				t.Fatalf("script lacks %s", literal)
@@ -727,7 +772,7 @@ func TestPageScriptAndDocumentOrder(t *testing.T) {
 		}
 		tables := pageTestTags(body, "table", false)
 		tableEnds := pageTestTags(body, "table", true)
-		if len(tables) != 1 || len(tableEnds) != 1 || (starts[0][0] > tables[0][0] && starts[0][0] < tableEnds[0][1]) {
+		if len(tables) != 1 || len(tableEnds) != 1 || (inline[0][0] > tables[0][0] && inline[0][0] < tableEnds[0][0]) {
 			t.Fatal("script inside table")
 		}
 		content := pageTestContent(t, stripped)
@@ -923,7 +968,7 @@ func TestPagePanelLayout(t *testing.T) {
 	}
 }
 
-// R-0AAQ-3PG0 R-0CQI-V8XE R-0F6B-MSES R-0HM4-EBW6 R-0K1X-5VDK R-0MHP-XEUY
+// R-0AAQ-3PG0 R-0CQI-V8XE R-HHRP-WCIH R-0HM4-EBW6 R-0K1X-5VDK R-0MHP-XEUY
 func TestPageDocumentMarkupSafety(t *testing.T) {
 	requests := pageTestDocuments()
 	attack := `"><svg onload="evil()"><script src="https://elsewhere.test/x">`
@@ -985,7 +1030,7 @@ func TestPageDocumentMarkupSafety(t *testing.T) {
 				if key == "style" || key == "ping" || key == "srcdoc" || key == "http-equiv" || strings.HasPrefix(key, "on") && len(key) > 2 && regexp.MustCompile(`^[a-z]+$`).MatchString(key[2:]) {
 					t.Fatalf("forbidden attribute %q in %q", key, matched)
 				}
-				if name == "script" && (key == "src" || key == "href" || key == "xlink:href") {
+				if name == "script" && (key == "src" && value != "/_appkit/feedback.js" || key == "href" || key == "xlink:href") {
 					t.Fatalf("external script: %q", matched)
 				}
 				if name != "a" {

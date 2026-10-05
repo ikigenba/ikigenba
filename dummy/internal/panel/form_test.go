@@ -555,15 +555,17 @@ func assertFormPanel(t *testing.T, body string) {
 	if !strings.HasPrefix(inside, card) || !formASCIIWhitespace(inside[len(card):]) {
 		t.Fatal("422 panel wrapper does not end with form card")
 	}
-	starts, ends := pageTestTags(body, "script", false), pageTestTags(body, "script", true)
-	if len(starts) != 1 || len(ends) != 1 || starts[0][1] > ends[0][0] {
-		t.Fatal("422 lacks panel script pair")
+	starts := pageTestInlineScripts(body)
+	if len(starts) != 1 {
+		t.Fatal("422 requires exactly one inline panel script")
 	}
-	if _, present := pageTestAttribute(body[starts[0][0]:starts[0][1]], "src"); present {
-		t.Error("422 panel script loads external source")
+	ends := pageTestTags(body[starts[0][1]:], "script", true)
+	if len(ends) == 0 {
+		t.Fatal("422 lacks panel script end tag")
 	}
+	end := starts[0][1] + ends[0][0]
 	for _, literal := range []string{"/widgets/table", "widgets-table", "5000"} {
-		if !strings.Contains(body[starts[0][1]:ends[0][0]], literal) {
+		if !strings.Contains(body[starts[0][1]:end], literal) {
 			t.Errorf("422 panel script lacks %q", literal)
 		}
 	}
