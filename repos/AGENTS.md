@@ -64,7 +64,7 @@ These rules govern everything `go test ./...` runs. Tests are offline (loopback 
 
 **MCP through appkit's client.** A test drives `/mcp` as a client would: it serves its handler on loopback or a Unix socket and calls it with appkit's `mcp.Client`, which forwards the caller's identity headers, and asserts on the `mcp.Result` and `mcp.ToolInfo` returned. Raw HTTP to `/mcp` is only for what the client cannot send, such as a missing identity header or `server/discover`. repos' tests never re-prove appkit's transport.
 
-**No test runs the page's scripts.** The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it.
+**No test runs the page's scripts.** Every page carries appkit's feedback script. The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it.
 
 **No test reads the checkout.** A test opens no file of this directory, not `.go`, `go.mod`, `go.sum`, `etc/`, `share/` or `assets/`, and never parses source. It proves what design declares by using it. Handing `cmd/repos` to `go build` is not reading it.
 

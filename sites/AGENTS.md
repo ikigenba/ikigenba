@@ -241,10 +241,10 @@ Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns.
 sites' tests never re-prove appkit's transport.
 
 **No test runs the page's scripts.** The pages carry appkit's launcher script
-when there are services. The gates have no browser and no JavaScript engine,
-and adding one is an external dependency no one has approved, so a test
-asserts what a response body carries and never what a script would do with
-it. A site's own files are bytes sites relays; a test asserts that they are
+when there are services, and every page carries appkit's feedback script.
+The gates have no browser and no JavaScript engine, and adding one is an
+external dependency no one has approved, so a test asserts what a response
+body carries and never what a script would do with it. A site's own files are bytes sites relays; a test asserts that they are
 served unaltered, never what they do in a browser.
 
 **No test reads the checkout.** A test opens no file of this directory — no

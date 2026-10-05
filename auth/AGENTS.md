@@ -61,7 +61,7 @@ These rules govern everything `go test ./...` runs. Tests are offline (loopback 
 
 **stderr is asserted only for trouble.** A handled failure, a 500 from a failed store or a 502 from a failed Google, is asserted through the `request.finished` status, the domain events, and `Stderr` staying empty. Exact `Stderr` bytes are asserted only for a condition auth cannot continue from (a refused start, a database that will not open, a failed `READY=1`, a failed or overrun `Serve`) and for the writer's `auth: undelivered event: ` lines.
 
-**No test runs the page's scripts.** The pages carry the Copy button's inline script and, when there are services, appkit's launcher script. The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it.
+**No test runs the page's scripts.** The pages carry appkit's feedback script and, when there are services, appkit's launcher script. The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it.
 
 **No test reads the checkout.** A test opens no file of this module, not source, `go.mod`, `go.sum`, `etc/` or `share/`, walks no directory, and never parses or reflects over code. It proves structure by use: importing the package, constructing the type, calling the function, or running the built binary in the one exec'ing test.
 

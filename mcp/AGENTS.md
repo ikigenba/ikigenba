@@ -20,7 +20,7 @@ mcp holds no stylesheet, fonts or licences; appkit's `page` package serves them.
 
 - Go 1.26 or later.
 - A C compiler cgo can use, such as `gcc`: `go test -race` needs it (gate 4). The release build is cgo-free (gate 3).
-- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit `v0.9.0`, whose `identity` package exports `Optional`, the middleware that lets a guest through with an empty caller (see Adopting appkit).
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit `v0.10.0`, whose `identity` package exports `Optional`, the middleware that lets a guest through with an empty caller (see Adopting appkit).
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
@@ -29,7 +29,7 @@ Prefer the standard library, then a widely used public module; adding one needs 
 
 ### Adopting appkit
 
-appkit is required only at a published release, `appkit/<version>` on origin (see the root `AGENTS.md`); the build run sets it with `go get github.com/ikigenba/ikigenba/appkit@v0.9.0`.
+appkit is required only at a published release, `appkit/<version>` on origin (see the root `AGENTS.md`); the build run sets it with `go get github.com/ikigenba/ikigenba/appkit@v0.10.0`.
 
 ## Test files
 
@@ -61,7 +61,7 @@ These rules govern everything `go test ./...` runs. Tests are offline (loopback 
 
 **MCP through appkit's client.** A test drives `/mcp` as a client would: it serves its handler on loopback or a Unix socket and calls it with appkit's `mcp.Client`, which forwards the caller's identity headers. Raw HTTP to `/mcp` is only for what the client cannot send (a missing, duplicated or empty identity header, a malformed scope path, a method other than POST, a request on an earlier protocol revision, `initialize` or `server/discover`) and for comparing the gateway's answer with appkit's server's answer to the same request. Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns, on the events the test's capture holds, and on what the test captured in a buffer of its own. The gateway's tests never re-prove appkit's transport.
 
-**No test runs the page's scripts.** The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it.
+**No test runs the page's scripts.** Every page carries appkit's feedback script. The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it.
 
 **No test reads the checkout.** A test opens no file of this directory, not `.go`, `go.mod`, `go.sum`, `etc/`, `share/` or `assets/`, and never parses source. Handing `cmd/mcp` to `go build` is not reading it.
 

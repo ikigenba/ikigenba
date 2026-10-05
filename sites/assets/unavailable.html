@@ -3,7 +3,8 @@
      banner, because a guest may see it; footer only. Data: .Banner (a
      page.Banner, for the footer; its .Email may be empty). Hooks: h1 with
      text "Site unavailable"; p#unavailable with text "This site is not
-     available right now. Try again in a moment."; no banner; no script. */}}
+     available right now. Try again in a moment."; no banner; no script but
+     appkit's /_appkit/feedback.js. */}}
 {{define "unavailable"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><script src="/_appkit/feedback.js" defer></script><title>Site unavailable</title></head>
