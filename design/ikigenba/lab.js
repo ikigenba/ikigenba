@@ -25,4 +25,9 @@
     </div>`;
   shadow.getElementById("p").onchange = (e) => (location.href = `${e.target.value}.html`);
   document.body.appendChild(host);
+
+  // Lift feedback.js's toasts clear of the toolbar, which shares their corner.
+  const lift = document.createElement("style");
+  lift.textContent = ".toasts { bottom: 64px; }";
+  document.head.appendChild(lift);
 })();

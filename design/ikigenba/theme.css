@@ -236,9 +236,14 @@ button, .button {
   padding: 7px 14px; border-radius: var(--r); cursor: pointer; text-decoration: none;
   border: 1px solid transparent;
   background: var(--accent); color: var(--accent-fg); box-shadow: var(--shadow-sm);
-  transition: background-color .12s, border-color .12s;
+  transition: background-color .12s, border-color .12s, transform .08s;
 }
 button:hover, .button:hover { background: var(--accent-hover); text-decoration: none; }
+/* Press feedback: a button shrinks while held and, once clicked, springs back
+   just past full size (.pulse, set by feedback.js). */
+button:active:not(:disabled), .button:active:not([aria-disabled="true"]) { transform: scale(.96); }
+button.pulse, .button.pulse { animation: pulse .28s ease-out; }
+@keyframes pulse { 0% { transform: scale(.96); } 50% { transform: scale(1.04); } 100% { transform: scale(1); } }
 button.secondary, .button.secondary { background: var(--surface); color: var(--fg); border-color: var(--line); }
 button.secondary:hover, .button.secondary:hover { background: var(--subtle); border-color: color-mix(in srgb, var(--line) 60%, var(--fg) 20%); }
 button.ghost, .button.ghost { background: transparent; color: var(--fg); box-shadow: none; }
@@ -597,6 +602,36 @@ main > section.card { margin-top: var(--s5); }
   flex: 1; min-width: 0; padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--r);
   background: var(--subtle); font-size: 13px; overflow-wrap: anywhere; user-select: all;
 }
+
+/* Toast: a short notice confirming an action, such as a copy. feedback.js
+   keeps one .toasts live region in the corner and drops each .toast into it;
+   it shows for about two seconds (an error, longer), then fades. data-kind="err" for failure. */
+.toasts {
+  position: fixed; right: var(--s5); bottom: var(--s5); z-index: 100;
+  display: grid; gap: var(--s2); justify-items: end; pointer-events: none;
+}
+.toast {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  padding: 10px 14px; border-radius: var(--r); box-shadow: var(--shadow);
+  background: var(--fg); color: var(--accent-fg); font-size: var(--text-sm); font-weight: 550;
+}
+.toast::before {
+  content: ""; width: 16px; height: 16px; flex: none;
+  background: currentColor; -webkit-mask: var(--i-ok) center / contain no-repeat; mask: var(--i-ok) center / contain no-repeat;
+}
+.toast[data-kind="err"] { background: var(--err); }
+.toast[data-kind="err"]::before { -webkit-mask-image: var(--i-err); mask-image: var(--i-err); }
+.toasts > .toast { animation: toast 2.2s ease-out forwards; }
+.toasts > .toast[data-kind="err"] { animation-duration: 4.5s; }
+@keyframes toast {
+  0% { opacity: 0; transform: translateY(8px); }
+  8%, 85% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(4px); }
+}
+@keyframes toast-fade { 0% { opacity: 0; } 8%, 85% { opacity: 1; } 100% { opacity: 0; } }
+/* Reduced motion: the toast fades in place. The button press stays; it is
+   small, and only follows the user's own click. */
+@media (prefers-reduced-motion: reduce) { .toasts > .toast { animation-name: toast-fade; } }
 
 /* Destructive zone. */
 .card.danger { border-color: color-mix(in srgb, var(--err) 30%, var(--line)); }

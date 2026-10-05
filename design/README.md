@@ -11,6 +11,7 @@ design/
   index.html        links into ikigenba/
   ikigenba/
     theme.css       the entire style — tokens, elements, components
+    feedback.js     button press and copy feedback, the toast
     lab.js          the page-switcher toolbar
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
@@ -42,7 +43,8 @@ design/
   container.
 - Visible focus states. Errors are stated in words, with an icon, as well as
   in color.
-- Every page ends with the lab toolbar script (`ikigenba/lab.js`).
+- Every page ends with the feedback script (`ikigenba/feedback.js`), then the
+  lab toolbar script (`ikigenba/lab.js`).
 
 ## Shared content
 
@@ -100,8 +102,8 @@ systems. The product name is **Ikigenba**. The example space is
 h1–h4, body, small, mono; paragraph with a link, inline `code`, `kbd`; a code
 block (a `curl` call); buttons (primary, secondary, danger, disabled); text
 input, select, checkbox, input in error; a table; status badges for active /
-paused / retired; alerts info / success / warning / error; a key/value list;
-a card/panel; an empty state.
+paused / retired; alerts info / success / warning / error; a copy block and the toast, ok and
+error; a key/value list; a card/panel; an empty state.
 
 ## The style
 
@@ -131,3 +133,13 @@ a card/panel; an empty state.
   `<svg class="ico">` is 16px in buttons and links, 18px by default. Filled
   variants, as CSS masks in `--i-ok`, `--i-warn`, `--i-err`, `--i-info`,
   `--i-alert`, `--i-neutral`, mark status, alerts, and field errors.
+- Motion is feedback only, and brief. Every button scales to .96 while held
+  and, on click, springs back just past full size (`.pulse`, .96 → 1.04 → 1
+  over .28s). The press stays under reduced motion: it is small and follows
+  the user's own click.
+- Copy: a `.secret` is a `code` beside a `Copy` button. A copy is confirmed by
+  a toast, "Copied to clipboard", in the bottom-right corner for about two
+  seconds; the button itself doesn't change. If the clipboard is unavailable
+  (a plain-http host) or refuses, the code is selected and an error toast
+  says to press Ctrl+C (⌘C on a Mac), shown longer. Toasts sit in one
+  `aria-live` region; under reduced motion they fade without sliding.

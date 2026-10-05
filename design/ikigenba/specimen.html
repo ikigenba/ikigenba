@@ -191,7 +191,11 @@ x-ikigenba-user: ada@acme.dev</code></pre>
 </section>
 
 <section id="feedback">
-<div class="section-head"><div><h2>Feedback</h2><p>Alerts carry an icon and a title as well as color.</p></div></div>
+<div class="section-head"><div><h2>Feedback</h2><p>Alerts carry an icon and a title as well as color. Every button shrinks while held and springs back when clicked; a copy confirms with a toast in the corner.</p></div></div>
+<div class="stack">
+  <div class="secret"><code>ikp_M9S346Q3D25VT4F5V37E3S3E28JT97KB6CQ643DZVMXXQKFBF5KZ</code><button class="secondary" type="button"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"/><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"/></svg>Copy</button></div>
+  <div class="actions"><div class="toast">Copied to clipboard</div><div class="toast" data-kind="err">Couldn't copy. The text is selected; press Ctrl+C.</div></div>
+</div>
 <div class="stack">
   <div class="alert"><strong>New sign-in method</strong><p>Passkeys are coming to acme.ikigenba.com next month.</p></div>
   <div class="alert" data-kind="ok"><strong>Widget created</strong><p>delta is active and reporting.</p></div>
@@ -216,6 +220,7 @@ x-ikigenba-user: ada@acme.dev</code></pre>
     });
   })();
 </script>
+<script src="feedback.js"></script>
 <script src="lab.js"></script>
 </body>
 </html>
