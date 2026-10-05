@@ -386,7 +386,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, tokenProfileRequest(session.ID))
 	body := w.Body.String()
-	assertAuthPage(t, body, false)
+	assertAuthPage(t, body)
 	api := tokenCard(t, body, "API tokens")
 	create := tokenCard(t, body, "Create a token")
 	// R-15RI-VNB8, R-ZXV5-3WM8: flush header and sole empty token panel; no table/scrolling wrapper.
@@ -417,7 +417,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 			t.Fatalf("reject status=%d", w.Code)
 		}
 		body = w.Body.String()
-		assertAuthPage(t, body, false)
+		assertAuthPage(t, body)
 		// R-00AX-VG3M: rejected page has the user's banner and one Create a token card.
 		main := assertChrome(t, body, user.Email)
 		cards := tokenElements(main, "section")
@@ -496,7 +496,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 		t.Fatalf("profile=%d %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	assertAuthPage(t, body, false)
+	assertAuthPage(t, body)
 	api := tokenCard(t, body, "API tokens")
 	panel := tokenElements(api, "div")[0]
 	table := tokenElements(panel, "table")
@@ -648,7 +648,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 		t.Fatalf("created status=%d", w.Code)
 	}
 	body := w.Body.String()
-	assertAuthPage(t, body, true)
+	assertAuthPage(t, body)
 	tokens, err := st.ListTokens(user.ID)
 	if err != nil || len(tokens) != 1 {
 		t.Fatalf("tokens=%v %v", tokens, err)
@@ -657,15 +657,14 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if !ok {
 		t.Fatal("stored secret not presented")
 	}
-	// R-01IU-97UB: created page has the user's banner, one Token created card, then script.
+	// R-ZCG2-ZOOK: created page has the user's banner and exactly one Token created card.
 	main := assertChrome(t, body, user.Email)
 	card := tokenCard(t, main, "Token created")
-	script := tokenElements(main, "script")
-	if len(script) != 1 || len(tokenElements(main, "section")) != 1 {
+	if len(tokenElements(main, "section")) != 1 {
 		t.Fatalf("created main=%s", main)
 	}
 	tokenAttrs(t, card, map[string]string{"class": "card"})
-	tokenConsists(t, main, card, script[0])
+	tokenConsists(t, main, card)
 	// R-1KEB-GW7K: warning, secret div and sole account link follow the card header exactly.
 	divs := tokenElements(card, "div")
 	links := tokenElements(card, "a")
@@ -709,40 +708,6 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	}
 	if secretTags != 1 {
 		t.Fatalf("secret tags=%d", secretTags)
-	}
-	// R-0SCM-O65L: exact sole script tags and fixed statement, with lexical and quoted-whitespace restrictions.
-	if strings.Count(fixtureWrittenMarkup(t, body), "<script>") != 1 || strings.Count(fixtureWrittenMarkup(t, body), "</script>") != 1 || tokenOpening(script[0]) != "<script>" {
-		t.Fatal("script tags wrong")
-	}
-	source := tokenElement(t, script[0], "script")
-	compact := strings.Map(func(r rune) rune {
-		if strings.ContainsRune(" \t\r\n\f", r) {
-			return -1
-		}
-		return r
-	}, source)
-	want := `document.querySelector('.secret>button').addEventListener('click',function(){navigator.clipboard.writeText(document.querySelector('.secret>code').textContent);});`
-	if compact != want {
-		t.Fatalf("script=%q", source)
-	}
-	for _, r := range source {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && !strings.ContainsRune(" \t\r\n\f.(){};,'>", r) {
-			t.Fatalf("script invalid char %q", r)
-		}
-	}
-	allowed := map[string]bool{}
-	for _, word := range strings.Fields("document querySelector addEventListener click function navigator clipboard writeText textContent secret button code") {
-		allowed[word] = true
-	}
-	for _, word := range regexp.MustCompile(`[A-Za-z]+`).FindAllString(source, -1) {
-		if !allowed[word] {
-			t.Fatalf("script invalid word %q", word)
-		}
-	}
-	for i, quoted := range strings.Split(source, "'") {
-		if i%2 == 1 && strings.ContainsAny(quoted, " \t\r\n\f") {
-			t.Fatal("script whitespace inside quote")
-		}
 	}
 	// R-1LM7-UNY9: secret appears once in code, then never in profile, mutation or rejection responses.
 	if strings.Count(body, secret) != 1 {

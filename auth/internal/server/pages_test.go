@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -263,7 +264,7 @@ func pageSequence(t *testing.T, text string, names ...string) []pageTag {
 	return result
 }
 
-func authPageErrors(body string, allowScript bool) []string {
+func authPageErrors(body string) []string {
 	var errors []string
 	bad := func(format string, args ...any) { errors = append(errors, fmt.Sprintf(format, args...)) }
 	if len(body) < 15 || !strings.EqualFold(body[:15], "<!DOCTYPE html>") {
@@ -276,7 +277,7 @@ func authPageErrors(body string, allowScript bool) []string {
 		return errors
 	}
 	bodyAt := bodies[0].start
-	titleCount, stylesheet, viewport := 0, 0, 0
+	titleCount, stylesheet, viewport, feedback := 0, 0, 0, 0
 	occupied := make([]bool, len(body))
 	for i := 0; i < len(body) && i < 15; i++ {
 		occupied[i] = true
@@ -310,7 +311,12 @@ func authPageErrors(body string, allowScript bool) []string {
 			bad("forbidden element %s", lower)
 		}
 		if lower == "script" {
-			if !allowScript {
+			if tag.name == "script" && tag.start < bodyAt && len(attrs["src"]) == 1 && attrs["src"][0] == "/_appkit/feedback.js" {
+				feedback++
+				if !slices.Contains(pageAttributeNames(tag), "defer") {
+					bad("feedback defer")
+				}
+			} else {
 				bad("unplaced script")
 			}
 			closeAt := strings.Index(strings.ToLower(body[tag.end:]), "</script")
@@ -439,8 +445,8 @@ func authPageErrors(body string, allowScript bool) []string {
 			bad("unread svg occurrence")
 		}
 	}
-	if titleCount != 1 || stylesheet != 1 || viewport != 1 {
-		bad("head counts %d/%d/%d", titleCount, stylesheet, viewport)
+	if titleCount != 1 || stylesheet != 1 || viewport != 1 || feedback != 1 {
+		bad("head counts %d/%d/%d/%d", titleCount, stylesheet, viewport, feedback)
 	}
 	for i := 0; i < len(body); i++ {
 		if occupied[i] || body[i] != '<' {
@@ -557,9 +563,9 @@ func pageIconError(body string, tag pageTag) string {
 	}
 	return ""
 }
-func assertAuthPage(t *testing.T, body string, allowScript bool) {
+func assertAuthPage(t *testing.T, body string) {
 	t.Helper()
-	if errors := authPageErrors(fixtureWrittenMarkup(t, body), allowScript); len(errors) > 0 {
+	if errors := authPageErrors(fixtureWrittenMarkup(t, body)); len(errors) > 0 {
 		t.Fatalf("page errors: %v\n%s", errors, body)
 	}
 }
@@ -663,7 +669,7 @@ func assertPageAlert(t *testing.T, text, kind, role, title, message string) {
 	}
 }
 func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
-	// R-08U8-JUAH R-0A24-XM16 R-0BA1-BDRV R-0YG4-L0V2
+	// R-08U8-JUAH R-0A24-XM16 R-0BA1-BDRV R-0YG4-L0V2 R-ZB86-LWXV
 	// R-0DPU-2X99 R-0EXQ-GOZY R-0G5M-UGQN R-0HDJ-88HC R-0ZO0-YSLR
 	// R-0ILF-M081 R-0JTB-ZRYQ R-0L18-DJPF R-0M94-RBG4 R-0NH1-536T
 	// R-0W0B-THDO R-0OOX-IUXI R-0PWT-WMO7 R-0R4Q-AEEW
@@ -706,11 +712,11 @@ func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 			if w.Header().Get("Content-Type") != signInHTMLContentType {
 				t.Fatalf("not HTML: %d %s", w.Code, w.Body.String())
 			}
-			assertAuthPage(t, w.Body.String(), name == "created")
+			assertAuthPage(t, w.Body.String())
 			if strings.HasPrefix(name, "profile") || name == "created" || name == "rejected" {
 				assertChrome(t, w.Body.String(), email)
 			}
-			if strings.Contains(w.Body.String(), `<fake`) || strings.Contains(w.Body.String(), `<script src=`) {
+			if strings.Contains(w.Body.String(), `<fake`) || strings.Contains(w.Body.String(), `<script src="https://evil/">`) {
 				t.Fatal("external value injected markup")
 			}
 		})
@@ -723,18 +729,29 @@ func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 	pageAttr(t, input, "value", `<fake src="x">`)
 }
 func TestAuthPageScannerRejectsUnsafeVocabulary(t *testing.T) {
-	base := `<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/_appkit/theme.css"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main><a href="/">safe</a></main></body></html>`
-	assertAuthPage(t, base, false)
+	base := `<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/_appkit/theme.css"><script src="/_appkit/feedback.js" defer></script><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main><a href="/">safe</a></main></body></html>`
+	assertAuthPage(t, base)
 	// Head hooks count only occurrences before body; later conforming hooks are allowed.
 	laterHooks := strings.Replace(base, `<main><a href="/">safe</a></main>`, `<main><link rel="stylesheet" href="/_appkit/extra.css"><meta name="viewport" content="width=device-width, initial-scale=1"><a href="/">safe</a></main>`, 1)
-	assertAuthPage(t, laterHooks, false)
+	assertAuthPage(t, laterHooks)
 	prematureEnd := strings.Replace(strings.Replace(base, "<body>", "</body><body>", 1), "</main></body>", "</main>", 1)
-	if len(authPageErrors(prematureEnd, false)) == 0 {
+	if len(authPageErrors(prematureEnd)) == 0 {
 		t.Fatal("body end before body start accepted")
 	}
 	quotedEnd := strings.Replace(strings.Replace(base, "<body>", `<body data-x="</body>">`, 1), "</main></body>", "</main>", 1)
-	if len(authPageErrors(quotedEnd, false)) == 0 {
+	if len(authPageErrors(quotedEnd)) == 0 {
 		t.Fatal("body end inside start-tag attribute accepted")
+	}
+	feedback := `<script src="/_appkit/feedback.js" defer></script>`
+	for _, replacement := range []string{"", feedback + feedback, `<script src="/_appkit/feedback.js"></script>`, `<script src="/_appkit/feedback.js" Defer></script>`, `<script src="/_appkit/launcher.js" defer></script>`, `<script src="/_appkit/feedback.js" src="/_appkit/feedback.js" defer></script>`} {
+		if len(authPageErrors(strings.Replace(base, feedback, replacement, 1))) == 0 {
+			t.Fatalf("invalid feedback hook accepted: %s", replacement)
+		}
+	}
+	misplaced := strings.Replace(base, feedback, "", 1)
+	misplaced = strings.Replace(misplaced, "<main>", "<main>"+feedback, 1)
+	if len(authPageErrors(misplaced)) == 0 {
+		t.Fatal("feedback in body accepted")
 	}
 	cases := []string{strings.TrimPrefix(base, "<!DOCTYPE html>"), strings.Replace(base, "auth</title>", "Auth</title>", 1), strings.Replace(base, "<body>", "<body><TITLE>x</TITLE>", 1), strings.Replace(base, "<body>", "<body><body>", 1),
 		`<meta http-equiv="refresh">`, `<a href="https://elsewhere">x</a>`, `<a href="//evil">x</a>`, `<a href="/\evil">x</a>`, `<a href="/x&#10;">x</a>`, `<form action="javascript:x"></form>`, `<button formaction="//evil">x</button>`,
@@ -748,18 +765,19 @@ func TestAuthPageScannerRejectsUnsafeVocabulary(t *testing.T) {
 		if !strings.Contains(body, "<html>") {
 			body = strings.Replace(base, `<main><a href="/">safe</a></main>`, fragment, 1)
 		}
-		if len(authPageErrors(body, false)) == 0 {
+		if len(authPageErrors(body)) == 0 {
 			t.Errorf("unsafe case %d accepted: %s", i, fragment)
 		}
 	}
-	for _, script := range []string{`<script><!-- escaped --></script>`, `<script>x</SCRIPT>`, `<SCRIPT>x</script>`, `<script>x</script >`} {
-		body := strings.Replace(base, `<main><a href="/">safe</a></main>`, script, 1)
-		if len(authPageErrors(body, true)) == 0 {
+	for _, script := range []string{`<script src="/_appkit/feedback.js" defer><!-- escaped --></script>`, `<script src="/_appkit/feedback.js" defer>x</SCRIPT>`, `<SCRIPT src="/_appkit/feedback.js" defer>x</script>`, `<script src="/_appkit/feedback.js" defer>x</script >`} {
+		body := strings.Replace(base, feedback, script, 1)
+		if len(authPageErrors(body)) == 0 {
 			t.Errorf("bad placed script accepted %s", script)
 		}
 	}
-	safe := strings.Replace(base, `<main><a href="/">safe</a></main>`, `<main><input value="<fake src='evil' onclick=x> &copyx"><script>var x = '<fake src="evil">';</script></main>`, 1)
-	assertAuthPage(t, safe, true)
+	safe := strings.Replace(base, `<main><a href="/">safe</a></main>`, `<main><input value="<fake src='evil' onclick=x> &copyx"></main>`, 1)
+	safe = strings.Replace(safe, `defer></script>`, `defer>var x = '<fake src="evil">';</script>`, 1)
+	assertAuthPage(t, safe)
 }
 
 func TestSignInPagesFixVisibleText(t *testing.T) {
@@ -786,7 +804,7 @@ func TestSignInPagesFixVisibleText(t *testing.T) {
 				sentence = "Sign in to continue to " + tc.display + "."
 			}
 			assertSignInCard(t, w.Body.String(), tc.host, "Continue with Google", target, footer)
-			assertAuthPage(t, w.Body.String(), false)
+			assertAuthPage(t, w.Body.String())
 			want := "ikigenba Sign in to " + apexName(tc.host) + " " + sentence + " Continue with Google " + footer
 			got := pageText(pageContent(w.Body.String(), pageOne(t, w.Body.String(), "body")))
 			if got != want {
@@ -830,7 +848,7 @@ func TestCancelledAndNonmemberCards(t *testing.T) {
 		t.Fatal("nonmember visible text")
 	}
 	for _, body := range []string{cancelled.Body.String(), refused.Body.String()} {
-		assertAuthPage(t, body, false)
+		assertAuthPage(t, body)
 		heading := pageOne(t, body, "h1")
 		alert := pageOne(t, body, "div")
 		if heading.end+len(pageContent(body, heading)) >= alert.start {
@@ -861,7 +879,7 @@ func TestProfileFrameAndAccount(t *testing.T) {
 	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Felsewhere.test", "auth.sbx.ikigenba.dev", cookie, "")
 	assertHTMLStatus(t, w, 200)
 	assertNoSetCookie(t, w)
-	assertAuthPage(t, w.Body.String(), false)
+	assertAuthPage(t, w.Body.String())
 	main := assertChrome(t, w.Body.String(), email)
 	seq := pageSequence(t, main, "h1", "p", "section", "section", "section")
 	if pageText(pageContent(main, seq[0])) != "Your account" || pageText(pageContent(main, seq[1])) != "You're signed in to ikigenba.dev." {
@@ -962,7 +980,7 @@ func TestAuthPagePreservesExternalBytes(t *testing.T) {
 	workspace, email := raw+".example", raw+"@green.example"
 	s.cfg.WorkspaceDomain = workspace
 	anonymous := serveSignIn(s, http.MethodGet, "/", "auth.green.example", nil, "")
-	assertAuthPage(t, anonymous.Body.String(), false)
+	assertAuthPage(t, anonymous.Body.String())
 	paragraph := pageOne(t, anonymous.Body.String(), "p")
 	if got := pageText(pageContent(anonymous.Body.String(), paragraph)); got != "Access is limited to Google accounts in the "+workspace+" workspace." {
 		t.Fatalf("workspace text changed bytes: %q", got)
@@ -980,7 +998,7 @@ func TestAuthPagePreservesExternalBytes(t *testing.T) {
 	}
 	cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	profile := serveSignIn(s, http.MethodGet, "/", "auth.green.example", cookie, "")
-	assertAuthPage(t, profile.Body.String(), false)
+	assertAuthPage(t, profile.Body.String())
 	assertChrome(t, profile.Body.String(), email)
 	fields := pageElements(profile.Body.String(), "dd")
 	for i, want := range []string{email, workspace} {
@@ -994,7 +1012,7 @@ func TestAuthPagePreservesExternalBytes(t *testing.T) {
 	req.Header.Set("Origin", "https://auth.green.example")
 	rejected := httptest.NewRecorder()
 	s.ServeHTTP(rejected, req)
-	assertAuthPage(t, rejected.Body.String(), false)
+	assertAuthPage(t, rejected.Body.String())
 	assertChrome(t, rejected.Body.String(), email)
 	pageAttr(t, pageOne(t, rejected.Body.String(), "input"), "value", raw)
 }

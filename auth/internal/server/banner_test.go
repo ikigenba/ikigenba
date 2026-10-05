@@ -118,7 +118,7 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 			}
 			inside := pageContent(written, pageOne(t, written, "body"))
 			pageSequence(t, inside, "main")
-			assertAuthPage(t, written, i == 2)
+			assertAuthPage(t, written)
 		}
 	}
 }

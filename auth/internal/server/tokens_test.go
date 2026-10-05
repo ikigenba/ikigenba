@@ -254,7 +254,7 @@ func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
 			if secret == "" || strings.Count(body, secret) != 1 {
 				t.Fatalf("creation body contains secret %q %d times, want one valid secret once", secret, strings.Count(body, secret))
 			}
-			if !strings.Contains(body, "<button") || !strings.Contains(body, "clipboard.writeText") || !strings.Contains(body, `<a href="/">`) {
+			if !strings.Contains(body, "<button") || !strings.Contains(body, `<a href="/">`) {
 				t.Errorf("creation body lacks copy button or profile link: %s", body)
 			}
 		})
