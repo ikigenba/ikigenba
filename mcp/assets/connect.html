@@ -6,10 +6,10 @@
      Install" then h2 "Manual Install"; two div.secret copy blocks, each with one
      code and one button[type=button] "Copy", the first holding code#setup-url
      (.SetupURL), the second code#endpoint (.Endpoint); a#profile-link "profile"
-     after Manual Install. Inline clipboard script only. */}}
+     after Manual Install. */}}
 {{define "connect"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>mcp</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><script src="/_appkit/feedback.js" defer></script><title>mcp</title></head>
 <body>
 {{template "banner" .Banner}}
 <main>
@@ -25,7 +25,6 @@
 <p>Create a token on your <a id="profile-link" href="{{.Banner.ProfileURL}}">profile</a>.</p>
 </section>
 </main>
-<script>document.querySelectorAll('.secret>button').forEach(function(b){b.addEventListener('click',function(){navigator.clipboard.writeText(b.parentNode.querySelector('code').textContent);});});</script>
 {{template "footer" .Banner}}
 </body>
 </html>
