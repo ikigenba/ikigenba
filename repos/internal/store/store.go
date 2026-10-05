@@ -140,8 +140,8 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		}
 		return nil, openError{err, kind}
 	}
-	// DELETE journaling makes a write depend on the database directory on each transaction.
-	if _, err = db.ExecContext(ctx, `PRAGMA journal_mode=DELETE; CREATE TABLE IF NOT EXISTS repos (id TEXT PRIMARY KEY,name TEXT NOT NULL,owner TEXT NOT NULL,created TEXT NOT NULL,available INTEGER NOT NULL,UNIQUE(owner,name)); BEGIN IMMEDIATE; UPDATE repos SET available=available; COMMIT;`); err != nil {
+	// Keep the database's journal mode, including WAL used by replication.
+	if _, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS repos (id TEXT PRIMARY KEY,name TEXT NOT NULL,owner TEXT NOT NULL,created TEXT NOT NULL,available INTEGER NOT NULL,UNIQUE(owner,name)); BEGIN IMMEDIATE; UPDATE repos SET available=available; COMMIT;`); err != nil {
 		return fail(err, ErrDatabase)
 	}
 	if err = os.MkdirAll(cfg.Root, 0700); err != nil {
