@@ -13,6 +13,7 @@ import (
 var webSharedFiles = map[string]string{
 	"theme.css":                  "text/css; charset=utf-8",
 	"launcher.js":                "text/javascript; charset=utf-8",
+	"feedback.js":                "text/javascript; charset=utf-8",
 	"InterVariable.woff2":        "font/woff2",
 	"InterVariable-Italic.woff2": "font/woff2",
 	"JetBrainsMono.woff2":        "font/woff2",
@@ -20,11 +21,11 @@ var webSharedFiles = map[string]string{
 	"TABLER-LICENSE.txt":         "text/plain; charset=utf-8",
 }
 
-// R-75L8-90Y9 R-76T4-MSOY
+// R-HK3V-XKU8 R-76T4-MSOY
 func TestStaticDelegation(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
-	paths := []string{"/_appkit/", "/_appkit/nope", "/_appkit/THEME.CSS", "/_appkit/theme.css/", "/_appkit/theme.css/x"}
+	paths := []string{"/_appkit/", "/_appkit/nope", "/_appkit/THEME.CSS", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/FEEDBACK.JS", "/_appkit/feedback.js/", "/%5fappkit/%66eedback.js", "/_appkit/../feedback.js"}
 	for name := range webSharedFiles {
 		paths = append(paths, page.StaticPrefix+name)
 	}
@@ -45,7 +46,7 @@ func TestStaticDelegation(t *testing.T) {
 	}
 }
 
-// R-7811-0KFN R-798X-EC6C R-7AGT-S3X1 R-7FCF-B6VT
+// R-HLBS-BCKX R-798X-EC6C R-7AGT-S3X1 R-HNRL-2W2B
 func TestSharedFilesAndHead(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -92,7 +93,7 @@ func assertWebETag(t *testing.T, h http.Header) {
 	}
 }
 
-// R-7BOQ-5VNQ R-069F-Z5YM
+// R-7BOQ-5VNQ R-HMJO-P4BM
 func TestSharedRevalidation(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)

@@ -28,12 +28,12 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
 )
 
-// R-QWZN-JQIA
+// R-HOZH-GNT0
 func TestIdentityBeforeEveryRoute(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
 	before := f.gitCalls.Load()
-	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/_appkit/nope", "/mcp", "/notes.git/info/refs?service=git-upload-pack", "/nope"} {
+	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/_appkit/feedback.js", "/_appkit/nope", "/_appkit", "/mcp", "/notes.git/info/refs?service=git-upload-pack", "/nope"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, values := range [][]string{nil, {""}, {"", "later-user"}} {
 				r := httptest.NewRequest(method, path, strings.NewReader(`{"name":"intruder"}`))
@@ -63,7 +63,7 @@ func TestIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-QZFG-B9ZO
+// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-HQ7D-UFJP
 func TestExactRoutesAndNotFound(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -271,7 +271,7 @@ func TestNoSiblingConnections(t *testing.T) {
 	}
 }
 
-// R-R4B1-UCYG R-8394-513A R-84H0-ISTZ R-R6QU-LWFU R-RCUC-IR5B
+// R-R4B1-UCYG R-8394-513A R-HSN6-LZ13 R-R6QU-LWFU R-RCUC-IR5B
 func TestRequestTraceAcrossRoutes(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -282,6 +282,9 @@ func TestRequestTraceAcrossRoutes(t *testing.T) {
 		{"GET", "/", "user", 200}, {"GET", "/about", "user", 200},
 		{"HEAD", "/", "user", 200}, {"HEAD", "/about", "user", 200},
 		{"GET", "/_appkit/theme.css", "user", 200}, {"HEAD", "/_appkit/theme.css", "user", 200},
+		{"GET", "/_appkit/feedback.js", "user", 200}, {"HEAD", "/_appkit/feedback.js", "user", 200},
+		{"POST", "/_appkit/feedback.js", "user", 405}, {"GET", "/_appkit/nope", "user", 404},
+		{"HEAD", "/_appkit/nope", "", 500},
 		{"POST", "/about", "user", 405}, {"GET", "/nope", "user", 404},
 		{"GET", "/ghost.git/info/refs", "user", 404}, {"GET", "/", "", 500},
 		{"GET", "/mcp", "user", 405},

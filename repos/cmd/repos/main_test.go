@@ -160,7 +160,7 @@ func TestBinary(t *testing.T) {
 	}
 	launcher := startBinary(t, binary, launcherDir, append(append([]string{}, env...), services.Variable+"="+servicePath))
 	_, body := launcher.request(t, http.MethodGet, "/", nil)
-	// R-970J-DHQW: appkit's real kit loads the ordered service entries in main.
+	// R-HIVZ-JT3J: appkit's real kit loads the ordered service entries in main.
 	assertBinaryLauncher(t, body, list[2].URL)
 	for _, description := range []string{"Published repos", "Changed instructions"} {
 		listed[2]["description"] = description
@@ -556,7 +556,18 @@ func (tag binaryTag) matches(name string) bool {
 	return tag.name == name || strings.HasPrefix(tag.name, name+"-")
 }
 
-func binarySpace(b byte) bool { return b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == '\f' }
+func (tag binaryTag) has(name, value string) bool {
+	for _, got := range tag.attrs[name] {
+		if got == value {
+			return true
+		}
+	}
+	return false
+}
+
+func binarySpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == '\v' || b == '\f'
+}
 func binaryName(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '-'
 }
@@ -623,12 +634,13 @@ func binaryTags(body string) []binaryTag {
 
 func assertBinaryLauncher(t *testing.T, body, url string) {
 	t.Helper()
-	buttons, scripts, current := 0, 0, 0
+	buttons, current := 0, 0
+	var scripts []binaryTag
 	for _, tag := range binaryTags(body) {
 		if tag.matches("button") {
 			launcher := false
 			for _, value := range tag.attrs["class"] {
-				for _, class := range strings.FieldsFunc(value, func(r rune) bool { return r == ' ' || r == '\t' || r == '\r' || r == '\n' || r == '\f' }) {
+				for _, class := range strings.FieldsFunc(value, func(r rune) bool { return r == ' ' || r == '\t' || r == '\r' || r == '\n' || r == '\v' || r == '\f' }) {
 					if class == "launcher" {
 						launcher = true
 					}
@@ -639,19 +651,20 @@ func assertBinaryLauncher(t *testing.T, body, url string) {
 			}
 		}
 		if tag.matches("script") {
-			scripts++
-			if !reflect.DeepEqual(tag.attrs["src"], []string{"/_appkit/launcher.js"}) {
-				t.Fatalf("launcher script: %v", tag.attrs)
-			}
+			scripts = append(scripts, tag)
 		}
 		if len(tag.attrs["aria-current"]) > 0 {
 			current++
-			if !tag.matches("a") || !reflect.DeepEqual(tag.attrs["aria-current"], []string{"page"}) || !reflect.DeepEqual(tag.attrs["href"], []string{url}) {
+			if !tag.matches("a") || !tag.has("aria-current", "page") || !tag.has("href", url) {
 				t.Fatalf("current launcher entry: %v", tag)
 			}
 		}
 	}
-	if buttons != 1 || scripts != 1 || current != 1 {
-		t.Fatalf("launcher counts: buttons=%d scripts=%d current=%d", buttons, scripts, current)
+	if buttons != 1 || len(scripts) != 2 || current != 1 {
+		t.Fatalf("launcher counts: buttons=%d scripts=%d current=%d", buttons, len(scripts), current)
+	}
+	if (!scripts[0].has("src", "/_appkit/launcher.js") || !scripts[1].has("src", "/_appkit/feedback.js")) &&
+		(!scripts[1].has("src", "/_appkit/launcher.js") || !scripts[0].has("src", "/_appkit/feedback.js")) {
+		t.Fatal("launcher and feedback sources must occur on distinct script tags")
 	}
 }

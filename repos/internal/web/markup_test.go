@@ -103,6 +103,16 @@ func (tag markupTag) values(name string) []string {
 	return found
 }
 
+// R-PB8G-QSV8: bare occurrences use the same left-to-right attribute read.
+func (tag markupTag) bare(name string) bool {
+	for _, attr := range tag.attrs {
+		if !attr.valued && strings.EqualFold(attr.name, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func (tag markupTag) has(name, value string) bool {
 	for _, got := range tag.values(name) {
 		if got == value {
@@ -242,7 +252,7 @@ func markupWritten(t *testing.T, body string, banner page.Banner) string {
 	return body[:bannerStart] + body[bannerEnd:footerStart] + body[footerEnd:]
 }
 
-// R-6CBN-2J5L R-6DJJ-GAWA R-6ERF-U2MZ R-6FZC-7UDO R-988F-R9HL R-6IF4-ZDV2 R-6JN1-D5LR R-6KUX-QXCG R-6M2U-4P35
+// R-6CBN-2J5L R-6DJJ-GAWA R-6ERF-U2MZ R-PG42-9VU0 R-PIJV-1FBE R-988F-R9HL R-6IF4-ZDV2 R-6JN1-D5LR R-6KUX-QXCG R-6M2U-4P35
 func assertMarkupCommon(t *testing.T, body, written, path, email string) {
 	t.Helper()
 	title := markupOne(t, written, "title")
@@ -293,8 +303,29 @@ func assertMarkupCommon(t *testing.T, body, written, path, email string) {
 	if len(viewports) != 1 || viewports[0].end > bodyTag.start || !viewports[0].has("content", "width=device-width, initial-scale=1") {
 		t.Fatal("viewport count/location/content")
 	}
-	if len(markupNamed(written, "script", false)) != 0 || len(markupNamed(written, "style", false)) != 0 || strings.Contains(written, "Repos") {
-		t.Fatal("written markup contains script/style or capitalized service name")
+	scripts := markupNamed(written, "script", false)
+	feedback := 0
+	for _, script := range scripts {
+		if len(script.values("src")) != 1 || !script.has("src", "/_appkit/feedback.js") || script.bare("src") {
+			t.Fatal("written script must have exactly one valued feedback source")
+		}
+		for _, name := range []string{"href", "xlink:href"} {
+			if len(script.values(name)) != 0 || script.bare(name) {
+				t.Fatalf("written script carries forbidden %s", name)
+			}
+		}
+		if script.has("src", "/_appkit/feedback.js") {
+			feedback++
+			if script.end > bodyTag.start || len(script.values("defer")) == 0 && !script.bare("defer") {
+				t.Fatal("feedback script must be deferred before body")
+			}
+		}
+	}
+	if feedback != 1 {
+		t.Fatalf("written feedback script count %d, want 1", feedback)
+	}
+	if len(markupNamed(written, "style", false)) != 0 || strings.Contains(written, "Repos") {
+		t.Fatal("written markup contains style or capitalized service name")
 	}
 	visible := markupVisible(t, body)
 	if strings.Contains(visible, "IKIGENBA_TOKEN=") || strings.Contains(visible, markupCollapse(email)) {
@@ -441,7 +472,7 @@ func assertMarkupAbout(t *testing.T, written string, banner page.Banner) {
 	}
 }
 
-// R-74DB-V97K
+// R-HHO3-61CU
 func assertMarkupLauncher(t *testing.T, body string, banner page.Banner) {
 	t.Helper()
 	launchers := 0
@@ -452,11 +483,17 @@ func assertMarkupLauncher(t *testing.T, body string, banner page.Banner) {
 	}
 	scripts := markupNamed(body, "script", false)
 	if len(banner.Services) == 0 {
-		if launchers != 0 || len(scripts) != 0 || len(markupNamed(body, "input", false)) != 0 || strings.Contains(body, "/_appkit/launcher.js") {
+		if launchers != 0 || len(scripts) != 1 || !scripts[0].has("src", "/_appkit/feedback.js") || len(markupNamed(body, "input", false)) != 0 || strings.Contains(body, "/_appkit/launcher.js") {
 			t.Fatal("empty banner services still carries launcher artifacts")
 		}
-	} else if launchers != 1 || len(scripts) != 1 || !scripts[0].has("src", "/_appkit/launcher.js") {
-		t.Fatal("nonempty banner services lacks exactly one launcher button and appkit script")
+	} else {
+		if launchers != 1 || len(scripts) != 2 {
+			t.Fatal("nonempty banner services lacks exactly one launcher button and two appkit scripts")
+		}
+		if (!scripts[0].has("src", "/_appkit/launcher.js") || !scripts[1].has("src", "/_appkit/feedback.js")) &&
+			(!scripts[1].has("src", "/_appkit/launcher.js") || !scripts[0].has("src", "/_appkit/feedback.js")) {
+			t.Fatal("launcher and feedback sources must occur on distinct script tags")
+		}
 	}
 }
 
