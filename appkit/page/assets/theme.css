@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit f2068a9. The design lab's
+   Copied from design/ikigenba/theme.css at commit 2400e6b. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -395,6 +395,7 @@ dl.kv { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; ga
 dl.kv dt, dl.kv dd { padding: 10px 0; border-bottom: 1px solid var(--line-soft); margin: 0; }
 dl.kv dt { color: var(--muted); padding-right: var(--s5); }
 dl.kv dd { font-weight: 500; }
+dl.kv dd code { overflow-wrap: anywhere; }
 dl.kv > :nth-last-child(-n+2) { border-bottom: 0; }
 
 /* alerts — white card with a solid status icon (default); .callout adds a colored
@@ -433,6 +434,20 @@ dl.kv > :nth-last-child(-n+2) { border-bottom: 0; }
 }
 .tabs a:hover { color: var(--fg); text-decoration: none; }
 .tabs a[aria-current] { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* breadcrumbs (scripts): where the page sits in a hierarchy, root first; the
+   last entry is the current page, unlinked, with aria-current="page". A
+   nav.crumbs holds an ol; the levels wrap on a narrow screen. */
+nav.crumbs ol {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2);
+  margin: 0; padding: 0; list-style: none; font-size: var(--text-sm); color: var(--muted);
+}
+nav.crumbs li { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; }
+nav.crumbs li + li::before { content: "/"; color: var(--faint); }
+nav.crumbs a { color: var(--muted); font-weight: 500; }
+nav.crumbs a:hover { color: var(--fg); }
+nav.crumbs [aria-current] { color: var(--fg); font-weight: 500; }
+main > nav.crumbs + h1 { margin-top: var(--s3); }
 
 /* --------------------------------------------------------------- layouts */
 .stack > * + * { margin-top: var(--s4); }
