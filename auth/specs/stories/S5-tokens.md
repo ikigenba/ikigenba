@@ -36,11 +36,13 @@ a 403, or a 500 because auth's database failed (`S4-check.md`) — records no
 token event.
 
 Every HTML page these stories fix is drawn with the banner (S3): its
-`<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet and
-declares the phone-width viewport, it opens with the banner — when auth's
-services file lists services with an icon, the launcher (S3), whose button
-comes first, immediately before the mark; then the mark, the profile icon
-titled with the user's email as a link to `/`, and the `Sign out` button
+`<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet, loads
+`/_appkit/feedback.js`, so that in a browser an enabled button visibly reacts
+as the user presses it (S3), and declares the phone-width viewport, it opens
+with the banner — when auth's services file lists services with an icon, the
+launcher (S3), whose button comes first, immediately before the mark; then
+the mark, the profile icon titled with the user's email as a link to `/`, and
+the `Sign out` button
 POSTing to `/logout` — its content sits in the page's one `<main>`, and it ends
 with the page footer reading `auth <version>` (S3). A card is a
 `<section class="card">` whose `<header>` holds an `<h2>` naming it. An icon
@@ -108,8 +110,12 @@ newly created token's plaintext secret, `ikp_` then 52 Crockford base32
 characters, in a `<code>` element, and a `<button class="secondary" type="button">`
 reading `Copy` behind the copy icon; then a link reading `Back to your account`
 whose target is `/` (the profile). The secret occurs exactly once in the body,
-inside that `<code>` element: the button carries no copy of it, and clicking
-`Copy` puts the text of the `<code>` element, the secret, on the clipboard.
+inside that `<code>` element: the button carries no copy of it. In a browser,
+pressing `Copy` puts the text of the `<code>` element, the secret, on the
+clipboard and shows a toast reading `Copied to clipboard`; if copying fails,
+the secret's text is selected instead and an error toast shows. That is the
+button feedback script's doing (`S8-assets.md`); the page carries no script
+of its own.
 The secret appears in this response only and in no later page.
 
 Preconditions:

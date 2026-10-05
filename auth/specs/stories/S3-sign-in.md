@@ -48,15 +48,19 @@ A page fixes its visible text and the markup the stylesheet keys on: an
 element or class is quoted where the stylesheet hooks in, the visible text is
 stated as fact in the story's status line, and no body is quoted whole. Every
 HTML page auth serves is titled `auth`, links `/_appkit/theme.css` as its
-stylesheet, and declares the phone-width viewport, so a phone shows it at the
-phone's own width rather than as a shrunken desktop page. The stylesheet, the
-fonts it loads, and the launcher's script are the platform's shared files,
+stylesheet, loads `/_appkit/feedback.js`, and declares the phone-width
+viewport, so a phone shows it at the phone's own width rather than as a
+shrunken desktop page. The stylesheet, the fonts it loads, the launcher's
+script, and the button feedback script are the platform's shared files,
 served by auth under `/_appkit/` (`S8-assets.md`); a page makes no request to
-any other host. auth serves nothing under `/assets/`: a path there is a path
-that does not exist, like any other. An icon is a Tabler outline icon
-drawn inline before a button's text as `<svg class="ico" aria-hidden="true">`,
-so the button's accessible text is its word alone. The workspace a page names
-is `WORKSPACE_DOMAIN`, here `michaelgreenly.dev`. A page names the apex, which
+any other host. The button feedback script, which every page loads with or
+without a banner or a launcher, makes an enabled button, or a link styled as
+one, visibly react in a browser as the user presses it. auth serves nothing
+under `/assets/`: a path there is a path that does not exist, like any
+other. An icon is a Tabler outline icon drawn inline before a button's text as
+`<svg class="ico" aria-hidden="true">`, so the button's accessible text is its
+word alone. The workspace a page names is `WORKSPACE_DOMAIN`, here
+`michaelgreenly.dev`. A page names the apex, which
 auth reads from the request's own `Host`: a trailing port is dropped, and the
 apex is the last two dot-separated labels of what remains —
 `auth.sbx.ikigenba.dev` gives `ikigenba.dev`.
@@ -172,14 +176,16 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn as a sign-in card. Its visible text
-is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, the sentence
+link, feedback script, and viewport every page has, drawn as a sign-in card.
+Its visible text is the mark `ikigenba`, the heading
+`Sign in to ikigenba.dev`, the sentence
 `Access is limited to Google accounts in the michaelgreenly.dev workspace.`,
 the link `Continue with Google` whose target is `/login/google`, and the
 card's `<footer>` reading
 `You're signing in at auth.sbx.ikigenba.dev. One sign-in covers every service in this space.`
 The footer names the `Host` as sent, port included. The page has no banner
-and no launcher, and loads no `/_appkit/launcher.js`.
+and no launcher, and loads no `/_appkit/launcher.js`. In a browser, the
+`Continue with Google` link visibly reacts as the user presses it.
 
 Preconditions:
 
@@ -214,8 +220,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn as a sign-in card. Its visible text
-is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, the sentence
+link, feedback script, and viewport every page has, drawn as a sign-in card.
+Its visible text is the mark `ikigenba`, the heading
+`Sign in to ikigenba.dev`, the sentence
 `Sign in to continue to dummy.sbx.ikigenba.dev.` naming the return URL's
 host exactly as the URL writes it, a port included, the link `Continue with Google` whose target is
 `/login/google?return=https%3A%2F%2Fdummy.sbx.ikigenba.dev%2Fwidgets` — the
@@ -586,8 +593,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn as a sign-in card. Its visible text
-is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, a warning,
+link, feedback script, and viewport every page has, drawn as a sign-in card.
+Its visible text is the mark `ikigenba`, the heading
+`Sign in to ikigenba.dev`, a warning,
 `<div class="alert" data-kind="warn" role="status">`, titled
 `Sign-in cancelled` and reading
 `Google didn't grant access, so you weren't signed in. You can try again.`,
@@ -628,8 +636,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 403. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn as a sign-in card. Its visible text
-is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, an error,
+link, feedback script, and viewport every page has, drawn as a sign-in card.
+Its visible text is the mark `ikigenba`, the heading
+`Sign in to ikigenba.dev`, an error,
 `<div class="alert" data-kind="err" role="alert">`, titled
 `Workspace membership required` and reading
 `ada@example.com isn't a verified account in the michaelgreenly.dev workspace. Sign in with your @michaelgreenly.dev account instead.`
@@ -735,10 +744,11 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn with the banner: the mark's text
-`ikigenba`, naming the service `auth` and not a link, the profile icon
-labelled `Profile` and titled `ada@michaelgreenly.dev` as a link to `/`, and
-the `Sign out` button in the form that POSTs to `/logout`. The banner holds no
+link, feedback script, and viewport every page has, drawn with the banner:
+the mark's text `ikigenba`, naming the service `auth` and not a link, the
+profile icon labelled `Profile` and titled `ada@michaelgreenly.dev` as a link
+to `/`, and the `Sign out` button in the form that POSTs to `/logout`. The
+banner holds no
 launcher button, and the page loads no `/_appkit/launcher.js`, since auth's
 services file lists no service with an icon here. Inside the page's one
 `<main>` its visible text is the heading `Your account` with the subtitle
@@ -746,9 +756,10 @@ services file lists no service with an icon here. Inside the page's one
 `ada@michaelgreenly.dev`, `Workspace` `michaelgreenly.dev`, and
 `Signed in via` `Google`; the `API tokens` card with its explanation and the
 user's tokens (`S5-tokens.md`); and the `Create a token` card, whose form
-POSTs to `/tokens` with fields `name` and `expires` (`S5-tokens.md`). After
-the `<main>`, the page ends with the page footer reading `auth <version>`,
-where `<version>` is what `auth --version` prints.
+POSTs to `/tokens` with fields `name` and `expires` (`S5-tokens.md`); in a
+browser, its `Create token` button, like `Sign out`, visibly reacts as the
+user presses it. After the `<main>`, the page ends with the page footer
+reading `auth <version>`, where `<version>` is what `auth --version` prints.
 Both forms return the same page; the `?return=<url>` is ignored.
 
 Preconditions:

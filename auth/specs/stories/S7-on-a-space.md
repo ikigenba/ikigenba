@@ -44,8 +44,9 @@ content-type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the sign-in page (`S3-sign-in.md`): an HTML page
-whose title is `auth`, which links `/_appkit/theme.css` as its stylesheet, and
-whose visible text includes the heading `Sign in to ikigenba.dev` and a link to
+whose title is `auth`, which links `/_appkit/theme.css` as its stylesheet,
+which loads `/_appkit/feedback.js`, and whose visible text includes the
+heading `Sign in to ikigenba.dev` and a link to
 `/login/google`. The sign-in page has no banner, so it carries no launcher,
 whatever the host's services file lists.
 
@@ -102,7 +103,9 @@ the button opens a list of the space's services with a search box labelled
 `S3-sign-in.md` tells. auth's own entry is in the list and is marked as the
 current page. The launcher's script is
 `https://auth.sbx.ikigenba.dev/_appkit/launcher.js` (`S8-assets.md`), so the
-launcher, like the style, needs nothing from any other origin.
+launcher, like the style, needs nothing from any other origin. Its button
+feedback script is `https://auth.sbx.ikigenba.dev/_appkit/feedback.js`, from
+the same host.
 
 Preconditions:
 
