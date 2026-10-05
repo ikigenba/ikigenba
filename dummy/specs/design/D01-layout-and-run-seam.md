@@ -32,8 +32,8 @@ documented contracts, and uses four of them:
   page.Banner` method yields the data the banner and footer are drawn from;
   `page.Templates()` is a fresh template set defining `banner`, `launcher` and
   `footer`, into which dummy parses its own templates; `page.Static()` serves
-  the shared stylesheet, fonts, licences and launcher script under
-  `page.StaticPrefix` (`/_appkit/`).
+  the shared stylesheet, fonts, licences, launcher script and feedback script
+  under `page.StaticPrefix` (`/_appkit/`).
 - `identity` (`github.com/ikigenba/ikigenba/appkit/identity`) —
   `identity.Require(next)` wraps dummy's whole handler, so every request
   reaches dummy's routes and `/mcp` only with an `X-User-Id`, and is otherwise
@@ -54,13 +54,14 @@ documented contracts, and uses four of them:
   writes an event it cannot deliver to its standard error.
 
 appkit owns the banner's, the footer's and the launcher's markup, the
-launcher's script, the stylesheet, the fonts and their licences, the MCP
-transport, the reading of the services file, and the event envelope, its
-delivery and the framework events (`service.started`, `service.stopping`,
-`request.started`, `request.finished`, `tool.called`); dummy authors none of
-them and carries no copy. dummy's own part of the trail is its one domain
-event, `widget.created`, naming the widget by its id under the entity type
-`widget`, whose id prefix `wgt_` appkit's D11 registers to dummy.
+launcher's script, the feedback script, the stylesheet, the fonts and their
+licences, the MCP transport, the reading of the services file, and the event
+envelope, its delivery and the framework events (`service.started`,
+`service.stopping`, `request.started`, `request.finished`, `tool.called`);
+dummy authors none of them and carries no copy. dummy's own part of the trail
+is its one domain event, `widget.created`, naming the widget by its id under
+the entity type `widget`, whose id prefix `wgt_` appkit's D11 registers to
+dummy.
 
 ## The two reads of the environment, both in main
 
