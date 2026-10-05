@@ -10,7 +10,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `telemetry` keeps the suite's trail of events; every service posts to it and agents query it.
 - `mcp` is the MCP gateway: one endpoint through which agents reach every service's tools.
 - `repos` is the suite's home for git repositories, served over smart HTTP and MCP.
-- `sites` publishes static sites from the suite's repositories.
+- `sites` is the suite's static site host: it publishes a repository that `repos` holds at one commit, public or private.
 - `scripts` runs Python scripts kept in `repos` on behalf of agents and keeps each run's input, output and files.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
