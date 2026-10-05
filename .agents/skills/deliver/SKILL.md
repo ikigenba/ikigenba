@@ -27,7 +27,7 @@ A sibling's `specs/`, `AGENTS.md` and layout are read as precedent, never cited 
 - The sub-projects the document names. One it introduces does not exist yet; creating it is part of the work.
 - A running sandbox with a stored token. Check with `sandbox status` and `sandbox token`; if either fails, ask the user.
 
-Defaults the user may override at invocation: `draft-stories` and `draft-design` run as Claude sub-agents, Opus where decisions are weighed, Sonnet for discovery and summaries; `build-spec` runs through [dispatch](../dispatch/SKILL.md) on a `sol` Codex agent; scaffolding and sandbox exercise run as Claude sub-agents.
+Defaults the user may override at invocation: `draft-stories` and `draft-design` run as Claude sub-agents, Opus where decisions are weighed, Sonnet for discovery and summaries; `build-spec` runs through [dispatch](../dispatch/SKILL.md) on a `sol` Codex agent; scaffolding and sandbox exercise run as Claude sub-agents. Every Claude sub-agent is spawned fresh with its model named, Opus unless this document says Sonnet, never as a fork and never on the orchestrator's own model; a sub-agent that coordinates in turn spawns its children under the same rule.
 
 ## Method
 
