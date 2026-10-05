@@ -82,15 +82,18 @@ human-authored; the build run never writes it. `devctl build` packs it beside
 - `git` 2.x on the `PATH`. scripts runs the host's `git` for every read of a
   repository (resolving a ref to a commit with `git rev-parse`, reading a
   repository's `ikigenba.*` config, unpacking a tree with `git archive`) and
-  links no git library; on a host opsctl provisions it. The tests run it too
+  links no git library; on a host the first-boot script
+  (`infra/templates/space-first-boot.sh`) installs it. The tests run it too
   (see Test discipline), so without it gate 4 fails.
 - Python 3.12, as `python3.12` on the `PATH`. scripts runs every script with
   it, and finds it on the `PATH` at start as it finds `git`. The version is
   one declaration in the source, from which the command scripts runs and
   everything a test needs of it derive. A developer installs it with
-  `uv python install 3.12`; on a host the first-boot script installs it. The
-  tests run it too (see Test discipline), so without it gate 4 fails. It and
-  `git` are approved dependencies of the repository; no other program is.
+  `uv python install 3.12`; on a host the first-boot script installs it, and
+  on a space launched before `python3.12` joined that script's install line
+  an operator installs it once by hand. The tests run it too (see Test
+  discipline), so without it gate 4 fails. It and `git` are approved
+  dependencies of the repository; no other program is.
 - the modules `go.mod` requires, in the Go module cache; `go.sum` is
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
@@ -364,9 +367,10 @@ build run never reads, edits, or tests it.
 
 scripts is an app, not a self-installing CLI: `devctl` builds it into a release
 tarball and pushes it to a space's host, where `opsctl install` installs it.
-The host must provide `git`, which opsctl provisions, and `python3.12`, which
-its first-boot script installs, and must run repos, whose repositories
-scripts reads.
+The host must provide `git` and `python3.12`, which its first-boot script
+installs (on a space launched before `python3.12` joined that script's install
+line, an operator installs it once by hand), and must run repos, whose
+repositories scripts reads.
 
 1. Set the version literal design declares to `vX.Y.Z`. The binary reports it
    verbatim, and the deploy refuses a tag that does not match it.
@@ -374,8 +378,9 @@ scripts reads.
 3. Tag that commit `scripts/vX.Y.Z` and push the tag.
 4. `devctl build scripts` at that tag writes
    `scripts/dist/scripts-vX.Y.Z.tar.xz`, holding `bin/scripts`, `etc/`, and
-   `share/icon.svg`, with no version recorded anywhere inside. It refuses a
-   binary whose `manifest` disagrees with the committed `etc/manifest.toml`.
+   `share/icon.svg`; the version is in the file's name and in the binary,
+   never in a member's path. It refuses a binary whose `manifest` disagrees
+   with the committed `etc/manifest.toml`.
 5. `devctl deploy <space> scripts/dist/scripts-vX.Y.Z.tar.xz` uploads the
    tarball to the space's `deploy/` prefix and runs `opsctl install` over ssh;
    the host fetches it, writes `etc/env` (the manifest's `[env]` defaults and

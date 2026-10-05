@@ -52,7 +52,7 @@
 <header><h2 id="script-title">Script</h2><p>Changed by an agent through the <code>update</code> tool.</p></header>
 <dl id="script" class="kv">
 <dt>Id</dt><dd><code>{{.ID}}</code></dd>
-<dt>Repository</dt><dd>{{if .Repo.Name}}{{.Repo.Name}}<span class="secondary-text"><code>{{.Repo.ID}}</code></span>{{else}}<span class="muted" title="the repository is gone"><code>{{.Repo.ID}}</code></span>{{end}}</dd>
+<dt>Repository</dt><dd>{{if .Repo.Name}}{{.Repo.Name}} <span class="secondary-text"><code>{{.Repo.ID}}</code></span>{{else}}<span class="muted" title="the repository is gone"><code>{{.Repo.ID}}</code></span>{{end}}</dd>
 <dt>Ref</dt><dd><code>{{.Ref}}</code></dd>
 <dt>Created</dt><dd><time datetime="{{.CreatedAt}}">{{.Created}}</time></dd>
 <dt>Runs kept</dt><dd>{{.RunsKept}} · the newest {{.KeepNewest}} are kept past {{.KeepDays}} days</dd>
