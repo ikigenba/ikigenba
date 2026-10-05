@@ -11,11 +11,11 @@ import (
 )
 
 func TestSharedFiles(t *testing.T) {
-	// R-QPR8-SG98 R-QVUQ-PAYP R-QX2N-32PE R-QYAJ-GUG3 R-QZIF-UM6S R-R0QC-8DXH R-R1Y8-M5O6 R-R364-ZXEV R-R4E1-DP5K R-R5LX-RGW9
+	// R-8JMY-S2KQ R-8KUV-5UBF R-QVUQ-PAYP R-8M2R-JM24 R-QYAJ-GUG3 R-QZIF-UM6S R-R0QC-8DXH R-R1Y8-M5O6 R-R4E1-DP5K R-R5LX-RGW9
 	f := newFixture(t)
 	second := web.Handler(freshServer(t, f, f.cfg))
 	static := page.Static()
-	for _, tc := range []struct{ name, content string }{{"theme.css", "text/css; charset=utf-8"}, {"launcher.js", "text/javascript; charset=utf-8"}, {"InterVariable.woff2", "font/woff2"}, {"InterVariable-Italic.woff2", "font/woff2"}, {"JetBrainsMono.woff2", "font/woff2"}, {"OFL.txt", "text/plain; charset=utf-8"}, {"TABLER-LICENSE.txt", "text/plain; charset=utf-8"}} {
+	for _, tc := range []struct{ name, content string }{{"theme.css", "text/css; charset=utf-8"}, {"launcher.js", "text/javascript; charset=utf-8"}, {"feedback.js", "text/javascript; charset=utf-8"}, {"InterVariable.woff2", "font/woff2"}, {"InterVariable-Italic.woff2", "font/woff2"}, {"JetBrainsMono.woff2", "font/woff2"}, {"OFL.txt", "text/plain; charset=utf-8"}, {"TABLER-LICENSE.txt", "text/plain; charset=utf-8"}} {
 		path := page.StaticPrefix + tc.name
 		get := request(f.h, "GET", path, "u")
 		again := request(second, "GET", path, "u")
@@ -86,7 +86,7 @@ func TestSharedFiles(t *testing.T) {
 			equalResponse(t, out, want)
 		}
 	}
-	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS"} {
+	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/FEEDBACK.JS", "/_appkit/feedback.js/", "/_appkit/feedback.js/x"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := httptest.NewRequest(method, "http://example"+path, nil)
 			r.Header.Set("X-User-Id", "u")

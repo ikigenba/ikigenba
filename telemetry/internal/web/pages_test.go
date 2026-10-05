@@ -74,6 +74,15 @@ func pageStarts(s string) []pageSpan {
 
 // R-RMOJ-499Z: attributes are read left to right, without browser heuristics.
 func pageAttrs(s string, tag pageSpan, name string) []string {
+	return pageReadAttrs(s, tag, name, false)
+}
+
+// R-8DJG-V7V9: bare attributes use the same left-to-right reading.
+func pageBareAttr(s string, tag pageSpan, name string) bool {
+	return len(pageReadAttrs(s, tag, name, true)) != 0
+}
+
+func pageReadAttrs(s string, tag pageSpan, name string, bare bool) []string {
 	var values []string
 	i := tag.start + 1
 	for i < tag.end-1 && (pageASCIIAlnum(s[i]) || s[i] == '-') {
@@ -108,10 +117,12 @@ func pageAttrs(s string, tag pageSpan, name string) []string {
 			if i == tag.end-1 {
 				break
 			}
-			if strings.EqualFold(attr, name) {
+			if !bare && strings.EqualFold(attr, name) {
 				values = append(values, html.UnescapeString(s[begin:i]))
 			}
 			i++
+		} else if bare && strings.EqualFold(attr, name) {
+			values = append(values, "")
 		}
 	}
 	return values
@@ -318,7 +329,7 @@ func pageWritten(t *testing.T, body string, b page.Banner) string {
 }
 
 func TestPlainPageFrameAndResources(t *testing.T) {
-	// R-SDIB-J7L9 R-SEQ7-WZBY R-SFY4-AR2N R-SH60-OITC R-SIDX-2AK1 R-SJLT-G2AQ R-SKTP-TU1F R-27ND-LVJ9
+	// R-SDIB-J7L9 R-SEQ7-WZBY R-SFY4-AR2N R-8ERD-8ZLY R-8FZ9-MRCN R-SIDX-2AK1 R-SJLT-G2AQ R-SKTP-TU1F R-27ND-LVJ9
 	b := page.Banner{Service: "chosen-service", Version: "chosen-version", Email: "reader@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"}
 	h := pageHandler(t, b)
 	for _, path := range []string{"/", "/about"} {
@@ -349,8 +360,9 @@ func TestPlainPageFrameAndResources(t *testing.T) {
 				t.Fatal("head hook", tc, matches)
 			}
 		}
-		if len(pageTags(s, "script", false)) != 0 {
-			t.Fatal("own script")
+		feedback := pageOne(t, s, "script")
+		if !pageAttrIs(s, feedback, "src", "/_appkit/feedback.js") || feedback.end > bt.start || len(pageAttrs(s, feedback, "defer")) == 0 && !pageBareAttr(s, feedback, "defer") {
+			t.Fatal("deferred feedback script missing from head")
 		}
 		for _, tag := range pageStarts(s) {
 			if len(pageAttrs(s, tag, "style")) != 0 || len(pageAttrs(s, tag, "srcset")) != 0 {
@@ -443,7 +455,7 @@ func TestAboutHooksAndVisibleText(t *testing.T) {
 	}
 }
 func TestLauncherDependsOnBannerServices(t *testing.T) {
-	// R-257K-UC1V
+	// R-8H76-0J3C
 	for _, listed := range []bool{false, true} {
 		b := page.Banner{Service: web.ServiceName, Version: "page-version"}
 		if listed {
@@ -459,12 +471,21 @@ func TestLauncherDependsOnBannerServices(t *testing.T) {
 				}
 			}
 			scripts := pageTags(body, "script", false)
-			if listed {
-				if count != 1 || len(scripts) != 1 || !pageAttrIs(body, scripts[0], "src", "/_appkit/launcher.js") {
-					t.Fatal("missing launcher", count, scripts)
+			feedback, launcher := 0, 0
+			for _, script := range scripts {
+				if pageAttrIs(body, script, "src", "/_appkit/feedback.js") {
+					feedback++
 				}
-			} else if count != 0 || len(scripts) != 0 || len(pageTags(body, "input", false)) != 0 || strings.Contains(body, "/_appkit/launcher.js") {
-				t.Fatal("unexpected launcher")
+				if pageAttrIs(body, script, "src", "/_appkit/launcher.js") {
+					launcher++
+				}
+			}
+			if listed {
+				if count != 1 || len(scripts) != 2 || feedback != 1 || launcher != 1 {
+					t.Fatal("missing launcher or feedback", count, scripts)
+				}
+			} else if count != 0 || len(scripts) != 1 || feedback != 1 || len(pageTags(body, "input", false)) != 0 || strings.Contains(body, "/_appkit/launcher.js") {
+				t.Fatal("unexpected launcher or missing feedback")
 			}
 		}
 	}
