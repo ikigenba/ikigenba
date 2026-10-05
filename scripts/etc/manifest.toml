@@ -1,0 +1,23 @@
+app = "scripts"
+description = "Python scripts run from the suite's repositories"
+default = false
+mcp = true
+secrets = []
+
+[env]
+REPOS_DIR = "../repos/state/repos"
+TREE_MAX_BYTES = "268435456"
+OUTPUT_MAX_BYTES = "1048576"
+OPERATION_SECONDS = "600"
+SCRIPT_SECONDS = "600"
+RUN_KEEP_DAYS = "15"
+RUN_KEEP_COUNT = "10"
+
+[database]
+engine = "sqlite"
+path = "state/scripts.db"
+
+[resources]
+cpu_weight = 50
+memory_max = "1G"
+io_weight = 50
