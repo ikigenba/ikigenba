@@ -7,3 +7,7 @@
 # .gitignore of its own.
 bin/
 dist/
+
+# Runtime state. An app run from its checkout keeps its database under its own
+# state/; no leading slash, so this covers every app.
+state/
