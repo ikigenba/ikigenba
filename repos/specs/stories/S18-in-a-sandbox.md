@@ -199,7 +199,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is events' answer to `search`, relayed by the gateway: no `isError` member, and a `structuredContent` holding, for the push, exactly one event, since it moved one ref. That event's `id` begins `evt_`; its `service` is `repos` and its `event` `repo.pushed`; its `attrs` are `repo` `<id>`, `ref` `refs/heads/main`, `old` 40 zeros, and `new` `<new>`; its `request_id` is the id the sandbox's nginx gave the `POST /notes.git/git-receive-pack`; its `user` is `<user-id>`; its `cause` is empty; and its `depth` is 0.
+Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is events' answer to `search`, relayed by the gateway: no `isError` member, and a `structuredContent` holding, for the push, exactly one event, since it moved one ref. That event's `id` begins `evt_`; its `service` is `repos` and its `event` `repo.pushed`; its `attrs` are `repo` `<id>`, `ref` `refs/heads/main`, `old` 40 zeros, and `new` `<new>`; its `request_id` is the id the sandbox's nginx gave the `POST /notes.git/git-receive-pack`; its `user` is `<user-id>`; its `cause` is empty; and its `depth` is 0, since the push sent no `X-Event-Cause` or `X-Event-Depth`.
 
 Preconditions:
 
@@ -209,6 +209,37 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. The push's `repo.pushed` is still in the trail, as `An agent creates a repository in a sandbox and pushes to it` says; the event sent to events is in addition to it.
+
+## A developer in a sandbox pushes with an event as the cause
+
+A push made in reaction to an event names that event with the headers `X-Event-Cause` and `X-Event-Depth` (`S02-serve.md`), and the sandbox's nginx passes them through to repos, since it sets neither itself. The developer pushes with the event's id `evt_0123456789abcdef` as the cause, at depth `0`.
+
+Command:
+
+```
+$ echo caused >> notes/README.md
+$ git -C notes commit -q -a -m 'Caused commit'
+$ git -C notes -c http.extraHeader='X-Event-Cause: evt_0123456789abcdef' -c http.extraHeader='X-Event-Depth: 0' push -q origin main
+$ git -C notes ls-remote origin refs/heads/main
+```
+
+Output:
+
+```
+<new>	refs/heads/main
+```
+
+Each command exits 0. `ls-remote` writes its one line to stdout; nothing is on stderr. `<new>` is the sha `git -C notes rev-parse HEAD` prints. The push behaves exactly as it does without the headers. Then the `search` request of `An agent in a sandbox finds a developer's push among the events` answers with an event for this push: `attrs` `repo` `<id>`, `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>`, under the id the sandbox's nginx gave this push and user `<user-id>`, with `cause` `evt_0123456789abcdef` and `depth` 1.
+
+Preconditions:
+
+- The clone of `An agent creates a repository in a sandbox and pushes to it` exists, and its `main` is `<old>`, the sha `notes`' `main` points at in repos.
+- `events` is active throughout.
+
+Postconditions:
+
+- `notes`' `refs/heads/main` in repos is `<new>`.
+- The trail holds repos' `repo.pushed` with `old=<old>` and `new=<new>` and `request.finished` with `status=200` under the push's id, exactly as for a push without the headers.
 
 ## A developer pushes in a sandbox while events is stopped
 

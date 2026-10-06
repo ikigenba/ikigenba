@@ -11,7 +11,7 @@ $ git config --global --add http.http://127.0.0.1:8080/.extraHeader 'X-User-Emai
 
 so the stand-in URL of `notes` is `http://127.0.0.1:8080/notes.git`; on a host it is the repo's `clone_url` (`S07-list-and-show.md`). git's own progress and report go to its stderr and are not fixed beyond what a story quotes. The caller `u_7f3a9c21` owns `notes`, `rep_3f9a0c1d2e4b5a69`, and `site`, `rep_8c21d4e0f7a3b915`, both available, unless a story says otherwise. `<head>` is the 40-hex sha `refs/heads/main` of `notes` points at.
 
-Every request on these routes is recorded in repos' trail (`S02-serve.md`), shown as the JSON object telemetry receives, by its `request.started`, with `method` and `path`, the URL path without its query, and its `request.finished`, with `status`, `duration_us`, `request_bytes`, the bytes of request body repos read, and `response_bytes`, the bytes of response body it wrote; both counts are of the body as sent, after any chunked encoding is removed. A developer's git sends no `X-Request-Id`, so each request git makes is given an id of its own (`S02-serve.md`), and one clone or push is several requests. Between a request's two events come the domain events of the operation, in this order: any `operation.waited` (`S12-limits.md`), then the operation's own. A `POST git-upload-pack` that completes records `repo.fetched`, with `repo`, the repo's id, and `bytes`, the bytes of pack it served, `0` when it served none, as for a client asking only for the refs. A `POST git-receive-pack` whose push git accepts records one `repo.pushed` per ref it changed, with `repo`; `ref`, the ref's full name, `refs/heads/main` or `refs/tags/draft` say; `old` and `new`, the 40-hex shas the ref pointed at before and after, `0000000000000000000000000000000000000000` for a ref the push created or deleted. When one push changes several refs their order is not fixed. Each such `repo.pushed` also goes to the event bus once git has moved its ref, with the same attributes, request id, and user (`S02-serve.md`): the stories here show the trail's record, and the bus has received the same event for each. A push that changes no ref, fails, or is refused emits nothing to the bus. A ref advertisement, the two `GET` routes, records no domain event. No event carries a repo's name except as part of a request's `path`, and none carries a commit message, a path within the repo, an author, or a credential. No story in this group earns a line on stderr but the one where the event bus stays away too long, which earns the one line `S02-serve.md` gives a dropped bus event.
+Every request on these routes is recorded in repos' trail (`S02-serve.md`), shown as the JSON object telemetry receives, by its `request.started`, with `method` and `path`, the URL path without its query, and its `request.finished`, with `status`, `duration_us`, `request_bytes`, the bytes of request body repos read, and `response_bytes`, the bytes of response body it wrote; both counts are of the body as sent, after any chunked encoding is removed. A developer's git sends no `X-Request-Id`, so each request git makes is given an id of its own (`S02-serve.md`), and one clone or push is several requests. Between a request's two events come the domain events of the operation, in this order: any `operation.waited` (`S12-limits.md`), then the operation's own. A `POST git-upload-pack` that completes records `repo.fetched`, with `repo`, the repo's id, and `bytes`, the bytes of pack it served, `0` when it served none, as for a client asking only for the refs. A `POST git-receive-pack` whose push git accepts records one `repo.pushed` per ref it changed, with `repo`; `ref`, the ref's full name, `refs/heads/main` or `refs/tags/draft` say; `old` and `new`, the 40-hex shas the ref pointed at before and after, `0000000000000000000000000000000000000000` for a ref the push created or deleted. When one push changes several refs their order is not fixed. Each such `repo.pushed` also goes to the event bus once git has moved its ref, with the same attributes, request id, and user (`S02-serve.md`): the stories here show the trail's record, and the bus has received the same event for each. A push that changes no ref, fails, or is refused emits nothing to the bus. A push's bus events carry the `cause` and `depth` its `X-Event-Cause` and `X-Event-Depth` headers set (`S02-serve.md`), which a developer's git sends with `-c http.extraHeader` and the stand-in forwarder passes on as it passes every byte, as a host's nginx passes them on because it sets neither itself; a push without them emits each event with an empty `cause` and `depth` `0`. The headers change nothing in the trail: a push's `repo.pushed` there is the same with them or without them. A ref advertisement, the two `GET` routes, records no domain event. No event carries a repo's name except as part of a request's `path`, and none carries a commit message, a path within the repo, an author, or a credential. No story in this group earns a line on stderr but the one where the event bus stays away too long, which earns the one line `S02-serve.md` gives a dropped bus event.
 
 ## A developer reads a repository's refs
 
@@ -410,6 +410,76 @@ Postconditions:
 - `notes`' `refs/heads/main` is `<new>`, and the push's requests recorded in the trail exactly what they record in `A developer pushes new commits to a branch`, its `repo.pushed` included.
 - The events app never receives the push's `repo.pushed`, not even once it is started again.
 - The trail holds an `event.lost` from `repos`, recorded after the push's `repo.pushed`, carrying among its attributes the `id` repos gave the dropped bus event.
+
+## A developer pushes with an event as the cause
+
+A push a script makes in reaction to an event names that event, so the push's own events can be traced back to it through `cause`, and the bus's limit on `depth` can stop a loop of reactions. The developer stands in for such a script: they push with the event's id `evt_0123456789abcdef` as the cause, at depth `0`.
+
+Command:
+
+```
+$ git -C notes -c http.extraHeader='X-Event-Cause: evt_0123456789abcdef' -c http.extraHeader='X-Event-Depth: 0' push origin main
+```
+
+Output:
+
+```
+To http://127.0.0.1:8080/notes.git
+```
+
+Exits 0. The line is on stderr, after git's own progress lines and before git's line reporting `main` moving from `<old>` to `<new>`; stdout is empty.
+
+Preconditions:
+
+- `notes`' `main` is at `<old>`; `./notes` is a clone of it with commits on `main` after `<old>`, ending at `<new>`.
+
+Postconditions:
+
+- `notes`' `refs/heads/main` is `<new>`, and the push's requests recorded in the trail exactly what they record in `A developer pushes new commits to a branch`, its `repo.pushed` included, with nothing of either header.
+- The events app has received the push's `repo.pushed`, and its `search` shows it with `id` beginning `evt_`, `service` `repos`, `event` `repo.pushed`, `attrs` `repo` `rep_3f9a0c1d2e4b5a69`, `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>`, the push's `request_id`, `user` `u_7f3a9c21`, `cause` `evt_0123456789abcdef`, and `depth` `1`.
+
+## A developer pushes with a malformed cause header
+
+The two headers count only together and only well-formed. When one is missing, or either is not of its form, repos ignores both, and the push is the plain push of `A developer pushes new commits to a branch`. Each form below sends the headers in one such way: a cause without a depth, a depth without a cause, a cause whose hexadecimal digits are not lowercase, a negative depth, and a depth that is not a number. They behave identically.
+
+Command:
+
+```
+$ git -C notes -c http.extraHeader='X-Event-Cause: evt_0123456789abcdef' push origin main
+```
+
+```
+$ git -C notes -c http.extraHeader='X-Event-Depth: 0' push origin main
+```
+
+```
+$ git -C notes -c http.extraHeader='X-Event-Cause: evt_0123456789ABCDEF' -c http.extraHeader='X-Event-Depth: 0' push origin main
+```
+
+```
+$ git -C notes -c http.extraHeader='X-Event-Cause: evt_0123456789abcdef' -c http.extraHeader='X-Event-Depth: -1' push origin main
+```
+
+```
+$ git -C notes -c http.extraHeader='X-Event-Cause: evt_0123456789abcdef' -c http.extraHeader='X-Event-Depth: one' push origin main
+```
+
+Output:
+
+```
+To http://127.0.0.1:8080/notes.git
+```
+
+Exits 0. The line is on stderr, after git's own progress lines and before git's line reporting `main` moving from `<old>` to `<new>`; stdout is empty.
+
+Preconditions:
+
+- `notes`' `main` is at `<old>`; `./notes` is a clone of it with commits on `main` after `<old>`, ending at `<new>`.
+
+Postconditions:
+
+- `notes`' `refs/heads/main` is `<new>`, and the push's requests recorded in the trail exactly what they record in `A developer pushes new commits to a branch`, its `repo.pushed` included.
+- The events app has received the push's `repo.pushed`, and its `search` shows it with `id` beginning `evt_`, `service` `repos`, `event` `repo.pushed`, `attrs` `repo` `rep_3f9a0c1d2e4b5a69`, `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>`, the push's `request_id`, `user` `u_7f3a9c21`, an empty `cause`, and `depth` `0`.
 
 ## A developer asks for another user's repository
 
