@@ -10,9 +10,10 @@ cannot be addressed as a hostname over TLS, so everything on the host that
 reaches it — opsctl itself and litestream through the file opsctl generates —
 addresses it path-style.
 
-Two different things are kept, so there are two pairs of commands. A
-**service** is what lives under `/opt/<name>/`; the **host** is the machine's
-own configuration and its certificate. A service backup never touches `/etc/`,
+Two different things are kept, so there are two pairs of commands for keeping
+them; a snapshot, below, is a third artifact. A **service** is what lives
+under `/opt/<name>/`; the **host** is the machine's own configuration and its
+certificate. A service backup never touches `/etc/`,
 and a host restore never touches `/opt/`.
 
 A host about to be discarded has one more thing to do: `opsctl retire`
@@ -20,13 +21,21 @@ stops everything, lets litestream ship what it holds, and takes the service
 and host backups one last time, so a destroy loses nothing the timers had not
 yet copied.
 
-The top-level usage gains four lines under `Commands:`:
+A **snapshot** is the one artifact that carries a service's data whole:
+`opsctl snapshot` writes a service's `etc/` but for `etc/env`, which holds its
+secrets, and its `state/`, together with a consistent copy of its database,
+and `opsctl restore --from` puts one back.
+It is how a space is given data it never made — a golden set, or another
+space's data — and nothing on the host takes one on a timer.
+
+The top-level usage gains five lines under `Commands:`:
 
 ```
   backup    back up a service's files to S3
   host      back up and restore the host's own configuration
   restore   restore a service from its backups
   retire    stop every service and take the host's final backup
+  snapshot  copy a service's files and database to S3 as one tarball
 ```
 
 Configuration keys:
@@ -124,6 +133,9 @@ snapshot and the committed changes after it, and nothing else.
 - Every service's `etc/` and `state/`, under the service's own name, by
   `opsctl backup`.
 - Every declared database, under the service's own name, by `litestream`.
+- A snapshot of a service — its `etc/` but for `etc/env`, its `state/`, and a
+  copy of its database — under `snapshots/<service>/`, by `opsctl snapshot`, only when
+  someone runs it.
 - Never `cache/`: it is, by the name, reconstructible.
 - Never `/etc/nginx/` and never a unit file: both are generated from the
   configuration store and what is under `/opt`, so a restored host writes
@@ -368,8 +380,8 @@ opsctl: backup.s3_uri not set
 ```
 
 Exits 1. The line is on stderr; stdout is empty. With `aws.region` unset the
-line is `opsctl: aws.region not set`. `opsctl host backup` and
-`opsctl restore` say the same.
+line is `opsctl: aws.region not set`. `opsctl host backup`,
+`opsctl restore`, and `opsctl snapshot` say the same.
 
 Preconditions:
 
@@ -538,8 +550,8 @@ Postconditions:
   generated from the store and an edit to one would be overwritten by the
   next `init`.
 - A space whose periods are all `0` and which has no service declaring a
-  database writes nothing at all, so its prefix stays empty and it can be a
-  restore target but never a source.
+  database writes nothing on its own, so its prefix stays empty and it can be
+  a restore target but never a source of backups.
 
 ## An operator asks what `retire` can do
 
@@ -696,6 +708,196 @@ Postconditions:
   no object was written for `crm`, and its earlier backups are untouched.
   `crm.db` was shipped in full before the files step ran.
 
+## An operator asks what `snapshot` can do
+
+A backup cannot stand a service up somewhere else on its own: its tarball
+leaves the database out, because litestream owns it. A snapshot is the
+service's data in one object, database included, so it can be put back on any
+space. It is taken while the service runs: nothing is stopped. It carries no
+credential: `etc/env` holds the service's secret values and is left out, so a
+snapshot can be copied anywhere without taking a space's secrets with it. A
+database's own rows, token hashes among them, are data and travel.
+
+Command:
+
+```
+$ opsctl snapshot --help
+```
+
+```
+$ opsctl snapshot -h
+```
+
+Output:
+
+```
+Usage: opsctl snapshot [SERVICE]
+
+Copy every service's etc/ and state/, and the database of a service that
+declares a [database], to snapshots/<service>/ under the prefix in
+backup.s3_uri, or just SERVICE when one is named. Every snapshot of one run
+carries the same timestamp.
+
+The database copy is rebuilt from the replica litestream.service keeps, so
+nothing is stopped; it may trail the live database by the changes litestream
+has not yet shipped. Never copied: cache/; etc/env, which holds the service's
+secrets; anything opsctl generates; and the database's -wal and -shm and its
+litestream metadata directory.
+
+'opsctl restore SERVICE --from URI' puts a snapshot back.
+
+Configuration keys:
+  aws.region      the region the backup bucket lives in
+  backup.s3_uri   the prefix this host backs up to
+```
+
+Exits 0. The text is on stdout; stderr is empty. It prints for any user.
+
+Preconditions:
+
+- `opsctl` is installed on the host.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An agent snapshots every service on a host
+
+`devctl golden capture` runs this over ssh to capture a space's data whole.
+One line per service, in name order, as `opsctl backup` prints them, but each
+names the full URI it wrote, because that URI is what `opsctl restore --from`
+takes. Every object of one run carries the same timestamp, so a run is one
+set, and the services' data agree with one another as closely as one run can
+make them.
+
+Command:
+
+```
+$ sudo opsctl snapshot
+```
+
+Output:
+
+```
+crm: ok (s3://ikigenba.dev/sbx/snapshots/crm/2026-09-12T14:22:51Z.tar.zst, 1.3 MiB)
+dashboard: ok (s3://ikigenba.dev/sbx/snapshots/dashboard/2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, `backup.s3_uri` is
+  `s3://ikigenba.dev/sbx/`, and the host's role can read and write under that
+  prefix.
+- Two services are installed and running. `/opt/crm/etc/manifest.toml`
+  declares a `[database]` at `state/crm.db`, and litestream has replicated it
+  under `<backup.s3_uri>crm/`; `dashboard`'s declares none.
+
+Postconditions:
+
+- `<backup.s3_uri>snapshots/crm/2026-09-12T14:22:51Z.tar.zst` holds `crm`'s
+  `etc/` but for `etc/env`, and its `state/`; and `state/crm.db` in it is a whole, consistent
+  database: what the replica held when the run read it, which may trail the
+  live database by the changes litestream had not yet shipped. It holds no
+  `state/crm.db-wal`, no `state/crm.db-shm`, and nothing under
+  `state/.crm.db-litestream/`.
+- `<backup.s3_uri>snapshots/dashboard/2026-09-12T14:22:51Z.tar.zst` holds
+  `dashboard`'s `etc/` but for `etc/env`, and all of its `state/`: with no
+  database declared there is no replica to read and no copy to make.
+- No unit was stopped or started, and `crm`'s live database, its `-wal`, and
+  its replica are as litestream left them. Nothing on the host has changed.
+- No backup and no earlier snapshot was deleted or overwritten. Running it
+  again writes a new set under a new timestamp.
+
+## An operator snapshots one service
+
+Command:
+
+```
+$ sudo opsctl snapshot crm
+```
+
+Output:
+
+```
+crm: ok (s3://ikigenba.dev/sbx/snapshots/crm/2026-09-12T14:22:51Z.tar.zst, 1.3 MiB)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- As for the previous story.
+
+Postconditions:
+
+- One object was written, under `snapshots/crm/` and no other prefix. No other
+  service was read.
+
+## A snapshot finds a service with no replica yet
+
+A service declares a database that litestream has not replicated — a database
+just added to a manifest, or replication that never started. There is nothing
+to copy the database from, and a snapshot without its database is a backup
+under another name, so that service fails and nothing is written for it. As
+with `opsctl backup`, one service's failure is reported and the rest of the run
+proceeds, and the exit code says the report holds a failure.
+
+Command:
+
+```
+$ sudo opsctl snapshot; echo "exit $?"
+```
+
+Output:
+
+```
+crm: failed: no replica under the prefix
+dashboard: ok (s3://ikigenba.dev/sbx/snapshots/dashboard/2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+exit 1
+```
+
+Exits 1. The lines are on stdout; stderr is empty. A service whose files
+cannot be read fails the same way, with the line `opsctl backup` prints for it:
+`crm: failed: /opt/crm/state/outbox: permission denied`. `opsctl snapshot crm`
+alone prints only the `crm` line and exits 1.
+
+Preconditions:
+
+- `/opt/crm/etc/manifest.toml` declares a `[database]`, and
+  `<backup.s3_uri>crm/` holds nothing litestream wrote.
+
+Postconditions:
+
+- `dashboard`'s object was written. Nothing was written under
+  `<backup.s3_uri>snapshots/crm/`, and `crm`'s earlier snapshots are untouched.
+- Nothing on the host has changed.
+
+## An operator snapshots a service that is not there
+
+Command:
+
+```
+$ sudo opsctl snapshot gmail
+```
+
+Output:
+
+```
+opsctl: no service 'gmail'
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `/opt/gmail/` does not exist, or holds neither an `etc/` nor a `state/`.
+
+Postconditions:
+
+- Nothing has changed. No object was written.
+
 ## An operator asks what `restore` can do
 
 Command:
@@ -711,12 +913,13 @@ $ opsctl restore -h
 Output:
 
 ```
-Usage: opsctl restore SERVICE [--at <timestamp>]
+Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
 Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with a backup, and, when
 SERVICE declares a [database], replace that database with what litestream
-holds. Without --at both halves are the newest there is. Nothing under bin/ or
-share/ is touched.
+holds. Without --at or --from both halves are the newest there is. With
+--from, everything comes from the one snapshot at that URI instead, database
+included. Nothing under bin/ or share/ is touched.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -733,16 +936,24 @@ never ran SERVICE is replicated from the start line on.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
+  --from <uri>        restore the service from the snapshot at this s3:// URI
 
 --at governs both halves: the files come from the newest tarball written at or
 before that moment, and the database is rebuilt to the moment itself. The two
 are not the same instant, because the tarball is written on a timer and the
 database is replicated continuously.
 
+--from takes etc/, state/, and the database from a snapshot 'opsctl snapshot'
+wrote, and reads neither the backups nor litestream's replica. A snapshot holds
+no etc/env, so --from writes it as 'opsctl install' does, from the parameter
+/<host.name>/SERVICE and the manifest the snapshot holds. It cannot be
+combined with --at.
+
 Configuration keys:
   aws.region      the region the backup bucket lives in
   backup.s3_uri   the prefix this host backs up to
   host.name       the fully-qualified name this host answers at
+  apps.drain_seconds  how long the app may drain when stopped (default 5)
   backup.service_db_seconds  how often a declared database is snapshotted whole
   backup.service_wal_seconds  how often a declared database's committed changes are shipped
 ```
@@ -1208,6 +1419,135 @@ Postconditions:
   binary to ask a version of and no units to ask states of, but a restored
   database whose journal mode it can read.
 
+## An agent restores a service from a snapshot
+
+`devctl seed` runs this over ssh to give a space data it never made. It has
+first copied a snapshot — from a golden set, or from another space — under
+this space's own prefix, at `seed/<service>/`, because the host can read
+nothing outside it. Everything comes from that one object: the files and the
+database are one moment, the moment the snapshot was taken, and neither this
+space's backups nor its replica are read. Otherwise the restore is the
+ordinary one, step for step, but for one more: the snapshot carries no
+`etc/env`, so the `secrets` step reads this host's own parameter for the
+service, as `opsctl install` does, before anything is stopped, and the `files`
+step writes `etc/env` from it. The source space's secrets never reach this
+one. The snapshot may come from an older release; the app brings its schema
+forward itself when it starts, as after any restore.
+
+Command:
+
+```
+$ sudo opsctl restore crm --from s3://ikigenba.dev/sbx/seed/crm/2026-09-12T14:22:51Z.tar.zst
+```
+
+Output:
+
+```
+source: ok (s3://ikigenba.dev/sbx/seed/crm/2026-09-12T14:22:51Z.tar.zst, 1.3 MiB)
+secrets: ok (3 keys)
+stop: ok (ikigenba-crm.socket, ikigenba-crm.service, litestream.service)
+files: ok (/opt/crm/etc, /opt/crm/state, 13 files)
+db: ok (/opt/crm/state/crm.db, from snapshot)
+litestream: ok (unchanged)
+start: ok (litestream.service, ikigenba-crm.socket, ikigenba-crm.service)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, `backup.s3_uri` is
+  `s3://ikigenba.dev/sbx/`, and the host's role can read under that prefix.
+- The object at the URI is a snapshot of `crm` that `opsctl snapshot` wrote.
+- `host.name` is `sbx.ikigenba.dev`, and `/sbx.ikigenba.dev/crm` holds every
+  name the snapshot's manifest lists in `secrets`.
+- `ikigenba-crm.socket` is listening.
+
+Postconditions:
+
+- `/opt/crm/etc/` and `/opt/crm/state/` are exactly what the snapshot holds,
+  `/opt/crm/state/crm.db` included, and `/opt/crm/etc/env` is what
+  `opsctl install` would write from this host's parameter and the snapshot's
+  manifest: mode `0600`, every secret the manifest names, its `[env]`,
+  `DRAIN_SECONDS`, and `IKIGENBA_SERVICES`. The values are never printed.
+  Anything else that was there and is not in the snapshot is gone.
+- Everything else the ordinary restore's postconditions say: `bin/` and
+  `share/` untouched, the units back as they were, `/etc/litestream.yml`
+  regenerated, `/var/lib/ikigenba/services.json` rewritten, no unit enabled
+  or disabled, nginx not reloaded.
+- litestream replicates the restored database to `<backup.s3_uri>crm/` from
+  the `start` line on. The history it held for the database this restore
+  replaced is litestream's to reconcile, and the restore does not remove it.
+- The restore wrote and deleted no object under `<backup.s3_uri>`; the
+  snapshot is still where it was.
+- The stop, start, disabled, retry, and fresh-host cases behave as the
+  ordinary restore's stories show, with the `source` and `db` lines above. A
+  snapshot of a service that declares no `[database]` restores as the
+  no-database story shows: no `db` line, and litestream is not touched.
+
+## An agent restores from a snapshot that is not there
+
+The source is read before anything is stopped, so a URI that names nothing
+costs nothing.
+
+Command:
+
+```
+$ sudo opsctl restore crm --from s3://ikigenba.dev/sbx/seed/crm/2026-09-12T14:22:51Z.tar.zst
+```
+
+Output:
+
+```
+source: failed: s3://ikigenba.dev/sbx/seed/crm/2026-09-12T14:22:51Z.tar.zst: no such object
+opsctl: restore crm failed at source
+```
+
+Exits 1. The failed step is on stdout; the diagnostic is on stderr. A URI the
+host's role cannot read — one outside `backup.s3_uri`, such as a golden set's
+own `s3://ikigenba.dev/golden/...` — fails at the same step:
+`source: failed: <uri>: <S3's refusal>`.
+
+Preconditions:
+
+- No object exists at the URI, or the host's role cannot read it.
+
+Postconditions:
+
+- Nothing has changed. No unit was stopped and nothing under `/opt/crm/` was
+  read or written.
+
+## An agent restores from a snapshot whose secret has never been pushed
+
+The secrets are read before anything is stopped, so a space that lacks one of
+the service's secrets refuses the restore, as it would refuse the install.
+
+Command:
+
+```
+$ sudo opsctl restore crm --from s3://ikigenba.dev/sbx/seed/crm/2026-09-12T14:22:51Z.tar.zst
+```
+
+Output:
+
+```
+source: ok (s3://ikigenba.dev/sbx/seed/crm/2026-09-12T14:22:51Z.tar.zst, 1.3 MiB)
+secrets: failed: crm: no value for 'CRM_API_KEY' in /sbx.ikigenba.dev/crm
+opsctl: restore crm failed at secrets
+```
+
+Exits 1. The step lines are on stdout; the diagnostic is on stderr.
+
+Preconditions:
+
+- The snapshot's manifest names `CRM_API_KEY` and `/sbx.ikigenba.dev/crm`
+  does not hold it, or the parameter does not exist at all.
+
+Postconditions:
+
+- Nothing has changed. No unit was stopped and nothing under `/opt/crm/` was
+  written.
+
 ## An operator runs restore with no service, or more than one
 
 Command:
@@ -1225,8 +1565,10 @@ see 'opsctl restore --help' for usage
 ```
 
 Exits 2. The text is on stderr; stdout is empty. More than one operand gives
-`opsctl: restore takes one SERVICE`, and an `--at` that is not an RFC 3339
-timestamp gives `opsctl: --at takes an RFC 3339 timestamp`.
+`opsctl: restore takes one SERVICE`, an `--at` that is not an RFC 3339
+timestamp gives `opsctl: --at takes an RFC 3339 timestamp`, a `--from` that is
+not an `s3://` URI gives `opsctl: --from takes an s3:// URI`, and `--at` and
+`--from` together give `opsctl: --at and --from cannot be combined`.
 
 Preconditions:
 

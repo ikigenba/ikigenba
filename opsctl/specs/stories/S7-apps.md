@@ -8,11 +8,13 @@ short of the app's data: `state/` stays on the host, so a later install lands
 over it. Restarting an app changes nothing on disk. What each host is running
 is read back from the host itself, never from a record kept anywhere else.
 
-The name the manifest declares is checked before anything is written, by the
-rule devctl's build story states: a DNS label that is not `host`, `deploy`,
-`backup-host`, `backup-services`, or `renew-certificate`, the prefixes and
-unit names the host already uses. A file can come from anywhere, so install
-does not trust that build checked.
+The name the manifest declares is checked before anything is written: it is a
+DNS label that is not `host`, `deploy`, `snapshots`, `seed`, `backup-host`,
+`backup-services`, or `renew-certificate`, the prefixes and unit names the
+host already uses. `snapshots` and `seed` are prefixes under the space's own
+(see `S8-backup.md`), where an app of that name would keep its backups and
+replica beside them. devctl's build checks a name too, but a file can come
+from anywhere, so install does not trust that build checked.
 
 The top-level usage gains six lines under `Commands:`:
 
@@ -154,13 +156,14 @@ no request can start the service again while they work or after.
 
 An app owns its schema, and the file carries what that takes: at every start
 the app creates the database its manifest declares if none is there, runs its
-migrations forward, and loads its seed data only when it created the database
-itself. opsctl never runs a migration and knows nothing about seeds. What the
-host promises is the order: a restore lands `etc/`, `state/`, and the database
-before the app's unit ever starts, and an install over a running app leaves
-`state/` alone, so an app that is restored or upgraded migrates forward over
-real data and never seeds over it. A space that backs nothing up holds what
-its apps seeded and what has been typed into them since.
+migrations forward. A migration carries schema and never rows, so a database
+the app creates starts empty; no app seeds itself. opsctl never runs a
+migration. What the host promises is the order: a restore lands `etc/`,
+`state/`, and the database before the app's unit ever starts, and an install
+over a running app leaves `state/` alone, so an app that is restored or
+upgraded migrates forward over real data. Data reaches a fresh space only by a
+restore. A space that backs nothing up holds only what has been typed into
+its apps since they were installed or last restored.
 
 ## An operator asks what `install` can do
 
@@ -948,6 +951,49 @@ Postconditions:
   was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
   was not rewritten. An installed `repos` keeps running the release it had,
   with the limits it had.
+
+## An agent installs an app whose database is not SQLite
+
+SQLite is the only engine the platform keeps, and the only one litestream
+replicates, so `engine` admits one value. A manifest naming any other is
+refused before anything is written, rather than installing an app whose
+database nothing would back up.
+
+```toml
+[database]
+engine = "postgres"
+path = "state/crm.db"
+```
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (crm-v0.1.0.tar.xz, 8.4 MiB)
+file: failed: crm-v0.1.0.tar.xz: etc/manifest.toml: 'database.engine' must be "sqlite"
+opsctl: install failed
+```
+
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on
+stderr. A `[database]` with no `engine` fails the same way.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- The file's manifest is `crm`'s from the opening of this group with the
+  `[database]` table above.
+
+Postconditions:
+
+- Nothing has changed. `/opt/crm/` was neither created nor touched, no unit
+  was written, nginx was not reloaded, `/var/lib/ikigenba/services.json` was
+  not rewritten, and `/etc/litestream.yml` was not regenerated. An installed
+  `crm` keeps running the release it had.
 
 ## An agent installs an app whose icon is not an SVG image
 
