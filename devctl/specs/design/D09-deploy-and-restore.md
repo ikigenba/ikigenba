@@ -25,7 +25,12 @@ which is what the stories' "no AWS call was made" preconditions ask for.
 Restore drives `opsctl restore <app> [--at <timestamp>]` on the space over the
 same kind of session: root file, operand, `cloud.Connect`, `cloud.LookupSpace`,
 running check, one `sudo` over ssh. Nothing moves through devctl and no bucket
-object is read or written by it. Both commands report the host's exit the same
+object is read or written by it. The backups it puts back are the space's own,
+which only opsctl on the host writes and reads. They are not all that sits
+under the space's prefix: opsctl's snapshots sit there too, which `golden
+capture` and `seed` read, as do the files `deploy` uploads and the snapshots
+`seed` copies in (D15). Restore reads none of those; `seed` is what puts a
+snapshot back. Both commands report the host's exit the same
 way: success is one `space.Step` line, failure is the host error unchanged,
 which `cli.Run` prints with opsctl's output quoted under it.
 

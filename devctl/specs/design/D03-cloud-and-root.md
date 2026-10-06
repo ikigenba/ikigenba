@@ -21,7 +21,12 @@ business. Per-space resources are tagged `Domain=<root>` and
 `Space=<space domain>`; `Spaces` and `LookupSpace` turn those tags into the
 space registry every command reads, and a space that is not there is a
 `NoSpaceError`. The S3 client addresses the bucket path-style because the
-bucket's name has dots.
+bucket's name has dots. `CopyObject` copies one object to another key in the
+same bucket without its bytes passing through devctl, which is how `golden
+capture` and `seed` (D15) move snapshots; S3 copies an object of up to 5 GiB
+in one such call, and a larger one fails with S3's own error. Its error names
+no subject, as the stories show (`s3 CopyObject: SlowDown`), because a copy has
+two keys and the story line names neither.
 
 Route 53 gains a point read, `FindRecord`, which is what `apex` uses to read
 the root's `A` record and what `space create` uses to see whether a name is
@@ -64,7 +69,7 @@ and a caller polling for a state keeps polling.
 
 - R-QBEM-C7PP: Package `internal/cloud` MUST export a `Route53` interface whose methods are exactly `Zone(ctx context.Context, name string) (Zone, error)`, `ListRecords(ctx context.Context, zoneID string) ([]Record, error)`, `FindRecord(ctx context.Context, zoneID, name, recordType string) (Record, bool, error)`, `ChangeRecords(ctx context.Context, zoneID string, changes []RecordChange) (string, error)`, and `ChangeStatus(ctx context.Context, changeID string) (ChangeStatus, error)`.
 
-- R-CCED-PY62: Package `internal/cloud` MUST export an `Object` struct whose fields are exactly `Key string`, `Size int64`, and `Modified time.Time`, and an `S3` interface whose methods are exactly `ListObjects(ctx context.Context, bucket, prefix string) ([]Object, error)`, `PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64) error`, and `DeleteObjects(ctx context.Context, bucket string, keys []string) error`.
+- R-SILM-EEV6: Package `internal/cloud` MUST export an `Object` struct whose fields are exactly `Key string`, `Size int64`, and `Modified time.Time`, and an `S3` interface whose methods are exactly `ListObjects(ctx context.Context, bucket, prefix string) ([]Object, error)`, `PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64) error`, `CopyObject(ctx context.Context, bucket, source, key string) error`, and `DeleteObjects(ctx context.Context, bucket string, keys []string) error`.
 
 - R-QCMI-PZGE: Package `internal/cloud` MUST export a `RoleSpec` struct whose fields are exactly `Name string`, `AssumeRolePolicy string`, and `PermissionsBoundaryARN string`, and an `IAM` interface whose methods are exactly `PermissionsBoundary(ctx context.Context, name string) (string, error)`, `RoleExists(ctx context.Context, name string) (bool, error)`, `CreateRole(ctx context.Context, spec RoleSpec) error`, `PutRolePolicy(ctx context.Context, role, policy, document string) error`, `DeleteRolePolicy(ctx context.Context, role, policy string) error`, `InstanceProfileRoles(ctx context.Context, name string) ([]string, bool, error)`, `CreateInstanceProfile(ctx context.Context, name string) error`, `AddRoleToInstanceProfile(ctx context.Context, profile, role string) error`, `RemoveRoleFromInstanceProfile(ctx context.Context, profile, role string) error`, `DeleteInstanceProfile(ctx context.Context, name string) error`, and `DeleteRole(ctx context.Context, name string) error`.
 
@@ -122,7 +127,9 @@ and a caller polling for a state keeps polling.
 
 - R-Z35T-82LV: In `awssdk`, `CallerAccountID` MUST map to the service `sts`, the operation `GetCallerIdentity`, and no subject, and MUST return the account id the response carries.
 
-- R-CEU6-HHNG: In `awssdk` the `S3` methods MUST map to the service `s3` with `<bucket>/<key>` as the subject — `<bucket>/<prefix>` for `ListObjects` and `<bucket>` for `DeleteObjects` — and the operations `ListObjects`→`ListObjectsV2`, `PutObject`→`PutObject`, and `DeleteObjects`→`DeleteObjects`; `ListObjects` MUST return every object whose key begins with `prefix`, with its key, size and last-modified time; `PutObject` MUST send `size` as the object's length; and `DeleteObjects` MUST delete every key in `keys`, in requests of at most 1000 keys each.
+- R-SJTI-S6LV: In `awssdk` the `S3` methods MUST map to the service `s3` with `<bucket>/<key>` as the subject — `<bucket>/<prefix>` for `ListObjects`, `<bucket>` for `DeleteObjects`, and no subject for `CopyObject` — and the operations `ListObjects`→`ListObjectsV2`, `PutObject`→`PutObject`, `CopyObject`→`CopyObject`, and `DeleteObjects`→`DeleteObjects`; `ListObjects` MUST return every object whose key begins with `prefix`, with its key, size and last-modified time; `PutObject` MUST send `size` as the object's length; `CopyObject` MUST make the object at `key` in `bucket` a copy of the object at `source` in `bucket`, replacing any object already at `key`; and `DeleteObjects` MUST delete every key in `keys`, in requests of at most 1000 keys each.
+
+- R-SL1F-5YCK: The `CopyObject` request the `S3` client `awssdk.OpenWithLoader` returns sends MUST address `bucket` path-style as R-QIQ0-MU5V states, MUST name `key` as the destination, and MUST carry a copy source that, percent-decoded, is exactly `<bucket>/<source>`; verified through the in-memory transport for the bucket `ikigenba.dev`, the source `sbx1/snapshots/crm/2026-09-12T14:22:51Z.tar.zst`, and the key `golden/demo/crm/2026-09-12T14:22:51Z.tar.zst`, and by a response carrying the error code `SlowDown` giving a `*cloud.Error` whose message is exactly `s3 CopyObject: SlowDown`.
 
 - R-QZSL-ZMJL: When a command fails because `cloud.Connect` or a method of a client of the `cloud.Clients` it opened returned an error that `errors.As` matches to a `*cloud.Error` or a `*cloud.NotFoundError`, `cli.Run` MUST write `devctl: ` followed by that error's message as the only line on stderr, write nothing further to stdout, and return 1, verified at least with fake clients reproducing `devctl: sts GetCallerIdentity: <m>` for an `STS` whose `CallerAccountID` fails with an empty `Code` and an `Err` whose message is `<m>`, `devctl: ec2 RunInstances: InsufficientInstanceCapacity`, `devctl: route53 ChangeResourceRecordSets: Throttling`, and `devctl: no launch template 'ikigenba.dev'`.
 

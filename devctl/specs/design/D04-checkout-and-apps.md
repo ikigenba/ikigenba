@@ -41,8 +41,14 @@ the stories show `Crm.sbx1` refused as a bad label. The reserved app names
 `appref.ValidName` rejects apply to the `<app>` part of `<app>.<space>`, with
 the same `is not a usable app name` diagnostic build and logs use, and do not
 apply to a space label: they exist because of collisions with host-side
-service and bucket-key names, and a space label never sits in those
-positions. Parsing returns the label and the full space domain together,
+service names and the keys under a space's prefix (`host/`, `deploy/`,
+`snapshots/`, `seed/`), and a space label never sits in those positions. A
+space label does sit at the top of the bucket, beside `golden/`, which holds
+the golden sets (D15), so the one reserved space label is `golden`: `Parse`
+refuses it, bare or as a full domain, and `ParseApp` refuses it as the space
+of `<app>.<space>`, with the diagnostic the stories give. Because every
+space-taking command parses through `Parse`, every one of them refuses it the
+same way, before anything is looked up. Parsing returns the label and the full space domain together,
 because downstream names need both: the role is `<space domain>`, the bucket
 prefix is `<label>/`. Every refusal is exit 2 and happens before anything is
 looked up.
@@ -111,7 +117,7 @@ looked up.
 
 - R-CPT9-XFBP: When a checkout method returns a `*GitError`, `cli.Run` MUST write its message prefixed `devctl: ` to stderr, followed by exactly one empty line and `seam.QuoteOutput(Stderr)` when nonempty, preserve preceding stdout, and return 1.
 
-- R-CR16-B72E: `appref.ValidName` MUST accept ASCII lowercase letters, digits and hyphens in a label of 1–63 bytes with an alphanumeric first and last byte, except exactly `host`, `deploy`, `backup-host`, `backup-services`, and `renew-certificate`, which MUST be rejected.
+- R-S6EM-KPG8: `appref.ValidName` MUST accept ASCII lowercase letters, digits and hyphens in a label of 1–63 bytes with an alphanumeric first and last byte, except exactly `host`, `deploy`, `snapshots`, `seed`, `backup-host`, `backup-services`, and `renew-certificate`, which MUST be rejected.
 
 - R-CS92-OYT3: `appref.ValidVersion` MUST accept a literal `v` followed by three dot-separated nonnegative decimal integers without leading zeroes, optionally followed by a hyphen and nonempty dot-separated ASCII alphanumeric/hyphen prerelease identifiers (numeric identifiers have no leading zeroes), optionally followed by `+` and nonempty dot-separated ASCII alphanumeric/hyphen metadata identifiers; all other forms MUST be rejected.
 
@@ -168,3 +174,9 @@ looked up.
 - R-QUSN-72OQ: When `spaceref.ParseApp` does not fail, it MUST return an `App` whose `Name` is the first piece, whose `Space` is what `Parse` returns for the second piece with the same `root`, and whose `Hostname` is `Name`, `.`, and `Space.Domain`, verified at least by `crm.sbx1` and `crm.sbx1.ikigenba.dev` with root `ikigenba.dev` each returning `Name` `crm`, `Space.Label` `sbx1`, `Space.Domain` `sbx1.ikigenba.dev`, and `Hostname` `crm.sbx1.ikigenba.dev`.
 
 - R-ST4K-APZN: Every command that takes a `<space>` operand MUST act on the `spaceref.Space` that `spaceref.Parse` returns for the operand as typed and the `Domain` of the checkout's `RootFile`, and `apex set` MUST act on the `spaceref.App` that `spaceref.ParseApp` returns for its operand the same way; when that call returns an error the command MUST return that error unchanged and MUST call `Deps.Cloud` not at all; verified at least through `cli.Run` by `devctl space status crm.sbx1` writing the single line `devctl: 'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'`, `devctl space status Foo_1` writing `devctl: 'Foo_1' is not a valid label`, and `devctl apex set sbx1` writing `devctl: 'sbx1' is not an app on a space: <app>.<space>`, each to stderr with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.
+
+- R-S7MI-YH6X: Package `internal/spaceref` MUST export `ReservedLabel = "golden"` and a `ReservedLabelError` struct whose only field is `Label string`, whose `Error()` returns `'<Label>' is not a usable space label: <Label>/ holds the golden sets`, and which MUST have the method `ExitCode() int` returning 2, verified at least by reproducing `'golden' is not a usable space label: golden/ holds the golden sets`.
+
+- R-S8UF-C8XM: When `spaceref.Parse` would otherwise succeed with a `Label` equal to `ReservedLabel`, it MUST instead return a zero `Space` and a `*ReservedLabelError` whose `Label` is that `Label`; verified at least by `golden` and `golden.ikigenba.dev` with root `ikigenba.dev` each giving `'golden' is not a usable space label: golden/ holds the golden sets`, by `goldens` and `golden-1` being accepted, and through `cli.Run`, in a temporary checkout whose root file names `ikigenba.dev`, by `devctl space create golden --acme-email ops@ikigenba.dev` and `devctl space status golden.ikigenba.dev` each writing that single line to stderr with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.
+
+- R-SA2B-Q0OB: When `spaceref.ParseApp` would otherwise succeed with a `Space.Label` equal to `ReservedLabel`, it MUST instead return a zero `App` and a `*ReservedLabelError` whose `Label` is that `Label`, after every refusal R-QTKQ-TAY1 states; verified at least by `crm.golden` and `crm.golden.ikigenba.dev` with root `ikigenba.dev` each giving `'golden' is not a usable space label: golden/ holds the golden sets`, and by `host.golden` giving `'host' is not a usable app name`.

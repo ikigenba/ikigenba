@@ -26,7 +26,12 @@ before it prints or changes anything, the apex record included.
 What devctl makes for a space is named after the space: the role and its
 instance profile are the space domain, the records are `<space domain>` and
 `*.<space domain>`, and the backup prefix in the bucket named after the root
-is the space's label followed by `/`. The role's one inline policy is built
+is the space's label followed by `/`. Under that prefix opsctl writes the
+backups, and its snapshots under `snapshots/`; deploy uploads under `deploy/`;
+and seed (D15) copies snapshots into `seed/`. `SnapshotPrefix` and
+`SeedPrefix` name those two, beside `BackupPrefix`. `--delete-backups` deletes
+every object under the whole prefix, snapshots and seed copies included, so a
+destroyed space leaves nothing a later seed could take. The role's one inline policy is built
 here too: `PolicyDocument` derives it from the root, the zone id, the space,
 and whether the space holds the apex, so `space create` (D07) and `apex` (D14)
 regenerate the same document and can never disagree about what a space's role
@@ -64,6 +69,8 @@ and D14 issue every host command through this one shape.
 - R-SR5Y-JN2E: Package `internal/space` MUST export `Step(w io.Writer, name, detail string)`, which MUST write `<name>: ok (<detail>)` followed by one newline to `w` when `detail` is not empty and `<name>: ok` followed by one newline when `detail` is empty, verified at least by reproducing `instance: ok (i-0c9e94542d98846a8 terminated)` and `init: ok`.
 
 - R-U273-JQ19: Package `internal/space` MUST export `RoleName(domain string) string`, returning `domain` unchanged, so that a space's IAM role and its instance profile are both named exactly the space domain; `PolicyName = "space"`; `BackupPrefix(label string) string`, returning `label` followed by `/`; `RecordNames(domain string) []string`, returning exactly `domain` and `*.` followed by `domain`, in that order; and `RecordTTL = 60`; verified at least by `RoleName("sbx1.ikigenba.dev")` being `sbx1.ikigenba.dev`, `BackupPrefix("sbx1")` being `sbx1/`, and `RecordNames("sbx1.ikigenba.dev")` being `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev`.
+
+- R-SCI4-HK5P: Package `internal/space` MUST export `SnapshotPrefix(label string) string`, returning `BackupPrefix(label)` followed by `snapshots/`, and `SeedPrefix(label string) string`, returning `BackupPrefix(label)` followed by `seed/`; verified at least by `SnapshotPrefix("sbx1")` being `sbx1/snapshots/` and `SeedPrefix("sbx2")` being `sbx2/seed/`.
 
 - R-U3EZ-XHRY: Package `internal/space` MUST export `WaitState(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, id string, state cloud.InstanceState) (cloud.Instance, error)`, `WaitChecks(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, id string) error`, `WaitLaunchReady(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, spec cloud.LaunchSpec) error`, `WaitInsync(ctx context.Context, deps seam.Deps, route53 cloud.Route53, changeID string) error`, `PollInterval = 5 * time.Second`, and `PollAttempts = 60`.
 
@@ -255,7 +262,7 @@ and D14 issue every host command through this one shape.
 
 - R-V3ZZ-EM0S: `space destroy` MUST accept each of `--no-backup`, `--delete-secrets`, and `--delete-backups` on either side of its `<space>` operand and in any order, with repeated occurrences of one option having the same effect as one, and each option MUST govern only its own step — `--no-backup` the `retire` step, `--delete-secrets` the `secrets` step, and `--delete-backups` the `backups` step; a value-bearing form such as `--no-backup=true` or `--delete-secrets=yes` MUST be an unknown option.
 
-- R-27FT-CEPP: `space list`, `space destroy`, `space stop`, `space start`, and `space status` MUST each, after its usage errors are reported and before any other call, call `checkout.ReadRootFile(ctx, deps)`, then — for the four that take `<space>` — `spaceref.Parse` with the operand as typed and the `RootFile`'s `Domain` (D04 R-ST4K-APZN), then `cloud.Connect(ctx, deps.Cloud, RootFile.Domain, RootFile.Region)` (D02 R-OO0I-HZUA), returning each call's error unchanged and making no later call when one fails; in the requirements below, `root` is that `Domain`, `space` is the `spaceref.Space` `Parse` returned, `clients` is the `Clients` of the `Session` `Connect` returned, and `zone` is what `clients.Route53.Zone(ctx, root)` returned; verified at least through `cli.Run` by `devctl space stop sbx1` in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving a recording fake `Deps.Cloud` with exactly one call whose profile is `example.test` and whose region is `eu-west-1`, and by `devctl space status crm.sbx1` leaving it with no call.
+- R-SBA8-3SF0: `space list`, `space destroy`, `space stop`, `space start`, and `space status` MUST each, after its usage errors are reported and before any other call, call `checkout.ReadRootFile(ctx, deps)`, then — for the four that take `<space>` — `spaceref.Parse` with the operand as typed and the `RootFile`'s `Domain` (D04 R-ST4K-APZN), then `cloud.Connect(ctx, deps.Cloud, RootFile.Domain, RootFile.Region)` (D02 R-S2QX-FE85), returning each call's error unchanged and making no later call when one fails; in the requirements below, `root` is that `Domain`, `space` is the `spaceref.Space` `Parse` returned, `clients` is the `Clients` of the `Session` `Connect` returned, and `zone` is what `clients.Route53.Zone(ctx, root)` returned; verified at least through `cli.Run` by `devctl space stop sbx1` in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving a recording fake `Deps.Cloud` with exactly one call whose profile is `example.test` and whose region is `eu-west-1`, and by `devctl space status crm.sbx1` leaving it with no call.
 
 - R-V6FS-65I6: `space list` and `space stop` MUST pass no `seam.Cmd` to `deps.Exec` other than the single one `checkout.ReadRootFile` passes, and none to `deps.Stream`.
 

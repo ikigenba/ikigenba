@@ -5,7 +5,7 @@ no configuration and no top-level option beyond help and version: the platform
 is one root domain in one account, and every command that touches the cloud
 learns the root and its region from the checkout's root file (D04,
 `internal/checkout`), never from an option, the environment, or the developer's
-machine. The command set now includes `apex`.
+machine. The command set now includes `apex`, `golden`, and `seed`.
 
 The superuser refusal — the check that devctl is not running with effective
 uid 0 — precedes every argument, help and version included. Older requirement
@@ -62,17 +62,17 @@ including nested quotes and empty lines.
 
 - R-DMPO-ZF3Q: The first line of every diagnostic `devctl` writes to stderr MUST begin with `devctl: `, the usage text MUST never be written to stderr, and on success a command MUST write nothing to stderr.
 
-- R-OKCT-COM7: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, and `apex`.
+- R-S0B4-NUQR: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, `golden`, `seed`, and `apex`.
 
-- R-1K7C-3SPK: For each of `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
+- R-S1J1-1MHG: For each of `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, `golden`, `seed`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
 
-- R-OO0I-HZUA: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `restore`, `remove`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the six in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
+- R-S2QX-FE85: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `restore`, `remove`, `golden`, `seed`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the eight in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
 
 - R-OP8E-VRKZ: `devctl --help`, `devctl -h`, `devctl --version`, `devctl -V`, `devctl version`, and every invocation that fails with a top-level usage error — no command, an unknown command, or an unknown top-level option — MUST call `Deps.Cloud` not at all and MUST pass no `seam.Cmd` to `Deps.Exec` or `Deps.Stream`, so that none of them finds a checkout or reads the root file, verified with recording fakes left with no call and `Deps.Dir` set to a directory that is not inside a git checkout.
 
 - R-R3TS-W0MS: When a command fails, `cli.Run` MUST write to `stderr` only the diagnostic for the error the command returned, verified at least by `devctl space list` with `Deps.Dir` outside any git checkout, in a temporary checkout that has no root file, and in one whose root file holds `{"domain": "ikigenba.dev"}` each writing exactly one line to stderr and nothing to stdout.
 
-- R-OMSM-483L: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
+- R-S56Q-6XPJ: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
 
   ```
   Usage: devctl [options] <command> [arguments]
@@ -87,6 +87,8 @@ including nested quotes and empty lines.
     deploy    put a built app file on a space
     remove    take an app off a space
     restore   put a space's app back from its backups
+    golden    capture a space's data as a named golden set
+    seed      give a space a golden set's or another space's data
     apex      point the root domain at one app on one space
 
   Options:
