@@ -57,7 +57,8 @@ Subcommands:
 Run 'devctl golden <subcommand> --help' for details.
 ```
 
-Exits 0. The text is on stdout; stderr is empty.
+Exits 0. The text is on stdout; stderr is empty. `devctl golden capture
+--help` prints the same text, since `capture` is the one subcommand.
 
 Preconditions:
 
@@ -676,9 +677,11 @@ see 'devctl seed --help' for usage
 ```
 
 Exits 2. The text is on stderr; stdout is empty. A `<space>` that is not a
-space is refused as `S2-space-lifecycle.md` shows. A `<source>` that is
-neither one label nor one label under `ikigenba.dev`, `crm.sbx1` say, gives
-`devctl: 'crm.sbx1' is not a golden set or a space`, exit 2.
+space is refused as `S2-space-lifecycle.md` shows. Run inside the checkout,
+whose root file names the suffix, a `<source>` that is neither one label nor
+one label under `ikigenba.dev`, `crm.sbx1` say, gives
+`devctl: 'crm.sbx1' is not a golden set or a space`, exit 2, before any AWS
+call; `golden.ikigenba.dev` is refused as a `<space>` is.
 
 Preconditions:
 
