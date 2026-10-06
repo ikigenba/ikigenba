@@ -333,15 +333,17 @@ Postconditions:
 
 ## A developer brings up an app that declares its resources
 
-On the platform a manifest's `[resources]` table bounds the app's CPU weight, memory, and IO weight, and every process the app starts with it. The sandbox accepts the table and checks it by the platform's rule, so a manifest a host would refuse is refused here first, but it does not apply the limits: the sandbox's units carry no resource settings, because a developer's user manager need not be able to enforce them and the sandbox is not where an app's load is measured. The table's keys are `cpu_weight`, a whole number from 1 to 10000; `memory_max`, a string holding a positive whole number of bytes optionally followed by `K`, `M`, or `G`; and `io_weight`, a whole number from 1 to 10000. Each is optional.
+On the platform a manifest's `[resources]` table places the app in a slice and bounds its memory, its Go heap and its CPU weight, and every process the app starts with it. The sandbox accepts the table and checks it by the platform's rule, so a manifest a host would refuse is refused here first. It honours where the table places the app, and whether it asks for delegation, but it does not apply the limits: the sandbox's units carry no memory ceiling, CPU weight or OOM policy and the app is given no `GOMEMLIMIT`, because a developer's user manager need not be able to enforce them and the sandbox is not where an app's load is measured. The table's keys are each optional: `slice`, `"core"` or `"apps"`, `"apps"` when absent; `memory_max`, a string holding a positive whole number of bytes optionally followed by `K`, `M`, or `G`, `"128M"` when absent; `go_memory_limit`, a string of the same form, no larger than `memory_max`, and 75% of `memory_max` when absent; `cpu_weight`, a whole number from 1 to 10000, `100` when absent; `delegate`, a boolean; and `oom_policy`, whose one accepted value is `"continue"`.
 
 `dummy/etc/manifest.toml` holds the manifest above plus:
 
 ```toml
 [resources]
+slice = "apps"
+memory_max = "256M"
+go_memory_limit = "128M"
 cpu_weight = 50
-memory_max = "512M"
-io_weight = 50
+oom_policy = "continue"
 ```
 
 Command:
@@ -362,7 +364,132 @@ Preconditions:
 Postconditions:
 
 - `wip` is up with `auth` and `dummy`, both services active.
-- `sandbox-wip-dummy.service` sets no CPU weight, memory ceiling, or IO weight: `systemctl --user show sandbox-wip-dummy.service -p MemoryMax` prints `MemoryMax=infinity`, as it does for an app with no `[resources]`.
+- `sandbox-wip-dummy.service` runs in `sandbox-wip-apps.slice`, as it would with no `[resources]`.
+- `sandbox-wip-dummy.service` sets no memory ceiling, CPU weight or OOM policy: `systemctl --user show sandbox-wip-dummy.service -p MemoryMax` prints `MemoryMax=infinity`, as it does for an app with no `[resources]`.
+- dummy's environment holds no `GOMEMLIMIT`.
+
+## A developer sees where an app runs
+
+Every app's service runs in a slice of its sandbox: `sandbox-wip-core.slice` when its manifest's `[resources]` says `slice = "core"`, and `sandbox-wip-apps.slice` otherwise, including when the manifest has no `[resources]` or no `slice`. Both sit under `sandbox-wip.slice`, so each sandbox's services are grouped apart from every other sandbox's and from the rest of the developer's session. In the three slice names each `-` of the sandbox's name is written `\x2d`, so a sandbox whose name has a dash gets slices of its own rather than nesting inside, or sharing, another sandbox's: sandbox `wip-cgroups` runs its apps in `sandbox-wip\x2dcgroups-apps.slice` and its core services in `sandbox-wip\x2dcgroups-core.slice`, both under `sandbox-wip\x2dcgroups.slice`. The units' own names are unchanged. The slices are not files the sandbox writes: the user's systemd manager makes them when a unit in them starts, and they carry no limits of their own.
+
+Command:
+
+```
+$ systemctl --user show sandbox-wip-dummy.service -p Slice
+```
+
+Output:
+
+```
+Slice=sandbox-wip-apps.slice
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `wip` is up from an `up` run with dummy's manifest as above, with no `[resources]`, and `sandbox-wip-dummy.service` is active.
+
+Postconditions:
+
+- Nothing has changed.
+- No `sandbox-wip*.slice` file is in `/home/me/.config/systemd/user/`.
+- Had the worktree been `/home/me/src/ikigenba/wip-cgroups`, whose sandbox is `wip-cgroups`, `systemctl --user show sandbox-wip-cgroups-dummy.service -p Slice` would print `Slice=sandbox-wip\x2dcgroups-apps.slice`.
+
+## A developer sees a core app run in the core slice
+
+The platform's core services, auth among them, say `slice = "core"`, and the sandbox places them as a host does.
+
+Command:
+
+```
+$ systemctl --user show sandbox-wip-auth.service -p Slice
+```
+
+Output:
+
+```
+Slice=sandbox-wip-core.slice
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `auth/etc/manifest.toml` holds the manifest above plus:
+
+  ```toml
+  [resources]
+  slice = "core"
+  ```
+
+- `wip` is up from an `up` run with the checkout in that state, and `sandbox-wip-auth.service` is active.
+
+Postconditions:
+
+- Nothing has changed.
+- `sandbox-wip-dummy.service`, whose manifest has no `[resources]`, runs in `sandbox-wip-apps.slice`.
+
+## A developer sees the sandbox's nginx run in the core slice
+
+The sandbox's nginx stands in front of every app, so it runs with the core services, whatever the apps' manifests say.
+
+Command:
+
+```
+$ systemctl --user show sandbox-wip-nginx.service -p Slice
+```
+
+Output:
+
+```
+Slice=sandbox-wip-core.slice
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `wip` is up, with `auth` and `dummy`, and `sandbox-wip-nginx.service` is active.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer brings up an app that manages its own processes' resources
+
+An app that starts processes of its own and divides its share among them says `delegate = true` in its `[resources]`, and its service is handed its part of the tree to manage, as on a host. An app whose manifest sets `delegate = false`, or does not set it, is not.
+
+Command:
+
+```
+$ systemctl --user show sandbox-wip-dummy.service -p Delegate
+```
+
+Output:
+
+```
+Delegate=yes
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `dummy/etc/manifest.toml` holds the manifest above plus:
+
+  ```toml
+  [resources]
+  delegate = true
+  ```
+
+- `wip` is up from an `up` run with the checkout in that state, and `sandbox-wip-dummy.service` is active.
+
+Postconditions:
+
+- Nothing has changed.
+- `systemctl --user show sandbox-wip-auth.service -p Delegate`, for auth, whose manifest does not set `delegate`, prints `Delegate=no`.
+- `sandbox-wip-dummy.service` runs in `sandbox-wip-apps.slice` and sets no memory ceiling.
 
 ## A developer brings up an app that welcomes guests
 
@@ -565,7 +692,7 @@ Postconditions:
 
 ## A developer brings up an app whose resources are not valid
 
-The platform refuses a `[resources]` table it cannot apply, and the sandbox refuses it too, in the same words.
+The platform refuses a `[resources]` table it cannot apply, and the sandbox refuses it too, in the same words, even for the keys it does not apply.
 
 Command:
 
@@ -579,12 +706,102 @@ Output:
 sandbox: dummy: etc/manifest.toml: 'resources.cpu_weight' must be a whole number from 1 to 10000
 ```
 
-Exits 2. The line is on stderr; stdout is empty. Each fault names its key the same way: `'resources.io_weight' must be a whole number from 1 to 10000`; `'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G`, for a value such as `"512MB"`, `"1.5G"`, `"50%"`, `"0"`, or an integer; and, for a key the table does not know, `'resources.cpu_quota' is not allowed; the resources are cpu_weight, memory_max, and io_weight`. When the table holds more than one fault, the first in the order `cpu_weight`, `memory_max`, `io_weight`, then unknown keys in name order, is the one reported.
+Exits 2. The line is on stderr; stdout is empty. Each fault names its key the same way: `'resources.slice' must be "core" or "apps"`; `'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G`, for a value such as `"512MB"`, `"1.5G"`, `"50%"`, `"0"`, or an integer; `'resources.go_memory_limit' must be a whole number of bytes, optionally followed by K, M, or G`, for the same values; `'resources.go_memory_limit' must not be larger than 'resources.memory_max'`; `'resources.delegate' must be true or false`, for a value such as `"yes"` or `1`; `'resources.oom_policy' must be "continue"`, for any other value; and, for a key the table does not know, `'resources.cpu_quota' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy`. When the table holds more than one fault, the first in the order `slice`, `memory_max`, `go_memory_limit` (its form, then its size against `memory_max`), `cpu_weight`, `delegate`, `oom_policy`, then unknown keys in byte order, is the one reported.
 
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
 - `dummy/etc/manifest.toml` holds the manifest above plus a `[resources]` table with `cpu_weight = 0`, or `20000`, or `"50"`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose manifest still sets `io_weight`
+
+`[resources]` no longer has an IO weight, and a manifest that still sets one is refused like any other key the table does not know.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'resources.io_weight' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus:
+
+  ```toml
+  [resources]
+  io_weight = 50
+  ```
+
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app that names a slice the platform does not have
+
+An app runs with the core services or with the other apps, and `slice` says which: `"core"` or `"apps"`, exactly, and nothing else.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'resources.slice' must be "core" or "apps"
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a `[resources]` table with `slice = "system"`, or `"Core"`, or `""`, or `1`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose Go memory limit is larger than its memory
+
+The Go heap limit must fit inside the memory the app is given, `memory_max` as the manifest sets it or `"128M"` when it does not set it. A limit equal to `memory_max` is accepted. The sandbox applies neither, but refuses the pair as a host would.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'resources.go_memory_limit' must not be larger than 'resources.memory_max'
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a `[resources]` table with `memory_max = "256M"` and `go_memory_limit = "512M"`; or with `go_memory_limit = "256M"` and no `memory_max`.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:

@@ -1,6 +1,6 @@
 # Stories — teardown
 
-Taking a sandbox apart and seeing which sandboxes exist: `down` stops a sandbox and keeps its data, `wipe` deletes a stopped sandbox's data, and `ls` lists every sandbox the registry knows. The registry, `/home/me/.local/state/ikigenba/sandbox/registry.json`, records each sandbox's name, port, worktree path and the apps of its last `up` whose builds all succeeded and whose configuration nginx accepted; `down` keeps a sandbox's entry whole, and only `wipe` removes it. A sandbox's data lives in `/home/me/.local/state/ikigenba/sandbox/<name>/`, holding each app's `apps/<app>/state/`, the stored token, and the files `up` generates; its units live in `/home/me/.config/systemd/user/` as `sandbox-<name>-<app>.socket`, `sandbox-<name>-<app>.service` and `sandbox-<name>-nginx.service`. A sandbox is up while `sandbox-<name>-nginx.service` is active and down otherwise, so after a reboot or logout every sandbox reads down. Without a name, `down` and `wipe` act on this worktree's sandbox, found from the current directory as `up` finds it; with a name they act on that sandbox from any directory, including one whose worktree is gone (an orphan). `ls` needs no checkout. `down` and `wipe` take the sandbox's lock: a second command that changes the same sandbox waits for the first to finish, then runs. The examples use the worktree `/home/me/src/ikigenba/wip` (sandbox `wip`, port `7400`, apps `auth` and `dummy`) and `/home/me/src/ikigenba/other` (sandbox `other`, port `7401`).
+Taking a sandbox apart and seeing which sandboxes exist: `down` stops a sandbox and keeps its data, `wipe` deletes a stopped sandbox's data, and `ls` lists every sandbox the registry knows. The registry, `/home/me/.local/state/ikigenba/sandbox/registry.json`, records each sandbox's name, port, worktree path and the apps of its last `up` whose builds all succeeded and whose configuration nginx accepted; `down` keeps a sandbox's entry whole, and only `wipe` removes it. A sandbox's data lives in `/home/me/.local/state/ikigenba/sandbox/<name>/`, holding each app's `apps/<app>/state/`, the stored token, and the files `up` generates; its units live in `/home/me/.config/systemd/user/` as `sandbox-<name>-<app>.socket`, `sandbox-<name>-<app>.service` and `sandbox-<name>-nginx.service`. Its services run in `sandbox-<escaped name>-core.slice` and `sandbox-<escaped name>-apps.slice` under `sandbox-<escaped name>.slice`, where each `-` of the name is written `\x2d` (sandbox `wip` has `sandbox-wip.slice`, sandbox `wip-cgroups` has `sandbox-wip\x2dcgroups.slice`); the slices have no files. `down` and `wipe` stop `sandbox-<escaped name>.slice` after the sockets and services, which stops both slices beneath it; with no file, there is nothing of the slices to remove. A sandbox is up while `sandbox-<name>-nginx.service` is active and down otherwise, so after a reboot or logout every sandbox reads down. Without a name, `down` and `wipe` act on this worktree's sandbox, found from the current directory as `up` finds it; with a name they act on that sandbox from any directory, including one whose worktree is gone (an orphan). `ls` needs no checkout. `down` and `wipe` take the sandbox's lock: a second command that changes the same sandbox waits for the first to finish, then runs. The examples use the worktree `/home/me/src/ikigenba/wip` (sandbox `wip`, port `7400`, apps `auth` and `dummy`) and `/home/me/src/ikigenba/other` (sandbox `other`, port `7401`).
 
 ## A developer asks what `down` does
 
@@ -38,7 +38,7 @@ Postconditions:
 
 ## A developer takes this worktree's sandbox down
 
-The developer is done for now but wants the apps' data, the token and the port back next time. `down` stops nginx and every app's units, removes the unit files and the generated files, and keeps everything else.
+The developer is done for now but wants the apps' data, the token and the port back next time. `down` stops nginx and every app's units, then the sandbox's slice, removes the unit files and the generated files, and keeps everything else.
 
 Command:
 
@@ -57,6 +57,7 @@ Preconditions:
 Postconditions:
 
 - `sandbox-wip-nginx.service`, `sandbox-wip-auth.socket`, `sandbox-wip-auth.service`, `sandbox-wip-dummy.socket` and `sandbox-wip-dummy.service` are stopped, their files are gone from `/home/me/.config/systemd/user/`, and the user's systemd manager has been reloaded so it no longer knows them.
+- `sandbox-wip.slice`, and with it `sandbox-wip-core.slice` and `sandbox-wip-apps.slice`, is stopped; it had no file, so none was removed.
 - The files `up` generated under `/home/me/.local/state/ikigenba/sandbox/wip/` are gone.
 - `apps/auth/state/auth.db`, every other app's `state/`, and the token are unchanged.
 - The registry still holds `wip` with port `7400`, worktree `/home/me/src/ikigenba/wip`, and its record that the last `up` ran `auth` and `dummy`; `sandbox ls` shows it `down`.
@@ -102,7 +103,7 @@ Preconditions:
 
 Postconditions:
 
-- `other`'s units are stopped and removed and its generated files are gone.
+- `other`'s units are stopped and removed, `sandbox-other.slice` is stopped, and its generated files are gone.
 - Its app `state/` directories, its token, and its registry entry are kept; `sandbox ls` shows it `down` with ` (gone)` after its worktree.
 
 ## A developer takes down a sandbox that is already down
@@ -124,7 +125,7 @@ Preconditions:
 
 Postconditions:
 
-- No `sandbox-wip-*` unit is running or present in `/home/me/.config/systemd/user/`, and no generated file remains under `wip`'s data.
+- No `sandbox-wip-*` unit is running or present in `/home/me/.config/systemd/user/`, `sandbox-wip.slice` is not running, and no generated file remains under `wip`'s data.
 - Its app `state/` directories, its token, and its registry entry are kept.
 
 ## A developer takes a sandbox down and systemctl fails
@@ -154,7 +155,7 @@ Preconditions:
 
 Postconditions:
 
-- Every unit and generated file `down` had not yet removed when systemctl failed is still there; running `sandbox down` again finishes the job.
+- Every unit and generated file `down` had not yet removed when systemctl failed is still there, and `sandbox-wip.slice` was not stopped; running `sandbox down` again finishes the job.
 - Its app `state/` directories, its token, and its registry entry with port `7400` are kept.
 
 ## A developer runs `down` again after one failed part-way
@@ -177,7 +178,7 @@ Preconditions:
 
 Postconditions:
 
-- No `sandbox-wip-*` unit is running or present in `/home/me/.config/systemd/user/`, the user's systemd manager has been reloaded so it no longer knows them, and no generated file remains under `wip`'s data.
+- No `sandbox-wip-*` unit is running or present in `/home/me/.config/systemd/user/`, `sandbox-wip.slice` is not running, the user's systemd manager has been reloaded so it no longer knows them, and no generated file remains under `wip`'s data.
 - Its app `state/` directories, its token, and its registry entry with port `7400` are kept.
 
 ## A developer takes down a sandbox name nobody has
@@ -366,6 +367,7 @@ Preconditions:
 Postconditions:
 
 - `/home/me/.local/state/ikigenba/sandbox/wip/` no longer exists: every app's state and the token are gone.
+- No `sandbox-wip-*` unit and not `sandbox-wip.slice` is running.
 - The registry no longer holds `wip`. Port `7400` belongs to no sandbox, so a later first `up` of any sandbox may take it.
 - The worktree itself is untouched.
 
@@ -458,7 +460,7 @@ Preconditions:
 
 Postconditions:
 
-- No `sandbox-wip-*` file remains in `/home/me/.config/systemd/user/`, and the user's systemd manager has been reloaded so it no longer knows them.
+- No `sandbox-wip-*` file remains in `/home/me/.config/systemd/user/`, and the user's systemd manager has been reloaded so it no longer knows them. `sandbox-wip.slice` is not running.
 - `wip`'s data directory and registry entry are gone and port `7400` is free.
 
 ## A developer wipes a sandbox name nobody has
