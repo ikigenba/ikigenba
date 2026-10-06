@@ -77,7 +77,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S02-3, S02-4, S02-25, S02-34, S02-35, S02-36 | settings, defaults, refusals and their order | `D01-layout-and-run-seam` R-Y500-NWFM, R-Y67X-1O6B, R-Y7FT-FFX0, R-Y8NP-T7NP, R-YB3I-KR53, R-YCBE-YIVS, R-YIEW-VDL9; `D03-serve` R-V9HG-A4A3, R-VAPC-NW0S, R-W0B8-P2LD; `D10-limits` R-ZZFM-ZVIU |
 | S02-5, S02-17 | nothing written under `REPOS_DIR`; no sibling called | `D05-git-and-cache` R-TNVA-VCWI, R-TP37-94N7; `D09-tools` R-NBIW-15M6; `D03-serve` R-XBVB-M4IG |
 | S02-6 | `IKIGENBA_SERVICES` read once, file re-read on need | `D01-layout-and-run-seam` R-YM2M-0OTC; `D03-serve` R-XO04-AF0R; `D06-pages` R-CD0E-ZSVI |
-| S02-7, S02-8 | start order; start reads no repository | `D03-serve` R-VAPC-NW0S, R-VKGJ-Q1YC, R-XJ4I-RC1Z, R-VO48-VD6F, R-XSVP-THZJ, R-XKCF-53SO |
+| S02-7, S02-8 | start order; start reads no repository | `D03-serve` R-VAPC-NW0S, R-VKGJ-Q1YC, R-XJ4I-RC1Z, R-VO48-VD6F, R-RMK0-23B6, R-XKCF-53SO |
 | S02-9 | sole writer of the catalog; `cache/` not backed up | `D02-cli` R-SJ18-P0AC (`[database]`); sole writer, backup and replication, and `cache/` not backed up: space-level check (opsctl) |
 | S02-10 | event envelope | `D03-serve` R-XQ8P-U5CQ, R-XRGM-7X3F; `D08-visitors-and-trail` R-FR9F-O3FS, R-FA6U-BB22 |
 | S02-11 | no names, content or credential in attributes | `D08-visitors-and-trail` R-UH9Z-UHBP, R-LON3-52D8, R-FGAC-85RJ, R-FHI8-LXI8, R-FIQ4-ZP8X, R-FJY1-DGZM, R-RFVG-0T9A; this design R-DODB-8A0P |
@@ -86,13 +86,13 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S02-14 | order of a request's events | `D03-serve` R-X244-JYKW; `D08-visitors-and-trail` R-RENJ-N1IL |
 | S02-15 | what stderr and stdout carry | `D03-serve` R-XP80-O6RG, R-WEY1-ABHP, R-WG5X-O38E; `D05-git-and-cache` R-TMNE-HL5T |
 | S02-16 | trusted headers; generated request id | `D03-serve` R-XPM2-VTHM, R-WPX4-Q95Y; `D07-site-serving` R-EH52-T4AD |
-| S02-18 | first start on a host | `D01-layout-and-run-seam` R-YY9L-UE8A; `D03-serve` R-W8UJ-DGS8, R-XSVP-THZJ; `systemctl` itself: space-level check (opsctl) |
+| S02-18 | first start on a host | `D01-layout-and-run-seam` R-YY9L-UE8A; `D03-serve` R-W8UJ-DGS8, R-RMK0-23B6; `systemctl` itself: space-level check (opsctl) |
 | S02-19 | first start creates the catalog and `cache/sites/` | `D03-serve` R-XKCF-53SO; `D04-store` R-WON1-72IM |
 | S02-20 | no services file | `D03-serve` R-XO04-AF0R, R-WBAC-509M; `D06-pages` R-CE8B-DKM7; `D01-layout-and-run-seam` R-R02K-R24N |
 | S02-new-1 | a guest's sign-in redirect the same with no services file | `D06-pages` R-CKBT-AFBO, R-DG17-8GLQ; `D07-site-serving` R-W6XT-ITGV |
 | S02-21, S02-22, S02-23, S02-24 | start refusals: catalog, cache, git | `D03-serve` R-XJ4I-RC1Z, R-VO48-VD6F, R-VKGJ-Q1YC, R-V6ZN-HU9K; `D05-git-and-cache` R-CBY7-DQF0, R-CD63-RI5P |
-| S02-db-1 | a start over a catalog a newer sites upgraded is refused, naming the version, touching nothing | `D03-serve` R-XJ4I-RC1Z, R-XSVP-THZJ; that nothing is migrated: appkit's `db.Open` (its D16) |
-| S02-db-2 | a start over a catalog from before migrations adopts it: `0001` recorded, every site and the apex kept | `D04-store` R-WEVU-4WL2, R-XXRB-CKYB, R-Y074-44FP; `D03-serve` R-WZM4-N06V |
+| S02-db-1 | a start over a catalog a newer sites upgraded is refused, naming the version, touching nothing | `D03-serve` R-XJ4I-RC1Z, R-RMK0-23B6; that nothing is migrated: appkit's `db.Open` (its D16) |
+| S02-db-2 | a start over a catalog from before migrations adopts it: `0001` recorded, every site and the apex kept | `D04-store` R-RIWA-WS33, R-XXRB-CKYB, R-Y074-44FP; `D03-serve` R-WZM4-N06V |
 | S02-db-3 | a first start records every migration as applied at the start's time; a restart brings the catalog up to date and keeps it | `D03-serve` R-WG3Q-IOBR, R-XKCF-53SO; `D04-store` R-9U9Q-8OGL, R-WPUX-KU9B |
 | S02-new-2 | a failed start leaves the socket up | `D03-serve` R-W7MM-ZP1J; `systemctl` reporting the failure: space-level check (opsctl) |
 | S02-26, S02-27, S02-28, S02-29 | stopping, drain, cut-off, 503 while stopping | `D03-serve` R-UZQ9-7YCJ, R-V0Y5-LQ38, R-LR2V-WLUM, R-SCP2-3J8G, R-W1J5-2UC2, R-W2R1-GM2R, R-WA2F-R8IX, R-WCI8-IS0B, R-V5RR-42IV, R-W7MM-ZP1J, R-WILQ-FMPS, R-BH93-MQG1; `D09-tools` R-XVCP-61ZC, R-LUQL-1X2P; `D01-layout-and-run-seam` R-YX1P-GMHL; `D07-site-serving` R-F6QY-UAUY, R-W5PX-51Q6; `D05-git-and-cache` R-CPD3-L7KN, R-GF0D-G2J5; `D08-visitors-and-trail` R-LM7A-DIVU; `D10-limits` R-TT42-AO7S |
@@ -217,8 +217,8 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S18-14 | a cached tree served with the repository gone | `D07-site-serving` R-Y4VI-FE92 |
 | S18-new-1 | sites runs as the same `ikigenba` user as repos | space-level check (opsctl) |
 | S19-1, S19-4 | the catalog is the only record; not rebuilt from disk | `D04-store` R-WPUX-KU9B; restoring from the replica: space-level check (opsctl) |
-| S19-2, S19-3, S19-5, S19-6 | start checks and what start leaves alone | `D03-serve` R-VKGJ-Q1YC, R-XJ4I-RC1Z, R-VO48-VD6F, R-XKCF-53SO, R-XSVP-THZJ, R-W8UJ-DGS8, R-XRNT-FQ8U |
-| S19-7, S19-8, S19-9 | restored catalog, absent repositories | `D03-serve` R-XSVP-THZJ, R-XRNT-FQ8U; `D01-layout-and-run-seam` R-2ZL3-20Q4; `D05-git-and-cache` R-CT0S-QISQ, R-UQPP-5LCD; `D07-site-serving` R-Y4VI-FE92, R-W4I0-R9ZH; `D09-tools` R-L86I-F3GO |
+| S19-2, S19-3, S19-5, S19-6 | start checks and what start leaves alone | `D03-serve` R-VKGJ-Q1YC, R-XJ4I-RC1Z, R-VO48-VD6F, R-XKCF-53SO, R-RMK0-23B6, R-W8UJ-DGS8, R-XRNT-FQ8U |
+| S19-7, S19-8, S19-9 | restored catalog, absent repositories | `D03-serve` R-RMK0-23B6, R-XRNT-FQ8U; `D01-layout-and-run-seam` R-2ZL3-20Q4; `D05-git-and-cache` R-CT0S-QISQ, R-UQPP-5LCD; `D07-site-serving` R-Y4VI-FE92, R-W4I0-R9ZH; `D09-tools` R-L86I-F3GO |
 | S20-1 | no nginx fragment | `D02-cli` (prose: no nginx constant); `D01-layout-and-run-seam` R-XST0-U70O |
 | S20-2, S20-5 | only the manifest under `etc/`; only the icon under `share/`; exactly three members | `D01-layout-and-run-seam` R-XST0-U70O; `D02-cli` R-SP4Q-LUZT; `share/` and the member list: space-level check (devctl) |
 | S20-3 | templates and appkit's files inside the binary | `D01-layout-and-run-seam` R-XQD8-2NJA, R-XRL4-GF9Z; `D06-pages` R-D06I-9FYP, R-67YR-SHGC |
