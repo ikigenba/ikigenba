@@ -1,6 +1,6 @@
 # D03-sandbox-and-data
 
-A sandbox is one worktree's running copy of the suite. This document owns how a command finds the sandbox it acts on, the name that sandbox carries, where every file of every sandbox lives, the registry that records which sandboxes exist, the two locks that keep concurrent commands from deploying over each other or sharing a port, the port range, the unit and socket names, the rule that says whether a sandbox is up, the refusal of a worktree or root holding a control character (or a state root holding a quote or backslash, or a character systemd rejects), and how a path is written into a unit file. The commands themselves (`up` and `url` in D04, `down`, `wipe` and `ls` in D07, `status` and `logs` in D08, `token` and `token set` in D09) cite these names and rules and never restate them. Program runs go through the run seam D01 declares (`seam.Deps`, `seam.Cmd`, `Deps.Exec`); the diagnostic shapes for a failed program, a program that could not start, and a file that could not be read or written are D02's.
+A sandbox is one worktree's running copy of the suite. This document owns how a command finds the sandbox it acts on, the name that sandbox carries, where every file of every sandbox lives, the registry that records which sandboxes exist, the two locks that keep concurrent commands from deploying over each other or sharing a port, the port range, the unit, slice and socket names, the rule that says whether a sandbox is up, the refusal of a worktree or root holding a control character (or a state root holding a quote or backslash, or a character systemd rejects), and how a path is written into a unit file. The commands themselves (`up` and `url` in D04, `down`, `wipe` and `ls` in D07, `status` and `logs` in D08, `token` and `token set` in D09) cite these names and rules and never restate them. Program runs go through the run seam D01 declares (`seam.Deps`, `seam.Cmd`, `Deps.Exec`); the diagnostic shapes for a failed program, a program that could not start, and a file that could not be read or written are D02's.
 
 Most commands act on this worktree's sandbox. They ask git for the top level of the working tree from the current directory, so any subdirectory works, and name the sandbox after that directory's last element, folded into a DNS label because every app answers at `<app>.<name>.localhost`. `down` and `wipe` may instead be given a name, which reaches any sandbox the registry knows from anywhere, including one whose worktree is gone; `ls` lists every sandbox and needs no checkout. A sandbox found from a worktree is this worktree's only when the registry records that worktree for it, so two worktrees with the same last element never act on each other's sandbox.
 
@@ -11,6 +11,8 @@ App names, like sandbox names, are DNS labels of at most 63 characters, and `ngi
 The registry is one small JSON file, rewritten whole and swapped in by rename so a reader never sees half of it. Every change to it is made under the registry lock, which is what makes port allocation one sandbox at a time: a first `up` takes the lowest port from 7400 to 7499 that no entry holds, and the sandbox keeps it until `wipe`. Commands that change a sandbox (`up`, `down`, `wipe`, `token set`) also hold that sandbox's own lock for as long as they run programs or write its files, so a second such command waits and then runs in full. Both locks are `flock(2)` locks on their lock files; such a lock belongs to the open file description, so two commands in one process exclude each other exactly as two processes do. Commands that only report take no lock.
 
 Unit names join the sandbox name and the app name with `-`, and both may contain `-`, so sandbox `a-b` with app `c` and sandbox `a` with app `b-c` would both own `sandbox-a-b-c.service`. The names stay as they are; `up` instead refuses a sandbox whose units would clash with another registered sandbox's, before it builds or allocates anything.
+
+A sandbox's services run in slices of its own, so its processes are grouped apart from every other sandbox's and from the rest of the developer's session: its core slice and its apps slice, both under its sandbox slice. systemd reads a slice's place in the tree from the dashes of its name (systemd.slice(5)), so the sandbox's name enters the three slice names escaped, each `-` written `\x2d` as systemd.unit(5) escapes a string for a unit name; sandbox `wip-cgroups` thus gets `sandbox-wip\x2dcgroups.slice` rather than a slice nested inside sandbox `wip`'s. Sandbox names hold no `\`, so the escaping keeps every sandbox's slices distinct. The slices have no unit files: the user manager creates a slice, and its parents, when a unit placed in it starts, and a slice nobody started reads `inactive`. They are not unit names either, so no file is ever written under a slice's name.
 
 Whether a sandbox is up is read from systemd each time, never stored, by its state run: it is up while its nginx unit is active, so after a reboot or logout every sandbox reads down.
 
@@ -105,6 +107,14 @@ A path in a unit file is written in one of three forms, by where it stands, beca
 - R-FJ3E-MDVP: An app's service unit MUST be `<units>/sandbox-<name>-<app>.service`.
 
 - R-FKBB-05ME: A sandbox's nginx unit MUST be `<units>/sandbox-<name>-nginx.service`.
+
+- R-FYAI-C54U: A sandbox's escaped name MUST be its name with every `-` written as the four characters `\x2d` and every other character unchanged, verified at least by `wip` giving `wip`, `wip-cgroups` giving `wip\x2dcgroups` and `a-b-c` giving `a\x2db\x2dc`.
+
+- R-FZIE-PWVJ: A sandbox's sandbox slice MUST be the unit name `sandbox-<escaped name>.slice`, `<escaped name>` its escaped name.
+
+- R-G0QB-3OM8: A sandbox's core slice MUST be the unit name `sandbox-<escaped name>-core.slice`, `<escaped name>` its escaped name.
+
+- R-G363-V83M: A sandbox's apps slice MUST be the unit name `sandbox-<escaped name>-apps.slice`, `<escaped name>` its escaped name.
 
 - R-FLJ7-DXD3: An app's socket path MUST be `/run/user/<EUID>/sandbox/<port>/<app>.sock`, where `<EUID>` is `Deps.EUID` in decimal and `<port>` is the sandbox's port.
 
@@ -208,7 +218,7 @@ A path in a unit file is written in one of three forms, by where it stands, beca
 
 - R-0O85-ODPD: Every run of `systemctl` or `journalctl` through either runner MUST have `Dir` `/`.
 
-- R-ICJI-9ZRF: A unit state run of a unit, one of a sandbox's unit names, MUST be a run through `Deps.Exec` of a `seam.Cmd` whose `Path` is `systemctl`, whose `Args` are exactly `--user`, `show`, `--property=ActiveState`, `--value` and the unit's name, and whose `Dir` is `/`.
+- R-G4E0-8ZUB: A unit state run of a unit, one of a sandbox's unit names or its sandbox slice, MUST be a run through `Deps.Exec` of a `seam.Cmd` whose `Path` is `systemctl`, whose `Args` are exactly `--user`, `show`, `--property=ActiveState`, `--value` and the unit's name, and whose `Dir` is `/`.
 
 - R-IDRE-NRI4: A sandbox's state run MUST be the unit state run of its nginx unit, so for sandbox `wip` it asks `Deps.Exec` for exactly the `seam.Cmd` whose `Path` is `systemctl`, whose `Args` are `--user`, `show`, `--property=ActiveState`, `--value` and `sandbox-wip-nginx.service`, and whose `Dir` is `/`.
 
