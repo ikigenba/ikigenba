@@ -443,7 +443,7 @@ func dcLockFree(t *testing.T, p string, want bool) {
 	}
 }
 func TestDataCommandRunnerLocksAndStates(t *testing.T) {
-	// R-D807-7C4S R-GOJZ-ML3B R-0O85-ODPD R-ICJI-9ZRF R-IDRE-NRI4 R-LX3F-ASMX R-LYBB-OKDM R-LZJ8-2C4B
+	// R-D807-7C4S R-GOJZ-ML3B R-0O85-ODPD R-G4E0-8ZUB R-IDRE-NRI4 R-LX3F-ASMX R-LYBB-OKDM R-LZJ8-2C4B
 	for _, cmd := range []string{"down", "wipe"} {
 		f := dcNew(t)
 		f.seed()
@@ -914,3 +914,22 @@ func (b *dcBuffer) Write(p []byte) (int, error) {
 }
 func (b *dcBuffer) Len() int       { b.mu.Lock(); defer b.mu.Unlock(); return b.b.Len() }
 func (b *dcBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
+
+func TestDataUnitStateRunSupportsSandboxSlice(t *testing.T) {
+	// R-G4E0-8ZUB
+	for _, unit := range []string{"sandbox-wip-auth.socket", "sandbox-wip-auth.service", "sandbox-wip-nginx.service", `sandbox-wip\x2dcgroups.slice`} {
+		f := dcNew(t)
+		f.answer = func(c seam.Cmd) (seam.Result, error) {
+			want := seam.Cmd{Path: "systemctl", Args: []string{"--user", "show", "--property=ActiveState", "--value", unit}, Dir: "/"}
+			if !reflect.DeepEqual(c, want) {
+				t.Fatalf("state run: %+v want %+v", c, want)
+			}
+			return seam.Result{Stdout: []byte("active\n")}, nil
+		}
+		i := invocation{ctx: context.Background(), deps: f.deps()}
+		state, err := i.unitState(unit, "state")
+		if err != nil || state != "active" || len(f.calls) != 1 {
+			t.Fatalf("state: %q %v calls %+v", state, err, f.calls)
+		}
+	}
+}

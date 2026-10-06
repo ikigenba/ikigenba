@@ -61,7 +61,7 @@ func (i invocation) runUp() (code int) {
 	for _, app := range apps {
 		files[filepath.Join("env", app.Name+".env")] = renderAppEnv(p.data(entry.Name), entry.Name, entry.Port, app)
 		files[filepath.Join("units", socketUnit(entry.Name, app.Name))] = renderAppSocket(entry, app.Name, i.deps.EUID)
-		files[filepath.Join("units", serviceUnit(entry.Name, app.Name))] = renderAppService(p, entry, app.Name)
+		files[filepath.Join("units", serviceUnit(entry.Name, app.Name))] = renderAppService(p, entry, app)
 	}
 	files["services.json"] = renderServices(entry.Name, entry.Port, i.deps.EUID, apps)
 	files[filepath.Join("nginx", "nginx.conf")] = renderNginxConfig(p.data(entry.Name), t.worktree, entry.Name, entry.Port, i.deps.EUID, apps)
@@ -276,9 +276,17 @@ func renderAppSocket(entry registryEntry, app string, uid int) []byte {
 	return []byte(fmt.Sprintf("[Unit]\nDescription=sandbox %s: %s socket\n\n[Socket]\nListenStream=%s\nRemoveOnStop=yes\n", entry.Name, app, unitPath(socketPath(uid, entry.Port, app))))
 }
 
-func renderAppService(p paths, entry registryEntry, app string) []byte {
-	unit := socketUnit(entry.Name, app)
-	return []byte(fmt.Sprintf("[Unit]\nDescription=sandbox %s: %s\nRequires=%s\nAfter=%s\n\n[Service]\nType=notify\nExecStart=%s\nWorkingDirectory=%s\nEnvironmentFile=%s\nTimeoutStopSec=10\n", entry.Name, app, unit, unit, unitExecutable(p.binary(entry.Name, app)), unitPath(p.appDir(entry.Name, app)), unitPath(p.env(entry.Name, app))))
+func renderAppService(p paths, entry registryEntry, app appInfo) []byte {
+	unit := socketUnit(entry.Name, app.Name)
+	placement := app.Placement
+	if placement == "" {
+		placement = "apps"
+	}
+	text := fmt.Sprintf("[Unit]\nDescription=sandbox %s: %s\nRequires=%s\nAfter=%s\n\n[Service]\nType=notify\nExecStart=%s\nWorkingDirectory=%s\nEnvironmentFile=%s\nTimeoutStopSec=10\nSlice=%s\n", entry.Name, app.Name, unit, unit, unitExecutable(p.binary(entry.Name, app.Name)), unitPath(p.appDir(entry.Name, app.Name)), unitPath(p.env(entry.Name, app.Name)), sandboxSliceName(entry.Name, placement))
+	if app.Delegate {
+		text += "Delegate=yes\n"
+	}
+	return []byte(text)
 }
 
 func urlListing(entry registryEntry) string {

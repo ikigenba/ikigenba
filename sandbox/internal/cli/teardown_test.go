@@ -170,6 +170,7 @@ func teardownSequence(stops bool) []seam.Cmd {
 	for _, u := range teardownNames {
 		calls = append(calls, stateCmd(u))
 	}
+	calls = append(calls, stateCmd("sandbox-wip.slice"))
 	if stops {
 		for _, u := range teardownNames {
 			calls = append(calls, stopCmd(u))
@@ -179,6 +180,7 @@ func teardownSequence(stops bool) []seam.Cmd {
 	for _, u := range teardownNames {
 		calls = append(calls, stateCmd(u))
 	}
+	calls = append(calls, stateCmd("sandbox-wip.slice"))
 	return calls
 }
 
@@ -238,7 +240,7 @@ func chmodTeardown(t *testing.T, p string, mode os.FileMode) {
 	}
 }
 
-// R-OB3F-0G6F R-ODJ7-RZNT R-DHIM-Z6C7 R-OIET-B2ML R-DJYF-QPTL R-DL6C-4HKA R-DNM4-W11O R-ONAE-U5LD R-OPQ7-LP2R R-53P6-QDDU R-DR9U-1C9R R-DSHQ-F40G R-OS60-D8K5
+// R-OB3F-0G6F R-ODJ7-RZNT R-JH81-EDDD R-JB4J-HINW R-JG05-0LMO R-DL6C-4HKA R-DNM4-W11O R-JIFX-S542 R-OPQ7-LP2R R-53P6-QDDU R-DR9U-1C9R R-DSHQ-F40G R-OS60-D8K5
 func TestDownSequenceAndPreservation(t *testing.T) {
 	f := newTeardownFixture(t, true)
 	kept := snapshotTeardown(t, filepath.Join(f.data, "apps"))
@@ -248,7 +250,7 @@ func TestDownSequenceAndPreservation(t *testing.T) {
 		for _, name := range generatedNames {
 			assertPresent(t, filepath.Join(f.data, name))
 		}
-		if index < 10 {
+		if index < 11 {
 			for _, u := range teardownNames {
 				assertPresent(t, filepath.Join(f.units, u))
 			}
@@ -270,7 +272,7 @@ func TestDownSequenceAndPreservation(t *testing.T) {
 	}
 }
 
-// R-LI4Z-4WIF
+// R-GRK3-IMXI
 func TestDownStopSelection(t *testing.T) {
 	for _, kind := range []string{"regular", "symlink", "dangling", "directory", "active", "failed", "missing"} {
 		t.Run(kind, func(t *testing.T) {
@@ -327,7 +329,7 @@ func TestDownStopSelection(t *testing.T) {
 	}
 }
 
-// R-OFZ0-JJ57 R-YALD-SG0Y
+// R-OFZ0-JJ57 R-JJNU-5WUR
 func TestDownResetFailedInterleaving(t *testing.T) {
 	f := newTeardownFixture(t, false)
 	reloaded := false
@@ -342,8 +344,8 @@ func TestDownResetFailedInterleaving(t *testing.T) {
 		return seam.Result{Stdout: []byte(state + "\n")}, nil
 	}
 	f.expect(f.run("down", "wip"), 0, "")
-	want := teardownSequence(false)[:6]
-	want = append(want, stateCmd(teardownNames[0]), stateCmd(teardownNames[1]), stateCmd(teardownNames[2]), resetCmd(teardownNames[2]), stateCmd(teardownNames[3]), resetCmd(teardownNames[3]), stateCmd(teardownNames[4]))
+	want := teardownSequence(false)[:7]
+	want = append(want, stateCmd(teardownNames[0]), stateCmd(teardownNames[1]), stateCmd(teardownNames[2]), resetCmd(teardownNames[2]), stateCmd(teardownNames[3]), resetCmd(teardownNames[3]), stateCmd(teardownNames[4]), stateCmd("sandbox-wip.slice"))
 	if !reflect.DeepEqual(f.calls, want) {
 		t.Fatalf("calls %#v", f.calls)
 	}
@@ -383,9 +385,9 @@ func TestDownAbsentAndNamedContexts(t *testing.T) {
 	}
 }
 
-// R-OX1L-WBIX R-OY9I-A39M R-OZHE-NV0B R-P0PB-1MR0 R-DTPM-SVR5 R-P353-T68E R-Y9DH-EOA9 R-OS60-D8K5
+// R-OX1L-WBIX R-OY9I-A39M R-OZHE-NV0B R-P0PB-1MR0 R-DTPM-SVR5 R-P353-T68E R-JDKC-925A R-OS60-D8K5
 func TestDownProgramFailuresAndRetry(t *testing.T) {
-	for _, point := range []int{0, 1, 5, 9, 10, 11, 13, 14} {
+	for _, point := range []int{0, 1, 5, 6, 10, 11, 12, 14, 15} {
 		for _, runnerError := range []bool{false, true} {
 			t.Run(strconv.Itoa(point)+map[bool]string{false: "exit", true: "runner"}[runnerError], func(t *testing.T) {
 				f := newTeardownFixture(t, true)
@@ -399,7 +401,7 @@ func TestDownProgramFailuresAndRetry(t *testing.T) {
 							return seam.Result{}, errors.New("boom")
 						}
 						output := "failure\n"
-						if point == 5 {
+						if point == 6 {
 							output = "Failed to stop sandbox-wip-nginx.service: Transport endpoint is not connected\n"
 						}
 						return seam.Result{ExitCode: 1, Output: []byte(output)}, nil
@@ -408,7 +410,7 @@ func TestDownProgramFailuresAndRetry(t *testing.T) {
 						reloaded = true
 					}
 					state := "inactive"
-					if point == 14 && reloaded && cmd.Args[1] == "show" && cmd.Args[4] == teardownNames[2] {
+					if point == 15 && reloaded && cmd.Args[1] == "show" && cmd.Args[4] == teardownNames[2] {
 						state = "failed"
 					}
 					return seam.Result{Stdout: []byte(state + "\n")}, nil
@@ -423,7 +425,7 @@ func TestDownProgramFailuresAndRetry(t *testing.T) {
 				want := "sandbox: " + action + ": boom\n"
 				if !runnerError {
 					output := "failure"
-					if point == 5 {
+					if point == 6 {
 						output = "Failed to stop sandbox-wip-nginx.service: Transport endpoint is not connected"
 					}
 					want = "sandbox: " + action + ": exit status 1\n\n> " + output + "\n"
@@ -435,7 +437,7 @@ func TestDownProgramFailuresAndRetry(t *testing.T) {
 				for _, name := range generatedNames {
 					assertPresent(t, filepath.Join(f.data, name))
 				}
-				if point <= 9 {
+				if point <= 10 {
 					for _, u := range teardownNames {
 						assertPresent(t, filepath.Join(f.units, u))
 					}
@@ -460,7 +462,7 @@ func TestDownProgramFailuresAndRetry(t *testing.T) {
 	}
 }
 
-// R-Y85L-0WJK R-P4D0-6XZ3 R-TWRP-I1T0 R-Y9DH-EOA9 R-DSHQ-F40G R-OS60-D8K5 R-OX1L-WBIX
+// R-JCCF-VAEL R-P4D0-6XZ3 R-TWRP-I1T0 R-JDKC-925A R-DSHQ-F40G R-OS60-D8K5 R-OX1L-WBIX
 func TestDownRemovalFailuresAndRetry(t *testing.T) {
 	requireUnprivileged(t)
 	for _, kind := range []string{"unit-entry", "unit-directory", "generated"} {
@@ -471,10 +473,10 @@ func TestDownRemovalFailuresAndRetry(t *testing.T) {
 			reg := snapshotTeardown(t, filepath.Join(f.root, "registry.json"))
 			blocked := f.units
 			failed := filepath.Join(f.units, teardownNames[0])
-			wantCalls := 10
+			wantCalls := 11
 			switch kind {
 			case "unit-entry":
-				wantCalls = 9
+				wantCalls = 10
 				p := filepath.Join(f.units, teardownNames[1])
 				if err := os.Remove(p); err != nil {
 					t.Fatal(err)
@@ -485,7 +487,7 @@ func TestDownRemovalFailuresAndRetry(t *testing.T) {
 			case "generated":
 				blocked = filepath.Join(f.data, "bin")
 				failed = blocked
-				wantCalls = 16
+				wantCalls = 18
 			}
 			chmodTeardown(t, blocked, 0500)
 			t.Cleanup(func() {
@@ -520,7 +522,7 @@ func TestDownRemovalFailuresAndRetry(t *testing.T) {
 	}
 }
 
-// R-Y85L-0WJK
+// R-JCCF-VAEL
 func TestDownRemovesWholeUnitEntries(t *testing.T) {
 	f := newTeardownFixture(t, false)
 	f.write(filepath.Join(f.units, teardownNames[4], "child"), []byte("file"))
@@ -719,7 +721,7 @@ func TestWipeRemovalAndRegistryFailuresRetry(t *testing.T) {
 			}
 			if kind == "registry" {
 				f.answer = func(_ seam.Cmd, index int) (seam.Result, error) {
-					if index == 16 {
+					if index == 18 {
 						if err := os.Remove(registryPath); err != nil {
 							t.Fatal(err)
 						}
@@ -753,5 +755,177 @@ func TestWipeRemovalAndRegistryFailuresRetry(t *testing.T) {
 				t.Fatalf("registry after retry: %s", b)
 			}
 		})
+	}
+}
+
+// R-JKVQ-JOLG R-JH81-EDDD R-JIFX-S542
+func TestDownSandboxSlice(t *testing.T) {
+	for _, tc := range []struct {
+		name, state        string
+		present, sliceFile bool
+	}{
+		{"wip", "active", true, false}, {"wip", "failed", false, false},
+		{"wip", "inactive", true, false}, {"wip", "inactive", true, true},
+		{"wip-cgroups", "active", false, false},
+	} {
+		t.Run(tc.name+tc.state+strconv.FormatBool(tc.sliceFile), func(t *testing.T) {
+			f := newTeardownFixture(t, tc.present)
+			slice := "sandbox-wip.slice"
+			names := teardownNames
+			if tc.name != "wip" {
+				f.write(filepath.Join(f.root, "registry.json"), bytes.ReplaceAll(f.registryBytes(), []byte(`"name":"wip"`), []byte(`"name":"wip-cgroups"`)))
+				names = []string{"sandbox-wip-cgroups-nginx.service", "sandbox-wip-cgroups-auth.socket", "sandbox-wip-cgroups-auth.service", "sandbox-wip-cgroups-dummy.socket", "sandbox-wip-cgroups-dummy.service"}
+				slice = `sandbox-wip\x2dcgroups.slice`
+			}
+			slicePath := filepath.Join(f.units, slice)
+			var before map[string]teardownSnapshot
+			if tc.sliceFile {
+				f.write(slicePath, []byte("preserved slice file"))
+				before = snapshotTeardown(t, slicePath)
+			}
+			reloaded := false
+			f.answer = func(c seam.Cmd, _ int) (seam.Result, error) {
+				if c.Args[1] == "daemon-reload" {
+					reloaded = true
+				}
+				state := "inactive"
+				if tc.present && !reloaded {
+					for _, n := range names {
+						assertPresent(t, filepath.Join(f.units, n))
+					}
+				}
+				if c.Args[1] == "show" && !reloaded {
+					if c.Args[4] == slice {
+						state = tc.state
+					} else if tc.present {
+						state = "active"
+					}
+				}
+				return seam.Result{Stdout: []byte(state + "\n")}, nil
+			}
+			f.expect(f.run("down", tc.name), 0, "")
+			var want []seam.Cmd
+			for _, n := range names {
+				want = append(want, stateCmd(n))
+			}
+			want = append(want, stateCmd(slice))
+			if tc.present {
+				for _, n := range names {
+					want = append(want, stopCmd(n))
+				}
+			}
+			if tc.state != "inactive" {
+				want = append(want, stopCmd(slice))
+			}
+			want = append(want, reloadCmd())
+			for _, n := range names {
+				want = append(want, stateCmd(n))
+			}
+			want = append(want, stateCmd(slice))
+			if !reflect.DeepEqual(f.calls, want) {
+				t.Fatalf("calls %#v; want %#v", f.calls, want)
+			}
+			if tc.sliceFile {
+				if !reflect.DeepEqual(before, snapshotTeardown(t, slicePath)) {
+					t.Fatal("slice file changed")
+				}
+			}
+		})
+	}
+}
+
+// R-JJNU-5WUR
+func TestDownResetFailedSlice(t *testing.T) {
+	f := newTeardownFixture(t, false)
+	reloaded := false
+	f.answer = func(c seam.Cmd, _ int) (seam.Result, error) {
+		if c.Args[1] == "daemon-reload" {
+			reloaded = true
+		}
+		state := "inactive"
+		if reloaded && c.Args[1] == "show" && c.Args[4] == "sandbox-wip.slice" {
+			state = "failed"
+		}
+		return seam.Result{Stdout: []byte(state + "\n")}, nil
+	}
+	f.expect(f.run("down", "wip"), 0, "")
+	want := append(teardownSequence(false), resetCmd("sandbox-wip.slice"))
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Fatalf("calls %#v; want %#v", f.calls, want)
+	}
+}
+
+// R-JDKC-925A
+func TestDownSliceFailuresAndRetry(t *testing.T) {
+	for _, point := range []string{"initial", "stop", "reset"} {
+		for _, runnerError := range []bool{false, true} {
+			t.Run(point+strconv.FormatBool(runnerError), func(t *testing.T) {
+				f := newTeardownFixture(t, true)
+				reloaded := false
+				f.answer = func(c seam.Cmd, _ int) (seam.Result, error) {
+					if c.Args[1] == "daemon-reload" {
+						reloaded = true
+					}
+					slice := c.Args[len(c.Args)-1] == "sandbox-wip.slice"
+					fail := slice && ((point == "initial" && c.Args[1] == "show" && !reloaded) || (point == "stop" && c.Args[1] == "stop") || (point == "reset" && c.Args[1] == "reset-failed"))
+					if fail {
+						if runnerError {
+							return seam.Result{}, errors.New("boom")
+						}
+						return seam.Result{ExitCode: 1, Output: []byte("failure\n")}, nil
+					}
+					state := "inactive"
+					if slice && c.Args[1] == "show" {
+						state = "active"
+						if reloaded {
+							state = "failed"
+						}
+					}
+					return seam.Result{Stdout: []byte(state + "\n")}, nil
+				}
+				if code := f.run("down", "wip"); code != 1 {
+					t.Fatalf("code %d", code)
+				}
+				last := f.calls[len(f.calls)-1]
+				wantLast := stateCmd("sandbox-wip.slice")
+				wantCount := 6
+				if point == "stop" {
+					wantLast = stopCmd("sandbox-wip.slice")
+					wantCount = 12
+				}
+				if point == "reset" {
+					wantLast = resetCmd("sandbox-wip.slice")
+					wantCount = 20
+				}
+				if len(f.calls) != wantCount || !reflect.DeepEqual(last, wantLast) {
+					t.Fatalf("continued after slice failure: %#v", f.calls)
+				}
+				if point != "reset" {
+					for _, n := range teardownNames {
+						assertPresent(t, filepath.Join(f.units, n))
+					}
+				}
+				for _, n := range generatedNames {
+					assertPresent(t, filepath.Join(f.data, n))
+				}
+				f.answer = func(c seam.Cmd, index int) (seam.Result, error) {
+					state := "inactive"
+					if index == 5 && reflect.DeepEqual(c, stateCmd("sandbox-wip.slice")) {
+						state = "active"
+					}
+					return seam.Result{Stdout: []byte(state + "\n")}, nil
+				}
+				f.expect(f.run("down", "wip"), 0, "")
+				f.gone()
+				var stopped, reloadedAgain bool
+				for _, c := range f.calls {
+					stopped = stopped || reflect.DeepEqual(c, stopCmd("sandbox-wip.slice"))
+					reloadedAgain = reloadedAgain || reflect.DeepEqual(c, reloadCmd())
+				}
+				if !stopped || !reloadedAgain {
+					t.Fatal("retry omitted slice stop or reload")
+				}
+			})
+		}
 	}
 }

@@ -168,6 +168,14 @@ func (p paths) token(name string) string            { return path.Join(p.data(na
 func socketPath(uid, port int, app string) string {
 	return fmt.Sprintf("/run/user/%d/sandbox/%d/%s.sock", uid, port, app)
 }
+func escapedSandboxName(name string) string { return strings.ReplaceAll(name, "-", `\x2d`) }
+func sandboxSliceName(name, placement string) string {
+	suffix := ""
+	if placement != "" {
+		suffix = "-" + placement
+	}
+	return "sandbox-" + escapedSandboxName(name) + suffix + ".slice"
+}
 func nginxUnit(name string) string        { return "sandbox-" + name + "-nginx.service" }
 func serviceUnit(name, app string) string { return "sandbox-" + name + "-" + app + ".service" }
 func socketUnit(name, app string) string  { return "sandbox-" + name + "-" + app + ".socket" }

@@ -341,7 +341,7 @@ func appTOMLString(s string) string {
 	return q
 }
 
-// R-4EPJ-0D5Q R-VCCP-LLQG
+// R-JPRC-2RK8 R-VCCP-LLQG
 func TestManifestPrecedence(t *testing.T) {
 	cases := []struct {
 		body, want string
@@ -430,21 +430,19 @@ func TestManifestReadKeys(t *testing.T) {
 	}
 }
 
-// R-89VT-FXJS
+// R-GGL0-2P99
 func TestResourceWeights(t *testing.T) {
-	for _, key := range []string{"cpu_weight", "io_weight"} {
-		for _, value := range []string{"0", "-1", "10001", "20000", "\"50\"", "50.0", "true", "[]", "{}"} {
-			t.Run(key+"="+value, func(t *testing.T) {
-				f := newAppFixture(t)
-				f.manifest("dummy", appManifest("dummy")+"[resources]\n"+key+"="+value+"\n")
-				f.refuse("dummy: etc/manifest.toml: 'resources." + key + "' must be a whole number from 1 to 10000")
-			})
-		}
-		for _, value := range []string{"1", "50", "10000"} {
+	for _, value := range []string{"0", "-1", "10001", "20000", "\"50\"", "50.0", "true", "[]", "{}"} {
+		t.Run("cpu_weight="+value, func(t *testing.T) {
 			f := newAppFixture(t)
-			f.manifest("dummy", appManifest("dummy")+"[resources]\n"+key+"="+value+"\n")
-			f.success()
-		}
+			f.manifest("dummy", appManifest("dummy")+"[resources]\ncpu_weight="+value+"\n")
+			f.refuse("dummy: etc/manifest.toml: 'resources.cpu_weight' must be a whole number from 1 to 10000")
+		})
+	}
+	for _, value := range []string{"1", "50", "10000"} {
+		f := newAppFixture(t)
+		f.manifest("dummy", appManifest("dummy")+"[resources]\ncpu_weight="+value+"\n")
+		f.success()
 	}
 }
 
@@ -464,25 +462,31 @@ func TestResourceMemoryMax(t *testing.T) {
 	}
 }
 
-// R-8CBM-7H16
+// R-GLGL-LS81
 func TestResourceUnknownKeys(t *testing.T) {
-	for _, value := range []string{"50", "\"50\"", "false", "[]", "{}"} {
-		f := newAppFixture(t)
-		f.manifest("dummy", appManifest("dummy")+"[resources]\ncpu_quota="+value+"\n")
-		f.refuse("dummy: etc/manifest.toml: 'resources.cpu_quota' is not allowed; the resources are cpu_weight, memory_max, and io_weight")
+	for _, key := range []string{"cpu_quota", "io_weight"} {
+		for _, value := range []string{"50", "\"50\"", "false", "[]", "{}"} {
+			f := newAppFixture(t)
+			f.manifest("dummy", appManifest("dummy")+"[resources]\n"+key+"="+value+"\n")
+			f.refuse("dummy: etc/manifest.toml: 'resources." + key + "' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy")
+		}
 	}
 	f := newAppFixture(t)
 	f.manifest("dummy", appManifest("dummy")+"[resources]\n\"bad\\nkey\\t\\u007f\"=1\n")
-	f.refuse("dummy: etc/manifest.toml: 'resources.bad\\x0akey\\x09\\x7f' is not allowed; the resources are cpu_weight, memory_max, and io_weight")
+	f.refuse("dummy: etc/manifest.toml: 'resources.bad\\x0akey\\x09\\x7f' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy")
 }
 
-// R-8DJI-L8RV
+// R-JOJF-OZTJ
 func TestResourcesPrecedence(t *testing.T) {
 	for _, c := range []struct{ entries, want string }{
-		{"memory_max=\"512MB\"\ncpu_weight=0\n", "'resources.cpu_weight' must be a whole number from 1 to 10000"},
-		{"io_weight=0\nmemory_max=\"512MB\"\n", "'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G"},
-		{"cpu_quota=1\nio_weight=0\n", "'resources.io_weight' must be a whole number from 1 to 10000"},
-		{"zz=1\ncpu_quota=1\n", "'resources.cpu_quota' is not allowed; the resources are cpu_weight, memory_max, and io_weight"},
+		{"slice=\"system\"\nmemory_max=\"512MB\"\n", `'resources.slice' must be "core" or "apps"`},
+		{"memory_max=\"512MB\"\ngo_memory_limit=\"1.5G\"\n", "'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G"},
+		{"go_memory_limit=\"1.5G\"\ncpu_weight=0\n", "'resources.go_memory_limit' must be a whole number of bytes, optionally followed by K, M, or G"},
+		{"go_memory_limit=\"512M\"\ncpu_weight=0\n", "'resources.go_memory_limit' must not be larger than 'resources.memory_max'"},
+		{"cpu_weight=0\ndelegate=\"yes\"\n", "'resources.cpu_weight' must be a whole number from 1 to 10000"},
+		{"delegate=\"yes\"\noom_policy=\"stop\"\n", "'resources.delegate' must be true or false"},
+		{"oom_policy=\"stop\"\nio_weight=50\n", `'resources.oom_policy' must be "continue"`},
+		{"zz=1\ncpu_quota=1\n", "'resources.cpu_quota' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy"},
 	} {
 		f := newAppFixture(t)
 		f.manifest("dummy", appManifest("dummy")+"[resources]\n"+c.entries)
@@ -490,7 +494,7 @@ func TestResourcesPrecedence(t *testing.T) {
 	}
 }
 
-// R-8ERE-Z0IK
+// R-GMOH-ZJYQ
 func TestResourcesDoNotChangeDeployment(t *testing.T) {
 	f := newAppFixture(t)
 	f.manifest("auth", appManifest("auth"))
@@ -501,14 +505,10 @@ func TestResourcesDoNotChangeDeployment(t *testing.T) {
 		for _, rel := range []string{"env/auth.env", "env/dummy.env", "services.json", "nginx/nginx.conf"} {
 			result[rel] = f.read(rel)
 		}
-		for _, unit := range []string{"auth.socket", "auth.service", "dummy.socket", "dummy.service", "nginx.service"} {
-			filename := "sandbox-wip-" + unit
-			b, err := os.ReadFile(filepath.Clean(filepath.Join(f.config, "systemd/user", filename)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			result[filename] = string(b)
+		for key, value := range upSnapshot(t, filepath.Join(f.config, "systemd/user")) {
+			result[key] = value
 		}
+		result["registry.json"] = upRead(t, filepath.Join(f.state, "ikigenba/sandbox/registry.json"))
 		return result
 	}
 	code, beforeOut, stderr := f.run()
@@ -517,7 +517,7 @@ func TestResourcesDoNotChangeDeployment(t *testing.T) {
 	}
 	beforeFiles := files()
 	beforeCommands := append([]seam.Cmd(nil), f.commands...)
-	f.manifest("dummy", appManifest("dummy")+"[resources]\ncpu_weight=50\nmemory_max=\"512M\"\nio_weight=50\n")
+	f.manifest("dummy", appManifest("dummy")+"[resources]\nslice=\"apps\"\nmemory_max=\"256M\"\ngo_memory_limit=\"128M\"\ncpu_weight=50\ndelegate=false\noom_policy=\"continue\"\n")
 	code, afterOut, stderr := f.run()
 	if code != 0 || stderr != "" {
 		t.Fatalf("with resources: %d %s", code, stderr)
@@ -526,10 +526,13 @@ func TestResourcesDoNotChangeDeployment(t *testing.T) {
 	if beforeOut != afterOut || !reflect.DeepEqual(beforeCommands, f.commands) || !reflect.DeepEqual(beforeFiles, afterFiles) {
 		t.Fatal("resources changed deployment output or commands")
 	}
-	for _, setting := range []string{"CPUWeight=", "MemoryMax=", "IOWeight="} {
+	for _, setting := range []string{"CPUWeight=", "MemoryMax=", "MemoryHigh=", "OOMPolicy="} {
 		if strings.Contains(afterFiles["sandbox-wip-dummy.service"], setting) {
 			t.Fatalf("resource setting applied: %s", setting)
 		}
+	}
+	if strings.Contains(afterFiles["env/dummy.env"], "GOMEMLIMIT") {
+		t.Fatal("resources added GOMEMLIMIT")
 	}
 }
 
@@ -573,7 +576,7 @@ func TestGuestsDoNotChangeDeployment(t *testing.T) {
 	}
 }
 
-// R-4EPJ-0D5Q R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
+// R-JPRC-2RK8 R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
 func TestAppIcons(t *testing.T) {
 	for _, emptyShare := range []bool{false, true} {
 		f := newAppFixture(t)
@@ -910,6 +913,100 @@ func TestAppSecretNonLeakage(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// R-GCXA-XE16 R-GHSW-GGZY R-GJ0S-U8QN
+func TestResourceChoices(t *testing.T) {
+	for _, c := range []struct {
+		key, reason string
+		bad, good   []string
+	}{
+		{"slice", `'resources.slice' must be "core" or "apps"`, []string{`"system"`, `"Core"`, `""`, `1`, `true`, `[]`, `{}`}, []string{`"core"`, `"apps"`}},
+		{"delegate", "'resources.delegate' must be true or false", []string{`"yes"`, `"true"`, `1`, `[]`, `{}`}, []string{"true", "false"}},
+		{"oom_policy", `'resources.oom_policy' must be "continue"`, []string{`"stop"`, `"kill"`, `"Continue"`, `""`, `true`, `1`, `[]`, `{}`}, []string{`"continue"`}},
+	} {
+		for _, value := range c.bad {
+			t.Run(c.key+"="+value, func(t *testing.T) {
+				f := newAppFixture(t)
+				f.manifest("dummy", appManifest("dummy")+"[resources]\n"+c.key+"="+value+"\n")
+				f.refuse("dummy: etc/manifest.toml: " + c.reason)
+			})
+		}
+		for _, value := range c.good {
+			f := newAppFixture(t)
+			f.manifest("dummy", appManifest("dummy")+"[resources]\n"+c.key+"="+value+"\n")
+			f.success()
+		}
+	}
+}
+
+// R-JM3M-XGC5
+func TestResourceGoMemoryForm(t *testing.T) {
+	for _, value := range []string{`"0"`, `"512MB"`, `"512m"`, `"1.5G"`, `"50%"`, `""`, `"9999999999G"`, `"17179869185G"`, `134217728`, `"9223372036854775808"`, `"8589934592G"`, `"K"`, `"+1"`, `"-1"`, `" 1"`, `"1 "`, `"١"`, `true`, `{}`} {
+		t.Run(value, func(t *testing.T) {
+			f := newAppFixture(t)
+			f.manifest("dummy", appManifest("dummy")+"[resources]\nmemory_max=\"1G\"\ngo_memory_limit="+value+"\n")
+			f.refuse("dummy: etc/manifest.toml: 'resources.go_memory_limit' must be a whole number of bytes, optionally followed by K, M, or G")
+		})
+	}
+	for _, value := range []string{"128M", "1G", "1048576", "1", "1K", "0001", "9223372036854775807", "8589934591G", "8796093022207M", "9007199254740991K"} {
+		f := newAppFixture(t)
+		f.manifest("dummy", appManifest("dummy")+"[resources]\nmemory_max=\"9223372036854775807\"\ngo_memory_limit="+appTOMLString(value)+"\n")
+		f.success()
+	}
+}
+
+// R-JNBJ-B82U
+func TestResourceGoMemoryCeiling(t *testing.T) {
+	for _, body := range []string{
+		"memory_max=\"256M\"\ngo_memory_limit=\"512M\"\n",
+		"go_memory_limit=\"256M\"\n",
+		"go_memory_limit=\"134217729\"\n",
+		"memory_max=\"1G\"\ngo_memory_limit=\"1048577K\"\n",
+	} {
+		f := newAppFixture(t)
+		f.manifest("dummy", appManifest("dummy")+"[resources]\n"+body)
+		f.refuse("dummy: etc/manifest.toml: 'resources.go_memory_limit' must not be larger than 'resources.memory_max'")
+	}
+	for _, body := range []string{
+		"memory_max=\"256M\"\ngo_memory_limit=\"256M\"\n",
+		"go_memory_limit=\"128M\"\n",
+		"go_memory_limit=\"134217728\"\n",
+		"memory_max=\"1G\"\ngo_memory_limit=\"1048576K\"\n",
+		"memory_max=\"64M\"\n",
+	} {
+		f := newAppFixture(t)
+		f.manifest("dummy", appManifest("dummy")+"[resources]\n"+body)
+		f.success()
+	}
+}
+
+// R-G81P-EB2E R-G99L-S2T3
+func TestResourcePlacementAndDelegation(t *testing.T) {
+	for _, c := range []struct {
+		body, placement string
+		delegate        bool
+	}{
+		{"", "apps", false},
+		{"[resources]\n", "apps", false},
+		{"[resources]\nslice=\"apps\"\n", "apps", false},
+		{"[resources]\nslice=\"core\"\n", "core", false},
+		{"[resources]\ndelegate=true\n", "apps", true},
+		{"[resources]\ndelegate=false\n", "apps", false},
+		{"[resources]\nslice=\"core\"\ndelegate=true\n", "core", true},
+	} {
+		for _, name := range []string{"auth", "dummy"} {
+			f := newAppFixture(t)
+			f.manifest(name, appManifest(name)+c.body)
+			apps, err := discoverApps(f.work)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(apps) != 1 || apps[0].Placement != c.placement || apps[0].Delegate != c.delegate {
+				t.Fatalf("resources %q: got %#v", c.body, apps)
 			}
 		}
 	}

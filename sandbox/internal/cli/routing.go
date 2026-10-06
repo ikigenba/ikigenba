@@ -143,6 +143,6 @@ func renderNginxUnit(data, name string) []byte {
 		return `"` + strings.NewReplacer("%", "%%", "$", "$$").Replace(path) + `"`
 	}
 	start := "nginx -p " + argument(nginxDir) + " -c " + argument(filepath.Join(nginxDir, "nginx.conf")) + " -e stderr"
-	return []byte(fmt.Sprintf("[Unit]\nDescription=sandbox %s: nginx\n\n[Service]\nType=forking\nPIDFile=%s\nExecStart=%s\nExecReload=%s -t\nExecReload=%s -s reload\n", name,
-		strings.ReplaceAll(filepath.Join(nginxDir, "nginx.pid"), "%", "%%"), start, start, start))
+	return []byte(fmt.Sprintf("[Unit]\nDescription=sandbox %s: nginx\n\n[Service]\nType=forking\nPIDFile=%s\nExecStart=%s\nExecReload=%s -t\nExecReload=%s -s reload\nSlice=%s\n", name,
+		strings.ReplaceAll(filepath.Join(nginxDir, "nginx.pid"), "%", "%%"), start, start, start, sandboxSliceName(name, "core")))
 }

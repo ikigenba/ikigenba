@@ -253,7 +253,7 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 				if upRead(t, filepath.Join(f.units, "sandbox-wip-"+app+".socket")) != string(renderAppSocket(registryEntry{Name: "wip", Port: 7400}, app, 1000)) {
 					t.Fatal("socket content mismatch")
 				}
-				if upRead(t, filepath.Join(f.units, "sandbox-wip-"+app+".service")) != string(renderAppService(paths{state: f.state, config: f.config, root: filepath.Join(f.state, "ikigenba", "sandbox"), units: f.units}, registryEntry{Name: "wip", Port: 7400}, app)) {
+				if upRead(t, filepath.Join(f.units, "sandbox-wip-"+app+".service")) != string(renderAppService(paths{state: f.state, config: f.config, root: filepath.Join(f.state, "ikigenba", "sandbox"), units: f.units}, registryEntry{Name: "wip", Port: 7400}, appInfo{Name: app})) {
 					t.Fatal("service mismatch")
 				}
 			}
@@ -350,7 +350,7 @@ func TestUpWithoutAuthAndReload(t *testing.T) {
 }
 
 func TestUpAppUnitText(t *testing.T) {
-	// R-XNFA-ISXR R-XM7E-5172
+	// R-XNFA-ISXR R-3R9N-KG35
 	for _, state := range []string{"/home/me/.local/state", "/tmp/a b%c$d"} {
 		p := paths{root: filepath.Join(state, "ikigenba", "sandbox")}
 		entry := registryEntry{Name: "wip", Port: 7400}
@@ -359,8 +359,8 @@ func TestUpAppUnitText(t *testing.T) {
 			t.Fatal("socket text")
 		}
 		data := strings.ReplaceAll(filepath.Join(state, "ikigenba", "sandbox", "wip"), "%", "%%")
-		wantService := "[Unit]\nDescription=sandbox wip: dummy\nRequires=sandbox-wip-dummy.socket\nAfter=sandbox-wip-dummy.socket\n\n[Service]\nType=notify\nExecStart=\"" + data + "/bin/dummy\"\nWorkingDirectory=" + data + "/apps/dummy\nEnvironmentFile=" + data + "/env/dummy.env\nTimeoutStopSec=10\n"
-		if got := string(renderAppService(p, entry, "dummy")); got != wantService {
+		wantService := "[Unit]\nDescription=sandbox wip: dummy\nRequires=sandbox-wip-dummy.socket\nAfter=sandbox-wip-dummy.socket\n\n[Service]\nType=notify\nExecStart=\"" + data + "/bin/dummy\"\nWorkingDirectory=" + data + "/apps/dummy\nEnvironmentFile=" + data + "/env/dummy.env\nTimeoutStopSec=10\nSlice=sandbox-wip-apps.slice\n"
+		if got := string(renderAppService(p, entry, appInfo{Name: "dummy"})); got != wantService {
 			t.Fatalf("%q want %q", got, wantService)
 		}
 	}
@@ -716,7 +716,7 @@ func TestUpIgnoresFragmentContents(t *testing.T) {
 }
 
 func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
-	// R-4FXF-E4WF
+	// R-JQZ8-GJAX
 	for _, fault := range []string{"earlier-icon", "later-manifest", "icon-before-defaults"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newUpFixture(t, "auth", "dummy")
@@ -742,7 +742,7 @@ func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
 }
 
 func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
-	// R-4FXF-E4WF R-S969-SQY1
+	// R-JQZ8-GJAX R-S969-SQY1
 	for _, known := range []bool{false, true} {
 		for _, fault := range []string{"noapps", "manifest", "icon", "defaults", "badvalue", "secrets", "clash", "ports"} {
 			if known && fault == "ports" {
@@ -1267,5 +1267,47 @@ func TestUpAppRecordUpdatePreservesUnrelatedRegistryEntries(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("registry: got %+v want %+v", got, want)
+	}
+}
+
+func TestUpManifestResourcesReachUnits(t *testing.T) {
+	// R-3R9N-KG35 R-GP4A-R3G4
+	for _, name := range []string{"wip", "wip-cgroups"} {
+		for _, tc := range []struct{ auth, dummy, authSlice, dummySlice, delegate string }{
+			{"[resources]\nslice = \"core\"\n", "", "core", "apps", ""},
+			{"", "[resources]\nslice = \"core\"\n", "apps", "core", ""},
+			{"", "[resources]\ndelegate = true\n", "apps", "apps", "Delegate=yes\n"},
+			{"", "[resources]\ndelegate = false\n", "apps", "apps", ""},
+			{"[resources]\nslice = \"apps\"\n", "[resources]\nslice = \"apps\"\n", "apps", "apps", ""},
+		} {
+			f := newUpFixture(t, "auth", "dummy")
+			if name != "wip" {
+				previous := f.worktree
+				f.worktree = filepath.Join(f.root, name)
+				if err := os.Rename(previous, f.worktree); err != nil {
+					t.Fatal(err)
+				}
+				f.data = filepath.Join(f.state, "ikigenba", "sandbox", name)
+			}
+			f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app = \"auth\"\n"+tc.auth, 0644)
+			f.put(filepath.Join(f.worktree, "dummy", "etc", "manifest.toml"), "app = \"dummy\"\n"+tc.dummy, 0644)
+			code, out, diagnostic := f.run("up")
+			if code != 0 || out == "" || diagnostic != "" {
+				t.Fatalf("up: %d %q %q", code, out, diagnostic)
+			}
+			escaped := strings.ReplaceAll(name, "-", `\x2d`)
+			for _, app := range []struct{ name, slice, delegate string }{{"auth", tc.authSlice, ""}, {"dummy", tc.dummySlice, tc.delegate}} {
+				data := strings.ReplaceAll(f.data, "%", "%%")
+				unit := "sandbox-" + name + "-" + app.name + ".socket"
+				want := "[Unit]\nDescription=sandbox " + name + ": " + app.name + "\nRequires=" + unit + "\nAfter=" + unit + "\n\n[Service]\nType=notify\nExecStart=\"" + data + "/bin/" + app.name + "\"\nWorkingDirectory=" + data + "/apps/" + app.name + "\nEnvironmentFile=" + data + "/env/" + app.name + ".env\nTimeoutStopSec=10\nSlice=sandbox-" + escaped + "-" + app.slice + ".slice\n" + app.delegate
+				if got := upRead(t, filepath.Join(f.units, "sandbox-"+name+"-"+app.name+".service")); got != want {
+					t.Fatalf("service: %q want %q", got, want)
+				}
+			}
+			nginx := upRead(t, filepath.Join(f.units, "sandbox-"+name+"-nginx.service"))
+			if !strings.HasSuffix(nginx, "Slice=sandbox-"+escaped+"-core.slice\n") {
+				t.Fatalf("nginx slice: %q", nginx)
+			}
+		}
 	}
 }

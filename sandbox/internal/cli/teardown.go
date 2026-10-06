@@ -32,8 +32,9 @@ func (r *invocation) teardownRun(args []string, action string) int {
 
 func (r *invocation) teardown(t target) int {
 	units := teardownUnits(t.entry)
-	states := make([]string, len(units))
-	for i, unit := range units {
+	stateUnits := append(append([]string(nil), units...), sandboxSliceName(t.entry.Name, ""))
+	states := make([]string, len(stateUnits))
+	for i, unit := range stateUnits {
 		state, err := r.unitState(unit, "show "+unit)
 		if err != nil {
 			return r.report(err)
@@ -49,6 +50,12 @@ func (r *invocation) teardown(t target) int {
 			}
 		}
 	}
+	if states[len(units)] != "inactive" {
+		unit := stateUnits[len(units)]
+		if code := r.teardownRun([]string{"stop", unit}, "stop "+unit); code != 0 {
+			return code
+		}
+	}
 	for _, unit := range units {
 		p := filepath.Join(t.paths.units, unit)
 		if err := os.RemoveAll(p); err != nil {
@@ -58,7 +65,7 @@ func (r *invocation) teardown(t target) int {
 	if code := r.teardownRun([]string{"daemon-reload"}, "systemctl --user daemon-reload"); code != 0 {
 		return code
 	}
-	for _, unit := range units {
+	for _, unit := range stateUnits {
 		state, err := r.unitState(unit, "show "+unit)
 		if err != nil {
 			return r.report(err)

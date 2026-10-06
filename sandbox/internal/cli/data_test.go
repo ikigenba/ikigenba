@@ -540,3 +540,22 @@ func dataRun(t *testing.T, args []string, input string, deps seam.Deps) (int, st
 	}
 	return code, out.String(), errout.String()
 }
+
+func TestDataSandboxSliceNames(t *testing.T) {
+	// R-FYAI-C54U R-FZIE-PWVJ R-G0QB-3OM8 R-G363-V83M
+	for _, tc := range []struct{ name, escaped string }{{"wip", "wip"}, {"wip-cgroups", `wip\x2dcgroups`}, {"a-b-c", `a\x2db\x2dc`}} {
+		if got := escapedSandboxName(tc.name); got != tc.escaped {
+			t.Fatalf("escaped %q: %q", tc.name, got)
+		}
+		for _, placement := range []string{"", "core", "apps"} {
+			want := "sandbox-" + tc.escaped
+			if placement != "" {
+				want += "-" + placement
+			}
+			want += ".slice"
+			if got := sandboxSliceName(tc.name, placement); got != want {
+				t.Fatalf("slice %q/%q: %q want %q", tc.name, placement, got, want)
+			}
+		}
+	}
+}

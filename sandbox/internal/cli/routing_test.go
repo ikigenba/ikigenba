@@ -496,7 +496,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 }
 
 func TestRoutingNginxUnit(t *testing.T) {
-	// R-5DLC-QFHT R-ZUPX-F7J2 R-ZVXT-SZ9R R-XPV3-ACF5 R-XON6-WKOG R-ZZLI-YAHU
+	// R-5DLC-QFHT R-GNWE-DBPF R-ZVXT-SZ9R R-XPV3-ACF5 R-XON6-WKOG R-ZZLI-YAHU
 	data := "/tmp/a b%c$d/ikigenba/sandbox/wip"
 	text := string(renderNginxUnit(data, "wip"))
 	sections := make(map[string][]string)
@@ -526,10 +526,10 @@ func TestRoutingNginxUnit(t *testing.T) {
 		}
 		settings[key] = append(settings[key], value)
 	}
-	if len(settings) != 4 {
+	if len(settings) != 5 {
 		t.Fatalf("service keys: %v", settings)
 	}
-	for key, want := range map[string]string{"Type": "forking", "PIDFile": "/tmp/a b%%c$d/ikigenba/sandbox/wip/nginx/nginx.pid"} {
+	for key, want := range map[string]string{"Type": "forking", "Slice": "sandbox-wip-core.slice", "PIDFile": "/tmp/a b%%c$d/ikigenba/sandbox/wip/nginx/nginx.pid"} {
 		if !reflect.DeepEqual(settings[key], []string{want}) {
 			t.Fatalf("%s: %v", key, settings[key])
 		}

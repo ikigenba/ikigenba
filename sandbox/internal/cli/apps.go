@@ -30,6 +30,8 @@ type appInfo struct {
 	SecretValues map[string]string
 	Icon         []byte
 	HasIcon      bool
+	Placement    string
+	Delegate     bool
 }
 
 func appOSReason(err error) string {
@@ -226,10 +228,16 @@ func readManifest(worktree string, a *appInfo) error {
 			return manifestError(a.Name, reason)
 		}
 	}
+	a.Placement = "apps"
+	a.Delegate = false
 	if resources, ok := m["resources"].(map[string]any); ok {
 		if err := checkResources(a.Name, resources); err != nil {
 			return err
 		}
+		if resources["slice"] == "core" {
+			a.Placement = "core"
+		}
+		a.Delegate, _ = resources["delegate"].(bool)
 	}
 	if a.MCP && strings.TrimFunc(a.Description, unicode.IsSpace) == "" {
 		return manifestError(a.Name, "'mcp' is true but 'description' is empty; an MCP service must say what it offers")
@@ -238,10 +246,10 @@ func readManifest(worktree string, a *appInfo) error {
 }
 
 func checkResources(name string, resources map[string]any) error {
-	keys := []string{"cpu_weight", "memory_max", "io_weight"}
+	keys := []string{"slice", "memory_max", "go_memory_limit", "cpu_weight", "delegate", "oom_policy"}
 	var unknown []string
 	for key := range resources {
-		if key != "cpu_weight" && key != "memory_max" && key != "io_weight" {
+		if key != "slice" && key != "memory_max" && key != "go_memory_limit" && key != "cpu_weight" && key != "delegate" && key != "oom_policy" {
 			unknown = append(unknown, key)
 		}
 	}
@@ -253,26 +261,48 @@ func checkResources(name string, resources map[string]any) error {
 			continue
 		}
 		switch key {
-		case "cpu_weight", "io_weight":
+		case "slice":
+			if value != "core" && value != "apps" {
+				return manifestError(name, `'resources.slice' must be "core" or "apps"`)
+			}
+		case "cpu_weight":
 			weight, ok := value.(int64)
 			if !ok || weight < 1 || weight > 10000 {
 				return manifestError(name, fmt.Sprintf("'resources.%s' must be a whole number from 1 to 10000", key))
 			}
-		case "memory_max":
+		case "memory_max", "go_memory_limit":
 			memory, ok := value.(string)
-			if !ok || !validMemoryMax(memory) {
-				return manifestError(name, "'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G")
+			count, valid := memoryByteCount(memory)
+			if !ok || !valid {
+				return manifestError(name, fmt.Sprintf("'resources.%s' must be a whole number of bytes, optionally followed by K, M, or G", key))
+			}
+			if key == "go_memory_limit" {
+				maximum := uint64(134217728)
+				if configured, ok := resources["memory_max"].(string); ok {
+					maximum, _ = memoryByteCount(configured)
+				}
+				if count > maximum {
+					return manifestError(name, "'resources.go_memory_limit' must not be larger than 'resources.memory_max'")
+				}
+			}
+		case "delegate":
+			if _, ok := value.(bool); !ok {
+				return manifestError(name, "'resources.delegate' must be true or false")
+			}
+		case "oom_policy":
+			if value != "continue" {
+				return manifestError(name, `'resources.oom_policy' must be "continue"`)
 			}
 		default:
-			return manifestError(name, fmt.Sprintf("'resources.%s' is not allowed; the resources are cpu_weight, memory_max, and io_weight", appPrinted(key)))
+			return manifestError(name, fmt.Sprintf("'resources.%s' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy", appPrinted(key)))
 		}
 	}
 	return nil
 }
 
-func validMemoryMax(memory string) bool {
+func memoryByteCount(memory string) (uint64, bool) {
 	if memory == "" {
-		return false
+		return 0, false
 	}
 	multiplier := uint64(1)
 	switch memory[len(memory)-1] {
@@ -288,11 +318,14 @@ func validMemoryMax(memory string) bool {
 	}
 	for _, digit := range []byte(memory) {
 		if digit < '0' || digit > '9' {
-			return false
+			return 0, false
 		}
 	}
 	count, err := strconv.ParseUint(memory, 10, 63)
-	return err == nil && count > 0 && count <= (1<<63-1)/multiplier
+	if err != nil || count == 0 || count > (1<<63-1)/multiplier {
+		return 0, false
+	}
+	return count * multiplier, true
 }
 
 func readAppIcon(worktree string, a *appInfo) error {
