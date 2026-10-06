@@ -1,0 +1,17 @@
+app = "events"
+description = "The suite's internal event bus"
+default = false
+mcp = true
+secrets = []
+
+[env]
+EVENTS_DEPTH_MAX = "8"
+EVENTS_DELIVERY_TIMEOUT_SECONDS = "5"
+EVENTS_DELIVERY_ATTEMPTS = "10"
+EVENTS_INFLIGHT_MAX = "4"
+EVENTS_RETENTION_DAYS = "2"
+EVENTS_DECLARATIONS_SECONDS = "60"
+
+[database]
+engine = "sqlite"
+path = "state/events.db"
