@@ -38,7 +38,7 @@ repos on a space is the same binary serving on the same terms as under a test: a
 | `tool.called` with `tool=create`, `kind=additive`, `outcome=ok`; `repo.created` | `kind=additive` from `D06-mcp` (R-LS48-WEAA, through appkit's MCP tool annotations); `outcome` and `repo.created` from `D07-tools` |
 | repos writes nothing to stderr while healthy | `D03-serve` |
 | no event attribute holds the name `drafts`, a file, a commit message | `D01-layout-and-run-seam` (each domain event's exact keys) |
-| the database kept and replicated across releases | opsctl (`[database]` in `D02-cli`'s manifest); repos opening the replicated file in the WAL journal mode litestream keeps it in, `D05-store` (R-XT4R-XL2Y) |
+| the database kept and replicated across releases, and brought up to date with the migrations the release carries | opsctl (`[database]` in `D02-cli`'s manifest); repos opening it through appkit's `db`, which keeps it in the WAL journal mode litestream needs (appkit's D15), and applying its migrations at start, `D03-serve` (R-H578-5F1M); an older release over a newer catalog refused, `D03-serve` (R-YB4H-4PUF) |
 
 ## The credential
 
