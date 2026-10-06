@@ -141,7 +141,7 @@ submit control" fixed above to exactly one, and that definition of a submit
 control and its ban on `name`, `formaction`, `formmethod` and `formenctype`
 still apply to it.
 
-**The route has four answers and no fifth.** A request without identity is a
+**The route has five answers and no sixth.** A request without identity is a
 500, decided before anything else by appkit's `identity.Require`, which
 `D04-panel` wraps around the whole handler; that answer is not restated here,
 but the *ordering* is stated here, because `S5-form` extends it from path and
@@ -157,7 +157,15 @@ it carries the banner's sign-out form; what it lacks is a form in its page
 content, where its message and its link to `/widgets` sit inside the one
 `main` (`D04-panel`). A submission dummy reads and accepts is a 303 to
 `/widgets` with an empty body. A submission dummy reads and rejects is a 422
-whose body is a panel page.
+whose body is a panel page. And while the store cannot reach the widgets
+(`D04-panel` defines the store being unreachable), every form-encoded
+submission is the unreachable answer `D04-panel` defines, the plain-text 503
+whose body is the line `widget.Unreachable`: an acceptable one, because
+nothing can be stored and a 303 would send the user to a panel that lacks the
+widget; and a rejected one too, because the 422 redraws the table, which
+cannot be read. Nothing is stored and nothing is recorded but the request's
+own two events. A body that is not form-encoded still gets its 415, which
+needs no widget.
 
 **Why the success is a redirect.** The browser must not be left showing the
 result of a POST: after a 303 it fetches `/widgets` with a GET, so the address
@@ -221,7 +229,7 @@ what was submitted.
 
 Echoing arbitrary caller bytes into markup is exactly where a design can hand
 a caller a tag, and the requirement that closes that is `D04-panel`'s
-R-HZC4-EYC9: the tag-name sequence of a document dummy sends cannot depend on
+R-GU4G-80UT: the tag-name sequence of a document dummy sends cannot depend on
 the echoed `Name`, `Count` or `Status`, and neither does how many `>`
 characters it holds, so whatever the caller submits comes back as a value and
 never as structure. That rule is D04's and is not restated
@@ -299,7 +307,7 @@ and pass or fail on markup nobody meant to fix.
 That creating a widget is the *only* interaction that changes state is not one
 document's to state. `D04-panel` fixes that its page and error routes leave
 the store alone, `D06-table` fixes it for the fragment, and this document
-fixes it for the two refusals and for the request that never gets as far as
+fixes it for the three refusals and for the request that never gets as far as
 the fields. Those together are the claim; none of them repeats another.
 
 Two things are deliberately absent. The half of `S5-form`'s "nothing is
@@ -315,7 +323,7 @@ report.
 Two requirements below compare two requests that differ in one thing and demand
 one answer: the 500 that never looks at the body, and the `Accept` header that
 changes nothing. A comparison like that means something only if everything else
-really is equal, and the thing most easily unequal is the store — a creation
+really is equal, and the thing most easily unequal is the store's widgets — a creation
 landing between the two requests changes the table inside a panel page and
 falsifies the claim without any handler misbehaving. Both therefore pin the
 store's contents equal immediately before each of the two requests, which is
@@ -339,7 +347,7 @@ the two requirements below that turn on a `selected` attribute are satisfied by
 not fixed — those two turn on whether the occurrence is there, not on what it
 reads — but some value must be written.
 
-**A widget created is recorded.** Creating a widget is dummy's one domain event. When the route answers 303, it has created a widget, and the handler's telemetry writer (`D04-panel`) records `widget.created`, whose one attribute, `widget`, is the new widget's id (`D05-widgets`), between the request's `request.started` and `request.finished` and under the same request id and user. It never carries the name, count or status the user submitted: those are the store's to answer. Every other answer — a 422, a 415 or the missing-identity 500 — created nothing and records no `widget.created`; its `request.finished` carries the status.
+**A widget created is recorded.** Creating a widget is dummy's one domain event. When the route answers 303, it has created a widget, and the handler's telemetry writer (`D04-panel`) records `widget.created`, whose one attribute, `widget`, is the new widget's id (`D05-widgets`), between the request's `request.started` and `request.finished` and under the same request id and user. It never carries the name, count or status the user submitted: those are the store's to answer. Every other answer — a 422, a 415, the 503 or the missing-identity 500 — created nothing and records no `widget.created`; its `request.finished` carries the status.
 
 ## REQUIREMENTS
 
@@ -365,15 +373,16 @@ reads — but some value must be written.
 - R-DMHD-83PR: An HTML document dummy sends, as `D04-panel` defines one (R-YGG5-G3EI), that is not the body of a 422 answer to a `POST /widgets` request MUST contain no start tag carrying an occurrence of the attribute `id` whose read value is `name-error`, `count-error` or `status-error`, and MUST contain no `<input` start tag and no `<select` start tag carrying an occurrence of the attribute `aria-describedby` (`D04-panel` R-YLBQ-Z6DA).
 - R-K5GV-9F5J: A `POST /widgets` request MUST be a form-encoded submission when the value of its `Content-Type` header, truncated at the first `;` and with leading and trailing whitespace removed, equals `application/x-www-form-urlencoded` compared case-insensitively, and MUST NOT be one otherwise, a request carrying no `Content-Type` header included.
 - R-MLL7-BZZT: A request **carries identity** when its first `X-User-Id` value is present and not empty. For a `POST /widgets` request that carries identity and is a form-encoded submission, the `Submission` (`D05-widgets`) that request produces MUST be the one whose `Name`, `Count` and `Status` are the values the request body carries for the keys `name`, `count` and `status` respectively, none of them altered, taking, for each of those three keys, the first value when the body carries the key more than once and the empty string when the body carries no value for it; when `Any()` on the `FieldErrors` that `ParseSubmission` (`D05-widgets`) returns for that `Submission` is false, the request MUST have exactly the effect on the store `Handler` was built over of one call of `Store.Create` (`D05-widgets`) for the `Draft` `ParseSubmission` returns for that `Submission`, made in its place, and no other effect on that store, and this document calls the `FieldErrors` that `Create` call returns the request's **creation errors**; and when it is true, the handler MUST add no widget.
-- R-MO10-3JH7: The handler MUST answer a `POST /widgets` request that carries identity and is a form-encoded submission with status 303 when `Any()` on that submission's field errors (R-MMT3-PRQI) is false, which is exactly when the `Store.Create` call of R-MLL7-BZZT added the widget, and with status 422 when it is true, whether parsing or `Store.Create` reported the offences.
+- R-HTHJ-BDCY: The handler MUST answer a `POST /widgets` request that carries identity and is a form-encoded submission, while the store it was built over is reachable (`D04-panel`), with status 303 when `Any()` on that submission's field errors (R-MMT3-PRQI) is false, which is exactly when the `Store.Create` call of R-MLL7-BZZT added the widget, and with status 422 when it is true, whether parsing or `Store.Create` reported the offences.
+- R-HUPF-P53N: While the store the handler was built over is unreachable (`D04-panel`), the handler MUST answer a `POST /widgets` request that carries identity and is a form-encoded submission with the unreachable answer (`D04-panel`), whatever values the request body carries for `name`, `count` and `status`, those of an acceptable submission (`D04-panel`) on that store when it was last reachable and those `ParseSubmission` (`D05-widgets`) or the store's rules reject included.
 - R-KE05-XTCE: The 303 answer to a `POST /widgets` request MUST carry a `Location` header whose value is exactly `/widgets`, with no query string and no fragment, and an empty body.
-- R-KGFY-PCTS: After a `POST /widgets` request the handler answered 303, the sequence `Store.All()` (`D05-widgets`) returns MUST be the sequence it returned immediately before that request with exactly one element appended at the end, whose `Name` is the trimmed name (`D05-widgets` R-FIEM-UUKE) of the `Draft` `ParseSubmission` returns for the `Submission` that request produced, and whose `Count` and `Status` are that `Draft`'s `Count` and `Status`.
+- R-HNE1-EINH: After a `POST /widgets` request the handler answered 303, the widgets of the store the handler was built over (`D04-panel`) MUST be the widgets of that store immediately before that request with exactly one element appended at the end, whose `Name` is the trimmed name (`D05-widgets` R-FIEM-UUKE) of the `Draft` `ParseSubmission` returns for the `Submission` that request produced, and whose `Count` and `Status` are that `Draft`'s `Count` and `Status`.
 - R-DOX5-ZN75: The body of the 422 answer to a `POST /widgets` request MUST be a panel page, as `D04-panel` defines a panel page (R-0ZWM-4W0L).
-- R-KLBK-8FSK: A `POST /widgets` request the handler answered 415 or 422 MUST leave the sequence `Store.All()` returns equal to the sequence it returned immediately before that request, element for element, in order, and with each element's `Name`, `Count` and `Status` equal, so that no widget is added, removed, reordered or altered.
+- R-HOLX-SAE6: A `POST /widgets` request the handler answered 415, 422 or 503 MUST leave the widgets of the store the handler was built over (`D04-panel`) as they were: those widgets when the store is first reachable after that request MUST be equal to those widgets when it was last reachable before it, no other request being answered in between, element for element, in order, and with each element's `Name`, `Count` and `Status` equal, so that no widget is added, removed, reordered or altered.
 - R-KNRC-ZZ9Y: A `POST /widgets` request that carries identity and is not a form-encoded submission MUST be answered with status 415 and a response in the banner failure shape for `UnsupportedMediaTypeMessage`, as `D04-panel` defines that shape.
 - R-CFI7-EA4E: In answering a `POST /widgets` request that carries identity and is not a form-encoded submission, the handler MUST NOT read any byte of the request body, that answer's body MUST have page content (`D04-panel` R-1DYY-P2E0) containing no `<form` start tag (`D04-panel` R-LPDH-LA2H), and that body MUST contain no start tag carrying an occurrence of the attribute `id` whose read value is `name-error`, `count-error` or `status-error` (`D04-panel` R-YLBQ-Z6DA).
-- R-KSMY-J28Q: A `POST /widgets` request that does not carry identity MUST be answered without reading any byte of the request body and without changing the sequence `Store.All()` returns, and two such requests differing only in their bodies, immediately before each of which the sequence `Store.All()` returns is equal element for element, in the same order and with each element's `Name`, `Count` and `Status` equal, MUST receive the same status, the same value for every header the handler sets, and the same body.
-- R-KV2R-ALQ4: The handler MUST answer every `POST /widgets` request with status 500, 415, 303 or 422, and with no other status.
-- R-KWAN-ODGT: No answer the handler sends to a `POST /widgets` request MUST carry a `Content-Type` header whose media type is `application/json`, and two `POST /widgets` requests differing only in their `Accept` header, immediately before each of which the sequence `Store.All()` returns is equal element for element, in the same order and with each element's `Name`, `Count` and `Status` equal, MUST receive the same status, the same value for every header the handler sets, and the same body.
-- R-L5QP-UCKG: When the handler answers a `POST /widgets` request with status 303, its telemetry writer (`D04-panel`) MUST record, between that request's `request.started` and `request.finished` events, exactly one event named `widget.created`, carrying that request's envelope request id and user (`D04-panel` R-KSBT-MVET), whose attributes are exactly `widget`, the `ID` of the element R-KGFY-PCTS states that request appended to the sequence `Store.All()` returns.
+- R-HPTU-624V: A `POST /widgets` request that does not carry identity MUST be answered without reading any byte of the request body and without changing the widgets of the store the handler was built over (`D04-panel`), and two such requests differing only in their bodies, immediately before each of which the widgets of that store are equal element for element, in the same order and with each element's `Name`, `Count` and `Status` equal, MUST receive the same status, the same value for every header the handler sets, and the same body.
+- R-HR1Q-JTVK: The handler MUST answer every `POST /widgets` request with status 500, 415, 303, 422 or 503, and with no other status.
+- R-HS9M-XLM9: No answer the handler sends to a `POST /widgets` request MUST carry a `Content-Type` header whose media type is `application/json`, and two `POST /widgets` requests differing only in their `Accept` header, immediately before each of which the widgets of the store the handler was built over (`D04-panel`) are equal element for element, in the same order and with each element's `Name`, `Count` and `Status` equal, MUST receive the same status, the same value for every header the handler sets, and the same body.
+- R-HVXC-2WUC: When the handler answers a `POST /widgets` request with status 303, its telemetry writer (`D04-panel`) MUST record, between that request's `request.started` and `request.finished` events, exactly one event named `widget.created`, carrying that request's envelope request id and user (`D04-panel` R-KSBT-MVET), whose attributes are exactly `widget`, the `ID` of the element R-HNE1-EINH states that request appended to the widgets of the store the handler was built over.
 - R-L6YM-84B5: When the handler answers a `POST /widgets` request with any status other than 303, its telemetry writer MUST record no event named `widget.created` for that request.
