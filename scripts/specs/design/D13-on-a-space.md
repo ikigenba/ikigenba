@@ -66,7 +66,7 @@ These outcomes are space-level checks: no test of scripts can make them, and the
 - The answers arrive over HTTP/2 and TLS on a space and over HTTP/1.1 in a sandbox (nginx).
 - The gateway offers scripts' nine tools, runs `create` and `run` through `mutate` and `result` through `call`, forwards the caller and the request id, and relays scripts' results under its own `serverInfo` (mcp's `S08-call.md`, `S09-mutate.md` and `S11-on-a-space.md`).
 - In a sandbox, repos makes the repository an agent pushes to, at `<data>/apps/repos/state/repos/<rep>.git`, and records `repo.created` and `repo.pushed` (repos, the sandbox).
-- The launcher a browser opens lists scripts with its icon, and the page's style is fetched from scripts' own host and from no other origin (appkit's script; no test runs it).
+- The launcher a browser opens lists scripts with its icon, an enabled button visibly reacts as it is pressed, and the page's style and button-feedback script are fetched from scripts' own host and from no other origin (appkit's scripts; no test runs them).
 - The `PATH` the sandbox gives scripts holds the developer's own `git` and `python3.12` (the sandbox, the developer).
 
 ## Story to design
