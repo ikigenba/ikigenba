@@ -16,7 +16,7 @@ toolkit is agentkit's standard local tools: Bash, Read, Write, Edit, Glob and Gr
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
 ## Test files
 

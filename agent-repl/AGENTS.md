@@ -15,7 +15,7 @@ agent-repl is a REPL for exercising agentkit by hand. One conversation per sessi
 - GNU `make`, for the developer targets; no gate runs through it.
 - The modules `go.mod` requires, from the Go module proxy: `agentkit` and `toolkit`, published from this repository under `agentkit/v*` and `toolkit/v*` tags, and `github.com/google/uuid`.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
 ## Test files
 

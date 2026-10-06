@@ -14,7 +14,7 @@ oauth is a CLI that runs the OAuth login flow agent-repl's providers need. One G
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires nothing today.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's. `go.mod` requires nothing today.
 
 ## Test files
 

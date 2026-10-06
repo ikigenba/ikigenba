@@ -5,7 +5,7 @@ mcp is the MCP gateway: one endpoint through which agents reach every service's 
 ## Layout
 
 - `specs/` is the contract: `stories/` and `design/`.
-- `assets/` is the page markup and the setup files, and `share/icon.svg` the launcher icon. The build run never writes them; an agent changes them only on explicit, direct instruction from a human.
+- `assets/` is the page markup and the setup files, and `share/icon.svg` the launcher icon. The build run never writes them; the user or the delivering agent changes them.
 - `assets.go` is the root package, which embeds `assets/`. `cmd/mcp` is the binary. `internal/` is everything else, one package per concern.
 - `etc/` is what the host needs: `manifest.toml`.
 - The build run writes the Go source, the tests, `go.mod`, `go.sum` and `etc/`. `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
@@ -25,7 +25,7 @@ mcp holds no stylesheet, fonts or licences; appkit's `page` package serves them.
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
 ### Adopting appkit
 

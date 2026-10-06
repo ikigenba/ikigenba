@@ -21,7 +21,7 @@ agentkit is a Go library over LLM chat APIs with an agentic tool loop. A vendor 
 - GNU Make 4.4.1.
 - For the live gate: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY` and `OPENROUTER_API_KEY` in the environment, and OAuth token files at `~/.agentkit/openai-auth.json` and `~/.agentkit/x-ai-auth.json` written by the `oauth` CLI. Judge a credential present or absent by running `make live`, never by inspecting the environment: a missing one fails the subtest that needs it with a message naming it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires nothing today.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's. `go.mod` requires nothing today.
 
 ## Test files
 

@@ -15,7 +15,7 @@ devctl is the developer's CLI; it creates and destroys spaces on the substrate. 
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
 The gates fake every external process. Running the built `devctl` also needs on `PATH`: `git` (finds the checkout), `ssh` (reaches a space's host as `ec2-user`), `tar` with `xz` support (`build` writes and `deploy` reads `.tar.xz` archives with `tar -J`), `secret-tool` (libsecret, the developer's keyring) and `curl` (fetches opsctl's published releases).
 

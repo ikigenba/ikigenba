@@ -5,7 +5,7 @@ auth signs users in and answers nginx's identity subrequest for every other app.
 ## Layout
 
 - `specs/` is the contract: `stories/` and `design/`.
-- `share/icon.svg` is the launcher icon. The build run never writes it; an agent changes it only on explicit, direct instruction from a human.
+- `share/icon.svg` is the launcher icon. The build run never writes it; the user or the delivering agent changes it.
 - `migrations/` holds the database's migrations, which the root package embeds; the build run writes it.
 - The root package `auth` embeds `migrations/`. `cmd/auth` is the binary. `internal/` is everything else, one package per concern.
 - `etc/` is what the host needs: `manifest.toml`.
@@ -26,7 +26,7 @@ auth holds no stylesheet, fonts or licences; appkit's `page` package serves them
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. Release selection is `go.mod`'s job.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's. Release selection is `go.mod`'s job.
 
 ### Adopting appkit
 

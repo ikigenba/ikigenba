@@ -12,9 +12,9 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 ## Layout
 
 - `specs/stories/` — user stories, one group per file (`S<int>-<slug>.md`). The intent the designs realise; written first, carry no ids. Absent for a library, whose intent is the interface agreed in conversation and locked in by `draft-design`. Format: `references/story-format.md`.
-- `specs/design/` — design documents (`D<int>-<slug>.md`). Human-authored.
+- `specs/design/` — design documents (`D<int>-<slug>.md`). Authored by `draft-design`, never by the build run.
 - `specs/issues/` — escalation channel; one markdown file per open issue, named `<slug>.md` (issues carry no minted id).
-- `AGENTS.md` — beside `specs/`; declares the sub-project's toolchain, test files, gates, and commit conventions (below). Human-authored.
+- `AGENTS.md` — beside `specs/`; declares the sub-project's toolchain, test files, gates, and commit conventions (below). Authored outside the build run, which treats it as read-only.
 
 Those four entries are the whole of `specs/`. Nothing else is created under it: no review, evidence, ledger, or progress files.
 
@@ -49,7 +49,7 @@ Each sub-project has an `AGENTS.md` beside `specs/` that declares how the sub-pr
 
 - **Toolchain**: the tools and versions the gates need. `idgen` is never listed here; it is an authoring tool, not a build tool.
 - **Test files**: where the sub-project's tests live (the file set the canonical gap greps for ids).
-- **Gates**: an ordered list of exact commands, each of which must exit 0 to pass — there may be several (for example tests, end-to-end tests, and linting). All must pass, with no skips laundering a failure. A per-finding suppression comment (`nolint`, `eslint-disable`, and the like) is a skip: the run never adds one; a finding it cannot fix below the contract seam, or believes is wrong, is filed as an issue for a human to adjudicate.
+- **Gates**: an ordered list of exact commands, each of which must exit 0 to pass — there may be several (for example tests, end-to-end tests, and linting). All must pass, with no skips laundering a failure. A per-finding suppression comment (`nolint`, `eslint-disable`, and the like) is a skip: the run never adds one; a finding it cannot fix below the contract seam, or believes is wrong, is filed as an issue for adjudication outside the run.
 - **Commit conventions**: the phase-commit message format; attribution is the repository's rule, not the sub-project's. Default:
 
   ```
@@ -70,7 +70,7 @@ A monorepo holds several sub-projects below one git root; each is independent an
 
 - **Never reach into a sibling's tree.** No requirement names a path inside another sub-project, builds or reads another sub-project's source, or writes into another sub-project's directory.
 - **A sibling is consumed only as an installed external tool**, with the same standing as `ssh`, `git`, or a compiler: its published interface, never its internals or which release of it to use. See `references/design-format.md`, "Depending on an external tool".
-- **Dependencies point one way and are declared.** If two sub-projects would each have to know about the other, one of them is wrong. A need only the other sub-project can satisfy is filed in `specs/issues/` for a human to adjudicate, never designed around by reaching across the boundary.
+- **Dependencies point one way and are declared.** If two sub-projects would each have to know about the other, one of them is wrong. A need only the other sub-project can satisfy is filed in `specs/issues/` for adjudication outside the run, never designed around by reaching across the boundary.
 
 ## Filing an issue
 
@@ -96,4 +96,4 @@ Each operation is a sibling skill. All five load this one for the shared rules a
 operation directly; naming `fanout` separately is unnecessary. Each operation
 supplies its own goal, completion criteria, authority, and reporting channel.
 
-`build-spec` and `audit-spec` are human-gated: an agent starts one only on explicit, direct instruction from a human. Each commits, edits tests, or both.
+`build-spec` and `audit-spec` are gated: only the user starts one, directly or through `deliver`, and no operation starts one on its own. Each commits, edits tests, or both.

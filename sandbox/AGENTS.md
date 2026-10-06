@@ -17,7 +17,7 @@ sandbox stands up the whole suite from the current worktree on the developer's m
 - GNU `make`, for the developer targets; no gate runs through it.
 - The modules `go.mod` requires, in the module cache: `github.com/BurntSushi/toml`, for reading app manifests; the D05 tests need its `toml.ParseError` for their expected diagnostics. `go.sum` is committed and the gates run offline.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
 The gates fake every external program, so they need no systemd user manager, nginx or network. Running the built `sandbox`, and `make live`, also needs `git` (finds the worktree with `git rev-parse --show-toplevel`), `go` (builds each app), a running systemd user manager (`systemctl --user`, `journalctl --user`), and `nginx` runnable by an ordinary user and installed where systemd's own executable search path finds a bare name (the standard `bin` and `sbin` directories): the nginx unit's `ExecStart=` names the bare word `nginx`, which the user manager resolves, not the developer's `PATH`.
 

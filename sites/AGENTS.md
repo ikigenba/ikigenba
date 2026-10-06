@@ -43,7 +43,7 @@ fragment `etc/nginx.conf` if design names one). It never writes `assets/` or
 `share/`. `state/` and `cache/` are where a running sites keeps `sites.db`
 and its trees; they are created at run time and never committed. See the `spec` and `build-spec` skills. Everything below is what
 the build run computes the gap and runs the gates against; it is
-human-authored and read-only to the run.
+written outside the run and read-only to it.
 
 ## Assets
 
@@ -55,8 +55,8 @@ commit cannot be served (template `unavailable`). Each opens with a comment
 naming the data it receives and the hooks it emits. The landing and about
 pages carry appkit's banner and are shown only to a signed-in user; the
 not-found and unavailable pages may be shown to a guest, so they carry the
-footer only and never the banner. They are written and approved by a human
-in interactive sessions, following the repository's `design/`, and are inputs
+footer only and never the banner. They are written by the user or the delivering agent,
+following the repository's `design/`, and are inputs
 to the spec: the build run reads them and never writes them. The code parses
 them into the set appkit's `page.Templates` returns and executes them by
 template name; it never writes markup of its own, not even a fragment or an
@@ -67,15 +67,15 @@ embeds `assets/`, and design names what it exports. Design names each
 template, the data it receives, and the hooks it emits; the tests assert on
 those hooks and on visible text, never on layout. A needed template that is
 missing or wrong, a state a story names that the templates cannot show, or a
-hook design names that the templates lack is an issue for a human: the run
+hook design names that the templates lack is an issue: the run
 files it in `specs/issues/` and never edits the asset to close it.
 
 sites holds no copy of the stylesheet, fonts, or licences; appkit's `page`
 package embeds and serves them. `share/icon.svg` is sites' icon in the
 service launcher: the Tabler outline `world-www` from
 `design/ikigenba/icons/tabler/`, without its class, width, height, or
-invisible bounding path, as `design/README.md` asks of a launcher icon. It is
-human-authored; the build run never writes it. `devctl build` packs it beside
+invisible bounding path, as `design/README.md` asks of a launcher icon. The build
+run never writes it. `devctl build` packs it beside
 `bin/` and `etc/`.
 
 ## Toolchain
@@ -111,7 +111,7 @@ appkit's `db` package, which brings `modernc.org/sqlite`: pure Go, so the
 release build stays cgo-free (gate 3), and already approved for the
 repository. sites neither requires nor imports it directly. Adding any other
 external dependency — a Go git library, a markdown renderer, a MIME database
-among them — needs human approval first.
+among them — needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 

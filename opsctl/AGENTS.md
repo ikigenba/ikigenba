@@ -16,7 +16,7 @@ opsctl is the operator's CLI on a host; it bootstraps and manages that one deplo
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
 Host tools such as nginx, certbot, systemctl, Litestream and archive utilities are observed on a host, never invoked on the gate machine. Tests go through the injected D01 boundaries and process fixtures; a tool's presence proves neither its protocol nor a successful operation.
 

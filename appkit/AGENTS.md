@@ -15,7 +15,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 
 ## Assets
 
-`page/assets/` sits inside the `page` package directory because Go's `embed` reaches only files at or below the embedding package. It holds the banner template (`banner.html`), the launcher script (`launcher.js`), the button feedback script (`feedback.js`), and copies of the repository's `design/` files: the stylesheet, fonts and their licences. The build run never writes it; it changes only on explicit, direct instruction from a human, and the session that changes `design/` refreshes the copies. The copied stylesheet replaces the Google Fonts import with `@font-face` rules for the files beside it, and its header names the `design/` commit it came from, so that commit lands first. Package `page` embeds `page/assets/` and never writes markup of its own.
+`page/assets/` sits inside the `page` package directory because Go's `embed` reaches only files at or below the embedding package. It holds the banner template (`banner.html`), the launcher script (`launcher.js`), the button feedback script (`feedback.js`), and copies of the repository's `design/` files: the stylesheet, fonts and their licences. The build run never writes it; the user or the delivering agent changes it, and the session that changes `design/` refreshes the copies. The copied stylesheet replaces the Google Fonts import with `@font-face` rules for the files beside it, and its header names the `design/` commit it came from, so that commit lands first. Package `page` embeds `page/assets/` and never writes markup of its own.
 
 ## Toolchain
 
@@ -24,7 +24,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires only `modernc.org/sqlite`, the pure-Go SQLite driver, and only `db` imports it.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's. `go.mod` requires only `modernc.org/sqlite`, the pure-Go SQLite driver, and only `db` imports it.
 
 ## Test files
 

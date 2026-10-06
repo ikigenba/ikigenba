@@ -41,13 +41,13 @@ Not sub-projects: `design/` holds the visual style every page follows, and `.age
 
 ## Working rules
 
-Each sub-project's code is derived from its `specs/`; a hand-written file desynchronizes the tree from the design. Without explicit, direct instruction from a human, an agent writes no file under a sub-project's tree, tests and diagnostics included, and never starts the build run (`build-spec`).
+Each sub-project's code is derived from its `specs/`; a hand-written file desynchronizes the tree from the design. An agent writes under a sub-project's tree only inside work the user started, and each kind of work has its own exclusions: the build run (`build-spec`) writes source and tests and nothing it treats as read-only; a delivery (`deliver`) writes what the build run cannot; a direct instruction writes what it names. Only the user starts the build run, directly or through a delivery.
 
 Stories and designs are working material, not a constraint. Only the build run and the audit treat them as read-only. Never cite a requirement as a reason something cannot be done: it is a decision we made and can unmake, so argue for or against it on its merits. Changing one costs a re-minted id.
 
 Versions are data. No test, fixture or requirement names a release version; a test that needs it reads the value the source declares and derives the rest from that.
 
-Adding an external dependency needs human approval. Ask first.
+Adding an external dependency is a decision: ask the user, or in a delivery decide it and record it.
 
 A library in this repository (appkit, agentkit, toolkit) is consumed only as a published release: tag it `<lib>/vX.Y.Z` on `main`, push the tag, then require that version through the ordinary module proxy and checksum database. Never build against the local tree: no `replace` directives, no `go.work`, no locally tagged or seeded module cache, no `GONOSUMDB` or `GOPROXY=direct` workarounds. A change that needs a new library feature lands and releases the library first.
 
@@ -67,7 +67,7 @@ The apps are not designed to run alone; `sandbox` (built from `sandbox/` with `m
 
 `design/ikigenba/theme.css` is the source of truth for every page's style and `design/README.md` records the decisions; UI work conforms to it or changes it there first.
 
-A sub-project's `assets/` (markup, styles, fonts, icons) follows `design/` and is an input to the spec: the build run never writes it, and an agent changes it only on explicit, direct instruction from a human. Markup assets are Go `html/template` files the code embeds; code never writes markup of its own. Stories say what a user does and sees, never appearance or structure. Design names each template, its data, and the hooks (classes, ids, attributes, labels, text) each state produces, never markup or styles. Tests assert on hooks and visible text, never layout. An asset that is missing or wrong, a state a story names that it can't show or a hook design names that it lacks, is raised as an issue, not fixed.
+A sub-project's `assets/` (markup, styles, fonts, icons) follows `design/` and is an input to the spec: the build run never writes it; the user or the delivering agent does. Markup assets are Go `html/template` files the code embeds; code never writes markup of its own. Stories say what a user does and sees, never appearance or structure. Design names each template, its data, and the hooks (classes, ids, attributes, labels, text) each state produces, never markup or styles. Tests assert on hooks and visible text, never layout. An asset that is missing or wrong, a state a story names that it can't show or a hook design names that it lacks, is raised as an issue, not fixed.
 
 ## Command-line conventions
 

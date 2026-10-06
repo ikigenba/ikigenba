@@ -5,7 +5,7 @@ description: Close the mechanical id gap between design and tests using fanout, 
 
 # Close the gap
 
-Only the user starts this operation; an agent never invokes it. Never start `audit-spec` from this operation.
+Only the user starts this operation, directly or through `deliver`; no other operation invokes it. Never start `audit-spec` from this operation.
 
 Load two skills before starting:
 

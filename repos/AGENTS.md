@@ -5,7 +5,7 @@ repos is the suite's home for git repositories, served over smart HTTP and MCP. 
 ## Layout
 
 - `specs/` is the contract: `stories/` and `design/`.
-- `assets/` is the page markup and `share/icon.svg` the launcher icon. The build run never writes them; an agent changes them only on explicit, direct instruction from a human.
+- `assets/` is the page markup and `share/icon.svg` the launcher icon. The build run never writes them; the user or the delivering agent changes them.
 - `repos.go` is the root package, which embeds `assets/` and the catalog's migrations under `migrations/`. `cmd/repos` is the binary. `internal/` is everything else, one package per concern.
 - `etc/` is what the host needs: `manifest.toml` and the nginx fragment `nginx.conf` that lets a push stream through.
 - The build run writes the Go source, the tests, `go.mod`, `go.sum`, `migrations/` and `etc/`. `state/` is where a running repos keeps `repos.db` and its repositories; it is created at run time and never committed. `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
@@ -26,7 +26,7 @@ repos holds no stylesheet, fonts or licences; appkit's `page` package serves the
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. The SQLite driver is appkit's: its `db` package brings `modernc.org/sqlite`, pure Go, so the release build stays cgo-free. repos neither requires nor imports it directly.
+Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's. The SQLite driver is appkit's: its `db` package brings `modernc.org/sqlite`, pure Go, so the release build stays cgo-free. repos neither requires nor imports it directly.
 
 ### Adopting appkit
 
