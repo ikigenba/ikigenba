@@ -4,3 +4,6 @@ default = false
 mcp = false
 guests = true
 secrets = []
+
+[resources]
+memory_max = "128M"
