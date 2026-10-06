@@ -243,7 +243,7 @@ Postconditions:
 
 ## A developer pushes in a sandbox while events is stopped
 
-events being away is not a reason to refuse a push. repos keeps the event for a few minutes and delivers it once events is back (`S02-serve.md`), so a developer who starts events again within that time loses nothing.
+events being away is not a reason to refuse a push. repos keeps the event and delivers it once events is back (`S02-serve.md`): it sends events one at a time, in order, and each event's retry window of about five minutes runs from its first attempt, so a developer who starts events again within about five minutes of the push loses nothing.
 
 Command:
 
@@ -262,12 +262,12 @@ Output:
 <new>	refs/heads/main
 ```
 
-Each command exits 0. `ls-remote` writes its one line to stdout; nothing is on stderr. `<new>` is the sha `git -C notes rev-parse HEAD` prints. The push behaves exactly as it does with events active. Within a few minutes of the `start`, the `search` request of `An agent in a sandbox finds a developer's push among the events` answers with an event for this push: `attrs` `repo` `<id>`, `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>`, under the id the sandbox's nginx gave this push and user `<user-id>`, with `cause` empty and `depth` 0.
+Each command exits 0. `ls-remote` writes its one line to stdout; nothing is on stderr. `<new>` is the sha `git -C notes rev-parse HEAD` prints. The push behaves exactly as it does with events active. Within moments of the `start`, the `search` request of `An agent in a sandbox finds a developer's push among the events` answers with an event for this push: `attrs` `repo` `<id>`, `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>`, under the id the sandbox's nginx gave this push and user `<user-id>`, with `cause` empty and `depth` 0.
 
 Preconditions:
 
 - The clone of `An agent creates a repository in a sandbox and pushes to it` exists, and its `main` is `<old>`, the sha `notes`' `main` points at in repos.
-- `events` is active when the first command runs, and the developer starts it again within a few minutes of the push.
+- `events` is active when the first command runs, and the developer starts it again within about five minutes of the push.
 
 Postconditions:
 
@@ -277,7 +277,7 @@ Postconditions:
 
 ## A developer pushes in a sandbox while events stays stopped too long
 
-repos keeps an event for events only a few minutes. When events is still away after that, the event is dropped, and the trail says so: repos records `event.lost` carrying the dropped event's `id` (`S02-serve.md`). The push itself is as unaffected as in the story above.
+repos keeps an event for events only for its retry window of about five minutes, which runs from its first delivery attempt, so an event queued behind another is kept longer. When events is still away after that, the event is dropped, and the trail says so: repos records `event.lost` carrying the dropped event's `id` (`S02-serve.md`). The push itself is as unaffected as in the story above.
 
 Command:
 
@@ -300,7 +300,7 @@ Each command exits 0. `ls-remote` writes its one line to stdout; nothing is on s
 Preconditions:
 
 - The clone of `An agent creates a repository in a sandbox and pushes to it` exists, and its `main` is `<old>`, the sha `notes`' `main` points at in repos.
-- `events` is active when the first command runs, and the developer leaves it stopped well past the few minutes repos keeps an event before starting it again with `systemctl --user start sandbox-wip-events.socket sandbox-wip-events.service`.
+- `events` is active when the first command runs, and the developer leaves it stopped well past the retry window repos keeps an event before starting it again with `systemctl --user start sandbox-wip-events.socket sandbox-wip-events.service`.
 
 Postconditions:
 

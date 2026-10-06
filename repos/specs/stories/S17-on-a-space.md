@@ -296,7 +296,7 @@ Postconditions:
 
 ## A developer pushes on a space while events is disabled
 
-events being away is not a reason to refuse a push. An operator has disabled events on the space with `sudo opsctl disable events` (opsctl's `S7-apps.md`); the developer pushes and sees nothing different. repos keeps the event for a few minutes and delivers it once events is back (`S02-serve.md`), so an operator who enables events again within that time loses nothing.
+events being away is not a reason to refuse a push. An operator has disabled events on the space with `sudo opsctl disable events` (opsctl's `S7-apps.md`); the developer pushes and sees nothing different. repos keeps the event and delivers it once events is back (`S02-serve.md`): it sends events one at a time, in order, and each event's retry window of about five minutes runs from its first attempt, so an operator who enables events again within about five minutes of the push loses nothing.
 
 Command:
 
@@ -318,7 +318,7 @@ Each command exits 0. `git push` writes its own messages to stderr, ending with 
 Preconditions:
 
 - The clone of `A developer clones a repository on a space with the credential helper` exists, and its `main` is `<old>`, the sha `notes`' `main` points at in repos.
-- events is deployed on the space and disabled, and the operator runs `sudo opsctl enable events` within a few minutes of the push.
+- events is deployed on the space and disabled, and the operator runs `sudo opsctl enable events` within about five minutes of the push.
 
 Postconditions:
 
@@ -328,7 +328,7 @@ Postconditions:
 
 ## A developer pushes on a space while events stays disabled too long
 
-repos keeps an event for events only a few minutes. When events is still disabled after that, the event is dropped, and the trail says so: repos records `event.lost` carrying the dropped event's `id` (`S02-serve.md`). The push itself is as unaffected as in the story above.
+repos keeps an event for events only for its retry window of about five minutes, which runs from its first delivery attempt, so an event queued behind another is kept longer. When events is still disabled after that, the event is dropped, and the trail says so: repos records `event.lost` carrying the dropped event's `id` (`S02-serve.md`). The push itself is as unaffected as in the story above.
 
 Command:
 
@@ -350,7 +350,7 @@ Each command exits 0. `git push` writes its own messages to stderr, ending with 
 Preconditions:
 
 - The clone of `A developer clones a repository on a space with the credential helper` exists, and its `main` is `<old>`, the sha `notes`' `main` points at in repos.
-- events is deployed on the space and disabled, and stays disabled well past the few minutes repos keeps an event before the operator runs `sudo opsctl enable events`.
+- events is deployed on the space and disabled, and stays disabled well past the retry window repos keeps an event before the operator runs `sudo opsctl enable events`.
 
 Postconditions:
 

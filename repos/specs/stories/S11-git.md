@@ -355,7 +355,7 @@ Postconditions:
 
 ## A developer pushes while the event bus is away
 
-The bus is not a reason to refuse or slow a push. With the events app stopped, the push is accepted and answered exactly as it would be, and the trail records its `repo.pushed` as ever; repos keeps the bus event and delivers it once the events app is back, within a few minutes of the push.
+The bus is not a reason to refuse or slow a push. With the events app stopped, the push is accepted and answered exactly as it would be, and the trail records its `repo.pushed` as ever; repos keeps the bus event and delivers it once the events app is back, within about five minutes of the push; it sends queued events one at a time, in order, so an event behind another waits its turn and is kept longer.
 
 Command:
 
@@ -374,7 +374,7 @@ Exits 0. The line is on stderr, after git's own progress lines and before git's 
 Preconditions:
 
 - `notes`' `main` is at `<old>`; `./notes` is a clone of it with commits on `main` after `<old>`, ending at `<new>`.
-- The events app is stopped, and is started again well within a few minutes of the push.
+- The events app is stopped, and is started again well within about five minutes of the push.
 
 Postconditions:
 
@@ -384,7 +384,7 @@ Postconditions:
 
 ## A developer pushes while the event bus stays away too long
 
-repos keeps a bus event only a few minutes. When the events app is still away after that, the event is dropped: the push itself is untouched, and the trail says what was lost.
+repos keeps a bus event only for its retry window of about five minutes, which runs from its first delivery attempt, so an event behind another is kept longer. When the events app is still away after that, the event is dropped: the push itself is untouched, and the trail says what was lost.
 
 Command:
 
@@ -403,7 +403,7 @@ Exits 0. The line is on stderr, after git's own progress lines and before git's 
 Preconditions:
 
 - `notes`' `main` is at `<old>`; `./notes` is a clone of it with commits on `main` after `<old>`, ending at `<new>`.
-- The events app is stopped, and stays stopped well past a few minutes after the push.
+- The events app is stopped, and stays stopped well past the retry window after the push.
 
 Postconditions:
 
