@@ -24,6 +24,7 @@ design/
                     one script and its runs, under a breadcrumb
     scripts-run.html
                     one run: details, input, output, files, other states
+    events.html     events' landing: its subscribers and its MCP tools
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
 ```
@@ -87,9 +88,9 @@ systems. The product name is **Ikigenba**. The example space is
 - The panel: a `Find a service` search field over a 4-column grid of 30
   services, A to Z, each a Tabler icon over its name, linking to
   `https://<name>.acme.ikigenba.com/`; `dummy` marked current. The services
-  known today — `auth`, `crm`, `cron`, `dummy`, `files`, `invoices`,
-  `ledger`, `prompts`, `repos`, `scripts`, `sites`, `webhooks`, `wiki` — with
-  plausible others to fill the grid to scale.
+  known today — `auth`, `crm`, `cron`, `dummy`, `events`, `files`,
+  `invoices`, `ledger`, `prompts`, `repos`, `scripts`, `sites`, `webhooks`,
+  `wiki` — with plausible others to fill the grid to scale.
 - `repos` is disabled (`opsctl disable`): its tile stays in place, faint and
   unlinked, titled "repos is unavailable".
 - States: filtered by `cr` (cron, scripts, secrets); no match for `kafka`;
@@ -126,6 +127,17 @@ run. Banner and footer as in app.html, the service `scripts`, `scripts v0.1.0`.
   output truncated, failed to start with its reason, files gone.
 - Run status reads as a `.status` word: running is info, exited 0 is ok,
   a non-zero exit, timed out and killed are warn, failed is err.
+
+**events.html** — events at `events.acme.ikigenba.com`, the suite's internal
+event bus. Banner and footer as in app.html, the service `events`,
+`events v0.1.0`.
+- `h1` events, a lede, the subscribers as a table of Service / Status /
+  Cursor / Lag / Since: `scripts` ok and caught up, `sites` paused, showing,
+  muted, the event it is stuck on and the error it answered. An MCP tools
+  list naming `catalog`, `search`, `subscribers`, `skip`, `resume`, and a
+  link to the about screen. State: no subscribers.
+- Subscriber status reads as a `.status` word, its kind in `data-kind`:
+  `ok`, `paused` or `gone`.
 
 **login.html** — auth at `auth.acme.ikigenba.com`.
 - Sign-in: product mark, "Sign in to acme", note that access is limited to

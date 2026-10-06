@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>events</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<header>
+  <a class="mark" data-service="events" href="events.html">ikigenba</a>
+  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>Sign out</button></form>
+</header>
+
+<main>
+  <h1>events</h1>
+  <p id="summary" class="lede">The suite's internal event bus: services emit events here, and each event is delivered, in order, to every service that accepts it.</p>
+
+  <section id="subscribers" class="card flush" aria-labelledby="subscribers-title">
+    <header>
+      <div>
+        <h2 id="subscribers-title">Subscribers</h2>
+        <p>Each service that accepts events, where it is in the log, and how far behind.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="subscriber-list">
+        <thead><tr><th>Service</th><th>Status</th><th>Cursor</th><th>Lag</th><th>Since</th></tr></thead>
+        <tbody>
+          <tr data-subscriber="scripts">
+            <td class="subscriber-service">scripts</td>
+            <td class="subscriber-status"><span class="status" data-kind="ok">ok</span></td>
+            <td class="subscriber-cursor">18204</td>
+            <td class="subscriber-lag">0</td>
+            <td class="subscriber-since"><time datetime="2026-10-05T09:14Z">2026-10-05 09:14</time></td>
+          </tr>
+          <tr data-subscriber="sites">
+            <td class="subscriber-service">sites</td>
+            <td class="subscriber-status"><span class="status" data-kind="paused">paused</span> <span class="muted">at <code>repos.pushed</code> 18177: publish failed: commit not found</span></td>
+            <td class="subscriber-cursor">18176</td>
+            <td class="subscriber-lag">28</td>
+            <td class="subscriber-since"><time datetime="2026-10-05T08:52Z">2026-10-05 08:52</time></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="tools-title">
+    <header><h2 id="tools-title">MCP tools</h2><p>Agents inspect the bus and unstick subscribers with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
+    <dl id="tools" class="kv">
+      <dt data-tool="catalog"><code>catalog</code></dt><dd>Every event the suite emits, who emits and accepts it, counts and last seen.</dd>
+      <dt data-tool="search"><code>search</code></dt><dd>The retained log, newest first, filtered by service, event, user, request id, cause or attributes.</dd>
+      <dt data-tool="subscribers"><code>subscribers</code></dt><dd>Each subscriber's status, reason, cursor and lag.</dd>
+      <dt data-tool="skip"><code>skip</code></dt><dd>Skip the event a paused subscriber is stuck on and resume it.</dd>
+      <dt data-tool="resume"><code>resume</code></dt><dd>Retry the event a paused subscriber is stuck on.</dd>
+    </dl>
+  </section>
+
+  <p><a id="about-link" href="/about">About events</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shape this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No subscribers</h3>
+      <div id="no-subscribers" class="empty">
+        <h3 class="text-md">No subscribers yet</h3>
+        <p>A service that accepts events shows up here once events has delivered to it.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>events v0.1.0</footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>
