@@ -1,6 +1,6 @@
 # Stories — bootstrap
 
-Running sites at all: help, version, the manifest, exit codes. sites is an app of the platform, the suite's static site host: one Go binary that serves each site at `/<slug>/` on `sites.<space>` from a tree it unpacks out of one of repos' bare repositories (`S11`, `S12`), redirects the apex host, the root domain the space hangs from when it is routed to sites, to the apex site (`S13`), offers seven MCP tools to list, show, create, publish, update, and delete sites and to choose the apex site at `/mcp` (`S05` to `S10`, `S13`), and serves a landing page at `/` that lists the space's sites and says how to make one (`S03`). On a host it runs as `/opt/sites/bin/sites` with `/opt/sites` as its working directory and its environment read from `/opt/sites/etc/env`; a developer runs the same binary from the checkout. With no command it serves (`S02`); the commands here are what the build asks of it. They serve nothing, run no git, read no repository, and record no event: the trail is what sites records while it serves (`S02`).
+Running sites at all: help, version, the manifest, the state of its database, exit codes. sites is an app of the platform, the suite's static site host: one Go binary that serves each site at `/<slug>/` on `sites.<space>` from a tree it unpacks out of one of repos' bare repositories (`S11`, `S12`), redirects the apex host, the root domain the space hangs from when it is routed to sites, to the apex site (`S13`), offers seven MCP tools to list, show, create, publish, update, and delete sites and to choose the apex site at `/mcp` (`S05` to `S10`, `S13`), and serves a landing page at `/` that lists the space's sites and says how to make one (`S03`). On a host it runs as `/opt/sites/bin/sites` with `/opt/sites` as its working directory and its environment read from `/opt/sites/etc/env`; a developer runs the same binary from the checkout. With no command it serves (`S02`); the commands here are what the build, and an operator, ask of it. They serve nothing, run no git, read no repository, and record no event: the trail is what sites records while it serves (`S02`). sites keeps its catalog of sites and the apex setting in its database, the SQLite file `state/sites.db` under its working directory, which it creates and brings up to date when it starts (`S02`). The database's schema is a sequence of numbered migrations, each with a four-digit version, that the binary carries and applies in order; this sites carries one, version `0001`. Of the commands only `db status` reads the database, and it only looks.
 
 ## A developer asks which version they have
 
@@ -92,7 +92,8 @@ Serve static sites from the suite's repositories at /<slug>/, MCP tools at
 command, serve.
 
 Commands:
-  manifest   print the app manifest
+  manifest    print the app manifest
+  db status   print applied and pending migrations
 
 Options:
   --help      print this help
@@ -100,7 +101,7 @@ Options:
 
 Exit codes:
   0  success
-  1  the server failed
+  1  failure
   2  usage error
 ```
 
@@ -167,3 +168,168 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## An operator checks a database that is up to date
+
+After a deploy, or before one, an operator wants to see the schema the binary expects beside what the database holds: which of the binary's migrations the database has had applied, and when. `sites db status` prints one line for each version, in ascending order: `<version> applied <applied-at>` for a migration the database has had applied, where `<applied-at>` is when it was applied, in UTC to the microsecond; `<version> pending` for one the binary carries that the database has not had applied; and `<version> unknown <applied-at>` for one the database records that the binary does not carry. It reads `state/sites.db` relative to its working directory and only looks: it applies nothing and changes nothing. Like `manifest` and `--version`, it needs no socket, no git and no repository, and reads no environment.
+
+Command:
+
+```
+$ sites db status
+```
+
+Output:
+
+```
+0001 applied 2026-10-05T14:03:07.123456Z
+```
+
+Exits 0. The line is on stdout; stderr is empty. The time is the one the database records for version `0001`.
+
+Preconditions:
+
+- `bin/sites` exists.
+- The working directory holds `state/sites.db`, which a sites of this version created or brought up to date, applying version `0001` at `2026-10-05T14:03:07.123456Z`. On a host the working directory is `/opt/sites` and the operator is a user who can read the database.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator checks before the database exists
+
+Before sites has first started there is no database. `sites db status` then reports every migration the binary carries as pending, which is what the next start will apply, and creates nothing: neither `state/` nor `state/sites.db`.
+
+Command:
+
+```
+$ sites db status
+```
+
+Output:
+
+```
+0001 pending
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `bin/sites` exists.
+- `state/sites.db` does not exist in the working directory; `state/` may be absent too.
+
+Postconditions:
+
+- Nothing has changed. No file or directory was created.
+
+## An operator checks a catalog from before sites recorded its migrations
+
+A sites from before the database recorded its migrations kept the same catalog in `state/sites.db`, with no record of any migration. `sites db status` reports every migration the binary carries as pending, as for a database that does not exist: the next start applies `0001`, which finds the catalog's schema already there, changes nothing in it, and records `0001` as applied (`S02`).
+
+Command:
+
+```
+$ sites db status
+```
+
+Output:
+
+```
+0001 pending
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `bin/sites` exists.
+- The working directory holds `state/sites.db`, a catalog an earlier sites kept, holding sites and recording no migration.
+
+Postconditions:
+
+- Nothing has changed: the catalog holds the sites it held, and still records no migration.
+
+## An operator checks a database a newer sites has upgraded
+
+A newer sites has applied a migration this binary does not carry, as when a deploy is rolled back to an older binary over a database the newer one upgraded. This sites cannot serve such a database (`S02`), and `sites db status` shows why: it prints every line as usual, the version it does not know among them as `unknown`, then says so on stderr and fails.
+
+Command:
+
+```
+$ sites db status
+```
+
+Output:
+
+```
+0001 applied 2026-10-05T14:03:07.123456Z
+0002 unknown 2026-10-06T09:12:44.000017Z
+sites: <reason>
+```
+
+Exits 1. The `0001` and `0002` lines are on stdout; the last line is on stderr. `<reason>` names the unknown version, `0002`.
+
+Preconditions:
+
+- `bin/sites` exists, carrying only migration `0001`.
+- The working directory holds `state/sites.db`, which records version `0001` applied at `2026-10-05T14:03:07.123456Z` and version `0002` applied at `2026-10-06T09:12:44.000017Z`.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator checks a database that cannot be read
+
+`state/sites.db` exists but is not a database sites can read: its contents are not a SQLite database, or it is a directory, or the operator cannot read it. sites prints no lines, since it cannot tell what the database holds, and says why on stderr.
+
+Command:
+
+```
+$ sites db status
+```
+
+Output:
+
+```
+sites: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` is the underlying failure.
+
+Preconditions:
+
+- `bin/sites` exists.
+- The working directory holds `state/sites.db`, a file whose contents are not a SQLite database.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator mistypes the database command
+
+`db` takes exactly one command, `status`, and `status` takes no arguments. The argument sites complains about is the first one it does not take: `sites db` alone names `db`, which is not a command by itself; `sites db bogus` names `bogus`; and `sites db status extra` names `extra`.
+
+Command:
+
+```
+$ sites db bogus
+```
+
+Output:
+
+```
+sites: unknown command 'bogus'
+
+see 'sites --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty. `sites db` fails the same way with `sites: unknown command 'db'`, and `sites db status extra` with `sites: unknown command 'extra'`.
+
+Preconditions:
+
+- `bin/sites` exists.
+
+Postconditions:
+
+- Nothing has changed. No database was read, and no file or directory was created.

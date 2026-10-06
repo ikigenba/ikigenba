@@ -4,7 +4,7 @@ The bare binary serves, and it serves only on a listening socket it inherits: si
 
 sites' environment also carries its three settings, each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `etc/env`, and an operator changes them there. `REPOS_DIR`, `../repos/state/repos`, is the directory holding repos' bare repositories, each as `<repository id>.git`; a relative value is resolved against sites' working directory, so on a host it is `/opt/sites/../repos/state/repos`, which is `/opt/repos/state/repos`, and an absolute one is used as it is (`S18`). sites only reads there, with git, and never writes there. `SITE_MAX_BYTES`, 268435456, a positive whole number of bytes, is the largest a site's tree may be, counted as the sum of its files' sizes (`S17`). `OPERATION_SECONDS`, 600, a positive whole number of seconds, is the longest one git run may take before sites kills it (`S17`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives sites. The file lists the platform's services: it feeds the launcher in the banner of sites' landing and about pages (`S03`), it holds the description sites' MCP endpoint gives its clients as instructions (`S05`), its entry named `sites` gives the public address sites puts in every site's `url` and on its landing page (`S03`, `S07`), and its entry named `telemetry` is where sites sends its trail (below). sites reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. sites never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, sites starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
 
-sites runs the host's own `git` for every read of a repository — resolving a ref, reading a repository's owner, unpacking a commit's tree with `git archive` — and has no git of its own; `git` is a dependency of the host that opsctl provisions. sites checks its environment first — `DRAIN_SECONDS`, then `SITE_MAX_BYTES`, then `OPERATION_SECONDS` — then looks for its socket, then checks that an executable named `git` is on its `PATH`, and only then opens its SQLite database, the catalog of sites and the apex setting, at `state/sites.db`, relative to its working directory, creating `state/` and the database on its first start, and then the directory that holds the unpacked trees, `cache/sites/`, creating `cache/` and `cache/sites/` when they are absent. Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after sites, and a repository is looked for only when a tool or a site request needs it (`S19`). No tree is unpacked at start: a published site whose tree is missing from `cache/` is rebuilt by the first request that needs it (`S16`). So a start refused as a usage error, or for want of git, has touched nothing, not even the database. sites is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); `cache/` is never backed up.
+sites runs the host's own `git` for every read of a repository — resolving a ref, reading a repository's owner, unpacking a commit's tree with `git archive` — and has no git of its own; `git` is a dependency of the host that opsctl provisions. sites checks its environment first — `DRAIN_SECONDS`, then `SITE_MAX_BYTES`, then `OPERATION_SECONDS` — then looks for its socket, then checks that an executable named `git` is on its `PATH`, and only then opens its SQLite database, the catalog of sites and the apex setting, at `state/sites.db`, relative to its working directory, creating `state/` and the database on its first start and bringing the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the unpacked trees, `cache/sites/`, creating `cache/` and `cache/sites/` when they are absent. Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after sites, and a repository is looked for only when a tool or a site request needs it (`S19`). No tree is unpacked at start: a published site whose tree is missing from `cache/` is rebuilt by the first request that needs it (`S16`). A database it cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `sites: cannot open database state/sites.db: <reason>`, and exit status 1. So a start refused as a usage error, or for want of git, has touched nothing, not even the database. sites is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); `cache/` is never backed up.
 
 sites keeps a trail: it records what it does as events it sends to the platform's telemetry service, exactly as repos does, where an operator, or an agent working for one, follows what happened from one thing they know — a request id, a user, a site's id, a visitor's id, or a time. sites finds telemetry in the services file `IKIGENBA_SERVICES` names, as the entry named `telemetry`, and sends each event to that entry's socket; it looks the entry up afresh for every event, so a telemetry installed after sites started is found without a restart. What telemetry does with an event is told in telemetry's own stories. The stories here show each event as the JSON object telemetry receives:
 
@@ -58,7 +58,7 @@ Preconditions:
 - `/opt/sites/etc/env` sets `DRAIN_SECONDS` and each of the three settings to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
 - `git` is installed on the host, on the `PATH` the service runs with.
 - `ikigenba-sites.socket` is active, so `/run/ikigenba/sites.sock` exists and accepts connections.
-- `/opt/sites/state/sites.db` exists, from an earlier start, and holds the sites `blog`, `handbook`, `scratch`, and `recipes`; `/opt/sites/cache/sites/` exists.
+- `/opt/sites/state/sites.db` exists, from an earlier start, records no migration this sites does not carry, and holds the sites `blog`, `handbook`, `scratch`, and `recipes`; `/opt/sites/cache/sites/` exists.
 - `ikigenba-sites.service` is not running.
 - The host's services file lists the telemetry service, which takes every event.
 
@@ -66,7 +66,7 @@ Postconditions:
 
 - `ikigenba-sites.service` is `active`, and sites is serving on `/run/ikigenba/sites.sock`: a connection there, and every connection queued before sites started, is answered by sites.
 - sites listens on no other socket and no port.
-- `/opt/sites/state/sites.db` is the database it opened, unchanged by the start; every tree under `/opt/sites/cache/sites/` is as it was, and none was unpacked by the start (`S19`).
+- `/opt/sites/state/sites.db` is the database it opened, now up to date, and holds the same sites and apex as before the start, each site unchanged; every tree under `/opt/sites/cache/sites/` is as it was, and none was unpacked by the start (`S19`).
 - telemetry has received one event from sites, with no request id and no user, whose `version` is the version `sites --version` prints (`S01`):
 
   ```
@@ -78,7 +78,7 @@ Postconditions:
 
 ## The host starts sites for the first time
 
-Nothing of sites' state exists yet. sites creates the `state/` directory if it is absent, then creates `state/sites.db` and its schema, then creates `cache/` and `cache/sites/`, empty, and serves with a catalog that names no site and no apex. The same start succeeds when `state/` or `cache/` already exists and only the database or `cache/sites/` is absent. Neither a fresh deployment nor any other first start needs a directory created beforehand. The paths are relative to sites' working directory.
+Nothing of sites' state exists yet. sites creates the `state/` directory if it is absent, then creates `state/sites.db` and applies every migration it carries, then creates `cache/` and `cache/sites/`, empty, and serves with a catalog that names no site and no apex. The same start succeeds when `state/` or `cache/` already exists and only the database or `cache/sites/` is absent. Neither a fresh deployment nor any other first start needs a directory created beforehand. The paths are relative to sites' working directory.
 
 Command:
 
@@ -106,7 +106,7 @@ Preconditions:
 Postconditions:
 
 - `state/` exists, created by sites if it was absent.
-- `state/sites.db` now exists, with its schema, created by this start, and names no site and no apex: `list` answers `{"sites":[]}` for every caller (`S07`), and `apex` with no arguments answers `{"apex":null}` (`S13`).
+- `state/sites.db` now exists, created by this start, and is up to date: `sites db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`). It names no site and no apex: `list` answers `{"sites":[]}` for every caller (`S07`), and `apex` with no arguments answers `{"apex":null}` (`S13`).
 - `cache/sites/` now exists, empty, created by this start.
 - sites is serving on the socket it was passed, and on no other.
 - telemetry has received exactly one event from sites, its `service.started` with `version` `v<semver>`, the version `sites --version` prints, under an empty request id and an empty user.
@@ -201,6 +201,66 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `state/sites.db` is as it was, and `cache/` is as it was, or still absent. sites served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host starts sites with a database a newer sites has upgraded
+
+A deploy rolled back to an older binary leaves it over a database a newer sites has upgraded: the database records a migration this sites does not carry, so its schema is one this sites does not understand. Rather than read it, sites refuses to start, naming the version it does not know, and the rollback fails loudly instead of serving wrong answers. There is no way back down a migration; restoring the database from before the upgrade is the rollback. `sites db status` shows the version as `unknown` (`S01`).
+
+Command:
+
+```
+$ sites
+```
+
+Output:
+
+```
+sites: cannot open database state/sites.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this sites does not carry, zero-padded to four digits: `0002`.
+
+Preconditions:
+
+- `bin/sites` exists and is on the `PATH` as `sites`, carrying only migration `0001`; `git` is on the `PATH` too.
+- `LISTEN_PID` is sites' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` and each of the three settings are unset, or valid.
+- `state/sites.db` exists and records versions `0001` and `0002` as applied.
+
+Postconditions:
+
+- Nothing has changed: the database still records `0001` and `0002` and holds the sites and the apex it held, and `cache/` is as it was, or still absent. sites served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host starts sites over a catalog from before it recorded its migrations
+
+The first release of sites that records its migrations is deployed over the catalog an earlier sites kept, which records none. sites applies its first migration, `0001`, which finds the catalog's schema already there and changes nothing in it, records `0001` as applied, and serves every site and the apex the catalog held. No step of the deploy prepares the database beforehand.
+
+Command:
+
+```
+$ sudo systemctl restart ikigenba-sites.service
+```
+
+Output:
+
+```
+```
+
+Exits 0, once the new sites has reported that it is ready. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `opsctl install` has installed a sites that carries migration `0001` over one that recorded no migrations.
+- `/opt/sites/state/sites.db` is the catalog the earlier sites kept: it holds `S06`'s shared catalog, with `blog` as the apex site, and records no migration (`sites db status` prints `0001 pending`, `S01`).
+- `git` is installed on the host, on the `PATH` the service runs with.
+- The host's services file lists the telemetry service, which takes every event.
+
+Postconditions:
+
+- sites is serving on `/run/ikigenba/sites.sock`, over the same `state/sites.db`.
+- `sites db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`).
+- `list` for each caller answers what it answered before the deploy (`S07`), and `apex` with no arguments answers `blog`'s site object (`S13`): no site, field, or setting changed.
+- telemetry has received the new sites' `service.started`, with the version `sites --version` prints.
 
 ## The host starts sites where its cache directory cannot be created
 
@@ -393,7 +453,7 @@ Postconditions:
 
 ## The host restarts sites during a deploy
 
-A deploy replaces sites' binary and restarts `ikigenba-sites.service` alone; `ikigenba-sites.socket` stays up throughout. Between the old sites exiting and the new one being ready, connections wait in the socket's queue instead of being refused, so a visitor or the gateway never sees sites missing. That holds because sites finishes what it accepted before it exits and leaves the socket where systemd put it. The new sites unpacks nothing at start, so the wait is short; the trees the old sites unpacked are still under `cache/sites/`, and the new one serves them as they are.
+A deploy replaces sites' binary and restarts `ikigenba-sites.service` alone; `ikigenba-sites.socket` stays up throughout. Between the old sites exiting and the new one being ready, connections wait in the socket's queue instead of being refused, so a visitor or the gateway never sees sites missing. That holds because sites finishes what it accepted before it exits and leaves the socket where systemd put it. The catalog outlives the deploy: the new sites opens the same `state/sites.db`, bringing it up to date first when the new binary carries a migration the database has not had, and serves every site the old one kept. The new sites unpacks nothing at start, so the wait is short; the trees the old sites unpacked are still under `cache/sites/`, and the new one serves them as they are.
 
 Command:
 
@@ -417,7 +477,7 @@ Preconditions:
 Postconditions:
 
 - Every request sent was answered, by the old sites or the new one; none was refused and none was cut off. Every page served is the published commit's file, before and after.
-- A new sites process is serving on `/run/ikigenba/sites.sock`, over the same `state/sites.db` and the same `cache/sites/`; the trees there are the ones the old sites left, and the new one rebuilt none of them.
+- A new sites process is serving on `/run/ikigenba/sites.sock`, over the same `state/sites.db`, now up to date, and the same `cache/sites/`; every site and the apex are as the old sites left them, and the trees there are the ones the old sites left, and the new one rebuilt none of them.
 - telemetry has received the old sites' `service.stopping`, with `reason` `SIGTERM`, and after it the new sites' `service.started`, whose `version` is the version the new binary's `sites --version` prints. Every request the old sites answered is recorded before its `service.stopping`, and every request the new one answered after its `service.started`.
 
 ## The host starts sites where telemetry cannot be reached
