@@ -1,26 +1,31 @@
 # Stories — mcp
 
-The widgets offered to models: dummy's MCP interface at `/mcp`, the one route
-that answers MCP clients rather than browsers. It is the exact path `/mcp`; a
-path beneath it, `/mcp/tools` say, is a path that does not exist and is
-answered as `S3` answers one. `/mcp` takes only POST, each POST carries one
-JSON-RPC request, and each request is answered with one `application/json`
-body: there are no sessions and no streams, and dummy keeps nothing from one
-request to the next. It offers two tools and nothing else, in this order:
-`list_widgets`, which lists the widgets, and `create_widget`, which creates
-one under the same rules as the form (`S5`). There is no tool to change or
-remove a widget, as there is no form for either. Both tools work on the same
-widgets the panel shows: one in-memory set, reset every time the process
-starts, holding at startup exactly three, in this order: `alpha` count 3
-status `active`; `beta` count 0 status `paused`; `gamma` count 12 status
-`retired`. A widget has a `name`, an integer `count`, a `status` that is
-one of `active`, `paused`, or `retired`, and an `id`, `wgt_` and 16 lowercase
-hexadecimal digits, which dummy gives it when the widget is made and which
-names the widget in dummy's trail (`S3`); the tools show the id, so a model
-that knows a widget by its name can find it in the trail, and no tool takes
-one. The widgets are always in
+The widgets offered to models: dummy's MCP interface at `/mcp`, the one
+route that answers MCP clients rather than browsers. It is the exact path
+`/mcp`; a path beneath it, `/mcp/tools` say, is a path that does not
+exist and is answered as `S3` answers one. `/mcp` takes only POST, each
+POST carries one JSON-RPC request, and each request is answered with one
+`application/json` body: there are no sessions and no streams, and dummy
+keeps no protocol state from one request to the next. It offers two tools
+and nothing else, in this order: `list_widgets`, which lists the widgets,
+and `create_widget`, which creates one under the same rules as the form
+(`S5`). There is no tool to change or remove a widget, as there is no form
+for either. Both tools work on the same widgets the panel shows. The widgets
+are kept in dummy's database, `state/dummy.db` under its working directory,
+and every request shares them. A database dummy creates holds no widgets;
+every widget created since is kept across restarts and deploys, with the
+id it was given. A widget has a `name`, an integer `count`, a `status`
+that is one of `active`, `paused`, or `retired`, and an `id`, `wgt_` and
+16 lowercase hexadecimal digits, which dummy gives it when the widget is
+created and keeps with it, and which names the widget in dummy's trail
+(`S3`); the tools show the id, so a model that knows a widget by its name
+can find it in the trail, and no tool takes one. The widgets are always in
 creation order, so a widget created through either way in — the form or
-`create_widget` — is last, and shows to the other at once.
+`create_widget` — is last, and shows to the other at once. Unless a story
+says otherwise, the stories below start from a database holding exactly
+three widgets, created in this order: `alpha` count 3 status `active`;
+`beta` count 0 status `paused`; `gamma` count 12 status `retired`. They
+are called the three widgets below.
 
 The actor is a model working through an MCP client, or the client itself.
 Each request is shown as the HTTP request the client sends to a running dummy
@@ -62,7 +67,10 @@ refuses its arguments answers status 200 with a result whose `isError` is
 `true` and whose one text content block says why. That text is always the
 line `invalid arguments:` followed by one line per offence, each
 `<field>: <reason>`, separated by LF with no LF after the last, so a model
-learns every offence from one answer and can fix them all in one retry.
+learns every offence from one answer and can fix them all in one retry. The
+one other refusal is dummy's own: a tool that cannot reach the database
+refuses with a line of its own, not a refusal of the arguments (`A model
+calls a tool while dummy cannot reach the widgets`).
 Arguments are refused at two layers. First they are read against the tool's
 input schema: a field missing, of the wrong JSON type, not a whole number
 where one is wanted, outside the range a whole number can hold, a status
@@ -88,8 +96,9 @@ before the request's `request.finished`. Its attributes are `tool`, the
 tool's name; `kind`, `read` for `list_widgets` and `additive` for
 `create_widget`; `outcome`, which says how the call was answered: `ok` for a
 result with no `isError`, `invalid_arguments` when the arguments were refused
-as they were read against the input schema, and `error` when they passed
-that but broke dummy's rules for a widget; and `duration_us`, how long the
+as they were read against the input schema, and `error` for every other
+refusal: arguments that passed that but broke dummy's rules for a widget, or
+a tool that could not reach the database; and `duration_us`, how long the
 tool took, in whole microseconds, 0 when the arguments were refused as they
 were read and the tool never ran. The arguments themselves, and the text of a
 refusal, are never recorded. A call answered with a protocol error, such as
@@ -215,14 +224,14 @@ no `isError` member, a `structuredContent` of
 
 and a `content` array of one text block, `{"type":"text","text":<text>}`,
 whose text is exactly that line. `<alpha-id>`, `<beta-id>`, and `<gamma-id>`
-are the ids dummy gave the three widgets when the process started: three
+are the ids dummy gave the three widgets when they were created: three
 different values, each `wgt_` and 16 lowercase hexadecimal digits, the same in
-every listing until the process stops.
+every listing, across restarts and deploys.
 
 Preconditions:
 
 - dummy is serving, and telemetry takes every event.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
@@ -280,17 +289,19 @@ hexadecimal digits, different from every other widget's.
 Preconditions:
 
 - dummy is serving, and telemetry takes every event.
-- The widgets are the fixture set as the process started it, so no widget is
-  named `delta`.
+- The database holds exactly the three widgets, so no widget is named
+  `delta`.
 
 Postconditions:
 
 - A widget named `delta`, count 7, status `active`, with the id
-  `<delta-id>`, now exists.
-- The set holds four widgets, `delta` last, after `gamma`. The panel's table
-  and the table fragment show it as their last row from the next request on
-  (`S3`, `S4`), and a fragment poll that carries the `ETag` from before the
-  call is answered with the new table, not `304`.
+  `<delta-id>`, now exists, kept in dummy's database: after dummy restarts,
+  or is deployed again, it is still there with the same id, count, and
+  status.
+- The database holds four widgets, `delta` last, after `gamma`. The panel's
+  table and the table fragment show it as their last row from the next
+  request on (`S3`, `S4`), and a fragment poll that carries the `ETag` from
+  before the call is answered with the new table, not `304`.
 - telemetry has received the request's four events, in this order, where
   `<request-id>` is the request's id (`S2`):
 
@@ -344,8 +355,8 @@ widgets`, and `<delta-id>` is the id `A model creates a widget` answered with.
 Preconditions:
 
 - dummy is serving.
-- Since the process started, the only change to the widgets is the
-  `create_widget` call of `A model creates a widget`.
+- The database held exactly the three widgets before the `create_widget`
+  call of `A model creates a widget`, and nothing else has changed it since.
 
 Postconditions:
 
@@ -379,8 +390,8 @@ order: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12 `retired`, and
 Preconditions:
 
 - dummy is serving.
-- Since the process started, the only change to the widgets is the
-  `create_widget` call of `A model creates a widget`.
+- The database held exactly the three widgets before the `create_widget`
+  call of `A model creates a widget`, and nothing else has changed it since.
 
 Postconditions:
 
@@ -428,7 +439,7 @@ and a `content` array of one text block whose text is exactly that line.
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
@@ -486,12 +497,12 @@ name: a name is required
 Preconditions:
 
 - dummy is serving, and telemetry takes every event.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with.
+- No widget was created. The database is unchanged: it holds `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had.
 - dummy recorded no `widget.created`. Between the request's `request.started`
   and its `request.finished`, whose `status` is 200, telemetry has received
   one event, where `<request-id>` is the request's id (`S2`):
@@ -539,11 +550,12 @@ name: the name is too long; the limit is 40 characters
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model creates a widget with a name that is already taken
 
@@ -585,12 +597,12 @@ name: that name is already taken
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it, so a widget
-  named `alpha` exists.
+- The database holds exactly the three widgets, so a widget named `alpha`
+  exists.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged; in particular `alpha`
+- No widget was created. The database is unchanged; in particular `alpha`
   still has count 3 and status `active`. A taken name is refused, never
   merged into the widget that holds it.
 
@@ -633,11 +645,12 @@ count: the count cannot be negative
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model breaks several of dummy's rules at once
 
@@ -678,11 +691,12 @@ count: the count cannot be negative
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model sends a status that is not one of the three
 
@@ -724,11 +738,12 @@ status: must be one of "active", "paused", "retired", got "archived"
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model sends a count that is not a number
 
@@ -770,11 +785,12 @@ count: expected integer, got string
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model sends a count that is not a whole number
 
@@ -815,11 +831,12 @@ count: expected integer, got 7.5
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model sends a count too large to hold
 
@@ -860,11 +877,12 @@ count: must be between -9223372036854775808 and 9223372036854775807, got 1e19
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model leaves out a field
 
@@ -904,11 +922,12 @@ status: missing required field
 Preconditions:
 
 - dummy is serving, and telemetry takes every event.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 - dummy recorded no `widget.created`. Between the request's `request.started`
   and its `request.finished`, whose `status` is 200, telemetry has received
   one event, where `<request-id>` is the request's id (`S2`); the tool never
@@ -957,11 +976,12 @@ colour: unknown field
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model sends several malformed arguments at once
 
@@ -1006,11 +1026,12 @@ colour: unknown field
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model's arguments are malformed and break dummy's rules too
 
@@ -1053,11 +1074,12 @@ status: must be one of "active", "paused", "retired", got "archived"
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged.
+- No widget was created. The database is unchanged: it holds exactly the three
+  widgets.
 
 ## A model calls a tool dummy does not have
 
@@ -1092,7 +1114,7 @@ whose `error` has `code` `-32602` and `message` `Unknown tool: delete_widget`.
 Preconditions:
 
 - dummy is serving, and telemetry takes every event.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 
@@ -1101,6 +1123,70 @@ Postconditions:
 - No tool ran, so dummy recorded no `tool.called`: telemetry has received
   only the request's `request.started` and its `request.finished`, whose
   `status` is 400.
+
+## A model calls a tool while dummy cannot reach the widgets
+
+Both tools answer from the database, so a tool that cannot read or write it
+has nothing true to say. `list_widgets` does not answer as if there were no
+widgets, which would tell the model they were gone; it refuses, and quotes
+nothing of the database's own error. The model can tell this from a refusal
+of its arguments and may try again later. dummy keeps serving; a user who
+opens the panel meanwhile is answered as `S3` tells, with the same line as
+plain text.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: list_widgets
+
+{"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"list_widgets","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 23 whose `result` has
+`isError` `true`, no `structuredContent`, and a `content` array of one text
+block whose text is exactly:
+
+```
+cannot reach the widgets; try again later
+```
+
+A `create_widget` call whose arguments dummy would otherwise accept is
+refused with the same text, and stores nothing: no widget is created and no
+`widget.created` is recorded. Its `tool.called` has `kind` `additive` and
+`outcome` `error`.
+
+Preconditions:
+
+- dummy is serving, and telemetry takes every event.
+- dummy can no longer read `state/dummy.db`: the filesystem holding it has
+  failed since dummy opened it, say.
+
+Postconditions:
+
+- Nothing has changed.
+- dummy wrote nothing to stderr. telemetry has received the request's three
+  events, in this order, where `<request-id>` is the request's id (`S2`):
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  {"time":"<time>","service":"dummy","event":"tool.called","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"read","outcome":"error","tool":"list_widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
+  ```
+
+- dummy is still serving.
 
 ## A request to /mcp arrives without the identity headers
 
@@ -1137,7 +1223,7 @@ Preconditions:
 
 - dummy is serving.
 - The request carries no `X-User-Id` header and no `X-Request-Id` header.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly the three widgets.
 
 Postconditions:
 

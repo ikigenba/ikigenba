@@ -26,13 +26,13 @@ case; the identity the fragment requires is `X-User-Id`, and a
 request without it is answered 500, the same rule the panel page follows. The
 requests below therefore carry both headers explicitly.
 
-The widgets are an in-memory fixture set, reset at process start, holding
-exactly three widgets in this order: `alpha` count 3 status `active`; `beta`
-count 0 status `paused`; `gamma` count 12 status `retired`. A widget has a
-`name` (text), a `count` (integer), and a `status`, which is one of `active`,
-`paused`, and `retired`, and an id the table does not show (`S3`). Rows
-appear in creation order, so the fixture widgets
-come first and a newly created widget is last. Status is a word in its own
+The widgets are kept in dummy's database, `state/dummy.db` under its working
+directory, and every request shares them. A database dummy creates holds no
+widgets; every widget created since is kept across restarts and deploys, with
+the id it was given. A widget has a `name` (text), a `count` (integer), and a
+`status`, which is one of `active`, `paused`, and `retired`, and an id the
+table does not show (`S3`). Rows appear in creation order, so a newly created
+widget is last. Status is a word in its own
 column, never colour alone, so a caller reading the fragment with `curl`
 understands a row the same way a person looking at the browser does. The
 table carries the same header row and marking as the panel's (`S3`): its
@@ -43,9 +43,9 @@ row's count cell, `<td class="num">3</td>`, and each status word sits inside a
 status marker naming its value,
 `<span class="status" data-status="active">active</span>`. The fragment and
 the table the panel page embeds are the same markup, byte for byte. The
-fixture set changes only when a widget is created, by a POST to `/widgets`
+widgets change only when a widget is created, by a POST to `/widgets`
 (`S5`) or by the MCP tool `create_widget` (`S9-mcp.md`); nothing in this group
-changes it.
+changes them.
 
 Every 200 and 304 carries an `ETag`. Its value is opaque — no story fixes it, and
 `"<etag>"` below stands for whatever the server sent. What is fixed is the
@@ -81,7 +81,7 @@ ETag: "<etag>"
 Status 200. The body is the widgets table alone: a table with a header row
 and one row per widget, and nothing around it — no doctype, no `html`
 element, no `body` element, no banner, no footer. It is a fragment, not a whole HTML
-document. It holds three rows, in fixture order, carrying `alpha` 3 `active`,
+document. It holds three rows, in creation order, carrying `alpha` 3 `active`,
 `beta` 0 `paused`, and `gamma` 12 `retired`; each row shows its status as a
 word in its own column, inside a status marker naming that status, and its
 count in a cell marked numeric; the header row's `Count` cell is marked
@@ -92,8 +92,9 @@ that order. The body is byte for byte the table a `GET
 Preconditions:
 
 - dummy is serving.
-- No widget has been created since dummy started, so the fixture set holds
-  the three widgets it holds at process start.
+- The database holds exactly these widgets, in creation order: `alpha`
+  count 3 status `active`, `beta` count 0 status `paused`, `gamma` count 12
+  status `retired`.
 
 Postconditions:
 
@@ -128,7 +129,7 @@ table returns.
 Preconditions:
 
 - dummy is serving.
-- No widget has been created since dummy started.
+- The database holds the widgets of `A page asks for the current table`.
 
 Postconditions:
 
@@ -201,8 +202,8 @@ ETag: "<new-etag>"
 
 Status 200. The body is the widgets table alone, on the same terms as an
 unconditional fetch: the table and its rows, with no doctype, no `html`
-element and no `body` element. It holds four rows — the three fixture widgets,
-in their order, then a row for `delta` carrying the name, count, and status it
+element and no `body` element. It holds four rows — the three widgets of
+`A page asks for the current table`, in their order, then a row for `delta` carrying the name, count, and status it
 was created with, marked the same way as the others. The `ETag` differs from
 the one the request quoted, because the content differs.
 
@@ -210,6 +211,8 @@ Preconditions:
 
 - dummy is serving.
 - `"<etag>"` is the `ETag` from the response the page is currently showing.
+- When that response was sent, the database held the widgets of
+  `A page asks for the current table`.
 - A widget named `delta` was created by a POST to `/widgets` after that
   response was sent.
 
@@ -218,6 +221,50 @@ Postconditions:
 - Nothing has changed as a result of this request. `delta` existed before it
   arrived, and reading the fragment neither creates, alters, nor removes a
   widget.
+
+## A page asks for the table while dummy cannot reach the widgets
+
+The table is the widgets, so when dummy cannot read them there is no true
+table to send, and an empty one would tell the page every widget was gone.
+dummy says plainly that it cannot reach them, quoting nothing of the
+database's own error, in one line of plain text like every error from this
+endpoint, and the page may ask again on its next poll.
+
+Request:
+
+```
+GET /widgets/table HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+```
+
+Response:
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 503. The body is exactly the one line
+`cannot reach the widgets; try again later`, ending in a newline, as on the
+panel (`S3`). No table markup is sent, and no `ETag`. A poll that quotes an
+`ETag` in `If-None-Match` is answered the same way. A `HEAD` is answered with
+the same status and headers and an empty body.
+
+Preconditions:
+
+- dummy is serving, and telemetry takes every event.
+- dummy's database cannot be read: `state/dummy.db` has become unreadable
+  since dummy opened it, the filesystem holding it failing, say.
+
+Postconditions:
+
+- Nothing has changed.
+- dummy wrote nothing to stderr. Its trail records the request as it records
+  every request (`S3`): a `request.started` with the `method` `GET` and the
+  `path` `/widgets/table`, and a `request.finished` with the `status` 503,
+  both under user `u_7f3a9c21`.
+- dummy is still serving.
 
 ## A request for the fragment arrives without the identity headers
 

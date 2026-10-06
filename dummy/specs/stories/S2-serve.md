@@ -30,6 +30,20 @@ file that is missing or unreadable, dummy starts and serves all the same, and
 says nothing about the file itself. The actor in these stories is the host,
 whether that is systemd or a developer at a terminal standing in for it.
 
+The widgets are kept in dummy's database, `state/dummy.db` under its working
+directory, and every request shares them. A database dummy creates holds no
+widgets; every widget created since is kept across restarts and deploys, with
+the id it was given. dummy reads `DRAIN_SECONDS` and takes its socket before
+it opens the database, so a start refused as a usage error has touched
+nothing, not even the database. Then it creates `state/` if it is absent and
+`state/dummy.db` if it is absent, brings the database up to date by applying,
+in order, every migration it carries that the database has not had (`S1`),
+and only then serves and tells systemd it is ready. A database it cannot open,
+or one that records a migration it does not carry, is a start it refuses, with
+one line on stderr, `dummy: cannot open database state/dummy.db: <reason>`,
+and exit status 1. dummy is the database's only writer, and the host
+replicates it as the manifest declares (`S1`).
+
 dummy keeps a trail: it records what it does as events it sends to the
 platform's telemetry service, where an operator, or an agent working for one,
 follows what happened from one thing they know — a request id, a user, a
@@ -71,7 +85,8 @@ host, the telemetry service itself.
 stderr holds only trouble: a condition dummy cannot go on from — the start-up
 refusals and the requests lost to a drain cut short, below — and an event
 dummy could not deliver. A failure dummy handles is not trouble: a request
-answered 500, like a request answered any other way, is recorded by its
+answered 500, or 503 because dummy cannot reach the widgets in its database
+(`S3`), like a request answered any other way, is recorded by its
 `request.finished` event with the status (`S3`) and earns no line on stderr.
 So while telemetry takes every event, a running dummy writes nothing to stdout
 or stderr, and under systemd the journal holds only trouble.
@@ -128,6 +143,8 @@ Preconditions:
 - `ikigenba-dummy.socket` is active, so `/run/ikigenba/dummy.sock` exists and
   accepts connections.
 - `ikigenba-dummy.service` is not running.
+- `/opt/dummy/state/dummy.db` exists, from an earlier start, and records no
+  migration this dummy does not carry.
 - The host's services file lists the telemetry service, which takes every
   event.
 
@@ -137,6 +154,8 @@ Postconditions:
   `/run/ikigenba/dummy.sock`: a connection there, and every connection queued
   before dummy started, is answered by dummy.
 - dummy listens on no other socket and no port.
+- `/opt/dummy/state/dummy.db` is the database it opened, now up to date, and
+  every widget it held is still there.
 - telemetry has received one event from dummy, with no request id and no
   user, whose `version` is the version `dummy --version` prints (`S1`):
 
@@ -146,6 +165,215 @@ Postconditions:
 
 - dummy has written nothing to the journal.
 - It keeps running until it is signalled.
+
+## The host starts dummy for the first time
+
+The database file does not yet exist. dummy creates the `state/` directory if
+it is absent, then creates `state/dummy.db`, applies every migration it
+carries, and serves. The same start succeeds when `state/` already exists and
+only the database is absent. Neither a fresh deployment nor any other first
+start needs the directory created beforehand. The paths are relative to
+dummy's working directory. A database dummy creates holds no widgets, so the
+panel it serves lists none until one is created.
+
+Command:
+
+```
+$ dummy
+```
+
+Output:
+
+```
+```
+
+Does not exit. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `bin/dummy` exists and is on the `PATH` as `dummy`.
+- `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `NOTIFY_SOCKET` is unset, so dummy reports readiness to nobody.
+- `DRAIN_SECONDS` is unset, or a positive whole number.
+- `IKIGENBA_SERVICES` names a services file whose `telemetry` entry takes
+  every event.
+- `state/dummy.db` does not exist.
+- Either `state/` is absent and dummy can create it in its working directory,
+  or `state/` is an existing directory in which dummy can create the
+  database.
+
+Postconditions:
+
+- `state/` exists, created by dummy if it was absent.
+- `state/dummy.db` now exists, created by this start, and is up to date:
+  `dummy db status` prints `0001 applied <time>`, `<time>` being the moment
+  this start applied it (`S1`).
+- dummy is serving on the socket it was passed, and on no other.
+- The database holds no widgets: the panel lists none (`S3`).
+- telemetry has received dummy's `service.started`, with the version
+  `dummy --version` prints.
+- It keeps running until it is signalled.
+
+## The host starts dummy over an existing database
+
+A database an earlier dummy created is where the widgets live, so a start, a
+restart, or a new binary serves the widgets that were there, each with the id
+it was given when it was created. Nothing about a start adds, removes, or
+changes a widget.
+
+Command:
+
+```
+$ dummy
+```
+
+Output:
+
+```
+```
+
+Does not exit. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `bin/dummy` exists and is on the `PATH` as `dummy`.
+- `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `NOTIFY_SOCKET` is unset, so dummy reports readiness to nobody.
+- `DRAIN_SECONDS` is unset, or a positive whole number.
+- `IKIGENBA_SERVICES` names a services file whose `telemetry` entry takes
+  every event.
+- `state/dummy.db` exists, from an earlier start, and records no migration
+  this dummy does not carry. It holds exactly these widgets, in creation
+  order: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12 `retired`, with
+  the ids `<alpha-id>`, `<beta-id>`, and `<gamma-id>` an earlier dummy gave
+  them.
+
+Postconditions:
+
+- dummy is serving on the socket it was passed, over the same
+  `state/dummy.db`, now up to date.
+- The panel lists exactly `alpha` 3 `active`, `beta` 0 `paused`, and `gamma`
+  12 `retired`, in that order, with the ids `<alpha-id>`, `<beta-id>`, and
+  `<gamma-id>` (`S3`).
+- telemetry has received dummy's `service.started`, with the version
+  `dummy --version` prints.
+- It keeps running until it is signalled.
+
+## The host starts dummy where its state directory cannot be created
+
+A regular file named `state` occupies the path where dummy needs its state
+directory. dummy has taken its socket, but it reports the database failure
+and exits before it serves or reports ready. The failure is not the caller's
+usage, so it exits 1.
+
+Command:
+
+```
+$ dummy
+```
+
+Output:
+
+```
+dummy: cannot open database state/dummy.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` is the underlying
+directory-creation failure.
+
+Preconditions:
+
+- `bin/dummy` exists and is on the `PATH` as `dummy`.
+- `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` is unset, or a positive whole number.
+- `state` is an existing regular file in dummy's working directory.
+
+Postconditions:
+
+- The existing `state` file is unchanged.
+- No database was created. dummy served nothing, told systemd nothing, and
+  recorded no event.
+
+## The host starts dummy with a database it cannot open
+
+`state/dummy.db` exists but dummy cannot open it: the file is not writable by
+the user dummy runs as, or its contents are not a SQLite database. dummy
+writes a diagnostic naming the database problem and exits before it serves or
+reports ready. A missing file is not this error: an absent `state/dummy.db` is
+created on first start (see `The host starts dummy for the first time`).
+Under systemd the start fails, and `systemctl start` reports it; the socket
+stays up, and connections wait in its queue for a dummy that can serve them.
+
+Command:
+
+```
+$ dummy
+```
+
+Output:
+
+```
+dummy: cannot open database state/dummy.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` is the underlying
+open failure.
+
+Preconditions:
+
+- `bin/dummy` exists and is on the `PATH` as `dummy`.
+- `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` is unset, or a positive whole number.
+- `state/dummy.db` exists but cannot be opened.
+
+Postconditions:
+
+- Nothing has changed. dummy served nothing, told systemd nothing, and
+  recorded no event.
+
+## The host starts dummy with a database a newer dummy has upgraded
+
+A deploy rolled back to an older binary leaves it over a database a newer
+dummy has upgraded: the database records a migration this dummy does not
+carry, so its schema is one this dummy does not understand. Rather than read
+it, dummy refuses to start, naming the version it does not know, and the
+rollback fails loudly instead of serving wrong answers. There is no way back
+down a migration; restoring the database from before the upgrade is the
+rollback. `dummy db status` shows the version as `unknown` (`S1`).
+
+Command:
+
+```
+$ dummy
+```
+
+Output:
+
+```
+dummy: cannot open database state/dummy.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version
+this dummy does not carry, zero-padded to four digits: `0002`.
+
+Preconditions:
+
+- `bin/dummy` exists and is on the `PATH` as `dummy`, carrying only migration
+  `0001`.
+- `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` is unset, or a positive whole number.
+- `state/dummy.db` exists and records versions `0001` and `0002` as applied.
+
+Postconditions:
+
+- Nothing has changed: the database still records `0001` and `0002` and
+  holds the widgets it held. dummy served nothing, told systemd nothing, and
+  recorded no event.
 
 ## The host stops dummy
 
@@ -270,7 +498,9 @@ A deploy replaces dummy's binary and restarts `ikigenba-dummy.service` alone;
 and the new one being ready, connections wait in the socket's queue instead
 of being refused, so a client never sees dummy missing. That holds because
 dummy finishes what it accepted before it exits and leaves the socket where
-systemd put it.
+systemd put it. The widgets outlive the deploy: the new dummy opens the same
+`state/dummy.db`, bringing it up to date first when the new binary carries a
+migration the database has not had, and serves every widget the old one kept.
 
 Command:
 
@@ -289,7 +519,8 @@ stdout or stderr.
 Preconditions:
 
 - dummy is serving on `/run/ikigenba/dummy.sock` under
-  `ikigenba-dummy.service`.
+  `ikigenba-dummy.service`, over `/opt/dummy/state/dummy.db`.
+- The database holds widgets, among them ones created through the old dummy.
 - A client is sending requests to `/run/ikigenba/dummy.sock` throughout the
   restart, and every request the old dummy accepted finishes at least a
   second before its drain deadline.
@@ -300,7 +531,11 @@ Postconditions:
 
 - Every request the client sent was answered, by the old dummy or the new
   one; none was refused and none was cut off.
-- A new dummy process is serving on `/run/ikigenba/dummy.sock`.
+- A new dummy process is serving on `/run/ikigenba/dummy.sock`, over the same
+  `state/dummy.db`.
+- Every widget the old dummy held, those created through it included, is
+  served by the new one with the same id, name, count, and status, in the
+  same order.
 - telemetry has received the old dummy's `service.stopping`, with `reason`
   `SIGTERM`, and after it the new dummy's `service.started`, whose `version`
   is the version the new binary's `dummy --version` prints. Every request the
@@ -336,6 +571,9 @@ Preconditions:
 - `opsctl install` has installed dummy, and `ikigenba-dummy.socket` is
   active, as in `The host starts dummy`.
 - `ikigenba-dummy.service` is not running.
+- `/opt/dummy/state/dummy.db` exists and records no migration this dummy
+  does not carry, or can be created as in `The host starts dummy for the
+  first time`.
 - The host's services file lists no `telemetry` entry, or nothing accepts
   connections on the socket that entry names.
 
@@ -387,8 +625,9 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. dummy listened on nothing, told systemd nothing, and
-  sent telemetry nothing.
+- Nothing has changed. dummy opened no database, listened on nothing, told
+  systemd nothing, and sent telemetry nothing; an absent `state/dummy.db` is
+  still absent.
 
 ## The host passes dummy more than one socket
 
@@ -420,8 +659,8 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. dummy served on neither socket, told systemd
-  nothing, and sent telemetry nothing.
+- Nothing has changed. dummy opened no database, served on neither socket,
+  told systemd nothing, and sent telemetry nothing.
 
 ## The host gives dummy a drain deadline that is not a number of seconds
 
@@ -454,5 +693,5 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. dummy served nothing, told systemd nothing, and sent
-  telemetry nothing.
+- Nothing has changed. dummy opened no database, served nothing, told systemd
+  nothing, and sent telemetry nothing.

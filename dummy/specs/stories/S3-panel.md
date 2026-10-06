@@ -28,17 +28,17 @@ shown as the HTTP request dummy receives, with the headers the story depends
 on; a request that shows no `Host` header carries one with no `dummy.` label.
 
 The demo resource is widgets. A widget has a `name`, an integer `count`, and
-a `status` that is one of `active`, `paused`, or `retired`. The widgets are an
-in-memory fixture set, reset every time the process starts and surviving
-nothing; at startup it holds exactly three, in this order: `alpha` count 3
-status `active`, `beta` count 0 status `paused`, `gamma` count 12 status
-`retired`. Every widget also has an id, which dummy gives it when the widget
-is made: `wgt_` followed by 16 lowercase hexadecimal digits, drawn at random,
-so in practice no two widgets, in one run or across runs, ever share one. The
-fixture widgets are given fresh ids each time the process starts. The id is
-how dummy's trail names a widget (`S2`), since the trail never carries a
-widget's name; the MCP tools show it beside the name (`S9-mcp.md`), and the
-panel and the table fragment do not show it.
+a `status` that is one of `active`, `paused`, or `retired`. The widgets are
+kept in dummy's database, `state/dummy.db` under its working directory, and
+every request shares them. A database dummy creates holds no widgets; every
+widget created since is kept across restarts and deploys, with the id it was
+given. The panel's table lists them in the order they were created (`S4`).
+Every widget has an id, which dummy gives it when the widget is created:
+`wgt_` followed by 16 lowercase hexadecimal digits, drawn at random, so in
+practice no two widgets ever share one. The id is how dummy's trail names a
+widget (`S2`), since the trail never carries a widget's name; the MCP tools
+show it beside the name (`S9-mcp.md`), and the panel and the table fragment
+do not show it.
 
 Every page dummy serves is drawn in one common frame, the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
@@ -49,15 +49,18 @@ it names the service it fronts, `dummy`; the service's name is lowercase `dummy`
 appears, and every page's title, the one a browser shows on its tab, is
 `dummy`. Because the caller's identity
 is what the banner is drawn from, a failure on a page that dummy can name to
-an identified caller is itself a page with that same banner, and only the
-missing-header fault, where there is no identity to draw with, is bare text.
+an identified caller is itself a page with that same banner. Of the answers
+to `/` and `/widgets`, only two are bare text: the missing-header fault,
+where there is no identity to draw with, and the answer dummy gives when it
+cannot reach the widgets (below).
 
 Every page with the banner also ends with the footer, the last thing on the
 page, whose text is `dummy v<semver>`: the service's name, one space, and the
 version `dummy --version` prints (`S1`), exactly as it prints it, so a user
 can tell which release is serving the page. The version is data, and no
-story fixes its value. The missing-header 500, being bare text, has no
-footer, and neither does the table fragment (`S4`).
+story fixes its value. The missing-header 500 and the 503 dummy answers
+when it cannot reach the widgets, being bare text, have no footer, and
+neither does the table fragment (`S4`).
 
 The profile link in the banner has no text of its own: it is labelled
 `Profile` for assistive technology and titled with the caller's
@@ -122,36 +125,36 @@ platform's, drawn by the platform's shared page kit for every app; dummy
 decides what goes into the banner, and the platform how it is drawn.
 
 Every HTML page dummy sends — the panel and every page with the banner: the
-404, the 405, the 415, and the 422 redraw (`S5`) — links
-`/_appkit/theme.css` as its stylesheet, loads `/_appkit/feedback.js`, and
-declares the phone-width viewport, so a phone shows it at the phone's own
-width rather than as a shrunken desktop page. The
-missing-header 500, being bare text, has none of them. The stylesheet, the fonts
-it loads, the launcher's script, and the button feedback script are the
-platform's shared files, served by dummy under `/_appkit/` (`S8`); a
-page makes no request to any third party.
+404, the 405, the 415, and the 422 redraw (`S5`) — links `/_appkit/theme.css`
+as its stylesheet, loads `/_appkit/feedback.js`, and declares the phone-width
+viewport, so a phone shows it at the phone's own width rather than as a
+shrunken desktop page. The missing-header 500 and the 503, being bare text,
+have none of them. The stylesheet, the fonts it loads, the launcher's script,
+and the button feedback script are the platform's shared files, served by
+dummy under `/_appkit/` (`S8`); a page makes no request to any third party.
 dummy serves nothing under `/assets/`: a path there is a path that does not
 exist, like any other.
 
-dummy records every request it serves in its trail (`S2`), whatever the
-route and whatever the answer, the shared files under `/_appkit/`, `/mcp`,
-and the missing-header 500 included. When the request arrives it records
+dummy records every request it serves in its trail (`S2`), whatever the route
+and whatever the answer, the shared files under `/_appkit/`, `/mcp`, the
+missing-header 500 and the 503 included. When the request arrives it records
 `request.started`, whose attributes are the request's `method`, as sent, and
 its `path`, never its query: `GET /widgets?sort=name` records the `path`
 `/widgets`. When the answer is complete it records `request.finished`, whose
-attributes are the answer's `status`, a number; `duration_us`, how long
-dummy took to answer, in whole microseconds; `request_bytes`, how many bytes
-of the request's body dummy read; and `response_bytes`, how many bytes of
-body its answer carried. Both carry the request's
-`X-Request-Id`, or the id dummy gave a request that came without one (`S2`),
-and the caller's `X-User-Id`, empty when there is none; anything dummy records
-while answering, a widget it creates (`S5`) or a tool call (`S9-mcp.md`),
-falls between the two under the same request id and user. A request with a
-`request.started` and no `request.finished` is one dummy never finished
-answering. No answer earns a line on stderr: a 404, a 405, a 415, or a 422 is
-the caller's mistake, and dummy's only 5xx, the missing-header 500 below, is
-recorded by its `request.finished` like every other answer, so a dummy
-whose telemetry takes every event writes nothing to stderr at all (`S2`).
+attributes are the answer's `status`, a number; `duration_us`, how long dummy
+took to answer, in whole microseconds; `request_bytes`, how many bytes of the
+request's body dummy read; and `response_bytes`, how many bytes of body its
+answer carried. Both carry the request's `X-Request-Id`, or the id dummy gave
+a request that came without one (`S2`), and the caller's `X-User-Id`, empty
+when there is none; anything dummy records while answering, a widget it
+creates (`S5`) or a tool call (`S9-mcp.md`), falls between the two under the
+same request id and user. A request with a `request.started` and no
+`request.finished` is one dummy never finished answering. No answer earns a
+line on stderr: a 404, a 405, a 415, or a 422 is the caller's mistake, and
+dummy's two 5xx answers, the missing-header 500 (its only 500) and the 503 it
+answers when it cannot reach the widgets, both below, are recorded by their
+`request.finished` like every other answer, so a dummy whose telemetry takes
+every event writes nothing to stderr at all (`S2`).
 
 The routes are `GET /`, which sends the caller to the panel; `GET /widgets`,
 the panel page; `GET /widgets/table`, the table fragment (`S4`); `POST
@@ -181,12 +184,13 @@ top-level heading, with a subtitle beneath it reading
 `3 widgets · refreshes every 5 seconds`.
 
 The subtitle reads `<N> widgets · refreshes every 5 seconds`, where `<N>` is
-the number of widgets when the page was rendered: `3 widgets` for the fixture
-set, `1 widget` when there is exactly one, and `0 widgets` when there are
-none. The page's script re-fetches the table every 5 seconds (`S4`), so the
-subtitle's second half is true. The subtitle is drawn when the page is rendered
-and is not part of the table, so the table's poll leaves it as it was; it catches up when the page is
-next loaded.
+the number of widgets when the page was rendered: `3 widgets` for the three
+below, `1 widget` when there is exactly one, and `0 widgets` when there are
+none, as in a database dummy has just created. The page's script re-fetches
+the table every 5 seconds (`S4`), so the subtitle's second half is true. The
+subtitle is drawn when the page is rendered and is not part of the table, so
+the table's poll leaves it as it was; it catches up when the page is next
+loaded.
 
 The table and the form share the page: in a browser window at least 960 pixels
 wide they sit side by side, the table first; narrower, as on a phone, they
@@ -213,36 +217,75 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is an HTML document titled `dummy` that links
 `/_appkit/theme.css` as its stylesheet, loads `/_appkit/feedback.js`, and
-declares the phone-width viewport.
-Its banner holds the mark, whose text is `ikigenba` and which names the
-service `dummy`; the profile link, labelled `Profile` and titled
-`mg@example.com`, leading to `http://localhost:3001/`; and the sign-out button
-reading `Sign out` in a form that POSTs to `http://localhost:3001/logout`.
-Beneath the banner is the heading `Widgets` with the subtitle
-`3 widgets · refreshes every 5 seconds`, and beneath it a table whose header
-cells read `Name`, `Count`, and `Status` and whose rows are the
-three fixture widgets in fixture order with their counts and their statuses as
-words: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12 `retired`. The
-`Count` header cell and each count cell are marked numeric, and each status
-word is inside a status marker naming that status. Beside the table is the
-card headed `Add widget` holding the form that creates a widget, with a field
-for each of a widget's three fields and a button reading `Add widget` behind
-its hidden `plus` icon; in a browser, that button, like `Sign out`, visibly
-reacts as the user presses it. The banner holds no launcher button, and the
-page loads no `/_appkit/launcher.js`, since dummy has no services file. Last
-on the page is the footer reading `dummy v<semver>`, where `v<semver>` is what
-`dummy --version` prints. Outside the banner, the address `mg@example.com`
-is not in the page's visible text. Outside the banner and the footer, the
-text `Dummy` appears nowhere.
+declares the phone-width viewport. Its banner holds the mark, whose text is
+`ikigenba` and which names the service `dummy`; the profile link, labelled
+`Profile` and titled `mg@example.com`, leading to `http://localhost:3001/`;
+and the sign-out button reading `Sign out` in a form that POSTs to
+`http://localhost:3001/logout`. Beneath the banner is the heading `Widgets`
+with the subtitle `3 widgets · refreshes every 5 seconds`, and beneath it a
+table whose header cells read `Name`, `Count`, and `Status` and whose rows are
+the three widgets in the order they were created, with their counts and their
+statuses as words: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12
+`retired`. The `Count` header cell and each count cell are marked numeric, and
+each status word is inside a status marker naming that status. Beside the
+table is the card headed `Add widget` holding the form that creates a widget,
+with a field for each of a widget's three fields and a button reading
+`Add widget` behind its hidden `plus` icon; in a browser, that button, like
+`Sign out`, visibly reacts as the user presses it. The banner holds no
+launcher button, and the page loads no `/_appkit/launcher.js`, since dummy has
+no services file. Last on the page is the footer reading `dummy v<semver>`,
+where `v<semver>` is what `dummy --version` prints. Outside the banner, the
+address `mg@example.com` is not in the page's visible text. Outside the banner
+and the footer, the text `Dummy` appears nowhere.
 
 Preconditions:
 
 - dummy is serving, started with `IKIGENBA_SERVICES` unset.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` count 3
+  status `active`, `beta` count 0 status `paused`, `gamma` count 12 status
+  `retired`.
 
 Postconditions:
 
 - Nothing has changed.
+
+## A user opens the panel before any widget exists
+
+A database dummy has just created holds no widgets, so this is the panel a
+user first sees on a new host or a developer's fresh working directory. The
+page is the same page with nothing in the table: the header row is still
+there, so the reader sees what a widget will show, and the form is there to
+create the first one.
+
+Request:
+
+```
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the panel page of `A user opens the panel`, except
+that the subtitle reads `0 widgets · refreshes every 5 seconds` and the
+table holds its header row, with cells reading `Name`, `Count`, and `Status`,
+and no other row.
+
+Preconditions:
+
+- dummy is serving, started with `IKIGENBA_SERVICES` unset.
+- The database holds no widgets: no widget has been created since dummy
+  created it.
+
+Postconditions:
+
+- Nothing has changed. The database still holds no widgets.
 
 ## A user asks for the service root
 
@@ -392,6 +435,7 @@ Status 200. The body is the panel page of `A user opens the panel`.
 Preconditions:
 
 - dummy is serving, and telemetry takes every event.
+- The database holds the widgets of `A user opens the panel`.
 
 Postconditions:
 
@@ -434,6 +478,7 @@ Preconditions:
 
 - dummy is serving, and telemetry takes every event.
 - The request carries no `X-Request-Id` header.
+- The database holds the widgets of `A user opens the panel`.
 
 Postconditions:
 
@@ -456,7 +501,7 @@ every request it forwards, a sibling app forwards the ones it received, and
 nothing but nginx and the suite's apps can reach dummy's socket. So a request
 without `X-User-Id` says the gate or a sibling is misconfigured, which is dummy's fault to report, not the caller's to fix — hence a
 500 and not a 400 or a 401. There is no identity to draw the banner from, so
-this one answer is bare text. A developer meets it by forgetting the headers,
+this answer is bare text. A developer meets it by forgetting the headers,
 as here.
 
 Request:
@@ -541,6 +586,58 @@ Postconditions:
   {"time":"<time>","service":"dummy","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"","attrs":{"method":"GET","path":"/widgets"}}
   {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":500}}
   ```
+
+## A user opens the panel while dummy cannot reach the widgets
+
+The panel shows the widgets, so when dummy cannot read them there is nothing
+true to show. It does not draw the panel as if there were no widgets, which
+would tell the user their widgets were gone; it says plainly that it cannot
+reach them, quoting nothing of the database's own error, and the user may try
+again later. The answer is bare text, with no banner and no footer. The
+fragment (`S4`) and the form (`S5`) need the widgets too and answer the same
+way; the root's redirect, the 404 and the 405 pages, the 415 a form post
+that is not form-encoded gets (`S5`), and the shared files under `/_appkit/`
+need no widget and are answered as usual.
+
+Request:
+
+```
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+```
+
+Response:
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 503. The body is exactly the one line
+`cannot reach the widgets; try again later`, ending in a newline. It has no
+banner and no footer. A `HEAD` is answered with the same status and headers
+and an empty body.
+
+Preconditions:
+
+- dummy is serving, and telemetry takes every event.
+- dummy's database cannot be read: `state/dummy.db` has become unreadable
+  since dummy opened it, the filesystem holding it failing, say.
+
+Postconditions:
+
+- Nothing has changed.
+- dummy wrote nothing to stderr. telemetry has received the request's two
+  events, in this order:
+
+  ```
+  {"time":"<time>","service":"dummy","event":"request.started","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"method":"GET","path":"/widgets"}}
+  {"time":"<time>","service":"dummy","event":"request.finished","request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":503}}
+  ```
+
+- dummy is still serving.
 
 ## A caller asks for a path that does not exist
 
@@ -697,7 +794,7 @@ Preconditions:
 - dummy is serving, started with `IKIGENBA_SERVICES=/tmp/services.json` in
   its environment.
 - `/tmp/services.json` holds the file above and is readable by dummy.
-- The widgets are the fixture set as the process started it.
+- The database holds the widgets of `A user opens the panel`.
 
 Postconditions:
 
@@ -733,6 +830,7 @@ and it loads no `/_appkit/launcher.js`.
 Preconditions:
 
 - dummy is serving, started with `IKIGENBA_SERVICES` unset.
+- The database holds the widgets of `A user opens the panel`.
 
 Postconditions:
 
@@ -775,6 +873,7 @@ Preconditions:
 - dummy is serving, started with `IKIGENBA_SERVICES=/tmp/services.json` in
   its environment.
 - `/tmp/services.json` does not exist.
+- The database holds the widgets of `A user opens the panel`.
 
 Postconditions:
 
@@ -821,6 +920,7 @@ Preconditions:
   while `/tmp/services.json` listed `ledger` as switched off, and it has not
   been restarted since.
 - `/tmp/services.json` now lists `ledger` with `enabled` `true`.
+- The database holds the widgets of `A user opens the panel`.
 
 Postconditions:
 

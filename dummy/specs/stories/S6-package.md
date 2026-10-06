@@ -13,6 +13,9 @@ style, its launcher, and its button feedback — the stylesheet, the fonts,
 their licences, the launcher's script, and the button feedback script — are
 inside the binary (`S8-assets.md`), so no `assets/`
 directory and no font file ships beside it.
+The database is not in the file: dummy creates `state/dummy.db` under its
+working directory on first start (`S2-serve.md`), and the manifest's
+`[database]` table declares it so that the host replicates it.
 The version is in the file's name and in the binary, never in a member's
 path.
 
@@ -64,6 +67,10 @@ description = "Demo widgets to list and create"
 default = false
 mcp = true
 secrets = []
+
+[database]
+engine = "sqlite"
+path = "state/dummy.db"
 ```
 
 Each command exits 0. The text is on stdout; stderr is empty. The version is

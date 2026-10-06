@@ -10,13 +10,16 @@ assembled by JavaScript, so a caller with `curl` submits exactly what a
 browser submits. A widget has three fields, and the form has one field for
 each: `name`, text, required, 1 to 40 characters and unique across widgets;
 `count`, an integer, required, zero or more; and `status`, one of exactly
-`active`, `paused`, or `retired`. The widgets are an in-memory fixture set,
-reset at process start, holding exactly three widgets in this order: `alpha`
-count 3 status `active`; `beta` count 0 status `paused`; `gamma` count 12
-status `retired`. Rows appear in creation order, so a newly created widget is
-last in the table (`S4`). dummy gives each widget it creates an id of its own,
-`wgt_` and 16 lowercase hexadecimal digits (`S3`); the form neither shows nor
-takes one.
+`active`, `paused`, or `retired`. The widgets are kept in dummy's database,
+`state/dummy.db` under its working directory, and every request shares them. A
+database dummy creates holds no widgets; every widget created since is kept
+across restarts and deploys, with the id it was given. The stories below
+start from a database holding exactly three widgets, in creation order:
+`alpha` count 3 status `active`; `beta` count 0 status `paused`; `gamma` count
+12 status `retired`. Rows appear in creation order, so a newly created widget
+is last in the table (`S4`). dummy gives each widget it creates an id of its
+own, `wgt_` and 16 lowercase hexadecimal digits (`S3`); the form neither shows
+nor takes one.
 
 Creating a widget is the one domain event dummy records in its trail, beside
 the events every app records for its start, its stop, its requests, and its
@@ -27,7 +30,9 @@ the caller's `X-User-Id` like every event of the request, and falls between
 the request's `request.started` and `request.finished`. It never carries the
 widget's name, count, or status: those are the widgets' to answer. A rejected
 submission creates nothing and records no `widget.created`; its
-`request.finished` carries the `422` or `415` it was answered with.
+`request.finished` carries the `422` or `415` it was answered with. Nor does a
+submission that arrives while dummy cannot reach the widgets, whose
+`request.finished` carries the `503` it was answered with.
 
 A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
@@ -36,14 +41,14 @@ whose body is the panel page re-rendered with the same banner and footer as a `G
 /widgets` — the same title, stylesheet link, feedback script, and viewport,
 and after the banner the page's `Widgets` heading with its subtitle
 counting the widgets as they are (`3 widgets · refreshes every 5 seconds`
-for the fixture set, `S3`), and beneath it the table exactly as it was and
+for those three, `S3`), and beneath it the table exactly as it was and
 the form in its card headed `Add widget`, still carrying the
 values the caller submitted, with an error message beside each field that was
 rejected. A submission dummy does not read at all, because its media type
 is not `application/x-www-form-urlencoded`, is answered `415` instead, and
 that answer carries no form and no field errors, there being no submitted
 values to carry. Nothing is created when a submission is rejected either
-way: the fixture set is left as it was, down to its order.
+way: the database's widgets are left as they were, down to their order.
 
 An nginx gate in front of dummy sets `X-User-Id` and `X-User-Email` on every
 upstream request, and a sibling app forwards the ones it received (`S2`), so
@@ -93,15 +98,17 @@ Status 303. The body is empty.
 Preconditions:
 
 - dummy is serving, and telemetry takes every event (`S2`).
-- The widgets are the fixture set as the process started it, so no widget is
-  named `delta`.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`. No widget is named `delta`.
 
 Postconditions:
 
 - A widget named `delta`, count 7, status `active`, now exists, with an id
   `<widget-id>` dummy gave it.
-- The fixture set holds four widgets. `delta` is last, after `gamma`, because
+- The database holds four widgets. `delta` is last, after `gamma`, because
   rows appear in creation order.
+- `delta` is kept in dummy's database: after dummy restarts, it is still
+  there, with the same id `<widget-id>`, count, and status, and still last.
 - telemetry has received the request's three events, in this order, where
   `<request-id>` is the request's id (`S2`):
 
@@ -141,7 +148,7 @@ Status 422. The body is the panel page with the same banner and footer as a
 `GET /widgets` — the mark, the profile link titled `mg@example.com` leading to
 `http://localhost:3001/`, and the sign-out button POSTing to
 `http://localhost:3001/logout` — with the `Widgets` heading, and beneath it
-the table holding the three fixture widgets in fixture order and the form in
+the table holding `alpha`, `beta`, and `gamma` in creation order and the form in
 its card headed `Add widget`, and last the footer reading `dummy v<semver>`.
 The form carries the values the caller submitted: the name field empty, the
 count field 7, the status field `active`. An error message sits beside the name field saying a
@@ -150,12 +157,13 @@ name is required. No error sits beside the count or the status field.
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with.
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had.
 
 ## A user submits a name that is already taken
 
@@ -184,7 +192,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page with the same banner and footer as a
-`GET /widgets`, with the table holding the three fixture widgets in fixture order.
+`GET /widgets`, with the table holding `alpha`, `beta`, and `gamma` in creation order.
 The form carries the values the caller submitted: the name field `alpha`, the
 count field 5, the status field `paused`. An error message sits beside the
 name field saying that name is already taken.
@@ -192,13 +200,13 @@ name field saying that name is already taken.
 Preconditions:
 
 - dummy is serving, and telemetry takes every event (`S2`).
-- The widgets are the fixture set as the process started it, so a widget named
-  `alpha` exists.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`. So a widget named `alpha` exists.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with. In
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had. In
   particular the existing `alpha` still has count 3 and status `active`; a
   duplicate name is refused, never merged into the widget that holds it.
 - dummy recorded no `widget.created`. telemetry has received the request's
@@ -229,7 +237,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page with the same banner and footer as a
-`GET /widgets`, with the table holding the three fixture widgets in fixture order.
+`GET /widgets`, with the table holding `alpha`, `beta`, and `gamma` in creation order.
 The form carries the values the caller submitted: the name field holding the
 41-character name in full, unshortened, the count field 7, the status field
 `active`. An error message sits beside the name field saying the name is too
@@ -238,12 +246,13 @@ long.
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with.
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had.
 
 ## A user submits a count that is not a number
 
@@ -270,7 +279,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page with the same banner and footer as a
-`GET /widgets`, with the table holding the three fixture widgets in fixture order.
+`GET /widgets`, with the table holding `alpha`, `beta`, and `gamma` in creation order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field holding the text `three` as it was typed, the status field
 `active`. An error message sits beside the count field saying the count must
@@ -279,12 +288,13 @@ be a whole number.
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with.
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had.
 
 ## A user submits a negative count
 
@@ -312,7 +322,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page with the same banner and footer as a
-`GET /widgets`, with the table holding the three fixture widgets in fixture order.
+`GET /widgets`, with the table holding `alpha`, `beta`, and `gamma` in creation order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field -1, the status field `active`. An error message sits beside the
 count field saying the count cannot be negative.
@@ -320,12 +330,13 @@ count field saying the count cannot be negative.
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with.
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had.
 
 ## A caller submits a status that is not one of the three
 
@@ -355,7 +366,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page with the same banner and footer as a
-`GET /widgets`, with the table holding the three fixture widgets in fixture order.
+`GET /widgets`, with the table holding `alpha`, `beta`, and `gamma` in creation order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field 7, and the status field, which offers the same three choices and
 has none of them selected, because `archived` is not one of them. An error
@@ -365,12 +376,13 @@ message sits beside the status field saying the status must be one of
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with.
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had.
 
 ## A user submits several bad fields at once
 
@@ -399,7 +411,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page with the same banner and footer as a
-`GET /widgets`, with the table holding the three fixture widgets in fixture order.
+`GET /widgets`, with the table holding `alpha`, `beta`, and `gamma` in creation order.
 The form carries the values the caller submitted: the name field empty, the
 count field holding the text `three`, and the status field with none of the
 three choices selected. Three error messages appear, one beside the name
@@ -409,12 +421,13 @@ saying what is wrong with that field.
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with.
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had.
 
 ## A caller posts a body that is not form-encoded
 
@@ -456,7 +469,9 @@ script, and viewport every page carries (`S3`) — which, between the banner
 and the footer, says the media type is not supported and carries a link to
 `/widgets`. The
 caller is identified, so this failure is a page with that banner, as the 404 and
-the 405 are (`S3`); only the missing-header 500 is bare text. The request body
+the 405 are (`S3`); of the answers the panel's pages and the form give, only
+the missing-header 500 and the 503 of a dummy that cannot reach the widgets
+are bare text. The request body
 is not read at all: `POST /widgets` accepts only
 `application/x-www-form-urlencoded`, and the names and values inside the JSON
 body are neither parsed nor reported. No form and no field errors come back,
@@ -465,12 +480,13 @@ there being no submitted values to show.
 Preconditions:
 
 - dummy is serving.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- No widget was created. The fixture set is unchanged: `alpha`, `beta`, and
-  `gamma`, in that order, with the counts and statuses they started with. In
+- No widget was created. The database's widgets are unchanged: `alpha`,
+  `beta`, and `gamma`, in that order, with the counts and statuses they had. In
   particular no widget named `delta` exists, though the JSON body named one.
 
 ## A request to create a widget arrives without the identity headers
@@ -509,14 +525,63 @@ Preconditions:
 
 - dummy is serving.
 - The request carries no `X-User-Id` header.
-- The widgets are the fixture set as the process started it.
+- The database holds exactly these widgets, in creation order: `alpha` 3
+  `active`, `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- Nothing has changed. No widget was created, and the fixture set is
+- Nothing has changed. No widget was created, and the database's widgets are
   unchanged.
 - dummy wrote nothing to stderr about the 500. Its trail records the
   request as it records every request (`S3`): a `request.started` with the
   `method` `POST` and the `path` `/widgets`, and a `request.finished` with
   the `status` 500, both with an empty user, under the id dummy gave the
   request (`S2`).
+
+## A user adds a widget while dummy cannot reach the widgets
+
+Creating a widget means storing it, so when dummy cannot write its database
+there is nothing it can truly report as created. It does not answer as if the
+widget were stored, which would send the user back to a panel that lacks it;
+it says plainly that it cannot reach the widgets, quoting nothing of the
+database's own error, and the user may try again later. The submission below
+is one dummy would otherwise accept, so the database alone is why it fails. A
+submission dummy would reject on its fields gets the same 503, since that
+answer shows the table; a body that is not form-encoded still gets its 415.
+
+Request:
+
+```
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=delta&count=7&status=active
+```
+
+Response:
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 503. The body is exactly the one line
+`cannot reach the widgets; try again later`, ending in a newline. It has no
+banner and no footer, and no form.
+
+Preconditions:
+
+- dummy is serving, and telemetry takes every event (`S2`).
+- dummy can no longer read or write `state/dummy.db`: the filesystem holding
+  it failing or full, say.
+
+Postconditions:
+
+- Nothing has changed. No widget was created; nothing was stored.
+- dummy wrote nothing to stderr. dummy recorded no `widget.created`.
+  telemetry has received the request's `request.started`, with the `method`
+  `POST` and the `path` `/widgets`, and its `request.finished`, with the
+  `status` 503, both under user `u_7f3a9c21`, and nothing between them.
+- dummy is still serving.
