@@ -139,7 +139,7 @@ Sequence:
                disabled app is rewritten and left disabled. The resources
                an app's manifest declares are kept as install wrote them;
                a manifest that is no longer valid stops init before
-               anything is rewritten
+               any app is rewritten
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
