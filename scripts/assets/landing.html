@@ -27,10 +27,10 @@
      order list, show, create, update, delete, run, runs, result, cancel,
      each holding the tool's name in a code element and followed by a dd
      holding the first line of its description; a#about-link whose href is
-     "/about". No script. */}}
+     "/about". No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>scripts</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><script src="/_appkit/feedback.js" defer></script><title>scripts</title></head>
 <body>
 {{template "banner" .Banner}}
 <main>

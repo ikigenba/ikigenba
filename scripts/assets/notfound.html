@@ -3,10 +3,10 @@
      file of a run. No banner, as sites' not-found page has none; footer
      only. Data: .Banner (a page.Banner, for the footer). Hooks: h1 with text
      "Not found"; p#notfound with text "There is nothing at this address.";
-     no banner; no script. */}}
+     no banner; no script but appkit's /_appkit/feedback.js. */}}
 {{define "notfound"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>Not found</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><script src="/_appkit/feedback.js" defer></script><title>Not found</title></head>
 <body>
 <main>
 <h1>Not found</h1>
