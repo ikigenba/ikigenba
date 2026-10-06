@@ -33,6 +33,7 @@ Commands:
   restart   restart an installed app's service
   restore   restore a service from its backups
   retire    stop every service and take the host's final backup
+  snapshot  copy a service's files and database to S3 as one tarball
   status    print every installed app, its version and its state
   uninstall take an app off the host, keeping its data
   version   print the version
@@ -194,10 +195,10 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-U1KU-CUA0
+	// R-1CK7-0LUS
 	user := depsAt(t, 1)
 
-	wantCommands := []string{"backup", "cert", "config", "disable", "dns", "enable", "host", "init", "install", "nginx", "restart", "restore", "retire", "status", "uninstall", "version"}
+	wantCommands := []string{"backup", "cert", "config", "disable", "dns", "enable", "host", "init", "install", "nginx", "restart", "restore", "retire", "snapshot", "status", "uninstall", "version"}
 	for _, name := range wantCommands {
 		_, stderr, _ := invoke([]string{name}, user)
 		if strings.Contains(stderr, "unknown command") {
@@ -241,7 +242,7 @@ func TestCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-U2SQ-QM0P
+	// R-1DS3-EDLH
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,12 +16,13 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
-const restoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp>]
+const restoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
 Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with a backup, and, when
 SERVICE declares a [database], replace that database with what litestream
-holds. Without --at both halves are the newest there is. Nothing under bin/ or
-share/ is touched.
+holds. Without --at or --from both halves are the newest there is. With
+--from, everything comes from the one snapshot at that URI instead, database
+included. Nothing under bin/ or share/ is touched.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -37,16 +39,24 @@ never ran SERVICE is replicated from the start line on.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
+  --from <uri>        restore the service from the snapshot at this s3:// URI
 
 --at governs both halves: the files come from the newest tarball written at or
 before that moment, and the database is rebuilt to the moment itself. The two
 are not the same instant, because the tarball is written on a timer and the
 database is replicated continuously.
 
+--from takes etc/, state/, and the database from a snapshot 'opsctl snapshot'
+wrote, and reads neither the backups nor litestream's replica. A snapshot holds
+no etc/env, so --from writes it as 'opsctl install' does, from the parameter
+/<host.name>/SERVICE and the manifest the snapshot holds. It cannot be
+combined with --at.
+
 Configuration keys:
   aws.region      the region the backup bucket lives in
   backup.s3_uri   the prefix this host backs up to
   host.name       the fully-qualified name this host answers at
+  apps.drain_seconds  how long the app may drain when stopped (default 5)
   backup.service_db_seconds  how often a declared database is snapshotted whole
   backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
@@ -54,6 +64,7 @@ Configuration keys:
 type restoreInvocation struct {
 	service string
 	at      *time.Time
+	from    string
 }
 
 type restoreStore interface {
@@ -99,7 +110,7 @@ func runRestoreWithStore(args []string, stdout, stderr io.Writer, deps Deps, sto
 	}
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
 	report, runErr := backup.Restore(
-		context.Background(), env, deps.Cloud, config.Store{Root: deps.Root}, invocation.service, invocation.at,
+		context.Background(), env, deps.Cloud, config.Store{Root: deps.Root}, invocation.service, invocation.at, invocation.from,
 		func(ctx context.Context) error {
 			if err := nginx.Write(ctx, env, hostName, apexApp); err != nil {
 				return err
@@ -113,7 +124,7 @@ func runRestoreWithStore(args []string, stdout, stderr io.Writer, deps Deps, sto
 
 func parseRestoreInvocation(args []string) (restoreInvocation, string) {
 	var invocation restoreInvocation
-	seenAt := false
+	seenAt, seenFrom := false, false
 	remaining := args
 	for len(remaining) > 0 {
 		argument := remaining[0]
@@ -123,6 +134,9 @@ func parseRestoreInvocation(args []string) (restoreInvocation, string) {
 				return restoreInvocation{}, "duplicate option '--at'"
 			}
 			seenAt = true
+			if seenFrom {
+				return restoreInvocation{}, "--at and --from cannot be combined"
+			}
 			if len(remaining) == 0 {
 				return restoreInvocation{}, "--at takes an RFC 3339 timestamp"
 			}
@@ -133,6 +147,25 @@ func parseRestoreInvocation(args []string) (restoreInvocation, string) {
 				return restoreInvocation{}, "--at takes an RFC 3339 timestamp"
 			}
 			invocation.at = &parsed
+			continue
+		}
+		if argument == "--from" {
+			if seenFrom {
+				return restoreInvocation{}, "duplicate option '--from'"
+			}
+			seenFrom = true
+			if seenAt {
+				return restoreInvocation{}, "--at and --from cannot be combined"
+			}
+			if len(remaining) == 0 {
+				return restoreInvocation{}, "--from takes an s3:// URI"
+			}
+			value := remaining[0]
+			remaining = remaining[1:]
+			if !validRestoreURI(value) {
+				return restoreInvocation{}, "--from takes an s3:// URI"
+			}
+			invocation.from = value
 			continue
 		}
 		if strings.HasPrefix(argument, "-") {
@@ -230,4 +263,9 @@ func writeRestoreStoppedDetail(stderr io.Writer, stopped []string) {
 	default:
 		_, _ = fmt.Fprintf(stderr, "%s, and %s were left stopped\n", diagnosticArg(strings.Join(stopped[:len(stopped)-1], ", ")), diagnosticArg(stopped[len(stopped)-1]))
 	}
+}
+
+func validRestoreURI(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "s3" && parsed.Hostname() != "" && parsed.Host == parsed.Hostname() && parsed.User == nil && parsed.Opaque == "" && parsed.RawQuery == "" && !parsed.ForceQuery && parsed.Fragment == "" && !strings.Contains(value, "#") && strings.HasPrefix(parsed.Path, "/") && len(parsed.Path) > 1
 }

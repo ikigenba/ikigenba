@@ -348,7 +348,7 @@ func assertLastAndOnlyStageReport(t *testing.T, reports []installReport, stage s
 }
 
 func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-OXY2-H0UX
+	// R-18WH-VAMP
 	tests := []struct {
 		name       string
 		target     string

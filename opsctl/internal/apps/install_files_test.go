@@ -18,7 +18,7 @@ import (
 )
 
 func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
-	// R-UNZ2-GM76
+	// R-2LOH-64AH
 	manifest := []byte("app = \"notes\"\n")
 	tests := []struct {
 		name    string
@@ -56,7 +56,7 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 }
 
 func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
-	// R-UNZ2-GM76
+	// R-2LOH-64AH
 	root := t.TempDir()
 	archive := tarEntries(t, []installTarEntry{
 		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o644),
@@ -199,11 +199,11 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 }
 
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
-	// R-UNZ2-GM76
+	// R-2LOH-64AH
 	// R-OUAD-BPMU
 	// R-WY7U-IS2M
 	// R-UQEV-85OK
-	// R-OXY2-H0UX
+	// R-18WH-VAMP
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "stale"), []byte("old"), 0o700)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "stale"), []byte("old"), 0o600)
@@ -271,7 +271,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 }
 
 func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-UNZ2-GM76
+	// R-2LOH-64AH
 	root := t.TempDir()
 	outside := t.TempDir()
 	writeFixture(t, filepath.Join(outside, "marker"), []byte("unchanged"), 0o600)

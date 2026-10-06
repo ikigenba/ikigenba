@@ -135,7 +135,7 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-YOP2-C25X, R-YPWY-PTWM, R-YR4V-3LNB, R-YSCR-HDE0, R-EOKC-P8UO
+	// R-YOP2-C25X, R-YPWY-PTWM, R-2MWD-JW16, R-YSCR-HDE0, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()

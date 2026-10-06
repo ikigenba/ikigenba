@@ -45,6 +45,7 @@ Commands:
   restart   restart an installed app's service
   restore   restore a service from its backups
   retire    stop every service and take the host's final backup
+  snapshot  copy a service's files and database to S3 as one tarball
   status    print every installed app, its version and its state
   uninstall take an app off the host, keeping its data
   version   print the version
@@ -220,6 +221,8 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 		return runRetire(args, stdout, stderr, deps)
 	case "host":
 		return runHost(args, stdout, stderr, deps)
+	case "snapshot":
+		return runSnapshot(args, stdout, stderr, deps)
 	case "backup":
 		return runBackup(args, stdout, stderr, deps)
 	case "cert":

@@ -237,7 +237,7 @@ func discoverDatabases(root string) ([]databaseService, error) {
 }
 
 func invalidDatabaseServiceName(name string) bool {
-	return name == "" || name == "." || name == ".." || name == "host" || name == "deploy" || strings.ContainsAny(name, "/\x00")
+	return name == "" || name == "." || name == ".." || name == "host" || name == "deploy" || name == "snapshots" || name == "seed" || strings.ContainsAny(name, "/\x00")
 }
 
 func renderConfiguration(root string, settings replicationSettings, services []databaseService) []byte {

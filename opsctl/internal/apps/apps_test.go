@@ -84,7 +84,7 @@ func TestServiceFields(t *testing.T) {
 	}
 }
 
-// R-A2TS-K4M0
+// R-158S-PZEM
 func TestValidateName(t *testing.T) {
 	valid := []string{
 		"a",
@@ -110,6 +110,10 @@ func TestValidateName(t *testing.T) {
 		"host",
 		"HOST",
 		"deploy",
+		"snapshots",
+		"SnApShOtS",
+		"seed",
+		"SEED",
 		"backup-host",
 		"BACKUP-SERVICES",
 		"renew-certificate",

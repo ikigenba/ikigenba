@@ -179,7 +179,7 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 }
 
 func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
-	// R-LEL8-NRBG R-RSC3-99UG
+	// R-LEL8-NRBG R-1A4E-92DE
 	root, store := regenerationFixture(t)
 	for _, key := range []string{"backup.service_db_seconds", "backup.service_wal_seconds"} {
 		if err := store.Set(key, "9223372036"); err != nil {
@@ -205,8 +205,8 @@ func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
 }
 
 func TestRegenerateRejectsReservedDatabaseService(t *testing.T) {
-	// R-RSC3-99UG
-	for _, name := range []string{"host", "deploy"} {
+	// R-1A4E-92DE
+	for _, name := range []string{"host", "deploy", "snapshots", "seed"} {
 		t.Run(name, func(t *testing.T) {
 			root, store := regenerationFixture(t)
 			writeService(t, root, name, "[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")

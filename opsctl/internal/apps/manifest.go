@@ -39,15 +39,16 @@ type tomlValue struct {
 }
 
 type manifestDecoder struct {
-	data       []byte
-	position   int
-	table      []string
-	seen       map[string]struct{}
-	tables     map[string]tomlKind
-	result     Manifest
-	portSeen   bool
-	firstError error
-	resources  map[string]tomlValue
+	data              []byte
+	position          int
+	table             []string
+	seen              map[string]struct{}
+	tables            map[string]tomlKind
+	result            Manifest
+	portSeen          bool
+	firstError        error
+	databasePathError error
+	resources         map[string]tomlValue
 }
 
 const portError = "'port' is not allowed; the host gives the app its socket"
@@ -158,14 +159,20 @@ func (decoder *manifestDecoder) manifest() (Manifest, error) {
 	if decoder.firstError != nil {
 		return Manifest{}, fmt.Errorf("invalid manifest: %w", decoder.firstError)
 	}
-	if decoder.result.Database != nil {
-		if err := validateDatabase(decoder.result.Database); err != nil {
-			return Manifest{}, fmt.Errorf("invalid manifest: %w", err)
-		}
-	}
 	for _, character := range decoder.result.Description {
 		if character <= '\u001f' || character == '\u007f' {
 			return Manifest{}, errors.New("'description' must be one line of text")
+		}
+	}
+	if decoder.result.Database != nil {
+		if decoder.result.Database.Engine != "sqlite" {
+			return Manifest{}, errors.New("'database.engine' must be \"sqlite\"")
+		}
+		if decoder.databasePathError != nil {
+			return Manifest{}, fmt.Errorf("invalid manifest: %w", decoder.databasePathError)
+		}
+		if err := validateDatabase(decoder.result.Database); err != nil {
+			return Manifest{}, fmt.Errorf("invalid manifest: %w", err)
 		}
 	}
 	resources, err := parseResources(decoder.resources)
@@ -428,12 +435,13 @@ func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
 		switch path[1] {
 		case "engine":
 			if value.kind != tomlString {
-				return decoder.errorf("database.engine must be a string")
+				return nil
 			}
 			decoder.result.Database.Engine = value.text
 		case "path":
 			if value.kind != tomlString {
-				return decoder.errorf("database.path must be a string")
+				decoder.databasePathError = decoder.errorf("database.path must be a string")
+				return nil
 			}
 			decoder.result.Database.Path = value.text
 		}

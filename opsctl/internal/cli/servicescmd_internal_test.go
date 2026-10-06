@@ -15,7 +15,7 @@ import (
 )
 
 func TestInstallConfigureServicesActionAndReportFailuresPreserveBothCauses(t *testing.T) {
-	// R-YR4V-3LNB
+	// R-2MWD-JW16
 	for _, failedStep := range []string{"nginx", "services", "litestream"} {
 		t.Run(failedStep, func(t *testing.T) {
 			root := t.TempDir()
@@ -93,7 +93,7 @@ func TestRestoreServicesPublicationIsSilentAndRunsOnlyAfterNginx(t *testing.T) {
 			}
 			client := newHostCLICloud()
 			if failure != "source" {
-				client.objects["s3://backups.example/host/notes/2026-09-16T10:00:00Z.tar.zst"] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "state/value", "restored")...)
+				client.objects["s3://backups.example/host/notes/2026-09-16T10:00:00Z.tar.zst"] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "restored")...)
 			}
 			if err := os.MkdirAll(filepath.Join(root, "var/lib/ikigenba"), 0o750); err != nil {
 				t.Fatal(err)

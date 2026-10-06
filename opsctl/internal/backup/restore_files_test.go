@@ -19,7 +19,7 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-XEAW-84OR R-G04K-RO7W R-KALQ-MZPK
+	// R-XEAW-84OR R-23DZ-FK62 R-KALQ-MZPK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/stale", "remove", 0o600)
@@ -41,7 +41,7 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 	client := restoreClientFor(t, body)
 	executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true, accountUID: uid, accountGID: accountGID}
 
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 			)
 			client := restoreClientForService(t, body, test.service)
 			executor := &restoreStageExecutor{t: t, root: root, installed: test.installed, active: test.active}
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, test.service, nil, func(context.Context) error { return nil })
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, test.service, nil, "", func(context.Context) error { return nil })
 			if err != nil || len(report.Steps) != 6 || report.Steps[1].Detail != test.wantStop {
 				t.Fatalf("Restore() = %+v, %v, want stop %q", report, err, test.wantStop)
 			}
@@ -146,7 +146,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 	// R-YBI2-GUY1
-	// R-XEAW-84OR R-G7FZ-2AO2 R-Z77G-EW83
+	// R-XEAW-84OR R-G7FZ-2AO2 R-1XAH-IPGL
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {
 		name         string
@@ -189,7 +189,7 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 				failCommand: test.failCommand, failResult: test.failResult, failErr: transport,
 			}
 			downstreamCalls := 0
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error {
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error {
 				downstreamCalls++
 				return nil
 			})
@@ -230,7 +230,7 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 	)
 	client := restoreClientFor(t, body)
 	executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true, accountLookupErr: errors.New("identity backend unavailable")}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	var restoreErr *backup.RestoreError
 	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "ownership" || len(report.Steps) != 3 || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
 		t.Fatalf("Restore() = %+v, %#v", report, err)
@@ -251,7 +251,7 @@ func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
 	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), gname: "ikigenba"})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "id --user ikigenba", failErr: errors.New("account backend unavailable")}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	var failure *backup.RestoreError
 	var commandFailure *host.CommandError
 	if !errors.As(err, &failure) || failure.Stage != "ownership" || !errors.As(err, &commandFailure) || len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[0].Err != nil || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
@@ -273,7 +273,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 	client := restoreClientFor(t, body)
 	accountGID := restoreAlternateGID(t)
 	executor := &restoreStageExecutor{t: t, root: root, accountMissing: true, accountUID: os.Getuid(), accountGID: accountGID}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 4 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
@@ -294,7 +294,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-KALQ-MZPK R-G04K-RO7W R-G7FZ-2AO2 R-Z77G-EW83
+	// R-KALQ-MZPK R-23DZ-FK62 R-G7FZ-2AO2 R-1XAH-IPGL
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
@@ -306,7 +306,7 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 	client := restoreClientFor(t, body)
 	executor := &restoreStageExecutor{t: t, root: root}
 	downstreamCalls := 0
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error {
 		downstreamCalls++
 		return nil
 	})
@@ -339,7 +339,7 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 	)
 	client := restoreClientFor(t, body)
 	executor := &restoreStageExecutor{t: t, root: root, accountUID: os.Getuid(), accountGID: os.Getgid()}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 4 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
@@ -360,7 +360,7 @@ func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
 	client := restoreClientFor(t, body)
 	executor := &restoreStageExecutor{t: t, root: root, accountUID: os.Getuid(), accountGID: os.Getgid(), accountPrimaryGroup: "users"}
 
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	var restoreErr *backup.RestoreError
 	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "ownership" {
 		t.Fatalf("Restore() = %+v, %#v, want ownership failure", report, err)

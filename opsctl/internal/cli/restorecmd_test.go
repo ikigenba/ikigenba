@@ -20,12 +20,13 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-const wantRestoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp>]
+const wantRestoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
 Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with a backup, and, when
 SERVICE declares a [database], replace that database with what litestream
-holds. Without --at both halves are the newest there is. Nothing under bin/ or
-share/ is touched.
+holds. Without --at or --from both halves are the newest there is. With
+--from, everything comes from the one snapshot at that URI instead, database
+included. Nothing under bin/ or share/ is touched.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -42,22 +43,30 @@ never ran SERVICE is replicated from the start line on.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
+  --from <uri>        restore the service from the snapshot at this s3:// URI
 
 --at governs both halves: the files come from the newest tarball written at or
 before that moment, and the database is rebuilt to the moment itself. The two
 are not the same instant, because the tarball is written on a timer and the
 database is replicated continuously.
 
+--from takes etc/, state/, and the database from a snapshot 'opsctl snapshot'
+wrote, and reads neither the backups nor litestream's replica. A snapshot holds
+no etc/env, so --from writes it as 'opsctl install' does, from the parameter
+/<host.name>/SERVICE and the manifest the snapshot holds. It cannot be
+combined with --at.
+
 Configuration keys:
   aws.region      the region the backup bucket lives in
   backup.s3_uri   the prefix this host backs up to
   host.name       the fully-qualified name this host answers at
+  apps.drain_seconds  how long the app may drain when stopped (default 5)
   backup.service_db_seconds  how often a declared database is snapshotted whole
   backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func TestRestoreHelpIsExactAndInert(t *testing.T) {
-	// R-XJ6H-R7NJ
+	// R-29HH-CEVJ
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "host-state")
@@ -84,13 +93,19 @@ func TestRestoreHelpIsExactAndInert(t *testing.T) {
 }
 
 func TestRestoreGrammarAcceptsAtInEitherPosition(t *testing.T) {
-	// R-GCBK-LDMU
+	// R-289K-YN4U
 	const stamp = "2026-09-16T10:30:00.123Z"
 	wantTime, _ := time.Parse(time.RFC3339, stamp)
 	for _, args := range [][]string{{"notes", "--at", stamp}, {"--at", stamp, "notes"}} {
 		got, message := parseRestoreInvocation(args)
 		if message != "" || got.service != "notes" || got.at == nil || !got.at.Equal(wantTime) {
 			t.Fatalf("parseRestoreInvocation(%q) = %+v, %q", args, got, message)
+		}
+	}
+	for _, args := range [][]string{{"notes", "--from", "s3://other.example/seed/item.tar.zst"}, {"--from", "s3://other.example/seed/item.tar.zst", "notes"}} {
+		got, message := parseRestoreInvocation(args)
+		if message != "" || got.service != "notes" || got.at != nil || got.from != "s3://other.example/seed/item.tar.zst" {
+			t.Fatalf("from invocation = %+v, %q", got, message)
 		}
 	}
 	got, message := parseRestoreInvocation([]string{"notes"})
@@ -100,16 +115,32 @@ func TestRestoreGrammarAcceptsAtInEitherPosition(t *testing.T) {
 }
 
 func TestRestoreGrammarRejectsInvalidInvocationsBeforeHostAccess(t *testing.T) {
-	// R-GCBK-LDMU
+	// R-289K-YN4U
 	for _, test := range []struct {
 		args []string
 		want string
 	}{
 		{args: nil, want: "restore needs SERVICE"},
+		{args: []string{"notes", "--from", "s3://bucket"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3://bucket/"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3:///key"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3://u@bucket/key"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3://bucket:443/key"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3:key"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3://bucket/key?x=1"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3://bucket/key?"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3://bucket/key#x"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "s3://bucket/key#"}, want: "--from takes an s3:// URI"},
+
 		{args: []string{"one", "two"}, want: "restore takes one SERVICE"},
 		{args: []string{"notes", "--at"}, want: "--at takes an RFC 3339 timestamp"},
 		{args: []string{"notes", "--at", "tomorrow"}, want: "--at takes an RFC 3339 timestamp"},
 		{args: []string{"--at", "2026-09-16T10:30:00Z", "--at", "2026-09-16T10:30:00Z", "notes"}, want: "duplicate option '--at'"},
+		{args: []string{"notes", "--from"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--from", "https://bucket/key"}, want: "--from takes an s3:// URI"},
+		{args: []string{"notes", "--at", "2026-09-16T10:30:00Z", "--from", "s3://bucket/key"}, want: "--at and --from cannot be combined"},
+		{args: []string{"notes", "--from", "s3://bucket/key", "--at", "2026-09-16T10:30:00Z"}, want: "--at and --from cannot be combined"},
+		{args: []string{"notes", "--from", "s3://bucket/key", "--from", "s3://bucket/key"}, want: "duplicate option '--from'"},
 		{args: []string{"notes", "--force"}, want: "unknown option '--force'"},
 		{args: []string{"notes", "-h"}, want: "unknown option '-h'"},
 	} {
@@ -134,7 +165,7 @@ func TestRestoreGrammarRejectsInvalidInvocationsBeforeHostAccess(t *testing.T) {
 }
 
 func TestRestoreInvalidNonRootInvocationReportsGrammarBeforeRefusal(t *testing.T) {
-	// R-GCBK-LDMU
+	// R-289K-YN4U
 	root := filepath.Join(t.TempDir(), "host-state")
 	if err := os.WriteFile(root, []byte("unchanged"), 0o600); err != nil {
 		t.Fatal(err)
@@ -280,7 +311,7 @@ func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
 				}
 			}
 			client := newHostCLICloud()
-			client.objects["s3://backups.example/host/notes/2026-09-16T10:00:00Z.tar.zst"] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "state/value", "restored")...)
+			client.objects["s3://backups.example/host/notes/2026-09-16T10:00:00Z.tar.zst"] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "restored")...)
 			accountCalls := 0
 			executeZstd := roundTripZstdExecute(nil)
 			execute := func(ctx context.Context, command host.Command) (host.Result, error) {
@@ -350,7 +381,7 @@ func readRestoreServicesFile(t *testing.T, root string) string {
 }
 
 func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
-	// R-GCBK-LDMU R-XHYL-DFWU
+	// R-289K-YN4U R-XHYL-DFWU R-2J8O-EKT3
 	const (
 		older  = "2026-09-16T10:00:00Z"
 		later  = "2026-09-16T11:00:00Z"
@@ -365,6 +396,8 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 		{name: "option before service", args: []string{"restore", "--at", cutoff, "notes"}, wantStamp: older, wantValue: "older"},
 		{name: "option after service", args: []string{"restore", "notes", "--at", cutoff}, wantStamp: older, wantValue: "older"},
 		{name: "nil selects newest", args: []string{"restore", "notes"}, wantStamp: later, wantValue: "later"},
+		{name: "from before service", args: []string{"restore", "--from", "s3://other.example/seed/object.tar.zst", "notes"}, wantValue: "snapshot"},
+		{name: "from after service", args: []string{"restore", "notes", "--from", "s3://other.example/seed/object.tar.zst"}, wantValue: "snapshot"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := configuredBackupRoot(t)
@@ -376,9 +409,10 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 				t.Fatal(err)
 			}
 			client := newHostCLICloud()
+			client.objects["s3://other.example/seed/object.tar.zst"] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "snapshot")...)
 			for stamp, value := range map[string]string{older: "older", later: "later"} {
 				uri := "s3://backups.example/host/notes/" + stamp + ".tar.zst"
-				client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "state/value", value)...)
+				client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, value)...)
 			}
 			executeZstd := roundTripZstdExecute(nil)
 			execute := func(ctx context.Context, command host.Command) (host.Result, error) {
@@ -405,6 +439,9 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 
 			stdout, stderr, code := invokeBackupCLI(test.args, hostCLIDeps(root, client, execute))
 			wantPrefix := "source: ok (notes/" + test.wantStamp + ".tar.zst, "
+			if test.wantValue == "snapshot" {
+				wantPrefix = "source: ok (s3://other.example/seed/object.tar.zst, "
+			}
 			if code != 0 || stderr != "" || !strings.HasPrefix(stdout, wantPrefix) {
 				t.Fatalf("%q = exit %d stdout %q stderr %q, want source prefix %q", test.args, code, stdout, stderr, wantPrefix)
 			}
@@ -563,7 +600,7 @@ func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
 }
 
 func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
-	// R-XHYL-DFWU
+	// R-XHYL-DFWU R-2J8O-EKT3
 	root := configuredBackupRoot(t)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "LOCALHOST."); err != nil {
@@ -585,13 +622,15 @@ func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
 			return nil, errors.New("unexpected cloud access")
 		}},
 	}
-	stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, deps)
-	if code != 1 || stdout != "" || stderr != "opsctl: host.apex is set but host.name 'localhost' has no parent domain\n" || used {
-		t.Fatalf("invalid restore apex = exit %d stdout %q stderr %q used %v", code, stdout, stderr, used)
-	}
-	for _, name := range []string{"opt/notes", "run/opsctl/restore/notes.active", "etc/nginx/conf.d/ikigenba.conf"} {
-		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(name))); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("invalid restore apex changed %s: %v", name, err)
+	for _, args := range [][]string{{"restore", "notes"}, {"restore", "notes", "--from", "s3://bucket/key"}} {
+		stdout, stderr, code := invokeBackupCLI(args, deps)
+		if code != 1 || stdout != "" || stderr != "opsctl: host.apex is set but host.name 'localhost' has no parent domain\n" || used {
+			t.Fatalf("invalid restore apex = exit %d stdout %q stderr %q used %v", code, stdout, stderr, used)
+		}
+		for _, name := range []string{"opt/notes", "run/opsctl/restore/notes.active", "etc/nginx/conf.d/ikigenba.conf"} {
+			if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(name))); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("invalid restore apex changed %s: %v", name, err)
+			}
 		}
 	}
 }
@@ -651,8 +690,8 @@ type restoreStoreFunc func(string) (string, error)
 
 func (f restoreStoreFunc) Get(key string) (string, error) { return f(key) }
 
-func makeRestoreCLITar(t *testing.T, name, content string) []byte {
-	return makeRestoreCLIArchive(t, map[string]string{name: content})
+func makeRestoreCLITar(t *testing.T, content string) []byte {
+	return makeRestoreCLIArchive(t, map[string]string{"state/value": content})
 }
 
 func makeRestoreCLIArchive(t *testing.T, files map[string]string) []byte {
@@ -674,4 +713,52 @@ func makeRestoreCLIArchive(t *testing.T, files map[string]string) []byte {
 		t.Fatal(err)
 	}
 	return archive.Bytes()
+}
+
+func TestRestoreFromFailuresRenderReportedSteps(t *testing.T) {
+	// R-2J8O-EKT3
+	const uri = "s3://other.example/seed/object.tar.zst"
+	for _, stage := range []string{"source", "secrets"} {
+		t.Run(stage, func(t *testing.T) {
+			root := configuredBackupRoot(t)
+			if err := (config.Store{Root: root}).Set("host.name", "HOST.Example.Test."); err != nil {
+				t.Fatal(err)
+			}
+			client := &restoreFromCLICloud{hostCLICloud: newHostCLICloud()}
+			if stage == "secrets" {
+				client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLIArchive(t, map[string]string{"etc/manifest.toml": "app = \"notes\"\nsecrets = [\"TOKEN\"]\n"})...)
+			}
+			executeZstd := roundTripZstdExecute(nil)
+			deps := Deps{Root: root, EUID: 0, Now: func() time.Time { return time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC) }, Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return client, nil }}, Execute: func(ctx context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "zstd" {
+					return executeZstd(ctx, command)
+				}
+				t.Fatalf("unexpected process %s %v", command.Name, command.Args)
+				return host.Result{}, nil
+			}}
+			stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes", "--from", uri}, deps)
+			if code != 1 || stderr != "opsctl: restore notes failed at "+stage+"\n" || !strings.Contains(stdout, stage+": failed: ") {
+				t.Fatalf("%s failure = %d %q %q", stage, code, stdout, stderr)
+			}
+			if stage == "source" && stdout != "source: failed: "+uri+": no such object\n" {
+				t.Fatalf("source row = %q", stdout)
+			}
+			if stage == "secrets" && (!strings.HasPrefix(stdout, "source: ok (") || client.parameter != "/host.example.test/notes") {
+				t.Fatalf("secrets output/parameter = %q / %q", stdout, client.parameter)
+			}
+			if _, err := os.Stat(filepath.Join(root, "opt/notes")); !os.IsNotExist(err) {
+				t.Fatalf("failed restore wrote service: %v", err)
+			}
+		})
+	}
+}
+
+type restoreFromCLICloud struct {
+	*hostCLICloud
+	parameter string
+}
+
+func (client *restoreFromCLICloud) ReadSecrets(_ context.Context, parameter string) (map[string]string, error) {
+	client.parameter = parameter
+	return map[string]string{}, nil
 }

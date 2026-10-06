@@ -103,7 +103,7 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 }
 
 func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
-	// R-RPWA-HQD2 R-DCSZ-8N4J R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
+	// R-1EZZ-S5C6 R-DCSZ-8N4J R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o640)
@@ -203,7 +203,7 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 }
 
 func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
-	// R-RPWA-HQD2
+	// R-1EZZ-S5C6
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/state/value", "notes", 0o600)
@@ -228,7 +228,7 @@ func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
 		t.Fatalf("uploads = %v", client.puts)
 	}
 
-	for _, name := range []string{".", "..", "nested/name", "nul\x00name", "host", "deploy"} {
+	for _, name := range []string{".", "..", "nested/name", "nul\x00name", "host", "deploy", "snapshots", "seed"} {
 		before := len(client.puts)
 		serviceAccess := newFileAccessWatch(t, filepath.Join(root, "opt"))
 		results, err = backup.Files(context.Background(), env, cloud.Env{Open: client.open}, store, name)

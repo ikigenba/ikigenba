@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -76,7 +77,7 @@ type serviceRestoreSource struct {
 
 // Restore selects and validates the requested service backup before any host
 // state is changed.
-func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store, service string, at *time.Time, regenerateNginx NginxRegenerator) (RestoreReport, error) {
+func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store, service string, at *time.Time, from string, regenerateNginx NginxRegenerator) (RestoreReport, error) {
 	var report RestoreReport
 	if invalidFileServiceName(service) {
 		return report, fmt.Errorf("invalid service %q", service)
@@ -84,6 +85,24 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	prefix, region, err := fileBackupConfiguration(store, service)
 	if err != nil {
 		return report, err
+	}
+	var hostName string
+	if from != "" {
+		if at != nil {
+			return report, errors.New("--at and --from cannot be combined")
+		}
+		parsed, parseErr := url.Parse(from)
+		if parseErr != nil || parsed.Scheme != "s3" || parsed.Host == "" || parsed.Hostname() == "" || parsed.User != nil || strings.Contains(parsed.Host, ":") || parsed.Opaque != "" || parsed.RawQuery != "" || parsed.ForceQuery || strings.Contains(from, "#") || parsed.Fragment != "" || strings.TrimPrefix(parsed.Path, "/") == "" {
+			return report, errors.New("--from takes an s3:// URI")
+		}
+		hostName, err = requiredSetting(store, "host.name")
+		if err != nil {
+			return report, err
+		}
+		hostName = host.NormalizeName(hostName)
+		if hostName == "" {
+			return report, errors.New("host.name not set")
+		}
 	}
 	if regenerateNginx == nil {
 		return report, errors.New("restore nginx regeneration is not configured")
@@ -111,15 +130,43 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		return failRestoreStep(report, service, "source", "source", err, nil)
 	}
 
-	source, err := loadServiceRestoreSource(ctx, env, client, prefix, service, at)
+	var source serviceRestoreSource
+	if from == "" {
+		source, err = loadServiceRestoreSource(ctx, env, client, prefix, service, at)
+	} else {
+		source, err = loadSnapshotRestoreSource(ctx, env, client, from, service)
+	}
 	if err != nil {
 		report.Steps = append(report.Steps, RestoreStep{Name: "source", Err: err})
 		return report, &RestoreError{Service: service, Stage: "source", Err: err}
 	}
-	report.Steps = append(report.Steps, RestoreStep{
-		Name:   "source",
-		Detail: fmt.Sprintf("%s/%s, %.1f MiB", service, source.basename, float64(source.size)/1048576),
-	})
+	sourceName := service + "/" + source.basename
+	if from != "" {
+		sourceName = from
+	}
+	report.Steps = append(report.Steps, RestoreStep{Name: "source", Detail: fmt.Sprintf("%s, %.1f MiB", sourceName, float64(source.size)/1048576)})
+	identityEntries := source.entries
+	var environment []byte
+	regenerateEnvironment := from != "" && source.manifest != nil
+	if regenerateEnvironment {
+		environment, err = apps.PrepareEnvironment(ctx, client, store, hostName, service, *source.manifest)
+		if err != nil {
+			return failRestoreStep(report, service, "secrets", "secrets", err, nil)
+		}
+		keys := map[string]bool{}
+		for _, key := range source.manifest.Secrets {
+			keys[key] = true
+		}
+		report.Steps = append(report.Steps, RestoreStep{Name: "secrets", Detail: fmt.Sprintf("%d keys", len(keys))})
+		filtered := make([]serviceRestoreEntry, 0, len(source.entries))
+		for _, entry := range source.entries {
+			if entry.name != "etc/env" && !strings.HasPrefix(entry.name, "etc/env/") {
+				filtered = append(filtered, entry)
+			}
+		}
+		source.entries = filtered
+	}
+
 	socket := ""
 	serviceUnit := ""
 	unitInstalled := false
@@ -179,7 +226,10 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	report.Steps = append(report.Steps, RestoreStep{Name: "stop", Detail: restoreStopDetail(socket, serviceUnit, unitInstalled, unitActive, unitDisabled, databaseIncoming)})
 	stopped := restoreStoppedUnits(socket, serviceUnit, activationIntent, litestreamActive)
 
-	identity, err := prepareRestoreIdentity(ctx, env, service, source.entries, source.manifest)
+	identity, err := prepareRestoreIdentity(ctx, env, service, identityEntries, source.manifest)
+	if err == nil && regenerateEnvironment && !identity.needed {
+		_, _, err = ensureRestoreAccount(ctx, env)
+	}
 	if err != nil {
 		return failRestoreStep(report, service, "files", "ownership", err, stopped)
 	}
@@ -187,13 +237,30 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	if err != nil {
 		return failRestoreStep(report, service, "files", "files", err, stopped)
 	}
+	if regenerateEnvironment {
+		if err := apps.PublishEnvironment(env.Root, service, environment); err != nil {
+			return failRestoreStep(report, service, "files", "environment", err, stopped)
+		}
+		result, executeErr := env.Execute(ctx, host.Command{Name: "chown", Args: []string{"root:ikigenba", filepath.Join(env.Root, "opt", service, "etc/env")}})
+		var err error
+		if executeErr != nil || result.ExitCode != 0 {
+			err = restoreCommandError("set environment ownership", result, executeErr)
+		}
+		if err != nil {
+			return failRestoreStep(report, service, "files", "environment", err, stopped)
+		}
+	}
 	report.Steps = append(report.Steps, RestoreStep{
 		Name:   "files",
 		Detail: fmt.Sprintf("/opt/%s/etc, /opt/%s/state, %d files", service, service, count),
 	})
 	if databaseIncoming {
 		database := *source.manifest.Database
-		recovered, restoreErr := restoreServiceDatabase(ctx, env, prefix, service, database, at)
+		var recovered string
+		var restoreErr error
+		if from == "" {
+			recovered, restoreErr = restoreServiceDatabase(ctx, env, prefix, service, database, at)
+		}
 		if restoreErr != nil {
 			return failRestoreStep(report, service, "db", "litestream restore", restoreErr, stopped)
 		}
@@ -204,9 +271,12 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 			return failRestoreStep(report, service, "db", "database ownership", ownershipErr, stopped)
 		}
 		detail := "/opt/" + service + "/" + database.Path
-		if at == nil {
+		switch {
+		case from != "":
+			detail += ", from snapshot"
+		case at == nil:
 			detail += ", newest " + recovered
-		} else {
+		default:
 			detail += ", at " + at.Format(time.RFC3339Nano)
 		}
 		report.Steps = append(report.Steps, RestoreStep{Name: "db", Detail: detail})
@@ -924,4 +994,45 @@ func validServiceArchiveName(headerName string) (string, error) {
 		return "", fmt.Errorf("archive entry %q is outside service restore trees", headerName)
 	}
 	return name, nil
+}
+
+func loadSnapshotRestoreSource(ctx context.Context, env host.Env, client cloud.Client, from, service string) (serviceRestoreSource, error) {
+	reader, err := client.GetObject(ctx, from)
+	if err != nil {
+		if reader != nil {
+			_ = reader.Close()
+		}
+		if errors.Is(err, cloud.ErrNotFound) {
+			return serviceRestoreSource{}, fmt.Errorf("%s: no such object", from)
+		}
+		return serviceRestoreSource{}, fmt.Errorf("%s: %w", from, err)
+	}
+	if reader == nil {
+		return serviceRestoreSource{}, fmt.Errorf("%s: object reader is not configured", from)
+	}
+	compressed, readErr := io.ReadAll(reader)
+	if err := errors.Join(readErr, reader.Close(), ctx.Err()); err != nil {
+		return serviceRestoreSource{}, fmt.Errorf("%s: %w", from, err)
+	}
+	archive, err := decompressServiceArchive(ctx, env.Execute, service, compressed)
+	if err != nil {
+		return serviceRestoreSource{}, err
+	}
+	entries, manifest, err := validateServiceRestoreArchive(archive, service)
+	if err != nil {
+		return serviceRestoreSource{}, fmt.Errorf("validate %q: %w", from, err)
+	}
+	if manifest != nil && manifest.Database != nil {
+		found := false
+		for _, entry := range entries {
+			found = found || entry.name == manifest.Database.Path && entry.typeflag == tar.TypeReg
+		}
+		if !found {
+			return serviceRestoreSource{}, fmt.Errorf("%s: no %s in the snapshot", from, manifest.Database.Path)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return serviceRestoreSource{}, err
+	}
+	return serviceRestoreSource{size: int64(len(compressed)), entries: entries, manifest: manifest}, nil
 }

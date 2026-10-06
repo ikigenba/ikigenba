@@ -13,7 +13,7 @@ import (
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
-	// R-U2SQ-QM0P
+	// R-1DS3-EDLH
 	stdout, stderr, code := runBinary(t, buildOpsctl(t), exec.Command("./opsctl", "--help"))
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
@@ -39,6 +39,7 @@ Commands:
   restart   restart an installed app's service
   restore   restore a service from its backups
   retire    stop every service and take the host's final backup
+  snapshot  copy a service's files and database to S3 as one tarball
   status    print every installed app, its version and its state
   uninstall take an app off the host, keeping its data
   version   print the version

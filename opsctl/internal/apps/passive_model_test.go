@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-// R-Y0Z4-ZBMR
+// R-16GP-3R5B
 func TestServiceModelIsPassiveAndStatusOwnsVersionQuery(t *testing.T) {
 	root := t.TempDir()
 	manifestData := []byte("app = \"ledger\"\nversion = \"manifest-version\"\n[database]\nengine = \"sqlite\"\npath = \"state/ledger.db\"\n")

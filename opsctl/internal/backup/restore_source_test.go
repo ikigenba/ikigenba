@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-var _ func(context.Context, host.Env, cloud.Env, config.Store, string, *time.Time, backup.NginxRegenerator) (backup.RestoreReport, error) = backup.Restore
+var _ func(context.Context, host.Env, cloud.Env, config.Store, string, *time.Time, string, backup.NginxRegenerator) (backup.RestoreReport, error) = backup.Restore
 
 func TestRestoreSourceContracts(t *testing.T) {
 	// R-Z5ZK-14HE R-Z8FC-SNYS
@@ -32,7 +32,7 @@ func TestRestoreSourceContracts(t *testing.T) {
 		t.Fatalf("RestoreStep = %+v", step)
 	}
 
-	// R-Z77G-EW83
+	// R-1XAH-IPGL
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{step}}
 	steps := append([]backup.RestoreStep(nil), report.Steps...)
 	if len(steps) != 1 || steps[0].Name != "source" {
@@ -57,7 +57,7 @@ func TestRestoreSourceContracts(t *testing.T) {
 }
 
 func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
-	// R-FU12-UTIF R-FDQ6-KYS5 R-DK7F-CAV0
+	// R-1ZQA-A8XZ R-FDQ6-KYS5 R-DK7F-CAV0
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"wrong-installed-app\"\n", 0o600)
@@ -66,6 +66,7 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	olderURI := "s3://bucket/host/notes/2026-09-15T23:00:00Z.tar.zst"
 	selectedURI := "s3://bucket/host/notes/2026-09-16T00:00:00Z.tar.zst"
 	laterURI := "s3://bucket/host/notes/2026-09-17T00:00:00Z.tar.zst"
+	modified := time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc", typeflag: tar.TypeDir, mode: 0o750},
 		restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")},
@@ -74,18 +75,18 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	)
 	client := &restoreCloud{
 		objects: []cloud.Object{
-			{URI: "s3://bucket/host/notes/not-a-time.tar.zst", Modified: time.Now().Add(100 * time.Hour)},
+			{URI: "s3://bucket/host/notes/not-a-time.tar.zst", Modified: modified.Add(100 * time.Hour)},
 			{URI: "s3://bucket/host/notes/2026-09-18T00:00:00Z.tar.zst/nested"},
 			{URI: "s3://bucket/host/other/2027-01-01T00:00:00Z.tar.zst"},
-			{URI: olderURI, Modified: time.Now().Add(200 * time.Hour)},
+			{URI: olderURI, Modified: modified.Add(200 * time.Hour)},
 			{URI: selectedURI, Modified: time.Time{}},
-			{URI: laterURI, Modified: time.Now().Add(-200 * time.Hour)},
+			{URI: laterURI, Modified: modified.Add(-200 * time.Hour)},
 		},
 		bodies: map[string][]byte{selectedURI: body, laterURI: body},
 	}
 	at := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	nginxCalls := 0
-	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", &at, func(context.Context) error {
+	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", &at, "", func(context.Context) error {
 		nginxCalls++
 		return nil
 	})
@@ -120,21 +121,21 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 }
 
 func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
-	// R-FU12-UTIF
+	// R-1ZQA-A8XZ
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	oldURI := "s3://bucket/host/notes/2026-09-15T00:00:00Z.tar.zst"
 	newURI := "s3://bucket/host/notes/2026-09-17T00:00:00.25Z.tar.zst"
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: newURI}, {URI: oldURI}}, bodies: map[string][]byte{newURI: body}}
-	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 4 || !strings.HasPrefix(report.Steps[0].Detail, "notes/2026-09-17T00:00:00.25Z.tar.zst, ") || !reflect.DeepEqual(client.got, []string{newURI}) {
 		t.Fatalf("Restore() = %+v, %v; got %v", report, err, client.got)
 	}
 }
 
 func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
-	// R-FST6-H1RQ R-Z77G-EW83 R-G7FZ-2AO2 R-DK7F-CAV0
+	// R-1YID-WH7A R-1XAH-IPGL R-G7FZ-2AO2 R-DK7F-CAV0
 	tests := []struct {
 		name    string
 		service string
@@ -148,6 +149,8 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 		{name: "slash service", service: "bad/name", nginx: func(context.Context) error { return nil }, want: "invalid service"},
 		{name: "nul service", service: "bad\x00name", nginx: func(context.Context) error { return nil }, want: "invalid service"},
 		{name: "host service", service: "host", nginx: func(context.Context) error { return nil }, want: "invalid service"},
+		{name: "snapshots service", service: "snapshots", nginx: func(context.Context) error { return nil }, want: "invalid service"},
+		{name: "seed service", service: "seed", nginx: func(context.Context) error { return nil }, want: "invalid service"},
 		{name: "deploy service", service: "deploy", nginx: func(context.Context) error { return nil }, want: "invalid service"},
 		{name: "prefix missing", service: "notes", setup: func(t *testing.T, store config.Store) {
 			if err := store.Del("backup.s3_uri"); err != nil {
@@ -179,7 +182,7 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 				executions++
 				return host.Result{}, errors.New("unexpected execution")
 			}}
-			report, err := backup.Restore(context.Background(), env, cloud.Env{Open: client.open}, store, test.service, nil, test.nginx)
+			report, err := backup.Restore(context.Background(), env, cloud.Env{Open: client.open}, store, test.service, nil, "", test.nginx)
 			if err == nil || !strings.Contains(err.Error(), test.want) || len(report.Steps) != 0 {
 				t.Fatalf("Restore() = %+v, %v; want %q", report, err, test.want)
 			}
@@ -199,7 +202,7 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			executions++
 			return host.Result{}, errors.New("unexpected host command")
-		}}, cloud.Env{}, store, "notes", nil, func(context.Context) error {
+		}}, cloud.Env{}, store, "notes", nil, "", func(context.Context) error {
 			nginxCalls++
 			return nil
 		})
@@ -213,7 +216,7 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 }
 
 func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
-	// R-Y2PV-3AWI
+	// R-20Y6-O0OO
 	tests := []struct {
 		name    string
 		objects []cloud.Object
@@ -237,7 +240,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 				executions++
 				return originalExecute(ctx, command)
 			}
-			report, err := backup.Restore(context.Background(), env, cloud.Env{Open: client.open}, store, "notes", test.at, func(context.Context) error { return nil })
+			report, err := backup.Restore(context.Background(), env, cloud.Env{Open: client.open}, store, "notes", test.at, "", func(context.Context) error { return nil })
 			if err == nil || !strings.Contains(err.Error(), test.want) || len(report.Steps) != 1 || report.Steps[0].Name != "source" || report.Steps[0].Detail != "" || report.Steps[0].Err == nil {
 				t.Fatalf("Restore() = %+v, %v; want %q", report, err, test.want)
 			}
@@ -253,7 +256,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 }
 
 func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
-	// R-FWGV-MCZT R-FXOS-04QI R-G7FZ-2AO2 R-Z77G-EW83
+	// R-FWGV-MCZT R-2263-1SFD R-G7FZ-2AO2 R-1XAH-IPGL
 	tests := []struct {
 		name       string
 		members    []restoreMember
@@ -268,7 +271,7 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 		{name: "device", members: []restoreMember{{name: "state/device", typeflag: tar.TypeChar}}, want: "special device"},
 		{name: "symlink traversal", members: []restoreMember{{name: "state/link", typeflag: tar.TypeSymlink, linkname: "../../outside"}, {name: "state/link/value", data: []byte("bad")}}, want: "traverses symlink"},
 		{name: "manifest symlink", members: []restoreMember{{name: "etc/manifest.toml", typeflag: tar.TypeSymlink, linkname: "../state/value"}}, want: "manifest is not a regular file"},
-		{name: "invalid manifest", members: []restoreMember{{name: "etc/manifest.toml", data: []byte("[database]\nengine = \"mysql\"\npath = \"state/db\"\n")}}, want: "invalid manifest"},
+		{name: "invalid manifest", members: []restoreMember{{name: "etc/manifest.toml", data: []byte("[database]\nengine = \"mysql\"\npath = \"state/db\"\n")}}, want: "database.engine"},
 		{name: "mismatched app", members: []restoreMember{{name: "etc/manifest.toml", data: []byte("app = \"other\"\n")}}, want: "does not match service"},
 	}
 	for _, test := range tests {
@@ -289,7 +292,7 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 					return host.Result{Stderr: []byte("invalid zstandard frame\n"), ExitCode: 1}, nil
 				}
 			}
-			report, err := backup.Restore(context.Background(), env, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+			report, err := backup.Restore(context.Background(), env, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 			if err == nil || !strings.Contains(err.Error(), test.want) || len(report.Steps) != 1 || report.Steps[0].Name != "source" || report.Steps[0].Err == nil {
 				t.Fatalf("Restore() = %+v, %v; want %q", report, err, test.want)
 			}
@@ -309,7 +312,7 @@ func TestRestoreUsesRootForRestoredTarget(t *testing.T) {
 	uri := "s3://bucket/host/notes/2026-09-16T00:00:00Z.tar.zst"
 	body := hostRestoreArchive(t, restoreMember{name: "etc/env", data: []byte("TOKEN=secret\n")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
-	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 4 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}

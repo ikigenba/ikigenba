@@ -99,6 +99,8 @@ type Service struct {
 var reservedNames = map[string]struct{}{
 	"host":              {},
 	"deploy":            {},
+	"snapshots":         {},
+	"seed":              {},
 	"backup-host":       {},
 	"backup-services":   {},
 	"renew-certificate": {},

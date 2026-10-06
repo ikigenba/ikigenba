@@ -239,7 +239,7 @@ func rootedDirectory(filesystem *os.Root, name string) (bool, error) {
 }
 
 func invalidFileServiceName(name string) bool {
-	return name == "" || name == "." || name == ".." || name == "host" || name == "deploy" || strings.ContainsAny(name, "/\x00")
+	return name == "" || name == "." || name == ".." || name == "host" || name == "deploy" || name == "snapshots" || name == "seed" || strings.ContainsAny(name, "/\x00")
 }
 
 func singleQuotedDiagnostic(value string) string {
@@ -273,6 +273,10 @@ func serviceArchive(ctx context.Context, env host.Env, service apps.Service) ([]
 }
 
 func archiveTree(ctx context.Context, filesystem *os.Root, writer *tar.Writer, resolver *identityResolver, service apps.Service, tree string) error {
+	return archiveTreeExcluding(ctx, filesystem, writer, resolver, service, tree, databaseExclusions(service.Manifest))
+}
+
+func archiveTreeExcluding(ctx context.Context, filesystem *os.Root, writer *tar.Writer, resolver *identityResolver, service apps.Service, tree string, exclusions []string) error {
 	servicePath := path.Join("opt", service.Name)
 	treePath := path.Join(servicePath, tree)
 	if _, err := filesystem.Lstat(treePath); errors.Is(err, os.ErrNotExist) {
@@ -280,8 +284,6 @@ func archiveTree(ctx context.Context, filesystem *os.Root, writer *tar.Writer, r
 	} else if err != nil {
 		return err
 	}
-
-	exclusions := databaseExclusions(service.Manifest)
 	return fs.WalkDir(filesystem.FS(), treePath, func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

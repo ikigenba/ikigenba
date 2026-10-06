@@ -32,7 +32,7 @@ func servicesFixtureCommand(command host.Command) (host.Result, bool) {
 }
 
 func TestInstallServicesStagePublishesNormalizedNameAndStopsOnError(t *testing.T) {
-	// R-YNH5-YAF8 R-YR4V-3LNB R-YOP2-C25X R-YPWY-PTWM
+	// R-YNH5-YAF8 R-2MWD-JW16 R-YOP2-C25X R-YPWY-PTWM
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)
