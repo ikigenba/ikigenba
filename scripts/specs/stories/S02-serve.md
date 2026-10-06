@@ -20,7 +20,7 @@ scripts records these events and no others:
 - `service.stopping`, when scripts is told to stop and has finished the requests it accepted, with `reason`, the name of the signal that stopped it, `SIGTERM` or `SIGINT`; it is the last event scripts records;
 - `request.started`, as each request arrives, with `method` and `path`, the request's URL path without its query;
 - `request.finished`, once that request's answer is complete, with `status`, the status of scripts' answer; `duration_us`, how long scripts took to answer, in whole microseconds; `request_bytes`, how many bytes of the request's body scripts read; and `response_bytes`, how many bytes of the response's body scripts wrote; the three vary from request to request, and a story's event JSON shows `duration_us` as `<n>` and the two byte counts as `<bytes>` unless it fixes them;
-- `tool.called`, for each call of one of its nine tools that is answered with a result, with `tool`, `kind`, `outcome`, and `duration_us` (`S05`);
+- `tool.called`, for each call of one of its eleven tools that is answered with a result, with `tool`, `kind`, `outcome`, and `duration_us` (`S05`);
 - `script.created`, `script.updated` and `script.deleted`, one for each `create`, `update` and `delete` that changes the catalog, with `script` (`S06`, `S09`, `S10`, `S16`);
 - `run.started`, when a run's process starts, with `run`, `script`, `sha`, and `trigger` (`S08`, `S16`);
 - `run.finished`, when a run reaches a final status, with `run`, `status`, its exit code when it exited, its duration, whether its output was truncated, and its reason when it failed; a run that could not start records only this one (`S08`, `S11`, `S16`).
@@ -102,7 +102,7 @@ Preconditions:
 Postconditions:
 
 - `state/` exists, created by scripts if it was absent.
-- `state/scripts.db` now exists, created by this start, and is up to date: `scripts db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`). It names no script and no run: `list` answers `{"scripts":[]}` for every caller (`S07`).
+- `state/scripts.db` now exists, created by this start, and is up to date: `scripts db status` prints `0001 applied <time>` and `0002 applied <time>`, each `<time>` being the moment this start applied that version (`S01`). It names no script and no run: `list` answers `{"scripts":[]}` for every caller (`S07`).
 - `state/runs/` now exists, empty, created by this start.
 - scripts is serving on the socket it was passed, and on no other.
 - telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
@@ -110,7 +110,7 @@ Postconditions:
 
 ## The host starts scripts over a catalog kept before its migrations
 
-A scripts from before the database carried migrations kept its catalog in `state/scripts.db` with the same schema, but the database records no migration at all. The baseline migration, `0001`, is that same schema, and applying it to such a database changes nothing in it but the record that `0001` has been applied. So a deploy of this scripts over that database needs no step of its own: scripts starts, records `0001` as applied, and serves every script and run the old one kept.
+A scripts from before the database carried migrations kept its catalog in `state/scripts.db` with the same schema, but the database records no migration at all. The baseline migration, `0001`, is that same schema, and applying it to such a database changes nothing in it but the record that `0001` has been applied; `0002` follows it as on any database that has `0001` alone. So a deploy of this scripts over that database needs no step of its own: scripts starts, applies `0001` and `0002`, and serves every script and run the old one kept.
 
 Command:
 
@@ -132,11 +132,11 @@ Preconditions:
 - `NOTIFY_SOCKET` is unset, so scripts reports readiness to nobody.
 - `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
 - `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
-- `state/scripts.db` holds the catalog a scripts from before migrations kept: scripts and their runs, none of which is recorded as `running` and none past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep, and records no migration; `state/runs/` holds their run folders. `scripts db status` there prints `0001 pending` (`S01`).
+- `state/scripts.db` holds the catalog a scripts from before migrations kept: scripts and their runs, none of which is recorded as `running` and none past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep, and records no migration; `state/runs/` holds their run folders. `scripts db status` there prints `0001 pending` and `0002 pending` (`S01`).
 
 Postconditions:
 
-- scripts is serving on the socket it was passed, over the same `state/scripts.db`, now up to date: `scripts db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`).
+- scripts is serving on the socket it was passed, over the same `state/scripts.db`, now up to date: `scripts db status` prints `0001 applied <time>` and `0002 applied <time>`, each `<time>` being the moment this start applied that version (`S01`).
 - Every script and run the database held is still there, unchanged: `list`, `show`, `runs` and `result` answer each as they did before the start (`S07`, `S11`), and every run folder under `state/runs/` is as it was.
 - telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
 - It keeps running until it is signalled.
@@ -247,18 +247,18 @@ Output:
 scripts: cannot open database state/scripts.db: <reason>
 ```
 
-Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this scripts does not carry, zero-padded to four digits: `0002`.
+Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this scripts does not carry, zero-padded to four digits: `0003`.
 
 Preconditions:
 
-- `bin/scripts` exists and is on the `PATH` as `scripts`, carrying only migration `0001`, and so do `git` and `python3.12`.
+- `bin/scripts` exists and is on the `PATH` as `scripts`, carrying only migrations `0001` and `0002`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
-- `state/scripts.db` exists and records versions `0001` and `0002` as applied.
+- `state/scripts.db` exists and records versions `0001`, `0002` and `0003` as applied.
 
 Postconditions:
 
-- Nothing has changed: the database still records `0001` and `0002` and holds the scripts and runs it held, none marked `killed` and none pruned, and `state/runs/` is as it was, or still absent. scripts served nothing, ran no git and no script, told systemd nothing, and sent telemetry nothing.
+- Nothing has changed: the database still records `0001`, `0002` and `0003` and holds the scripts and runs it held, none marked `killed` and none pruned, and `state/runs/` is as it was, or still absent. scripts served nothing, ran no git and no script, told systemd nothing, and sent telemetry nothing.
 
 ## The host starts scripts where its runs directory cannot be created
 

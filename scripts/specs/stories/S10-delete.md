@@ -1,8 +1,8 @@
 # Stories — delete
 
-`delete`, the tool that removes one of the caller's scripts and every run it has, for good. Its one argument is `name`, required, a string, the name of one of the caller's scripts. A run of the script still `running` is killed first, as `cancel` kills one (`S11`): its process group is killed whole and the run ends `killed`. Then the script's catalog record goes, with every one of its runs' records, whatever their status, and everything scripts holds for it under `state/runs/<script id>/`, each run's folder with its `tree/`, `out/`, `input.json`, `stdout`, and `stderr`; nothing of the script is orphaned. It answers `{"deleted":true,"id":"<script id>"}`. The script's repository is not scripts' and is untouched: its commits, and every other script that runs from it, are as they were, and a new script can be created from it at once; delete reads no repository and runs no git, so a script whose repository is gone is deleted the same. There is no undo; once the call has answered, the script's page and its runs' pages answer not-found (`S12`, `S13`, `S14`), `result` and `cancel` with any of its runs' ids are refused with `no run '<id>'` (`S11`), its name is free for any user's `create` (`S06`), and its id and its runs' ids name nothing. `delete` is of kind `destructive`.
+`delete`, the tool that removes one of the caller's scripts and every run it has, for good. Its one argument is `name`, required, a string, the name of one of the caller's scripts. A run of the script still `running` is killed first, as `cancel` kills one (`S11`): its process group is killed whole and the run ends `killed`. Then the script's catalog record goes, with every one of its runs' records, whatever their status, every one of its subscriptions (`S26`), and everything scripts holds for it under `state/runs/<script id>/`, each run's folder with its `tree/`, `out/`, `input.json`, `stdout`, and `stderr`; nothing of the script is orphaned, and an event of a name it was subscribed to, delivered after the call, starts nothing for it (`S27`). It answers `{"deleted":true,"id":"<script id>"}`. The script's repository is not scripts' and is untouched: its commits, and every other script that runs from it, are as they were, and a new script can be created from it at once; delete reads no repository and runs no git, so a script whose repository is gone is deleted the same. There is no undo; once the call has answered, the script's page and its runs' pages answer not-found (`S12`, `S13`, `S14`), `result` and `cancel` with any of its runs' ids are refused with `no run '<id>'` (`S11`), its name is free for any user's `create` (`S06`), and its id and its runs' ids name nothing. `delete` is of kind `destructive`.
 
-The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, in which the caller `u_7f3a9c21` owns `nightly-report` (`scr_6d1f4a9b2e8c7035`, repository `rep_9c2e4b7a1d3f8e05`, seven runs, `run_8a2c6e1f9b3d5074` of them still `running` since `2026-10-05T09:31:40Z`), `sync-crm` (`scr_a2e7c4f9b1d03856`, its run `run_6b2d8f4a0c9e1735` still `running`), `rotate-keys` (`scr_5c9b1e3a7f2d4068`, repository `rep_7b3e9a0c5d1f2846`, its one run `run_1e9c3a7f5b0d2864` `failed`), and `backfill` (`scr_e8f2a6c0d4b19357`, repository `rep_0f6a2d9e8c4b7153`, gone from repos, never run), and `u_2b8e1d04` owns `digest` (`scr_3b7f9d1c5e0a2846`, its one run `run_0c4e8a2f6b1d9375`); every run's folder is at `state/runs/<script id>/<run id>/` but `run_72b0c8f5e3d1a946`'s, already gone. A delete that removes a script records, for each of its runs it killed, that run's `run.finished`, with `run`, `status` `killed`, `duration_us`, and `truncated`, under the run's own user and request id (`S02`); then `script.deleted`, with `script`, the id; both before its `tool.called`. The name is in no event. A refusal removes and kills nothing and records no `script.*` or `run.*` event. scripts writes nothing to stderr for any answer in this group.
+The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, in which the caller `u_7f3a9c21` owns `nightly-report` (`scr_6d1f4a9b2e8c7035`, repository `rep_9c2e4b7a1d3f8e05`, seven runs, `run_8a2c6e1f9b3d5074` of them still `running` since `2026-10-05T09:31:40Z`), `sync-crm` (`scr_a2e7c4f9b1d03856`, its run `run_6b2d8f4a0c9e1735` still `running`), `rotate-keys` (`scr_5c9b1e3a7f2d4068`, repository `rep_7b3e9a0c5d1f2846`, its one run `run_1e9c3a7f5b0d2864` `failed`), and `backfill` (`scr_e8f2a6c0d4b19357`, repository `rep_0f6a2d9e8c4b7153`, gone from repos, never run), and `u_2b8e1d04` owns `digest` (`scr_3b7f9d1c5e0a2846`, its one run `run_0c4e8a2f6b1d9375`); no script is subscribed to any event unless a story says otherwise; every run's folder is at `state/runs/<script id>/<run id>/` but `run_72b0c8f5e3d1a946`'s, already gone. A delete that removes a script records, for each of its runs it killed, that run's `run.finished`, with `run`, `status` `killed`, `duration_us`, and `truncated`, under the run's own user and request id (`S02`); then `script.deleted`, with `script`, the id; both before its `tool.called`. The name is in no event. A refusal removes and kills nothing and records no `script.*` or `run.*` event. scripts writes nothing to stderr for any answer in this group.
 
 ## A model deletes a script
 
@@ -43,7 +43,7 @@ Preconditions:
 
 Postconditions:
 
-- The catalog no longer holds `scr_5c9b1e3a7f2d4068` or its run `run_1e9c3a7f5b0d2864`. `list` (`S07`) answers `backfill`, `nightly-report`, and `sync-crm`; `show`, `update`, `delete`, `run`, and `runs` with `rotate-keys` are refused with `no script named 'rotate-keys'`; `result` and `cancel` with `run_1e9c3a7f5b0d2864` are refused with `no run 'run_1e9c3a7f5b0d2864'`.
+- The catalog no longer holds `scr_5c9b1e3a7f2d4068` or its run `run_1e9c3a7f5b0d2864`. `list` (`S07`) answers `backfill`, `nightly-report`, and `sync-crm`; `show`, `update`, `delete`, `subscribe`, `unsubscribe`, `run`, and `runs` with `rotate-keys` are refused with `no script named 'rotate-keys'`; `result` and `cancel` with `run_1e9c3a7f5b0d2864` are refused with `no run 'run_1e9c3a7f5b0d2864'`.
 - `state/runs/scr_5c9b1e3a7f2d4068/` no longer exists. The other scripts' directories under `state/runs/` are untouched, and their running runs run on.
 - `../repos/state/repos/rep_7b3e9a0c5d1f2846.git` is untouched: scripts ran no git and wrote nothing there.
 - `GET /rotate-keys/` and `GET /rotate-keys/runs/run_1e9c3a7f5b0d2864/` are answered 404 with scripts' not-found page, as for any name none of the caller's scripts has (`S12`, `S13`).
@@ -157,6 +157,51 @@ Postconditions:
 - The name `backfill` is free.
 - telemetry has received `script.deleted` with attributes `{"script":"scr_e8f2a6c0d4b19357"}` before the request's `tool.called`, whose `outcome` is `ok`, and no `run.*` event.
 
+## A model deletes a script subscribed to an event
+
+A script's subscriptions are its own and go with it: nothing of them is left to start a run of a script that is gone, and a new script that later takes the name starts with none. Removing them records nothing of its own; the call's trail is that of any delete.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: delete
+
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"delete","arguments":{"name":"rotate-keys"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 4 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"deleted":true,"id":"scr_5c9b1e3a7f2d4068"}
+```
+
+and a `content` array of one text block whose text is exactly that line.
+
+Preconditions:
+
+- The preamble's, and `rotate-keys` is subscribed to `repo.pushed`, created `2026-10-04T10:15:00Z` (`S26`). No other script is subscribed to it.
+
+Postconditions:
+
+- The catalog no longer holds `scr_5c9b1e3a7f2d4068`, its run `run_1e9c3a7f5b0d2864`, or its subscription to `repo.pushed`; `state/runs/scr_5c9b1e3a7f2d4068/` no longer exists.
+- An event named `repo.pushed` delivered to scripts after the call starts no run at all, since no script is subscribed to it any longer (`S27`).
+- A script created later with the name `rotate-keys` answers `"subscriptions":[]` (`S06`); it inherits nothing of the deleted one.
+- `subscribe` and `unsubscribe` with `rotate-keys` are refused with `no script named 'rotate-keys'` (`S26`).
+- telemetry has received `script.deleted` with attributes `{"script":"scr_5c9b1e3a7f2d4068"}` before the request's `tool.called`, whose `kind` is `destructive` and `outcome` `ok`, and no `run.*` event; the event name is in no event.
+
 ## A model deletes another user's script
 
 Only a script's owner deletes it. Another user's script does not exist for the caller, and gets exactly the answer a script that does not exist gets; it and its runs are untouched.
@@ -172,7 +217,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: delete
 
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"delete","arguments":{"name":"digest"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"delete","arguments":{"name":"digest"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -182,7 +227,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 4 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 5 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 no script named 'digest'
@@ -216,7 +261,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: delete
 
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"delete","arguments":{"name":"cleanup"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"delete","arguments":{"name":"cleanup"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -226,7 +271,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 5 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 6 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 no script named 'cleanup'
@@ -256,7 +301,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: delete
 
-{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"delete","arguments":{"name":"rotate-keys"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"delete","arguments":{"name":"rotate-keys"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -266,7 +311,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 6 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 7 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 no script named 'rotate-keys'
@@ -295,7 +340,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: delete
 
-{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"delete","arguments":{"id":"scr_5c9b1e3a7f2d4068"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"delete","arguments":{"id":"scr_5c9b1e3a7f2d4068"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -305,7 +350,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 7 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 8 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 invalid arguments:

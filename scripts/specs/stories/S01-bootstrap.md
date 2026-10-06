@@ -1,6 +1,6 @@
 # Stories — bootstrap
 
-Running scripts at all: help, version, the manifest, the state of its database, exit codes. scripts is an app of the platform, the suite's script runner: one Go binary that keeps a catalog of each user's scripts, each naming one of their repositories in repos and the ref it runs, runs a script's `main.py` from that ref's commit unpacked into a folder of its own and keeps the run's input, output, files and outcome (`S08`, `S15`), offers nine MCP tools to list, show, create, update, delete and run scripts and to list, read and cancel their runs at `/mcp` (`S05` to `S11`), and serves a catalog of the user's scripts at `/` (`S03`) with a page for each script (`S12`) and for each run (`S13`). On a host it runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory and its environment read from `/opt/scripts/etc/env`; a developer runs the same binary from the checkout. With no command it serves (`S02`); the commands here are what the build, and an operator, ask of it. They serve nothing, run no git and no script, read no repository, and record no event: the trail is what scripts records while it serves (`S02`). scripts keeps its catalog of scripts and the record of every run in its database, the SQLite file `state/scripts.db` under its working directory, which it creates and brings up to date when it starts (`S02`). The database's schema is a sequence of numbered migrations, each with a four-digit version, that the binary carries and applies in order; this scripts carries one, version `0001`.
+Running scripts at all: help, version, the manifest, the state of its database, exit codes. scripts is an app of the platform, the suite's script runner: one Go binary that keeps a catalog of each user's scripts, each naming one of their repositories in repos and the ref it runs, runs a script's `main.py` from that ref's commit unpacked into a folder of its own and keeps the run's input, output, files and outcome (`S08`, `S15`), offers eleven MCP tools to list, show, create, update, delete and run scripts, to subscribe them to events and unsubscribe them, and to list, read and cancel their runs at `/mcp` (`S05` to `S11`, `S26`), runs a script when an event it is subscribed to is delivered to it (`S27`), and serves a catalog of the user's scripts at `/` (`S03`) with a page for each script (`S12`) and for each run (`S13`). On a host it runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory and its environment read from `/opt/scripts/etc/env`; a developer runs the same binary from the checkout. With no command it serves (`S02`); the commands here are what the build, and an operator, ask of it. They serve nothing, run no git and no script, read no repository, and record no event: the trail is what scripts records while it serves (`S02`). scripts keeps its catalog of scripts and the record of every run in its database, the SQLite file `state/scripts.db` under its working directory, which it creates and brings up to date when it starts (`S02`). The database's schema is a sequence of numbered migrations, each with a four-digit version, that the binary carries and applies in order; this scripts carries two, versions `0001` and `0002`.
 
 ## A developer asks which version they have
 
@@ -186,14 +186,15 @@ Output:
 
 ```
 0001 applied 2026-10-05T14:03:07.123456Z
+0002 applied 2026-10-05T14:03:07.124031Z
 ```
 
-Exits 0. The line is on stdout; stderr is empty. The time is the one the database records for version `0001`.
+Exits 0. The lines are on stdout; stderr is empty. Each time is the one the database records for that version.
 
 Preconditions:
 
 - `bin/scripts` exists.
-- The working directory holds `state/scripts.db`, which a scripts of this version created or brought up to date, applying version `0001` at `2026-10-05T14:03:07.123456Z`. On a host the working directory is `/opt/scripts` and the operator is a user who can read the database.
+- The working directory holds `state/scripts.db`, which a scripts of this version created or brought up to date, applying version `0001` at `2026-10-05T14:03:07.123456Z` and version `0002` at `2026-10-05T14:03:07.124031Z`. On a host the working directory is `/opt/scripts` and the operator is a user who can read the database.
 
 Postconditions:
 
@@ -213,9 +214,10 @@ Output:
 
 ```
 0001 pending
+0002 pending
 ```
 
-Exits 0. The line is on stdout; stderr is empty.
+Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
@@ -240,16 +242,17 @@ Output:
 
 ```
 0001 applied 2026-10-05T14:03:07.123456Z
-0002 unknown 2026-10-06T09:12:44.000017Z
+0002 applied 2026-10-05T14:03:07.124031Z
+0003 unknown 2026-10-06T09:12:44.000017Z
 scripts: <reason>
 ```
 
-Exits 1. The `0001` and `0002` lines are on stdout; the last line is on stderr. `<reason>` names the unknown version, `0002`.
+Exits 1. The `0001`, `0002` and `0003` lines are on stdout; the last line is on stderr. `<reason>` names the unknown version, `0003`.
 
 Preconditions:
 
-- `bin/scripts` exists, carrying only migration `0001`.
-- The working directory holds `state/scripts.db`, which records version `0001` applied at `2026-10-05T14:03:07.123456Z` and version `0002` applied at `2026-10-06T09:12:44.000017Z`.
+- `bin/scripts` exists, carrying only migrations `0001` and `0002`.
+- The working directory holds `state/scripts.db`, which records version `0001` applied at `2026-10-05T14:03:07.123456Z`, version `0002` applied at `2026-10-05T14:03:07.124031Z`, and version `0003` applied at `2026-10-06T09:12:44.000017Z`.
 
 Postconditions:
 

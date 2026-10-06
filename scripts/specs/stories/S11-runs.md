@@ -1,8 +1,8 @@
 # Stories — runs, result and cancel
 
-`runs`, `result` and `cancel`, the three tools through which the caller follows its runs after `run` has started them (`S08`). `runs` takes one argument, `name`, required, a string, the name of one of the caller's scripts, looked up among the caller's scripts only, and answers `{"runs":[...]}`, every run the catalog keeps for that script, newest first by `started`, ties broken by id, each entry the shape `S05` fixes — `id`, `sha`, `ref`, `trigger`, `status`, `exit_code`, `started`, `finished`, `truncated`, `reason` — and `{"runs":[]}` for a script that has never run; a `name` that names none of the caller's scripts is refused with exactly `no script named '<name>'`. `result` and `cancel` each take one argument, `run`, required, a string, a run's id, looked up among the runs of the caller's own scripts only; an id that names none of them, another user's run included, is refused with exactly `no run '<id>'`, quoting the value as sent, and that lookup comes before anything else. `result` answers the run object `S05` fixes, then `stdout`, `stderr` and `files`, or `files_gone` when the run's folder is no longer there; it reads the catalog and the run's folder and nothing else. `runs` reads the catalog only. Neither runs git, writes anything or touches a process, and both are of kind `read`. `cancel` ends a run that is still `running`: it kills the run's process group whole, as the drain deadline does (`S18`), records the run `killed` with its `finished`, keeps everything the run wrote, and answers the run in the shape `runs` lists it; a run whose status is already final, whatever it is, is refused with exactly `run '<id>' has already ended`. `cancel` is of kind `destructive`. What makes a run's output truncated, and how long a run may take, is `S17`'s; a run ended by stopping is `S18`'s; how ended runs are pruned is `S19`'s; what a run sees while it runs is `S15`'s.
+`runs`, `result` and `cancel`, the three tools through which the caller follows its runs after `run` has started them (`S08`). `runs` takes one argument, `name`, required, a string, the name of one of the caller's scripts, looked up among the caller's scripts only, and answers `{"runs":[...]}`, every run the catalog keeps for that script, newest first by `started`, ties broken by id, each entry the shape `S05` fixes — `id`, `sha`, `ref`, `trigger`, `event`, `status`, `exit_code`, `started`, `finished`, `truncated`, `reason` — and `{"runs":[]}` for a script that has never run; a `name` that names none of the caller's scripts is refused with exactly `no script named '<name>'`. `result` and `cancel` each take one argument, `run`, required, a string, a run's id, looked up among the runs of the caller's own scripts only; an id that names none of them, another user's run included, is refused with exactly `no run '<id>'`, quoting the value as sent, and that lookup comes before anything else. A run's `trigger` is `manual` for a run `run` started (`S08`) and `event` for one an event started (`S27`), and only the latter has `event`, the id of the event that started it, right after `trigger`, in every shape this group answers. `result` answers the run object `S05` fixes, then `stdout`, `stderr` and `files`, or `files_gone` when the run's folder is no longer there; it reads the catalog and the run's folder and nothing else. `runs` reads the catalog only. Neither runs git, writes anything or touches a process, and both are of kind `read`. `cancel` ends a run that is still `running`: it kills the run's process group whole, as the drain deadline does (`S18`), records the run `killed` with its `finished`, keeps everything the run wrote, and answers the run in the shape `runs` lists it; a run whose status is already final, whatever it is, is refused with exactly `run '<id>' has already ended`. `cancel` is of kind `destructive`. What makes a run's output truncated, and how long a run may take, is `S17`'s; a run ended by stopping is `S18`'s; how ended runs are pruned is `S19`'s; what a run sees while it runs is `S15`'s.
 
-The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, with now `2026-10-05T09:32:00Z`. The caller `u_7f3a9c21` (`mg@example.com`) owns `nightly-report` (`scr_6d1f4a9b2e8c7035`), whose seven runs, newest first, are `run_8a2c6e1f9b3d5074`, `running` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` since `2026-10-05T09:31:40Z`; `run_3f9a1c2e8b7d4a60`, `exited` 0; `run_c71d0b5e4a2f9386`, `exited` 1; `run_5e8b3d7a1c0f6294`, `timed_out` with its output truncated; `run_19f6a4d2c8e3b705`, `killed`, from the tag `v1`; `run_d4a7e2c9f1b8630a`, `failed` with `commit_missing` on the ref `release`; and `run_72b0c8f5e3d1a946`, `exited` 0, whose folder is gone. The caller also owns `sync-crm`, whose run `run_6b2d8f4a0c9e1735` is `running`, `rotate-keys`, and `backfill` (`scr_e8f2a6c0d4b19357`), which has never run; `u_2b8e1d04` (`ann@example.com`) owns `digest`, whose one run is `run_0c4e8a2f6b1d9375`, `exited` 0. Every run's trigger is `manual` and its user is its script's owner. Each run but `run_72b0c8f5e3d1a946` has its folder at `state/runs/<script id>/<run id>/`. `runs` and `result` change nothing, and their trail is the request's `request.started`, its `tool.called` with `tool` `runs` or `result`, `kind` `read`, and the outcome `S05` fixes, and its `request.finished`; neither records a `run.*` event. A `cancel` that ends a run records that run's `run.finished`, under the run's own request id and user, before its `tool.called`; a refused `cancel` kills nothing and records no `run.*` event. scripts writes nothing to stderr for any answer in this group.
+The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, with now `2026-10-05T09:32:00Z`. The caller `u_7f3a9c21` (`mg@example.com`) owns `nightly-report` (`scr_6d1f4a9b2e8c7035`), whose seven runs, newest first, are `run_8a2c6e1f9b3d5074`, `running` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` since `2026-10-05T09:31:40Z`; `run_3f9a1c2e8b7d4a60`, `exited` 0; `run_c71d0b5e4a2f9386`, `exited` 1; `run_5e8b3d7a1c0f6294`, `timed_out` with its output truncated; `run_19f6a4d2c8e3b705`, `killed`, from the tag `v1`; `run_d4a7e2c9f1b8630a`, `failed` with `commit_missing` on the ref `release`; and `run_72b0c8f5e3d1a946`, `exited` 0, whose folder is gone. The caller also owns `sync-crm`, whose run `run_6b2d8f4a0c9e1735` is `running`, `rotate-keys`, and `backfill` (`scr_e8f2a6c0d4b19357`), which has never run; `u_2b8e1d04` (`ann@example.com`) owns `digest`, whose one run is `run_0c4e8a2f6b1d9375`, `exited` 0. Every run's trigger is `manual`, and its user is its script's owner, unless a story says otherwise. Each run but `run_72b0c8f5e3d1a946` has its folder at `state/runs/<script id>/<run id>/`. `runs` and `result` change nothing, and their trail is the request's `request.started`, its `tool.called` with `tool` `runs` or `result`, `kind` `read`, and the outcome `S05` fixes, and its `request.finished`; neither records a `run.*` event. A `cancel` that ends a run records that run's `run.finished`, under the run's own request id and user, before its `tool.called`; a refused `cancel` kills nothing and records no `run.*` event. scripts writes nothing to stderr for any answer in this group.
 
 ## A model lists a script's runs
 
@@ -53,6 +53,47 @@ Postconditions:
   ```
 
   No script's or run's id or name is in them.
+
+## A model lists a script's runs, one of them started by an event
+
+A script subscribed to an event (`S26`) runs whenever the events app delivers it (`S27`), so its runs mix those a model asked for and those events started. `runs` lists them together, newest first as always, and tells them apart: a run an event started has `trigger` `event` and `event`, the id of the event, which a run `run` started has not. Here `nightly-report` is subscribed to `repo.pushed`, and a push event started its newest run, which has already exited.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: runs
+
+{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"runs","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 18 whose `result` has no `isError` member, a `structuredContent` of `{"runs":[...]}` whose first entry is
+
+```
+{"id":"run_e2b6d0a4c8f17359","sha":"e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d","ref":"main","trigger":"event","event":"evt_3a7d9c1e5b2f8064","status":"exited","exit_code":0,"started":"2026-10-05T09:31:52Z","finished":"2026-10-05T09:31:57Z","truncated":false}
+```
+
+followed by the seven entries of `A model lists a script's runs`, as that story shows them, each with `trigger` `manual` and no `event`; and a `content` array of one text block whose text is exactly that object encoded compactly.
+
+Preconditions:
+
+- The preamble's, and `nightly-report` is subscribed to `repo.pushed`. The events app delivered the event `evt_3a7d9c1e5b2f8064`, a `repo.pushed`, at `2026-10-05T09:31:52Z`, which started the run `run_e2b6d0a4c8f17359` of `nightly-report` as `u_7f3a9c21`, from `main` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`; it exited 0 at `2026-10-05T09:31:57Z`.
+
+Postconditions:
+
+- Nothing has changed. No git ran, and no run folder was read. The request's `tool.called` has `tool` `runs`, `kind` `read`, and `outcome` `ok`.
 
 ## A model lists the runs of a script that has never run
 

@@ -1,8 +1,8 @@
 # Stories — update
 
-`update`, the tool that changes the ref one of the caller's scripts runs from. It takes, in this order, `name`, a string, the name of one of the caller's scripts, and `ref`, a string, the ref every later run resolves; both are required, and nothing else about a script can be changed: its name, its repository, and its id are fixed at create (`S06`). `ref` is held to the rule `create` holds it to: a string git accepts as a ref name, and it is not resolved, so a ref that names nothing yet is accepted and a run of it fails as `S08` tells. A ref sent with the value the script already has is not a change. The checks run in this order — the script; the ref — and the first that fails is the whole answer, one line naming it. `update` changes what the next `run` without a `ref` resolves (`S08`), never a run already made: a run keeps the sha and ref it resolved, whether it has ended or is still running, and a running run is not signalled. It reads no repository and runs no git. It answers the script object `show` answers (`S07`), as it is after the call.
+`update`, the tool that changes the ref one of the caller's scripts runs from. It takes, in this order, `name`, a string, the name of one of the caller's scripts, and `ref`, a string, the ref every later run resolves; both are required, and nothing else about a script can be changed: its name, its repository, and its id are fixed at create (`S06`). `ref` is held to the rule `create` holds it to: a string git accepts as a ref name, and it is not resolved, so a ref that names nothing yet is accepted and a run of it fails as `S08` tells. A ref sent with the value the script already has is not a change. The checks run in this order — the script; the ref — and the first that fails is the whole answer, one line naming it. `update` changes what the next `run` without a `ref` resolves (`S08`), never a run already made: a run keeps the sha and ref it resolved, whether it has ended or is still running, and a running run is not signalled. It reads no repository and runs no git. A script's subscriptions (`S26`) are kept across an update, each with the time it was made, and a run an event starts after the call resolves the new ref (`S27`). It answers the script object `show` answers (`S07`), as it is after the call, its `subscriptions` included.
 
-The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, in which the caller `u_7f3a9c21` owns `nightly-report` (`scr_6d1f4a9b2e8c7035`, repository `rep_9c2e4b7a1d3f8e05`, ref `main`, created `2026-09-18T16:40:00Z`, its newest run `run_8a2c6e1f9b3d5074` still `running` since `2026-10-05T09:31:40Z`), `sync-crm` (`scr_a2e7c4f9b1d03856`, repository `rep_41d8f0a6b2c97e13`, ref `main`, created `2026-09-25T10:00:00Z`, its newest run `run_6b2d8f4a0c9e1735` still `running` since `2026-10-05T09:31:00Z` at `3c8e1f5a9d2b7064e1a3c5f7b9d0e2a4c6f8b1d3`), `rotate-keys` (`scr_5c9b1e3a7f2d4068`, repository `rep_7b3e9a0c5d1f2846`, ref `release`, created `2026-09-28T08:00:00Z`, its one run `run_1e9c3a7f5b0d2864` `failed` with reason `commit_missing`, started `2026-10-04T22:00:00Z`, since that repository has no `release`), and `backfill`, and `u_2b8e1d04` owns `digest` (`scr_3b7f9d1c5e0a2846`, ref `main`). `update` is of kind `additive`. An update that changes the ref records one `script.updated`, with `script`, the id, before its `tool.called`; an update to the ref the script already has records nothing. Neither the name nor the ref is in any event. A refusal changes nothing and records no `script.*` event. scripts writes nothing to stderr for any answer in this group.
+The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, in which the caller `u_7f3a9c21` owns `nightly-report` (`scr_6d1f4a9b2e8c7035`, repository `rep_9c2e4b7a1d3f8e05`, ref `main`, created `2026-09-18T16:40:00Z`, its newest run `run_8a2c6e1f9b3d5074` still `running` since `2026-10-05T09:31:40Z`), `sync-crm` (`scr_a2e7c4f9b1d03856`, repository `rep_41d8f0a6b2c97e13`, ref `main`, created `2026-09-25T10:00:00Z`, its newest run `run_6b2d8f4a0c9e1735` still `running` since `2026-10-05T09:31:00Z` at `3c8e1f5a9d2b7064e1a3c5f7b9d0e2a4c6f8b1d3`), `rotate-keys` (`scr_5c9b1e3a7f2d4068`, repository `rep_7b3e9a0c5d1f2846`, ref `release`, created `2026-09-28T08:00:00Z`, its one run `run_1e9c3a7f5b0d2864` `failed` with reason `commit_missing`, started `2026-10-04T22:00:00Z`, since that repository has no `release`), and `backfill`, and `u_2b8e1d04` owns `digest` (`scr_3b7f9d1c5e0a2846`, ref `main`); no script is subscribed to any event unless a story says otherwise. `update` is of kind `additive`. An update that changes the ref records one `script.updated`, with `script`, the id, before its `tool.called`; an update to the ref the script already has records nothing. Neither the name nor the ref is in any event. A refusal changes nothing and records no `script.*` event. scripts writes nothing to stderr for any answer in this group.
 
 ## A model changes the ref a script runs from
 
@@ -32,10 +32,10 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"id":"scr_5c9b1e3a7f2d4068","name":"rotate-keys","repo":"rep_7b3e9a0c5d1f2846","ref":"main","created":"2026-09-28T08:00:00Z","last_run":{"id":"run_1e9c3a7f5b0d2864","status":"failed","started":"2026-10-04T22:00:00Z"}}
+{"id":"scr_5c9b1e3a7f2d4068","name":"rotate-keys","repo":"rep_7b3e9a0c5d1f2846","ref":"main","created":"2026-09-28T08:00:00Z","subscriptions":[],"last_run":{"id":"run_1e9c3a7f5b0d2864","status":"failed","started":"2026-10-04T22:00:00Z"}}
 ```
 
-and a `content` array of one text block whose text is that object encoded compactly. `id`, `name`, `repo`, `created`, and `last_run` are unchanged.
+and a `content` array of one text block whose text is that object encoded compactly. `id`, `name`, `repo`, `created`, `subscriptions`, and `last_run` are unchanged.
 
 Preconditions:
 
@@ -85,7 +85,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 2 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"id":"scr_a2e7c4f9b1d03856","name":"sync-crm","repo":"rep_41d8f0a6b2c97e13","ref":"next","created":"2026-09-25T10:00:00Z","last_run":{"id":"run_6b2d8f4a0c9e1735","status":"running","started":"2026-10-05T09:31:00Z"}}
+{"id":"scr_a2e7c4f9b1d03856","name":"sync-crm","repo":"rep_41d8f0a6b2c97e13","ref":"next","created":"2026-09-25T10:00:00Z","subscriptions":[],"last_run":{"id":"run_6b2d8f4a0c9e1735","status":"running","started":"2026-10-05T09:31:00Z"}}
 ```
 
 and a `content` array of one text block whose text is that object encoded compactly. `next` names no branch of `rep_41d8f0a6b2c97e13` yet; it is accepted all the same, since it is not resolved until a run.
@@ -130,7 +130,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 3 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"id":"scr_6d1f4a9b2e8c7035","name":"nightly-report","repo":"rep_9c2e4b7a1d3f8e05","ref":"main","created":"2026-09-18T16:40:00Z","last_run":{"id":"run_8a2c6e1f9b3d5074","status":"running","started":"2026-10-05T09:31:40Z"}}
+{"id":"scr_6d1f4a9b2e8c7035","name":"nightly-report","repo":"rep_9c2e4b7a1d3f8e05","ref":"main","created":"2026-09-18T16:40:00Z","subscriptions":[],"last_run":{"id":"run_8a2c6e1f9b3d5074","status":"running","started":"2026-10-05T09:31:40Z"}}
 ```
 
 and a `content` array of one text block whose text is that object encoded compactly.
@@ -148,6 +148,50 @@ Postconditions:
   {"time":"<time>","service":"scripts","event":"tool.called","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"additive","outcome":"ok","tool":"update"}}
   ```
 
+## A model changes the ref of a script subscribed to an event
+
+A subscription names a script, not a ref, so changing the ref neither removes nor remakes it: `rotate-keys` stays subscribed to `repo.pushed`, with the time the subscription was made, and the next run an event of that name starts resolves the new ref, as the next `run` without a `ref` does. The model need not unsubscribe and subscribe again.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: update
+
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"update","arguments":{"name":"rotate-keys","ref":"main"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 4 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"scr_5c9b1e3a7f2d4068","name":"rotate-keys","repo":"rep_7b3e9a0c5d1f2846","ref":"main","created":"2026-09-28T08:00:00Z","subscriptions":[{"event":"repo.pushed","created":"2026-10-04T10:15:00Z"}],"last_run":{"id":"run_1e9c3a7f5b0d2864","status":"failed","started":"2026-10-04T22:00:00Z"}}
+```
+
+and a `content` array of one text block whose text is that object encoded compactly.
+
+Preconditions:
+
+- The preamble's: `rotate-keys` runs from `release`, and it is subscribed to `repo.pushed`, created `2026-10-04T10:15:00Z` (`S26`).
+
+Postconditions:
+
+- The catalog has `rotate-keys` running from `main`, still subscribed to `repo.pushed`, created `2026-10-04T10:15:00Z`.
+- An event named `repo.pushed` delivered to scripts after the call starts a run of `rotate-keys` that resolves `main` (`S27`).
+- No git ran, no repository was read, no run was made, and no script ran.
+- telemetry has received `script.updated` with attributes `{"script":"scr_5c9b1e3a7f2d4068"}` before the request's `tool.called`, whose `outcome` is `ok`; the event name is in no event.
+
 ## A model updates a script with a ref git would not accept
 
 A ref is held to the rule `create` holds it to: a string git accepts as a ref name. `..bad` is not one, and is refused quoting it as sent. A ref git would accept but that names nothing is not refused; a run of it fails (`S08`).
@@ -163,7 +207,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: update
 
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"update","arguments":{"name":"nightly-report","ref":"..bad"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"update","arguments":{"name":"nightly-report","ref":"..bad"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -173,7 +217,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 4 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 5 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 invalid ref '..bad'
@@ -203,7 +247,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: update
 
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"update","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -213,7 +257,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 5 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 6 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 invalid arguments:
@@ -248,7 +292,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: update
 
-{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update","arguments":{"name":"digest","ref":"v2"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"update","arguments":{"name":"digest","ref":"v2"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -258,7 +302,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 6 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 7 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 no script named 'digest'
@@ -288,7 +332,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: update
 
-{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"update","arguments":{"name":"cleanup","ref":"main"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"update","arguments":{"name":"cleanup","ref":"main"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -298,7 +342,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 7 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 8 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 no script named 'cleanup'
@@ -332,7 +376,7 @@ MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: update
 
-{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"update","arguments":{"name":"nightly-report","ref":2,"repo":"rep_41d8f0a6b2c97e13","new_name":"daily-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"update","arguments":{"name":"nightly-report","ref":2,"repo":"rep_41d8f0a6b2c97e13","new_name":"daily-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -342,7 +386,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 8 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
+Status 200. The body is a JSON-RPC response with `id` 9 whose `result` has `isError` `true`, no `structuredContent`, and a `content` array of one text block whose text is exactly:
 
 ```
 invalid arguments:

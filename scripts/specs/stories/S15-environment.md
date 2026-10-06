@@ -1,8 +1,8 @@
 # Stories — environment
 
-What a script finds when it runs: the process scripts starts for a run, what it is given, where it may write, and how its end becomes the run's status. Once `run` has resolved the ref and unpacked the commit into the run's `tree/` (`S08`), scripts starts the command `python3.12 main.py`, the host's `python3.12` found on scripts' own `PATH` (`S22`), with the run's `tree/` as its working directory. The tree is the commit's files exactly as `git archive` emits them, with no `.git` and no history; `main.py` at the repository's root is the entry point, and everything else in the repository is the script's own business: modules it imports, data it reads. The process runs as scripts' own unix user and group, whatever the script holds. Its standard output and standard error go to the run's `stdout` and `stderr`, each kept up to `OUTPUT_MAX_BYTES` (`S17`), and its standard input is empty. Its environment is scrubbed: it holds exactly these twelve variables and no others. `PATH` is scripts' own, exactly as scripts was given it. `HOME` is the run's folder, the same as `IKIGENBA_RUN_DIR`. `LANG` is `C.UTF-8`, so the script reads and writes text as UTF-8 whatever the host's locale. `IKIGENBA_RUN_ID` is the run's id. `IKIGENBA_SCRIPT` is the script's id, `scr_` and 16 lowercase hexadecimal digits, not its name. `IKIGENBA_SHA` is the 40 lowercase hexadecimal digits of the commit the run resolved, the `sha` `run` answered. `IKIGENBA_RUN_DIR` is the run's folder. `IKIGENBA_OUT_DIR` is the run's `out/` folder, empty when the script starts, where the script leaves what it produces: its files are what `result` lists (`S11`) and the run's page offers for download (`S13`, `S14`). `IKIGENBA_INPUT` is the run's `input.json`, which is always written before the script starts: the `input` argument of `run` byte for byte as it appears in the request, when it was given, and `{}` otherwise (`S08`). `IKIGENBA_USER_ID` and `IKIGENBA_REQUEST_ID` are the run's user and request id, the `run` call's `X-User-Id` and `X-Request-Id`. `IKIGENBA_SERVICES` is the path of the services file, exactly as scripts was given it (`S02`). The four path variables, `HOME`, `IKIGENBA_RUN_DIR`, `IKIGENBA_OUT_DIR`, and `IKIGENBA_INPUT`, name real places as the script sees them, each a full path that holds from any working directory; nothing promises what those paths look like, or how they relate to one another or to where scripts keeps the run on its disk (`S20`), beyond `HOME` being `IKIGENBA_RUN_DIR`. So a script finds its input, its out folder, and its run's folder only through the variables, and its repository's files only as its working directory. The tree is read-only to the script: before the script starts, every file and directory under it has lost its write permission, a guard against an accidental write. The script writes to its out folder and to `/tmp`. The script runs in its own process group, which scripts kills whole, children included, whenever it ends a run itself: on `cancel` (`S11`), at `SCRIPT_SECONDS` (`S17`), at the drain deadline (`S18`), or when its script is deleted (`S10`). A run is `main.py`'s: it ends when `main.py`'s own process exits, not when every process it started has, and scripts then kills whatever `main.py` left running in the run's process group, so nothing a script starts outlives its run. Runs are concurrent, across scripts and within one script: no run waits for another, and each has its own folder, tree, input, and out folder. When `main.py`'s process ends on its own, the run is `exited`, with that process's exit code, or, when the process died of a signal scripts did not send, 128 plus the signal's number; `killed`, `timed_out`, and `failed` are told in `S11`, `S10`, `S17`, `S18`, and `S08`. A script reaches the suite as a sibling service does, through the services file, and nothing more is built for it.
+What a script finds when it runs: the process scripts starts for a run, what it is given, where it may write, and how its end becomes the run's status. Once `run` has resolved the ref and unpacked the commit into the run's `tree/` (`S08`), scripts starts the command `python3.12 main.py`, the host's `python3.12` found on scripts' own `PATH` (`S22`), with the run's `tree/` as its working directory. The tree is the commit's files exactly as `git archive` emits them, with no `.git` and no history; `main.py` at the repository's root is the entry point, and everything else in the repository is the script's own business: modules it imports, data it reads. The process runs as scripts' own unix user and group, whatever the script holds. Its standard output and standard error go to the run's `stdout` and `stderr`, each kept up to `OUTPUT_MAX_BYTES` (`S17`), and its standard input is empty. Its environment is scrubbed: it holds exactly these fourteen variables and no others. `PATH` is scripts' own, exactly as scripts was given it. `HOME` is the run's folder, the same as `IKIGENBA_RUN_DIR`. `LANG` is `C.UTF-8`, so the script reads and writes text as UTF-8 whatever the host's locale. `IKIGENBA_RUN_ID` is the run's id. `IKIGENBA_SCRIPT` is the script's id, `scr_` and 16 lowercase hexadecimal digits, not its name. `IKIGENBA_SHA` is the 40 lowercase hexadecimal digits of the commit the run resolved, the `sha` `run` answered. `IKIGENBA_RUN_DIR` is the run's folder. `IKIGENBA_OUT_DIR` is the run's `out/` folder, empty when the script starts, where the script leaves what it produces: its files are what `result` lists (`S11`) and the run's page offers for download (`S13`, `S14`). `IKIGENBA_INPUT` is the run's `input.json`, which is always written before the script starts: the `input` argument of `run` byte for byte as it appears in the request, when it was given, and `{}` otherwise (`S08`), or, for a run an event started, the event record, byte for byte as the events app sent it in the delivery (`S27`). `IKIGENBA_USER_ID` and `IKIGENBA_REQUEST_ID` are the run's user and request id: for a run `run` started, the `run` call's `X-User-Id` and `X-Request-Id`; for a run an event started, the script's owner, whoever caused the event, and the id of the request by which the events app delivered the event to scripts, not the event's own `request_id` (`S27`). `IKIGENBA_EVENT_ID` and `IKIGENBA_EVENT_DEPTH` are, for a run an event started, the event's `id` and its `depth` in decimal; for a run `run` started, the empty string and `0`. A script that calls a sibling sends them on, as it sends its user and request id, as `X-Event-Cause` and `X-Event-Depth` (`A script started by an event calls a sibling service with the event as cause`). `IKIGENBA_SERVICES` is the path of the services file, exactly as scripts was given it (`S02`). The four path variables, `HOME`, `IKIGENBA_RUN_DIR`, `IKIGENBA_OUT_DIR`, and `IKIGENBA_INPUT`, name real places as the script sees them, each a full path that holds from any working directory; nothing promises what those paths look like, or how they relate to one another or to where scripts keeps the run on its disk (`S20`), beyond `HOME` being `IKIGENBA_RUN_DIR`. So a script finds its input, its out folder, and its run's folder only through the variables, and its repository's files only as its working directory. The tree is read-only to the script: before the script starts, every file and directory under it has lost its write permission, a guard against an accidental write. The script writes to its out folder and to `/tmp`. The script runs in its own process group, which scripts kills whole, children included, whenever it ends a run itself: on `cancel` (`S11`), at `SCRIPT_SECONDS` (`S17`), at the drain deadline (`S18`), or when its script is deleted (`S10`). A run is `main.py`'s: it ends when `main.py`'s own process exits, not when every process it started has, and scripts then kills whatever `main.py` left running in the run's process group, so nothing a script starts outlives its run. Runs are concurrent, across scripts and within one script: no run waits for another, and each has its own folder, tree, input, and out folder. When `main.py`'s process ends on its own, the run is `exited`, with that process's exit code, or, when the process died of a signal scripts did not send, 128 plus the signal's number; `killed`, `timed_out`, and `failed` are told in `S11`, `S10`, `S17`, `S18`, and `S08`. A script reaches the suite as a sibling service does, through the services file, and nothing more is built for it.
 
-The actor is a model working through an MCP client, which starts a run with `run` and follows it with `result` until its status is final, with the request shape and result envelope `S05` fixes; the stories show what its script saw and produced. scripts is serving on the host (`S02`), started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file (`S03`), whose entry named `repos` has the socket `/run/ikigenba/repos.sock`; telemetry takes every event. Every setting is its default. The catalog holds `S06`'s shared catalog, among it the caller `u_7f3a9c21`'s script `nightly-report`, `scr_6d1f4a9b2e8c7035`, over the repository `rep_9c2e4b7a1d3f8e05` at `main`, whose run `run_8a2c6e1f9b3d5074` is still `running` and runs on undisturbed by every story here. The owner has since pushed one commit to the repository's `main`, `<sha>`, whose files each story shows; the commit holds those files and no others. The `run` call carries `X-Request-Id: e7a3c9f1b5d24e68a0c4f8b2d6e1a359` unless a story says otherwise, and that is the request id its run keeps; a `result` call's own request id is not fixed. `<id>` is the new run's id, `run_` and 16 lowercase hexadecimal digits, and `<started>` and `<finished>` its times. A run here records `run.started` in the `run` call's request, after its `request.started` and before its `tool.called`, and `run.finished` whenever the script ends, possibly before the `run` call is answered, under the `run` call's request id and user (`S16`). Each `result` call records its own `request.started`, `tool.called` with `tool` `result`, `kind` `read`, and `outcome` `ok`, and `request.finished`, and nothing else. After every run ends scripts prunes (`S19`); nothing in the fixture is past keeping. What a script writes goes into its run, never to scripts' stderr, and scripts writes nothing to stderr in this group.
+The actor is a model working through an MCP client, which starts a run with `run`, or has one started by an event its script is subscribed to (`S27`), and follows it with `result` until its status is final, with the request shape and result envelope `S05` fixes; the stories show what its script saw and produced. scripts is serving on the host (`S02`), started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file (`S03`), whose entry named `repos` has the socket `/run/ikigenba/repos.sock`; telemetry takes every event. Every setting is its default. The catalog holds `S06`'s shared catalog, among it the caller `u_7f3a9c21`'s script `nightly-report`, `scr_6d1f4a9b2e8c7035`, over the repository `rep_9c2e4b7a1d3f8e05` at `main`, whose run `run_8a2c6e1f9b3d5074` is still `running` and runs on undisturbed by every story here. The owner has since pushed one commit to the repository's `main`, `<sha>`, whose files each story shows; the commit holds those files and no others. The `run` call carries `X-Request-Id: e7a3c9f1b5d24e68a0c4f8b2d6e1a359` unless a story says otherwise, and that is the request id its run keeps; a `result` call's own request id is not fixed. `<id>` is the new run's id, `run_` and 16 lowercase hexadecimal digits, and `<started>` and `<finished>` its times. A run here records `run.started` in the `run` call's request, after its `request.started` and before its `tool.called`, and `run.finished` whenever the script ends, possibly before the `run` call is answered, under the `run` call's request id and user (`S16`). Each `result` call records its own `request.started`, `tool.called` with `tool` `result`, `kind` `read`, and `outcome` `ok`, and `request.finished`, and nothing else. After every run ends scripts prunes (`S19`); nothing in the fixture is past keeping. What a script writes goes into its run, never to scripts' stderr, and scripts writes nothing to stderr in this group.
 
 ## A model runs a script that prints its environment
 
@@ -76,10 +76,12 @@ Status 200. The body is a JSON-RPC response with `id` 2 whose `result` has no `i
 {"id":"<id>","script":"scr_6d1f4a9b2e8c7035","sha":"<sha>","ref":"main","user":"u_7f3a9c21","request_id":"e7a3c9f1b5d24e68a0c4f8b2d6e1a359","trigger":"manual","status":"exited","exit_code":0,"started":"<started>","finished":"<finished>","stdout_bytes":<bytes>,"stderr_bytes":0,"truncated":false,"stdout":"<stdout>","stderr":"","files":[]}
 ```
 
-and a `content` array of one text block whose text is that object encoded compactly. `<stdout>` is these twelve lines, each ending with LF, and `stdout_bytes`, `<bytes>`, is their length in bytes:
+and a `content` array of one text block whose text is that object encoded compactly. `<stdout>` is these fourteen lines, each ending with LF, and `stdout_bytes`, `<bytes>`, is their length in bytes:
 
 ```
 HOME=<run folder>
+IKIGENBA_EVENT_DEPTH=0
+IKIGENBA_EVENT_ID=
 IKIGENBA_INPUT=<input file>
 IKIGENBA_OUT_DIR=<out folder>
 IKIGENBA_REQUEST_ID=e7a3c9f1b5d24e68a0c4f8b2d6e1a359
@@ -93,7 +95,7 @@ LANG=C.UTF-8
 PATH=<path>
 ```
 
-`<run folder>` names the run's folder, the same in both lines; `<out folder>` names its out folder, an empty directory when the script started; `<input file>` names the file holding the run's input, here `{}`; `<path>` is scripts' own `PATH`, exactly as scripts was given it. Each of the three paths names a place that exists while the script runs, as a full path; what the paths look like is not fixed. There is no other line: none of scripts' own settings, no `DRAIN_SECONDS`, no other variable systemd gave scripts (`NOTIFY_SOCKET`, `LISTEN_*`, …), and nothing else of scripts' environment is passed on, and no caller's email is in it.
+`<run folder>` names the run's folder, the same in both lines; `<out folder>` names its out folder, an empty directory when the script started; `<input file>` names the file holding the run's input, here `{}`; `<path>` is scripts' own `PATH`, exactly as scripts was given it. `IKIGENBA_EVENT_ID` is empty, with nothing after its `=`, and `IKIGENBA_EVENT_DEPTH` is `0`, since `run` started the run, not an event. Each of the three paths names a place that exists while the script runs, as a full path; what the paths look like is not fixed. There is no other line: none of scripts' own settings, no `DRAIN_SECONDS`, no other variable systemd gave scripts (`NOTIFY_SOCKET`, `LISTEN_*`, …), and nothing else of scripts' environment is passed on, and no caller's email is in it.
 
 Preconditions:
 
@@ -101,7 +103,7 @@ Preconditions:
 
 Postconditions:
 
-- The run `<id>` of `nightly-report` is recorded `exited` with exit code 0, at `<sha>` from `main`, as user `u_7f3a9c21` under request id `e7a3c9f1b5d24e68a0c4f8b2d6e1a359`, trigger `manual`. Its folder, `state/runs/scr_6d1f4a9b2e8c7035/<id>/`, holds its `tree/` with `main.py` alone, its empty `out/`, its `input.json` holding `{}`, and its `stdout`, the twelve lines.
+- The run `<id>` of `nightly-report` is recorded `exited` with exit code 0, at `<sha>` from `main`, as user `u_7f3a9c21` under request id `e7a3c9f1b5d24e68a0c4f8b2d6e1a359`, trigger `manual`. Its folder, `state/runs/scr_6d1f4a9b2e8c7035/<id>/`, holds its `tree/` with `main.py` alone, its empty `out/`, its `input.json` holding `{}`, and its `stdout`, the fourteen lines.
 - telemetry has received the run's `run.started`, in the `run` call's request, and, when the script ended, its `run.finished`, under the `run` call's request id and user:
 
   ```
@@ -278,6 +280,112 @@ Preconditions:
 Postconditions:
 
 - The run `<id>` is recorded `exited` with exit code 0, and its folder's `input.json` holds `{}`.
+
+## A script started by an event finds the event as its input
+
+A script subscribed to an event (`S26`) is started by the events app's delivery, not by a model's `run` (`S27`), and finds the event where every run finds its input: in the file `IKIGENBA_INPUT` names. It reads it as JSON, an object of the event record's eleven members, and finds in it what happened and who caused it. It runs as its owner, so `IKIGENBA_USER_ID` is the owner's id, whoever caused the event; here that is the same user. The rest of its environment is as for any run.
+
+`main.py`:
+
+```python
+import json
+import os
+
+with open(os.environ["IKIGENBA_INPUT"]) as f:
+    event = json.load(f)
+print(os.environ["IKIGENBA_USER_ID"])
+print(sorted(event))
+print(event["event"], event["user"], event["attrs"]["repo"])
+```
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: result
+
+{"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"result","arguments":{"run":"<id>"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 31 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"<id>","script":"scr_6d1f4a9b2e8c7035","sha":"<sha>","ref":"main","user":"u_7f3a9c21","request_id":"<delivery request id>","trigger":"event","event":"evt_8c3f1a6e2d9b4075","status":"exited","exit_code":0,"started":"<started>","finished":"<finished>","stdout_bytes":158,"stderr_bytes":0,"truncated":false,"stdout":"u_7f3a9c21\n['attrs', 'cause', 'depth', 'event', 'id', 'received', 'request_id', 'seq', 'service', 'time', 'user']\nrepo.pushed u_7f3a9c21 rep_7b3e9a0c5d1f2846\n","stderr":"","files":[]}
+```
+
+where `<delivery request id>` is the run's request id, that of the request by which the events app delivered the event to scripts (`S27`); and a `content` array of one text block whose text is that object encoded compactly.
+
+Preconditions:
+
+- The preamble's: `<sha>` holds `main.py` alone. `nightly-report` is subscribed to `repo.pushed` (`S26`), and the events app delivered the push event `S27`'s preamble shows, `evt_8c3f1a6e2d9b4075`, whose `user` is `u_7f3a9c21` and whose `attrs.repo` is `rep_7b3e9a0c5d1f2846`. That started the run `<id>` of `nightly-report`, which has ended. No model called `run`.
+
+Postconditions:
+
+- The run `<id>` is recorded `exited` with exit code 0, as user `u_7f3a9c21`, trigger `event`, event `evt_8c3f1a6e2d9b4075`. Its folder's `input.json` holds the event record, byte for byte as the events app sent it, which the run's page shows as its Input (`S13`).
+- The event record is in no event scripts recorded: the run's `run.started`, with `trigger` `event`, and its `run.finished` carry only the ids, status, and numbers the preamble names.
+
+## A script started by an event finds the event's id and depth
+
+A script started by an event also finds the event's `id` and `depth` in its environment, without reading its input: `IKIGENBA_EVENT_ID` and `IKIGENBA_EVENT_DEPTH`. They are what it passes on when it calls a sibling (`A script started by an event calls a sibling service with the event as cause`). A run `run` started has them too, empty and `0` (`A model runs a script that prints its environment`). Its `IKIGENBA_REQUEST_ID` is the id of the request by which the events app delivered the event, `<delivery request id>`, not the push's own `6c2e9a4f1b7d3058e2a6c9f4b1d7e305`.
+
+`main.py`:
+
+```python
+import os
+
+print(os.environ["IKIGENBA_EVENT_ID"], os.environ["IKIGENBA_EVENT_DEPTH"])
+```
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: result
+
+{"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"result","arguments":{"run":"<id>"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 32 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"<id>","script":"scr_6d1f4a9b2e8c7035","sha":"<sha>","ref":"main","user":"u_7f3a9c21","request_id":"<delivery request id>","trigger":"event","event":"evt_8c3f1a6e2d9b4075","status":"exited","exit_code":0,"started":"<started>","finished":"<finished>","stdout_bytes":23,"stderr_bytes":0,"truncated":false,"stdout":"evt_8c3f1a6e2d9b4075 0\n","stderr":"","files":[]}
+```
+
+and a `content` array of one text block whose text is that object encoded compactly.
+
+Preconditions:
+
+- The preamble's: `<sha>` holds `main.py` alone. `nightly-report` is subscribed to `repo.pushed` (`S26`), and the events app delivered the push event `S27`'s preamble shows, `evt_8c3f1a6e2d9b4075`, whose `depth` is `0`, in a request whose id is `<delivery request id>`. That started the run `<id>` of `nightly-report`, which has ended.
+
+Postconditions:
+
+- Nothing has changed by the call. The run `<id>` is recorded `exited` with exit code 0, trigger `event`, event `evt_8c3f1a6e2d9b4075`, request id `<delivery request id>`.
 
 ## A script reads the files of its own repository
 
@@ -777,6 +885,66 @@ Postconditions:
   ```
 
 - scripts recorded no event for the call: its only events about the run are `run.started` and `run.finished`, and scripts served no request for the script.
+
+## A script started by an event calls a sibling service with the event as cause
+
+A script started by an event calls a sibling as any script does (`A script calls a sibling service as the run's user`), and also sends the event that started it as the call's cause: `IKIGENBA_EVENT_ID` as `X-Event-Cause` and `IKIGENBA_EVENT_DEPTH` as `X-Event-Depth`, beside `X-User-Id` and `X-Request-Id`. scripts sends nothing for it; the script sends them, as it sends the others. What a sibling does with them is the sibling's: a service that honors them stamps any event it emits to the events app during that call with `cause` `evt_8c3f1a6e2d9b4075` and `depth` `1`, the depth sent plus one, which the events app's `search` shows. Here the call is repos' `list`, which emits no event, so nothing is stamped. The same script started by `run` sends them empty and `0`.
+
+`main.py` is the one of `A script calls a sibling service as the run's user`, but the headers of its call are:
+
+```python
+{
+    "Content-Type": "application/json",
+    "MCP-Protocol-Version": "2026-07-28",
+    "Mcp-Method": "tools/call",
+    "Mcp-Name": "list",
+    "X-User-Id": os.environ["IKIGENBA_USER_ID"],
+    "X-Request-Id": os.environ["IKIGENBA_REQUEST_ID"],
+    "X-Event-Cause": os.environ["IKIGENBA_EVENT_ID"],
+    "X-Event-Depth": os.environ["IKIGENBA_EVENT_DEPTH"],
+}
+```
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: result
+
+{"jsonrpc":"2.0","id":33,"method":"tools/call","params":{"name":"result","arguments":{"run":"<id>"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 33 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"<id>","script":"scr_6d1f4a9b2e8c7035","sha":"<sha>","ref":"main","user":"u_7f3a9c21","request_id":"<delivery request id>","trigger":"event","event":"evt_8c3f1a6e2d9b4075","status":"exited","exit_code":0,"started":"<started>","finished":"<finished>","stdout_bytes":34,"stderr_bytes":0,"truncated":false,"stdout":"crm-sync\nnightly-report\nops-tools\n","stderr":"","files":[]}
+```
+
+and a `content` array of one text block whose text is that object encoded compactly.
+
+Preconditions:
+
+- The preamble's: `<sha>` holds `main.py` alone. repos is serving on `/run/ikigenba/repos.sock` and holds `S06`'s shared repositories.
+- `nightly-report` is subscribed to `repo.pushed` (`S26`), and the events app delivered the push event `S27`'s preamble shows, `evt_8c3f1a6e2d9b4075`, whose `depth` is `0`, in a request whose id is `<delivery request id>`. That started the run `<id>` of `nightly-report`, which has ended.
+
+Postconditions:
+
+- repos received the script's call with `X-User-Id: u_7f3a9c21`, `X-Request-Id: <delivery request id>`, `X-Event-Cause: evt_8c3f1a6e2d9b4075`, and `X-Event-Depth: 0`.
+- telemetry has received repos' `request.started`, `tool.called` with `tool` `list`, and `request.finished` for the call, under request id `<delivery request id>` and user `u_7f3a9c21`, between the run's `run.started` and its `run.finished`.
+- scripts recorded no event for the call.
 
 ## A script prints text outside ASCII
 

@@ -1,6 +1,6 @@
 # Stories — on a space
 
-scripts reached through a space: the file `S23` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `scripts.<space>` over TLS, so on the space `sbx.ikigenba.dev` scripts answers at `scripts.sbx.ikigenba.dev`. nginx on the space proxies to scripts' socket, `/run/ikigenba/scripts.sock` (`S02`); scripts ships no `etc/nginx.conf` (`S23`). scripts' manifest declares no `guests` (`S01`), so the space's nginx asks auth's `/check` for every path of scripts: a request with no credential never reaches scripts, and is sent to sign in at a page or challenged at `/mcp` and the paths under `/mcp/` by nginx itself (opsctl's `S5-nginx.md`, `A browser reaches a wired app outside /mcp without signing in` and `An MCP client reaches a wired app without a credential`), one whose credential auth refuses gets auth's 403 and never reaches scripts, and one with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check` subrequest carried, so auth's check event and scripts' records of the request share one request id. The host's services file is `/var/lib/ikigenba/services.json`, which lists scripts with `url` `https://scripts.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so the MCP gateway offers scripts' nine tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`), and every script scripts runs is handed that file's path as `IKIGENBA_SERVICES` (`S15`). scripts runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory, so its catalog is `/opt/scripts/state/scripts.db`, its run folders are under `/opt/scripts/state/runs/`, and `REPOS_DIR`, at its manifest default `../repos/state/repos`, names `/opt/scripts/../repos/state/repos`, the directory where repos keeps its bare repositories, `/opt/repos/state/repos/` (repos' `S15-disk.md`; `S20`). The host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect; the run folders are kept on the host but not replicated (`S20`). `/opt/scripts/etc/env` carries the seven settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`; the host provides the `git` scripts runs (opsctl's `S4-init.md`) and the `python3.12` every script runs under, installed at the space's first boot or, on a space launched before that, by the operator (`S22`). A deploy restarts scripts and so kills any run in flight (`S18`).
+scripts reached through a space: the file `S23` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `scripts.<space>` over TLS, so on the space `sbx.ikigenba.dev` scripts answers at `scripts.sbx.ikigenba.dev`. nginx on the space proxies to scripts' socket, `/run/ikigenba/scripts.sock` (`S02`), and includes scripts' own `etc/nginx.conf` in that server (`S23`), so `/events` and `/declarations` at the public name answer 404 while the same paths on the socket stay open to scripts' siblings. scripts' manifest declares no `guests` (`S01`), so the space's nginx asks auth's `/check` for every path of scripts: a request with no credential never reaches scripts, and is sent to sign in at a page or challenged at `/mcp` and the paths under `/mcp/` by nginx itself (opsctl's `S5-nginx.md`, `A browser reaches a wired app outside /mcp without signing in` and `An MCP client reaches a wired app without a credential`), one whose credential auth refuses gets auth's 403 and never reaches scripts, and one with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check` subrequest carried, so auth's check event and scripts' records of the request share one request id. The host's services file is `/var/lib/ikigenba/services.json`, which lists scripts with `url` `https://scripts.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so the MCP gateway offers scripts' eleven tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`), and every script scripts runs is handed that file's path as `IKIGENBA_SERVICES` (`S15`). scripts runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory, so its catalog is `/opt/scripts/state/scripts.db`, its run folders are under `/opt/scripts/state/runs/`, and `REPOS_DIR`, at its manifest default `../repos/state/repos`, names `/opt/scripts/../repos/state/repos`, the directory where repos keeps its bare repositories, `/opt/repos/state/repos/` (repos' `S15-disk.md`; `S20`). The host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect; the run folders are kept on the host but not replicated (`S20`). `/opt/scripts/etc/env` carries the seven settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`; the host provides the `git` scripts runs (opsctl's `S4-init.md`) and the `python3.12` every script runs under, installed at the space's first boot or, on a space launched before that, by the operator (`S22`). A deploy restarts scripts and so kills any run in flight (`S18`).
 
 The stories prove the whole path from checkout to browser, curl, and agent, and nothing about scripts that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The catalog on the space holds `S06`'s shared catalog — `backfill`, `nightly-report`, `rotate-keys`, and `sync-crm`, owned by `u_7f3a9c21`, `mg@example.com`, and `digest`, owned by `u_2b8e1d04`, `ann@example.com`, with their runs — and repos on the space holds the repositories they run from, but `backfill`'s, which is gone. A guest is curl with no cookie and no `Authorization` header; a signed-in caller sends the token `ikp_<token>` (auth's `S5-tokens.md`), owned by `u_7f3a9c21`, as `Authorization: Bearer ikp_<token>`. The MCP requests are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision are not repeated. Trail events are named here by their attributes, as `S16` records them in full. The token's secret is in no record any story below leaves behind: not in the trail, not in nginx's logs on the host, and not in any run's folder.
 
@@ -21,7 +21,7 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the landing page (`S03`): an HTML page whose title is `scripts`, whose banner's profile link is titled `mg@example.com`, the email of the token's owner, and leads to `https://auth.sbx.ikigenba.dev/`, whose banner's `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`, whose banner carries the launcher button `Services`, since the host's services file lists scripts with its icon, and whose visible text carries the heading `scripts`; the heading `Your scripts` and the table of the caller's scripts, `backfill`, `nightly-report`, `rotate-keys`, and `sync-crm`, in that order, each linking to its page at `/<name>/`, `backfill` saying `never run` and showing its repository by its id, since that repository is gone; not `digest`, which is `ann@example.com`'s; the heading `MCP tools` and the nine tool names `list`, `show`, `create`, `update`, `delete`, `run`, `runs`, `result`, and `cancel`; and a link `About scripts` to `/about`; and whose footer reads `scripts v<semver>`, the version the deployed binary's `scripts --version` prints (`S01`), the same one `space status` reports for scripts. Its stylesheet is `https://scripts.sbx.ikigenba.dev/_appkit/theme.css` (`S04`): a browser showing the page requests its style from scripts' own host and from no other origin. Its button feedback script is `https://scripts.sbx.ikigenba.dev/_appkit/feedback.js`, from the same host.
+Status 200. The body is the landing page (`S03`): an HTML page whose title is `scripts`, whose banner's profile link is titled `mg@example.com`, the email of the token's owner, and leads to `https://auth.sbx.ikigenba.dev/`, whose banner's `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`, whose banner carries the launcher button `Services`, since the host's services file lists scripts with its icon, and whose visible text carries the heading `scripts`; the heading `Your scripts` and the table of the caller's scripts, `backfill`, `nightly-report`, `rotate-keys`, and `sync-crm`, in that order, each linking to its page at `/<name>/`, `backfill` saying `never run` and showing its repository by its id, since that repository is gone; not `digest`, which is `ann@example.com`'s; the heading `MCP tools` and the eleven tool names `list`, `show`, `create`, `update`, `delete`, `subscribe`, `unsubscribe`, `run`, `runs`, `result`, and `cancel`; and a link `About scripts` to `/about`; and whose footer reads `scripts v<semver>`, the version the deployed binary's `scripts --version` prints (`S01`), the same one `space status` reports for scripts. Its stylesheet is `https://scripts.sbx.ikigenba.dev/_appkit/theme.css` (`S04`): a browser showing the page requests its style from scripts' own host and from no other origin. Its button feedback script is `https://scripts.sbx.ikigenba.dev/_appkit/feedback.js`, from the same host.
 
 Preconditions:
 
@@ -95,6 +95,45 @@ Postconditions:
 
 - Nothing has changed. Nothing reached `/run/ikigenba/scripts.sock`, and scripts recorded no event; auth recorded `check.refused` with `outcome=unauthenticated` and `credential=none`.
 
+## An agent asks a space for scripts' events and declarations paths
+
+`/events` and `/declarations` are meant only for scripts' siblings on the socket. At scripts' public name the space's nginx answers each 404 for every method, because of the fragment scripts ships (`S23`); a credential makes no difference, since the answer is nginx's and the request never reaches scripts. Every form below is answered the same way.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' https://scripts.sbx.ikigenba.dev/events
+```
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://scripts.sbx.ikigenba.dev/events
+```
+
+```
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' https://scripts.sbx.ikigenba.dev/declarations
+```
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://scripts.sbx.ikigenba.dev/declarations
+```
+
+Response:
+
+```
+HTTP/2 404
+```
+
+Status 404. The body is not fixed. A request to either path with no credential is answered 404 as well; this story does not fix which of the space's refusals comes first, only that neither reaches scripts.
+
+Preconditions:
+
+- scripts `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, so the host's nginx includes `/opt/scripts/etc/nginx.conf` in scripts' server.
+- The agent holds `ikp_<token>`, a token auth honors, owned by `u_7f3a9c21`.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/scripts.sock`: scripts recorded no event for any of the requests, and no run started. The public 404 closes the paths to the outside only; what scripts answers on them on its socket is not this group's.
+
 ## An agent on a space creates and runs a script through the gateway
 
 The expected path for an agent: it has pushed a `main.py` to one of its repositories in repos, asks the gateway to run scripts' `create` naming that repository, then `run` with an input, and follows the run with `result` until it has ended. `create` and `run` are additive tools (`S05`), so the agent calls them with the gateway's `mutate` tool (mcp's `S09-mutate.md`); `result` is a read tool, called with the gateway's `call` (mcp's `S08-call.md`). The gateway reaches scripts directly on `/run/ikigenba/scripts.sock` and relays its answer, forwarding the caller and the request id nginx gave the agent's request, so the run acts as `u_7f3a9c21` under the id of the `run` request (`S08`). The repository's `main` holds one file, `main.py`:
@@ -134,10 +173,10 @@ content-type: application/json
 Status 200, for each. The first body is a JSON-RPC response with `id` 1 whose `result` is scripts' answer to `create` (`S06`), relayed: no `isError` member, a `structuredContent` of
 
 ```
-{"id":"<id>","name":"hello","repo":"<rep>","ref":"main","created":"<created>"}
+{"id":"<id>","name":"hello","repo":"<rep>","ref":"main","created":"<created>","subscriptions":[]}
 ```
 
-and a `content` array of one text block holding that same object encoded compactly; it has no `last_run`, since the script has never run. The second is a JSON-RPC response with `id` 2 whose `result` is scripts' answer to `run` (`S08`), relayed, given once the commit is unpacked and the script's process has started, without waiting for it, with a `structuredContent` of
+and a `content` array of one text block holding that same object encoded compactly; its `subscriptions` is empty, since nothing subscribes a new script to an event, and it has no `last_run`, since the script has never run. The second is a JSON-RPC response with `id` 2 whose `result` is scripts' answer to `run` (`S08`), relayed, given once the commit is unpacked and the script's process has started, without waiting for it, with a `structuredContent` of
 
 ```
 {"id":"<run>","status":"running","sha":"<sha>"}

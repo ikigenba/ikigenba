@@ -1,12 +1,12 @@
 # Stories — script page
 
-One script's page: what a running scripts (`S02`) answers at `/<name>/`, at `/<name>`, and at every path whose first segment names none of the caller's scripts or that names nothing beneath one of them. The page shows the caller one of their own scripts: its record and its runs, newest first, each linking to its own page (`S13`). It is server-rendered HTML drawn from scripts' template `script`, titled `<name> · scripts`, with the stylesheet link, the button feedback script, the viewport, the banner, the launcher when the services file offers one, and the footer `scripts v<semver>` exactly as the catalog has them (`S03`), and no script of its own. The first segment of every path but `/`, `/about`, `/mcp` (`S05`), and `/_appkit/` and every path beneath it, whose answers, a missing shared file's included, are `S04`'s, is a script's name (`S03`), and scripts answers it in this order: the caller's identity first, as on every route (`S03`); then a method other than `GET` or `HEAD`, refused with `405`; then the name, looked up in the catalog among the caller's own scripts only, a catalog it cannot read being answered `503`; then `/<name>` without its trailing `/` is redirected to `/<name>/`, `/<name>/` is the page, the paths of a run, `/<name>/runs/<run id>/` and what lies beneath it, are `S13`'s and `S14`'s, and every other path is answered with the not-found page. A name that is none of the caller's scripts is answered with the not-found page whatever follows it, exactly as a name no script has, so a page never tells a user that another user's script exists. scripts' not-found page is an HTML document, `Content-Type: text/html; charset=utf-8`, titled `Not found`, that links `/_appkit/theme.css`, whose heading is `Not found` and whose text (`p#notfound`) is `There is nothing at this address.`, with the footer `scripts v<semver>`, no banner, and no script but the button feedback script, `/_appkit/feedback.js`; it is answered with status `404`. A script's repository is shown by its name, which scripts reads when it draws the page from the bare repository's config, `ikigenba.name` in `<REPOS_DIR>/<repository id>.git`, with the host's git; it is not stored, so a repository renamed in repos shows its new name on the next page, and when the repository's directory is gone or the name cannot be read the page shows the repository's id instead, muted, titled `the repository is gone`. That read is the only git a script page runs, and it reads no run folder and runs no script. Status reads as a word with a kind (`span.status[data-kind=<kind>]`): `running`, `info`; `exited 0`, `ok`; `exited <n>` for a non-zero `<n>`, `timed out` and `killed`, `warn`; `failed`, `err`. A run's commit is its short hash, the first seven hexadecimal digits of its sha, and is empty when its ref never resolved; its duration is empty while it runs and when it failed to start; and its exit code is shown only when its process exited on its own.
+One script's page: what a running scripts (`S02`) answers at `/<name>/`, at `/<name>`, and at every path whose first segment names none of the caller's scripts or that names nothing beneath one of them. The page shows the caller one of their own scripts: its record, the events it is subscribed to (`S26`), and its runs, newest first, each linking to its own page (`S13`). It is server-rendered HTML drawn from scripts' template `script`, titled `<name> · scripts`, with the stylesheet link, the button feedback script, the viewport, the banner, the launcher when the services file offers one, and the footer `scripts v<semver>` exactly as the catalog has them (`S03`), and no script of its own. The first segment of every path but `/`, `/about`, `/mcp` (`S05`), `/events` and `/declarations`, which only siblings on the socket reach and which no story in this group answers, and `/_appkit/` and every path beneath it, whose answers, a missing shared file's included, are `S04`'s, is a script's name (`S03`), and scripts answers it in this order: the caller's identity first, as on every route (`S03`); then a method other than `GET` or `HEAD`, refused with `405`; then the name, looked up in the catalog among the caller's own scripts only, a catalog it cannot read being answered `503`; then `/<name>` without its trailing `/` is redirected to `/<name>/`, `/<name>/` is the page, the paths of a run, `/<name>/runs/<run id>/` and what lies beneath it, are `S13`'s and `S14`'s, and every other path is answered with the not-found page. A name that is none of the caller's scripts is answered with the not-found page whatever follows it, exactly as a name no script has, so a page never tells a user that another user's script exists. scripts' not-found page is an HTML document, `Content-Type: text/html; charset=utf-8`, titled `Not found`, that links `/_appkit/theme.css`, whose heading is `Not found` and whose text (`p#notfound`) is `There is nothing at this address.`, with the footer `scripts v<semver>`, no banner, and no script but the button feedback script, `/_appkit/feedback.js`; it is answered with status `404`. A script's repository is shown by its name, which scripts reads when it draws the page from the bare repository's config, `ikigenba.name` in `<REPOS_DIR>/<repository id>.git`, with the host's git; it is not stored, so a repository renamed in repos shows its new name on the next page, and when the repository's directory is gone or the name cannot be read the page shows the repository's id instead, muted, titled `the repository is gone`. That read is the only git a script page runs, and it reads no run folder and runs no script. A script's subscriptions are the catalog's, each shown by its event name, sorted by event name, in `section#subscriptions`, headed `Subscriptions`: a list `ul#subscription-list` of one `li[data-event=<event>]` per subscription, whose visible text is the event name, or, for a script subscribed to nothing, no list and `div#no-subscriptions` reading `This script is subscribed to no events.`; the page shows no subscription's time. Status reads as a word with a kind (`span.status[data-kind=<kind>]`): `running`, `info`; `exited 0`, `ok`; `exited <n>` for a non-zero `<n>`, `timed out` and `killed`, `warn`; `failed`, `err`. A run's commit is its short hash, the first seven hexadecimal digits of its sha, and is empty when its ref never resolved; its duration is empty while it runs and when it failed to start; and its exit code is shown only when its process exited on its own.
 
 Unless a story says otherwise, scripts runs with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, the suite's services file (`S03`), and telemetry takes every event. The catalog is `S06`'s shared catalog, and now is `2026-10-05T09:32:00Z`. The caller is `u_7f3a9c21`, `mg@example.com`, who owns `nightly-report`, `scr_6d1f4a9b2e8c7035`, created `2026-09-18T16:40:00Z`, running `main` of `rep_9c2e4b7a1d3f8e05`, whose name in repos is `nightly-report`; `sync-crm`; `rotate-keys`, `scr_5c9b1e3a7f2d4068`, created `2026-09-28T08:00:00Z`, running `release` of `rep_7b3e9a0c5d1f2846`, whose name is `ops-tools`; and `backfill`, `scr_e8f2a6c0d4b19357`, created `2026-10-02T12:00:00Z`, running `main` of `rep_0f6a2d9e8c4b7153`, whose directory is gone from `../repos/state/repos`. `digest` is `u_2b8e1d04`'s, `ann@example.com`. `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` are their defaults, 15 and 10. The requests carry `Host: scripts.sbx.ikigenba.dev`, `X-Forwarded-Proto: https`, the caller's `X-User-Id` and `X-User-Email`, and nginx's `X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59`. Every request adds exactly two events to scripts' trail, `request.started` and `request.finished` (`S02`), under that request id and the caller's user, and no other: a page view is no domain event. No answer in this group earns a line on stderr. Every answer in this group answers `HEAD` with the status and headers its `GET` has and an empty body. A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A user opens one of their scripts
 
-A user follows a script's link on the catalog to see what it runs and how its runs went. The page names the repository and the ref, gives the script's record, and lists every run the catalog keeps for it, newest first, by when each started, so the run that is still going is on top. A run whose files are gone (`S20`) is a row like any other: its record stays, and the script page shows only records.
+A user follows a script's link on the catalog to see what it runs, what sets it off, and how its runs went. The page names the repository and the ref, gives the script's record, lists the events the script is subscribed to, and lists every run the catalog keeps for it, newest first, by when each started, so the run that is still going is on top. A run whose files are gone (`S20`) is a row like any other: its record stays, and the script page shows only records.
 
 Request:
 
@@ -30,6 +30,8 @@ Status 200. The body is an HTML document titled `nightly-report · scripts`, dra
 
 Then the card `section#script-card`, headed `Script`, reading `Changed by an agent through the update tool.`, and holding the list `dl#script` of exactly five facts, in this order: `Id`, `scr_6d1f4a9b2e8c7035` in a code element; `Repository`, `nightly-report` over the repository's id, `rep_9c2e4b7a1d3f8e05`, in a code element; `Ref`, `main` in a code element; `Created`, `2026-09-18 16:40 UTC`, in a `time` whose `datetime` is `2026-09-18T16:40:00Z`; and `Runs kept`, `7 · the newest 10 are kept past 15 days`, the number of runs the catalog holds for the script and the retention rule of `RUN_KEEP_COUNT` and `RUN_KEEP_DAYS` (`S19`).
 
+Then the section `section#subscriptions`, headed `Subscriptions`, holding `ul#subscription-list` with exactly two items, in this order: `li[data-event=crm.contact_updated]`, reading `crm.contact_updated`, then `li[data-event=repo.pushed]`, reading `repo.pushed`, sorted by event name and not by when each was made. The page has no `div#no-subscriptions`.
+
 Then the section `section#runs`, headed `Runs`, reading `Newest first. A run still running shows its progress when the page is reloaded.`, and the table `table#run-list`, whose columns are `Run`, `Status`, `Commit`, `Started`, `Duration` and `Exit`, with exactly seven rows, `tr[data-run=<run id>]`, in this order. Each row's run id is a link (`a.run-link`) to `/nightly-report/runs/<run id>/`, and its start is a `time` whose `datetime` is the start in RFC 3339 UTC to the second:
 
 | row | Status (kind) | Commit | Started (`datetime`) | Duration | Exit |
@@ -48,6 +50,7 @@ Preconditions:
 
 - scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file; telemetry takes every event.
 - The catalog holds `S06`'s shared catalog: `nightly-report`'s seven runs, `run_8a2c6e1f9b3d5074` still running, and `run_72b0c8f5e3d1a946`'s folder gone from `state/runs/scr_6d1f4a9b2e8c7035/`.
+- `nightly-report` is subscribed to two events: `repo.pushed`, made `2026-09-20T10:00:00Z`, and `crm.contact_updated`, made `2026-10-01T08:30:00Z`.
 - `../repos/state/repos/rep_9c2e4b7a1d3f8e05.git` exists, and its config names it `nightly-report`.
 
 Postconditions:
@@ -64,7 +67,7 @@ Postconditions:
 
 ## A user opens a script that has never run, whose repository is gone
 
-`backfill` was created from a repository that has since been deleted in repos, and nobody has run it. The page still shows the script: its record is the catalog's and stays whatever became of the repository. With no name to read, the repository is shown by the id the catalog keeps, muted, titled `the repository is gone`; and where the runs would be, the page says there are none.
+`backfill` was created from a repository that has since been deleted in repos, nobody has run it, and nothing subscribes it to an event. The page still shows the script: its record is the catalog's and stays whatever became of the repository. With no name to read, the repository is shown by the id the catalog keeps, muted, titled `the repository is gone`; where the subscriptions would be, the page says there are none; and where the runs would be, the page says there are none.
 
 Request:
 
@@ -84,12 +87,12 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the script page of `A user opens one of their scripts`, for `backfill`: titled `backfill · scripts`; the breadcrumb `scripts`, a link to `/`, then `backfill`, the current page; the heading `backfill`; and `p#about-script` reading `Runs main.py from the repository rep_0f6a2d9e8c4b7153 at main.`, the id in a `span.muted` titled `the repository is gone`, with no `strong`. `dl#script` holds `Id`, `scr_e8f2a6c0d4b19357`; `Repository`, `rep_0f6a2d9e8c4b7153` in a code element within a `span.muted` titled `the repository is gone`, and no name; `Ref`, `main`; `Created`, `2026-10-02 12:00 UTC`, in a `time` whose `datetime` is `2026-10-02T12:00:00Z`; and `Runs kept`, `0 · the newest 10 are kept past 15 days`. The section `section#runs`, headed `Runs`, holds no `table#run-list` and holds `div#no-runs`, whose heading is `No runs yet` and whose text reads `Runs started with the run tool show up here, newest first.` A repository whose directory is there but whose config has no `ikigenba.name`, or one git cannot read, is shown the same way.
+Status 200. The body is the script page of `A user opens one of their scripts`, for `backfill`: titled `backfill · scripts`; the breadcrumb `scripts`, a link to `/`, then `backfill`, the current page; the heading `backfill`; and `p#about-script` reading `Runs main.py from the repository rep_0f6a2d9e8c4b7153 at main.`, the id in a `span.muted` titled `the repository is gone`, with no `strong`. `dl#script` holds `Id`, `scr_e8f2a6c0d4b19357`; `Repository`, `rep_0f6a2d9e8c4b7153` in a code element within a `span.muted` titled `the repository is gone`, and no name; `Ref`, `main`; `Created`, `2026-10-02 12:00 UTC`, in a `time` whose `datetime` is `2026-10-02T12:00:00Z`; and `Runs kept`, `0 · the newest 10 are kept past 15 days`. The section `section#subscriptions`, headed `Subscriptions`, holds no `ul#subscription-list` and holds `div#no-subscriptions` reading `This script is subscribed to no events.` The section `section#runs`, headed `Runs`, holds no `table#run-list` and holds `div#no-runs`, whose heading is `No runs yet` and whose text reads `Runs started with the run tool show up here, newest first.` A repository whose directory is there but whose config has no `ikigenba.name`, or one git cannot read, is shown the same way.
 
 Preconditions:
 
 - scripts is serving.
-- The catalog holds `backfill`, owned by `u_7f3a9c21`, with no runs.
+- The catalog holds `backfill`, owned by `u_7f3a9c21`, with no runs and no subscriptions.
 - `../repos/state/repos/rep_0f6a2d9e8c4b7153.git` does not exist.
 
 Postconditions:
@@ -119,12 +122,12 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the script page of `A user opens one of their scripts`, for `rotate-keys`: titled `rotate-keys · scripts`; the heading `rotate-keys`; `p#about-script` reading `Runs main.py from the repository ops-tools at release.`; and `dl#script` holding `Id`, `scr_5c9b1e3a7f2d4068`; `Repository`, `ops-tools` over `rep_7b3e9a0c5d1f2846`; `Ref`, `release`; `Created`, `2026-09-28 08:00 UTC`, `datetime` `2026-09-28T08:00:00Z`; and `Runs kept`, `1 · the newest 10 are kept past 15 days`. `table#run-list` has exactly one row, `tr[data-run=run_1e9c3a7f5b0d2864]`: the link `run_1e9c3a7f5b0d2864` to `/rotate-keys/runs/run_1e9c3a7f5b0d2864/`; the status `failed`, kind `err`; an empty commit; the start `2026-10-04 22:00`, `datetime` `2026-10-04T22:00:00Z`; an empty duration; and an empty exit. The page carries no reason for the failure.
+Status 200. The body is the script page of `A user opens one of their scripts`, for `rotate-keys`: titled `rotate-keys · scripts`; the heading `rotate-keys`; `p#about-script` reading `Runs main.py from the repository ops-tools at release.`; and `dl#script` holding `Id`, `scr_5c9b1e3a7f2d4068`; `Repository`, `ops-tools` over `rep_7b3e9a0c5d1f2846`; `Ref`, `release`; `Created`, `2026-09-28 08:00 UTC`, `datetime` `2026-09-28T08:00:00Z`; and `Runs kept`, `1 · the newest 10 are kept past 15 days`. `section#subscriptions` holds `div#no-subscriptions` and no list. `table#run-list` has exactly one row, `tr[data-run=run_1e9c3a7f5b0d2864]`: the link `run_1e9c3a7f5b0d2864` to `/rotate-keys/runs/run_1e9c3a7f5b0d2864/`; the status `failed`, kind `err`; an empty commit; the start `2026-10-04 22:00`, `datetime` `2026-10-04T22:00:00Z`; an empty duration; and an empty exit. The page carries no reason for the failure.
 
 Preconditions:
 
 - scripts is serving.
-- The catalog holds `rotate-keys` with one run, `run_1e9c3a7f5b0d2864`, `failed` with reason `commit_missing`.
+- The catalog holds `rotate-keys` with one run, `run_1e9c3a7f5b0d2864`, `failed` with reason `commit_missing`, and no subscriptions.
 - `../repos/state/repos/rep_7b3e9a0c5d1f2846.git` exists, its config names it `ops-tools`, and it has no branch `release`.
 
 Postconditions:
@@ -381,7 +384,7 @@ Postconditions:
 
 ## A user asks for a path beneath scripts' own pages
 
-`/about` and `/mcp` are scripts' own exact paths (`S03`, `S05`), and `about` and `mcp` can never be a script's name (`S06`), so a path beneath either is a script path whose name no script has, answered with the not-found page. scripts has no plain-text `not found`.
+`/about` and `/mcp` are scripts' own exact paths (`S03`, `S05`), as `/events` and `/declarations` are for its siblings on the socket, and `about`, `mcp`, `events`, and `declarations` can never be a script's name (`S06`). So a path beneath any of the four is a script path whose name no script has, answered with the not-found page; this group does not say what scripts answers on the exact paths `/events` and `/declarations`. scripts has no plain-text `not found`.
 
 Request:
 
@@ -403,6 +406,24 @@ X-User-Email: mg@example.com
 X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
 ```
 
+```
+GET /events/ HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-Forwarded-Proto: https
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+```
+
+```
+GET /declarations/repo.pushed HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-Forwarded-Proto: https
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+```
+
 Response:
 
 ```
@@ -410,7 +431,7 @@ HTTP/1.1 404 Not Found
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 404. The body is scripts' not-found page, as in `A user asks for a script that does not exist`. `/about/` is not redirected to `/about`, and `/mcp/` and `/mcp/tools` are not MCP.
+Status 404. The body is scripts' not-found page, as in `A user asks for a script that does not exist`. `/about/` is not redirected to `/about`, and `/mcp/` and `/mcp/tools` are not MCP. Neither `/events/` nor `/declarations/repo.pushed` is redirected or reaches what scripts answers on `/events` or `/declarations`.
 
 Preconditions:
 

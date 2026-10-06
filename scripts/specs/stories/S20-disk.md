@@ -31,7 +31,7 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `isError` member, a `structuredContent` of
 
 ```
-{"id":"<id>","name":"crm-weekly","repo":"rep_41d8f0a6b2c97e13","ref":"main","created":"<created>"}
+{"id":"<id>","name":"crm-weekly","repo":"rep_41d8f0a6b2c97e13","ref":"main","created":"<created>","subscriptions":[]}
 ```
 
 and a `content` array of one text block whose text is that object encoded compactly. `<created>` is the time of the call.
