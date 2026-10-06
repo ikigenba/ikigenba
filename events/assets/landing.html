@@ -1,0 +1,72 @@
+{{/* The landing page at GET /: what the service is, the bus's subscribers,
+     and the tools that inspect and unstick them. The root of the hierarchy,
+     so no breadcrumb. Shown only to a signed-in user. Data: .Banner (a
+     page.Banner, for banner and footer); .Subscribers, one row per
+     subscriber, each with .Service (the subscribing service's name),
+     .Status (the status word: "ok", "paused" or "gone"), .Kind (the theme
+     kind it shows as: ok is "ok", paused is "warn", gone is "info"),
+     .Reason (for a paused subscriber, the event it is stuck on and the error
+     it answered, as text; empty otherwise), .Cursor (the last event it was
+     delivered, as text), .Lag (how many events it is behind, as text), and
+     .Since (a time.Time, when it entered its status; shown in UTC as
+     "2006-01-02 15:04", and as RFC 3339 UTC in the datetime attribute).
+     Hooks: h1 with text "events"; p#summary.lede; section#subscribers with
+     h2 "Subscribers" and either div#no-subscribers.empty (h3 text "No
+     subscribers yet") when .Subscribers is empty, or table#subscriber-list
+     with headers Service, Status, Cursor, Lag, Since and one
+     tr[data-subscriber=<service>] per subscriber holding
+     td.subscriber-service (text .Service), td.subscriber-status holding
+     span.status[data-kind=<.Kind>][data-status=<.Status>] (text .Status)
+     followed, when .Reason is not empty, by span.muted (text .Reason),
+     td.subscriber-cursor (text .Cursor), td.subscriber-lag (text .Lag), and
+     td.subscriber-since holding time[datetime=<.Since, RFC 3339 UTC>] (text
+     .Since as shown); a section with h2 "MCP tools" and dl#tools.kv holding
+     one dt[data-tool=<name>] per MCP tool, in the order catalog, search,
+     subscribers, skip, resume, each holding the tool's name in a code
+     element and followed by a dd holding the first line of its description;
+     a#about-link whose href is "/about". No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><script src="/_appkit/feedback.js" defer></script><title>events</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>events</h1>
+<p id="summary" class="lede">The suite's internal event bus: services emit events here, and each event is delivered, in order, to every service that accepts it.</p>
+<section id="subscribers" class="card flush" aria-labelledby="subscribers-title">
+<header><div><h2 id="subscribers-title">Subscribers</h2><p>Each service that accepts events, where it is in the log, and how far behind.</p></div></header>
+{{if .Subscribers}}<div class="table-scroll">
+<table id="subscriber-list">
+<thead><tr><th>Service</th><th>Status</th><th>Cursor</th><th>Lag</th><th>Since</th></tr></thead>
+<tbody>
+{{range .Subscribers}}<tr data-subscriber="{{.Service}}">
+<td class="subscriber-service">{{.Service}}</td>
+<td class="subscriber-status"><span class="status" data-status="{{.Status}}" data-kind="{{.Kind}}">{{.Status}}</span>{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</td>
+<td class="subscriber-cursor">{{.Cursor}}</td>
+<td class="subscriber-lag">{{.Lag}}</td>
+<td class="subscriber-since"><time datetime="{{.Since.UTC.Format "2006-01-02T15:04:05Z07:00"}}">{{.Since.UTC.Format "2006-01-02 15:04"}}</time></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-subscribers" class="empty">
+<h3 class="text-md">No subscribers yet</h3>
+<p>A service that accepts events shows up here once events has delivered to it.</p>
+</div>{{end}}
+</section>
+<section class="card" aria-labelledby="tools-title">
+<header><h2 id="tools-title">MCP tools</h2><p>Agents inspect the bus and unstick subscribers with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
+<dl id="tools" class="kv">
+<dt data-tool="catalog"><code>catalog</code></dt><dd>Every event the suite emits, who emits and accepts it, counts and last seen.</dd>
+<dt data-tool="search"><code>search</code></dt><dd>The retained log, newest first, filtered by service, event, user, request id, cause or attributes.</dd>
+<dt data-tool="subscribers"><code>subscribers</code></dt><dd>Each subscriber's status, reason, cursor and lag.</dd>
+<dt data-tool="skip"><code>skip</code></dt><dd>Skip the event a paused subscriber is stuck on and resume it.</dd>
+<dt data-tool="resume"><code>resume</code></dt><dd>Retry the event a paused subscriber is stuck on.</dd>
+</dl>
+</section>
+<p><a id="about-link" href="/about">About events</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
