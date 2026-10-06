@@ -201,7 +201,7 @@ Status 200. The body is the landing page (`S03-landing.md`).
 Preconditions:
 
 - telemetry is serving on the socket it was passed.
-- telemetry's database cannot be written to: the directory holding `state/telemetry.db` has been made unwritable since telemetry opened it, or the filesystem holding it is full.
+- telemetry's database cannot be written to: its storage has begun refusing writes since telemetry opened it, the filesystem holding `state/telemetry.db` full, say.
 
 Postconditions:
 

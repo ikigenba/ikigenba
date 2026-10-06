@@ -4,7 +4,7 @@ The bare binary serves, and it serves only on a listening socket it inherits: te
 
 telemetry's environment also carries `RETENTION_DAYS`, how long a record stays in the trail: a positive whole number of days, and 15 when it is unset or empty. Its default is the manifest's (`S01`), which the host writes into `etc/env`, and an operator changes it there. Records older than the window are swept out, once as telemetry starts and then every hour (`S07`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives telemetry. The file lists the platform's services: it feeds the launcher in the banner of telemetry's pages (`S03`), and it holds the description telemetry's MCP endpoint gives its clients as instructions (`S05`). telemetry reads the variable once, when it starts, and reads the file it names afresh on every request, so a rewritten file shows on the next request without a restart. telemetry never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, telemetry starts and serves all the same, treats the file as listing no services, and says nothing about it. Unlike every other app, telemetry does not need the file to find the telemetry service: it is the telemetry service, and its own events go straight into its own store (below), so a missing services file or a file with no `telemetry` entry costs it only the launcher and the instructions.
 
-telemetry checks its environment first — `DRAIN_SECONDS`, then `RETENTION_DAYS` — then looks for its socket, and only then opens its SQLite database at `state/telemetry.db`, relative to its working directory, creating `state/` and the database on its first start. So a start refused as a usage error has touched nothing, not even the database. telemetry is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S14`).
+telemetry checks its environment first — `DRAIN_SECONDS`, then `RETENTION_DAYS` — then looks for its socket, and only then opens its SQLite database at `state/telemetry.db`, relative to its working directory. So a start refused as a usage error has touched nothing, not even the database. It creates `state/` if it is absent and `state/telemetry.db` if it is absent, brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and only then sweeps, serves and tells systemd it is ready. A database an older telemetry created, before telemetry carried migrations, is brought up to date the same way: version `0001` is the schema such a database already has, so applying it keeps every record the database holds, and afterwards `telemetry db status` shows `0001` applied. A database it cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `telemetry: cannot open database state/telemetry.db: <reason>`, and exit status 1. telemetry is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S14`).
 
 telemetry records what it does as a trail of events, exactly as every app of the platform does, and its events are records in the same trail the other services' events land in: the same store its tools search (`S08` to `S11`). They do not go through its socket. Every other app posts each event to the telemetry service's socket; telemetry writes each of its own straight into its store, so no event of its own loops back through `/ingest`, and no services file is needed to find the way. An event is one record: the time, in UTC to the microsecond; the service, always `telemetry`; the event's name; the request id, the `X-Request-Id` of the request the event belongs to; the user, that request's `X-User-Id`, empty when it had none; and its attributes, flat names with string, number, or boolean values. The request id and the user are empty for an event that belongs to no request. Attributes carry what happened and the names of the things it happened to, never what a request or an answer held: no tool arguments, no results, no error text, no query string. Storing its own trail never holds up a request. telemetry records these events and no others (`S12`):
 
@@ -42,14 +42,14 @@ Preconditions:
 - `opsctl install` has installed telemetry: `/opt/telemetry/bin/telemetry` exists, and `ikigenba-telemetry.socket` and `ikigenba-telemetry.service` are published.
 - `/opt/telemetry/etc/env` sets `DRAIN_SECONDS` and `RETENTION_DAYS`, each to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
 - `ikigenba-telemetry.socket` is active, so `/run/ikigenba/telemetry.sock` exists and accepts connections.
-- `/opt/telemetry/state/telemetry.db` exists, from an earlier start.
+- `/opt/telemetry/state/telemetry.db` exists, from an earlier start, and records no migration this telemetry does not carry.
 - `ikigenba-telemetry.service` is not running.
 
 Postconditions:
 
 - `ikigenba-telemetry.service` is `active`, and telemetry is serving on `/run/ikigenba/telemetry.sock`: a connection there, and every connection queued before telemetry started, is answered by telemetry.
 - telemetry listens on no other socket and no port.
-- `/opt/telemetry/state/telemetry.db` is the database it opened; it existed already, and every record it held that is inside the retention window is still there. Records older than the window have been swept out (`S07`).
+- `/opt/telemetry/state/telemetry.db` is the database it opened, now up to date; it existed already, and every record it held that is inside the retention window is still there. Records older than the window have been swept out (`S07`).
 - telemetry has written nothing to the journal.
 - The trail holds one event from this start, the first this telemetry records, before the `request.started` of any request it answers, with an empty request id and an empty user, `v<semver>` being the version `telemetry --version` prints; `search` with `services` `["telemetry"]` finds it (`S09`, `S12`):
 
@@ -61,7 +61,7 @@ Postconditions:
 
 ## The host starts telemetry for the first time
 
-The database file does not yet exist. telemetry creates the `state/` directory if it is absent, then creates `state/telemetry.db` and its schema and serves. The same start succeeds when `state/` already exists and only the database is absent. Neither a fresh deployment nor any other first start needs the directory created beforehand. The paths are relative to telemetry's working directory.
+The database file does not yet exist. telemetry creates the `state/` directory if it is absent, then creates `state/telemetry.db`, applies every migration it carries, and serves. The same start succeeds when `state/` already exists and only the database is absent. Neither a fresh deployment nor any other first start needs the directory created beforehand. The paths are relative to telemetry's working directory.
 
 Command:
 
@@ -88,7 +88,7 @@ Preconditions:
 Postconditions:
 
 - `state/` exists, created by telemetry if it was absent.
-- `state/telemetry.db` now exists, with its schema, created by this start.
+- `state/telemetry.db` now exists, created by this start, and is up to date: `telemetry db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`).
 - telemetry is serving on the socket it was passed, and on no other.
 - The trail holds exactly one record, telemetry's own `service.started` with `version=v<semver>`, the version `telemetry --version` prints, under an empty request id and an empty user.
 - It keeps running until it is signalled.
@@ -115,7 +115,7 @@ Preconditions:
 - `bin/telemetry` exists and is on the `PATH` as `telemetry`.
 - `LISTEN_PID` is telemetry's process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `IKIGENBA_SERVICES` is unset, or names a file that does not exist, or names a services file that has no entry named `telemetry` and no entry that carries an icon.
-- `state/telemetry.db` exists, from an earlier start, or can be created as in `The host starts telemetry for the first time`.
+- `state/telemetry.db` exists, from an earlier start, and records no migration this telemetry does not carry, or can be created as in `The host starts telemetry for the first time`.
 
 Postconditions:
 
@@ -181,6 +181,35 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. telemetry served nothing, told systemd nothing, and recorded no event.
+
+## The host starts telemetry with a database a newer telemetry has upgraded
+
+A deploy rolled back to an older binary leaves it over a database a newer telemetry has upgraded: the database records a migration this telemetry does not carry, so its schema is one this telemetry does not understand. Rather than read it, telemetry refuses to start, naming the version it does not know, and the rollback fails loudly instead of storing into or answering from a trail it cannot read. There is no way back down a migration; restoring the database from before the upgrade is the rollback. `telemetry db status` shows the version as `unknown` (`S01`). Under systemd the start fails, and the socket stays up, as for a database it cannot open.
+
+Command:
+
+```
+$ telemetry
+```
+
+Output:
+
+```
+telemetry: cannot open database state/telemetry.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this telemetry does not carry, zero-padded to four digits: `0002`.
+
+Preconditions:
+
+- `bin/telemetry` exists and is on the `PATH` as `telemetry`, carrying only migration `0001`.
+- `LISTEN_PID` is telemetry's process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` and `RETENTION_DAYS` are each unset, or a positive whole number.
+- `state/telemetry.db` exists and records versions `0001` and `0002` as applied.
+
+Postconditions:
+
+- Nothing has changed: the database still records `0001` and `0002` and holds the records it held, none swept. telemetry served nothing, told systemd nothing, and recorded no event.
 
 ## The host stops telemetry
 
@@ -250,7 +279,7 @@ Postconditions:
 
 ## The host restarts telemetry during a deploy
 
-A deploy replaces telemetry's binary and restarts `ikigenba-telemetry.service` alone; `ikigenba-telemetry.socket` stays up throughout. Between the old telemetry exiting and the new one being ready, connections wait in the socket's queue instead of being refused — the events every sibling posts among them — so no sibling sees telemetry missing and no event is turned away for the deploy. That holds because telemetry finishes what it accepted before it exits and leaves the socket where systemd put it.
+A deploy replaces telemetry's binary and restarts `ikigenba-telemetry.service` alone; `ikigenba-telemetry.socket` stays up throughout. Between the old telemetry exiting and the new one being ready, connections wait in the socket's queue instead of being refused — the events every sibling posts among them — so no sibling sees telemetry missing and no event is turned away for the deploy. That holds because telemetry finishes what it accepted before it exits and leaves the socket where systemd put it. The trail outlives the deploy: the new telemetry opens the same `state/telemetry.db`, bringing it up to date first when the new binary carries a migration the database has not had, and keeps every record the old one stored.
 
 Command:
 
