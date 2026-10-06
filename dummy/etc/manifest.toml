@@ -7,3 +7,6 @@ secrets = []
 [database]
 engine = "sqlite"
 path = "state/dummy.db"
+
+[resources]
+memory_max = "64M"
