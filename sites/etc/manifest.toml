@@ -15,6 +15,4 @@ engine = "sqlite"
 path = "state/sites.db"
 
 [resources]
-cpu_weight = 50
-memory_max = "1G"
-io_weight = 50
+memory_max = "128M"

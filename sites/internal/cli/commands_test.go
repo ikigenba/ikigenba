@@ -44,7 +44,7 @@ func TestExitConstants(t *testing.T) {
 	}
 }
 
-// R-XAL8-2XV4 R-SJ18-P0AC R-SMOX-UBIF R-KKIR-A82X R-CMRM-1YT2 R-CNZI-FQJR
+// R-XAL8-2XV4 R-9XA1-MRMV R-SMOX-UBIF R-KKIR-A82X R-CMRM-1YT2 R-CNZI-FQJR
 func TestPublicText(t *testing.T) {
 	const service = pages.ServiceName
 	const description = pages.Description
@@ -57,7 +57,7 @@ func TestPublicText(t *testing.T) {
 	if usage != wantUsage {
 		t.Fatal("usage text")
 	}
-	wantManifest := "app = \"sites\"\ndescription = \"Static sites from the suite's repositories\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nREPOS_DIR = \"../repos/state/repos\"\nSITE_MAX_BYTES = \"268435456\"\nOPERATION_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/sites.db\"\n\n[resources]\ncpu_weight = 50\nmemory_max = \"1G\"\nio_weight = 50\n"
+	wantManifest := "app = \"sites\"\ndescription = \"Static sites from the suite's repositories\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nREPOS_DIR = \"../repos/state/repos\"\nSITE_MAX_BYTES = \"268435456\"\nOPERATION_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/sites.db\"\n\n[resources]\nmemory_max = \"128M\"\n"
 	if manifest != wantManifest {
 		t.Fatal("manifest text")
 	}
