@@ -70,6 +70,10 @@ WORKSPACE_DOMAIN = "michaelgreenly.dev"
 [database]
 engine = "sqlite"
 path = "state/auth.db"
+
+[resources]
+slice = "core"
+memory_max = "128M"
 `
 
 const socketHint = "\n\nrun it under systemd, with a listening socket passed in\n"

@@ -32,7 +32,7 @@ import (
 func TestMainWiring(t *testing.T) {
 	// R-3WNI-4FXO
 	// R-P02O-R3KF R-P2IH-IN1T R-7KD6-KDOH
-	// R-M6Y4-3SXT
+	// R-QB6N-JUCJ
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
 	// R-AUXO-9DST: the serve cases run the binary bare with the Google settings
@@ -92,6 +92,10 @@ WORKSPACE_DOMAIN = "michaelgreenly.dev"
 [database]
 engine = "sqlite"
 path = "state/auth.db"
+
+[resources]
+slice = "core"
+memory_max = "128M"
 `
 
 func googleEnv() []string {
