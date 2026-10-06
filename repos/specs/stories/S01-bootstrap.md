@@ -30,7 +30,7 @@ Postconditions:
 
 ## A developer asks for the manifest
 
-The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. repos declares its name; its description, the one line that says what repos is for, which the host publishes in its services file, the about screen shows (`S03`), and repos' MCP endpoint gives its clients as instructions (`S05`); that it is not the host's default app; that it is one of the suite's MCP services (`mcp = true`), so the gateway lists it and runs its tools (`S05`); no secrets; its eight settings, which the host writes into its `etc/env` and which it reads when it serves (`S02`): `READ_SLOTS` and `WRITE_SLOTS`, how many git reads and writes run at once, `QUEUE_LENGTH` and `QUEUE_SECONDS`, how many operations may wait for a slot and for how long (`S12`), `OPERATION_SECONDS`, the longest one git operation may run (`S12`), `PUSH_MAX_BYTES` and `REPO_MAX_BYTES`, the largest pack one push may send and the size at which a repository takes no more pushes (`S12`), and `MAINTENANCE_HOURS`, how often each repository is tidied (`S13`); its SQLite database, the catalog of repositories, which the host replicates like auth's; and how much of the host it may take, in opsctl's `[resources]` table, which opsctl writes into its service unit, so it bounds repos and every git repos runs together: `cpu_weight` 50 and `io_weight` 50, half the share of a service that declares none, so git work yields to the rest of the suite when the host is busy, and `memory_max` `1G`, a ceiling of 1 GiB. It declares no port: repos serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl.
+The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. repos declares its name; its description, the one line that says what repos is for, which the host publishes in its services file, the about screen shows (`S03`), and repos' MCP endpoint gives its clients as instructions (`S05`); that it is not the host's default app; that it is one of the suite's MCP services (`mcp = true`), so the gateway lists it and runs its tools (`S05`); no secrets; its eight settings, which the host writes into its `etc/env` and which it reads when it serves (`S02`): `READ_SLOTS` and `WRITE_SLOTS`, how many git reads and writes run at once, `QUEUE_LENGTH` and `QUEUE_SECONDS`, how many operations may wait for a slot and for how long (`S12`), `OPERATION_SECONDS`, the longest one git operation may run (`S12`), `PUSH_MAX_BYTES` and `REPO_MAX_BYTES`, the largest pack one push may send and the size at which a repository takes no more pushes (`S12`), and `MAINTENANCE_HOURS`, how often each repository is tidied (`S13`); its SQLite database, the catalog of repositories, which the host replicates like auth's; and how much of the host it may take, in opsctl's `[resources]` table, which opsctl writes into its service unit: it caps the memory of repos and every git repos runs together at 256M, of which repos keeps half, 128M, to itself, leaving the rest to git, and a git that runs out of memory is killed and fails alone, its operation with it, while repos keeps serving. It declares no port: repos serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl.
 
 Command:
 
@@ -62,9 +62,9 @@ engine = "sqlite"
 path = "state/repos.db"
 
 [resources]
-cpu_weight = 50
-memory_max = "1G"
-io_weight = 50
+memory_max = "256M"
+go_memory_limit = "128M"
+oom_policy = "continue"
 ```
 
 Exits 0. The text is on stdout; stderr is empty.

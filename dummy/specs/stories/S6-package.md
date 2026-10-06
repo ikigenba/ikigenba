@@ -71,6 +71,9 @@ secrets = []
 [database]
 engine = "sqlite"
 path = "state/dummy.db"
+
+[resources]
+memory_max = "64M"
 ```
 
 Each command exits 0. The text is on stdout; stderr is empty. The version is

@@ -66,9 +66,9 @@ engine = "sqlite"
 path = "state/repos.db"
 
 [resources]
-cpu_weight = 50
-memory_max = "1G"
-io_weight = 50
+memory_max = "256M"
+go_memory_limit = "128M"
+oom_policy = "continue"
 ```
 
 Each command exits 0. The text is on stdout; stderr is empty. The version is the one in the file's name, and the manifest is byte for byte the file's `etc/manifest.toml`.

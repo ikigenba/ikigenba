@@ -53,9 +53,10 @@ dummy's MCP endpoint gives its clients as instructions (`S9-mcp.md`); that it
 is not the host's default app; that it offers an MCP endpoint, at `/mcp`, so
 the platform's MCP gateway may reach it (`S9-mcp.md`); no secrets; and its
 SQLite database, at `state/dummy.db` under its working directory, which the
-host replicates, in that order. It declares no port: dummy serves on the
-socket the host passes it (`S2-serve.md`), and a manifest carrying `port` is
-refused by `devctl build` and by opsctl.
+host replicates, in that order. Its `[resources]` table caps its memory at
+64M. It declares no port: dummy serves on the socket the host passes it
+(`S2-serve.md`), and a manifest carrying `port` is refused by `devctl build`
+and by opsctl.
 
 Command:
 
@@ -75,6 +76,9 @@ secrets = []
 [database]
 engine = "sqlite"
 path = "state/dummy.db"
+
+[resources]
+memory_max = "64M"
 ```
 
 Exits 0. The text is on stdout; stderr is empty.

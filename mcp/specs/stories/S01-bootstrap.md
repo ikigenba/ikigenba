@@ -30,7 +30,7 @@ Postconditions:
 
 ## A developer asks for the manifest
 
-The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. mcp declares its name; its description, the one line that says what mcp is for, which the host publishes in its services file; that it is not the host's default app; that it is not one of the suite's MCP services (`mcp = false`): though it serves an MCP endpoint at `/mcp`, its own tools are not in the gateway's catalogue, so the gateway never lists itself (`S06`); that it serves guests (`guests = true`), so the host's nginx lets a visitor with no credential reach its paths outside `/mcp`, where the setup files are served to anyone (`S12`) and a guest asking for the connect page is sent to sign in (`S03`); and no secrets, in that order. It declares no port: mcp serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl.
+The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. mcp declares its name; its description, the one line that says what mcp is for, which the host publishes in its services file; that it is not the host's default app; that it is not one of the suite's MCP services (`mcp = false`): though it serves an MCP endpoint at `/mcp`, its own tools are not in the gateway's catalogue, so the gateway never lists itself (`S06`); that it serves guests (`guests = true`), so the host's nginx lets a visitor with no credential reach its paths outside `/mcp`, where the setup files are served to anyone (`S12`) and a guest asking for the connect page is sent to sign in (`S03`); and no secrets, in that order. Its `[resources]` table caps its memory at 128M. It declares no port: mcp serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl.
 
 Command:
 
@@ -47,6 +47,9 @@ default = false
 mcp = false
 guests = true
 secrets = []
+
+[resources]
+memory_max = "128M"
 ```
 
 Exits 0. The text is on stdout; stderr is empty.

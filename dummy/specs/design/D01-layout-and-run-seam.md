@@ -299,8 +299,9 @@ bootstrap story shows, with a trailing newline: dummy's name; its description,
 the one line the host publishes in its services file and dummy's MCP endpoint
 gives its clients as instructions; that it is not the host's default app; that
 it offers an MCP endpoint, so the platform's MCP gateway may reach it; no
-secrets; and, after an empty line, a `[database]` table declaring the SQLite
-database at `state/dummy.db`, which the host replicates. The path there and
+secrets; after an empty line, a `[database]` table declaring the SQLite
+database at `state/dummy.db`, which the host replicates; and, after another
+empty line, a `[resources]` table capping its memory at 64M. The path there and
 the path `Run` opens are the same relative path, resolved against the
 working directory the host starts dummy in. It declares no port, because dummy serves on the socket the host
 passes it and a manifest carrying `port` is refused by `devctl build` and by
@@ -413,7 +414,7 @@ handler answers is `D04-panel` and the designs it leads to.
 - R-2V4C-UYUY: Every call to `dummy.Migrations` MUST return a file system holding the same one file with the same contents, whatever the process working directory is, a directory that holds no `migrations/` directory included.
 - R-JWQT-BFRO: The `internal/cli` package MUST export `var Version string`.
 - R-KHH3-TJDH: `Version` MUST be the letter `v` followed by a valid Semantic Versioning version as defined at semver.org, prerelease and build metadata included when present.
-- R-2XK5-MICC: The `internal/cli` package MUST export `const Manifest = "app = \"dummy\"\ndescription = \"Demo widgets to list and create\"\ndefault = false\nmcp = true\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/dummy.db\"\n"`.
+- R-SCNW-L802: The `internal/cli` package MUST export `const Manifest = "app = \"dummy\"\ndescription = \"Demo widgets to list and create\"\ndefault = false\nmcp = true\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/dummy.db\"\n\n[resources]\nmemory_max = \"64M\"\n"`.
 - R-F2D6-M8QD: The `internal/cli` package MUST export `Usage` as a string constant, holding the usage text whose value `D02-cli` fixes.
 - R-2WC9-8QLN: The `internal/cli` package MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Banner func(u page.User) page.Banner; MCP *mcp.Server; Telemetry *telemetry.Writer; Gate *Gate; Rand io.Reader; Dir string; Now func() time.Time }` and `func Run(ctx context.Context, p Process) int`, where `page`, `mcp` and `telemetry` are the packages `github.com/ikigenba/ikigenba/appkit/page`, `github.com/ikigenba/ikigenba/appkit/mcp` and `github.com/ikigenba/ikigenba/appkit/telemetry` and `time` is the standard library's `time`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Banner` is the source of the banner data every page the handler draws with the banner is drawn from, `MCP` is the server the handler registers dummy's tools on and mounts at `/mcp`, `Telemetry` is the writer every event the handler records goes through and on which `Run` calls `Ready` and `Shutdown`, `Gate` is the gate (R-HS0Q-4BW3) that `Telemetry` delivers its events through, `Rand` is the source of the ids of the widgets `Run` creates, nil meaning `crypto/rand.Reader`, `Dir` is the directory against which `Run` resolves the path `state/dummy.db` of its database, empty meaning the process working directory, and `Now` is the clock `Run` stamps the migrations it applies to that database with, nil meaning the standard library's `time.Now`.
 - R-HS0Q-4BW3: The `internal/cli` package MUST export `type Gate struct`, with no exported field, `func NewGate(next telemetry.Sink) *Gate`, and `func (g *Gate) Deliver(ctx context.Context, e telemetry.Event) error`, so that `*Gate` implements `telemetry.Sink`, where `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`; the sink passed as `next` is that gate's **next sink**.

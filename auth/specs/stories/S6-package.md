@@ -73,6 +73,10 @@ WORKSPACE_DOMAIN = "michaelgreenly.dev"
 [database]
 engine = "sqlite"
 path = "state/auth.db"
+
+[resources]
+slice = "core"
+memory_max = "128M"
 ```
 
 Each command exits 0. The text is on stdout; stderr is empty. The version is

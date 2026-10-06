@@ -52,7 +52,9 @@ The manifest is a fact about the binary, so the binary emits it. The committed
 the two are byte-identical, and `devctl build` refuses an app where they
 differ. auth declares its name, that it is not the host's default app, the
 secrets it needs, its Workspace domain, and its SQLite database, at
-`state/auth.db` under its working directory, which the host replicates. It
+`state/auth.db` under its working directory, which the host replicates. Its
+`[resources]` table places it among the platform's core services, which keep
+a small memory reserve ahead of other apps, and caps its memory at 128M. It
 declares no port: auth serves on the socket the host passes it
 (`S2-serve.md`), and a manifest carrying `port` is refused by `devctl build`
 and by opsctl.
@@ -76,6 +78,10 @@ WORKSPACE_DOMAIN = "michaelgreenly.dev"
 [database]
 engine = "sqlite"
 path = "state/auth.db"
+
+[resources]
+slice = "core"
+memory_max = "128M"
 ```
 
 Exits 0. The text is on stdout; stderr is empty.

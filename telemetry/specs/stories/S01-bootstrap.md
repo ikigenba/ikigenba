@@ -30,7 +30,7 @@ Postconditions:
 
 ## A developer asks for the manifest
 
-The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. telemetry declares its name; its description, the one line that says what telemetry is for, which the host publishes in its services file and the about screen shows (`S03`); that it is not the host's default app; that it is one of the suite's MCP services (`mcp = true`), so the gateway lists it and runs its tools (`S05`); no secrets; its one setting, `RETENTION_DAYS`, the retention window in days, which the host writes into its `etc/env` and which it reads when it serves (`S02`, `S07`); and its SQLite database, which the host replicates like auth's. It declares no port: telemetry serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl.
+The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. telemetry declares its name; its description, the one line that says what telemetry is for, which the host publishes in its services file and the about screen shows (`S03`); that it is not the host's default app; that it is one of the suite's MCP services (`mcp = true`), so the gateway lists it and runs its tools (`S05`); no secrets; its one setting, `RETENTION_DAYS`, the retention window in days, which the host writes into its `etc/env` and which it reads when it serves (`S02`, `S07`); and its SQLite database, which the host replicates like auth's. Its `[resources]` table places it among the platform's core services, which keep a small memory reserve ahead of other apps, and caps its memory at 256M. It declares no port: telemetry serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl.
 
 Command:
 
@@ -53,6 +53,10 @@ RETENTION_DAYS = "15"
 [database]
 engine = "sqlite"
 path = "state/telemetry.db"
+
+[resources]
+slice = "core"
+memory_max = "256M"
 ```
 
 Exits 0. The text is on stdout; stderr is empty.

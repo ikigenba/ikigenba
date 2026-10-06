@@ -15,8 +15,9 @@ The manifest is a fact about the binary, so the binary emits it. The committed
 `etc/manifest.toml` in the checkout is a copy kept so the tree can be read
 without a build. The manifest declares auth's
 name, that it is not the host's default app, the secrets it needs, its
-Workspace domain, and its SQLite database. It declares no port: auth serves on
-the socket the host passes it, and a manifest carrying `port` is refused by
+Workspace domain, and its SQLite database; its `[resources]` table places it
+among the platform's core services and caps its memory at 128M. It declares no
+port: auth serves on the socket the host passes it, and a manifest carrying `port` is refused by
 `devctl build` and by opsctl. The domain `michaelgreenly.dev` and the database
 path are data the manifest fixes, not release versions.
 
@@ -108,7 +109,7 @@ a literal here.
     1  failure
     2  usage error
   ```
-- R-M6Y4-3SXT: The app manifest MUST be exactly the following text, and nothing else (a trailing newline follows the last line):
+- R-QB6N-JUCJ: The app manifest MUST be exactly the following text, and nothing else (a trailing newline follows the last line):
   ```
   app = "auth"
   default = false
@@ -120,6 +121,10 @@ a literal here.
   [database]
   engine = "sqlite"
   path = "state/auth.db"
+
+  [resources]
+  slice = "core"
+  memory_max = "128M"
   ```
 - R-OYUS-DBTQ: Invoking auth with no command MUST serve the auth service (the serving behavior is D03's contract); it MUST NOT print the usage text or the manifest.
 - R-P02O-R3KF: `auth --version` MUST write the value of `Version` from `internal/version`, followed by a single newline, to stdout, write nothing to stderr, and exit `0`.
@@ -156,6 +161,10 @@ WORKSPACE_DOMAIN = "michaelgreenly.dev"
 [database]
 engine = "sqlite"
 path = "state/auth.db"
+
+[resources]
+slice = "core"
+memory_max = "128M"
 
 $ auth --help
 Usage: auth [command]

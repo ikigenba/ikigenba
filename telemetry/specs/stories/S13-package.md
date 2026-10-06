@@ -57,6 +57,10 @@ RETENTION_DAYS = "15"
 [database]
 engine = "sqlite"
 path = "state/telemetry.db"
+
+[resources]
+slice = "core"
+memory_max = "256M"
 ```
 
 Each command exits 0. The text is on stdout; stderr is empty. The version is the one in the file's name, and the manifest is byte for byte the file's `etc/manifest.toml`.

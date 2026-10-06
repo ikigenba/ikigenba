@@ -48,7 +48,11 @@ app = "mcp"
 description = "Connect AI assistants to your services"
 default = false
 mcp = false
+guests = true
 secrets = []
+
+[resources]
+memory_max = "128M"
 ```
 
 Each command exits 0. The text is on stdout; stderr is empty. The version is the one in the file's name, and the manifest is byte for byte the file's `etc/manifest.toml`.
