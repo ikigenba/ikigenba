@@ -33,40 +33,74 @@ the literal prefix `ikp_` followed by the 52-character encoding of 32 random
 bytes; only its SHA-256 hash is persisted, so a secret cannot be recovered from
 the database.
 
-An earlier auth gave each token a bare 26-character id. Opening a database
-that holds such tokens gives each the prefixed id, `tok_` followed by the same
-26 characters, and changes nothing else about it: its secret, name, times, and
-state stay as they were, so the token keeps authenticating, and its bare id
-names no token afterward. The rewrite is idempotent — a token already carrying
-the prefix is left alone, so opening the database again changes nothing — and
-it touches only token ids: user ids, session ids, and login states keep the
-values they had.
+## One database, through appkit
 
-How the store lays out its tables is not contract, but the prefix changes no
-part of it: the token storage schema is the one the design before the prefix
-produced, and only the values in the token-id column change. So a database an
-earlier auth wrote has exactly the shape a test builds by hand: it opens a
-database in its own temporary tree, creates a token with `CreateToken`,
-closes the store, and with the SQLite driver strips `tok_` from that token's
-id wherever the database stores it, finding those places through
-`sqlite_master`.
+The database is the one the manifest declares, `state/auth.db` on a host, and
+auth is its only writer. Opening it is appkit's: `db.Open` (appkit's D15 and
+D16) creates the missing directories and the file, configures it, refuses a
+database it cannot open or write, applies the migrations the database has not
+had, and refuses one that records a migration it was not given; `DB.Read` and
+`DB.Write` run the transactions, `Write` on the one writer. That contract is
+appkit's, and auth's design restates none of it and its tests re-prove none of
+it. `cli.Run` opens the handle (D03) and builds the store over it with
+`store.New`, handing it the random source ids and secrets are minted from; the
+store neither opens nor closes a handle, so whoever opened it closes it, and a
+test builds a store the same way over a handle on a file in its own temporary
+directory. Every operation that changes a row runs in one `Write`, so the
+read-then-write steps of a login, a touch, or a consumed login state are one
+transaction on the one writer; every operation that only reads runs in one
+`Read`. Users, sessions, login states and tokens written through a store are
+there for a store over a later handle on the same file, which is what lets
+them outlive every restart and deploy.
+
+The schema is contract now, because a migration is written against it and an
+operator and the host's replication see it. It is two migrations, which the
+root package carries (D01). `0001` is the baseline: the tables `users`,
+`sessions`, `login_states` and `tokens`, with the columns below, the two
+indexes auth has always had on a session's and a token's owner,
+`sessions_user_id_idx` and `tokens_user_id_idx`, each created
+only if it does not exist, and no rows. A token's row holds its id in the
+`tokens` table's `id` column and nowhere else. Because the baseline is the
+schema auth always created, a database an earlier auth wrote before it carried
+migrations is adopted as it is: `db.Open` applies `0001`, which changes
+nothing there, and records it as applied. A test proves the schema the way an
+operator would read it: it opens a fresh database in its own temporary
+directory with `auth.Migrations()` and, inside a `DB.Read`, queries
+`sqlite_master` and `PRAGMA table_info` (SQLite's documentation of the schema
+table and of that pragma).
+
+`0002` is a data transform, and it is auth's own code. An earlier auth gave
+each token a bare 26-character id. `0002` gives each such token the prefixed
+id, `tok_` followed by the same 26 characters, and changes nothing else about
+it: its secret, name, times, and state stay as they were, so the token keeps
+authenticating, and its bare id names no token afterward. It leaves a token
+already carrying the prefix alone, and it touches only token ids: users,
+sessions, and login states keep the values they had. appkit applies it once,
+in order after `0001`, and records it, so a later start runs it no more. A
+test builds the database an earlier auth wrote in its own tree: it opens a
+database with `db.Open` and `auth.Migrations()`, creates tokens with
+`CreateToken` through a store over that handle, then through `DB.Write` strips
+`tok_` from some of those tokens' `id` in `tokens` and drops
+`schema_migrations`, closes the handle, and opens the file again with
+`auth.Migrations()`; it reads the tokens back through a store over the new
+handle. The schema the old database holds is the one `0001` creates, because
+the prefix never changed it.
+
+A store whose handle has been made to fail answers every operation with an
+error that is not `ErrNotFound`, which is what lets the server tell a database
+it cannot reach from a session, a login state or a token that is not there
+(D03 answers the first `500`). The cannot-read and cannot-write cases are made
+testable by appkit's failure seam, not by a fixture on the filesystem: a test
+calls `SetFailing(true)` on the handle its store was built over, sees every
+operation fail that way, then calls `SetFailing(false)` and sees the same
+store answer again with nothing reopened.
 
 The identity a lookup resolves says which token it came through, when it came
 through one, so the check can name the honored token in the trail (D06). And
 provisioning a user on login reports whether the call created the user, so the
 sign-in flow can record a first sign-in (D05).
 
-Opening the store at `state/auth.db` creates missing parent directories and
-the database with its schema, or opens the existing database. Directory
-creation belongs to the store, so a first start works without advance
-preparation. Newly created directories are private
-to the service user; existing directory permissions stay as they are. A
-filesystem or database failure returns through the same open-error boundary,
-and so does a database the service user cannot write: `Open` never settles for
-a read-only database that would fail the first request that writes.
-SQLite's special sources keep their driver semantics; automatic directory
-creation applies to ordinary filesystem paths only. The operations cover
-provisioning a user on login, minting and ending sessions,
+The operations cover provisioning a user on login, minting and ending sessions,
 recording and consuming login state, and creating, listing, scoping, and
 authenticating tokens. Two reads deliberately do not mutate — the identity
 lookups behind `/me` and the profile — while their touching counterparts behind
@@ -98,7 +132,7 @@ may also have no expiry, which never expires.
 - R-J6HY-CYXV: `internal/store` MUST export `SessionMax` as a constant of type `time.Duration` whose value is `18 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-J7PU-QQOK: `internal/store` MUST export `TokenLoginWindow` as a constant of type `time.Duration` whose value is `30 * 24 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-2SV9-DI1W: `internal/store` MUST export `var ErrNotFound error`, the sentinel an operation returns (wrapped or as-is, matchable with `errors.Is`) wherever a requirement of this design states that the operation returns `ErrNotFound`.
-- R-4ILP-0BA6: `internal/store` MUST export `type Store`, `func Open(source string, rand io.Reader) (*Store, error)`, and `func (*Store) Close() error`.
+- R-8CEV-D3QG: `internal/store` MUST export `type Store` and `func New(d *db.DB, rand io.Reader) *Store`, where `db` is the package `github.com/ikigenba/ikigenba/appkit/db`, `d` is the handle every operation of the returned `*Store` reads and writes through, and `rand` is the source from which it mints ids and secrets.
 - R-SZ68-T63A: `internal/store` MUST export `func (*Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, bool, error)`, whose second result reports whether the call created the user.
 - R-4L1H-RURK: `internal/store` MUST export `func (*Store) CreateSession(userID string, now time.Time) (Session, error)`.
 - R-4M9E-5MI9: `internal/store` MUST export `func (*Store) LookupSessionIdentity(sessionID string, now time.Time) (Identity, error)`.
@@ -116,14 +150,13 @@ may also have no expiry, which never expires.
 - R-53BZ-IEVZ: `NewID` MUST read exactly 16 bytes from `rand`, MUST return their `Encode` (26 characters from `Alphabet`), and MUST return a non-nil error and no id if the read fails.
 - R-54JV-W6MO: `NewSecret` MUST read exactly 32 bytes from `rand`, MUST return `SecretPrefix` followed by their `Encode` (`ikp_` then 52 characters from `Alphabet`), and MUST return a non-nil error and no secret if the read fails.
 - R-G99G-TBAH: `HashSecret` MUST return the lowercase-hex SHA-256 of its input (64 hex characters) and MUST be deterministic; the only persisted representation of a token secret MUST be its `HashSecret` value (lowercase-hex SHA-256, 64 characters), and the plaintext secret MUST NOT be persisted.
-- R-CEVY-E877: `Open` MUST retain the `modernc.org/sqlite` source semantics of the empty string, `:memory:`, and `file:`-prefixed SQLite URIs, including URI query parameters, without creating parent directories for those source forms; an in-memory source MUST create no filesystem file or directory. Every other nonempty `source` is an ordinary filesystem path for the directory-creation requirements below, with relative paths resolved against the process working directory.
-- R-CG3U-RZXW: When `source` is an ordinary filesystem path to an absent database and the filesystem permits the necessary directory and database creation, `Open` MUST create any missing parent directories, create the database file and its schema, and return a usable `*Store`; this MUST succeed both when the parent directory is absent and when it already exists.
-- R-CIJN-JJFA: For an ordinary filesystem path, directories `Open` creates MUST have creation permission bits `0700` before the process umask is applied; `Open` MUST NOT change permissions on existing directories.
-- R-587L-1HUR: When `source` names an existing, openable database, `Open` MUST open it and return a usable `*Store` without recreating or discarding its existing rows.
-- R-CHBR-5ROL: When required parent-directory creation, database opening, or schema creation fails, `Open` MUST return a nil `*Store` and a non-nil error whose text includes the underlying failure; when an existing regular file occupies a required directory path, `Open` MUST leave that file unchanged and MUST NOT create a database.
-- R-W4JF-EHDQ: When `source` is an ordinary filesystem path naming an existing database that the process cannot write, `Open` MUST return a nil `*Store` and a non-nil error whose text includes the underlying failure, rather than opening the database read-only.
-- R-9U2L-ZPFQ: When `source` names an existing database that `Open` created and `CreateToken` wrote a token into, and in which that token's `ID` has since had its leading `TokenIDPrefix` removed wherever the database stores it, leaving 26 characters from `Alphabet`, `Open` MUST return a usable `*Store` in which that token's `ID` is `TokenIDPrefix` followed by those same 26 characters, no token's `ID` is the bare 26 characters, and the token's `UserID`, `Name`, `Hash`, `Enabled`, `CreatedAt`, `ExpiresAt`, and `LastUsedAt` are unchanged, so that `LookupTokenIdentity` and `TouchTokenIdentity` honor its secret exactly as before.
-- R-T41U-C922: `Open` MUST leave unchanged every token whose `ID` already begins with `TokenIDPrefix`, so that opening a database again after an `Open` that rewrote ids changes no token, and MUST NOT change the `ID` of any user or session or the `State` of any login state.
+- R-8DMR-QVH5: When a database file was created by `db.Open` with a `db.Config` whose `Migrations` is the root package's `auth.Migrations()`, tokens were created in it through `CreateToken` on a `*Store` that `New` returned over that handle, and then, through `DB.Write` on a handle on that file, for one or more of those tokens, the `id` of its row in `tokens` was set to its `ID` with the leading `TokenIDPrefix` removed, leaving 26 characters from `Alphabet`, and the table `schema_migrations` was dropped, as in a database an auth that carried no migrations wrote, every handle on the file then being closed, a later `db.Open` of that file with `auth.Migrations()` MUST return a non-nil `*db.DB` and a nil error, and in a `*Store` that `New` returns over that handle each such token's `ID` MUST be `TokenIDPrefix` followed by those same 26 characters, `ListTokens` for its owner MUST return no token whose `ID` is those bare 26 characters, and the token's `UserID`, `Name`, `Hash`, `Enabled`, `CreatedAt`, `ExpiresAt`, and `LastUsedAt` MUST be unchanged, so that `LookupTokenIdentity` and `TouchTokenIdentity` honor its secret exactly as before.
+- R-8EUO-4N7U: After the later `db.Open` R-8DMR-QVH5 describes has returned, queried inside a `DB.Read` on its handle, every row of the tables `users`, `sessions`, and `login_states`, and every row of `tokens` that the `DB.Write` R-8DMR-QVH5 describes did not change, its `id` already beginning with `TokenIDPrefix`, MUST hold exactly the values it held before that `db.Open`, and every row of `tokens` that `DB.Write` changed MUST hold in every column but `id` exactly the values it held before that `db.Open`.
+- R-8G2K-IEYJ: When nothing exists at a path, `db.Open` called with a `db.Config` whose `Path` is that path and whose `Migrations` is `auth.Migrations()` MUST return a non-nil `*db.DB` and a nil error, and, queried inside a `DB.Read` on that handle, `sqlite_master` MUST hold exactly five rows whose `type` is `table` and whose `name` does not begin with `sqlite_`, those whose `name` is `login_states`, `schema_migrations`, `sessions`, `tokens`, and `users`, and the tables `login_states`, `sessions`, `tokens`, and `users` MUST hold no rows.
+- R-8HAG-W6P8: For a database that `db.Open` created with `auth.Migrations()` as R-8G2K-IEYJ states, queried inside a `DB.Read` on a handle on it, `PRAGMA table_info('users')` MUST list the columns `id`, `issuer`, `subject`, `email`, and `last_google_login`; `PRAGMA table_info('sessions')` the columns `id`, `user_id`, `login_at`, and `last_used_at`; `PRAGMA table_info('login_states')` the columns `state`, `verifier`, and `return_url`; and `PRAGMA table_info('tokens')` the columns `id`, `user_id`, `name`, `hash`, `enabled`, `created_at`, `expires_at`, and `last_used_at`; each in that order and no other; and for every token a `*Store` over a handle on that database has created and not deleted, the `tokens` table MUST hold exactly one row whose `id` is that token's `ID`.
+- R-78DO-JF6Z: For a database that `db.Open` created with `auth.Migrations()` as R-8G2K-IEYJ states, `sqlite_master` queried as R-8G2K-IEYJ queries it MUST show exactly two rows whose `type` is `index` and whose `name` does not begin with `sqlite_`, `sessions_user_id_idx` with `tbl_name` `sessions` and `tokens_user_id_idx` with `tbl_name` `tokens`, and `PRAGMA index_info` of each MUST list exactly the one column `user_id`.
+- R-8IID-9YFX: When users, sessions, login states, and tokens were written through a `*Store` over a handle that `db.Open` returned for a path with `auth.Migrations()`, and that handle was then closed, then on a `*Store` that `New` returns over a later handle that `db.Open` returns for the same path with `auth.Migrations()`, every `LookupSessionIdentity`, `ListTokens`, and `LookupTokenIdentity` call MUST return what the same call with the same arguments returned on the first `*Store` just before its handle was closed, and `ConsumeLoginState` MUST return, for the `State` of every login state created and not consumed through the first `*Store`, that login state.
+- R-8JQ9-NQ6M: While `SetFailing(true)` is in force on the handle a `*Store` was built over, a `SetFailing(true)` call on it having returned and no `SetFailing(false)` call on it having followed, every `UpsertUserOnLogin`, `CreateSession`, `LookupSessionIdentity`, `TouchSession`, `DeleteSession`, `CreateLoginState`, `ConsumeLoginState`, `CreateToken`, `ListTokens`, `SetTokenEnabled`, `DeleteToken`, `LookupTokenIdentity`, and `TouchTokenIdentity` call on that `*Store` MUST return a non-nil error for which `errors.Is(err, ErrNotFound)` is false; once a `SetFailing(false)` call on that handle has returned, the same `*Store` MUST again behave as the other requirements of this design state, with no new handle and no `New` call in between; and every other requirement of auth's design that states what one of those calls returns or does MUST be read as applying only to a `*Store` whose handle is open and on which `SetFailing(true)` is not in force.
 - R-5AND-T1C5: On the first `UpsertUserOnLogin` for an `(issuer, subject)` pair, the store MUST create a `User` with a freshly minted opaque `ID` (via `NewID`), the given `Email`, and `LastGoogleLogin` equal to `now`, and MUST return that `User`.
 - R-5BVA-6T2U: On a later `UpsertUserOnLogin` for an `(issuer, subject)` pair that already has a user, the store MUST keep the existing `ID`, MUST set `Email` to the given value and `LastGoogleLogin` to `now`, MUST NOT create a second row for that pair, and MUST return the updated `User`.
 - R-T0E5-6XTZ: `UpsertUserOnLogin` MUST return `true` as its second result when the call created the user (the case of R-5AND-T1C5) and `false` when the `(issuer, subject)` pair already had a user (the case of R-5BVA-6T2U).

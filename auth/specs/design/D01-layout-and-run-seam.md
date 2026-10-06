@@ -2,8 +2,9 @@
 
 auth is one Go binary that serves the platform's auth service. This document
 fixes the skeleton the rest of the auth design hangs on: the module path, the
-packages the later documents name, the one platform library it depends on, and
-the run seam through which the program touches the outside world. It designs no
+packages the later documents name, the one platform library it depends on,
+the run seam through which the program touches the outside world, and the
+migrations that give its database its schema. It designs no
 endpoint, no config validation, no OAuth flow, and no persistence behavior —
 only where those things live and how they are wired and tested. The later
 design documents attach their contracts to the packages this document names:
@@ -15,7 +16,7 @@ encoding (D04).
 ## The one platform dependency
 
 auth depends on appkit, the platform's shared library, beside auth's Google
-and SQLite libraries, and on three of its packages. The first is
+libraries, and on four of its packages. The first is
 `github.com/ikigenba/ikigenba/appkit/page`, the banner kit, whose exported
 surface is `StaticPrefix = "/_appkit/"`, `Static() http.Handler`,
 `Templates() *template.Template`, `New(service, version string) *Kit`,
@@ -27,7 +28,20 @@ request, and, for tests, the capturing sink. The third is
 `github.com/ikigenba/ikigenba/appkit/identity`, and of it auth uses only the
 `Caller` a context carries (`NewContext`, `FromContext`), so that an event it
 records while answering a request carries that request's id and the user the
-event is about (D05, D06, D07). appkit is a sibling sub-project, so auth
+event is about (D05, D06, D07). The fourth is
+`github.com/ikigenba/ikigenba/appkit/db`, the suite's one way to keep a SQLite
+database: `db.Open` opens or creates the database at a path, creating its
+missing directories, applies the migrations it is given that the database has
+not had, and refuses a database it cannot open or one that records a
+migration it was not given (`db.ErrUnknownVersion`); `DB.Read` and `DB.Write`
+run the store's transactions, `Write` on the one writer; `DB.Close` closes the
+handle; `DB.SetFailing` makes a handle fail every transaction, which is how
+auth's tests make its store fail; and `db.Status` writes, changing nothing,
+which migrations a database has had and which it has not. The SQLite driver,
+the pure-Go one that keeps the release build cgo-free, arrives through that
+package; auth never imports it. All of that is appkit's contract (its D15 and
+D16): auth restates none of it and its tests re-prove none of it. appkit is a
+sibling sub-project, so auth
 reaches it only through those published packages. `identity.Require` is not
 auth's: auth is the identity provider, so no identity gate stands in front of
 it (D08), and its own code never reads the services file, which `page` and
@@ -86,6 +100,22 @@ package is what lists auth in the platform's launcher on a space. The build
 run never writes it. Everything auth serves is inside the binary — its own templates and appkit's
 embedded files alike.
 
+The database's schema is inside the binary too. It is a sequence of migration
+files in `migrations/` at the module root, which only a package at the module
+root can embed, so the root package `auth` exists for them and exports
+`Migrations`, a file system holding exactly the two migrations this auth
+carries. `0001_baseline.sql` is the schema auth has always created, its users,
+sessions, login states and tokens (D04 declares it), written so that it
+creates each table and index only if it does not exist and seeds nothing, so
+a database an earlier auth wrote before it carried migrations is adopted as it
+is. `0002_token_id_prefix.sql` gives every token that still carries a bare
+26-character id the `tok_` prefix (D04); it transforms rows that are there and
+adds none. That file system is what `Run` hands `db.Open` and `db.Status`, and
+what a test hands `db.Open` to make a database of auth's shape in its own
+temporary directory. It is the same on every call and depends on no file
+beside the binary. A later migration is a new file there with the next
+four-digit version; none is ever edited once released.
+
 So auth needs nothing on disk but its database. The release build is cgo-free
 (`CGO_ENABLED=0`), and a cgo-free Go build links no C library and yields an
 executable that loads no shared library. A working directory holding only
@@ -119,12 +149,25 @@ or the real streams, changes the real environment, calls `page.New`, or
 installs a signal handler,
 so a test that drives `Run` sees the whole program's behaviour and nothing
 leaks past it. auth needs more injected than a plain app, because it reads the
-clock, mints random ids and secrets, talks to Google, and opens a database; so
+clock, mints random ids and secrets, talks to Google, and keeps a database; so
 `Process` also carries a clock, a randomness source, the Google OIDC issuer
-location (so a loopback fake stands in for Google offline), and the database
-source (so a temporary or in-memory database stands in for `state/auth.db`),
-then the banner source described above, and, last, the telemetry sink
-described below.
+location (so a loopback fake stands in for Google offline), and the directory
+its database's path is resolved against, then the banner source described
+above, and, last, the telemetry sink described below.
+
+`Process.Dir` is that directory. `Run` keeps its database at the **database
+path**, `state/auth.db` resolved against `Dir`, which it opens with appkit's
+`db.Open`, the migrations `auth.Migrations()` and the clock `Process.Now`, so
+the migrations it applies are stamped with the injected clock like everything
+else it records. `main` leaves `Dir` empty, so the path is `state/auth.db`
+relative to the working directory, which is `/opt/auth` on a host, and passes
+`time.Now` as the clock; a test sets a temporary directory it owns, so two
+`Run`s given the same `Dir` share one database and two given different ones do
+not. There is no field naming another database: appkit's `db` takes only an
+ordinary file path, so there is no in-memory database. The one exec'ing test
+seeds the child's `state/auth.db` the way any test makes a database of auth's
+shape: `db.Open` with `auth.Migrations()`, a store over that handle with
+`store.New`, and the handle closed before the child starts.
 
 Socket activation hands the process a listening socket as file descriptor 3,
 and the one thing below the seam that touches a real descriptor is turning
@@ -144,10 +187,10 @@ waits for, so an in-process test and the host learn readiness the same way.
 There is no listen factory and no readiness callback in the seam: auth binds
 nothing, so there is no bind to fake, and the datagram is the readiness
 signal. auth opens no listening socket of its own, which is how "auth
-listens on no other socket" is kept: the seam's `Process` (R-ASHV-HUBF)
+listens on no other socket" is kept: the seam's `Process` (R-7ALZ-I7QX)
 carries exactly one way to come by a listener, `Inherit`, and nothing that
 binds one, and `Run` takes every input and produces every output through that
-`Process` (R-2KBY-P3V1). No requirement asserts the absence of other sockets in a running
+`Process` (R-7BTV-VZHM). No requirement asserts the absence of other sockets in a running
 process, because only the process's `/proc` entries could show it and the
 tests read nothing there.
 
@@ -209,12 +252,15 @@ that wants a particular reason cancels with a cause of its own choosing
 - R-AUXO-9DST: When the `auth` executable runs with no command, the three Google settings in its environment, a listening socket passed as file descriptor 3 by the socket-activation protocol, and `IKIGENBA_SERVICES` naming a services file whose entry named `telemetry` names a Unix socket on which an HTTP server answers every `POST /ingest` with `204`, it MUST open its database at `state/auth.db` relative to its working directory, MUST draw its pages' banner from the services file that `IKIGENBA_SERVICES` names in its environment at start, and on `SIGTERM` or `SIGINT` MUST stop, write nothing to stdout or stderr, and exit `0`.
 - R-AW5K-N5JI: When the `auth` executable serves as R-AUXO-9DST describes, every page it draws with the banner MUST end its `body` element's content, apart from trailing ASCII whitespace, with a `footer` element whose content reads `auth`, a single space, and the value of `Version` from `internal/version`.
 - R-3O47-G1QT: Package `internal/version` MUST own the release version value and export it as `Version`.
-- R-ASHV-HUBF: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; DBSource string; Banner func(u page.User) page.Banner; Sink telemetry.Sink }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page` and `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Banner` is the banner source from which every page auth draws with the banner is drawn, and `Sink` is the sink to which `Run` delivers the events it records.
+- R-7ALZ-I7QX: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; Dir string; Banner func(u page.User) page.Banner; Sink telemetry.Sink }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page` and `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Now` is the clock every time `Run` records or compares against is read from, the time of every migration it applies included, `Dir` is the directory against which `Run` resolves the path `state/auth.db` of its database, empty meaning the process working directory, `Banner` is the banner source from which every page auth draws with the banner is drawn, and `Sink` is the sink to which `Run` delivers the events it records.
 - R-LUR4-A3IV: `internal/cli` MUST export `func Run(ctx context.Context, p Process) int`.
 - R-2C9G-ACYG: `internal/version` MUST export `var Version string` whose value is a leading `v` followed by a semantic version.
 - R-3WNI-4FXO: `main` MUST terminate the process with the exact integer that `cli.Run` returns as the process exit status.
-- R-3XVE-I7OD: `cli.Run` MUST return `0` on success, `1` when the server fails, and `2` on a usage error.
-- R-2KBY-P3V1: Given a `Process` whose `Stdout` and `Stderr` are in-memory buffers, `Args` an explicit slice, `LookupEnv` a fake lookup, `Unsetenv` nil or a recorder, `Pid` a value the test chose, `Inherit` a function returning a listener the test made, `Now` a fixed clock, `Rand` a deterministic reader, `OIDCIssuer` a loopback URL, `DBSource` a temporary database, `Banner` a function the test wrote, and `Sink` a `*telemetry.Capture` or a sink the test wrote, `cli.Run` MUST take every input and produce every output through that `Process` — reading arguments only from `Args`, environment only through `LookupEnv`, every time it records or compares against stored state and every event's time only through `Now`, randomness, the request ids it mints included, only through `Rand`, except the request id appkit's `telemetry.Middleware` mints after its read of `Rand` fails (appkit D14, R-DRSL-TU2H), which MAY come from `crypto/rand`, and banner data only through `Banner`, delivering events only through `Sink`, and removing environment variables only through `Unsetenv` — and MUST NOT read the real process arguments, the real process environment, the real process id, or a global random source other than for such a request id; the drain deadline of D03 and `net/http`'s own deadlines are measured in real elapsed time and are not read through `Now`.
+- R-7D1S-9R8B: `cli.Run` MUST return `0` on success, `1` on a failure that is not a usage error (the server failing, a database it cannot open, or a `db status` that fails, D02 and D03), and `2` on a usage error.
+- R-7E9O-NIZ0: The module's root package, imported from the path `github.com/ikigenba/ikigenba/auth` with the package name `auth`, MUST export `func Migrations() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `0001_baseline.sql` and `0002_token_id_prefix.sql` and no other entry.
+- R-7FHL-1APP: Every call to the root package's `Migrations` MUST return a file system holding the same two files with the same contents, whatever the process working directory is, a directory that holds no `migrations/` directory included.
+- R-7GPH-F2GE: auth's design defines the **database path** of a `Run` as `filepath.Join(p.Dir, "state", "auth.db")`, where `filepath` is the standard library's `path/filepath` and `p` is the `Process` given to that `Run`, a relative path resolved against the process working directory when `p.Dir` is empty; every requirement of auth's design that names the database path MUST denote this.
+- R-7BTV-VZHM: Given a `Process` whose `Stdout` and `Stderr` are in-memory buffers, `Args` an explicit slice, `LookupEnv` a fake lookup, `Unsetenv` nil or a recorder, `Pid` a value the test chose, `Inherit` a function returning a listener the test made, `Now` a fixed clock, `Rand` a deterministic reader, `OIDCIssuer` a loopback URL, `Dir` a temporary directory the test owns, `Banner` a function the test wrote, and `Sink` a `*telemetry.Capture` or a sink the test wrote, `cli.Run` MUST take every input and produce every output through that `Process` — reading arguments only from `Args`, environment only through `LookupEnv`, every time it records or compares against stored state, every event's time, and the time of every migration it applies only through `Now`, randomness, the request ids it mints included, only through `Rand`, except the request id appkit's `telemetry.Middleware` mints after its read of `Rand` fails (appkit D14, R-DRSL-TU2H), which MAY come from `crypto/rand`, and banner data only through `Banner`, delivering events only through `Sink`, and removing environment variables only through `Unsetenv` — and MUST NOT read the real process arguments, the real process environment, the real process id, or a global random source other than for such a request id; the drain deadline of D03 and `net/http`'s own deadlines are measured in real elapsed time and are not read through `Now`.
 - R-M22I-KPZ1: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.
 - R-M3AE-YHPQ: The `internal/server` package MUST export `type DrainError struct { Unfinished int }` and `func (e *DrainError) Error() string`.
 - R-L9FH-DHDY: `*server.Server` MUST implement `http.Handler` through `func (*Server) ServeHTTP(w http.ResponseWriter, r *http.Request)`.
