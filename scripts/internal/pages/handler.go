@@ -94,6 +94,9 @@ func Handler(cfg Config) http.Handler {
 			for _, u := range rs {
 				d.Runs = append(d.Runs, runRow(u, sc.Name))
 			}
+			for _, sub := range sc.Subscriptions {
+				d.Subscriptions = append(d.Subscriptions, sub.Event)
+			}
 			cfg.Pages.Write(w, r, 200, "script", d)
 			return
 		}

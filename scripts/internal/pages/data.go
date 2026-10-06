@@ -98,7 +98,7 @@ func failure(ctx context.Context, cfg Config, sc store.Script, u store.Run) *Fai
 func runData(ctx context.Context, cfg Config, sc store.Script, u store.Run, b page.Banner) RunData {
 	word, kind := status(u)
 	out, errout := cfg.Runs.Sizes(u)
-	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: word, Kind: kind, Running: u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
+	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: word, Kind: kind, Running: u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
 	if !c.Running {
 		c.Finished = u.Finished.UTC().Format("2006-01-02 15:04:05 UTC")
 		c.FinishedAt = datetime(u.Finished)

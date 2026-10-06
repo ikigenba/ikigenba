@@ -85,7 +85,7 @@ func equal(t *testing.T, a, b any) {
 }
 func catalog(t *testing.T, err error) {
 	t.Helper()
-	if err == nil || errors.Is(err, store.ErrNameTaken) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrEnded) {
+	if err == nil || errors.Is(err, store.ErrNameTaken) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrEnded) || errors.Is(err, store.ErrNotSubscribed) || errors.Is(err, store.ErrDelivered) {
 		t.Fatalf("not a catalog error: %v", err)
 	}
 }
@@ -158,7 +158,7 @@ type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("random unavailable") }
 func TestWordsAndNames(t *testing.T) {
-	// R-KJY1-TEST R-KL5Y-76JI R-KMDU-KYA7 R-XX43-QPZC R-KW51-N47R
+	// R-KJY1-TEST R-KL5Y-76JI R-R66G-0772 R-XX43-QPZC R-RDHU-ATN8
 	equal(t, []string{store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed}, []string{"running", "exited", "killed", "timed_out", "failed"})
 	equal(t, []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed}, []string{"repository_missing", "commit_missing", "too_large", "git_failed", "timed_out", "start_failed"})
 	equal(t, store.TriggerManual, "manual")
@@ -174,10 +174,10 @@ func TestWordsAndNames(t *testing.T) {
 			}
 		}
 	}
-	for _, good := range []string{"a", "0", "a-", "about-us", "mcp-audit", strings.Repeat("a", 64)} {
+	for _, good := range []string{"a", "0", "a-", "about-us", "mcp-audit", "events-digest", "declarations2", strings.Repeat("a", 64)} {
 		equal(t, store.ValidName(good), true)
 	}
-	for _, bad := range []string{"", "about", "mcp", "CRM Weekly", " report", "-report", "a_b", strings.Repeat("a", 65), "é", "a\x00"} {
+	for _, bad := range []string{"", "about", "mcp", "events", "declarations", "CRM Weekly", " report", "-report", "a_b", strings.Repeat("a", 65), "é", "a\x00"} {
 		equal(t, store.ValidName(bad), false)
 	}
 	for b := 0; b < 256; b++ {
@@ -188,7 +188,7 @@ func TestWordsAndNames(t *testing.T) {
 }
 
 func TestScriptsAndPersistence(t *testing.T) {
-	// R-KGAC-O3KQ R-KIQ5-FN24 R-KOTN-CHRL R-KR9G-418Z R-XZJW-I9GQ R-Y0RS-W17F R-LD7M-ZWLH R-LFNF-RG2V R-LGVC-57TK R-LI38-IZK9 R-LJB4-WRAY R-LKJ1-AJ1N R-Y1ZP-9SY4 R-LMYU-22J1
+	// R-R2IQ-UVYZ R-KIQ5-FN24 R-KOTN-CHRL R-R9U5-5IF5 R-XZJW-I9GQ R-Y0RS-W17F R-LD7M-ZWLH R-LFNF-RG2V R-LGVC-57TK R-LI38-IZK9 R-LJB4-WRAY R-LKJ1-AJ1N R-Y1ZP-9SY4 R-LMYU-22J1
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	z := create(t, s, "alice", "zulu")
@@ -274,7 +274,7 @@ func TestScriptsAndPersistence(t *testing.T) {
 	create(t, s, "bob", "alpha")
 }
 func TestCreateFailuresAndCollisions(t *testing.T) {
-	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-YAIZ-Y74Z
+	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-S0NX-KGQF
 	random := bytes.NewReader(bytes.Repeat([]byte{1, 2, 3, 4, 5, 6, 7, 8}, 9))
 	s := configured(t, "", store.Config{Rand: random, Now: func() time.Time { return stamp }})
 	defer func() { must(t, closeStore(s)) }()
@@ -313,7 +313,7 @@ func TestCreateFailuresAndCollisions(t *testing.T) {
 	equal(t, retry.Len(), 0)
 }
 func TestRunTransitionsAndReads(t *testing.T) {
-	// R-KHI9-1VBF R-KQ1J-Q9IA R-LUA8-COZ7 R-LVI4-QGPW R-LWQ1-48GL R-LZ5T-VRXZ R-Y5NE-F467
+	// R-R4YJ-MFGD R-KQ1J-Q9IA R-LUA8-COZ7 R-LVI4-QGPW R-LWQ1-48GL R-LZ5T-VRXZ R-Y5NE-F467
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	a := create(t, s, "alice", "alpha")
@@ -397,7 +397,7 @@ func TestRunValidation(t *testing.T) {
 	sc := create(t, s, "alice", "alpha")
 	base := run(sc, 10)
 	before := content(t, s)
-	invalid := []func(*store.Run){func(r *store.Run) { r.ID = "bad" }, func(r *store.Run) { r.Ref = "" }, func(r *store.Run) { r.User = "" }, func(r *store.Run) { r.Script = "" }, func(r *store.Run) { r.Trigger = "event" }, func(r *store.Run) { r.Started = time.Time{} }, func(r *store.Run) { r.StdoutBytes = -1 }, func(r *store.Run) { r.StderrBytes = -1 }, func(r *store.Run) { r.SHA = "A" + strings.Repeat("a", 39) }, func(r *store.Run) { r.SHA = "" }, func(r *store.Run) { r.SHA = "a" }, func(r *store.Run) { r.ExitCode = 1 }, func(r *store.Run) { r.StdoutBytes = 1 }, func(r *store.Run) { r.StderrBytes = 1 }, func(r *store.Run) { r.Finished = stamp }, func(r *store.Run) { r.Truncated = true }, func(r *store.Run) { r.Reason = store.ReasonStartFailed }, func(r *store.Run) { r.Status = store.StatusExited }}
+	invalid := []func(*store.Run){func(r *store.Run) { r.ID = "bad" }, func(r *store.Run) { r.Ref = "" }, func(r *store.Run) { r.User = "" }, func(r *store.Run) { r.Script = "" }, func(r *store.Run) { r.Trigger = "invalid" }, func(r *store.Run) { r.Started = time.Time{} }, func(r *store.Run) { r.StdoutBytes = -1 }, func(r *store.Run) { r.StderrBytes = -1 }, func(r *store.Run) { r.SHA = "A" + strings.Repeat("a", 39) }, func(r *store.Run) { r.SHA = "" }, func(r *store.Run) { r.SHA = "a" }, func(r *store.Run) { r.ExitCode = 1 }, func(r *store.Run) { r.StdoutBytes = 1 }, func(r *store.Run) { r.StderrBytes = 1 }, func(r *store.Run) { r.Finished = stamp }, func(r *store.Run) { r.Truncated = true }, func(r *store.Run) { r.Reason = store.ReasonStartFailed }, func(r *store.Run) { r.Status = store.StatusExited }}
 	for i, mutate := range invalid {
 		r := base
 		mutate(&r)
@@ -654,7 +654,7 @@ func TestConcurrentWrites(t *testing.T) {
 	equal(t, rr, []store.Run{})
 }
 func TestClosedAndCancelled(t *testing.T) {
-	// R-Y6VA-SVWW R-Y837-6NNL R-YAIZ-Y74Z
+	// R-Y6VA-SVWW R-Y837-6NNL R-S0NX-KGQF
 	path := filepath.Join(t.TempDir(), "scripts.db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")

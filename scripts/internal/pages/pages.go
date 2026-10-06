@@ -66,9 +66,10 @@ type RunRow struct{ ID, URL, Status, Kind, Commit, Started, StartedAt, Duration,
 
 // ScriptData is a script and its retained runs.
 type ScriptData struct {
-	Banner page.Banner
-	Script ScriptCard
-	Runs   []RunRow
+	Banner        page.Banner
+	Script        ScriptCard
+	Runs          []RunRow
+	Subscriptions []string
 }
 
 // ScriptCard is the formatted script record and retention rule.
@@ -94,12 +95,12 @@ type ScriptLink struct{ Name, URL string }
 
 // RunCard is the formatted headline and details of a run.
 type RunCard struct {
-	ID, URL, Status, Kind                                                                                           string
-	Running                                                                                                         bool
-	Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, User, Request, StdoutSize, StderrSize string
-	Truncated                                                                                                       bool
-	Failure                                                                                                         *Failure
-	FilesGone                                                                                                       bool
+	ID, URL, Status, Kind                                                                                                  string
+	Running                                                                                                                bool
+	Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
+	Truncated                                                                                                              bool
+	Failure                                                                                                                *Failure
+	FilesGone                                                                                                              bool
 }
 
 // Failure explains why a script did not start.

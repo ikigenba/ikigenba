@@ -64,7 +64,7 @@ func assertNoCredential(t *testing.T, secrets []string, b []byte) {
 }
 
 func TestCredentialSequence(t *testing.T) {
-	// R-VZA3-2BOY R-BB9G-J9E5 R-BCHC-X14U R-BDP9-ASVJ R-1DYA-2P7O R-BG52-2CCX
+	// R-VZA3-2BOY R-8QNL-DLH0 R-8RVH-RD7P R-8T3E-54YE R-8UBA-IWP3 R-8VJ6-WOFS
 	user, password := strings.Join([]string{"AZBZCZDZ", "EXFXGXHX", "JXKXLXMX", "NXOX"}, ""), strings.Join([]string{"PZQZRZSZ", "TUVWXZYX", "AXBYCXDY", "EXFY"}, "")
 	encoded := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
 	var secrets []string
@@ -117,7 +117,7 @@ if json.load(open(os.environ['IKIGENBA_INPUT'])).get('hold'):
 				listed, e := h.client.ListTools(ctx, caller)
 				cancel()
 				mustCLI(t, e)
-				if len(listed) != 9 {
+				if len(listed) != 11 {
 					t.Fatalf("tools: %d", len(listed))
 				}
 				name, other := fmt.Sprintf("credential-%d", pass), fmt.Sprintf("deleted-%d", pass)
@@ -126,6 +126,8 @@ if json.load(open(os.environ['IKIGENBA_INPUT'])).get('hold'):
 				h.call("update", map[string]any{"name": name, "ref": "main"})
 				h.call("show", map[string]any{"name": name})
 				h.call("list", nil)
+				h.call("subscribe", map[string]any{"name": name, "event": "repo.pushed"})
+				h.call("unsubscribe", map[string]any{"name": name, "event": "repo.pushed"})
 				run := func(n string, hold bool) string {
 					return h.call("run", map[string]any{"name": n, "input": map[string]any{"hold": hold}})["id"].(string)
 				}

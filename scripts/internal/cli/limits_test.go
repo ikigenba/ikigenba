@@ -164,7 +164,7 @@ func TestLimitsAlreadyExpiredOperation(t *testing.T) {
 	h.stop()
 }
 func TestLimitsPruneUsesStartupSettings(t *testing.T) {
-	// R-LPL3-GWRC R-MA0K-NAIG R-XNSK-OHF3
+	// R-LPL3-GWRC R-MA0K-NAIG
 	h := newHarness(t)
 	h.repository("pass\n")
 	h.p.Sink = &h.sink.capture

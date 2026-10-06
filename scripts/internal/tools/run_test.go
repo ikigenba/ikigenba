@@ -28,7 +28,7 @@ import (
 )
 
 func TestRunRecordsAndFiles(t *testing.T) {
-	// R-IZHY-8LMQ R-J5LG-5GC7 R-J6TC-J82W R-J818-WZTL R-3N2C-FZ7X R-3OA8-TQYM R-3PI5-7IPB R-3QQ1-LAG0 R-5GWX-3L9F R-5I4T-HD04 R-5KKM-8WHI R-5N0F-0FYW R-5O8B-E7PL R-5QO4-5R6Z
+	// R-IZHY-8LMQ R-J5LG-5GC7 R-7HJB-831B R-7IR7-LUS0 R-7L70-DE9E R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-5GWX-3L9F R-5I4T-HD04 R-5KKM-8WHI R-5N0F-0FYW R-5O8B-E7PL R-5QO4-5R6Z
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	if got := string(object(t, h.call("runs", tools.RunsArgs{Name: "job"}))); got != `{"runs":[]}` {
@@ -205,7 +205,7 @@ func TestLiveRunCancelAndDelete(t *testing.T) {
 }
 
 func TestDrainAndRunFolderFailure(t *testing.T) {
-	// R-I507-KTJ8 R-I683-YL9X R-4RB1-2EOU
+	// R-I507-KTJ8 R-I683-YL9X R-8FOH-XNSR
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	must(t, os.MkdirAll(filepath.Join(h.root, "runs"), 0700))

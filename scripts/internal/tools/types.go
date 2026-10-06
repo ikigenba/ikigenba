@@ -14,7 +14,7 @@ type ShowArgs struct {
 
 // CreateArgs is an MCP argument.
 type CreateArgs struct {
-	Name string  `json:"name" mcp:"required" description:"The new script's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about or mcp, and not already a script's name in the space."`
+	Name string  `json:"name" mcp:"required" description:"The new script's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about, mcp, events, or declarations, and not already a script's name in the space."`
 	Repo string  `json:"repo" mcp:"required" description:"The id of one of your repositories in repos (rep_ and 16 hexadecimal digits)."`
 	Ref  *string `json:"ref" description:"The branch, tag, or commit a run uses; main unless given."`
 }
@@ -28,6 +28,18 @@ type UpdateArgs struct {
 // DeleteArgs is an MCP argument.
 type DeleteArgs struct {
 	Name string `json:"name" mcp:"required" description:"The script's name."`
+}
+
+// SubscribeArgs is an MCP argument.
+type SubscribeArgs struct {
+	Name  string `json:"name" mcp:"required" description:"The script's name."`
+	Event string `json:"event" mcp:"required" description:"The exact event name, such as repo.pushed."`
+}
+
+// UnsubscribeArgs is an MCP argument.
+type UnsubscribeArgs struct {
+	Name  string `json:"name" mcp:"required" description:"The script's name."`
+	Event string `json:"event" mcp:"required" description:"The exact event name the script is subscribed to."`
 }
 
 // RunArgs is an MCP argument.
@@ -60,23 +72,31 @@ type LastRun struct {
 	Started  string `json:"started" mcp:"required"`
 }
 
+// Subscription is an MCP result.
+type Subscription struct {
+	Event   string `json:"event" mcp:"required"`
+	Created string `json:"created" mcp:"required"`
+}
+
 // Script is an MCP result.
 type Script struct {
-	ID      string   `json:"id" mcp:"required"`
-	Name    string   `json:"name" mcp:"required"`
-	Repo    string   `json:"repo" mcp:"required"`
-	Ref     string   `json:"ref" mcp:"required"`
-	Created string   `json:"created" mcp:"required"`
-	LastRun *LastRun `json:"last_run"`
+	ID            string         `json:"id" mcp:"required"`
+	Name          string         `json:"name" mcp:"required"`
+	Repo          string         `json:"repo" mcp:"required"`
+	Ref           string         `json:"ref" mcp:"required"`
+	Created       string         `json:"created" mcp:"required"`
+	Subscriptions []Subscription `json:"subscriptions" mcp:"required"`
+	LastRun       *LastRun       `json:"last_run"`
 }
 
 // ListedScript is an MCP result.
 type ListedScript struct {
-	ID      string   `json:"id" mcp:"required"`
-	Name    string   `json:"name" mcp:"required"`
-	Repo    string   `json:"repo" mcp:"required"`
-	Ref     string   `json:"ref" mcp:"required"`
-	LastRun *LastRun `json:"last_run"`
+	ID            string   `json:"id" mcp:"required"`
+	Name          string   `json:"name" mcp:"required"`
+	Repo          string   `json:"repo" mcp:"required"`
+	Ref           string   `json:"ref" mcp:"required"`
+	Subscriptions int      `json:"subscriptions" mcp:"required"`
+	LastRun       *LastRun `json:"last_run"`
 }
 
 // ScriptList is an MCP result.
@@ -104,6 +124,7 @@ type RunEntry struct {
 	SHA       *string `json:"sha"`
 	Ref       string  `json:"ref" mcp:"required"`
 	Trigger   string  `json:"trigger" mcp:"required"`
+	Event     *string `json:"event"`
 	Status    string  `json:"status" mcp:"required"`
 	ExitCode  *int    `json:"exit_code"`
 	Started   string  `json:"started" mcp:"required"`
@@ -132,6 +153,7 @@ type RunResult struct {
 	User        string  `json:"user" mcp:"required"`
 	RequestID   string  `json:"request_id" mcp:"required"`
 	Trigger     string  `json:"trigger" mcp:"required"`
+	Event       *string `json:"event"`
 	Status      string  `json:"status" mcp:"required"`
 	ExitCode    *int    `json:"exit_code"`
 	Started     string  `json:"started" mcp:"required"`

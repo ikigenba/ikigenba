@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -53,7 +54,20 @@ func Handler(cfg Config) http.Handler {
 			p.ServeHTTP(w, r)
 		}
 	})
-	return telemetry.Middleware(cfg.Telemetry, identity.Require(routes))
+	gated := identity.Require(routes)
+	handlers := events.Handlers{"*": cfg.Runs.Deliver}
+	delivery := events.DeliveryHandler(handlers)
+	declarations := events.DeclarationsHandler(nil, handlers)
+	return telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case events.EventsPath:
+			delivery.ServeHTTP(w, r)
+		case events.DeclarationsPath:
+			declarations.ServeHTTP(w, r)
+		default:
+			gated.ServeHTTP(w, r)
+		}
+	}))
 }
 
 func runFilePath(r *http.Request) bool {

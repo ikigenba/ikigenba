@@ -23,7 +23,7 @@ import (
 )
 
 func TestCatalogLifecycle(t *testing.T) {
-	// R-J0PU-MDDF R-J1XR-0544 R-J4DJ-ROLI R-3LUG-27H8 R-52A4-ICD3 R-53I0-W43S R-54PX-9VUH R-55XT-NNL6 R-575Q-1FBV R-58DM-F72K R-59LI-SYT9 R-O7UW-EYEM R-5ATF-6QJY R-5C1B-KIAN R-5D97-YA1C R-C2RY-13RX
+	// R-7F3I-GJJX R-7GBE-UBAM R-J4DJ-ROLI R-7JZ3-ZMIP R-52A4-ICD3 R-53I0-W43S R-54PX-9VUH R-55XT-NNL6 R-575Q-1FBV R-58DM-F72K R-59LI-SYT9 R-O7UW-EYEM R-5ATF-6QJY R-5C1B-KIAN R-5D97-YA1C R-C2RY-13RX
 	h := setup(t, "print(1)\n")
 	if got := string(object(t, h.call("list", tools.ListArgs{}))); got != `{"scripts":[]}` {
 		t.Fatal(got)
@@ -216,7 +216,7 @@ func TestCatalogCreateStoredRecordAndExistingEntries(t *testing.T) {
 		if ref != nil {
 			wantRef = *ref
 		}
-		want := store.Script{ID: stored.ID, Name: name, Owner: "alice", Repo: "rep_1111111111111111", Ref: wantRef, Created: time.Date(2025, 1, 2, 2, 4, 5, 0, time.UTC)}
+		want := store.Script{ID: stored.ID, Name: name, Owner: "alice", Repo: "rep_1111111111111111", Ref: wantRef, Created: time.Date(2025, 1, 2, 2, 4, 5, 0, time.UTC), Subscriptions: []store.Subscription{}}
 		if !store.ValidScriptID(stored.ID) || !reflect.DeepEqual(stored, want) {
 			t.Fatal("stored script", stored, want)
 		}

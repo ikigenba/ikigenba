@@ -45,11 +45,11 @@ func TestAssets(t *testing.T) {
 	}
 }
 
-// R-S0RY-EOPY R-J8DY-WCVQ R-S1ZU-SGGN
+// R-6KM0-WA0K R-6LTX-A1R9 R-OO2Y-2753 R-S1ZU-SGGN
 func TestEtc(t *testing.T) {
 	first := scripts.Etc()
 	assertEntries(t, first, ".", []string{"etc"}, true)
-	assertEntries(t, first, "etc", []string{"manifest.toml"}, false)
+	assertEntries(t, first, "etc", []string{"manifest.toml", "nginx.conf"}, false)
 	data, err := fs.ReadFile(first, "etc/manifest.toml")
 	if err != nil {
 		t.Fatal(err)
@@ -57,11 +57,25 @@ func TestEtc(t *testing.T) {
 	if string(data) != cli.Manifest {
 		t.Fatalf("embedded manifest differs: %q", data)
 	}
+	nginx, err := fs.ReadFile(first, "etc/nginx.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(nginx) != cli.NginxConf {
+		t.Fatal("embedded nginx differs")
+	}
 	t.Chdir(t.TempDir())
 	for range 3 {
 		next := scripts.Etc()
+		got, err := fs.ReadFile(next, "etc/nginx.conf")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, nginx) {
+			t.Fatal("nginx changed")
+		}
 		assertEntries(t, next, ".", []string{"etc"}, true)
-		assertEntries(t, next, "etc", []string{"manifest.toml"}, false)
+		assertEntries(t, next, "etc", []string{"manifest.toml", "nginx.conf"}, false)
 		again, err := fs.ReadFile(next, "etc/manifest.toml")
 		if err != nil {
 			t.Fatal(err)

@@ -102,7 +102,14 @@ func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 				catalog := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
 				kept, err = catalog.Create(context.Background(), store.Draft{Owner: "owner", Name: "kept", Repo: "rep_0102030405060708", Ref: "main"})
 				mustCLI(t, err)
-				mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error { _, err := tx.Exec("DROP TABLE schema_migrations"); return err }))
+				mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
+					for _, statement := range []string{"DROP TABLE schema_migrations", "DROP TABLE subscriptions", "DROP TABLE event_runs"} {
+						if _, err := tx.Exec(statement); err != nil {
+							return err
+						}
+					}
+					return nil
+				}))
 				mustCLI(t, handle.Close())
 			}
 			oracle := filepath.Join(t.TempDir(), "oracle.db")

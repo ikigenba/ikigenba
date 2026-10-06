@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -34,14 +35,17 @@ const (
 	ReasonTimedOut          = "timed_out"
 	ReasonStartFailed       = "start_failed"
 	TriggerManual           = "manual"
+	TriggerEvent            = "event"
 	Unreachable             = "cannot reach the catalog; try again later"
 )
 
 // Sentinel errors distinguish content refusals from database failures.
 var (
-	ErrNotFound  = errors.New("not found")
-	ErrNameTaken = errors.New("name taken")
-	ErrEnded     = errors.New("run ended")
+	ErrNotFound      = errors.New("not found")
+	ErrNameTaken     = errors.New("name taken")
+	ErrEnded         = errors.New("run ended")
+	ErrNotSubscribed = errors.New("not subscribed")
+	ErrDelivered     = errors.New("event delivered")
 )
 
 // errCatalog is the stable error for a failure of the database handle.
@@ -57,17 +61,24 @@ type Config struct {
 type Script struct {
 	ID, Name, Owner, Repo, Ref string
 	Created                    time.Time
+	Subscriptions              []Subscription
 	Last                       *Run
+}
+
+// Subscription records a subscribed event name and creation time.
+type Subscription struct {
+	Event   string
+	Created time.Time
 }
 
 // Run holds the durable metadata of one execution.
 type Run struct {
-	ID, Script, SHA, Ref, User, RequestID, Trigger, Status string
-	ExitCode                                               int
-	Started, Finished                                      time.Time
-	StdoutBytes, StderrBytes                               int64
-	Truncated                                              bool
-	Reason                                                 string
+	ID, Script, SHA, Ref, User, RequestID, Trigger, Event, Status string
+	ExitCode                                                      int
+	Started, Finished                                             time.Time
+	StdoutBytes, StderrBytes                                      int64
+	Truncated                                                     bool
+	Reason                                                        string
 }
 
 // Draft supplies the fields of a new script.
@@ -94,9 +105,10 @@ type Store struct {
 
 // catalog is the content of a single transaction, never shared between calls.
 type catalog struct {
-	tx   *sql.Tx
-	cfg  Config
-	data content
+	tx            *sql.Tx
+	cfg           Config
+	data          content
+	subscriptions map[string][]Subscription
 }
 
 func newID(prefix string, r io.Reader) (string, error) {
@@ -145,7 +157,7 @@ func ValidRunID(s string) bool {
 
 // ValidName reports whether s is an available script-name shape.
 func ValidName(s string) bool {
-	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "mcp" {
+	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "mcp" || s == "events" || s == "declarations" {
 		return false
 	}
 	for _, b := range []byte(s) {
@@ -155,6 +167,12 @@ func ValidName(s string) bool {
 	}
 	return true
 }
+
+var eventPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*\.[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
+
+// ValidEvent reports whether s is a canonical event name.
+func ValidEvent(s string) bool { return eventPattern.MatchString(s) }
+
 func normalize(t time.Time) time.Time {
 	if t.IsZero() {
 		return time.Time{}
@@ -193,6 +211,25 @@ func (s *Store) transaction(ctx context.Context, write bool, fn func(*catalog) e
 			if err = gob.NewDecoder(bytes.NewReader(encoded)).Decode(&c.data); err != nil {
 				return err
 			}
+		}
+		c.subscriptions = map[string][]Subscription{}
+		rows, err := tx.QueryContext(ctx, "SELECT script,event,created FROM subscriptions ORDER BY event")
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id, event string
+			var created int64
+			if err = rows.Scan(&id, &event, &created); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			c.subscriptions[id] = append(c.subscriptions[id], Subscription{Event: event, Created: time.Unix(created, 0).UTC()})
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return err
 		}
 		for id, sc := range c.data.Scripts {
 			sc.Created = normalize(sc.Created)
@@ -257,6 +294,7 @@ func (s *catalog) runs(script string) []Run {
 }
 func (s *catalog) script(sc Script) Script {
 	sc.Last = nil
+	sc.Subscriptions = append([]Subscription{}, s.subscriptions[sc.ID]...)
 	rr := s.runs(sc.ID)
 	if len(rr) > 0 {
 		r := rr[0]
@@ -326,7 +364,7 @@ func (s *catalog) create(ctx context.Context, d Draft) (Script, error) {
 		if err = s.save(ctx, c); err != nil {
 			return Script{}, err
 		}
-		return sc, nil
+		return s.script(sc), nil
 	}
 	return Script{}, errors.New("script id collision")
 }
@@ -362,6 +400,11 @@ func (s *catalog) delete(ctx context.Context, id string) error {
 			delete(c.Runs, key)
 		}
 	}
+	for _, query := range []string{"DELETE FROM subscriptions WHERE script=?", "DELETE FROM event_runs WHERE script=?"} {
+		if _, err := s.tx.ExecContext(ctx, query, id); err != nil {
+			return err
+		}
+	}
 	return s.save(ctx, c)
 }
 func validReason(r string) bool {
@@ -372,7 +415,7 @@ func validReason(r string) bool {
 	return false
 }
 func validRun(r Run) bool {
-	if !ValidRunID(r.ID) || r.Ref == "" || r.User == "" || r.Script == "" || r.Trigger != TriggerManual || normalize(r.Started).IsZero() || r.StdoutBytes < 0 || r.StderrBytes < 0 || r.SHA != "" && (len(r.SHA) != 40 || !validHex(r.SHA)) {
+	if !ValidRunID(r.ID) || r.Ref == "" || r.User == "" || r.Script == "" || (r.Trigger != TriggerManual || r.Event != "") && (r.Trigger != TriggerEvent || r.Event == "") || normalize(r.Started).IsZero() || r.StdoutBytes < 0 || r.StderrBytes < 0 || r.SHA != "" && (len(r.SHA) != 40 || !validHex(r.SHA)) {
 		return false
 	}
 	switch r.Status {
@@ -395,6 +438,18 @@ func (s *catalog) addRun(ctx context.Context, r Run) (Run, error) {
 	}
 	if _, ok := s.data.Scripts[r.Script]; !ok {
 		return Run{}, ErrNotFound
+	}
+	if r.Trigger == TriggerEvent {
+		delivered, err := s.delivered(ctx, r.Script, r.Event)
+		if err != nil {
+			return Run{}, err
+		}
+		if delivered {
+			return Run{}, ErrDelivered
+		}
+		if _, err = s.tx.ExecContext(ctx, "INSERT INTO event_runs(script,event) VALUES(?,?)", r.Script, r.Event); err != nil {
+			return Run{}, err
+		}
 	}
 	r.Started = normalize(r.Started)
 	r.Finished = normalize(r.Finished)

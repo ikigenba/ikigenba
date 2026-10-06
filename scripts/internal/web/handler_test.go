@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -109,11 +110,11 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-A0MU-NN4U R-C48M-DF3W
+// R-6RXF-6WGQ R-OLN5-ANNP
 func TestMissingIdentityBeforeEveryRoute(t *testing.T) {
 	f := makeFixture(t, nil)
 	f.db.SetFailing(true)
-	for _, p := range []string{"/", "/_appkit/theme.css", "/mcp", "/n/runs/r/stdout", "/about", "/nope"} {
+	for _, p := range []string{"/", "/_appkit/theme.css", "/mcp", "/n/runs/r/stdout", "/about", "/nope", "/events/", "/Events", "/declarations/repo.pushed"} {
 		for _, m := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, email := range []string{"", "user@example.test"} {
 				got := serve(f.h, m, p, "", email, "request")
@@ -127,7 +128,7 @@ func TestMissingIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-C30P-ZND7 R-C5GI-R6UL R-8CIO-SOZP R-CAC4-A9TD R-8DQL-6GQE R-CDZT-FL1G R-CF7P-TCS5 R-CMJ4-3Z8B
+// R-6T5B-KO7F R-C5GI-R6UL R-8CIO-SOZP R-CAC4-A9TD R-8DQL-6GQE R-CDZT-FL1G R-CF7P-TCS5 R-CMJ4-3Z8B
 func TestRoutingMatchesOwnedHandlers(t *testing.T) {
 	f := makeFixture(t, nil)
 	set, err := pages.Load()
@@ -146,7 +147,7 @@ func TestRoutingMatchesOwnedHandlers(t *testing.T) {
 		for _, row := range []struct {
 			path    string
 			handler http.Handler
-		}{{"/", p}, {"/about", p}, {"/nope", p}, {"/about/", p}, {"/mcp/tools", p}, {"/mcp/", p}, {"/_appkit", p}, {"//", p}, {"/a/../b", p}, {"/n/runs/r/", p}, {"/n/runs/r", p}, {"/n/runs/r/stdout", files}, {"/n/runs/r//", files}, {"/n/runs/r/out/", files}, {"/n/runs/r/./stdout", files}, {"/n/runs/r/stdout/", files}, {"/n/%72uns/r/stdout", files}, {"/n%2Fruns/r/stdout", p}, {"/_appkit/theme.css", static}, {"/_appkit/nope.css", static}, {"/mcp", endpoint}} {
+		}{{"/", p}, {"/about", p}, {"/nope", p}, {"/about/", p}, {"/mcp/tools", p}, {"/mcp/", p}, {"/events/", p}, {"/events/x", p}, {"/declarations/repo.pushed", p}, {"/Events", p}, {"/_appkit", p}, {"//", p}, {"/a/../b", p}, {"/n/runs/r/", p}, {"/n/runs/r", p}, {"/n/runs/r/stdout", files}, {"/n/runs/r//", files}, {"/n/runs/r/out/", files}, {"/n/runs/r/./stdout", files}, {"/n/runs/r/stdout/", files}, {"/n/%72uns/r/stdout", files}, {"/n%2Fruns/r/stdout", p}, {"/_appkit/theme.css", static}, {"/_appkit/nope.css", static}, {"/mcp", endpoint}} {
 			for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 				got := serve(f.h, method, row.path, "owner", "", "request")
 				want := serve(row.handler, method, row.path, "owner", "", "request")
@@ -183,7 +184,7 @@ func TestRegistersExactlyDesignedTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, want) || len(got) != 9 {
+	if !reflect.DeepEqual(got, want) || len(got) != 11 {
 		t.Fatalf("tools: %v %v", got, want)
 	}
 }
@@ -297,7 +298,7 @@ func TestAnswersIndependentOfSink(t *testing.T) {
 	}
 }
 
-// R-CLB7-Q7HM
+// R-6VL4-C7OT
 func TestServicesSocketNotContacted(t *testing.T) {
 	f := makeFixture(t, nil)
 	repo := repositoryFixture(t, f)
@@ -353,6 +354,7 @@ func TestServicesSocketNotContacted(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	call("subscribe", map[string]any{"name": "report", "event": "repo.pushed"})
 	call("show", map[string]any{"name": "report"})
 	call("list", map[string]any{})
 	call("update", map[string]any{"name": "report", "ref": "alternate"})
@@ -378,6 +380,19 @@ func TestServicesSocketNotContacted(t *testing.T) {
 	if e != nil || ended.Status != store.StatusKilled {
 		t.Fatal(ended, e)
 	}
+	raw, e := deliveryJSON(events.Delivery{Event: events.Event{ID: "evt_1111111111111111", Seq: 1, Received: cfg.Telemetry.Now(), Time: cfg.Telemetry.Now(), Service: "repos", Name: "repo.pushed", Attrs: events.Attrs{}}, Attempt: 1})
+	if e != nil {
+		t.Fatal(e)
+	}
+	r := httptest.NewRequest("POST", events.EventsPath, bytes.NewReader(raw))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-Request-Id", "delivery-request")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"ok"`) {
+		t.Fatal(w)
+	}
+	call("unsubscribe", map[string]any{"name": "report", "event": "repo.pushed"})
 	call("delete", map[string]any{"name": "report"})
 	if _, e = cfg.Store.Find(context.Background(), "owner", "report"); !errors.Is(e, store.ErrNotFound) {
 		t.Fatal("script was not deleted", e)
@@ -596,4 +611,106 @@ func TestRequestStartedPrecedesFirstResponseWrite(t *testing.T) {
 	if !checked {
 		t.Fatal("response never written")
 	}
+}
+
+// R-6WT0-PZFI R-6Y0X-3R67
+func TestEventHandlersOutsideIdentity(t *testing.T) {
+	f := makeFixture(t, nil)
+	handlers := events.Handlers{"*": f.cfg.Runs.Deliver}
+	for _, path := range []string{events.EventsPath, events.DeclarationsPath} {
+		direct := events.DeliveryHandler(handlers)
+		if path == events.DeclarationsPath {
+			direct = events.DeclarationsHandler(nil, handlers)
+		}
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE"} {
+			for _, user := range []string{"", "owner"} {
+				for _, body := range []string{"", "not-json"} {
+					request := func() *http.Request {
+						r := httptest.NewRequest(method, path+"?q=1", strings.NewReader(body))
+						r.Header.Set("Content-Type", "application/json")
+						r.Header.Set("X-User-Id", user)
+						r.Header.Set("X-User-Email", "person@example.test")
+						r.Header.Set("X-Request-Id", "chosen-request")
+						return r
+					}
+					got, want := httptest.NewRecorder(), httptest.NewRecorder()
+					f.h.ServeHTTP(got, request())
+					direct.ServeHTTP(want, request().WithContext(identity.NewContext(context.Background(), identity.Caller{UserID: user, Email: "person@example.test", RequestID: "chosen-request"})))
+					same(t, got, want)
+				}
+			}
+		}
+	}
+	got := serve(f.h, "GET", events.DeclarationsPath, "", "", "declaration-request")
+	var declarations map[string][]string
+	if err := json.Unmarshal(got.Body.Bytes(), &declarations); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(declarations, map[string][]string{"emits": {}, "accepts": {"*"}}) {
+		t.Fatal(declarations)
+	}
+	sc, err := f.cfg.Store.Create(context.Background(), store.Draft{Owner: "owner", Name: "report", Repo: "absent-repo", Ref: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.cfg.Store.Subscribe(context.Background(), sc.ID, "repo.pushed"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"repo.created", "repo.pushed"} {
+		d := events.Delivery{Event: events.Event{ID: "evt_2222222222222222", Seq: 1, Received: f.cfg.Telemetry.Now(), Time: f.cfg.Telemetry.Now(), Service: "repos", Name: name, Attrs: events.Attrs{}}, Attempt: 1}
+		raw, e := deliveryJSON(d)
+		if e != nil {
+			t.Fatal(e)
+		}
+		r := httptest.NewRequest("POST", events.EventsPath, bytes.NewReader(raw))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("X-Request-Id", "event-request")
+		w := httptest.NewRecorder()
+		f.h.ServeHTTP(w, r)
+		var outcome map[string]string
+		if e = json.Unmarshal(w.Body.Bytes(), &outcome); e != nil || w.Code != 200 {
+			t.Fatal(w, e)
+		}
+		want := "skip"
+		count := 0
+		if name == "repo.pushed" {
+			want = "ok"
+			count = 1
+		}
+		if !reflect.DeepEqual(outcome, map[string]string{"outcome": want}) {
+			t.Fatal(outcome)
+		}
+		rs, e := f.cfg.Store.Runs(context.Background(), sc.ID)
+		if e != nil || len(rs) != count {
+			t.Fatal(rs, e)
+		}
+		if count == 1 && (rs[0].Event != d.Event.ID || rs[0].Trigger != store.TriggerEvent || rs[0].RequestID != "event-request") {
+			t.Fatal(rs)
+		}
+	}
+	if err = f.cfg.Telemetry.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, event := range f.capture.Events() {
+		if event.RequestID == "event-request" && (event.Name == "request.started" || event.Name == "request.finished") {
+			seen[event.Name]++
+		}
+	}
+	if seen["request.started"] != 2 || seen["request.finished"] != 2 {
+		t.Fatal(seen)
+	}
+}
+
+func deliveryJSON(d events.Delivery) ([]byte, error) {
+	b, err := json.Marshal(d.Event)
+	if err != nil {
+		return nil, err
+	}
+	var obj map[string]json.RawMessage
+	if err = json.Unmarshal(b, &obj); err != nil {
+		return nil, err
+	}
+	obj["attempt"] = json.RawMessage(fmt.Sprint(d.Attempt))
+	return json.Marshal(obj)
 }

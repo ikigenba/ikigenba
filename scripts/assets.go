@@ -9,7 +9,7 @@ import (
 //go:embed assets/landing.html assets/script.html assets/run.html assets/about.html assets/notfound.html assets/unavailable.html
 var assets embed.FS
 
-//go:embed etc/manifest.toml
+//go:embed etc/manifest.toml etc/nginx.conf
 var etc embed.FS
 
 //go:embed migrations/*.sql

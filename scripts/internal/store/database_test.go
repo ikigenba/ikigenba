@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/gob"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
@@ -119,6 +122,7 @@ func TestAdoptEarlierGobCatalog(t *testing.T) {
 					equal(t, len(got), 1)
 					actual := got[0]
 					actual.Last = nil
+					actual.Subscriptions = nil
 					equal(t, actual, sc)
 					rr, err := s.Runs(ctx, sc.ID)
 					must(t, err)
@@ -147,4 +151,95 @@ func TestAdoptEarlierGobCatalog(t *testing.T) {
 			}
 		})
 	}
+}
+
+// R-RZG1-6OZQ R-1G35-QHOA
+func TestUpgradeBaselineCatalog(t *testing.T) {
+	for _, baseline := range []bool{false, true} {
+		for _, records := range []bool{false, true} {
+			t.Run(fmt.Sprintf("baseline-%t-records-%t", baseline, records), func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "scripts.db")
+				migrations := fstest.MapFS{}
+				if baseline {
+					data, err := fs.ReadFile(scripts.Migrations(), "0001_catalog.sql")
+					must(t, err)
+					migrations["0001_catalog.sql"] = &fstest.MapFile{Data: data}
+				}
+				legacy, err := db.Open(ctx, db.Config{Path: path, Migrations: migrations, Now: func() time.Time { return stamp }})
+				must(t, err)
+				sc := store.Script{ID: "scr_0000000000000001", Name: "alpha", Owner: "alice", Repo: "repo", Ref: "main", Created: stamp.UTC().Truncate(time.Second), Subscriptions: []store.Subscription{{Event: "fake.subscription", Created: stamp.UTC().Truncate(time.Second)}}}
+				r := run(sc, 1)
+				r.Started = r.Started.UTC().Truncate(time.Second)
+				must(t, legacy.Write(ctx, func(tx *sql.Tx) error {
+					if !baseline {
+						if _, err := tx.ExecContext(ctx, "CREATE TABLE catalog (id INTEGER PRIMARY KEY CHECK(id=1),value BLOB NOT NULL); DROP TABLE schema_migrations"); err != nil {
+							return err
+						}
+					}
+					if !records {
+						return nil
+					}
+					stored := struct {
+						Scripts map[string]store.Script
+						Runs    map[string]store.Run
+					}{map[string]store.Script{sc.ID: sc}, map[string]store.Run{r.ID: r}}
+					var encoded bytes.Buffer
+					if err := gob.NewEncoder(&encoded).Encode(stored); err != nil {
+						return err
+					}
+					_, err := tx.ExecContext(ctx, "INSERT INTO catalog(id,value) VALUES(1,?)", encoded.Bytes())
+					return err
+				}))
+				must(t, legacy.Close())
+				s := open(t, path)
+				must(t, handle(s).Read(ctx, func(tx *sql.Tx) error {
+					rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name")
+					if err != nil {
+						return err
+					}
+					defer func() { _ = rows.Close() }()
+					names := []string{}
+					for rows.Next() {
+						var name string
+						if err := rows.Scan(&name); err != nil {
+							return err
+						}
+						names = append(names, name)
+					}
+					equal(t, names, []string{"catalog", "event_runs", "schema_migrations", "subscriptions"})
+					return rows.Err()
+				}))
+				if !records {
+					equal(t, lenList(t, s, "alice"), 0)
+					return
+				}
+				actual, err := s.Find(ctx, sc.Owner, sc.Name)
+				must(t, err)
+				equal(t, actual.Subscriptions, []store.Subscription{})
+				actual.Last = nil
+				sc.Subscriptions = []store.Subscription{}
+				equal(t, actual, sc)
+				rr, err := s.Runs(ctx, sc.ID)
+				must(t, err)
+				equal(t, rr, []store.Run{r})
+				delivered, err := s.Delivered(ctx, sc.ID, "event")
+				must(t, err)
+				equal(t, delivered, false)
+				actual, err = s.Subscribe(ctx, sc.ID, "repo.pushed")
+				must(t, err)
+				must(t, closeStore(s))
+				s = open(t, path)
+				again, err := s.Find(ctx, sc.Owner, sc.Name)
+				must(t, err)
+				equal(t, again, actual)
+			})
+		}
+	}
+}
+
+func lenList(t *testing.T, s *store.Store, owner string) int {
+	t.Helper()
+	list, err := s.List(ctx, owner)
+	must(t, err)
+	return len(list)
 }

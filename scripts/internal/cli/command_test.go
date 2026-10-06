@@ -178,3 +178,11 @@ func TestCommandsLeaveProcessUntouched(t *testing.T) {
 		})
 	}
 }
+
+// R-6PHM-FCZC
+func TestNginxConf(t *testing.T) {
+	const fragment string = cli.NginxConf
+	if fragment != "location = /events { return 404; }\nlocation = /declarations { return 404; }\n" {
+		t.Fatalf("nginx fragment %q", fragment)
+	}
+}

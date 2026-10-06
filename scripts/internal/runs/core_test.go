@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts"
@@ -250,9 +251,9 @@ func entries(t *testing.T, dir string) []string {
 	return ns
 }
 
-// R-TRAW-TG9L R-TSIT-780A R-TTQP-KZQZ R-TUYL-YRHO R-TW6I-CJ8D R-TXEE-QAZ2
-// R-UQ6M-B6LX R-UREI-OYCM R-U4PT-0XF8 R-U75L-SGWM R-U8DI-68NB R-U9LE-K0E0
-// R-XBLK-US05 R-UC17-BJVE R-UFOW-GV3H R-V2DM-4W0V R-J746-MBVK R-VG9V-XZCB R-VI8B-3WNW
+// R-TRAW-TG9L R-S1VT-Y8H4 R-TTQP-KZQZ R-TUYL-YRHO R-TW6I-CJ8D R-TXEE-QAZ2
+// R-S33Q-C07T R-UREI-OYCM R-U4PT-0XF8 R-U75L-SGWM R-U8DI-68NB R-U9LE-K0E0
+// R-S978-8UXA R-UC17-BJVE R-UFOW-GV3H R-V2DM-4W0V R-J746-MBVK R-VG9V-XZCB R-VI8B-3WNW
 func TestRunFolderEnvironmentAndLifetime(t *testing.T) {
 	script := `import os, json
 root=os.environ['IKIGENBA_RUN_DIR']
@@ -269,7 +270,7 @@ while not os.path.exists(os.path.join(root,'release')): pass
 	raw := []byte(" { \"a\": 1 } \n")
 	r, e := h.core.Run(ctx, h.sc, runs.Request{Input: raw, Caller: identity.Caller{UserID: "owner", RequestID: "request"}})
 	must(t, e)
-	if r.Status != store.StatusRunning || !store.ValidRunID(r.ID) || r.Script != h.sc.ID || r.SHA != h.sha || r.Ref != "main" || r.User != "owner" || r.RequestID != "request" || r.Trigger != store.TriggerManual || r.Started != h.readNow().UTC().Truncate(time.Second) {
+	if r.Status != store.StatusRunning || !store.ValidRunID(r.ID) || r.Script != h.sc.ID || r.SHA != h.sha || r.Ref != "main" || r.User != "owner" || r.RequestID != "request" || r.Trigger != store.TriggerManual || r.Event != "" || r.Started != h.readNow().UTC().Truncate(time.Second) {
 		t.Fatalf("record: %+v", r)
 	}
 	if got := h.record(r.ID); !reflect.DeepEqual(got, r) {
@@ -306,7 +307,7 @@ while not os.path.exists(os.path.join(root,'release')): pass
 		}
 		env[k] = x
 	}
-	want := map[string]string{"PATH": h.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_SCRIPT": h.sc.ID, "IKIGENBA_SHA": h.sha, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_OUT_DIR": filepath.Join(folder, runs.OutDir), "IKIGENBA_INPUT": filepath.Join(folder, runs.InputFile), "IKIGENBA_USER_ID": "owner", "IKIGENBA_REQUEST_ID": "request", "IKIGENBA_SERVICES": h.cfg.Services}
+	want := map[string]string{"PATH": h.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_SCRIPT": h.sc.ID, "IKIGENBA_SHA": h.sha, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_OUT_DIR": filepath.Join(folder, runs.OutDir), "IKIGENBA_INPUT": filepath.Join(folder, runs.InputFile), "IKIGENBA_USER_ID": "owner", "IKIGENBA_REQUEST_ID": "request", "IKIGENBA_EVENT_ID": "", "IKIGENBA_EVENT_DEPTH": "0", "IKIGENBA_SERVICES": h.cfg.Services}
 	if !reflect.DeepEqual(env, want) {
 		t.Fatalf("env %v", env)
 	}
@@ -520,7 +521,7 @@ func processGone(pid string) bool {
 	return ok && strings.HasPrefix(tail, "Z ")
 }
 
-// R-FM6M-9NH9 R-FNEI-NF7Y R-UWA4-81BE R-UXI0-LT23 R-XE1D-MBHJ R-UZ7A-L6YL R-UWRH-TNH7
+// R-S4BM-PRYI R-S5JJ-3JP7 R-UWA4-81BE R-UXI0-LT23 R-S7ZB-V36L R-UZ7A-L6YL R-UWRH-TNH7
 func TestFailedRunsAndFolders(t *testing.T) {
 	for _, mode := range []string{"missing-ref", "missing-repo", "large-tree", "start-failed", "git-error"} {
 		t.Run(mode, func(t *testing.T) {
@@ -569,9 +570,9 @@ func TestFailedRunsAndFolders(t *testing.T) {
 				sha = ""
 				want = []string{runs.InputFile, runs.StderrFile}
 			}
-			r, e := h.core.Run(context.Background(), sc, runs.Request{Caller: identity.Caller{UserID: "owner", RequestID: "failure"}})
+			r, e := h.core.Run(context.Background(), sc, runs.Request{Caller: identity.Caller{UserID: "owner", RequestID: "failure"}, Cause: events.Cause{ID: "evt_abcdef0123456789", Depth: 2}})
 			must(t, e)
-			if r.Status != store.StatusFailed || r.Reason != reason || r.SHA != sha || r.Finished.Before(r.Started) {
+			if r.Status != store.StatusFailed || r.Reason != reason || r.SHA != sha || r.Finished.Before(r.Started) || r.Event != "evt_abcdef0123456789" || r.Trigger != store.TriggerEvent || r.User != "owner" || r.RequestID != "failure" || r.Ref != sc.Ref || r.Started != h.readNow().UTC().Truncate(time.Second) {
 				t.Fatalf("failed %+v", r)
 			}
 			if got := entries(t, h.core.Folder(r)); !reflect.DeepEqual(got, want) {

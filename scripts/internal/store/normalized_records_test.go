@@ -11,7 +11,7 @@ import (
 )
 
 func TestNormalizedRunRecordRefusals(t *testing.T) {
-	// R-9CAY-4JXA
+	// R-RB21-JA5U
 	zeroFraction := time.Time{}.Add(750 * time.Millisecond)
 	tests := []struct {
 		name   string
@@ -22,7 +22,7 @@ func TestNormalizedRunRecordRefusals(t *testing.T) {
 		{"ref", false, func(r *store.Run) { r.Ref = "" }},
 		{"user", false, func(r *store.Run) { r.User = "" }},
 		{"script", false, func(r *store.Run) { r.Script = "" }},
-		{"trigger", false, func(r *store.Run) { r.Trigger = "event" }},
+		{"trigger", false, func(r *store.Run) { r.Trigger = "invalid" }},
 		{"start-zero", false, func(r *store.Run) { r.Started = time.Time{} }},
 		{"start-normalizes-zero", false, func(r *store.Run) { r.Started = zeroFraction }},
 		{"start-offset-normalizes-zero", false, func(r *store.Run) { r.Started = zeroFraction.In(time.FixedZone("west", -3600)) }},
@@ -83,7 +83,7 @@ func TestNormalizedRunRecordRefusals(t *testing.T) {
 }
 
 func TestNormalizedAddRunPersistence(t *testing.T) {
-	// R-9CAY-4JXA R-Y4FI-1CFI
+	// R-RB21-JA5U R-Y4FI-1CFI
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")
@@ -143,7 +143,7 @@ func TestNormalizedAddRunPersistence(t *testing.T) {
 }
 
 func TestNormalizedEndingRefusals(t *testing.T) {
-	// R-9CAY-4JXA
+	// R-RB21-JA5U
 	zeroFraction := time.Time{}.Add(750 * time.Millisecond)
 	for i, e := range []store.Ending{
 		{Status: store.StatusRunning, Finished: stamp},
@@ -186,7 +186,7 @@ func TestNormalizedEndingRefusals(t *testing.T) {
 }
 
 func TestNormalizedFinishRun(t *testing.T) {
-	// R-9CAY-4JXA R-LQMJ-7DR4
+	// R-RB21-JA5U R-LQMJ-7DR4
 	endings := []store.Ending{}
 	for _, code := range []int{0, 1, 254, 255} {
 		endings = append(endings, store.Ending{Status: store.StatusExited, ExitCode: code})

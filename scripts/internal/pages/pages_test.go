@@ -76,7 +76,7 @@ func requireAbsent(t *testing.T, body string, values ...string) {
 	}
 }
 
-// R-VKHH-HQ5X R-VMXA-99NB R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-VVGK-XNU6 R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W1K2-UIJN R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7 R-WCJ6-AG7W R-WDR2-O7YL R-WEYZ-1ZPA R-WHER-TJ6O
+// R-VKHH-HQ5X R-VMXA-99NB R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-71OM-92EA R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7 R-WCJ6-AG7W R-WDR2-O7YL R-WEYZ-1ZPA R-WHER-TJ6O
 func TestTemplateSetAndData(t *testing.T) {
 	const serviceName = pages.ServiceName
 	const description = pages.Description
@@ -253,7 +253,7 @@ func writeFile(t *testing.T, p, text string) {
 	}
 }
 
-// R-W8VH-54ZT R-WA3D-IWQI R-NY3P-CSH2 R-WJUK-L2O2 R-WL2G-YUER R-WPY2-HXDJ R-WR5Y-VP48 R-WW1K-ES30 R-WX9G-SJTP R-WZP9-K3B3 R-0KOO-W7F0 R-X252-BMSH R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0N4H-NQWE R-0PKA-FADS R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ R-XGRU-WVOT
+// R-W8VH-54ZT R-WA3D-IWQI R-NY3P-CSH2 R-WJUK-L2O2 R-WL2G-YUER R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-WX9G-SJTP R-WZP9-K3B3 R-0KOO-W7F0 R-X252-BMSH R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0N4H-NQWE R-0PKA-FADS R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ R-XGRU-WVOT
 func TestPageRoutesAndData(t *testing.T) {
 	var handler func(pages.Config) http.Handler
 	f := setup(t)
@@ -415,7 +415,7 @@ func TestPageRoutesAndData(t *testing.T) {
 	requireEqual(t, w.Body.String(), rendered(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
 }
 
-// R-WMAD-CM5G R-WNI9-QDW5 R-WOQ6-45MU R-WSDV-9GUX R-WTLR-N8LM R-WUTO-10CB R-X3CY-PEJ6
+// R-WMAD-CM5G R-WNI9-QDW5 R-WOQ6-45MU R-WSDV-9GUX R-744F-0LVO R-WUTO-10CB R-X3CY-PEJ6
 func TestRunPageData(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -1069,7 +1069,7 @@ func breadcrumbs(t *testing.T, body string, wants []pages.ScriptLink) {
 	}
 }
 
-// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-YCH8-UWYV R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
+// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-76K7-S5D2 R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
 func TestCatalogScriptAboutHooks(t *testing.T) {
 	f := setup(t)
 	b := fixedBanner
@@ -1117,16 +1117,16 @@ func TestCatalogScriptAboutHooks(t *testing.T) {
 	requireEqual(t, tools.tag, "dl")
 	dts := elements(tools.body, "dt")
 	dds := elements(tools.body, "dd")
-	names := []string{"list", "show", "create", "update", "delete", "run", "runs", "result", "cancel"}
-	desc := []string{"The scripts you own, by name.", "One of your scripts, with its repository, its ref and its last run.", "Create a script from one of your repositories and a ref.", "Change the ref one of your scripts runs from.", "Delete one of your scripts and every run it has.", "Start a run of one of your scripts and return its id, status and commit.", "The runs of one of your scripts, newest first.", "One run whole: its details, its output so far, and the files it wrote.", "End one of your runs that is still running."}
-	requireEqual(t, len(dts), 9)
-	requireEqual(t, len(dds), 9)
+	names := []string{"list", "show", "create", "update", "delete", "subscribe", "unsubscribe", "run", "runs", "result", "cancel"}
+	desc := []string{"The scripts you own, by name.", "One of your scripts, with its repository, its ref and its last run.", "Create a script from one of your repositories and a ref.", "Change the ref one of your scripts runs from.", "Delete one of your scripts and every run it has.", "Run one of your scripts each time an event of a given name is delivered.", "Stop running one of your scripts on an event it is subscribed to.", "Start a run of one of your scripts and return its id, status and commit.", "The runs of one of your scripts, newest first.", "One run whole: its details, its output so far, and the files it wrote.", "End one of your runs that is still running."}
+	requireEqual(t, len(dts), 11)
+	requireEqual(t, len(dds), 11)
 	for i, n := range names {
 		attr(t, dts[i], "data-tool", n)
 		requireEqual(t, normalise(one(t, dts[i].body, "code").body), n)
 		requireEqual(t, normalise(dts[i].body), n)
 		requireEqual(t, normalise(content(t, dds[i])), desc[i])
-		if dds[i].start < dts[i].end || (i < 8 && dds[i].start > dts[i+1].start) {
+		if dds[i].start < dts[i].end || (i < 10 && dds[i].start > dts[i+1].start) {
 			t.Fatal("tool ordering")
 		}
 	}
@@ -1988,7 +1988,7 @@ func holding(t *testing.T, s string, values ...string) {
 
 // The anonymous conversions prove the complete ordered data contracts by use;
 // adding, removing, reordering or changing a field makes these fail to compile.
-// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-VVGK-XNU6 R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W1K2-UIJN R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-W8VH-54ZT
+// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-71OM-92EA R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-W8VH-54ZT
 func TestDataContracts(t *testing.T) {
 	_ = struct {
 		Banner  page.Banner
@@ -2003,9 +2003,10 @@ func TestDataContracts(t *testing.T) {
 	_ = struct{ ID, Name string }(pages.Repo{})
 	_ = struct{ ID, URL, Status, Kind, Commit, Started, StartedAt, Duration, Exit string }(pages.RunRow{})
 	_ = struct {
-		Banner page.Banner
-		Script pages.ScriptCard
-		Runs   []pages.RunRow
+		Banner        page.Banner
+		Script        pages.ScriptCard
+		Runs          []pages.RunRow
+		Subscriptions []string
 	}(pages.ScriptData{})
 	_ = struct {
 		ID, Name                string
@@ -2023,12 +2024,12 @@ func TestDataContracts(t *testing.T) {
 	}(pages.RunData{})
 	_ = struct{ Name, URL string }(pages.ScriptLink{})
 	_ = struct {
-		ID, URL, Status, Kind                                                                                           string
-		Running                                                                                                         bool
-		Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, User, Request, StdoutSize, StderrSize string
-		Truncated                                                                                                       bool
-		Failure                                                                                                         *pages.Failure
-		FilesGone                                                                                                       bool
+		ID, URL, Status, Kind                                                                                                  string
+		Running                                                                                                                bool
+		Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
+		Truncated                                                                                                              bool
+		Failure                                                                                                                *pages.Failure
+		FilesGone                                                                                                              bool
 	}(pages.RunCard{})
 	_ = struct{ Title, Reason string }(pages.Failure{})
 	_ = struct{ Size, Text, URL string }(pages.FileText{})
@@ -2088,7 +2089,7 @@ func TestBannerCallCounts(t *testing.T) {
 	f.mu.Unlock()
 }
 
-// R-WNI9-QDW5 R-WMAD-CM5G R-WTLR-N8LM
+// R-WNI9-QDW5 R-WMAD-CM5G R-744F-0LVO
 func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -2134,4 +2135,77 @@ func assertAlternatingPairs(t *testing.T, body string) {
 		requireEqual(t, tag, want)
 	}
 	requireEqual(t, len(tags)%2, 0)
+}
+
+// R-70GP-VANL R-72WI-MU4Z R-77S4-5X3R
+func TestScriptSubscriptions(t *testing.T) {
+	f := setup(t)
+	sc := f.create(t, "owner", "alpha")
+	check := func(names []string) {
+		t.Helper()
+		w := f.request(context.Background(), "GET", "/alpha/", "owner")
+		requireEqual(t, w.Code, 200)
+		section := typedID(t, w.Body.String(), "section", "subscriptions")
+		requireEqual(t, contentTexts(t, section.body, "h2"), []string{"Subscriptions"})
+		if len(names) == 0 {
+			empty := typedID(t, w.Body.String(), "div", "no-subscriptions")
+			contained(t, empty, section)
+			if !class(empty, "empty") {
+				t.Fatal("missing empty class")
+			}
+			requireEqual(t, normalise(empty.body), "This script is subscribed to no events.")
+			requireEqual(t, countID(w.Body.String(), "subscription-list"), 0)
+			requireEqual(t, len(occurrenceElements(w.Body.String(), "", "data-event")), 0)
+			return
+		}
+		list := typedID(t, w.Body.String(), "ul", "subscription-list")
+		contained(t, list, section)
+		requireEqual(t, countID(w.Body.String(), "no-subscriptions"), 0)
+		items := occurrenceElements(w.Body.String(), "", "data-event")
+		requireEqual(t, len(items), len(names))
+		for i, item := range items {
+			requireEqual(t, item.tag, "li")
+			contained(t, item, list)
+			attr(t, item, "data-event", names[i])
+			requireEqual(t, normalise(one(t, item.body, "code").body), names[i])
+		}
+	}
+	check(nil)
+	for _, name := range []string{"repo.pushed", "auth.signed_in"} {
+		if _, err := f.cfg.Store.Subscribe(context.Background(), sc.ID, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check([]string{"auth.signed_in", "repo.pushed"})
+	if _, err := f.cfg.Store.Unsubscribe(context.Background(), sc.ID, "auth.signed_in"); err != nil {
+		t.Fatal(err)
+	}
+	check([]string{"repo.pushed"})
+}
+
+// R-71OM-92EA R-744F-0LVO R-7900-JOUG
+func TestRunEventOrigin(t *testing.T) {
+	f := setup(t)
+	sc := f.create(t, "owner", "alpha")
+	manual := f.add(t, sc, 1, store.StatusRunning, "", 0, 0)
+	event, err := f.cfg.Store.AddRun(context.Background(), store.Run{ID: "run_0000000000000002", Script: sc.ID, SHA: strings.Repeat("a", 40), Ref: "main", User: sc.Owner, RequestID: "event-request", Trigger: store.TriggerEvent, Event: "evt_0123456789abcdef", Status: store.StatusRunning, Started: fixedTime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []store.Run{manual, event} {
+		w := f.request(context.Background(), "GET", "/alpha/runs/"+u.ID+"/", "owner")
+		requireEqual(t, w.Code, 200)
+		card := typedID(t, w.Body.String(), "section", "run-card")
+		p := typedID(t, w.Body.String(), "p", "started-by")
+		contained(t, p, card)
+		code := one(t, p.body, "code")
+		if u.Event == "" {
+			requireEqual(t, normalise(p.body), "Started by the run tool.")
+			requireEqual(t, normalise(code.body), "run")
+		} else {
+			requireEqual(t, normalise(p.body), "Started by the event "+u.Event+".")
+			requireEqual(t, normalise(code.body), u.Event)
+			requireAbsent(t, visibleText(w.Body.String()), "Started by the run tool.")
+		}
+	}
 }

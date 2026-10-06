@@ -43,6 +43,9 @@ Exit codes:
   2  usage error
 `
 
+// NginxConf closes internal event routes at the public proxy.
+const NginxConf = "location = /events { return 404; }\nlocation = /declarations { return 404; }\n"
+
 // Manifest describes the service to the host's deployment tools.
 const Manifest = `app = "scripts"
 description = "Python scripts run from the suite's repositories"

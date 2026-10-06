@@ -10,9 +10,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts/internal/git"
@@ -34,6 +36,9 @@ const (
 // ErrDraining refuses runs after the core starts stopping.
 var ErrDraining = errors.New("scripts is draining")
 
+// ErrStarting reports another call preparing the same event and script.
+var ErrStarting = errors.New("a run for this event is starting")
+
 // Config supplies the catalog, process environment, bounds and runtime hooks.
 type Config struct {
 	Store                                              *store.Store
@@ -51,10 +56,12 @@ type Request struct {
 	Ref    string
 	Input  []byte
 	Caller identity.Caller
+	Cause  events.Cause
 }
 
 type pending struct {
 	script string
+	event  string
 	cancel context.CancelCauseFunc
 }
 type active struct {
@@ -190,8 +197,29 @@ func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (result st
 		c.mu.Unlock()
 		return store.Run{}, store.ErrNotFound
 	}
+	if e := context.Cause(ctx); e != nil {
+		c.mu.Unlock()
+		return store.Run{}, e
+	}
+	if req.Cause.ID != "" {
+		delivered, e := c.cfg.Store.Delivered(ctx, sc.ID, req.Cause.ID)
+		if e != nil {
+			c.mu.Unlock()
+			return store.Run{}, e
+		}
+		if delivered {
+			c.mu.Unlock()
+			return store.Run{}, store.ErrDelivered
+		}
+		for p := range c.pending {
+			if p.script == sc.ID && p.event == req.Cause.ID {
+				c.mu.Unlock()
+				return store.Run{}, ErrStarting
+			}
+		}
+	}
 	callCtx, cancel := context.WithCancelCause(ctx)
-	p := &pending{script: sc.ID, cancel: cancel}
+	p := &pending{script: sc.ID, event: req.Cause.ID, cancel: cancel}
 	c.pending[p] = struct{}{}
 	c.mu.Unlock()
 	defer func() { cancel(nil); c.mu.Lock(); delete(c.pending, p); c.signal(); c.mu.Unlock() }()
@@ -206,7 +234,10 @@ func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (result st
 	if ref == "" {
 		ref = sc.Ref
 	}
-	r := store.Run{ID: id, Script: sc.ID, Ref: ref, User: req.Caller.UserID, RequestID: req.Caller.RequestID, Trigger: store.TriggerManual, Status: store.StatusRunning, Started: started}
+	r := store.Run{ID: id, Script: sc.ID, Ref: ref, User: req.Caller.UserID, RequestID: req.Caller.RequestID, Trigger: store.TriggerManual, Status: store.StatusRunning, Started: started, Event: req.Cause.ID}
+	if req.Cause.ID != "" {
+		r.Trigger = store.TriggerEvent
+	}
 	dir := c.Folder(r)
 	var proc *runner.Process
 	var out, errOut *headWriter
@@ -278,7 +309,7 @@ func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (result st
 		if e != nil {
 			return store.Run{}, e
 		}
-		env := []string{"PATH=" + c.cfg.Path, "HOME=" + abs, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + id, "IKIGENBA_SCRIPT=" + sc.ID, "IKIGENBA_SHA=" + sha, "IKIGENBA_RUN_DIR=" + abs, "IKIGENBA_OUT_DIR=" + filepath.Join(abs, OutDir), "IKIGENBA_INPUT=" + filepath.Join(abs, InputFile), "IKIGENBA_USER_ID=" + req.Caller.UserID, "IKIGENBA_REQUEST_ID=" + req.Caller.RequestID, "IKIGENBA_SERVICES=" + c.cfg.Services}
+		env := []string{"PATH=" + c.cfg.Path, "HOME=" + abs, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + id, "IKIGENBA_SCRIPT=" + sc.ID, "IKIGENBA_SHA=" + sha, "IKIGENBA_RUN_DIR=" + abs, "IKIGENBA_OUT_DIR=" + filepath.Join(abs, OutDir), "IKIGENBA_INPUT=" + filepath.Join(abs, InputFile), "IKIGENBA_USER_ID=" + req.Caller.UserID, "IKIGENBA_REQUEST_ID=" + req.Caller.RequestID, "IKIGENBA_EVENT_ID=" + req.Cause.ID, "IKIGENBA_EVENT_DEPTH=" + strconv.Itoa(req.Cause.Depth), "IKIGENBA_SERVICES=" + c.cfg.Services}
 		proc, runErr = runner.Start(callCtx, runner.Spec{Dir: filepath.Join(abs, TreeDir), Env: env, Stdout: out, Stderr: errOut})
 		if runErr != nil {
 			reason = store.ReasonStartFailed
