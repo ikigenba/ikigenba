@@ -33,7 +33,7 @@ Preconditions:
 - A tag `repos/v<semver>` points at the commit `devctl build repos` was run at, and it wrote `repos/dist/repos-v<semver>.tar.xz`.
 - `devctl --account 602773793009 deploy sbx.ikigenba.dev repos/dist/repos-v<semver>.tar.xz` exited 0.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows `repos v<semver> active active -`.
-- `/opt/repos/state/repos.db` is the database repos opened, created on its first start on this space or kept from an earlier release.
+- `/opt/repos/state/repos.db` is the database repos opened, created on its first start on this space or kept from an earlier release, and brought up to date with the migrations this release carries (`S01`).
 - auth and telemetry are deployed and active on the space through their own chains; the space routes `repos.sbx.ikigenba.dev` through its authenticating gate, which sets `X-User-Id` and `X-User-Email` on what it passes to repos and refuses a request it cannot authenticate before repos sees it.
 - The caller holds a credential the gate accepts, and the email that credential names is the one the page's profile link is titled with.
 

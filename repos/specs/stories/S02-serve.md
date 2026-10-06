@@ -4,7 +4,7 @@ The bare binary serves, and it serves only on a listening socket it inherits: re
 
 repos' environment also carries its eight settings, each a positive whole number, and each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `etc/env`, and an operator changes them there. `READ_SLOTS`, 8, is how many git reads — a clone or a fetch — run at once, and `WRITE_SLOTS`, 2, how many git writes — a push, or a repository's maintenance (`S13`) — run at once; the two are counted apart, so a flood of clones never keeps a push waiting. `QUEUE_LENGTH`, 16, is how many operations of each kind may wait for a slot, and `QUEUE_SECONDS`, 30, the longest one waits for a slot or for its repository's lock before it is refused (`S12`). `OPERATION_SECONDS`, 600, is the longest one git operation may run before git is killed (`S12`). `PUSH_MAX_BYTES`, 104857600, is the largest pack one push may send, and `REPO_MAX_BYTES`, 1073741824, the size on disk at which a repository takes no more pushes (`S12`). `MAINTENANCE_HOURS`, 24, is how often each repository is tidied (`S13`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives repos. The file lists the platform's services: it feeds the launcher in the banner of repos' pages (`S03`), it holds the description repos' MCP endpoint gives its clients as instructions (`S05`), its entry named `repos` gives the public address repos puts in every clone URL (`S07`), and its entry named `telemetry` is where repos sends its trail (below). repos reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. repos never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, repos starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
 
-repos runs the host's own `git` for every repository operation: it has no git of its own, and `git` is a dependency of the host that opsctl provisions. repos checks its environment first — `DRAIN_SECONDS`, then the eight settings in the manifest's order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, and only then opens its SQLite database, the catalog of repositories, at `state/repos.db`, relative to its working directory, creating `state/` and the database on its first start, and then the directory that holds the repositories themselves, `state/repos/`, creating it on its first start too. Each repository is a bare git repository in `state/repos/`, named by its id (`S15`). Before it tells systemd it is ready, repos verifies every repository the catalog names (`S14`). So a start refused as a usage error, or for want of git, has touched nothing, not even the database. repos is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S17`).
+repos runs the host's own `git` for every repository operation: it has no git of its own, and `git` is a dependency of the host that opsctl provisions. repos checks its environment first — `DRAIN_SECONDS`, then the eight settings in the manifest's order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, and only then opens its SQLite database, the catalog of repositories, at `state/repos.db`, relative to its working directory, creating `state/` and the database on its first start and bringing the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the repositories themselves, `state/repos/`, creating it on its first start too. Each repository is a bare git repository in `state/repos/`, named by its id (`S15`). Before it tells systemd it is ready, repos verifies every repository the catalog names (`S14`). So a start refused as a usage error, or for want of git, has touched nothing, not even the database. A database it cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `repos: cannot open database state/repos.db: <reason>`, and exit status 1. A database an earlier repos made before it carried migrations records none: repos applies `0001` to it, which changes nothing in it, and serves every repository it names. repos is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S17`).
 
 repos keeps a trail: it records what it does as events it sends to the platform's telemetry service, exactly as dummy does, where an operator, or an agent working for one, follows what happened from one thing they know — a request id, a user, a repository's id, or a time. repos finds telemetry in the services file `IKIGENBA_SERVICES` names, as the entry named `telemetry`, and sends each event to that entry's socket; it looks the entry up afresh for every event, so a telemetry installed after repos started is found without a restart. What telemetry does with an event is told in telemetry's own stories. The stories here show each event as the JSON object telemetry receives:
 
@@ -59,7 +59,7 @@ Preconditions:
 - `/opt/repos/etc/env` sets `DRAIN_SECONDS` and each of the eight settings to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
 - `git` is installed on the host, on the `PATH` the service runs with.
 - `ikigenba-repos.socket` is active, so `/run/ikigenba/repos.sock` exists and accepts connections.
-- `/opt/repos/state/repos.db` exists, from an earlier start, and every repository it names has its directory in `/opt/repos/state/repos/`, sound.
+- `/opt/repos/state/repos.db` exists, from an earlier start, and records no migration this repos does not carry; every repository it names has its directory in `/opt/repos/state/repos/`, sound.
 - `ikigenba-repos.service` is not running.
 - The host's services file lists the telemetry service, which takes every event.
 
@@ -67,7 +67,7 @@ Postconditions:
 
 - `ikigenba-repos.service` is `active`, and repos is serving on `/run/ikigenba/repos.sock`: a connection there, and every connection queued before repos started, is answered by repos.
 - repos listens on no other socket and no port.
-- `/opt/repos/state/repos.db` is the database it opened, and every repository it names is available, its directory unchanged by the start (`S14`).
+- `/opt/repos/state/repos.db` is the database it opened, now up to date, and every repository it names is available, its directory unchanged by the start (`S14`).
 - telemetry has received one event from repos, with no request id and no user, whose `version` is the version `repos --version` prints (`S01`):
 
   ```
@@ -79,7 +79,7 @@ Postconditions:
 
 ## The host starts repos for the first time
 
-Nothing of repos' state exists yet. repos creates the `state/` directory if it is absent, then creates `state/repos.db` and its schema, then creates `state/repos/`, empty, and serves with a catalog that names no repository. The same start succeeds when `state/` already exists and only the database and `state/repos/` are absent. Neither a fresh deployment nor any other first start needs a directory created beforehand. The paths are relative to repos' working directory.
+Nothing of repos' state exists yet. repos creates the `state/` directory if it is absent, then creates `state/repos.db` and applies every migration it carries, then creates `state/repos/`, empty, and serves with a catalog that names no repository. The same start succeeds when `state/` already exists and only the database and `state/repos/` are absent. Neither a fresh deployment nor any other first start needs a directory created beforehand. The paths are relative to repos' working directory.
 
 Command:
 
@@ -107,7 +107,7 @@ Preconditions:
 Postconditions:
 
 - `state/` exists, created by repos if it was absent.
-- `state/repos.db` now exists, with its schema, created by this start, and names no repository: `list` answers `{"repos":[]}` for every caller (`S07`).
+- `state/repos.db` now exists, created by this start, and is up to date: `repos db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`). It names no repository: `list` answers `{"repos":[]}` for every caller (`S07`).
 - `state/repos/` now exists, empty, created by this start.
 - repos is serving on the socket it was passed, and on no other.
 - telemetry has received exactly one event from repos, its `service.started` with `version` `v<semver>`, the version `repos --version` prints, under an empty request id and an empty user.
@@ -137,7 +137,7 @@ Preconditions:
 - `LISTEN_PID` is repos' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `DRAIN_SECONDS` and each of the eight settings are unset, or a positive whole number.
 - `IKIGENBA_SERVICES` is unset, or names a file that does not exist.
-- `state/repos.db` exists, from an earlier start, or can be created as in `The host starts repos for the first time`.
+- `state/repos.db` exists, from an earlier start, and records no migration this repos does not carry, or can be created as in `The host starts repos for the first time`.
 
 Postconditions:
 
@@ -202,6 +202,35 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Every directory in `state/repos/` is as it was. repos served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host starts repos with a database a newer repos has upgraded
+
+A deploy rolled back to an older binary leaves it over a database a newer repos has upgraded: the database records a migration this repos does not carry, so its schema is one this repos does not understand. Rather than read it, repos refuses to start, naming the version it does not know, and the rollback fails loudly instead of serving wrong answers. There is no way back down a migration; restoring the database from before the upgrade is the rollback. `repos db status` shows the version as `unknown` (`S01`). Under systemd the start fails as for a database it cannot open, and the socket stays up.
+
+Command:
+
+```
+$ repos
+```
+
+Output:
+
+```
+repos: cannot open database state/repos.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this repos does not carry, zero-padded to four digits: `0002`.
+
+Preconditions:
+
+- `bin/repos` exists and is on the `PATH` as `repos`, carrying only migration `0001`, and so does `git`.
+- `LISTEN_PID` is repos' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` and each of the eight settings are unset, or a positive whole number.
+- `state/repos.db` exists and records versions `0001` and `0002` as applied.
+
+Postconditions:
+
+- Nothing has changed: the database still records `0001` and `0002` and names the repositories it named, and every directory in `state/repos/` is as it was. repos served nothing, told systemd nothing, and sent telemetry nothing.
 
 ## The host starts repos where git is not installed
 
@@ -320,7 +349,7 @@ Postconditions:
 
 ## The host restarts repos during a deploy
 
-A deploy replaces repos' binary and restarts `ikigenba-repos.service` alone; `ikigenba-repos.socket` stays up throughout. Between the old repos exiting and the new one being ready, connections wait in the socket's queue instead of being refused, so a git client or the gateway never sees repos missing. That holds because repos finishes what it accepted before it exits and leaves the socket where systemd put it. The new repos verifies its repositories (`S14`) before it is ready, so the wait lasts as long as that takes.
+A deploy replaces repos' binary and restarts `ikigenba-repos.service` alone; `ikigenba-repos.socket` stays up throughout. Between the old repos exiting and the new one being ready, connections wait in the socket's queue instead of being refused, so a git client or the gateway never sees repos missing. That holds because repos finishes what it accepted before it exits and leaves the socket where systemd put it. The new repos opens the same `state/repos.db`, bringing it up to date first when the new binary carries a migration the database has not had, and verifies its repositories (`S14`) before it is ready, so the wait lasts as long as that takes.
 
 Command:
 
@@ -344,7 +373,7 @@ Preconditions:
 Postconditions:
 
 - Every request sent was answered, by the old repos or the new one; none was refused and none was cut off. Every clone has the repository as it stood when it was served, and every push that succeeded is in its repository.
-- A new repos process is serving on `/run/ikigenba/repos.sock`, over the same `state/repos.db` and the same `state/repos/`.
+- A new repos process is serving on `/run/ikigenba/repos.sock`, over the same `state/repos.db`, now up to date, and the same `state/repos/`; every repository the old repos served is served by the new one with the same id, name, and owner.
 - telemetry has received the old repos' `service.stopping`, with `reason` `SIGTERM`, and after it the new repos' `service.started`, whose `version` is the version the new binary's `repos --version` prints. Every request the old repos answered is recorded before its `service.stopping`, and every request the new one answered after its `service.started`.
 
 ## The host starts repos where telemetry cannot be reached

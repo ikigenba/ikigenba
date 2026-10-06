@@ -185,7 +185,7 @@ Preconditions:
 
 Postconditions:
 
-- `state/repos.db` exists, created by this start, and names both repositories.
+- `state/repos.db` exists, created by this start and up to date (`S01`), and names both repositories.
 - `list` for `u_7f3a9c21` answers both, available, as in `The host starts repos over sound repositories`; `show` of `notes` gives `created` `2026-09-30T10:15:00Z`; and `list` for `u_2b8e1d04` answers `{"repos":[]}`.
 - Cloning and pushing to either repository through its old clone URL works (`S11`).
 - telemetry has received this start's `service.started`, and no `repo.created` and no `repo.unavailable`.
@@ -218,7 +218,7 @@ Preconditions:
 
 Postconditions:
 
-- `state/repos.db` exists, created by this start, and names `notes`, `rep_3f9a0c1d2e4b5a69`, alone.
+- `state/repos.db` exists, created by this start and up to date (`S01`), and names `notes`, `rep_3f9a0c1d2e4b5a69`, alone.
 - `list` for `u_7f3a9c21` answers `notes` alone, available; no caller's `list` names `rep_5d0e7b2a9c4f1863`, and `show` of it for any caller answers `repo: no repository 'rep_5d0e7b2a9c4f1863'` (`S07`).
 - `state/repos/rep_5d0e7b2a9c4f1863.git` is exactly as it was, its config unchanged.
 - telemetry has received this start's `service.started`, and no event naming `rep_5d0e7b2a9c4f1863`.
