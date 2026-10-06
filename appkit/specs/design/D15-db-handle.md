@@ -1,0 +1,71 @@
+# D15-db-handle
+
+Every service that keeps data keeps it in one SQLite database file, and opens and uses it the same way through package `db`. SQLite is the only engine the suite supports, so nothing here admits another. The package uses the pure-Go driver `modernc.org/sqlite`. A service's own store keeps its entities, its SQL and its rules; everything about opening the file, configuring it and running transactions on it is here, so no two services drift apart in how they do it.
+
+## Opening
+
+`Open` takes a `Config` naming the path of the database file, the service's migrations (D16), and the clock migrations are timed with, and returns a handle once the database is ready to use. The path is always an ordinary filesystem path; a relative one resolves against the working directory at the time of the call, so a service passes something like `state/<name>.db`. SQLite's special sources are refused: the empty string and `:memory:` name a database that lives inside one connection, which a pool of readers and a writer cannot share, and a `file:` URI or a `?` would let a path carry options that change how the database is opened. A test uses a file in its own temporary directory instead. The clock is injected as the telemetry writer's is: a nil `Now` means the real one, and a test supplies a fixed one.
+
+`Open` creates the parent directories that are missing, private to the service's user, and leaves existing ones alone. It refuses a path it cannot use (a regular file where a directory must be, a directory where the database must be, a file that is not a SQLite database) and a database it cannot write, so a service learns at start, not at its first write, that its state is unusable; it changes nothing in a file it refuses. It configures every connection, then applies the migrations (D16), and only then returns. The write-ahead log journal mode (WAL) is set, so a database that was in the rollback journal mode is switched to it; litestream, which replicates the database on a host, requires it. Foreign keys are enforced and the busy timeout is 5 seconds on every connection. These three settings are fixed configuration, recorded here and not tested: they turn on SQLite behaviour this package relies on but does not implement. Every reader connection is also query-only, so a write can only ever go through `Write`.
+
+## Reading and writing
+
+The handle offers exactly two ways to reach the database and no bare connection. `Read` runs a function in one read transaction on a pool of `Readers` connections; `Write` runs a function in one transaction on the single writer connection, taking the write lock as the transaction begins, so two writers never deadlock trying to upgrade a read lock. The function gets the transaction and nothing else; when it returns nil the transaction commits, and when it returns an error, panics, or the context ends, nothing it did is kept. WAL is what makes the two paths work together: a reader does not wait for the writer, and a reader sees one consistent snapshot for the whole of its function.
+
+Writes on one handle queue behind each other, and a fifth concurrent read queues behind the four running. Something outside the process may also hold the database's lock for a moment, in practice litestream's occasional checkpoint; a write then waits up to the busy timeout of 5 seconds before it fails with an error. Neither `Readers` nor the busy timeout is configurable: no service gets a knob the others lack.
+
+The requirements below state what this package does, never what SQLite does: they fix the way the handle opens the file, routes and schedules transactions, commits and abandons them, and leave the journal mode, locking, timeouts, snapshots and constraint enforcement to SQLite itself. No requirement depends on the real passage of time.
+
+## The failure seam
+
+Every service has a story about what happens when its database cannot be written. Breaking a database on purpose is hard under WAL: removing a directory's write permission no longer fails the next write on a connection that is already open. So the handle carries a switch for tests: `SetFailing(true)` makes every `Read` and `Write` on that handle fail until `SetFailing(false)`. A test stores real rows first, flips the switch, checks the service's error path, flips it back and finds the rows intact. It is meant for tests only; a service never calls it in production.
+
+## REQUIREMENTS
+
+- R-PP6A-6S9R: Package `db` MUST export `type Config struct { Path string; Migrations fs.FS; Now func() time.Time }`, with exactly these fields in this order, where `fs` is the standard library's `io/fs` and `time` is the standard library's `time`.
+- R-PQE6-KK0G: Package `db` MUST export type `DB` and `func Open(ctx context.Context, cfg Config) (*DB, error)`, where `context` is the standard library's `context`.
+- R-LJ0T-HFKI: Package `db` MUST export the methods `func (d *DB) Read(ctx context.Context, fn func(*sql.Tx) error) error`, `func (d *DB) Write(ctx context.Context, fn func(*sql.Tx) error) error`, `func (d *DB) Close() error`, and `func (d *DB) SetFailing(failing bool)`, where `sql` is the standard library's `database/sql`.
+- R-1CZF-Y7YJ: Package `db` MUST export the untyped integer constant `Readers = 4`.
+- R-P04U-UW38: When `ctx` is not done before `db.Open` returns, `cfg.Path` is not empty, is not `:memory:`, does not begin with `file:`, and contains no `?`, the migrations are valid, nothing exists at `cfg.Path`, no file other than a directory exists where a directory of `cfg.Path`'s parent would be, the process can write and search the nearest existing directory among `cfg.Path`'s ancestors and search every existing ancestor, and every statement of every migration executes without error, `db.Open` MUST return a non-nil `*DB` and a nil error.
+- R-P1CR-8NTX: When `ctx` is not done before `db.Open` returns, `cfg.Path` is not empty, is not `:memory:`, does not begin with `file:`, and contains no `?`, the migrations are valid, `cfg.Path` names a SQLite database file that an earlier `db.Open` created and whose handle was closed, the process can write that file and write and search its directory, `schema_migrations` holds no version that is not the version of a migration, and every statement of every migration whose version it does not hold executes without error, `db.Open` MUST return a non-nil `*DB` and a nil error.
+- R-I5LL-ONP9: When `ctx` is not done before `db.Open` returns, `cfg.Path` is not empty, is not `:memory:`, does not begin with `file:`, and contains no `?`, the migrations are valid, `cfg.Path` names a SQLite database file not created by `db.Open` and holding no table `schema_migrations`, the process can write that file and write and search its directory, and every statement of every migration executes without error, `db.Open` MUST return a non-nil `*DB` and a nil error.
+- R-4K7T-JS93: When `db.Open` returns a non-nil `*DB`, a regular file MUST exist at `cfg.Path`, a relative `cfg.Path` resolving against the process working directory at the time of the call.
+- R-PSTZ-C3HU: `db.Open` MUST return a nil `*DB` and a non-nil error, and create no file or directory, when `cfg.Path` is empty, is `:memory:`, begins with `file:`, or contains `?`.
+- R-4LFP-XJZS: When `db.Open` returns a non-nil `*DB`, every directory of `cfg.Path`'s parent MUST exist.
+- R-4MNM-BBQH: Each directory `db.Open` creates MUST have the owner's read, write, and search permission bits set and no group or other permission bits set.
+- R-LQC7-S20O: `db.Open` MUST NOT change the mode of any directory that existed before the call.
+- R-LRK4-5TRD: When `ctx` is done before `db.Open` is called, `db.Open` MUST return a nil `*DB` and a non-nil error for which `errors.Is(err, ctx.Err())` is true, and create no file or directory.
+- R-4NVI-P3H6: `db.Open` MUST return a nil `*DB` and a non-nil error when a missing directory of `cfg.Path`'s parent cannot be created because a regular file exists where it would be.
+- R-4P3F-2V7V: `db.Open` MUST return a nil `*DB` and a non-nil error when `cfg.Path` names a directory.
+- R-PWHO-HEPX: When nothing exists at `cfg.Path` and the process has no permission to write `cfg.Path`'s existing parent directory, `db.Open` MUST return a nil `*DB` and a non-nil error and create no file.
+- R-4QBB-GMYK: When `cfg.Path` names a non-empty regular file whose first 16 bytes are not the SQLite header string `SQLite format 3` followed by a NUL byte, `db.Open` MUST return a nil `*DB` and a non-nil error, the file's bytes and mode MUST be unchanged, and no new file MUST exist in its directory.
+- R-4RJ7-UEP9: When `cfg.Path` names an existing SQLite database whose file the process has no permission to write, `db.Open` MUST return a nil `*DB` and a non-nil error, the file's bytes and mode MUST be unchanged, and no new file MUST exist in its directory.
+- R-4SR4-86FY: When `cfg.Path` names an existing SQLite database whose directory the process has no permission to write, `db.Open` MUST return a nil `*DB` and a non-nil error, the file's bytes and mode MUST be unchanged, and no new file MUST exist in that directory.
+- R-1E7C-BZP8: A statement inside the `fn` of a `DB.Read` call that would change the database, such as an `INSERT` into an existing table, MUST return a non-nil error, and a `DB.Read` that begins after that call returned MUST see the database unchanged by it.
+- R-M1BB-7ZOX: `DB.Read` MUST call `fn` exactly once with a non-nil `*sql.Tx` and, when `fn` returns nil, return nil.
+- R-4V6W-ZPXC: When `fn` panics, `DB.Read` MUST panic with the same value.
+- R-4WET-DHO1: After `Readers` + 1 `DB.Read` calls on a handle, one after another, whose `fn` each panicked, a further `DB.Read` call on that handle MUST call `fn` and, when `fn` returns nil, return nil.
+- R-M2J7-LRFM: When `fn` returns a non-nil error `fnErr`, `DB.Read` MUST return a non-nil error for which `errors.Is(err, fnErr)` is true.
+- R-M4Z0-DAX0: Up to `Readers` `DB.Read` calls on one handle MUST be able to run `fn` at the same time, so `Readers` concurrent calls whose `fn` each waits until all `Readers` have been called all return.
+- R-Q50Z-5SWS: While `Readers` `DB.Read` calls on one handle are held inside `fn`, a further `DB.Read` call on that handle MUST NOT have called `fn` or returned; once one held `fn` returns, the further call MUST call `fn` and return.
+- R-AYJX-1HNP: When a `DB.Read` call is waiting for one of `Readers` running `DB.Read` calls on the handle to return and its `ctx` becomes done, it MUST return a non-nil error for which `errors.Is(err, ctx.Err())` is true without calling `fn`.
+- R-Q68V-JKNH: While a `DB.Write` call on a handle is held inside `fn`, a `DB.Read` call on that handle MUST call `fn` and return.
+- R-R3AL-WW3P: When `fn` returns nil, `DB.Write` MUST either return nil, with every `DB.Read` on the handle that begins after it returned and before another `DB.Write` on the handle begins, and no other handle or process changes the file in between, seeing the state `fn` left, or return a non-nil error and keep none of the changes `fn` made.
+- R-MCAE-NXD6: When `fn` returns a non-nil error `fnErr`, `DB.Write` MUST keep none of the changes `fn` made and return a non-nil error for which `errors.Is(err, fnErr)` is true.
+- R-4XMP-R9EQ: `DB.Write` MUST call `fn` at most once per call, and exactly once with a non-nil `*sql.Tx` in every call that returns nil.
+- R-MDIB-1P3V: `DB.Write` calls on one handle MUST NOT run `fn` concurrently, so N concurrent calls whose `fn` each reads a counter and stores it plus one all return nil and leave the counter N greater.
+- R-Q7GR-XCE6: While a `DB.Write` call on a handle is held inside `fn`, a further `DB.Write` call on that handle MUST NOT have called `fn` or returned; once the held `fn` returns, the further call MUST call `fn` and return.
+- R-MFY3-T8L9: When a `DB.Write` call is waiting for another `DB.Write` on the handle to return and its `ctx` becomes done, it MUST return a non-nil error for which `errors.Is(err, ctx.Err())` is true without calling `fn`.
+- R-MH60-70BY: When `ctx` becomes done before `fn` returns, `DB.Write` MUST return a non-nil error and keep none of the changes `fn` made.
+- R-AZRT-F9EE: When `fn` panics, `DB.Write` MUST keep none of the changes `fn` made.
+- R-B0ZP-T153: When `fn` panics, `DB.Write` MUST panic with the same value.
+- R-MJLS-YJTC: After a `DB.Write` call whose `fn` panicked, later `DB.Read` and `DB.Write` calls on the handle MUST behave as on a handle on which no `fn` panicked.
+- R-R4II-ANUE: When, after `DB.Close` returns, a `db.Open` with the same `cfg.Path` and the same `cfg.Migrations` returns a non-nil `*DB`, a `DB.Read` on it that begins before any `DB.Write` on it begins, and no other handle or process changes the file in between, MUST see the state left by the `DB.Write` calls on the closed handle that returned nil.
+- R-MOHE-HMS4: After `DB.Close` returns, `DB.Read` and `DB.Write` on that handle MUST return a non-nil error without calling `fn`.
+- R-B4NE-YCD6: `DB.Close` MUST return nil when called for the first time on a handle on which no `DB.Read` or `DB.Write` is in progress.
+- R-B5VB-C43V: Every `DB.Close` call after the first on a handle MUST return nil.
+- R-MQX7-969I: After `DB.SetFailing(true)` returns, and until a `DB.SetFailing(false)` call on the same handle, every `DB.Read` and `DB.Write` call on that handle MUST return a non-nil error without calling `fn`.
+- R-B737-PVUK: After `DB.SetFailing(false)` returns, `DB.Read` and `DB.Write` on the handle MUST behave as on a handle on which `SetFailing(true)` was never called.
+- R-R5QE-OFL3: After `DB.SetFailing(true)` and then `DB.SetFailing(false)` on a handle, with no `DB.Write` returning nil in between, a `DB.Read` that begins before any later `DB.Write` on that handle begins, and no other handle or process changes the file in between, MUST see the state left by the `DB.Write` calls that returned nil before `SetFailing(true)` was called.
+- R-Q9WK-OVVK: `DB.SetFailing` MUST affect only the handle it is called on, so `DB.Read` and `DB.Write` on another handle opened with the same `cfg.Path` behave as if it were not called.
+- R-7RH2-NJKK: `DB.Read`, `DB.Write`, and `DB.SetFailing` MUST be safe to call concurrently from multiple goroutines on the same handle.

@@ -1,6 +1,6 @@
 # D01-scope-and-layout
 
-`appkit` is the shared library code of the Ikigenba services. Anything that more than one service needs — the page chrome every app shows a signed-in user, the reader for the host's services file, the identity nginx hands each request, the Model Context Protocol server and client, the trail of events every service records — belongs here, so that every service gets it from one place and behaves the same way. The module path is `github.com/ikigenba/ikigenba/appkit`; it depends on the Go standard library only. Every command runs from this sub-project directory.
+`appkit` is the shared library code of the Ikigenba services. Anything that more than one service needs — the page chrome every app shows a signed-in user, the reader for the host's services file, the identity nginx hands each request, the Model Context Protocol server and client, the trail of events every service records, the database every service that keeps data opens — belongs here, so that every service gets it from one place and behaves the same way. The module path is `github.com/ikigenba/ikigenba/appkit`; it depends on the Go standard library and on `modernc.org/sqlite`, the pure-Go SQLite driver, which only `db` uses. That ends the rule that appkit depends on the standard library only, by decision: every service that keeps a database already used that driver, and the alternative, a driver-agnostic `db` with each service registering its driver, was rejected because it keeps in every service the one line that had drifted. Every command runs from this sub-project directory.
 
 ## One concern per package
 
@@ -11,8 +11,9 @@ The library is a set of packages, each holding one concern small enough to hold 
 - `identity` — the caller nginx authenticated for a request: the middleware that requires it, the middleware that also admits guests, the context that carries it, and forwarding it on a call to a sibling service. D06.
 - `mcp` — the Model Context Protocol over Streamable HTTP: the server a service mounts with its tools, and the client the gateway and service tests use. D07-mcp-server, D08-mcp-tools, D09-mcp-schema, and D10-mcp-client define its contents.
 - `telemetry` — the suite's event trail: the event and the rules it follows, the catalogue of framework events (D11), the writer that queues and delivers a service's events and its sinks (D12), the wire to the telemetry service (D13), and the request middleware and sibling client that record every request and every call to a sibling (D14).
+- `db` — a service's SQLite database: opening it, reading and writing it through transactions, the failure seam its tests use (D15), and its migrations and their status (D16).
 
-Dependencies point one way: `page` uses `services`; `telemetry` uses `identity` and `services`; `mcp` uses `identity`, `services`, and `telemetry`; `identity` and `services` use no other appkit package. Which package imports which is not observable, so this is guidance, not a requirement.
+Dependencies point one way: `page` uses `services`; `telemetry` uses `identity` and `services`; `mcp` uses `identity`, `services`, and `telemetry`; `identity`, `services`, and `db` use no other appkit package. Which package imports which is not observable, so this is guidance, not a requirement.
 
 ## Assets
 
@@ -42,6 +43,8 @@ The telemetry service stores the suite's events. Its writer's `Sink` is its own 
 
 The gateway records its calls to backends. The `HTTPClient` it gives the `mcp` client (D10) is the sibling client (D14), so every call to a backend records `sibling.called` beside the backend's own `request.started`, `tool.called`, and `request.finished` under the same request id.
 
+An app keeps its data in a database. At start-up it calls `db.Open` with a `db.Config` whose `Path` is its database file relative to its working directory, such as `state/<name>.db`, whose `Migrations` is its embedded migrations directory, and whose `Now` is nil, and fails to start when that returns an error (D15, D16). Its store runs every query through `DB.Read` or `DB.Write`, and on a stop signal, after draining its HTTP server, it calls `DB.Close`. Its `db status` subcommand calls `db.Status` with the same `db.Config` and its standard output. Its tests open a database in their temporary directory with a fixed `Now`, store rows, and call `DB.SetFailing` to drive its write-failure path.
+
 A service's own test drives its MCP tools end to end: it builds the server with a writer over a `*telemetry.Capture`, serves it wrapped in `identity.Require` from a test server, and calls a tool through the `mcp` client with an `identity.Caller` it makes up.
 
 ## REQUIREMENTS
@@ -51,5 +54,6 @@ A service's own test drives its MCP tools end to end: it builds the server with 
 - R-HO9Q-DBQ4: Package `identity` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/identity`, and its package name MUST be `identity`.
 - R-HPHM-R3GT: Package `mcp` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/mcp`, and its package name MUST be `mcp`.
 - R-XFFJ-0MAV: Package `telemetry` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/telemetry`, and its package name MUST be `telemetry`.
-- R-XGNF-EE1K: An exported function or method of packages `page`, `services`, `identity`, `mcp`, or `telemetry` MUST NOT write to the process's standard output, to its standard error, or through the standard library `log` package's default logger, except through an `io.Writer` the consumer passed to that function or method, to the value it belongs to, or to the function that built that value.
-- R-XHVB-S5S9: Every exported function and method of packages `services`, `identity`, `mcp`, and `telemetry`, and `page.New` and `Kit.Banner`, MUST behave identically whatever the process working directory is, apart from how a relative path the consumer supplies resolves.
+- R-NNUH-KZA9: Package `db` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/db`, and its package name MUST be `db`.
+- R-NP2D-YR0Y: An exported function or method of packages `page`, `services`, `identity`, `mcp`, `telemetry`, or `db` MUST NOT write to the process's standard output, to its standard error, or through the standard library `log` package's default logger, except through an `io.Writer` the consumer passed to that function or method, to the value it belongs to, or to the function that built that value.
+- R-NQAA-CIRN: Every exported function and method of packages `services`, `identity`, `mcp`, `telemetry`, and `db`, and `page.New` and `Kit.Banner`, MUST behave identically whatever the process working directory is, apart from how a relative path the consumer supplies resolves.
