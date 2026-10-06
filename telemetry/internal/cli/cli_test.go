@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -36,20 +35,21 @@ func refusedProcess(t *testing.T) (cli.Process, *bytes.Buffer, *writes) {
 	t.Helper()
 	stdout := new(bytes.Buffer)
 	stderr := new(writes)
-	p := cli.Process{Stdout: stdout, Stderr: stderr, Pid: 42, DBSource: filepath.Join(t.TempDir(), "absent", "trail.db"), Rand: forbiddenReader{t}, Now: func() time.Time { t.Error("clock consulted"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Error("sleep consulted") }, Inherit: func(uintptr) (net.Listener, error) {
+	p := cli.Process{Stdout: stdout, Stderr: stderr, Pid: 42, Dir: t.TempDir(), Rand: forbiddenReader{t}, Now: func() time.Time { t.Error("clock consulted"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Error("sleep consulted") }, Inherit: func(uintptr) (net.Listener, error) {
 		t.Error("descriptor inherited")
 		return nil, errors.New("unexpected")
 	}, Unsetenv: func(string) error { t.Error("environment changed"); return nil }}
 	return p, stdout, stderr
 }
-func assertAbsent(t *testing.T, source string) {
+func assertEmpty(t *testing.T, dir string) {
 	t.Helper()
-	if _, err := os.Stat(filepath.Dir(source)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("database parent exists or failed: %v", err)
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("directory changed: %v %v", entries, err)
 	}
 }
 
-// R-U3IP-MTPS R-U4QM-0LGH R-U5YI-ED76 R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-ONDD-GG0V
+// R-U3IP-MTPS R-U4QM-0LGH R-U5YI-ED76 R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
 func TestDeclarations(t *testing.T) {
 	version := &cli.Version
 	semanticVersion := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
@@ -76,7 +76,7 @@ func TestDeclarations(t *testing.T) {
 		t.Fatal("nginx")
 	}
 	const usage = cli.Usage
-	if usage != "Usage: telemetry [command]\n\nServe the suite's trail of events: ingest at /ingest, MCP tools at /mcp, and\na landing page at /, on the socket systemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n" {
+	if usage != "Usage: telemetry [command]\n\nServe the suite's trail of events: ingest at /ingest, MCP tools at /mcp, and\na landing page at /, on the socket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n" {
 		t.Fatal("usage")
 	}
 	const success, failed, usageExit = cli.ExitSuccess, cli.ExitServerFailed, cli.ExitUsage
@@ -85,7 +85,7 @@ func TestDeclarations(t *testing.T) {
 	}
 }
 
-// R-OOL9-U7RK R-OPT6-7ZI9 R-OR12-LR8Y R-OS8Y-ZIZN R-OTGV-DAQC R-OUOR-R2H1 R-OVWO-4U7Q R-OYCG-WDP4 R-UC20-B7WN R-QJNQ-VLJR
+// R-OOL9-U7RK R-OPT6-7ZI9 R-OR12-LR8Y R-R5W9-L9QD R-R745-Z1H2 R-OUOR-R2H1 R-R4OD-7HZO R-R8C2-CT7R R-UC20-B7WN R-R9JY-QKYG
 func TestCommands(t *testing.T) {
 	cases := []struct {
 		args                []string
@@ -96,9 +96,15 @@ func TestCommands(t *testing.T) {
 		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
 		{[]string{"--help"}, cli.Usage, "", cli.ExitSuccess},
 	}
-	for _, args := range [][]string{{"bogus"}, {"--bad"}, {""}, {"--help", "--version"}, {"manifest", "tail", "more"}, {"--version", "-extra"}, {"bogus", "--help"}} {
+	for _, args := range [][]string{{"bogus"}, {"--bad"}, {""}, {"--help", "--version"}, {"manifest", "tail", "more"}, {"--version", "-extra"}, {"bogus", "--help"}, {"db"}, {"db", "bogus"}, {"db", "status", "tail"}, {"db", "--bad"}} {
 		arg := args[0]
-		if arg == "--help" || arg == "manifest" || arg == "--version" {
+		if arg == "db" && len(args) > 1 {
+			if args[1] == "status" {
+				arg = args[2]
+			} else {
+				arg = args[1]
+			}
+		} else if arg == "--help" || arg == "manifest" || arg == "--version" {
 			arg = args[1]
 		}
 		kind := "command"
@@ -123,12 +129,12 @@ func TestCommands(t *testing.T) {
 			if tc.diagnostic != "" && len(errout.calls) != 1 {
 				t.Fatal("fragmented diagnostic")
 			}
-			assertAbsent(t, p.DBSource)
+			assertEmpty(t, p.Dir)
 		})
 	}
 }
 
-// R-PAJG-Q342 R-PBRD-3UUR R-PCZ9-HMLG R-PE75-VEC5 R-PFF2-962U R-PGMY-MXTJ R-PJ2R-EHAX R-PKAN-S91M R-PLIK-60SB
+// R-PAJG-Q342 R-RBZR-I4FU R-PCZ9-HMLG R-PE75-VEC5 R-RD7N-VW6J R-PGMY-MXTJ R-PJ2R-EHAX R-REFK-9NX8 R-RFNG-NFNX
 func TestRefusedEnvironment(t *testing.T) {
 	invalid := []string{"0", "-1", "+1", "2.5", "5s", "05", " 5", "5 ", "abc", "５", "1\n"}
 	for _, key := range []string{"DRAIN_SECONDS", "RETENTION_DAYS"} {
@@ -154,7 +160,7 @@ func TestRefusedEnvironment(t *testing.T) {
 				if code != cli.ExitUsage || out.Len() != 0 || errout.text() != want || len(errout.calls) != 1 || !reflect.DeepEqual(looked, expectedKeys) {
 					t.Fatalf("got %d %q keys %v", code, errout.text(), looked)
 				}
-				assertAbsent(t, p.DBSource)
+				assertEmpty(t, p.Dir)
 			})
 		}
 	}
@@ -168,11 +174,11 @@ func TestRefusedEnvironment(t *testing.T) {
 		if cli.Run(context.Background(), p) != cli.ExitUsage || out.Len() != 0 || errout.text() != want || len(errout.calls) != 1 {
 			t.Fatalf("env %v: %q", env, errout.text())
 		}
-		assertAbsent(t, p.DBSource)
+		assertEmpty(t, p.Dir)
 	}
 }
 
-// R-PMQG-JSJ0 R-PNYC-XK9P R-PP69-BC0E R-U9M7-JOF9
+// R-PMQG-JSJ0 R-PNYC-XK9P R-RGVD-17EM R-S41G-AUHT
 func TestInheritedFailure(t *testing.T) {
 	for _, fds := range []string{"1", "001"} {
 		p, out, errout := refusedProcess(t)
@@ -191,6 +197,6 @@ func TestInheritedFailure(t *testing.T) {
 		if cli.Run(context.Background(), p) != cli.ExitServerFailed || out.Len() != 0 || errout.text() != "telemetry: descriptor unavailable\n" || len(errout.calls) != 1 || calls != 1 || !reflect.DeepEqual(unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) || len(env) != 0 {
 			t.Fatalf("inherit failure %q %v", errout.text(), unset)
 		}
-		assertAbsent(t, p.DBSource)
+		assertEmpty(t, p.Dir)
 	}
 }

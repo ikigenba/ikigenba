@@ -33,7 +33,7 @@ func main() {
 	kit := page.New(web.ServiceName, cli.Version)
 	code := cli.Run(ctx, cli.Process{
 		Args: os.Args[1:], LookupEnv: os.LookupEnv, Pid: os.Getpid(),
-		Stdout: os.Stdout, Stderr: os.Stderr, DBSource: "state/telemetry.db",
+		Stdout: os.Stdout, Stderr: os.Stderr, Unsetenv: os.Unsetenv,
 		Banner: kit.Banner,
 		MCP: func(writer *telemetry.Writer) *mcp.Server {
 			return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: writer})

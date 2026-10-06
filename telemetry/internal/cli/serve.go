@@ -7,12 +7,15 @@ import (
 	"math"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	root "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/server"
 	"github.com/ikigenba/ikigenba/telemetry/internal/store"
 	"github.com/ikigenba/ikigenba/telemetry/internal/web"
@@ -139,30 +142,31 @@ func serve(ctx context.Context, p Process) int {
 		return ExitServerFailed
 	}
 	defer func() { _ = ln.Close() }()
-	db, err := store.Open(p.DBSource)
-	if err != nil {
-		diagnostic(out, "cannot open database "+p.DBSource+": "+err.Error()+"\n")
-		return ExitServerFailed
-	}
-	defer func() { _ = db.Close() }()
 	now := p.Now
 	if now == nil {
 		now = time.Now
 	}
+	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "telemetry.db"), Migrations: root.Migrations(), Now: now})
+	if err != nil {
+		diagnostic(out, "cannot open database state/telemetry.db: "+strings.ReplaceAll(err.Error(), "\n", " ")+"\n")
+		return ExitServerFailed
+	}
+	defer func() { _ = handle.Close() }()
+	trail := store.New(handle)
 	sleep := p.Sleep
 	if sleep == nil {
 		sleep = pause
 	}
-	_ = db.Sweep(ctx, now().Add(-retention))
+	_ = trail.Sweep(ctx, now().Add(-retention))
 	if err = notify(get("NOTIFY_SOCKET")); err != nil {
 		diagnostic(out, err.Error()+"\n")
 		return ExitServerFailed
 	}
-	writer := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: Version, Sink: db, Stderr: out, Now: now, Sleep: sleep, Rand: p.Rand})
+	writer := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: Version, Sink: trail, Stderr: out, Now: now, Sleep: sleep, Rand: p.Rand})
 	writer.Ready()
 	_ = writer.Flush(ctx)
 	srv := p.MCP(writer)
-	handler := web.Handler(web.Config{Banner: p.Banner, MCP: srv, ServicesPath: get("IKIGENBA_SERVICES"), Store: db, Telemetry: writer})
+	handler := web.Handler(web.Config{Banner: p.Banner, MCP: srv, ServicesPath: get("IKIGENBA_SERVICES"), Store: trail, Telemetry: writer})
 	sweepCtx, cancelSweep := context.WithCancel(ctx)
 	sweepDone := make(chan struct{})
 	go func() {
@@ -172,7 +176,7 @@ func serve(ctx context.Context, p Process) int {
 			if sweepCtx.Err() != nil {
 				return
 			}
-			_ = db.Sweep(sweepCtx, now().Add(-retention))
+			_ = trail.Sweep(sweepCtx, now().Add(-retention))
 		}
 	}()
 	err = server.Serve(ctx, ln, handler, drain, func(stopCtx context.Context) { writer.Shutdown(stopCtx, context.Cause(ctx).Error()) })

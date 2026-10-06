@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
@@ -241,14 +242,15 @@ func pageOrder(t *testing.T, text string, parts []string) {
 func pageHandler(t *testing.T, b page.Banner) http.Handler {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	s, err := store.Open(filepath.Join(t.TempDir(), "pages.db"))
+	database, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "pages.db"), Migrations: assets.Migrations(), Now: func() time.Time { return time.Unix(100, 0) }})
 	if err != nil {
 		t.Fatal(err)
 	}
+	s := store.New(database)
 	w := at.New(at.Config{Service: web.ServiceName, Sink: new(at.Capture), Stderr: io.Discard, Now: func() time.Time { return time.Unix(100, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{3}, 8192))})
 	t.Cleanup(func() {
 		w.Shutdown(context.Background(), "test")
-		if err := s.Close(); err != nil {
+		if err := database.Close(); err != nil {
 			t.Error(err)
 		}
 	})

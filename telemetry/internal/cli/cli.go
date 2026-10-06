@@ -5,12 +5,15 @@ import (
 	"context"
 	"io"
 	"net"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	root "github.com/ikigenba/ikigenba/telemetry"
 )
 
 // Version is the deployed release identifier.
@@ -23,7 +26,7 @@ const Manifest = "app = \"telemetry\"\ndescription = \"The suite's trail of even
 const NginxConf = "location = /ingest { return 404; }\n"
 
 // Usage is the command's complete help product.
-const Usage = "Usage: telemetry [command]\n\nServe the suite's trail of events: ingest at /ingest, MCP tools at /mcp, and\na landing page at /, on the socket systemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+const Usage = "Usage: telemetry [command]\n\nServe the suite's trail of events: ingest at /ingest, MCP tools at /mcp, and\na landing page at /, on the socket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 
 // Exit codes distinguish success, runtime failures, and invalid invocations.
 const (
@@ -44,7 +47,7 @@ type Process struct {
 	Now       func() time.Time
 	Sleep     func(context.Context, time.Duration)
 	Rand      io.Reader
-	DBSource  string
+	Dir       string
 	Banner    func(page.User) page.Banner
 	MCP       func(*telemetry.Writer) *mcp.Server
 }
@@ -53,6 +56,18 @@ type Process struct {
 func Run(ctx context.Context, p Process) int {
 	if len(p.Args) == 0 {
 		return serve(ctx, p)
+	}
+	if len(p.Args) == 2 && p.Args[0] == "db" && p.Args[1] == "status" {
+		out := p.Stdout
+		if out == nil {
+			out = io.Discard
+		}
+		err := db.Status(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "telemetry.db"), Migrations: root.Migrations()}, out)
+		if err != nil {
+			diagnostic(p.Stderr, strings.ReplaceAll(err.Error(), "\n", " ")+"\n")
+			return ExitServerFailed
+		}
+		return ExitSuccess
 	}
 	arg := p.Args[0]
 	recognized := arg == "--version" || arg == "manifest" || arg == "--help"
@@ -69,8 +84,12 @@ func Run(ctx context.Context, p Process) int {
 		}
 		return ExitSuccess
 	}
-	if recognized {
-		arg = p.Args[1]
+	if recognized || (arg == "db" && len(p.Args) > 1) {
+		if arg == "db" && p.Args[1] == "status" {
+			arg = p.Args[2]
+		} else {
+			arg = p.Args[1]
+		}
 	}
 	kind := "command"
 	if strings.HasPrefix(arg, "-") {

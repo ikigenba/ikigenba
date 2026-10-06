@@ -2,10 +2,7 @@ module github.com/ikigenba/ikigenba/telemetry
 
 go 1.26
 
-require (
-	github.com/ikigenba/ikigenba/appkit v0.12.0
-	modernc.org/sqlite v1.59.0
-)
+require github.com/ikigenba/ikigenba/appkit v0.12.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -17,4 +14,5 @@ require (
 	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
+	modernc.org/sqlite v1.59.0 // indirect
 )

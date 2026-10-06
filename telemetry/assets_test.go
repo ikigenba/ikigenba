@@ -56,3 +56,31 @@ func TestAssetsIndependentOfDirectory(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrationsFilesAndDirectoryIndependence(t *testing.T) {
+	// R-QSHD-DSKQ R-QTP9-RKBF
+	checkMigrations(t, telemetry.Migrations)
+}
+
+func checkMigrations(t *testing.T, migrations func() fs.FS) {
+	t.Helper()
+	before, err := fs.ReadFile(migrations(), "0001_trail.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	for range 3 {
+		entries, err := fs.ReadDir(migrations(), ".")
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("entries: %v %v", entries, err)
+		}
+		info, err := entries[0].Info()
+		if err != nil || entries[0].Name() != "0001_trail.sql" || !info.Mode().IsRegular() {
+			t.Fatalf("entry: %v %v", entries[0], err)
+		}
+		body, err := fs.ReadFile(migrations(), "0001_trail.sql")
+		if err != nil || !bytes.Equal(body, before) {
+			t.Fatalf("migration changed: %v", err)
+		}
+	}
+}

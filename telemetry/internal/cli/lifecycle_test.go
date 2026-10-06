@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,9 +19,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	root "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
 	"github.com/ikigenba/ikigenba/telemetry/internal/store"
 	"github.com/ikigenba/ikigenba/telemetry/internal/web"
@@ -120,7 +123,7 @@ func runtimeFor(t *testing.T, env map[string]string) *runtimeTest {
 		if d == time.Hour {
 			<-c.Done()
 		}
-	}, Rand: bytes.NewReader(bytes.Repeat([]byte{0x3b}, 4096)), DBSource: filepath.Join(t.TempDir(), "state", "trail.db"), Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *mcp.Server {
+	}, Rand: bytes.NewReader(bytes.Repeat([]byte{0x3b}, 4096)), Dir: t.TempDir(), Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *mcp.Server {
 		writers <- w
 		return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w})
 	}}
@@ -179,11 +182,9 @@ func (r *runtimeTest) request(t *testing.T, path, id string) (int, string) {
 }
 func records(t *testing.T, source string) []store.Record {
 	t.Helper()
-	s, err := store.Open(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
+	handle := openDatabase(t, source)
+	s := store.New(handle)
+	defer func() { _ = handle.Close() }()
 	result, err := s.Search(context.Background(), store.Filter{}, 500, "")
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +200,7 @@ func flush(t *testing.T, w *telemetry.Writer) {
 	}
 }
 
-// R-AZ7S-NZDG R-BCMO-VGJ3 R-NRNU-OKUH R-Q68U-O4E4 R-NYZ8-Z7AN R-NQFY-AT3S R-B0FP-1R45 R-NSVR-2CL6 R-RCXC-23CF
+// R-QQ1K-M93C R-RARV-4CP5 R-RQMK-3DC6 R-Q68U-O4E4 R-RRUG-H52V R-RO6R-BTUS R-S0DR-5J9Q R-RT2C-UWTK R-RVI5-MGAY R-RCXC-23CF
 func TestHealthyRun(t *testing.T) {
 	for _, services := range []string{"", "missing", "malformed"} {
 		t.Run(services, func(t *testing.T) {
@@ -238,7 +239,7 @@ func TestHealthyRun(t *testing.T) {
 			r.cancel(errors.New("stop-cause"))
 			r.finish(t, cli.ExitSuccess)
 			r.output.assertQuiet(t)
-			trail := records(t, r.p.DBSource)
+			trail := records(t, databasePath(r.p.Dir))
 			if len(trail) != 8 {
 				t.Fatalf("records %d", len(trail))
 			}
@@ -267,15 +268,14 @@ func TestHealthyRun(t *testing.T) {
 	}
 }
 
-// R-PQE5-P3R3 R-PWHN-LYGK R-QJNQ-VLJR
+// R-RI39-EZ5B R-RPEN-PLLH R-R9JY-QKYG
 func TestStartupRuntimeFailures(t *testing.T) {
 	t.Run("database", func(t *testing.T) {
 		r := runtimeFor(t, nil)
-		if err := os.WriteFile(r.p.DBSource[:strings.LastIndex(r.p.DBSource, "/state/")]+"/parent", []byte("file"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(r.p.Dir, "state"), []byte("file"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		r.p.DBSource = filepath.Join(filepath.Dir(filepath.Dir(r.p.DBSource)), "parent", "trail.db")
-		_, openErr := store.Open(r.p.DBSource)
+		_, openErr := db.Open(context.Background(), db.Config{Path: databasePath(r.p.Dir), Migrations: root.Migrations(), Now: r.p.Now})
 		if openErr == nil {
 			t.Fatal("fixture opens")
 		}
@@ -283,27 +283,33 @@ func TestStartupRuntimeFailures(t *testing.T) {
 		r.p.Banner = nil
 		r.start()
 		r.finish(t, cli.ExitServerFailed)
-		want := "telemetry: cannot open database " + r.p.DBSource + ": " + openErr.Error() + "\n"
+		want := "telemetry: cannot open database state/telemetry.db: " + strings.ReplaceAll(openErr.Error(), "\n", " ") + "\n"
 		if got := r.output.lines(); len(got) != 1 || got[0] != want {
 			t.Fatalf("database diagnostic %q", got)
 		}
 	})
 	t.Run("notification", func(t *testing.T) {
 		r := runtimeFor(t, map[string]string{"NOTIFY_SOCKET": filepath.Join(t.TempDir(), "absent")})
+		address, _ := r.p.LookupEnv("NOTIFY_SOCKET")
+		conn, notifyErr := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: address, Net: "unixgram"})
+		if notifyErr == nil {
+			_ = conn.Close()
+			t.Fatal("notification fixture accepted")
+		}
 		r.p.MCP = nil
 		r.p.Banner = nil
 		r.start()
 		r.finish(t, cli.ExitServerFailed)
-		if got := r.output.lines(); len(got) != 1 || !strings.HasPrefix(got[0], "telemetry: ") {
+		if got := r.output.lines(); len(got) != 1 || got[0] != "telemetry: "+notifyErr.Error()+"\n" {
 			t.Fatalf("notify diagnostic %q", got)
 		}
-		if got := records(t, r.p.DBSource); len(got) != 0 {
+		if got := records(t, databasePath(r.p.Dir)); len(got) != 0 {
 			t.Fatalf("refused start records %+v", got)
 		}
 	})
 }
 
-// R-PHUV-0PK8 R-3LCM-GK9G R-3NSF-83QU R-XWT6-9MMF
+// R-PHUV-0PK8 R-RKJ2-6IMP R-RLQY-KADE R-RKJ2-6IMP
 func TestRetentionSweeps(t *testing.T) {
 	for _, days := range []string{"", "1", "999999999999999999999999999999999999999999999999999999999999999999999999999"} {
 		t.Run(days, func(t *testing.T) {
@@ -335,17 +341,15 @@ func TestRetentionSweeps(t *testing.T) {
 				window = time.Duration(1<<63 - 1)
 				now = now.Add(time.Duration(int64(window) % 1000))
 			}
-			seed, err := store.Open(r.p.DBSource)
-			if err != nil {
-				t.Fatal(err)
-			}
+			seedHandle := openDatabase(t, databasePath(r.p.Dir))
+			seed := store.New(seedHandle)
 			for i, when := range []time.Time{now.Add(-window).Add(-time.Microsecond), now.Add(-window), now.Add(-window + time.Hour)} {
 				event := telemetry.Event{Time: when, Service: "sibling", Name: "fixture.event", RequestID: []string{"old", "edge", "young"}[i], Attrs: telemetry.Attrs{}}
 				if err := seed.Deliver(context.Background(), event); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := seed.Close(); err != nil {
+			if err := seedHandle.Close(); err != nil {
 				t.Fatal(err)
 			}
 			r.start()
@@ -354,11 +358,9 @@ func TestRetentionSweeps(t *testing.T) {
 			w := <-r.writer
 			flush(t, w)
 			read := func() []store.Record {
-				s, e := store.Open(r.p.DBSource)
-				if e != nil {
-					t.Fatal(e)
-				}
-				defer func() { _ = s.Close() }()
+				h := openDatabase(t, databasePath(r.p.Dir))
+				defer func() { _ = h.Close() }()
+				s := store.New(h)
 				p, e := s.Search(context.Background(), store.Filter{Services: []string{"sibling"}}, 50, "")
 				if e != nil {
 					t.Fatal(e)
@@ -385,7 +387,7 @@ func TestRetentionSweeps(t *testing.T) {
 	}
 }
 
-// R-Q7GR-1W4T R-Q1D9-51FC R-NXRC-LFJY R-NWJG-7NT9 R-NVBJ-TW2K R-NSVR-2CL6
+// R-S2TJ-X2R4 R-Q7GR-1W4T R-Q1D9-51FC R-RUA9-8OK9 R-RZ5U-RRJ1 R-S1LN-JB0F R-RVI5-MGAY
 func TestDrain(t *testing.T) {
 	for _, cutoff := range []bool{false, true} {
 		t.Run(map[bool]string{false: "completed", true: "cutoff"}[cutoff], func(t *testing.T) {
@@ -432,7 +434,7 @@ func TestDrain(t *testing.T) {
 					t.Fatal("clean drain waited past deadline")
 				}
 				r.output.assertQuiet(t)
-				trail := records(t, r.p.DBSource)
+				trail := records(t, databasePath(r.p.Dir))
 				if len(trail) != 4 || trail[0].Event != "service.stopping" || trail[1].Event != "request.finished" {
 					t.Fatalf("drain order %+v", trail)
 				}
@@ -453,7 +455,7 @@ func TestDrain(t *testing.T) {
 				if event.Name != "service.stopping" || event.Attrs["reason"] != "drain-cause" {
 					t.Fatalf("undelivered stopping %+v", event)
 				}
-				trail := records(t, r.p.DBSource)
+				trail := records(t, databasePath(r.p.Dir))
 				if len(trail) != 2 || trail[0].Event != "request.started" || trail[1].Event != "service.started" {
 					t.Fatalf("cutoff trail %+v", trail)
 				}
@@ -541,27 +543,21 @@ func TestAcceptFailuresAndDiscardedLogger(t *testing.T) {
 	})
 }
 
-// R-NU3N-G4BV R-NVBJ-TW2K R-NWJG-7NT9
+// R-6ZGC-JRPJ R-RWQ2-081N R-S1LN-JB0F R-RZ5U-RRJ1 R-RXXY-DZSC
 func TestUndeliveredRequestEvents(t *testing.T) {
 	r := runtimeFor(t, nil)
 	r.start()
 	r.ready(t)
 	w := <-r.writer
 	flush(t, w)
-	dir := filepath.Dir(r.p.DBSource)
-	info, err := os.Stat(dir)
-	if err != nil {
+	h := openDatabase(t, databasePath(r.p.Dir))
+	defer func() { _ = h.Close() }()
+	if err := h.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.Exec("CREATE TRIGGER refuse_records BEFORE INSERT ON records BEGIN SELECT RAISE(ABORT, 'refused'); END")
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
-	dirMode := info.Mode().Perm()
-	if err := os.Chmod(dir, dirMode&^0222); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, dirMode) })
-	if err := os.Chmod(r.p.DBSource, 0400); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(r.p.DBSource, 0600) })
 	var requests sync.WaitGroup
 	for _, id := range []string{"undelivered-a", "undelivered-b", "undelivered-c"} {
 		requests.Add(1)
@@ -597,19 +593,17 @@ func TestUndeliveredRequestEvents(t *testing.T) {
 		}
 		counts[event.RequestID] = append(counts[event.RequestID], event.Name)
 	}
-	for id, names := range counts {
+	if len(counts) != 3 {
+		t.Fatalf("request ids %v", counts)
+	}
+	for _, id := range []string{"undelivered-a", "undelivered-b", "undelivered-c"} {
+		names := counts[id]
 		if len(names) != 2 || names[0] != "request.started" || names[1] != "request.finished" {
 			t.Fatalf("%s events %v", id, names)
 		}
 	}
 	if r.output.overlapping.Load() {
 		t.Fatal("concurrent stderr calls")
-	}
-	if err := os.Chmod(dir, dirMode); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(r.p.DBSource, 0600); err != nil {
-		t.Fatal(err)
 	}
 	r.cancel(errors.New("stop"))
 	r.finish(t, cli.ExitSuccess)
@@ -631,7 +625,7 @@ func decodeEvent(t *testing.T, line string) telemetry.Event {
 	return telemetry.Event{Time: wire.Time, Service: wire.Service, Name: wire.Name, RequestID: wire.RequestID, User: wire.User, Attrs: wire.Attrs}
 }
 
-// R-BCMO-VGJ3 R-AZ7S-NZDG R-PAJG-Q342
+// R-RARV-4CP5 R-QQ1K-M93C R-PAJG-Q342
 func TestRunConstructorInputsAndFrozenServicesPath(t *testing.T) {
 	r := runtimeFor(t, map[string]string{"DRAIN_SECONDS": "99999999999999999999999999999999999999999999999999999999999999999999999"})
 	servicesPath := filepath.Join(t.TempDir(), "services.json")
@@ -692,7 +686,7 @@ func TestRunConstructorInputsAndFrozenServicesPath(t *testing.T) {
 	}
 }
 
-// R-Q7GR-1W4T R-Q1D9-51FC R-NXRC-LFJY
+// R-S2TJ-X2R4 R-Q7GR-1W4T R-Q1D9-51FC R-RUA9-8OK9
 func TestDefaultDrainCutsOffMultipleRequests(t *testing.T) {
 	r := runtimeFor(t, map[string]string{"DRAIN_SECONDS": ""})
 	r.client.Timeout = 7 * time.Second
@@ -750,7 +744,7 @@ func TestDefaultDrainCutsOffMultipleRequests(t *testing.T) {
 	if len(lines) != 2 || decodeEvent(t, lines[0]).Name != "service.stopping" || lines[1] != "telemetry: stopped with 2 requests unfinished\n" {
 		t.Fatalf("multiple cutoff output %q", lines)
 	}
-	trail := records(t, r.p.DBSource)
+	trail := records(t, databasePath(r.p.Dir))
 	if len(trail) != 3 {
 		t.Fatalf("cutoff records %+v", trail)
 	}
@@ -774,7 +768,7 @@ func TestDefaultDrainCutsOffMultipleRequests(t *testing.T) {
 	}
 }
 
-// R-XWT6-9MMF
+// R-RKJ2-6IMP
 func TestAbstractReadinessSocket(t *testing.T) {
 	r := runtimeFor(t, nil)
 	address := "@" + filepath.Base(filepath.Dir(r.notify.LocalAddr().String())) + "-abstract"
@@ -800,4 +794,14 @@ func TestAbstractReadinessSocket(t *testing.T) {
 	r.cancel(errors.New("abstract-stop"))
 	r.finish(t, cli.ExitSuccess)
 	r.output.assertQuiet(t)
+}
+
+func databasePath(dir string) string { return filepath.Join(dir, "state", "telemetry.db") }
+func openDatabase(t *testing.T, path string) *db.DB {
+	t.Helper()
+	h, err := db.Open(context.Background(), db.Config{Path: path, Migrations: root.Migrations(), Now: func() time.Time { return time.Date(2025, 6, 20, 10, 30, 1, 123456789, time.UTC) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
 }

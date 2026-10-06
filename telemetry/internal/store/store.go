@@ -11,14 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
-	_ "modernc.org/sqlite" // Register the pure Go SQLite driver.
 )
 
 // Record is the stored envelope.
@@ -86,43 +84,11 @@ var ErrCursor = errors.New("invalid cursor")
 // ErrGroupBy reports an unknown grouping.
 var ErrGroupBy = errors.New("invalid grouping")
 
-// Store holds a single SQLite database.
-type Store struct{ db *sql.DB }
+// Store holds the trail over an appkit database handle.
+type Store struct{ db *db.DB }
 
-const schema = `CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, svc TEXT NOT NULL, ev TEXT NOT NULL, req TEXT NOT NULL, user TEXT NOT NULL, attrs TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS attrs (record_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS records_ts ON records(ts);
-CREATE INDEX IF NOT EXISTS records_svc_ts ON records(svc,ts);
-CREATE INDEX IF NOT EXISTS records_ev_ts ON records(ev,ts);
-CREATE INDEX IF NOT EXISTS records_req_ts ON records(req,ts);
-CREATE INDEX IF NOT EXISTS records_user_ts ON records(user,ts);
-CREATE INDEX IF NOT EXISTS attrs_key_value ON attrs(key,value);`
-
-// Open initializes or opens the database source.
-func Open(source string) (*Store, error) {
-	if source != "" && source != ":memory:" && !strings.HasPrefix(source, "file:") {
-		if err := os.MkdirAll(filepath.Dir(source), 0700); err != nil {
-			return nil, fmt.Errorf("create database directory: %w", err)
-		}
-	}
-	db, err := sql.Open("sqlite", source)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	if _, err = db.Exec(schema); err == nil {
-		// Force a write even when all schema objects already exist.
-		_, err = db.Exec("BEGIN IMMEDIATE; INSERT INTO records(ts,svc,ev,req,user,attrs) VALUES(0,'','','','','{}'); ROLLBACK;")
-	}
-	if err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("open database: %w", err)
-	}
-	return &Store{db: db}, nil
-}
-
-// Close releases the database.
-func (s *Store) Close() error { return s.db.Close() }
+// New builds a store over the caller-owned database handle.
+func New(d *db.DB) *Store { return &Store{db: d} }
 
 // Deliver atomically appends one event.
 func (s *Store) Deliver(ctx context.Context, e telemetry.Event) error {
@@ -139,29 +105,26 @@ func (s *Store) Deliver(ctx context.Context, e telemetry.Event) error {
 	if err = json.Unmarshal(data, &envelope); err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, "INSERT INTO records(ts,svc,ev,req,user,attrs) VALUES(?,?,?,?,?,?)", e.Time.UTC().Truncate(time.Microsecond).UnixMicro(), e.Service, e.Name, e.RequestID, e.User, string(envelope.Attrs))
-	if err != nil {
-		return err
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return err
-	}
-	var attrs map[string]json.RawMessage
-	if err = json.Unmarshal(envelope.Attrs, &attrs); err != nil {
-		return err
-	}
-	for key, value := range attrs {
-		if _, err = tx.ExecContext(ctx, "INSERT INTO attrs(record_id,key,value) VALUES(?,?,?)", id, key, string(value)); err != nil {
+	return s.db.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, "INSERT INTO records(ts,svc,ev,req,user,attrs) VALUES(?,?,?,?,?,?)", e.Time.UTC().Truncate(time.Microsecond).UnixMicro(), e.Service, e.Name, e.RequestID, e.User, string(envelope.Attrs))
+		if err != nil {
 			return err
 		}
-	}
-	return tx.Commit()
+		id, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		var attrs map[string]json.RawMessage
+		if err = json.Unmarshal(envelope.Attrs, &attrs); err != nil {
+			return err
+		}
+		for key, value := range attrs {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO attrs(record_id,key,value) VALUES(?,?,?)", id, key, string(value)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Sweep removes records older than before in bounded transactions.
@@ -170,30 +133,23 @@ func (s *Store) Sweep(ctx context.Context, before time.Time) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
+		var n int64
+		err := s.db.Write(ctx, func(tx *sql.Tx) error {
+			cutoff := before.UnixMicro()
+			if before.Nanosecond()%1000 != 0 {
+				cutoff++
+			}
+			if _, err := tx.ExecContext(ctx, "DELETE FROM attrs WHERE record_id IN (SELECT id FROM records WHERE ts < ? ORDER BY id LIMIT 500)", cutoff); err != nil {
+				return err
+			}
+			res, err := tx.ExecContext(ctx, "DELETE FROM records WHERE id IN (SELECT id FROM records WHERE ts < ? ORDER BY id LIMIT 500)", cutoff)
+			if err != nil {
+				return err
+			}
+			n, err = res.RowsAffected()
 			return err
-		}
-		// Compare the microsecond timestamp to the precise cutoff.
-		cutoff := before.UnixMicro()
-		if before.Nanosecond()%1000 != 0 {
-			cutoff++
-		}
-		_, err = tx.ExecContext(ctx, "DELETE FROM attrs WHERE record_id IN (SELECT id FROM records WHERE ts < ? ORDER BY id LIMIT 500)", cutoff)
-		var res sql.Result
-		if err == nil {
-			res, err = tx.ExecContext(ctx, "DELETE FROM records WHERE id IN (SELECT id FROM records WHERE ts < ? ORDER BY id LIMIT 500)", cutoff)
-		}
+		})
 		if err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-		if err = tx.Commit(); err != nil {
 			return err
 		}
 		if n < 500 {
@@ -208,24 +164,27 @@ type stored struct {
 }
 
 func (s *Store) records(ctx context.Context) ([]stored, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id,ts,svc,ev,req,user,attrs FROM records ORDER BY ts DESC,id DESC")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
 	result := make([]stored, 0)
-	for rows.Next() {
-		var r stored
-		var ts int64
-		var attrs string
-		if err := rows.Scan(&r.id, &ts, &r.Service, &r.Event, &r.RequestID, &r.User, &attrs); err != nil {
-			return nil, err
+	err := s.db.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT id,ts,svc,ev,req,user,attrs FROM records ORDER BY ts DESC,id DESC")
+		if err != nil {
+			return err
 		}
-		r.Time = time.UnixMicro(ts).UTC()
-		r.Attrs = json.RawMessage(attrs)
-		result = append(result, r)
-	}
-	return result, rows.Err()
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var r stored
+			var ts int64
+			var attrs string
+			if err := rows.Scan(&r.id, &ts, &r.Service, &r.Event, &r.RequestID, &r.User, &attrs); err != nil {
+				return err
+			}
+			r.Time = time.UnixMicro(ts).UTC()
+			r.Attrs = json.RawMessage(attrs)
+			result = append(result, r)
+		}
+		return rows.Err()
+	})
+	return result, err
 }
 func match(r Record, f Filter) bool {
 	if f.Since != nil && r.Time.Before(*f.Since) || f.Until != nil && !r.Time.Before(*f.Until) || len(f.Services) > 0 && !contains(f.Services, r.Service) || len(f.Events) > 0 && !contains(f.Events, r.Event) || f.User != nil && *f.User != r.User || f.RequestID != nil && *f.RequestID != r.RequestID {

@@ -15,43 +15,46 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	at "github.com/ikigenba/ikigenba/appkit/telemetry"
+	assets "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/store"
 	"github.com/ikigenba/ikigenba/telemetry/internal/tools"
 	"github.com/ikigenba/ikigenba/telemetry/internal/web"
 )
 
 type fixture struct {
-	h      http.Handler
-	s      *store.Store
-	w      *at.Writer
-	c      *at.Capture
-	stderr *bytes.Buffer
-	cfg    web.Config
-	source string
+	h        http.Handler
+	s        *store.Store
+	w        *at.Writer
+	c        *at.Capture
+	stderr   *bytes.Buffer
+	cfg      web.Config
+	database *db.DB
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	t.Setenv(services.Variable, "")
 	source := filepath.Join(t.TempDir(), "trail.db")
-	s, err := store.Open(source)
+	database, err := db.Open(context.Background(), db.Config{Path: source, Migrations: assets.Migrations(), Now: func() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) }})
 	if err != nil {
 		t.Fatal(err)
 	}
+	s := store.New(database)
 	c := new(at.Capture)
 	stderr := new(bytes.Buffer)
 	w := at.New(at.Config{Service: web.ServiceName, Sink: c, Stderr: stderr, Now: func() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{0x41}, 65536))})
 	cfg := web.Config{Banner: func(u page.User) page.Banner {
 		return page.Banner{Service: web.ServiceName, Version: "test-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "test-version", Telemetry: w}), Store: s, Telemetry: w}
-	f := &fixture{s: s, w: w, c: c, stderr: stderr, cfg: cfg, source: source}
+	f := &fixture{s: s, w: w, c: c, stderr: stderr, cfg: cfg, database: database}
 	f.h = web.Handler(cfg)
-	t.Cleanup(func() { w.Shutdown(context.Background(), "test"); _ = s.Close() })
+	t.Cleanup(func() { w.Shutdown(context.Background(), "test"); _ = database.Close() })
 	return f
 }
 func request(h http.Handler, method, path, user string) *httptest.ResponseRecorder {
@@ -132,7 +135,7 @@ func TestExactPathsAnd404(t *testing.T) {
 	}
 }
 func TestIngestWiring(t *testing.T) {
-	// R-BTVA-7AFE R-1U8H-EEDM R-1XW6-JPLP R-QUMU-BJ80
+	// R-BTVA-7AFE R-1U8H-EEDM R-S59C-OM8I R-QUMU-BJ80
 	f := newFixture(t)
 	e := at.Event{Time: time.Date(2025, 1, 2, 0, 0, 0, 123000, time.UTC), Service: "sibling", Name: "thing.done", RequestID: "shared", User: "person", Attrs: at.Attrs{"value": "é"}}
 	body, err := e.MarshalJSON()
@@ -196,23 +199,13 @@ func TestIngestWiring(t *testing.T) {
 	if len(flush(t, f)) != 0 {
 		t.Fatal("ingest emitted events")
 	}
-	if err := f.s.Close(); err != nil {
-		t.Fatal(err)
-	}
+	f.database.SetFailing(true)
 	if post().Code != 500 {
-		t.Fatal("closed ingest")
+		t.Fatal("failed ingest")
 	}
-	reopened, err := store.Open(f.source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
-	after, err := reopened.Trace(context.Background(), "shared")
-	if err != nil || len(after) != 3 {
+	f.database.SetFailing(false)
+	after, err := f.s.Trace(context.Background(), "shared")
+	if err != nil || !reflect.DeepEqual(after, records) {
 		t.Fatal("failed ingest changed trail", after, err)
 	}
 
@@ -272,8 +265,8 @@ func TestRequestEvents(t *testing.T) {
 		t.Fatal(f.stderr.String())
 	}
 }
-func TestClosedStoreDoesNotChangePages(t *testing.T) {
-	// R-C391-ONO0
+func TestFailingStoreDoesNotChangeResponses(t *testing.T) {
+	// R-S7P5-G5PW
 	f := newFixture(t)
 	w := at.New(at.Config{Service: web.ServiceName, Sink: f.s, Stderr: f.stderr,
 		Now:   func() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) },
@@ -295,9 +288,32 @@ func TestClosedStoreDoesNotChangePages(t *testing.T) {
 	if f.stderr.Len() != 0 {
 		t.Fatal("healthy store delivery failed", f.stderr.String())
 	}
-	if err := f.s.Close(); err != nil {
+	responses := make(chan *httptest.ResponseRecorder, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(out http.ResponseWriter, r *http.Request) {
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, r)
+		for key, values := range response.Header() {
+			out.Header()[key] = values
+		}
+		out.WriteHeader(response.Code)
+		_, _ = out.Write(response.Body.Bytes())
+		responses <- response
+	}))
+	defer server.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp", HTTPClient: server.Client()})
+	caller := identity.Caller{UserID: "reader", RequestID: "list-request"}
+	listBefore, err := client.ListTools(context.Background(), caller)
+	if err != nil {
 		t.Fatal(err)
 	}
+	listResponseBefore := <-responses
+	f.database.SetFailing(true)
+	clientAfter := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp", HTTPClient: server.Client()})
+	listAfter, err := clientAfter.ListTools(context.Background(), caller)
+	if err != nil || !reflect.DeepEqual(listBefore, listAfter) {
+		t.Fatal("failing store changed tools/list", listBefore, listAfter, err)
+	}
+	equalResponse(t, listResponseBefore, <-responses)
 	for i, c := range calls {
 		equalResponse(t, before[i], request(h, c.method, c.path, c.user))
 	}
@@ -305,7 +321,7 @@ func TestClosedStoreDoesNotChangePages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(f.stderr.String(), "undelivered event") {
-		t.Fatal("closed store did not fail writer delivery", f.stderr.String())
+		t.Fatal("failing store did not fail writer delivery", f.stderr.String())
 	}
 }
 func TestMCPMountAndRegistration(t *testing.T) {

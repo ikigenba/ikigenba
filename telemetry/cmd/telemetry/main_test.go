@@ -19,16 +19,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	assets "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
 	"github.com/ikigenba/ikigenba/telemetry/internal/web"
 )
 
 // TestBinary is the one process test: all command and host wiring is exercised here.
 func TestBinary(t *testing.T) {
-	// R-TMG4-A1C2
+	// R-QOTO-8HCN
 	processContext, cancelProcesses := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancelProcesses()
 	runProcess := func(cmd *exec.Cmd) error {
@@ -63,7 +65,7 @@ func TestBinary(t *testing.T) {
 		"HOME=" + buildDir,
 		"GOCACHE=" + filepath.Join(buildDir, "cache"),
 		"GOMODCACHE=" + strings.TrimSpace(string(moduleCache)),
-		"GOPROXY=off", "GONOSUMDB=github.com/ikigenba/ikigenba",
+		"GOPROXY=off",
 	}
 	var buildOutput bytes.Buffer
 	build.Stdout, build.Stderr = &buildOutput, &buildOutput
@@ -71,6 +73,11 @@ func TestBinary(t *testing.T) {
 		t.Fatalf("build: %v\n%s", buildErr, buildOutput.Bytes())
 	}
 	workingDir := t.TempDir()
+	statusConfig := db.Config{Path: filepath.Join(workingDir, "state", "telemetry.db"), Migrations: assets.Migrations()}
+	var pendingStatus bytes.Buffer
+	if err := db.Status(context.Background(), statusConfig, &pendingStatus); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		args           []string
 		code           int
@@ -78,6 +85,8 @@ func TestBinary(t *testing.T) {
 	}{
 		{[]string{"--version"}, cli.ExitSuccess, cli.Version + "\n", ""},
 		{[]string{"manifest"}, cli.ExitSuccess, cli.Manifest, ""},
+		{[]string{"--help"}, cli.ExitSuccess, cli.Usage, ""},
+		{[]string{"db", "status"}, cli.ExitSuccess, pendingStatus.String(), ""},
 		{[]string{"bogus"}, cli.ExitUsage, "", "telemetry: unknown command 'bogus'\n\nsee 'telemetry --help' for usage\n"},
 		{nil, cli.ExitUsage, "", "telemetry: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"},
 	} {
@@ -315,6 +324,16 @@ func TestBinary(t *testing.T) {
 	third, stopThird := launch("third", false)
 	assertBinaryStop(t, third, "SIGINT")
 	stopThird(syscall.SIGTERM)
+	var appliedStatus bytes.Buffer
+	if err := db.Status(context.Background(), statusConfig, &appliedStatus); err != nil {
+		t.Fatal(err)
+	}
+	statusCommand := &exec.Cmd{Path: binary, Args: []string{binary, "db", "status"}, Dir: workingDir, Env: []string{}}
+	var statusOutput, statusErrors bytes.Buffer
+	statusCommand.Stdout, statusCommand.Stderr = &statusOutput, &statusErrors
+	if err := runProcess(statusCommand); err != nil || statusOutput.String() != appliedStatus.String() || statusErrors.Len() != 0 {
+		t.Fatalf("db status: %v stdout %q stderr %q, want %q", err, statusOutput.String(), statusErrors.String(), appliedStatus.String())
+	}
 }
 
 func binaryASCIISpace(value rune) bool {

@@ -3,17 +3,19 @@ package tools_test
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	assets "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/store"
 	"github.com/ikigenba/ikigenba/telemetry/internal/tools"
 )
@@ -23,28 +25,30 @@ var caller = identity.Caller{UserID: "reader", RequestID: "call"}
 var fixed = time.Date(2026, 10, 2, 14, 0, 0, 0, time.UTC)
 
 type rig struct {
-	s       *store.Store
-	c       *mcp.Client
-	w       *telemetry.Writer
-	capture *telemetry.Capture
+	database *db.DB
+	s        *store.Store
+	c        *mcp.Client
+	w        *telemetry.Writer
+	capture  *telemetry.Capture
 }
 
 func setup(t *testing.T, events ...telemetry.Event) *rig {
 	t.Helper()
-	return setupSource(t, ":memory:", false, events...)
+	return setupWithSink(t, false, events...)
 }
-func setupSource(t *testing.T, source string, ownSink bool, events ...telemetry.Event) *rig {
+func setupWithSink(t *testing.T, ownSink bool, events ...telemetry.Event) *rig {
 	t.Helper()
 	t.Setenv("IKIGENBA_SERVICES", "")
-	s, err := store.Open(source)
+	database, err := db.Open(ctx, db.Config{Path: filepath.Join(t.TempDir(), "trail.db"), Migrations: assets.Migrations(), Now: func() time.Time { return fixed }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := s.Close(); err != nil {
+		if err := database.Close(); err != nil {
 			t.Error(err)
 		}
 	})
+	s := store.New(database)
 	for _, e := range events {
 		if err := s.Deliver(ctx, e); err != nil {
 			t.Fatal(err)
@@ -55,13 +59,13 @@ func setupSource(t *testing.T, source string, ownSink bool, events ...telemetry.
 	if ownSink {
 		sink = s
 	}
-	w := telemetry.New(telemetry.Config{Service: "telemetry", Version: "test", Sink: sink, Now: func() time.Time { return fixed }, Rand: bytes.NewReader(make([]byte, 4096))})
+	w := telemetry.New(telemetry.Config{Service: "telemetry", Version: "test", Sink: sink, Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}, Now: func() time.Time { return fixed }, Rand: bytes.NewReader(make([]byte, 4096))})
 	t.Cleanup(func() { w.Shutdown(ctx, "done") })
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "telemetry", Version: "test", Telemetry: w})
 	tools.Register(srv, s) // R-UPGW-IP2A
 	h := httptest.NewServer(identity.Require(srv))
 	t.Cleanup(h.Close)
-	return &rig{s, mcp.NewClient(mcp.ClientConfig{Endpoint: h.URL, HTTPClient: h.Client()}), w, capture}
+	return &rig{database, s, mcp.NewClient(mcp.ClientConfig{Endpoint: h.URL, HTTPClient: h.Client()}), w, capture}
 }
 func call(t *testing.T, r *rig, name, args string) mcp.Result {
 	t.Helper()
@@ -446,7 +450,7 @@ func TestCountGroups(t *testing.T) {
 	success(t, call(t, r, "count", `{"services":["z"],"by":"service"}`), `{"total":2,"groups":[{"key":"z","count":2}]}`)
 }
 
-// R-BMJV-WNZ8 R-YQO5-O9FH
+// R-SL41-NMVJ R-YQO5-O9FH
 func TestFailedReadsAndWriterIsolation(t *testing.T) {
 	r := setup(t, event("test.one", "alpha", "", "r", 0, nil))
 	before, err := r.s.Search(ctx, store.Filter{}, 500, "")
@@ -479,11 +483,17 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 			t.Fatalf("extra/wrong event %+v", e)
 		}
 	}
-	if err := r.s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct{ name, args string }{{"catalog", `{}`}, {"search", `{}`}, {"search", `{"services":["absent"]}`}, {"count", `{}`}, {"count", `{"by":"service"}`}, {"trace", `{"request_id":"missing"}`}} {
+	r.database.SetFailing(true)
+	for _, tc := range []struct{ name, args string }{{"catalog", `{}`}, {"search", `{}`}, {"search", `{"services":["absent"]}`}, {"search", `{"attrs":{"status":null}}`}, {"search", `{"since":"2026-10-03T00:00:00Z","until":"2026-10-02T00:00:00Z"}`}, {"count", `{}`}, {"count", `{"by":"service"}`}, {"count", `{"by":"attrs.missing"}`}, {"count", `{"attrs":{"status":null}}`}, {"trace", `{"request_id":"missing"}`}} {
+		before := len(r.capture.Events())
 		refusal(t, call(t, r, tc.name, tc.args), "cannot read the trail")
+		if err := r.w.Flush(ctx); err != nil {
+			t.Fatal(err)
+		}
+		added := r.capture.Events()[before:]
+		if len(added) != 1 || added[0].Name != "tool.called" || added[0].Attrs["outcome"] != "error" {
+			t.Fatalf("%s failure events: %+v", tc.name, added)
+		}
 	}
 	refusal(t, call(t, r, "search", `{"cursor":"page2"}`), "cursor is not one search issued")
 	refusal(t, call(t, r, "count", `{"by":"path"}`), "by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got 'path'")
@@ -491,7 +501,7 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	events = r.capture.Events()
-	if len(events) != 12 {
+	if len(events) != 16 {
 		t.Fatalf("events: %+v", events)
 	}
 	for _, e := range events[4:] {
@@ -529,43 +539,10 @@ func TestNumberFormsAndRecordTime(t *testing.T) {
 	}
 }
 
-// R-BMJV-WNZ8
-func TestDroppedRecordsTable(t *testing.T) {
-	source := filepath.Join(t.TempDir(), "trail.db")
-	r := setupSource(t, source, false)
-	db, err := sql.Open("sqlite", source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	if _, err := db.Exec("DROP TABLE records"); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct{ name, args string }{{"catalog", `{}`}, {"search", `{"attrs":{"status":null}}`}, {"count", `{}`}, {"count", `{"by":"attrs.missing"}`}, {"trace", `{"request_id":"missing"}`}} {
-		refusal(t, call(t, r, tc.name, tc.args), "cannot read the trail")
-	}
-	if err := r.w.Flush(ctx); err != nil {
-		t.Fatal(err)
-	}
-	events := r.capture.Events()
-	if len(events) != 5 {
-		t.Fatalf("events %d", len(events))
-	}
-	for _, e := range events {
-		if e.Name != "tool.called" || e.Attrs["outcome"] != "error" {
-			t.Fatalf("wrong event %+v", e)
-		}
-	}
-}
-
 // R-YQO5-O9FH R-BUNR-IJF0 R-BVVN-WB5P
 func TestLiveTrailAndWriterSink(t *testing.T) {
 	a := event("test.one", "alpha", "", "r", 0, nil)
-	r := setupSource(t, ":memory:", true, a)
+	r := setupWithSink(t, true, a)
 	success(t, call(t, r, "trace", `{"request_id":"r"}`), recordsJSON(t, a))
 	if err := r.w.Flush(ctx); err != nil {
 		t.Fatal(err)
