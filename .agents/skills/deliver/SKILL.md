@@ -5,7 +5,7 @@ description: Carry a decisions document through stories, design, build and a san
 
 # Deliver a decisions document
 
-Only the user starts this operation, naming a decisions document. The invocation is the human instruction the root `AGENTS.md` requires: it authorizes `build-spec` and the files a human otherwise writes under a sub-project (`AGENTS.md`, build files, assets). It does not authorize merging, pushing, deploying, adding an external dependency, or changing `design/`; those go to the user.
+Only the user starts this operation, naming a decisions document. The invocation is the human instruction the root `AGENTS.md` requires: it authorizes `build-spec` and the files a human otherwise writes under a sub-project (`AGENTS.md`, build files, assets). It also authorizes two things the document decides and the sequence depends on: adding an external dependency the document names, and releasing a library seam once it is verified, by landing the branch on `main` with `git fetch . <branch>:main`, tagging `<lib>/vX.Y.Z` there and pushing `main` and the tag, since the seams after it consume the library only as a published release. It does not authorize landing the finished branch, deploying, a dependency the document does not name, or changing `design/`; those go to the user.
 
 ## Role
 
@@ -49,6 +49,6 @@ If you are running low anyway: start no new seam, let in-flight work finish and 
 
 ## Completion
 
-Complete when every seam in the sequence has verified, committed stories, design and implementation on the current branch, each seam's sandbox exercise passed, and nothing remains but what the user excluded or left as a recorded open decision. Nothing is merged, pushed or deployed; those are the user's.
+Complete when every seam in the sequence has verified, committed stories, design and implementation on the current branch, each seam's sandbox exercise passed, and nothing remains but what the user excluded or left as a recorded open decision. Beyond the library releases the sequence required, nothing is merged, pushed or deployed; those are the user's.
 
 Report per seam: sub-project, commits, sandbox evidence, issues filed, and any divergence from precedent with the decision that allowed it. Then the open decisions with the seams they block, and the one step left to the human: land the branch on `main`.
