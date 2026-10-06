@@ -24,7 +24,8 @@
      td.script-when holding time[datetime=<.LastRun.StartedAt>] (text
      .LastRun.Started), empty when never run; a section with h2 "MCP tools"
      and dl#tools.kv holding one dt[data-tool=<name>] per MCP tool, in the
-     order list, show, create, update, delete, run, runs, result, cancel,
+     order list, show, create, update, delete, subscribe, unsubscribe, run,
+     runs, result, cancel,
      each holding the tool's name in a code element and followed by a dd
      holding the first line of its description; a#about-link whose href is
      "/about". No script but appkit's /_appkit/feedback.js. */}}
@@ -66,6 +67,8 @@
 <dt data-tool="create"><code>create</code></dt><dd>Create a script from one of your repositories and a ref.</dd>
 <dt data-tool="update"><code>update</code></dt><dd>Change the ref one of your scripts runs from.</dd>
 <dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your scripts and every run it has.</dd>
+<dt data-tool="subscribe"><code>subscribe</code></dt><dd>Run one of your scripts each time an event of a given name is delivered.</dd>
+<dt data-tool="unsubscribe"><code>unsubscribe</code></dt><dd>Stop running one of your scripts on an event it is subscribed to.</dd>
 <dt data-tool="run"><code>run</code></dt><dd>Start a run of one of your scripts and return its id, status and commit.</dd>
 <dt data-tool="runs"><code>runs</code></dt><dd>The runs of one of your scripts, newest first.</dd>
 <dt data-tool="result"><code>result</code></dt><dd>One run whole: its details, its output so far, and the files it wrote.</dd>

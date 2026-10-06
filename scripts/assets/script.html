@@ -13,7 +13,8 @@
      never resolved), .Started ("2006-01-02 15:04") and .StartedAt (RFC 3339
      UTC), .Duration (as shown, "12s" or "3m 41s"; empty while running or
      when the run failed to start) and .Exit (the exit code as text, empty
-     when the process did not exit by itself). Status words and kinds:
+     when the process did not exit by itself); .Subscriptions ([]string, the
+     event names the script is subscribed to, sorted by name). Status words and kinds:
      "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
      out" and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
      "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts") then
@@ -26,7 +27,11 @@
      span.muted > code .Repo.ID), dt "Ref" (dd code .Ref), dt "Created" (dd
      time[datetime=.CreatedAt], text .Created) and dt "Runs kept" (dd
      ".RunsKept · the newest .KeepNewest are kept past .KeepDays days");
-     section#runs with h2 "Runs" and either div#no-runs.empty (h3 text "No
+     section#subscriptions with h2 "Subscriptions" and either
+     ul#subscription-list with one li[data-event=<name>] > code (text the
+     name) per event name, in the given order, or, when .Subscriptions is
+     empty, div#no-subscriptions.empty (text "This script is subscribed to
+     no events."); section#runs with h2 "Runs" and either div#no-runs.empty (h3 text "No
      runs yet") when .Runs is empty, or table#run-list with one
      tr[data-run=<id>] per run holding td.run-id > a.run-link (href .URL) >
      code (text .ID), td.run-status > span.status[data-kind=<.Kind>] (text
@@ -58,7 +63,15 @@
 <dt>Runs kept</dt><dd>{{.RunsKept}} · the newest {{.KeepNewest}} are kept past {{.KeepDays}} days</dd>
 </dl>
 </section>
-{{end}}<section id="runs" class="card flush" aria-labelledby="runs-title">
+{{end}}<section id="subscriptions" class="card" aria-labelledby="subscriptions-title">
+<header><h2 id="subscriptions-title">Subscriptions</h2><p>The events that start this script, set by an agent.</p></header>
+{{if .Subscriptions}}<ul id="subscription-list">
+{{range .Subscriptions}}<li data-event="{{.}}"><code>{{.}}</code></li>
+{{end}}</ul>{{else}}<div id="no-subscriptions" class="empty">
+<p>This script is subscribed to no events.</p>
+</div>{{end}}
+</section>
+<section id="runs" class="card flush" aria-labelledby="runs-title">
 <header><div><h2 id="runs-title">Runs</h2><p>Newest first. A run still running shows its progress when the page is reloaded.</p></div></header>
 {{if .Runs}}<div class="table-scroll">
 <table id="run-list">

@@ -10,7 +10,8 @@
      .StartedAt (RFC 3339 UTC), .Finished and .FinishedAt (likewise, empty
      while running), .Duration (as shown, "12s" or "10m 0s"; empty while
      running or when the run failed to start), .Trigger (how it started,
-     "manual", the only trigger there is), .User (the user id of the user
+     "manual" or "event"), .Event (string: the id of the event that started
+     the run, empty for a manual run), .User (the user id of the user
      who started it), .Request (the request id, nginx's X-Request-Id, 32
      hex, of the request that started it), .StdoutSize and .StderrSize (as
      shown, "1.2 kB", the bytes kept), .Truncated (bool: the run's output
@@ -37,7 +38,9 @@
      div#failure.alert[data-kind=err] (strong .Failure.Title, p
      .Failure.Reason); when .FilesGone, div#files-gone.alert.quiet (strong
      "Files no longer kept"); section#run-card with h2 "Run", then, when
-     .Trigger is "manual", a p "Started by the run tool." (run in code), and
+     .Event is set, p#started-by "Started by the event <.Event>." (the id in
+     code), else, when .Trigger is "manual", p#started-by "Started by the run
+     tool." (run in code), and
      dl#run.kv holding dt "Status" (dd span.status, then
      span.badge[data-kind=warn] with text "output truncated" when
      .Truncated), dt "Script" (dd a, href .Script.URL, text .Script.Name),
@@ -78,7 +81,7 @@
 {{end}}{{with .Failure}}<div id="failure" class="alert" data-kind="err"><strong>{{.Title}}</strong><p>{{.Reason}}</p></div>
 {{end}}{{if .FilesGone}}<div id="files-gone" class="alert quiet"><strong>Files no longer kept</strong><p>This run's folder is gone, so its input, output and files cannot be shown. The record stays.</p></div>
 {{end}}<section id="run-card" class="card" aria-labelledby="run-title">
-<header><h2 id="run-title">Run</h2>{{if eq .Trigger "manual"}}<p>Started by the <code>run</code> tool.</p>{{end}}</header>
+<header><h2 id="run-title">Run</h2>{{if .Event}}<p id="started-by">Started by the event <code>{{.Event}}</code>.</p>{{else if eq .Trigger "manual"}}<p id="started-by">Started by the <code>run</code> tool.</p>{{end}}</header>
 <dl id="run" class="kv">
 <dt>Status</dt><dd><span class="status" data-kind="{{.Kind}}">{{.Status}}</span>{{if .Truncated}} <span class="badge" data-kind="warn">output truncated</span>{{end}}</dd>
 <dt>Script</dt><dd><a href="{{$.Script.URL}}">{{$.Script.Name}}</a></dd>
