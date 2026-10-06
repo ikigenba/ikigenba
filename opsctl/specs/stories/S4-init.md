@@ -27,8 +27,9 @@ the first step that reads it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `S6-certificates.md` adds
-`certificate`, `S5-nginx.md` adds `nginx.conf`, `S8-backup.md` adds `litestream`
-and `timers`, and `S7-apps.md` adds `apps`, in that order. Every setup command is idempotent, so `init` is
+`certificate`, `S5-nginx.md` adds `nginx.conf`, this group adds `slices`,
+`S8-backup.md` adds `litestream` and `timers`, and `S7-apps.md` adds `apps`,
+in that order. Every setup command is idempotent, so `init` is
 too, and a step's inputs are read from the store every run — which is why
 changing a period or a zone is `config set` followed by `init`, and never an
 edit to something `init` generated. From the developer's machine that pair is
@@ -43,6 +44,34 @@ for it;
 themselves when they change what they answer to (see `S7-apps.md` and
 `S8-backup.md`); `init` remains the only
 command that enables the units behind them.
+
+The suite runs inside three slices, systemd's way of grouping services so
+that they share a CPU weight and a memory ceiling. The `slices` step writes
+them as unit files under `/etc/systemd/system`; a dash in a slice's name makes
+the part before it the parent:
+
+| slice | holds | settings |
+|---|---|---|
+| `ikigenba.slice` | the other two | `CPUWeight=100`, `MemoryMax` 80% of the host's memory |
+| `ikigenba-core.slice` | nginx and the core apps | `CPUWeight=300` |
+| `ikigenba-apps.slice` | every other app | `CPUWeight=100`, `MemoryMax` two thirds of `ikigenba.slice`'s, `MemoryHigh` fifteen sixteenths of its own |
+
+The host's memory is the `MemTotal` line of `/proc/meminfo`, read when the
+step runs. Each `MemoryMax` is rounded to the nearest 64 MiB and written in
+whole MiB; `MemoryHigh` is cut down to a whole MiB. On a t3.small, whose
+`MemTotal` is 1909 MiB, that is `MemoryMax=1536M` for `ikigenba.slice`, and
+`MemoryMax=1024M` with `MemoryHigh=960M` for `ikigenba-apps.slice`. The numbers
+are fixed when the step writes them: a host resized to more or less memory
+keeps the old ones until `init` runs again. The same step writes nginx's
+drop-in, `/etc/systemd/system/nginx.service.d/ikigenba.conf`, which puts
+nginx in `ikigenba-core.slice` with `CPUWeight=100`, `MemoryMax=128M`, and
+`MemoryLow=32M`, so the front door keeps its memory when the apps are short of
+theirs. Each file is the same bytes on every run with the same memory. systemd
+is reloaded only when one of the four files changed, and nginx is restarted,
+not just reloaded, only when its drop-in changed, because a running service
+moves to another slice only when it starts. Where each app goes, and how much
+it may hold, is `S7-apps.md`'s; `install` checks an app against the slice unit
+this step wrote, never against the host's memory.
 
 The host's programs — `nginx`, `certbot`, `systemctl`, `litestream`, and
 `git` — are installed by the space's first boot, not by opsctl. `init` only
@@ -95,13 +124,19 @@ Checks, in order:
 Sequence:
   certificate  obtain the host's certificate, or renew it if it is due
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  slices       write ikigenba.slice, ikigenba-core.slice and
+               ikigenba-apps.slice, sized from the host's memory, and the
+               drop-in that puts nginx in ikigenba-core.slice; restart nginx
+               when the drop-in changed
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
                disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them
+               an app's manifest declares are kept as install wrote them; a
+               manifest that is no longer valid stops init before any app
+               is rewritten
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -165,7 +200,8 @@ Preconditions:
 Postconditions:
 
 - The setup sequence has run: the host holds its certificate, the nginx file
-  generated from the store and what is under `/opt`, `/etc/litestream.yml`
+  generated from the store and what is under `/opt`, the three slices and
+  nginx's drop-in, `/etc/litestream.yml`
   naming every declared database with `litestream.service` enabled, the two
   backup unit pairs with each timer enabled whose period the store gives as
   non-zero, and the certificate renewal pair with its timer enabled.
@@ -173,8 +209,8 @@ Postconditions:
   is under `/opt`, and which apps are disabled. No line reports it.
 - Every installed app's `etc/env` holds `DRAIN_SECONDS=5` and
   `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit a
-  stop timeout of `10` seconds and the CPU weight, memory ceiling, and IO
-  weight its installed manifest declares (`S7-apps.md`). An app that already
+  stop timeout of `10` seconds and the resource settings its installed
+  manifest declares, or their defaults (`S7-apps.md`). An app that already
   held those values was not restarted.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
@@ -256,6 +292,87 @@ Postconditions:
   byte the same output and the same exit code: the whole command is
   idempotent, and a preflight that passes writes nothing of its own.
 
+## An agent's first init puts the suite in its slices
+
+The first `init` on a fresh host writes the slices before any app is
+installed, so every app `install` later places has a slice to go into and a
+ceiling to be checked against. The step prints no line of its own; the run's
+output is the ready host's.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is a t3.small: `/proc/meminfo` has `MemTotal: 1954816 kB`, which
+  is 1909 MiB.
+- Every preflight check passes.
+- None of `/etc/systemd/system/ikigenba.slice`, `ikigenba-core.slice`,
+  `ikigenba-apps.slice`, or `nginx.service.d/ikigenba.conf` exists, and nginx
+  is running in `system.slice`, where systemd puts a service by default.
+
+Postconditions:
+
+- `/etc/systemd/system/ikigenba.slice` sets `CPUWeight=100` and
+  `MemoryMax=1536M`; `/etc/systemd/system/ikigenba-core.slice` sets
+  `CPUWeight=300`; `/etc/systemd/system/ikigenba-apps.slice` sets
+  `CPUWeight=100`, `MemoryMax=1024M`, and `MemoryHigh=960M`. Each is under
+  `[Slice]`.
+- `/etc/systemd/system/nginx.service.d/ikigenba.conf` holds, under
+  `[Service]`, `Slice=ikigenba-core.slice`, `CPUWeight=100`,
+  `MemoryMax=128M`, and `MemoryLow=32M`.
+- systemd has been reloaded and nginx restarted, so `systemctl show
+  nginx.service -p Slice -p MemoryMax -p MemoryLow` prints
+  `Slice=ikigenba-core.slice`, `MemoryMax=134217728`, and
+  `MemoryLow=33554432`, and `systemctl show ikigenba-apps.slice -p MemoryMax
+  -p MemoryHigh` prints `MemoryMax=1073741824` and `MemoryHigh=1006632960`.
+- Running `init` again writes the same four files byte for byte, does not
+  reload systemd for them, and does not restart nginx.
+
+## An operator resizes the host and runs init again
+
+The slices are sized from the memory the host had when `init` last ran, not
+the memory it has now, so a host stopped and started as a bigger instance
+runs with the old ceilings until the operator runs `init`. Nothing else
+recomputes them: `install` reads the slice units as they are.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host was initialised as a t3.small, so its slice units hold
+  `MemoryMax=1536M`, `MemoryMax=1024M`, and `MemoryHigh=960M`.
+- It has since been resized to a t3.medium: `/proc/meminfo` now has
+  `MemTotal: 3964928 kB`, which is 3872 MiB.
+- Every preflight check passes.
+
+Postconditions:
+
+- `/etc/systemd/system/ikigenba.slice` sets `MemoryMax=3072M`, and
+  `/etc/systemd/system/ikigenba-apps.slice` sets `MemoryMax=2048M` and
+  `MemoryHigh=1920M`; their CPU weights are as they were.
+  `/etc/systemd/system/ikigenba-core.slice` is byte for byte as it was.
+- systemd has been reloaded, so the running slices hold the new ceilings at
+  once; no app was restarted for it.
+- nginx's drop-in is byte for byte as it was, so nginx was not restarted.
+- An app's own `memory_max` is unchanged: a slice grows, and what each app may
+  hold is still what its manifest says.
+
 ## An operator changes how long apps may drain
 
 The two timing settings are store inputs like any other, so a change is
@@ -307,6 +424,61 @@ Postconditions:
 - `/opt/gmail/` was not touched and no unit was written for it.
 - Running `init` again writes the same values, restarts no app, and prints
   the same lines.
+
+## An agent initialises a host holding an app whose manifest is no longer valid
+
+The `apps` step reads each installed app's manifest again to write its unit,
+and a manifest the running opsctl refuses stops the sequence before any app is
+rewritten, rather than being half-applied: a release installed under an older
+opsctl may carry `io_weight`, a key this one does not know. The step judges
+the manifest's form only. It does not check an app's `memory_max` against its
+slice or warn about a slice that is oversubscribed; those are `install`'s.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output:
+
+```
+nginx: ok (/usr/sbin/nginx)
+certbot: ok (/usr/bin/certbot)
+systemctl: ok (/usr/bin/systemctl)
+litestream: ok (/usr/bin/litestream)
+git: ok (/usr/bin/git)
+dns.provider: ok (route53)
+dns.zones: ok (ikigenba.dev)
+host.name: ok (sbx.ikigenba.dev)
+timeouts: ok (drain 5s, stop 10s)
+zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
+host sbx.ikigenba.dev: ok (zone ikigenba.dev)
+wildcard sbx.ikigenba.dev: ok (77.112.106.79)
+opsctl: repos: etc/manifest.toml: 'resources.io_weight' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy
+exit 1
+```
+
+Exits 1. The `ok` lines are on stdout; the `opsctl:` line is on stderr. Any
+other fault `install` would refuse in the manifest is reported the same way,
+in `install`'s words, after `opsctl: <app>: etc/manifest.toml: `.
+
+Preconditions:
+
+- Every preflight check passes.
+- `repos` is installed, and `/opt/repos/etc/manifest.toml` has `[resources]`
+  with `cpu_weight = 50`, `memory_max = "2G"`, and `io_weight = 50`.
+
+Postconditions:
+
+- Every step before `apps` has run, slices included, and stays as it ran.
+- The step checks every installed app's manifest before it rewrites any
+  app, so no app changed: every installed app's unit and `etc/env` are as
+  they were, and none was restarted, `repos` included.
+- The fix is to install a `repos` release whose manifest is valid; `init`
+  then runs to the end. A `memory_max` of `2G`, more than the apps slice's
+  1024M on a t3.small, is not this step's to refuse, but that install
+  refuses it.
 
 ## An operator sets a stop timeout no longer than the drain deadline
 
