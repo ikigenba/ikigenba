@@ -13,7 +13,7 @@ import (
 )
 
 // Version is the release version reported by the service.
-var Version = "v0.2.0"
+var Version = "v0.3.0"
 
 // Exit codes distinguish a successful command, a server failure and incorrect usage.
 const (
