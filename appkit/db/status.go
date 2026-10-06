@@ -51,14 +51,16 @@ func Status(ctx context.Context, cfg Config, w io.Writer) error {
 		}
 	}
 	sort.Ints(versions)
-	unknown := false
+	var unknownErr error
 	for _, version := range versions {
 		timestamp, exists := applied[version]
 		var line string
 		switch {
 		case version < 1 || version > len(migrations):
 			line = fmt.Sprintf("%04d unknown %s\n", version, timestamp)
-			unknown = true
+			if unknownErr == nil {
+				unknownErr = fmt.Errorf("%w: %04d", ErrUnknownVersion, version)
+			}
 		case exists:
 			line = fmt.Sprintf("%04d applied %s\n", version, timestamp)
 		default:
@@ -68,8 +70,5 @@ func Status(ctx context.Context, cfg Config, w io.Writer) error {
 			return fmt.Errorf("write database status: %w", err)
 		}
 	}
-	if unknown {
-		return ErrUnknownVersion
-	}
-	return nil
+	return unknownErr
 }

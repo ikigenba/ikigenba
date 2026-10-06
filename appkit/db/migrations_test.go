@@ -245,26 +245,45 @@ func TestFailedMigrationRollsBackOnlyItsVersion(t *testing.T) {
 	}
 }
 
-// R-MVSS-S98A R-JZVB-L0R9 R-K137-YSHY R-N97O-ZQDX
+// R-MVSS-S98A R-JZVB-L0R9 R-TLWM-VN5T R-N97O-ZQDX
 func TestUnknownMigrationRefusesOpenBeforeAnyMigration(t *testing.T) {
 	if db.ErrUnknownVersion == nil {
 		t.Fatal("nil sentinel")
 	}
-	cfg := migrationConfig(t, "CREATE TABLE must_not_exist(value TEXT)")
-	conn := rawDatabase(t, cfg.Path)
-	if _, err := conn.Exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT); INSERT INTO schema_migrations VALUES(12,'past')"); err != nil {
-		t.Fatal(err)
-	}
-	handle, err := db.Open(context.Background(), cfg)
-	if handle != nil || !errors.Is(err, db.ErrUnknownVersion) || !strings.Contains(err.Error(), "0012") {
-		t.Fatalf("Open = %v, %v", handle, err)
-	}
-	var count int
-	if err := conn.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='must_not_exist'").Scan(&count); err != nil || count != 0 {
-		t.Fatalf("table %d %v", count, err)
-	}
-	if err := conn.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 1 {
-		t.Fatalf("rows %d %v", count, err)
+	for _, tc := range []struct {
+		name     string
+		versions []int
+		message  string
+	}{
+		{"single", []int{12}, "unknown migration version: 0012"},
+		{"multiple", []int{40, 12, 3}, "unknown migration version: 0003"},
+		{"zero", []int{12, 0, 4}, "unknown migration version: 0000"},
+		{"negative", []int{12, -3, 0}, "unknown migration version: -003"},
+		{"five digits", []int{12000, 10000}, "unknown migration version: 10000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := migrationConfig(t, "CREATE TABLE must_not_exist(value TEXT)")
+			conn := rawDatabase(t, cfg.Path)
+			if _, err := conn.Exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT)"); err != nil {
+				t.Fatal(err)
+			}
+			for _, version := range tc.versions {
+				if _, err := conn.Exec("INSERT INTO schema_migrations VALUES(?,'past')", version); err != nil {
+					t.Fatal(err)
+				}
+			}
+			handle, err := db.Open(context.Background(), cfg)
+			if handle != nil || !errors.Is(err, db.ErrUnknownVersion) || err.Error() != tc.message {
+				t.Fatalf("Open = %v, %v; want nil handle and %q wrapping ErrUnknownVersion", handle, err, tc.message)
+			}
+			var count int
+			if err := conn.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='must_not_exist'").Scan(&count); err != nil || count != 0 {
+				t.Fatalf("table %d %v", count, err)
+			}
+			if err := conn.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != len(tc.versions) {
+				t.Fatalf("rows %d %v", count, err)
+			}
+		})
 	}
 }
 

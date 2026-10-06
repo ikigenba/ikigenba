@@ -123,10 +123,14 @@ func applyMigrations(ctx context.Context, writer *sql.DB, migrations []migration
 	if err != nil {
 		return err
 	}
+	lowestUnknown, unknown := 0, false
 	for version := range applied {
-		if version < 1 || version > len(migrations) {
-			return fmt.Errorf("%w: %04d", ErrUnknownVersion, version)
+		if (version < 1 || version > len(migrations)) && (!unknown || version < lowestUnknown) {
+			lowestUnknown, unknown = version, true
 		}
+	}
+	if unknown {
+		return fmt.Errorf("%w: %04d", ErrUnknownVersion, lowestUnknown)
 	}
 	if _, err := writer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT)"); err != nil {
 		return fmt.Errorf("create migration table: %w", err)

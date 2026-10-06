@@ -50,6 +50,43 @@ func TestStatusReportsUnionWithoutApplyingOrReadingClock(t *testing.T) {
 	}
 }
 
+// R-TN4J-9EWI R-BBYT-8YTC R-P68C-RQSP
+func TestStatusErrorNamesLowestUnknownVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		versions []int
+		message  string
+		output   string
+	}{
+		{"single", []int{12}, "unknown migration version: 0012", "0001 pending\n0012 unknown past\n"},
+		{"multiple", []int{40, 12, 3}, "unknown migration version: 0003", "0001 pending\n0003 unknown past\n0012 unknown past\n0040 unknown past\n"},
+		{"zero", []int{12, 0, 4}, "unknown migration version: 0000", "0000 unknown past\n0001 pending\n0004 unknown past\n0012 unknown past\n"},
+		{"negative", []int{12, -3, 0}, "unknown migration version: -003", "-003 unknown past\n0000 unknown past\n0001 pending\n0012 unknown past\n"},
+		{"five digits", []int{12000, 10000}, "unknown migration version: 10000", "0001 pending\n10000 unknown past\n12000 unknown past\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := migrationConfig(t, "SELECT 1")
+			conn := rawDatabase(t, cfg.Path)
+			if _, err := conn.Exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT)"); err != nil {
+				t.Fatal(err)
+			}
+			for _, version := range tc.versions {
+				if _, err := conn.Exec("INSERT INTO schema_migrations VALUES(?,'past')", version); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var output bytes.Buffer
+			err := db.Status(context.Background(), cfg, &output)
+			if !errors.Is(err, db.ErrUnknownVersion) || err.Error() != tc.message {
+				t.Fatalf("Status error = %v; want %q wrapping ErrUnknownVersion", err, tc.message)
+			}
+			if output.String() != tc.output {
+				t.Fatalf("Status output = %q; want %q", output.String(), tc.output)
+			}
+		})
+	}
+}
+
 // R-QM3K-ILAI
 func TestStatusPreservesRollbackJournalMode(t *testing.T) {
 	cfg := migrationConfig(t, "SELECT 1")
