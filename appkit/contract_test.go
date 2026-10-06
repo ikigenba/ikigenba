@@ -3,6 +3,7 @@ package appkit_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +18,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -26,7 +29,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-XGNF-EE1K
+// R-NP2D-YR0Y
 func TestConsumerOwnsOutput(t *testing.T) {
 	root := t.TempDir()
 	stdout := contractFile(t)
@@ -54,7 +57,7 @@ func TestConsumerOwnsOutput(t *testing.T) {
 	}
 }
 
-// R-XHVB-S5S9
+// R-NQAA-CIRN
 func TestPublicAPIWorkingDirectoryIndependence(t *testing.T) {
 	root := t.TempDir()
 	first, second := filepath.Join(root, "first"), filepath.Join(root, "second")
@@ -259,6 +262,7 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 		note("CallTool invalid endpoint", string(data), err, jsonErr)
 	}
 	contractTelemetryExercise(ctx, t, root, note)
+	contractDatabaseExercise(t, root, note)
 	return observed
 }
 
@@ -428,4 +432,73 @@ func contractTelemetryExercise(ctx context.Context, t *testing.T, root string, n
 		note("Socket sink unavailable", sink.Deliver(ctx, event))
 	}
 	note("Supplied telemetry diagnostics", supplied.String())
+}
+
+// R-NNUH-KZA9
+func TestDatabasePackageImport(t *testing.T) {
+	cfg := db.Config{Path: filepath.Join(t.TempDir(), "import.db"), Migrations: fstest.MapFS{}, Now: func() time.Time { return time.Unix(42, 0) }}
+	handle, err := db.Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func contractDatabaseExercise(t *testing.T, root string, note func(string, ...any)) {
+	t.Helper()
+	ctx := context.Background()
+	cfg := db.Config{Path: filepath.Join(root, "contract.db"), Migrations: fstest.MapFS{"0001_data.sql": &fstest.MapFile{Data: []byte("CREATE TABLE data(n INTEGER)")}}, Now: func() time.Time { return time.Unix(42, 0) }}
+	handle, err := db.Open(ctx, cfg)
+	note("db.Open", handle != nil, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openedHandle := handle
+	t.Cleanup(func() {
+		if err := openedHandle.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	note("db.Write", handle.Write(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.Exec("DELETE FROM data"); err != nil {
+			return err
+		}
+		_, err := tx.Exec("INSERT INTO data VALUES(42)")
+		return err
+	}))
+	var n int
+	readErr := handle.Read(ctx, func(tx *sql.Tx) error { return tx.QueryRow("SELECT n FROM data").Scan(&n) })
+	note("db.Read", readErr, n)
+	sentinel := errors.New("consumer callback failure")
+	for _, failing := range []bool{true, false} {
+		handle.SetFailing(failing)
+		note("db.Read failure", handle.Read(ctx, func(*sql.Tx) error { return sentinel }))
+		note("db.Write failure", handle.Write(ctx, func(*sql.Tx) error { return sentinel }))
+	}
+	note("db.Read panic", contractPanic(func() { _ = handle.Read(ctx, func(*sql.Tx) error { panic("consumer panic") }) }))
+	note("db.Write panic", contractPanic(func() { _ = handle.Write(ctx, func(*sql.Tx) error { panic("consumer panic") }) }))
+	var status bytes.Buffer
+	statusErr := db.Status(ctx, cfg, &status)
+	note("db.Status", statusErr, status.String())
+	note("db.Close", handle.Close(), handle.Close())
+	note("db.Read closed", handle.Read(ctx, func(*sql.Tx) error { return nil }))
+	note("db.Write closed", handle.Write(ctx, func(*sql.Tx) error { return nil }))
+	for _, path := range []string{"", "file:invalid", root, filepath.Join(root, "bad.json")} {
+		bad := cfg
+		bad.Path = path
+		handle, err := db.Open(ctx, bad)
+		note("db.Open invalid", handle != nil, err)
+		status.Reset()
+		statusErr := db.Status(ctx, bad, &status)
+		note("db.Status invalid", statusErr, status.String())
+	}
+	invalid := cfg
+	invalid.Migrations = nil
+	handle, err = db.Open(ctx, invalid)
+	note("db.Open invalid migrations", handle != nil, err)
+	status.Reset()
+	statusErr = db.Status(ctx, invalid, &status)
+	note("db.Status invalid migrations", statusErr, status.String())
 }
