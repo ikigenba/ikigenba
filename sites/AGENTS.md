@@ -6,7 +6,8 @@ descriptor 3 (`/run/ikigenba/sites.sock` on a host), behind the host's
 nginx. A site is a catalog record naming a repository that repos holds, the
 ref it tracks, the commit published from it, its visibility (public or
 private) and whether it is listed; sites keeps the catalog in its own SQLite
-database under `state/`, of which it is the only writer. It serves each site
+database, `state/sites.db` resolved against the working directory and opened
+through appkit's `db` package, of which it is the only writer. It serves each site
 at `/<slug>/` from a tree it unpacks under `cache/` with the host's own `git`
 from repos' bare repository, read-only, by the repository's id and the
 published commit's sha; `cache/` is disposable and rebuilt on demand, never
@@ -23,21 +24,24 @@ says how to make one, and links to an about screen. On a host it runs as
 `/opt/sites/bin/sites` with `/opt/sites` as its working directory and its
 environment from `/opt/sites/etc/env`; a developer runs the same binary from
 the checkout. The module path is `github.com/ikigenba/ikigenba/sites`. It
-requires appkit (`github.com/ikigenba/ikigenba/appkit`) and one SQLite driver
-(see Toolchain), runs the host's `git` (see Toolchain), and uses appkit's
+requires appkit (`github.com/ikigenba/ikigenba/appkit`), runs the host's
+`git` (see Toolchain), and uses appkit's
 packages `page` (the banner, launcher and footer, and the shared static files
 under `/_appkit/`), `identity` (the caller nginx authenticated: required on
 `/mcp`, optional everywhere else, so a guest reaches a site with no identity
 headers), `mcp` (the server mounted at `/mcp`, and the client the tests drive
-it with) and `telemetry` (the event contract, the request middleware, and the
-writer sites' events go through). The contract is the documents in
+it with), `telemetry` (the event contract, the request middleware, and the
+writer sites' events go through) and `db` (the catalog's handle and its
+migrations). The contract is the documents in
 `specs/design/`. This file restates none of it.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
-`go.sum`, and everything under `etc/` (`etc/manifest.toml`, and the nginx
+`go.sum`, the catalog's migrations under `migrations/`, which the root package
+embeds, and everything under `etc/` (`etc/manifest.toml`, and the nginx
 fragment `etc/nginx.conf` if design names one). It never writes `assets/` or
-`share/`. See the `spec` and `build-spec` skills. Everything below is what
+`share/`. `state/` and `cache/` are where a running sites keeps `sites.db`
+and its trees; they are created at run time and never committed. See the `spec` and `build-spec` skills. Everything below is what
 the build run computes the gap and runs the gates against; it is
 human-authored and read-only to the run.
 
@@ -90,25 +94,24 @@ human-authored; the build run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit, at the release `go.mod` requires: one whose `identity` package
-    exports `Optional`, the middleware that lets a guest through with an
-    empty caller. See Adopting appkit below.
-  - `modernc.org/sqlite` `v1.59.0`, the SQLite driver, set with
-    `go get modernc.org/sqlite@v1.59.0`. It and the modules it pulls in are
-    sites' only other dependencies.
+  - appkit `v0.12.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.12.0`: a release whose
+    `identity` package exports `Optional`, the middleware that lets a guest
+    through with an empty caller, and which exports the `db` package. See
+    Adopting appkit below. It and the modules it pulls in are sites' only
+    dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
 - GNU `make`: the developer targets in the `Makefile` (see Build); no gate
   runs through it
 
-**The SQLite driver is auth's.** sites stores its catalog in SQLite. Its
-driver is exactly the one auth and repos use, `modernc.org/sqlite` at the
-version their `go.mod` requires, `v1.59.0`: pure Go, so the release build
-stays cgo-free (gate 3), already approved for the repository, and already in
-the module cache wherever auth builds. Adding any other external dependency —
-a Go git library, a markdown renderer, a MIME database among them — or moving
-this one to another version, needs human approval first.
+**The SQLite driver is appkit's.** sites stores its catalog in SQLite through
+appkit's `db` package, which brings `modernc.org/sqlite`: pure Go, so the
+release build stays cgo-free (gate 3), and already approved for the
+repository. sites neither requires nor imports it directly. Adding any other
+external dependency — a Go git library, a markdown renderer, a MIME database
+among them — needs human approval first.
 
 ### Adopting appkit
 
@@ -143,7 +146,8 @@ These rules govern the unit tests: everything `go test ./...` runs.
 
 - Offline: no network beyond loopback and Unix sockets, no real credentials.
 - Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
+  sleeps to wait for something. Clocks are injected: a test that opens a
+  catalog hands it a `Now` it controls.
 - No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
   temporary directory.
 - Isolated: a test touches only its own temporary directory, never the
@@ -152,11 +156,16 @@ These rules govern the unit tests: everything `go test ./...` runs.
 **The run seam carries the process.** sites binds nothing itself; it serves
 on the listener it is passed. Arguments, environment lookup and removal (the
 `PATH` sites finds `git` on included), the pid, the inherited listener, the
-output streams, the clock, the random source, the working directory and the
-database source come in through the run seam design declares, and tests
-inject them. A test never reads or changes the real environment, clock, or
+output streams, the clock, the random source and the working directory come
+in through the run seam design declares, and tests inject them. A `Run`-level
+test sets `Dir` to a temporary directory of its own, so the catalog lands
+there and never in the checkout. A test never reads or changes the real environment, clock, or
 randomness, and never leaves the inherited-listener step unset, since that
-would take the test process's real descriptor 3. A test learns that the
+would take the test process's real descriptor 3. The one exception is the
+working directory: a test that proves what an empty `Dir`, a relative
+repositories path, or the root package's `Assets`, `Etc` or `Migrations` does
+whatever the working directory is may `t.Chdir` into a temporary directory of
+its own, and such a test does not call `t.Parallel`. A test learns that the
 server is ready the way systemd does: it binds a Unix datagram socket in a
 short temporary directory (`os.MkdirTemp("", ...)`, since a Unix socket path
 is limited to 108 bytes and `t.TempDir()` can exceed it), names it in
@@ -166,16 +175,24 @@ deadline is the behavior, and they keep that wait to a few seconds. The gates
 run offline as an ordinary user, with no systemd.
 
 **The state is an isolated directory.** Each test gives sites a working
-directory, or the database, cache and repositories paths design names,
-inside a test-owned temporary directory, so the catalog, `cache/` and the
-repositories it reads are the test's own; an in-memory SQLite DSN is fine
-where no directory is involved. Tests may create filesystem fixtures inside
-that temporary tree (an absent parent, a file that is not a database, a bare
-repository with a commit the test made, a cache tree the test removed or made
-unwritable); nothing touches `/opt/sites`, `/opt/repos` or a shared file. A
-database or disk failure mid-request is produced by making the test's own
-database or directory fail after the server has it, for example by closing
-the store the test handed it.
+directory, or the cache and repositories paths design names, inside a
+test-owned temporary directory, so the catalog, `cache/` and the repositories
+it reads are the test's own. A test that needs a store opens its own catalog
+with appkit's `db.Open` at a path in its own temporary directory, with
+`sites.Migrations()` and a clock it controls, closes the handle when it ends,
+and builds the store over that handle with `store.New`. Tests may create
+filesystem fixtures inside that temporary tree (a regular file named `state`,
+a file at `state/sites.db` that is not a database, a catalog a test's own
+`db.Open` made and then changed through `DB.Write`, a bare repository with a
+commit the test made, a cache tree the test removed or made unwritable);
+nothing touches `/opt/sites`, `/opt/repos`, the checkout's `state/` or a
+shared file. A catalog failure is provoked with `SetFailing(true)` on the
+handle the store the test handed the server was built over, before a call or
+from a hook design names, never by corrupting the file, removing permissions
+or closing the store. Tests prove sites' use of the catalog, its schema, its
+store and its wiring, never SQLite's own guarantees (atomicity, durability,
+locking) and never appkit's `db` contract (opening, migrations, transactions,
+`db status`), which appkit's own tests prove.
 
 **git is real, and its environment is the test's.** sites reads repositories
 with the host's real `git`, and what it proves is that a repository's commit
@@ -264,8 +281,8 @@ directory, passes it as `exec.Cmd.ExtraFiles[0]` (descriptor 3 in the child),
 and starts the child through
 `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
 `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. The
-child runs in a test-owned temporary working directory, where it creates its
-database and `cache/`, with the repositories directory design names pointed
+child runs in a test-owned temporary working directory, where it creates
+`state/sites.db` and `cache/`, with the repositories directory design names pointed
 at a bare repository fixture in the same temporary tree. Its environment is
 one the test composes, never the developer's: the git environment above, with
 a `PATH` holding git's directory. The test waits for `READY=1`, makes the
