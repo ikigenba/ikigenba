@@ -1,6 +1,6 @@
 # Stories — bootstrap
 
-Running scripts at all: help, version, the manifest, exit codes. scripts is an app of the platform, the suite's script runner: one Go binary that keeps a catalog of each user's scripts, each naming one of their repositories in repos and the ref it runs, runs a script's `main.py` from that ref's commit unpacked into a folder of its own and keeps the run's input, output, files and outcome (`S08`, `S15`), offers nine MCP tools to list, show, create, update, delete and run scripts and to list, read and cancel their runs at `/mcp` (`S05` to `S11`), and serves a catalog of the user's scripts at `/` (`S03`) with a page for each script (`S12`) and for each run (`S13`). On a host it runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory and its environment read from `/opt/scripts/etc/env`; a developer runs the same binary from the checkout. With no command it serves (`S02`); the commands here are what the build asks of it. They serve nothing, run no git and no script, read no repository, and record no event: the trail is what scripts records while it serves (`S02`).
+Running scripts at all: help, version, the manifest, the state of its database, exit codes. scripts is an app of the platform, the suite's script runner: one Go binary that keeps a catalog of each user's scripts, each naming one of their repositories in repos and the ref it runs, runs a script's `main.py` from that ref's commit unpacked into a folder of its own and keeps the run's input, output, files and outcome (`S08`, `S15`), offers nine MCP tools to list, show, create, update, delete and run scripts and to list, read and cancel their runs at `/mcp` (`S05` to `S11`), and serves a catalog of the user's scripts at `/` (`S03`) with a page for each script (`S12`) and for each run (`S13`). On a host it runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory and its environment read from `/opt/scripts/etc/env`; a developer runs the same binary from the checkout. With no command it serves (`S02`); the commands here are what the build, and an operator, ask of it. They serve nothing, run no git and no script, read no repository, and record no event: the trail is what scripts records while it serves (`S02`). scripts keeps its catalog of scripts and the record of every run in its database, the SQLite file `state/scripts.db` under its working directory, which it creates and brings up to date when it starts (`S02`). The database's schema is a sequence of numbered migrations, each with a four-digit version, that the binary carries and applies in order; this scripts carries one, version `0001`.
 
 ## A developer asks which version they have
 
@@ -95,7 +95,8 @@ and pages for scripts and their runs at /, on the socket systemd passes in.
 With no command, serve.
 
 Commands:
-  manifest   print the app manifest
+  manifest    print the app manifest
+  db status   print applied and pending migrations
 
 Options:
   --help      print this help
@@ -103,7 +104,7 @@ Options:
 
 Exit codes:
   0  success
-  1  the server failed
+  1  failure
   2  usage error
 ```
 
@@ -170,3 +171,141 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## An operator checks a database that is up to date
+
+After a deploy, or before one, an operator wants to see the schema the binary expects beside what the database holds: which of the binary's migrations the database has had applied, and when. `scripts db status` prints one line for each version, in ascending order: `<version> applied <applied-at>` for a migration the database has had applied, where `<applied-at>` is when it was applied, in UTC to the microsecond; `<version> pending` for one the binary carries that the database has not had applied; and `<version> unknown <applied-at>` for one the database records that the binary does not carry. It reads `state/scripts.db` relative to its working directory and only looks: it applies nothing and changes nothing. Like `manifest` and `--version`, it needs no socket, reads no environment, and needs neither `git` nor `python3.12` on the `PATH`.
+
+Command:
+
+```
+$ scripts db status
+```
+
+Output:
+
+```
+0001 applied 2026-10-05T14:03:07.123456Z
+```
+
+Exits 0. The line is on stdout; stderr is empty. The time is the one the database records for version `0001`.
+
+Preconditions:
+
+- `bin/scripts` exists.
+- The working directory holds `state/scripts.db`, which a scripts of this version created or brought up to date, applying version `0001` at `2026-10-05T14:03:07.123456Z`. On a host the working directory is `/opt/scripts` and the operator is a user who can read the database.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator checks before the database exists
+
+Before scripts has first started there is no database. `scripts db status` then reports every migration the binary carries as pending, which is what the next start will apply, and creates nothing: neither `state/` nor `state/scripts.db`.
+
+Command:
+
+```
+$ scripts db status
+```
+
+Output:
+
+```
+0001 pending
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `bin/scripts` exists.
+- `state/scripts.db` does not exist in the working directory; `state/` may be absent too.
+
+Postconditions:
+
+- Nothing has changed. No file or directory was created.
+
+## An operator checks a database a newer scripts has upgraded
+
+A newer scripts has applied a migration this binary does not carry, as when a deploy is rolled back to an older binary over a database the newer one upgraded. This scripts cannot serve such a database (`S02`), and `scripts db status` shows why: it prints every line as usual, the version it does not know among them as `unknown`, then says so on stderr and fails.
+
+Command:
+
+```
+$ scripts db status
+```
+
+Output:
+
+```
+0001 applied 2026-10-05T14:03:07.123456Z
+0002 unknown 2026-10-06T09:12:44.000017Z
+scripts: <reason>
+```
+
+Exits 1. The `0001` and `0002` lines are on stdout; the last line is on stderr. `<reason>` names the unknown version, `0002`.
+
+Preconditions:
+
+- `bin/scripts` exists, carrying only migration `0001`.
+- The working directory holds `state/scripts.db`, which records version `0001` applied at `2026-10-05T14:03:07.123456Z` and version `0002` applied at `2026-10-06T09:12:44.000017Z`.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator checks a database that cannot be read
+
+`state/scripts.db` exists but is not a database scripts can read: its contents are not a SQLite database, or it is a directory, or the operator cannot read it. scripts prints no lines, since it cannot tell what the database holds, and says why on stderr.
+
+Command:
+
+```
+$ scripts db status
+```
+
+Output:
+
+```
+scripts: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` is the underlying failure.
+
+Preconditions:
+
+- `bin/scripts` exists.
+- The working directory holds `state/scripts.db`, a file whose contents are not a SQLite database.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator mistypes the database command
+
+`db` takes exactly one command, `status`, and `status` takes no arguments. The argument scripts complains about is the first one it does not take: `scripts db` alone names `db`, which is not a command by itself; `scripts db bogus` names `bogus`; and `scripts db status extra` names `extra`.
+
+Command:
+
+```
+$ scripts db bogus
+```
+
+Output:
+
+```
+scripts: unknown command 'bogus'
+
+see 'scripts --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty. `scripts db` fails the same way with `scripts: unknown command 'db'`, and `scripts db status extra` with `scripts: unknown command 'extra'`.
+
+Preconditions:
+
+- `bin/scripts` exists.
+
+Postconditions:
+
+- Nothing has changed. No database was read, and no file or directory was created.

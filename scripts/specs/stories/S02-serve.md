@@ -4,7 +4,7 @@ The bare binary serves, and it serves only on a listening socket it inherits: sc
 
 scripts' environment also carries its seven settings, each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `etc/env`, and an operator changes them there. `REPOS_DIR`, `../repos/state/repos`, is the directory holding repos' bare repositories, each as `<repository id>.git`; a relative value is resolved against scripts' working directory, so on a host it is `/opt/scripts/../repos/state/repos`, which is `/opt/repos/state/repos`, and an absolute one is used as it is (`S20`). scripts only reads there, with git, and never writes there. `TREE_MAX_BYTES`, 268435456, a positive whole number of bytes, is the largest a run's unpacked tree may be, counted as the sum of its files' sizes (`S17`). `OUTPUT_MAX_BYTES`, 1048576, a positive whole number of bytes, is how much of a run's standard output, and separately of its standard error, is kept (`S17`). `OPERATION_SECONDS`, 600, a positive whole number of seconds, is the longest one git run may take before scripts kills it (`S17`). `SCRIPT_SECONDS`, 600, a positive whole number of seconds, is the longest a script may run before scripts kills it (`S17`). `RUN_KEEP_DAYS`, 15, a positive whole number of days, is how long a run is kept, and `RUN_KEEP_COUNT`, 10, a positive whole number of runs, is how many of each script's newest runs are kept whatever their age (`S19`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives scripts. The file lists the platform's services: it feeds the launcher in the banner of scripts' pages (`S03`), it holds the description scripts' MCP endpoint gives its clients as instructions (`S05`), its entry named `telemetry` is where scripts sends its trail (below), and its path is handed, as it is, to every script scripts runs, which finds its siblings there (`S15`). scripts reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. scripts never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, scripts starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
 
-scripts runs the host's own `git` for every read of a repository — reading a repository's owner and name, resolving a ref, unpacking a commit's tree with `git archive` — and has no git of its own, and it runs every script with the host's own `python3.12` (`S15`, `S22`); both are dependencies of the host. scripts checks its environment first — `DRAIN_SECONDS`, then `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, in that order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, then that one named `python3.12` is (`S22`), and only then opens its SQLite database, the catalog of scripts and the record of every run, at `state/scripts.db`, relative to its working directory, creating `state/` and the database on its first start, and then the directory that holds the run folders, `state/runs/`, creating it when it is absent. It then marks every run its catalog still records as `running` as `killed` (`S18`) and prunes the runs past keeping (`S19`). Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after scripts, and a repository is looked for only when a tool, a run or a page needs it (`S21`). So a start refused as a usage error, or for want of git or `python3.12`, has touched nothing, not even the database. scripts is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); the run folders under `state/runs/` are not replicated (`S20`).
+scripts runs the host's own `git` for every read of a repository — reading a repository's owner and name, resolving a ref, unpacking a commit's tree with `git archive` — and has no git of its own, and it runs every script with the host's own `python3.12` (`S15`, `S22`); both are dependencies of the host. scripts checks its environment first — `DRAIN_SECONDS`, then `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, in that order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, then that one named `python3.12` is (`S22`), and only then opens its SQLite database, the catalog of scripts and the record of every run, at `state/scripts.db`, relative to its working directory, creating `state/` and the database on its first start, and brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the run folders, `state/runs/`, creating it when it is absent. It then marks every run its catalog still records as `running` as `killed` (`S18`) and prunes the runs past keeping (`S19`). Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after scripts, and a repository is looked for only when a tool, a run or a page needs it (`S21`). So a start refused as a usage error, or for want of git or `python3.12`, has touched nothing, not even the database. A database scripts cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `scripts: cannot open database state/scripts.db: <reason>`, and exit status 1. scripts is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); the run folders under `state/runs/` are not replicated (`S20`).
 
 scripts keeps a trail: it records what it does as events it sends to the platform's telemetry service, exactly as sites does, where an operator, or an agent working for one, follows what happened from one thing they know — a request id, a user, a script's id, a run's id, or a time. scripts finds telemetry in the services file `IKIGENBA_SERVICES` names, as the entry named `telemetry`, and sends each event to that entry's socket; it looks the entry up afresh for every event, so a telemetry installed after scripts started is found without a restart. What telemetry does with an event is told in telemetry's own stories. The stories here show each event as the JSON object telemetry receives:
 
@@ -54,7 +54,7 @@ Preconditions:
 - `/opt/scripts/etc/env` sets `DRAIN_SECONDS` and each of the seven settings to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
 - `git` and `python3.12` are installed on the host, on the `PATH` the service runs with.
 - `ikigenba-scripts.socket` is active, so `/run/ikigenba/scripts.sock` exists and accepts connections.
-- `/opt/scripts/state/scripts.db` exists, from an earlier start, and holds the scripts `nightly-report`, `sync-crm`, `rotate-keys`, `backfill`, and `digest` and their runs; none of the runs is recorded as `running`, and none is past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep. `/opt/scripts/state/runs/` exists and holds their run folders.
+- `/opt/scripts/state/scripts.db` exists, from an earlier start, records no migration this scripts does not carry, and holds the scripts `nightly-report`, `sync-crm`, `rotate-keys`, `backfill`, and `digest` and their runs; none of the runs is recorded as `running`, and none is past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep. `/opt/scripts/state/runs/` exists and holds their run folders.
 - `ikigenba-scripts.service` is not running.
 - The host's services file lists the telemetry service, which takes every event.
 
@@ -62,7 +62,7 @@ Postconditions:
 
 - `ikigenba-scripts.service` is `active`, and scripts is serving on `/run/ikigenba/scripts.sock`: a connection there, and every connection queued before scripts started, is answered by scripts.
 - scripts listens on no other socket and no port.
-- `/opt/scripts/state/scripts.db` is the database it opened, unchanged by the start; every run folder under `/opt/scripts/state/runs/` is as it was. No git and no script ran.
+- `/opt/scripts/state/scripts.db` is the database it opened, now up to date, and every script and run it held is still there, unchanged by the start; every run folder under `/opt/scripts/state/runs/` is as it was. No git and no script ran.
 - telemetry has received one event from scripts, with no request id and no user, whose `version` is the version `scripts --version` prints (`S01`):
 
   ```
@@ -74,7 +74,7 @@ Postconditions:
 
 ## The host starts scripts for the first time
 
-Nothing of scripts' state exists yet. scripts creates the `state/` directory if it is absent, then creates `state/scripts.db` and its schema, then creates `state/runs/`, empty, and serves with a catalog that names no script and no run. The same start succeeds when `state/` already exists and only the database or `state/runs/` is absent. Neither a fresh deployment nor any other first start needs a directory created beforehand. The paths are relative to scripts' working directory.
+Nothing of scripts' state exists yet. scripts creates the `state/` directory if it is absent, then creates `state/scripts.db` and applies every migration it carries, then creates `state/runs/`, empty, and serves with a catalog that names no script and no run. The same start succeeds when `state/` already exists and only the database or `state/runs/` is absent. Neither a fresh deployment nor any other first start needs a directory created beforehand. The paths are relative to scripts' working directory.
 
 Command:
 
@@ -102,9 +102,42 @@ Preconditions:
 Postconditions:
 
 - `state/` exists, created by scripts if it was absent.
-- `state/scripts.db` now exists, with its schema, created by this start, and names no script and no run: `list` answers `{"scripts":[]}` for every caller (`S07`).
+- `state/scripts.db` now exists, created by this start, and is up to date: `scripts db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`). It names no script and no run: `list` answers `{"scripts":[]}` for every caller (`S07`).
 - `state/runs/` now exists, empty, created by this start.
 - scripts is serving on the socket it was passed, and on no other.
+- telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
+- It keeps running until it is signalled.
+
+## The host starts scripts over a catalog kept before its migrations
+
+A scripts from before the database carried migrations kept its catalog in `state/scripts.db` with the same schema, but the database records no migration at all. The baseline migration, `0001`, is that same schema, and applying it to such a database changes nothing in it but the record that `0001` has been applied. So a deploy of this scripts over that database needs no step of its own: scripts starts, records `0001` as applied, and serves every script and run the old one kept.
+
+Command:
+
+```
+$ scripts
+```
+
+Output:
+
+```
+```
+
+Does not exit. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `NOTIFY_SOCKET` is unset, so scripts reports readiness to nobody.
+- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
+- `state/scripts.db` holds the catalog a scripts from before migrations kept: scripts and their runs, none of which is recorded as `running` and none past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep, and records no migration; `state/runs/` holds their run folders. `scripts db status` there prints `0001 pending` (`S01`).
+
+Postconditions:
+
+- scripts is serving on the socket it was passed, over the same `state/scripts.db`, now up to date: `scripts db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`).
+- Every script and run the database held is still there, unchanged: `list`, `show`, `runs` and `result` answer each as they did before the start (`S07`, `S11`), and every run folder under `state/runs/` is as it was.
 - telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
 - It keeps running until it is signalled.
 
@@ -197,6 +230,35 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `state/scripts.db` is as it was, and `state/runs/` is as it was, or still absent. scripts served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host starts scripts with a database a newer scripts has upgraded
+
+A deploy rolled back to an older binary leaves it over a database a newer scripts has upgraded: the database records a migration this scripts does not carry, so its schema is one this scripts does not understand. Rather than read it, scripts refuses to start, naming the version it does not know, and the rollback fails loudly instead of serving wrong answers. There is no way back down a migration; restoring the database from before the upgrade is the rollback. `scripts db status` shows the version as `unknown` (`S01`).
+
+Command:
+
+```
+$ scripts
+```
+
+Output:
+
+```
+scripts: cannot open database state/scripts.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this scripts does not carry, zero-padded to four digits: `0002`.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`, carrying only migration `0001`, and so do `git` and `python3.12`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `state/scripts.db` exists and records versions `0001` and `0002` as applied.
+
+Postconditions:
+
+- Nothing has changed: the database still records `0001` and `0002` and holds the scripts and runs it held, none marked `killed` and none pruned, and `state/runs/` is as it was, or still absent. scripts served nothing, ran no git and no script, told systemd nothing, and sent telemetry nothing.
 
 ## The host starts scripts where its runs directory cannot be created
 
@@ -370,7 +432,7 @@ Postconditions:
 
 ## The host restarts scripts during a deploy
 
-A deploy replaces scripts' binary and restarts `ikigenba-scripts.service` alone; `ikigenba-scripts.socket` stays up throughout. Between the old scripts exiting and the new one being ready, connections wait in the socket's queue instead of being refused, so a user or the gateway never sees scripts missing. That holds because scripts finishes what it accepted before it exits and leaves the socket where systemd put it. The new scripts runs no git and no script at start, so the wait is short; the run folders the old scripts left are still under `state/runs/`, and the new one shows them as they are. A deploy while a run is running kills that run; that is told in `S18`, and in this story none is running.
+A deploy replaces scripts' binary and restarts `ikigenba-scripts.service` alone; `ikigenba-scripts.socket` stays up throughout. Between the old scripts exiting and the new one being ready, connections wait in the socket's queue instead of being refused, so a user or the gateway never sees scripts missing. That holds because scripts finishes what it accepted before it exits and leaves the socket where systemd put it. The new scripts runs no git and no script at start, so the wait is short; the run folders the old scripts left are still under `state/runs/`, and the new one shows them as they are. The catalog outlives the deploy: the new scripts opens the same `state/scripts.db`, bringing it up to date first when the new binary carries a migration the database has not had, and serves every script and run the old one kept. A deploy while a run is running kills that run; that is told in `S18`, and in this story none is running.
 
 Command:
 
