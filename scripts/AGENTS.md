@@ -29,8 +29,8 @@ launcher and footer, and the shared static files under `/_appkit/`),
 `identity` (the caller nginx authenticated, required on every route), `mcp`
 (the server mounted at `/mcp`, and the client the tests drive it with),
 `telemetry` (the event contract, the request middleware, and the writer
-scripts' events go through) and `db` (the catalog's handle and its
-migrations). The contract is the
+scripts' events go through), `db` (the catalog's handle and its
+migrations), and `events` (the event bus). The contract is the
 documents in `specs/design/`. This file restates none of it.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
@@ -103,8 +103,8 @@ run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.12.1`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.12.1`: a release that
+  - appkit `v0.13.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.13.0`: a release that
     exports the `db` package. See Adopting appkit below.
   - `golang.org/x/sys`. It, appkit and the modules they pull in are scripts'
     only dependencies.

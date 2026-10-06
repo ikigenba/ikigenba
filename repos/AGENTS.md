@@ -1,6 +1,6 @@
 # repos
 
-repos is the suite's home for git repositories, served over smart HTTP and MCP. One Go binary serves `repos.<host>` on the socket it is passed as descriptor 3, behind the host's nginx. It keeps each user's repositories as bare git repositories under `state/repos/`, catalogued in its own SQLite database, `state/repos.db`, which it opens through appkit's `db` package and is the only writer of, serves them at `/<name>.git/` through the host's `git http-backend`, and offers six MCP tools at `/mcp` that agents reach through the gateway. It is built on appkit for pages, identity, MCP, telemetry and the catalog's database (`db`: its handle and its migrations). The contract is `specs/design/`; this file restates none of it.
+repos is the suite's home for git repositories, served over smart HTTP and MCP. One Go binary serves `repos.<host>` on the socket it is passed as descriptor 3, behind the host's nginx. It keeps each user's repositories as bare git repositories under `state/repos/`, catalogued in its own SQLite database, `state/repos.db`, which it opens through appkit's `db` package and is the only writer of, serves them at `/<name>.git/` through the host's `git http-backend`, and offers six MCP tools at `/mcp` that agents reach through the gateway. It is built on appkit for pages, identity, MCP, telemetry, the event bus (`events`) and the catalog's database (`db`: its handle and its migrations). The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -21,7 +21,7 @@ repos holds no stylesheet, fonts or licences; appkit's `page` package serves the
 - Go 1.26 or later.
 - A C compiler cgo can use, such as `gcc`: `go test -race` needs it (gate 4). The release build is cgo-free (gate 3).
 - `git` 2.x on the `PATH`, with `git http-backend`. repos runs the host's git for every repository operation and links no git library; opsctl provisions it on a host, and the tests run it too, so gate 4 fails without it.
-- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit `v0.12.1`, set with `go get github.com/ikigenba/ikigenba/appkit@v0.12.1`, a release that exports the `db` package (see Adopting appkit), and `golang.org/x/sys`.
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit `v0.13.0`, set with `go get github.com/ikigenba/ikigenba/appkit@v0.13.0`, a release that exports the `db` package (see Adopting appkit), and `golang.org/x/sys`.
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
