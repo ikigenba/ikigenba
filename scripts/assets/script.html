@@ -15,7 +15,7 @@
      when the run failed to start) and .Exit (the exit code as text, empty
      when the process did not exit by itself); .Subscriptions ([]string, the
      event names the script is subscribed to, sorted by name). Status words and kinds:
-     "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
+     "queued" and "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
      out" and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
      "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts") then
      li[aria-current="page"] (text .Script.Name, no link); h1 with text

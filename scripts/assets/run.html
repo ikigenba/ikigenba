@@ -4,7 +4,7 @@
      page is loaded. Data: .Banner (a page.Banner, for banner and footer);
      .Script, the run's script, with .Name and .URL ("/<name>/"); .Run, with
      .ID (its run_ id), .URL (this page's path), .Status (the status word),
-     .Kind (its kind), .Running (bool: still running), .Commit (the full
+     .Kind (its kind), .Running (bool: queued or running), .Notice (the notice's first word, "Queued" or "Running"; empty when not .Running), .Commit (the full
      commit hash, empty when the ref never resolved), .Ref (the ref as named
      when the run started), .Started ("2006-01-02 15:04:05 UTC") and
      .StartedAt (RFC 3339 UTC), .Finished and .FinishedAt (likewise, empty
@@ -23,7 +23,7 @@
      the file is empty, and .URL, its download path); .Files, what the run
      wrote under out/, sorted by path, each with .Path (relative to out/),
      .Size as shown and .URL, its download path. Status words and kinds:
-     "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
+     "queued" and "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
      out" and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
      "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts"), li
      a[href=.Script.URL] (text .Script.Name), then li[aria-current="page"]
@@ -32,7 +32,7 @@
      span.muted holding "started" and time[datetime=.StartedAt] (text
      .Started), then " · " and .Duration when there is one, or, when
      .Failure is set, the time alone; when .Running,
-     div#running.alert.quiet[data-kind=info] (strong "Running", text "The
+     div#running.alert.quiet[data-kind=info] (strong#notice, text .Notice, then text "The
      page does not stream. Reload it to see more output.") and
      a#reload.button (href .Run.URL, text "Reload"); when .Failure is set,
      div#failure.alert[data-kind=err] (strong .Failure.Title, p
@@ -76,7 +76,7 @@
 </nav>
 {{with .Run}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster"><span class="status" data-kind="{{.Kind}}">{{.Status}}</span> <span class="muted">{{if .Failure}}<time datetime="{{.StartedAt}}">{{.Started}}</time>{{else}}started <time datetime="{{.StartedAt}}">{{.Started}}</time>{{with .Duration}} · {{.}}{{end}}{{end}}</span></p>
-{{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong>Running</strong><p>The page does not stream. Reload it to see more output.</p></div>
+{{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">{{.Notice}}</strong><p>The page does not stream. Reload it to see more output.</p></div>
 <p><a id="reload" class="button secondary small" href="{{.URL}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
 {{end}}{{with .Failure}}<div id="failure" class="alert" data-kind="err"><strong>{{.Title}}</strong><p>{{.Reason}}</p></div>
 {{end}}{{if .FilesGone}}<div id="files-gone" class="alert quiet"><strong>Files no longer kept</strong><p>This run's folder is gone, so its input, output and files cannot be shown. The record stays.</p></div>
