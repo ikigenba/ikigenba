@@ -3,7 +3,7 @@ module github.com/ikigenba/ikigenba/repos
 go 1.26
 
 require (
-	github.com/ikigenba/ikigenba/appkit v0.10.0
+	github.com/ikigenba/ikigenba/appkit v0.12.1
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.59.0
 )
