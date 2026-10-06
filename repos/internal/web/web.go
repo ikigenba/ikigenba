@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -32,6 +33,7 @@ type Config struct {
 	Git          *git.Git
 	Limits       *limits.Limits
 	Telemetry    *telemetry.Writer
+	Events       *events.Emitter
 }
 
 // Handler registers the tools and wraps every route in the common middleware.
@@ -39,7 +41,7 @@ func Handler(cfg Config) http.Handler {
 	tools.Register(cfg.MCP, tools.Config{Store: cfg.Store, Limits: cfg.Limits, Telemetry: cfg.Telemetry})
 	pages := newPages(cfg)
 	static := page.Static()
-	gitHTTP := smarthttp.Handler(smarthttp.Config{Store: cfg.Store, Git: cfg.Git, Limits: cfg.Limits, Telemetry: cfg.Telemetry})
+	gitHTTP := smarthttp.Handler(smarthttp.Config{Store: cfg.Store, Git: cfg.Git, Limits: cfg.Limits, Telemetry: cfg.Telemetry, Events: cfg.Events})
 	routes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/" || r.URL.Path == "/about":
@@ -59,7 +61,19 @@ func Handler(cfg Config) http.Handler {
 			}
 		}
 	})
-	return telemetry.Middleware(cfg.Telemetry, identity.Require(routes))
+	authenticated := events.Middleware(identity.Require(routes))
+	delivery := events.DeliveryHandler(nil)
+	declarations := events.DeclarationsHandler(cfg.Events, nil)
+	return telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/events":
+			delivery.ServeHTTP(w, r)
+		case "/declarations":
+			declarations.ServeHTTP(w, r)
+		default:
+			authenticated.ServeHTTP(w, r)
+		}
+	}))
 }
 
 func isGitPath(path string) bool {

@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -640,7 +641,9 @@ func TestMutationDeleteBusyFetchAndPushLeaveRealGitRunning(t *testing.T) {
 			g, err := git.Find(filepath.Dir(f.GitPath), func() []string { return append([]string(nil), env...) })
 			toolsMust(t, err)
 			f.Git = g
-			handler := identity.Require(smarthttp.Handler(smarthttp.Config{Store: f.Store, Git: f.Git, Limits: f.Limits, Telemetry: f.Writer}))
+			bus := events.New(events.Config{Service: "repos", Sink: &events.Capture{}, Stderr: io.Discard, Now: f.StoreConfig.Now, Rand: toolsIDSource(), Telemetry: f.Writer, Emits: smarthttp.Emits()})
+			t.Cleanup(func() { bus.Shutdown(context.Background()) })
+			handler := identity.Require(smarthttp.Handler(smarthttp.Config{Store: f.Store, Git: f.Git, Limits: f.Limits, Telemetry: f.Writer, Events: bus}))
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				defer close(ended)
 				handler.ServeHTTP(w, request)

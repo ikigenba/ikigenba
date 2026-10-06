@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -67,14 +68,14 @@ func (o *serveOutput) lines() []string {
 	return append([]string(nil), o.writes...)
 }
 
-// R-RAEJ-R7NX: every captured or undelivered event in the serve flows uses D11's vocabulary.
+// R-E436-7IWS: every captured or undelivered event in the serve flows uses D11's vocabulary.
 func assertServeEventName(t *testing.T, name string) {
 	t.Helper()
 	switch name {
 	case "request.started", "request.finished", "tool.called",
 		"repo.created", "repo.renamed", "repo.deleted", "repo.pushed", "repo.fetched",
 		"operation.waited", "operation.rejected", "operation.timed_out",
-		"maintenance.finished", "repo.unavailable", "service.started", "service.stopping":
+		"maintenance.finished", "repo.unavailable", "service.started", "service.stopping", "event.lost":
 	default:
 		t.Errorf("unexpected event name %q", name)
 	}
@@ -180,7 +181,7 @@ func newServeFixture(t *testing.T, knownGit ...string) *serveFixture {
 	}
 	f.env["PATH"] = filepath.Dir(f.gitPath)
 	f.gitEnv = []string{"PATH=" + filepath.Dir(f.gitPath), "HOME=" + f.dir, "XDG_CONFIG_HOME=" + f.dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=", "GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.test", "GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.test", "GIT_AUTHOR_DATE=2001-02-03T04:05:06Z", "GIT_COMMITTER_DATE=2001-02-03T04:05:06Z"}
-	f.p = cli.Process{Pid: 71, Dir: f.dir, Stdout: f.stdout, Stderr: f.stderr, Sink: f.capture, Rand: f.random,
+	f.p = cli.Process{Pid: 71, Dir: f.dir, Stdout: f.stdout, Stderr: f.stderr, Sink: f.capture, EventSink: &events.Capture{}, Rand: f.random,
 		LookupEnv: func(key string) (string, bool) {
 			f.envMu.Lock()
 			defer f.envMu.Unlock()

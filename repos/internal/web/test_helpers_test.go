@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
@@ -23,6 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/settings"
+	"github.com/ikigenba/ikigenba/repos/internal/smarthttp"
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 )
 
@@ -68,6 +70,8 @@ type webFixture struct {
 	bannerCalls atomic.Int64
 	capture     *telemetry.Capture
 	stderr      *webBuffer
+	busCapture  *events.Capture
+	busStderr   *webBuffer
 }
 
 func newWebFixture(t *testing.T) *webFixture {
@@ -106,6 +110,8 @@ func newWebFixture(t *testing.T) *webFixture {
 		return page.Banner{Service: ServiceName, Version: "fixture-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
 	f.setWriter(t, f.capture, random, now)
+	f.busCapture, f.busStderr = &events.Capture{}, &webBuffer{}
+	f.setEmitter(t, f.busCapture)
 	t.Cleanup(func() {
 		if err := f.db.Close(); err != nil {
 			t.Error(err)
@@ -177,4 +183,24 @@ func webServices(t *testing.T, path, data string) {
 	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (f *webFixture) setEmitter(t *testing.T, sink events.Sink) {
+	t.Helper()
+	f.cfg.Events = events.New(events.Config{Service: ServiceName, Sink: sink, Stderr: f.busStderr, Now: func() time.Time { return time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC) }, Rand: &webRandom{}, Telemetry: f.cfg.Telemetry, Emits: smarthttp.Emits(), Sleep: func(ctx context.Context, _ time.Duration) { <-ctx.Done() }})
+	emitter := f.cfg.Events
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		emitter.Shutdown(ctx)
+	})
+}
+func (f *webFixture) busEvents(t *testing.T) []events.Event {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err := f.cfg.Events.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return f.busCapture.Events()
 }

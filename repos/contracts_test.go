@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -61,9 +62,13 @@ func TestEmbeddedAssets(t *testing.T) {
 	}
 }
 
-// R-F240-C369 R-F3BW-PUWY R-F4JT-3MNN: Compare embedded deployment files to
+// R-F240-C369 R-F3BW-PUWY R-F4JT-3MNN R-DATL-1144: Compare embedded deployment files to
 // the publicly consumed constants, without opening the checkout.
 func TestEmbeddedDeploymentFiles(t *testing.T) {
+	const nginx = cli.NginxConf + ""
+	if nginx != "client_max_body_size    0;\nproxy_request_buffering off;\nproxy_http_version      1.1;\nproxy_buffering         on;\nproxy_read_timeout      3600s;\nproxy_send_timeout      3600s;\nlocation = /events { return 404; }\nlocation = /declarations { return 404; }\n" {
+		t.Fatal("nginx fragment changed")
+	}
 	got := files(t, repos.Etc(), []string{"manifest.toml", "nginx.conf"})
 	if string(got["manifest.toml"]) != cli.Manifest {
 		t.Error("embedded manifest differs from Manifest")
@@ -127,6 +132,7 @@ type contractFixture struct {
 	git     *repogit.Git
 	store   *store.Store
 	limits  *limits.Limits
+	bus     *events.Emitter
 	writer  *telemetry.Writer
 	capture *telemetry.Capture
 }
@@ -166,7 +172,9 @@ func newContractFixture(t *testing.T) *contractFixture {
 	f.limits = limits.New(settings.Defaults(), limits.Clock{Now: contractNow, After: contractAfter})
 	f.writer = telemetry.New(telemetry.Config{Service: web.ServiceName, Version: cli.Version, Sink: f.capture,
 		Stderr: io.Discard, Now: contractNow, Rand: &contractRandom{}, Sleep: func(context.Context, time.Duration) {}})
+	f.bus = events.New(events.Config{Service: web.ServiceName, Sink: &events.Capture{}, Stderr: io.Discard, Now: contractNow, Rand: &contractRandom{}, Telemetry: f.writer, Emits: smarthttp.Emits()})
 	t.Cleanup(func() {
+		f.bus.Shutdown(context.Background())
 		f.writer.Shutdown(context.Background(), "test complete")
 		if err := d.Close(); err != nil {
 			t.Error(err)
@@ -443,7 +451,7 @@ func TestClonePublicContract(t *testing.T) {
 	}
 }
 
-// R-SK41-8CAY R-SLBX-M41N R-SMJT-ZVSC R-TH1B-K5BP R-TJH4-BOT3:
+// R-SK41-8CAY R-SLBX-M41N R-TJH4-BOT3:
 // Construct the exact exported configs and serve a route and MCP discovery.
 func TestHandlerPublicContracts(t *testing.T) {
 	const name = web.ServiceName + ""
@@ -453,7 +461,7 @@ func TestHandlerPublicContracts(t *testing.T) {
 	}
 	f := newContractFixture(t)
 	mcpServer := mcp.NewServer(mcp.ServerConfig{Name: name, Version: cli.Version, Telemetry: f.writer})
-	h := web.Handler(web.Config{Banner: func(u page.User) page.Banner { return page.Banner{Service: name, Version: cli.Version, Email: u.Email} }, MCP: mcpServer, ServicesPath: filepath.Join(f.dir, "services.json"), Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer})
+	h := web.Handler(web.Config{Banner: func(u page.User) page.Banner { return page.Banner{Service: name, Version: cli.Version, Email: u.Email} }, MCP: mcpServer, ServicesPath: filepath.Join(f.dir, "services.json"), Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer, Events: f.bus})
 	r := httptest.NewRequest(http.MethodGet, "http://fixture.test/", nil)
 	r.Header.Set("X-User-Id", "owner")
 	rec := httptest.NewRecorder()
@@ -461,7 +469,7 @@ func TestHandlerPublicContracts(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("landing=%d: %s", rec.Code, rec.Body.String())
 	}
-	smart := smarthttp.Handler(smarthttp.Config{Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer})
+	smart := smarthttp.Handler(smarthttp.Config{Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer, Events: f.bus})
 	rec = httptest.NewRecorder()
 	smart.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://fixture.test/missing.git/info/refs?service=git-upload-pack", nil))
 	if rec.Code == http.StatusOK {

@@ -190,7 +190,7 @@ func noise(n int) string {
 }
 
 func TestDynamicPackLimitAndRejectionEvents(t *testing.T) {
-	// R-XDNC-RTG4 R-969O-PS2H R-99XD-V3AK
+	// R-XDNC-RTG4 R-969O-PS2H R-99XD-V3AK R-ECMG-VX3N
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
@@ -217,6 +217,7 @@ func TestDynamicPackLimitAndRejectionEvents(t *testing.T) {
 	same(t, events[0].RequestID, "rejected")
 	same(t, events[0].User, "alice")
 	same(t, events[0].Attrs, telemetry.Attrs{"repo": repo.ID, "operation": "push", "limit": "push_max_bytes"})
+	assertBusMatches(f)
 	f.settings.PushMaxBytes = 1024 * 1024
 	f.resetLimits()
 	large := f.server()
@@ -235,6 +236,7 @@ func TestDynamicPackLimitAndRejectionEvents(t *testing.T) {
 			t.Fatal("wrong push limit rejection")
 		}
 	}
+	assertBusMatches(f)
 }
 
 func TestSizePreflightAndOvershootFetch(t *testing.T) {

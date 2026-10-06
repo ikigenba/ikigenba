@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/server"
 )
 
-// R-Q9TK-A3F3 R-QB1G-NV5S R-KTZG-UF5R R-QJKR-C9CN R-4FLE-JOQW
+// R-Q9TK-A3F3 R-QB1G-NV5S R-3TO0-YS59 R-QJKR-C9CN R-4FLE-JOQW
 func TestServeGracefulPushAndImmediateQueuedDrain(t *testing.T) {
 	for _, duration := range []string{"1", "9999999999999999999999999"} {
 		t.Run(duration, func(t *testing.T) {
@@ -330,7 +330,7 @@ func TestServeDeadlineFallbackBeforeClosingAndGitCleanup(t *testing.T) {
 	}
 }
 
-// R-KTZG-UF5R R-QJKR-C9CN
+// R-3TO0-YS59 R-QJKR-C9CN
 func TestServeNoNotifyStaysAliveAndFinishesWithoutDeadlineWait(t *testing.T) {
 	f := newServeFixture(t)
 	started := make(chan struct{})

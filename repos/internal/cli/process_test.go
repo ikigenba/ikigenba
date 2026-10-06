@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -16,6 +17,11 @@ import (
 )
 
 type forbiddenEffects struct{}
+type forbiddenBus struct{}
+
+func (forbiddenBus) Deliver(context.Context, events.Event) error {
+	panic("command delivered bus event")
+}
 
 func (forbiddenEffects) Read([]byte) (int, error) {
 	panic("command read randomness")
@@ -47,7 +53,7 @@ func untouchedProcess(args []string, out, diagnostic io.Writer, dir string) cli.
 		After: func(time.Duration) <-chan time.Time {
 			panic("command created a timer")
 		},
-		Rand: forbiddenEffects{}, Dir: dir, Sink: forbiddenEffects{},
+		Rand: forbiddenEffects{}, Dir: dir, Sink: forbiddenEffects{}, EventSink: forbiddenBus{},
 		Banner: func(page.User) page.Banner {
 			panic("command called banner source")
 		},
@@ -57,7 +63,7 @@ func untouchedProcess(args []string, out, diagnostic io.Writer, dir string) cli.
 	}
 }
 
-// R-RAID-H7PG R-Y1DA-2JWV
+// R-D2AA-CMX9 R-DC1H-ESUT
 func TestProcessContractAndUntouchedCommandSeams(t *testing.T) {
 	api := struct {
 		Run func(context.Context, cli.Process) int

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -35,6 +36,7 @@ import (
 	repogit "github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/settings"
+	"github.com/ikigenba/ikigenba/repos/internal/smarthttp"
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 	"github.com/ikigenba/ikigenba/repos/internal/web"
 )
@@ -422,7 +424,7 @@ func (s *eventSink) Deliver(ctx context.Context, event telemetry.Event) error {
 	return s.failure
 }
 
-// R-GTMI-EQAJ R-S64N-K6TA R-GUUE-SI18 R-GW2B-69RX: Drive the entire run,
+// R-GTMI-EQAJ R-S64N-K6TA R-GUUE-SI18 R-GW2B-69RX R-EGA6-18BQ R-3W3T-QBMN: Drive the entire run,
 // inspect every delivery attempt and stderr, and inspect every regular state file.
 func TestRunDoesNotExportCredentials(t *testing.T) {
 	for _, sinkMode := range []string{"delivered", "failed", "rejected"} {
@@ -461,12 +463,19 @@ func TestRunDoesNotExportCredentials(t *testing.T) {
 			defer cancel(errors.New("SIGTERM"))
 			var stderr bytes.Buffer
 			sink := &eventSink{}
+			busSink := &busSink{}
+			var clockMu sync.Mutex
+			current := credentialTime
+			now := func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return current }
+			sleep := func(_ context.Context, d time.Duration) { clockMu.Lock(); current = current.Add(d); clockMu.Unlock() }
 			if sinkMode != "delivered" {
 				// Sink errors may themselves carry secrets; Run must still write
 				// only the safe event, never the sink's error text.
 				sink.failure = errors.New("test sink refuses " + cs[0].header)
+				busSink.failure = sink.failure
 				if sinkMode == "rejected" {
 					sink.failure = errors.Join(telemetry.ErrRejected, sink.failure)
+					busSink.failure = errors.Join(events.ErrRejected, busSink.failure)
 				}
 			}
 			finished := make(chan int, 1)
@@ -482,8 +491,8 @@ func TestRunDoesNotExportCredentials(t *testing.T) {
 					},
 					Environ: func() []string { return append([]string(nil), env...) }, Pid: 42,
 					Stdout: io.Discard, Stderr: &stderr, Inherit: func(uintptr) (net.Listener, error) { return ln, nil },
-					Now: credentialClock, After: credentialAfter, Sleep: func(context.Context, time.Duration) {},
-					Rand: &deterministicBytes{}, Dir: dir, Sink: sink,
+					Now: now, After: credentialAfter, Sleep: sleep,
+					Rand: &deterministicBytes{}, Dir: dir, Sink: sink, EventSink: busSink,
 					Banner: page.New(web.ServiceName, cli.Version).Banner,
 					MCP: func(w *telemetry.Writer) *mcp.Server {
 						return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w})
@@ -562,6 +571,23 @@ func TestRunDoesNotExportCredentials(t *testing.T) {
 				t.Fatal("failed deliveries did not exercise stderr")
 			}
 			assertEventTraffic(t, events)
+			busEvents := busSink.capture.Events()
+			if len(busEvents) == 0 {
+				t.Fatal("credential pushes delivered no bus events")
+			}
+			for _, event := range busEvents {
+				a.check("bus event name", event.Name)
+				a.check("bus event id", event.ID)
+				a.check("bus event request id", event.RequestID)
+				a.check("bus event user", event.User)
+				a.check("bus event cause", event.Cause)
+				for _, value := range event.Attrs {
+					a.check("bus event attribute", fmt.Sprint(value))
+				}
+			}
+			if sinkMode == "failed" && !strings.Contains(stderr.String(), "repos: lost event: ") {
+				t.Fatal("failed bus deliveries did not exercise lost-event stderr")
+			}
 			a.check("Run stderr", stderr.String())
 			fixtureFiles(t, dir, a)
 			a.assert(t)
@@ -661,7 +687,8 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 	w.Ready()
 	defer w.Shutdown(context.Background(), "test complete")
 	l := limits.New(settings.Defaults(), limits.Clock{Now: credentialClock, After: credentialAfter})
-	handler := web.Handler(web.Config{Banner: page.New(web.ServiceName, cli.Version).Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w}), ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w})
+	bus := credentialEmitter(t, w)
+	handler := web.Handler(web.Config{Banner: page.New(web.ServiceName, cli.Version).Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w}), ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus})
 	server := httptest.NewServer(a.wrap(handler))
 	defer server.Close()
 	exerciseCredentials(t, server.URL, cs, a)
@@ -778,10 +805,11 @@ func credentialLimitRefusals(t *testing.T, cs []credential, a *inspection, s *st
 			return ch
 		}
 		l := limits.New(cfg, limits.Clock{Now: credentialClock, After: after})
+		bus := credentialEmitter(t, w)
 		server := httptest.NewServer(a.wrap(web.Handler(web.Config{
 			Banner:       page.New(web.ServiceName, cli.Version).Banner,
 			MCP:          mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w}),
-			ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w,
+			ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus,
 		})))
 		func() {
 			defer server.Close()
@@ -857,4 +885,22 @@ func credentialPushRefusals(t *testing.T, endpoint string, cs []credential, a *i
 			t.Fatalf("push size refusal was not exercised: %v\n%s", err, output)
 		}
 	}
+}
+
+type busSink struct {
+	capture events.Capture
+	failure error
+}
+
+func (s *busSink) Deliver(ctx context.Context, event events.Event) error {
+	if err := s.capture.Deliver(ctx, event); err != nil {
+		return err
+	}
+	return s.failure
+}
+func credentialEmitter(t *testing.T, w *telemetry.Writer) *events.Emitter {
+	t.Helper()
+	bus := events.New(events.Config{Service: web.ServiceName, Sink: &events.Capture{}, Stderr: io.Discard, Now: credentialClock, Rand: &deterministicBytes{}, Telemetry: w, Emits: smarthttp.Emits()})
+	t.Cleanup(func() { bus.Shutdown(context.Background()) })
+	return bus
 }

@@ -28,12 +28,12 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
 )
 
-// R-HOZH-GNT0
+// R-AE0Z-CVH4
 func TestIdentityBeforeEveryRoute(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
 	before := f.gitCalls.Load()
-	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/_appkit/feedback.js", "/_appkit/nope", "/_appkit", "/mcp", "/notes.git/info/refs?service=git-upload-pack", "/nope"} {
+	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/_appkit/feedback.js", "/_appkit/nope", "/_appkit", "/mcp", "/events/", "/declarations/", "/notes.git/info/refs?service=git-upload-pack", "/nope"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, values := range [][]string{nil, {""}, {"", "later-user"}} {
 				r := httptest.NewRequest(method, path, strings.NewReader(`{"name":"intruder"}`))
@@ -63,7 +63,7 @@ func TestIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-HQ7D-UFJP
+// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-DXZO-AO7B
 func TestExactRoutesAndNotFound(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -100,12 +100,12 @@ func TestExactRoutesAndNotFound(t *testing.T) {
 	}
 }
 
-// R-R0NC-P1QD
+// R-E0FH-27OP
 func TestGitRoutesDelegate(t *testing.T) {
 	f := newWebFixture(t)
 	f.repo(t, "user", "notes")
 	h := Handler(f.cfg)
-	direct := smarthttp.Handler(smarthttp.Config{Store: f.cfg.Store, Git: f.cfg.Git, Limits: f.cfg.Limits, Telemetry: f.cfg.Telemetry})
+	direct := smarthttp.Handler(smarthttp.Config{Store: f.cfg.Store, Git: f.cfg.Git, Limits: f.cfg.Limits, Telemetry: f.cfg.Telemetry, Events: f.cfg.Events})
 	for _, path := range []string{"/notes.git", "/notes.git/", "/notes.git/HEAD", "/notes.git/info/refs?service=git-upload-pack", "/ghost.git/info/refs?service=git-upload-pack", "/Notes.git/HEAD", "/.git/x", "/mcp.git"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			r := httptest.NewRequest(method, path, nil)
@@ -123,7 +123,7 @@ func TestGitRoutesDelegate(t *testing.T) {
 	}
 }
 
-// R-R1V9-2TH2 R-8217-R9CL R-R335-GL7R
+// R-E1ND-FZFE R-8217-R9CL R-R335-GL7R
 func TestMCPRegistrationAndCloneContext(t *testing.T) {
 	f := newWebFixture(t)
 	path := filepath.Join(f.dir, "services.json")
@@ -209,7 +209,7 @@ func webTool(t *testing.T, client *mcp.Client, caller identity.Caller, name, arg
 	return envelope.Structured
 }
 
-// R-ED46-YDO9
+// R-E2V9-TR63
 func TestNoSiblingConnections(t *testing.T) {
 	f := newWebFixture(t)
 	dir, err := os.MkdirTemp("", "repos-web-")
@@ -472,7 +472,7 @@ func TestGitPostCountsLengthAndChunkedBodies(t *testing.T) {
 	}
 }
 
-// R-RAEJ-R7NX R-R6QU-LWFU R-R4B1-UCYG
+// R-E436-7IWS R-3JWT-WM7P R-R6QU-LWFU R-R4B1-UCYG
 func TestDomainAndToolTraceNames(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -542,7 +542,7 @@ func TestDomainAndToolTraceNames(t *testing.T) {
 	for i, path := range []string{"/", "/about", "/_appkit/theme.css", "/nope", "/ghost.git/info/refs"} {
 		webRequest(srv.Config.Handler, "GET", path, "owner", fmt.Sprintf("simple-route-%d", i), nil)
 	}
-	allowed := map[string]bool{"request.started": true, "request.finished": true, "tool.called": true, "repo.created": true, "repo.renamed": true, "repo.deleted": true, "repo.pushed": true, "repo.fetched": true, "operation.waited": true, "operation.rejected": true, "operation.timed_out": true, "maintenance.finished": true, "repo.unavailable": true}
+	allowed := map[string]bool{"request.started": true, "request.finished": true, "tool.called": true, "repo.created": true, "repo.renamed": true, "repo.deleted": true, "repo.pushed": true, "repo.fetched": true, "operation.waited": true, "event.lost": true, "operation.rejected": true, "operation.timed_out": true, "maintenance.finished": true, "repo.unavailable": true}
 	seen := map[string]bool{}
 	mu.Lock()
 	count := begun
@@ -582,6 +582,18 @@ func TestDomainAndToolTraceNames(t *testing.T) {
 			t.Fatalf("unexpected trace: %+v", e)
 		}
 		seen[e.Name] = true
+	}
+	bus := f.busEvents(t)
+	if got := f.busStderr.String(); got != "" {
+		t.Fatalf("successful bus delivery wrote stderr: %s", got)
+	}
+	if len(bus) == 0 {
+		t.Fatal("push emitted no bus event")
+	}
+	for _, event := range bus {
+		if event.Name != "repo.pushed" {
+			t.Fatalf("unexpected bus event: %+v", event)
+		}
 	}
 	for _, name := range []string{"request.started", "request.finished", "tool.called", "repo.created", "repo.renamed", "repo.deleted", "repo.pushed", "repo.fetched"} {
 		if !seen[name] {

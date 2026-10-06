@@ -124,7 +124,7 @@ func TestGitTransferEventContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(telemetry.Middleware(f.writer, identity.Require(smarthttp.Handler(smarthttp.Config{Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer}))))
+	server := httptest.NewServer(telemetry.Middleware(f.writer, identity.Require(smarthttp.Handler(smarthttp.Config{Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer, Events: f.bus}))))
 	defer server.Close()
 	work := filepath.Join(f.dir, "work")
 	if err := os.Mkdir(work, 0700); err != nil {

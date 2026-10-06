@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos"
@@ -88,6 +89,8 @@ type fixture struct {
 	limits           *limits.Limits
 	writer           *telemetry.Writer
 	capture          *telemetry.Capture
+	bus              *events.Emitter
+	busCapture       *events.Capture
 }
 
 func setup(t *testing.T) *fixture {
@@ -102,23 +105,25 @@ func setup(t *testing.T) *fixture {
 	c := newClock()
 	capture := new(telemetry.Capture)
 	w := telemetry.New(telemetry.Config{Service: "repos", Sink: capture, Now: func() time.Time { return epoch }, Rand: new(sequence), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
+	busCapture := new(events.Capture)
+	bus := events.New(events.Config{Service: "repos", Emits: smarthttp.Emits(), Sink: busCapture, Now: func() time.Time { return epoch }, Rand: new(sequence), Stderr: io.Discard, QueueCapacity: 16384, Sleep: func(context.Context, time.Duration) {}})
 	d, err := db.Open(deadline(t), db.Config{Path: filepath.Join(root, "catalog.db"), Migrations: repos.Migrations(), Now: func() time.Time { return epoch }})
 	must(t, err)
 	s, err := store.Open(deadline(t), d, store.Config{Root: filepath.Join(root, "repos"), Git: g, Now: func() time.Time { return epoch }, Rand: new(sequence)})
 	must(t, err)
-	f := &fixture{t: t, root: root, executable: path, env: env, git: g, db: d, store: s, clock: c, settings: settings.Defaults(), writer: w, capture: capture}
+	f := &fixture{t: t, root: root, executable: path, env: env, git: g, db: d, store: s, clock: c, settings: settings.Defaults(), writer: w, capture: capture, bus: bus, busCapture: busCapture}
 	f.settings.ReadSlots = 1
 	f.settings.WriteSlots = 1
 	f.settings.QueueLength = 1
 	f.resetLimits()
-	t.Cleanup(func() { must(t, d.Close()); w.Shutdown(deadline(t), "test") })
+	t.Cleanup(func() { must(t, d.Close()); bus.Shutdown(deadline(t)); w.Shutdown(deadline(t), "test") })
 	return f
 }
 func (f *fixture) resetLimits() {
 	f.limits = limits.New(f.settings, limits.Clock{Now: f.clock.read, After: f.clock.after})
 }
 func (f *fixture) config() smarthttp.Config {
-	return smarthttp.Config{Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer}
+	return smarthttp.Config{Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer, Events: f.bus}
 }
 func (f *fixture) handler() http.Handler {
 	return telemetry.Middleware(f.writer, identity.Require(smarthttp.Handler(f.config())))

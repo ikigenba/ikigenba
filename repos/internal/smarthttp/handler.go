@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
@@ -25,6 +26,7 @@ type Config struct {
 	Git       *git.Git
 	Limits    *limits.Limits
 	Telemetry *telemetry.Writer
+	Events    *events.Emitter
 }
 
 // Handler serves smart routes after resolving the caller's repository.

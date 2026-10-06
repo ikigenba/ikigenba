@@ -1,6 +1,7 @@
 package maintenance_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	busevents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos/internal/smarthttp"
@@ -20,8 +22,10 @@ import (
 
 func relationServer(t *testing.T, f *fixtureConfig, body func(*http.Request)) *httptest.Server {
 	t.Helper()
+	bus := busevents.New(busevents.Config{Service: "repos", Sink: &busevents.Capture{}, Stderr: io.Discard, Now: f.clock.Now, Rand: bytes.NewReader(make([]byte, 4096)), Telemetry: f.cfg.Telemetry, Emits: smarthttp.Emits()})
+	t.Cleanup(func() { bus.Shutdown(context.Background()) })
 	h := telemetry.Middleware(f.cfg.Telemetry, identity.Require(smarthttp.Handler(smarthttp.Config{
-		Store: f.st, Git: f.g, Limits: f.lim, Telemetry: f.cfg.Telemetry,
+		Store: f.st, Git: f.g, Limits: f.lim, Telemetry: f.cfg.Telemetry, Events: bus,
 	})))
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if body != nil && r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack") {

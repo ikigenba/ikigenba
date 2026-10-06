@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -17,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 )
 
-// R-PK7O-8WUI R-PLFK-MOL7 R-PMNH-0GBW R-PP39-RZTA R-PQB6-5RJZ
+// R-DD9D-SKLI R-PLFK-MOL7 R-PMNH-0GBW R-PP39-RZTA R-PQB6-5RJZ
 // R-PNVD-E82L R-Y2L6-GBNK
 func TestServeRefusalOrderAndNoEffects(t *testing.T) {
 	cases := []struct {
@@ -54,6 +55,7 @@ func TestServeRefusalOrderAndNoEffects(t *testing.T) {
 			f.p.Banner = func(page.User) page.Banner { t.Error("banner called"); return page.Banner{} }
 			f.p.MCP = func(*telemetry.Writer) *mcp.Server { t.Error("MCP called"); return nil }
 			f.p.Sink = serveSink(t, func(context.Context, telemetry.Event) error { t.Error("event delivered"); return nil })
+			f.p.EventSink = busSink(func(context.Context, events.Event) error { t.Error("bus event delivered"); return nil })
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			if code := cli.Run(ctx, f.p); code != cli.ExitUsage {

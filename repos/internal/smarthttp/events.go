@@ -4,8 +4,20 @@ import (
 	"context"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
+
+// Emits declares the bus events produced by git requests.
+func Emits() []events.Emission {
+	return []events.Emission{{Event: "repo.pushed", Attrs: []string{"repo", "ref", "old", "new"}}}
+}
+
+func (cfg Config) emitPushed(ctx context.Context, id, ref, old, newValue string) {
+	attrs := telemetry.Attrs{"repo": id, "ref": ref, "old": old, "new": newValue}
+	cfg.Telemetry.Emit(ctx, "repo.pushed", attrs)
+	cfg.Events.Emit(ctx, "repo.pushed", events.Attrs(attrs))
+}
 
 func (cfg Config) refs(ctx context.Context, id string) (map[string]string, error) {
 	b, err := cfg.Git.Output(ctx, "", "--git-dir="+cfg.Store.Dir(id), "for-each-ref", "--format=%(refname) %(objectname)")
@@ -34,12 +46,12 @@ func (cfg Config) pushed(ctx context.Context, id string, before map[string]strin
 			if newValue == "" {
 				newValue = absent
 			}
-			cfg.Telemetry.Emit(ctx, "repo.pushed", telemetry.Attrs{"repo": id, "ref": ref, "old": old, "new": newValue})
+			cfg.emitPushed(ctx, id, ref, old, newValue)
 		}
 		delete(after, ref)
 	}
 	for ref, value := range after {
-		cfg.Telemetry.Emit(ctx, "repo.pushed", telemetry.Attrs{"repo": id, "ref": ref, "old": absent, "new": value})
+		cfg.emitPushed(ctx, id, ref, absent, value)
 	}
 }
 

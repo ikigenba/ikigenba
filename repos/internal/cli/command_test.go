@@ -74,7 +74,7 @@ func TestCommandDispatchAndDiagnostics(t *testing.T) {
 	}
 }
 
-// R-Y1DA-2JWV
+// R-DC1H-ESUT
 func TestCommandsNeedOnlyArgumentsAndStreams(t *testing.T) {
 	for _, args := range [][]string{{"--version"}, {"manifest"}, {"--help"}, {"bogus"}, {"manifest", "--version"}} {
 		var out, diagnostic bytes.Buffer

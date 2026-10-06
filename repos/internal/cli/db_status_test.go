@@ -37,7 +37,7 @@ func statusFixture(t *testing.T, cfg db.Config, change string) {
 	}
 }
 
-// R-Y50Z-7V4Y R-Y68V-LMVN R-Y7GR-ZEMC R-Y8OO-D6D1 R-Y9WK-QY3Q R-Y1DA-2JWV R-Y2L6-GBNK
+// R-Y50Z-7V4Y R-Y68V-LMVN R-Y7GR-ZEMC R-Y8OO-D6D1 R-Y9WK-QY3Q R-DC1H-ESUT R-Y2L6-GBNK
 func TestDatabaseStatusDelegation(t *testing.T) {
 	for _, fixture := range []string{"absent", "applied", "pending", "unknown", "invalid"} {
 		t.Run(fixture, func(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 )
 
-// R-PV6R-OUIR R-Q3Q2-D8PM R-KV7D-86WG
+// R-PV6R-OUIR R-Q3Q2-D8PM R-9WYE-033E
 func TestServeUnsetLookupValuesAreIgnored(t *testing.T) {
 	t.Run("PATH", func(t *testing.T) {
 		f := newServeFixture(t)
@@ -143,7 +143,7 @@ func TestServeCancellationDuringVerificationFinishesOnlyVerificationEvents(t *te
 	}
 }
 
-// R-EBWA-KLXK R-QJKR-C9CN R-RAID-H7PG
+// R-A0M3-5EBH R-QJKR-C9CN R-D2AA-CMX9
 func TestServeMaintenanceWiringAndStopLast(t *testing.T) {
 	f := newServeFixture(t)
 	finished := make(chan telemetry.Event, 1)
@@ -240,7 +240,7 @@ func TestServeDirOverridesPrivateWorkingDirectory(t *testing.T) {
 	}
 }
 
-// R-RAID-H7PG R-KV7D-86WG R-KNVY-XKGA
+// R-D2AA-CMX9 R-9WYE-033E R-KNVY-XKGA
 func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 	f := newServeFixture(t)
 	f.p.Banner = func(u page.User) page.Banner {

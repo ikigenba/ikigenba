@@ -325,6 +325,7 @@ func streamPushed(f *fixture, requestID, id string, want map[string][2]string) {
 		}
 	}
 	same(f.t, seen, want)
+	assertBusMatches(f)
 }
 
 func TestStreamCompletePushBeforeInputEOF(t *testing.T) {
@@ -472,7 +473,7 @@ func TestStreamPushReleasesFullOutputBufferBeforeInputEOF(t *testing.T) {
 }
 
 func TestStreamPushEventsMatchRefChanges(t *testing.T) {
-	// R-3QZ3-P5MW
+	// R-3QZ3-P5MW R-ECMG-VX3N
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
@@ -517,10 +518,11 @@ func TestStreamPushEventsMatchRefChanges(t *testing.T) {
 	before := len(f.events())
 	f.request("GET", "/notes.git/info/refs?service=git-receive-pack", nil)
 	same(t, len(ownEvents(f.events()[before:])), 0)
+	assertBusMatches(f)
 }
 
 func TestStreamForcedUpdateAndRefusalEvents(t *testing.T) {
-	// R-3QZ3-P5MW
+	// R-3QZ3-P5MW R-ECMG-VX3N
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
@@ -718,7 +720,7 @@ func (g *streamDeadlineGate) Done() <-chan struct{} {
 func (g *streamDeadlineGate) release() { g.once.Do(func() { close(g.resume) }) }
 
 func TestStreamDeadlineWithOptionalObserverDelay(t *testing.T) {
-	// R-16DD-6AT6 R-3QZ3-P5MW
+	// R-16DD-6AT6 R-3QZ3-P5MW R-ECMG-VX3N
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
@@ -1147,7 +1149,7 @@ func TestStreamFetchByteCountsWithRealClients(t *testing.T) {
 }
 
 func TestStreamPushEventsBeforeLockHandover(t *testing.T) {
-	// R-7W8P-EFFQ
+	// R-7W8P-EFFQ R-AGGS-4EYI
 	f := setup(t)
 	repo := f.create("notes")
 	work := f.working("source")
@@ -1182,6 +1184,7 @@ func TestStreamPushEventsBeforeLockHandover(t *testing.T) {
 	close(firstClosed)
 	streamTake(t, blocked)
 	must(t, f.writer.Flush(deadline(t)))
+	must(t, f.bus.Flush(deadline(t)))
 	streamPushed(f, "first", repo.ID, map[string][2]string{"refs/heads/main": {zeroSHA, sha}})
 	close(resume)
 	streamBody(t, firstResponse)

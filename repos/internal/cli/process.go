@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -28,6 +29,7 @@ type Process struct {
 	Rand      io.Reader
 	Dir       string
 	Sink      telemetry.Sink
+	EventSink events.Sink
 	Banner    func(u page.User) page.Banner
 	MCP       func(w *telemetry.Writer) *mcp.Server
 }

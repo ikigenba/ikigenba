@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	busevents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
@@ -49,7 +52,7 @@ func TestBinary(t *testing.T) {
 		t.Fatalf("build: %v\n%s", err, output)
 	}
 
-	// R-RUI5-75QD: command output and exits agree with the public run seam.
+	// R-D12D-YV6K: command output and exits agree with the public run seam.
 	for _, args := range [][]string{{"--version"}, {"manifest"}, {"bogus"}, nil} {
 		var wantOut, wantErr bytes.Buffer
 		wantCode := cli.Run(context.Background(), cli.Process{Args: args, LookupEnv: func(string) (string, bool) { return "", false }, Stdout: &wantOut, Stderr: &wantErr})
@@ -194,8 +197,22 @@ func TestBinary(t *testing.T) {
 			}
 			var mu sync.Mutex
 			var events []binaryEvent
+			var busEvents []busevents.Event
 			var ingestErrors []string
 			srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost && r.URL.Path == busevents.EmitPath {
+					var event busevents.Event
+					err := json.NewDecoder(r.Body).Decode(&event)
+					mu.Lock()
+					if err != nil {
+						ingestErrors = append(ingestErrors, "invalid bus event")
+					} else {
+						busEvents = append(busEvents, event)
+					}
+					mu.Unlock()
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
 				var event binaryEvent
 				err := json.NewDecoder(r.Body).Decode(&event)
 				mu.Lock()
@@ -211,13 +228,39 @@ func TestBinary(t *testing.T) {
 			go func() { serverDone <- srv.Serve(ln) }()
 			t.Cleanup(func() { _ = srv.Close(); <-serverDone })
 			file := filepath.Join(root, "services.json")
-			writeBinaryServices(t, file, []map[string]any{{"name": "telemetry", "url": "", "description": "", "socket": ln.Addr().String(), "enabled": true, "mcp": false}})
+			writeBinaryServices(t, file, []map[string]any{{"name": "telemetry", "url": "", "description": "", "socket": ln.Addr().String(), "enabled": true, "mcp": false}, {"name": "events", "url": "", "description": "", "socket": ln.Addr().String(), "enabled": true, "mcp": false}})
 			child := startBinary(t, binary, root, append(append([]string{}, env...), services.Variable+"="+file))
+			// The binary leaves EventSink nil and must discover the bus socket.
+			child.call(t, "create", json.RawMessage(`{"name":"bus"}`))
+			proxy := &httputil.ReverseProxy{Director: func(r *http.Request) { r.URL.Scheme = "http"; r.URL.Host = "repos.example.test" }, Transport: child.client.Transport}
+			front := httptest.NewServer(proxy)
+			defer front.Close()
+			clientDir := t.TempDir()
+			gitCall := func(args ...string) {
+				t.Helper()
+				ctx, done := context.WithTimeout(context.Background(), 10*time.Second)
+				defer done()
+				cmd := exec.CommandContext(ctx, git, args...)
+				cmd.Dir, cmd.Env = clientDir, env
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("git %v: %v: %s", args, err, out)
+				}
+			}
+			gitCall("init", "-b", "main")
+			if err := os.WriteFile(filepath.Join(clientDir, "note"), []byte("bus fixture\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			gitCall("add", "note")
+			gitCall("commit", "-m", "bus fixture")
+			gitCall("-c", "http.extraHeader=X-User-Id: u", "push", front.URL+"/bus.git", "HEAD:refs/heads/main")
 			child.stop(t, sig, true)
 			mu.Lock()
 			defer mu.Unlock()
 			if len(ingestErrors) != 0 || len(events) < 2 {
 				t.Fatalf("events=%v errors=%v", events, ingestErrors)
+			}
+			if len(busEvents) != 1 || busEvents[0].Name != "repo.pushed" || busEvents[0].Service != web.ServiceName || busEvents[0].User != "u" {
+				t.Fatalf("binary socket bus events: %+v", busEvents)
 			}
 			assertLifecycle(t, events[0], "service.started", map[string]any{"version": cli.Version})
 			assertLifecycle(t, events[len(events)-1], "service.stopping", map[string]any{"reason": binarySignalName(sig)})

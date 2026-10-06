@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
@@ -21,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/maintenance"
 	"github.com/ikigenba/ikigenba/repos/internal/server"
 	"github.com/ikigenba/ikigenba/repos/internal/settings"
+	smarthttp "github.com/ikigenba/ikigenba/repos/internal/smarthttp"
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 	"github.com/ikigenba/ikigenba/repos/internal/web"
 )
@@ -155,10 +157,12 @@ func serve(ctx context.Context, p Process) int {
 		diagnostic.diagnostic("cannot open database state/repos.db: " + strings.ReplaceAll(err.Error(), "\n", " "))
 		return ExitServerFailed
 	}
+	emitter := events.New(events.Config{Service: web.ServiceName, Sink: p.EventSink, Stderr: diagnostic, Now: p.Now, Sleep: p.Sleep, Rand: random, Telemetry: w, Emits: smarthttp.Emits()})
+	defer func() { done, cancel := context.WithCancel(context.Background()); cancel(); emitter.Shutdown(done) }()
 	servicesPath := environmentValue(p, "IKIGENBA_SERVICES")
 	mcpServer := p.MCP(w)
 	l := limits.New(cfg, limits.Clock{Now: p.Now, After: p.After})
-	h := web.Handler(web.Config{Banner: p.Banner, MCP: mcpServer, ServicesPath: servicesPath, Store: s, Git: g, Limits: l, Telemetry: w})
+	h := web.Handler(web.Config{Banner: p.Banner, MCP: mcpServer, ServicesPath: servicesPath, Store: s, Git: g, Limits: l, Telemetry: w, Events: emitter})
 	address := environmentValue(p, "NOTIFY_SOCKET")
 	if ctx.Err() != nil {
 		flushStart(w)
@@ -200,6 +204,7 @@ func serve(ctx context.Context, p Process) int {
 	})
 	stop := func(drainCtx context.Context) {
 		<-stopped
+		emitter.Shutdown(drainCtx)
 		w.Shutdown(drainCtx, context.Cause(ctx).Error())
 	}
 	err = server.Serve(ctx, ln, tracked, seconds(cfg.DrainSeconds), stop)
@@ -216,6 +221,7 @@ func serve(ctx context.Context, p Process) int {
 		done, cancel := context.WithCancel(context.Background())
 		cancel()
 		scheduler.Stop(done)
+		emitter.Shutdown(done)
 		w.Shutdown(done, "accept failed")
 	}
 	if err != nil {

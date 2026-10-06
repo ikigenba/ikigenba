@@ -26,8 +26,8 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/web"
 )
 
-// R-SE0J-BHLH R-PYUG-U5QU R-SF8F-P9C6 R-KNVY-XKGA R-KV7D-86WG
-// R-YDK9-W9BT R-RAID-H7PG
+// R-SE0J-BHLH R-PYUG-U5QU R-SF8F-P9C6 R-KNVY-XKGA R-9WYE-033E
+// R-3L4Q-ADYE R-D2AA-CMX9
 func TestServePersistentStoreAndInjectedWiring(t *testing.T) {
 	f := newServeFixture(t)
 	f.start(t)
@@ -98,7 +98,7 @@ func TestServePersistentStoreAndInjectedWiring(t *testing.T) {
 	f2.stop(t, "second stop", cli.ExitSuccess)
 }
 
-// R-Q3Q2-D8PM R-KQBR-P3XO R-KP3V-BC6Z R-KNVY-XKGA R-EBWA-KLXK
+// R-Q3Q2-D8PM R-KQBR-P3XO R-KP3V-BC6Z R-KNVY-XKGA R-A0M3-5EBH
 func TestServeReadyVerifyAndMaintenanceBeforeFirstAccept(t *testing.T) {
 	f := newServeFixture(t)
 	g, err := git.Find(filepath.Dir(f.gitPath), f.p.Environ)
@@ -195,7 +195,7 @@ func TestServeNotificationFailureHasNoStartedEventOrAccept(t *testing.T) {
 	}
 }
 
-// R-KXN5-ZQDU R-KV7D-86WG
+// R-A31V-WXSV R-9WYE-033E
 func TestServeServicesStartToleranceAndCapturedPath(t *testing.T) {
 	for _, value := range []string{"", "missing", "malformed", "directory"} {
 		t.Run(value, func(t *testing.T) {
@@ -252,7 +252,7 @@ func writeServeServices(t *testing.T, path, url string) {
 	}
 }
 
-// R-QKSN-Q13C R-QPO9-9424 R-QS42-0NJI R-RAEJ-R7NX
+// R-QKSN-Q13C R-QPO9-9424 R-QS42-0NJI
 func TestServeUndeliveredConcurrentEventsAndSharedRandom(t *testing.T) {
 	f := newServeFixture(t)
 	f.p.Sink = serveSink(t, func(ctx context.Context, e telemetry.Event) error {
