@@ -21,7 +21,7 @@ The log fixture is the same in this group and in `S08`, and a group that names a
 
 ## An agent searches the whole log
 
-No filter: the whole retained log, newest first. 4178 comes after 4177 in the answer though its `time` is earlier, because events accepted it later.
+No filter: the whole retained log, newest first. 4178 comes before 4177 in the answer though its `time` is earlier, because events accepted it later and the newest comes first.
 
 Request:
 

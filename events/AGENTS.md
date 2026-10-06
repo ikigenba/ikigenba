@@ -336,8 +336,8 @@ tarball and pushes it to a space's host, where `opsctl install` installs it.
    the host fetches it, writes `etc/env` (the manifest's `[env]` defaults and
    the space's `DRAIN_SECONDS`), replaces the release, publishes
    `ikigenba-events.socket` (the Unix socket `/run/ikigenba/events.sock`)
-   and the `Type=notify` `ikigenba-events.service`, bounded by the manifest's
-   `[resources]`, regenerates the host's nginx and litestream configuration,
+   and the `Type=notify` `ikigenba-events.service`, regenerates the host's nginx and litestream
+   configuration,
    and restarts the service alone. The database is kept across releases.
 
 `events --version` then prints `vX.Y.Z`, and `devctl space status <space>`
