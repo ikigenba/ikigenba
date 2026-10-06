@@ -1,14 +1,16 @@
 # telemetry
 
-telemetry keeps the suite's trail of events; every service posts to it and agents query it. One Go binary serves `telemetry.<host>` on the socket it is passed as descriptor 3, behind the host's nginx. Every service on the host posts its events to `/ingest`; telemetry stores each one in its own SQLite database, sweeps out records older than its retention window, and offers four read-only MCP tools over the trail at `/mcp` that agents reach through the gateway. It is built on appkit for pages, identity, MCP and the event contract. The contract is `specs/design/`; this file restates none of it.
+telemetry keeps the suite's trail of events; every service posts to it and agents query it. One Go binary serves `telemetry.<host>` on the socket it is passed as descriptor 3, behind the host's nginx. Every service on the host posts its events to `/ingest`; telemetry stores each one in its own SQLite database, `state/telemetry.db` resolved against the working directory and opened through appkit's `db` package, sweeps out records older than its retention window, and offers four read-only MCP tools over the trail at `/mcp` that agents reach through the gateway. It is built on appkit for pages, identity, MCP, the event contract and the database. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
 - `specs/` is the contract: `stories/` and `design/`.
 - `assets/` is the page markup and `share/icon.svg` the launcher icon. The build run never writes them; an agent changes them only on explicit, direct instruction from a human.
-- `assets.go` is the root package, which embeds `assets/`. `cmd/telemetry` is the binary. `internal/` is everything else, one package per concern.
+- `migrations/` holds the database's migrations, which the root package embeds; the build run writes it.
+- `assets.go` is the root package, which embeds `assets/` and `migrations/`. `cmd/telemetry` is the binary. `internal/` is everything else, one package per concern.
 - `etc/` is what the host needs: `manifest.toml` and the nginx fragment `nginx.conf` that makes `/ingest` answer 404 to the public.
-- The build run writes the Go source, the tests, `go.mod`, `go.sum` and `etc/`. `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
+- `state/` is where a running telemetry keeps `telemetry.db`; it is created at run time and never committed.
+- The build run writes the Go source, the tests, `migrations/`, `go.mod`, `go.sum` and `etc/`. `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets
 
@@ -20,12 +22,13 @@ telemetry holds no stylesheet, fonts or licences; appkit's `page` package serves
 
 - Go 1.26 or later.
 - A C compiler cgo can use, such as `gcc`: `go test -race` needs it (gate 4). The release build is cgo-free (gate 3).
-- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit at the release `go.mod` requires (see Adopting appkit), and `modernc.org/sqlite` `v1.59.0`.
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit at the release `go.mod` requires (see Adopting appkit).
+- `modernc.org/sqlite`, the cgo-free SQLite driver, an approved dependency that arrives through appkit's `db` package; telemetry never imports it directly.
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. The SQLite driver is auth's, `modernc.org/sqlite` at the version auth's `go.mod` requires: pure Go, so the release build stays cgo-free, and already cached wherever auth builds.
+Prefer the standard library, then a widely used public module; adding one needs human approval.
 
 ### Adopting appkit
 
@@ -45,11 +48,11 @@ grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 
 ## Test discipline
 
-These rules govern everything `go test ./...` runs. Tests are offline (loopback and Unix sockets only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state.
+These rules govern everything `go test ./...` runs. Tests are offline (loopback and Unix sockets only, no real credentials), deterministic (time, randomness and environment are injected; nothing sleeps to wait), bind no fixed port (`127.0.0.1:0` or a Unix socket in a temporary directory), and touch only their own temporary directory, never the developer's home, config or real state. Clocks are injected: a test that opens a database hands it a `Now` it controls.
 
-**The run seam carries the process.** telemetry binds nothing; it serves on the listener it is passed. Arguments, environment lookup and removal, the pid, the inherited listener, the output streams, the clock, the random source and the database source all come in through the run seam design declares, and tests inject them. A test never reads or changes the real environment, clock or randomness, and never leaves the inherited-listener step unset, which would take the test process's real descriptor 3. A test learns the server is ready the way systemd does: it binds a Unix datagram socket in a short temporary directory (`os.MkdirTemp`, since a socket path is limited to 108 bytes and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for `READY=1` with a deadline that fails the test. Drain tests are the one place a test waits on the clock, because the drain deadline is the behavior; they keep it to a few seconds. The gates run offline as an ordinary user with no systemd.
+**The run seam carries the process.** telemetry binds nothing; it serves on the listener it is passed. Arguments, environment lookup and removal, the pid, the inherited listener, the output streams, the clock, the random source and the directory the database lives under (`Process.Dir`) all come in through the run seam design declares, and tests inject them. A test never reads or changes the real environment, clock or randomness, and never leaves the inherited-listener step unset, which would take the test process's real descriptor 3. A `Run`-level test sets `Process.Dir` to a directory of its own, so the database lands in its temporary directory and never in the checkout. A test learns the server is ready the way systemd does: it binds a Unix datagram socket in a short temporary directory (`os.MkdirTemp`, since a socket path is limited to 108 bytes and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for `READY=1` with a deadline that fails the test. Drain tests are the one place a test waits on the clock, because the drain deadline is the behavior; they keep it to a few seconds. The gates run offline as an ordinary user with no systemd.
 
-**The database is an isolated source.** A test passes a database path or file-backed SQLite DSN inside its own temporary directory, or an in-memory DSN, through the run seam or the constructor design names. Filesystem fixtures (an absent parent, a file that is not a database, a file with write permission removed) live in that tree; nothing touches `/opt/telemetry` or a shared file. A mid-request database failure is produced by breaking the test's own database after the server has it, for example by closing the store the test handed it.
+**The database is the test's own.** A test that needs a store opens its own database with appkit's `db.Open` at a path in its own temporary directory, with `telemetry.Migrations()` and a clock it controls, closes the handle when it ends, and builds the store over that handle with `store.New`; nothing touches `/opt/telemetry`, the checkout's `state/` or a shared file. A store failure is provoked with the handle's `SetFailing(true)`, never by corrupting the file or removing permissions. A write failure at the `Run` level, where the test holds no handle `Run` uses, is provoked as design names: a `DB.Write` on another handle on the database path creates a trigger that aborts every insert into `records`. Tests prove telemetry's use of the database, its schema, its store and its wiring, never SQLite's own guarantees (atomicity, durability, locking) and never appkit's `db` contract (opening, migrations, transactions, `db status`), which appkit's own tests prove.
 
 **The clock is injected.** Every timestamp telemetry makes and every retention decision the sweep makes comes from the injected clock. Retention is proved by advancing the clock, and a sweep is triggered the way design names, never by waiting for a timer. A test that sleeps to age a record is a bug.
 

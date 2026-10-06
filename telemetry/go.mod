@@ -3,7 +3,7 @@ module github.com/ikigenba/ikigenba/telemetry
 go 1.26
 
 require (
-	github.com/ikigenba/ikigenba/appkit v0.10.0
+	github.com/ikigenba/ikigenba/appkit v0.12.0
 	modernc.org/sqlite v1.59.0
 )
 
