@@ -27,10 +27,13 @@ the first step that reads it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `S6-certificates.md` adds
-`certificate`, `S5-nginx.md` adds `nginx.conf`, this group adds `slices`,
+`certificate`, this group adds `slices`, `S5-nginx.md` adds `nginx.conf`,
 `S8-backup.md` adds `litestream` and `timers`, and `S7-apps.md` adds `apps`,
-in that order. Every setup command is idempotent, so `init` is
-too, and a step's inputs are read from the store every run — which is why
+in that order. `slices` reads no manifest, so it comes before every step that
+does: a host whose installed manifests the running opsctl refuses still gets
+its slices, which `install` needs to judge a fixed release. Every setup
+command is idempotent, so `init` is too, and a step's inputs are read from
+the store every run — which is why
 changing a period or a zone is `config set` followed by `init`, and never an
 edit to something `init` generated. From the developer's machine that pair is
 `devctl space init`, which sets the keys `create` set and runs `init` again;
@@ -123,11 +126,11 @@ Checks, in order:
 
 Sequence:
   certificate  obtain the host's certificate, or renew it if it is due
-  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
   slices       write ikigenba.slice, ikigenba-core.slice and
                ikigenba-apps.slice, sized from the host's memory, and the
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
+  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
@@ -430,8 +433,11 @@ Postconditions:
 nginx, the services file, the backup configuration and the apps' units are
 all generated from every installed app's manifest, so a manifest the running
 opsctl refuses stops `init` at its `nginx.conf` step, the first that reads
-them, before anything is rewritten: a release installed under an older
-opsctl may carry `io_weight`, a key this one does not know. `init` judges the
+them, before anything they generate is rewritten. This is the host just
+upgraded from an opsctl that wrote no slices: the release it holds was
+installed under the older opsctl and carries `io_weight`, a key this one does
+not know. The `slices` step, which reads no manifest, has already run, so
+the host has the slices that installing a fixed release needs. `init` judges the
 manifest's form only. It does not check an app's `memory_max` against its
 slice or warn about a slice that is oversubscribed; those are `install`'s.
 
@@ -466,20 +472,30 @@ in `install`'s words, after `opsctl: <app>: etc/manifest.toml: `.
 
 Preconditions:
 
-- Every preflight check passes.
+- Every preflight check passes, and the host's certificate is not due for
+  renewal.
+- Neither the three slice units nor nginx's drop-in exists: the host has
+  only ever run an opsctl that did not write them.
 - `repos` is installed, and `/opt/repos/etc/manifest.toml` has `[resources]`
   with `cpu_weight = 50`, `memory_max = "2G"`, and `io_weight = 50`.
 
 Postconditions:
 
-- The `certificate` step ran as on any run. Nothing from `nginx.conf` on
-  ran: `/etc/nginx/conf.d/ikigenba.conf`, `/var/lib/ikigenba/services.json`,
-  the slice units, nginx's drop-in, `/etc/litestream.yml`, and the timers
-  are as they were, and nginx was neither reloaded nor restarted.
+- The `certificate` step found nothing to renew and changed nothing.
+- The `slices` step ran: the three slice units and nginx's drop-in are
+  written, sized from the host's memory, systemd was reloaded, and nginx
+  was restarted once, into `ikigenba-core.slice`.
+- Nothing from `nginx.conf` on ran: `/etc/nginx/conf.d/ikigenba.conf`,
+  `/var/lib/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
+  are as they were, and nginx was not reloaded.
+- Running `init` again before the fix stops at the same place with the same
+  output; the slice units and drop-in are present and unchanged, so systemd
+  is not reloaded for them and nginx is neither reloaded nor restarted.
 - No app changed: every installed app's unit and `etc/env` are as they
   were, and none was restarted, `repos` included.
-- The fix is to install a `repos` release whose manifest is valid; `init`
-  then runs to the end. A `memory_max` of `2G`, more than the apps slice's
+- The fix is to install a `repos` release whose manifest is valid, which
+  `install` can judge now that the slices are there; `init` then runs to the
+  end. A `memory_max` of `2G`, more than the apps slice's
   1024M on a t3.small, is not `init`'s to refuse, but that install refuses
   it.
 

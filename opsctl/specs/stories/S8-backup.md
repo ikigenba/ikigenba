@@ -164,7 +164,7 @@ it. There, a manifest naming its app is what earns a server block. Here, a
 a manifest that declares no database, has its whole `state/` in the tarball
 and nothing else.
 
-`init`'s sequence gains two steps after `slices`: `litestream`, which
+`init`'s sequence gains two steps after `nginx.conf`: `litestream`, which
 writes `/etc/litestream.yml` from the declared databases and the two database
 periods and enables `litestream.service`, and `timers`, which writes the two
 service and timer pairs that run the two file backups at their periods. The
