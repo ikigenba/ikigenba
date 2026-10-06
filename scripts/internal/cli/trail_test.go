@@ -15,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/runs"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
@@ -339,7 +341,7 @@ func releaseRun(t *testing.T, h *runHarness, sc, id any) {
 	mustCLI(t, os.WriteFile(filepath.Join(h.p.Dir, "state", "runs", sc.(string), id.(string), "release"), nil, 0600))
 }
 func TestTrailEndingsAndClock(t *testing.T) {
-	// R-TNIA-V7AV R-ZC8Y-ZZD8 R-LMQ4-VKH5 R-LNY1-9C7U R-LP5X-N3YJ
+	// R-11RA-8ZSQ R-ZC8Y-ZZD8 R-LMQ4-VKH5 R-LNY1-9C7U R-LP5X-N3YJ
 	// R-LKAC-40ZR R-LLI8-HSQG R-ZH4K-J2C0 R-TZPA-OWPT R-3HRB-50VE
 	for _, mode := range []string{"exit", "backwards", "timeout", "truncated", "race"} {
 		t.Run(mode, func(t *testing.T) {
@@ -355,7 +357,6 @@ func TestTrailEndingsAndClock(t *testing.T) {
 			t0 := now
 			h.p.Now = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
 			h.p.Sink = &h.sink.capture
-			h.p.Database = filepath.Join(h.root, "catalog.db")
 			h.start()
 			c := &trailClient{h: h}
 			sc, _ := c.ok("create", map[string]any{"name": "clock", "repo": "rep_0102030405060708"})
@@ -426,9 +427,10 @@ func TestTrailEndingsAndClock(t *testing.T) {
 			if ended["status"] != end.Attrs["status"] {
 				t.Fatal(ended)
 			}
-			s, e := store.Open(context.Background(), store.Config{Source: h.p.Database, Now: h.p.Now, Rand: &countingRandom{}})
+			sDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 			mustCLI(t, e)
-			defer func() { mustCLI(t, s.Close()) }()
+			s := store.New(sDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+			defer func() { mustCLI(t, sDB.Close()) }()
 			record, e := s.RunByID(context.Background(), r["id"].(string))
 			mustCLI(t, e)
 			expectAttrs(t, end, runs.FinishedAttrs(record, time.Duration(duration)*time.Microsecond))
@@ -466,17 +468,17 @@ func TestTrailEndingsAndClock(t *testing.T) {
 func TestTrailRecoveryAndReadRequests(t *testing.T) {
 	// R-ZB12-M7MJ R-XQ8D-G0WH
 	h := newHarness(t)
-	h.p.Database = filepath.Join(h.root, "catalog.db")
 	h.p.Sink = &h.sink.capture
-	s, e := store.Open(context.Background(), store.Config{Source: h.p.Database, Now: func() time.Time { return h.now }, Rand: &countingRandom{}})
+	sDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return h.now }})
 	mustCLI(t, e)
+	s := store.New(sDB, store.Config{Now: func() time.Time { return h.now }, Rand: &countingRandom{}})
 	sc, e := s.Create(context.Background(), store.Draft{Owner: "owner", Name: "recovered", Repo: "rep_0102030405060708", Ref: "main"})
 	mustCLI(t, e)
 	r, e := s.AddRun(context.Background(), store.Run{ID: "run_1122334455667788", Script: sc.ID, SHA: strings.Repeat("a", 40), Ref: "main", User: "past-owner", RequestID: "past-request", Trigger: "manual", Status: "running", Started: h.now.Add(-2 * time.Second)})
 	mustCLI(t, e)
 	future, e := s.AddRun(context.Background(), store.Run{ID: "run_8899aabbccddeeff", Script: sc.ID, SHA: strings.Repeat("b", 40), Ref: "main", User: "future-owner", RequestID: "future-request", Trigger: "manual", Status: "running", Started: h.now.Add(2 * time.Second)})
 	mustCLI(t, e)
-	mustCLI(t, s.Close())
+	mustCLI(t, sDB.Close())
 	h.start()
 	paths := []string{"/", "/recovered/", "/recovered/runs/" + r.ID + "/", "/recovered/runs/" + r.ID + "/stdout", "/about/", "/_appkit/theme.css"}
 	for i, p := range paths {
@@ -590,7 +592,7 @@ func TestTrailDrainDeadlineUndeliveredIdentity(t *testing.T) {
 	trailEvent(t, events, "service.stopping", nil)
 }
 func TestTrailClientCancellationCutsOffGit(t *testing.T) {
-	// R-8UH2-YKIR
+	// R-2I6Y-P4OL
 	h := newHarness(t)
 	h.repository("pass\n")
 	h.p.Sink = &h.sink.capture

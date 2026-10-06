@@ -75,7 +75,7 @@ func TestNormalizedRunRecordRefusals(t *testing.T) {
 			equal(t, got, store.Run{})
 			catalog(t, err)
 			equal(t, content(t, s), before)
-			must(t, s.Close())
+			must(t, closeStore(s))
 			s = open(t, path)
 			equal(t, content(t, s), before)
 		})
@@ -83,7 +83,7 @@ func TestNormalizedRunRecordRefusals(t *testing.T) {
 }
 
 func TestNormalizedAddRunPersistence(t *testing.T) {
-	// R-9CAY-4JXA R-LO6Q-FU9Q
+	// R-9CAY-4JXA R-Y4FI-1CFI
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")
@@ -133,7 +133,7 @@ func TestNormalizedAddRunPersistence(t *testing.T) {
 		equal(t, got, r)
 		want = append(want, r)
 	}
-	must(t, s.Close())
+	must(t, closeStore(s))
 	s = open(t, path)
 	for _, r := range want {
 		got, err := s.RunByID(ctx, r.ID)
@@ -178,7 +178,7 @@ func TestNormalizedEndingRefusals(t *testing.T) {
 			equal(t, got, store.Run{})
 			catalog(t, err)
 			equal(t, content(t, s), before)
-			must(t, s.Close())
+			must(t, closeStore(s))
 			s = open(t, path)
 			equal(t, content(t, s), before)
 		})
@@ -357,7 +357,7 @@ func TestEveryStoreReturnedRecord(t *testing.T) {
 		assertReturnedRun(t, add(t, s, r))
 	}
 	checkReads(s, len(scripts)-1)
-	must(t, s.Close())
+	must(t, closeStore(s))
 	s = open(t, path)
 	checkReads(s, len(scripts)-1)
 }

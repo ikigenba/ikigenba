@@ -24,7 +24,7 @@ type Process struct {
 	Sleep              func(context.Context, time.Duration)
 	After, ScriptAfter func(time.Duration) <-chan time.Time
 	Rand               io.Reader
-	Dir, Database      string
+	Dir                string
 	Sink               telemetry.Sink
 	Banner             func(page.User) page.Banner
 	MCP                func(*telemetry.Writer) *mcp.Server

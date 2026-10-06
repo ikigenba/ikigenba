@@ -12,6 +12,15 @@ var assets embed.FS
 //go:embed etc/manifest.toml
 var etc embed.FS
 
+//go:embed migrations/*.sql
+var migrations embed.FS
+
+// Migrations returns the catalog migrations at the file system root.
+func Migrations() fs.FS {
+	files, _ := fs.Sub(migrations, "migrations")
+	return files
+}
+
 // Assets returns the page templates at the file system root.
 func Assets() fs.FS {
 	files, _ := fs.Sub(assets, "assets")

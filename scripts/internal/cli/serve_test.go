@@ -26,23 +26,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
 	"github.com/ikigenba/ikigenba/scripts/internal/settings"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
-// R-S5NJ-XROQ R-JD9K-FFUI R-JLSV-3U1D R-AF9N-8W16 R-AGHJ-MNRV R-BWX8-2SNQ
+// R-S5NJ-XROQ R-96QM-GJY0 R-AF9N-8W16 R-AGHJ-MNRV R-BWX8-2SNQ
 func TestStartupSettingsComeFirst(t *testing.T) {
 	for _, key := range []string{"DRAIN_SECONDS", "TREE_MAX_BYTES", "OUTPUT_MAX_BYTES", "OPERATION_SECONDS", "SCRIPT_SECONDS", "RUN_KEEP_DAYS", "RUN_KEEP_COUNT"} {
 		t.Run(key, func(t *testing.T) {
 			h := newHarness(t)
 			h.set(key, "0")
-			h.p.Database = filepath.Join(h.root, "external", "catalog.db")
+
 			h.p.LookupEnv = func(k string) (string, bool) {
 				switch k {
 				case "LISTEN_PID", "LISTEN_FDS", "PATH", "NOTIFY_SOCKET", "IKIGENBA_SERVICES":
@@ -60,7 +62,7 @@ func TestStartupSettingsComeFirst(t *testing.T) {
 			if code != cli.ExitUsage || h.stderr.String() != "scripts: "+err.Error()+"\n" || h.stdout.String() != "" || len(h.stderr.snapshot()) != 1 {
 				t.Fatalf("refusal %d %q", code, h.stderr.String())
 			}
-			if _, err = os.Stat(h.p.Database); !os.IsNotExist(err) {
+			if _, err = os.Stat(filepath.Join(h.p.Dir, "state", "scripts.db")); !os.IsNotExist(err) {
 				t.Fatalf("database touched: %v", err)
 			}
 			if _, err = os.Stat(h.p.Dir); !os.IsNotExist(err) {
@@ -144,7 +146,7 @@ func TestInheritanceAndEnvironmentRemoval(t *testing.T) {
 	}
 }
 
-// R-S83C-PB64 R-S9B9-32WT
+// R-S83C-PB64 R-016A-RVJW
 func TestPrerequisitesBeforeState(t *testing.T) {
 	for _, which := range []string{"git", "python"} {
 		t.Run(which, func(t *testing.T) {
@@ -176,7 +178,7 @@ func TestPrerequisitesBeforeState(t *testing.T) {
 	}
 }
 
-// R-ATWF-U4XI R-AV4C-7WO7
+// R-ZRF3-PPMC R-03M3-JF1A
 func TestStateFailures(t *testing.T) {
 	for _, kind := range []string{"state-file", "invalid-db", "runs-file"} {
 		t.Run(kind, func(t *testing.T) {
@@ -192,12 +194,19 @@ func TestStateFailures(t *testing.T) {
 				}
 			}
 			mustCLI(t, os.WriteFile(target, []byte("unchanged"), 0600))
-			code := cli.Run(context.Background(), h.p)
+			var oracleErr error
 			prefix := "scripts: cannot open database state/scripts.db: "
 			if kind == "runs-file" {
+				oracleErr = os.MkdirAll(filepath.Join(h.p.Dir, "state", "runs"), 0700)
 				prefix = "scripts: cannot create directory state/runs: "
+			} else {
+				_, oracleErr = db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 			}
-			if code != cli.ExitServerFailed || !strings.HasPrefix(h.stderr.String(), prefix) || len(h.stderr.snapshot()) != 1 || h.stdout.String() != "" || len(h.sink.capture.Events()) != 0 {
+			if oracleErr == nil {
+				t.Fatal("fixture did not refuse startup")
+			}
+			code := cli.Run(context.Background(), h.p)
+			if code != cli.ExitServerFailed || h.stderr.String() != prefix+strings.ReplaceAll(oracleErr.Error(), "\n", " ")+"\n" || len(h.stderr.snapshot()) != 1 || h.stdout.String() != "" || len(h.sink.capture.Events()) != 0 {
 				t.Fatalf("%d %q", code, h.stderr.String())
 			}
 			scoped, e := os.OpenRoot(h.p.Dir)
@@ -219,7 +228,7 @@ func TestStateFailures(t *testing.T) {
 	}
 }
 
-// R-AWC8-LOEW R-AXK4-ZG5L R-B63F-NUCG R-WNGS-KWCF R-BC6X-KP1X R-BPLT-S67K R-K58H-2BO4 R-JWRY-JRPM
+// R-ZV2S-V0UF R-ZYQI-0C2I R-B63F-NUCG R-WNGS-KWCF R-1NPH-4V58 R-BPLT-S67K R-K58H-2BO4 R-JWRY-JRPM
 func TestReadyInitialStateAndLifecycle(t *testing.T) {
 	for _, servicesPath := range []string{"", "absent", "malformed"} {
 		t.Run(servicesPath, func(t *testing.T) {
@@ -300,7 +309,7 @@ func TestReadyInitialStateAndLifecycle(t *testing.T) {
 	}
 }
 
-// R-JUC5-S888 R-JRWD-0OQU R-JVK2-5ZYX R-JPGK-959G R-KDUJ-WK3C R-JZ7R-BB70 R-JXZU-XJGB R-WM8W-74LQ R-BAZ1-6XB8
+// R-JUC5-S888 R-JRWD-0OQU R-JVK2-5ZYX R-JPGK-959G R-KDUJ-WK3C R-JZ7R-BB70 R-JXZU-XJGB R-WM8W-74LQ R-0C5E-7T85
 func TestRunCompositionUsesInjectedState(t *testing.T) {
 	h := newHarness(t)
 	h.p.Rand = repeatingRandom(0x5a)
@@ -337,53 +346,31 @@ func TestRunCompositionUsesInjectedState(t *testing.T) {
 	}
 }
 
-// R-JN0R-HLS2 R-JO8N-VDIR
+// R-996F-83FE
 func TestCatalogPathsSurviveRestart(t *testing.T) {
-	for _, external := range []bool{false, true} {
-		t.Run(strconv.FormatBool(external), func(t *testing.T) {
-			h := newHarness(t)
-			h.repository("print('hello')\n")
-			if external {
-				h.p.Database = filepath.Join(h.root, "outside", "catalog.db")
-			}
-			h.start()
-			h.create("alpha")
-			h.stop()
-			next := newHarness(t)
-			next.p.Dir = h.p.Dir
-			next.p.Database = h.p.Database
-			next.start()
-			list := next.call("list", nil)
-			if len(list["scripts"].([]any)) != 1 {
-				t.Fatalf("restart list %v", list)
-			}
-			next.stop()
-			third := newHarness(t)
-			if external {
-				third.p.Database = h.p.Database
-			}
-			third.start()
-			list = third.call("list", nil)
-			want := 0
-			if external {
-				want = 1
-			}
-			if len(list["scripts"].([]any)) != want {
-				t.Fatalf("other Dir %v", list)
-			}
-			third.stop()
-			if external {
-				for _, dir := range []string{h.p.Dir, third.p.Dir} {
-					if _, e := os.Stat(filepath.Join(dir, "state", "scripts.db")); !os.IsNotExist(e) {
-						t.Fatalf("default database created: %v", e)
-					}
-				}
-			}
-		})
+	h := newHarness(t)
+	h.repository("print('hello')\n")
+	h.start()
+	h.create("alpha")
+	h.stop()
+	next := newHarness(t)
+	next.p.Dir = h.p.Dir
+	next.start()
+	list := next.call("list", nil)
+	if len(list["scripts"].([]any)) != 1 {
+		t.Fatalf("restart list %v", list)
 	}
+	next.stop()
+	third := newHarness(t)
+	third.start()
+	list = third.call("list", nil)
+	if len(list["scripts"].([]any)) != 0 {
+		t.Fatalf("other Dir %v", list)
+	}
+	third.stop()
 }
 
-// R-SAJ5-GUNI R-B7BC-1M35
+// R-09PL-G9QR R-B7BC-1M35
 func TestCancellationAndNotificationFailure(t *testing.T) {
 	h := newHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -403,9 +390,10 @@ func TestCancellationAndNotificationFailure(t *testing.T) {
 
 func seedCatalog(t *testing.T, h *runHarness) (store.Script, []store.Run) {
 	t.Helper()
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(h.p.Dir, "state", "scripts.db"), Now: h.p.Now, Rand: &countingRandom{}})
+	stDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 	mustCLI(t, e)
-	defer func() { _ = st.Close() }()
+	st := store.New(stDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+	defer func() { _ = stDB.Close() }()
 	sc, e := st.Create(context.Background(), store.Draft{Owner: "owner", Name: "alpha", Repo: "rep_0102030405060708", Ref: "main"})
 	mustCLI(t, e)
 	var records []store.Run
@@ -425,7 +413,7 @@ func seedCatalog(t *testing.T, h *runHarness) (store.Script, []store.Run) {
 	return sc, records
 }
 
-// R-AYS1-D7WA R-AZZX-QZMZ R-B2FQ-IJ4D R-SCYY-8E4W
+// R-AYS1-D7WA R-AZZX-QZMZ R-079S-OQ9D R-1K1R-ZJX5
 func TestRecoveryAndPruningBeforeReady(t *testing.T) {
 	for _, cancelStart := range []bool{false, true} {
 		t.Run(strconv.FormatBool(cancelStart), func(t *testing.T) {
@@ -447,9 +435,10 @@ func TestRecoveryAndPruningBeforeReady(t *testing.T) {
 				}
 				h.stop()
 			}
-			st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(h.p.Dir, "state", "scripts.db")})
+			stDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 			mustCLI(t, e)
-			defer func() { _ = st.Close() }()
+			st := store.New(stDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+			defer func() { _ = stDB.Close() }()
 			r, e := st.RunByID(context.Background(), rs[1].ID)
 			mustCLI(t, e)
 			if r.Status != store.StatusKilled {
@@ -531,7 +520,7 @@ func TestAcceptFailuresAndPanicAvoidGlobalLogger(t *testing.T) {
 	}
 }
 
-// R-BKQ8-938S R-SE6U-M5VL R-SBR1-UME7 R-BY54-GKEF
+// R-1ZWG-YKK6 R-22C9-Q41K R-2C3G-S9Z4 R-2EJ9-JTGI
 func TestQuietServeAndLifecycleOrdering(t *testing.T) {
 	h := newHarness(t)
 	h.repository("raise SystemExit(3)\n")
@@ -628,7 +617,7 @@ func TestUndeliveredEventsUseWholeDiagnostics(t *testing.T) {
 
 var _ io.Writer = (*lockedBuffer)(nil)
 
-// R-JQOG-MX05 R-ASOJ-GD6T R-S4FN-JZY1
+// R-9AEB-LV63 R-ASOJ-GD6T R-S4FN-JZY1
 func TestGitEnvironmentAndAllProductsRemainUnderDir(t *testing.T) {
 	h := newHarness(t)
 	h.repository("import os\nwith open(os.path.join(os.environ['IKIGENBA_OUT_DIR'], 'answer.txt'),'w') as f: f.write('answer')\n")
@@ -704,13 +693,14 @@ func TestRecoveryCatalogFailureRefusesStartup(t *testing.T) {
 	seedCatalog(t, h)
 	var once sync.Once
 	h.p.Now = func() time.Time {
-		once.Do(func() {
-			db, e := sql.Open("sqlite", filepath.Join(h.p.Dir, "state", "scripts.db"))
-			mustCLI(t, e)
-			_, e = db.Exec("DROP TABLE catalog")
-			mustCLI(t, e)
-			mustCLI(t, db.Close())
-		})
+		if _, err := os.Stat(filepath.Join(h.p.Dir, "state", "runs")); err == nil {
+			once.Do(func() {
+				handle, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return h.now }})
+				mustCLI(t, e)
+				mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error { _, err := tx.Exec("DROP TABLE catalog"); return err }))
+				mustCLI(t, handle.Close())
+			})
+		}
 		return h.now
 	}
 	h.p.MCP = func(*telemetry.Writer) *mcp.Server { t.Fatal("MCP after recovery failure"); return nil }
@@ -726,7 +716,7 @@ while not os.path.exists(os.path.join(os.environ['IKIGENBA_OUT_DIR'], 'release')
 print('finished')
 `
 
-// R-BFUM-Q0A0 R-BLY4-MUZH R-BKQ8-938S
+// R-1OXD-IMVX R-0FT3-D4G8 R-1ZWG-YKK6
 func TestGracefulDrainWaitsForRunThenStopsEarly(t *testing.T) {
 	h := newHarness(t)
 	h.set("DRAIN_SECONDS", "30")
@@ -747,9 +737,10 @@ func TestGracefulDrainWaitsForRunThenStopsEarly(t *testing.T) {
 	if code := h.finish(); code != cli.ExitSuccess {
 		t.Fatalf("drain %d %s", code, h.stderr.String())
 	}
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(h.p.Dir, "state", "scripts.db")})
+	stDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 	mustCLI(t, e)
-	defer func() { _ = st.Close() }()
+	st := store.New(stDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+	defer func() { _ = stDB.Close() }()
 	ended, e := st.RunByID(context.Background(), r["id"].(string))
 	mustCLI(t, e)
 	if ended.Status != store.StatusExited || ended.ExitCode != 0 {
@@ -784,7 +775,7 @@ func connectionDeadline(t *testing.T, addr string) {
 	}
 }
 
-// R-BH2J-3S0P R-SE6U-M5VL R-SFEQ-ZXMA R-BLY4-MUZH R-BEMQ-C8JB
+// R-1SL2-NY40 R-22C9-Q41K R-24S2-HNIY R-0FT3-D4G8 R-BEMQ-C8JB
 func TestDrainDeadlineKillsRunBeforeStoppingEvent(t *testing.T) {
 	h := newHarness(t)
 	h.repository("import os, subprocess, sys\nsubprocess.Popen([sys.executable, '-c', 'while True: pass'])\nwhile True: pass\n")
@@ -810,9 +801,10 @@ func TestDrainDeadlineKillsRunBeforeStoppingEvent(t *testing.T) {
 	if len(writes) != 2 || !strings.Contains(string(writes[0]), `"event":"run.finished"`) || !strings.Contains(string(writes[0]), `"status":"killed"`) || !strings.Contains(string(writes[1]), `"event":"service.stopping"`) {
 		t.Fatalf("cutoff lines %q", writes)
 	}
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(h.p.Dir, "state", "scripts.db")})
+	stDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 	mustCLI(t, e)
-	defer func() { _ = st.Close() }()
+	st := store.New(stDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+	defer func() { _ = stDB.Close() }()
 	ended, e := st.RunByID(context.Background(), r["id"].(string))
 	mustCLI(t, e)
 	if ended.Status != store.StatusKilled {
@@ -845,7 +837,7 @@ func assertNoProcess(t *testing.T, variable string) {
 	}
 }
 
-// R-BIAF-HJRE R-BS1M-JPOY
+// R-1V0V-FHLE R-277V-970C
 func TestUnfinishedRequestStopsOnlyAfterEventDiagnostic(t *testing.T) {
 	h := newHarness(t)
 	h.start()
@@ -883,7 +875,7 @@ func TestUnfinishedRequestStopsOnlyAfterEventDiagnostic(t *testing.T) {
 	}
 }
 
-// R-BJIB-VBI3 R-BUHF-B96C
+// R-1XGO-712S R-2AVK-EI8F
 func TestBlockedGitIsKilledWithoutCutoffMutations(t *testing.T) {
 	h := newHarness(t)
 	h.repository("print('hello')\n")
@@ -942,9 +934,10 @@ emptied:
 			t.Fatalf("cutoff diagnostic %s", line)
 		}
 	}
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(h.p.Dir, "state", "scripts.db")})
+	stDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 	mustCLI(t, e)
-	defer func() { _ = st.Close() }()
+	st := store.New(stDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+	defer func() { _ = stDB.Close() }()
 	scripts, e := st.List(context.Background(), "owner")
 	mustCLI(t, e)
 	if len(scripts) != 1 || scripts[0].Name != "alpha" {
@@ -1096,7 +1089,7 @@ func (s *capturedRejection) Deliver(ctx context.Context, e telemetry.Event) erro
 	return telemetry.ErrRejected
 }
 
-// R-B63F-NUCG R-BC6X-KP1X
+// R-B63F-NUCG R-1NPH-4V58
 func TestAbstractNotificationAndNoNotificationSocket(t *testing.T) {
 	t.Run("abstract", func(t *testing.T) {
 		h := newHarness(t)
@@ -1184,13 +1177,14 @@ func TestRequestIDUsesProcessRandomBytes(t *testing.T) {
 	}
 }
 
-// R-BY54-GKEF
+// R-2EJ9-JTGI
 func TestStaleCatalogWithoutRequestsEmitsOnlyLifecycle(t *testing.T) {
 	h := newHarness(t)
 	h.repository("print('unused')\n")
 	database := filepath.Join(h.p.Dir, "state", "scripts.db")
-	st, e := store.Open(context.Background(), store.Config{Source: database, Now: h.p.Now, Rand: &countingRandom{}})
+	stDB, e := db.Open(context.Background(), db.Config{Path: database, Migrations: scripts.Migrations(), Now: h.p.Now})
 	mustCLI(t, e)
+	st := store.New(stDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
 	for i, repo := range []string{"rep_0102030405060708", "rep_1112131415161718"} {
 		sc, e := st.Create(context.Background(), store.Draft{Owner: "owner", Name: fmt.Sprintf("stale-%d", i), Repo: repo, Ref: "main"})
 		mustCLI(t, e)
@@ -1206,7 +1200,7 @@ func TestStaleCatalogWithoutRequestsEmitsOnlyLifecycle(t *testing.T) {
 			mustCLI(t, os.WriteFile(filepath.Join(folder, "marker"), []byte("kept"), 0600))
 		}
 	}
-	mustCLI(t, st.Close())
+	mustCLI(t, stDB.Close())
 	h.start()
 	h.stop()
 	events := h.sink.capture.Events()

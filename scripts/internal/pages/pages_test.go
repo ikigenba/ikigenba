@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -129,6 +130,7 @@ func TestTemplateSetAndData(t *testing.T) {
 type fixture struct {
 	t           *testing.T
 	cfg         pages.Config
+	db          *db.DB
 	handler     http.Handler
 	sc          store.Script
 	root, trace string
@@ -149,11 +151,13 @@ func setup(t *testing.T) *fixture {
 	if e != nil {
 		t.Fatal(e)
 	}
-	s, e := store.Open(context.Background(), store.Config{Source: filepath.Join(dir, "catalog.db"), Now: func() time.Time { return fixedTime }, Rand: bytes.NewReader(bytes.Repeat([]byte{1, 2, 3, 4, 5, 6, 7, 8, 8, 7, 6, 5, 4, 3, 2, 1, 9, 9, 9, 9, 9, 9, 9, 9}, 20))})
+	d, e := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "catalog.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return fixedTime }})
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { _ = s.Close() })
+	t.Cleanup(func() { _ = d.Close() })
+	f.db = d
+	s := store.New(d, store.Config{Now: func() time.Time { return fixedTime }, Rand: bytes.NewReader(bytes.Repeat([]byte{1, 2, 3, 4, 5, 6, 7, 8, 8, 7, 6, 5, 4, 3, 2, 1, 9, 9, 9, 9, 9, 9, 9, 9}, 20))})
 	lim := limits.New(settings.Settings{OperationSeconds: 30, TreeMaxBytes: 10000}, limits.Clock{After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
 	src := source.New(source.Config{Repos: filepath.Join(dir, "repos"), Git: g, Limits: lim})
 	repo := "rep_0102030405060708"
@@ -249,7 +253,7 @@ func writeFile(t *testing.T, p, text string) {
 	}
 }
 
-// R-W8VH-54ZT R-WA3D-IWQI R-NY3P-CSH2 R-WJUK-L2O2 R-WL2G-YUER R-WPY2-HXDJ R-WR5Y-VP48 R-WW1K-ES30 R-WX9G-SJTP R-WZP9-K3B3 R-X0X5-XV1S R-X252-BMSH R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-NWFC-ZF9Q R-O2ZA-VVFU R-XAOD-00ZC R-XBW9-DSQ1 R-XD45-RKGQ R-XGRU-WVOT
+// R-W8VH-54ZT R-WA3D-IWQI R-NY3P-CSH2 R-WJUK-L2O2 R-WL2G-YUER R-WPY2-HXDJ R-WR5Y-VP48 R-WW1K-ES30 R-WX9G-SJTP R-WZP9-K3B3 R-0KOO-W7F0 R-X252-BMSH R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0N4H-NQWE R-0PKA-FADS R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ R-XGRU-WVOT
 func TestPageRoutesAndData(t *testing.T) {
 	var handler func(pages.Config) http.Handler
 	f := setup(t)
@@ -356,6 +360,14 @@ func TestPageRoutesAndData(t *testing.T) {
 		requireEqual(t, head.Body.Len(), 0)
 		requireEqual(t, get.Header().Values("Set-Cookie"), []string(nil))
 	}
+	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+		for _, path := range []string{"/", "/about", "/alpha/", "/private/", "/nope/"} {
+			w = f.request(context.Background(), method, path, "owner")
+			requireEqual(t, w.Code, 405)
+			requireEqual(t, w.Header(), http.Header{"Allow": {"GET, HEAD"}})
+			requireEqual(t, w.Body.Len(), 0)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for _, path := range []string{"/", "/alpha/", "/alpha", "/nope/", "/alpha/runs/" + u.ID + "/"} {
@@ -370,9 +382,7 @@ func TestPageRoutesAndData(t *testing.T) {
 			requireEqual(t, w.Body.String(), want)
 		}
 	}
-	if e := f.cfg.Store.Close(); e != nil {
-		t.Fatal(e)
-	}
+	f.db.SetFailing(true)
 	f.mu.Lock()
 	f.users = nil
 	f.mu.Unlock()
@@ -1949,9 +1959,7 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 		t.Error(e)
 	}
 	assertState(f.cfg.Store)
-	if e := f.cfg.Store.Close(); e != nil {
-		t.Fatal(e)
-	}
+	f.db.SetFailing(true)
 	for _, method := range []string{"GET", "HEAD", "POST"} {
 		for _, path := range []string{"/", "/alpha/", "/alpha", "/never/", "/alpha/runs/" + failed.ID + "/", "/missing/", "/about"} {
 			writeFile(t, f.trace, "")
@@ -1959,16 +1967,10 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 			assertGit(nil)
 			requireEqual(t, snapshot(t, runsRoot), beforeRuns)
 			requireEqual(t, snapshot(t, repoRoot), beforeRepos)
-			// Reopen the test-owned catalog to observe persisted records while
-			// keeping the handler's original store closed for the next refusal.
-			reopened, err := store.Open(context.Background(), store.Config{Source: filepath.Join(f.root, "catalog.db"), Now: func() time.Time { return fixedTime }, Rand: bytes.NewReader(nil)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			requireEqual(t, catalog(reopened), beforeCatalog)
-			if err := reopened.Close(); err != nil {
-				t.Fatal(err)
-			}
+			// Temporarily restore reads to observe records after the refusal.
+			f.db.SetFailing(false)
+			requireEqual(t, catalog(f.cfg.Store), beforeCatalog)
+			f.db.SetFailing(true)
 		}
 	}
 }

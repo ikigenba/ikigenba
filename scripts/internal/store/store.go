@@ -9,19 +9,13 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"math/big"
-	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	// Register the catalog SQLite driver.
-	_ "modernc.org/sqlite"
+	"github.com/ikigenba/ikigenba/appkit/db"
 )
 
 // Catalog vocabulary and entity id prefixes.
@@ -45,17 +39,18 @@ const (
 
 // Sentinel errors distinguish content refusals from database failures.
 var (
-	ErrDatabase  = errors.New("database failure")
 	ErrNotFound  = errors.New("not found")
 	ErrNameTaken = errors.New("name taken")
 	ErrEnded     = errors.New("run ended")
 )
 
-// Config supplies the catalog source and injected clock and randomness.
+// errCatalog is the stable error for a failure of the database handle.
+var errCatalog = errors.New("catalog database failure")
+
+// Config supplies the injected clock and randomness.
 type Config struct {
-	Source string
-	Now    func() time.Time
-	Rand   io.Reader
+	Now  func() time.Time
+	Rand io.Reader
 }
 
 // Script holds one catalog entry and its newest run.
@@ -91,20 +86,19 @@ type content struct {
 	Runs    map[string]Run
 }
 
-// Store is a concurrent durable catalog.
+// Store provides catalog operations over a caller-owned handle.
 type Store struct {
-	mu     sync.Mutex
-	db     *sql.DB
-	cfg    Config
-	closed bool
-	data   content
+	db  *db.DB
+	cfg Config
 }
-type databaseError struct{ err error }
 
-func (e databaseError) Error() string { return strings.ReplaceAll(e.err.Error(), "\n", " ") }
-func (e databaseError) Is(target error) bool {
-	return target == ErrDatabase || errors.Is(e.err, target)
+// catalog is the content of a single transaction, never shared between calls.
+type catalog struct {
+	tx   *sql.Tx
+	cfg  Config
+	data content
 }
+
 func newID(prefix string, r io.Reader) (string, error) {
 	b := make([]byte, 8)
 	for offset, empty := 0, 0; offset < len(b); {
@@ -168,149 +162,75 @@ func normalize(t time.Time) time.Time {
 	return t.UTC().Truncate(time.Second)
 }
 
-// Open creates or loads a catalog from cfg.Source.
-func Open(ctx context.Context, cfg Config) (*Store, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, databaseError{err}
-	}
+// New builds a store over the caller's database handle.
+func New(d *db.DB, cfg Config) *Store {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
 	if cfg.Rand == nil {
 		cfg.Rand = rand.Reader
 	}
-	memory := cfg.Source == "" || cfg.Source == ":memory:"
-	source := cfg.Source
-	if memory {
-		source = ":memory:"
-	}
-	existed := false
-	sidecars := map[string]bool{}
-	if !memory {
-		parent := sourceParent(source)
-		if err := os.MkdirAll(parent, 0700); err != nil {
-			return nil, databaseError{err}
-		}
-		for _, suffix := range []string{"-wal", "-shm", "-journal"} {
-			_, sideErr := os.Stat(source + suffix)
-			sidecars[suffix] = !os.IsNotExist(sideErr)
-		}
-		info, err := os.Stat(source)
-		if err == nil {
-			existed = true
-			if !info.Mode().IsRegular() {
-				return nil, databaseError{fmt.Errorf("%s is not a regular database file", source)}
-			}
-			if info.Mode().Perm()&0222 == 0 {
-				return nil, databaseError{fmt.Errorf("%s is not writable", source)}
-			}
-		} else if !os.IsNotExist(err) {
-			return nil, databaseError{err}
-		}
-		info, err = os.Stat(parent)
-		if err != nil {
-			return nil, databaseError{err}
-		}
-		if info.Mode().Perm()&0222 == 0 {
-			return nil, databaseError{fmt.Errorf("%s is not writable", parent)}
-		}
-	}
-	databaseSource := source
-	if !memory {
-		if !filepath.IsAbs(databaseSource) {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return nil, databaseError{err}
-			}
-			databaseSource = cwd + string(os.PathSeparator) + databaseSource
-		}
-		databaseSource = (&url.URL{Scheme: "file", Path: databaseSource}).String()
-	}
-	db, err := sql.Open("sqlite", databaseSource)
-	if err != nil {
-		return nil, databaseError{err}
-	}
-	db.SetMaxOpenConns(1)
-	fail := func(err error) (*Store, error) {
-		_ = db.Close()
-		if !memory {
-			for _, suffix := range []string{"-wal", "-shm", "-journal"} {
-				if !sidecars[suffix] {
-					_ = os.Remove(source + suffix)
-				}
-			}
-			if !existed {
-				_ = os.Remove(source)
-			}
-		}
-		return nil, databaseError{err}
-	}
-	if _, err = db.ExecContext(ctx, "SELECT count(*) FROM sqlite_master"); err != nil {
-		return fail(err)
-	}
-	if _, err = db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS catalog (id INTEGER PRIMARY KEY CHECK(id=1), value BLOB NOT NULL)"); err != nil {
-		return fail(err)
-	}
-	if _, err = db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		return fail(err)
-	}
-	s := &Store{db: db, cfg: cfg, data: content{Scripts: map[string]Script{}, Runs: map[string]Run{}}}
-	var b []byte
-	err = db.QueryRowContext(ctx, "SELECT value FROM catalog WHERE id=1").Scan(&b)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fail(err)
-	}
-	if len(b) > 0 {
-		if err = gob.NewDecoder(bytes.NewReader(b)).Decode(&s.data); err != nil {
-			return fail(err)
-		}
-	}
-	for id, sc := range s.data.Scripts {
-		sc.Created = normalize(sc.Created)
-		sc.Last = nil
-		s.data.Scripts[id] = sc
-	}
-	for id, r := range s.data.Runs {
-		r.Started = normalize(r.Started)
-		r.Finished = normalize(r.Finished)
-		s.data.Runs[id] = r
-	}
-	return s, nil
+	return &Store{db: d, cfg: cfg}
 }
 
-// Close releases the database and makes this store unavailable.
-func (s *Store) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	return s.db.Close()
-}
-func (s *Store) check(ctx context.Context) error {
+func (s *Store) transaction(ctx context.Context, write bool, fn func(*catalog) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if s.closed {
-		return errors.New("catalog closed")
+	call := s.db.Read
+	if write {
+		call = s.db.Write
 	}
-	var n int
-	return s.db.QueryRowContext(ctx, "SELECT count(*) FROM catalog").Scan(&n)
-}
-func (s *Store) save(ctx context.Context, c content) error {
-	var encoded bytes.Buffer
-	err := gob.NewEncoder(&encoded).Encode(c)
-	if err != nil {
+	var operationErr error
+	err := call(ctx, func(tx *sql.Tx) error {
+		c := &catalog{tx: tx, cfg: s.cfg, data: content{Scripts: map[string]Script{}, Runs: map[string]Run{}}}
+		var encoded []byte
+		err := tx.QueryRowContext(ctx, "SELECT value FROM catalog WHERE id=1").Scan(&encoded)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			if err = gob.NewDecoder(bytes.NewReader(encoded)).Decode(&c.data); err != nil {
+				return err
+			}
+		}
+		for id, sc := range c.data.Scripts {
+			sc.Created = normalize(sc.Created)
+			sc.Last = nil
+			c.data.Scripts[id] = sc
+		}
+		for id, r := range c.data.Runs {
+			r.Started = normalize(r.Started)
+			r.Finished = normalize(r.Finished)
+			c.data.Runs[id] = r
+		}
+		operationErr = fn(c)
+		return operationErr
+	})
+	if err == nil {
+		return nil
+	}
+	if operationErr != nil {
+		return operationErr
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "INSERT INTO catalog(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", encoded.Bytes())
+	return errCatalog
+}
+
+func (s *catalog) save(ctx context.Context, c content) error {
+	var encoded bytes.Buffer
+	if err := gob.NewEncoder(&encoded).Encode(c); err != nil {
+		return err
+	}
+	_, err := s.tx.ExecContext(ctx, "INSERT INTO catalog(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", encoded.Bytes())
 	if err == nil {
 		s.data = c
 	}
 	return err
 }
-func (s *Store) copy() content {
+func (s *catalog) copy() content {
 	c := content{Scripts: map[string]Script{}, Runs: map[string]Run{}}
 	for id, r := range s.data.Scripts {
 		c.Scripts[id] = r
@@ -320,7 +240,7 @@ func (s *Store) copy() content {
 	}
 	return c
 }
-func (s *Store) runs(script string) []Run {
+func (s *catalog) runs(script string) []Run {
 	out := []Run{}
 	for _, r := range s.data.Runs {
 		if r.Script == script {
@@ -335,7 +255,7 @@ func (s *Store) runs(script string) []Run {
 	})
 	return out
 }
-func (s *Store) script(sc Script) Script {
+func (s *catalog) script(sc Script) Script {
 	sc.Last = nil
 	rr := s.runs(sc.ID)
 	if len(rr) > 0 {
@@ -346,12 +266,7 @@ func (s *Store) script(sc Script) Script {
 }
 
 // Find reads a script by owner and name.
-func (s *Store) Find(ctx context.Context, owner, name string) (Script, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return Script{}, err
-	}
+func (s *catalog) find(owner, name string) (Script, error) {
 	for _, sc := range s.data.Scripts {
 		if sc.Owner == owner && sc.Name == name {
 			return s.script(sc), nil
@@ -361,12 +276,7 @@ func (s *Store) Find(ctx context.Context, owner, name string) (Script, error) {
 }
 
 // List reads an owner's scripts in name order.
-func (s *Store) List(ctx context.Context, owner string) ([]Script, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return nil, err
-	}
+func (s *catalog) list(owner string) []Script {
 	out := []Script{}
 	for _, sc := range s.data.Scripts {
 		if sc.Owner == owner {
@@ -374,19 +284,14 @@ func (s *Store) List(ctx context.Context, owner string) ([]Script, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	return out
 }
 
 // Taken checks the space-wide name namespace.
-func (s *Store) Taken(ctx context.Context, name string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return false, err
-	}
-	return s.taken(name), nil
+func (s *catalog) readTaken(name string) bool {
+	return s.taken(name)
 }
-func (s *Store) taken(name string) bool {
+func (s *catalog) taken(name string) bool {
 	for _, sc := range s.data.Scripts {
 		if sc.Name == name {
 			return true
@@ -399,30 +304,14 @@ func validDraft(d Draft) bool {
 }
 
 // Create records a script with a fresh id and created timestamp.
-func (s *Store) Create(ctx context.Context, d Draft) (Script, error) {
-	s.mu.Lock()
-	if err := s.check(ctx); err != nil {
-		s.mu.Unlock()
-		return Script{}, err
-	}
+func (s *catalog) create(ctx context.Context, d Draft) (Script, error) {
 	if !validDraft(d) {
-		s.mu.Unlock()
 		return Script{}, errors.New("invalid script")
 	}
 	if s.taken(d.Name) {
-		s.mu.Unlock()
 		return Script{}, ErrNameTaken
 	}
-	s.mu.Unlock()
 	created := normalize(s.cfg.Now())
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return Script{}, err
-	}
-	if s.taken(d.Name) {
-		return Script{}, ErrNameTaken
-	}
 	for i := 0; i < 8; i++ {
 		id, err := NewScriptID(s.cfg.Rand)
 		if err != nil {
@@ -443,12 +332,7 @@ func (s *Store) Create(ctx context.Context, d Draft) (Script, error) {
 }
 
 // SetRef updates a script ref and reports whether it changed.
-func (s *Store) SetRef(ctx context.Context, id, ref string) (Script, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return Script{}, false, err
-	}
+func (s *catalog) setRef(ctx context.Context, id, ref string) (Script, bool, error) {
 	if ref == "" {
 		return Script{}, false, errors.New("empty ref")
 	}
@@ -467,12 +351,7 @@ func (s *Store) SetRef(ctx context.Context, id, ref string) (Script, bool, error
 }
 
 // Delete removes a script and all of its runs atomically.
-func (s *Store) Delete(ctx context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return err
-	}
+func (s *catalog) delete(ctx context.Context, id string) error {
 	if _, ok := s.data.Scripts[id]; !ok {
 		return ErrNotFound
 	}
@@ -509,12 +388,7 @@ func validEnding(e Ending) bool {
 }
 
 // AddRun records a newly running or failed run.
-func (s *Store) AddRun(ctx context.Context, r Run) (Run, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return Run{}, err
-	}
+func (s *catalog) addRun(ctx context.Context, r Run) (Run, error) {
 	_, duplicate := s.data.Runs[r.ID]
 	if !validRun(r) || duplicate {
 		return Run{}, errors.New("invalid run")
@@ -533,12 +407,7 @@ func (s *Store) AddRun(ctx context.Context, r Run) (Run, error) {
 }
 
 // FinishRun ends a running run exactly once.
-func (s *Store) FinishRun(ctx context.Context, id string, e Ending) (Run, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return Run{}, err
-	}
+func (s *catalog) finishRun(ctx context.Context, id string, e Ending) (Run, error) {
 	if !validEnding(e) {
 		return Run{}, errors.New("invalid ending")
 	}
@@ -567,12 +436,7 @@ func (s *Store) FinishRun(ctx context.Context, id string, e Ending) (Run, error)
 }
 
 // FindRun reads a run belonging to the given owner.
-func (s *Store) FindRun(ctx context.Context, owner, id string) (Run, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return Run{}, err
-	}
+func (s *catalog) findRun(owner, id string) (Run, error) {
 	r, ok := s.data.Runs[id]
 	if !ok || s.data.Scripts[r.Script].Owner != owner || owner == "" {
 		return Run{}, ErrNotFound
@@ -581,12 +445,7 @@ func (s *Store) FindRun(ctx context.Context, owner, id string) (Run, error) {
 }
 
 // RunByID reads a run regardless of owner.
-func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return Run{}, err
-	}
+func (s *catalog) runByID(id string) (Run, error) {
 	r, ok := s.data.Runs[id]
 	if !ok {
 		return Run{}, ErrNotFound
@@ -595,22 +454,12 @@ func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
 }
 
 // Runs reads a script's runs newest first.
-func (s *Store) Runs(ctx context.Context, script string) ([]Run, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return nil, err
-	}
-	return s.runs(script), nil
+func (s *catalog) readRuns(script string) []Run {
+	return s.runs(script)
 }
 
 // Running reads all running runs in ascending id order.
-func (s *Store) Running(ctx context.Context) ([]Run, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return nil, err
-	}
+func (s *catalog) running() []Run {
 	out := []Run{}
 	for _, r := range s.data.Runs {
 		if r.Status == StatusRunning {
@@ -618,16 +467,11 @@ func (s *Store) Running(ctx context.Context) ([]Run, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out, nil
+	return out
 }
 
 // PastKeeping reads ended runs beyond both retention thresholds.
-func (s *Store) PastKeeping(ctx context.Context, now time.Time, days, count int64) ([]Run, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return nil, err
-	}
+func (s *catalog) pastKeeping(now time.Time, days, count int64) ([]Run, error) {
 	if days < 1 || count < 1 {
 		return nil, errors.New("invalid retention")
 	}
@@ -648,12 +492,7 @@ func (s *Store) PastKeeping(ctx context.Context, now time.Time, days, count int6
 }
 
 // DeleteRun removes a single run record.
-func (s *Store) DeleteRun(ctx context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.check(ctx); err != nil {
-		return err
-	}
+func (s *catalog) deleteRun(ctx context.Context, id string) error {
 	if _, ok := s.data.Runs[id]; !ok {
 		return ErrNotFound
 	}
@@ -670,13 +509,188 @@ func pastAge(now, started time.Time, days int64) bool {
 	return elapsed.Cmp(threshold) > 0
 }
 
-func sourceParent(source string) string {
-	i := strings.LastIndexByte(source, os.PathSeparator)
-	if i < 0 {
-		return "."
+// Find performs a catalog operation through the supplied handle.
+func (s *Store) Find(ctx context.Context, owner, name string) (Script, error) {
+	var out Script
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		var err error
+		out, err = c.find(owner, name)
+		return err
+	})
+	if err != nil {
+		var zero Script
+		return zero, err
 	}
-	if i == 0 {
-		return string(os.PathSeparator)
+	return out, nil
+}
+
+// List performs a catalog operation through the supplied handle.
+func (s *Store) List(ctx context.Context, owner string) ([]Script, error) {
+	var out []Script
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		out = c.list(owner)
+		return nil
+	})
+	if err != nil {
+		var zero []Script
+		return zero, err
 	}
-	return source[:i]
+	return out, nil
+}
+
+// Taken performs a catalog operation through the supplied handle.
+func (s *Store) Taken(ctx context.Context, name string) (bool, error) {
+	var out bool
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		out = c.readTaken(name)
+		return nil
+	})
+	if err != nil {
+		var zero bool
+		return zero, err
+	}
+	return out, nil
+}
+
+// Create performs a catalog operation through the supplied handle.
+func (s *Store) Create(ctx context.Context, d Draft) (Script, error) {
+	var out Script
+	err := s.transaction(ctx, true, func(c *catalog) error {
+		var err error
+		out, err = c.create(ctx, d)
+		return err
+	})
+	if err != nil {
+		var zero Script
+		return zero, err
+	}
+	return out, nil
+}
+
+// Delete performs a catalog operation through the supplied handle.
+func (s *Store) Delete(ctx context.Context, id string) error {
+	return s.transaction(ctx, true, func(c *catalog) error { return c.delete(ctx, id) })
+}
+
+// AddRun performs a catalog operation through the supplied handle.
+func (s *Store) AddRun(ctx context.Context, r Run) (Run, error) {
+	var out Run
+	err := s.transaction(ctx, true, func(c *catalog) error {
+		var err error
+		out, err = c.addRun(ctx, r)
+		return err
+	})
+	if err != nil {
+		var zero Run
+		return zero, err
+	}
+	return out, nil
+}
+
+// FinishRun performs a catalog operation through the supplied handle.
+func (s *Store) FinishRun(ctx context.Context, id string, e Ending) (Run, error) {
+	var out Run
+	err := s.transaction(ctx, true, func(c *catalog) error {
+		var err error
+		out, err = c.finishRun(ctx, id, e)
+		return err
+	})
+	if err != nil {
+		var zero Run
+		return zero, err
+	}
+	return out, nil
+}
+
+// FindRun performs a catalog operation through the supplied handle.
+func (s *Store) FindRun(ctx context.Context, owner, id string) (Run, error) {
+	var out Run
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		var err error
+		out, err = c.findRun(owner, id)
+		return err
+	})
+	if err != nil {
+		var zero Run
+		return zero, err
+	}
+	return out, nil
+}
+
+// RunByID performs a catalog operation through the supplied handle.
+func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
+	var out Run
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		var err error
+		out, err = c.runByID(id)
+		return err
+	})
+	if err != nil {
+		var zero Run
+		return zero, err
+	}
+	return out, nil
+}
+
+// Runs performs a catalog operation through the supplied handle.
+func (s *Store) Runs(ctx context.Context, script string) ([]Run, error) {
+	var out []Run
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		out = c.readRuns(script)
+		return nil
+	})
+	if err != nil {
+		var zero []Run
+		return zero, err
+	}
+	return out, nil
+}
+
+// Running performs a catalog operation through the supplied handle.
+func (s *Store) Running(ctx context.Context) ([]Run, error) {
+	var out []Run
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		out = c.running()
+		return nil
+	})
+	if err != nil {
+		var zero []Run
+		return zero, err
+	}
+	return out, nil
+}
+
+// PastKeeping performs a catalog operation through the supplied handle.
+func (s *Store) PastKeeping(ctx context.Context, now time.Time, days, count int64) ([]Run, error) {
+	var out []Run
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		var err error
+		out, err = c.pastKeeping(now, days, count)
+		return err
+	})
+	if err != nil {
+		var zero []Run
+		return zero, err
+	}
+	return out, nil
+}
+
+// DeleteRun performs a catalog operation through the supplied handle.
+func (s *Store) DeleteRun(ctx context.Context, id string) error {
+	return s.transaction(ctx, true, func(c *catalog) error { return c.deleteRun(ctx, id) })
+}
+
+// SetRef changes a script's ref and reports whether it changed.
+func (s *Store) SetRef(ctx context.Context, id, ref string) (Script, bool, error) {
+	var out Script
+	var changed bool
+	err := s.transaction(ctx, true, func(c *catalog) error {
+		var err error
+		out, changed, err = c.setRef(ctx, id, ref)
+		return err
+	})
+	if err != nil {
+		return Script{}, false, err
+	}
+	return out, changed, nil
 }

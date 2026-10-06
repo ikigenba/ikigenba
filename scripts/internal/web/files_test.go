@@ -16,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
 	"github.com/ikigenba/ikigenba/scripts/internal/runs"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
@@ -30,6 +32,7 @@ type fileFixture struct {
 	banner  page.Banner
 	dir     string
 	st      *store.Store
+	db      *db.DB
 	core    *runs.Core
 	handler http.Handler
 	run     store.Run
@@ -40,11 +43,12 @@ type fileFixture struct {
 
 func fileSetup(t *testing.T) *fileFixture {
 	t.Helper()
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(t.TempDir(), "catalog"), Now: func() time.Time { return time.Unix(100, 0) }, Rand: fileRandom()})
+	d, e := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "catalog"), Migrations: scripts.Migrations(), Now: func() time.Time { return time.Unix(100, 0) }})
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	t.Cleanup(func() { _ = d.Close() })
+	st := store.New(d, store.Config{Now: func() time.Time { return time.Unix(100, 0) }, Rand: fileRandom()})
 	sc, e := st.Create(context.Background(), store.Draft{Owner: "alice", Name: "report", Repo: "rep_1111111111111111", Ref: "main"})
 	if e != nil {
 		t.Fatal(e)
@@ -59,7 +63,7 @@ func fileSetup(t *testing.T) *fileFixture {
 	}
 	dir := t.TempDir()
 	core := runs.New(runs.Config{Runs: dir})
-	f := &fileFixture{t: t, pages: set, banner: page.Banner{Service: "distinct-files-banner", Version: "fixture", Email: "banner@example.test", ProfileURL: "/fixture-profile", LogoutURL: "/fixture-logout"}, dir: dir, st: st, core: core, run: r, folder: core.Folder(r)}
+	f := &fileFixture{t: t, pages: set, banner: page.Banner{Service: "distinct-files-banner", Version: "fixture", Email: "banner@example.test", ProfileURL: "/fixture-profile", LogoutURL: "/fixture-logout"}, dir: dir, st: st, db: d, core: core, run: r, folder: core.Folder(r)}
 	// R-ZJ5Q-8VX6 R-ZKDM-MNNV R-ZMTF-E759
 	f.handler = identity.Require(web.Files(web.FilesConfig{func(u page.User) page.Banner {
 		if !reflect.DeepEqual(u, page.User{}) {
@@ -230,7 +234,7 @@ func TestFilesMissingAndIsolation(t *testing.T) {
 	}
 }
 func TestFilesMethodCatalogAndConcurrency(t *testing.T) {
-	// R-ZP98-5QMN R-XY9N-J2OG R-O477-9N6J R-03W0-QZIZ
+	// R-0UFV-YDCK R-0WVO-PWTY R-0ZBH-HGBC R-03W0-QZIZ
 	f := fileSetup(t)
 	before, e := os.ReadFile(filepath.Join(f.folder, "stdout"))
 	if e != nil {
@@ -268,13 +272,15 @@ func TestFilesMethodCatalogAndConcurrency(t *testing.T) {
 			}
 		}
 	}
-	if e := f.st.Close(); e != nil {
-		t.Fatal(e)
-	}
+	f.db.SetFailing(true)
 	for _, m := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
-		w := f.request(context.Background(), m, fileURL(f, "out/../input.json"), "alice")
-		if w.Code != 405 || w.Header().Get("Allow") != "GET, HEAD" || w.Body.Len() != 0 {
-			t.Fatal(w.Code, w.Header())
+		for _, user := range []string{"alice", "bob"} {
+			for _, suffix := range []string{"input.json", "out/missing.txt", "out/../input.json"} {
+				w := f.request(context.Background(), m, fileURL(f, suffix), user)
+				if w.Code != 405 || !reflect.DeepEqual(w.Header().Values("Allow"), []string{"GET, HEAD"}) || w.Body.Len() != 0 {
+					t.Fatal(w.Code, w.Header())
+				}
+			}
 		}
 	}
 	for _, m := range []string{"GET", "HEAD"} {
@@ -428,7 +434,7 @@ func assertFileUnchanged(t *testing.T, f *fileFixture, before fileSnapshot) {
 	}
 }
 func TestFilesPreserveAllStateAndOwnerAssociation(t *testing.T) {
-	// R-XZHJ-WUF5 R-ZMTF-E759 R-O032-4QHT R-02O4-D7SA R-ZO1B-RYVY R-ZP98-5QMN
+	// R-XZHJ-WUF5 R-ZMTF-E759 R-O032-4QHT R-02O4-D7SA R-ZO1B-RYVY R-0UFV-YDCK
 	f := fileSetup(t)
 	ctx := context.Background()
 	other, e := f.st.Create(ctx, store.Draft{Owner: "alice", Name: "other", Repo: "rep_1111111111111111", Ref: "main"})
@@ -506,15 +512,13 @@ func TestFilesPreserveAllStateAndOwnerAssociation(t *testing.T) {
 	assertFileUnchanged(t, f, before)
 }
 func TestFilesCatalogRefusalsUnknownRun(t *testing.T) {
-	// R-XY9N-J2OG R-O477-9N6J
-	for _, closed := range []bool{false, true} {
-		t.Run(strconv.FormatBool(closed), func(t *testing.T) {
+	// R-0WVO-PWTY R-0ZBH-HGBC
+	for _, failing := range []bool{false, true} {
+		t.Run(strconv.FormatBool(failing), func(t *testing.T) {
 			f := fileSetup(t)
 			ctx := context.Background()
-			if closed {
-				if e := f.st.Close(); e != nil {
-					t.Fatal(e)
-				}
+			if failing {
+				f.db.SetFailing(true)
 			} else {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)

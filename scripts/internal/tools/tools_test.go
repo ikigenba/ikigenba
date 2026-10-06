@@ -21,10 +21,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/git"
 	"github.com/ikigenba/ikigenba/scripts/internal/limits"
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
@@ -60,6 +62,7 @@ type fixture struct {
 	root, repo, path, gitPath, gitExec, trace string
 	env                                       []string
 	st                                        *store.Store
+	db                                        *db.DB
 	core                                      *runs.Core
 	src                                       *source.Source
 	writer                                    *telemetry.Writer
@@ -102,8 +105,9 @@ func setup(t *testing.T, script string) *fixture {
 	h.command(h.repo, "config", "ikigenba.owner", "alice")
 	h.env = append(h.env, "GIT_TRACE2_EVENT="+h.trace)
 	now := func() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 456000000, time.FixedZone("east", 3600)) }
-	h.st, e = store.Open(context.Background(), store.Config{Source: filepath.Join(root, "catalog.db"), Now: now, Rand: &sequence{}})
+	h.db, e = db.Open(context.Background(), db.Config{Path: filepath.Join(root, "catalog.db"), Migrations: scripts.Migrations(), Now: now})
 	must(t, e)
+	h.st = store.New(h.db, store.Config{Now: now, Rand: &sequence{}})
 	h.after = func(time.Duration) <-chan time.Time { return make(chan time.Time) }
 	h.lim = limits.New(settings.Defaults(), limits.Clock{After: func(d time.Duration) <-chan time.Time { return h.after(d) }})
 	gitDir := filepath.Join(root, "git-bin")
@@ -115,7 +119,7 @@ func setup(t *testing.T, script string) *fixture {
 	h.src = source.New(source.Config{Repos: filepath.Dir(h.repo), Git: gg, Limits: h.lim})
 	h.writer = telemetry.New(telemetry.Config{Service: "scripts", Sink: sink{h.capture, h.events}, Stderr: io.Discard, Now: now, Rand: &sequence{}})
 	h.core = runs.New(runs.Config{Store: h.st, Source: h.src, Writer: h.writer, Runs: filepath.Join(root, "runs"), Path: path, Services: filepath.Join(root, "services"), ScriptSeconds: 30, OutputMaxBytes: 128, KeepDays: 1, KeepCount: 2, Now: now, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Rand: &sequence{}})
-	// R-2W8K-10WN R-2XGG-ESNC R-3JEN-ANZU R-3KMJ-OFQJ
+	// R-2W8K-10WN R-2XGG-ESNC R-1473-0JA4 R-3KMJ-OFQJ
 	h.server = mcp.NewServer(mcp.ServerConfig{Name: "scripts", Version: "test", Telemetry: h.writer})
 	func(register func(*mcp.Server, tools.Config)) {
 		register(h.server, tools.Config{Store: h.st, Source: h.src, Runs: h.core, Telemetry: h.writer})
@@ -129,7 +133,7 @@ func setup(t *testing.T, script string) *fixture {
 		h.core.Drain(ctx)
 		httpServer.Close()
 		h.writer.Shutdown(context.Background(), "test")
-		_ = h.st.Close()
+		_ = h.db.Close()
 		cleanupRoot, err := os.OpenRoot(root)
 		if err != nil {
 			t.Error(err)
@@ -457,7 +461,7 @@ func TestArgumentShapes(t *testing.T) {
 	}
 }
 func TestCatalogRefusalsAndInvalidArguments(t *testing.T) {
-	// R-3RXX-Z26P R-3T5U-CTXE R-C1K1-NC18 R-A8LZ-2P82 R-4SIX-G6FJ
+	// R-3RXX-Z26P R-3T5U-CTXE R-1BIH-B5QA R-A8LZ-2P82 R-4SIX-G6FJ
 	h := setup(t, "print(1)\n")
 	a := h.create("job")
 	must(t, os.Remove(h.trace))
@@ -506,7 +510,7 @@ func TestCatalogRefusalsAndInvalidArguments(t *testing.T) {
 	if _, e = os.Stat(h.trace); !os.IsNotExist(e) {
 		t.Fatal("invalid args ran git")
 	}
-	must(t, h.st.Close())
+	h.db.SetFailing(true)
 	for _, tt := range []struct{ tool, args string }{{"list", `{}`}, {"show", `{"name":"job"}`}, {"create", `{"name":"new","repo":"rep_1111111111111111"}`}, {"update", `{"name":"job","ref":"main"}`}, {"delete", `{"name":"job"}`}, {"run", `{"name":"job"}`}, {"runs", `{"name":"job"}`}, {"result", `{"run":"run_1111111111111111"}`}, {"cancel", `{"run":"run_1111111111111111"}`}} {
 		refusal(t, h.raw(tt.tool, tt.args, caller()), store.Unreachable)
 	}
@@ -565,15 +569,15 @@ func TestUnknownAndMissingArguments(t *testing.T) {
 	}
 }
 
-func TestCatalogClosesDuringGit(t *testing.T) {
-	// R-C1K1-NC18
+func TestCatalogFailsDuringGit(t *testing.T) {
+	// R-1BIH-B5QA
 	for _, tool := range []string{"create", "run"} {
 		t.Run(tool, func(t *testing.T) {
 			h := setup(t, "print(1)\n")
 			if tool == "run" {
 				h.create("job")
 			}
-			h.after = func(time.Duration) <-chan time.Time { must(t, h.st.Close()); return make(chan time.Time) }
+			h.after = func(time.Duration) <-chan time.Time { h.db.SetFailing(true); return make(chan time.Time) }
 			args := `{"name":"job"}`
 			if tool == "create" {
 				args = `{"name":"job","repo":"rep_1111111111111111"}`
@@ -736,8 +740,8 @@ func assertListing(t *testing.T, h *fixture, want []mcp.ToolInfo) []mcp.ToolInfo
 	noGit(t, h)
 	return got
 }
-func TestListingAfterCallsDrainAndClose(t *testing.T) {
-	// R-4Q34-OMY5 R-O6N0-16NX
+func TestListingAfterCallsDrainAndFailure(t *testing.T) {
+	// R-16MV-S2RI R-192O-JM8W
 	h := setup(t, "print(1)\n")
 	before := assertListing(t, h, nil)
 	if toolCalledCount(h) != 0 {
@@ -796,12 +800,12 @@ func TestListingAfterCallsDrainAndClose(t *testing.T) {
 	}
 	h.core.Drain(context.Background())
 	assertListing(t, h, before)
-	// Drain's refusal is another answered call, independent of store closure.
+	// Drain's refusal is another answered call, independent of store failure.
 	if r := h.raw("run", `{"name":"absent"}`, caller()); !r.IsError() {
 		t.Fatal("run after drain succeeded")
 	}
 	assertListing(t, h, before)
-	must(t, h.st.Close())
+	h.db.SetFailing(true)
 	assertListing(t, h, before)
 	for _, name := range names {
 		args := `{"name":"absent"}`
@@ -817,22 +821,22 @@ func TestListingAfterCallsDrainAndClose(t *testing.T) {
 		}
 		assertListing(t, h, before)
 		if r := h.raw(name, args, caller()); !r.IsError() {
-			t.Fatal("call after close succeeded", name)
+			t.Fatal("call while failing succeeded", name)
 		}
 		assertListing(t, h, before)
 	}
 }
-func TestListingAfterCloseBeforeDrain(t *testing.T) {
-	// R-4Q34-OMY5 R-O6N0-16NX
+func TestListingWhileFailingBeforeDrain(t *testing.T) {
+	// R-16MV-S2RI R-192O-JM8W
 	h := setup(t, "print(1)\n")
 	before := assertListing(t, h, nil)
-	must(t, h.st.Close())
+	h.db.SetFailing(true)
 	assertListing(t, h, before)
 	h.core.Drain(context.Background())
 	assertListing(t, h, before)
 }
 func TestListingAfterLiveRunAndSuccessfulCancel(t *testing.T) {
-	// R-4Q34-OMY5 R-O6N0-16NX
+	// R-16MV-S2RI R-192O-JM8W
 	h, _, record, _ := paused(t)
 	before := assertListing(t, h, nil)
 	// paused has answered a successful run and waits for its process handshake.
@@ -843,7 +847,7 @@ func TestListingAfterLiveRunAndSuccessfulCancel(t *testing.T) {
 	assertListing(t, h, before)
 	h.core.Drain(context.Background())
 	assertListing(t, h, before)
-	must(t, h.st.Close())
+	h.db.SetFailing(true)
 	assertListing(t, h, before)
 }
 

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
@@ -17,7 +19,6 @@ func limitsRestart(t *testing.T, old *runHarness) *runHarness {
 	t.Helper()
 	h := newHarness(t)
 	h.p.Dir = old.p.Dir
-	h.p.Database = old.p.Database
 	h.repo = old.repo
 	h.sha = old.sha
 	h.set("REPOS_DIR", filepath.Dir(old.repo))
@@ -194,12 +195,13 @@ func TestLimitsPruneUsesStartupSettings(t *testing.T) {
 			}
 		}
 	}
-	db := filepath.Join(h.p.Dir, "state", "scripts.db")
-	s, e := store.Open(context.Background(), store.Config{Source: db, Now: func() time.Time { return h.now }, Rand: &countingRandom{}})
+	database := filepath.Join(h.p.Dir, "state", "scripts.db")
+	sDB, e := db.Open(context.Background(), db.Config{Path: database, Migrations: scripts.Migrations(), Now: func() time.Time { return h.now }})
 	mustCLI(t, e)
+	s := store.New(sDB, store.Config{Now: func() time.Time { return h.now }, Rand: &countingRandom{}})
 	past, e := s.PastKeeping(context.Background(), h.now, 3, 2)
 	mustCLI(t, e)
-	mustCLI(t, s.Close())
+	mustCLI(t, sDB.Close())
 	if len(past) != 2 {
 		t.Fatal(past)
 	}

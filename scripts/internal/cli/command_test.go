@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -32,7 +31,7 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// R-T9F8-CWZB R-TAN4-QOQ0 R-TD2X-I87E R-TFIQ-9ROS R-TGQM-NJFH
+// R-1XBL-2MBE R-TAN4-QOQ0 R-TD2X-I87E R-TFIQ-9ROS R-TGQM-NJFH
 func TestCommandConstants(t *testing.T) {
 	const usage string = cli.Usage
 	const manifest string = cli.Manifest
@@ -43,7 +42,7 @@ func TestCommandConstants(t *testing.T) {
 	if sum != 3 || codes[0] != 0 || codes[1] != 1 || codes[2] != 2 || unsigned[2] != 2 {
 		t.Fatal("wrong exit codes")
 	}
-	wantUsage := "Usage: scripts [command]\n\nRun Python scripts from the suite's repositories, with MCP tools at /mcp\nand pages for scripts and their runs at /, on the socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+	wantUsage := "Usage: scripts [command]\n\nRun Python scripts from the suite's repositories, with MCP tools at /mcp\nand pages for scripts and their runs at /, on the socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 	if usage != wantUsage {
 		t.Fatalf("usage %q", usage)
 	}
@@ -63,7 +62,7 @@ func TestCommandConstants(t *testing.T) {
 	}
 }
 
-// R-TJ6F-F2WV R-TKEB-SUNK R-TLM8-6ME9 R-TMU4-KE4Y R-TO20-Y5VN R-TP9X-BXMC R-TRPQ-3H3Q R-TEAT-VZY3
+// R-TJ6F-F2WV R-TKEB-SUNK R-TLM8-6ME9 R-1YJH-GE23 R-1ZRD-U5SS R-TP9X-BXMC R-A3YX-3RPC R-TEAT-VZY3
 func TestCommandRun(t *testing.T) {
 	tests := []struct {
 		args           []string
@@ -76,6 +75,11 @@ func TestCommandRun(t *testing.T) {
 		{[]string{"--bogus"}, "", "--bogus"},
 		{[]string{""}, "", ""},
 		{[]string{"-"}, "", "-"},
+		{[]string{"db"}, "", "db"},
+		{[]string{"db", "bogus"}, "", "bogus"},
+		{[]string{"db", "--bogus"}, "", "--bogus"},
+		{[]string{"db", "status", "extra"}, "", "extra"},
+		{[]string{"db", "status", "--extra"}, "", "--extra"},
 		{[]string{"bogus", "--help"}, "", "bogus"},
 		{[]string{"--bogus", "manifest"}, "", "--bogus"},
 	}
@@ -145,15 +149,15 @@ func (s forbiddenSink) Deliver(context.Context, telemetry.Event) error {
 	return nil
 }
 
-// R-S37R-687C
+// R-20ZA-7XJH R-2276-LPA6
 func TestCommandsLeaveProcessUntouched(t *testing.T) {
-	for _, args := range [][]string{{"--version"}, {"manifest"}, {"--help"}, {"bogus"}, {"manifest", "--extra"}} {
+	for _, args := range [][]string{{"--version"}, {"manifest"}, {"--help"}, {"bogus"}, {"manifest", "--extra"}, {"db", "status"}, {"db", "bogus"}} {
 		t.Run(fmt.Sprint(args), func(t *testing.T) {
 			forbidden := func() { t.Fatal("command touched process seam") }
 			dir := t.TempDir()
 			capture := &forbiddenSink{t}
 			p := cli.Process{
-				Args: args, Stdout: io.Discard, Stderr: io.Discard, Dir: dir, Database: filepath.Join(dir, "catalog.db"),
+				Args: args, Stdout: io.Discard, Stderr: io.Discard, Dir: dir,
 				LookupEnv:   func(string) (string, bool) { forbidden(); return "", false },
 				Environ:     func() []string { forbidden(); return nil },
 				Unsetenv:    func(string) error { forbidden(); return nil },

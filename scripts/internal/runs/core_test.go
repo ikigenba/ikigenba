@@ -19,8 +19,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/git"
 	"github.com/ikigenba/ikigenba/scripts/internal/limits"
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
@@ -62,6 +64,7 @@ type harness struct {
 	core      *runs.Core
 	cfg       runs.Config
 	st        *store.Store
+	db        *db.DB
 	sc        store.Script
 	sink      *eventSink
 	env       []string
@@ -109,8 +112,10 @@ func fixture(t *testing.T, script string, extra ...map[string]string) *harness {
 	must(t, os.MkdirAll(filepath.Dir(h.repo), 0700))
 	h.command(root, "clone", "--bare", work, h.repo)
 	h.sha = strings.TrimSpace(h.command(h.repo, "rev-parse", "HEAD"))
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(root, "state", "catalog.db"), Now: h.readNow, Rand: &sequence{}})
+	d, e := db.Open(context.Background(), db.Config{Path: filepath.Join(root, "state", "catalog.db"), Migrations: scripts.Migrations(), Now: h.readNow})
 	must(t, e)
+	h.db = d
+	st := store.New(d, store.Config{Now: h.readNow, Rand: &sequence{}})
 	h.st = st
 	h.sc, e = st.Create(context.Background(), store.Draft{Owner: "owner", Name: "job", Repo: "rep_0102030405060708", Ref: "main"})
 	must(t, e)
@@ -131,7 +136,7 @@ func fixture(t *testing.T, script string, extra ...map[string]string) *harness {
 		cancel()
 		h.core.Drain(ctx)
 		writer.Shutdown(context.Background(), "test")
-		_ = st.Close()
+		_ = h.db.Close()
 		cleanupRoot, e := os.OpenRoot(root)
 		if e != nil {
 			t.Error(e)
@@ -624,14 +629,32 @@ func TestFailedRunsAndFolders(t *testing.T) {
 	}
 }
 
-// R-FKYP-VVQK R-FPUB-EYPC R-FR27-SQG1 R-V3LI-INRK R-V9P0-FIH1 R-UWRH-TNH7
+// R-FKYP-VVQK R-FPUB-EYPC R-0I8W-4NXM R-V3LI-INRK R-V9P0-FIH1 R-UWRH-TNH7
 func TestCutoffAndCatalogFailureCleanup(t *testing.T) {
-	for _, mode := range []string{"cancel", "halt", "closed-running", "closed-failed", "delete-store", "delete-core", "folder"} {
+	for _, mode := range []string{"cancel", "halt", "failing-running", "failing-failed", "delete-store", "delete-core", "folder"} {
 		t.Run(mode, func(t *testing.T) {
-			h := fixture(t, waitScript)
+			script := waitScript
+			if mode == "failing-running" {
+				script = "import os\nopen(os.path.join(os.environ['IKIGENBA_OUT_DIR'], 'pid'), 'w').write(str(os.getpid()))\n" + waitScript
+			}
+			h := fixture(t, script)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			cfg := h.cfg
+			var startedPID string
+			if mode == "failing-running" {
+				cfg.ScriptAfter = func(time.Duration) <-chan time.Time {
+					root, err := os.OpenRoot(filepath.Join(cfg.Runs, h.sc.ID, "run_0101010101010101", runs.OutDir))
+					must(t, err)
+					defer func() { _ = root.Close() }()
+					until(t, func() bool {
+						b, err := root.ReadFile("pid")
+						startedPID = string(b)
+						return err == nil && startedPID != ""
+					})
+					return make(chan time.Time)
+				}
+			}
 			if mode == "folder" {
 				must(t, os.WriteFile(filepath.Join(filepath.Dir(cfg.Runs), "blocked"), nil, 0600))
 				cfg.Runs = filepath.Join(filepath.Dir(cfg.Runs), "blocked", "runs")
@@ -645,8 +668,8 @@ func TestCutoffAndCatalogFailureCleanup(t *testing.T) {
 							cancel()
 						case "halt":
 							h.limit.Halt()
-						case "closed-running", "closed-failed":
-							must(t, h.st.Close())
+						case "failing-running", "failing-failed":
+							h.db.SetFailing(true)
 						case "delete-store":
 							must(t, h.st.Delete(context.Background(), h.sc.ID))
 						}
@@ -658,7 +681,7 @@ func TestCutoffAndCatalogFailureCleanup(t *testing.T) {
 				cfg.Source = source.New(source.Config{Repos: filepath.Dir(h.repo), Git: g, Limits: h.limit})
 			}
 			h.core = runs.New(cfg)
-			if mode == "closed-failed" {
+			if mode == "failing-failed" {
 				h.sc.Ref = "absent"
 			}
 			if mode == "delete-core" {
@@ -714,9 +737,17 @@ func TestCutoffAndCatalogFailureCleanup(t *testing.T) {
 					if !errors.Is(e, store.ErrNotFound) {
 						t.Fatal(e)
 					}
-				case "closed-running", "closed-failed":
-					if !catalogError(e) {
-						t.Fatal(e)
+				case "failing-running", "failing-failed":
+					_, addErr := h.st.AddRun(context.Background(), store.Run{ID: "run_ffffffffffffffff", Script: h.sc.ID, SHA: h.sha, Ref: "main", User: "owner", RequestID: "failure-probe", Trigger: store.TriggerManual, Status: store.StatusRunning, Started: h.readNow()})
+					if !catalogError(addErr) || !errors.Is(e, addErr) || errors.Is(e, runs.ErrDraining) || errors.Is(e, limits.ErrHalted) {
+						t.Fatalf("Run error %v does not preserve AddRun error %v", e, addErr)
+					}
+					if startedPID != "" && !processGone(startedPID) {
+						t.Fatal("process survives catalog failure", startedPID)
+					}
+					h.db.SetFailing(false)
+					if _, err := h.st.RunByID(context.Background(), "run_0101010101010101"); !errors.Is(err, store.ErrNotFound) {
+						t.Fatal("catalog retained refused run", err)
 					}
 				}
 				id := "run_0101010101010101"
@@ -724,6 +755,9 @@ func TestCutoffAndCatalogFailureCleanup(t *testing.T) {
 					t.Fatal("folder remains", e)
 				}
 			}
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer flushCancel()
+			must(t, h.cfg.Writer.Flush(flushCtx))
 			for _, ev := range h.sink.capture.Events() {
 				if strings.HasPrefix(ev.Name, "run.") {
 					t.Fatal(ev)
@@ -792,7 +826,7 @@ func TestRecoverAndForeignCancel(t *testing.T) {
 	if !s.IsDir() {
 		t.Fatal("recover root")
 	}
-	must(t, h.st.Close())
+	h.db.SetFailing(true)
 	if e = h.core.Recover(context.Background()); !catalogError(e) {
 		t.Fatal(e)
 	}
@@ -880,7 +914,7 @@ func TestPruneKeepingAndReadOnlyRemoval(t *testing.T) {
 		t.Fatal("record removed")
 	}
 	must(t, restoreDirectory(parent))
-	must(t, h.st.Close())
+	h.db.SetFailing(true)
 	if e = h.core.Prune(context.Background()); !catalogError(e) {
 		t.Fatal(e)
 	}
@@ -1076,7 +1110,7 @@ while not os.path.exists(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'child-read
 func TestEndingCatalogFailureHasNoFinishedEvent(t *testing.T) {
 	h := fixture(t, waitScript)
 	r := h.run(nil)
-	must(t, h.st.Close())
+	h.db.SetFailing(true)
 	h.release(r)
 	h.core.Drain(context.Background())
 	h.cfg.Writer.Shutdown(context.Background(), "failure")
@@ -1085,9 +1119,8 @@ func TestEndingCatalogFailureHasNoFinishedEvent(t *testing.T) {
 			t.Fatal(ev)
 		}
 	}
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(filepath.Dir(h.cfg.Runs), "catalog.db"), Now: h.readNow, Rand: &sequence{}})
-	must(t, e)
-	defer func() { _ = st.Close() }()
+	h.db.SetFailing(false)
+	st := store.New(h.db, store.Config{Now: h.readNow, Rand: &sequence{}})
 	rec, e := st.RunByID(context.Background(), r.ID)
 	must(t, e)
 	if rec.Status != store.StatusRunning {

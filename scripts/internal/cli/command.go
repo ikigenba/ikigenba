@@ -2,9 +2,14 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
+
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/scripts"
 )
 
 // Version is the release version reported by the service.
@@ -25,7 +30,8 @@ and pages for scripts and their runs at /, on the socket systemd passes in.
 With no command, serve.
 
 Commands:
-  manifest   print the app manifest
+  manifest    print the app manifest
+  db status   print applied and pending migrations
 
 Options:
   --help      print this help
@@ -33,7 +39,7 @@ Options:
 
 Exit codes:
   0  success
-  1  the server failed
+  1  failure
   2  usage error
 `
 
@@ -63,9 +69,17 @@ memory_max = "1G"
 io_weight = 50
 `
 
-func command(args []string, stdout, stderr io.Writer) (bool, int) {
+func command(args []string, dir string, stdout, stderr io.Writer) (bool, int) {
 	if len(args) == 0 {
 		return false, ExitSuccess
+	}
+	if len(args) == 2 && args[0] == "db" && args[1] == "status" {
+		err := db.Status(context.Background(), db.Config{Path: filepath.Join(dir, "state", "scripts.db"), Migrations: scripts.Migrations()}, stdout)
+		if err != nil {
+			_, _ = stderr.Write([]byte("scripts: " + strings.ReplaceAll(err.Error(), "\n", " ") + "\n"))
+			return true, ExitServerFailed
+		}
+		return true, ExitSuccess
 	}
 	var text string
 	switch args[0] {
@@ -81,7 +95,12 @@ func command(args []string, stdout, stderr io.Writer) (bool, int) {
 		return true, ExitSuccess
 	}
 	arg := args[0]
-	if text != "" {
+	if args[0] == "db" && len(args) > 1 {
+		arg = args[1]
+		if arg == "status" {
+			arg = args[2]
+		}
+	} else if text != "" {
 		arg = args[1]
 	}
 	kind := "command"

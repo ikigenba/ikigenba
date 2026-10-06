@@ -25,9 +25,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
@@ -42,7 +44,7 @@ func binaryMust(t *testing.T, err error) {
 }
 
 func TestBinary(t *testing.T) {
-	// R-K1NK-2UOE R-K2VG-GMF3 R-8U9H-VWCG R-K5B9-85WH R-K6J5-LXN6
+	// R-9BM7-ZMWS R-K2VG-GMF3 R-8U9H-VWCG R-K5B9-85WH R-K6J5-LXN6
 	// R-K7R1-ZPDV R-K8YY-DH4K R-KA6U-R8V9 R-8XX7-17KJ
 	// R-SGMN-DPCZ R-BODX-EEGV R-XW4F-83YL
 	t.Setenv(services.Variable, "")
@@ -76,6 +78,8 @@ func TestBinary(t *testing.T) {
 	env := []string{"HOME=" + root, "XDG_CONFIG_HOME=" + root, "PATH=" + filepath.Dir(git) + ":" + filepath.Dir(python), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=", "GIT_AUTHOR_NAME=Fixture", "GIT_COMMITTER_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.test", "GIT_COMMITTER_EMAIL=fixture@example.test", "GIT_AUTHOR_DATE=2025-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2025-01-01T00:00:00Z"}
 	dir := filepath.Join(root, "scripts")
 	binaryMust(t, os.Mkdir(dir, 0700))
+	var pending bytes.Buffer
+	binaryMust(t, db.Status(context.Background(), db.Config{Path: filepath.Join(dir, "state", "scripts.db"), Migrations: scripts.Migrations()}, &pending))
 	for _, tc := range []struct {
 		args     []string
 		out, err string
@@ -83,6 +87,10 @@ func TestBinary(t *testing.T) {
 	}{
 		{[]string{"--version"}, cli.Version + "\n", "", cli.ExitSuccess},
 		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
+		{[]string{"--help"}, cli.Usage, "", cli.ExitSuccess},
+		{[]string{"db", "status"}, pending.String(), "", cli.ExitSuccess},
+		{[]string{"db", "bogus"}, "", "scripts: unknown command 'bogus'\n\nsee 'scripts --help' for usage\n", cli.ExitUsage},
+		{[]string{"db", "status", "extra"}, "", "scripts: unknown command 'extra'\n\nsee 'scripts --help' for usage\n", cli.ExitUsage},
 		{[]string{"bogus"}, "", "scripts: unknown command 'bogus'\n\nsee 'scripts --help' for usage\n", cli.ExitUsage},
 		{nil, "", "scripts: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n", cli.ExitUsage},
 	} {
@@ -442,9 +450,10 @@ func TestBinary(t *testing.T) {
 	if string(ready[:n]) != "READY=1" {
 		t.Fatalf("trace readiness %q", ready[:n])
 	}
-	catalog, e := store.Open(context.Background(), store.Config{Source: filepath.Join(dir, "state", "scripts.db"), Now: func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }, Rand: bytes.NewReader(make([]byte, 64))})
+	catalogDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }})
 	binaryMust(t, e)
-	defer func() { _ = catalog.Close() }()
+	defer func() { _ = catalogDB.Close() }()
+	catalog := store.New(catalogDB, store.Config{Now: func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }, Rand: bytes.NewReader(make([]byte, 64))})
 	catalogSnapshot := func() []byte {
 		scripts, e := catalog.List(context.Background(), "owner")
 		binaryMust(t, e)

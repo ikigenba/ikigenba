@@ -3,12 +3,10 @@ package store_test
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -16,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
@@ -31,19 +31,27 @@ func (r *sequence) Read(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
-func open(t *testing.T, source string) *store.Store {
+
+var handles sync.Map
+
+func open(t *testing.T, path string) *store.Store {
 	t.Helper()
-	s, err := store.Open(ctx, store.Config{Source: source, Now: func() time.Time { return stamp }, Rand: &sequence{}})
-	if err != nil {
-		t.Fatal(err)
+	return configured(t, path, store.Config{Now: func() time.Time { return stamp }, Rand: &sequence{}})
+}
+func configured(t *testing.T, path string, cfg store.Config) *store.Store {
+	t.Helper()
+	if path == "" {
+		path = filepath.Join(t.TempDir(), "scripts.db")
 	}
-	t.Cleanup(func() {
-		if err := s.Close(); err != nil {
-			t.Error(err)
-		}
-	})
+	d, err := db.Open(ctx, db.Config{Path: path, Migrations: scripts.Migrations(), Now: func() time.Time { return stamp }})
+	must(t, err)
+	s := store.New(d, cfg)
+	handles.Store(s, d)
+	t.Cleanup(func() { must(t, d.Close()); handles.Delete(s) })
 	return s
 }
+func handle(s *store.Store) *db.DB    { d, _ := handles.Load(s); return d.(*db.DB) }
+func closeStore(s *store.Store) error { return handle(s).Close() }
 func create(t *testing.T, s *store.Store, owner, name string) store.Script {
 	t.Helper()
 	sc, err := s.Create(ctx, store.Draft{Owner: owner, Name: name, Repo: "repository", Ref: "main"})
@@ -150,12 +158,12 @@ type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("random unavailable") }
 func TestWordsAndNames(t *testing.T) {
-	// R-KJY1-TEST R-KL5Y-76JI R-KMDU-KYA7 R-KNLQ-YQ0W R-KW51-N47R
+	// R-KJY1-TEST R-KL5Y-76JI R-KMDU-KYA7 R-XX43-QPZC R-KW51-N47R
 	equal(t, []string{store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed}, []string{"running", "exited", "killed", "timed_out", "failed"})
 	equal(t, []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed}, []string{"repository_missing", "commit_missing", "too_large", "git_failed", "timed_out", "start_failed"})
 	equal(t, store.TriggerManual, "manual")
 	equal(t, store.Unreachable, "cannot reach the catalog; try again later")
-	sentinels := []error{store.ErrDatabase, store.ErrNotFound, store.ErrNameTaken, store.ErrEnded}
+	sentinels := []error{store.ErrNotFound, store.ErrNameTaken, store.ErrEnded}
 	for i, a := range sentinels {
 		if a == nil {
 			t.Fatal("nil sentinel")
@@ -178,139 +186,9 @@ func TestWordsAndNames(t *testing.T) {
 		equal(t, store.ValidName(name), want)
 	}
 }
-func TestOpenMemoryAndFilesystem(t *testing.T) {
-	// R-KF2G-ABU1 R-KXCY-0VYG R-KYKU-ENP5 R-L10N-676J
-	for _, source := range []string{"", ":memory:"} {
-		s := open(t, source)
-		sc := create(t, s, "alice", "alpha")
-		got, err := s.Find(ctx, "alice", "alpha")
-		must(t, err)
-		equal(t, got, sc)
-	}
-	root := t.TempDir()
-	existing := filepath.Join(root, "existing")
-	must(t, os.Mkdir(existing, 0750))
-	path := filepath.Join(existing, "new", "nested", "scripts.db")
-	s := open(t, path)
-	for _, d := range []string{filepath.Dir(path), filepath.Dir(filepath.Dir(path))} {
-		info, err := os.Stat(d)
-		must(t, err)
-		equal(t, info.Mode().Perm(), os.FileMode(0700))
-	}
-	info, err := os.Stat(existing)
-	must(t, err)
-	equal(t, info.Mode().Perm(), os.FileMode(0750))
-	list, err := s.List(ctx, "nobody")
-	must(t, err)
-	equal(t, list, []store.Script{})
-	taken, err := s.Taken(ctx, "arbitrary")
-	must(t, err)
-	equal(t, taken, false)
-	rr, err := s.Running(ctx)
-	must(t, err)
-	equal(t, rr, []store.Run{})
-	_, err = s.RunByID(ctx, "missing")
-	equal(t, errors.Is(err, store.ErrNotFound), true)
-	checkWAL := func() {
-		db, err := sql.Open("sqlite", path)
-		must(t, err)
-		defer func() { must(t, db.Close()) }()
-		var mode string
-		must(t, db.QueryRow("PRAGMA journal_mode").Scan(&mode))
-		equal(t, mode, "wal")
-	}
-	checkWAL()
-	must(t, s.Close())
-	checkWAL()
-	zero := filepath.Join(root, "zero.db")
-	must(t, os.WriteFile(zero, nil, 0600))
-	s = open(t, zero)
-	list, err = s.List(ctx, "alice")
-	must(t, err)
-	equal(t, list, []store.Script{})
-}
-func TestOpenFailures(t *testing.T) {
-	// R-L28J-JYX8 R-L3GF-XQNX R-L4OC-BIEM R-8PDW-CTDO
-	root := t.TempDir()
-	file := filepath.Join(root, "parent\nfile")
-	must(t, os.WriteFile(file, []byte("blocker"), 0600))
-	path := filepath.Join(file, "child", "scripts.db")
-	_, expected := os.Stat(path)
-	if expected == nil {
-		t.Fatal("fixture not blocked")
-	}
-	expected = os.MkdirAll(filepath.Dir(path), 0700)
-	s, err := store.Open(ctx, store.Config{Source: path})
-	equal(t, s, (*store.Store)(nil))
-	equal(t, errors.Is(err, store.ErrDatabase), true)
-	equal(t, err.Error(), strings.ReplaceAll(expected.Error(), "\n", " "))
-	for _, kind := range []string{"garbage", "readonly", "directory"} {
-		t.Run(kind, func(t *testing.T) {
-			dir := t.TempDir()
-			path := filepath.Join(dir, "db")
-			data := []byte("not a database")
-			if kind == "readonly" {
-				tmp := open(t, path)
-				create(t, tmp, "alice", "alpha")
-				must(t, tmp.Close())
-				var readErr error
-				owned, rootErr := os.OpenRoot(dir)
-				must(t, rootErr)
-				data, readErr = owned.ReadFile("db")
-				must(t, owned.Close())
-				must(t, readErr)
-				must(t, os.Chmod(path, 0400))
-			} else {
-				must(t, os.WriteFile(path, data, 0600))
-			}
-			if kind == "directory" {
-				owned, rootErr := os.OpenRoot(dir)
-				must(t, rootErr)
-				must(t, owned.Chmod(".", 0500))
-				defer func() { must(t, owned.Chmod(".", 0700)); must(t, owned.Close()) }()
-			}
-			before, readErr := os.ReadDir(dir)
-			must(t, readErr)
-			info, statErr := os.Stat(path)
-			must(t, statErr)
-			s, err := store.Open(ctx, store.Config{Source: path})
-			equal(t, s, (*store.Store)(nil))
-			equal(t, errors.Is(err, store.ErrDatabase), true)
-			if err.Error() == "" || strings.Contains(err.Error(), "\n") {
-				t.Fatal(err)
-			}
-			after, readErr := os.ReadDir(dir)
-			must(t, readErr)
-			names := func(entries []os.DirEntry) []string {
-				out := []string{}
-				for _, entry := range entries {
-					out = append(out, entry.Name())
-				}
-				return out
-			}
-			equal(t, names(after), names(before))
-			owned, rootErr := os.OpenRoot(dir)
-			must(t, rootErr)
-			actual, readErr := owned.ReadFile("db")
-			must(t, owned.Close())
-			must(t, readErr)
-			equal(t, actual, data)
-			afterInfo, statErr := os.Stat(path)
-			must(t, statErr)
-			equal(t, afterInfo.Mode().Perm(), info.Mode().Perm())
-		})
-	}
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	absent := filepath.Join(root, "absent.db")
-	s, err = store.Open(cancelled, store.Config{Source: absent})
-	equal(t, s, (*store.Store)(nil))
-	equal(t, errors.Is(err, context.Canceled), true)
-	_, err = os.Stat(absent)
-	equal(t, os.IsNotExist(err), true)
-}
+
 func TestScriptsAndPersistence(t *testing.T) {
-	// R-KGAC-O3KQ R-KIQ5-FN24 R-KOTN-CHRL R-KR9G-418Z R-KZSQ-SFFU R-L5W8-PA5B R-LD7M-ZWLH R-LFNF-RG2V R-LGVC-57TK R-LI38-IZK9 R-LJB4-WRAY R-LKJ1-AJ1N R-LLQX-OASC R-LMYU-22J1
+	// R-KGAC-O3KQ R-KIQ5-FN24 R-KOTN-CHRL R-KR9G-418Z R-XZJW-I9GQ R-Y0RS-W17F R-LD7M-ZWLH R-LFNF-RG2V R-LGVC-57TK R-LI38-IZK9 R-LJB4-WRAY R-LKJ1-AJ1N R-Y1ZP-9SY4 R-LMYU-22J1
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	z := create(t, s, "alice", "zulu")
@@ -367,7 +245,7 @@ func TestScriptsAndPersistence(t *testing.T) {
 	equal(t, errors.Is(err, store.ErrNotFound), true)
 	equal(t, content(t, s), before)
 	equal(t, errors.Is(s.Delete(ctx, "missing"), store.ErrNotFound), true)
-	must(t, s.Close())
+	must(t, closeStore(s))
 	s = open(t, path)
 	equal(t, content(t, s), before)
 	got, err = s.Find(ctx, "alice", "alpha")
@@ -387,7 +265,7 @@ func TestScriptsAndPersistence(t *testing.T) {
 	got, err = s.Find(ctx, "alice", "zulu")
 	must(t, err)
 	equal(t, got, z)
-	must(t, s.Close())
+	must(t, closeStore(s))
 	s = open(t, path)
 	_, err = s.RunByID(ctx, r.ID)
 	equal(t, errors.Is(err, store.ErrNotFound), true)
@@ -396,11 +274,10 @@ func TestScriptsAndPersistence(t *testing.T) {
 	create(t, s, "bob", "alpha")
 }
 func TestCreateFailuresAndCollisions(t *testing.T) {
-	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-8WPA-NFTU
+	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-YAIZ-Y74Z
 	random := bytes.NewReader(bytes.Repeat([]byte{1, 2, 3, 4, 5, 6, 7, 8}, 9))
-	s, err := store.Open(ctx, store.Config{Rand: random, Now: func() time.Time { return stamp }})
-	must(t, err)
-	defer func() { must(t, s.Close()) }()
+	s := configured(t, "", store.Config{Rand: random, Now: func() time.Time { return stamp }})
+	defer func() { must(t, closeStore(s)) }()
 	a := create(t, s, "alice", "alpha")
 	equal(t, a.ID, "scr_0102030405060708")
 	before := content(t, s)
@@ -428,16 +305,15 @@ func TestCreateFailuresAndCollisions(t *testing.T) {
 	catalog(t, err)
 	equal(t, content(t, s), before)
 	retry := bytes.NewReader(append(bytes.Repeat([]byte{1}, 16), bytes.Repeat([]byte{2}, 8)...))
-	s2, err := store.Open(ctx, store.Config{Rand: retry, Now: func() time.Time { return stamp }})
-	must(t, err)
-	defer func() { must(t, s2.Close()) }()
+	s2 := configured(t, "", store.Config{Rand: retry, Now: func() time.Time { return stamp }})
+	defer func() { must(t, closeStore(s2)) }()
 	create(t, s2, "alice", "first")
 	second := create(t, s2, "alice", "second")
 	equal(t, second.ID, "scr_0202020202020202")
 	equal(t, retry.Len(), 0)
 }
 func TestRunTransitionsAndReads(t *testing.T) {
-	// R-KHI9-1VBF R-KQ1J-Q9IA R-LUA8-COZ7 R-LVI4-QGPW R-LWQ1-48GL R-LZ5T-VRXZ R-M2TJ-1362
+	// R-KHI9-1VBF R-KQ1J-Q9IA R-LUA8-COZ7 R-LVI4-QGPW R-LWQ1-48GL R-LZ5T-VRXZ R-Y5NE-F467
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	a := create(t, s, "alice", "alpha")
@@ -497,7 +373,7 @@ func TestRunTransitionsAndReads(t *testing.T) {
 	must(t, err)
 	equal(t, rr, []store.Run{})
 	before := content(t, s)
-	must(t, s.Close())
+	must(t, closeStore(s))
 	s = open(t, path)
 	equal(t, content(t, s), before)
 	must(t, s.DeleteRun(ctx, r2.ID))
@@ -510,7 +386,7 @@ func TestRunTransitionsAndReads(t *testing.T) {
 	before = content(t, s)
 	equal(t, errors.Is(s.DeleteRun(ctx, "missing"), store.ErrNotFound), true)
 	equal(t, content(t, s), before)
-	must(t, s.Close())
+	must(t, closeStore(s))
 	s = open(t, path)
 	equal(t, content(t, s), before)
 }
@@ -646,7 +522,7 @@ func TestRetention(t *testing.T) {
 	}
 }
 func TestConcurrentWrites(t *testing.T) {
-	// R-LBZQ-M4US R-LT2B-YX8I R-M41F-EUWR R-M7P4-K64U
+	// R-LBZQ-M4US R-LT2B-YX8I R-M41F-EUWR R-Y9B3-KFEA
 	s := open(t, "")
 	const n = 12
 	errorsOut := make(chan error, n)
@@ -699,30 +575,68 @@ func TestConcurrentWrites(t *testing.T) {
 	final, err := s.RunByID(ctx, r.ID)
 	must(t, err)
 	equal(t, final, <-winner)
+
+	assertScript := func(got store.Script) {
+		equal(t, got.ID, sc.ID)
+		equal(t, got.Name, sc.Name)
+		equal(t, got.Owner, sc.Owner)
+		equal(t, got.Repo, sc.Repo)
+		equal(t, got.Created, sc.Created)
+		equal(t, *got.Last, final)
+	}
 	for i := 0; i < n; i++ {
 		i := i
 		wg.Go(func() {
-			_, err := s.Find(ctx, "alice", "alpha")
+			got, err := s.Find(ctx, "alice", "alpha")
 			must(t, err)
-			_, err = s.List(ctx, "alice")
+			assertScript(got)
+			list, err := s.List(ctx, "alice")
 			must(t, err)
-			_, err = s.Taken(ctx, "alpha")
+			equal(t, len(list), 1)
+			assertScript(list[0])
+			taken, err := s.Taken(ctx, "alpha")
 			must(t, err)
-			_, err = s.RunByID(ctx, r.ID)
+			equal(t, taken, true)
+			gotRun, err := s.RunByID(ctx, r.ID)
 			must(t, err)
-			_, err = s.FindRun(ctx, "alice", r.ID)
+			equal(t, gotRun, final)
+			gotRun, err = s.FindRun(ctx, "alice", r.ID)
 			must(t, err)
-			_, err = s.Runs(ctx, sc.ID)
+			equal(t, gotRun, final)
+			rr, err := s.Runs(ctx, sc.ID)
 			must(t, err)
-			_, err = s.Running(ctx)
+			equal(t, rr, []store.Run{final})
+			rr, err = s.Running(ctx)
 			must(t, err)
-			_, err = s.PastKeeping(ctx, stamp, 1, 1)
+			equal(t, rr, []store.Run{})
+			rr, err = s.PastKeeping(ctx, stamp, 1, 1)
 			must(t, err)
-			_, _, err = s.SetRef(ctx, sc.ID, fmt.Sprintf("ref%d", i))
+			equal(t, rr, []store.Run{})
+			ref := fmt.Sprintf("ref%d", i)
+			got, changed, err := s.SetRef(ctx, sc.ID, ref)
 			must(t, err)
+			assertScript(got)
+			equal(t, got.Ref, ref)
+			equal(t, changed, true)
 		})
 	}
 	wg.Wait()
+	deletedIDs := make([]string, n)
+	for i := range n {
+		deletedIDs[i] = add(t, s, run(sc, 100+i)).ID
+	}
+	for _, id := range deletedIDs {
+		wg.Go(func() { must(t, s.DeleteRun(ctx, id)) })
+	}
+	wg.Wait()
+	rr, err := s.Runs(ctx, sc.ID)
+	must(t, err)
+	equal(t, rr, []store.Run{final})
+	for _, id := range deletedIDs {
+		_, err := s.RunByID(ctx, id)
+		equal(t, errors.Is(err, store.ErrNotFound), true)
+	}
+
 	start := make(chan struct{})
 	errorsOut = make(chan error, 2)
 	wg.Go(func() { <-start; _, err := s.AddRun(ctx, run(sc, 2)); errorsOut <- err })
@@ -735,13 +649,14 @@ func TestConcurrentWrites(t *testing.T) {
 			equal(t, errors.Is(err, store.ErrNotFound), true)
 		}
 	}
-	rr, err := s.Runs(ctx, sc.ID)
+	rr, err = s.Runs(ctx, sc.ID)
 	must(t, err)
 	equal(t, rr, []store.Run{})
 }
 func TestClosedAndCancelled(t *testing.T) {
-	// R-M59B-SMNG R-M6H8-6EE5
-	s := open(t, "")
+	// R-Y6VA-SVWW R-Y837-6NNL R-YAIZ-Y74Z
+	path := filepath.Join(t.TempDir(), "scripts.db")
+	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")
 	r := add(t, s, run(sc, 1))
 	before := content(t, s)
@@ -769,22 +684,27 @@ func TestClosedAndCancelled(t *testing.T) {
 		equal(t, errors.Is(err, context.Canceled), true)
 	}
 	equal(t, content(t, s), before)
-	must(t, s.Close())
+	handle(s).SetFailing(true)
+	_, err := s.Create(ctx, store.Draft{Owner: "alice", Name: "alpha", Repo: "r", Ref: "main"})
+	catalog(t, err)
+	_, err = s.RunByID(ctx, "absent")
+	catalog(t, err)
 	for _, err := range calls(ctx) {
 		catalog(t, err)
 	}
 	for _, err := range calls(cancelled) {
 		equal(t, errors.Is(err, context.Canceled), true)
 	}
-}
-func TestInjectedClockFailure(t *testing.T) {
-	var s *store.Store
-	var err error
-	s, err = store.Open(ctx, store.Config{Now: func() time.Time { must(t, s.Close()); return stamp }, Rand: &sequence{}})
-	must(t, err)
-	out, err := s.Create(ctx, store.Draft{Owner: "alice", Name: "alpha", Repo: "r", Ref: "main"})
-	equal(t, out, store.Script{})
-	catalog(t, err)
+	handle(s).SetFailing(false)
+	equal(t, content(t, s), before)
+	must(t, closeStore(s))
+	for _, err := range calls(ctx) {
+		catalog(t, err)
+	}
+	for _, err := range calls(cancelled) {
+		equal(t, errors.Is(err, context.Canceled), true)
+	}
+	equal(t, content(t, open(t, path)), before)
 }
 
 func TestRetentionBeyondDurationRange(t *testing.T) {
@@ -808,7 +728,7 @@ func TestRetentionBeyondDurationRange(t *testing.T) {
 	equal(t, got, []store.Run{})
 }
 func TestDeletingEveryStatus(t *testing.T) {
-	// R-LLQX-OASC R-LI38-IZK9
+	// R-Y1ZP-9SY4 R-LI38-IZK9
 	path := filepath.Join(t.TempDir(), "db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")
@@ -839,37 +759,11 @@ func TestDeletingEveryStatus(t *testing.T) {
 	must(t, err)
 	equal(t, *got.Last, rr[0])
 	must(t, s.Delete(ctx, sc.ID))
-	must(t, s.Close())
+	must(t, closeStore(s))
 	s = open(t, path)
 	for _, r := range rr {
 		_, err = s.RunByID(ctx, r.ID)
 		equal(t, errors.Is(err, store.ErrNotFound), true)
-	}
-}
-
-func TestTimesOutsideJSONRange(t *testing.T) {
-	// R-KZSQ-SFFU
-	path := filepath.Join(t.TempDir(), "db")
-	s := open(t, path)
-	sc := create(t, s, "alice", "alpha")
-	r := run(sc, 1)
-	r.Started = time.Date(12000, 1, 1, 0, 0, 0, 0, time.UTC)
-	r = add(t, s, r)
-	must(t, s.Close())
-	s = open(t, path)
-	got, err := s.RunByID(ctx, r.ID)
-	must(t, err)
-	equal(t, got, r)
-}
-
-func TestOrdinaryPathCharacters(t *testing.T) {
-	// R-KXCY-0VYG
-	for _, name := range []string{"db?query#fragment", "file:catalog.db"} {
-		path := filepath.Join(t.TempDir(), name)
-		s := open(t, path)
-		create(t, s, "alice", "alpha")
-		_, err := os.Stat(path)
-		must(t, err)
 	}
 }
 
@@ -879,33 +773,13 @@ func (r sentinelReader) Read([]byte) (int, error) { return 0, r.err }
 func TestCreateRandomContentSentinels(t *testing.T) {
 	// R-L8C1-GTMP
 	for _, sentinel := range []error{store.ErrNotFound, store.ErrNameTaken, store.ErrEnded} {
-		s, err := store.Open(ctx, store.Config{Rand: sentinelReader{sentinel}, Now: func() time.Time { return stamp }})
-		must(t, err)
+		s := configured(t, "", store.Config{Rand: sentinelReader{sentinel}, Now: func() time.Time { return stamp }})
 		before := content(t, s)
 		sc, err := s.Create(ctx, store.Draft{Owner: "alice", Name: "alpha", Repo: "repo", Ref: "main"})
 		equal(t, sc, store.Script{})
 		catalog(t, err)
 		equal(t, err.Error(), sentinel.Error())
 		equal(t, content(t, s), before)
-		must(t, s.Close())
+		must(t, closeStore(s))
 	}
-}
-func TestSourcePreservesSymlinkTraversal(t *testing.T) {
-	// R-KXCY-0VYG
-	root := t.TempDir()
-	d := filepath.Join(root, "d")
-	target := filepath.Join(root, "target", "child")
-	must(t, os.MkdirAll(d, 0700))
-	must(t, os.MkdirAll(target, 0700))
-	must(t, os.Symlink(target, filepath.Join(d, "link")))
-	source := d + "/link/../catalog.db"
-	s := open(t, source)
-	sc := create(t, s, "alice", "alpha")
-	must(t, s.Close())
-	_, err := os.Stat(filepath.Join(d, "catalog.db"))
-	equal(t, os.IsNotExist(err), true)
-	s = open(t, filepath.Join(root, "target", "catalog.db"))
-	got, err := s.Find(ctx, "alice", "alpha")
-	must(t, err)
-	equal(t, got, sc)
 }

@@ -64,7 +64,7 @@ func assertNoCredential(t *testing.T, secrets []string, b []byte) {
 }
 
 func TestCredentialSequence(t *testing.T) {
-	// R-VZA3-2BOY R-BB9G-J9E5 R-BCHC-X14U R-BDP9-ASVJ R-BEX5-OKM8 R-BG52-2CCX
+	// R-VZA3-2BOY R-BB9G-J9E5 R-BCHC-X14U R-BDP9-ASVJ R-1DYA-2P7O R-BG52-2CCX
 	user, password := strings.Join([]string{"AZBZCZDZ", "EXFXGXHX", "JXKXLXMX", "NXOX"}, ""), strings.Join([]string{"PZQZRZSZ", "TUVWXZYX", "AXBYCXDY", "EXFY"}, "")
 	encoded := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
 	var secrets []string
@@ -89,8 +89,6 @@ func TestCredentialSequence(t *testing.T) {
 	for _, reject := range []bool{false, true} {
 		t.Run(fmt.Sprint(reject), func(t *testing.T) {
 			h := newHarness(t)
-			h.p.Database = filepath.Join(h.root, "separate", "catalog.db")
-			mustCLI(t, os.MkdirAll(filepath.Dir(h.p.Database), 0700))
 			sink := &credentialSink{reject: reject}
 			h.p.Sink = sink
 			script := `import os,json,sys,time
@@ -202,7 +200,7 @@ if json.load(open(os.environ['IKIGENBA_INPUT'])).get('hold'):
 				mustCLI(t, e)
 				assertNoCredential(t, secrets, b)
 			}
-			for _, root := range []string{h.p.Dir, filepath.Dir(h.p.Database)} {
+			for _, root := range []string{h.p.Dir} {
 				mustCLI(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, e error) error {
 					if e != nil {
 						return e

@@ -19,11 +19,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/git"
 	"github.com/ikigenba/ikigenba/scripts/internal/limits"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
@@ -53,6 +55,7 @@ func (s *sequence) Read(b []byte) (int, error) {
 
 type fixture struct {
 	cfg     web.Config
+	db      *db.DB
 	h       http.Handler
 	capture *telemetry.Capture
 	stderr  *bytes.Buffer
@@ -63,12 +66,13 @@ func makeFixture(t *testing.T, sink telemetry.Sink) *fixture {
 	t.Setenv(services.Variable, "")
 	now := func() time.Time { return time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC) }
 	rand := &sequence{}
-	st, err := store.Open(context.Background(), store.Config{Source: filepath.Join(t.TempDir(), "catalog.db"), Now: now, Rand: rand})
+	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "catalog.db"), Migrations: scripts.Migrations(), Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
-	f := &fixture{capture: &telemetry.Capture{}, stderr: &bytes.Buffer{}}
+	t.Cleanup(func() { _ = d.Close() })
+	st := store.New(d, store.Config{Now: now, Rand: rand})
+	f := &fixture{db: d, capture: &telemetry.Capture{}, stderr: &bytes.Buffer{}}
 	if sink == nil {
 		sink = f.capture
 	}
@@ -108,7 +112,7 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 // R-A0MU-NN4U R-C48M-DF3W
 func TestMissingIdentityBeforeEveryRoute(t *testing.T) {
 	f := makeFixture(t, nil)
-	_ = f.cfg.Store.Close()
+	f.db.SetFailing(true)
 	for _, p := range []string{"/", "/_appkit/theme.css", "/mcp", "/n/runs/r/stdout", "/about", "/nope"} {
 		for _, m := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, email := range []string{"", "user@example.test"} {
@@ -135,9 +139,9 @@ func TestRoutingMatchesOwnedHandlers(t *testing.T) {
 	files := identity.Require(web.Files(web.FilesConfig{Banner: f.cfg.Banner, Pages: set, Store: f.cfg.Store, Runs: f.cfg.Runs}))
 	static := identity.Require(page.Static())
 	endpoint := identity.Require(f.cfg.MCP)
-	for _, closed := range []bool{false, true} {
-		if closed {
-			_ = f.cfg.Store.Close()
+	for _, failing := range []bool{false, true} {
+		if failing {
+			f.db.SetFailing(true)
 		}
 		for _, row := range []struct {
 			path    string
@@ -199,8 +203,8 @@ func TestMiddlewareAndConcurrentIdentities(t *testing.T) {
 	wg.Wait()
 	serve(f.h, "GET", "/mcp", "", "", "missing")
 	serve(f.h, "HEAD", "/", "owner", "", "head")
-	_ = f.cfg.Store.Close()
-	serve(f.h, "GET", "/", "owner", "", "closed")
+	f.db.SetFailing(true)
+	serve(f.h, "GET", "/", "owner", "", "failing")
 	serve(f.h, "GET", "/about", "owner", "", "")
 	if err := f.cfg.Telemetry.Flush(context.Background()); err != nil {
 		t.Fatal(err)
@@ -229,7 +233,7 @@ func TestMiddlewareAndConcurrentIdentities(t *testing.T) {
 			method, path = "HEAD", "/"
 		case "missing":
 			path = "/mcp"
-		case "closed":
+		case "failing":
 			path = "/"
 		}
 		if !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"method": method, "path": path}) {
@@ -242,7 +246,7 @@ func TestMiddlewareAndConcurrentIdentities(t *testing.T) {
 			t.Fatal("identity crossed", events)
 		}
 	}
-	if fmt.Sprint(grouped["missing"][1].Attrs["status"]) != "500" || fmt.Sprint(grouped["head"][1].Attrs["response_bytes"]) != "0" || fmt.Sprint(grouped["closed"][1].Attrs["status"]) != "503" {
+	if fmt.Sprint(grouped["missing"][1].Attrs["status"]) != "500" || fmt.Sprint(grouped["head"][1].Attrs["response_bytes"]) != "0" || fmt.Sprint(grouped["failing"][1].Attrs["status"]) != "503" {
 		t.Fatal("middleware metrics", grouped)
 	}
 	if f.stderr.Len() != 0 {
@@ -389,7 +393,7 @@ func TestServicesSocketNotContacted(t *testing.T) {
 func TestSharedStaticFiles(t *testing.T) {
 	f := makeFixture(t, nil)
 	g := makeFixture(t, nil)
-	_ = f.cfg.Store.Close()
+	f.db.SetFailing(true)
 
 	baseline := map[string]*httptest.ResponseRecorder{}
 	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {

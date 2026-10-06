@@ -11,10 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/git"
 	"github.com/ikigenba/ikigenba/scripts/internal/limits"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
@@ -117,7 +120,7 @@ func (c *drainContext) Done() <-chan struct{} {
 
 // Run executes a command or serves and drains the inherited listener.
 func Run(ctx context.Context, p Process) int {
-	if handled, code := command(p.Args, p.Stdout, p.Stderr); handled {
+	if handled, code := command(p.Args, p.Dir, p.Stdout, p.Stderr); handled {
 		return code
 	}
 	stderr := &serialWriter{w: p.Stderr}
@@ -179,23 +182,21 @@ func Run(ctx context.Context, p Process) int {
 			return fail(ExitServerFailed, e.Error())
 		}
 	}
-	database := p.Database
-	if database == "" {
-		database = filepath.Join(dir, "state", "scripts.db")
-	}
+	database := filepath.Join(dir, "state", "scripts.db")
 	random := p.Rand
 	if random == nil {
 		random = rand.Reader
 	}
 	random = &serialReader{r: random}
-	catalog, e := store.Open(ctx, store.Config{Source: database, Now: p.Now, Rand: random})
+	handle, e := db.Open(ctx, db.Config{Path: database, Migrations: scripts.Migrations(), Now: p.Now})
 	if e != nil {
 		if ctx.Err() != nil {
 			return ExitSuccess
 		}
-		return fail(ExitServerFailed, "cannot open database state/scripts.db: "+e.Error())
+		return fail(ExitServerFailed, "cannot open database state/scripts.db: "+strings.ReplaceAll(e.Error(), "\n", " "))
 	}
-	defer func() { _ = catalog.Close() }()
+	defer func() { _ = handle.Close() }()
+	catalog := store.New(handle, store.Config{Now: p.Now, Rand: random})
 	runDir := filepath.Join(dir, "state", "runs")
 	if e = os.MkdirAll(runDir, 0700); e != nil {
 		return fail(ExitServerFailed, "cannot create directory state/runs: "+e.Error())
