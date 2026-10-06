@@ -39,11 +39,11 @@ An attribute naming an entity has the entity's type as its key (`token`, `widget
 | `vis_` | `visitor` | `sites` |
 | `wgt_` | `widget` | `dummy` |
 
-This table is the registry, and it exists only here: appkit exports no code for it, so adding a row is a design change to this document alone, with no change to appkit's code and no appkit release. A service that adds an entity type adds its row in that change, and its own design then holds the testable requirements: that its ids begin with its registered prefix and that its events name the entity under its registered type. The convention every service follows: an entity attribute's key is the entity type's name exactly as registered (itself a valid attribute key), and its value is a string that begins with the registered prefix, lowercase ASCII letters followed by `_`. appkit's own framework events name no entity, so the convention places no requirement on appkit's code.
+This table is the registry, and it exists only here: appkit exports no code for it, so adding a row is a design change to this document alone, with no change to appkit's code and no appkit release. A service that adds an entity type adds its row in that change, and its own design then holds the testable requirements: that its ids begin with its registered prefix and that its events name the entity under its registered type. The convention every service follows: an entity attribute's key is the entity type's name exactly as registered (itself a valid attribute key), and its value is a string that begins with the registered prefix, lowercase ASCII letters followed by `_`. appkit's own framework events name no entity, with one exception: `event.lost`, which the `events` package's emitter records, names the bus event it lost under the key `event` with its `evt_` id, following the convention, and D18's requirements hold appkit's code to it. Its `cause` attribute also holds an `evt_` id, the lost event's cause, and deliberately departs from the convention: it names a second bus event under a role key, since one event cannot carry two attributes keyed `event`.
 
 ## Framework events
 
-appkit records these for every service, and a service cannot switch them off: every service must import appkit to serve, and a service author must not be able to leave a hop out of the trail. A request started with no finish, or a service started with no stop before it, is evidence of a crash; that is why a request records two events rather than one at the end.
+appkit records these for every service, and a service cannot switch them off: every service must import appkit to serve, and a service author must not be able to leave a hop out of the trail. The one exception is `event.lost`, which only a service that builds an `events` emitter with a telemetry writer in its `Config.Telemetry` records (D18). A request started with no finish, or a service started with no stop before it, is evidence of a crash; that is why a request records two events rather than one at the end.
 
 | Event | When | Attributes |
 |---|---|---|
@@ -53,8 +53,9 @@ appkit records these for every service, and a service cannot switch them off: ev
 | `request.finished` | its answer is complete (D14) | `status`, `duration_us`, `request_bytes`, `response_bytes` |
 | `sibling.called` | a call to a sibling service returns (D14) | `target`, `method`, `path`, `status`, `duration_us` |
 | `tool.called` | an MCP tool call is answered (D07, D08) | `tool`, `kind`, `outcome`, `duration_us` |
+| `event.lost` | the `events` package's emitter gives up an event it could not put on the bus (D18) | `event`, `cause` |
 
-The request id and the user travel in the envelope, never as attributes. This document fixes each event's attribute keys and value types; the producing document fixes when the event is emitted and what values it carries (`tool.called`'s `kind` and `outcome` value sets are D08's: `kind` is `read`, `additive`, or `destructive`, and `outcome` is `ok`, `error`, `invalid_arguments`, `panicked`, or `unencodable_output`). A service records its own events under its own names and does not emit these.
+The request id and the user travel in the envelope, never as attributes. This document fixes each event's attribute keys and value types; the producing document fixes when the event is emitted and what values it carries (`event.lost`'s `event` is the lost event's id and its `cause` that event's cause, empty when it has none, both D18's; `tool.called`'s `kind` and `outcome` value sets are D08's: `kind` is `read`, `additive`, or `destructive`, and `outcome` is `ok`, `error`, `invalid_arguments`, `panicked`, or `unencodable_output`). A service records its own events under its own names and does not emit these.
 
 ## REQUIREMENTS
 
