@@ -36,15 +36,7 @@ func (r *tokenTestRand) Read(p []byte) (int, error) {
 
 func openTokenTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.Open(t.TempDir()+"/auth.db", &tokenTestRand{})
-	if err != nil {
-		t.Fatalf("store.Open() error = %v", err)
-	}
-	t.Cleanup(func() {
-		if err := st.Close(); err != nil {
-			t.Errorf("Store.Close() error = %v", err)
-		}
-	})
+	st := openServerStore(t, t.TempDir()+"/auth.db", &tokenTestRand{}, func() time.Time { return tokenTestNow })
 	return st
 }
 
@@ -93,15 +85,13 @@ func tokenActionRequest(sessionID, tokenID, action string) *http.Request {
 	return req
 }
 
-func TestTokenRoutesClosedStoreReturns500(t *testing.T) {
+func TestTokenRoutesFailingStoreReturns500(t *testing.T) {
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "closed")
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, st)
 	_, reason := st.LookupSessionIdentity(session.ID, tokenTestNow)
 	if reason == nil {
-		t.Fatal("closed store unexpectedly succeeded")
+		t.Fatal("failing store unexpectedly succeeded")
 	}
 	for _, tc := range []struct {
 		name string
@@ -133,27 +123,18 @@ func TestTokenRoutesClosedStoreReturns500(t *testing.T) {
 
 func TestTokenMutationStoreFailuresReport500(t *testing.T) {
 	path := t.TempDir() + "/auth.db"
-	st, err := store.Open(path, &tokenTestRand{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
+	st := openServerStore(t, path, &tokenTestRand{}, func() time.Time { return tokenTestNow })
 	user, session := tokenTestIdentity(t, st, "mutations")
 	token, _, err := st.CreateToken(user.ID, "existing", store.ExpiryNever, tokenTestNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
 	for _, trigger := range []string{
 		`CREATE TRIGGER fail_token_insert BEFORE INSERT ON tokens BEGIN SELECT RAISE(FAIL, 'injected token insert failure'); END`,
 		`CREATE TRIGGER fail_token_update BEFORE UPDATE ON tokens BEGIN SELECT RAISE(FAIL, 'injected token update failure'); END`,
 		`CREATE TRIGGER fail_token_delete BEFORE DELETE ON tokens BEGIN SELECT RAISE(FAIL, 'injected token delete failure'); END`,
 	} {
-		if _, err := db.ExecContext(context.Background(), trigger); err != nil {
+		if err := serverStoreDB(t, st).Write(context.Background(), func(tx *sql.Tx) error { _, err := tx.ExecContext(context.Background(), trigger); return err }); err != nil {
 			t.Fatal(err)
 		}
 	}

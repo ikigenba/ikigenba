@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"path/filepath"
@@ -31,9 +32,9 @@ func TestFirstUpsertUserOnLoginPersistsMintedUser(t *testing.T) {
 	random := sequentialStoreBytes(16)
 	reader := &countingReader{reader: bytes.NewReader(random)}
 	path := filepath.Join(t.TempDir(), "auth.db")
-	st, err := Open(path, reader)
+	st, err := newTestStore(t, path, reader)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatalf("open test database error = %v", err)
 	}
 	now := time.Date(2026, time.January, 15, 8, 9, 10, 11, time.UTC)
 	got, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "google-subject", "member@example.com", now)
@@ -56,26 +57,28 @@ func TestFirstUpsertUserOnLoginPersistsMintedUser(t *testing.T) {
 	assertStoredUser(t, st, want)
 	assertTableCount(t, st, "users", 1)
 	var storedLogin int64
-	if err := st.db.QueryRowContext(
-		context.Background(),
-		`SELECT last_google_login FROM users WHERE issuer = ? AND subject = ?`,
-		want.Issuer,
-		want.Subject,
-	).Scan(&storedLogin); err != nil {
+	if err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(
+			context.Background(),
+			`SELECT last_google_login FROM users WHERE issuer = ? AND subject = ?`,
+			want.Issuer,
+			want.Subject,
+		).Scan(&storedLogin)
+	}); err != nil {
 		t.Fatalf("read stored login instant: %v", err)
 	}
 	if storedLogin != now.UnixNano() {
 		t.Fatalf("stored last_google_login = %d, want %d", storedLogin, now.UnixNano())
 	}
-	if err := st.Close(); err != nil {
+	if err := st.db.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	reopened, err := Open(path, bytes.NewReader(nil))
+	reopened, err := newTestStore(t, path, bytes.NewReader(nil))
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
 	}
-	defer func() { _ = reopened.Close() }()
+	defer func() { _ = reopened.db.Close() }()
 	assertStoredUser(t, reopened, want)
 	assertTableCount(t, reopened, "users", 1)
 }
@@ -84,9 +87,9 @@ func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	// R-5BVA-6T2U
 	random := sequentialStoreBytes(16)
 	path := filepath.Join(t.TempDir(), "auth.db")
-	st, err := Open(path, bytes.NewReader(random))
+	st, err := newTestStore(t, path, bytes.NewReader(random))
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatalf("open test database error = %v", err)
 	}
 
 	firstNow := time.Date(2026, time.March, 1, 2, 3, 4, 5, time.UTC)
@@ -120,32 +123,36 @@ func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	}
 
 	var count int
-	if err := st.db.QueryRowContext(
-		context.Background(),
-		`SELECT COUNT(*) FROM users WHERE issuer = ? AND subject = ?`,
-		first.Issuer,
-		first.Subject,
-	).Scan(&count); err != nil {
+	if err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(
+			context.Background(),
+			`SELECT COUNT(*) FROM users WHERE issuer = ? AND subject = ?`,
+			first.Issuer,
+			first.Subject,
+		).Scan(&count)
+	}); err != nil {
 		t.Fatalf("count users: %v", err)
 	}
 	if count != 1 {
 		t.Fatalf("user row count = %d, want 1", count)
 	}
-	if err := st.Close(); err != nil {
+	if err := st.db.Close(); err != nil {
 		t.Fatalf("first Close() error = %v", err)
 	}
 
-	reopened, err := Open(path, bytes.NewReader(nil))
+	reopened, err := newTestStore(t, path, bytes.NewReader(nil))
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
 	}
-	defer func() { _ = reopened.Close() }()
+	defer func() { _ = reopened.db.Close() }()
 	var stored User
 	var storedLogin int64
-	if err := reopened.db.QueryRowContext(
-		context.Background(),
-		`SELECT id, issuer, subject, email, last_google_login FROM users`,
-	).Scan(&stored.ID, &stored.Issuer, &stored.Subject, &stored.Email, &storedLogin); err != nil {
+	if err := reopened.db.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(
+			context.Background(),
+			`SELECT id, issuer, subject, email, last_google_login FROM users`,
+		).Scan(&stored.ID, &stored.Issuer, &stored.Subject, &stored.Email, &storedLogin)
+	}); err != nil {
 		t.Fatalf("read reopened user: %v", err)
 	}
 	stored.LastGoogleLogin = time.Unix(0, storedLogin).UTC()
@@ -158,9 +165,9 @@ func TestCreateSessionUsesInjectedIDAndPersistsExactTimes(t *testing.T) {
 	// R-5D36-KKTJ
 	random := sequentialStoreBytes(32)
 	path := filepath.Join(t.TempDir(), "auth.db")
-	st, err := Open(path, bytes.NewReader(random))
+	st, err := newTestStore(t, path, bytes.NewReader(random))
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatalf("open test database error = %v", err)
 	}
 	now := sessionTestNow()
 	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", now)
@@ -181,15 +188,15 @@ func TestCreateSessionUsesInjectedIDAndPersistsExactTimes(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("CreateSession() = %#v, want %#v", got, want)
 	}
-	if err := st.Close(); err != nil {
+	if err := st.db.Close(); err != nil {
 		t.Fatalf("first Close() error = %v", err)
 	}
 
-	reopened, err := Open(path, bytes.NewReader(nil))
+	reopened, err := newTestStore(t, path, bytes.NewReader(nil))
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
 	}
-	defer func() { _ = reopened.Close() }()
+	defer func() { _ = reopened.db.Close() }()
 	assertStoredSession(t, reopened, want.ID, want.UserID, now.UnixNano(), now.UnixNano())
 }
 
@@ -316,12 +323,12 @@ func TestDeleteSessionIsIdempotentAndLeavesUser(t *testing.T) {
 
 func openUserSessionTestStore(t *testing.T, random io.Reader) *Store {
 	t.Helper()
-	st, err := Open(filepath.Join(t.TempDir(), "auth.db"), random)
+	st, err := newTestStore(t, filepath.Join(t.TempDir(), "auth.db"), random)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatalf("open test database error = %v", err)
 	}
 	t.Cleanup(func() {
-		if err := st.Close(); err != nil {
+		if err := st.db.Close(); err != nil {
 			t.Errorf("Close() error = %v", err)
 		}
 	})
@@ -331,14 +338,17 @@ func openUserSessionTestStore(t *testing.T, random io.Reader) *Store {
 
 func insertSessionFixture(t *testing.T, st *Store, id, userID string, loginAt, lastUsedAt time.Time) {
 	t.Helper()
-	if _, err := st.db.ExecContext(
-		context.Background(),
-		`INSERT INTO sessions (id, user_id, login_at, last_used_at) VALUES (?, ?, ?, ?)`,
-		id,
-		userID,
-		loginAt.UnixNano(),
-		lastUsedAt.UnixNano(),
-	); err != nil {
+	if err := st.db.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(
+			context.Background(),
+			`INSERT INTO sessions (id, user_id, login_at, last_used_at) VALUES (?, ?, ?, ?)`,
+			id,
+			userID,
+			loginAt.UnixNano(),
+			lastUsedAt.UnixNano(),
+		)
+		return err
+	}); err != nil {
 		t.Fatalf("insert session fixture %q: %v", id, err)
 	}
 }
@@ -347,11 +357,13 @@ func assertStoredSession(t *testing.T, st *Store, id, wantUserID string, wantLog
 	t.Helper()
 	var gotUserID string
 	var gotLoginAt, gotLastUsedAt int64
-	if err := st.db.QueryRowContext(
-		context.Background(),
-		`SELECT user_id, login_at, last_used_at FROM sessions WHERE id = ?`,
-		id,
-	).Scan(&gotUserID, &gotLoginAt, &gotLastUsedAt); err != nil {
+	if err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(
+			context.Background(),
+			`SELECT user_id, login_at, last_used_at FROM sessions WHERE id = ?`,
+			id,
+		).Scan(&gotUserID, &gotLoginAt, &gotLastUsedAt)
+	}); err != nil {
 		t.Fatalf("read stored session %q: %v", id, err)
 	}
 	if gotUserID != wantUserID || gotLoginAt != wantLoginAt || gotLastUsedAt != wantLastUsedAt {
@@ -372,11 +384,13 @@ func assertStoredUser(t *testing.T, st *Store, want User) {
 	t.Helper()
 	var got User
 	var lastGoogleLogin int64
-	if err := st.db.QueryRowContext(
-		context.Background(),
-		`SELECT id, issuer, subject, email, last_google_login FROM users WHERE id = ?`,
-		want.ID,
-	).Scan(&got.ID, &got.Issuer, &got.Subject, &got.Email, &lastGoogleLogin); err != nil {
+	if err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(
+			context.Background(),
+			`SELECT id, issuer, subject, email, last_google_login FROM users WHERE id = ?`,
+			want.ID,
+		).Scan(&got.ID, &got.Issuer, &got.Subject, &got.Email, &lastGoogleLogin)
+	}); err != nil {
 		t.Fatalf("read stored user %q: %v", want.ID, err)
 	}
 	got.LastGoogleLogin = time.Unix(0, lastGoogleLogin).UTC()
@@ -388,7 +402,9 @@ func assertStoredUser(t *testing.T, st *Store, want User) {
 func assertTableCount(t *testing.T, st *Store, table string, want int) {
 	t.Helper()
 	var got int
-	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM `+table).Scan(&got); err != nil {
+	if err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM `+table).Scan(&got)
+	}); err != nil {
 		t.Fatalf("count %s: %v", table, err)
 	}
 	if got != want {

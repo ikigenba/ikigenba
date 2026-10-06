@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -11,24 +10,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
-	"modernc.org/sqlite"
 )
 
 var identityNow = time.Date(2026, time.September, 20, 15, 0, 0, 123, time.UTC)
-
-var identitySessionProbeCalls atomic.Int64
-
-var (
-	identitySessionProbeRegisterOnce sync.Once
-	identitySessionProbeRegisterErr  error
-)
 
 type identityRand struct{ next byte }
 
@@ -55,15 +44,7 @@ type identityFixture struct {
 func openIdentityFixture(t *testing.T) identityFixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "auth.db")
-	st, err := store.Open(path, &identityRand{})
-	if err != nil {
-		t.Fatalf("store.Open() error = %v", err)
-	}
-	t.Cleanup(func() {
-		if err := st.Close(); err != nil {
-			t.Errorf("Store.Close() error = %v", err)
-		}
-	})
+	st := openServerStore(t, path, &identityRand{}, func() time.Time { return identityNow })
 	return identityFixture{store: st, path: path}
 }
 
@@ -108,12 +89,10 @@ func (f identityFixture) setTokenSecret(t *testing.T, tokenID, secret string) {
 
 func (f identityFixture) exec(t *testing.T, query string, args ...any) {
 	t.Helper()
-	db, err := sql.Open("sqlite", f.path)
-	if err != nil {
-		t.Fatalf("sql.Open() error = %v", err)
-	}
-	defer func() { _ = db.Close() }()
-	if _, err := db.ExecContext(context.Background(), query, args...); err != nil {
+	if err := serverStoreDB(t, f.store).Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), query, args...)
+		return err
+	}); err != nil {
 		t.Fatalf("database fixture update: %v", err)
 	}
 }
@@ -146,9 +125,7 @@ func TestIdentityStoreFailureReturns500AndStaysSilent(t *testing.T) {
 	user := fixture.user(t, "failure-owner", "failure@example.com", identityNow)
 	session := fixture.session(t, user.ID, identityNow, identityNow)
 	_, secret := fixture.token(t, user.ID, "failure", store.ExpiryNever, identityNow)
-	if err := fixture.store.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, fixture.store)
 
 	for _, tc := range []struct {
 		name      string
@@ -165,7 +142,7 @@ func TestIdentityStoreFailureReturns500AndStaysSilent(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.reason == nil {
-				t.Fatal("closed store unexpectedly succeeded")
+				t.Fatal("failing store unexpectedly succeeded")
 			}
 			var stderr identityDiagnosticWrites
 			srv := newStatusTestServer(t, 500, Config{Store: fixture.store, Now: func() time.Time { return identityNow }}, &stderr)
@@ -342,37 +319,18 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 }
 
 func TestTokenCredentialsDoNotConsultSession(t *testing.T) {
-	identitySessionProbeRegisterOnce.Do(func() {
-		identitySessionProbeRegisterErr = sqlite.RegisterScalarFunction(
-			"identity_session_probe",
-			0,
-			func(*sqlite.FunctionContext, []driver.Value) (driver.Value, error) {
-				identitySessionProbeCalls.Add(1)
-				return "", nil
-			},
-		)
-	})
-	if err := identitySessionProbeRegisterErr; err != nil {
-		t.Fatalf("RegisterScalarFunction() error = %v", err)
-	}
-
 	fixture := openIdentityFixture(t)
 	cookieOwner := fixture.user(t, "cookie-probe", "cookie-probe@example.com", identityNow)
 	session := fixture.session(t, cookieOwner.ID, identityNow.Add(-time.Hour), identityNow.Add(-time.Minute))
 	tokenOwner := fixture.user(t, "token-probe", "token-probe@example.com", identityNow)
 	_, secret := fixture.token(t, tokenOwner.ID, "probe", store.ExpiryNever, identityNow.Add(-time.Hour))
-	// Make every session-id comparison invoke a non-mutating counter. This
-	// instruments the real SQLite-backed store rather than replacing its API.
+	// A session query must fail, so token success proves that path is not consulted.
 	fixture.exec(t, `ALTER TABLE sessions RENAME TO identity_sessions_data`)
 	fixture.exec(t, `CREATE VIEW sessions AS
-		SELECT identity_session_probe() || id AS id, user_id, login_at, last_used_at
-		FROM identity_sessions_data`)
-	identitySessionProbeCalls.Store(0)
-	if _, err := fixture.store.LookupSessionIdentity(session.ID, identityNow); err != nil {
-		t.Fatalf("probe LookupSessionIdentity() error = %v", err)
-	}
-	if identitySessionProbeCalls.Load() == 0 {
-		t.Fatal("session-query probe did not observe the control lookup")
+  SELECT identity_session_query_forbidden() || id AS id, user_id, login_at, last_used_at
+  FROM identity_sessions_data`)
+	if _, err := fixture.store.LookupSessionIdentity(session.ID, identityNow); err == nil {
+		t.Fatal("session-query control unexpectedly succeeded")
 	}
 
 	for _, test := range []struct {
@@ -392,16 +350,12 @@ func TestTokenCredentialsDoNotConsultSession(t *testing.T) {
 		{name: "check basic malformed", target: "/check", authorization: "Basic !", handler: fixture.server(t).handleCheck, status: http.StatusForbidden},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			identitySessionProbeCalls.Store(0)
 			response := serveIdentity(test.handler, credentialRequest(test.target, []*http.Cookie{{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}, test.authorization))
 			// R-NN2M-J7OI: honored, refused, and malformed token credentials, the
 			// instrumented real session query is never reached by /me or /check
 			// despite a live cookie.
 			if response.Code != test.status {
 				t.Fatalf("status = %d, want %d", response.Code, test.status)
-			}
-			if calls := identitySessionProbeCalls.Load(); calls != 0 {
-				t.Fatalf("session identity was consulted %d times", calls)
 			}
 		})
 	}
@@ -884,9 +838,7 @@ func TestIdentityEndpointsNeverChallenge(t *testing.T) {
 				case "absent":
 					authorization, cookies = "", nil
 				case "database-failure":
-					if err := fixture.store.Close(); err != nil {
-						t.Fatal(err)
-					}
+					failServerStore(t, fixture.store)
 				}
 				w := serveIdentity(fixture.server(t).ServeHTTP, credentialRequest(path, cookies, authorization))
 				for name := range w.Header() {
@@ -966,48 +918,48 @@ type identityTokenRow struct {
 
 func (f identityFixture) snapshot(t *testing.T) identitySnapshot {
 	t.Helper()
-	db, err := sql.Open("sqlite", f.path)
-	if err != nil {
-		t.Fatalf("sql.Open() error = %v", err)
-	}
-	defer func() { _ = db.Close() }()
 	var snapshot identitySnapshot
-	readRows(t, db, `SELECT id, issuer, subject, email, last_google_login FROM users ORDER BY id`, func(rows *sql.Rows) error {
-		var row identityUserRow
-		if err := rows.Scan(&row.id, &row.issuer, &row.subject, &row.email, &row.lastGoogleLogin); err != nil {
-			return err
-		}
-		snapshot.users = append(snapshot.users, row)
+	if err := serverStoreDB(t, f.store).Read(context.Background(), func(tx *sql.Tx) error {
+		readRows(t, tx, `SELECT id, issuer, subject, email, last_google_login FROM users ORDER BY id`, func(rows *sql.Rows) error {
+			var row identityUserRow
+			if err := rows.Scan(&row.id, &row.issuer, &row.subject, &row.email, &row.lastGoogleLogin); err != nil {
+				return err
+			}
+			snapshot.users = append(snapshot.users, row)
+			return nil
+		})
+		readRows(t, tx, `SELECT id, user_id, login_at, last_used_at FROM sessions ORDER BY id`, func(rows *sql.Rows) error {
+			var row identitySessionRow
+			if err := rows.Scan(&row.id, &row.userID, &row.loginAt, &row.lastUsedAt); err != nil {
+				return err
+			}
+			snapshot.sessions = append(snapshot.sessions, row)
+			return nil
+		})
+		readRows(t, tx, `SELECT state, verifier, return_url FROM login_states ORDER BY state`, func(rows *sql.Rows) error {
+			var row identityLoginStateRow
+			if err := rows.Scan(&row.state, &row.verifier, &row.returnURL); err != nil {
+				return err
+			}
+			snapshot.loginStates = append(snapshot.loginStates, row)
+			return nil
+		})
+		readRows(t, tx, `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`, func(rows *sql.Rows) error {
+			var row identityTokenRow
+			if err := rows.Scan(&row.id, &row.userID, &row.name, &row.hash, &row.enabled, &row.createdAt, &row.expiresAt, &row.lastUsedAt); err != nil {
+				return err
+			}
+			snapshot.tokens = append(snapshot.tokens, row)
+			return nil
+		})
 		return nil
-	})
-	readRows(t, db, `SELECT id, user_id, login_at, last_used_at FROM sessions ORDER BY id`, func(rows *sql.Rows) error {
-		var row identitySessionRow
-		if err := rows.Scan(&row.id, &row.userID, &row.loginAt, &row.lastUsedAt); err != nil {
-			return err
-		}
-		snapshot.sessions = append(snapshot.sessions, row)
-		return nil
-	})
-	readRows(t, db, `SELECT state, verifier, return_url FROM login_states ORDER BY state`, func(rows *sql.Rows) error {
-		var row identityLoginStateRow
-		if err := rows.Scan(&row.state, &row.verifier, &row.returnURL); err != nil {
-			return err
-		}
-		snapshot.loginStates = append(snapshot.loginStates, row)
-		return nil
-	})
-	readRows(t, db, `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`, func(rows *sql.Rows) error {
-		var row identityTokenRow
-		if err := rows.Scan(&row.id, &row.userID, &row.name, &row.hash, &row.enabled, &row.createdAt, &row.expiresAt, &row.lastUsedAt); err != nil {
-			return err
-		}
-		snapshot.tokens = append(snapshot.tokens, row)
-		return nil
-	})
+	}); err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
 	return snapshot
 }
 
-func readRows(t *testing.T, db *sql.DB, query string, scan func(*sql.Rows) error) {
+func readRows(t *testing.T, db *sql.Tx, query string, scan func(*sql.Rows) error) {
 	t.Helper()
 	rows, err := db.QueryContext(context.Background(), query)
 	if err != nil {

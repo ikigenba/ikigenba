@@ -19,7 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/auth"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
@@ -29,7 +31,7 @@ import (
 // the real process boundary, including socket activation and both signals.
 func TestMainWiring(t *testing.T) {
 	// R-3WNI-4FXO
-	// R-P02O-R3KF R-P2IH-IN1T R-P666-NY9W
+	// R-P02O-R3KF R-P2IH-IN1T R-7KD6-KDOH
 	// R-M6Y4-3SXT
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
@@ -171,11 +173,12 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	var sessionID string
 	if sig == syscall.SIGTERM {
 
-		st, err := store.Open(filepath.Join(work, "state", "auth.db"), bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)))
+		now := time.Now()
+		handle, err := db.Open(t.Context(), db.Config{Path: filepath.Join(work, "state", "auth.db"), Migrations: auth.Migrations(), Now: func() time.Time { return now }})
+		st := store.New(handle, bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		now := time.Now()
 		u, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject", "user@example.test", now)
 		if err != nil {
 			t.Fatal(err)
@@ -185,7 +188,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 			t.Fatal(err)
 		}
 		sessionID = session.ID
-		if err := st.Close(); err != nil {
+		if err := handle.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}

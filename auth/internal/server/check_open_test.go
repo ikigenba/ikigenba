@@ -102,18 +102,22 @@ func TestOpenCheckMatchesCheckExceptGuests(t *testing.T) {
 					trail := newTrail(t, Config{Store: fixture.store, Now: func() time.Time { return identityNow }}, nil)
 					if tc.cause == "database-failure" {
 						// Fail the actual store after server.New has received it.
-						if err := fixture.store.Close(); err != nil {
-							t.Fatal(err)
-						}
+						failServerStore(t, fixture.store)
 						if tc.scheme == "" {
 							_, err := fixture.store.TouchSession(req.Cookies()[0].Value, identityNow)
 							if err == nil || errors.Is(err, store.ErrNotFound) {
-								t.Fatalf("closed-store error = %v, want failure distinct from ErrNotFound", err)
+								t.Fatalf("failing-store error = %v, want failure distinct from ErrNotFound", err)
 							}
 						}
 					}
 					response, events := trail.request(t, req)
+					if tc.cause == "database-failure" {
+						serverStoreDB(t, fixture.store).SetFailing(false)
+					}
 					after := fixture.snapshot(t)
+					if tc.cause == "database-failure" {
+						serverStoreDB(t, fixture.store).SetFailing(true)
+					}
 					if path == "/check" {
 						controlAnswer, controlState = comparableIdentityAnswer(path, response), after
 						if len(events) != 3 {
@@ -142,7 +146,7 @@ func TestOpenCheckMatchesCheckExceptGuests(t *testing.T) {
 						}
 						assertSnapshotEqual(t, after, controlState)
 					}
-					// R-3F48-9BUU: a cookie's genuine store failure yields 500, never a guest success, without identity.
+					// R-8KY6-1HXB: a cookie's genuine store failure yields 500, never a guest success, without identity.
 					if tc.cause == "database-failure" && tc.scheme == "" {
 						assertCheckRefusal(t, response, http.StatusInternalServerError)
 					}

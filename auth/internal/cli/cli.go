@@ -8,13 +8,16 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/auth"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -33,7 +36,7 @@ type Process struct {
 	Now        func() time.Time
 	Rand       io.Reader
 	OIDCIssuer string
-	DBSource   string
+	Dir        string
 	Banner     func(u page.User) page.Banner
 	Sink       telemetry.Sink
 }
@@ -44,7 +47,8 @@ Serve the auth service on the socket systemd passes in. With no command,
 serve.
 
 Commands:
-  manifest   print the app manifest
+  manifest    print the app manifest
+  db status   print applied and pending migrations
 
 Options:
   --help      print this help
@@ -52,7 +56,7 @@ Options:
 
 Exit codes:
   0  success
-  1  the server failed
+  1  failure
   2  usage error
 `
 
@@ -86,6 +90,15 @@ func Run(ctx context.Context, p Process) int {
 	stderr := &lockedWriter{w: p.Stderr}
 	if len(p.Args) != 0 {
 		args := p.Args
+		if len(args) == 2 && args[0] == "db" && args[1] == "status" {
+			err := db.Status(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations()}, p.Stdout)
+			if err != nil {
+				_, _ = fmt.Fprintf(stderr, "auth: %s\n", strings.ReplaceAll(err.Error(), "\n", " "))
+				return 1
+			}
+			return 0
+		}
+
 		switch args[0] {
 		case "--version", "--help", "manifest":
 			if len(args) == 1 {
@@ -100,6 +113,14 @@ func Run(ctx context.Context, p Process) int {
 				return 0
 			}
 			args = args[1:]
+		case "db":
+			if len(args) > 1 {
+				if args[1] == "status" {
+					args = args[2:]
+				} else {
+					args = args[1:]
+				}
+			}
 		}
 		kind := "unknown command"
 		if strings.HasPrefix(args[0], "--") {
@@ -166,12 +187,13 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 		return 1
 	}
 	defer func() { _ = ln.Close() }()
-	st, err := store.Open(p.DBSource, p.Rand)
+	hdb, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "auth: cannot open database %s: %s\n", p.DBSource, err)
+		_, _ = fmt.Fprintf(stderr, "auth: cannot open database state/auth.db: %s\n", strings.ReplaceAll(err.Error(), "\n", " "))
 		return 1
 	}
-	defer func() { _ = st.Close() }()
+	defer func() { _ = hdb.Close() }()
+	st := store.New(hdb, p.Rand)
 	client := google.NewClient(values[0], values[1], values[2], p.OIDCIssuer)
 
 	if addr, ok := lookup("NOTIFY_SOCKET"); ok && addr != "" {

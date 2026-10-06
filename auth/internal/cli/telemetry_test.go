@@ -91,7 +91,7 @@ func startTrailRun(t *testing.T, sink telemetry.Sink, issuer string) (Process, c
 }
 
 func TestRunTrailDelivery(t *testing.T) {
-	// R-BEG2-DPNX R-BGVV-595B R-BI3R-J0W0 R-BKJK-AKDE R-2MRR-GNCF R-B74O-337R R-2J42-BC4C
+	// R-BEG2-DPNX R-BGVV-595B R-8NDY-T1EP R-BKJK-AKDE R-2MRR-GNCF R-B74O-337R R-2J42-BC4C
 	for _, reject := range []bool{false, true} {
 		t.Run(fmt.Sprint(reject), func(t *testing.T) {
 			sink := &observedSink{reject: reject}
@@ -189,14 +189,16 @@ func TestRunTrailDelivery(t *testing.T) {
 }
 
 func TestRunTrailBeforeServe(t *testing.T) {
-	// R-BJBN-WSMP
-	for _, kind := range []string{"command", "usage", "config", "inherit", "database", "notify"} {
+	// R-8B6Y-ZBZR
+	for _, kind := range []string{"command", "status", "usage", "config", "inherit", "database", "notify"} {
 		t.Run(kind, func(t *testing.T) {
 			env := goodEnv()
 			p := baseProcess(env, testSource(t), nil)
 			switch kind {
 			case "command":
 				p.Args = []string{"--version"}
+			case "status":
+				p.Args = []string{"db", "status"}
 			case "usage":
 				p.Args = []string{"bogus"}
 			case "config":
@@ -211,8 +213,11 @@ func TestRunTrailBeforeServe(t *testing.T) {
 				t.Cleanup(func() { _ = ln.Close() })
 				p.Inherit = func(uintptr) (net.Listener, error) { return ln, nil }
 				if kind == "database" {
-					p.DBSource = filepath.Join(t.TempDir(), "bad.db")
-					if err := os.WriteFile(p.DBSource, []byte("not sqlite"), 0600); err != nil {
+					p.Dir = t.TempDir()
+					if err := os.Mkdir(filepath.Join(p.Dir, "state"), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(p.Dir, "state", "auth.db"), []byte("not sqlite"), 0600); err != nil {
 						t.Fatal(err)
 					}
 				} else {

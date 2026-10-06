@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"path/filepath"
@@ -54,11 +55,13 @@ func TestCreateLoginStatePersistsInjectedIDAndExactValues(t *testing.T) {
 			}
 
 			var stored LoginState
-			if err := st.db.QueryRowContext(
-				context.Background(),
-				`SELECT state, verifier, return_url FROM login_states WHERE state = ?`,
-				got.State,
-			).Scan(&stored.State, &stored.Verifier, &stored.ReturnURL); err != nil {
+			if err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+				return tx.QueryRowContext(
+					context.Background(),
+					`SELECT state, verifier, return_url FROM login_states WHERE state = ?`,
+					got.State,
+				).Scan(&stored.State, &stored.Verifier, &stored.ReturnURL)
+			}); err != nil {
 				t.Fatalf("read persisted login state: %v", err)
 			}
 			if !reflect.DeepEqual(stored, want) {
@@ -143,12 +146,12 @@ type loginStateConsumeResult struct {
 
 func openLoginStateTestStore(t *testing.T, random io.Reader) *Store {
 	t.Helper()
-	st, err := Open(filepath.Join(t.TempDir(), "auth.db"), random)
+	st, err := newTestStore(t, filepath.Join(t.TempDir(), "auth.db"), random)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatalf("open test database error = %v", err)
 	}
 	t.Cleanup(func() {
-		if err := st.Close(); err != nil {
+		if err := st.db.Close(); err != nil {
 			t.Errorf("Close() error = %v", err)
 		}
 	})

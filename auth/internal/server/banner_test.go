@@ -204,9 +204,7 @@ func TestOtherResponsesNeverCallBanner(t *testing.T) {
 	if calls != 0 {
 		t.Fatal("redirect called banner")
 	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, st)
 	srv.ServeHTTP(httptest.NewRecorder(), tokenProfileRequest(session.ID))
 	if calls != 0 {
 		t.Fatal("store failure called banner")

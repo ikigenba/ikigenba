@@ -80,7 +80,7 @@ func trailRequest(method, target string) *http.Request {
 
 func assertTrail(t *testing.T, events []telemetry.Event, r *http.Request, status int, names ...string) {
 	t.Helper()
-	// R-UEN3-Y8ZA R-UFV0-C0PZ R-T6HN-3SJG R-BD85-ZXX8: the writer's captured envelope defines the ordered request trail.
+	// R-75XV-RVPL R-8OLV-6T5E R-T6HN-3SJG R-BD85-ZXX8: the writer's captured envelope defines the ordered request trail.
 	want := append([]string{"request.started"}, names...)
 	want = append(want, "request.finished")
 	got := make([]string, len(events))
@@ -138,14 +138,12 @@ func TestRequestTrailEveryRoute(t *testing.T) {
 		}
 		assertTrail(t, events, r, w.Code, tc.domain...)
 	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, st)
 	r := trailRequest("GET", "/me")
 	r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "session", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	w, events := f.request(t, r)
 	if w.Code != 500 {
-		t.Fatalf("closed store=%d", w.Code)
+		t.Fatalf("failing store=%d", w.Code)
 	}
 	assertTrail(t, events, r, 500)
 }
@@ -329,11 +327,7 @@ func TestSignInRefusalTrail(t *testing.T) {
 
 func TestTokenAndCheckTrail(t *testing.T) {
 	// R-TW3J-4Z41 R-9RMT-85YC R-TZR8-AAC4 R-9SUP-LXP1: token changes emit exactly the token ID, and repeated toggles emit nothing.
-	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), &identityRand{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
+	st := openServerStore(t, filepath.Join(t.TempDir(), "auth.db"), &identityRand{}, func() time.Time { return signInNow })
 	user, _, err := st.UpsertUserOnLogin("issuer", "owner", "owner@green.example", signInNow)
 	if err != nil {
 		t.Fatal(err)
@@ -484,9 +478,7 @@ func testCheckTrail(t *testing.T, f *trailFixture, st *store.Store, user store.U
 	f.server.now = func() time.Time { return signInNow }
 	failedStore := openSignInStore(t)
 	failed := newTrail(t, Config{Store: failedStore}, nil)
-	if err := failedStore.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, failedStore)
 	r := trailRequest("GET", "/check")
 	r.Header.Set("Authorization", "Bearer "+secret)
 	w, events := failed.request(t, r)
@@ -551,9 +543,7 @@ func TestCheckCredentialKindForIgnoredSchemesAndDatabaseFailure(t *testing.T) {
 	} {
 		fixture, session, _ := basicOutcomeFixture(t, "honored")
 		if tc.closed {
-			if err := fixture.store.Close(); err != nil {
-				t.Fatal(err)
-			}
+			failServerStore(t, fixture.store)
 		}
 		f := newTrail(t, Config{Store: fixture.store, Now: func() time.Time { return identityNow }}, nil)
 		r := trailRequest("GET", "/check")
@@ -573,14 +563,11 @@ func TestCheckCredentialKindForIgnoredSchemesAndDatabaseFailure(t *testing.T) {
 }
 
 func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
-	// R-9VAI-DH6F: reopening the old token shape makes only the prefixed route actionable.
+	// R-8M62-F9O0: reopening the old token shape makes only the prefixed route actionable.
 	for _, action := range []string{"enable", "disable", "delete"} {
 		t.Run(action, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "auth.db")
-			st, err := store.Open(path, &identityRand{})
-			if err != nil {
-				t.Fatal(err)
-			}
+			st := openServerStore(t, path, &identityRand{}, func() time.Time { return signInNow })
 			user, _, err := st.UpsertUserOnLogin("issuer", "owner", "owner@green.example", signInNow)
 			if err != nil {
 				t.Fatal(err)
@@ -598,65 +585,21 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := st.Close(); err != nil {
-				t.Fatal(err)
-			}
-			db, err := sql.Open("sqlite", path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			rows, err := db.QueryContext(context.Background(), `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var tables []string
-			for rows.Next() {
-				var table string
-				if err := rows.Scan(&table); err != nil {
-					t.Fatal(err)
-				}
-				tables = append(tables, table)
-			}
-			if err := rows.Err(); err != nil {
-				t.Fatal(err)
-			}
-			_ = rows.Close()
 			bare := strings.TrimPrefix(token.ID, idcodec.TokenIDPrefix)
-			for _, table := range tables {
-				quotedTable := `"` + strings.ReplaceAll(table, `"`, `""`) + `"`
-				cols, err := db.QueryContext(context.Background(), "PRAGMA table_info("+quotedTable+")")
-				if err != nil {
-					t.Fatal(err)
+			handle := serverStoreDB(t, st)
+			if err := handle.Write(context.Background(), func(tx *sql.Tx) error {
+				if _, err := tx.ExecContext(context.Background(), `UPDATE tokens SET id = ? WHERE id = ?`, bare, token.ID); err != nil {
+					return err
 				}
-				var columns []string
-				for cols.Next() {
-					var cid, notNull, pk int
-					var name, kind string
-					var defaultValue any
-					if err := cols.Scan(&cid, &name, &kind, &notNull, &defaultValue, &pk); err != nil {
-						t.Fatal(err)
-					}
-					columns = append(columns, name)
-				}
-				if err := cols.Err(); err != nil {
-					t.Fatal(err)
-				}
-				_ = cols.Close()
-				for _, column := range columns {
-					quotedColumn := `"` + strings.ReplaceAll(column, `"`, `""`) + `"`
-					if _, err := db.ExecContext(context.Background(), strings.Join([]string{"UPDATE", quotedTable, "SET", quotedColumn, "= ? WHERE", quotedColumn, "= ?"}, " "), bare, token.ID); err != nil {
-						t.Fatal(err)
-					}
-				}
-			}
-			if err := db.Close(); err != nil {
+				_, err := tx.ExecContext(context.Background(), `DROP TABLE schema_migrations`)
+				return err
+			}); err != nil {
 				t.Fatal(err)
 			}
-			st, err = store.Open(path, &identityRand{})
-			if err != nil {
+			if err := handle.Close(); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = st.Close() })
+			st = openServerStore(t, path, &identityRand{}, func() time.Time { return signInNow })
 			f := newTrail(t, Config{Store: st}, nil)
 			before, err := st.ListTokens(user.ID)
 			if err != nil {
@@ -724,9 +667,7 @@ func TestDomainFailuresRecordOnlyRequiredEvents(t *testing.T) {
 		}
 		assertTrail(t, events, r, w.Code)
 	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, st)
 	for _, tc := range []struct{ method, target string }{{"GET", "/"}, {"GET", "/login/google"}, {"GET", "/login/google/callback?state=unknown"}, {"POST", "/logout"}, {"POST", "/tokens"}, {"POST", "/tokens/unknown/delete"}, {"GET", "/me"}} {
 		r := trailRequest(tc.method, tc.target)
 		r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})

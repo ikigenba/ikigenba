@@ -27,7 +27,6 @@ import (
 	googleclient "github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
-	_ "modernc.org/sqlite"
 )
 
 var signInNow = time.Date(2026, 9, 20, 16, 0, 0, 0, time.UTC)
@@ -62,23 +61,7 @@ func (r *signInRand) Read(p []byte) (int, error) {
 
 func openSignInStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, path, err := openSignInStoreAt(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	signInStorePath[st] = path
-	t.Cleanup(func() { delete(signInStorePath, st) })
-	return st
-}
-
-var signInStorePath = map[*store.Store]string{}
-
-func openSignInStoreAt(t *testing.T) (*store.Store, string, error) {
-	t.Helper()
-	path := t.TempDir() + "/auth.db"
-	st, err := store.Open(path, &signInRand{next: 1})
-	return st, path, err
+	return openServerStore(t, t.TempDir()+"/auth.db", &signInRand{next: 1}, func() time.Time { return signInNow })
 }
 
 type signInIssuer struct {
@@ -346,11 +329,7 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	issuer := newSignInIssuer(t)
 	// The store has its own reader. The server's reader is distinct, so the
 	// recorded verifier can only come from the bytes that reader yields.
-	st, err := store.Open(t.TempDir()+"/auth.db", &signInRand{next: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
+	st := openSignInStore(t)
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
 	verifierBytes := bytes.Repeat([]byte{0x2a}, pkceVerifierBytes)
 	serverRand := bytes.NewReader(append([]byte(nil), verifierBytes...))
@@ -403,11 +382,7 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 
 	// A different injected reader produces a different verifier.
 	otherBytes := bytes.Repeat([]byte{0x5c}, pkceVerifierBytes)
-	secondStore, err := store.Open(t.TempDir()+"/auth.db", &signInRand{next: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = secondStore.Close() })
+	secondStore := openSignInStore(t)
 	second := newTestServer(t, Config{Banner: testPageBanner,
 		Store:  secondStore,
 		Google: gc,
@@ -533,9 +508,7 @@ func TestCallbackAccessDeniedReportsStoreFailure(t *testing.T) {
 	}
 	var stderr signInDiagnosticWrites
 	s := newStatusTestServer(t, 500, Config{Banner: testPageBanner, Store: st}, &stderr)
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, st)
 	w := serveSignIn(s, http.MethodGet, "/login/google/callback?error=access_denied&state="+state.State, "auth.green.example", nil, "")
 	if w.Code != http.StatusInternalServerError || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) {
 		t.Fatalf("store failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
@@ -543,7 +516,7 @@ func TestCallbackAccessDeniedReportsStoreFailure(t *testing.T) {
 	assertNoSetCookie(t, w)
 	_, consumeErr := st.ConsumeLoginState(state.State)
 	if consumeErr == nil {
-		t.Fatal("closed store unexpectedly consumed login state")
+		t.Fatal("failing store unexpectedly consumed login state")
 	}
 	if len(stderr.writes) != 0 {
 		t.Fatalf("handled failure wrote stderr: %q", stderr.writes)
@@ -970,44 +943,48 @@ func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
 // profileStateSnapshot observes all persisted values without modifying them.
 func profileStateSnapshot(t *testing.T, st *store.Store) string {
 	t.Helper()
-	db := openSignInSQL(t, st)
-	defer func() { _ = db.Close() }()
 	var snapshot strings.Builder
-	for _, table := range []struct{ name, query string }{
-		{"users", "SELECT * FROM users ORDER BY id"},
-		{"sessions", "SELECT * FROM sessions ORDER BY id"},
-		{"login_states", "SELECT * FROM login_states ORDER BY state"},
-		{"tokens", "SELECT * FROM tokens ORDER BY id"},
-	} {
-		rows, err := db.QueryContext(context.Background(), table.query)
-		if err != nil {
-			t.Fatal(err)
-		}
-		columns, err := rows.Columns()
-		if err != nil {
-			_ = rows.Close()
-			t.Fatal(err)
-		}
-		fmt.Fprintf(&snapshot, "%s\n", table.name)
-		for rows.Next() {
-			values := make([]any, len(columns))
-			pointers := make([]any, len(columns))
-			for i := range values {
-				pointers[i] = &values[i]
+	err := serverStoreDB(t, st).Read(context.Background(), func(tx *sql.Tx) error {
+		for _, table := range []struct{ name, query string }{
+			{"users", "SELECT * FROM users ORDER BY id"},
+			{"sessions", "SELECT * FROM sessions ORDER BY id"},
+			{"login_states", "SELECT * FROM login_states ORDER BY state"},
+			{"tokens", "SELECT * FROM tokens ORDER BY id"},
+		} {
+			rows, err := tx.QueryContext(context.Background(), table.query)
+			if err != nil {
+				return err
 			}
-			if err := rows.Scan(pointers...); err != nil {
+			columns, err := rows.Columns()
+			if err != nil {
 				_ = rows.Close()
-				t.Fatal(err)
+				return err
 			}
-			fmt.Fprintf(&snapshot, "%#v\n", values)
+			fmt.Fprintf(&snapshot, "%s\n", table.name)
+			for rows.Next() {
+				values := make([]any, len(columns))
+				pointers := make([]any, len(columns))
+				for i := range values {
+					pointers[i] = &values[i]
+				}
+				if err := rows.Scan(pointers...); err != nil {
+					_ = rows.Close()
+					return err
+				}
+				fmt.Fprintf(&snapshot, "%#v\n", values)
+			}
+			if err := rows.Err(); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			if err := rows.Close(); err != nil {
+				return err
+			}
 		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			t.Fatal(err)
-		}
-		if err := rows.Close(); err != nil {
-			t.Fatal(err)
-		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	return snapshot.String()
 }
@@ -1222,37 +1199,28 @@ type signInSessionRow struct {
 	lastUsed   int64
 }
 
-func openSignInSQL(t *testing.T, st *store.Store) *sql.DB {
-	t.Helper()
-	path, ok := signInStorePath[st]
-	if !ok {
-		t.Fatal("sign-in store path was not recorded")
-	}
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return db
-}
-
 func signInUserRows(t *testing.T, st *store.Store) []signInUserRow {
 	t.Helper()
-	db := openSignInSQL(t, st)
-	defer func() { _ = db.Close() }()
-	rows, err := db.QueryContext(context.Background(), `SELECT id, issuer, subject, email, last_google_login FROM users ORDER BY id`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = rows.Close() }()
 	var got []signInUserRow
-	for rows.Next() {
-		var row signInUserRow
-		if err := rows.Scan(&row.id, &row.issuer, &row.subject, &row.email, &row.last); err != nil {
-			t.Fatal(err)
+	err := serverStoreDB(t, st).Read(context.Background(), func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(context.Background(), `SELECT id, issuer, subject, email, last_google_login FROM users ORDER BY id`)
+		if err != nil {
+			return err
 		}
-		got = append(got, row)
-	}
-	if err := rows.Err(); err != nil {
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var row signInUserRow
+			if err := rows.Scan(&row.id, &row.issuer, &row.subject, &row.email, &row.last); err != nil {
+				return err
+			}
+			got = append(got, row)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	return got
@@ -1260,22 +1228,26 @@ func signInUserRows(t *testing.T, st *store.Store) []signInUserRow {
 
 func signInSessionRows(t *testing.T, st *store.Store) []signInSessionRow {
 	t.Helper()
-	db := openSignInSQL(t, st)
-	defer func() { _ = db.Close() }()
-	rows, err := db.QueryContext(context.Background(), `SELECT id, user_id, login_at, last_used_at FROM sessions ORDER BY id`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = rows.Close() }()
 	var got []signInSessionRow
-	for rows.Next() {
-		var row signInSessionRow
-		if err := rows.Scan(&row.id, &row.userID, &row.loginAt, &row.lastUsed); err != nil {
-			t.Fatal(err)
+	err := serverStoreDB(t, st).Read(context.Background(), func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(context.Background(), `SELECT id, user_id, login_at, last_used_at FROM sessions ORDER BY id`)
+		if err != nil {
+			return err
 		}
-		got = append(got, row)
-	}
-	if err := rows.Err(); err != nil {
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var row signInSessionRow
+			if err := rows.Scan(&row.id, &row.userID, &row.loginAt, &row.lastUsed); err != nil {
+				return err
+			}
+			got = append(got, row)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	return got
@@ -1295,10 +1267,10 @@ func formatSignInIdentity(t *testing.T, st *store.Store) string {
 
 func requireLoginState(t *testing.T, st *store.Store, state, verifier, returnURL string) {
 	t.Helper()
-	db := openSignInSQL(t, st)
-	defer func() { _ = db.Close() }()
 	var gotVerifier, gotReturn string
-	err := db.QueryRowContext(context.Background(), `SELECT verifier, return_url FROM login_states WHERE state = ?`, state).Scan(&gotVerifier, &gotReturn)
+	err := serverStoreDB(t, st).Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(), `SELECT verifier, return_url FROM login_states WHERE state = ?`, state).Scan(&gotVerifier, &gotReturn)
+	})
 	if err != nil || gotVerifier != verifier || gotReturn != returnURL {
 		t.Fatalf("login state %s = %q %q err %v, want verifier %q return %q", state, gotVerifier, gotReturn, err, verifier, returnURL)
 	}
@@ -1306,18 +1278,18 @@ func requireLoginState(t *testing.T, st *store.Store, state, verifier, returnURL
 
 func assertReturnNotPersisted(t *testing.T, st *store.Store, returnURL string) {
 	t.Helper()
-	db := openSignInSQL(t, st)
-	defer func() { _ = db.Close() }()
 	var n int
-	err := db.QueryRowContext(context.Background(), `
+	err := serverStoreDB(t, st).Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(), `
 		SELECT
 			(SELECT COUNT(*) FROM login_states WHERE return_url = ? OR state = ? OR verifier = ?)
 			+ (SELECT COUNT(*) FROM users WHERE email = ? OR id = ? OR issuer = ? OR subject = ?)
 			+ (SELECT COUNT(*) FROM sessions WHERE id = ? OR user_id = ?)`,
-		returnURL, returnURL, returnURL,
-		returnURL, returnURL, returnURL, returnURL,
-		returnURL, returnURL,
-	).Scan(&n)
+			returnURL, returnURL, returnURL,
+			returnURL, returnURL, returnURL, returnURL,
+			returnURL, returnURL,
+		).Scan(&n)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1333,23 +1305,20 @@ func lookupSessionError(st *store.Store, sessionID string) error {
 
 func assertEmptySignInTables(t *testing.T, st *store.Store) {
 	t.Helper()
-	path, ok := signInStorePath[st]
-	if !ok {
-		t.Fatal("sign-in store path was not recorded")
-	}
-	db, err := sql.Open("sqlite", path)
+	err := serverStoreDB(t, st).Read(context.Background(), func(tx *sql.Tx) error {
+		for _, table := range []string{"users", "sessions", "login_states"} {
+			var n int
+			if err := tx.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&n); err != nil {
+				return err
+			}
+			if n != 0 {
+				return fmt.Errorf("%s has %d rows, want 0", table, n)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	for _, table := range []string{"users", "sessions", "login_states"} {
-		var n int
-		if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		if n != 0 {
-			t.Fatalf("%s has %d rows, want 0", table, n)
-		}
 	}
 }
 
@@ -1389,9 +1358,7 @@ func TestSignInStoreFailuresStaySilent(t *testing.T) {
 		}
 		var writes signInDiagnosticWrites
 		s := newServer(st, &writes)
-		if err := st.Close(); err != nil {
-			t.Fatal(err)
-		}
+		failServerStore(t, st)
 		w := serveSignInWithRequestID(s, "/login/google/callback?state="+state.State, "consume-request")
 		_, cause := st.ConsumeLoginState(state.State)
 		assertSignInStoreFailure(t, w, writes, cause)
@@ -1406,9 +1373,10 @@ func TestSignInStoreFailuresStaySilent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		db := openSignInSQL(t, st)
-		defer func() { _ = db.Close() }()
-		if _, err := db.ExecContext(context.Background(), `CREATE TRIGGER fail_user_insert BEFORE INSERT ON users BEGIN SELECT RAISE(FAIL, 'injected user failure'); END`); err != nil {
+		if err := serverStoreDB(t, st).Write(context.Background(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(context.Background(), `CREATE TRIGGER fail_user_insert BEFORE INSERT ON users BEGIN SELECT RAISE(FAIL, 'injected user failure'); END`)
+			return err
+		}); err != nil {
 			t.Fatal(err)
 		}
 		var writes signInDiagnosticWrites
@@ -1429,9 +1397,10 @@ func TestSignInStoreFailuresStaySilent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		db := openSignInSQL(t, st)
-		defer func() { _ = db.Close() }()
-		if _, err := db.ExecContext(context.Background(), `CREATE TRIGGER fail_session_insert BEFORE INSERT ON sessions BEGIN SELECT RAISE(FAIL, 'injected session failure'); END`); err != nil {
+		if err := serverStoreDB(t, st).Write(context.Background(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(context.Background(), `CREATE TRIGGER fail_session_insert BEFORE INSERT ON sessions BEGIN SELECT RAISE(FAIL, 'injected session failure'); END`)
+			return err
+		}); err != nil {
 			t.Fatal(err)
 		}
 		var writes signInDiagnosticWrites
@@ -1451,9 +1420,7 @@ func TestSignInStoreFailuresStaySilent(t *testing.T) {
 		st := openSignInStore(t)
 		var writes signInDiagnosticWrites
 		s := newServer(st, &writes)
-		if err := st.Close(); err != nil {
-			t.Fatal(err)
-		}
+		failServerStore(t, st)
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/logout", nil)
 		req.Host = "auth.green.example"
 		req.Header.Set("Origin", "https://auth.green.example")
@@ -1467,52 +1434,34 @@ func TestSignInStoreFailuresStaySilent(t *testing.T) {
 }
 
 func TestProfileStoreFailuresArePlain500(t *testing.T) {
-	for _, step := range []string{"identity", "tokens"} {
-		t.Run(step, func(t *testing.T) {
-			st := openSignInStore(t)
-			user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
-			if err != nil {
-				t.Fatal(err)
-			}
-			session, err := st.CreateSession(user.ID, signInNow)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var writes signInDiagnosticWrites
-			s := newStatusTestServer(t, 500, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }}, &writes)
-			if step == "identity" {
-				if err := st.Close(); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				db := openSignInSQL(t, st)
-				defer func() { _ = db.Close() }()
-				if _, err := db.ExecContext(context.Background(), `DROP TABLE tokens`); err != nil {
-					t.Fatal(err)
-				}
-			}
-			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
-			req.Host = "auth.green.example"
-			req.Header.Set("X-Request-Id", "profile-request")
-			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
-			w := httptest.NewRecorder()
-			s.httpServer.Handler.ServeHTTP(w, req)
-			var cause error
-			if step == "identity" {
-				_, cause = st.LookupSessionIdentity(session.ID, signInNow)
-			} else {
-				_, cause = st.ListTokens(user.ID)
-			}
-			assertSignInStoreFailure(t, w, writes, cause)
-		})
+	st := openSignInStore(t)
+	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
+	if err != nil {
+		t.Fatal(err)
 	}
+	session, err := st.CreateSession(user.ID, signInNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var writes signInDiagnosticWrites
+	s := newStatusTestServer(t, 500, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }}, &writes)
+	failServerStore(t, st)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	req.Host = "auth.green.example"
+	req.Header.Set("X-Request-Id", "profile-request")
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	_, cause := st.LookupSessionIdentity(session.ID, signInNow)
+	assertSignInStoreFailure(t, w, writes, cause)
 }
 
 func TestLoginStartCleanupFailureKeeps502(t *testing.T) {
 	st := openSignInStore(t)
-	db := openSignInSQL(t, st)
-	defer func() { _ = db.Close() }()
-	if _, err := db.ExecContext(context.Background(), `CREATE TRIGGER fail_state_delete BEFORE DELETE ON login_states BEGIN SELECT RAISE(FAIL, 'injected cleanup failure'); END`); err != nil {
+	if err := serverStoreDB(t, st).Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), `CREATE TRIGGER fail_state_delete BEFORE DELETE ON login_states BEGIN SELECT RAISE(FAIL, 'injected cleanup failure'); END`)
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	issuer := newSignInIssuer(t)

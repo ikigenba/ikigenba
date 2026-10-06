@@ -2,7 +2,6 @@ package store
 
 import (
 	"bytes"
-	"database/sql"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -63,14 +62,14 @@ func TestIdentitiesNameOnlyHonoredTokens(t *testing.T) {
 }
 
 func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
-	// R-9U2L-ZPFQ
-	// R-T41U-C922
+	// R-8DMR-QVH5
+	// R-8EUO-4N7U
 	path := filepath.Join(t.TempDir(), "auth.db")
-	st, err := Open(path, bytes.NewReader(sequentialStoreBytes(240)))
+	st, err := newTestStore(t, path, bytes.NewReader(sequentialStoreBytes(240)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	t.Cleanup(func() { _ = st.db.Close() })
 	now := sessionTestNow()
 	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", now)
 	if err != nil {
@@ -107,15 +106,19 @@ func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
 		tokens = append(tokens, token)
 		secrets = append(secrets, secret)
 	}
-	if err := st.Close(); err != nil {
+	before := domainRows(t, st)
+	if err := st.db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	// Keep one already-prefixed token alongside three old-shape tokens.
 	stripFixtureTokenPrefixes(t, path, tokens[:3])
 	for range 2 {
-		st, err = Open(path, bytes.NewReader(nil))
+		st, err = newTestStore(t, path, bytes.NewReader(nil))
 		if err != nil {
 			t.Fatal(err)
+		}
+		if after := domainRows(t, st); !reflect.DeepEqual(after, before) {
+			t.Fatalf("migration changed domain rows: before %#v, after %#v", before, after)
 		}
 		for _, want := range tokens {
 			if got := readToken(t, st, want.ID); !reflect.DeepEqual(got, want) {
@@ -140,11 +143,11 @@ func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
 		}
 		assertStoredUser(t, st, user)
 		assertStoredSession(t, st, session.ID, user.ID, now.UnixNano(), now.UnixNano())
-		if err := st.Close(); err != nil {
+		if err := st.db.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}
-	st, err = Open(path, bytes.NewReader(nil))
+	st, err = newTestStore(t, path, bytes.NewReader(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,63 +165,6 @@ func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
 				}
 			} else if !errors.Is(err, ErrNotFound) {
 				t.Fatalf("disabled migrated token authenticated: %#v, %v", identity, err)
-			}
-		}
-	}
-}
-
-// Discover the database's tables and columns rather than prescribing its layout.
-func stripFixtureTokenPrefixes(t *testing.T, path string, tokens []Token) {
-	t.Helper()
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	rows, err := db.QueryContext(t.Context(), `SELECT name FROM sqlite_master WHERE type = 'table'`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tables []string
-	for rows.Next() {
-		var table string
-		if err := rows.Scan(&table); err != nil {
-			t.Fatal(err)
-		}
-		tables = append(tables, table)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if err := rows.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for _, table := range tables {
-		rows, err := db.QueryContext(t.Context(), `SELECT name FROM pragma_table_info(?)`, table)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var columns []string
-		for rows.Next() {
-			var column string
-			if err := rows.Scan(&column); err != nil {
-				t.Fatal(err)
-			}
-			columns = append(columns, column)
-		}
-		if err := rows.Err(); err != nil {
-			t.Fatal(err)
-		}
-		if err := rows.Close(); err != nil {
-			t.Fatal(err)
-		}
-		for _, column := range columns {
-			quote := func(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }
-			statement := strings.Join([]string{"UPDATE ", quote(table), " SET ", quote(column), " = ? WHERE ", quote(column), " = ?"}, "")
-			for _, token := range tokens {
-				if _, err := db.ExecContext(t.Context(), statement, strings.TrimPrefix(token.ID, idcodec.TokenIDPrefix), token.ID); err != nil {
-					t.Fatal(err)
-				}
 			}
 		}
 	}

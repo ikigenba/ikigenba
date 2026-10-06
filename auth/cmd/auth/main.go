@@ -39,7 +39,6 @@ func main() {
 		Now:        time.Now,
 		Rand:       rand.Reader,
 		OIDCIssuer: "https://accounts.google.com",
-		DBSource:   "state/auth.db",
 		Banner:     kit.Banner,
 		Sink:       telemetry.NewSocketSink(),
 	})

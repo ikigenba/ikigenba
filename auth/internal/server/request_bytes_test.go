@@ -124,14 +124,12 @@ func TestResponseBodyByteCountsAcrossRoutes(t *testing.T) {
 			assertRequestByteCounts(t, events, w, 0)
 		})
 	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	failServerStore(t, st)
 	r := trailRequest(http.MethodGet, "/me")
 	r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "session", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	w, events := f.request(t, r)
 	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("closed store status=%d, want 500", w.Code)
+		t.Fatalf("failing store status=%d, want 500", w.Code)
 	}
 	assertRequestByteCounts(t, events, w, 0)
 }

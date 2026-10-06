@@ -12,166 +12,177 @@ import (
 
 // UpsertUserOnLogin returns the refreshed user and whether it was created.
 func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, bool, error) {
-	tx, err := s.db.BeginTx(context.Background(), nil)
-	if err != nil {
-		return User{}, false, fmt.Errorf("begin user upsert: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
+	var user User
 	var created bool
-	var id string
-	err = tx.QueryRowContext(
-		context.Background(),
-		`SELECT id FROM users WHERE issuer = ? AND subject = ?`,
-		issuer,
-		subject,
-	).Scan(&id)
-	switch {
-	case err == nil:
-		if _, err := tx.ExecContext(
+	err := s.db.Write(context.Background(), func(tx *sql.Tx) error {
+		var id string
+		err := tx.QueryRowContext(
 			context.Background(),
-			`UPDATE users SET email = ?, last_google_login = ? WHERE id = ?`,
-			email,
-			now.UnixNano(),
-			id,
-		); err != nil {
-			return User{}, false, fmt.Errorf("update user on login: %w", err)
-		}
-	case errors.Is(err, sql.ErrNoRows):
-		created = true
-		id, err = idcodec.NewID(s.rand)
-		if err != nil {
-			return User{}, false, fmt.Errorf("create user id: %w", err)
-		}
-		if _, err := tx.ExecContext(
-			context.Background(),
-			`INSERT INTO users (id, issuer, subject, email, last_google_login) VALUES (?, ?, ?, ?, ?)`,
-			id,
+			`SELECT id FROM users WHERE issuer = ? AND subject = ?`,
 			issuer,
 			subject,
-			email,
-			now.UnixNano(),
-		); err != nil {
-			return User{}, false, fmt.Errorf("insert user on login: %w", err)
+		).Scan(&id)
+		switch {
+		case err == nil:
+			if _, err := tx.ExecContext(
+				context.Background(),
+				`UPDATE users SET email = ?, last_google_login = ? WHERE id = ?`,
+				email,
+				now.UnixNano(),
+				id,
+			); err != nil {
+				return fmt.Errorf("update user on login: %w", err)
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			created = true
+			id, err = idcodec.NewID(s.rand)
+			if err != nil {
+				return fmt.Errorf("create user id: %w", err)
+			}
+			if _, err := tx.ExecContext(
+				context.Background(),
+				`INSERT INTO users (id, issuer, subject, email, last_google_login) VALUES (?, ?, ?, ?, ?)`,
+				id,
+				issuer,
+				subject,
+				email,
+				now.UnixNano(),
+			); err != nil {
+				return fmt.Errorf("insert user on login: %w", err)
+			}
+		default:
+			return fmt.Errorf("find user on login: %w", err)
 		}
-	default:
-		return User{}, false, fmt.Errorf("find user on login: %w", err)
-	}
 
-	if err := tx.Commit(); err != nil {
-		return User{}, false, fmt.Errorf("commit user upsert: %w", err)
+		user = User{
+			ID:              id,
+			Issuer:          issuer,
+			Subject:         subject,
+			Email:           email,
+			LastGoogleLogin: now,
+		}
+		return nil
+	})
+	if err != nil {
+		return User{}, false, err
 	}
-
-	return User{
-		ID:              id,
-		Issuer:          issuer,
-		Subject:         subject,
-		Email:           email,
-		LastGoogleLogin: now,
-	}, created, nil
+	return user, created, err
 }
 
 // CreateSession stores a session for the user and returns it.
 func (s *Store) CreateSession(userID string, now time.Time) (Session, error) {
-	id, err := idcodec.NewID(s.rand)
+	var session Session
+	err := s.db.Write(context.Background(), func(tx *sql.Tx) error {
+		id, err := idcodec.NewID(s.rand)
+		if err != nil {
+			return fmt.Errorf("create session id: %w", err)
+		}
+
+		session = Session{
+			ID:         id,
+			UserID:     userID,
+			LoginAt:    now,
+			LastUsedAt: now,
+		}
+		if _, err := tx.ExecContext(
+			context.Background(),
+			`INSERT INTO sessions (id, user_id, login_at, last_used_at) VALUES (?, ?, ?, ?)`,
+			session.ID,
+			session.UserID,
+			session.LoginAt.UnixNano(),
+			session.LastUsedAt.UnixNano(),
+		); err != nil {
+			return fmt.Errorf("insert session: %w", err)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return Session{}, fmt.Errorf("create session id: %w", err)
+		return Session{}, err
 	}
-
-	session := Session{
-		ID:         id,
-		UserID:     userID,
-		LoginAt:    now,
-		LastUsedAt: now,
-	}
-	if _, err := s.db.ExecContext(
-		context.Background(),
-		`INSERT INTO sessions (id, user_id, login_at, last_used_at) VALUES (?, ?, ?, ?)`,
-		session.ID,
-		session.UserID,
-		session.LoginAt.UnixNano(),
-		session.LastUsedAt.UnixNano(),
-	); err != nil {
-		return Session{}, fmt.Errorf("insert session: %w", err)
-	}
-
-	return session, nil
+	return session, err
 }
 
 // LookupSessionIdentity returns the session's user when it is still within idle and max age.
 func (s *Store) LookupSessionIdentity(sessionID string, now time.Time) (Identity, error) {
 	var identity Identity
-	err := s.db.QueryRowContext(
-		context.Background(),
-		`SELECT users.id, users.email
+	err := s.db.Read(context.Background(), func(tx *sql.Tx) error {
+		err := tx.QueryRowContext(
+			context.Background(),
+			`SELECT users.id, users.email
 		 FROM sessions
 		 JOIN users ON users.id = sessions.user_id
 		 WHERE sessions.id = ?
 		   AND sessions.last_used_at >= ?
 		   AND sessions.login_at >= ?`,
-		sessionID,
-		now.Add(-SessionIdle).UnixNano(),
-		now.Add(-SessionMax).UnixNano(),
-	).Scan(&identity.UserID, &identity.Email)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Identity{}, ErrNotFound
-	}
-	if err != nil {
-		return Identity{}, fmt.Errorf("lookup session identity: %w", err)
-	}
+			sessionID,
+			now.Add(-SessionIdle).UnixNano(),
+			now.Add(-SessionMax).UnixNano(),
+		).Scan(&identity.UserID, &identity.Email)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("lookup session identity: %w", err)
+		}
 
-	return identity, nil
+		return nil
+	})
+	if err != nil {
+		return Identity{}, err
+	}
+	return identity, err
 }
 
 // TouchSession records last use and returns the session's user when it is still within idle and max age.
 func (s *Store) TouchSession(sessionID string, now time.Time) (Identity, error) {
-	tx, err := s.db.BeginTx(context.Background(), nil)
-	if err != nil {
-		return Identity{}, fmt.Errorf("begin session touch: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var userID string
-	err = tx.QueryRowContext(
-		context.Background(),
-		`UPDATE sessions
+	var identity Identity
+	err := s.db.Write(context.Background(), func(tx *sql.Tx) error {
+		var userID string
+		err := tx.QueryRowContext(
+			context.Background(),
+			`UPDATE sessions
 		 SET last_used_at = ?
 		 WHERE id = ?
 		   AND last_used_at >= ?
 		   AND login_at >= ?
 		 RETURNING user_id`,
-		now.UnixNano(),
-		sessionID,
-		now.Add(-SessionIdle).UnixNano(),
-		now.Add(-SessionMax).UnixNano(),
-	).Scan(&userID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Identity{}, ErrNotFound
-	}
+			now.UnixNano(),
+			sessionID,
+			now.Add(-SessionIdle).UnixNano(),
+			now.Add(-SessionMax).UnixNano(),
+		).Scan(&userID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("touch session: %w", err)
+		}
+
+		if err := tx.QueryRowContext(
+			context.Background(),
+			`SELECT id, email FROM users WHERE id = ?`,
+			userID,
+		).Scan(&identity.UserID, &identity.Email); err != nil {
+			return fmt.Errorf("lookup touched session user: %w", err)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return Identity{}, fmt.Errorf("touch session: %w", err)
+		return Identity{}, err
 	}
-
-	var identity Identity
-	if err := tx.QueryRowContext(
-		context.Background(),
-		`SELECT id, email FROM users WHERE id = ?`,
-		userID,
-	).Scan(&identity.UserID, &identity.Email); err != nil {
-		return Identity{}, fmt.Errorf("lookup touched session user: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return Identity{}, fmt.Errorf("commit session touch: %w", err)
-	}
-
-	return identity, nil
+	return identity, err
 }
 
 // DeleteSession deletes the session. A missing session is not an error.
 func (s *Store) DeleteSession(sessionID string) error {
-	if _, err := s.db.ExecContext(context.Background(), `DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
-		return fmt.Errorf("delete session: %w", err)
-	}
+	err := s.db.Write(context.Background(), func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(context.Background(), `DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
+			return fmt.Errorf("delete session: %w", err)
+		}
 
-	return nil
+		return nil
+	})
+	return err
 }

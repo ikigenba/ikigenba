@@ -61,7 +61,7 @@ func withCreateToken(t *testing.T, create func(*Store, string, string, Expiry, t
 	if _, err := st.LookupTokenIdentity(token.Hash, now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("LookupTokenIdentity(stored hash) error = %v, want ErrNotFound", err)
 	}
-	if err := st.Close(); err != nil {
+	if err := st.db.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
 
@@ -72,11 +72,11 @@ func withCreateToken(t *testing.T, create func(*Store, string, string, Expiry, t
 	if bytes.Contains(databaseBytes, []byte(secret)) {
 		t.Fatalf("database contains plaintext secret %q", secret)
 	}
-	reopened, err := Open(path, bytes.NewReader(nil))
+	reopened, err := newTestStore(t, path, bytes.NewReader(nil))
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
 	}
-	t.Cleanup(func() { _ = reopened.Close() })
+	t.Cleanup(func() { _ = reopened.db.Close() })
 	stored := readToken(t, reopened, token.ID)
 	if stored.Hash != idcodec.HashSecret(wantSecret) || stored.Name != "deploy token" || stored.UserID != "owner" {
 		t.Fatalf("stored token = %#v, want hash of plaintext secret", stored)
@@ -135,17 +135,17 @@ func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 				t.Fatalf("stored hash = %q for secret %q", stored.Hash, secret)
 			}
 
-			if err := st.Close(); err != nil {
+			if err := st.db.Close(); err != nil {
 				t.Fatalf("Close() error = %v", err)
 			}
-			reopened, err := Open(path, bytes.NewReader(nil))
+			reopened, err := newTestStore(t, path, bytes.NewReader(nil))
 			if err != nil {
 				t.Fatalf("reopen store: %v", err)
 			}
 			if reopenedToken := readToken(t, reopened, got.ID); !reflect.DeepEqual(reopenedToken, want) {
 				t.Fatalf("reopened token = %#v, want %#v", reopenedToken, want)
 			}
-			if err := reopened.Close(); err != nil {
+			if err := reopened.db.Close(); err != nil {
 				t.Fatalf("close reopened store: %v", err)
 			}
 			databaseBytes, err := fs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
@@ -354,55 +354,66 @@ func openTokenTestStore(t *testing.T, random io.Reader) *Store {
 
 func openTokenTestStoreAt(t *testing.T, path string, random io.Reader) *Store {
 	t.Helper()
-	st, err := Open(path, random)
+	st, err := newTestStore(t, path, random)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatalf("open test database error = %v", err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	t.Cleanup(func() { _ = st.db.Close() })
 	return st
 }
 
 func insertTokenUser(t *testing.T, st *Store, id, email string, lastGoogleLogin time.Time) {
 	t.Helper()
-	if _, err := st.db.ExecContext(
-		context.Background(),
-		`INSERT INTO users (id, issuer, subject, email, last_google_login) VALUES (?, ?, ?, ?, ?)`,
-		id,
-		"issuer-"+id,
-		"subject-"+id,
-		email,
-		lastGoogleLogin.UnixNano(),
-	); err != nil {
+	if err := st.db.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(
+			context.Background(),
+			`INSERT INTO users (id, issuer, subject, email, last_google_login) VALUES (?, ?, ?, ?, ?)`,
+			id,
+			"issuer-"+id,
+			"subject-"+id,
+			email,
+			lastGoogleLogin.UnixNano(),
+		)
+		return err
+	}); err != nil {
 		t.Fatalf("insert user %q: %v", id, err)
 	}
 }
 
 func insertToken(t *testing.T, st *Store, token Token) {
 	t.Helper()
-	if _, err := st.db.ExecContext(
-		context.Background(),
-		`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at)
+	if err := st.db.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(
+			context.Background(),
+			`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		token.ID,
-		token.UserID,
-		token.Name,
-		token.Hash,
-		token.Enabled,
-		token.CreatedAt.UnixNano(),
-		nullableUnixNano(token.ExpiresAt),
-		nullableUnixNano(token.LastUsedAt),
-	); err != nil {
+			token.ID,
+			token.UserID,
+			token.Name,
+			token.Hash,
+			token.Enabled,
+			token.CreatedAt.UnixNano(),
+			nullableUnixNano(token.ExpiresAt),
+			nullableUnixNano(token.LastUsedAt),
+		)
+		return err
+	}); err != nil {
 		t.Fatalf("insert token %q: %v", token.ID, err)
 	}
 }
 
 func readToken(t *testing.T, st *Store, id string) Token {
 	t.Helper()
-	token, err := scanToken(st.db.QueryRowContext(
-		context.Background(),
-		`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens WHERE id = ?`,
-		id,
-	))
+	var token Token
+	err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		var err error
+		token, err = scanToken(tx.QueryRowContext(
+			context.Background(),
+			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens WHERE id = ?`,
+			id,
+		))
+		return err
+	})
 	if err != nil {
 		t.Fatalf("read token %q: %v", id, err)
 	}
@@ -411,24 +422,30 @@ func readToken(t *testing.T, st *Store, id string) Token {
 
 func allTokenStates(t *testing.T, st *Store) []Token {
 	t.Helper()
-	rows, err := st.db.QueryContext(
-		context.Background(),
-		`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`,
-	)
-	if err != nil {
-		t.Fatalf("query all tokens: %v", err)
-	}
-	defer func() { _ = rows.Close() }()
 	var tokens []Token
-	for rows.Next() {
-		token, err := scanToken(rows)
+	err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(
+			context.Background(),
+			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`,
+		)
 		if err != nil {
-			t.Fatalf("scan token state: %v", err)
+			t.Fatalf("query all tokens: %v", err)
 		}
-		tokens = append(tokens, token)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("token state rows: %v", err)
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			token, err := scanToken(rows)
+			if err != nil {
+				t.Fatalf("scan token state: %v", err)
+			}
+			tokens = append(tokens, token)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("token state rows: %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	return tokens
 }
@@ -436,7 +453,9 @@ func allTokenStates(t *testing.T, st *Store) []Token {
 func tokenLastUsed(t *testing.T, st *Store, id string) (sql.NullInt64, error) {
 	t.Helper()
 	var lastUsed sql.NullInt64
-	err := st.db.QueryRowContext(context.Background(), `SELECT last_used_at FROM tokens WHERE id = ?`, id).Scan(&lastUsed)
+	err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(), `SELECT last_used_at FROM tokens WHERE id = ?`, id).Scan(&lastUsed)
+	})
 	return lastUsed, err
 }
 

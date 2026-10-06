@@ -25,8 +25,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/auth"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -39,7 +41,8 @@ Serve the auth service on the socket systemd passes in. With no command,
 serve.
 
 Commands:
-  manifest   print the app manifest
+  manifest    print the app manifest
+  db status   print applied and pending migrations
 
 Options:
   --help      print this help
@@ -47,7 +50,7 @@ Options:
 
 Exit codes:
   0  success
-  1  the server failed
+  1  failure
   2  usage error
 `
 const wantManifest = `app = "auth"
@@ -65,7 +68,7 @@ path = "state/auth.db"
 const wantSocketHint = "\n\nrun it under systemd, with a listening socket passed in\n"
 
 func TestSurface(t *testing.T) {
-	// R-ASHV-HUBF
+	// R-7ALZ-I7QX
 	// An unkeyed literal fixes the field set, order, and types at compile time;
 	// reading each field back into a variable of its declared type fixes them exactly.
 	var (
@@ -79,17 +82,17 @@ func TestSurface(t *testing.T) {
 		now       func() time.Time
 		rnd       io.Reader
 		issuer    string
-		dbSource  string
+		dir       string
 		banner    func(page.User) page.Banner
 		sink      telemetry.Sink
 	)
-	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner, sink}
+	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dir, banner, sink}
 	args, lookupEnv, unsetenv, pid = p.Args, p.LookupEnv, p.Unsetenv, p.Pid
 	stdout, stderr, inherit, now = p.Stdout, p.Stderr, p.Inherit, p.Now
-	rnd, issuer, dbSource, banner = p.Rand, p.OIDCIssuer, p.DBSource, p.Banner
+	rnd, issuer, dir, banner = p.Rand, p.OIDCIssuer, p.Dir, p.Banner
 	sink = p.Sink
-	_, _, _, _, _, _, _, _, _, _, _, _, _ = args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner, sink
-	// R-LUR4-A3IV R-3XVE-I7OD
+	_, _, _, _, _, _, _, _, _, _, _, _, _ = args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dir, banner, sink
+	// R-LUR4-A3IV R-7D1S-9R8B
 	runFn := Run
 	if code := runFn(t.Context(), Process{Args: []string{"--version"}, Stdout: io.Discard, Stderr: io.Discard}); code != 0 {
 		t.Fatal(code)
@@ -103,23 +106,24 @@ func TestCommands(t *testing.T) {
 		code      int
 	}{
 		{[]string{"--version"}, version.Version + "\n", "", 0},                                          // R-P02O-R3KF
-		{[]string{"--help"}, wantUsage, "", 0},                                                          // R-P1AL-4VB4 R-M5Q7-Q174
+		{[]string{"--help"}, wantUsage, "", 0},                                                          // R-P1AL-4VB4 R-7J5A-6LXS
 		{[]string{"manifest"}, wantManifest, "", 0},                                                     // R-P2IH-IN1T R-M6Y4-3SXT
-		{[]string{"bogus"}, "", "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", 2},    // R-P666-NY9W R-P8LZ-FHRA
+		{[]string{"bogus"}, "", "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", 2},    // R-7KD6-KDOH R-P8LZ-FHRA
 		{[]string{"--bogus"}, "", "auth: unknown option '--bogus'\n\nsee 'auth --help' for usage\n", 2}, // R-P7E3-1Q0L
 		{[]string{"manifest", "extra"}, "", "auth: unknown command 'extra'\n\nsee 'auth --help' for usage\n", 2},
 	}
-	// R-OV73-80LN R-M860-HKOI R-M9DW-VCF7
+	// R-7HXD-SU73 R-7LL2-Y5F6 R-7MSZ-BX5V R-7U4D-MJM1
 	for _, tt := range tests {
 		t.Run(strings.Join(tt.args, "_"), func(t *testing.T) {
 			out := new(bytes.Buffer)
 			errOut := &countWriter{}
 			called := false
-			p := Process{Args: tt.args, LookupEnv: func(string) (string, bool) { called = true; return "", false }, Unsetenv: func(string) error { called = true; return nil }, Inherit: func(uintptr) (net.Listener, error) { called = true; return nil, errors.New("unexpected") }, Stdout: out, Stderr: errOut}
+			p := Process{Args: tt.args, LookupEnv: func(string) (string, bool) { called = true; return "", false }, Unsetenv: func(string) error { called = true; return nil }, Inherit: func(uintptr) (net.Listener, error) { called = true; return nil, errors.New("unexpected") }, Stdout: out, Stderr: errOut, Dir: t.TempDir()}
 			code := Run(t.Context(), p)
 			if code != tt.code || out.String() != tt.out || errOut.String() != tt.diag || called {
 				t.Fatalf("code=%d out=%q diag=%q called=%v", code, out, errOut.String(), called)
 			}
+			assertEmptyDir(t, p.Dir)
 			if tt.diag != "" && errOut.calls != 1 {
 				t.Fatalf("diagnostic writes=%d", errOut.calls)
 			}
@@ -140,17 +144,17 @@ func baseProcess(env map[string]string, source string, ln net.Listener) Process 
 			return nil, fmt.Errorf("fd %d", fd)
 		}
 		return ln, nil
-	}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)), OIDCIssuer: "http://127.0.0.1:0", DBSource: source, Banner: func(u page.User) page.Banner {
+	}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)), OIDCIssuer: "http://127.0.0.1:0", Dir: source, Banner: func(u page.User) page.Banner {
 		return page.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}}
 }
 func goodEnv() map[string]string {
 	return map[string]string{"GOOGLE_CLIENT_ID": "id", "GOOGLE_CLIENT_SECRET": "secret", "WORKSPACE_DOMAIN": "example.test", "LISTEN_PID": "42", "LISTEN_FDS": "1"}
 }
-func testSource(t *testing.T) string { return filepath.Join(t.TempDir(), "auth.db") }
+func testSource(t *testing.T) string { return t.TempDir() }
 
 func TestConfigAndSocketValidation(t *testing.T) {
-	// R-GESR-IE7R R-MLKW-P1U5 R-MO0P-GLBJ R-MMST-2TKU R-MQGI-84SX R-GIGG-NPFU R-GJOD-1H6J
+	// R-GESR-IE7R R-7WK6-E33F R-7XS2-RUU4 R-MMST-2TKU R-MQGI-84SX R-81FR-X627 R-82NO-AXSW
 	dir, err := os.MkdirTemp("", "auth-validation-")
 	if err != nil {
 		t.Fatal(err)
@@ -198,9 +202,10 @@ func TestConfigAndSocketValidation(t *testing.T) {
 			if code != 2 || p.Stdout.(*bytes.Buffer).Len() != 0 || p.Stderr.(*countWriter).String() != tt.want || calls != 0 {
 				t.Fatalf("code=%d diag=%q calls=%d", code, p.Stderr, calls)
 			}
-			if _, err := os.Stat(p.DBSource); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(filepath.Join(p.Dir, "state", "auth.db")); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("database opened: %v", err)
 			}
+			assertEmptyDir(t, p.Dir)
 			assertNoNotification(t, notifications)
 		})
 	}
@@ -230,7 +235,7 @@ func TestConfigAndSocketValidation(t *testing.T) {
 }
 
 func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
-	// R-GM45-T0NX R-MWK0-4ZIE R-MXRW-IR93 R-MYZS-WIZS
+	// R-GM45-T0NX R-83VK-OPJL R-86BD-G90Z
 	env := goodEnv()
 	source := testSource(t)
 	p := baseProcess(env, source, nil)
@@ -251,9 +256,10 @@ func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
 	if !slices.Equal(unset, []string{"LISTEN_FDNAMES", "LISTEN_FDS", "LISTEN_PID"}) {
 		t.Fatal(unset)
 	}
-	if _, err := os.Stat(source); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(source, "state", "auth.db")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("store opened before listener: %v", err)
 	}
+	assertEmptyDir(t, p.Dir)
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -263,9 +269,9 @@ func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
 	if err := os.WriteFile(obstruction, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	source = filepath.Join(obstruction, "auth.db")
+	source = obstruction
 	p = baseProcess(env, source, ln)
-	if code := Run(t.Context(), p); code != 1 || !strings.HasPrefix(p.Stderr.(*countWriter).String(), "auth: cannot open database "+source+": ") {
+	if code := Run(t.Context(), p); code != 1 || !strings.HasPrefix(p.Stderr.(*countWriter).String(), "auth: cannot open database state/auth.db: ") {
 		t.Fatalf("code=%d diag=%q", code, p.Stderr)
 	}
 	if p.Stdout.(*bytes.Buffer).Len() != 0 {
@@ -379,7 +385,7 @@ func TestRunClosesListenerOnLaterFailure(t *testing.T) {
 				if err := os.WriteFile(obstruction, []byte("not a directory"), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				source = filepath.Join(obstruction, "auth.db")
+				source = obstruction
 			}
 			if failure == "notify" {
 				env["NOTIFY_SOCKET"] = filepath.Join(t.TempDir(), "missing.sock")
@@ -395,21 +401,17 @@ func TestRunClosesListenerOnLaterFailure(t *testing.T) {
 }
 
 func TestServeReadinessAndInjectedSeam(t *testing.T) {
-	// R-2KBY-P3V1 R-NII7-0UUW R-B4OV-BJQD R-N1FL-O2H6 R-N3VE-FLYK R-N6B7-75FY R-B74O-337R R-OYUS-DBTQ
+	// R-7BTV-VZHM R-88R6-7SID R-89Z2-LK92 R-N3VE-FLYK R-N6B7-75FY R-B74O-337R R-OYUS-DBTQ
 	for _, preexisting := range []bool{false, true} {
 		t.Run(strconv.FormatBool(preexisting), func(t *testing.T) {
 			source := testSource(t)
-			if preexisting { // make a valid existing database through a first run
-				ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+			if preexisting {
+				h, err := db.Open(t.Context(), db.Config{Path: filepath.Join(source, "state", "auth.db"), Migrations: auth.Migrations(), Now: baseProcess(goodEnv(), source, nil).Now})
 				if err != nil {
 					t.Fatal(err)
 				}
-				env := goodEnv()
-				p := baseProcess(env, source, ln)
-				ctx, cancel := context.WithCancel(t.Context())
-				cancel()
-				if code := Run(ctx, p); code != 0 {
-					t.Fatalf("initial open: %d %s", code, p.Stderr)
+				if err := h.Close(); err != nil {
+					t.Fatal(err)
 				}
 			}
 			ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -450,17 +452,7 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 			if string(buf[:n]) != "READY=1" {
 				t.Fatalf("notify %q", buf[:n])
 			}
-			if err := notifyLn.SetReadDeadline(time.Now().Add(20 * time.Millisecond)); err != nil {
-				t.Fatal(err)
-			}
-			if n, _, err := notifyLn.ReadFromUnix(buf); err == nil {
-				t.Fatalf("extra readiness datagram %q", buf[:n])
-			} else {
-				var timeout net.Error
-				if !errors.As(err, &timeout) || !timeout.Timeout() {
-					t.Fatalf("second datagram read: %v", err)
-				}
-			}
+
 			cancel()
 			if code := <-done; code != 0 {
 				t.Fatalf("code=%d diag=%q", code, p.Stderr)
@@ -468,7 +460,8 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 			if p.Stdout.(*bytes.Buffer).Len() != 0 || p.Stderr.(*countWriter).Len() != 0 {
 				t.Fatalf("streams %q %q", p.Stdout, p.Stderr)
 			}
-			if _, err := os.Stat(source); err != nil {
+			assertNoNotification(t, notifyLn)
+			if _, err := os.Stat(filepath.Join(source, "state", "auth.db")); err != nil {
 				t.Fatalf("store not opened: %v", err)
 			}
 		})
@@ -476,7 +469,7 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 }
 
 func TestRunWiresIssuerAndRandomness(t *testing.T) {
-	// R-B4OV-BJQD R-2KBY-P3V1: serve a request through Run's inherited listener.
+	// R-88R6-7SID R-7BTV-VZHM: serve a request through Run's inherited listener.
 	var issuerCalls atomic.Int32
 	credentials := make(chan [2]string, 1)
 	var issuer *httptest.Server
@@ -527,7 +520,8 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	env["NOTIFY_SOCKET"] = addr
 	source := testSource(t)
 	p := baseProcess(env, source, ln)
-	st, err := store.Open(source, &synchronizedRand{})
+	handle, err := db.Open(t.Context(), db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now})
+	st := store.New(handle, &synchronizedRand{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +533,7 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Close(); err != nil {
+	if err := handle.Close(); err != nil {
 		t.Fatal(err)
 	}
 	bannerCalls := 0
@@ -931,7 +925,8 @@ func TestEmptyNotificationAndHugeDrainServe(t *testing.T) {
 			}
 			p := baseProcess(env, testSource(t), ln)
 			ctx, cancel := context.WithCancel(t.Context())
-			cancel()
+			defer cancel()
+			p.Sink = cancelStartedSink{cancel: cancel}
 			if code := Run(ctx, p); code != 0 || p.Stderr.(*countWriter).Len() != 0 {
 				t.Fatalf("code=%d diagnostic=%q", code, p.Stderr)
 			}
@@ -1076,7 +1071,7 @@ func (b *brokenListener) Close() error              { return nil }
 func (b *brokenListener) Addr() net.Addr            { return &net.TCPAddr{} }
 
 func TestSocketUsageErrorsHaveNoServingSideEffects(t *testing.T) {
-	// R-GIGG-NPFU R-GJOD-1H6J
+	// R-81FR-X627 R-82NO-AXSW
 	dir, err := os.MkdirTemp("", "auth-notify-")
 	if err != nil {
 		t.Fatal(err)
@@ -1110,9 +1105,10 @@ func TestSocketUsageErrorsHaveNoServingSideEffects(t *testing.T) {
 				if code := Run(t.Context(), p); code != 2 || p.Stdout.(*bytes.Buffer).Len() != 0 || p.Stderr.(*countWriter).String() != want {
 					t.Fatalf("code=%d stdout=%q stderr=%q", code, p.Stdout, p.Stderr)
 				}
-				if _, err := os.Stat(p.DBSource); !errors.Is(err, os.ErrNotExist) {
+				if _, err := os.Stat(filepath.Join(p.Dir, "state", "auth.db")); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("database opened: %v", err)
 				}
+				assertEmptyDir(t, p.Dir)
 				assertNoNotification(t, notifications)
 			})
 		}
@@ -1226,4 +1222,13 @@ func TestOverrunWriterRejectsEventsAfterShutdown(t *testing.T) {
 	if events := sink.capture.Events(); len(events) != 0 {
 		t.Fatalf("late events delivered: %+v", events)
 	}
+}
+
+type cancelStartedSink struct{ cancel context.CancelFunc }
+
+func (s cancelStartedSink) Deliver(_ context.Context, e telemetry.Event) error {
+	if e.Name == "service.started" {
+		s.cancel()
+	}
+	return nil
 }

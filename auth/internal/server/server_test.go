@@ -19,7 +19,6 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
-	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
 func TestConfigAndNew(t *testing.T) {
@@ -339,11 +338,7 @@ func TestRouterRegistersContractRoutes(t *testing.T) {
 
 // R-2AOL-W6YZ: each D05, D06, D07, and D08 method and path is this server's route.
 func TestContractRoutesServed(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{4}, 64)))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
+	st := openServerStore(t, filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{4}, 64)), fixedNow)
 
 	var issuer *httptest.Server
 	issuer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -427,13 +422,8 @@ func (w *diagnosticWrites) Write(p []byte) (int, error) {
 func TestCrossRouteStoreFailuresStaySilent(t *testing.T) {
 	// R-B9KG-UMP5: failed store operations on D05, D06, and D07 routes
 	// produce the same plain 500 without identity headers.
-	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{1}, 128)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	st := openServerStore(t, filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{1}, 128)), fixedNow)
+	failServerStore(t, st)
 
 	for _, tc := range []struct {
 		name, method, target, cookie, origin, id string

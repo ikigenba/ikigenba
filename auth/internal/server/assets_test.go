@@ -204,12 +204,8 @@ func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
 func TestSharedAssetCredentialAndStoreIndependence(t *testing.T) {
 	// R-4Y9U-JYP8: live and invalid credentials leave the entire response unchanged.
 	// R-4ZHQ-XQFX: no appkit response sets a cookie.
-	// R-50PN-BI6M: closing the store leaves the entire response unchanged.
-	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), &tokenTestRand{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
+	// R-50PN-BI6M: closing the store's database handle leaves the entire response unchanged.
+	st := openServerStore(t, filepath.Join(t.TempDir(), "auth.db"), &tokenTestRand{}, fixedNow)
 	user, _, err := st.UpsertUserOnLogin("issuer", "asset-user", "asset@example.test", fixedNow())
 	if err != nil {
 		t.Fatal(err)
@@ -261,7 +257,7 @@ func TestSharedAssetCredentialAndStoreIndependence(t *testing.T) {
 			}
 		}
 	}
-	if err := st.Close(); err != nil {
+	if err := serverStoreDB(t, st).Close(); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range cases {

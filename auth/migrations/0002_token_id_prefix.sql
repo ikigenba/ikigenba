@@ -1,0 +1,2 @@
+UPDATE tokens SET id = 'tok_' || id
+WHERE length(id) = 26 AND id NOT GLOB '*[^0123456789ABCDEFGHJKMNPQRSTVWXYZ]*';

@@ -16,12 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/auth"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
 func TestRunOriginValues(t *testing.T) {
-	// R-GDKV-4MH2 R-GG0N-W5YG R-GH8K-9XP5
+	// R-GDKV-4MH2 R-7YZZ-5MKT R-807V-JEBI
 	accepted := []string{"http://auth.wip.localhost:7400", "http://localhost:7400", "https://localhost:80", "http://localhost:443", "http://localhost:1", "http://localhost:65535", "https://localhost", "http://a-1.b2", "http://127.1:7400", "http://-"}
 	rejected := []string{"", "http://localhost:7400/", "http://localhost/path", "http://localhost?q=x", "http://localhost#x", "http://user@localhost", " http://localhost", "http://local host", "http://", "http://:7400", "http://localhost:", "http://localhost:a", "http://localhost:1:2", "ftp://localhost", "HTTP://localhost", "Https://localhost", "http://auth.green.example.:7400", "http://.wip.localhost:7400", "http://auth..localhost:7400", "http://Auth.wip.localhost:7400", "http://localhost:07400", "http://localhost:0", "http://localhost:65536", "http://localhost:80", "https://localhost:443", "http://localhost:+1", "http://localhost:99999999999999999999", "http://local_host", "http://lócálhost", "http://[::1]:7400", "http://localhost\n"}
 	dir, err := os.MkdirTemp("", "auth-origin-")
@@ -64,9 +66,10 @@ func TestRunOriginValues(t *testing.T) {
 						if code := Run(t.Context(), p); code != 2 || p.Stdout.(*bytes.Buffer).Len() != 0 || p.Stderr.(*countWriter).String() != want {
 							t.Fatalf("code=%d out=%q diagnostic=%q want=%q", code, p.Stdout, p.Stderr, want)
 						}
-						if _, err := os.Stat(p.DBSource); !errors.Is(err, os.ErrNotExist) {
+						if _, err := os.Stat(filepath.Join(p.Dir, "state", "auth.db")); !errors.Is(err, os.ErrNotExist) {
 							t.Fatalf("database opened: %v", err)
 						}
+						assertEmptyDir(t, p.Dir)
 						assertNoNotification(t, notifications)
 					}
 				})
@@ -153,7 +156,8 @@ func TestRunOptionalOriginsThroughHTTP(t *testing.T) {
 			p.LookupEnv = func(key string) (string, bool) { lookups = append(lookups, key); v, ok := env[key]; return v, ok }
 			p.OIDCIssuer = issuer.URL
 			p.Rand = &synchronizedRand{}
-			st, err := store.Open(p.DBSource, &synchronizedRand{})
+			handle, err := db.Open(t.Context(), db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now})
+			st := store.New(handle, &synchronizedRand{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,7 +169,7 @@ func TestRunOptionalOriginsThroughHTTP(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := st.Close(); err != nil {
+			if err := handle.Close(); err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithCancel(t.Context())
