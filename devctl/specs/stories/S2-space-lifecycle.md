@@ -182,6 +182,23 @@ Exits 2. The line is on stderr; stdout is empty. A label is lowercase
 letters, digits, and hyphens, at most 63 characters, not starting or ending
 with a hyphen: the rule build applies to app names.
 
+Command:
+
+```
+$ devctl space create golden --acme-email ops@ikigenba.dev
+```
+
+Output:
+
+```
+devctl: 'golden' is not a usable space label: golden/ holds the golden sets
+```
+
+Exits 2. The line is on stderr; stdout is empty. Every command that takes
+`<space>` refuses `golden` and `golden.ikigenba.dev` the same way, because
+`s3://ikigenba.dev/golden/` holds the golden sets (see `S8-seed.md`) and a
+space's prefix is its label.
+
 Preconditions:
 
 - The working directory is inside the checkout, whose root file names
@@ -1091,7 +1108,8 @@ Postconditions:
 
 - Everything a plain destroy's postconditions say, and every parameter under
   `/sbx1.ikigenba.dev/` and every object under `sbx1/` in the bucket, the
-  retire's own objects and `deploy/` included, are deleted. The bucket's
+  retire's own objects, `deploy/`, `snapshots/`, and `seed/` included, are
+  deleted, so no later seed can take this space's snapshots. The bucket's
   name has dots in it, so the deletes addressed it path-style.
 - Either option alone deletes its one thing and the other line reads
   `kept`.

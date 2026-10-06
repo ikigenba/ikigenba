@@ -16,11 +16,12 @@ work reaches a sandbox before it is released.
 An app's name goes three places on a host, and each constrains it. It is a
 DNS label, because the app answers at `<app>.<host.name>`: lowercase
 letters, digits, and hyphens, at most 63 characters, not starting or ending
-with a hyphen. It is a prefix under the space's backup URI, where `host/`
-and `deploy/` already live. And it is a unit name, `ikigenba-<app>.service`,
-where `backup-host`, `backup-services`, and `renew-certificate` already
-live. A usable app name is a DNS label that is none of those five, and build
-refuses any other before it compiles anything. opsctl applies the same rule
+with a hyphen. It is a prefix under the space's backup URI, where `host/`,
+`deploy/`, `snapshots/`, and `seed/` already live. And it is a unit name,
+`ikigenba-<app>.service`, where `backup-host`, `backup-services`, and
+`renew-certificate` already live. A usable app name is a DNS label that is
+none of those seven, and build refuses any other before it compiles
+anything. opsctl applies the same rule
 at install, because a file can come from anywhere.
 
 ## A developer asks what `build` can do
@@ -337,8 +338,9 @@ Output:
 devctl: 'host' is not a usable app name
 ```
 
-Exits 2. The line is on stderr; stdout is empty. A name that is not a DNS
-label, `Crm` or `crm_v2` say, fails the same way.
+Exits 2. The line is on stderr; stdout is empty. Each of the other six
+reserved names, `seed` and `snapshots` among them, fails the same way, and so
+does a name that is not a DNS label, `Crm` or `crm_v2` say.
 
 Preconditions:
 

@@ -2,7 +2,10 @@
 
 A space's backups belong to that space. `opsctl` on the host writes them to
 the space's own prefix in the bucket, `s3://ikigenba.dev/<label>/`, and reads
-them back from there, and nothing else ever reads or writes that prefix.
+them back from there, and nothing else ever reads or writes the backups.
+Nor is all else under the prefix a backup: opsctl also writes snapshots
+there, which `golden capture` and `seed` read, `deploy` uploads files there,
+and `seed` copies snapshots in (see `S8-seed.md`).
 `devctl restore` drives that from the developer's machine: it runs `opsctl
 restore` on the space over ssh and reports its exit, exactly as `deploy` runs
 `opsctl install`. No object moves, and nothing travels over the ssh
