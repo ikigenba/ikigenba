@@ -389,7 +389,7 @@ HTTP/1.1 500 Internal Server Error
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 500. The body is exactly the one line `identity header missing`, ending in a newline. A `HEAD` is answered with the same status and headers and an empty body. An `X-User-Id` header whose value is empty is answered the same way as no header at all. Every path answers this way — `/`, `/about`, the shared files under `/_appkit/` (`S04`), the MCP endpoint `/mcp` (`S05`), the git paths (`S11`), and every path that does not exist; the identity check runs before repos looks at the path or the method, so a request with no identity is never a 404 or a 405, and no git runs for it.
+Status 500. The body is exactly the one line `identity header missing`, ending in a newline. A `HEAD` is answered with the same status and headers and an empty body. An `X-User-Id` header whose value is empty is answered the same way as no header at all. Every path but `/events` and `/declarations` answers this way — `/`, `/about`, the shared files under `/_appkit/` (`S04`), the MCP endpoint `/mcp` (`S05`), the git paths (`S11`), and every path that does not exist; what repos answers at `/events` and `/declarations`, the events app's two paths on its socket (`S17-on-a-space.md`), is not this story's. Elsewhere the identity check runs before repos looks at the path or the method, so a request with no identity is never a 404 or a 405, and no git runs for it.
 
 Preconditions:
 
@@ -444,7 +444,7 @@ Postconditions:
 
 ## A caller asks for a path that does not exist
 
-repos serves the landing page, the about screen, the shared files, the MCP endpoint, and the git paths, and nothing else; it has no page of its own to send a lost caller to, so a path it does not serve is answered with one line of plain text, whatever the method. The MCP endpoint is `/mcp` alone (`S05`): `/mcp/` or any path beneath it is a path that does not exist like any other. A path whose first segment does not end in `.git` is never a git path, so `/notes` and `/notes/info/refs` are paths that do not exist here, while `/notes.git/...` is `S11`'s to answer. repos serves nothing under `/assets/`; the pages' stylesheet is under `/_appkit/` (`S04`).
+To its callers repos serves the landing page, the about screen, the shared files, the MCP endpoint, and the git paths. Beside them it has two paths for the event bus, the `events` app, `/events` and `/declarations`, which the events app reaches on repos' socket and which never reach repos through nginx (`S17-on-a-space.md`); what repos answers at them is not this story's. Every other path is one repos does not serve; it has no page of its own to send a lost caller to, so a path it does not serve is answered with one line of plain text, whatever the method. The MCP endpoint is `/mcp` alone (`S05`): `/mcp/` or any path beneath it is a path that does not exist like any other. A path whose first segment does not end in `.git` is never a git path, so `/notes` and `/notes/info/refs` are paths that do not exist here, while `/notes.git/...` is `S11`'s to answer. repos serves nothing under `/assets/`; the pages' stylesheet is under `/_appkit/` (`S04`).
 
 Request:
 

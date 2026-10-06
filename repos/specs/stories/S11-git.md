@@ -2,7 +2,7 @@
 
 Git over HTTP: how a user's git client clones, fetches, and pushes a repo. repos speaks git's smart HTTP protocol, and only it, at `/<name>.git/`, where `<name>` is the name of one of the caller's repos, resolved among the repos whose owner is the request's `X-User-Id` (`S06-create.md`). Four routes are git's: `GET /<name>.git/info/refs?service=git-upload-pack` and `POST /<name>.git/git-upload-pack` are a read, the operation `fetch` (a clone and a fetch are the same operation to repos); `GET /<name>.git/info/refs?service=git-receive-pack` and `POST /<name>.git/git-receive-pack` are a write, the operation `push`. repos answers each by running the host's own `git http-backend` against the repo's directory, `state/repos/<id>.git` (`S15-disk.md`), so what passes on these routes is git's protocol, exactly as git writes it, and the repo is changed only by git. Request and response bodies stream through repos in both directions: repos never holds a whole body, and a request body sent chunked, with no `Content-Length`, as git sends any push larger than its 1 MiB `http.postBuffer`, is read like any other. Every other path under `/<name>.git/` is git's dumb HTTP protocol, or nothing, and is answered `404`. A name that is not one of the caller's repos is answered `404` whatever follows it, and another user's repo is indistinguishable from one that does not exist. A request without `X-User-Id` is answered `500`, as every route is (`S03-landing.md`). repos never authenticates: on a host the caller's credential is the host nginx's and auth's to check, and git's request reaches repos with the identity headers set (`S17-on-a-space.md`). How many git operations run at once, how long one may wait or run, and how large a push or a repo may grow are `S12-limits.md`'s; the stories here meet none of those limits.
 
-The actor is a developer, with git or by hand. Each story runs against a repos started as `S02-serve.md` starts it, from its working directory, with the suite's services file of `S03-landing.md`, whose `telemetry` entry takes every event. A request shown as HTTP is the request repos receives on its socket, with the headers the story depends on. Where a git client is the actor, the developer stands in for nginx with a forwarder of their own: a listener at `127.0.0.1:8080` that passes every connection, byte for byte and unbuffered, to the socket repos was passed. Their git adds the identity headers nginx would set to every request to that address, once, with:
+The actor is a developer, with git or by hand. Each story runs against a repos started as `S02-serve.md` starts it, from its working directory, with the suite's services file of `S03-landing.md`, whose `telemetry` entry takes every event, and with the event bus, the `events` app, taking every event repos emits unless a story says otherwise. A request shown as HTTP is the request repos receives on its socket, with the headers the story depends on. Where a git client is the actor, the developer stands in for nginx with a forwarder of their own: a listener at `127.0.0.1:8080` that passes every connection, byte for byte and unbuffered, to the socket repos was passed. Their git adds the identity headers nginx would set to every request to that address, once, with:
 
 ```
 $ git config --global --add http.http://127.0.0.1:8080/.extraHeader 'X-User-Id: u_7f3a9c21'
@@ -11,7 +11,7 @@ $ git config --global --add http.http://127.0.0.1:8080/.extraHeader 'X-User-Emai
 
 so the stand-in URL of `notes` is `http://127.0.0.1:8080/notes.git`; on a host it is the repo's `clone_url` (`S07-list-and-show.md`). git's own progress and report go to its stderr and are not fixed beyond what a story quotes. The caller `u_7f3a9c21` owns `notes`, `rep_3f9a0c1d2e4b5a69`, and `site`, `rep_8c21d4e0f7a3b915`, both available, unless a story says otherwise. `<head>` is the 40-hex sha `refs/heads/main` of `notes` points at.
 
-Every request on these routes is recorded in repos' trail (`S02-serve.md`), shown as the JSON object telemetry receives, by its `request.started`, with `method` and `path`, the URL path without its query, and its `request.finished`, with `status`, `duration_us`, `request_bytes`, the bytes of request body repos read, and `response_bytes`, the bytes of response body it wrote; both counts are of the body as sent, after any chunked encoding is removed. A developer's git sends no `X-Request-Id`, so each request git makes is given an id of its own (`S02-serve.md`), and one clone or push is several requests. Between a request's two events come the domain events of the operation, in this order: any `operation.waited` (`S12-limits.md`), then the operation's own. A `POST git-upload-pack` that completes records `repo.fetched`, with `repo`, the repo's id, and `bytes`, the bytes of pack it served, `0` when it served none, as for a client asking only for the refs. A `POST git-receive-pack` whose push git accepts records one `repo.pushed` per ref it changed, with `repo`; `ref`, the ref's full name, `refs/heads/main` or `refs/tags/draft` say; `old` and `new`, the 40-hex shas the ref pointed at before and after, `0000000000000000000000000000000000000000` for a ref the push created or deleted. When one push changes several refs their order is not fixed. A ref advertisement, the two `GET` routes, records no domain event. No event carries a repo's name except as part of a request's `path`, and none carries a commit message, a path within the repo, an author, or a credential. No story in this group earns a line on stderr.
+Every request on these routes is recorded in repos' trail (`S02-serve.md`), shown as the JSON object telemetry receives, by its `request.started`, with `method` and `path`, the URL path without its query, and its `request.finished`, with `status`, `duration_us`, `request_bytes`, the bytes of request body repos read, and `response_bytes`, the bytes of response body it wrote; both counts are of the body as sent, after any chunked encoding is removed. A developer's git sends no `X-Request-Id`, so each request git makes is given an id of its own (`S02-serve.md`), and one clone or push is several requests. Between a request's two events come the domain events of the operation, in this order: any `operation.waited` (`S12-limits.md`), then the operation's own. A `POST git-upload-pack` that completes records `repo.fetched`, with `repo`, the repo's id, and `bytes`, the bytes of pack it served, `0` when it served none, as for a client asking only for the refs. A `POST git-receive-pack` whose push git accepts records one `repo.pushed` per ref it changed, with `repo`; `ref`, the ref's full name, `refs/heads/main` or `refs/tags/draft` say; `old` and `new`, the 40-hex shas the ref pointed at before and after, `0000000000000000000000000000000000000000` for a ref the push created or deleted. When one push changes several refs their order is not fixed. Each such `repo.pushed` also goes to the event bus once git has moved its ref, with the same attributes, request id, and user (`S02-serve.md`): the stories here show the trail's record, and the bus has received the same event for each. A push that changes no ref, fails, or is refused emits nothing to the bus. A ref advertisement, the two `GET` routes, records no domain event. No event carries a repo's name except as part of a request's `path`, and none carries a commit message, a path within the repo, an author, or a credential. No story in this group earns a line on stderr, save that whether the two where the event bus is away do is not fixed.
 
 ## A developer reads a repository's refs
 
@@ -352,6 +352,64 @@ Postconditions:
 - `notes`' `refs/heads/main` is `<new>`, and `git --git-dir=state/repos/rep_3f9a0c1d2e4b5a69.git cat-file -s <new>:<file>` prints `52428800`, where `<file>` is the added file's path.
 - The `request.finished` of that `POST` has status 200 and `request_bytes` more than 52428800, and a `repo.pushed` with `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>` precedes it.
 - repos' own resident memory, not counting the git it ran, rose during the push by far less than the pack's size: it never held the body whole.
+
+## A developer pushes while the event bus is away
+
+The bus is not a reason to refuse or slow a push. With the events app stopped, the push is accepted and answered exactly as it would be, and the trail records its `repo.pushed` as ever; repos keeps the bus event and delivers it once the events app is back, within a few minutes of the push.
+
+Command:
+
+```
+$ git -C notes push origin main
+```
+
+Output:
+
+```
+To http://127.0.0.1:8080/notes.git
+```
+
+Exits 0. The line is on stderr, after git's own progress lines and before git's line reporting `main` moving from `<old>` to `<new>`; stdout is empty.
+
+Preconditions:
+
+- `notes`' `main` is at `<old>`; `./notes` is a clone of it with commits on `main` after `<old>`, ending at `<new>`.
+- The events app is stopped, and is started again well within a few minutes of the push.
+
+Postconditions:
+
+- `notes`' `refs/heads/main` is `<new>`, and the push's requests recorded in the trail exactly what they record in `A developer pushes new commits to a branch`, its `repo.pushed` included.
+- Once the events app is back, it has received the push's `repo.pushed`, with `id` beginning `evt_`, `service` `repos`, `event` `repo.pushed`, `attrs` `repo` `rep_3f9a0c1d2e4b5a69`, `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>`, the push's `request_id`, `user` `u_7f3a9c21`, an empty `cause`, and `depth` `0`.
+- The trail holds no `event.lost`.
+
+## A developer pushes while the event bus stays away too long
+
+repos keeps a bus event only a few minutes. When the events app is still away after that, the event is dropped: the push itself is untouched, and the trail says what was lost.
+
+Command:
+
+```
+$ git -C notes push origin main
+```
+
+Output:
+
+```
+To http://127.0.0.1:8080/notes.git
+```
+
+Exits 0. The line is on stderr, after git's own progress lines and before git's line reporting `main` moving from `<old>` to `<new>`; stdout is empty.
+
+Preconditions:
+
+- `notes`' `main` is at `<old>`; `./notes` is a clone of it with commits on `main` after `<old>`, ending at `<new>`.
+- The events app is stopped, and stays stopped well past a few minutes after the push.
+
+Postconditions:
+
+- `notes`' `refs/heads/main` is `<new>`, and the push's requests recorded in the trail exactly what they record in `A developer pushes new commits to a branch`, its `repo.pushed` included.
+- The events app never receives the push's `repo.pushed`, not even once it is started again.
+- The trail holds an `event.lost` from `repos`, recorded after the push's `repo.pushed`, carrying among its attributes the `id` repos gave the dropped bus event.
 
 ## A developer asks for another user's repository
 

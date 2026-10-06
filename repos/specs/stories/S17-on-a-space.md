@@ -1,6 +1,6 @@
 # Stories — on a space
 
-repos reached through a space: the file `S16-package.md` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `repos.<space>` over TLS, so on the space `sbx.ikigenba.dev` repos answers at `repos.sbx.ikigenba.dev`. nginx on the space proxies to repos' socket, `/run/ikigenba/repos.sock` (`S02-serve.md`), and includes repos' own `etc/nginx.conf` in that server, so a push of any size streams through to repos and is refused, if at all, by repos' own limits (`S12-limits.md`). The space authenticates every request before it reaches repos and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`; repos has no unauthenticated case, so a request that arrives at all is one of a known caller. git sends its credential as `Authorization: Basic` with the personal access token as the password, which auth's `/check` decides exactly as the same token sent as a bearer (auth's `S4-check.md`); and since git sends nothing until it is challenged, the host's nginx answers a request it cannot authenticate on a path ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack` with `401` and `WWW-Authenticate: Basic realm="ikigenba"` rather than a redirect to sign in (opsctl's `S5-nginx.md`). That challenge is the space's, on every app's server, and not repos' fragment's. The host's services file is `/var/lib/ikigenba/services.json`, which lists repos with `url` `https://repos.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so every clone URL repos gives is `https://repos.sbx.ikigenba.dev/<name>.git` and the MCP gateway offers repos' six tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`). repos runs as `/opt/repos/bin/repos` with `/opt/repos` as its working directory, so its database is `/opt/repos/state/repos.db` and its repositories are under `/opt/repos/state/repos/` (`S15-disk.md`); the host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect. `/opt/repos/etc/env` carries the eight settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`, and the host provides the `git` repos runs (opsctl's `S4-init.md`). The developer's shell in these stories is on their own machine, with `git` installed, the token `ikp_<token>` (auth's `S5-tokens.md`), owned by the user `u_7f3a9c21`, `mg@example.com`, in the environment variable `IKIGENBA_TOKEN`, and the credential helper the guidance gives (`S06-create.md`) installed once:
+repos reached through a space: the file `S16-package.md` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `repos.<space>` over TLS, so on the space `sbx.ikigenba.dev` repos answers at `repos.sbx.ikigenba.dev`. nginx on the space proxies to repos' socket, `/run/ikigenba/repos.sock` (`S02-serve.md`), and includes repos' own `etc/nginx.conf` in that server, so a push of any size streams through to repos and is refused, if at all, by repos' own limits (`S12-limits.md`). The space authenticates every request before it reaches repos and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`; repos has no unauthenticated case, so a request that arrives at all is one of a known caller. git sends its credential as `Authorization: Basic` with the personal access token as the password, which auth's `/check` decides exactly as the same token sent as a bearer (auth's `S4-check.md`); and since git sends nothing until it is challenged, the host's nginx answers a request it cannot authenticate on a path ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack` with `401` and `WWW-Authenticate: Basic realm="ikigenba"` rather than a redirect to sign in (opsctl's `S5-nginx.md`). That challenge is the space's, on every app's server, and not repos' fragment's. The host's services file is `/var/lib/ikigenba/services.json`, which lists repos with `url` `https://repos.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so every clone URL repos gives is `https://repos.sbx.ikigenba.dev/<name>.git` and the MCP gateway offers repos' six tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`). repos runs as `/opt/repos/bin/repos` with `/opt/repos` as its working directory, so its database is `/opt/repos/state/repos.db` and its repositories are under `/opt/repos/state/repos/` (`S15-disk.md`); the host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect. `/opt/repos/etc/env` carries the eight settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`, and the host provides the `git` repos runs (opsctl's `S4-init.md`). repos also emits `repo.pushed` to the event bus, the `events` app (`S02-serve.md`), deployed and active on the space through its own chain unless a story says otherwise; an agent reads the events app through the gateway with its read tools `catalog` and `search`, called with the gateway's `call` tool (mcp's `S08-call.md`). The developer's shell in these stories is on their own machine, with `git` installed, the token `ikp_<token>` (auth's `S5-tokens.md`), owned by the user `u_7f3a9c21`, `mg@example.com`, in the environment variable `IKIGENBA_TOKEN`, and the credential helper the guidance gives (`S06-create.md`) installed once:
 
 ```
 $ git config --global credential.https://*.sbx.ikigenba.dev.helper '!f() { test "$1" = get && printf "username=token\npassword=%s\n" "$IKIGENBA_TOKEN"; }; f'
@@ -236,3 +236,163 @@ Postconditions:
 
 - Nothing has changed. Nothing reached `/run/ikigenba/repos.sock`, and repos recorded no event.
 - auth recorded `check.refused` with `outcome=forbidden`, `credential=basic`, `host=repos.sbx.ikigenba.dev`, and `path=/notes.git/info/refs`, under no user and with no `token` attribute; neither the password nor the encoded credential is in the trail or in the host's nginx logs; the host's access log holds the Basic username, as opsctl's `S5-nginx.md` log format records it.
+
+## An agent on a space reads the event catalog through the gateway
+
+Before any push has happened on the space, an agent can learn from events what repos emits. `catalog` is a read tool of events, so the agent calls it with the gateway's `call` tool; the gateway relays events' answer.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: call' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"call","arguments":{"service":"events","tool":"catalog","args":{}},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' https://mcp.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/2 200
+content-type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is events' answer to `catalog`, relayed: no `isError` member, and a `structuredContent` that lists the event `repo.pushed` as emitted by the service `repos`, with the four attributes `repo`, `ref`, `old`, and `new`. The result's `io.modelcontextprotocol/serverInfo` is the gateway's.
+
+Preconditions:
+
+- repos `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches repos' landing page on a space`, and mcp and events are deployed and active on the space.
+- No repository on the space has been pushed to since repos and events were deployed.
+- The agent holds `ikp_<token>`, a token the gate accepts.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An agent on a space finds a developer's push among the events
+
+Once git has accepted a push, repos emits `repo.pushed` to events, one for each ref the push moved, with the same attributes as the trail's record of it (`S02-serve.md`). An agent finds the large push of `A developer pushes a large commit through a space` with events' `search`.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: call' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"call","arguments":{"service":"events","tool":"search","args":{"events":["repo.pushed"]}},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' https://mcp.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/2 200
+content-type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is events' answer to `search`, relayed: no `isError` member, and a `structuredContent` holding, for that push, exactly one event, since it moved one ref. That event's `id` begins `evt_`; its `service` is `repos` and its `event` `repo.pushed`; its `attrs` are `repo` `rep_3f9a0c1d2e4b5a69`, `ref` `refs/heads/main`, `old` `<old>`, and `new` `<new>`; its `request_id` is the id nginx gave the `POST /notes.git/git-receive-pack`; its `user` is `u_7f3a9c21`; its `cause` is empty; and its `depth` is 0.
+
+Preconditions:
+
+- `A developer pushes a large commit through a space` has run, moving `notes`' `main` from `<old>` to `<new>`, with events active throughout.
+- mcp and events are deployed and active on the space, and the agent holds `ikp_<token>`, whose owner is `u_7f3a9c21`.
+
+Postconditions:
+
+- Nothing has changed. The push's `repo.pushed` is still in the trail, as `A developer pushes a large commit through a space` says; the event sent to events is in addition to it.
+
+## A developer pushes on a space while events is disabled
+
+events being away is not a reason to refuse a push. An operator has disabled events on the space with `sudo opsctl disable events` (opsctl's `S7-apps.md`); the developer pushes and sees nothing different. repos keeps the event for a few minutes and delivers it once events is back (`S02-serve.md`), so an operator who enables events again within that time loses nothing.
+
+Command:
+
+```
+$ echo again >> notes/README.md
+$ git -C notes commit -q -a -m 'Second commit'
+$ git -C notes push origin main
+$ git -C notes ls-remote origin refs/heads/main
+```
+
+Output:
+
+```
+<new>	refs/heads/main
+```
+
+Each command exits 0. `git push` writes its own messages to stderr, ending with the line `   <old7>..<new7>  main -> main`, where `<old7>` and `<new7>` are the abbreviated shas, and nothing to stdout, exactly as with events active. `ls-remote` writes its one line to stdout: `<new>`, the sha `git -C notes rev-parse HEAD` prints, a tab, and the ref name.
+
+Preconditions:
+
+- The clone of `A developer clones a repository on a space with the credential helper` exists, and its `main` is `<old>`, the sha `notes`' `main` points at in repos.
+- events is deployed on the space and disabled, and the operator runs `sudo opsctl enable events` within a few minutes of the push.
+
+Postconditions:
+
+- `notes`' `refs/heads/main` in repos is `<new>`, and the trail holds repos' `repo.pushed` with `repo=rep_3f9a0c1d2e4b5a69`, `ref=refs/heads/main`, `old=<old>`, and `new=<new>` and `request.finished` with `status=200`, under the id nginx gave the push and user `u_7f3a9c21`, as with events active.
+- Once events is enabled again, the `search` request of `An agent on a space finds a developer's push among the events` answers with an event for this push, with those four attributes, that request id and user, `cause` empty and `depth` 0.
+- The trail holds no `event.lost` for it.
+
+## A developer pushes on a space while events stays disabled too long
+
+repos keeps an event for events only a few minutes. When events is still disabled after that, the event is dropped, and the trail says so: repos records `event.lost` carrying the dropped event's `id` (`S02-serve.md`). The push itself is as unaffected as in the story above.
+
+Command:
+
+```
+$ echo later >> notes/README.md
+$ git -C notes commit -q -a -m 'Third commit'
+$ git -C notes push origin main
+$ git -C notes ls-remote origin refs/heads/main
+```
+
+Output:
+
+```
+<new>	refs/heads/main
+```
+
+Each command exits 0. `git push` writes its own messages to stderr, ending with the line `   <old7>..<new7>  main -> main`, where `<old7>` and `<new7>` are the abbreviated shas, and nothing to stdout, exactly as with events active. `ls-remote` writes its one line to stdout: `<new>`, the sha `git -C notes rev-parse HEAD` prints, a tab, and the ref name.
+
+Preconditions:
+
+- The clone of `A developer clones a repository on a space with the credential helper` exists, and its `main` is `<old>`, the sha `notes`' `main` points at in repos.
+- events is deployed on the space and disabled, and stays disabled well past the few minutes repos keeps an event before the operator runs `sudo opsctl enable events`.
+
+Postconditions:
+
+- `notes`' `refs/heads/main` in repos is `<new>`, and the trail holds repos' `repo.pushed` with `repo=rep_3f9a0c1d2e4b5a69`, `ref=refs/heads/main`, `old=<old>`, and `new=<new>` under the id nginx gave the push and user `u_7f3a9c21`, as with events active.
+- Once events is enabled again, the `search` request of `An agent on a space finds a developer's push among the events` answers with no event for this push, and no later request brings it back.
+- The trail holds `event.lost` from `repos` whose attributes carry the `evt_` id repos gave the dropped `repo.pushed`.
+
+## An agent asks a space for repos' event paths
+
+`/events` and `/declarations` are how events reaches repos, on `/run/ikigenba/repos.sock` only. At repos' public name the space's nginx answers both 404 for every method, because of the fragment repos ships (`S16-package.md`); a credential makes no difference, since the answer is nginx's and the request never reaches repos. The forms below are answered the same way.
+
+Request:
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://repos.sbx.ikigenba.dev/events
+```
+
+```
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -d '{}' https://repos.sbx.ikigenba.dev/events
+```
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://repos.sbx.ikigenba.dev/declarations
+```
+
+```
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -d '{}' https://repos.sbx.ikigenba.dev/declarations
+```
+
+Response:
+
+```
+HTTP/2 404
+```
+
+Status 404. The body is not fixed. A request to either path with no credential is answered 404 as well; this story does not fix which of the space's refusals comes first, only that neither reaches repos.
+
+Preconditions:
+
+- repos `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches repos' landing page on a space`, so the host's nginx includes `/opt/repos/etc/nginx.conf` in repos' server.
+- The agent holds a valid token `ikp_<token>` (auth's `S5-tokens.md`) the gate accepts.
+
+Postconditions:
+
+- Nothing has changed. repos records no event for any of the requests: none reached `/run/ikigenba/repos.sock`.
