@@ -1,0 +1,41 @@
+# D11-on-a-space
+
+What events is once it leaves the checkout: the release file `devctl build` makes of it, the binary on a space's host behind nginx and auth, and the same binary in a developer's sandbox. Almost everything the space and sandbox stories show is something an earlier design already guarantees, seen through a real host; the rest belongs to the tools that build, install and front events — devctl, opsctl, the host's nginx, auth, the gateway, the sandbox — and is not events' to promise. This document maps each story outcome to the requirement that makes it hold, or names its owner. It adds the guarantees no other design states: `cli.Run` leaves its database file closed when it returns, and a restore of that file brings the log, the cursors and the head back together (see Restore).
+
+## The release file
+
+`devctl build events` packs `bin/events`, `etc/manifest.toml`, `etc/nginx.conf` and `share/icon.svg`, and the listing `S16` shows is devctl's output, not events'. events' share of it: the root package's `Etc` holds exactly those two files under `etc/` (R-ZR2R-KAQ3), whose bytes are `cli.Manifest` and `cli.NginxConf` (R-0KCC-QSIR, R-0LK9-4K9G, R-0BT2-2EBW, R-0D0Y-G62L); the binary prints its version and its manifest (R-0MS5-IC05, R-0O01-W3QU), the manifest declaring no `[resources]` and no `guests`. The binary is static and cgo-free by gate 3 of `AGENTS.md`, which no requirement restates. `share/icon.svg` is a human-drawn asset the build run never writes and no test may read (`AGENTS.md`), so its being an SVG is outside the design.
+
+## The public /emit
+
+On a host and in a sandbox nginx includes `etc/nginx.conf` in events' server (opsctl's and the sandbox's doing). Its one directive, `location = /emit { return 404; }`, pinned byte for byte by R-0D0Y-G62L, answers 404 for every method before any other location: an exact-match `location` ends nginx's search (`ngx_http_core_module`), `return` ends the request (`ngx_http_rewrite_module`), and nginx matches the decoded, slash-merged path without its query, so `/emit?x`, `//emit` and `/%65mit` are closed too. That is nginx's documented behaviour on a constant events pins; no events test can run nginx, so no further requirement is minted. A path nginx does pass, such as `/emit/`, reaches events and is its not-found page (R-D18I-QLTY), since events routes on the exact path (R-CTX4-FZDS). On the socket the same path takes every sibling's events (R-CV50-TR4H, R-9CMB-1JQ3).
+
+## Behind nginx and auth
+
+The manifest declares no `guests` (R-0BT2-2EBW), so the host's nginx asks auth's `/check` for every path and a request without a credential never reaches events: the guest's 302 to auth's sign-in, the `/mcp` bearer challenge with its one-line body, and auth's `check.allowed` and `check.refused` records are nginx's and auth's, outside events' contract. Were such a request to reach events, it would be answered 500 and recorded (R-9Q17-90VQ, R-EYWG-JUFR). A passed request carries the caller and nginx's request id, which events' request records carry (R-F1C9-BDX5).
+
+## Restore
+
+`opsctl restore events` puts back `/opt/events/etc/` and `/opt/events/state/` from a files backup and the database from its replica, with events stopped; its output is opsctl's. events' part is that nothing it keeps lives anywhere but in `state/events.db`: the log, the declarations, the subscribers with their cursors and the head are all there (`D04-store`, whose log and head are what the file holds, R-3794-58R6, R-PNJD-XS7X), and the in-memory attempt counts start afresh at every start anyway (`D07-delivery`). So a restored file is a whole earlier events: events accepted since are gone and never delivered again, each subscriber is delivered again, in `seq` order, every event it had finished since, with the same `id`, `seq` and `received`, and the next event accepted takes the `seq` after the restored head, so a `seq` the lost events had is given again (R-X661-3MC4).
+
+A restore needs a stopped events to leave a whole file behind: `D04-store` speaks of a file replaced while no handle is open on it. So `cli.Run`, once it returns, has closed what it opened on the file; with SQLite's write-ahead log that leaves `state/events.db` alone, with no `-wal` or `-shm` beside it (probed against the installed appkit: a handle closed after a write leaves only `events.db`) (R-E0E3-6NDU). A test proves the restore the way `S17` tells it: three runs over one `Dir`, a copy of `state/events.db` taken after the first and put back after the second.
+
+## In a sandbox
+
+The sandbox runs the same binary with a host's environment; variables it sets that a host does not are never read (R-ZX69-H5FK), the log sits under the working directory it gives (R-Q0YV-7I42, R-BTC4-YV4Y) and survives `down` and `up` because it is one file (`D04-store`). The profile link `http://auth.wip.localhost:7400/` comes from the sandbox's services file's `auth` entry (R-QX0U-QWY3); the sandbox writes that entry.
+
+## Coverage
+
+- `S16/A developer lists what the file holds`: devctl's listing; events' members R-ZR2R-KAQ3, R-0KCC-QSIR, R-0LK9-4K9G, R-Q0YV-7I42; icon outside the design (above).
+- `S16/A developer checks the binary the file holds`: R-0MS5-IC05, R-0O01-W3QU, R-0BT2-2EBW, R-0KCC-QSIR; version equal to the file name's is the deploy's check (`AGENTS.md`).
+- `S17/A user on a space reaches events' landing page` and `S18/An agent reaches events' landing page in a sandbox`: R-R1WG-9ZWV, R-MVZ3-OWJ0, R-QX0U-QWY3, R-QY8R-4OOS, R-N0UP-7ZHS (same-origin assets), R-DH37-PMGZ (no cookie), R-EYWG-JUFR, R-F04C-XM6G, R-F1C9-BDX5; auth's `check.allowed`, the deploy and `space status` are auth's, devctl's and opsctl's.
+- `S03/A visitor on a space without a credential is sent to sign in` (delegated by `D08-pages`), `S17/A guest ...`, `S17/An MCP client ... without a credential`, `S18/A guest in a sandbox ...`: outside events' contract (nginx, auth, sandbox); events' part R-0BT2-2EBW.
+- `S17/An agent asks a space for events' emit path`, `S18/An agent asks a sandbox for events' emit path`: R-0D0Y-G62L, R-0LK9-4K9G and nginx's documentation (above); the socket path R-CV50-TR4H, R-9CMB-1JQ3.
+- `S17/An agent on a space finds a push ...` and `S18/A developer in a sandbox pushes ...`: the emit is repos'; storing it R-9CMB-1JQ3, R-69AX-8R2N; the search answer `D09-tools`; request and tool records R-HIFX-H3NV, R-HG04-PK6H; no stderr R-9NLE-HHEC; the gateway's `serverInfo` is the gateway's.
+- `S17/An agent on a space checks the subscribers ...` and `S18/An agent in a sandbox watches scripts take a push`: `D09-tools`' `subscribers`, delivery R-9GA0-6UY6, R-G1LB-MGO7, R-H68X-NE8X, records R-HIFX-H3NV, R-HG04-PK6H, no stderr R-9NLE-HHEC.
+- `S17/An operator restores events on a space`: R-E0E3-6NDU, R-X661-3MC4, R-PNJD-XS7X; R-8LSI-MLET (a new `service.started`), R-G1LB-MGO7 (`event.delivered` per redelivery); the command, its output and the replica are opsctl's.
+
+## REQUIREMENTS
+
+- R-E0E3-6NDU: When `cli.Run`, with `Args` empty, returns after it opened the database path as R-IH24-NGU5 states, it MUST have closed every handle it opened on that file, so that the directory `state` under `Dir` then holds `events.db` and no `events.db-wal` or `events.db-shm`, whether it returns `ExitSuccess` after a stop or `ExitFailure` after a drain that cut requests off.
+- R-X661-3MC4: When, between a `cli.Run` with `Dir` `d` that has returned and a later `cli.Run` with the same `Dir`, the file `state/events.db` under `d` is replaced by a copy of it taken after a still earlier `cli.Run` with `Dir` `d` had returned, and the later `Run` is given the same services file with every sibling answering its declarations as it did then, the later `Run` MUST serve the log and the subscribers as they stood when that still earlier `Run` returned: `search` MUST list no event the copy did not hold and every event it held that the start sweep keeps, each with the `id`, `seq` and `received` it had; each subscriber `ok` then MUST be delivered, in ascending `seq` from its cursor of then, every event above that cursor that it accepts, each with the `id`, `seq` and `received` it had; and the first event the later `Run` stores MUST be given the `seq` one more than the largest `seq` the copy's events were ever given; so that events keeps nothing across a restart outside its database file.
