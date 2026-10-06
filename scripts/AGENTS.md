@@ -5,8 +5,9 @@ An app of the Ikigenba platform: the suite's script runner, served at
 descriptor 3 (`/run/ikigenba/scripts.sock` on a host), behind the host's
 nginx. A script is a catalog record naming one of its owner's repositories
 that repos holds and the ref it runs (by default `main`); scripts keeps the
-catalog and the record of every run in its own SQLite database under
-`state/`, of which it is the only writer. A run resolves the ref to a commit
+catalog and the record of every run in its own SQLite database,
+`state/scripts.db` resolved against the working directory and opened through
+appkit's `db` package, of which it is the only writer. A run resolves the ref to a commit
 with the host's own `git` from repos' bare repository, read-only, by the
 repository's id, unpacks that commit with `git archive` into
 `state/runs/<script id>/<run id>/tree/`, and runs `python3.12 main.py` there,
@@ -22,20 +23,24 @@ as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory
 and its environment from `/opt/scripts/etc/env`; a developer runs the same
 binary from the checkout. The module path is
 `github.com/ikigenba/ikigenba/scripts`. It requires appkit
-(`github.com/ikigenba/ikigenba/appkit`) and one SQLite driver (see
-Toolchain), runs the host's `git` and `python3.12` (see Toolchain), and uses
-appkit's packages `page` (the banner, launcher and footer, and the shared
-static files under `/_appkit/`), `identity` (the caller nginx authenticated,
-required on every route), `mcp` (the server mounted at `/mcp`, and the client
-the tests drive it with) and `telemetry` (the event contract, the request
-middleware, and the writer scripts' events go through). The contract is the
+(`github.com/ikigenba/ikigenba/appkit`), runs the host's `git` and
+`python3.12` (see Toolchain), and uses appkit's packages `page` (the banner,
+launcher and footer, and the shared static files under `/_appkit/`),
+`identity` (the caller nginx authenticated, required on every route), `mcp`
+(the server mounted at `/mcp`, and the client the tests drive it with),
+`telemetry` (the event contract, the request middleware, and the writer
+scripts' events go through) and `db` (the catalog's handle and its
+migrations). The contract is the
 documents in `specs/design/`. This file restates none of it.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
-`go.sum`, and everything under `etc/` (`etc/manifest.toml`, and the nginx
+`go.sum`, the catalog's migrations under `migrations/`, which the root package
+embeds, and everything under `etc/` (`etc/manifest.toml`, and the nginx
 fragment `etc/nginx.conf` if design names one). It never writes `assets/` or
-`share/`. See the `spec` and `build-spec` skills. Everything below is what
+`share/`. `state/` is where a running scripts keeps `scripts.db` and its runs;
+it is created at run time and never committed. See the `spec` and
+`build-spec` skills. Everything below is what
 the build run computes the gap and runs the gates against; it is
 human-authored and read-only to the run.
 
@@ -98,23 +103,23 @@ human-authored; the build run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit, at the release `go.mod` requires. See Adopting appkit below.
-  - `modernc.org/sqlite` `v1.59.0`, the SQLite driver, set with
-    `go get modernc.org/sqlite@v1.59.0`. It and the modules it pulls in are
-    scripts' only other dependencies.
+  - appkit `v0.12.1`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.12.1`: a release that
+    exports the `db` package. See Adopting appkit below.
+  - `golang.org/x/sys`. It, appkit and the modules they pull in are scripts'
+    only dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
 - GNU `make`: the developer targets in the `Makefile` (see Build); no gate
   runs through it
 
-**The SQLite driver is auth's.** scripts stores its catalog in SQLite. Its
-driver is exactly the one auth and repos use, `modernc.org/sqlite` at the
-version their `go.mod` requires, `v1.59.0`: pure Go, so the release build
-stays cgo-free (gate 3), already approved for the repository, and already in
-the module cache wherever auth builds. Adding any other external dependency —
-a Go git library, a markdown renderer, a MIME database among them — or moving
-this one to another version, needs human approval first.
+**The SQLite driver is appkit's.** scripts stores its catalog in SQLite
+through appkit's `db` package, which brings `modernc.org/sqlite`: pure Go, so
+the release build stays cgo-free (gate 3), and already approved for the
+repository. scripts neither requires nor imports it directly. Adding any other
+external dependency — a Go git library, a markdown renderer, a MIME database
+among them — needs human approval first.
 
 ### Adopting appkit
 
@@ -150,7 +155,8 @@ These rules govern the unit tests: everything `go test ./...` runs.
 
 - Offline: no network beyond loopback and Unix sockets, no real credentials.
 - Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
+  sleeps to wait for something. Clocks are injected: a test that opens a
+  catalog hands it a `Now` it controls.
 - No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
   temporary directory.
 - Isolated: a test touches only its own temporary directory, never the
@@ -159,11 +165,17 @@ These rules govern the unit tests: everything `go test ./...` runs.
 **The run seam carries the process.** scripts binds nothing itself; it serves
 on the listener it is passed. Arguments, environment lookup and removal (the
 `PATH` scripts finds `git` and `python3.12` on included), the pid, the
-inherited listener, the output streams, the clock, the random source, the
-working directory and the database source come in through the run seam design
-declares, and tests inject them. A test never reads or changes the real
-environment, clock, or randomness, and never leaves the inherited-listener
-step unset, since that would take the test process's real descriptor 3. A test
+inherited listener, the output streams, the clock, the random source and the
+working directory come in through the run seam design declares, and tests
+inject them. A `Run`-level test sets `Dir` to a temporary directory of its
+own, so the catalog lands there and never in the checkout. A test never reads
+or changes the real environment, clock, or randomness, and never leaves the
+inherited-listener step unset, since that would take the test process's real
+descriptor 3. The one exception is the working directory: a test that proves
+what an empty `Dir`, a relative repositories path, or the root package's
+`Assets`, `Etc` or `Migrations` does whatever the working directory is may
+`t.Chdir` into a temporary directory of its own, and such a test does not
+call `t.Parallel`. A test
 learns that the server is ready the way systemd does: it binds a Unix datagram
 socket in a short temporary directory (`os.MkdirTemp("", ...)`, since a Unix
 socket path is limited to 108 bytes and `t.TempDir()` can exceed it), names it
@@ -173,16 +185,30 @@ drain deadline is the behavior, and they keep that wait to a few seconds. The
 gates run offline as an ordinary user, with no systemd.
 
 **The state is an isolated directory.** Each test gives scripts a working
-directory, or the database, runs and repositories paths design names, inside a
+directory, or the runs and repositories paths design names, inside a
 test-owned temporary directory, so the catalog, the runs under `state/runs/`
-and the repositories it reads are the test's own; an in-memory SQLite DSN is
-fine where no directory is involved. Tests may create filesystem fixtures
-inside that temporary tree (an absent parent, a file that is not a database, a
-bare repository with a commit the test made, a run directory the test removed
-or made unwritable); nothing touches `/opt/scripts`, `/opt/repos` or a shared
-file. A database or disk failure mid-request is produced by making the test's
-own database or directory fail after the server has it, for example by closing
-the store the test handed it.
+and the repositories it reads are the test's own. A test that needs a store
+opens its own catalog with appkit's `db.Open` at a path in its own temporary
+directory, with `scripts.Migrations()` and a clock it controls, closes the
+handle when it ends, and builds the store over that handle with `store.New`.
+Tests may create filesystem fixtures inside that temporary tree (an absent
+parent, a regular file named `state`, a file at `state/scripts.db` that is not
+a database, a catalog a test's own `db.Open` made and then changed through
+`DB.Write`, a bare repository with a commit the test made, a run directory the
+test removed or made unwritable); nothing touches `/opt/scripts`,
+`/opt/repos`, the checkout's `state/` or a shared file. A catalog failure is
+provoked with `SetFailing(true)` on the handle the store the test handed the
+server was built over, before a call or from a hook design names, never by
+corrupting the file, removing permissions or closing the store. The one
+exception is the test of a failed `Recover` through `Run`, where the store is
+`Run`'s own: from a hook design names it opens a second handle of its own on
+the same file with `db.Open` and `scripts.Migrations()`, drops the `catalog`
+table inside that handle's `Write`, and closes it. A disk failure on the runs
+directory is still produced by removing a permission from the test's own
+directory, as design names. Tests prove scripts' use of the catalog, its
+schema, its store and its wiring, never SQLite's own guarantees (atomicity,
+durability, locking) and never appkit's `db` contract (opening, migrations,
+transactions, `db status`), which appkit's own tests prove.
 
 **git is real, and its environment is the test's.** scripts reads repositories
 with the host's real `git`, and what it proves is that a repository's commit
@@ -289,8 +315,8 @@ in a short temporary directory, passes it as `exec.Cmd.ExtraFiles[0]`
 (descriptor 3 in the child), and starts the child through
 `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
 `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. The
-child runs in a test-owned temporary working directory, where it creates its
-database and run directories under `state/`, with the repositories directory
+child runs in a test-owned temporary working directory, where it creates
+`state/scripts.db` and its run directories under `state/runs/`, with the repositories directory
 design names pointed at a bare repository fixture in the same temporary tree.
 Its environment is one the test composes, never the developer's: the git
 environment above, with a `PATH` holding git's and `python3.12`'s directories.
