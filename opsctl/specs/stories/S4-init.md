@@ -134,9 +134,9 @@ Sequence:
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
                disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them; a
-               manifest that is no longer valid stops init before any app
-               is rewritten
+               an app's manifest declares are kept as install wrote them;
+               a manifest that is no longer valid stops init before
+               anything is rewritten
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -427,11 +427,12 @@ Postconditions:
 
 ## An agent initialises a host holding an app whose manifest is no longer valid
 
-The `apps` step reads each installed app's manifest again to write its unit,
-and a manifest the running opsctl refuses stops the sequence before any app is
-rewritten, rather than being half-applied: a release installed under an older
-opsctl may carry `io_weight`, a key this one does not know. The step judges
-the manifest's form only. It does not check an app's `memory_max` against its
+nginx, the services file, the backup configuration and the apps' units are
+all generated from every installed app's manifest, so a manifest the running
+opsctl refuses stops `init` at its `nginx.conf` step, the first that reads
+them, before anything is rewritten: a release installed under an older
+opsctl may carry `io_weight`, a key this one does not know. `init` judges the
+manifest's form only. It does not check an app's `memory_max` against its
 slice or warn about a slice that is oversubscribed; those are `install`'s.
 
 Command:
@@ -471,14 +472,16 @@ Preconditions:
 
 Postconditions:
 
-- Every step before `apps` has run, slices included, and stays as it ran.
-- The step checks every installed app's manifest before it rewrites any
-  app, so no app changed: every installed app's unit and `etc/env` are as
-  they were, and none was restarted, `repos` included.
+- The `certificate` step ran as on any run. Nothing from `nginx.conf` on
+  ran: `/etc/nginx/conf.d/ikigenba.conf`, `/var/lib/ikigenba/services.json`,
+  the slice units, nginx's drop-in, `/etc/litestream.yml`, and the timers
+  are as they were, and nginx was neither reloaded nor restarted.
+- No app changed: every installed app's unit and `etc/env` are as they
+  were, and none was restarted, `repos` included.
 - The fix is to install a `repos` release whose manifest is valid; `init`
   then runs to the end. A `memory_max` of `2G`, more than the apps slice's
-  1024M on a t3.small, is not this step's to refuse, but that install
-  refuses it.
+  1024M on a t3.small, is not `init`'s to refuse, but that install refuses
+  it.
 
 ## An operator sets a stop timeout no longer than the drain deadline
 
