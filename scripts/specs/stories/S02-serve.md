@@ -2,9 +2,11 @@
 
 The bare binary serves, and it serves only on a listening socket it inherits: scripts never opens one of its own, and there is no port or address it falls back to. It takes the socket the way systemd socket activation passes it — `LISTEN_PID` names scripts' own process, `LISTEN_FDS` is `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*` variables from its environment once it has taken it. On a host, opsctl publishes `ikigenba-scripts.socket`, which holds the Unix socket `/run/ikigenba/scripts.sock`, beside `ikigenba-scripts.service`, which runs `/opt/scripts/bin/scripts` with no arguments as the `ikigenba` user, with `/opt/scripts` as its working directory and `/opt/scripts/etc/env` as its environment file; nginx proxies scripts' public name, `scripts.<space>`, to `http://unix:/run/ikigenba/scripts.sock:`. The service is `Type=notify`: scripts tells systemd it is ready, by sending `READY=1` to `$NOTIFY_SOCKET`, once it is serving. When stopped, scripts drains for at most `DRAIN_SECONDS`, a positive whole number of seconds read from its environment, and 5 when that is unset or empty. On a host, opsctl owns this value and the service unit's stop timeout: both are space-wide settings in opsctl's configuration, opsctl writes the drain into every app's `etc/env` and the stop timeout (10 seconds by default, always longer than the drain) into every service unit, and an app's manifest never sets either. The actor in these stories is the host, whether that is systemd or a developer at a terminal standing in for it.
 
-scripts' environment also carries its seven settings, each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `etc/env`, and an operator changes them there. `REPOS_DIR`, `../repos/state/repos`, is the directory holding repos' bare repositories, each as `<repository id>.git`; a relative value is resolved against scripts' working directory, so on a host it is `/opt/scripts/../repos/state/repos`, which is `/opt/repos/state/repos`, and an absolute one is used as it is (`S20`). scripts only reads there, with git, and never writes there. `TREE_MAX_BYTES`, 268435456, a positive whole number of bytes, is the largest a run's unpacked tree may be, counted as the sum of its files' sizes (`S17`). `OUTPUT_MAX_BYTES`, 1048576, a positive whole number of bytes, is how much of a run's standard output, and separately of its standard error, is kept (`S17`). `OPERATION_SECONDS`, 600, a positive whole number of seconds, is the longest one git run may take before scripts kills it (`S17`). `SCRIPT_SECONDS`, 600, a positive whole number of seconds, is the longest a script may run before scripts kills it (`S17`). `RUN_KEEP_DAYS`, 15, a positive whole number of days, is how long a run is kept, and `RUN_KEEP_COUNT`, 10, a positive whole number of runs, is how many of each script's newest runs are kept whatever their age (`S19`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives scripts. The file lists the platform's services: it feeds the launcher in the banner of scripts' pages (`S03`), it holds the description scripts' MCP endpoint gives its clients as instructions (`S05`), its entry named `telemetry` is where scripts sends its trail (below), and its path is handed, as it is, to every script scripts runs, which finds its siblings there (`S15`). scripts reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. scripts never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, scripts starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
+scripts' environment also carries its thirteen settings, each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `etc/env`, and an operator changes them there. `REPOS_DIR`, `../repos/state/repos`, is the directory holding repos' bare repositories, each as `<repository id>.git`; a relative value is resolved against scripts' working directory, so on a host it is `/opt/scripts/../repos/state/repos`, which is `/opt/repos/state/repos`, and an absolute one is used as it is (`S20`). scripts only reads there, with git, and never writes there. `TREE_MAX_BYTES`, 268435456, a positive whole number of bytes, is the largest a run's unpacked tree may be, counted as the sum of its files' sizes (`S17`). `OUTPUT_MAX_BYTES`, 1048576, a positive whole number of bytes, is how much of a run's standard output, and separately of its standard error, is kept (`S17`). `OPERATION_SECONDS`, 600, a positive whole number of seconds, is the longest one git run may take before scripts kills it (`S17`). `SCRIPT_SECONDS`, 600, a positive whole number of seconds, is the longest a script may run before scripts kills it (`S17`). `RUN_MEMORY_MAX_BYTES`, 268435456, a positive whole number of bytes, is the most memory one run may hold, every process of it together, and `RUNS_MEMORY_MAX_BYTES`, 536870912, a positive whole number of bytes, is the most every run may hold together (`S17`). `RUNS_CPU_PERCENT`, 100, a positive whole number, is how much CPU every run may use together, as a percentage of one CPU (`S17`). `RUN_PIDS_MAX`, 64, a positive whole number of processes, is the most processes one run may have at once (`S17`). `RUN_MAX_ACTIVE`, 2, a positive whole number of runs, is how many runs may run at once, and `RUN_MAX_QUEUED`, 10, a positive whole number of runs, is how many more may wait for one of those to end (`S08`, `S17`). `RUN_KEEP_DAYS`, 15, a positive whole number of days, is how long a run is kept, and `RUN_KEEP_COUNT`, 10, a positive whole number of runs, is how many of each script's newest runs are kept whatever their age (`S19`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives scripts. The file lists the platform's services: it feeds the launcher in the banner of scripts' pages (`S03`), it holds the description scripts' MCP endpoint gives its clients as instructions (`S05`), its entry named `telemetry` is where scripts sends its trail (below), and its path is handed, as it is, to every script scripts runs, which finds its siblings there (`S15`). scripts reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. scripts never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, scripts starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
 
-scripts runs the host's own `git` for every read of a repository — reading a repository's owner and name, resolving a ref, unpacking a commit's tree with `git archive` — and has no git of its own, and it runs every script with the host's own `python3.12` (`S15`, `S22`); both are dependencies of the host. scripts checks its environment first — `DRAIN_SECONDS`, then `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, in that order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, then that one named `python3.12` is (`S22`), and only then opens its SQLite database, the catalog of scripts and the record of every run, at `state/scripts.db`, relative to its working directory, creating `state/` and the database on its first start, and brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the run folders, `state/runs/`, creating it when it is absent. It then marks every run its catalog still records as `running` as `killed` (`S18`) and prunes the runs past keeping (`S19`). Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after scripts, and a repository is looked for only when a tool, a run or a page needs it (`S21`). So a start refused as a usage error, or for want of git or `python3.12`, has touched nothing, not even the database. A database scripts cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `scripts: cannot open database state/scripts.db: <reason>`, and exit status 1. scripts is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); the run folders under `state/runs/` are not replicated (`S20`).
+scripts runs the host's own `git` for every read of a repository — reading a repository's owner and name, resolving a ref, unpacking a commit's tree with `git archive` — and has no git of its own, and it runs every script with the host's own `python3.12` (`S15`, `S22`); both are dependencies of the host. scripts checks its environment first — `DRAIN_SECONDS`, then `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, in that order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, then that one named `python3.12` is (`S22`), and only then opens its SQLite database, the catalog of scripts and the record of every run, at `state/scripts.db`, relative to its working directory, creating `state/` and the database on its first start, and brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the run folders, `state/runs/`, creating it when it is absent. Then it prepares its control group, in which it runs every script (below). It then marks every run its catalog still records as `running` as `killed`, and finishes every run it still records as `queued` as `failed`, with reason `queue_abandoned` (`S18`), and prunes the runs past keeping (`S19`). Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after scripts, and a repository is looked for only when a tool, a run or a page needs it (`S21`). So a start refused as a usage error, or for want of git or `python3.12`, has touched nothing, not even the database. A database scripts cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `scripts: cannot open database state/scripts.db: <reason>`, and exit status 1. scripts is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); the run folders under `state/runs/` are not replicated (`S20`).
+
+On a host, `ikigenba-scripts.service` delegates its control group to scripts, as the manifest's `delegate` asks (`S01`): the group `systemctl show --property ControlGroup --value ikigenba-scripts.service` names, under `/sys/fs/cgroup`, is scripts' own to arrange. Once its runs directory is ready, and before it settles what a previous process left, scripts prepares that group: it moves its own process into a child group `main/`, enables the `cpu`, `memory` and `pids` controllers for the group's children, makes a second child group `runs/`, whose `memory.max` is `RUNS_MEMORY_MAX_BYTES` and whose `cpu.max` allows `RUNS_CPU_PERCENT` percent of one CPU, so that every run together is held to both, and enables the `memory` and `pids` controllers under `runs/`. Each run runs in a group of its own under `runs/`, named for the run's id, bounded by `RUN_MEMORY_MAX_BYTES` and `RUN_PIDS_MAX`, and removed, with whatever is still in it killed, when the run ends (`S15`, `S17`). When scripts cannot find such a group, or cannot prepare it — run bare at a developer's terminal, where its process is in a group nothing delegated to it, or under a unit that does not delegate — it does not refuse to start, and it has no other way to run a script: it writes one line, `scripts: runs are unavailable: <reason>`, to stderr, `<reason>` saying why, then settles, reports ready and serves as on any start, and refuses every `run` with `runs are unavailable: <reason>`, the same reason (`S08`). Every page and every other tool is answered as usual. A start refused earlier, for its settings, its socket, git, `python3.12`, its database or its runs directory, has touched no control group.
 
 scripts keeps a trail: it records what it does as events it sends to the platform's telemetry service, exactly as sites does, where an operator, or an agent working for one, follows what happened from one thing they know — a request id, a user, a script's id, a run's id, or a time. scripts finds telemetry in the services file `IKIGENBA_SERVICES` names, as the entry named `telemetry`, and sends each event to that entry's socket; it looks the entry up afresh for every event, so a telemetry installed after scripts started is found without a restart. What telemetry does with an event is told in telemetry's own stories. The stories here show each event as the JSON object telemetry receives:
 
@@ -27,13 +29,13 @@ scripts records these events and no others:
 
 The events of a request carry its request id and its caller, and come in this order: `request.started`, then the request's domain events, then `tool.called` for a tool call, then `request.finished`. A run's `run.finished` carries the request id and user of the run, whichever request or moment ends it (`S16`).
 
-stderr holds only trouble: a condition scripts cannot go on from — the start-up refusals below and the requests lost to a drain cut short — and an event scripts could not deliver. A failure scripts handles is not trouble: a tool call refused, a run that could not start, a script that exits non-zero, runs too long or is cancelled, a path answered `404`, a request answered 500, like a request answered any other way, is recorded in the trail, the run or the tool's result and earns no line on stderr. So while telemetry takes every event, a running scripts writes nothing to stdout or stderr, and under systemd the journal holds only trouble. Every line scripts writes to stderr begins `scripts: `. What git itself writes to its stderr while scripts runs it for a run goes into that run's `stderr` (`S08`), or nowhere, and what a script writes goes into its run's `stdout` and `stderr` (`S15`); neither ever reaches scripts' own stderr.
+stderr holds only trouble: a condition scripts cannot go on from — the start-up refusals below, the runs a start without its control group cannot make, and the requests lost to a drain cut short — and an event scripts could not deliver. A failure scripts handles is not trouble: a tool call refused, a run that could not start, a script that exits non-zero, runs too long or is cancelled, a path answered `404`, a request answered 500, like a request answered any other way, is recorded in the trail, the run or the tool's result and earns no line on stderr. So while telemetry takes every event and its control group is ready, a running scripts writes nothing to stdout or stderr, and under systemd the journal holds only trouble. Every line scripts writes to stderr begins `scripts: `. What git itself writes to its stderr while scripts runs it for a run goes into that run's `stderr` (`S08`), or nowhere, and what a script writes goes into its run's `stdout` and `stderr` (`S15`); neither ever reaches scripts' own stderr.
 
 These are the terms every app of the platform serves on, the same as sites'. The socket is the app's only way in. Every app runs as the one `ikigenba` user, so any app can reach any sibling's socket, and nginx reaches them all; nothing else on the host can. The suite is a closed system that only we deploy services into, and an app trusts the suite: it trusts the headers nginx sets — `X-User-Id` and `X-User-Email`, the caller auth authenticated, and `X-Request-Id`, 32 lowercase hexadecimal characters nginx sets on every request and overwrites whatever a client sent — and it trusts a sibling that calls it to have forwarded them. scripts' manifest declares no `guests` (`S01`), so on a host with an authenticator nginx passes scripts no request from a visitor with no credential: it sends one to sign in at a page (`S03`) and challenges one at `/mcp` (`S05`). The mcp gateway calls scripts at its socket (`S05`). A request that reaches scripts with no `X-Request-Id`, or an empty one, as a developer's request does, is given an id of the same shape by scripts, a new one for each such request, so every event about a request names it. scripts calls no sibling while serving a request, and reaches repos only through its bare repositories on disk; a script it runs reaches siblings on its own, as the run's user and under the run's request id (`S15`).
 
 ## The host starts scripts
 
-The socket keeps out every process that is not part of the suite or nginx, which a port on loopback would not: any process on the host can connect to a loopback port, and only the `ikigenba` user and nginx can connect to `/run/ikigenba/scripts.sock`. systemd owns the socket, so it exists, and accepts connections into its queue, before scripts starts and while it is stopped; scripts' part is to serve what arrives on it. `systemctl start` returns once scripts has opened its catalog and its runs directory, settled what a previous process left (`S18`, `S19`), and reported that it is ready. At that moment scripts records `service.started`, with the version it is running: a new version in a start event is how a deploy shows in the trail.
+The socket keeps out every process that is not part of the suite or nginx, which a port on loopback would not: any process on the host can connect to a loopback port, and only the `ikigenba` user and nginx can connect to `/run/ikigenba/scripts.sock`. systemd owns the socket, so it exists, and accepts connections into its queue, before scripts starts and while it is stopped; scripts' part is to serve what arrives on it. `systemctl start` returns once scripts has opened its catalog and its runs directory, prepared its control group, settled what a previous process left (`S18`, `S19`), and reported that it is ready. At that moment scripts records `service.started`, with the version it is running: a new version in a start event is how a deploy shows in the trail.
 
 Command:
 
@@ -51,10 +53,11 @@ Exits 0. Nothing is on stdout or stderr.
 Preconditions:
 
 - `opsctl install` has installed scripts: `/opt/scripts/bin/scripts` exists, and `ikigenba-scripts.socket` and `ikigenba-scripts.service` are published.
-- `/opt/scripts/etc/env` sets `DRAIN_SECONDS` and each of the seven settings to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
+- `/opt/scripts/etc/env` sets `DRAIN_SECONDS` and each of the thirteen settings to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
 - `git` and `python3.12` are installed on the host, on the `PATH` the service runs with.
+- `ikigenba-scripts.service` delegates its control group (`S01`), and the host offers that group the `cpu`, `memory` and `pids` controllers.
 - `ikigenba-scripts.socket` is active, so `/run/ikigenba/scripts.sock` exists and accepts connections.
-- `/opt/scripts/state/scripts.db` exists, from an earlier start, records no migration this scripts does not carry, and holds the scripts `nightly-report`, `sync-crm`, `rotate-keys`, `backfill`, and `digest` and their runs; none of the runs is recorded as `running`, and none is past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep. `/opt/scripts/state/runs/` exists and holds their run folders.
+- `/opt/scripts/state/scripts.db` exists, from an earlier start, records no migration this scripts does not carry, and holds the scripts `nightly-report`, `sync-crm`, `rotate-keys`, `backfill`, and `digest` and their runs; none of the runs is recorded as `running` or `queued`, and none is past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep. `/opt/scripts/state/runs/` exists and holds their run folders.
 - `ikigenba-scripts.service` is not running.
 - The host's services file lists the telemetry service, which takes every event.
 
@@ -63,6 +66,7 @@ Postconditions:
 - `ikigenba-scripts.service` is `active`, and scripts is serving on `/run/ikigenba/scripts.sock`: a connection there, and every connection queued before scripts started, is answered by scripts.
 - scripts listens on no other socket and no port.
 - `/opt/scripts/state/scripts.db` is the database it opened, now up to date, and every script and run it held is still there, unchanged by the start; every run folder under `/opt/scripts/state/runs/` is as it was. No git and no script ran.
+- scripts has prepared its control group, the one `systemctl show --property ControlGroup --value ikigenba-scripts.service` names under `/sys/fs/cgroup`: scripts' process is in its child group `main/`, and no process is in the group itself; its `cgroup.subtree_control` names `cpu`, `memory` and `pids`; and its child group `runs/` has a `memory.max` of `RUNS_MEMORY_MAX_BYTES`, a `cpu.max` whose quota is `RUNS_CPU_PERCENT` percent of its period, and a `cgroup.subtree_control` naming `memory` and `pids`.
 - telemetry has received one event from scripts, with no request id and no user, whose `version` is the version `scripts --version` prints (`S01`):
 
   ```
@@ -94,8 +98,9 @@ Preconditions:
 - `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `NOTIFY_SOCKET` is unset, so scripts reports readiness to nobody.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 - `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
+- scripts' process is in a control group delegated to it, which it prepares as in `The host starts scripts`.
 - Neither `state/scripts.db` nor `state/runs/` exists.
 - Either `state/` is absent and scripts can create it in its working directory, or `state/` is an existing directory in which scripts can create the database and `runs/`.
 
@@ -130,8 +135,9 @@ Preconditions:
 - `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `NOTIFY_SOCKET` is unset, so scripts reports readiness to nobody.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 - `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
+- scripts' process is in a control group delegated to it, which it prepares as in `The host starts scripts`.
 - `state/scripts.db` holds the catalog a scripts from before migrations kept: scripts and their runs, none of which is recorded as `running` and none past what `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT` keep, and records no migration; `state/runs/` holds their run folders. `scripts db status` there prints `0001 pending` and `0002 pending` (`S01`).
 
 Postconditions:
@@ -163,7 +169,8 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
+- scripts' process is in a control group delegated to it, which it prepares as in `The host starts scripts`.
 - `IKIGENBA_SERVICES` is unset, or names a file that does not exist.
 - `state/scripts.db` exists, from an earlier start, or can be created as in `The host starts scripts for the first time`.
 
@@ -194,7 +201,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 - `state` is an existing regular file in scripts' working directory.
 
 Postconditions:
@@ -224,7 +231,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 - `state/scripts.db` exists but cannot be opened.
 
 Postconditions:
@@ -253,7 +260,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`, carrying only migrations `0001` and `0002`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 - `state/scripts.db` exists and records versions `0001`, `0002` and `0003` as applied.
 
 Postconditions:
@@ -282,7 +289,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 - `state/scripts.db` exists, or can be created as in `The host starts scripts for the first time`.
 - `state/runs` is an existing regular file.
 
@@ -290,6 +297,42 @@ Postconditions:
 
 - The existing `state/runs` file is unchanged.
 - `state/scripts.db` exists, created by this start if it was absent, and names what it named before: no run was marked `killed` and none was pruned. scripts served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host starts scripts without a delegated control group
+
+A developer running scripts at a terminal has no control group delegated to it: its process is in the group of the terminal's session, which is not scripts' to arrange. The same holds under a service unit that does not delegate. scripts serves all the same, every page and every tool but `run` answered as on any start, but it can start no run, and it says so once, as it starts, rather than leaving it to the first refused `run`. It looks for its control group once its runs directory is ready, so the line comes only when every earlier step has passed, and before it settles what a previous process left (`S18`, `S19`) and reports that it is ready. This is not a refused start: scripts does not exit for it, and under systemd `systemctl start` succeeds.
+
+Command:
+
+```
+$ scripts
+```
+
+Output:
+
+```
+scripts: runs are unavailable: <reason>
+```
+
+Does not exit. The line is on stderr, written before scripts reports that it is ready; stdout is empty. `<reason>` says why scripts could not find or prepare its control group.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
+- `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
+- `state/scripts.db` and `state/runs/` exist, from an earlier start, or can be created as in `The host starts scripts for the first time`.
+- scripts' process is in a control group nothing delegated to it, as at a developer's terminal.
+
+Postconditions:
+
+- scripts is serving on the socket it was passed, and answers every page and every tool call but `run` as it would with its control group ready.
+- Every `run` is refused with `runs are unavailable: <reason>`, the same `<reason>` (`S08`), and makes no run.
+- scripts settled what a previous process left as any start does (`S18`, `S19`).
+- telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
+- The line above is the only one scripts has written to stderr.
+- It keeps running until it is signalled.
 
 ## The host starts scripts where git is not installed
 
@@ -314,7 +357,7 @@ Preconditions:
 - `bin/scripts` exists and is run by its path.
 - No directory on the `PATH` scripts is started with holds an executable named `git`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 
 Postconditions:
 
@@ -345,8 +388,9 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT` are unset, or valid.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT` are unset, or valid.
 - `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
+- scripts' process is in a control group delegated to it, which it prepares as in `The host starts scripts`.
 - scripts' working directory is `/opt/scripts`, and `/opt/repos/state/repos/rep_9c2e4b7a1d3f8e05.git` is repos' bare repository `nightly-report`, owned by `u_7f3a9c21`.
 
 Postconditions:
@@ -517,7 +561,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`.
 - `LISTEN_FDS` is unset in the environment, or `LISTEN_PID` is not scripts' process id.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 
 Postconditions:
 
@@ -547,7 +591,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `2`: two listening sockets are passed in, as file descriptors 3 and 4.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 
 Postconditions:
 
@@ -555,7 +599,7 @@ Postconditions:
 
 ## The host gives scripts a drain deadline that is not a number of seconds
 
-scripts reads `DRAIN_SECONDS` before it serves, so a bad value is found at start rather than at the moment scripts is asked to stop. A value that is not a positive whole number — `0`, `-1`, `2.5`, `5s`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing. The value is quoted back verbatim. scripts sets no upper limit: keeping the drain inside the service unit's stop timeout is opsctl's to enforce. It checks `DRAIN_SECONDS` before `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, so it is the one named when several are bad, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+scripts reads `DRAIN_SECONDS` before it serves, so a bad value is found at start rather than at the moment scripts is asked to stop. A value that is not a positive whole number — `0`, `-1`, `2.5`, `5s`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing. The value is quoted back verbatim. scripts sets no upper limit: keeping the drain inside the service unit's stop timeout is opsctl's to enforce. It checks `DRAIN_SECONDS` before `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, so it is the one named when several are bad, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
 
 Command:
 
@@ -582,7 +626,7 @@ Postconditions:
 
 ## The host gives scripts a tree size limit that is not a number of bytes
 
-scripts reads `TREE_MAX_BYTES` before it serves, so a bad value is found at start rather than when a run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `256M`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a limit it cannot read is not a limit it can guess, and guessing one could let one run fill the host's disk or refuse every run. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `TREE_MAX_BYTES` after `DRAIN_SECONDS` and before `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, so it is the one named when it and any of those are bad, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+scripts reads `TREE_MAX_BYTES` before it serves, so a bad value is found at start rather than when a run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `256M`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a limit it cannot read is not a limit it can guess, and guessing one could let one run fill the host's disk or refuse every run. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `TREE_MAX_BYTES` after `DRAIN_SECONDS` and before `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, so it is the one named when it and any of those are bad, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
 
 Command:
 
@@ -610,7 +654,7 @@ Postconditions:
 
 ## The host gives scripts an output limit that is not a number of bytes
 
-scripts reads `OUTPUT_MAX_BYTES` before it serves, so a bad value is found at start rather than when a run first writes output. A value that is not a positive whole number — `0`, `-1`, `2.5`, `1M`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a bound it cannot read could let one run's output fill the host's disk, or keep none of any run's. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `OUTPUT_MAX_BYTES` after `DRAIN_SECONDS` and `TREE_MAX_BYTES` and before `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+scripts reads `OUTPUT_MAX_BYTES` before it serves, so a bad value is found at start rather than when a run first writes output. A value that is not a positive whole number — `0`, `-1`, `2.5`, `1M`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a bound it cannot read could let one run's output fill the host's disk, or keep none of any run's. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `OUTPUT_MAX_BYTES` after `DRAIN_SECONDS` and `TREE_MAX_BYTES` and before `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
 
 Command:
 
@@ -638,7 +682,7 @@ Postconditions:
 
 ## The host gives scripts a git time limit that is not a number of seconds
 
-scripts reads `OPERATION_SECONDS` before it serves, so a bad value is found at start rather than when a git run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `10m`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a git run with a deadline scripts cannot read could hold a `run` call for as long as git likes. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `OPERATION_SECONDS` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, and `OUTPUT_MAX_BYTES` and before `SCRIPT_SECONDS`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+scripts reads `OPERATION_SECONDS` before it serves, so a bad value is found at start rather than when a git run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `10m`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a git run with a deadline scripts cannot read could hold a `run` call for as long as git likes. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `OPERATION_SECONDS` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, and `OUTPUT_MAX_BYTES` and before `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
 
 Command:
 
@@ -666,7 +710,7 @@ Postconditions:
 
 ## The host gives scripts a script time limit that is not a number of seconds
 
-scripts reads `SCRIPT_SECONDS` before it serves, so a bad value is found at start rather than when a run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `10m`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a script with a deadline scripts cannot read could run for as long as it likes. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `SCRIPT_SECONDS` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, and `OPERATION_SECONDS` and before `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+scripts reads `SCRIPT_SECONDS` before it serves, so a bad value is found at start rather than when a run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `10m`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a script with a deadline scripts cannot read could run for as long as it likes. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `SCRIPT_SECONDS` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, and `OPERATION_SECONDS` and before `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
 
 Command:
 
@@ -692,9 +736,177 @@ Postconditions:
 
 - Nothing has changed. scripts opened no database, ran no git and no script, served nothing, told systemd nothing, and sent telemetry nothing.
 
+## The host gives scripts a memory limit per run that is not a number of bytes
+
+scripts reads `RUN_MEMORY_MAX_BYTES` before it serves, so a bad value is found at start rather than when a run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `256M`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a limit it cannot read is not one it can guess, and guessing one could let one run take the memory every other run needs, or kill every run that starts. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_MEMORY_MAX_BYTES` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, and `SCRIPT_SECONDS` and before `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+
+Command:
+
+```
+$ RUN_MEMORY_MAX_BYTES=abc scripts
+```
+
+Output:
+
+```
+scripts: RUN_MEMORY_MAX_BYTES is 'abc', not a positive whole number of bytes
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, and `SCRIPT_SECONDS` are unset, or a positive whole number.
+
+Postconditions:
+
+- Nothing has changed. scripts opened no database, ran no git and no script, touched no control group, served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host gives scripts a memory limit for every run together that is not a number of bytes
+
+scripts reads `RUNS_MEMORY_MAX_BYTES` before it serves, so a bad value is found at start rather than when it prepares its control group. A value that is not a positive whole number — `0`, `-1`, `2.5`, `512M`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a limit it cannot read is not one it can guess, and guessing one could let the runs together take the memory scripts itself needs, or starve every run. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUNS_MEMORY_MAX_BYTES` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, and `RUN_MEMORY_MAX_BYTES` and before `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+
+Command:
+
+```
+$ RUNS_MEMORY_MAX_BYTES=abc scripts
+```
+
+Output:
+
+```
+scripts: RUNS_MEMORY_MAX_BYTES is 'abc', not a positive whole number of bytes
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, and `RUN_MEMORY_MAX_BYTES` are unset, or a positive whole number.
+
+Postconditions:
+
+- Nothing has changed. scripts opened no database, ran no git and no script, touched no control group, served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host gives scripts a CPU share that is not a percentage
+
+scripts reads `RUNS_CPU_PERCENT` before it serves, so a bad value is found at start rather than when it prepares its control group. A value that is not a positive whole number — `0`, `-1`, `2.5`, `50%`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a share it cannot read is not one it can guess, and guessing one could let the runs take the CPU the rest of the host needs, or starve them. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit: a value over 100 lets the runs together use more than one CPU. It checks `RUNS_CPU_PERCENT` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, and `RUNS_MEMORY_MAX_BYTES` and before `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+
+Command:
+
+```
+$ RUNS_CPU_PERCENT=abc scripts
+```
+
+Output:
+
+```
+scripts: RUNS_CPU_PERCENT is 'abc', not a positive whole percentage
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, and `RUNS_MEMORY_MAX_BYTES` are unset, or a positive whole number.
+
+Postconditions:
+
+- Nothing has changed. scripts opened no database, ran no git and no script, touched no control group, served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host gives scripts a process limit per run that is not a number of processes
+
+scripts reads `RUN_PIDS_MAX` before it serves, so a bad value is found at start rather than when a run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `1e2`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a limit it cannot read is not one it can guess, and guessing one could let one run fill the host with processes, or keep every script from starting one. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_PIDS_MAX` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, and `RUNS_CPU_PERCENT` and before `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+
+Command:
+
+```
+$ RUN_PIDS_MAX=abc scripts
+```
+
+Output:
+
+```
+scripts: RUN_PIDS_MAX is 'abc', not a positive whole number of processes
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, and `RUNS_CPU_PERCENT` are unset, or a positive whole number.
+
+Postconditions:
+
+- Nothing has changed. scripts opened no database, ran no git and no script, touched no control group, served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host gives scripts a cap on runs at once that is not a number of runs
+
+scripts reads `RUN_MAX_ACTIVE` before it serves, so a bad value is found at start rather than when a run first needs it. A value that is not a positive whole number — `0`, `-1`, `2.5`, `1e1`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing. `0` is refused like the rest: a scripts that may run nothing at once would start no run. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_MAX_ACTIVE` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, and `RUN_PIDS_MAX` and before `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS`, and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+
+Command:
+
+```
+$ RUN_MAX_ACTIVE=abc scripts
+```
+
+Output:
+
+```
+scripts: RUN_MAX_ACTIVE is 'abc', not a positive whole number of runs
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, and `RUN_PIDS_MAX` are unset, or a positive whole number.
+
+Postconditions:
+
+- Nothing has changed. scripts opened no database, ran no git and no script, touched no control group, served nothing, told systemd nothing, and sent telemetry nothing.
+
+## The host gives scripts a queue cap that is not a number of runs
+
+scripts reads `RUN_MAX_QUEUED` before it serves, so a bad value is found at start rather than when a run first waits. A value that is not a positive whole number — `0`, `-1`, `2.5`, `1e1`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing. `0` is refused like the rest: there is always room for at least one run to wait (`S08`). The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_MAX_QUEUED` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, and `RUN_MAX_ACTIVE` and before `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+
+Command:
+
+```
+$ RUN_MAX_QUEUED=abc scripts
+```
+
+Output:
+
+```
+scripts: RUN_MAX_QUEUED is 'abc', not a positive whole number of runs
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/scripts` exists and is on the `PATH` as `scripts`.
+- `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, and `RUN_MAX_ACTIVE` are unset, or a positive whole number.
+
+Postconditions:
+
+- Nothing has changed. scripts opened no database, ran no git and no script, touched no control group, served nothing, told systemd nothing, and sent telemetry nothing.
+
 ## The host gives scripts a run age limit that is not a number of days
 
-scripts reads `RUN_KEEP_DAYS` before it serves, so a bad value is found at start rather than when it first prunes, which it does at start (`S19`). A value that is not a positive whole number — `0`, `-1`, `2.5`, `15d`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a limit it cannot read is not one it can guess, and guessing one could remove runs a user still wants. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_KEEP_DAYS` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, and `SCRIPT_SECONDS` and before `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+scripts reads `RUN_KEEP_DAYS` before it serves, so a bad value is found at start rather than when it first prunes, which it does at start (`S19`). A value that is not a positive whole number — `0`, `-1`, `2.5`, `15d`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing: a limit it cannot read is not one it can guess, and guessing one could remove runs a user still wants. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_KEEP_DAYS` after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, and `RUN_MAX_QUEUED` and before `RUN_KEEP_COUNT`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
 
 Command:
 
@@ -714,7 +926,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, and `SCRIPT_SECONDS` are unset, or a positive whole number.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, and `RUN_MAX_QUEUED` are unset, or a positive whole number.
 
 Postconditions:
 
@@ -722,7 +934,7 @@ Postconditions:
 
 ## The host gives scripts a run count to keep that is not a number of runs
 
-scripts reads `RUN_KEEP_COUNT` before it serves, so a bad value is found at start rather than when it first prunes (`S19`). A value that is not a positive whole number — `0`, `-1`, `2.5`, `1e1`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing. `0` is refused like the rest: every script keeps at least its newest run whatever its age. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_KEEP_COUNT` last of its settings, after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, and `RUN_KEEP_DAYS`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
+scripts reads `RUN_KEEP_COUNT` before it serves, so a bad value is found at start rather than when it first prunes (`S19`). A value that is not a positive whole number — `0`, `-1`, `2.5`, `1e1`, or `abc` — is the caller's mistake, so it is a usage error and scripts serves nothing. `0` is refused like the rest: every script keeps at least its newest run whatever its age. The value is quoted back verbatim. Only an unset or empty variable means the manifest's default (`S01`). scripts sets no upper limit. It checks `RUN_KEEP_COUNT` last of its settings, after `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, and `RUN_KEEP_DAYS`, and before it looks for its socket, for git or for `python3.12`, so it is reported whether or not a socket was passed in or either is installed.
 
 Command:
 
@@ -742,7 +954,7 @@ Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, and `RUN_KEEP_DAYS` are unset, or a positive whole number.
+- `DRAIN_SECONDS`, `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, and `RUN_KEEP_DAYS` are unset, or a positive whole number.
 
 Postconditions:
 

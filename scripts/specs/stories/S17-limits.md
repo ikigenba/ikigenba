@@ -1,8 +1,8 @@
 # Stories — limits
 
-What bounds a run, so that no script can fill scripts' disk with its tree or its output, or hold a process for ever. Four settings, each a positive whole number read once, at start, from scripts' environment, whose default is the manifest's `[env]` (`S01`), which the host writes into `/opt/scripts/etc/env`; an operator changes one there and restarts scripts, which ends every run then running (`S18`), and a developer sets it on the command line. Unset or empty, a setting is its default; a value that is not a positive whole number keeps scripts from starting (`S02`). `TREE_MAX_BYTES`, 268435456 (256 MiB), is the most a run's tree may hold: the sum of the sizes of the files of the commit, as `git archive` emits them, neither the repository's size on disk nor the archive's. A tree whose files sum to exactly `TREE_MAX_BYTES` is unpacked and run; one byte more, and it is not: scripts stops unpacking as soon as the sum passes the limit, leaves in `tree/` whatever of it had been written by then, starts no script, and records the run `failed` with `reason` `too_large` and the `sha` its ref resolved to. Every run unpacks its own tree, so the limit that applies is the one scripts started with, not the one in force when the commit was pushed or when an earlier run of it was refused. `OUTPUT_MAX_BYTES`, 1048576 (1 MiB), bounds a run's standard output and, separately, its standard error: of each stream the first `OUTPUT_MAX_BYTES` bytes are kept in the run's `stdout` or `stderr` file, cut where the count falls, mid-line or not, and the rest is read and dropped. A stream of exactly `OUTPUT_MAX_BYTES` is not cut. A run with either stream cut is `truncated`, one flag for both; the script is not killed, held up or told for it, and runs on to its own end. `stdout_bytes` and `stderr_bytes` count what was kept, never what was written. `OPERATION_SECONDS`, 600, is the longest one git run starting a run may take, whether a `run` call or an event's delivery (`S27`) started it, resolving the ref or unpacking the tree, each timed on its own; a git still running at the deadline is killed and the run recorded `failed` with `reason` `timed_out`, as `S08` tells. `SCRIPT_SECONDS`, 600, is the longest a script may run, counted from when its process starts: a script still running then is killed with its whole process group, every process it started in that group with it, and its run recorded `timed_out`, with no exit code and `finished` the moment it was killed; what it wrote to its output streams and to `out/` before then is kept. Every limit here bounds a run an event started (`S27`) exactly as it bounds one `run` started. Nothing bounds `out/`: a script writes there as much as the disk takes, and pruning answers the growth (`S19`). scripts has no memory setting of its own: the manifest's `[resources]` sets `memory_max` to `1G` for scripts' service unit (`S01`), one ceiling over scripts, every git it runs, and every script it runs together, with no limit per run and no cap on how many run at once; a script the kernel kills for memory has died of a signal scripts did not send, so its run is `exited` with `exit_code` 137, 128 plus `SIGKILL`'s 9 (`S15`).
+What bounds a run, so that no script can fill scripts' disk with its tree or its output, hold a process for ever, or take more of the host's memory, CPU or processes than its share. Ten settings, each a positive whole number read once, at start, from scripts' environment, whose default is the manifest's `[env]` (`S01`), which the host writes into `/opt/scripts/etc/env`; an operator changes one there and restarts scripts, which ends every run then running or waiting (`S18`), and a developer sets it on the command line. Unset or empty, a setting is its default; a value that is not a positive whole number keeps scripts from starting (`S02`). `TREE_MAX_BYTES`, 268435456 (256 MiB), is the most a run's tree may hold: the sum of the sizes of the files of the commit, as `git archive` emits them, neither the repository's size on disk nor the archive's. A tree whose files sum to exactly `TREE_MAX_BYTES` is unpacked and run; one byte more, and it is not: scripts stops unpacking as soon as the sum passes the limit, leaves in `tree/` whatever of it had been written by then, starts no script, and records the run `failed` with `reason` `too_large` and the `sha` its ref resolved to. Every run unpacks its own tree, so the limit that applies is the one scripts started with, not the one in force when the commit was pushed or when an earlier run of it was refused. `OUTPUT_MAX_BYTES`, 1048576 (1 MiB), bounds a run's standard output and, separately, its standard error: of each stream the first `OUTPUT_MAX_BYTES` bytes are kept in the run's `stdout` or `stderr` file, cut where the count falls, mid-line or not, and the rest is read and dropped. A stream of exactly `OUTPUT_MAX_BYTES` is not cut. A run with either stream cut is `truncated`, one flag for both; the script is not killed, held up or told for it, and runs on to its own end. `stdout_bytes` and `stderr_bytes` count what was kept, never what was written. `OPERATION_SECONDS`, 600, is the longest one git run starting a run may take, whether a `run` call or an event's delivery (`S27`) started it, resolving the ref or unpacking the tree, each timed on its own; a git still running at the deadline is killed and the run recorded `failed` with `reason` `timed_out`, as `S08` tells. `SCRIPT_SECONDS`, 600, is the longest a script may run, counted from when its process starts, not from the `run` call: a run that waited for a slot (`S08`) has the whole of it once it starts. A script still running then is killed with every process it started, and its run recorded `timed_out`, with no exit code and `finished` the moment it was killed; what it wrote to its output streams and to `out/` before then is kept. Every limit here bounds a run an event started (`S27`) exactly as it bounds one `run` started. Nothing bounds `out/`: a script writes there as much as the disk takes, and pruning answers the growth (`S19`). Every run runs in a control group of its own, inside the group the host delegates to scripts (`S02`), from the moment its process starts until it ends, when whatever is still in it is killed and the group removed (`S15`); the limits below are that group's and its parent's, so they hold every process the script starts, whatever process group or session it puts it in. `RUN_MEMORY_MAX_BYTES`, 268435456 (256 MiB), is the most memory one run may hold, every process of it together, with no swap to spill into. A run that needs more is killed whole by the kernel, every process of it at once, not by scripts, so by the status rule (`S15`) it is `exited` with `exit_code` 137, 128 plus `SIGKILL`'s 9, not `killed`, which is kept for what scripts itself kills. `RUNS_MEMORY_MAX_BYTES`, 536870912 (512 MiB), is the most every running run may hold together; when they need more, one of them is killed whole the same way, the kernel choosing which. `RUNS_CPU_PERCENT`, 100, is how much CPU every running run may use together, as a percentage of one CPU, so 100 is one CPU's worth and 200 two; runs that want more are slowed, never killed or told. `RUN_PIDS_MAX`, 64, is the most processes one run may have at once, `main.py`'s own among them; a script that tries to start one more is refused it by the kernel, sees its own attempt fail, and runs on. `RUN_MAX_ACTIVE`, 2, is how many runs may run at once, and `RUN_MAX_QUEUED`, 10, how many more may wait for one of them to end; how a run waits, starts and is refused for them is `S08`'s. Above them all, the manifest's `[resources]` sets `memory_max` to `896M` for scripts' service unit (`S01`), one ceiling over scripts, every git it runs, and every run together; `RUNS_MEMORY_MAX_BYTES` keeps the runs inside it and leaves the rest to scripts and its git, so a run that takes all it may take ends itself, not scripts and not another run's limit. A run killed for memory, or refused a process, earns no line on scripts' stderr, and no change to scripts or to any other run.
 
-The actor is a model working through an MCP client, starting a run with `run` as `S08` sends it and reading it with `result` as `S11` sends it; the request shape and the result envelope are `S05`'s. scripts runs on the host with the suite's services file (`S05`), telemetry takes every event, and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `nightly-report`, `scr_6d1f4a9b2e8c7035`, over `rep_9c2e4b7a1d3f8e05` at `main`. The owner has since pushed one commit to that repository's `main`, `<sha>`, whose files each story gives, a `main.py` at its root among them; a run of `nightly-report` resolves `main` to `<sha>`. Every setting is unset unless a story sets it; a story that sets one has it in `/opt/scripts/etc/env`, and scripts was restarted since, which ended the shared catalog's two running runs `killed` (`S18`). No other run is running while a story's run does. Each story's `run` call carries the request id `4a8e2c6f0b9d4173c5e1a7f3b9d2c086`, which its run keeps as its `request_id`, and its `result` call, made once the run has ended, carries `8d4b1f6e2a9c4e07b5d3a1f8c6e2094b`. `<id>` is the new run's id, `<started>` the time of the `run` call, and `<finished>` the moment the run ended. A run that ends on its own or at `SCRIPT_SECONDS` records its `run.finished` as it ends, under the run's own request id and user, with no request around it: `duration_us`, the whole microseconds from the run's start to its end; `exit_code`, only when `status` is `exited`; `reason`, only when it is `failed`; `run`; `status`; and `truncated` (`S16`). Nothing in this group earns a line on stderr: a run refused its tree, cut short or killed is recorded in the run and the trail, and what a script writes goes to its own run's files (`S02`).
+The actor is a model working through an MCP client, starting a run with `run` as `S08` sends it and reading it with `result` as `S11` sends it; the request shape and the result envelope are `S05`'s. scripts runs on the host with the suite's services file (`S05`), telemetry takes every event, and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `nightly-report`, `scr_6d1f4a9b2e8c7035`, over `rep_9c2e4b7a1d3f8e05` at `main`. The owner has since pushed one commit to that repository's `main`, `<sha>`, whose files each story gives, a `main.py` at its root among them; a run of `nightly-report` resolves `main` to `<sha>`. Every setting is unset unless a story sets it, but `RUN_MAX_ACTIVE`, which is 4, so a story's run starts at once and is never queued (`S08`); a story that sets one has it in `/opt/scripts/etc/env`, and scripts was restarted since, which ended the shared catalog's two running runs `killed` (`S18`). No other run is running while a story's run does. Each story's `run` call carries the request id `4a8e2c6f0b9d4173c5e1a7f3b9d2c086`, which its run keeps as its `request_id`, and its `result` call, made once the run has ended, carries `8d4b1f6e2a9c4e07b5d3a1f8c6e2094b`. `<id>` is the new run's id, `<started>` the time of the `run` call, and `<finished>` the moment the run ended. A run that ends on its own or at `SCRIPT_SECONDS` records its `run.finished` as it ends, under the run's own request id and user, with no request around it: `duration_us`, the whole microseconds from the run's start to its end; `exit_code`, only when `status` is `exited`; `reason`, only when it is `failed`; `run`; `status`; and `truncated` (`S16`). Nothing in this group earns a line on stderr: a run refused its tree, cut short or killed is recorded in the run and the trail, and what a script writes goes to its own run's files (`S02`).
 
 ## A model runs a script whose tree is exactly at the size limit
 
@@ -603,7 +603,7 @@ Postconditions:
 
 ## A script's child process is killed with it at the time limit
 
-A script that starts processes of its own does not escape the limit through them: they are in the run's process group, and at `SCRIPT_SECONDS` the group is killed whole, the script and every process it started. A child's output goes where the script's goes, and is kept the same way.
+A script that starts processes of its own does not escape the limit through them: they are in the run's process group and in its control group, and at `SCRIPT_SECONDS` the script and every process it started are killed. A child's output goes where the script's goes, and is kept the same way.
 
 ```python
 import subprocess
@@ -691,7 +691,7 @@ Postconditions:
 
 - Neither `main.py`'s process nor `worker.py`'s, `<pid>`, is still running: both were killed at the limit, and the run is `timed_out`, with no exit code.
 - `state/runs/scr_6d1f4a9b2e8c7035/<id>/stdout` is `<pid>\n`.
-- When scripts killed the run's process group, with no request around it, telemetry received the run's `run.finished`, under the `run` call's request id and user:
+- When scripts killed the run, with no request around it, telemetry received the run's `run.finished`, under the `run` call's request id and user:
 
   ```
   {"time":"<time>","service":"scripts","event":"run.finished","request_id":"4a8e2c6f0b9d4173c5e1a7f3b9d2c086","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"run":"<id>","status":"timed_out","truncated":false}}
@@ -790,14 +790,14 @@ Postconditions:
   ```
 - The `result` call recorded its `request.started`, its `tool.called` with `{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"result"}`, and its `request.finished`, under request id `8d4b1f6e2a9c4e07b5d3a1f8c6e2094b` and user `u_7f3a9c21`, and nothing else.
 
-## A script uses more memory than the host allows
+## A script uses more memory than one run may hold
 
-scripts sets no memory limit of its own. On a host, the one ceiling is the manifest's `memory_max`, 1 GiB, over scripts' whole service unit: scripts, every git it runs, and every script it runs, together. A script that keeps taking memory past what is left is killed by the kernel, not by scripts, so by the status rule (`S15`) its run is `exited` with `exit_code` 137, 128 plus `SIGKILL`'s 9, not `killed`, which is kept for what scripts itself kills. Since the ceiling is shared, a script that takes much of it leaves less for scripts and for other runs; there is no limit per run and no cap on how many run at once.
+A run may hold `RUN_MEMORY_MAX_BYTES` of memory, every process of it together, and no more, with no swap to spill into. A script that keeps taking memory past that is killed by the kernel, not by scripts, and the whole run with it, every process it started; by the status rule (`S15`) the run is `exited` with `exit_code` 137, 128 plus `SIGKILL`'s 9, not `killed`, which is kept for what scripts itself kills. The limit is the run's alone: scripts, which runs outside the run's group, and every other run go on as they were, and a run started next starts with the whole limit again. Here the limit is 128 MiB, and the script asks for 16 MiB at a time until it is killed.
 
 ```python
 chunks = []
 while True:
-    chunks.append(b"x" * (64 * 1024 * 1024))
+    chunks.append(b"x" * (16 * 1024 * 1024))
 ```
 
 That is `main.py` at `<sha>`.
@@ -866,16 +866,117 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's. scripts runs on a host as `ikigenba-scripts.service`, whose memory ceiling is the manifest's `memory_max`, `1G` (`S01`).
-- No other run is running, and the script's process is the one the kernel kills when the unit reaches its ceiling.
+- The preamble's, with `RUN_MEMORY_MAX_BYTES=134217728` set in `/opt/scripts/etc/env` and scripts restarted since; `RUNS_MEMORY_MAX_BYTES` is its default, `536870912`, and scripts runs on a host as `ikigenba-scripts.service`, whose control group is delegated to it (`S02`).
 
 Postconditions:
 
-- The run is `exited` with exit code 137, `finished` when the kernel killed the script; no process of the run is still running.
-- scripts is still serving, and answers every tool as before.
+- The run is `exited` with exit code 137, `finished` when the kernel killed it; no process of the run is still running, and scripts' control group holds no group for it.
+- scripts is still serving, the same process that served the `run` call, and answers every tool as before; a run of `nightly-report` started now starts, as any run does (`S08`).
+- scripts wrote nothing to stderr.
 - When the kernel killed the script, with no request around it, telemetry received the run's `run.finished`, under the `run` call's request id and user:
 
   ```
   {"time":"<time>","service":"scripts","event":"run.finished","request_id":"4a8e2c6f0b9d4173c5e1a7f3b9d2c086","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"exit_code":137,"run":"<id>","status":"exited","truncated":false}}
+  ```
+- The `result` call recorded its `request.started`, its `tool.called` with `{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"result"}`, and its `request.finished`, under request id `8d4b1f6e2a9c4e07b5d3a1f8c6e2094b` and user `u_7f3a9c21`, and nothing else.
+
+## A script starts more processes than one run may have
+
+A run may have `RUN_PIDS_MAX` processes at once, `main.py`'s own among them, and no more, so a script that starts processes in a loop, by mistake or by design, cannot fill the host with them. scripts does not kill a script for reaching the limit: the kernel refuses the one process too many, the script sees its own attempt to start it fail, and what it does next is its own. This script starts sleepers until one fails to start, says how many it started and why the next failed, stops them, and exits 3. With the limit at 4, `main.py` and three sleepers make four, and the fourth sleeper is refused. The limit is the run's alone: scripts and every other run go on as they were.
+
+```python
+import subprocess
+import sys
+
+sleepers = []
+try:
+    while True:
+        sleepers.append(subprocess.Popen(["python3.12", "-c", "import time; time.sleep(3600)"]))
+except OSError as e:
+    print(f"started {len(sleepers)}, then: {e.strerror}", flush=True)
+for sleeper in sleepers:
+    sleeper.kill()
+    sleeper.wait()
+sys.exit(3)
+```
+
+That is `main.py` at `<sha>`.
+
+Request (run):
+
+```
+POST /mcp HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 4a8e2c6f0b9d4173c5e1a7f3b9d2c086
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: run
+
+{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"run","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response (run):
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 20 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"<id>","status":"running","sha":"<sha>"}
+```
+
+and a `content` array of one text block whose text is that object encoded compactly.
+
+Request (result):
+
+```
+POST /mcp HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 8d4b1f6e2a9c4e07b5d3a1f8c6e2094b
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: result
+
+{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"result","arguments":{"run":"<id>"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response (result):
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 21 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"<id>","script":"scr_6d1f4a9b2e8c7035","sha":"<sha>","ref":"main","user":"u_7f3a9c21","request_id":"4a8e2c6f0b9d4173c5e1a7f3b9d2c086","trigger":"manual","status":"exited","exit_code":3,"started":"<started>","finished":"<finished>","stdout_bytes":50,"stderr_bytes":0,"truncated":false,"stdout":"started 3, then: Resource temporarily unavailable\n","stderr":"","files":[]}
+```
+
+and a `content` array of one text block whose text is that object encoded compactly.
+
+Preconditions:
+
+- The preamble's, with `RUN_PIDS_MAX=4` set in `/opt/scripts/etc/env` and scripts restarted since; scripts runs on a host as `ikigenba-scripts.service`, whose control group is delegated to it (`S02`).
+
+Postconditions:
+
+- The run is `exited` with exit code 3, the script's own, not `killed` and not `failed`; no process of the run is still running, and scripts' control group holds no group for it.
+- `state/runs/scr_6d1f4a9b2e8c7035/<id>/stdout` is `started 3, then: Resource temporarily unavailable\n`; `stderr` is empty.
+- scripts is still serving, the same process that served the `run` call, and answers every tool as before; a run of `nightly-report` started now may have four processes again.
+- scripts wrote nothing to stderr.
+- When the script exited, with no request around it, telemetry received the run's `run.finished`, under the `run` call's request id and user:
+
+  ```
+  {"time":"<time>","service":"scripts","event":"run.finished","request_id":"4a8e2c6f0b9d4173c5e1a7f3b9d2c086","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"exit_code":3,"run":"<id>","status":"exited","truncated":false}}
   ```
 - The `result` call recorded its `request.started`, its `tool.called` with `{"duration_us":<n>,"kind":"read","outcome":"ok","tool":"result"}`, and its `request.finished`, under request id `8d4b1f6e2a9c4e07b5d3a1f8c6e2094b` and user `u_7f3a9c21`, and nothing else.

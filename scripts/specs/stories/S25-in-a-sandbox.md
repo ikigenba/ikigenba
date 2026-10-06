@@ -1,6 +1,6 @@
 # Stories — in a sandbox
 
-scripts reached through a sandbox: the local runner a developer brings up from a worktree, which serves every app of the checkout in plain HTTP behind its own nginx on a loopback port, each at `http://<app>.<name>.localhost:<port>`. The stories share one sandbox: `wip`, on port `7400`, holding `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`, `sites`, and `telemetry`, all active, with scripts at `http://scripts.wip.localhost:7400`, repos at `http://repos.wip.localhost:7400`, auth at `http://auth.wip.localhost:7400`, and the gateway at `http://mcp.wip.localhost:7400`. Browsers, curl, and git resolve every name under `localhost` to the loopback address. The sandbox gives scripts the environment of a host, `DRAIN_SECONDS`, `IKIGENBA_SERVICES`, and the seven settings of its manifest's `[env]` at their manifest values, and variables a host never sets, none of which scripts reads; scripts runs the developer's own `git` and `python3.12`, found on the `PATH` the sandbox gives it, `python3.12` installed as `S22` tells, and every script it runs is handed that `PATH` and the sandbox's services file as `IKIGENBA_SERVICES` (`S15`). Each app's working directory is the sandbox's own for that app, `<data>/apps/<app>/`, where `<data>` is the sandbox's data directory (sandbox's `S3-apps.md`), so scripts' catalog is `<data>/apps/scripts/state/scripts.db` and its run folders are under `<data>/apps/scripts/state/runs/` (`S20`), while repos keeps its bare repositories under `<data>/apps/repos/state/repos/` (repos' `S18-in-a-sandbox.md`). `REPOS_DIR`, at its manifest default `../repos/state/repos`, is resolved against scripts' working directory, so it names `<data>/apps/scripts/../repos/state/repos`, which is repos' directory: in a sandbox as on a host, scripts reads exactly the repositories repos holds, with no setting changed. The catalog and the run folders are created on the first `up` and kept across `down` and `up` until `wipe`.
+scripts reached through a sandbox: the local runner a developer brings up from a worktree, which serves every app of the checkout in plain HTTP behind its own nginx on a loopback port, each at `http://<app>.<name>.localhost:<port>`. The stories share one sandbox: `wip`, on port `7400`, holding `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`, `sites`, and `telemetry`, all active, with scripts at `http://scripts.wip.localhost:7400`, repos at `http://repos.wip.localhost:7400`, auth at `http://auth.wip.localhost:7400`, and the gateway at `http://mcp.wip.localhost:7400`. Browsers, curl, and git resolve every name under `localhost` to the loopback address. The sandbox gives scripts the environment of a host, `DRAIN_SECONDS`, `IKIGENBA_SERVICES`, and the thirteen settings of its manifest's `[env]` at their manifest values, and variables a host never sets, none of which scripts reads; scripts runs the developer's own `git` and `python3.12`, found on the `PATH` the sandbox gives it, `python3.12` installed as `S22` tells, and every script it runs is handed that `PATH` and the sandbox's services file as `IKIGENBA_SERVICES` (`S15`). Each app's working directory is the sandbox's own for that app, `<data>/apps/<app>/`, where `<data>` is the sandbox's data directory (sandbox's `S3-apps.md`), so scripts' catalog is `<data>/apps/scripts/state/scripts.db` and its run folders are under `<data>/apps/scripts/state/runs/` (`S20`), while repos keeps its bare repositories under `<data>/apps/repos/state/repos/` (repos' `S18-in-a-sandbox.md`). `REPOS_DIR`, at its manifest default `../repos/state/repos`, is resolved against scripts' working directory, so it names `<data>/apps/scripts/../repos/state/repos`, which is repos' directory: in a sandbox as on a host, scripts reads exactly the repositories repos holds, with no setting changed. The catalog and the run folders are created on the first `up` and kept across `down` and `up` until `wipe`. scripts runs as the user service `sandbox-wip-scripts.service`, in `sandbox-wip-apps.slice` as its manifest's `slice` says, and since its manifest says `delegate = true` the sandbox hands the service its part of the control group tree, as a host does; the sandbox applies no memory ceiling to the service (sandbox's `S3-apps.md`). scripts runs each script in a control group of its own there, `runs/<run id>/` beneath the service's, bounded by the run settings at their manifest defaults (`S17`), exactly as on a space (`S24`).
 
 scripts' manifest declares no `guests`, so the sandbox's nginx puts every request to scripts to auth's `/check`: a request with no credential never reaches scripts, and is sent to sign in at a page or challenged at `/mcp` (sandbox's `S4-routing.md`). The sandbox's nginx includes scripts' `etc/nginx.conf` from the checkout in scripts' server, as a host's does (`S23`), so `/events` and `/declarations` at scripts' sandbox name answer 404 while the same paths on scripts' socket stay open to its siblings. The events app delivers to scripts every event the sandbox's apps emit to it, repos' `repo.pushed` among them, as on a host. Every request the sandbox's nginx passes carries `X-Forwarded-Proto: http` and an `X-Request-Id` nginx made. An agent sends the sandbox's token, the one `sandbox token` prints, as `Authorization: Bearer <token>`, and git sends it as the Basic password after the sandbox's nginx challenges it on a git path (sandbox's `S4-routing.md`). The sandbox's nginx, its routing through `/check`, and the token are the sandbox's own (a separate sub-project), named here only by their observable effect. Every request below is made to the sandbox; responses pass through the sandbox's nginx over HTTP/1.1. The developer's shell has the token in `IKIGENBA_TOKEN` and the git credential helper repos' guidance gives installed once (repos' `S18-in-a-sandbox.md`):
 
@@ -133,6 +133,7 @@ Preconditions:
 - The sandbox above is up, and `sandbox token` prints a token auth accepts, whose owner is the user `<user-id>`, who has no repository named `hello` in repos.
 - `python3.12` is on the `PATH` the sandbox gives scripts (`S22`).
 - No script in the sandbox is named `hello`.
+- No run is running or queued, so the run starts at once rather than waiting for a slot (`S08`).
 - The developer's shell is as the opening paragraph says, and the current directory holds nothing named `hello`.
 
 Postconditions:
@@ -244,6 +245,7 @@ Preconditions:
 - `python3.12` is on the `PATH` the sandbox gives scripts (`S22`).
 - `<user-id>` owns, in repos, the repository `watch`, `<rep>`, whose `main` is at `<sha>`, a commit whose tree holds `main.py` above and nothing else, pushed with git as `An agent runs a script in a sandbox from a repository it pushed` tells; and the repository `notes`, `<notes-rep>`, whose `main` is at `<old>`.
 - No script in the sandbox is named `on-push`, and the events app has no event waiting to be delivered to scripts.
+- No run is running or queued, so the push's run starts as soon as its event is delivered (`S08`).
 - The developer's shell is as the opening paragraph says, and the current directory holds nothing named `notes`.
 
 Postconditions:
@@ -319,3 +321,62 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing reached scripts' socket: scripts recorded no event for any of the requests, and no run started.
+
+## A developer reads a run's limits from its control group in a sandbox
+
+A sandbox runs each script in a control group of its own as a space does (`S24`), so a developer can read a run's limits on their own machine while it runs. The control group of scripts' service is the one the developer's systemd manager reports for `sandbox-wip-scripts.service`; beneath it, `runs/` holds what every run may take together and `runs/<run id>/` what one run may take, each at its manifest default (`S01`, `S17`). The script is `wait`, owned by the token's owner and running the repository `wait`, `<wait-rep>`, whose `main` holds one file, `main.py`:
+
+```
+import time
+
+time.sleep(60)
+```
+
+The agent starts it through the gateway, and the developer reads the files while it sleeps.
+
+Request:
+
+```
+$ curl -si -X POST -H "Authorization: Bearer $(sandbox token)" -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: mutate' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mutate","arguments":{"service":"scripts","tool":"run","args":{"name":"wait"}},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://mcp.wip.localhost:7400/mcp
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is scripts' answer to `run` (`S08`), relayed, with a `structuredContent` of `{"id":"<run>","status":"running","sha":"<sha>"}`. Then, in the developer's shell, within the minute the script sleeps:
+
+Command:
+
+```
+$ cg=/sys/fs/cgroup$(systemctl --user show --property ControlGroup --value sandbox-wip-scripts.service)
+$ cat $cg/runs/memory.max $cg/runs/<run>/memory.max $cg/runs/<run>/memory.swap.max $cg/runs/<run>/pids.max $cg/runs/<run>/memory.oom.group
+```
+
+Output:
+
+```
+536870912
+268435456
+0
+64
+1
+```
+
+Each command exits 0. The lines are on stdout; stderr is empty. `<run>` is the run's id from the answer above.
+
+Preconditions:
+
+- The sandbox above is up, and `sandbox token` prints a token auth accepts, whose owner is the user `<user-id>`.
+- `python3.12` is on the `PATH` the sandbox gives scripts (`S22`).
+- `<user-id>` owns the repository `wait`, `<wait-rep>`, its `main` at `<sha>`, a commit whose tree holds `main.py` above and nothing else, pushed as `An agent runs a script in a sandbox from a repository it pushed` tells, and the script `wait`, running `<wait-rep>` at `main`.
+- No run is running or queued.
+
+Postconditions:
+
+- While the run sleeps, `$cg/runs/<run>/cgroup.procs` lists the script's process, and scripts' own process is not beneath `$cg/runs/`.
+- Once the script has slept its minute, the run is `exited` with exit code 0, and `$cg/runs/` holds nothing named `<run>`: the run's control group was removed when it ended.
+- `sandbox logs scripts` shows no line from scripts: it wrote nothing to stderr.

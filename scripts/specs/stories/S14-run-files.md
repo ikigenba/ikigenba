@@ -212,7 +212,7 @@ Postconditions:
 
 ## A user asks for a stream a run never wrote
 
-`run_d4a7e2c9f1b8630a` failed to start because its ref named no commit, so no tree was unpacked and no process ran (`S08`): its folder holds its `input.json` alone, and it has no standard output or error to give. A stream that does not exist is not an empty one, so it is answered not found, and the run page offers no download for it (`S13`).
+`run_d4a7e2c9f1b8630a` failed to start because its ref named no commit, so no tree was unpacked and no process ran (`S08`): its folder holds its `input.json` alone, and it has no standard output or error to give. A stream that does not exist is not an empty one, so it is answered not found, and the run page offers no download for it (`S13`). A queued run, whose script has not started, has neither stream yet either, and its `stdout` and `stderr` are answered the same way until its process starts (`A user opens a queued run`, `S13`).
 
 Request:
 

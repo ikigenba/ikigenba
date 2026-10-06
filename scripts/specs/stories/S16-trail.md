@@ -6,7 +6,7 @@ What scripts' trail holds, and what it never holds. scripts records what it does
 {"time":"<time>","service":"scripts","event":"<event>","request_id":"<request-id>","user":"<user>","attrs":{<attributes>}}
 ```
 
-`<time>` is when scripts recorded the event, in UTC to the microsecond, as `2026-10-05T09:14:02.123456Z`; `service` is always `scripts`; `<request-id>` and `<user>` are the id of the request that caused the event and the caller's `X-User-Id`. Both are empty for a start or a stop, which no request caused. A run's events are the exception: a run is caused by the `run` call that asked for it, and it keeps that call's request id and user for as long as it lives, so its `run.started` and its `run.finished` both carry them, whichever request or moment ends it — a `cancel` made under another request id, a `delete` of its script, the script ending on its own, the time limit, the drain deadline, or the next start finding it still recorded `running`. A run's events are never empty in either. A run an event started (`S27`) was asked for by no `run` call: it keeps as its request id that of the request by which the events app delivered the event to scripts, not the event's own `request_id`, and its script's owner as its user, whoever caused the event, and carries them the same way. `attrs` holds the event's attributes, flat, their keys in alphabetical order. Attributes name what happened and the ids of what it touched, never data: no attribute carries a script's name, a repository's name, a ref, a run's input, a script's output, a file's name or its content, a caller's email, a request's query, a tool's arguments, or the text of a refusal. A script is named by its id under the key `script`, and a run by its id under `run`, so the trail of a script survives anything done to it. The one place a script's name, or the name of a file a run wrote, reaches the trail is a `path`, `/nightly-report/` or `/nightly-report/runs/run_3f9a1c2e8b7d4a60/out/report.csv` say, the URL path as it arrived, without its query, in `request.started` as on every app.
+`<time>` is when scripts recorded the event, in UTC to the microsecond, as `2026-10-05T09:14:02.123456Z`; `service` is always `scripts`; `<request-id>` and `<user>` are the id of the request that caused the event and the caller's `X-User-Id`. Both are empty for a start or a stop, which no request caused. A run's events are the exception: a run is caused by the `run` call that asked for it, and it keeps that call's request id and user for as long as it lives, so its `run.started` and its `run.finished` both carry them, whenever its process starts — at once, or later, when it leaves the queue (`S08`) — and whichever request or moment ends it — a `cancel` made under another request id, a `delete` of its script, the script ending on its own, the time limit, the drain deadline, a stop that abandons it in the queue, or the next start finding it still recorded `running` or `queued`. A run's events are never empty in either. A run an event started (`S27`) was asked for by no `run` call: it keeps as its request id that of the request by which the events app delivered the event to scripts, not the event's own `request_id`, and its script's owner as its user, whoever caused the event, and carries them the same way. `attrs` holds the event's attributes, flat, their keys in alphabetical order. Attributes name what happened and the ids of what it touched, never data: no attribute carries a script's name, a repository's name, a ref, a run's input, a script's output, a file's name or its content, a caller's email, a request's query, a tool's arguments, or the text of a refusal. A script is named by its id under the key `script`, and a run by its id under `run`, so the trail of a script survives anything done to it. The one place a script's name, or the name of a file a run wrote, reaches the trail is a `path`, `/nightly-report/` or `/nightly-report/runs/run_3f9a1c2e8b7d4a60/out/report.csv` say, the URL path as it arrived, without its query, in `request.started` as on every app.
 
 scripts records these events and no others:
 
@@ -14,10 +14,10 @@ scripts records these events and no others:
 - `request.started`, as each request arrives, with `method` and `path`; and `request.finished`, once its answer is complete, with `status`, `duration_us`, `request_bytes`, and `response_bytes`, shown as `<n>` and `<bytes>` unless a story fixes them (`S02`);
 - `tool.called`, for each call of one of its eleven tools answered with a result, with `tool`, `kind`, `outcome`, and `duration_us` (`S05`);
 - `script.created`, `script.updated`, and `script.deleted`, one for each `create`, `update`, and `delete` that changes the catalog, each with `script` alone (`S06`, `S09`, `S10`); `subscribe` and `unsubscribe` change the catalog too but record no event of their own, only their `tool.called` (`S26`);
-- `run.started`, when a run's process starts, with `run`; `script`, its script's id; `sha`, the full commit it resolved; and `trigger`, `manual` for a run the `run` tool started (`S08`) and `event` for one an event started (`S27`);
-- `run.finished`, when a run reaches a final status, with `duration_us`, the whole microseconds from its start to its end, shown as `<n>` unless a story fixes it; `exit_code`, a number, only when its `status` is `exited`; `reason`, only when its `status` is `failed`: `repository_missing`, `commit_missing`, `too_large`, `git_failed`, `timed_out`, or `start_failed` (`S08`); `run`; `status`, `exited`, `killed`, `timed_out`, or `failed`; and `truncated`, a JSON boolean, `true` when either of its streams was cut at `OUTPUT_MAX_BYTES` (`S17`). It has no `script`: the run's id leads to it through the run's `run.started` or `result`.
+- `run.started`, when a run's process starts, at once or, for a run that waited in the queue, when it leaves the queue (`S08`), with `run`; `script`, its script's id; `sha`, the full commit it resolved; and `trigger`, `manual` for a run the `run` tool started (`S08`) and `event` for one an event started (`S27`);
+- `run.finished`, when a run reaches a final status, with `duration_us`, the whole microseconds from its `started`, the moment it was asked for, to its end, any time it waited in the queue included, shown as `<n>` unless a story fixes it; `exit_code`, a number, only when its `status` is `exited`; `reason`, only when its `status` is `failed`: `repository_missing`, `commit_missing`, `too_large`, `git_failed`, `timed_out`, or `start_failed` (`S08`), or `queue_abandoned` (`S18`); `run`; `status`, `exited`, `killed`, `timed_out`, or `failed`; and `truncated`, a JSON boolean, `true` when either of its streams was cut at `OUTPUT_MAX_BYTES` (`S17`). It has no `script`: the run's id leads to it through `result`, or through the run's `run.started` when it has one; a run that never started, failed or queued and then ended, has none.
 
-A request's events carry its request id and its caller and come in this order: `request.started`, then its `script.*` and `run.*` events, then its `tool.called` if it called a tool, then `request.finished`. Every run records exactly one `run.finished`. A run that starts records `run.started` in its `run` call's request, before the call's `tool.called`, and its `run.finished` when it ends, always after its `run.started`; where that falls among the `run` call's own later events is not fixed, since a script can end before its call is answered. A run that could not start records only its `run.finished`, with `status` `failed`, in its `run` call's request, before the call's `tool.called` (`S08`). A run an event started records its `run.started`, or, when it could not start, its `run.finished`, as the delivery starts it, and no `tool.called`, since no tool was called (`S27`). A `cancel` records the run's `run.finished`, with `status` `killed`, in its own request, before its `tool.called`, under the run's request id and user, not the cancel's (`S11`). A `delete` of a script with a run still `running` records that run's `run.finished`, with `status` `killed`, the same way, in its own request before its `script.deleted` (`S10`). A run ended at the drain deadline records its `run.finished` as scripts stops (`S18`), and a run the next start finds still recorded `running` records its `run.finished`, `killed`, before that start's `service.started` (`S18`). A tool call that is refused records no `script.*` or `run.*` event. A request that touches no script — a page, a download of a run's file, `/_appkit/`, a tool that only reads — records only its `request.started`, its `tool.called` if it called a tool, and its `request.finished`. scripts never records a run's removal: a run pruned (`S19`) or deleted with its script (`S10`) leaves no event for being removed, beyond the `run.finished` a run still `running` records when its script's `delete` kills it. Nor does it record what a running script does: a call a script makes to a sibling is recorded by that sibling, under the run's request id and user (`S15`), and scripts records nothing for it. Unless a story says otherwise, scripts runs on the host with the suite's services file (`S05`), whose `scripts` entry has the `url` `https://scripts.sbx.ikigenba.dev`; telemetry takes every event; the time is `2026-10-05T09:32:00Z`; and the catalog holds `S06`'s shared catalog: the caller `u_7f3a9c21` (`mg@example.com`) owns `nightly-report`, `scr_6d1f4a9b2e8c7035`, over `rep_9c2e4b7a1d3f8e05` at `main`, which is `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`, with the tag `v1` at `b07d2e3f5a8c1964e0d7b3a2f9c6e5d48a1b0c37`, and whose newest run `run_8a2c6e1f9b3d5074` has been `running` since `2026-10-05T09:31:40Z`; `sync-crm`, `scr_a2e7c4f9b1d03856`, with its run `run_6b2d8f4a0c9e1735` `running`; `rotate-keys`, `scr_5c9b1e3a7f2d4068`, over `rep_7b3e9a0c5d1f2846` at `release`, a branch that repository does not have, with one run, `run_1e9c3a7f5b0d2864`, `failed` with reason `commit_missing`; and `backfill`, never run; `u_2b8e1d04` (`ann@example.com`) owns `digest`, `scr_3b7f9d1c5e0a2846`. Requests come through nginx or the gateway as `S05` shows them, with `X-Request-Id` `7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9` unless a story fixes another.
+A request's events carry its request id and its caller and come in this order: `request.started`, then its `script.*` and `run.*` events, then its `tool.called` if it called a tool, then `request.finished`. Every run records exactly one `run.finished`. A run that starts at once records `run.started` in its `run` call's request, before the call's `tool.called`, and its `run.finished` when it ends, always after its `run.started`; where that falls among the `run` call's own later events is not fixed, since a script can end before its call is answered. A run that is queued records no `run.*` event in its `run` call's request: its `run.started` is recorded when its process starts, after the call's `tool.called`, with no request around it, under the run's own request id and user, and its `run.finished` when it ends, always after its `run.started`. A run that could not start records only its `run.finished`, with `status` `failed`, in its `run` call's request, before the call's `tool.called` (`S08`). A run an event started records its `run.started`, or, when it could not start, its `run.finished`, as the delivery starts it, or its `run.started` later, when its process starts, when the delivery queued it, and no `tool.called`, since no tool was called (`S27`). A `cancel` records the run's `run.finished`, with `status` `killed`, in its own request, before its `tool.called`, under the run's request id and user, not the cancel's (`S11`), whether the run was running or queued; a queued run so ended records no `run.started`, ever. A `delete` of a script with a run still `running` or `queued` records that run's `run.finished`, with `status` `killed`, the same way, in its own request before its `script.deleted` (`S10`). A run ended at the drain deadline records its `run.finished` as scripts stops, and a run still queued when scripts is told to stop records its `run.finished`, `failed` with reason `queue_abandoned`, at the signal, and no `run.started` (`S18`). A run the next start finds still recorded `running` records its `run.finished`, `killed`, and one it finds still recorded `queued` its `run.finished`, `failed` with reason `queue_abandoned`, before that start's `service.started` (`S18`). A tool call that is refused records no `script.*` or `run.*` event. A request that touches no script — a page, a download of a run's file, `/_appkit/`, a tool that only reads — records only its `request.started`, its `tool.called` if it called a tool, and its `request.finished`. scripts never records a run's removal: a run pruned (`S19`) or deleted with its script (`S10`) leaves no event for being removed, beyond the `run.finished` a run still `running` or `queued` records when its script's `delete` ends it. Nor does it record what a running script does: a call a script makes to a sibling is recorded by that sibling, under the run's request id and user (`S15`), and scripts records nothing for it. Unless a story says otherwise, scripts runs on the host with the suite's services file (`S05`), whose `scripts` entry has the `url` `https://scripts.sbx.ikigenba.dev`; telemetry takes every event; the time is `2026-10-05T09:32:00Z`; scripts runs with `RUN_MAX_ACTIVE` 4, so a run asked for starts at once beside the two running; and the catalog holds `S06`'s shared catalog: the caller `u_7f3a9c21` (`mg@example.com`) owns `nightly-report`, `scr_6d1f4a9b2e8c7035`, over `rep_9c2e4b7a1d3f8e05` at `main`, which is `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`, with the tag `v1` at `b07d2e3f5a8c1964e0d7b3a2f9c6e5d48a1b0c37`, and whose newest run `run_8a2c6e1f9b3d5074` has been `running` since `2026-10-05T09:31:40Z`; `sync-crm`, `scr_a2e7c4f9b1d03856`, with its run `run_6b2d8f4a0c9e1735` `running`; `rotate-keys`, `scr_5c9b1e3a7f2d4068`, over `rep_7b3e9a0c5d1f2846` at `release`, a branch that repository does not have, with one run, `run_1e9c3a7f5b0d2864`, `failed` with reason `commit_missing`; and `backfill`, never run; `u_2b8e1d04` (`ann@example.com`) owns `digest`, `scr_3b7f9d1c5e0a2846`. Requests come through nginx or the gateway as `S05` shows them, with `X-Request-Id` `7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9` unless a story fixes another.
 
 ## An operator follows a script's creation
 
@@ -394,6 +394,160 @@ Postconditions:
   `<n>` in `run.finished` is the time from `2026-10-05T09:31:40Z` to `<finished>`. The `run.finished` has no `exit_code`: scripts killed the process.
 - No other `run.finished` is ever recorded for `run_8a2c6e1f9b3d5074`.
 
+## An operator follows a run that waited in the queue
+
+A run asked for while `RUN_MAX_ACTIVE` runs are running waits in the queue (`S08`), and its `run` call is answered `queued` at once. Nothing has started, so the call's request holds no `run.*` event: only its `request.started`, its `tool.called`, with `outcome` `ok`, since the call made a run, and its `request.finished`. The run's `run.started` comes later, when a running run ends and its process starts, with no request around it, but under the `run` call's request id and user all the same, so following `7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9` still finds the whole run. Its `run.finished` follows as for any run; its `duration_us` runs from the run's `started`, the moment it was asked for, so it includes the time it waited.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: run
+
+{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"run","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 13 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"<id>","status":"queued","sha":"e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d"}
+```
+
+and a `content` array of one text block whose text is that object encoded compactly.
+
+Preconditions:
+
+- The preamble's, but scripts runs with `RUN_MAX_ACTIVE` 2, so with `run_8a2c6e1f9b3d5074` and `run_6b2d8f4a0c9e1735` running no other run can start, and no run is queued.
+- `run_6b2d8f4a0c9e1735`'s script exits 0 on its own after the call is answered, and `run_8a2c6e1f9b3d5074`'s is still running then. The script at `nightly-report`'s `main` exits 0 within `SCRIPT_SECONDS`, having written less than `OUTPUT_MAX_BYTES` to each of its streams.
+
+Postconditions:
+
+- telemetry has received the request's three events, in this order, and no `run.*` event in it:
+
+  ```
+  {"time":"<time>","service":"scripts","event":"request.started","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  {"time":"<time>","service":"scripts","event":"tool.called","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"additive","outcome":"ok","tool":"run"}}
+  {"time":"<time>","service":"scripts","event":"request.finished","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
+  ```
+
+- When `run_6b2d8f4a0c9e1735` ended, telemetry received its `run.finished`, under its own request id, and then, when `<id>`'s process started, `<id>`'s `run.started`, after the call's `tool.called`, under the `run` call's request id and user:
+
+  ```
+  {"time":"<time>","service":"scripts","event":"run.started","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"run":"<id>","script":"scr_6d1f4a9b2e8c7035","sha":"e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d","trigger":"manual"}}
+  ```
+
+- When the script has ended, telemetry has received, after the run's `run.started`, its `run.finished`, under the same request id and user:
+
+  ```
+  {"time":"<time>","service":"scripts","event":"run.finished","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"exit_code":0,"run":"<id>","status":"exited","truncated":false}}
+  ```
+
+  `<n>` is the time from the run's `started`, the moment of the `run` call, to its `finished`, the time it waited in the queue included.
+
+## An operator follows a queued run that was cancelled
+
+A queued run that is cancelled (`S11`) never started, so its trail is one event: its `run.finished`, with `status` `killed` and no `exit_code`, recorded inside the cancel's request, before its `tool.called`, under the run's own request id and user, as for a running run cancelled. It has no `run.started`, then or ever.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: cancel
+
+{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"cancel","arguments":{"run":"run_c4a8e2f6b0d93157"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 14 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"id":"run_c4a8e2f6b0d93157","sha":"e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d","ref":"main","trigger":"manual","status":"killed","started":"2026-10-05T09:31:50Z","finished":"<finished>","truncated":false}
+```
+
+and a `content` array of one text block whose text is that object encoded compactly. `<finished>` is the time of the cancel.
+
+Preconditions:
+
+- The preamble's, but scripts runs with `RUN_MAX_ACTIVE` 2, so `run_8a2c6e1f9b3d5074` and `run_6b2d8f4a0c9e1735` take both places.
+- `run_c4a8e2f6b0d93157`, of `nightly-report`, has been `queued` since `2026-10-05T09:31:50Z`, from `main` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`. It was asked for by a `run` call of `u_7f3a9c21`'s whose request id was `5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5`, which was answered `queued` and recorded no `run.*` event.
+
+Postconditions:
+
+- `run_c4a8e2f6b0d93157` is `killed` and no longer queued; its script never ran (`S11`).
+- telemetry has received the request's four events, in this order:
+
+  ```
+  {"time":"<time>","service":"scripts","event":"request.started","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"method":"POST","path":"/mcp"}}
+  {"time":"<time>","service":"scripts","event":"run.finished","request_id":"5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"run":"run_c4a8e2f6b0d93157","status":"killed","truncated":false}}
+  {"time":"<time>","service":"scripts","event":"tool.called","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"destructive","outcome":"ok","tool":"cancel"}}
+  {"time":"<time>","service":"scripts","event":"request.finished","request_id":"7d4b1f8a2c6e3095b8a1d4f7c0e3b6a9","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"request_bytes":<bytes>,"response_bytes":<bytes>,"status":200}}
+  ```
+
+  `<n>` in `run.finished` is the time from `2026-10-05T09:31:50Z` to `<finished>`.
+- No `run.started` and no other `run.finished` is ever recorded for `run_c4a8e2f6b0d93157`.
+
+## An operator follows a queued run abandoned when scripts stopped
+
+A run still queued when scripts is told to stop never starts (`S18`). Its whole trail under its own request id is its `run` call's request, which holds no `run.*` event, and one `run.finished`, recorded at the signal with no request around it, `failed` with reason `queue_abandoned`, which says the run was asked for and accepted but never ran because scripts stopped. There is no `run.started`.
+
+Command:
+
+```
+$ kill -TERM <pid>
+```
+
+Output:
+
+```
+```
+
+scripts exits 0, once both running runs have ended and every event is sent, within 4 seconds of the signal. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- scripts is serving as process `<pid>` with `RUN_MAX_ACTIVE` 2 over the preamble's catalog; `run_8a2c6e1f9b3d5074` and `run_6b2d8f4a0c9e1735` are running, and each script exits 0 on its own within 4 seconds of the signal.
+- `run_c4a8e2f6b0d93157`, of `nightly-report`, has been `queued` since `2026-10-05T09:31:50Z`, asked for by a `run` call of `u_7f3a9c21`'s whose request id was `5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5`.
+- No request is running at the signal, and none arrives after it.
+
+Postconditions:
+
+- `run_c4a8e2f6b0d93157` is `failed` with reason `queue_abandoned`, and its script never ran (`S18`).
+- telemetry has received, at the signal, under the run's own request id and user:
+
+  ```
+  {"time":"<time>","service":"scripts","event":"run.finished","request_id":"5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"reason":"queue_abandoned","run":"run_c4a8e2f6b0d93157","status":"failed","truncated":false}}
+  ```
+
+  `<n>` is the time from `2026-10-05T09:31:50Z` to the signal. Then the two running runs' `run.finished`, as each ended, and last scripts' `service.stopping` (`S02`).
+- No `run.started` is ever recorded for `run_c4a8e2f6b0d93157`. A run the next start finds still recorded `queued`, after a scripts that died, records the same `run.finished`, before that start's `service.started` (`S18`).
+
 ## An operator follows a run that timed out with its output truncated
 
 A run that outlives `SCRIPT_SECONDS` is killed by scripts on its own (`S17`), at a moment no request is part of, and its `run.finished` carries the `run` call's request id and user, never empty ones as a start or a stop has. Its `truncated` says the output was cut; how much was kept is read from `result` (`S11`), not the trail.
@@ -456,7 +610,7 @@ Postconditions:
 
 ## An operator finds no event for a refused run
 
-A `run` that is refused made no run, so the trail says only that the call was made and refused: its `tool.called` with `outcome` `error`, and no `run.*` event. Here the model names a script it does not own; the name it sent and the text of the refusal are not recorded. A `run` refused while scripts is stopping (`S18`) records the same.
+A `run` that is refused made no run, so the trail says only that the call was made and refused: its `tool.called` with `outcome` `error`, and no `run.*` event. Here the model names a script it does not own; the name it sent and the text of the refusal are not recorded. A `run` refused while scripts is stopping (`S18`), while runs are unavailable (`S02`, `S08`), or because the run queue is full (`S08`) records the same.
 
 Request:
 

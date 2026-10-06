@@ -1,8 +1,8 @@
 # Stories — delete
 
-`delete`, the tool that removes one of the caller's scripts and every run it has, for good. Its one argument is `name`, required, a string, the name of one of the caller's scripts. A run of the script still `running` is killed first, as `cancel` kills one (`S11`): its process group is killed whole and the run ends `killed`. Then the script's catalog record goes, with every one of its runs' records, whatever their status, every one of its subscriptions (`S26`), and everything scripts holds for it under `state/runs/<script id>/`, each run's folder with its `tree/`, `out/`, `input.json`, `stdout`, and `stderr`; nothing of the script is orphaned, and an event of a name it was subscribed to, delivered after the call, starts nothing for it (`S27`). It answers `{"deleted":true,"id":"<script id>"}`. The script's repository is not scripts' and is untouched: its commits, and every other script that runs from it, are as they were, and a new script can be created from it at once; delete reads no repository and runs no git, so a script whose repository is gone is deleted the same. There is no undo; once the call has answered, the script's page and its runs' pages answer not-found (`S12`, `S13`, `S14`), `result` and `cancel` with any of its runs' ids are refused with `no run '<id>'` (`S11`), its name is free for any user's `create` (`S06`), and its id and its runs' ids name nothing. `delete` is of kind `destructive`.
+`delete`, the tool that removes one of the caller's scripts and every run it has, for good. Its one argument is `name`, required, a string, the name of one of the caller's scripts. A run of the script still `running` is killed first, as `cancel` kills one (`S11`): its process group is killed whole and the run ends `killed`. A run of it still `queued` (`S08`) is taken out of the queue first, as `cancel` takes one (`S11`), so it never starts, and it ends `killed` too. Then the script's catalog record goes, with every one of its runs' records, whatever their status, every one of its subscriptions (`S26`), and everything scripts holds for it under `state/runs/<script id>/`, each run's folder with its `tree/`, `out/`, `input.json`, `stdout`, and `stderr`; nothing of the script is orphaned, and an event of a name it was subscribed to, delivered after the call, starts nothing for it (`S27`). It answers `{"deleted":true,"id":"<script id>"}`. The script's repository is not scripts' and is untouched: its commits, and every other script that runs from it, are as they were, and a new script can be created from it at once; delete reads no repository and runs no git, so a script whose repository is gone is deleted the same. There is no undo; once the call has answered, the script's page and its runs' pages answer not-found (`S12`, `S13`, `S14`), `result` and `cancel` with any of its runs' ids are refused with `no run '<id>'` (`S11`), its name is free for any user's `create` (`S06`), and its id and its runs' ids name nothing. `delete` is of kind `destructive`.
 
-The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, in which the caller `u_7f3a9c21` owns `nightly-report` (`scr_6d1f4a9b2e8c7035`, repository `rep_9c2e4b7a1d3f8e05`, seven runs, `run_8a2c6e1f9b3d5074` of them still `running` since `2026-10-05T09:31:40Z`), `sync-crm` (`scr_a2e7c4f9b1d03856`, its run `run_6b2d8f4a0c9e1735` still `running`), `rotate-keys` (`scr_5c9b1e3a7f2d4068`, repository `rep_7b3e9a0c5d1f2846`, its one run `run_1e9c3a7f5b0d2864` `failed`), and `backfill` (`scr_e8f2a6c0d4b19357`, repository `rep_0f6a2d9e8c4b7153`, gone from repos, never run), and `u_2b8e1d04` owns `digest` (`scr_3b7f9d1c5e0a2846`, its one run `run_0c4e8a2f6b1d9375`); no script is subscribed to any event unless a story says otherwise; every run's folder is at `state/runs/<script id>/<run id>/` but `run_72b0c8f5e3d1a946`'s, already gone. A delete that removes a script records, for each of its runs it killed, that run's `run.finished`, with `run`, `status` `killed`, `duration_us`, and `truncated`, under the run's own user and request id (`S02`); then `script.deleted`, with `script`, the id; both before its `tool.called`. The name is in no event. A refusal removes and kills nothing and records no `script.*` or `run.*` event. scripts writes nothing to stderr for any answer in this group.
+The actor, the request shape, the result envelope, and the fixture are those of `S06`: `S06`'s shared catalog, in which the caller `u_7f3a9c21` owns `nightly-report` (`scr_6d1f4a9b2e8c7035`, repository `rep_9c2e4b7a1d3f8e05`, seven runs, `run_8a2c6e1f9b3d5074` of them still `running` since `2026-10-05T09:31:40Z`), `sync-crm` (`scr_a2e7c4f9b1d03856`, its run `run_6b2d8f4a0c9e1735` still `running`), `rotate-keys` (`scr_5c9b1e3a7f2d4068`, repository `rep_7b3e9a0c5d1f2846`, its one run `run_1e9c3a7f5b0d2864` `failed`), and `backfill` (`scr_e8f2a6c0d4b19357`, repository `rep_0f6a2d9e8c4b7153`, gone from repos, never run), and `u_2b8e1d04` owns `digest` (`scr_3b7f9d1c5e0a2846`, its one run `run_0c4e8a2f6b1d9375`); no script is subscribed to any event unless a story says otherwise; every run's folder is at `state/runs/<script id>/<run id>/` but `run_72b0c8f5e3d1a946`'s, already gone; no run is queued unless a story says otherwise. A delete that removes a script records, for each of its runs it killed, running or queued, that run's `run.finished`, with `run`, `status` `killed`, `duration_us`, and `truncated`, under the run's own user and request id (`S02`); then `script.deleted`, with `script`, the id; both before its `tool.called`. The name is in no event. A refusal removes and kills nothing and records no `script.*` or `run.*` event. scripts writes nothing to stderr for any answer in this group.
 
 ## A model deletes a script
 
@@ -113,6 +113,60 @@ Postconditions:
   ```
 
   No `run.finished` is recorded for the six runs that had already ended.
+
+## A model deletes a script while one of its runs is queued
+
+A run still waiting for a slot goes with its script as a running one does. It is taken out of the queue, so it never starts, neither in the slot the delete frees by killing the script's running run nor later; its end is recorded in the trail as `killed`, as `cancel` records it, before the script goes; and its record and its folder go with the script's other runs. It never ran, so the trail has its `run.finished` and no `run.started`.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: delete
+
+{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"delete","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 9 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"deleted":true,"id":"scr_6d1f4a9b2e8c7035"}
+```
+
+and a `content` array of one text block whose text is exactly that line.
+
+Preconditions:
+
+- The preamble's, except that scripts runs with `RUN_MAX_ACTIVE` `2`: `run_8a2c6e1f9b3d5074` and `run_6b2d8f4a0c9e1735` are running and take both slots, and `nightly-report` has an eighth run, `run_c4a8e2f6b0d93157`, asked for by `u_7f3a9c21` in the request `5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5` at `2026-10-05T09:31:50Z`, answered `queued` (`S08`), and the only run queued. Its folder `state/runs/scr_6d1f4a9b2e8c7035/run_c4a8e2f6b0d93157/` holds its `input.json`, `tree/` and `out/`, empty.
+
+Postconditions:
+
+- `run_8a2c6e1f9b3d5074`'s process group was killed before the call answered: no process of it is left. `run_c4a8e2f6b0d93157` never started: no process of it ran, before the call or since.
+- The catalog no longer holds `scr_6d1f4a9b2e8c7035` or any of its eight runs; nothing is queued. `result` and `cancel` with `run_c4a8e2f6b0d93157` are refused with `no run 'run_c4a8e2f6b0d93157'`.
+- `state/runs/scr_6d1f4a9b2e8c7035/` no longer exists, the queued run's folder with it.
+- `sync-crm`'s run `run_6b2d8f4a0c9e1735` is still `running`, and `state/runs/scr_a2e7c4f9b1d03856/` is untouched. No run was started.
+- Between the request's `request.started` and its `request.finished`, whose `status` is 200, telemetry has received four events. The first two are the two killed runs' `run.finished`, each under the user and request id the run carries, those of the `run` call that made it, in an order that is not fixed; `duration_us` is each run's from its `started` to its being recorded `killed`, so the queued run's counts the time it waited. Then `script.deleted` and `tool.called`, in that order, where `<request-id>` is the request's id (`S02`):
+
+  ```
+  {"time":"<time>","service":"scripts","event":"run.finished","request_id":"9b1e4d7a2c5f8036e1a4d7b0c3f6e9a2","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"run":"run_8a2c6e1f9b3d5074","status":"killed","truncated":false}}
+  {"time":"<time>","service":"scripts","event":"run.finished","request_id":"5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"run":"run_c4a8e2f6b0d93157","status":"killed","truncated":false}}
+  {"time":"<time>","service":"scripts","event":"script.deleted","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"script":"scr_6d1f4a9b2e8c7035"}}
+  {"time":"<time>","service":"scripts","event":"tool.called","request_id":"<request-id>","user":"u_7f3a9c21","attrs":{"duration_us":<n>,"kind":"destructive","outcome":"ok","tool":"delete"}}
+  ```
+
+  No `run.started` is recorded for `run_c4a8e2f6b0d93157`, and no `run.finished` for the six runs that had already ended.
 
 ## A model deletes a script that has never run
 

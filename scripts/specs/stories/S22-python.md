@@ -25,7 +25,7 @@ Preconditions:
 - `bin/scripts` exists and is run by its path.
 - No directory on the `PATH` scripts is started with holds an executable named `python3.12`; one of them holds an executable named `git`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
-- `DRAIN_SECONDS` and each of the seven settings are unset, or valid.
+- `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
 
 Postconditions:
 

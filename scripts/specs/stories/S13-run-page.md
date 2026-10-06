@@ -2,7 +2,7 @@
 
 One run, seen in a browser: what a running scripts (`S02`) answers at `/<name>/runs/<run id>/`, the page of one run of one of the caller's scripts, and at `/<name>/runs/<run id>` without its trailing `/`. The page is server-rendered HTML drawn from scripts' template `run`, in the frame every page of scripts is drawn in (`S03`): the banner, the stylesheet `/_appkit/theme.css`, the button feedback script `/_appkit/feedback.js`, the phone-width viewport, and the footer `scripts v<semver>`; the whole of its content arrives in the response body, and it carries no script of its own. Its title is `<run id> · <name> · scripts`. Every route of scripts is behind the identity rule `S03` tells, so a request with no `X-User-Id` never reaches anything told here, and on a host a visitor with no credential is sent to sign in before any request reaches scripts (`S03`). A run's page is its script owner's alone: scripts looks `<name>` up among the caller's own scripts and `<run id>` among that script's runs, and anything else at a run's address, a run that does not exist, a run of another of the caller's scripts, a run of another user's script, is answered with scripts' not-found page, status 404, exactly as a script that does not exist is (`S12`), so the page never tells a caller that someone else's run exists. The script's own page, which lists its runs and links each to its page, is `S12`'s; the files the run page links to download, `input.json`, `stdout`, `stderr` and each file under `out/`, are served as `S14` tells.
 
-The page has a breadcrumb, `nav.crumbs` labelled `Breadcrumb`, an ordered list of three levels: `scripts`, a link to `/`; the script's name, a link to `/<name>/`; and the run's id, the current page, with `aria-current="page"` and no link. Beneath it is the top-level heading (`h1`), the run's id, and then the headline, `p#headline`, holding the run's status and, muted, `started <started>` followed by ` · <duration>` when the run has ended, or, for a run that failed to start, the start time alone. A status reads as a `span.status` whose `data-kind` is its kind: `running`, kind `info`; `exited 0`, kind `ok`; `exited <n>` for any other exit code, `timed out` and `killed`, kind `warn`; and `failed`, kind `err`. The run card, `section#run-card`, is headed `Run` and reads `Started by the run tool.` for a run the `run` tool started (`S08`), and `Started by the event <event id>.`, where `<event id>` is the id of the event that started it, for a run an event started (`S27`); its list `dl#run` holds, in this order, `Status`, the status and, only when the run's output was truncated (`S17`), the badge `span.badge[data-kind=warn]` reading `output truncated`, once for the run whichever stream was cut; `Script`, the script's name as a link to `/<name>/`; `Commit`, the full 40-character commit the run resolved, in a code element, and nothing when its ref never resolved; `Ref`, the ref the run was resolved from, in a code element; `Started`; `Finished` and `Duration`, only once the run has ended, a run that failed to start showing `Finished` and no `Duration`; `Trigger`, the run's trigger, `manual` or `event`; `User`, the id of the user the run acts as; `Request`, the 32-character request id the run was caused by, in a code element; and `Output`, `stdout <size> · stderr <size>`, the bytes kept of each stream. A time reads `2026-10-05 09:14:02 UTC`, in UTC to the second, in a `time` element whose `datetime` is the same moment as RFC 3339, `2026-10-05T09:14:02Z`. A duration reads `12s` under a minute and `3m 41s` from a minute on. A size reads `<n> B` under 1000 bytes and otherwise in thousands with one decimal, `kB` and then `MB`: 0 bytes read `0 B`, 1229 read `1.2 kB`, 12034 read `12.0 kB`, and 1048576 read `1.0 MB`.
+The page has a breadcrumb, `nav.crumbs` labelled `Breadcrumb`, an ordered list of three levels: `scripts`, a link to `/`; the script's name, a link to `/<name>/`; and the run's id, the current page, with `aria-current="page"` and no link. Beneath it is the top-level heading (`h1`), the run's id, and then the headline, `p#headline`, holding the run's status and, muted, `started <started>` followed by ` · <duration>` when the run has ended, or, for a run that failed to start, the start time alone. A status reads as a `span.status` whose `data-kind` is its kind: `queued` and `running`, kind `info`; `exited 0`, kind `ok`; `exited <n>` for any other exit code, `timed out` and `killed`, kind `warn`; and `failed`, kind `err`. The run card, `section#run-card`, is headed `Run` and reads `Started by the run tool.` for a run the `run` tool started (`S08`), and `Started by the event <event id>.`, where `<event id>` is the id of the event that started it, for a run an event started (`S27`); its list `dl#run` holds, in this order, `Status`, the status and, only when the run's output was truncated (`S17`), the badge `span.badge[data-kind=warn]` reading `output truncated`, once for the run whichever stream was cut; `Script`, the script's name as a link to `/<name>/`; `Commit`, the full 40-character commit the run resolved, in a code element, and nothing when its ref never resolved; `Ref`, the ref the run was resolved from, in a code element; `Started`; `Finished` and `Duration`, only once the run has ended, a run that failed to start showing `Finished` and no `Duration`; `Trigger`, the run's trigger, `manual` or `event`; `User`, the id of the user the run acts as; `Request`, the 32-character request id the run was caused by, in a code element; and `Output`, `stdout <size> · stderr <size>`, the bytes kept of each stream. A time reads `2026-10-05 09:14:02 UTC`, in UTC to the second, in a `time` element whose `datetime` is the same moment as RFC 3339, `2026-10-05T09:14:02Z`. A duration reads `12s` under a minute and `3m 41s` from a minute on. A size reads `<n> B` under 1000 bytes and otherwise in thousands with one decimal, `kB` and then `MB`: 0 bytes read `0 B`, 1229 read `1.2 kB`, 12034 read `12.0 kB`, and 1048576 read `1.0 MB`.
 
 After the card come the run folder's contents, each only when its file exists: `section#input`, headed `Input`; `section#stdout`, headed `Standard output`; and `section#stderr`, headed `Standard error`. Each names its file and size, `input.json, 69 B` say; holds a `Download` link (`a.button[download]`) to the file's address, `/<name>/runs/<run id>/input.json`, `/<name>/runs/<run id>/stdout` or `/<name>/runs/<run id>/stderr`; and shows the file's whole content as text in a `pre`, or, when the file is empty, the muted line `No input.` or `No output.` and no `pre`. Last is `section#files`, headed `Files` and reading `What the script wrote under out/. Each downloads as a file.`, which holds either the line `p#no-files` reading `No files.`, when the run's `out/` holds no file, or the table `table#file-list` with one row, `tr[data-file=<path>]`, per regular file under `out/`, at any depth, sorted by path: the path relative to `out/`, `/`-separated, in a code element; its size; and a `Download` link (`a.button[download]`) to `/<name>/runs/<run id>/out/<path>`. A run whose folder is gone shows none of these four sections (`A user opens a run whose files are gone`). The page shows what is on disk when it is drawn and does not stream: a run still running shows what exists so far, and a reload shows more (`A user opens a run still running and reloads it`).
 
@@ -141,6 +141,42 @@ Postconditions:
 - Nothing has changed by either request: the run is still running, its process untouched, and the catalog and the folder were read and not written. No git ran.
 - scripts wrote nothing to stderr. telemetry has received each request's two events, each `request.finished` with `status` 200, and no `run.*` event.
 
+## A user opens a queued run
+
+A run asked for while `RUN_MAX_ACTIVE` runs are already running waits in the queue for a slot (`S08`). Its ref has resolved and its commit is unpacked, so its page shows the commit and the input it was given, but its script has not started: it has no output yet and has written no files. Like a running run it has not ended, so the page says it does not stream, offers a link back to itself, and shows no duration and no `Finished`; its `Started` is when the run was asked for, and the duration it shows once it has ended counts from then, the time it waited included.
+
+Request:
+
+```
+GET /nightly-report/runs/run_c4a8e2f6b0d93157/ HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-Forwarded-Proto: https
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 9b3f7d1a5e0c2846b9d3f7a1e5c0d284
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the run page of `run_c4a8e2f6b0d93157`, titled `run_c4a8e2f6b0d93157 · nightly-report · scripts`, its breadcrumb's last level and its heading `run_c4a8e2f6b0d93157`. Its headline reads `queued`, of kind `info`, then `started 2026-10-05 09:31:50 UTC` and no duration. Beneath it is `div#running`, of kind `info`, reading `Running` and `The page does not stream. Reload it to see more output.`, and the link `a#reload`, `Reload`, leading to `/nightly-report/runs/run_c4a8e2f6b0d93157/`, the page itself. The run card is headed `Run` and reads `Started by the run tool.`; its list holds `Status`, `queued` of kind `info` and no `output truncated` badge; `Script`, `nightly-report`, linking to `/nightly-report/`; `Commit`, `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`; `Ref`, `main`; `Started`, `2026-10-05 09:31:50 UTC`; no `Finished` and no `Duration`; `Trigger`, `manual`; `User`, `u_7f3a9c21`; `Request`, `5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5`; and `Output`, `stdout 0 B · stderr 0 B`. `section#input` reads `input.json, 2 B` and shows `{}`. There is no `section#stdout` and no `section#stderr`, since the run's script has not started and its folder has neither file. `section#files` shows `No files.`. The page has no `div#failure` and no `div#files-gone`.
+
+The user follows `Reload`: once a slot frees and the run starts, the same request is answered with the page of a running run, as `A user opens a run still running and reloads it` shows one, and once it has ended, with the page of an ended run, with no `div#running` and no `a#reload`.
+
+Preconditions:
+
+- The preamble's, with `RUN_MAX_ACTIVE` 2: `run_8a2c6e1f9b3d5074` and `sync-crm`'s `run_6b2d8f4a0c9e1735` are running.
+- `run_c4a8e2f6b0d93157` of `nightly-report` is recorded `queued`, with trigger `manual` and user `u_7f3a9c21`, asked for at 2026-10-05T09:31:50Z by a `run` call without an `input` argument, carrying `X-Request-Id: 5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5`, which resolved `main` to `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` and was answered `queued` (`S08`). Its folder, `state/runs/scr_6d1f4a9b2e8c7035/run_c4a8e2f6b0d93157/`, holds `input.json`, `{}`; `tree/`; and an empty `out/`; and no `stdout` and no `stderr`.
+
+Postconditions:
+
+- Nothing has changed: the run is still `queued`, still waiting for a slot, and was not started; the catalog and the folder were read and not written. No git ran.
+- scripts wrote nothing to stderr. telemetry has received the request's two events, the `request.finished` with `status` 200, and no `run.*` event.
+
 ## A user opens a run that exited non-zero
 
 A script that ends with a non-zero exit code ran and ended on its own; the page shows the code in the status, with kind `warn`, and the user reads why in its standard error. The code is shown as the script ended with it, 128 plus the signal number for a script that died of a signal scripts did not send (`S15`), `exited 137` say.
@@ -245,7 +281,7 @@ Postconditions:
 
 ## A user opens a run that failed to start
 
-A run scripts could not start is still a run (`S08`), and its page says why in plain words: a title and a sentence, both plain text, in place of anything the script would have said. The headline holds the status and the time alone, since there is no duration to show; the card shows when the failure was recorded as `Finished`, and no `Duration`. The folder holds what was produced before the failure, and the page shows what is there: here, for a ref that did not resolve, `input.json` alone, so the page shows it, no output sections, since this run never opened a stream, and `No files.` under Files, since nothing was written under `out/`. A run that failed another way shows whatever its folder holds, the `stderr` git wrote for `git_failed` (`S08`) among them. Each reason has its own title and sentence, where `<rep id>` is the repository's id, `<repo>` the repository's name read from its bare directory as the page is drawn, or its id when that cannot be read (`A user opens a failed run whose repository's name cannot be read`), and the numbers are scripts' settings:
+A run scripts could not start is still a run (`S08`), and its page says why in plain words: a title and a sentence, both plain text, in place of anything the script would have said. The headline holds the status and the time alone, since there is no duration to show; the card shows when the failure was recorded as `Finished`, and no `Duration`. The folder holds what was produced before the failure, and the page shows what is there: here, for a ref that did not resolve, `input.json` alone, so the page shows it, no output sections, since this run never opened a stream, and `No files.` under Files, since nothing was written under `out/`. A run that failed another way shows whatever its folder holds, the `stderr` git wrote for `git_failed` (`S08`) among them, and the `input.json` and empty `out/` of a run abandoned in the queue (`A user opens a run abandoned in the queue`). Each reason has its own title and sentence, where `<rep id>` is the repository's id, `<repo>` the repository's name read from its bare directory as the page is drawn, or its id when that cannot be read (`A user opens a failed run whose repository's name cannot be read`), and the numbers are scripts' settings:
 
 | reason | title | sentence |
 |---|---|---|
@@ -255,6 +291,7 @@ A run scripts could not start is still a run (`S08`), and its page says why in p
 | `git_failed` | `git failed` | `git could not read the repository <repo>. The script was not started.` |
 | `timed_out` | `git took too long` | `git took longer than <OPERATION_SECONDS> seconds. The script was not started.` |
 | `start_failed` | `The script could not start` | `The script's process could not be launched. The script was not started.` |
+| `queue_abandoned` | `The run never left the queue` | `The run was waiting for a slot when scripts stopped. The script was not started.` |
 
 Request:
 
@@ -318,6 +355,40 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. The run's record and folder are as they were, and nothing was written under `REPOS_DIR`.
+- scripts wrote nothing to stderr. telemetry has received the request's two events, the `request.finished` with `status` 200.
+
+## A user opens a run abandoned in the queue
+
+A run still waiting in the queue when scripts stopped never started and never will: scripts records it `failed`, with the reason `queue_abandoned`, as it does one it finds still `queued` when it next starts (`S18`). Its page is that of any run that failed to start: the status and the time alone in the headline, the reason's title and sentence, `Finished` and no `Duration`. Unlike a run whose ref never resolved, its commit was resolved and unpacked before it was queued, so the card shows it.
+
+Request:
+
+```
+GET /nightly-report/runs/run_c4a8e2f6b0d93157/ HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-Forwarded-Proto: https
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 9b3f7d1a5e0c2846b9d3f7a1e5c0d284
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the run page of `run_c4a8e2f6b0d93157`. Its headline reads `failed`, of kind `err`, then `2026-10-05 09:31:50 UTC`, with no `started` before it and no duration after it. Beneath it is `div#failure`, of kind `err`, reading `The run never left the queue` and `The run was waiting for a slot when scripts stopped. The script was not started.` The run card's list holds `Status`, `failed` of kind `err`; `Script`, `nightly-report`; `Commit`, `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`; `Ref`, `main`; `Started`, `2026-10-05 09:31:50 UTC`; `Finished`, `2026-10-05 09:32:10 UTC`; no `Duration`; `Trigger`, `manual`; `User`, `u_7f3a9c21`; `Request`, `5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5`; and `Output`, `stdout 0 B · stderr 0 B`. `section#input` reads `input.json, 2 B` and shows `{}`. There is no `section#stdout` and no `section#stderr`. `section#files` shows `No files.`. The page has no `div#running` and no `div#files-gone`.
+
+Preconditions:
+
+- The preamble's.
+- `run_c4a8e2f6b0d93157` of `nightly-report`, asked for at 2026-10-05T09:31:50Z as in `A user opens a queued run`, was still queued when scripts was told to stop at 2026-10-05T09:32:10Z, and is recorded `failed` with reason `queue_abandoned`, finished at that moment (`S18`). Its folder holds `input.json`, `{}`; `tree/`; and an empty `out/`; and no `stdout` and no `stderr`.
+
+Postconditions:
+
+- Nothing has changed. No git ran, since the sentence names no repository.
 - scripts wrote nothing to stderr. telemetry has received the request's two events, the `request.finished` with `status` 200.
 
 ## A user opens a run whose files are gone

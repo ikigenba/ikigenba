@@ -30,7 +30,7 @@ Postconditions:
 
 ## A developer asks for the manifest
 
-The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. scripts declares its name; its description, the one line that says what scripts is for, which the host publishes in its services file, the about screen shows (`S03`), and scripts' MCP endpoint gives its clients as instructions (`S05`); that it is not the host's default app; that it is one of the suite's MCP services (`mcp = true`), so the gateway lists it and runs its tools (`S05`); no secrets; its seven settings, which the host writes into its `etc/env` and which it reads when it serves (`S02`): `REPOS_DIR`, the directory holding repos' bare repositories, relative to scripts' working directory, so `/opt/scripts/../repos/state/repos` on a host (`S20`), `TREE_MAX_BYTES`, the largest a run's unpacked tree may be, 256 MiB (`S17`), `OUTPUT_MAX_BYTES`, how much of a run's standard output, and separately of its standard error, is kept, 1 MiB (`S17`), `OPERATION_SECONDS`, the longest one git run may take (`S17`), `SCRIPT_SECONDS`, the longest a script may run (`S17`), and `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, how many days a run is kept and how many of each script's newest runs are kept whatever their age (`S19`); its SQLite database, the catalog of scripts and the record of every run, which the host replicates like auth's; and how much of the host it may take, in opsctl's `[resources]` table, which opsctl writes into its service unit, so it bounds scripts, every git scripts runs and every script it runs together: `cpu_weight` 50 and `io_weight` 50, half the share of a service that declares none, so unpacking and running scripts yields to the rest of the suite when the host is busy, and `memory_max` `1G`, a ceiling of 1 GiB. It does not declare `guests`: every page and `/mcp` is for a signed-in user, so on a host with an authenticator nginx sends a visitor with no credential to sign in before they reach a page (`S03`) and challenges one at `/mcp` (`S05`). It declares no port: scripts serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl. It names no `cache/`: a run's folder is the product, not a cache, and lives under `state/runs/` (`S20`).
+The manifest is a fact about the binary, so the binary emits it. The committed `etc/manifest.toml` is a copy kept so the checkout can be read without a build; the two are byte-identical, and `devctl build` refuses an app where they differ. scripts declares its name; its description, the one line that says what scripts is for, which the host publishes in its services file, the about screen shows (`S03`), and scripts' MCP endpoint gives its clients as instructions (`S05`); that it is not the host's default app; that it is one of the suite's MCP services (`mcp = true`), so the gateway lists it and runs its tools (`S05`); no secrets; its thirteen settings, which the host writes into its `etc/env` and which it reads when it serves (`S02`): `REPOS_DIR`, the directory holding repos' bare repositories, relative to scripts' working directory, so `/opt/scripts/../repos/state/repos` on a host (`S20`), `TREE_MAX_BYTES`, the largest a run's unpacked tree may be, 256 MiB (`S17`), `OUTPUT_MAX_BYTES`, how much of a run's standard output, and separately of its standard error, is kept, 1 MiB (`S17`), `OPERATION_SECONDS`, the longest one git run may take (`S17`), `SCRIPT_SECONDS`, the longest a script may run (`S17`), `RUN_MEMORY_MAX_BYTES`, the most memory one run may hold, 256 MiB, `RUNS_MEMORY_MAX_BYTES`, the most every run may hold together, 512 MiB, `RUNS_CPU_PERCENT`, how much of one CPU every run may use together, as a percentage, `RUN_PIDS_MAX`, how many processes one run may have at once, `RUN_MAX_ACTIVE`, how many runs may run at once, and `RUN_MAX_QUEUED`, how many more may wait for one of those to end (`S17`), and `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, how many days a run is kept and how many of each script's newest runs are kept whatever their age (`S19`); its SQLite database, the catalog of scripts and the record of every run, which the host replicates like auth's; and where on the host it runs and how much of it it may take, in opsctl's `[resources]` table, which opsctl writes into its service unit (opsctl's `S7-apps.md`): `slice` `apps`, so it runs among the suite's other apps, not its core services; `memory_max` `896M`, a ceiling of 896 MiB that bounds scripts, every git scripts runs and every script it runs together; `go_memory_limit` `128M`, the soft limit scripts' own Go runtime collects garbage against, small because most of the ceiling is for the scripts it runs; and `delegate` `true`, so the host hands scripts its service's own part of the control group tree, in which scripts runs each script in a control group of its own, bounded by the run settings above (`S17`). It declares no CPU weight, so it has the share every app of its slice has by default. It does not declare `guests`: every page and `/mcp` is for a signed-in user, so on a host with an authenticator nginx sends a visitor with no credential to sign in before they reach a page (`S03`) and challenges one at `/mcp` (`S05`). It declares no port: scripts serves on the socket the host passes it (`S02`), and a manifest carrying `port` is refused by `devctl build` and by opsctl. It names no `cache/`: a run's folder is the product, not a cache, and lives under `state/runs/` (`S20`).
 
 Command:
 
@@ -53,6 +53,12 @@ TREE_MAX_BYTES = "268435456"
 OUTPUT_MAX_BYTES = "1048576"
 OPERATION_SECONDS = "600"
 SCRIPT_SECONDS = "600"
+RUN_MEMORY_MAX_BYTES = "268435456"
+RUNS_MEMORY_MAX_BYTES = "536870912"
+RUNS_CPU_PERCENT = "100"
+RUN_PIDS_MAX = "64"
+RUN_MAX_ACTIVE = "2"
+RUN_MAX_QUEUED = "10"
 RUN_KEEP_DAYS = "15"
 RUN_KEEP_COUNT = "10"
 
@@ -61,9 +67,10 @@ engine = "sqlite"
 path = "state/scripts.db"
 
 [resources]
-cpu_weight = 50
-memory_max = "1G"
-io_weight = 50
+slice = "apps"
+memory_max = "896M"
+go_memory_limit = "128M"
+delegate = true
 ```
 
 Exits 0. The text is on stdout; stderr is empty.

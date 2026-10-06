@@ -1,6 +1,6 @@
 # Stories — on a space
 
-scripts reached through a space: the file `S23` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `scripts.<space>` over TLS, so on the space `sbx.ikigenba.dev` scripts answers at `scripts.sbx.ikigenba.dev`. nginx on the space proxies to scripts' socket, `/run/ikigenba/scripts.sock` (`S02`), and includes scripts' own `etc/nginx.conf` in that server (`S23`), so `/events` and `/declarations` at the public name answer 404 while the same paths on the socket stay open to scripts' siblings. scripts' manifest declares no `guests` (`S01`), so the space's nginx asks auth's `/check` for every path of scripts: a request with no credential never reaches scripts, and is sent to sign in at a page or challenged at `/mcp` and the paths under `/mcp/` by nginx itself (opsctl's `S5-nginx.md`, `A browser reaches a wired app outside /mcp without signing in` and `An MCP client reaches a wired app without a credential`), one whose credential auth refuses gets auth's 403 and never reaches scripts, and one with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check` subrequest carried, so auth's check event and scripts' records of the request share one request id. The host's services file is `/var/lib/ikigenba/services.json`, which lists scripts with `url` `https://scripts.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so the MCP gateway offers scripts' eleven tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`), and every script scripts runs is handed that file's path as `IKIGENBA_SERVICES` (`S15`). scripts runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory, so its catalog is `/opt/scripts/state/scripts.db`, its run folders are under `/opt/scripts/state/runs/`, and `REPOS_DIR`, at its manifest default `../repos/state/repos`, names `/opt/scripts/../repos/state/repos`, the directory where repos keeps its bare repositories, `/opt/repos/state/repos/` (repos' `S15-disk.md`; `S20`). The host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect; the run folders are kept on the host but not replicated (`S20`). `/opt/scripts/etc/env` carries the seven settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`; the host provides the `git` scripts runs (opsctl's `S4-init.md`) and the `python3.12` every script runs under, installed at the space's first boot or, on a space launched before that, by the operator (`S22`). A deploy restarts scripts and so kills any run in flight (`S18`).
+scripts reached through a space: the file `S23` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `scripts.<space>` over TLS, so on the space `sbx.ikigenba.dev` scripts answers at `scripts.sbx.ikigenba.dev`. nginx on the space proxies to scripts' socket, `/run/ikigenba/scripts.sock` (`S02`), and includes scripts' own `etc/nginx.conf` in that server (`S23`), so `/events` and `/declarations` at the public name answer 404 while the same paths on the socket stay open to scripts' siblings. scripts' manifest declares no `guests` (`S01`), so the space's nginx asks auth's `/check` for every path of scripts: a request with no credential never reaches scripts, and is sent to sign in at a page or challenged at `/mcp` and the paths under `/mcp/` by nginx itself (opsctl's `S5-nginx.md`, `A browser reaches a wired app outside /mcp without signing in` and `An MCP client reaches a wired app without a credential`), one whose credential auth refuses gets auth's 403 and never reaches scripts, and one with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check` subrequest carried, so auth's check event and scripts' records of the request share one request id. The host's services file is `/var/lib/ikigenba/services.json`, which lists scripts with `url` `https://scripts.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so the MCP gateway offers scripts' eleven tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`), and every script scripts runs is handed that file's path as `IKIGENBA_SERVICES` (`S15`). scripts runs as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory, so its catalog is `/opt/scripts/state/scripts.db`, its run folders are under `/opt/scripts/state/runs/`, and `REPOS_DIR`, at its manifest default `../repos/state/repos`, names `/opt/scripts/../repos/state/repos`, the directory where repos keeps its bare repositories, `/opt/repos/state/repos/` (repos' `S15-disk.md`; `S20`). The host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect; the run folders are kept on the host but not replicated (`S20`). `/opt/scripts/etc/env` carries the thirteen settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`; the host provides the `git` scripts runs (opsctl's `S4-init.md`) and the `python3.12` every script runs under, installed at the space's first boot or, on a space launched before that, by the operator (`S22`). scripts runs as the service `ikigenba-scripts.service`, in the apps' slice with the 896 MiB ceiling its manifest's `[resources]` declares, and, since that table says `delegate = true`, the host hands the service its part of the control group tree (`S01`; opsctl's `S7-apps.md`): scripts runs each script in a control group of its own there, `runs/<run id>/` beneath the service's, bounded by the run settings at their manifest defaults (`S17`), and a space is where those bounds are proven on a real host. A deploy restarts scripts and so kills any run in flight and records any run still queued `failed` with reason `queue_abandoned` (`S18`).
 
 The stories prove the whole path from checkout to browser, curl, and agent, and nothing about scripts that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The catalog on the space holds `S06`'s shared catalog — `backfill`, `nightly-report`, `rotate-keys`, and `sync-crm`, owned by `u_7f3a9c21`, `mg@example.com`, and `digest`, owned by `u_2b8e1d04`, `ann@example.com`, with their runs — and repos on the space holds the repositories they run from, but `backfill`'s, which is gone. A guest is curl with no cookie and no `Authorization` header; a signed-in caller sends the token `ikp_<token>` (auth's `S5-tokens.md`), owned by `u_7f3a9c21`, as `Authorization: Bearer ikp_<token>`. The MCP requests are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision are not repeated. Trail events are named here by their attributes, as `S16` records them in full. The token's secret is in no record any story below leaves behind: not in the trail, not in nginx's logs on the host, and not in any run's folder.
 
@@ -197,6 +197,7 @@ Preconditions:
 - `python3.12` is installed on the host and on the `PATH` scripts runs with (`S22`).
 - The agent holds `ikp_<token>`, owned by `u_7f3a9c21`, who owns the repository `hello`, `<rep>`, in repos, its `ikigenba.owner` `u_7f3a9c21` and its `main` at `<sha>`, a commit whose tree holds `main.py` above and nothing else, pushed with git as repos' `S17-on-a-space.md` tells.
 - No script in the space is named `hello`.
+- No run is running or queued, so the run starts at once rather than waiting for a slot (`S08`).
 
 Postconditions:
 
@@ -205,3 +206,63 @@ Postconditions:
 - The landing page lists `hello` with its repository `hello` and its last run `exited 0` (`S03`), and `https://scripts.sbx.ikigenba.dev/hello/runs/<run>/` shows the run (`S13`).
 - mcp wrote nothing to stderr, and neither did scripts.
 - The trail holds, under the id nginx gave each request and user `u_7f3a9c21`, auth's `check.allowed` with `credential=token`, the gateway's events for the call, and scripts' own: for the first, `script.created` with `script=<id>`, then `tool.called` with `tool=create`, `kind=additive`, and `outcome=ok`; for the second, `run.started` with `run=<run>`, `script=<id>`, `sha=<sha>`, and `trigger=manual`, then `tool.called` with `tool=run`, `kind=additive`, and `outcome=ok`; for the third, `tool.called` with `tool=result`, `kind=read`, and `outcome=ok`. The run's `run.finished`, with `run=<run>` and `status=exited` and its exit code 0, is under `<run-request>`, the second request's id, whenever it was recorded (`S16`). No event attribute holds the name `hello`, the input, the output, or the token.
+
+## An operator on a space reads a run's limits from its control group
+
+The limits a run is given are the kernel's, so an operator on the host can read them while the run is going. scripts' service's control group is the one systemd reports for `ikigenba-scripts.service`; beneath it, `runs/` holds what every run may take together and `runs/<run id>/` what one run may take, each at its manifest default (`S01`, `S17`): 512 MiB for every run together, and for one run 256 MiB, no swap, at most 64 processes, and, should it run out of memory, the whole run killed at once. The script is `wait`, owned by `u_7f3a9c21` and running the repository `wait`, `<wait-rep>`, whose `main` holds one file, `main.py`:
+
+```
+import time
+
+time.sleep(60)
+```
+
+The agent starts it as `An agent on a space creates and runs a script through the gateway` runs `hello`, and the operator reads the files while it sleeps.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: mutate' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mutate","arguments":{"service":"scripts","tool":"run","args":{"name":"wait"}},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' https://mcp.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/2 200
+content-type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is scripts' answer to `run` (`S08`), relayed, with a `structuredContent` of `{"id":"<run>","status":"running","sha":"<sha>"}`. Then, on the host, within the minute the script sleeps:
+
+Command:
+
+```
+$ cg=/sys/fs/cgroup$(systemctl show --property ControlGroup --value ikigenba-scripts.service)
+$ cat $cg/runs/memory.max $cg/runs/<run>/memory.max $cg/runs/<run>/memory.swap.max $cg/runs/<run>/pids.max $cg/runs/<run>/memory.oom.group
+```
+
+Output:
+
+```
+536870912
+268435456
+0
+64
+1
+```
+
+Each command exits 0. The lines are on stdout; stderr is empty. `<run>` is the run's id from the answer above.
+
+Preconditions:
+
+- scripts `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, mcp is deployed and active as in `An agent on a space creates and runs a script through the gateway`, and `python3.12` is installed on the host and on the `PATH` scripts runs with (`S22`).
+- `/opt/scripts/etc/env` holds every run setting at its manifest default.
+- `u_7f3a9c21` owns the repository `wait`, `<wait-rep>`, its `main` at `<sha>`, a commit whose tree holds `main.py` above and nothing else, and the script `wait`, running `<wait-rep>` at `main`.
+- No run is running or queued.
+- The operator is a user on the host.
+
+Postconditions:
+
+- While the run sleeps, `$cg/runs/<run>/cgroup.procs` lists the script's process, and scripts' own process is not beneath `$cg/runs/`.
+- Once the script has slept its minute, the run is `exited` with exit code 0, and `$cg/runs/` holds nothing named `<run>`: the run's control group was removed when it ended.
+- scripts wrote nothing to stderr.
