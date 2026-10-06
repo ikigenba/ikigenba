@@ -780,6 +780,88 @@ func startAssertPermittedStartup(t *testing.T, dir string, before, after map[str
 	}
 }
 
+// R-RMK0-23B6
+func TestRunStartupWritesOnlyCatalogAndCacheDirectories(t *testing.T) {
+	for _, setup := range []string{"absent", "empty directories", "cached tree", "cache refusal"} {
+		t.Run(setup, func(t *testing.T) {
+			f := newStartFixture(t)
+			outer := t.TempDir()
+			f.p.Dir = filepath.Join(outer, "sites")
+			if e := os.Mkdir(f.p.Dir, 0700); e != nil {
+				t.Fatal(e)
+			}
+			repos := filepath.Join(outer, "absent-repositories")
+			trace := filepath.Join(outer, "git-trace")
+			f.set("REPOS_DIR", repos)
+			f.set("GIT_TRACE2_EVENT", trace)
+			f.set("TMPDIR", outer)
+			if e := os.WriteFile(filepath.Join(outer, "outside"), []byte("outside unchanged"), 0600); e != nil {
+				t.Fatal(e)
+			}
+			if e := os.WriteFile(filepath.Join(f.p.Dir, "inside"), []byte("inside unchanged"), 0600); e != nil {
+				t.Fatal(e)
+			}
+			switch setup {
+			case "empty directories":
+				for _, dir := range []string{"state", "cache"} {
+					if e := os.Mkdir(filepath.Join(f.p.Dir, dir), 0700); e != nil {
+						t.Fatal(e)
+					}
+				}
+			case "cached tree":
+				tree := filepath.Join(f.p.Dir, "cache/sites", "sit_0123456789abcdef", strings.Repeat("a", 40))
+				if e := os.MkdirAll(filepath.Join(tree, "nested"), 0700); e != nil {
+					t.Fatal(e)
+				}
+				for _, name := range []string{"index.html", "nested/saved.html"} {
+					if e := os.WriteFile(filepath.Join(tree, name), []byte(name+" unchanged"), 0600); e != nil {
+						t.Fatal(e)
+					}
+				}
+				if e := os.Symlink("index.html", filepath.Join(tree, "link.html")); e != nil {
+					t.Fatal(e)
+				}
+			case "cache refusal":
+				if e := os.WriteFile(filepath.Join(f.p.Dir, "cache"), []byte("cache unchanged"), 0600); e != nil {
+					t.Fatal(e)
+				}
+			}
+			before := startSnapshot(t, outer, "")
+			if setup == "cache refusal" {
+				check := startGuardRefusal(t, f)
+				if code := cli.Run(context.Background(), f.p); code != cli.ExitServerFailed {
+					t.Fatalf("exit=%d stderr=%q", code, f.err.text())
+				}
+				check()
+			} else {
+				f.start(t)
+			}
+			// Observe before any client connects, or immediately after refusal.
+			after := startSnapshot(t, outer, "")
+			startAssertPermittedStartup(t, f.p.Dir, before, after)
+			for _, path := range []string{repos, trace} {
+				if _, e := os.Lstat(path); !os.IsNotExist(e) {
+					t.Errorf("startup created %s: %v", path, e)
+				}
+			}
+			entries, e := os.ReadDir(filepath.Join(f.p.Dir, "state"))
+			if e != nil {
+				t.Fatal(e)
+			}
+			for _, entry := range entries {
+				switch entry.Name() {
+				case "sites.db", "sites.db-journal", "sites.db-wal", "sites.db-shm":
+				default:
+					t.Errorf("startup left a write-probe or unexpected state entry: %s", entry.Name())
+				}
+			}
+			if setup != "cache refusal" && f.stop(t) != cli.ExitSuccess {
+				t.Fatal(f.err.text())
+			}
+		})
+	}
+}
+
 type startReadyListener struct {
 	net.Listener
 	notify       *net.UnixConn
