@@ -49,7 +49,7 @@ func assertEmpty(t *testing.T, dir string) {
 	}
 }
 
-// R-U3IP-MTPS R-U4QM-0LGH R-U5YI-ED76 R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
+// R-U3IP-MTPS R-U4QM-0LGH R-V80L-VTUN R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
 func TestDeclarations(t *testing.T) {
 	version := &cli.Version
 	semanticVersion := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
@@ -68,7 +68,7 @@ func TestDeclarations(t *testing.T) {
 		}
 	}
 	const manifest = cli.Manifest
-	if manifest != "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n" {
+	if manifest != "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n" {
 		t.Fatal("manifest")
 	}
 	const nginx = cli.NginxConf

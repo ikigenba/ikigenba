@@ -10,3 +10,7 @@ RETENTION_DAYS = "15"
 [database]
 engine = "sqlite"
 path = "state/telemetry.db"
+
+[resources]
+slice = "core"
+memory_max = "256M"
