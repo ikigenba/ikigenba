@@ -46,6 +46,7 @@ type expectedRoute53 interface {
 type expectedS3 interface {
 	ListObjects(context.Context, string, string) ([]Object, error)
 	PutObject(context.Context, string, string, io.Reader, int64) error
+	CopyObject(context.Context, string, string, string) error
 	DeleteObjects(context.Context, string, []string) error
 }
 
@@ -367,7 +368,7 @@ func TestSTSContract(_ *testing.T) {
 }
 
 func TestS3Contract(_ *testing.T) {
-	// R-CCED-PY62
+	// R-SILM-EEV6
 	_ = Object(struct {
 		Key      string
 		Size     int64

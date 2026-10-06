@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
@@ -84,7 +85,7 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 }
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
-	// R-28NP-Q6GE R-924O-CO9Q R-9709-VR8I R-VTEC-13P5 R-9GRG-XX62
+	// R-SDQ0-VBWE R-924O-CO9Q R-9709-VR8I R-VTEC-13P5 R-9GRG-XX62
 	// R-EB4J-WN6C R-9J79-PGNG R-YMOE-CCEO R-VUM8-EVFU R-9LN2-H04U R-YSRW-9745 R-9MUY-URVJ
 	f := newCreateFake(t)
 	f.objects = []cloud.Object{
@@ -389,6 +390,7 @@ func (f *createFake) ListObjects(context.Context, string, string) ([]cloud.Objec
 	return f.objects, nil
 }
 func (f *createFake) PutObject(context.Context, string, string, io.Reader, int64) error { return nil }
+func (f *createFake) CopyObject(context.Context, string, string, string) error          { return nil }
 func (f *createFake) DeleteObjects(context.Context, string, []string) error             { return nil }
 func (f *createFake) PermissionsBoundary(context.Context, string) (string, error) {
 	if err := f.event("boundary"); err != nil {
@@ -426,3 +428,42 @@ func (f *createFake) AddRoleToInstanceProfile(context.Context, string, string) e
 func (f *createFake) RemoveRoleFromInstanceProfile(context.Context, string, string) error { return nil }
 func (f *createFake) DeleteInstanceProfile(context.Context, string) error                 { return nil }
 func (f *createFake) DeleteRole(context.Context, string) error                            { return nil }
+
+func TestCreateCheckoutFailuresPrecedeConnection(t *testing.T) {
+	// R-SDQ0-VBWE
+	t.Run("checkout", func(t *testing.T) {
+		want := errors.New("git sentinel")
+		deps := seam.Deps{Dir: t.TempDir(), Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			return seam.Result{}, want
+		}, Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			t.Fatal("cloud after checkout failure")
+			return cloud.Clients{}, nil
+		}}
+		var out bytes.Buffer
+		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &out, deps)
+		if !errors.Is(err, want) || out.Len() != 0 {
+			t.Fatalf("err=%v out=%q", err, out.String())
+		}
+	})
+	t.Run("apps before root", func(t *testing.T) {
+		f := newCreateFake(t)
+		mustWrite(t, filepath.Join(f.root, "crm", "etc", "manifest.toml"), "invalid toml [")
+		mustWrite(t, filepath.Join(f.root, "infra", "terraform.tfvars.json"), "invalid json")
+		var out bytes.Buffer
+		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &out, f.deps())
+		var manifest *checkout.ManifestError
+		if !errors.As(err, &manifest) || out.Len() != 0 || f.openProfile != "" {
+			t.Fatalf("err=%v out=%q profile=%q", err, out.String(), f.openProfile)
+		}
+	})
+	t.Run("root", func(t *testing.T) {
+		f := newCreateFake(t)
+		mustWrite(t, filepath.Join(f.root, "infra", "terraform.tfvars.json"), "invalid json")
+		var out bytes.Buffer
+		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &out, f.deps())
+		var root *checkout.RootFileError
+		if !errors.As(err, &root) || out.Len() != 0 || f.openProfile != "" {
+			t.Fatalf("err=%v out=%q profile=%q", err, out.String(), f.openProfile)
+		}
+	})
+}

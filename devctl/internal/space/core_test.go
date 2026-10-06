@@ -138,3 +138,13 @@ func TestRetireStateError(t *testing.T) {
 		t.Errorf("Detail() = %q, want %q", got, wantDetail)
 	}
 }
+
+func TestSnapshotAndSeedPrefixes(t *testing.T) {
+	// R-SCI4-HK5P
+	if got := SnapshotPrefix("sbx1"); got != "sbx1/snapshots/" {
+		t.Fatalf("SnapshotPrefix = %q", got)
+	}
+	if got := SeedPrefix("sbx2"); got != "sbx2/seed/" {
+		t.Fatalf("SeedPrefix = %q", got)
+	}
+}

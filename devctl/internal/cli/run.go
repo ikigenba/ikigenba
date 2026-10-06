@@ -13,11 +13,13 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/deploy"
+	"github.com/ikigenba/ikigenba/devctl/internal/golden"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
 	"github.com/ikigenba/ikigenba/devctl/internal/remove"
 	"github.com/ikigenba/ikigenba/devctl/internal/restore"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
+	"github.com/ikigenba/ikigenba/devctl/internal/seed"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
 	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
@@ -38,6 +40,8 @@ Commands:
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
+  golden    capture a space's data as a named golden set
+  seed      give a space a golden set's or another space's data
   apex      point the root domain at one app on one space
 
 Options:
@@ -67,6 +71,8 @@ var commandSet = map[string]struct{}{
 	"restore": {},
 	"remove":  {},
 	"apex":    {},
+	"golden":  {},
+	"seed":    {},
 }
 
 type topLevel struct {
@@ -105,6 +111,12 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	}
 	if invocation.command == "version" {
 		return runVersion(invocation.arguments, stdout, stderr)
+	}
+	if invocation.command == "golden" {
+		return operationError(stderr, golden.Run(ctx, invocation.arguments, stdout, deps))
+	}
+	if invocation.command == "seed" {
+		return operationError(stderr, seed.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "apex" {
 		return operationError(stderr, apex.Run(ctx, invocation.arguments, stdout, deps))

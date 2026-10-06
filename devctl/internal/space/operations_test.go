@@ -25,7 +25,7 @@ const (
 )
 
 func TestRunListCurrentRootAndApex(t *testing.T) {
-	// R-RJ9Z-1OB0 R-27FT-CEPP R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-8YVJ-0IZI
+	// R-RJ9Z-1OB0 R-SBA8-3SF0 R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-8YVJ-0IZI
 	_ = []func(context.Context, []string, io.Writer, seam.Deps) error{Run}
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{
@@ -845,6 +845,8 @@ func (f *operationFake) ListObjects(_ context.Context, bucket, prefix string) ([
 func (f *operationFake) PutObject(context.Context, string, string, io.Reader, int64) error {
 	panic("unexpected")
 }
+
+func (f *operationFake) CopyObject(context.Context, string, string, string) error { return nil }
 func (f *operationFake) DeleteObjects(_ context.Context, bucket string, keys []string) error {
 	f.deleteKeys = append(f.deleteKeys, deleteObjectsCall{bucket: bucket, keys: append([]string(nil), keys...)})
 	op := "delete objects " + bucket + " " + strings.Join(keys, ",")

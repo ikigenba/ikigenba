@@ -24,6 +24,8 @@ Commands:
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
+  golden    capture a space's data as a named golden set
+  seed      give a space a golden set's or another space's data
   apex      point the root domain at one app on one space
 
 Options:

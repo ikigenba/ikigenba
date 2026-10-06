@@ -749,3 +749,5 @@ func failCloud(t *testing.T) cloud.Opener {
 		return cloud.Clients{}, nil
 	}
 }
+
+func (f *fakeS3) CopyObject(context.Context, string, string, string) error { return nil }

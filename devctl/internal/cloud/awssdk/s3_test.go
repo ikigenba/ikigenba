@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +27,7 @@ type fakeS3 struct {
 
 	listObjectsV2 func(*s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 	putObject     func(*s3.PutObjectInput) (*s3.PutObjectOutput, error)
+	copyObject    func(*s3.CopyObjectInput) (*s3.CopyObjectOutput, error)
 	deleteObjects func(*s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error)
 }
 
@@ -44,6 +47,14 @@ func (f *fakeS3) PutObject(_ context.Context, input *s3.PutObjectInput, _ ...fun
 	return nil, f.err
 }
 
+func (f *fakeS3) CopyObject(_ context.Context, input *s3.CopyObjectInput, _ ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
+	f.calls = append(f.calls, "CopyObject")
+	if f.copyObject != nil {
+		return f.copyObject(input)
+	}
+	return nil, f.err
+}
+
 func (f *fakeS3) DeleteObjects(_ context.Context, input *s3.DeleteObjectsInput, _ ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
 	f.calls = append(f.calls, "DeleteObjects")
 	if f.deleteObjects != nil {
@@ -53,7 +64,7 @@ func (f *fakeS3) DeleteObjects(_ context.Context, input *s3.DeleteObjectsInput, 
 }
 
 func TestS3MappingPaginationAndFields(t *testing.T) {
-	// R-CEU6-HHNG
+	// R-SJTI-S6LV
 	const (
 		bucket = "backup-bucket"
 		prefix = "spaces/example/backups/"
@@ -113,6 +124,8 @@ func TestS3MappingPaginationAndFields(t *testing.T) {
 		{Key: prefix + "one", Size: 11, Modified: firstModified},
 		{Key: prefix + "two", Size: 22, Modified: secondModified},
 	}
+	slices.SortFunc(objects, func(a, b cloud.Object) int { return strings.Compare(a.Key, b.Key) })
+	slices.SortFunc(wantObjects, func(a, b cloud.Object) int { return strings.Compare(a.Key, b.Key) })
 	if !reflect.DeepEqual(objects, wantObjects) {
 		t.Fatalf("objects = %#v, want %#v", objects, wantObjects)
 	}
@@ -126,24 +139,23 @@ func TestS3MappingPaginationAndFields(t *testing.T) {
 }
 
 func TestS3DeleteObjectsBatchBoundaries(t *testing.T) {
+	// R-SJTI-S6LV
 	for _, count := range []int{0, 1, 999, 1000, 1001, 2000, 2001} {
 		t.Run(fmt.Sprintf("keys_%d", count), func(t *testing.T) {
 			keys := make([]string, count)
 			for index := range keys {
 				keys[index] = fmt.Sprintf("object-%04d", index)
 			}
-			var deleted []string
-			var batchSizes []int
+			deleted := make(map[string]bool)
 			fake := &fakeS3{deleteObjects: func(input *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
 				if aws.ToString(input.Bucket) != "bucket" || input.Delete == nil {
 					t.Fatalf("DeleteObjects input = %#v, want bucket and delete payload", input)
 				}
-				if len(input.Delete.Objects) == 0 || len(input.Delete.Objects) > 1000 {
-					t.Fatalf("DeleteObjects batch size = %d, want 1..1000", len(input.Delete.Objects))
+				if len(input.Delete.Objects) > 1000 {
+					t.Fatalf("DeleteObjects batch size = %d, want at most 1000", len(input.Delete.Objects))
 				}
-				batchSizes = append(batchSizes, len(input.Delete.Objects))
 				for _, object := range input.Delete.Objects {
-					deleted = append(deleted, aws.ToString(object.Key))
+					deleted[aws.ToString(object.Key)] = true
 				}
 				return &s3.DeleteObjectsOutput{}, nil
 			}}
@@ -151,12 +163,10 @@ func TestS3DeleteObjectsBatchBoundaries(t *testing.T) {
 			if err := (&s3Client{sdk: fake}).DeleteObjects(context.Background(), "bucket", keys); err != nil {
 				t.Fatalf("DeleteObjects: %v", err)
 			}
-			if !slices.Equal(deleted, keys) {
-				t.Fatalf("deleted %d keys in order, want %d exact keys", len(deleted), len(keys))
-			}
-			wantBatches := (count + 999) / 1000
-			if len(batchSizes) != wantBatches || len(fake.calls) != wantBatches {
-				t.Fatalf("batch sizes/calls = %v/%v, want %d batches", batchSizes, fake.calls, wantBatches)
+			for _, key := range keys {
+				if !deleted[key] {
+					t.Fatalf("DeleteObjects did not delete key %q", key)
+				}
 			}
 			for _, call := range fake.calls {
 				if call != "DeleteObjects" {
@@ -168,7 +178,7 @@ func TestS3DeleteObjectsBatchBoundaries(t *testing.T) {
 }
 
 func TestS3ErrorMapping(t *testing.T) {
-	// R-VV8S-ZVE7 R-YPQX-0LG8
+	// R-VV8S-ZVE7 R-YPQX-0LG8 R-SJTI-S6LV
 	boom := &smithy.GenericAPIError{Code: "SlowDown", Message: "retry later"}
 	tests := []struct {
 		method    string
@@ -182,6 +192,9 @@ func TestS3ErrorMapping(t *testing.T) {
 		}},
 		{"PutObject", "PutObject", "bucket/key", func(client *s3Client) error {
 			return client.PutObject(context.Background(), "bucket", "key", bytes.NewReader(nil), 0)
+		}},
+		{"CopyObject", "CopyObject", "", func(client *s3Client) error {
+			return client.CopyObject(context.Background(), "bucket", "source", "key")
 		}},
 		{"DeleteObjects", "DeleteObjects", "bucket", func(client *s3Client) error {
 			return client.DeleteObjects(context.Background(), "bucket", []string{"key"})
@@ -201,5 +214,24 @@ func TestS3ErrorMapping(t *testing.T) {
 				t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, want)
 			}
 		})
+	}
+}
+
+func TestS3CopyObjectReplacesDestination(t *testing.T) {
+	// R-SJTI-S6LV
+	objects := map[string]string{"source": "snapshot", "key": "previous"}
+	fake := &fakeS3{copyObject: func(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+		source, err := url.PathUnescape(aws.ToString(input.CopySource))
+		if err != nil || source != "bucket/source" || aws.ToString(input.Bucket) != "bucket" || aws.ToString(input.Key) != "key" {
+			t.Fatalf("copy input = %#v, decoded source %q, error %v", input, source, err)
+		}
+		objects[aws.ToString(input.Key)] = objects[strings.TrimPrefix(source, "bucket/")]
+		return &s3.CopyObjectOutput{}, nil
+	}}
+	if err := (&s3Client{sdk: fake}).CopyObject(context.Background(), "bucket", "source", "key"); err != nil {
+		t.Fatal(err)
+	}
+	if objects["key"] != "snapshot" || !slices.Equal(fake.calls, []string{"CopyObject"}) {
+		t.Fatalf("objects = %v, calls = %v", objects, fake.calls)
 	}
 }

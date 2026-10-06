@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -183,3 +184,92 @@ func (h *commandHarness) RemoveRoleFromInstanceProfile(context.Context, string, 
 }
 func (h *commandHarness) DeleteInstanceProfile(context.Context, string) error { return nil }
 func (h *commandHarness) DeleteRole(context.Context, string) error            { return nil }
+
+func TestRootBoundOperationProfilesThroughCLI(t *testing.T) {
+	// R-SBA8-3SF0 R-SHDQ-0N4H
+	for _, args := range [][]string{{"space", "list"}, {"space", "destroy", "sbx1"}, {"space", "stop", "sbx1"}, {"space", "start", "sbx1"}, {"space", "status", "sbx1"}, {"apex", "set", "crm.sbx1"}, {"apex", "show"}, {"apex", "clear"}} {
+		h := newCommandHarness(t)
+		h.write(filepath.Join("infra", "terraform.tfvars.json"), `{"domain":"example.test","region":"eu-west-1"}`)
+		deps := h.deps()
+		calls := 0
+		deps.Cloud = func(_ context.Context, profile, region string) (cloud.Clients, error) {
+			calls++
+			if profile != "example.test" || region != "eu-west-1" {
+				t.Fatalf("%q cloud = %q, %q", args, profile, region)
+			}
+			return cloud.Clients{}, errors.New("profile sentinel")
+		}
+		assertResult(t, invokeWithDeps(deps, args...), 1, "", "devctl: profile sentinel\n")
+		if calls != 1 {
+			t.Fatalf("%q cloud calls = %d", args, calls)
+		}
+	}
+}
+
+func TestInvalidSpaceAndAppNeverConnectThroughCLI(t *testing.T) {
+	// R-S8UF-C8XM R-SDQ0-VBWE R-SBA8-3SF0 R-SHDQ-0N4H
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"space", "create", "golden", "--acme-email", "ops@ikigenba.dev"}, "'golden' is not a usable space label: golden/ holds the golden sets"},
+		{[]string{"space", "status", "golden.ikigenba.dev"}, "'golden' is not a usable space label: golden/ holds the golden sets"},
+		{[]string{"space", "create", "crm.sbx1", "--acme-email", "ops@ikigenba.dev"}, "'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'"},
+		{[]string{"space", "status", "crm.sbx1"}, "'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'"},
+		{[]string{"apex", "set", "crm.sbx1.example.com"}, "'crm.sbx1.example.com' is not an app on a space: <app>.<space>"},
+	} {
+		h := newCommandHarness(t)
+		deps := h.deps()
+		deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+			t.Fatal("unexpected cloud call")
+			return cloud.Clients{}, nil
+		}
+		assertResult(t, invokeWithDeps(deps, tc.args...), 2, "", "devctl: "+tc.want+"\n")
+	}
+}
+
+func TestCreateConnectsOnceAndStopsOnIdentityFailureThroughCLI(t *testing.T) {
+	// R-SDQ0-VBWE
+	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev"} {
+		h := newCommandHarness(t)
+		deps := h.deps()
+		calls := 0
+		sts := &preflightSTS{}
+		deps.Cloud = func(_ context.Context, profile, region string) (cloud.Clients, error) {
+			calls++
+			if profile != "ikigenba.dev" || region != "us-east-2" {
+				t.Fatalf("cloud = %q, %q", profile, region)
+			}
+			return cloud.Clients{STS: sts}, nil
+		}
+		assertResult(t, invokeWithDeps(deps, "space", "create", operand, "--acme-email", "ops@ikigenba.dev"), 1, "", "devctl: sts GetCallerIdentity: identity sentinel\n")
+		if calls != 1 || sts.calls != 1 {
+			t.Fatalf("cloud calls = %d, sts calls = %d", calls, sts.calls)
+		}
+	}
+}
+
+type preflightSTS struct{ calls int }
+
+func (s *preflightSTS) CallerAccountID(context.Context) (string, error) {
+	s.calls++
+	return "", &cloud.Error{Service: "sts", Operation: "GetCallerIdentity", Err: errors.New("identity sentinel")}
+}
+
+func (*commandHarness) CopyObject(context.Context, string, string, string) error {
+	panic("unexpected CopyObject")
+}
+
+func TestRootFailuresStopBeforeCloudThroughCLI(t *testing.T) {
+	// R-SBA8-3SF0 R-SHDQ-0N4H
+	for _, args := range [][]string{{"space", "list"}, {"space", "destroy", "sbx1"}, {"space", "stop", "sbx1"}, {"space", "start", "sbx1"}, {"space", "status", "sbx1"}, {"apex", "set", "crm.sbx1"}, {"apex", "show"}, {"apex", "clear"}} {
+		h := newCommandHarness(t)
+		h.write(filepath.Join("infra", "terraform.tfvars.json"), `{}`)
+		deps := h.deps()
+		deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+			t.Fatal("unexpected cloud after root error")
+			return cloud.Clients{}, nil
+		}
+		assertResult(t, invokeWithDeps(deps, args...), 2, "", "devctl: infra/terraform.tfvars.json: missing 'domain'\n")
+	}
+}

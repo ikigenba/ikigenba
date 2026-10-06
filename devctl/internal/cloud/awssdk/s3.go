@@ -3,6 +3,7 @@ package awssdk
 import (
 	"context"
 	"io"
+	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -16,6 +17,7 @@ const maxDeleteObjects = 1000
 type s3API interface {
 	ListObjectsV2(context.Context, *s3.ListObjectsV2Input, ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	CopyObject(context.Context, *s3.CopyObjectInput, ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
 	DeleteObjects(context.Context, *s3.DeleteObjectsInput, ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
 }
 
@@ -56,6 +58,15 @@ func (c *s3Client) PutObject(ctx context.Context, bucket, key string, body io.Re
 		ContentLength: aws.Int64(size),
 	})
 	return wrapS3("PutObject", bucket+"/"+key, err)
+}
+
+func (c *s3Client) CopyObject(ctx context.Context, bucket, source, key string) error {
+	_, err := c.sdk.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(key),
+		CopySource: aws.String(url.PathEscape(bucket + "/" + source)),
+	})
+	return wrapS3("CopyObject", "", err)
 }
 
 func (c *s3Client) DeleteObjects(ctx context.Context, bucket string, keys []string) error {

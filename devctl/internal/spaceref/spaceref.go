@@ -7,6 +7,21 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/appref"
 )
 
+// ReservedLabel names the bucket namespace for golden sets.
+const ReservedLabel = "golden"
+
+// ReservedLabelError reports a space label reserved for golden sets.
+type ReservedLabelError struct {
+	Label string
+}
+
+func (e *ReservedLabelError) Error() string {
+	return fmt.Sprintf("'%s' is not a usable space label: %s/ holds the golden sets", e.Label, e.Label)
+}
+
+// ExitCode reports a command-line usage failure.
+func (e *ReservedLabelError) ExitCode() int { return 2 }
+
 // Space identifies a space by its label and full domain name.
 type Space struct {
 	Label  string
@@ -94,6 +109,9 @@ func Parse(operand, root string) (Space, error) {
 	}
 	if !ValidLabel(label) {
 		return Space{}, &InvalidLabelError{Operand: operand}
+	}
+	if label == ReservedLabel {
+		return Space{}, &ReservedLabelError{Label: label}
 	}
 	return Space{Label: label, Domain: label + "." + root}, nil
 }

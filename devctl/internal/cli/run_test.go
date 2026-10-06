@@ -39,6 +39,8 @@ Commands:
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
+  golden    capture a space's data as a named golden set
+  seed      give a space a golden set's or another space's data
   apex      point the root domain at one app on one space
 
 Options:
@@ -230,7 +232,7 @@ func TestUnknownTopLevelOption(t *testing.T) {
 }
 
 func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
-	// R-OO0I-HZUA R-N1LD-IX1I
+	// R-S2QX-FE85 R-N1LD-IX1I
 	tests := []struct {
 		name    string
 		args    []string
@@ -242,6 +244,8 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
 		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
 		{name: "apex", args: []string{"apex", "show"}},
+		{name: "golden", args: []string{"golden", "capture", "sbx1", "demo"}},
+		{name: "seed", args: []string{"seed", "sbx2", "demo"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -284,6 +288,10 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 		{name: "remove invalid", args: []string{"remove", "sbx1", "crm"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "apex missing", args: []string{"apex", "show"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
 		{name: "apex invalid", args: []string{"apex", "show"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "golden missing", args: []string{"golden", "capture", "sbx1", "demo"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "golden invalid", args: []string{"golden", "capture", "sbx1", "demo"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "seed missing", args: []string{"seed", "sbx2", "demo"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "seed invalid", args: []string{"seed", "sbx2", "demo"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 	}
 	for _, test := range failures {
 		t.Run(test.name, func(t *testing.T) {
@@ -550,6 +558,8 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"restore", "--help"},
 		{"remove", "--help"},
 		{"apex", "--help"},
+		{"golden", "--help"},
+		{"seed", "--help"},
 		{"space", "list"},
 		{"secrets", "list", "sbx1"},
 		{"build", "crm"},
@@ -557,6 +567,8 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"restore", "sbx1", "crm"},
 		{"remove", "sbx1", "crm"},
 		{"apex", "show"},
+		{"golden", "capture", "sbx1", "demo"},
+		{"seed", "sbx2", "demo"},
 	}
 	for _, args := range invocations {
 		external := 0
@@ -621,13 +633,13 @@ func TestVersionRejectsArguments(t *testing.T) {
 }
 
 func TestTopLevelCommandSet(t *testing.T) {
-	// R-OKCT-COM7
+	// R-S0B4-NUQR
 	got := make([]string, 0, len(commandSet))
 	for command := range commandSet {
 		got = append(got, command)
 	}
 	sort.Strings(got)
-	want := []string{"apex", "build", "deploy", "remove", "restore", "secrets", "space", "version"}
+	want := []string{"apex", "build", "deploy", "golden", "remove", "restore", "secrets", "seed", "space", "version"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("top-level commands = %q, want %q", got, want)
 	}
@@ -639,7 +651,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-OMSM-483L
+	// R-S56Q-6XPJ
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}

@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
@@ -61,7 +63,7 @@ func TestSpaceInitHelpThroughCLIOutsideCheckout(t *testing.T) {
 }
 
 func TestSpaceInitLookupRefusalsThroughCLI(t *testing.T) {
-	// R-2CBE-VHOH
+	// R-SEXX-93N3
 	t.Run("absent", func(t *testing.T) {
 		h := newD11Harness(t)
 		h.instances = nil
@@ -81,7 +83,7 @@ func TestSpaceInitLookupRefusalsThroughCLI(t *testing.T) {
 }
 
 func TestSpaceInitFailureRelaysHostDiagnosticThroughCLI(t *testing.T) {
-	// R-IRWQ-H3I4 R-OW56-4O4X
+	// R-SG5T-MVDS R-OW56-4O4X
 	h := newD11Harness(t)
 	h.sshResults = make([]seam.Result, 7)
 	h.sshResults[0].Stdout = []byte("v3.2.1\n")
@@ -180,4 +182,37 @@ func (h *d11Harness) ListSpaceInstances(context.Context, string) ([]cloud.Instan
 
 func (*d11Harness) Zone(context.Context, string) (cloud.Zone, error) {
 	return cloud.Zone{ID: "Z09565073GHK8BYWQ1A78", Name: "ikigenba.dev"}, nil
+}
+
+func TestInitReportsResolvedValuesBeforeFirstSSH(t *testing.T) {
+	// R-SG5T-MVDS R-SEXX-93N3
+	h := newD11Harness(t)
+	deps := h.deps()
+	var stdout, stderr bytes.Buffer
+	want := "account: ok (ikigenba.dev, us-east-2, 295229566359)\n" +
+		"domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)\n" +
+		"instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)\n"
+	baseExec := deps.Exec
+	sshCalls, cloudCalls := 0, 0
+	deps.Exec = func(ctx context.Context, cmd seam.Cmd) (seam.Result, error) {
+		if cmd.Path == "ssh" {
+			sshCalls++
+			if stdout.String() != want {
+				t.Fatalf("before ssh stdout = %q, want %q", stdout.String(), want)
+			}
+			return seam.Result{}, errors.New("ssh sentinel")
+		}
+		return baseExec(ctx, cmd)
+	}
+	deps.Cloud = func(_ context.Context, profile, region string) (cloud.Clients, error) {
+		cloudCalls++
+		if profile != "ikigenba.dev" || region != "us-east-2" || stdout.Len() != 0 {
+			t.Fatalf("connect = %q, %q; stdout = %q", profile, region, stdout.String())
+		}
+		return cloud.Clients{EC2: h, Route53: h, STS: h}, nil
+	}
+	code := Run(context.Background(), []string{"space", "init", "sbx1"}, strings.NewReader(""), &stdout, &stderr, deps)
+	if code != 1 || cloudCalls != 1 || sshCalls != 1 || stdout.String() != want {
+		t.Fatalf("code=%d cloud=%d ssh=%d stdout=%q stderr=%q", code, cloudCalls, sshCalls, stdout.String(), stderr.String())
+	}
 }

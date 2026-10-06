@@ -205,3 +205,45 @@ func assertFunctionTypes(
 		t.Fatal("exported spaceref functions are nil")
 	}
 }
+
+func TestGoldenReservedLabel(t *testing.T) {
+	// R-S7MI-YH6X R-S8UF-C8XM
+	_ = spaceref.ReservedLabelError(struct{ Label string }{})
+	if spaceref.ReservedLabel != "golden" {
+		t.Fatalf("ReservedLabel = %q", spaceref.ReservedLabel)
+	}
+	for _, operand := range []string{"golden", "golden.ikigenba.dev"} {
+		sp, err := spaceref.Parse(operand, "ikigenba.dev")
+		var reserved *spaceref.ReservedLabelError
+		if sp != (spaceref.Space{}) || !errors.As(err, &reserved) || reserved.Label != "golden" || err.Error() != "'golden' is not a usable space label: golden/ holds the golden sets" || reserved.ExitCode() != 2 {
+			t.Fatalf("Parse(%q) = %#v, %v", operand, sp, err)
+		}
+	}
+	for _, label := range []string{"goldens", "golden-1"} {
+		sp, err := spaceref.Parse(label, "ikigenba.dev")
+		if err != nil || sp != (spaceref.Space{Label: label, Domain: label + ".ikigenba.dev"}) {
+			t.Fatalf("Parse(%q) = %#v, %v", label, sp, err)
+		}
+	}
+}
+
+func TestGoldenAppRefusalOrder(t *testing.T) {
+	// R-SA2B-Q0OB
+	for _, operand := range []string{"crm.golden", "crm.golden.ikigenba.dev"} {
+		app, err := spaceref.ParseApp(operand, "ikigenba.dev")
+		var reserved *spaceref.ReservedLabelError
+		if app != (spaceref.App{}) || !errors.As(err, &reserved) || reserved.Label != "golden" || err.Error() != "'golden' is not a usable space label: golden/ holds the golden sets" {
+			t.Fatalf("ParseApp(%q) = %#v, %v", operand, app, err)
+		}
+	}
+	for _, tc := range []struct{ operand, want string }{
+		{"host.golden", "'host' is not a usable app name"},
+		{"Crm.golden", "'Crm.golden' is not a valid label"},
+		{"crm.golden.other", "'crm.golden.other' is not an app on a space: <app>.<space>"},
+	} {
+		app, err := spaceref.ParseApp(tc.operand, "ikigenba.dev")
+		if app != (spaceref.App{}) || err == nil || err.Error() != tc.want {
+			t.Fatalf("ParseApp(%q) = %#v, %v", tc.operand, app, err)
+		}
+	}
+}

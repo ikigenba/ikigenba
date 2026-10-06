@@ -46,7 +46,7 @@ Run 'devctl apex <subcommand> --help' for details.
 `
 
 func TestEveryCommandHelpIsExact(t *testing.T) {
-	// R-1K7C-3SPK
+	// R-S1J1-1MHG
 	tests := []struct {
 		command string
 		want    string
@@ -58,6 +58,8 @@ func TestEveryCommandHelpIsExact(t *testing.T) {
 		{command: "restore", want: expectedRestoreUsage},
 		{command: "remove", want: wantRemoveUsage},
 		{command: "apex", want: expectedApexUsage},
+		{command: "golden", want: expectedGoldenUsage},
+		{command: "seed", want: expectedSeedUsage},
 	}
 	for _, test := range tests {
 		t.Run(test.command, func(t *testing.T) {
@@ -82,6 +84,8 @@ func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
 		{name: "restore", args: []string{"restore", "--at", "--bad", "--help"}, want: expectedRestoreUsage},
 		{name: "remove", args: []string{"remove", "--bad", "--help"}, want: wantRemoveUsage},
 		{name: "apex", args: []string{"apex", "set", "--bad", "--help"}, want: expectedApexUsage},
+		{name: "golden", args: []string{"golden", "capture", "--bad", "--help"}, want: expectedGoldenUsage},
+		{name: "seed", args: []string{"seed", "--bad", "--help"}, want: expectedSeedUsage},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

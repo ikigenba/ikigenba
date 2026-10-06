@@ -212,6 +212,7 @@ type Object struct {
 type S3 interface {
 	ListObjects(ctx context.Context, bucket, prefix string) ([]Object, error)
 	PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64) error
+	CopyObject(ctx context.Context, bucket, source, key string) error
 	DeleteObjects(ctx context.Context, bucket string, keys []string) error
 }
 

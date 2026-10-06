@@ -142,3 +142,9 @@ func (e *RetireStateError) ExitCode() int { return 1 }
 func (e *RetireStateError) Detail() string {
 	return fmt.Sprintf("run 'devctl space start %s' first, or pass --no-backup", e.Label)
 }
+
+// SnapshotPrefix returns the object-key prefix for a space's snapshots.
+func SnapshotPrefix(label string) string { return BackupPrefix(label) + "snapshots/" }
+
+// SeedPrefix returns the object-key prefix for a space's seed set.
+func SeedPrefix(label string) string { return BackupPrefix(label) + "seed/" }

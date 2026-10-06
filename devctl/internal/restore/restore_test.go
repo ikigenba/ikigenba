@@ -303,3 +303,5 @@ func restoreFailCloud(t *testing.T) cloud.Opener {
 		return cloud.Clients{}, nil
 	}
 }
+
+func (f *restoreS3) CopyObject(context.Context, string, string, string) error { return nil }
