@@ -26,5 +26,9 @@ resource "aws_launch_template" "space" {
     http_tokens = "required"
   }
 
+  credit_specification {
+    cpu_credits = "unlimited"
+  }
+
   user_data = base64encode(file("${path.module}/templates/space-first-boot.sh"))
 }
