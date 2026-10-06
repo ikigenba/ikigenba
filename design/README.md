@@ -136,8 +136,9 @@ event bus. Banner and footer as in app.html, the service `events`,
   muted, the event it is stuck on and the error it answered. An MCP tools
   list naming `catalog`, `search`, `subscribers`, `skip`, `resume`, and a
   link to the about screen. State: no subscribers.
-- Subscriber status reads as a `.status` word, its kind in `data-kind`:
-  `ok`, `paused` or `gone`.
+- Subscriber status reads as a `.status` word carrying two attributes:
+  `data-status` is the real status (`ok`, `paused` or `gone`) and `data-kind`
+  is the theme kind it shows as: ok is ok, paused is warn, gone is info.
 
 **login.html** — auth at `auth.acme.ikigenba.com`.
 - Sign-in: product mark, "Sign in to acme", note that access is limited to
