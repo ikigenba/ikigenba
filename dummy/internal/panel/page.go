@@ -25,9 +25,14 @@ func (h *handler) pageData(r *http.Request) pageData {
 }
 
 func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int, sub widget.Submission, errs widget.FieldErrors) {
+	widgets, err := h.store.All(r.Context())
+	if err != nil {
+		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
+		return
+	}
 	data := h.pageData(r)
 	data.Panel = true
-	data.Table = h.store.All()
+	data.Table = widgets
 	data.Count = len(data.Table)
 	data.Form = newFormData(sub, errs)
 	h.renderDocument(w, r, status, data)

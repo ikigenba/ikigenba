@@ -51,7 +51,7 @@ func TestWidgetFormPageContent(t *testing.T) {
 		pageTestRequest(http.MethodGet, "/widgets"),
 		pageTestFormRequest(widget.Submission{Count: "bad"}),
 	} {
-		body := pageTestResponse(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), request).Body.String()
+		body := pageTestResponse(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), request).Body.String()
 		_ = formSpan(t, body)
 	}
 }
@@ -75,7 +75,7 @@ func TestFormCard(t *testing.T) {
 		if sub.Count != "" {
 			method, encoded = http.MethodPost, formBody(sub)
 		}
-		body := pageTestContent(t, formRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
+		body := pageTestContent(t, formRequest(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
 		forms, formEnds := pageTestTags(body, "form", false), pageTestTags(body, "form", true)
 		if len(forms) != 1 || len(formEnds) != 1 {
 			t.Fatalf("form pairs: starts=%v ends=%v", forms, formEnds)
@@ -132,7 +132,7 @@ func TestFormIconButton(t *testing.T) {
 		if sub.Count != "" {
 			method, encoded = http.MethodPost, formBody(sub)
 		}
-		form := formSpan(t, formRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
+		form := formSpan(t, formRequest(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
 		buttons := pageTestTags(form, "button", false)
 		if len(buttons) != 1 {
 			t.Fatalf("button start tags = %d", len(buttons))
@@ -255,7 +255,7 @@ func TestFormStatusOptionsFollowStatuses(t *testing.T) {
 			method = http.MethodPost
 			body = formBody(sub)
 		}
-		response := formRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", body)
+		response := formRequest(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", body)
 		form := formSpan(t, response.Body.String())
 		var statusSelect string
 		for _, span := range pageTestTags(form, "select", false) {
@@ -293,7 +293,7 @@ func TestFormStatusOptionsFollowStatuses(t *testing.T) {
 func TestFormRejectedStatusSelection(t *testing.T) {
 	for _, status := range []string{"active", " paused ", "retired", "archived", "", "PAUSED"} {
 		sub := widget.Submission{Name: "", Count: "1", Status: status}
-		response := formRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
+		response := formRequest(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
 		if response.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("status %q: response = %d", status, response.Code)
 		}
@@ -344,7 +344,7 @@ func TestFormFieldErrorTextProcedure(t *testing.T) {
 	if got, ok := formFieldErrorText(body, "name"); !ok || got != "A & B" {
 		t.Errorf("field error text = %q, present=%v", got, ok)
 	}
-	response := formRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", "name=valid&count=bad&status=active")
+	response := formRequest(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", "name=valid&count=bad&status=active")
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d", response.Code)
 	}
@@ -398,7 +398,7 @@ func TestFormFreshPagesAndFailures(t *testing.T) {
 		{http.MethodPost, "/widgets", "application/json"},
 	} {
 		t.Run(tc.method+tc.path+tc.contentType, func(t *testing.T) {
-			w := formRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), tc.method, tc.path, tc.contentType, "")
+			w := formRequest(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), tc.method, tc.path, tc.contentType, "")
 			body := w.Body.String()
 			controls := make(map[string]string)
 			if w.Code == http.StatusOK {
@@ -448,9 +448,9 @@ func TestFormRejections(t *testing.T) {
 	}
 	for i, sub := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			store, oracle := panelTestStore(), panelTestStore()
-			before := store.All()
-			_, errs := formTestCreate(oracle, sub)
+			store, oracle := panelTestStore(t), panelTestStore(t)
+			before := panelStoreAll(t, store)
+			_, errs := formTestCreate(t, oracle, sub)
 			if !errs.Any() {
 				t.Fatal("rejection fixture unexpectedly valid")
 			}
@@ -459,8 +459,8 @@ func TestFormRejections(t *testing.T) {
 			if w.Code != http.StatusUnprocessableEntity || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("rejection = %d %v", w.Code, w.Header())
 			}
-			if !slices.Equal(before, store.All()) {
-				t.Errorf("rejection mutated store: %v", store.All())
+			if !slices.Equal(before, panelStoreAll(t, store)) {
+				t.Errorf("rejection mutated store: %v", panelStoreAll(t, store))
 			}
 			body := w.Body.String()
 			controls := assertFormMarkup(t, body)
@@ -576,7 +576,7 @@ func assertFormPanel(t *testing.T, body string) {
 	}
 }
 
-// R-MLL7-BZZT R-KE05-XTCE R-KGFY-PCTS
+// R-MLL7-BZZT R-KE05-XTCE R-HNE1-EINH
 func TestFormAcceptedSubmission(t *testing.T) {
 	for _, mediaType := range []string{
 		"application/x-www-form-urlencoded",
@@ -584,10 +584,10 @@ func TestFormAcceptedSubmission(t *testing.T) {
 		"application/x-www-form-urlencoded; deliberately not a MIME parameter",
 	} {
 		t.Run(mediaType, func(t *testing.T) {
-			store, oracle := panelTestStore(), panelTestStore()
-			before := store.All()
+			store, oracle := panelTestStore(t), panelTestStore(t)
+			before := panelStoreAll(t, store)
 			sub := widget.Submission{Name: " \tnew & widget\n", Count: " +004 ", Status: "\u2003paused "}
-			created, errs := formTestCreate(oracle, sub)
+			created, errs := formTestCreate(t, oracle, sub)
 			if errs.Any() {
 				t.Fatalf("valid fixture rejected: %+v", errs)
 			}
@@ -598,7 +598,7 @@ func TestFormAcceptedSubmission(t *testing.T) {
 			if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/widgets" || w.Body.Len() != 0 {
 				t.Fatalf("accepted answer = %d %v %q", w.Code, w.Header(), w.Body.String())
 			}
-			if got := store.All(); !slices.Equal(got, append(before, created)) {
+			if got := panelStoreAll(t, store); !slices.Equal(got, append(before, created)) {
 				t.Errorf("created sequence = %v, want old sequence + %v", got, created)
 			}
 			page := formRequest(h, http.MethodGet, "/widgets", "", "")
@@ -621,17 +621,17 @@ func TestFormMissingAndRepeatedFields(t *testing.T) {
 		{"name=+first+&name=later&count=+bad+&count=1&status=+paused+&status=active", widget.Submission{Name: " first ", Count: " bad ", Status: " paused "}},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
-			store := panelTestStore()
-			before := store.All()
+			store := panelTestStore(t)
+			before := panelStoreAll(t, store)
 			w := formRequest(coreHandler(t, store, pageTestBanner, io.Discard), http.MethodPost, "/widgets?name=query&count=9&status=active", "application/x-www-form-urlencoded", tc.body)
 			if w.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d", w.Code)
 			}
-			if got := store.All(); !slices.Equal(got, before) {
+			if got := panelStoreAll(t, store); !slices.Equal(got, before) {
 				t.Errorf("rejected submission changed store: %v, want %v", got, before)
 			}
 			controls := assertFormMarkup(t, w.Body.String())
-			_, errs := formTestCreate(panelTestStore(), tc.sub)
+			_, errs := formTestCreate(t, panelTestStore(t), tc.sub)
 			assertFormErrors(t, w.Body.String(), controls, errs)
 			for field, want := range map[string]string{"name": tc.sub.Name, "count": tc.sub.Count} {
 				if got, _ := pageTestAttribute(controls[field], "value"); got != want {
@@ -663,8 +663,8 @@ func (*formObservedBody) Close() error { return nil }
 func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 	for _, mediaType := range []string{"", "application/json", "multipart/form-data; boundary=a", "text/plain", "application/x-www-form-urlencoded-extra", ";application/x-www-form-urlencoded"} {
 		t.Run(mediaType, func(t *testing.T) {
-			store := panelTestStore()
-			before := store.All()
+			store := panelTestStore(t)
+			before := panelStoreAll(t, store)
 			body := &formObservedBody{reader: strings.NewReader("name=otherwise-valid&count=1&status=active")}
 			r := httptest.NewRequest(http.MethodPost, "/widgets", body)
 			r.Header.Set("X-User-Id", "form-user")
@@ -677,7 +677,7 @@ func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 			if w.Code != http.StatusUnsupportedMediaType || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("unsupported answer = %d %v", w.Code, w.Header())
 			}
-			if body.reads != 0 || !slices.Equal(before, store.All()) {
+			if body.reads != 0 || !slices.Equal(before, panelStoreAll(t, store)) {
 				t.Errorf("unsupported request read body %d times or changed store", body.reads)
 			}
 			markup := pageTestStrip(w.Body.String())
@@ -705,13 +705,13 @@ func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 	}
 }
 
-// R-KSMY-J28Q
+// R-HPTU-624V
 func TestFormMissingIdentityNeverReads(t *testing.T) {
 	for _, mediaType := range []string{"application/x-www-form-urlencoded", "application/json", ""} {
 		for _, identity := range []string{"absent", "empty"} {
 			t.Run(mediaType+identity, func(t *testing.T) {
-				store := panelTestStore()
-				before := store.All()
+				store := panelTestStore(t)
+				before := panelStoreAll(t, store)
 				h := coreHandler(t, store, pageTestBanner, io.Discard)
 				var previous *httptest.ResponseRecorder
 				for _, content := range []string{"name=new&count=1&status=active", "name=&count=wrong&status=archived"} {
@@ -723,8 +723,8 @@ func TestFormMissingIdentityNeverReads(t *testing.T) {
 					}
 					w := httptest.NewRecorder()
 					h.ServeHTTP(w, r)
-					if w.Code != http.StatusInternalServerError || body.reads != 0 || !slices.Equal(before, store.All()) {
-						t.Errorf("missing identity status=%d reads=%d store=%v", w.Code, body.reads, store.All())
+					if w.Code != http.StatusInternalServerError || body.reads != 0 || !slices.Equal(before, panelStoreAll(t, store)) {
+						t.Errorf("missing identity status=%d reads=%d store=%v", w.Code, body.reads, panelStoreAll(t, store))
 					}
 					if previous != nil && (previous.Code != w.Code || !reflect.DeepEqual(previous.Header(), w.Header()) || previous.Body.String() != w.Body.String()) {
 						t.Error("missing-identity response depends on body")
@@ -740,7 +740,7 @@ type formFailingReader struct{}
 
 func (formFailingReader) Read([]byte) (int, error) { return 0, errors.New("broken body") }
 
-// R-KV2R-ALQ4 R-KWAN-ODGT
+// R-HR1Q-JTVK R-HS9M-XLM9
 func TestFormAnswerSetAndAcceptIndependence(t *testing.T) {
 	for _, tc := range []struct {
 		name, identity, mediaType, body string
@@ -768,7 +768,7 @@ func TestFormAnswerSetAndAcceptIndependence(t *testing.T) {
 					r.Header.Set("Accept", accept)
 				}
 				w := httptest.NewRecorder()
-				coreHandler(t, panelTestStore(), pageTestBanner, io.Discard).ServeHTTP(w, r)
+				coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard).ServeHTTP(w, r)
 				if w.Code != tc.want {
 					t.Errorf("status=%d, want=%d", w.Code, tc.want)
 				}
@@ -786,12 +786,12 @@ func TestFormAnswerSetAndAcceptIndependence(t *testing.T) {
 }
 
 // formTestCreate independently models the submission's field error definition.
-func formTestCreate(store *widget.Store, sub widget.Submission) (widget.Widget, widget.FieldErrors) {
+func formTestCreate(t *testing.T, store *widget.Store, sub widget.Submission) (widget.Widget, widget.FieldErrors) {
 	d, parse := widget.ParseSubmission(sub)
 	if !parse.Any() {
-		return store.Create(d)
+		return panelStoreCreate(t, store, d)
 	}
-	rules := store.Check(d)
+	rules := panelStoreCheck(t, store, d)
 	errors := widget.FieldErrors{Name: parse.Name, Count: parse.Count, Status: parse.Status}
 	if errors.Name == "" {
 		errors.Name = rules.Name
@@ -817,13 +817,13 @@ func TestFormAssetAndDeclaredView(t *testing.T) {
 		{Name: "valid", Count: "bad", Status: " paused "},
 		{Name: "new", Count: "1", Status: "ARCHIVED"},
 	} {
-		store := panelTestStore()
+		store := panelTestStore(t)
 		view := panel.FormView{Statuses: widget.Statuses()}
 		method, encoded := http.MethodGet, ""
 		if sub != (widget.Submission{}) {
 			method, encoded = http.MethodPost, formBody(sub)
 			draft, _ := widget.ParseSubmission(sub)
-			_, errs := formTestCreate(panelTestStore(), sub)
+			_, errs := formTestCreate(t, panelTestStore(t), sub)
 			view = panel.FormView{Submission: sub, Errors: errs, Statuses: widget.Statuses(), Selected: draft.Status}
 		}
 		response := formRequest(coreHandler(t, store, pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded)
@@ -852,10 +852,10 @@ func TestFormAssetAndDeclaredView(t *testing.T) {
 	}
 }
 
-// R-MLL7-BZZT R-MO10-3JH7 R-MMT3-PRQI
+// R-MLL7-BZZT R-HTHJ-BDCY R-MMT3-PRQI
 func TestFormConcurrentCreationOutcomes(t *testing.T) {
-	store := panelTestStore()
-	before := store.All()
+	store := panelTestStore(t)
+	before := panelStoreAll(t, store)
 	handler := coreHandler(t, store, pageTestBanner, io.Discard)
 	sub := widget.Submission{Name: " contested ", Count: "4", Status: "paused"}
 	start := make(chan struct{})
@@ -884,12 +884,12 @@ func TestFormConcurrentCreationOutcomes(t *testing.T) {
 		}
 	}
 	want := slices.Clone(before)
-	expected, errors := panelTestStore().Create(coreDraft(sub))
+	expected, errors := panelStoreCreate(t, panelTestStore(t), coreDraft(sub))
 	if errors.Any() {
 		t.Fatal(errors)
 	}
 	want = append(want, expected)
-	if accepted != 1 || rejected != 1 || !slices.Equal(store.All(), want) {
-		t.Fatalf("outcomes=%d/%d store=%v", accepted, rejected, store.All())
+	if accepted != 1 || rejected != 1 || !slices.Equal(panelStoreAll(t, store), want) {
+		t.Fatalf("outcomes=%d/%d store=%v", accepted, rejected, panelStoreAll(t, store))
 	}
 }

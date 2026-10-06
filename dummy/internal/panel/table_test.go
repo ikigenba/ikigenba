@@ -37,7 +37,7 @@ func tableTestIdentity() http.Header {
 
 func tableTestCreate(t *testing.T, store *widget.Store, name string) {
 	t.Helper()
-	if _, errs := store.Create(widget.Draft{Name: name, Count: 45, Status: widget.StatusPaused}); errs.Any() {
+	if _, errs := panelStoreCreate(t, store, widget.Draft{Name: name, Count: 45, Status: widget.StatusPaused}); errs.Any() {
 		t.Fatalf("create %q: %+v", name, errs)
 	}
 }
@@ -119,13 +119,13 @@ func tableTestPageSpan(t *testing.T, raw string) string {
 }
 
 func TestTableMarkupAndPageIdentity(t *testing.T) {
-	// R-76HS-3U6R R-CEKZ-GD0R R-H8LI-D5DT R-HB1B-4OV7 R-MHXI-6ORQ
-	// R-MJ5E-KGIF R-HUJP-90QB R-HWZI-0K7P
+	// R-76HS-3U6R R-CEKZ-GD0R R-H8LI-D5DT R-HEUQ-Q4GM R-MHXI-6ORQ
+	// R-MJ5E-KGIF R-HUJP-90QB R-HIIF-VFOP
 	for _, empty := range []bool{false, true} {
 		t.Run(fmt.Sprintf("empty=%v", empty), func(t *testing.T) {
-			store := panelTestStore()
+			store := panelTestStore(t)
 			if empty {
-				store = new(widget.Store)
+				store = panelEmptyStore(t)
 			} else {
 				tableTestCreate(t, store, "  my  \twidget\n<&>\"\x00  ")
 				tableTestCreate(t, store, "last widget")
@@ -136,7 +136,7 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 			if fragment.Code != http.StatusOK || fragment.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("fragment response = %d %v", fragment.Code, fragment.Header())
 			}
-			tableTestFragment(t, fragment.Body.String(), store.All())
+			tableTestFragment(t, fragment.Body.String(), panelStoreAll(t, store))
 			page := tableTestRequest(h, "GET", "/widgets", headers, "")
 			if page.Code != http.StatusOK {
 				t.Fatalf("page status = %d", page.Code)
@@ -148,7 +148,7 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 			}
 			for _, response := range []*httptest.ResponseRecorder{page, rejected} {
 				span := tableTestPageSpan(t, response.Body.String())
-				tableTestFragment(t, span, store.All())
+				tableTestFragment(t, span, panelStoreAll(t, store))
 				if span != fragment.Body.String() {
 					t.Errorf("page %d table differs from fragment", response.Code)
 				}
@@ -179,9 +179,9 @@ func tableTestHasASCIIClass(value, name string) bool {
 
 func TestTableCountAndStatusMarkup(t *testing.T) {
 	// R-HH4T-1JKO R-HICP-FBBD R-HM0E-KMJG R-HOG7-C60U
-	store := panelTestStore()
+	store := panelTestStore(t)
 	for _, status := range widget.Statuses() {
-		if _, errs := store.Create(widget.Draft{Name: "widget " + string(status), Count: 7, Status: status}); errs.Any() {
+		if _, errs := panelStoreCreate(t, store, widget.Draft{Name: "widget " + string(status), Count: 7, Status: status}); errs.Any() {
 			t.Fatalf("create %q: %+v", status, errs)
 		}
 	}
@@ -191,7 +191,7 @@ func TestTableCountAndStatusMarkup(t *testing.T) {
 	}
 	fragment := response.Body.String()
 	rows := pageTestTags(fragment, "tr", false)
-	widgets := store.All()
+	widgets := panelStoreAll(t, store)
 	if len(rows) != len(widgets)+1 {
 		t.Fatalf("rows = %d, want %d", len(rows), len(widgets)+1)
 	}
@@ -261,11 +261,11 @@ func TestTableCountAndStatusMarkup(t *testing.T) {
 
 func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 	// R-HZFA-S3P3 R-I1V3-JN6H R-I4AW-B6NV
-	store := panelTestStore()
+	store := panelTestStore(t)
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	first := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
 	second := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
-	otherStore := tableTestRequest(coreHandler(t, panelTestStore(), pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+	otherStore := tableTestRequest(coreHandler(t, panelTestStore(t), pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
 	for _, response := range []*httptest.ResponseRecorder{first, second, otherStore} {
 		if response.Code != http.StatusOK || !regexp.MustCompile(`^"[^",\x09-\x0d\x20]+"$`).MatchString(response.Header().Get("ETag")) {
 			t.Fatalf("invalid success validator: %d %v", response.Code, response.Header())
@@ -287,11 +287,11 @@ func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 }
 
 func TestTableConditionalRequests(t *testing.T) {
-	// R-IAEE-81DC R-ICU6-ZKUQ R-I7YL-GHVY
+	// R-HJQC-97FE R-ICU6-ZKUQ R-HG2N-3W7B
 	for _, empty := range []bool{false, true} {
-		store := panelTestStore()
+		store := panelTestStore(t)
 		if empty {
-			store = new(widget.Store)
+			store = panelEmptyStore(t)
 		}
 		h := coreHandler(t, store, pageTestBanner, io.Discard)
 		baseline := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
@@ -341,12 +341,12 @@ func TestTableConditionalRequests(t *testing.T) {
 }
 
 func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
-	// R-IF9Z-R4C4 R-IIXO-WFK7 R-0142-4LXJ R-INTA-FIIZ R-I7YL-GHVY
+	// R-IF9Z-R4C4 R-IIXO-WFK7 R-0142-4LXJ R-HHAJ-HNY0 R-HG2N-3W7B
 	for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CUSTOM"} {
 		for _, identity := range []string{"absent", "empty", "present"} {
 			for _, conditional := range []string{"", "*", `"stale"`} {
 				t.Run(method+"/"+identity+"/"+conditional, func(t *testing.T) {
-					store := panelTestStore()
+					store := panelTestStore(t)
 					tableTestCreate(t, store, "read-only fixture")
 					headers := tableTestIdentity()
 					switch identity {
@@ -356,9 +356,9 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 						headers.Set("X-User-Id", "")
 					}
 					headers.Set("If-None-Match", conditional)
-					before := store.All()
+					before := panelStoreAll(t, store)
 					response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), method, "/widgets/table", headers, "name=unwanted&count=3&status=active")
-					if !slices.Equal(before, store.All()) {
+					if !slices.Equal(before, panelStoreAll(t, store)) {
 						t.Error("table request mutated the store")
 					}
 					wantStatus, wantBody := http.StatusOK, ""
@@ -407,13 +407,13 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 }
 
 func TestTableConcurrentSnapshots(t *testing.T) {
-	store := panelTestStore()
+	store := panelTestStore(t)
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	var group sync.WaitGroup
 	for i := range 12 {
 		group.Go(func() {
 			name := fmt.Sprintf("concurrent-%d", i)
-			if _, errs := store.Create(widget.Draft{Name: name, Count: 2, Status: widget.StatusActive}); errs.Any() {
+			if _, errs := panelStoreCreate(t, store, widget.Draft{Name: name, Count: 2, Status: widget.StatusActive}); errs.Any() {
 				t.Errorf("create: %+v", errs)
 			}
 		})
@@ -426,13 +426,13 @@ func TestTableConcurrentSnapshots(t *testing.T) {
 	}
 	group.Wait()
 	response := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
-	tableTestFragment(t, response.Body.String(), store.All())
+	tableTestFragment(t, response.Body.String(), panelStoreAll(t, store))
 }
 
 func TestTableTransportHeadParity(t *testing.T) {
-	// R-I7YL-GHVY: exercise net/http's real response framing, including lengths
+	// R-HG2N-3W7B: exercise net/http's real response framing, including lengths
 	// it otherwise adds to GET responses but omits from unwritten HEAD bodies.
-	store := panelTestStore()
+	store := panelTestStore(t)
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	etag := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Header().Get("ETag")
 	server := httptest.NewServer(h)
@@ -491,7 +491,7 @@ func TestTableTransportHeadParity(t *testing.T) {
 
 // R-CI8O-LO8U
 func TestTableFragmentExcludesPageHeading(t *testing.T) {
-	store := panelTestStore()
+	store := panelTestStore(t)
 	for _, extra := range []bool{false, true} {
 		if extra {
 			tableTestCreate(t, store, "one more")
@@ -507,21 +507,21 @@ func TestTableFragmentExcludesPageHeading(t *testing.T) {
 	}
 }
 
-// R-CAXA-B1SO
+// R-HDMU-CCPX
 func TestTableUsesAssetData(t *testing.T) {
 	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, empty := range []bool{false, true} {
-		store := panelTestStore()
+		store := panelTestStore(t)
 		if empty {
-			store = new(widget.Store)
+			store = panelEmptyStore(t)
 		} else {
 			tableTestCreate(t, store, "a\x00b <&>")
 		}
 		var expected bytes.Buffer
-		if err := set.ExecuteTemplate(&expected, "table", store.All()); err != nil {
+		if err := set.ExecuteTemplate(&expected, "table", panelStoreAll(t, store)); err != nil {
 			t.Fatal(err)
 		}
 		response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")

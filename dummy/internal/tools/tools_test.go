@@ -7,16 +7,19 @@ import (
 	"fmt"
 	"io"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/tools"
@@ -72,6 +75,43 @@ func knownSource() io.Reader {
 	return bytes.NewReader(data)
 }
 
+func toolsDatabaseStore(t *testing.T) (*widget.Store, *db.DB) {
+	t.Helper()
+	handle, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "widgets.db"), Migrations: dummy.Migrations(), Now: func() time.Time { return time.Unix(1000, 0) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := handle.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return widget.NewStore(handle, knownSource()), handle
+}
+func toolsTestStore(t *testing.T) *widget.Store {
+	t.Helper()
+	s, _ := toolsDatabaseStore(t)
+	for _, d := range []widget.Draft{{Name: "alpha", Count: 3, Status: widget.StatusActive}, {Name: "beta", Count: 0, Status: widget.StatusPaused}, {Name: "gamma", Count: 12, Status: widget.StatusRetired}} {
+		toolsStoreCreate(t, s, d)
+	}
+	return s
+}
+func toolsStoreAll(t *testing.T, s *widget.Store) []widget.Widget {
+	t.Helper()
+	w, err := s.All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+func toolsStoreCreate(t *testing.T, s *widget.Store, d widget.Draft) (widget.Widget, widget.FieldErrors) {
+	t.Helper()
+	w, e, err := s.Create(context.Background(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w, e
+}
 func capturingWriter(t *testing.T) (*telemetry.Writer, *telemetry.Capture, *bytes.Buffer) {
 	t.Helper()
 	capture := &telemetry.Capture{}
@@ -87,7 +127,7 @@ func capturingWriter(t *testing.T) (*telemetry.Writer, *telemetry.Capture, *byte
 }
 
 func TestAdvertisedTools(t *testing.T) {
-	c := clientOver(t, widget.NewStore(knownSource()))
+	c := clientOver(t, toolsTestStore(t))
 	infos, err := c.ListTools(context.Background(), caller)
 	if err != nil {
 		t.Fatal(err)
@@ -226,17 +266,17 @@ func assertError(t *testing.T, r mcp.Result, text string) {
 }
 
 func TestListResultAndReadOnly(t *testing.T) {
-	s := widget.NewStore(knownSource())
-	_, errs := s.Create(widget.Draft{Name: "last \"widget\"", Count: 8, Status: widget.StatusPaused})
+	s := toolsTestStore(t)
+	_, errs := toolsStoreCreate(t, s, widget.Draft{Name: "last \"widget\"", Count: 8, Status: widget.StatusPaused})
 	if errs.Any() {
 		t.Fatal(errs)
 	}
 	c := clientOver(t, s)
-	before := s.All()
-	// R-LFHW-WII0, R-9E70-T554, R-EYRO-HCXB.
+	before := toolsStoreAll(t, s)
+	// R-LFHW-WII0, R-HX58-GOL1, R-HYD4-UGBQ.
 	for _, args := range []json.RawMessage{nil, json.RawMessage(`{}`)} {
 		assertSuccess(t, call(t, c, "list_widgets", args), listJSON(t, before))
-		if !reflect.DeepEqual(s.All(), before) {
+		if !reflect.DeepEqual(toolsStoreAll(t, s), before) {
 			t.Fatal("listing changed the store")
 		}
 	}
@@ -262,24 +302,24 @@ func TestCreateMatchesStoreOutcome(t *testing.T) {
 	}
 	for i, draft := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			s, expected := widget.NewStore(knownSource()), widget.NewStore(knownSource())
+			s, expected := toolsTestStore(t), toolsTestStore(t)
 			c := clientOver(t, s)
 			inputBytes, err := json.Marshal(draftInput(draft))
 			if err != nil {
 				t.Fatal(err)
 			}
 			input := string(inputBytes)
-			w, errs := expected.Create(draft)
+			w, errs := toolsStoreCreate(t, expected, draft)
 			result := call(t, c, "create_widget", json.RawMessage(input))
-			// R-5XXV-7CQL: effects match one domain Create, including refusal.
-			if !reflect.DeepEqual(s.All(), expected.All()) {
-				t.Fatalf("store = %+v; want %+v", s.All(), expected.All())
+			// R-HZL1-882F: effects match one domain Create, including refusal.
+			if !reflect.DeepEqual(toolsStoreAll(t, s), toolsStoreAll(t, expected)) {
+				t.Fatalf("store = %+v; want %+v", toolsStoreAll(t, s), toolsStoreAll(t, expected))
 			}
 			if !errs.Any() {
-				// R-9FEX-6WVT: ordered compact widget object and matching text.
+				// R-I0SX-LZT4: ordered compact widget object and matching text.
 				assertSuccess(t, result, widgetJSON(t, w))
 			} else {
-				// R-M5QI-CZCS: exact error members and field order.
+				// R-I20T-ZRJT: exact error members and field order.
 				text := "invalid arguments:"
 				if errs.Name != "" {
 					text += "\nname: " + errs.Name
@@ -305,14 +345,14 @@ func TestArgumentOffencesLeaveStoreUnchanged(t *testing.T) {
 	// R-F8IV-JIUV: decode offences preclude any mutation for both tools.
 	for i, tc := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			s := widget.NewStore(knownSource())
+			s := toolsTestStore(t)
 			c := clientOver(t, s)
-			before := s.All()
+			before := toolsStoreAll(t, s)
 			result := call(t, c, tc.name, json.RawMessage(tc.args))
 			if !result.IsError() {
 				t.Fatal("offence accepted")
 			}
-			if !reflect.DeepEqual(s.All(), before) {
+			if !reflect.DeepEqual(toolsStoreAll(t, s), before) {
 				t.Fatal("decode offence changed store")
 			}
 		})
@@ -320,7 +360,7 @@ func TestArgumentOffencesLeaveStoreUnchanged(t *testing.T) {
 }
 
 func TestCountRange(t *testing.T) {
-	s := widget.NewStore(knownSource())
+	s := toolsTestStore(t)
 	c := clientOver(t, s)
 	// R-FAYO-B2C9: integral JSON values beyond either int64 bound.
 	for _, number := range []string{"-9223372036854775809", "9223372036854775808"} {
@@ -330,9 +370,9 @@ func TestCountRange(t *testing.T) {
 }
 
 func TestConcurrentCreateSameName(t *testing.T) {
-	s := widget.NewStore(knownSource())
+	s := toolsTestStore(t)
 	c := clientOver(t, s)
-	before := s.All()
+	before := toolsStoreAll(t, s)
 	const n = 16
 	results := make([]mcp.Result, n)
 	errors := make([]error, n)
@@ -346,7 +386,7 @@ func TestConcurrentCreateSameName(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
-	// R-M6YE-QR3H: exactly one success and one additional widget.
+	// R-I4GM-RB17: exactly one success and one additional widget.
 	successes := 0
 	for i, result := range results {
 		if errors[i] != nil {
@@ -366,16 +406,16 @@ func TestConcurrentCreateSameName(t *testing.T) {
 			successes++
 		}
 	}
-	if successes != 1 || len(s.All()) != len(before)+1 {
-		t.Fatalf("successes %d; widgets %d", successes, len(s.All()))
+	if successes != 1 || len(toolsStoreAll(t, s)) != len(before)+1 {
+		t.Fatalf("successes %d; widgets %d", successes, len(toolsStoreAll(t, s)))
 	}
 }
 
-// R-LGPT-AA8P, R-LHXP-O1ZE.
+// R-I38Q-DJAI, R-LHXP-O1ZE.
 func TestToolDomainTelemetry(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	writer, capture, stderr := capturingWriter(t)
-	store := widget.NewStore(knownSource())
+	store := toolsTestStore(t)
 	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: cli.Version, Telemetry: writer})
 	tools.Register(srv, store, writer)
 	server := httptest.NewServer(identity.Require(srv))
@@ -409,7 +449,7 @@ func TestToolDomainTelemetry(t *testing.T) {
 			if len(events) != 2 || events[0].Name != "widget.created" || events[1].Name != "tool.called" {
 				t.Fatalf("accepted events: %+v", events)
 			}
-			all := store.All()
+			all := toolsStoreAll(t, store)
 			event := events[0]
 			if event.RequestID != caller.RequestID || event.User != caller.UserID || !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"widget": all[len(all)-1].ID}) {
 				t.Fatalf("created event: %+v", event)

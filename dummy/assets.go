@@ -17,3 +17,15 @@ func Assets() fs.FS {
 	}
 	return files
 }
+
+//go:embed migrations/0001_widgets.sql
+var migrations embed.FS
+
+// Migrations returns the embedded baseline database migration.
+func Migrations() fs.FS {
+	files, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		panic(err)
+	}
+	return files
+}

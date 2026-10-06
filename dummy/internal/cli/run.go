@@ -7,14 +7,17 @@ import (
 	"math"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -34,6 +37,8 @@ type Process struct {
 	Telemetry *telemetry.Writer
 	Gate      *Gate
 	Rand      io.Reader
+	Dir       string
+	Now       func() time.Time
 }
 
 // Process exit codes.
@@ -44,12 +49,20 @@ const (
 )
 
 // Usage describes the dummy command line.
-const Usage = "Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+const Usage = "Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 
 // Run runs the dummy command and returns its process exit code.
 func Run(ctx context.Context, p Process) int {
 	stderr := &lockedWriter{writer: p.Stderr}
 	if len(p.Args) > 0 {
+		if len(p.Args) == 2 && p.Args[0] == "db" && p.Args[1] == "status" {
+			err := db.Status(context.Background(), db.Config{Path: filepath.Join(p.Dir, "state", "dummy.db"), Migrations: dummy.Migrations()}, p.Stdout)
+			if err != nil {
+				writeDiagnostic(stderr, "dummy: "+strings.ReplaceAll(err.Error(), "\n", " ")+"\n")
+				return ExitServerFailed
+			}
+			return ExitSuccess
+		}
 		if len(p.Args) == 1 {
 			switch p.Args[0] {
 			case "--version":
@@ -64,7 +77,9 @@ func Run(ctx context.Context, p Process) int {
 			}
 		}
 		arg := p.Args[0]
-		if arg == "--version" || arg == "manifest" || arg == "--help" {
+		if arg == "db" && len(p.Args) > 2 && p.Args[1] == "status" {
+			arg = p.Args[2]
+		} else if (arg == "--version" || arg == "manifest" || arg == "--help" || arg == "db") && len(p.Args) > 1 {
 			arg = p.Args[1]
 		}
 		kind := "command"
@@ -109,13 +124,19 @@ func Run(ctx context.Context, p Process) int {
 	}
 	defer func() { _ = ln.Close() }()
 
+	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "dummy.db"), Migrations: dummy.Migrations(), Now: p.Now})
+	if err != nil {
+		writeDiagnostic(stderr, "dummy: cannot open database state/dummy.db: "+strings.ReplaceAll(err.Error(), "\n", " ")+"\n")
+		return ExitServerFailed
+	}
+	defer func() { _ = handle.Close() }()
+	store := widget.NewStore(handle, p.Rand)
 	if address, ok := lookup(p.LookupEnv, "NOTIFY_SOCKET"); ok && address != "" {
 		if err = notifyReady(address); err != nil {
 			writeDiagnostic(stderr, "dummy: "+err.Error()+"\n")
 			return ExitServerFailed
 		}
 	}
-	store := widget.NewStore(p.Rand)
 	handler := panel.Handler(store, p.Banner, p.MCP, p.Telemetry)
 	p.Telemetry.Ready()
 	if p.Gate != nil {

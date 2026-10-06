@@ -8,28 +8,73 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-func panelTestStore() *widget.Store {
+func panelDatabaseStore(t *testing.T) (*widget.Store, *db.DB) {
+	t.Helper()
+	handle, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "widgets.db"), Migrations: dummy.Migrations(), Now: func() time.Time { return time.Unix(1000, 0) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := handle.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	data := make([]byte, 16*4096)
 	for i := range data {
-		data[i] = byte(i / 16)
-		data[i] ^= byte(i / 4096)
+		data[i] = byte(i/16) ^ byte(i/4096)
 	}
-	return widget.NewStore(bytes.NewReader(data))
+	return widget.NewStore(handle, bytes.NewReader(data)), handle
+}
+func panelEmptyStore(t *testing.T) *widget.Store { t.Helper(); s, _ := panelDatabaseStore(t); return s }
+func panelTestStore(t *testing.T) *widget.Store {
+	t.Helper()
+	s := panelEmptyStore(t)
+	for _, d := range []widget.Draft{{Name: "alpha", Count: 3, Status: widget.StatusActive}, {Name: "beta", Count: 0, Status: widget.StatusPaused}, {Name: "gamma", Count: 12, Status: widget.StatusRetired}} {
+		panelStoreCreate(t, s, d)
+	}
+	return s
+}
+func panelStoreAll(t *testing.T, s *widget.Store) []widget.Widget {
+	t.Helper()
+	values, err := s.All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return values
+}
+func panelStoreCreate(t *testing.T, s *widget.Store, d widget.Draft) (widget.Widget, widget.FieldErrors) {
+	t.Helper()
+	w, e, err := s.Create(context.Background(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w, e
+}
+func panelStoreCheck(t *testing.T, s *widget.Store, d widget.Draft) widget.FieldErrors {
+	t.Helper()
+	e, err := s.Check(context.Background(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
 }
 
 func panelTestTelemetry(t *testing.T, stderr io.Writer) (*telemetry.Writer, *telemetry.Capture, *bytes.Buffer) {
@@ -47,7 +92,7 @@ func panelTestTelemetryWithClock(t *testing.T, stderr io.Writer, now func() time
 }
 
 // R-8AR9-SETA R-KSBT-MVET R-KTJQ-0N5I
-// R-CO16-H2KI R-L5QP-UCKG R-L6YM-84B5
+// R-CO16-H2KI R-HVXC-2WUC R-L6YM-84B5
 func TestPanelRequestTrail(t *testing.T) {
 	cases := []struct {
 		method, path, body, media, user string
@@ -81,7 +126,7 @@ func TestPanelRequestTrail(t *testing.T) {
 			t.Run(tc.method+tc.path+tc.user+headers.name, func(t *testing.T) {
 				t.Setenv(services.Variable, "")
 				writer, capture, diagnostics := panelTestTelemetry(t, io.Discard)
-				store := panelTestStore()
+				store := panelTestStore(t)
 				h := panel.Handler(store, pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
 				r := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 				if headers.present || tc.user != "" {
@@ -129,7 +174,7 @@ func TestPanelRequestTrail(t *testing.T) {
 					t.Fatalf("finish %#v", last)
 				}
 				if tc.created {
-					all := store.All()
+					all := panelStoreAll(t, store)
 					e := events[1]
 					if e.Name != "widget.created" || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"widget": all[len(all)-1].ID}) {
 						t.Fatalf("creation %#v", e)
@@ -152,7 +197,7 @@ func TestPanelPanicTrail(t *testing.T) {
 		t.Run(tc.method, func(t *testing.T) {
 			t.Setenv(services.Variable, "")
 			writer, capture, _ := panelTestTelemetry(t, io.Discard)
-			h := panel.Handler(panelTestStore(), func(page.User) page.Banner { panic("banner failed") }, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+			h := panel.Handler(panelTestStore(t), func(page.User) page.Banner { panic("banner failed") }, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
 			r := pageTestRequest(tc.method, "/widgets")
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			r.Body = io.NopCloser(strings.NewReader(tc.body))
@@ -175,14 +220,14 @@ func TestPanelPanicTrail(t *testing.T) {
 	}
 }
 
-// R-IC9W-TOIW
+// R-GWK8-ZKC7
 func TestPanelKeepsWidgetIDsOutOfBodies(t *testing.T) {
 	for _, tc := range []struct{ method, path, body string }{{"GET", "/widgets", ""}, {"GET", "/widgets/table", ""}, {"POST", "/widgets", "name=new&count=bad&status=active"}, {"GET", "/missing", ""}} {
 		t.Run(tc.path+tc.method, func(t *testing.T) {
-			store := panelTestStore()
+			store := panelTestStore(t)
 			h := coreHandler(t, store, pageTestBanner, io.Discard)
 			response := formRequest(h, tc.method, tc.path, "application/x-www-form-urlencoded", tc.body)
-			for _, w := range store.All() {
+			for _, w := range panelStoreAll(t, store) {
 				if strings.Contains(response.Body.String(), w.ID) {
 					t.Fatalf("body shows widget id %q", w.ID)
 				}
@@ -227,7 +272,7 @@ func TestPanelStartsTrailBeforeIO(t *testing.T) {
 		t.Run(tc.method+tc.path+tc.user, func(t *testing.T) {
 			t.Setenv(services.Variable, "")
 			writer, capture, _ := panelTestTelemetry(t, io.Discard)
-			h := panel.Handler(panelTestStore(), pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+			h := panel.Handler(panelTestStore(t), pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
 			observed := 0
 			check := func() {
 				observed++
@@ -260,7 +305,7 @@ func TestPanelStartsTrailBeforeIO(t *testing.T) {
 func TestPanelMCPDomainTrail(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	writer, capture, diagnostics := panelTestTelemetry(t, io.Discard)
-	store := panelTestStore()
+	store := panelTestStore(t)
 	h := panel.Handler(store, pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
 	counts := make(chan telemetry.Attrs, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -335,7 +380,7 @@ func (panelCanceledBody) Close() error { return nil }
 func TestPanelTrailForInterruptedRequest(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	writer, capture, diagnostics := panelTestTelemetry(t, io.Discard)
-	h := panel.Handler(panelTestStore(), pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+	h := panel.Handler(panelTestStore(t), pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := pageTestRequest(http.MethodPost, "/widgets").WithContext(ctx)
@@ -387,7 +432,7 @@ func TestPanelTrailCountsWrittenBytesAndDuration(t *testing.T) {
 		now = now.Add(23 * time.Microsecond)
 		return pageTestBanner(u)
 	}
-	h := panel.Handler(panelTestStore(), banner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+	h := panel.Handler(panelTestStore(t), banner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
 	r := pageTestRequest(http.MethodGet, "/widgets")
 	out := panelShortResponse{httptest.NewRecorder()}
 	h.ServeHTTP(out, r)

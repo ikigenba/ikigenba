@@ -45,3 +45,33 @@ func TestAssets(t *testing.T) {
 		}
 	}
 }
+
+// R-2TWG-H749, R-2V4C-UYUY.
+func TestMigrations(t *testing.T) {
+	migrations := struct{ call func() fs.FS }{dummy.Migrations}.call
+	initial := migrations()
+	entries, err := fs.ReadDir(initial, ".")
+	if err != nil || len(entries) != 1 || entries[0].Name() != "0001_widgets.sql" {
+		t.Fatalf("migrations: %v %v", entries, err)
+	}
+	info, err := entries[0].Info()
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("migration info: %v %v", info, err)
+	}
+	before, err := fs.ReadFile(initial, "0001_widgets.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	for range 2 {
+		current := migrations()
+		entries, err := fs.ReadDir(current, ".")
+		if err != nil || len(entries) != 1 || entries[0].Name() != "0001_widgets.sql" {
+			t.Fatalf("later migrations: %v %v", entries, err)
+		}
+		data, err := fs.ReadFile(current, "0001_widgets.sql")
+		if err != nil || !bytes.Equal(before, data) {
+			t.Fatalf("migration contents: %v", err)
+		}
+	}
+}

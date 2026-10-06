@@ -45,7 +45,7 @@ func TestGateForwardsExactlyOnceWithContextEventAndError(t *testing.T) {
 	}
 }
 
-// R-HT8M-I3MS R-HPKX-CSEP
+// R-HT8M-I3MS R-2WC9-8QLN
 func TestGatePassesThroughAfterCancellationBeforeDrainDeadline(t *testing.T) {
 	trail := testMCP(t)
 	trail.writer.Shutdown(context.Background(), "replace fixture writer")

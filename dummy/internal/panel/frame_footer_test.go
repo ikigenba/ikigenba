@@ -89,7 +89,7 @@ func TestFrameDocumentsDrawSameFetchedBannerAndFooter(t *testing.T) {
 			Services: []page.Service{{Name: "other", URL: "/other", Enabled: true}}}
 		return drawn
 	}
-	h := coreHandler(t, panelTestStore(), source, io.Discard)
+	h := coreHandler(t, panelTestStore(t), source, io.Discard)
 	for _, r := range pageTestDocuments() {
 		body := pageTestResponse(h, r).Body.String()
 		banner := frameTestRender(t, "banner", drawn)
@@ -122,15 +122,15 @@ func TestFrameDocumentsDrawSameFetchedBannerAndFooter(t *testing.T) {
 	}
 }
 
-// R-HY48-16LK
+// R-GSWJ-U944
 func TestFrameEmailHasNoVisibleText(t *testing.T) {
 	for _, services := range [][]page.Service{nil, {}, {{Name: "alpha", URL: "https://alpha.test/", Enabled: true, Icon: `<svg><path d="M0 0"/></svg>`}}} {
 		source := pageTestEchoingBanner(services)
 		for _, email := range []string{"reader@example.test", " \treader+<&\"@example.test \n"} {
 			for _, r := range pageTestDocuments() {
 				r.Header.Set("X-User-Email", email)
-				store := panelTestStore()
-				for _, w := range store.All() {
+				store := panelTestStore(t)
+				for _, w := range panelStoreAll(t, store) {
 					if strings.Contains(w.Name, "@") {
 						t.Fatal("email test precondition violated")
 					}

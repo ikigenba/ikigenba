@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS widgets (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE,
+    count INTEGER NOT NULL,
+    status TEXT NOT NULL
+);

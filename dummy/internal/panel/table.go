@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
 func (h *handler) table(w http.ResponseWriter, r *http.Request) {
@@ -16,8 +18,13 @@ func (h *handler) table(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	widgets, err := h.store.All(r.Context())
+	if err != nil {
+		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
+		return
+	}
 	var body bytes.Buffer
-	if err := h.templates.ExecuteTemplate(&body, "table", h.store.All()); err != nil {
+	if err := h.templates.ExecuteTemplate(&body, "table", widgets); err != nil {
 		panic(err)
 	}
 	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body.Bytes()))

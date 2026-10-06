@@ -3,3 +3,7 @@ description = "Demo widgets to list and create"
 default = false
 mcp = true
 secrets = []
+
+[database]
+engine = "sqlite"
+path = "state/dummy.db"

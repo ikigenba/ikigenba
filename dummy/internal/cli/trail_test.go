@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-KG4T-T5ZV R-E80Y-6RJM R-KEWX-FE96 R-IXZD-5HBP
+// R-3QTQ-T050 R-E80Y-6RJM R-3ODY-1GNM R-IXZD-5HBP
 func TestRunTrailStartsBeforeRequestsAndStopsAfterFinishes(t *testing.T) {
 	trail := testMCP(t)
 	run := startRun(t, trail)
@@ -45,11 +45,12 @@ func TestRunTrailStartsBeforeRequestsAndStopsAfterFinishes(t *testing.T) {
 	}
 }
 
-// R-KL0F-C8YN
+// R-3H2J-QU7G
 func TestRunUsesInjectedWidgetIDBytes(t *testing.T) {
 	trail := testMCP(t)
 	source := bytes.NewReader([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23})
 	run := startConfiguredRun(t, trail, func(p *Process) { p.Rand = source })
+	runTool(t, run, "create_widget", json.RawMessage(`{"name":"injected","count":1,"status":"active"}`))
 	data, err := runTool(t, run, "list_widgets", nil).MarshalJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +63,7 @@ func TestRunUsesInjectedWidgetIDBytes(t *testing.T) {
 	if err = json.Unmarshal(data, &result); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"wgt_0001020304050607", "wgt_08090a0b0c0d0e0f", "wgt_1011121314151617"}
+	want := []string{"wgt_0001020304050607"}
 	var ids []string
 	for _, w := range result.StructuredContent.Widgets {
 		ids = append(ids, w.ID)
@@ -71,12 +72,15 @@ func TestRunUsesInjectedWidgetIDBytes(t *testing.T) {
 		t.Errorf("ids=%v", ids)
 	}
 	run.stop(t)
+	nilRun := startConfiguredRun(t, testMCP(t), func(p *Process) { p.Rand = nil })
+	runTool(t, nilRun, "create_widget", json.RawMessage(`{"name":"random","count":1,"status":"active"}`))
+	nilRun.stop(t)
 	if trail.stderr.Len() != 0 {
 		t.Errorf("telemetry stderr=%q", trail.stderr.String())
 	}
 }
 
-// R-KHCQ-6XQK R-IXZD-5HBP
+// R-0QW9-B16C R-IXZD-5HBP
 func TestRunRefusedStartsAndCommandsLeaveTelemetryUntouched(t *testing.T) {
 	cases := []Process{
 		{Args: []string{"--version"}}, {Args: []string{"manifest"}}, {Args: []string{"--help"}}, {Args: []string{"bad"}},
@@ -89,6 +93,7 @@ func TestRunRefusedStartsAndCommandsLeaveTelemetryUntouched(t *testing.T) {
 	for i, p := range cases {
 		t.Run(string(rune('a'+i)), func(t *testing.T) {
 			for _, withWriter := range []bool{false, true} {
+				p.Dir, p.Now = t.TempDir(), testNow
 				p.Stdout, p.Stderr = io.Discard, io.Discard
 				if !withWriter {
 					p.Telemetry = nil
@@ -133,7 +138,7 @@ func (s *deadlineSink) Deliver(ctx context.Context, e telemetry.Event) error {
 	return s.capture.Deliver(ctx, e)
 }
 
-// R-E6T1-SZSX
+// R-3PLU-F8EB
 func TestRunShutdownWithBlockedSinkRespectsDrain(t *testing.T) {
 	sink := &deadlineSink{block: true}
 	gate := NewGate(sink)

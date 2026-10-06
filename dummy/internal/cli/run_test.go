@@ -17,16 +17,16 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-F2D6-M8QD R-E8OC-2INJ
+// R-F2D6-M8QD R-32FR-5LB4
 func TestUsageConstant(t *testing.T) {
-	const want = "Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+	const want = "Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 	const declared = Usage
 	if declared != want {
 		t.Errorf("Usage = %q, want %q", declared, want)
 	}
 }
 
-// R-HPKX-CSEP
+// R-2WC9-8QLN
 func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	// Each field's address is stored in a slot of the declared pointer type,
 	// and Run is stored in a field of its declared type, so this compiles
@@ -41,7 +41,7 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	unsetenv := func(string) error { return nil }
 	inherit := func(uintptr) (net.Listener, error) { return nil, errors.New("unexpected") }
 	banner := func(page.User) page.Banner { return page.Banner{} }
-	var p Process
+	p := Process{Dir: t.TempDir(), Now: testNow}
 	fields := struct {
 		args      *[]string
 		lookupEnv *func(key string) (string, bool)
@@ -55,7 +55,9 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 		telemetry **telemetry.Writer
 		gate      **Gate
 		rand      *io.Reader
-	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner, &p.MCP, &p.Telemetry, &p.Gate, &p.Rand}
+		dir       *string
+		now       *func() time.Time
+	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner, &p.MCP, &p.Telemetry, &p.Gate, &p.Rand, &p.Dir, &p.Now}
 	*fields.args, *fields.lookupEnv, *fields.unsetenv, *fields.pid = args, lookupEnv, unsetenv, 1
 	*fields.stdout, *fields.stderr, *fields.inherit, *fields.banner = stdout, stderr, inherit, banner
 	*fields.mcp = nil
@@ -70,7 +72,7 @@ func TestRunCommandsDoNotTouchServeState(t *testing.T) {
 		t.Run(tc.arg, func(t *testing.T) {
 			var out, err recordingWriter
 			calls := 0
-			p := Process{Args: []string{tc.arg}, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, errors.New("unexpected") }, Stdout: &out, Stderr: &err}
+			p := Process{Dir: t.TempDir(), Now: testNow, Args: []string{tc.arg}, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, errors.New("unexpected") }, Stdout: &out, Stderr: &err}
 			if code := Run(context.Background(), p); code != ExitSuccess {
 				t.Errorf("exit = %d", code)
 			}
@@ -81,7 +83,7 @@ func TestRunCommandsDoNotTouchServeState(t *testing.T) {
 	}
 }
 
-// R-SR0L-5KAX R-TAIZ-9W61 R-TV99-RZRU R-UFZK-A3DN R-V0PU-S6ZG
+// R-33NN-JD1T R-34VJ-X4SI R-TV99-RZRU R-UFZK-A3DN R-3C6Y-7R8O
 func TestRunInvalidArguments(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -97,7 +99,7 @@ func TestRunInvalidArguments(t *testing.T) {
 	} {
 		var out, err recordingWriter
 		calls := 0
-		p := Process{Args: tc.args, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, nil }, Stdout: &out, Stderr: &err}
+		p := Process{Dir: t.TempDir(), Now: testNow, Args: tc.args, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, nil }, Stdout: &out, Stderr: &err}
 		if code := Run(context.Background(), p); code != ExitUsage {
 			t.Errorf("%v exit=%d", tc.args, code)
 		}
@@ -113,7 +115,7 @@ func TestDrainValidationPrecedesSocket(t *testing.T) {
 		var out, err recordingWriter
 		var looked []string
 		inherit, unset := 0, 0
-		p := Process{LookupEnv: func(k string) (string, bool) {
+		p := Process{Dir: t.TempDir(), Now: testNow, LookupEnv: func(k string) (string, bool) {
 			looked = append(looked, k)
 			if k == "DRAIN_SECONDS" {
 				return s, true
@@ -130,7 +132,7 @@ func TestDrainValidationPrecedesSocket(t *testing.T) {
 	}
 	for _, s := range []string{"1", "5", "9223372036854775808", strings.Repeat("9", 100)} {
 		var out, diagnostics recordingWriter
-		code := Run(context.Background(), Process{LookupEnv: mapLookup(map[string]string{"DRAIN_SECONDS": s}), Stdout: &out, Stderr: &diagnostics})
+		code := Run(context.Background(), Process{Dir: t.TempDir(), Now: testNow, LookupEnv: mapLookup(map[string]string{"DRAIN_SECONDS": s}), Stdout: &out, Stderr: &diagnostics})
 		const want = "dummy: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"
 		if code != ExitUsage || out.Len() != 0 || diagnostics.String() != want {
 			t.Errorf("valid drain %q rejected: code=%d out=%q diagnostics=%q", s, code, out.String(), diagnostics.String())
@@ -172,7 +174,7 @@ func TestSocketCount(t *testing.T) {
 			if drain != "unset" {
 				env["DRAIN_SECONDS"] = drain
 			}
-			p := Process{Pid: 42, LookupEnv: mapLookup(env), Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return ln, nil }, Stdout: &out, Stderr: &err}
+			p := Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(env), Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return ln, nil }, Stdout: &out, Stderr: &err}
 			if code := Run(context.Background(), p); code != ExitUsage {
 				t.Errorf("%q,%q exit=%d", tc.pid, tc.fds, code)
 			}
@@ -189,7 +191,7 @@ func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 	var out, err recordingWriter
 	var unset []string
 	var fds []uintptr
-	p := Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "0001"}), Unsetenv: func(k string) error { unset = append(unset, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) {
+	p := Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "0001"}), Unsetenv: func(k string) error { unset = append(unset, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) {
 		fds = append(fds, fd)
 		return nil, errors.New("bad descriptor")
 	}, Stdout: &out, Stderr: &err}
@@ -201,9 +203,9 @@ func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 	}
 }
 
-// R-L27E-BMZA R-V0PU-S6ZG
+// R-L27E-BMZA R-3C6Y-7R8O
 func TestRunReturnsDeclaredExitCodes(t *testing.T) {
-	p := Process{Stderr: io.Discard}
+	p := Process{Dir: t.TempDir(), Now: testNow, Stderr: io.Discard}
 	for _, args := range [][]string{{"--version"}, {"bogus"}, nil} {
 		p.Args = args
 		if len(args) > 0 && args[0] == "--version" {

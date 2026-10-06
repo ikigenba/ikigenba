@@ -14,19 +14,19 @@ import (
 
 func invariantSeededStore(t *testing.T) *widget.Store {
 	t.Helper()
-	store := panelTestStore()
+	store := panelTestStore(t)
 	for _, sub := range []widget.Submission{
 		{Name: "later first", Count: "8", Status: string(widget.StatusPaused)},
 		{Name: "later second", Count: "2", Status: string(widget.StatusActive)},
 	} {
-		if _, errs := store.Create(coreDraft(sub)); errs.Any() {
+		if _, errs := panelStoreCreate(t, store, coreDraft(sub)); errs.Any() {
 			t.Fatalf("seed submission rejected: %+v", errs)
 		}
 	}
 	return store
 }
 
-// R-2MFS-HVLX
+// R-GZ01-R3TL
 func invariantSubmission(t *testing.T) string {
 	t.Helper()
 	sub := widget.Submission{Name: "new entry", Count: "9", Status: string(widget.StatusRetired)}
@@ -34,7 +34,7 @@ func invariantSubmission(t *testing.T) string {
 	if parsed.Any() {
 		t.Fatal(parsed)
 	}
-	if errs := invariantSeededStore(t).Check(draft); errs.Any() {
+	if errs := panelStoreCheck(t, invariantSeededStore(t), draft); errs.Any() {
 		t.Fatalf("valid submission rejected: %+v", errs)
 	}
 	return url.Values{"name": {sub.Name}, "count": {sub.Count}, "status": {sub.Status}}.Encode()
@@ -43,7 +43,7 @@ func invariantSubmission(t *testing.T) string {
 func assertPanelStoreInvariant(t *testing.T, method, path, identity string, present, form bool, wantStatus int) {
 	t.Helper()
 	store := invariantSeededStore(t)
-	before := store.All()
+	before := panelStoreAll(t, store)
 	var body string
 	if form {
 		body = invariantSubmission(t)
@@ -60,12 +60,12 @@ func assertPanelStoreInvariant(t *testing.T, method, path, identity string, pres
 	if response.Code != wantStatus {
 		t.Errorf("%s %s status = %d, want %d", method, path, response.Code, wantStatus)
 	}
-	if after := store.All(); !slices.Equal(before, after) {
+	if after := panelStoreAll(t, store); !slices.Equal(before, after) {
 		t.Errorf("%s %s changed ordered store: before=%+v after=%+v", method, path, before, after)
 	}
 }
 
-// R-2Q3H-N6U0 R-2SJA-EQBE R-2UZ3-69SS R-2YMS-BL0V
+// R-H07Y-4VKA R-H2NQ-WF1O R-H3VN-A6SD R-H53J-NYJ2
 func TestPanelReadRoutesPreserveStore(t *testing.T) {
 	for _, tc := range []struct {
 		method, path string
@@ -82,7 +82,7 @@ func TestPanelReadRoutesPreserveStore(t *testing.T) {
 	}
 }
 
-// R-312L-34I9 R-34QA-8FQC R-0GMA-SDQL
+// R-H6BG-1Q9R R-H7JC-FI0G R-H8R8-T9R5
 func TestPanelRejectedRoutesPreserveStore(t *testing.T) {
 	for _, tc := range []struct {
 		method, path string
@@ -102,7 +102,7 @@ func TestPanelRejectedRoutesPreserveStore(t *testing.T) {
 	}
 }
 
-// R-39LV-RIP4 R-3D9K-WTX7
+// R-H9Z5-71HU R-HB71-KT8J
 func TestPanelMissingIdentityPreservesStore(t *testing.T) {
 	for _, identity := range []struct {
 		name    string

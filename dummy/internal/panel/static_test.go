@@ -22,7 +22,7 @@ var sharedFiles = []struct{ name, contentType string }{
 }
 
 func staticTestHandler(t *testing.T) http.Handler {
-	return coreHandler(t, panelTestStore(), func(page.User) page.Banner { return page.Banner{} }, io.Discard)
+	return coreHandler(t, panelTestStore(t), func(page.User) page.Banner { return page.Banner{} }, io.Discard)
 }
 
 func staticStrongTag(tag string) bool {

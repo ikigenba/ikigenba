@@ -37,8 +37,11 @@ func object(w widget.Widget) widgetObject {
 func Register(srv *mcp.Server, s *widget.Store, writer *telemetry.Writer) {
 	mcp.AddTool(srv, mcp.Tool[struct{}, widgetList]{
 		Name: "list_widgets", Description: "List the widgets, oldest first.", Effect: mcp.Read,
-		Handler: func(context.Context, identity.Caller, struct{}) (widgetList, error) {
-			widgets := s.All()
+		Handler: func(ctx context.Context, _ identity.Caller, _ struct{}) (widgetList, error) {
+			widgets, err := s.All(ctx)
+			if err != nil {
+				return widgetList{}, errors.New(widget.Unreachable)
+			}
 			out := widgetList{Widgets: make([]widgetObject, len(widgets))}
 			for i, w := range widgets {
 				out.Widgets[i] = object(w)
@@ -51,7 +54,10 @@ func Register(srv *mcp.Server, s *widget.Store, writer *telemetry.Writer) {
 		Description: "Create a widget and return it.\n\nThe name is trimmed of surrounding white space and must then be 1 to 40 characters and not already taken (letter case counts). The count is a whole number, zero or more. Every rule the arguments break is reported in one error, and nothing is created unless all of them hold.",
 		Effect:      mcp.Additive,
 		Handler: func(ctx context.Context, _ identity.Caller, in widgetInput) (widgetObject, error) {
-			w, errs := s.Create(widget.Draft{Name: in.Name, Count: in.Count, Status: in.Status})
+			w, errs, err := s.Create(ctx, widget.Draft{Name: in.Name, Count: in.Count, Status: in.Status})
+			if err != nil {
+				return widgetObject{}, errors.New(widget.Unreachable)
+			}
 			if errs.Any() {
 				lines := []string{"invalid arguments:"}
 				if errs.Name != "" {

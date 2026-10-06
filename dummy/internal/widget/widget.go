@@ -1,15 +1,19 @@
-// Package widget owns widgets, their validation, and their in-memory store.
+// Package widget owns widgets, their validation, and their database store.
 package widget
 
 import (
+	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/ikigenba/ikigenba/appkit/db"
 )
 
 // Status is a widget's lifecycle status.
@@ -84,28 +88,26 @@ func (e FieldErrors) Any() bool {
 	return e.Name != "" || e.Count != "" || e.Status != ""
 }
 
-// Store holds widgets in creation order and is safe for concurrent use.
+// Unreachable is the shared response when the widgets cannot be reached.
+const Unreachable = "cannot reach the widgets; try again later"
+
+// Store reads and writes widgets through a caller-owned database handle.
 type Store struct {
-	mu      sync.RWMutex
-	widgets []Widget
-	src     io.Reader
+	mu     sync.Mutex
+	handle *db.DB
+	src    io.Reader
 }
 
-// NewStore creates an independent store with the three starting widgets.
-func NewStore(src io.Reader) *Store {
+// NewStore creates a store over the handle without reading or seeding it.
+func NewStore(d *db.DB, src io.Reader) *Store {
 	if src == nil {
 		src = rand.Reader
 	}
-	s := &Store{src: src}
-	for _, w := range []Widget{{Name: "alpha", Count: 3, Status: StatusActive}, {Name: "beta", Count: 0, Status: StatusPaused}, {Name: "gamma", Count: 12, Status: StatusRetired}} {
-		w.ID = s.nextID()
-		s.widgets = append(s.widgets, w)
-	}
-	return s
+	return &Store{handle: d, src: src}
 }
 
-// nextID requires exclusive access to the store and its source.
-func (s *Store) nextID() string {
+// nextID runs inside the creation transaction with exclusive source access.
+func (s *Store) nextID(ctx context.Context, tx *sql.Tx) (string, error) {
 	for {
 		var data [8]byte
 		if _, err := io.ReadFull(s.src, data[:]); err != nil {
@@ -115,17 +117,38 @@ func (s *Store) nextID() string {
 			}
 		}
 		id := "wgt_" + hex.EncodeToString(data[:])
-		if !slices.ContainsFunc(s.widgets, func(w Widget) bool { return w.ID == id }) {
-			return id
+		var exists bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM widgets WHERE id = ?)", id).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return id, nil
 		}
 	}
 }
 
-// All returns an independent snapshot of the widgets in creation order.
-func (s *Store) All() []Widget {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return slices.Clone(s.widgets)
+// All returns an independent snapshot in creation order.
+func (s *Store) All(ctx context.Context) ([]Widget, error) {
+	var widgets []Widget
+	err := s.handle.Read(ctx, func(tx *sql.Tx) (err error) {
+		rows, err := tx.QueryContext(ctx, "SELECT id, name, count, status FROM widgets ORDER BY seq")
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, rows.Close()) }()
+		for rows.Next() {
+			var w Widget
+			if err := rows.Scan(&w.ID, &w.Name, &w.Count, &w.Status); err != nil {
+				return err
+			}
+			widgets = append(widgets, w)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return widgets, nil
 }
 
 // ParseSubmission converts the form's fields without judging typed values.
@@ -147,50 +170,68 @@ func ParseSubmission(sub Submission) (Draft, FieldErrors) {
 	return d, errs
 }
 
-// Check judges all fields without modifying the store.
-func (s *Store) Check(d Draft) FieldErrors {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.check(d)
+// Check judges all fields without modifying the database.
+func (s *Store) Check(ctx context.Context, d Draft) (FieldErrors, error) {
+	var fields FieldErrors
+	err := s.handle.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		fields, err = check(ctx, tx, d)
+		return err
+	})
+	if err != nil {
+		return FieldErrors{}, err
+	}
+	return fields, nil
 }
 
-// Create judges and appends an accepted widget atomically.
-func (s *Store) Create(d Draft) (Widget, FieldErrors) {
+// Create checks and inserts in one write transaction.
+func (s *Store) Create(ctx context.Context, d Draft) (Widget, FieldErrors, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	errs := s.check(d)
-	if errs.Any() {
-		return Widget{}, errs
+	var w Widget
+	var fields FieldErrors
+	err := s.handle.Write(ctx, func(tx *sql.Tx) error {
+		var err error
+		fields, err = check(ctx, tx, d)
+		if err != nil || fields.Any() {
+			return err
+		}
+		id, err := s.nextID(ctx, tx)
+		if err != nil {
+			return err
+		}
+		w = Widget{ID: id, Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
+		_, err = tx.ExecContext(ctx, "INSERT INTO widgets (id, name, count, status) VALUES (?, ?, ?, ?)", w.ID, w.Name, w.Count, w.Status)
+		return err
+	})
+	if err != nil {
+		return Widget{}, FieldErrors{}, err
 	}
-	w := Widget{ID: s.nextID(), Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
-	s.widgets = append(s.widgets, w)
-	return w, errs
+	return w, fields, nil
 }
 
-// check requires the caller to hold the store's lock.
-func (s *Store) check(d Draft) FieldErrors {
+func check(ctx context.Context, tx *sql.Tx, d Draft) (FieldErrors, error) {
 	name := strings.TrimSpace(d.Name)
-	var errs FieldErrors
+	var exists bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM widgets WHERE name = ?)", name).Scan(&exists); err != nil {
+		return FieldErrors{}, err
+	}
+	var fields FieldErrors
 	switch {
 	case name == "":
-		errs.Name = NameRequiredMessage
+		fields.Name = NameRequiredMessage
 	case utf8.RuneCountInString(name) > MaxNameRunes:
-		errs.Name = NameTooLongMessage
-	default:
-		for _, existing := range s.widgets {
-			if existing.Name == name {
-				errs.Name = NameTakenMessage
-				break
-			}
-		}
+		fields.Name = NameTooLongMessage
+	case exists:
+		fields.Name = NameTakenMessage
 	}
 	if d.Count < 0 {
-		errs.Count = CountNegativeMessage
+		fields.Count = CountNegativeMessage
 	}
 	if !allowedStatus(d.Status) {
-		errs.Status = StatusNotAllowedMessage
+		fields.Status = StatusNotAllowedMessage
 	}
-	return errs
+	return fields, nil
 }
 
 func allowedStatus(status Status) bool {

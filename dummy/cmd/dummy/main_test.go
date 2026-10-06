@@ -28,7 +28,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-49MF-7KF1 R-K1I1-7X3J R-K2PX-LOU8 R-K3XT-ZGKX R-K55Q-D8BM R-K7LJ-4RT0 R-MRE2-JOZN
+// R-2YS2-0A31 R-K1I1-7X3J R-K2PX-LOU8 R-K3XT-ZGKX R-K55Q-D8BM R-K7LJ-4RT0 R-317U-RTKF
 func TestMainWiring(t *testing.T) {
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")
@@ -58,17 +58,10 @@ func TestMainWiring(t *testing.T) {
 		})
 	}
 
-	var alphaIDs []string
 	for _, sig := range []os.Signal{syscall.SIGTERM, os.Interrupt} {
 		t.Run(sig.String(), func(t *testing.T) {
-			alphaIDs = append(alphaIDs, serveAndSignal(t, binary, sig))
+			serveAndSignal(t, binary, sig)
 		})
-	}
-	if len(alphaIDs) != 2 {
-		t.Fatalf("process ids=%v", alphaIDs)
-	}
-	if alphaIDs[0] == "" || alphaIDs[0] == alphaIDs[1] {
-		t.Errorf("process alpha ids=%v", alphaIDs)
 	}
 }
 
@@ -86,6 +79,7 @@ func runBinary(t *testing.T, binary string, args []string) (string, string, int)
 	commandArgs := append([]string{binary}, args...)
 	command := &exec.Cmd{Path: binary, Args: commandArgs}
 	command.Env = []string{}
+	command.Dir = t.TempDir()
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -101,7 +95,7 @@ func runBinary(t *testing.T, binary string, args []string) (string, string, int)
 }
 
 // R-DPQ2-9T5Q R-5ZTA-PV8G
-func serveAndSignal(t *testing.T, binary string, sig os.Signal) string {
+func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "dummy-exec-")
 	if err != nil {
@@ -163,6 +157,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) string {
 	}
 
 	command := exec.Command("/bin/sh")
+	command.Dir = t.TempDir()
 	command.Args = []string{"/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"`, binary}
 	servicesPath := filepath.Join(directory, "services.json")
 	command.Env = []string{"NOTIFY_SOCKET=" + notifyPath}
@@ -194,7 +189,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) string {
 	if got := string(datagram[:n]); got != "READY=1" {
 		t.Fatalf("readiness = %q, want READY=1", got)
 	}
-	var alphaID string
+
 	{
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -222,7 +217,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) string {
 		}
 		t.Setenv(services.Variable, servicesValue)
 		assertAppkitFrame(t, string(body), page.New(panel.ServiceName, cli.Version).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")}))
-		alphaID = assertMCPWiring(t, client)
+		assertMCPWiring(t, client)
 		if sig == syscall.SIGTERM {
 			assertDiscovery(t, client, "First description", true)
 			writeServices(t, servicesPath, "Second description", ingestSocket)
@@ -314,7 +309,10 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) string {
 	} else if err := connection.Close(); err != nil {
 		t.Errorf("close queued connection: %v", err)
 	}
-	return alphaID
+	info, err := os.Stat(filepath.Join(command.Dir, "state", "dummy.db"))
+	if err != nil || !info.Mode().IsRegular() {
+		t.Errorf("database absent: %v", err)
+	}
 }
 
 // R-HVOF-9N46
@@ -357,7 +355,7 @@ func writeServices(t *testing.T, path, description, telemetrySocket string) {
 }
 
 // R-E051-E4GO
-func assertMCPWiring(t *testing.T, httpClient *http.Client) string {
+func assertMCPWiring(t *testing.T, httpClient *http.Client) {
 	t.Helper()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://dummy/mcp", HTTPClient: httpClient, Name: "test", Version: "test"})
 	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "test-user", RequestID: "binary-tool-request"}, "list_widgets", nil)
@@ -394,13 +392,9 @@ func assertMCPWiring(t *testing.T, httpClient *http.Client) string {
 	if err := json.Unmarshal(data, &resultBody); err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range resultBody.StructuredContent.Widgets {
-		if w.Name == "alpha" {
-			return w.ID
-		}
+	if resultBody.StructuredContent.Widgets == nil || len(resultBody.StructuredContent.Widgets) != 0 {
+		t.Errorf("fresh widgets=%+v", resultBody)
 	}
-	t.Fatal("alpha missing")
-	return ""
 
 }
 

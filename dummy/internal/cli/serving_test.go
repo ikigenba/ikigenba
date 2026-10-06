@@ -70,7 +70,7 @@ func startConfiguredRun(t *testing.T, srv *testTrail, configure func(*Process)) 
 	cancel := func() { cancelCause(errors.New("explicit run cancellation")) }
 	run := &servingRun{client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, endpoint: "http://" + ln.Addr().String(), cancel: cancel, result: make(chan int, 1), trail: srv}
 	t.Cleanup(cancel)
-	p := Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(fd uintptr) (net.Listener, error) { run.fds = append(run.fds, fd); return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &run.stdout, Stderr: &run.stderr}
+	p := Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(fd uintptr) (net.Listener, error) { run.fds = append(run.fds, fd); return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &run.stdout, Stderr: &run.stderr}
 	if configure != nil {
 		configure(&p)
 	}
@@ -132,6 +132,7 @@ func (run *servingRun) stop(t *testing.T) {
 }
 
 type servedWidget struct {
+	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Count  int    `json:"count"`
 	Status string `json:"status"`
@@ -166,11 +167,27 @@ func runWidgets(t *testing.T, run *servingRun) []servedWidget {
 	return result.StructuredContent.Widgets
 }
 
-// R-DPQ2-9T5Q R-E6T1-SZSX R-KEWX-FE96 R-P9B9-6C49 R-PAJ5-K3UY R-PBR1-XVLN R-IXZD-5HBP
-func TestRunSharesWidgetsAndRestartsFresh(t *testing.T) {
-	for range 2 {
-		run := startRun(t, testMCP(t))
-		want := []servedWidget{{"alpha", 3, "active"}, {"beta", 0, "paused"}, {"gamma", 12, "retired"}}
+// R-DPQ2-9T5Q R-3PLU-F8EB R-3ODY-1GNM R-3IAG-4LY5 R-3JIC-IDOU R-PAJ5-K3UY R-PBR1-XVLN R-IXZD-5HBP
+func TestRunSharesWidgetsAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	var saved []servedWidget
+	for iteration := range 3 {
+		chosen := dir
+		if iteration == 2 {
+			chosen = t.TempDir()
+		}
+		run := startConfiguredRun(t, testMCP(t), func(p *Process) { p.Dir = chosen })
+		want := []servedWidget{}
+		if iteration == 1 {
+			want = saved
+		}
+		if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
+			t.Fatalf("restart widgets=%+v want %+v", got, want)
+		}
+		if iteration > 0 {
+			run.stop(t)
+			continue
+		}
 		for range 2 {
 			if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
 				t.Fatalf("initial widgets=%+v", got)
@@ -180,7 +197,7 @@ func TestRunSharesWidgetsAndRestartsFresh(t *testing.T) {
 		if code != http.StatusSeeOther {
 			t.Fatalf("form status=%d", code)
 		}
-		want = append(want, servedWidget{"form-widget", 4, "paused"})
+		want = append(want, servedWidget{"wgt_0000000000000000", "form-widget", 4, "paused"})
 		if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
 			t.Fatalf("after form widgets=%+v", got)
 		}
@@ -217,10 +234,11 @@ func TestRunSharesWidgetsAndRestartsFresh(t *testing.T) {
 			t.Errorf("last row missing widget hooks: %q", last)
 		}
 
-		want = append(want, servedWidget{"tool-widget", 7, "retired"})
+		want = append(want, servedWidget{"wgt_0100000000000000", "tool-widget", 7, "retired"})
 		if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
 			t.Fatalf("after tool widgets=%+v", got)
 		}
+		saved = want
 		run.stop(t)
 		if run.stderr.Len() != 0 {
 			t.Errorf("stderr=%q", run.stderr.String())
@@ -268,7 +286,7 @@ func TestRunDiscardsRetryAndPanicLogs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	result := make(chan int, 1)
 	go func() {
-		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { panic("banner failed") }, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &stdout, Stderr: &stderr})
+		result <- Run(ctx, Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { panic("banner failed") }, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &stdout, Stderr: &stderr})
 	}()
 	waitReady(t, notify)
 	<-ln.retried

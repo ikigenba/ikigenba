@@ -42,8 +42,10 @@ func (h *handler) serveForm(w http.ResponseWriter, r *http.Request) {
 	}
 	d, errs := widget.ParseSubmission(sub)
 	var created widget.Widget
+	var err error
 	if errs.Any() {
-		rules := h.store.Check(d)
+		rules, checkErr := h.store.Check(r.Context(), d)
+		err = checkErr
 		if errs.Name == "" {
 			errs.Name = rules.Name
 		}
@@ -54,7 +56,11 @@ func (h *handler) serveForm(w http.ResponseWriter, r *http.Request) {
 			errs.Status = rules.Status
 		}
 	} else {
-		created, errs = h.store.Create(d)
+		created, errs, err = h.store.Create(r.Context(), d)
+	}
+	if err != nil {
+		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
+		return
 	}
 	if errs.Any() {
 		h.renderPage(w, r, http.StatusUnprocessableEntity, sub, errs)
