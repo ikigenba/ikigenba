@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,8 +14,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/store"
 )
 
@@ -43,18 +47,23 @@ func (r *counter) Read(p []byte) (int, error) {
 }
 func open(t *testing.T, c store.Config) *store.Store {
 	t.Helper()
+	s, _ := openAt(t, filepath.Join(t.TempDir(), "state", "sites.db"), c)
+	return s
+}
+func openAt(t *testing.T, path string, c store.Config) (*store.Store, *db.DB) {
+	t.Helper()
 	if c.Now == nil {
 		c.Now = func() time.Time { return stamp }
 	}
 	if c.Rand == nil {
 		c.Rand = &counter{}
 	}
-	s, e := store.Open(ctx, c)
-	if e != nil {
-		t.Fatal(e)
+	d, err := db.Open(ctx, db.Config{Path: path, Migrations: sites.Migrations(), Now: func() time.Time { return stamp }})
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
+	t.Cleanup(func() { _ = d.Close() })
+	return store.New(d, c), d
 }
 func draft(name string) store.Draft {
 	return store.Draft{Owner: "alice", Name: name, Repo: "repository", Ref: "main", Visibility: store.Public, Listed: true}
@@ -112,8 +121,8 @@ func snapshot(t *testing.T, s *store.Store) content {
 }
 
 func TestDeclarationsAndValidation(t *testing.T) {
-	// R-0V39-CGYR R-0WB5-Q8PG R-0XJ2-40G5 R-0YQY-HS6U R-0ZYU-VJXJ R-116R-9BO8 R-12EN-N3EX R-AN8M-G38O
-	c := store.Config{Source: ":memory:", Now: func() time.Time { return stamp }, Rand: &counter{}}
+	// R-WM78-FJ18 R-0WB5-Q8PG R-0XJ2-40G5 R-0YQY-HS6U R-0ZYU-VJXJ R-116R-9BO8 R-12EN-N3EX R-WYE8-98G6
+	c := store.Config{Now: func() time.Time { return stamp }, Rand: &counter{}}
 	s := open(t, c)
 	if s == nil {
 		t.Fatal("nil store")
@@ -126,7 +135,7 @@ func TestDeclarationsAndValidation(t *testing.T) {
 	equal(t, store.Public, "public")
 	equal(t, store.Private, "private")
 	equal(t, store.Unreachable, "cannot reach the catalog; try again later")
-	sentinels := []error{store.ErrDatabase, store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic}
+	sentinels := []error{store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic}
 	for i, e := range sentinels {
 		if e == nil {
 			t.Fatal("nil sentinel")
@@ -168,67 +177,6 @@ func TestDeclarationsAndValidation(t *testing.T) {
 	}
 }
 
-func TestMemoryAndEmptyCatalog(t *testing.T) {
-	// R-1DDR-3136 R-1ELN-GSTV
-	dir := t.TempDir()
-	t.Chdir(dir)
-	for _, source := range []string{"", ":memory:", filepath.Join("nested", "state", "sites.db"), "zero.db"} {
-		t.Run(fmt.Sprintf("source%q", source), func(t *testing.T) {
-			if source == "zero.db" {
-				if e := os.WriteFile(source, nil, 0600); e != nil {
-					t.Fatal(e)
-				}
-			}
-			s := open(t, store.Config{Source: source})
-			a, e := s.List(ctx, "alice")
-			equal(t, e, nil)
-			equal(t, a, []store.Site{})
-			a, e = s.Visible(ctx, "bob")
-			equal(t, e, nil)
-			equal(t, a, []store.Site{})
-			taken, e := s.Taken(ctx, "orphan")
-			equal(t, e, nil)
-			equal(t, taken, false)
-			x, set, e := s.Apex(ctx)
-			equal(t, e, nil)
-			equal(t, set, false)
-			equal(t, x, store.Site{})
-			x = create(t, s, draft("docs"))
-			y, e := s.BySlug(ctx, x.Slug)
-			equal(t, e, nil)
-			equal(t, y, x)
-			if source == "" || source == ":memory:" {
-				if _, e = os.Stat(":memory:"); !os.IsNotExist(e) {
-					t.Fatal("memory path exists")
-				}
-			}
-		})
-	}
-	info, e := os.Stat(filepath.Join(dir, "nested"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	equal(t, info.Mode().Perm(), os.FileMode(0700))
-	info, e = os.Stat(filepath.Join(dir, "nested", "state"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	equal(t, info.Mode().Perm(), os.FileMode(0700))
-	existing := filepath.Join(dir, "existing")
-	if e = os.Mkdir(existing, 0750); e != nil {
-		t.Fatal(e)
-	}
-	if e = os.WriteFile(filepath.Join(existing, "orphan"), []byte("unrelated content"), 0600); e != nil {
-		t.Fatal(e)
-	}
-	existingStore := open(t, store.Config{Source: filepath.Join(existing, "db")})
-	assertEmpty(t, existingStore)
-	info, e = os.Stat(existing)
-	if e != nil {
-		t.Fatal(e)
-	}
-	equal(t, info.Mode().Perm(), os.FileMode(0750))
-}
 func assertEmpty(t *testing.T, s *store.Store) {
 	t.Helper()
 	for _, owner := range []string{"alice", "bob", ""} {
@@ -249,23 +197,10 @@ func assertEmpty(t *testing.T, s *store.Store) {
 	equal(t, set, false)
 	equal(t, a, store.Site{})
 }
-func wal(t *testing.T, path string) {
-	t.Helper()
-	db, e := sql.Open("sqlite", path)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer func() { _ = db.Close() }()
-	var mode string
-	if e = db.QueryRow("PRAGMA journal_mode").Scan(&mode); e != nil {
-		t.Fatal(e)
-	}
-	equal(t, mode, "wal")
-}
-func TestPersistenceAndWAL(t *testing.T) {
-	// R-1FTJ-UKKK R-I173-6PUZ R-1KP5-DNJC R-2K28-H01H
+func TestPersistence(t *testing.T) {
+	// R-WPUX-KU9B R-WR2T-YM00 R-2K28-H01H
 	path := filepath.Join(t.TempDir(), "state", "db")
-	s := open(t, store.Config{Source: path})
+	s, handle := openAt(t, path, store.Config{})
 	x := create(t, s, draft("docs"))
 	equal(t, x.Name, "docs")
 	equal(t, x.Owner, "alice")
@@ -292,11 +227,15 @@ func TestPersistenceAndWAL(t *testing.T) {
 	if z.ID == x.ID {
 		t.Fatal("duplicate id")
 	}
+	ref := "updated"
+	y, _, e = s.Update(ctx, y.ID, store.Change{Ref: &ref})
+	equal(t, e, nil)
+	doomed := create(t, s, draft("doomed"))
+	_, e = s.Delete(ctx, doomed.ID)
+	equal(t, e, nil)
 	before := snapshot(t, s)
-	wal(t, path)
-	equal(t, s.Close(), nil)
-	wal(t, path)
-	s = open(t, store.Config{Source: path})
+	equal(t, handle.Close(), nil)
+	s, handle = openAt(t, path, store.Config{})
 	equal(t, snapshot(t, s), before)
 	for _, expected := range []store.Site{y, z} {
 		a, e := s.Find(ctx, expected.Owner, expected.Name)
@@ -312,85 +251,13 @@ func TestPersistenceAndWAL(t *testing.T) {
 			equal(t, a.Published.Nanosecond(), 0)
 		}
 	}
-}
-func TestOpenFailures(t *testing.T) {
-	// R-1H1G-8CB9 R-1JH8-ZVSN R-I2EZ-KHLO R-D75E-NBQE
-	root := t.TempDir()
-	block := filepath.Join(root, "block")
-	newlineBlock := filepath.Join(root, "block\n\nwith\r\ttabs")
-	bad := filepath.Join(root, "bad")
-	for _, p := range []string{block, newlineBlock, bad} {
-		if e := os.WriteFile(p, []byte("not sqlite"), 0600); e != nil {
-			t.Fatal(e)
-		}
-	}
-	for _, path := range []string{filepath.Join(block, "child", "db"), filepath.Join(newlineBlock, "child", "db"), bad} {
-		s, e := store.Open(ctx, store.Config{Source: path})
-		equal(t, s, (*store.Store)(nil))
-		checkErr(t, e, store.ErrDatabase)
-		openErrorText(t, e)
-		if path != bad {
-			expected := os.MkdirAll(filepath.Dir(path), 0700)
-			equal(t, e.Error(), strings.ReplaceAll(expected.Error(), "\n", " "))
-		}
-		for _, p := range []string{block, newlineBlock, bad} {
-			b, err := os.ReadFile(filepath.Clean(p))
-			equal(t, err, nil)
-			equal(t, string(b), "not sqlite")
-			info, err := os.Stat(p)
-			equal(t, err, nil)
-			equal(t, info.Mode().Perm(), os.FileMode(0600))
-		}
-	}
-	path := filepath.Join(root, "readonly", "db")
-	s := open(t, store.Config{Source: path})
-	equal(t, s.Close(), nil)
-	original, e := os.ReadFile(filepath.Clean(path))
-	equal(t, e, nil)
-	for _, target := range []string{path, filepath.Dir(path)} {
-		info, err := os.Stat(target)
-		equal(t, err, nil)
-		mode := info.Mode().Perm()
-		if err = os.Chmod(target, mode&^0222); err != nil {
-			t.Fatal(err)
-		}
-		s, err = store.Open(ctx, store.Config{Source: path})
-		fileInfo, statErr := os.Stat(path)
-		equal(t, statErr, nil)
-		expectedMode := os.FileMode(0600)
-		if target == path {
-			expectedMode = mode &^ 0222
-		}
-		equal(t, fileInfo.Mode().Perm(), expectedMode)
-		restore := os.Chmod(target, mode)
-		equal(t, restore, nil)
-		equal(t, s, (*store.Store)(nil))
-		checkErr(t, err, store.ErrDatabase)
-		openErrorText(t, err)
-		b, err := os.ReadFile(filepath.Clean(path))
-		equal(t, err, nil)
-		equal(t, b, original)
-	}
-	done, cancel := context.WithCancel(ctx)
-	cancel()
-	for _, source := range []string{bad, filepath.Join(root, "absent", "db")} {
-		s, e = store.Open(done, store.Config{Source: source})
-		equal(t, s, (*store.Store)(nil))
-		checkErr(t, e, context.Canceled)
-		openErrorText(t, e)
-	}
-	if _, e = os.Stat(filepath.Join(root, "absent", "db")); !os.IsNotExist(e) {
-		t.Fatal(e)
-	}
-}
+	equal(t, s.ClearApex(ctx), nil)
+	before = snapshot(t, s)
+	equal(t, handle.Close(), nil)
+	s, _ = openAt(t, path, store.Config{})
+	equal(t, snapshot(t, s), before)
 
-func openErrorText(t *testing.T, err error) {
-	t.Helper()
-	if err == nil || err.Error() == "" || strings.Contains(err.Error(), "\n") {
-		t.Fatalf("Open error must be nonempty and one line: %q", err)
-	}
 }
-
 func TestRandomCandidates(t *testing.T) {
 	// R-1LX1-RFA1 R-1N4Y-570Q R-UEZD-QS32 R-1QSN-AI8T
 	stream := &trackedReader{reader: bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8, 14, 91, 124, 41})}
@@ -629,9 +496,9 @@ func TestPublishUpdateAndApex(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	// R-25FF-VR55 R-27V8-NAMJ R-2935-12D8
+	// R-WSAQ-CDQP R-27V8-NAMJ R-2935-12D8
 	path := filepath.Join(t.TempDir(), "db")
-	s := open(t, store.Config{Source: path})
+	s, handle := openAt(t, path, store.Config{})
 	x := create(t, s, draft("docs"))
 	other := create(t, s, draft("other"))
 	d := draft("hidden")
@@ -669,8 +536,8 @@ func TestDelete(t *testing.T) {
 	_, set, e = s.Apex(ctx)
 	equal(t, e, nil)
 	equal(t, set, false)
-	equal(t, s.Close(), nil)
-	s = open(t, store.Config{Source: path})
+	equal(t, handle.Close(), nil)
+	s, _ = openAt(t, path, store.Config{})
 	for _, dead := range []store.Site{x, other, hidden} {
 		a, e := s.Find(ctx, dead.Owner, dead.Name)
 		equal(t, a, store.Site{})
@@ -705,42 +572,57 @@ func assertDeleted(t *testing.T, s *store.Store, dead store.Site) {
 		equal(t, taken, false)
 	}
 }
-func calls(c context.Context, s *store.Store) []error {
+func calls(c context.Context, s *store.Store, id string) []error {
 	_, a := s.Find(c, "alice", "docs")
 	_, b := s.BySlug(c, "docs")
 	_, d := s.List(c, "alice")
 	_, e := s.Visible(c, "alice")
 	_, f := s.Taken(c, "docs")
 	_, g := s.Create(c, draft("new"))
-	_, h := s.Publish(c, "missing", strings.Repeat("a", 40))
-	_, _, i := s.Update(c, "missing", store.Change{})
-	_, j := s.Delete(c, "missing")
+	_, h := s.Publish(c, id, strings.Repeat("a", 40))
+	_, _, i := s.Update(c, id, store.Change{})
+	_, j := s.Delete(c, id)
 	_, _, k := s.Apex(c)
-	_, l := s.SetApex(c, "missing")
+	_, l := s.SetApex(c, id)
 	m := s.ClearApex(c)
 	return []error{a, b, d, e, f, g, h, i, j, k, l, m}
 }
 func TestContextCloseAndPrecedence(t *testing.T) {
-	// R-UG7A-4JTR R-2HMF-PGK3 R-I2EZ-KHLO
-	s := open(t, store.Config{})
-	_ = create(t, s, draft("docs"))
+	// R-XFGT-M0TW R-2HMF-PGK3 R-X5PM-JUWC
+	path := filepath.Join(t.TempDir(), "db")
+	s, handle := openAt(t, path, store.Config{})
+	x := create(t, s, draft("docs"))
+	_, err := s.SetApex(ctx, x.ID)
+	equal(t, err, nil)
 	before := snapshot(t, s)
 	done, cancel := context.WithCancel(ctx)
 	cancel()
-	for _, e := range calls(done, s) {
+	for _, e := range calls(done, s, x.ID) {
 		catalog(t, e)
 		checkErr(t, e, context.Canceled)
 	}
 	equal(t, snapshot(t, s), before)
-	equal(t, s.Close(), nil)
-	for _, e := range calls(ctx, s) {
+	handle.SetFailing(true)
+	for _, e := range calls(ctx, s, x.ID) {
 		catalog(t, e)
 	}
-	for _, e := range calls(done, s) {
+	for _, e := range calls(done, s, x.ID) {
+		catalog(t, e)
+		checkErr(t, e, context.Canceled)
+	}
+	handle.SetFailing(false)
+	equal(t, snapshot(t, s), before)
+	equal(t, handle.Close(), nil)
+	for _, e := range calls(ctx, s, x.ID) {
+		catalog(t, e)
+	}
+	for _, e := range calls(done, s, x.ID) {
 		checkErr(t, e, context.Canceled)
 	}
 	_, e := s.Create(ctx, store.Draft{})
 	catalog(t, e)
+	reopened, _ := openAt(t, path, store.Config{})
+	equal(t, snapshot(t, reopened), before)
 	q := open(t, store.Config{Rand: bytes.NewReader(nil)})
 	_, e = q.Create(ctx, draft("docs"))
 	catalog(t, e)
@@ -751,7 +633,7 @@ func TestContextCloseAndPrecedence(t *testing.T) {
 }
 
 func TestConcurrentCreates(t *testing.T) {
-	// R-1S0J-O9ZI R-UHF6-IBKG R-2IUC-38AS
+	// R-1S0J-O9ZI R-UHF6-IBKG R-WTIM-Q5HE
 	s := open(t, store.Config{})
 	start := make(chan struct{})
 	errs := make(chan error, 20)
@@ -815,7 +697,7 @@ func assertPair(t *testing.T, a store.Site) {
 }
 
 func TestConcurrentAtomicPublish(t *testing.T) {
-	// R-21RQ-QFX2 R-2IUC-38AS
+	// R-21RQ-QFX2 R-WTIM-Q5HE
 	var tick int64
 	s := open(t, store.Config{Now: func() time.Time { tick++; return time.Unix(tick, 0) }})
 	x := create(t, s, draft("docs"))
@@ -882,7 +764,7 @@ func TestConcurrentAtomicPublish(t *testing.T) {
 	wg.Wait()
 }
 func TestConcurrentPublicApex(t *testing.T) {
-	// R-2DYQ-K5C0 R-2IUC-38AS
+	// R-2DYQ-K5C0 R-WTIM-Q5HE
 	for range 20 {
 		s := open(t, store.Config{})
 		x := create(t, s, draft("docs"))
@@ -923,4 +805,91 @@ func TestConcurrentPublicApex(t *testing.T) {
 		equal(t, e, nil)
 		equal(t, set, false)
 	}
+}
+
+func TestAdoptEarlierCatalog(t *testing.T) {
+	// R-2K28-H01H
+	for _, apex := range []bool{false, true} {
+		t.Run(fmt.Sprint(apex), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sites.db")
+			clock := func() time.Time { return stamp }
+			d, err := db.Open(ctx, db.Config{Path: path, Migrations: fstest.MapFS{}, Now: clock})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = d.Close() })
+			a := store.Site{ID: "sit_0102030405060708", Name: "docs", Slug: "docs", Owner: "alice", Repo: "repo-a", Ref: "main", Visibility: store.Public, Listed: true, Commit: strings.Repeat("a", 40), Created: stamp.Truncate(time.Second), Published: stamp.Add(time.Hour).Truncate(time.Second)}
+			b := store.Site{ID: "sit_090a0b0c0d0e0f10", Name: "hidden", Slug: "hidden-01020304", Owner: "bob", Repo: "repo-b", Ref: "next", Visibility: store.Private, Listed: false, Created: stamp.Truncate(time.Second)}
+			err = d.Write(ctx, func(tx *sql.Tx) error {
+				if _, err := tx.ExecContext(ctx, "CREATE TABLE sites (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, owner TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); DROP TABLE schema_migrations"); err != nil {
+					return err
+				}
+				for _, x := range []store.Site{a, b} {
+					payload, err := json.Marshal(map[string]any{
+						"ID": x.ID, "Name": x.Name, "Slug": x.Slug, "Owner": x.Owner,
+						"Repo": x.Repo, "Ref": x.Ref, "Visibility": x.Visibility, "Commit": x.Commit,
+						"Listed": x.Listed, "Created": x.Created, "Published": x.Published,
+					})
+					if err != nil {
+						return err
+					}
+					if _, err := tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload) VALUES(?,?,?,?,?)", x.ID, x.Name, x.Slug, x.Owner, string(payload)); err != nil {
+						return err
+					}
+				}
+				if apex {
+					_, err := tx.ExecContext(ctx, "INSERT INTO settings(key,value) VALUES('apex',?)", a.ID)
+					return err
+				}
+				return nil
+			})
+			equal(t, err, nil)
+			equal(t, d.Close(), nil)
+			s, _ := openAt(t, path, store.Config{})
+			for _, x := range []store.Site{a, b} {
+				xs, err := s.List(ctx, x.Owner)
+				equal(t, err, nil)
+				equal(t, len(xs), 1)
+				got := xs[0]
+				equal(t, got.Created.Location(), time.UTC)
+				equal(t, got.Created.Nanosecond(), 0)
+				if !got.Published.IsZero() {
+					equal(t, got.Published.Location(), time.UTC)
+					equal(t, got.Published.Nanosecond(), 0)
+				}
+				if !got.Created.Equal(x.Created) || !got.Published.Equal(x.Published) {
+					t.Fatal("adopted times differ")
+				}
+				got.Created, got.Published = x.Created, x.Published
+				equal(t, got, x)
+			}
+			xs, err := s.List(ctx, "nobody")
+			equal(t, err, nil)
+			equal(t, len(xs), 0)
+			got, set, err := s.Apex(ctx)
+			equal(t, err, nil)
+			equal(t, set, apex)
+			if apex {
+				equal(t, got.Created.Location(), time.UTC)
+				equal(t, got.Published.Location(), time.UTC)
+				if !got.Created.Equal(a.Created) || !got.Published.Equal(a.Published) {
+					t.Fatal("adopted apex times differ")
+				}
+				a.Created, a.Published = a.Created.UTC(), a.Published.UTC()
+				equal(t, got, a)
+			} else {
+				equal(t, got, store.Site{})
+			}
+		})
+	}
+}
+
+func TestEmptyCatalogIgnoresOtherFiles(t *testing.T) {
+	// R-WON1-72IM
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "orphan"), []byte("unrelated site content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := openAt(t, filepath.Join(dir, "sites.db"), store.Config{})
+	assertEmpty(t, s)
 }

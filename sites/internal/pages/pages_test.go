@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/sites"
@@ -51,16 +52,22 @@ func load(t *testing.T) *pages.Set {
 
 func catalog(t *testing.T) *store.Store {
 	t.Helper()
+	s, _ := catalogHandle(t)
+	return s
+}
+
+func catalogHandle(t *testing.T) (*store.Store, *db.DB) {
+	t.Helper()
 	random := make([]byte, 1024)
 	for i := range random {
 		random[i] = byte(i)
 	}
-	s, err := store.Open(context.Background(), store.Config{Source: filepath.Join(t.TempDir(), "catalog.db"), Now: func() time.Time { return time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(random)})
+	handle, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "catalog.db"), Migrations: sites.Migrations(), Now: func() time.Time { return time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC) }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
+	t.Cleanup(func() { _ = handle.Close() })
+	return store.New(handle, store.Config{Now: func() time.Time { return time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(random)}), handle
 }
 
 func fixtureSites(t *testing.T, s *store.Store) []store.Site {
@@ -222,9 +229,9 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	}
 }
 
-// R-DDLE-GX4C R-DETA-UOV1 R-DG17-8GLQ R-DKGW-ZMTK R-DJOW-DRTT
-func TestMethodsGuestsAndClosedCatalog(t *testing.T) {
-	s := catalog(t)
+// R-DDLE-GX4C R-DETA-UOV1 R-DG17-8GLQ R-X0U1-0RXK R-DJOW-DRTT
+func TestMethodsGuestsAndFailingCatalog(t *testing.T) {
+	s, handle := catalogHandle(t)
 	var calls int
 	cfg := config(t, s)
 	cfg.Banner = func(u page.User) page.Banner { calls++; return banner(u) }
@@ -267,24 +274,22 @@ func TestMethodsGuestsAndClosedCatalog(t *testing.T) {
 			}
 		}
 	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
+	handle.SetFailing(true)
 	for i, r := range rs {
 		w := answer(h, r)
 		if w.Code != before[i].Code || !reflect.DeepEqual(w.Header(), before[i].Header()) || w.Body.String() != before[i].Body.String() {
-			t.Fatal("closed catalog changed refusal/redirect")
+			t.Fatal("failing catalog changed refusal/redirect")
 		}
 	}
 	for _, method := range []string{"GET", "HEAD"} {
 		calls = 0
 		w := answer(h, request(method, "/", "alice", ""))
 		if w.Code != 503 || calls != 0 {
-			t.Fatalf("closed landing called banner: %d calls %d", w.Code, calls)
+			t.Fatalf("failing landing called banner: %d calls %d", w.Code, calls)
 		}
 		w = answer(h, request(method, "/about", "alice", ""))
 		if w.Code != 200 || calls != 1 {
-			t.Fatalf("closed about: %d calls %d", w.Code, calls)
+			t.Fatalf("failing about: %d calls %d", w.Code, calls)
 		}
 	}
 }

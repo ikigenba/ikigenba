@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
-// R-LRFI-FPI8 R-LSNE-TH8X R-M8I3-SHVY R-MAXW-K1DC
+// R-LRFI-FPI8 R-LSNE-TH8X R-X6XI-XMN1 R-MAXW-K1DC
 func TestAdvertisedSurface(t *testing.T) {
 	h := newHarness(t)
 	register := tools.Register
@@ -292,20 +292,18 @@ func TestReadCallsLeaveStateAndListingIndependent(t *testing.T) {
 	}
 }
 
-// R-MWW3-FWPU
+// R-X85F-BEDQ
 func TestToolsListingAcrossCatalogAndRepositoryStates(t *testing.T) {
 	var expected []mcp.ToolInfo
-	for _, closed := range []bool{false, true} {
+	for _, failing := range []bool{false, true} {
 		for _, exists := range []bool{false, true} {
-			t.Run(fmt.Sprintf("closed=%t/repos=%t", closed, exists), func(t *testing.T) {
+			t.Run(fmt.Sprintf("failing=%t/repos=%t", failing, exists), func(t *testing.T) {
 				h := newHarness(t)
 				if exists {
 					h.repo(t, "rep_0123456789abcdef", "alice")
 				}
-				if closed {
-					if err := h.cfg.Store.Close(); err != nil {
-						t.Fatal(err)
-					}
+				if failing {
+					h.db.SetFailing(true)
 				}
 				for _, called := range []bool{false, true} {
 					if called {

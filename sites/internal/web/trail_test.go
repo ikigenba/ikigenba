@@ -115,7 +115,7 @@ func TestRequestTrails(t *testing.T) {
 		t.Fatalf("views=%d creates=%d", viewed, mutation)
 	}
 	// Catalog refusal remains a nonview and request middleware counts its bytes.
-	_ = f.cfg.Store.Close()
+	f.db.SetFailing(true)
 	r := f.get(t, "GET", "/blog/", "sites", "", nil)
 	if r.Code != 503 || r.Header().Get("Set-Cookie") != "" {
 		t.Fatal("catalog cookie")
@@ -204,7 +204,7 @@ func TestNonviewsHaveOnlyRequestEvents(t *testing.T) {
 			t.Fatal("nonview cookie")
 		}
 	}
-	_ = f.cfg.Store.Close()
+	f.db.SetFailing(true)
 	f.get(t, "GET", "/blog/", "sites", "", nil)
 	for _, e := range f.events(t) {
 		if e.Name != "request.started" && e.Name != "request.finished" {

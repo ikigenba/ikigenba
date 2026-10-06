@@ -112,27 +112,34 @@ func TestToolRegistration(t *testing.T) {
 	}
 }
 
-// R-XP0T-GDM1 R-X0W8-66U7
+// R-XQFX-1YI5 R-XMS7-WNA2
 func TestCatalogRefusalAndRecovery(t *testing.T) {
 	f := fresh(t)
-	if err := f.cfg.Store.Close(); err != nil {
-		t.Fatal(err)
-	}
+	f.add(t, "private", "private")
+	baseline := f.get(t, "GET", "/about", "sites", "user", nil)
+	landing := f.get(t, "GET", "/", "sites", "user", nil)
+	f.db.SetFailing(true)
 	for _, host := range []string{"sites", "ikigenba.dev"} {
-		for _, method := range []string{"GET", "HEAD", "POST"} {
-			for _, path := range []string{"/", "/blog/", "/mcp"} {
-				if host == "sites" && (path == "/mcp" || method == "POST") {
-					continue
-				}
-				r := f.get(t, method, path, host, "user", nil)
-				if r.Code != 503 || len(r.Header().Values("Content-Type")) != 1 || r.Header().Get("Content-Type") != "text/plain; charset=utf-8" || (method == "HEAD" && r.Body.Len() != 0) || (method != "HEAD" && r.Body.String() != "cannot reach the catalog; try again later\n") {
-					t.Fatalf("catalog %s %s %s: %d %s", host, method, path, r.Code, r.Body.String())
+		for _, method := range []string{"GET", "HEAD", "POST", "DELETE", "OPTIONS", "CUSTOM"} {
+			for _, path := range []string{"/", "/blog", "/blog/", "/private/", "/mcp", "/about"} {
+				for _, user := range []string{"", "user"} {
+					if host == "sites" && (path == "/mcp" || path == "/about" || method != "GET" && method != "HEAD" || path == "/" && user == "") {
+						continue
+					}
+					r := f.get(t, method, path, host, user, nil)
+					if r.Code != 503 || len(r.Header().Values("Content-Type")) != 1 || r.Header().Get("Content-Type") != "text/plain; charset=utf-8" || (method == "HEAD" && r.Body.Len() != 0) || (method != "HEAD" && r.Body.String() != "cannot reach the catalog; try again later\n") {
+						t.Fatalf("catalog %s %s %s user=%q: %d %s", host, method, path, user, r.Code, r.Body.String())
+					}
 				}
 			}
 		}
 	}
-	if r := f.get(t, "GET", "/about", "sites", "user", nil); r.Code != 200 {
-		t.Fatal("handler stopped after catalog refusal", r.Code)
+	if r := f.get(t, "GET", "/about", "sites", "user", nil); r.Code != 200 || r.Body.String() != baseline.Body.String() || !reflect.DeepEqual(r.Header(), baseline.Header()) {
+		t.Fatal("catalog failure changed about", r.Code)
+	}
+	f.db.SetFailing(false)
+	if r := f.get(t, "GET", "/", "sites", "user", nil); r.Code != landing.Code || r.Body.String() != landing.Body.String() || !reflect.DeepEqual(r.Header(), landing.Header()) {
+		t.Fatal("handler did not recover", r.Code)
 	}
 }
 

@@ -3,7 +3,6 @@ package cli_test
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,10 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cache"
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
 	"github.com/ikigenba/ikigenba/sites/internal/git"
@@ -184,7 +185,7 @@ func (f *startFixture) get(t *testing.T, path string) *http.Response {
 	return res
 }
 
-// R-V89J-WCJE R-V9HG-A4A3 R-VAPC-NW0S R-VBX9-1NRH R-VD55-FFI6 R-VFKY-6YZK R-V6ZN-HU9K R-2VXD-WPI1 R-SLH1-GJRQ
+// R-V89J-WCJE R-V9HG-A4A3 R-VAPC-NW0S R-VBX9-1NRH R-VD55-FFI6 R-VFKY-6YZK R-V6ZN-HU9K R-XU3M-79Q8 R-SLH1-GJRQ
 func TestRunStartupRefusals(t *testing.T) {
 	for _, tc := range []struct{ name, pid, count, setting, want string }{{"setting", "123", "1", "abc", "DRAIN_SECONDS is 'abc', not a positive whole number of seconds"}, {"missing", "124", "1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"zero", "123", "0", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"space", "123", " 1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"plus", "123", "+1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"many", "123", "0002", "", "0002 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in"}, {"overflow", "123", "999999999999999999999999", "", "999999999999999999999999 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in"}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -195,7 +196,6 @@ func TestRunStartupRefusals(t *testing.T) {
 			f.set("LISTEN_PID", tc.pid)
 			f.set("LISTEN_FDS", tc.count)
 			f.set("DRAIN_SECONDS", tc.setting)
-			f.p.Database = filepath.Join(t.TempDir(), "outside.db")
 			code := cli.Run(context.Background(), f.p)
 			if code != cli.ExitUsage || f.err.text() != "sites: "+tc.want+"\n" || f.out.text() != "" || f.err.calls != 1 {
 				t.Fatalf("code=%d stderr=%q", code, f.err.text())
@@ -207,9 +207,6 @@ func TestRunStartupRefusals(t *testing.T) {
 			if e != nil || len(entries) != 0 {
 				t.Fatalf("entries=%v %v", entries, e)
 			}
-			if _, e = os.Stat(f.p.Database); !os.IsNotExist(e) {
-				t.Fatal("database touched")
-			}
 			for _, k := range f.keys {
 				if k == "PATH" || k == "NOTIFY_SOCKET" || k == "IKIGENBA_SERVICES" {
 					t.Fatalf("premature lookup %s", k)
@@ -219,7 +216,7 @@ func TestRunStartupRefusals(t *testing.T) {
 	}
 }
 
-// R-VGSU-KQQ9 R-VI0Q-YIGY R-VJ8N-CA7N R-VKGJ-Q1YC R-VRRY-0OEI
+// R-VGSU-KQQ9 R-VI0Q-YIGY R-VJ8N-CA7N R-VKGJ-Q1YC R-XLKB-IVJD
 func TestRunSocketAndGitRefusals(t *testing.T) {
 	for _, failure := range []string{"inherit", "git", "canceled"} {
 		t.Run(failure, func(t *testing.T) {
@@ -271,7 +268,7 @@ func TestRunSocketAndGitRefusals(t *testing.T) {
 	}
 }
 
-// R-VMWC-HLFQ R-VO48-VD6F
+// R-XJ4I-RC1Z R-VO48-VD6F
 func TestRunFilesystemRefusals(t *testing.T) {
 	for _, path := range []string{"state", "state/sites.db", "cache", "cache/sites"} {
 		t.Run(path, func(t *testing.T) {
@@ -293,7 +290,7 @@ func TestRunFilesystemRefusals(t *testing.T) {
 				}
 				_, openingError = cache.Open(cache.Config{Root: filepath.Join(f.p.Dir, "cache/sites"), Repos: filepath.Join(f.p.Dir, "missing-repos"), Git: g, Limits: limits.New(settings.Defaults(), limits.Clock{After: f.p.After})})
 			} else {
-				catalog, e := store.Open(context.Background(), store.Config{Source: filepath.Join(f.p.Dir, "state/sites.db"), Now: f.p.Now, Rand: f.p.Rand})
+				catalog, e := db.Open(context.Background(), db.Config{Path: filepath.Join(f.p.Dir, "state/sites.db"), Migrations: sites.Migrations(), Now: f.p.Now})
 				openingError = e
 				if catalog != nil {
 					_ = catalog.Close()
@@ -334,7 +331,7 @@ func TestRunNotificationFailure(t *testing.T) {
 	}
 }
 
-// R-VPC5-94X4 R-VSZU-EG57 R-XTWE-ZGKT R-XQ8P-U5CQ R-BDLE-HF7Y R-XMTE-HNSH R-W8UJ-DGS8 R-XQH3-MZ0K R-YULW-P307 R-XYWI-R1Q5 R-YPQB-601F
+// R-XKCF-53SO R-VSZU-EG57 R-XQ8P-U5CQ R-WZM4-N06V R-XO04-AF0R R-W8UJ-DGS8 R-XRNT-FQ8U R-YULW-P307 R-XU3M-79Q8 R-YPQB-601F
 func TestRunFirstStartComposition(t *testing.T) {
 	for _, services := range []string{"", "missing", "malformed"} {
 		t.Run(services, func(t *testing.T) {
@@ -449,7 +446,7 @@ func startRepo(t *testing.T, f *startFixture, root string) string {
 	return sha
 }
 
-// R-VLOG-3TP1 R-2YD6-O8ZF R-YIEW-VDL9 R-2ZL3-20Q4 R-YKUP-MX2N R-YM2M-0OTC R-4AOP-838L R-4BWL-LUZA
+// R-VLOG-3TP1 R-2YD6-O8ZF R-YIEW-VDL9 R-2ZL3-20Q4 R-YKUP-MX2N R-YM2M-0OTC R-4AOP-838L R-WVYF-HOYS
 func TestRunRepositoriesAndPaths(t *testing.T) {
 	for _, relative := range []bool{false, true} {
 		t.Run(map[bool]string{true: "relative", false: "absolute"}[relative], func(t *testing.T) {
@@ -553,57 +550,34 @@ func startSnapshot(t *testing.T, root, excluded string) map[string]string {
 	return out
 }
 
-// R-2X5A-AH8Q R-YFZ4-3U3V
+// R-WUQJ-3X83
 func TestRunCatalogPersistence(t *testing.T) {
-	for _, external := range []bool{false, true} {
-		t.Run(map[bool]string{false: "default", true: "external"}[external], func(t *testing.T) {
-			f := newStartFixture(t)
-			root := t.TempDir()
-			startRepo(t, f, root)
-			f.set("REPOS_DIR", root)
-			database := ""
-			if external {
-				database = filepath.Join(t.TempDir(), "catalog.db")
-				f.p.Database = database
+	f := newStartFixture(t)
+	root := t.TempDir()
+	startRepo(t, f, root)
+	f.set("REPOS_DIR", root)
+	f.start(t)
+	created := f.call(t, "create", `{"name":"blog","repo":"rep_0123456789abcdef"}`)
+	if f.stop(t) != cli.ExitSuccess {
+		t.Fatal(f.err.text())
+	}
+	for _, same := range []bool{true, false} {
+		again := newStartFixture(t)
+		if same {
+			again.p.Dir = f.p.Dir
+		}
+		again.start(t)
+		records := again.call(t, "list", "{}")["sites"].([]any)
+		if same {
+			if len(records) != 1 || records[0].(map[string]any)["id"] != created["id"] {
+				t.Fatal(records)
 			}
-			f.start(t)
-			f.call(t, "create", `{"name":"blog","repo":"rep_0123456789abcdef"}`)
-			if f.stop(t) != cli.ExitSuccess {
-				t.Fatal(f.err.text())
-			}
-			for _, same := range []bool{true, false} {
-				again := newStartFixture(t)
-				if same && !external {
-					again.p.Dir = f.p.Dir
-				}
-				if external && same {
-					again.p.Database = database
-				}
-				again.start(t)
-				r := again.call(t, "list", "{}")
-				sites := r["sites"].([]any)
-				want := 0
-				if same {
-					want = 1
-				}
-				if len(sites) != want {
-					t.Fatalf("same=%v sites=%v", same, sites)
-				}
-				if same && external {
-					if _, e := os.Stat(filepath.Join(again.p.Dir, "state")); !os.IsNotExist(e) {
-						t.Fatal("external database created state")
-					}
-				}
-				if again.stop(t) != cli.ExitSuccess {
-					t.Fatal(again.err.text())
-				}
-			}
-			if external {
-				if _, e := os.Stat(filepath.Join(f.p.Dir, "state")); !os.IsNotExist(e) {
-					t.Fatal("external database created state")
-				}
-			}
-		})
+		} else if len(records) != 0 {
+			t.Fatal(records)
+		}
+		if again.stop(t) != cli.ExitSuccess {
+			t.Fatal(again.err.text())
+		}
 	}
 }
 
@@ -616,14 +590,15 @@ func startReadFile(path string) ([]byte, error) {
 	return root.ReadFile(filepath.Base(path))
 }
 
-// R-XTWE-ZGKT R-XQH3-MZ0K R-W8UJ-DGS8
+// R-XRNT-FQ8U R-W8UJ-DGS8
 func TestRunStartupLeavesTreesAndRecordsOnlyLifecycle(t *testing.T) {
 	f := newStartFixture(t)
 	f.set("REPOS_DIR", filepath.Join(t.TempDir(), "absent"))
-	catalog, e := store.Open(context.Background(), store.Config{Source: filepath.Join(f.p.Dir, "state/sites.db"), Now: f.p.Now, Rand: f.p.Rand})
+	handle, e := db.Open(context.Background(), db.Config{Path: filepath.Join(f.p.Dir, "state/sites.db"), Migrations: sites.Migrations(), Now: f.p.Now})
 	if e != nil {
 		t.Fatal(e)
 	}
+	catalog := store.New(handle, store.Config{Now: f.p.Now, Rand: f.p.Rand})
 	site, e := catalog.Create(context.Background(), store.Draft{Owner: "owner", Name: "restored", Repo: "rep_0123456789abcdef", Ref: "main", Visibility: store.Public, Listed: true})
 	if e != nil {
 		t.Fatal(e)
@@ -631,7 +606,7 @@ func TestRunStartupLeavesTreesAndRecordsOnlyLifecycle(t *testing.T) {
 	if _, e = catalog.Publish(context.Background(), site.ID, strings.Repeat("a", 40)); e != nil {
 		t.Fatal(e)
 	}
-	if e = catalog.Close(); e != nil {
+	if e = handle.Close(); e != nil {
 		t.Fatal(e)
 	}
 
@@ -823,7 +798,7 @@ func (l *startReadyListener) Accept() (net.Conn, error) {
 	return l.Listener.Accept()
 }
 
-// R-VSZU-EG57 R-XTWE-ZGKT
+// R-VSZU-EG57
 func TestRunReadinessPrecedesAcceptAndOccursOnce(t *testing.T) {
 	f := newStartFixture(t)
 	before := startSnapshot(t, f.p.Dir, "")
@@ -851,7 +826,7 @@ func TestRunReadinessPrecedesAcceptAndOccursOnce(t *testing.T) {
 	startNoNotification(t, f)
 }
 
-// R-VSZU-EG57 R-VRRY-0OEI R-VMWC-HLFQ R-VO48-VD6F
+// R-VSZU-EG57 R-XLKB-IVJD R-XJ4I-RC1Z R-VO48-VD6F
 func TestRunCancellationAtStartupErrorChecks(t *testing.T) {
 	// Inject cancellation at each observation of the context, including the
 	// observation made after an opening failure. This drives startup without
@@ -908,7 +883,7 @@ func (c *startCancelObservation) Err() error {
 	return c.Context.Err()
 }
 
-// R-VRRY-0OEI
+// R-XLKB-IVJD
 func TestRunCancellationBeforeReady(t *testing.T) {
 	f := newStartFixture(t)
 	check := startGuardRefusal(t, f)
@@ -932,7 +907,7 @@ func TestRunCancellationBeforeReady(t *testing.T) {
 	}
 }
 
-// R-VRRY-0OEI
+// R-XLKB-IVJD
 func TestRunCancellationDuringServicesLookupWithoutNotify(t *testing.T) {
 	for _, unset := range []bool{true, false} {
 		t.Run(map[bool]string{true: "unset", false: "empty"}[unset], func(t *testing.T) {
@@ -960,7 +935,7 @@ func TestRunCancellationDuringServicesLookupWithoutNotify(t *testing.T) {
 	}
 }
 
-// R-VRRY-0OEI
+// R-XLKB-IVJD
 func TestRunCancellationDuringMCPConstructionWithoutNotify(t *testing.T) {
 	for _, unset := range []bool{true, false} {
 		t.Run(map[bool]string{true: "unset", false: "empty"}[unset], func(t *testing.T) {
@@ -982,282 +957,4 @@ func TestRunCancellationDuringMCPConstructionWithoutNotify(t *testing.T) {
 			}
 		})
 	}
-}
-
-// R-XTWE-ZGKT
-func TestRunStartupCreatesOnlyDeclaredEntries(t *testing.T) {
-	for _, external := range []bool{false, true} {
-		t.Run(map[bool]string{false: "default-database", true: "external-database"}[external], func(t *testing.T) {
-			f := newStartFixture(t)
-			state := filepath.Join(f.p.Dir, "state")
-			cacheRoot := filepath.Join(f.p.Dir, "cache")
-			for _, dir := range []string{state, cacheRoot} {
-				if e := os.Mkdir(dir, 0700); e != nil {
-					t.Fatal(e)
-				}
-			}
-			catalogDir := state
-			catalogName := "sites.db"
-			if external {
-				catalogDir = t.TempDir()
-				catalogName = "catalog.db"
-				f.p.Database = filepath.Join(catalogDir, catalogName)
-			}
-			fd, e := syscall.InotifyInit1(syscall.IN_NONBLOCK | syscall.IN_CLOEXEC)
-			if e != nil {
-				t.Fatal(e)
-			}
-			defer func() { _ = syscall.Close(fd) }()
-			watches := map[int]string{}
-			for _, dir := range []string{f.p.Dir, state, cacheRoot, catalogDir} {
-				if _, seen := func() (int, bool) {
-					for wd, path := range watches {
-						if path == dir {
-							return wd, true
-						}
-					}
-					return 0, false
-				}(); seen {
-					continue
-				}
-				wd, e := syscall.InotifyAddWatch(fd, dir, syscall.IN_CREATE|syscall.IN_DELETE)
-				if e != nil {
-					t.Fatal(e)
-				}
-				watches[wd] = dir
-			}
-			before := startSnapshot(t, f.p.Dir, "")
-			f.start(t)
-			after := startSnapshot(t, f.p.Dir, "")
-			startAssertPermittedStartup(t, f.p.Dir, before, after)
-			allowed := map[string]bool{filepath.Join(cacheRoot, "sites"): true}
-			for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
-				allowed[filepath.Join(catalogDir, catalogName+suffix)] = true
-			}
-			seenCatalog := false
-			seenCache := false
-			var buffer [16384]byte
-			for {
-				n, e := syscall.Read(fd, buffer[:])
-				if errors.Is(e, syscall.EAGAIN) || errors.Is(e, syscall.EWOULDBLOCK) {
-					break
-				}
-				if e != nil {
-					t.Fatal(e)
-				}
-				if n == 0 {
-					break
-				}
-				for at := 0; at < n; {
-					if n-at < 16 {
-						t.Fatal("truncated inotify header")
-					}
-					wd := int(binary.NativeEndian.Uint32(buffer[at : at+4]))
-					mask := binary.NativeEndian.Uint32(buffer[at+4 : at+8])
-					size := int(binary.NativeEndian.Uint32(buffer[at+12 : at+16]))
-					if size > n-at-16 {
-						t.Fatal("truncated inotify name")
-					}
-					if mask&syscall.IN_Q_OVERFLOW != 0 {
-						t.Fatal("inotify overflow lost startup observations")
-					}
-					dir, ok := watches[wd]
-					if !ok {
-						t.Fatalf("unknown inotify watch %d", wd)
-					}
-					name := strings.TrimRight(string(buffer[at+16:at+16+size]), "\x00")
-					path := filepath.Join(dir, name)
-					if mask&(syscall.IN_CREATE|syscall.IN_DELETE) != 0 && !allowed[path] {
-						t.Errorf("startup changed undeclared entry %s mask=%#x", path, mask)
-					}
-					if mask&syscall.IN_CREATE != 0 {
-						seenCatalog = seenCatalog || path == filepath.Join(catalogDir, catalogName)
-						seenCache = seenCache || path == filepath.Join(cacheRoot, "sites")
-					}
-					at += 16 + size
-				}
-			}
-			if !seenCatalog || !seenCache {
-				t.Errorf("inotify missed expected startup creations catalog=%v cache=%v", seenCatalog, seenCache)
-			}
-			if code := f.stop(t); code != cli.ExitSuccess {
-				t.Fatal(code, f.err.text())
-			}
-		})
-	}
-}
-
-// R-XTWE-ZGKT R-VMWC-HLFQ
-func TestRunExplicitDatabaseDoesNotCreateMissingParents(t *testing.T) {
-	for _, location := range []string{"external-nested", "inside-nested", "symlink-parent"} {
-		t.Run(location, func(t *testing.T) {
-			f := newStartFixture(t)
-			outside := t.TempDir()
-			watchPath := outside
-			parent := filepath.Join(outside, "missing", "nested")
-			if location == "inside-nested" {
-				watchPath = f.p.Dir
-				parent = filepath.Join(f.p.Dir, "missing", "nested")
-			}
-			if location == "symlink-parent" {
-				alias := filepath.Join(f.p.Dir, "catalog-parent")
-				if e := os.Symlink(outside, alias); e != nil {
-					t.Fatal(e)
-				}
-				parent = filepath.Join(alias, "missing", "nested")
-			}
-			f.p.Database = filepath.Join(parent, "catalog.db")
-			beforeDir := startSnapshot(t, f.p.Dir, "")
-			beforeOutside := startSnapshot(t, outside, "")
-			fd, e := syscall.InotifyInit1(syscall.IN_NONBLOCK | syscall.IN_CLOEXEC)
-			if e != nil {
-				t.Fatal(e)
-			}
-			defer func() { _ = syscall.Close(fd) }()
-			if _, e = syscall.InotifyAddWatch(fd, watchPath, syscall.IN_CREATE|syscall.IN_DELETE); e != nil {
-				t.Fatal(e)
-			}
-			check := startGuardRefusal(t, f)
-			defer check()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			lookup := f.p.LookupEnv
-			f.p.LookupEnv = func(key string) (string, bool) {
-				if key == "NOTIFY_SOCKET" {
-					cancel()
-				}
-				return lookup(key)
-			}
-			code := cli.Run(ctx, f.p)
-			if code != cli.ExitServerFailed || f.out.text() != "" || f.err.calls != 1 || !strings.HasPrefix(f.err.text(), "sites: cannot open database state/sites.db: ") || strings.Count(f.err.text(), "\n") != 1 || len(f.capture.Events()) != 0 {
-				t.Fatalf("code=%d stderr=%q", code, f.err.text())
-			}
-			if _, e := os.Stat(parent); !os.IsNotExist(e) {
-				t.Fatalf("missing parent changed: %v", e)
-			}
-			afterDir := startSnapshot(t, f.p.Dir, "")
-			afterOutside := startSnapshot(t, outside, "")
-			if len(beforeDir) != len(afterDir) || len(beforeOutside) != len(afterOutside) {
-				t.Fatalf("startup created undeclared entries: beforeDir=%v afterDir=%v beforeOutside=%v afterOutside=%v", beforeDir, afterDir, beforeOutside, afterOutside)
-			}
-			for p, v := range beforeDir {
-				if afterDir[p] != v {
-					t.Errorf("startup changed %s", p)
-				}
-			}
-			for p, v := range beforeOutside {
-				if afterOutside[p] != v {
-					t.Errorf("startup changed %s", p)
-				}
-			}
-			var data [4096]byte
-			n, e := syscall.Read(fd, data[:])
-			if !errors.Is(e, syscall.EAGAIN) && !errors.Is(e, syscall.EWOULDBLOCK) {
-				t.Errorf("startup created/deleted an undeclared parent: inotify bytes=%d err=%v", n, e)
-			}
-		})
-	}
-}
-
-// R-XTWE-ZGKT R-VMWC-HLFQ R-VO48-VD6F
-func TestRunDefaultPathsRespectPhysicalDirectory(t *testing.T) {
-	for _, hook := range []string{"state", "catalog", "cache", "cache-sites"} {
-		for _, outward := range []bool{true, false} {
-			t.Run(hook+map[bool]string{true: "-outward", false: "-inward"}[outward], func(t *testing.T) {
-				f := newStartFixture(t)
-				outside := t.TempDir()
-				targetRoot := outside
-				if !outward {
-					targetRoot = filepath.Join(f.p.Dir, "inside-target")
-					if e := os.Mkdir(targetRoot, 0700); e != nil {
-						t.Fatal(e)
-					}
-				}
-				link := filepath.Join(f.p.Dir, hook)
-				target := targetRoot
-				switch hook {
-				case "catalog":
-					if e := os.Mkdir(filepath.Join(f.p.Dir, "state"), 0700); e != nil {
-						t.Fatal(e)
-					}
-					link = filepath.Join(f.p.Dir, "state/sites.db")
-					target = filepath.Join(targetRoot, "catalog.db")
-				case "cache-sites":
-					if e := os.Mkdir(filepath.Join(f.p.Dir, "cache"), 0700); e != nil {
-						t.Fatal(e)
-					}
-					link = filepath.Join(f.p.Dir, "cache/sites")
-				}
-				if e := os.Symlink(target, link); e != nil {
-					t.Fatal(e)
-				}
-				before := startSnapshot(t, outside, "")
-				fd, e := syscall.InotifyInit1(syscall.IN_NONBLOCK | syscall.IN_CLOEXEC)
-				if e != nil {
-					t.Fatal(e)
-				}
-				defer func() { _ = syscall.Close(fd) }()
-				if _, e = syscall.InotifyAddWatch(fd, outside, syscall.IN_CREATE|syscall.IN_DELETE); e != nil {
-					t.Fatal(e)
-				}
-				if outward {
-					check := startGuardRefusal(t, f)
-					defer check()
-					code := cli.Run(context.Background(), f.p)
-					prefix := "sites: cannot open database state/sites.db: "
-					if strings.HasPrefix(hook, "cache") {
-						prefix = "sites: cannot create directory cache/sites: "
-						if _, e := os.Stat(filepath.Join(f.p.Dir, "state/sites.db")); e != nil {
-							t.Fatal(e)
-						}
-					}
-					if code != cli.ExitServerFailed || !strings.HasPrefix(f.err.text(), prefix) || f.err.calls != 1 || strings.Count(f.err.text(), "\n") != 1 || f.out.text() != "" || len(f.capture.Events()) != 0 {
-						t.Fatalf("code=%d stderr=%q", code, f.err.text())
-					}
-				} else {
-					f.start(t)
-					f.call(t, "list", "{}")
-					if code := f.stop(t); code != cli.ExitSuccess {
-						t.Fatal(code, f.err.text())
-					}
-					if f.out.text() != "" || f.err.text() != "" {
-						t.Fatal(f.out.text(), f.err.text())
-					}
-				}
-				after := startSnapshot(t, outside, "")
-				if len(before) != len(after) {
-					t.Fatalf("outside entries changed before=%v after=%v", before, after)
-				}
-				for p, v := range before {
-					if after[p] != v {
-						t.Errorf("outside entry changed %s", p)
-					}
-				}
-				var events [4096]byte
-				n, e := syscall.Read(fd, events[:])
-				if !errors.Is(e, syscall.EAGAIN) && !errors.Is(e, syscall.EWOULDBLOCK) {
-					t.Errorf("outside transient write bytes=%d err=%v", n, e)
-				}
-			})
-		}
-	}
-	t.Run("directory-symlink", func(t *testing.T) {
-		f := newStartFixture(t)
-		physical := f.p.Dir
-		alias := filepath.Join(t.TempDir(), "workdir")
-		if e := os.Symlink(physical, alias); e != nil {
-			t.Fatal(e)
-		}
-		f.p.Dir = alias
-		f.start(t)
-		f.call(t, "list", "{}")
-		if code := f.stop(t); code != cli.ExitSuccess {
-			t.Fatal(code, f.err.text())
-		}
-		for _, path := range []string{"state/sites.db", "cache/sites"} {
-			if _, e := os.Stat(filepath.Join(physical, path)); e != nil {
-				t.Fatal(e)
-			}
-		}
-	})
 }

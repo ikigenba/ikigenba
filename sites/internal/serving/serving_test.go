@@ -20,9 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cache"
 	"github.com/ikigenba/ikigenba/sites/internal/git"
 	"github.com/ikigenba/ikigenba/sites/internal/limits"
@@ -40,6 +42,7 @@ const visitorID = "vis_1a2b3c4d5e6f7081"
 var instant = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
 type fixture struct {
+	db                                   *db.DB
 	t                                    *testing.T
 	base, binary, work, repos, root, sha string
 	env                                  []string
@@ -81,9 +84,10 @@ func newFixture(t *testing.T, files map[string]string) *fixture {
 	for i := range seed {
 		seed[i] = byte(i)
 	}
-	f.s, err = store.Open(context.Background(), store.Config{Source: filepath.Join(f.base, "sites.db"), Now: func() time.Time { return instant }, Rand: bytes.NewReader(seed)})
+	f.db, err = db.Open(context.Background(), db.Config{Path: filepath.Join(f.base, "sites.db"), Migrations: sites.Migrations(), Now: func() time.Time { return instant }})
 	must(t, err)
-	t.Cleanup(func() { must(t, f.s.Close()) })
+	t.Cleanup(func() { must(t, f.db.Close()) })
+	f.s = store.New(f.db, store.Config{Now: func() time.Time { return instant }, Rand: bytes.NewReader(seed)})
 	f.site, err = f.s.Create(context.Background(), store.Draft{Owner: "u_fixture", Name: "blog", Repo: repository, Ref: "main", Visibility: store.Public, Listed: true})
 	must(t, err)
 	if files != nil {
@@ -229,7 +233,7 @@ func TestDeclaredServingSeams(t *testing.T) {
 	}
 }
 
-// R-EQW9-VA7X R-ETC2-MTPB R-Y2FP-NURO R-Y3NM-1MID R-4YFR-E1U4
+// R-X4HQ-635N R-ETC2-MTPB R-Y2FP-NURO R-Y3NM-1MID R-4YFR-E1U4
 func TestSiteAnswerOrder(t *testing.T) {
 	f := newFixture(t, nil)
 	for _, method := range []string{"POST", "DELETE", "OPTIONS", "PUT"} {
@@ -278,10 +282,19 @@ func TestSiteAnswerOrder(t *testing.T) {
 	must(t, err)
 	r = f.req("GET", "/blog", "")
 	assertNotice(t, f.answer(r, false), f.notice(r, 404, "notfound"))
-	must(t, f.s.Close())
-	w = f.answer(f.req("POST", "/blog/", ""), false)
-	assertStatus(t, w, 405)
-	assertHeader(t, w, "Allow", "GET, HEAD")
+	f.db.SetFailing(true)
+	for _, method := range []string{"POST", "DELETE", "OPTIONS", "PUT", "PATCH", "CUSTOM"} {
+		for _, target := range []string{"/blog", "/blog/", "/nosuch", "/"} {
+			for _, user := range []string{"", "u_fixture"} {
+				w := f.answer(f.req(method, target, user), false)
+				assertStatus(t, w, 405)
+				assertHeader(t, w, "Allow", "GET, HEAD")
+				if w.Body.Len() != 0 {
+					t.Fatal("failing catalog method body")
+				}
+			}
+		}
+	}
 }
 
 // R-W6XT-ITGV

@@ -9,16 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
-	// Register the approved database/sql driver for catalog connections.
-	_ "modernc.org/sqlite"
+	"github.com/ikigenba/ikigenba/appkit/db"
 )
 
 // Catalog identifiers and visibility values.
@@ -31,17 +25,15 @@ const (
 
 // Catalog error sentinels distinguish refusals from storage failures.
 var (
-	ErrDatabase  = errors.New("database failure")
 	ErrNotFound  = errors.New("site not found")
 	ErrNameTaken = errors.New("name taken")
 	ErrNotPublic = errors.New("site is not public")
 )
 
-// Config supplies catalog storage, time, and randomness.
+// Config supplies catalog time and randomness.
 type Config struct {
-	Source string
-	Now    func() time.Time
-	Rand   io.Reader
+	Now  func() time.Time
+	Rand io.Reader
 }
 
 // Site is the catalog record exposed to consumers.
@@ -65,20 +57,12 @@ type Change struct {
 	Ref        *string
 }
 
-// Store provides serialized access to one SQLite catalog.
+// Store provides record operations over one catalog handle.
 type Store struct {
-	mu     sync.Mutex
-	db     *sql.DB
-	now    func() time.Time
-	rand   io.Reader
-	closed bool
+	db   *db.DB
+	now  func() time.Time
+	rand io.Reader
 }
-
-type databaseError struct{ cause error }
-
-func (e databaseError) Error() string        { return strings.ReplaceAll(e.cause.Error(), "\n", " ") }
-func (e databaseError) Unwrap() error        { return e.cause }
-func (e databaseError) Is(target error) bool { return target == ErrDatabase }
 
 // ValidID reports whether s is a catalog site identifier.
 func ValidID(s string) bool { return strings.HasPrefix(s, IDPrefix) && validHex(s[len(IDPrefix):], 16) }
@@ -107,105 +91,45 @@ func ValidName(s string) bool {
 	return true
 }
 
-// Open opens or initializes a catalog using cfg.
-func Open(ctx context.Context, cfg Config) (*Store, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	source := cfg.Source
-	file := source != "" && source != ":memory:"
-	existed := false
-	if file {
-		parent := filepath.Dir(source)
-		if err := os.MkdirAll(parent, 0700); err != nil {
-			return nil, databaseError{err}
-		}
-		info, err := os.Stat(source)
-		if err != nil && !os.IsNotExist(err) {
-			return nil, databaseError{err}
-		}
-		existed = err == nil
-		if existed && info.Size() > 0 {
-			f, e := os.Open(filepath.Clean(source))
-			if e != nil {
-				return nil, databaseError{e}
-			}
-			head := make([]byte, 16)
-			_, e = io.ReadFull(f, head)
-			ce := f.Close()
-			if e != nil || string(head) != "SQLite format 3\x00" {
-				return nil, databaseError{errors.New("file is not a database")}
-			}
-			if ce != nil {
-				return nil, databaseError{ce}
-			}
-		}
-		// Check directory write and search access without creating an entry.
-		// The service runs as an ordinary user, with equal real and effective IDs.
-		const writeAndSearch = 2 | 1
-		if err := syscall.Access(parent, writeAndSearch); err != nil {
-			return nil, databaseError{err}
-		}
-		f, err := os.OpenFile(filepath.Clean(source), os.O_RDWR|os.O_CREATE, 0600)
-		if err != nil {
-			return nil, databaseError{err}
-		}
-		if err = f.Close(); err != nil {
-			return nil, databaseError{err}
-		}
-		absolute, err := filepath.Abs(source)
-		if err != nil {
-			return nil, databaseError{err}
-		}
-		source = (&url.URL{Scheme: "file", Path: absolute}).String()
-	} else {
-		source = ":memory:"
-	}
-	db, err := sql.Open("sqlite", source)
-	if err != nil {
-		return nil, databaseError{err}
-	}
-	db.SetMaxOpenConns(1)
-	fail := func(e error) (*Store, error) {
-		_ = db.Close()
-		if file && !existed {
-			_ = os.Remove(cfg.Source)
-		}
-		return nil, databaseError{e}
-	}
-	if err = db.PingContext(ctx); err != nil {
-		return fail(err)
-	}
-	if file {
-		if _, err = db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-			return fail(err)
-		}
-	}
-	if _, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS sites (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, owner TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
-		return fail(err)
-	}
+// New builds a catalog over a caller-owned database handle.
+func New(d *db.DB, cfg Config) *Store {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
 	if cfg.Rand == nil {
 		cfg.Rand = rand.Reader
 	}
-	return &Store{db: db, now: cfg.Now, rand: cfg.Rand}, nil
+	return &Store{db: d, now: cfg.Now, rand: cfg.Rand}
 }
 
-// Close closes the catalog and makes subsequent operations fail.
-func (s *Store) Close() error { s.mu.Lock(); defer s.mu.Unlock(); s.closed = true; return s.db.Close() }
-func (s *Store) ready(ctx context.Context) error {
+func transact[T any](ctx context.Context, operation func(context.Context, func(*sql.Tx) error) error, fn func(*sql.Tx) (T, error)) (T, error) {
+	var out T
 	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+	err := operation(ctx, func(tx *sql.Tx) error {
+		var err error
+		out, err = fn(tx)
 		return err
+	})
+	if err != nil {
+		var zero T
+		return zero, err
 	}
-	if s.closed {
-		return ErrDatabase
-	}
-	return nil
+	return out, nil
 }
-func (s *Store) all(ctx context.Context) ([]Site, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT payload FROM sites ORDER BY name COLLATE BINARY")
+
+type updateResult struct {
+	site   Site
+	fields []string
+}
+type apexResult struct {
+	site Site
+	set  bool
+}
+
+func (s *Store) all(ctx context.Context, tx *sql.Tx) ([]Site, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT payload FROM sites ORDER BY name COLLATE BINARY")
 	if err != nil {
 		return nil, err
 	}
@@ -220,13 +144,15 @@ func (s *Store) all(ctx context.Context) ([]Site, error) {
 		if err = json.Unmarshal([]byte(payload), &x); err != nil {
 			return nil, err
 		}
+		x.Created = x.Created.UTC()
+		x.Published = x.Published.UTC()
 		out = append(out, x)
 	}
 	return out, rows.Err()
 }
-func (s *Store) byID(ctx context.Context, id string) (Site, error) {
+func (s *Store) byID(ctx context.Context, tx *sql.Tx, id string) (Site, error) {
 	var payload string
-	err := s.db.QueryRowContext(ctx, "SELECT payload FROM sites WHERE id=?", id).Scan(&payload)
+	err := tx.QueryRowContext(ctx, "SELECT payload FROM sites WHERE id=?", id).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Site{}, ErrNotFound
 	}
@@ -235,29 +161,28 @@ func (s *Store) byID(ctx context.Context, id string) (Site, error) {
 	}
 	var x Site
 	err = json.Unmarshal([]byte(payload), &x)
+	x.Created = x.Created.UTC()
+	x.Published = x.Published.UTC()
 	return x, err
 }
-func (s *Store) save(ctx context.Context, x Site) error {
+func (s *Store) save(ctx context.Context, tx *sql.Tx, x Site) error {
 	b, err := json.Marshal(x)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", x.ID, x.Name, x.Slug, x.Owner, string(b))
+	_, err = tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", x.ID, x.Name, x.Slug, x.Owner, string(b))
 	return err
 }
-func (s *Store) apexID(ctx context.Context) (string, error) {
+func (s *Store) apexID(ctx context.Context, tx *sql.Tx) (string, error) {
 	var id string
-	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='apex'").Scan(&id)
+	err := tx.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='apex'").Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	return id, err
 }
-func (s *Store) selectOne(ctx context.Context, match func(Site) bool) (Site, error) {
-	if err := s.ready(ctx); err != nil {
-		return Site{}, err
-	}
-	xs, err := s.all(ctx)
+func (s *Store) selectOne(ctx context.Context, tx *sql.Tx, match func(Site) bool) (Site, error) {
+	xs, err := s.all(ctx, tx)
 	if err != nil {
 		return Site{}, err
 	}
@@ -271,22 +196,19 @@ func (s *Store) selectOne(ctx context.Context, match func(Site) bool) (Site, err
 
 // Find finds an owner's site by name.
 func (s *Store) Find(ctx context.Context, owner, name string) (Site, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.selectOne(ctx, func(x Site) bool { return x.Owner == owner && x.Name == name })
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) (Site, error) {
+		return s.selectOne(ctx, tx, func(x Site) bool { return x.Owner == owner && x.Name == name })
+	})
 }
 
 // BySlug finds a site by its exact serving slug.
 func (s *Store) BySlug(ctx context.Context, slug string) (Site, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.selectOne(ctx, func(x Site) bool { return x.Slug == slug })
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) (Site, error) {
+		return s.selectOne(ctx, tx, func(x Site) bool { return x.Slug == slug })
+	})
 }
-func (s *Store) list(ctx context.Context, match func(Site) bool) ([]Site, error) {
-	if err := s.ready(ctx); err != nil {
-		return nil, err
-	}
-	xs, err := s.all(ctx)
+func (s *Store) list(ctx context.Context, tx *sql.Tx, match func(Site) bool) ([]Site, error) {
+	xs, err := s.all(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -301,242 +223,213 @@ func (s *Store) list(ctx context.Context, match func(Site) bool) ([]Site, error)
 
 // List lists one owner's sites in name order.
 func (s *Store) List(ctx context.Context, owner string) ([]Site, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.list(ctx, func(x Site) bool { return x.Owner == owner })
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) ([]Site, error) {
+		return s.list(ctx, tx, func(x Site) bool { return x.Owner == owner })
+	})
 }
 
 // Visible lists all listed sites and the user's own unlisted sites.
 func (s *Store) Visible(ctx context.Context, user string) ([]Site, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.list(ctx, func(x Site) bool { return x.Listed || x.Owner == user })
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) ([]Site, error) {
+		return s.list(ctx, tx, func(x Site) bool { return x.Listed || x.Owner == user })
+	})
 }
-func (s *Store) taken(ctx context.Context, name string) (bool, error) {
+func (s *Store) taken(ctx context.Context, tx *sql.Tx, name string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM sites WHERE name=? OR slug=?", name, name).Scan(&n)
+	err := tx.QueryRowContext(ctx, "SELECT count(*) FROM sites WHERE name=? OR slug=?", name, name).Scan(&n)
 	return n > 0, err
 }
 
 // Taken reports whether a name or slug is already reserved.
 func (s *Store) Taken(ctx context.Context, name string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return false, err
-	}
-	return s.taken(ctx, name)
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) (bool, error) {
+		return s.taken(ctx, tx, name)
+	})
 }
 
 // Create creates a site with a unique ID and serving slug.
 func (s *Store) Create(ctx context.Context, d Draft) (Site, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return Site{}, err
-	}
-	if !ValidName(d.Name) || d.Owner == "" || d.Ref == "" || d.Visibility != Public && d.Visibility != Private {
-		return Site{}, errors.New("invalid draft")
-	}
-	taken, err := s.taken(ctx, d.Name)
-	if err != nil {
-		return Site{}, err
-	}
-	if taken {
-		return Site{}, ErrNameTaken
-	}
-	var id string
-	for {
-		b := make([]byte, 8)
-		if _, err = io.ReadFull(s.rand, b); err != nil {
-			return Site{}, errors.New(err.Error())
+	return transact(ctx, s.db.Write, func(tx *sql.Tx) (Site, error) {
+		if !ValidName(d.Name) || d.Owner == "" || d.Ref == "" || d.Visibility != Public && d.Visibility != Private {
+			return Site{}, errors.New("invalid draft")
 		}
-		id = IDPrefix + hex.EncodeToString(b)
-		_, err = s.byID(ctx, id)
-		if errors.Is(err, ErrNotFound) {
-			break
-		}
+		taken, err := s.taken(ctx, tx, d.Name)
 		if err != nil {
 			return Site{}, err
 		}
-	}
-	slug := d.Name
-	if !d.Listed {
+		if taken {
+			return Site{}, ErrNameTaken
+		}
+		var id string
 		for {
-			b := make([]byte, 4)
+			b := make([]byte, 8)
 			if _, err = io.ReadFull(s.rand, b); err != nil {
 				return Site{}, errors.New(err.Error())
 			}
-			slug = d.Name + "-" + hex.EncodeToString(b)
-			taken, err = s.taken(ctx, slug)
+			id = IDPrefix + hex.EncodeToString(b)
+			_, err = s.byID(ctx, tx, id)
+			if errors.Is(err, ErrNotFound) {
+				break
+			}
 			if err != nil {
 				return Site{}, err
 			}
-			if !taken {
-				break
+		}
+		slug := d.Name
+		if !d.Listed {
+			for {
+				b := make([]byte, 4)
+				if _, err = io.ReadFull(s.rand, b); err != nil {
+					return Site{}, errors.New(err.Error())
+				}
+				slug = d.Name + "-" + hex.EncodeToString(b)
+				taken, err = s.taken(ctx, tx, slug)
+				if err != nil {
+					return Site{}, err
+				}
+				if !taken {
+					break
+				}
 			}
 		}
-	}
-	x := Site{ID: id, Name: d.Name, Slug: slug, Owner: d.Owner, Repo: d.Repo, Ref: d.Ref, Visibility: d.Visibility, Listed: d.Listed, Created: s.now().UTC().Truncate(time.Second)}
-	if err = s.save(ctx, x); err != nil {
-		return Site{}, err
-	}
-	return x, nil
+		x := Site{ID: id, Name: d.Name, Slug: slug, Owner: d.Owner, Repo: d.Repo, Ref: d.Ref, Visibility: d.Visibility, Listed: d.Listed, Created: s.now().UTC().Truncate(time.Second)}
+		if err = s.save(ctx, tx, x); err != nil {
+			return Site{}, err
+		}
+		return x, nil
+	})
 }
 
 // Publish atomically replaces the published commit and timestamp.
 func (s *Store) Publish(ctx context.Context, id, commit string) (Site, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return Site{}, err
-	}
-	if !validHex(commit, 40) {
-		return Site{}, errors.New("invalid commit")
-	}
-	x, err := s.byID(ctx, id)
-	if err != nil {
-		return Site{}, err
-	}
-	x.Commit = commit
-	x.Published = s.now().UTC().Truncate(time.Second)
-	if err = s.save(ctx, x); err != nil {
-		return Site{}, err
-	}
-	return x, nil
+	return transact(ctx, s.db.Write, func(tx *sql.Tx) (Site, error) {
+		if !validHex(commit, 40) {
+			return Site{}, errors.New("invalid commit")
+		}
+		x, err := s.byID(ctx, tx, id)
+		if err != nil {
+			return Site{}, err
+		}
+		x.Commit = commit
+		x.Published = s.now().UTC().Truncate(time.Second)
+		if err = s.save(ctx, tx, x); err != nil {
+			return Site{}, err
+		}
+		return x, nil
+	})
 }
 
 // Update atomically changes visibility, listing, and tracking ref.
 func (s *Store) Update(ctx context.Context, id string, c Change) (Site, []string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return Site{}, nil, err
-	}
-	if c.Visibility != nil && *c.Visibility != Public && *c.Visibility != Private || c.Ref != nil && *c.Ref == "" {
-		return Site{}, nil, errors.New("invalid change")
-	}
-	x, err := s.byID(ctx, id)
-	if err != nil {
-		return Site{}, nil, err
-	}
-	apex, err := s.apexID(ctx)
-	if err != nil {
-		return Site{}, nil, err
-	}
-	if apex == id && c.Visibility != nil && *c.Visibility == Private {
-		return Site{}, nil, ErrNotPublic
-	}
-	changed := make([]string, 0)
-	if c.Visibility != nil && *c.Visibility != x.Visibility {
-		x.Visibility = *c.Visibility
-		changed = append(changed, "visibility")
-	}
-	if c.Listed != nil && *c.Listed != x.Listed {
-		x.Listed = *c.Listed
-		changed = append(changed, "listed")
-	}
-	if c.Ref != nil && *c.Ref != x.Ref {
-		x.Ref = *c.Ref
-		changed = append(changed, "ref")
-	}
-	if len(changed) > 0 {
-		if err = s.save(ctx, x); err != nil {
-			return Site{}, nil, err
+	result, err := transact(ctx, s.db.Write, func(tx *sql.Tx) (updateResult, error) {
+		if c.Visibility != nil && *c.Visibility != Public && *c.Visibility != Private || c.Ref != nil && *c.Ref == "" {
+			return updateResult{}, errors.New("invalid change")
 		}
-	}
-	return x, changed, nil
+		x, err := s.byID(ctx, tx, id)
+		if err != nil {
+			return updateResult{}, err
+		}
+		apex, err := s.apexID(ctx, tx)
+		if err != nil {
+			return updateResult{}, err
+		}
+		if apex == id && c.Visibility != nil && *c.Visibility == Private {
+			return updateResult{}, ErrNotPublic
+		}
+		changed := make([]string, 0)
+		if c.Visibility != nil && *c.Visibility != x.Visibility {
+			x.Visibility = *c.Visibility
+			changed = append(changed, "visibility")
+		}
+		if c.Listed != nil && *c.Listed != x.Listed {
+			x.Listed = *c.Listed
+			changed = append(changed, "listed")
+		}
+		if c.Ref != nil && *c.Ref != x.Ref {
+			x.Ref = *c.Ref
+			changed = append(changed, "ref")
+		}
+		if len(changed) > 0 {
+			if err = s.save(ctx, tx, x); err != nil {
+				return updateResult{}, err
+			}
+		}
+		return updateResult{x, changed}, nil
+	})
+	return result.site, result.fields, err
 }
 
 // Delete deletes a site and clears its apex setting if present.
 func (s *Store) Delete(ctx context.Context, id string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return false, err
-	}
-	if _, err := s.byID(ctx, id); err != nil {
-		return false, err
-	}
-	apex, err := s.apexID(ctx)
-	if err != nil {
-		return false, err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, "DELETE FROM sites WHERE id=?", id); err != nil {
-		return false, err
-	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM settings WHERE key='apex' AND value=?", id); err != nil {
-		return false, err
-	}
-	if err = tx.Commit(); err != nil {
-		return false, err
-	}
-	return apex == id, nil
+	return transact(ctx, s.db.Write, func(tx *sql.Tx) (bool, error) {
+		if _, err := s.byID(ctx, tx, id); err != nil {
+			return false, err
+		}
+		apex, err := s.apexID(ctx, tx)
+		if err != nil {
+			return false, err
+		}
+		if _, err = tx.ExecContext(ctx, "DELETE FROM sites WHERE id=?", id); err != nil {
+			return false, err
+		}
+		if _, err = tx.ExecContext(ctx, "DELETE FROM settings WHERE key='apex' AND value=?", id); err != nil {
+			return false, err
+		}
+		return apex == id, nil
+	})
 }
 
 // Apex returns the currently configured apex site, if any.
 func (s *Store) Apex(ctx context.Context) (Site, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return Site{}, false, err
-	}
-	id, err := s.apexID(ctx)
-	if err != nil {
-		return Site{}, false, err
-	}
-	if id == "" {
-		return Site{}, false, nil
-	}
-	x, err := s.byID(ctx, id)
-	return x, err == nil, err
+	result, err := transact(ctx, s.db.Read, func(tx *sql.Tx) (apexResult, error) {
+		id, err := s.apexID(ctx, tx)
+		if err != nil {
+			return apexResult{}, err
+		}
+		if id == "" {
+			return apexResult{}, nil
+		}
+		x, err := s.byID(ctx, tx, id)
+		return apexResult{x, err == nil}, err
+	})
+	return result.site, result.set, err
 }
 
 // SetApex sets the apex to a public site.
 func (s *Store) SetApex(ctx context.Context, id string) (Site, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return Site{}, err
-	}
-	x, err := s.byID(ctx, id)
-	if err != nil {
-		return Site{}, err
-	}
-	if x.Visibility != Public {
-		return Site{}, ErrNotPublic
-	}
-	apex, err := s.apexID(ctx)
-	if err != nil {
-		return Site{}, err
-	}
-	if apex != id {
-		if _, err = s.db.ExecContext(ctx, "INSERT INTO settings(key,value) VALUES('apex',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", id); err != nil {
+	return transact(ctx, s.db.Write, func(tx *sql.Tx) (Site, error) {
+		x, err := s.byID(ctx, tx, id)
+		if err != nil {
 			return Site{}, err
 		}
-	}
-	return x, nil
+		if x.Visibility != Public {
+			return Site{}, ErrNotPublic
+		}
+		apex, err := s.apexID(ctx, tx)
+		if err != nil {
+			return Site{}, err
+		}
+		if apex != id {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO settings(key,value) VALUES('apex',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", id); err != nil {
+				return Site{}, err
+			}
+		}
+		return x, nil
+	})
 }
 
 // ClearApex clears the apex without changing any site.
 func (s *Store) ClearApex(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ready(ctx); err != nil {
-		return err
-	}
-	id, err := s.apexID(ctx)
-	if err != nil {
-		return err
-	}
-	if id == "" {
-		return nil
-	}
-	_, err = s.db.ExecContext(ctx, "DELETE FROM settings WHERE key='apex'")
+	_, err := transact(ctx, s.db.Write, func(tx *sql.Tx) (struct{}, error) {
+		id, err := s.apexID(ctx, tx)
+		if err != nil {
+			return struct{}{}, err
+		}
+		if id == "" {
+			return struct{}{}, nil
+		}
+		_, err = tx.ExecContext(ctx, "DELETE FROM settings WHERE key='apex'")
+		return struct{}{}, err
+	})
 	return err
 }

@@ -270,7 +270,7 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 }
 
 func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
-	// R-QTZ2-U7F6 R-9FGR-O8O7
+	// R-X9DB-P64F R-9FGR-O8O7
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			h := newHarness(t)
@@ -284,18 +284,9 @@ func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
 			}
 			catalogBefore := catalogSnapshot(t, h)
 			before := diskSnapshot(t, h.cacheRoot, false)
-			configureCache(t, h, settings.Defaults(), func(string, string) {
-				if e := h.cfg.Store.Close(); e != nil {
-					t.Fatal(e)
-				}
-			})
-			if existing {
-				h.after = func(time.Duration) <-chan time.Time {
-					if e := h.cfg.Store.Close(); e != nil {
-						t.Fatal(e)
-					}
-					return make(chan time.Time)
-				}
+			h.after = func(time.Duration) <-chan time.Time {
+				h.db.SetFailing(true)
+				return make(chan time.Time)
 			}
 			if got := refusal(t, h.call(t, "alice", "publish", `{"name":"blog"}`)); got != store.Unreachable {
 				t.Fatal(got)
@@ -303,7 +294,7 @@ func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
 			if !reflect.DeepEqual(before, diskSnapshot(t, h.cacheRoot, false)) {
 				t.Fatal("catalog failure changed trees")
 			}
-			if !reflect.DeepEqual(catalogBefore, closedCatalogSnapshot(t, h)) {
+			if !reflect.DeepEqual(catalogBefore, recoveredCatalogSnapshot(t, h)) {
 				t.Fatal("catalog failure changed catalog")
 			}
 		})

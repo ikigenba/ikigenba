@@ -16,10 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cache"
 	gitpkg "github.com/ikigenba/ikigenba/sites/internal/git"
 	"github.com/ikigenba/ikigenba/sites/internal/limits"
@@ -29,6 +31,7 @@ import (
 )
 
 type fixture struct {
+	db                  *db.DB
 	cfg                 web.Config
 	h                   http.Handler
 	capture             *telemetry.Capture
@@ -63,14 +66,15 @@ func fresh(t *testing.T) *fixture {
 	if e != nil {
 		t.Fatal(e)
 	}
-	st, e := store.Open(context.Background(), store.Config{Source: filepath.Join(f.root, "state", "catalog.db"), Now: func() time.Time { return time.Date(2024, 2, 3, 4, 5, 6, 0, time.UTC) }, Rand: bytes.NewReader(randomBytes(61))})
+	f.db, e = db.Open(context.Background(), db.Config{Path: filepath.Join(f.root, "state", "catalog.db"), Migrations: sites.Migrations(), Now: func() time.Time { return time.Date(2024, 2, 3, 4, 5, 6, 0, time.UTC) }})
 	if e != nil {
 		t.Fatal(e)
 	}
+	st := store.New(f.db, store.Config{Now: func() time.Time { return time.Date(2024, 2, 3, 4, 5, 6, 0, time.UTC) }, Rand: bytes.NewReader(randomBytes(61))})
 	wr := telemetry.New(telemetry.Config{Service: "sites", Version: "fixture", Sink: f.capture, Stderr: io.Discard, Now: func() time.Time { return time.Date(2024, 2, 3, 4, 5, 6, 0, time.UTC) }, Rand: bytes.NewReader(randomBytes(62)), Sleep: func(context.Context, time.Duration) {}})
 	f.cfg = web.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: mcp.NewServer(mcp.ServerConfig{Name: "sites", Version: "fixture", Telemetry: wr}), Store: st, Cache: c, Limits: l, Telemetry: wr, Rand: bytes.NewReader(randomBytes(63))}
 	f.h = web.Handler(f.cfg)
-	t.Cleanup(func() { _ = st.Close(); wr.Shutdown(context.Background(), "test finished") })
+	t.Cleanup(func() { _ = f.db.Close(); wr.Shutdown(context.Background(), "test finished") })
 	return f
 }
 func (f *fixture) get(t *testing.T, method, path, host, user string, headers map[string]string) *httptest.ResponseRecorder {

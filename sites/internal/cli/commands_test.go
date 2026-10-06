@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,14 +44,14 @@ func TestExitConstants(t *testing.T) {
 	}
 }
 
-// R-SHTC-B8JN R-SJ18-P0AC R-SMOX-UBIF R-KKIR-A82X R-CMRM-1YT2 R-CNZI-FQJR
+// R-XAL8-2XV4 R-SJ18-P0AC R-SMOX-UBIF R-KKIR-A82X R-CMRM-1YT2 R-CNZI-FQJR
 func TestPublicText(t *testing.T) {
 	const service = pages.ServiceName
 	const description = pages.Description
 	if service != "sites" || description != "Static sites from the suite's repositories" {
 		t.Fatal("service text")
 	}
-	wantUsage := "Usage: sites [command]\n\nServe static sites from the suite's repositories at /<slug>/, MCP tools at\n/mcp, and a landing page at /, on the socket systemd passes in. With no\ncommand, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+	wantUsage := "Usage: sites [command]\n\nServe static sites from the suite's repositories at /<slug>/, MCP tools at\n/mcp, and a landing page at /, on the socket systemd passes in. With no\ncommand, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 	const usage = cli.Usage
 	const manifest = cli.Manifest
 	if usage != wantUsage {
@@ -92,7 +91,7 @@ func (s forbiddenSink) Deliver(context.Context, telemetry.Event) error {
 	return nil
 }
 
-// R-SQCM-ZMQI R-SRKJ-DEH7 R-SSSF-R67W R-SU0C-4XYL R-SWG4-WHFZ R-SXO1-A96O R-SYVX-O0XD R-5FW3-M580
+// R-SQCM-ZMQI R-SRKJ-DEH7 R-SSSF-R67W R-XBT4-GPLT R-XD10-UHCI R-SXO1-A96O R-XE8X-8937 R-WHBM-WG2G R-WX6B-VGPH
 func TestCommands(t *testing.T) {
 	tests := []struct {
 		args     []string
@@ -102,6 +101,10 @@ func TestCommands(t *testing.T) {
 		{[]string{"--version"}, cli.Version + "\n", "", cli.ExitSuccess},
 		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
 		{[]string{"--help"}, cli.Usage, "", cli.ExitSuccess},
+		{[]string{"db"}, "", "sites: unknown command 'db'\n\nsee 'sites --help' for usage\n", cli.ExitUsage},
+		{[]string{"db", "bogus"}, "", "sites: unknown command 'bogus'\n\nsee 'sites --help' for usage\n", cli.ExitUsage},
+		{[]string{"db", "status", "extra"}, "", "sites: unknown command 'extra'\n\nsee 'sites --help' for usage\n", cli.ExitUsage},
+		{[]string{"db", "status", "--extra", "last"}, "", "sites: unknown option '--extra'\n\nsee 'sites --help' for usage\n", cli.ExitUsage},
 	}
 	for _, first := range []string{"bogus", "--bogus", "-", "", "--version", "manifest", "--help"} {
 		for _, extra := range [][]string{nil, {"another"}, {"--extra"}, {"--help", "third"}} {
@@ -131,7 +134,7 @@ func TestCommands(t *testing.T) {
 			var stdout, stderr observedWriter
 			forbidden := func() { t.Fatal("process seam used") }
 			p := cli.Process{
-				Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir, Database: filepath.Join(dir, "db"), Pid: 42,
+				Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir, Pid: 42,
 				LookupEnv: func(string) (string, bool) { forbidden(); return "", false },
 				Environ:   func() []string { forbidden(); return nil }, Unsetenv: func(string) error { forbidden(); return nil },
 				Inherit: func(uintptr) (net.Listener, error) { forbidden(); return nil, nil },

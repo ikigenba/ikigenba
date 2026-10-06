@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cache"
 	"github.com/ikigenba/ikigenba/sites/internal/git"
 	"github.com/ikigenba/ikigenba/sites/internal/limits"
@@ -124,41 +126,17 @@ func runServe(ctx context.Context, p Process) int {
 		random = rand.Reader
 	}
 	guarded := &runRandom{source: random}
-	database := p.Database
-	if database == "" {
-		database = filepath.Join(p.Dir, "state", "sites.db")
+	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "sites.db"), Migrations: sites.Migrations(), Now: p.Now})
+	if handle != nil {
+		defer func() { _ = handle.Close() }()
 	}
-	if p.Database != "" && p.Database != ":memory:" {
-		// Only the explicit catalog and its SQLite sidecars may be created; its
-		// parent is not one of the startup entries declared for this run.
-		_, err = os.Stat(filepath.Dir(database))
-		if ctx.Err() != nil {
-			return ExitSuccess
-		}
-		if err != nil {
-			return diagnostic("cannot open database state/sites.db: "+err.Error(), ExitServerFailed)
-		}
-	}
-	if p.Database == "" {
-		err = startupContainedPath(p.Dir, database)
-		if ctx.Err() != nil {
-			return ExitSuccess
-		}
-		if err != nil {
-			return diagnostic("cannot open database state/sites.db: "+err.Error(), ExitServerFailed)
-		}
-	}
-	catalog, err := store.Open(ctx, store.Config{Source: database, Now: p.Now, Rand: guarded})
 	if ctx.Err() != nil {
-		if catalog != nil {
-			_ = catalog.Close()
-		}
 		return ExitSuccess
 	}
 	if err != nil {
-		return diagnostic("cannot open database state/sites.db: "+err.Error(), ExitServerFailed)
+		return diagnostic("cannot open database state/sites.db: "+strings.ReplaceAll(err.Error(), "\n", " "), ExitServerFailed)
 	}
-	defer func() { _ = catalog.Close() }()
+	catalog := store.New(handle, store.Config{Now: p.Now, Rand: guarded})
 	lim := limits.New(s, limits.Clock{After: p.After})
 	defer lim.Halt()
 	repos := s.ReposDir

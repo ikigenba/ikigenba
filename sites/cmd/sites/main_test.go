@@ -21,13 +21,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 )
 
-// R-YVTT-2UQW R-YX1P-GMHL R-YY9L-UE8A R-YZHI-85YZ R-Z0PE-LXPO
+// R-XVBI-L1GX R-YX1P-GMHL R-YY9L-UE8A R-YZHI-85YZ R-Z0PE-LXPO
 // R-Z1XA-ZPGD R-Z357-DH72 R-R02K-R24N R-Z4D3-R8XR R-W7MM-ZP1J
 // R-WILQ-FMPS R-66QV-EPPN
 func TestBinary(t *testing.T) {
@@ -45,6 +47,10 @@ func TestBinary(t *testing.T) {
 		t.Fatalf("build: %v\n%s", e, output)
 	}
 	env := []string{"PATH=" + filepath.Dir(git), "HOME=" + root, "XDG_CONFIG_HOME=" + root, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=", "TMPDIR=" + root}
+	var pending bytes.Buffer
+	if err := db.Status(context.Background(), db.Config{Path: filepath.Join(root, "state", "sites.db"), Migrations: sites.Migrations()}, &pending); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct {
 		args        []string
 		code        int
@@ -52,6 +58,9 @@ func TestBinary(t *testing.T) {
 	}{
 		{[]string{"--version"}, 0, cli.Version + "\n", ""},
 		{[]string{"manifest"}, 0, cli.Manifest, ""},
+		{[]string{"--help"}, 0, cli.Usage, ""},
+		{[]string{"db", "status"}, 0, pending.String(), ""},
+		{[]string{"db", "status", "extra"}, cli.ExitUsage, "", "sites: unknown command 'extra'\n\nsee 'sites --help' for usage\n"},
 		{[]string{"bogus"}, cli.ExitUsage, "", "sites: unknown command 'bogus'\n\nsee 'sites --help' for usage\n"},
 		{nil, cli.ExitUsage, "", "sites: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"},
 	} {

@@ -17,9 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cache"
 	"github.com/ikigenba/ikigenba/sites/internal/git"
 	"github.com/ikigenba/ikigenba/sites/internal/limits"
@@ -30,6 +32,7 @@ import (
 )
 
 type harness struct {
+	db                   *db.DB
 	sequence             atomic.Uint64
 	cfg                  tools.Config
 	cacheRoot, reposRoot string
@@ -62,15 +65,16 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(context.Background(), store.Config{Source: filepath.Join(root, "catalog.db"), Now: func() time.Time { return h.now }, Rand: fixtureRandom(24)})
+	h.db, err = db.Open(context.Background(), db.Config{Path: filepath.Join(root, "catalog.db"), Migrations: sites.Migrations(), Now: func() time.Time { return h.now }})
 	if err != nil {
 		t.Fatal(err)
 	}
+	s := store.New(h.db, store.Config{Now: func() time.Time { return h.now }, Rand: fixtureRandom(24)})
 	w := telemetry.New(telemetry.Config{Service: "sites", Version: "fixture", Sink: h.capture, Now: func() time.Time { return time.Date(2024, 2, 3, 4, 5, 6, 0, time.UTC) }, Rand: fixtureRandom(25), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
 	w.Ready()
 	h.cfg = tools.Config{Store: s, Cache: c, Limits: l, Telemetry: w}
 	resetServer(t, h)
-	t.Cleanup(func() { _ = s.Close(); w.Shutdown(context.Background(), "test finished") })
+	t.Cleanup(func() { _ = h.db.Close(); w.Shutdown(context.Background(), "test finished") })
 	return h
 }
 func (h *harness) call(t *testing.T, user, name, args string) mcp.Result {

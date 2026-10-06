@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -157,13 +156,11 @@ func assertToolTrail(t *testing.T, h *harness, start int, tool, outcome string, 
 	}
 }
 
-func TestCatalogFreeRulesAndClosedCatalog(t *testing.T) {
-	// R-N5FE-4AWP R-QTZ2-U7F6
+func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
+	// R-N5FE-4AWP R-X9DB-P64F
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)
-	if e := h.cfg.Store.Close(); e != nil {
-		t.Fatal(e)
-	}
+	h.db.SetFailing(true)
 	cases := []struct{ tool, args, want string }{
 		{"list", `{}`, store.Unreachable}, {"show", `{"name":"bad name"}`, "no site named 'bad name'"}, {"publish", `{"name":"BAD"}`, "no site named 'BAD'"}, {"delete", `{"name":"BAD"}`, "no site named 'BAD'"},
 		{"create", `{"name":"BAD","repo":"x","ref":"..bad","visibility":"secret"}`, "invalid name 'BAD'"},
@@ -322,7 +319,7 @@ func TestCreateLeavesRepositoryUnchanged(t *testing.T) {
 }
 
 func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
-	// R-QTZ2-U7F6 R-9FGR-O8O7
+	// R-X9DB-P64F R-9FGR-O8O7
 	for _, visibility := range []string{"public", "secret"} {
 		t.Run(visibility, func(t *testing.T) {
 			h := newHarness(t)
@@ -330,9 +327,7 @@ func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
 			catalogBefore := catalogSnapshot(t, h)
 			before := diskSnapshot(t, h.cacheRoot, false)
 			h.after = func(time.Duration) <-chan time.Time {
-				if e := h.cfg.Store.Close(); e != nil {
-					t.Fatal(e)
-				}
+				h.db.SetFailing(true)
 				return make(chan time.Time)
 			}
 			want := store.Unreachable
@@ -345,19 +340,16 @@ func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
 			if !reflect.DeepEqual(before, diskSnapshot(t, h.cacheRoot, false)) {
 				t.Fatal("later catalog failure changed trees")
 			}
-			if !reflect.DeepEqual(catalogBefore, closedCatalogSnapshot(t, h)) {
+			if !reflect.DeepEqual(catalogBefore, recoveredCatalogSnapshot(t, h)) {
 				t.Fatal("later catalog failure changed catalog")
 			}
 		})
 	}
 }
 
-func closedCatalogSnapshot(t *testing.T, h *harness) catalogState {
+func recoveredCatalogSnapshot(t *testing.T, h *harness) catalogState {
 	t.Helper()
-	s, e := store.Open(context.Background(), store.Config{Source: filepath.Join(filepath.Dir(filepath.Dir(h.cacheRoot)), "catalog.db"), Now: func() time.Time { return h.now }, Rand: strings.NewReader("unused")})
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer func() { _ = s.Close() }()
-	return storeSnapshot(t, s)
+	h.db.SetFailing(false)
+	defer h.db.SetFailing(true)
+	return storeSnapshot(t, h.cfg.Store)
 }

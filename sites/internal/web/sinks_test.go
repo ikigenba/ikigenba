@@ -100,7 +100,7 @@ func TestDeliveryDoesNotChangeAnswers(t *testing.T) {
 			}
 			f.call(t, "publish", `{"name":"absent"}`)
 			closed := fresh(t)
-			_ = closed.cfg.Store.Close()
+			closed.db.SetFailing(true)
 			cc := closed.cfg
 			cc.Telemetry = writer
 			cc.MCP = newServer(writer)
