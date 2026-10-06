@@ -44,7 +44,7 @@ func binaryMust(t *testing.T, err error) {
 func TestBinary(t *testing.T) {
 	// R-K1NK-2UOE R-K2VG-GMF3 R-8U9H-VWCG R-K5B9-85WH R-K6J5-LXN6
 	// R-K7R1-ZPDV R-K8YY-DH4K R-KA6U-R8V9 R-8XX7-17KJ
-	// R-SGMN-DPCZ R-BODX-EEGV R-Z4IX-NN0U
+	// R-SGMN-DPCZ R-BODX-EEGV R-XW4F-83YL
 	t.Setenv(services.Variable, "")
 	root := t.TempDir()
 	t.Cleanup(func() {
@@ -373,7 +373,6 @@ func TestBinary(t *testing.T) {
 	assertBinaryTag(t, body, "form", nil)
 	assertBinaryTag(t, body, "form", map[string]string{"action": "https://auth.different.example/logout"})
 	assertBinaryTag(t, body, "button", map[string]string{"class": "launcher"})
-	assertBinaryTag(t, body, "script", nil)
 	assertBinaryTag(t, body, "script", map[string]string{"src": "/_appkit/launcher.js"})
 	assertBinaryAttribute(t, body, "aria-current", "a", map[string]string{"aria-current": "page", "href": "https://scripts.different.example"})
 	if binaryAttributeCount(body, "aria-disabled") != 0 {

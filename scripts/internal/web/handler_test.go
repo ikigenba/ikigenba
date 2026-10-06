@@ -385,19 +385,19 @@ func TestServicesSocketNotContacted(t *testing.T) {
 	}
 }
 
-// R-Z5QU-1ERJ R-Z6YQ-F6I8 R-Z86M-SY8X R-ZAMF-KHQB R-ZBUB-Y9H0 R-ZD28-C17P R-ZEA4-PSYE R-ZFI1-3KP3 R-ZGPX-HCFS R-ZHXT-V46H
+// R-XXCB-LVPA R-XYK7-ZNFZ R-Z86M-SY8X R-ZAMF-KHQB R-ZBUB-Y9H0 R-ZD28-C17P R-XZS4-DF6O R-Y100-R6XD R-ZGPX-HCFS R-ZHXT-V46H
 func TestSharedStaticFiles(t *testing.T) {
 	f := makeFixture(t, nil)
 	g := makeFixture(t, nil)
 	_ = f.cfg.Store.Close()
 
 	baseline := map[string]*httptest.ResponseRecorder{}
-	for _, name := range []string{"theme.css", "launcher.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
+	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
 		baseline[name] = serve(f.h, "GET", page.StaticPrefix+name, "owner", "", "request")
 	}
 	t.Chdir(t.TempDir())
 	bodies := map[string]string{}
-	for name, mime := range map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"} {
+	for name, mime := range map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"} {
 		p := page.StaticPrefix + name
 		got := serve(f.h, "GET", p, "owner", "", "request")
 		same(t, baseline[name], got)
@@ -421,7 +421,7 @@ func TestSharedStaticFiles(t *testing.T) {
 			same(t, got, serve(h, "GET", p, "owner", "", "request"))
 		}
 		head := serve(f.h, "HEAD", p, "owner", "", "request")
-		if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Type") != mime || head.Header().Get("ETag") != tag || head.Header().Get("Cache-Control") != "no-cache" {
+		if head.Code != 200 || head.Body.Len() != 0 || !reflect.DeepEqual(head.Header().Values("Content-Type"), got.Header().Values("Content-Type")) || !reflect.DeepEqual(head.Header().Values("ETag"), got.Header().Values("ETag")) || !reflect.DeepEqual(head.Header().Values("Cache-Control"), got.Header().Values("Cache-Control")) {
 			t.Fatal(head)
 		}
 		for _, method := range []string{"GET", "HEAD"} {
@@ -442,7 +442,7 @@ func TestSharedStaticFiles(t *testing.T) {
 			r.Header.Set("If-Modified-Since", "Thu, 01 Jan 2099 00:00:00 GMT")
 			w := httptest.NewRecorder()
 			f.h.ServeHTTP(w, r)
-			if w.Code != 200 || w.Header().Get("ETag") != tag || w.Header().Get("Content-Type") != mime || (method == "GET" && w.Body.String() != got.Body.String()) || (method == "HEAD" && w.Body.Len() != 0) {
+			if w.Code != 200 || w.Header().Get("ETag") != tag || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{mime}) || (method == "GET" && w.Body.String() != got.Body.String()) || (method == "HEAD" && w.Body.Len() != 0) {
 				t.Fatal(w)
 			}
 		}

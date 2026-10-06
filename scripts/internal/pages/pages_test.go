@@ -930,13 +930,80 @@ func resourceHooks(t *testing.T, body string) {
 		}
 	}
 }
+func feedbackHead(t *testing.T, body string) {
+	t.Helper()
+	var feedback []element
+	for _, e := range elements(body, "script") {
+		if hasAttr(e, "src", "/_appkit/feedback.js") {
+			feedback = append(feedback, e)
+		}
+	}
+	requireEqual(t, len(feedback), 1)
+	bodies := elements(body, "body")
+	if len(bodies) == 0 || feedback[0].end > bodies[0].start {
+		t.Fatal("feedback script not before first body")
+	}
+	// Check bare defer lexically, including value syntax outside D08's reader.
+	start := feedback[0].startTag
+	i := 1
+	for i < len(start) && (asciiAlnum(start[i]) || start[i] == '-') {
+		i++
+	}
+	rest := start[i:]
+	attribute := regexp.MustCompile(`^[\t\n\f\r ]+([^\t\n\f\r "'<>/=]+)([\t\n\f\r ]*=[\t\n\f\r ]*(?:"[^"]*"|'[^']*'|[^\t\n\f\r >]*))?`)
+	bareDefer := false
+	for {
+		match := attribute.FindStringSubmatchIndex(rest)
+		if match == nil {
+			break
+		}
+		if asciiLower(rest[match[2]:match[3]]) == "defer" {
+			if match[4] >= 0 {
+				t.Fatal("feedback script defer attribute has a value")
+			}
+			bareDefer = true
+		}
+		rest = rest[match[1]:]
+	}
+	if !bareDefer {
+		t.Fatal("feedback script lacks a bare defer attribute")
+	}
+}
+func launcherScripts(t *testing.T, body string) {
+	t.Helper()
+	launchers := 0
+	for _, e := range elements(body, "script") {
+		if hasAttr(e, "src", "/_appkit/launcher.js") {
+			launchers++
+		} else {
+			attr(t, e, "src", "/_appkit/feedback.js")
+		}
+	}
+	requireEqual(t, launchers, 1)
+}
+func onlyFeedbackScripts(t *testing.T, body string) {
+	t.Helper()
+	for _, e := range elements(body, "script") {
+		attr(t, e, "src", "/_appkit/feedback.js")
+		srcCount := 0
+		for _, a := range e.attributes {
+			if a.name == "src" {
+				srcCount++
+			}
+		}
+		requireEqual(t, srcCount, 1)
+		if bearing(e, "href") || bearing(e, "xlink:href") {
+			t.Fatal("forbidden script link attribute")
+		}
+	}
+}
 func commonHooks(t *testing.T, body, title, heading string) {
 	t.Helper()
 	titleHooks(t, body, title, heading)
 	resourceHooks(t, body)
-	for _, tag := range []string{"script", "style"} {
-		requireEqual(t, len(elements(body, tag)), 0)
-	}
+	feedbackHead(t, body)
+	onlyFeedbackScripts(t, body)
+	requireEqual(t, len(elements(body, "style")), 0)
 	for _, e := range elements(body, "") {
 		for _, a := range []string{"style", "srcset", "imagesrcset"} {
 			if len(values(e, a)) > 0 {
@@ -992,7 +1059,7 @@ func breadcrumbs(t *testing.T, body string, wants []pages.ScriptLink) {
 	}
 }
 
-// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XWMJ-VWBU R-XXUG-9O2J R-XZ2C-NFT8 R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-YCH8-UWYV R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
+// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-YCH8-UWYV R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
 func TestCatalogScriptAboutHooks(t *testing.T) {
 	f := setup(t)
 	b := fixedBanner
@@ -1273,8 +1340,7 @@ func TestCatalogScriptAboutHooks(t *testing.T) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, r)
 		requireEqual(t, len(ofClass(rec.Body.String(), "button", "launcher")), 1)
-		scr := one(t, rec.Body.String(), "script")
-		attr(t, scr, "src", "/_appkit/launcher.js")
+		launcherScripts(t, rec.Body.String())
 	}
 }
 
@@ -1543,19 +1609,21 @@ func noticeHooks(t *testing.T, body string, b page.Banner) {
 	if start < 0 || body[start:end] != footer {
 		t.Fatal("notice footer not followed by only ASCII whitespace")
 	}
-	for _, tag := range []string{"header", "form", "script", "style"} {
+	for _, tag := range []string{"header", "form", "style"} {
 		requireEqual(t, len(elements(body, tag)), 0)
 	}
 	requireEqual(t, len(ofClass(body, "strong", "mark")), 0)
 	requireEqual(t, len(ofClass(body, "a", "profile")), 0)
 	noAttribute(t, body, "style")
+	feedbackHead(t, body)
+	onlyFeedbackScripts(t, body)
 	resourceHooks(t, body)
 	titleHooks(t, body, "Not found", "Not found")
 	notice := typedID(t, body, "p", "notfound")
 	requireEqual(t, normalise(content(t, notice)), "There is nothing at this address.")
 }
 
-// R-YZNC-4K22 R-Z0V8-IBSR R-Z234-W3JG R-Z3B1-9VA5
+// R-YZNC-4K22 R-XTOM-GKH7 R-XUWI-UC7W R-Z234-W3JG R-Z3B1-9VA5
 func TestDirectNoticeHooks(t *testing.T) {
 	set, err := pages.Load()
 	if err != nil {
@@ -1576,7 +1644,7 @@ func TestDirectNoticeHooks(t *testing.T) {
 	}
 }
 
-// R-XRQY-CTD2 R-XU6R-4CUG R-XVEN-I4L5 R-XWMJ-VWBU R-XXUG-9O2J R-XZ2C-NFT8 R-Y0A9-17JX R-Y2Q1-SR1B R-YG4Y-086Y R-YHCU-DZXN
+// R-XRQY-CTD2 R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-YG4Y-086Y R-YHCU-DZXN
 func TestAllPageCommonHooks(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "plain-script")
@@ -1617,11 +1685,13 @@ func TestAllPageCommonHooks(t *testing.T) {
 					body := written(t, whole, banner)
 					if len(services) > 0 {
 						requireEqual(t, len(ofClass(whole, "button", "launcher")), 1)
-						attr(t, one(t, whole, "script"), "src", "/_appkit/launcher.js")
+						launcherScripts(t, whole)
 						return
 					}
 					requireEqual(t, len(ofClass(whole, "button", "launcher")), 0)
-					requireEqual(t, len(elements(whole, "script")), 0)
+					for _, e := range elements(whole, "script") {
+						attr(t, e, "src", "/_appkit/feedback.js")
+					}
 					requireEqual(t, len(elements(whole, "input")), 0)
 					requireAbsent(t, whole, "/_appkit/launcher.js")
 					requireAbsent(t, visibleText(whole), strings.Join(strings.Fields(request.Header.Get("X-User-Email")), " "))
@@ -1656,7 +1726,7 @@ func TestAllPageCommonHooks(t *testing.T) {
 	}
 }
 
-// R-YZNC-4K22 R-Z0V8-IBSR R-Z234-W3JG R-Z3B1-9VA5
+// R-YZNC-4K22 R-XTOM-GKH7 R-XUWI-UC7W R-Z234-W3JG R-Z3B1-9VA5
 func TestNoticeAndEmptyRunFiles(t *testing.T) {
 	f := setup(t)
 	w := f.request(context.Background(), "GET", "/missing/", "owner")
