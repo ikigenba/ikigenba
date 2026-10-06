@@ -34,6 +34,14 @@
     </dl>
   </section>
 
+  <section id="subscriptions" class="card" aria-labelledby="subscriptions-title">
+    <header><h2 id="subscriptions-title">Subscriptions</h2><p>The events that start this script, set by an agent.</p></header>
+    <ul id="subscription-list">
+      <li data-event="crm.contact_updated"><code>crm.contact_updated</code></li>
+      <li data-event="repo.pushed"><code>repo.pushed</code></li>
+    </ul>
+  </section>
+
   <section id="runs" class="card flush" aria-labelledby="runs-title">
     <header>
       <div>
@@ -114,6 +122,10 @@
       </div>
     </div>
     <div class="stack">
+      <h3 class="text-md">No subscriptions</h3>
+      <div id="no-subscriptions" class="empty">
+        <p>This script is subscribed to no events.</p>
+      </div>
       <h3 class="text-md">No runs</h3>
       <div class="empty">
         <h3 class="text-md">No runs yet</h3>

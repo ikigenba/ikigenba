@@ -117,13 +117,19 @@ run. Banner and footer as in app.html, the service `scripts`, `scripts v0.1.0`.
   value card (id, repository, ref, created, runs kept); the runs table, newest
   first, Run / Status / Commit / Started / Duration / Exit, with one row per
   status. The repository shows its name over its id as secondary text.
-  State: no runs.
+  `section#subscriptions` (h2 Subscriptions) sits between the card and the
+  runs: `ul#subscription-list`, one `li[data-event=<name>] > code` per
+  subscribed event, sorted by name. States: no subscriptions
+  (`div#no-subscriptions.empty`, "This script is subscribed to no events."),
+  no runs.
 - One run: breadcrumb scripts / nightly-report / `run_3f9a1c2e8b7d4a60`; a
   headline of status, start time and duration; the run card (status, script,
   commit, ref, started, finished, duration, trigger, user, request, output
   sizes); then Input, Standard output, Standard error, each a `pre` with a
   Download button, and Files, the `out/` folder as a table with a download
-  per file. States: still running (reload, no streaming), timed out with
+  per file. The run card's header says what started it, `p#started-by`:
+  "Started by the `run` tool." or "Started by the event `evt_<16 hex>`."
+  (the id in `code`). States: started by an event, still running (reload, no streaming), timed out with
   output truncated, failed to start with its reason, files gone.
 - Run status reads as a `.status` word: running is info, exited 0 is ok,
   a non-zero exit, timed out and killed are warn, failed is err.

@@ -25,7 +25,7 @@
   <p class="cluster"><span class="status" data-kind="ok">exited 0</span><span class="muted">started <time datetime="2026-10-05T09:14:02Z">2026-10-05 09:14:02 UTC</time> · 12s</span></p>
 
   <section class="card" aria-labelledby="run-title">
-    <header><h2 id="run-title">Run</h2><p>Started by the <code>run</code> tool.</p></header>
+    <header><h2 id="run-title">Run</h2><p id="started-by">Started by the <code>run</code> tool.</p></header>
     <dl id="run" class="kv">
       <dt>Status</dt><dd><span class="status" data-kind="ok">exited 0</span></dd>
       <dt>Script</dt><dd><a href="scripts-script.html">nightly-report</a></dd>
@@ -117,6 +117,15 @@ done in 11.6s</code></pre>
         <div class="card">
           <p class="cluster"><span class="status" data-kind="err">failed</span><span class="muted"><time datetime="2026-10-01T09:14:02Z">2026-10-01 09:14:02 UTC</time></span></p>
           <div class="alert" data-kind="err"><strong>The ref did not resolve</strong><p><code>release</code> names no commit in the repository nightly-report. The script was not started.</p></div>
+        </div>
+      </div>
+      <div class="stack">
+        <h3 class="text-md">Started by an event</h3>
+        <div class="card">
+          <header><h2>Run</h2><p>Started by the event <code>evt_3a7d9c1e5b2f8064</code>.</p></header>
+          <dl class="kv">
+            <dt>Trigger</dt><dd>event</dd>
+          </dl>
         </div>
       </div>
       <div class="stack">
