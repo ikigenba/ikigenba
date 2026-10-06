@@ -253,9 +253,7 @@ func TestCanceledCycleEndsHoldWithoutStartingGit(t *testing.T) {
 func TestFailedAllReturnsAndScheduleContinues(t *testing.T) {
 	// R-4V9W-JYZG
 	f := fixture(t, 1)
-	if err := f.st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	f.db.SetFailing(true)
 	maintenance.Cycle(maintenanceContext(t), f.cfg)
 	schedule := maintenance.Start(f.cfg)
 	timer(t, f.clock, time.Hour).fire <- f.clock.Now()

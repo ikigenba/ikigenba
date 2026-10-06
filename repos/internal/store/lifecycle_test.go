@@ -27,9 +27,10 @@ func calls(ctx context.Context, s *store.Store, w *telemetry.Writer, r store.Rep
 }
 
 func TestClosedAndCanceledMethodsRefuseWithoutEffects(t *testing.T) {
-	// R-NKSJ-VT7L R-NM0G-9KYA
-	for _, closed := range []bool{false, true} {
-		t.Run(map[bool]string{true: "closed", false: "canceled"}[closed], func(t *testing.T) {
+	// R-Z6TV-2R4H R-NM0G-9KYA
+	for _, mode := range []string{"closed", "canceled", "failing"} {
+		closed := mode == "closed"
+		t.Run(mode, func(t *testing.T) {
 			f := setup(t)
 			s := f.open(t)
 			r := create(t, s, "owner", "notes")
@@ -37,9 +38,12 @@ func TestClosedAndCanceledMethodsRefuseWithoutEffects(t *testing.T) {
 			catalog := all(t, s)
 			w, c := writer(t)
 			ctx := testContext(t)
-			if closed {
-				must(t, s.Close())
-			} else {
+			switch mode {
+			case "closed":
+				f.close(t)
+			case "failing":
+				(*f.d).SetFailing(true)
+			default:
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
@@ -49,7 +53,7 @@ func TestClosedAndCanceledMethodsRefuseWithoutEffects(t *testing.T) {
 				if err == nil {
 					t.Fatalf("call %d succeeded", i)
 				}
-				if closed {
+				if closed || mode == "failing" {
 					if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrNameTaken) {
 						t.Fatal(err)
 					}
@@ -59,6 +63,9 @@ func TestClosedAndCanceledMethodsRefuseWithoutEffects(t *testing.T) {
 				same(t, snapshot(t, f.cfg.Root), before)
 			}
 			same(t, len(events(t, w, c)), 0)
+			if mode == "failing" {
+				(*f.d).SetFailing(false)
+			}
 			if !closed {
 				same(t, all(t, s), catalog)
 			}
@@ -67,7 +74,7 @@ func TestClosedAndCanceledMethodsRefuseWithoutEffects(t *testing.T) {
 }
 
 func TestConcurrentAllMethods(t *testing.T) {
-	// R-NN8C-NCOZ
+	// R-Z81R-GIV6
 	f := setup(t)
 	s := f.open(t)
 	anchor := create(t, s, "anchor", "stable")
@@ -171,4 +178,32 @@ func TestConcurrentAllMethods(t *testing.T) {
 	must(t, err)
 	same(t, len(entries), 1)
 	same(t, entries[0].Name(), anchor.ID+".git")
+}
+
+// R-Z6TV-2R4H: A transaction scope never bypasses its handle's failure seam.
+func TestFailingMethodsInsideCoordinatedMutation(t *testing.T) {
+	f := setup(t)
+	s := f.open(t)
+	r := create(t, s, "owner", "notes")
+	before := snapshot(t, f.cfg.Root)
+	catalog := all(t, s)
+	w, c := writer(t)
+	failure := errors.New("coordinated failure")
+	err := s.Coordinate(testContext(t), func(ctx context.Context) error {
+		(*f.d).SetFailing(true)
+		defer (*f.d).SetFailing(false)
+		for i, call := range calls(ctx, s, w, r) {
+			err := call()
+			if err == nil || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrNameTaken) {
+				t.Errorf("call %d: %v", i, err)
+			}
+		}
+		return failure
+	})
+	if !errors.Is(err, failure) {
+		t.Fatal(err)
+	}
+	same(t, all(t, s), catalog)
+	same(t, snapshot(t, f.cfg.Root), before)
+	same(t, len(events(t, w, c)), 0)
 }

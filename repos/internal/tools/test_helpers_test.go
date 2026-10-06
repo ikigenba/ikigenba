@@ -17,9 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/clone"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
@@ -29,6 +31,7 @@ import (
 )
 
 type toolsFixture struct {
+	DB          *db.DB
 	Store       *store.Store
 	StoreConfig store.Config
 	Git         *git.Git
@@ -41,7 +44,6 @@ type toolsFixture struct {
 	Caller      identity.Caller
 	Base        string
 	Root        string
-	DBParent    string
 }
 
 func toolsContext(t *testing.T) context.Context {
@@ -75,10 +77,12 @@ func newToolsFixture(t *testing.T) *toolsFixture {
 	toolsMust(t, err)
 	now := func() time.Time { return time.Date(2001, 2, 3, 4, 5, 6, 123456789, time.FixedZone("fixture", 3600)) }
 	parent := filepath.Join(root, "catalog")
-	cfg := store.Config{Source: filepath.Join(parent, "repos.sqlite"), Root: filepath.Join(root, "repos"), Git: g, Now: now, Rand: toolsIDSource()}
-	s, err := store.Open(toolsContext(t), cfg)
+	cfg := store.Config{Root: filepath.Join(root, "repos"), Git: g, Now: now, Rand: toolsIDSource()}
+	d, err := db.Open(toolsContext(t), db.Config{Path: filepath.Join(parent, "repos.db"), Migrations: repos.Migrations(), Now: now})
 	toolsMust(t, err)
-	t.Cleanup(func() { toolsMust(t, s.Close()) })
+	s, err := store.Open(toolsContext(t), d, cfg)
+	toolsMust(t, err)
+	t.Cleanup(func() { toolsMust(t, d.Close()) })
 	capture := &telemetry.Capture{}
 	w := telemetry.New(telemetry.Config{Service: "repos", Version: "fixture", Sink: capture, Stderr: io.Discard, Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 4096)), Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() {
@@ -87,7 +91,7 @@ func newToolsFixture(t *testing.T) *toolsFixture {
 		w.Shutdown(ctx, "test")
 	})
 	l := limits.New(settings.Defaults(), limits.Clock{Now: now, After: func(time.Duration) <-chan time.Time { t.Error("unexpected Limits.After"); return make(chan time.Time) }})
-	f := &toolsFixture{Store: s, StoreConfig: cfg, Git: g, GitPath: path, Env: env, Limits: l, Writer: w, Capture: capture, Caller: identity.Caller{UserID: "owner", RequestID: "fixture-request"}, Base: "https://repos.fixture.invalid", Root: cfg.Root, DBParent: parent}
+	f := &toolsFixture{DB: d, Store: s, StoreConfig: cfg, Git: g, GitPath: path, Env: env, Limits: l, Writer: w, Capture: capture, Caller: identity.Caller{UserID: "owner", RequestID: "fixture-request"}, Base: "https://repos.fixture.invalid", Root: cfg.Root}
 	f.Client = serveTools(t, tools.Config{Store: s, Limits: l, Telemetry: w}, f.Base, false)
 	return f
 }

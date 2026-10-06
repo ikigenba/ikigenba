@@ -314,15 +314,11 @@ func TestStorageErrorsReleaseGrantAndContinue(t *testing.T) {
 				}
 				done = runCycle(maintenanceContext(t), f.cfg)
 				timer(t, f.clock, 17*time.Second)
-				if err = f.st.Close(); err != nil {
-					t.Fatal(err)
-				}
+				f.db.SetFailing(true)
 				grant.Release()
 			case "before":
 				f.cfg.Hold = func(context.Context, string) {
-					if err := f.st.Close(); err != nil {
-						t.Error(err)
-					}
+					f.db.SetFailing(true)
 				}
 				done = runCycle(maintenanceContext(t), f.cfg)
 			case "after":
@@ -330,9 +326,7 @@ func TestStorageErrorsReleaseGrantAndContinue(t *testing.T) {
 				f.clock.nowHook = func() time.Time {
 					calls++
 					if calls == 2 {
-						if err := f.st.Close(); err != nil {
-							t.Error(err)
-						}
+						f.db.SetFailing(true)
 					}
 					return time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 				}

@@ -65,7 +65,7 @@ func assertOnlyToolCalls(t *testing.T, f *toolsFixture, offset int, outcomes ...
 }
 
 // R-7Y5T-5AG1 R-81TI-ALO4 R-Q4HR-3JLU R-849B-255I
-// R-85H7-FWW7 R-86P3-TOMW R-QGCK-NOYV R-8BKP-CRLO
+// R-85H7-FWW7 R-86P3-TOMW R-ZSS1-YMGZ R-8BKP-CRLO
 func TestQueryListAndShowReadCurrentOwnerRepositories(t *testing.T) {
 	f := newToolsFixture(t)
 	zeta := f.create(t, f.Caller.UserID, "zeta")
@@ -107,7 +107,7 @@ func TestQueryListAndShowReadCurrentOwnerRepositories(t *testing.T) {
 	toolsEqual(t, string(successObject(t, f.call(t, "list", "{}"))), `{"repos":[`+queryListing(t, f, alpha, "")+`,`+queryListing(t, f, zeta, head)+`]}`)
 }
 
-// R-80LL-WTXF R-81TI-ALO4 R-894W-L84A R-8BKP-CRLO
+// R-80LL-WTXF R-81TI-ALO4 R-ZJ0U-WGJF R-8BKP-CRLO
 func TestQueryMissingRepositoryAndRuleVocabulary(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
@@ -195,12 +195,11 @@ func queryContextClient(t *testing.T, f *toolsFixture, decorate func(context.Con
 
 type queryRequestCancel struct{ cancel context.CancelFunc }
 
-// R-QGCK-NOYV R-8BKP-CRLO
+// R-ZSS1-YMGZ R-8BKP-CRLO
 func TestQueryRefusesWhenHeadFailsAfterReadingRepository(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")
 	queryHead(t, f, r, "main")
-	toolsMust(t, f.Store.Close())
 	var active atomic.Pointer[queryRequestCancel]
 	var armed atomic.Bool
 	var gitCalls atomic.Int64
@@ -216,9 +215,9 @@ func TestQueryRefusesWhenHeadFailsAfterReadingRepository(t *testing.T) {
 	toolsMust(t, err)
 	cfg := f.StoreConfig
 	cfg.Git = g
-	f.Store, err = store.Open(toolsContext(t), cfg)
+	f.Store, err = store.Open(toolsContext(t), f.DB, cfg)
 	toolsMust(t, err)
-	t.Cleanup(func() { toolsMust(t, f.Store.Close()) })
+
 	f.Client = queryContextClient(t, f, func(ctx context.Context) (context.Context, context.CancelFunc) {
 		ctx, cancel := context.WithCancel(ctx)
 		request := &queryRequestCancel{cancel: cancel}

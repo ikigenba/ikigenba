@@ -11,7 +11,7 @@ import (
 )
 
 func TestVerificationSoundnessDamageRecoveryAndEvents(t *testing.T) {
-	// R-V54X-SGJG R-QBMJ-0G2N R-V6CU-68A5 R-NQW1-SNX2 R-MP35-XRXJ
+	// R-V54X-SGJG R-YVUR-MTG8 R-V6CU-68A5 R-UKHP-D4O7 R-MP35-XRXJ
 	cases := []struct {
 		part   string
 		mode   os.FileMode
@@ -97,9 +97,9 @@ func TestVerificationSoundnessDamageRecoveryAndEvents(t *testing.T) {
 }
 
 func TestAvailabilityChangesOnlyWithVerifyAndSurvivesReopen(t *testing.T) {
-	// R-MQB2-BJO8
+	// R-UQL7-9ZDO
 	f := setup(t)
-	s, err := store.Open(testContext(t), f.cfg)
+	s, err := store.Open(testContext(t), f.handle(t), f.cfg)
 	must(t, err)
 	r := create(t, s, "owner", "notes")
 	damaged(t, s, r)
@@ -110,7 +110,7 @@ func TestAvailabilityChangesOnlyWithVerifyAndSurvivesReopen(t *testing.T) {
 	must(t, s.Verify(testContext(t), w))
 	r.Available = false
 	same(t, all(t, s), []store.Repo{r})
-	must(t, s.Close())
+	f.close(t)
 	s = f.open(t)
 	same(t, all(t, s), []store.Repo{r})
 	write(t, filepath.Join(s.Dir(r.ID), "HEAD"), "ref: refs/heads/main\n")

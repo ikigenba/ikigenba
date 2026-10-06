@@ -25,10 +25,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
 	repogit "github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
@@ -641,16 +643,17 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(context.Background(), store.Config{Source: filepath.Join(dir, "catalog.db"), Root: filepath.Join(dir, "repos"), Git: g, Now: credentialClock, Rand: &deterministicBytes{}})
+	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "catalog.db"), Migrations: repos.Migrations(), Now: credentialClock})
 	if err != nil {
 		t.Fatal(err)
 	}
-	closed := false
+	s, err := store.Open(context.Background(), d, store.Config{Root: filepath.Join(dir, "repos"), Git: g, Now: credentialClock, Rand: &deterministicBytes{}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer func() {
-		if !closed {
-			if err := s.Close(); err != nil {
-				t.Error(err)
-			}
+		if err := d.Close(); err != nil {
+			t.Error(err)
 		}
 	}()
 	sink := &eventSink{}
@@ -728,10 +731,7 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 			t.Fatal("unavailable refusal was not exercised")
 		}
 	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	closed = true
+	d.SetFailing(true)
 	for _, c := range cs {
 		client := toolClient(server.URL, c.header)
 		for _, tool := range []string{"list", "status", "show", "create", "rename", "delete"} {

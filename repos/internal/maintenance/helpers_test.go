@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/maintenance"
@@ -95,6 +97,7 @@ func runCycle(ctx context.Context, cfg maintenance.Config) <-chan struct{} {
 type fixtureConfig struct {
 	cfg     maintenance.Config
 	g       *git.Git
+	db      *db.DB
 	st      *store.Store
 	lim     *limits.Limits
 	clock   *testClock
@@ -120,12 +123,16 @@ func fixture(t *testing.T, n int) *fixtureConfig {
 	for i := range random {
 		random[i] = byte(i)
 	}
-	f.st, err = store.Open(testContext(t), store.Config{Source: filepath.Join(f.dir, "catalog"), Root: filepath.Join(f.dir, "repos"), Git: f.g, Now: f.clock.Now, Rand: bytes.NewReader(random)})
+	f.db, err = db.Open(testContext(t), db.Config{Path: filepath.Join(f.dir, "catalog"), Migrations: repos.Migrations(), Now: f.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.st, err = store.Open(testContext(t), f.db, store.Config{Root: filepath.Join(f.dir, "repos"), Git: f.g, Now: f.clock.Now, Rand: bytes.NewReader(random)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := f.st.Close(); err != nil {
+		if err := f.db.Close(); err != nil {
 			t.Error(err)
 		}
 	})

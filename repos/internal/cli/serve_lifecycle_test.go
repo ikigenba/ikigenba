@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
@@ -26,7 +27,7 @@ import (
 )
 
 // R-SE0J-BHLH R-PYUG-U5QU R-SF8F-P9C6 R-KNVY-XKGA R-KV7D-86WG
-// R-7ATG-PX7A R-RAID-H7PG
+// R-YDK9-W9BT R-RAID-H7PG
 func TestServePersistentStoreAndInjectedWiring(t *testing.T) {
 	f := newServeFixture(t)
 	f.start(t)
@@ -104,7 +105,12 @@ func TestServeReadyVerifyAndMaintenanceBeforeFirstAccept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(t.Context(), store.Config{Source: filepath.Join(f.dir, "state", "repos.db"), Root: filepath.Join(f.dir, "state", "repos"), Git: g, Now: f.p.Now, Rand: f.random})
+	d, err := db.Open(t.Context(), statusConfig(f.dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	s, err := store.Open(t.Context(), d, store.Config{Root: filepath.Join(f.dir, "state", "repos"), Git: g, Now: f.p.Now, Rand: f.random})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +118,7 @@ func TestServeReadyVerifyAndMaintenanceBeforeFirstAccept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Close(); err != nil {
+	if err = d.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err = os.RemoveAll(filepath.Join(f.dir, "state", "repos", repo.ID+".git")); err != nil {

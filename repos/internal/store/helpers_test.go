@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 )
@@ -21,11 +23,13 @@ import (
 var fixedNow = time.Date(2024, 7, 8, 9, 10, 11, 987654321, time.FixedZone("east", 3600))
 
 type fixture struct {
-	cfg  store.Config
-	g    *git.Git
-	env  []string
-	path string
-	base string
+	cfg    store.Config
+	source string
+	d      **db.DB
+	g      *git.Git
+	env    []string
+	path   string
+	base   string
 }
 
 func setup(t *testing.T) fixture {
@@ -40,15 +44,26 @@ func setup(t *testing.T) fixture {
 	for i := 0; i < 128; i++ {
 		random[i*8+7] = byte(i + 1)
 	}
-	return fixture{cfg: store.Config{Source: filepath.Join(base, "catalog", "repos.db"), Root: filepath.Join(base, "root"), Git: g, Now: func() time.Time { return fixedNow }, Rand: bytes.NewReader(random)}, g: g, env: env, path: path, base: base}
+	return fixture{source: filepath.Join(base, "catalog", "repos.db"), d: new(*db.DB), cfg: store.Config{Root: filepath.Join(base, "root"), Git: g, Now: func() time.Time { return fixedNow }, Rand: bytes.NewReader(random)}, g: g, env: env, path: path, base: base}
 }
 func (f fixture) open(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.Open(testContext(t), f.cfg)
+	s, err := store.Open(testContext(t), f.handle(t), f.cfg)
 	must(t, err)
-	t.Cleanup(func() { must(t, s.Close()) })
+
 	return s
 }
+func (f fixture) handle(t *testing.T) *db.DB {
+	t.Helper()
+	if *f.d == nil {
+		d, err := db.Open(testContext(t), db.Config{Path: f.source, Migrations: repos.Migrations(), Now: f.cfg.Now})
+		must(t, err)
+		*f.d = d
+		t.Cleanup(func() { must(t, d.Close()) })
+	}
+	return *f.d
+}
+func (f fixture) close(t *testing.T) { t.Helper(); must(t, (*f.d).Close()); *f.d = nil }
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {

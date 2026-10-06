@@ -305,7 +305,7 @@ func TestPagesAndSharedFilesNeverConnectToServices(t *testing.T) {
 	f.cfg.ServicesPath = filepath.Join(f.dir, "services.json")
 	writePageServices(t, f.cfg.ServicesPath, pageService("auth", "https://auth.sockets.test", socket), pageService("repos", "https://repos.sockets.test", socket), pageService("dummy", "https://dummy.sockets.test", socket), pageService("telemetry", "", socket))
 	h := Handler(f.cfg)
-	for _, path := range []string{"/", "/about", "/_appkit/", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/JetBrainsMono.woff2", "/_appkit/nope.css"} {
+	for _, path := range []string{"/", "/about", "/_appkit/", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/feedback.js", "/_appkit/JetBrainsMono.woff2", "/_appkit/nope.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
 			for _, user := range []string{"", "caller"} {
 				r := httptest.NewRequest(method, path, strings.NewReader("ignored payload"))
@@ -336,8 +336,8 @@ func TestPagesAndSharedFilesNeverConnectToServices(t *testing.T) {
 	}
 }
 
-// R-6685-5OG4
-func TestPagesAndSharedFilesIgnoreClosedCatalogAndRemovedRepositories(t *testing.T) {
+// R-YJNR-T41A
+func TestPagesAndSharedFilesIgnoreFailingCatalogAndRemovedRepositories(t *testing.T) {
 	f := newWebFixture(t)
 	seed := f.repo(t, "caller", "private-notes")
 	root := filepath.Dir(f.cfg.Store.Dir(seed.ID))
@@ -347,16 +347,14 @@ func TestPagesAndSharedFilesIgnoreClosedCatalogAndRemovedRepositories(t *testing
 		response           *httptest.ResponseRecorder
 	}
 	var answers []answer
-	for _, path := range []string{"/", "/about", "/_appkit/", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/InterVariable.woff2", "/_appkit/InterVariable-Italic.woff2", "/_appkit/JetBrainsMono.woff2", "/_appkit/OFL.txt", "/_appkit/TABLER-LICENSE.txt", "/_appkit/nope.css"} {
+	for _, path := range []string{"/", "/about", "/_appkit/", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/feedback.js", "/_appkit/InterVariable.woff2", "/_appkit/InterVariable-Italic.woff2", "/_appkit/JetBrainsMono.woff2", "/_appkit/OFL.txt", "/_appkit/TABLER-LICENSE.txt", "/_appkit/nope.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
 			for _, user := range []string{"", "caller"} {
 				answers = append(answers, answer{method, path, user, webRequest(h, method, path, user, "catalog-independent", strings.NewReader("ignored payload"))})
 			}
 		}
 	}
-	if err := f.cfg.Store.Close(); err != nil {
-		t.Fatal(err)
-	}
+	f.db.SetFailing(true)
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}

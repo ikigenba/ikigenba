@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -97,14 +98,19 @@ func TestServeAbstractNotificationExactlyOnce(t *testing.T) {
 	noServeNotification(t, f.notify)
 }
 
-// R-4D5L-S59I R-KP3V-BC6Z
+// R-YCCD-IHL4 R-KP3V-BC6Z
 func TestServeCancellationDuringVerificationFinishesOnlyVerificationEvents(t *testing.T) {
 	f := newServeFixture(t)
 	g, err := git.Find(filepath.Dir(f.gitPath), f.p.Environ)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(t.Context(), store.Config{Source: filepath.Join(f.dir, "state", "repos.db"), Root: filepath.Join(f.dir, "state", "repos"), Git: g, Now: f.p.Now, Rand: f.random})
+	d, err := db.Open(t.Context(), statusConfig(f.dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	s, err := store.Open(t.Context(), d, store.Config{Root: filepath.Join(f.dir, "state", "repos"), Git: g, Now: f.p.Now, Rand: f.random})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +118,7 @@ func TestServeCancellationDuringVerificationFinishesOnlyVerificationEvents(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Close(); err != nil {
+	if err = d.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err = os.RemoveAll(filepath.Join(f.dir, "state", "repos", repo.ID+".git")); err != nil {
@@ -296,7 +302,7 @@ func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 	}
 }
 
-// R-4D5L-S59I
+// R-YCCD-IHL4
 func TestServeDoneContextOverridesUnopenableState(t *testing.T) {
 	f := newServeFixture(t)
 	if err := os.WriteFile(filepath.Join(f.dir, "state"), []byte("unchanged"), 0600); err != nil {

@@ -57,7 +57,7 @@ func untouchedProcess(args []string, out, diagnostic io.Writer, dir string) cli.
 	}
 }
 
-// R-RAID-H7PG R-UDYL-VYCG
+// R-RAID-H7PG R-Y1DA-2JWV
 func TestProcessContractAndUntouchedCommandSeams(t *testing.T) {
 	api := struct {
 		Run func(context.Context, cli.Process) int
@@ -71,7 +71,7 @@ func TestProcessContractAndUntouchedCommandSeams(t *testing.T) {
 	assertEmptyDirectory(t, p.Dir)
 }
 
-// R-SCSM-XPUS R-UF6I-9Q35
+// R-SCSM-XPUS R-Y2L6-GBNK
 func TestEmptyArgumentsDispatchToServeAndExitRange(t *testing.T) {
 	for _, args := range [][]string{nil, {}} {
 		for _, failInherit := range []bool{false, true} {

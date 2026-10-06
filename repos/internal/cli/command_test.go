@@ -20,8 +20,8 @@ func (w *recordedWrites) Write(p []byte) (int, error) {
 	return w.Buffer.Write(p)
 }
 
-// R-U6N7-LBWA R-U7V3-Z3MZ R-U930-CVDO R-UAAW-QN4D R-UBIT-4EV2
-// R-UCQP-I6LR R-UF6I-9Q35 R-SCSM-XPUS
+// R-U6N7-LBWA R-U7V3-Z3MZ R-U930-CVDO R-XYXH-B0FH R-Y05D-OS66
+// R-UCQP-I6LR R-Y2L6-GBNK R-SCSM-XPUS R-Y3T2-U3E9
 func TestCommandDispatchAndDiagnostics(t *testing.T) {
 	cases := []struct {
 		args []string
@@ -32,6 +32,11 @@ func TestCommandDispatchAndDiagnostics(t *testing.T) {
 		{args: []string{"--version"}, out: cli.Version + "\n"},
 		{args: []string{"manifest"}, out: cli.Manifest},
 		{args: []string{"--help"}, out: cli.Usage},
+		{args: []string{"db"}, arg: "db", kind: "command"},
+		{args: []string{"db", "bogus"}, arg: "bogus", kind: "command"},
+		{args: []string{"db", "status", "extra"}, arg: "extra", kind: "command"},
+		{args: []string{"db", "status", "-x"}, arg: "-x", kind: "option"},
+		{args: []string{"db", "-x"}, arg: "-x", kind: "option"},
 		{args: []string{"bogus"}, arg: "bogus", kind: "command"},
 		{args: []string{"-x"}, arg: "-x", kind: "option"},
 		{args: []string{""}, arg: "", kind: "command"},
@@ -69,7 +74,7 @@ func TestCommandDispatchAndDiagnostics(t *testing.T) {
 	}
 }
 
-// R-UDYL-VYCG
+// R-Y1DA-2JWV
 func TestCommandsNeedOnlyArgumentsAndStreams(t *testing.T) {
 	for _, args := range [][]string{{"--version"}, {"manifest"}, {"--help"}, {"bogus"}, {"manifest", "--version"}} {
 		var out, diagnostic bytes.Buffer

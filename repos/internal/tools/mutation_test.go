@@ -33,7 +33,7 @@ import (
 )
 
 func TestMutationLateHeadFailurePreservesState(t *testing.T) {
-	// R-15J0-JUNM: a refusal after a response read fails preserves the catalog and tree.
+	// R-ZFD5-R5BC: a refusal after a response read fails preserves the catalog and tree.
 	f := newToolsFixture(t)
 	var armed atomic.Bool
 	var calls atomic.Int64
@@ -49,11 +49,10 @@ func TestMutationLateHeadFailurePreservesState(t *testing.T) {
 		return env
 	})
 	toolsMust(t, err)
-	toolsMust(t, f.Store.Close())
 	f.StoreConfig.Git = g
-	s, err := store.Open(toolsContext(t), f.StoreConfig)
+	s, err := store.Open(toolsContext(t), f.DB, f.StoreConfig)
 	toolsMust(t, err)
-	t.Cleanup(func() { toolsMust(t, s.Close()) })
+
 	f.Store = s
 	f.Client = serveTools(t, tools.Config{Store: s, Limits: f.Limits, Telemetry: f.Writer}, f.Base, true)
 	r := f.create(t, f.Caller.UserID, "notes")
@@ -74,11 +73,7 @@ func TestMutationLateHeadFailurePreservesState(t *testing.T) {
 	// Keep the failing environment armed until the complete MCP response, so
 	// compensation that repeats git validation meets the same failure.
 	armed.Store(false)
-	toolsMust(t, s.Close())
-	reopened, err := store.Open(toolsContext(t), f.StoreConfig)
-	toolsMust(t, err)
-	t.Cleanup(func() { toolsMust(t, reopened.Close()) })
-	after, err := reopened.All(toolsContext(t))
+	after, err := s.All(toolsContext(t))
 	toolsMust(t, err)
 	if !reflect.DeepEqual(after, before) {
 		t.Errorf("catalog after late-read refusal: got %#v, want %#v", after, before)
@@ -133,7 +128,7 @@ func mutationHoldReleased(t *testing.T, f *toolsFixture, id string) {
 	release()
 }
 
-// R-8CSL-QJCD R-8E0I-4B32 R-8K40-15SJ
+// R-ZLGN-O00T R-8E0I-4B32 R-8K40-15SJ
 func TestMutationCreateAnswersAndPersistsEmptyRepository(t *testing.T) {
 	f := newToolsFixture(t)
 	existing := f.create(t, "other", "existing")
@@ -190,7 +185,7 @@ func TestMutationCreateAnswersAndPersistsEmptyRepository(t *testing.T) {
 	mutationDomain(t, f, offset, "repo.created", id)
 }
 
-// R-8F8E-I2TR R-QFGU-JHA3
+// R-ZTZY-CE7O R-QFGU-JHA3
 func TestMutationCreateOwnerBoundariesAndConcurrentName(t *testing.T) {
 	f := newToolsFixture(t)
 	other := f.create(t, "other", "notes")
@@ -267,7 +262,7 @@ func TestMutationCreateOwnerBoundariesAndConcurrentName(t *testing.T) {
 	toolsEqual(t, errorsSeen, count-1)
 }
 
-// R-8GGA-VUKG R-QE8Y-5PJE R-Q9DC-MMKM R-QHWN-B0RH
+// R-8GGA-VUKG R-QE8Y-5PJE R-Q9DC-MMKM R-ZNWG-FJI7
 func TestMutationRuleRefusalsPreserveAllState(t *testing.T) {
 	f := newToolsFixture(t)
 	notes := f.create(t, f.Caller.UserID, "notes")
@@ -299,12 +294,12 @@ func TestMutationRuleRefusalsPreserveAllState(t *testing.T) {
 	mutationHoldReleased(t, f, notes.ID)
 }
 
-// R-99PW-2CD4
-func TestMutationClosedStoreRenameKeepsNamingPriority(t *testing.T) {
+// R-ZP4C-TB8W
+func TestMutationFailingStoreRenameKeepsNamingPriority(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")
 	disk := toolsSnapshot(t, f.Root)
-	toolsMust(t, f.Store.Close())
+	f.DB.SetFailing(true)
 	for _, ref := range []string{r.ID, r.Name, "missing", "rep_zz"} {
 		offset := len(f.events(t))
 		refusal(t, f.call(t, "rename", toolsArguments(ref, "Bad Name")), "invalid arguments:\nname: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit")
@@ -313,7 +308,7 @@ func TestMutationClosedStoreRenameKeepsNamingPriority(t *testing.T) {
 	}
 }
 
-// R-Q85G-8UTX R-8MJS-SP9X R-UM6R-Y4DE R-8TV7-3BQ3 R-8V33-H3GS
+// R-ZMOK-1RRI R-8MJS-SP9X R-ZYVJ-VH6G R-ZWFR-3XP2 R-8V33-H3GS
 func TestMutationRenamePreservesIdentityAndHistoryWhileBusy(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")
@@ -390,7 +385,7 @@ func TestMutationRenameCurrentNameWritesNothingAndRecordsNoDomain(t *testing.T) 
 	assertOnlyToolCalls(t, f, offset, "ok", "ok")
 }
 
-// R-8NRP-6H0M
+// R-LCM8-PI21
 func TestMutationRenameUnavailableChangesCatalogAlone(t *testing.T) {
 	for _, damage := range []string{"missing", "broken"} {
 		t.Run(damage, func(t *testing.T) {
@@ -424,7 +419,7 @@ func TestMutationRenameUnavailableChangesCatalogAlone(t *testing.T) {
 	}
 }
 
-// R-8WAZ-UV7H R-8ZYP-06FK R-QAL9-0EBB
+// R-ZQC9-72ZL R-ZXNN-HPFR R-ZRK5-KUQA
 func TestMutationDeleteOnlyTheNamedRepositoryAndReleaseHold(t *testing.T) {
 	for _, byID := range []bool{false, true} {
 		t.Run(fmt.Sprint(byID), func(t *testing.T) {
@@ -465,7 +460,7 @@ func TestMutationDeleteOnlyTheNamedRepositoryAndReleaseHold(t *testing.T) {
 	}
 }
 
-// R-8XIW-8MY6
+// R-ZV7U-Q5YD
 func TestMutationDeleteUnavailableMissingBrokenAndRegularFile(t *testing.T) {
 	for _, damage := range []string{"missing", "broken", "regular-file"} {
 		t.Run(damage, func(t *testing.T) {
@@ -508,32 +503,42 @@ func TestMutationDeleteUnavailableMissingBrokenAndRegularFile(t *testing.T) {
 	}
 }
 
-// R-QAL9-0EBB
+// R-ZRK5-KUQA
 func TestMutationDeleteWriteFailuresReleaseHold(t *testing.T) {
-	for _, source := range []bool{false, true} {
-		t.Run(fmt.Sprint(source), func(t *testing.T) {
+	for _, failing := range []bool{false, true} {
+		t.Run(fmt.Sprint(failing), func(t *testing.T) {
 			f := newToolsFixture(t)
 			r := f.create(t, f.Caller.UserID, "notes")
 			queryHead(t, f, r, "keep")
-			path := f.Root
-			if source {
-				path = f.DBParent
-			}
-			info, err := os.Stat(path)
+			before, err := f.Store.All(toolsContext(t))
+			toolsMust(t, err)
+			disk := toolsSnapshot(t, f.Root)
+			info, err := os.Stat(f.Root)
 			toolsMust(t, err)
 			mode := info.Mode().Perm()
-			t.Cleanup(func() { toolsMust(t, os.Chmod(path, mode)) })
-			toolsMust(t, os.Chmod(path, mode&^0222))
-			mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(r.ID), "cannot reach the repositories; try again later")
+			t.Cleanup(func() { toolsMust(t, os.Chmod(f.Root, mode)) })
+			if failing {
+				f.DB.SetFailing(true)
+			} else {
+				toolsMust(t, os.Chmod(f.Root, mode&^0222))
+			}
+			offset := len(f.events(t))
+			refusal(t, f.call(t, "delete", toolsRepoArgument(r.ID)), "cannot reach the repositories; try again later")
 			mutationHoldReleased(t, f, r.ID)
-			toolsMust(t, os.Chmod(path, mode))
+			assertOnlyToolCalls(t, f, offset, "error")
+			f.DB.SetFailing(false)
+			toolsMust(t, os.Chmod(f.Root, mode))
+			after, err := f.Store.All(toolsContext(t))
+			toolsMust(t, err)
+			toolsEqual(t, after, before)
+			toolsEqual(t, toolsSnapshot(t, f.Root), disk)
 			successObject(t, f.call(t, "delete", toolsRepoArgument(r.ID)))
 			mutationHoldReleased(t, f, r.ID)
 		})
 	}
 }
 
-// R-8YQS-MEOV R-QAL9-0EBB
+// R-8YQS-MEOV R-ZRK5-KUQA
 func TestMutationDeleteTryHoldBusyUsesCurrentNameAndLeavesOwnerState(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")

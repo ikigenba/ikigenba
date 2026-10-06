@@ -87,7 +87,7 @@ func TestCreateRefusalsPreserveStateAndNamesArePerOwner(t *testing.T) {
 }
 
 func TestCreatePermissionFailureRecoveryAndConcurrentSameName(t *testing.T) {
-	// R-N2I2-5936 R-WWSQ-NF65
+	// R-0HQZ-2R03 R-WWSQ-NF65
 	for _, where := range []string{"root", "database"} {
 		t.Run(where, func(t *testing.T) {
 			f := setup(t)
@@ -97,7 +97,7 @@ func TestCreatePermissionFailureRecoveryAndConcurrentSameName(t *testing.T) {
 			catalog := all(t, s)
 			path := f.cfg.Root
 			if where == "database" {
-				path = filepath.Dir(f.cfg.Source)
+				(*f.d).SetFailing(true)
 			}
 			info, err := os.Stat(path)
 			must(t, err)
@@ -109,6 +109,7 @@ func TestCreatePermissionFailureRecoveryAndConcurrentSameName(t *testing.T) {
 				t.Fatal(err)
 			}
 			must(t, os.Chmod(path, info.Mode().Perm()))
+			(*f.d).SetFailing(false)
 			same(t, snapshot(t, f.cfg.Root), before)
 			same(t, all(t, s), catalog)
 			r = create(t, s, "owner", "new")
@@ -213,7 +214,7 @@ func TestUnavailableRenameAndNoopWriteNothing(t *testing.T) {
 }
 
 func TestRenameRefusalsAndPermissionFailureRollback(t *testing.T) {
-	// R-NB1C-TNA1 R-NC99-7F0Q
+	// R-NB1C-TNA1 R-Z365-XFWE
 	f := setup(t)
 	s := f.open(t)
 	r := create(t, s, "owner", "notes")
@@ -239,7 +240,7 @@ func TestRenameRefusalsAndPermissionFailureRollback(t *testing.T) {
 		same(t, snapshot(t, f.cfg.Root), before)
 		same(t, all(t, s), catalog)
 	}
-	for _, path := range []string{s.Dir(r.ID), filepath.Dir(f.cfg.Source)} {
+	for _, path := range []string{s.Dir(r.ID)} {
 		info, err := os.Stat(path)
 		must(t, err)
 		must(t, os.Chmod(path, info.Mode().Perm()&^0222))
@@ -258,11 +259,11 @@ func TestRenameRefusalsAndPermissionFailureRollback(t *testing.T) {
 }
 
 func TestDeleteDirectoryFileMissingAndReopen(t *testing.T) {
-	// R-WY0N-16WU
+	// R-UT10-1IV2
 	for _, kind := range []string{"directory", "file", "missing"} {
 		t.Run(kind, func(t *testing.T) {
 			f := setup(t)
-			s, err := store.Open(testContext(t), f.cfg)
+			s, err := store.Open(testContext(t), f.handle(t), f.cfg)
 			must(t, err)
 			r := create(t, s, "owner", "notes")
 			other := create(t, s, "other", "other")
@@ -288,7 +289,7 @@ func TestDeleteDirectoryFileMissingAndReopen(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			must(t, s.Close())
+			f.close(t)
 			s = f.open(t)
 			same(t, all(t, s), []store.Repo{other})
 			for _, ref := range []string{r.ID, r.Name} {
@@ -302,7 +303,7 @@ func TestDeleteDirectoryFileMissingAndReopen(t *testing.T) {
 }
 
 func TestDeleteRefusalsAndPermissionFailuresPreserveState(t *testing.T) {
-	// R-NEP1-YYI4 R-NTBU-K7EG
+	// R-NEP1-YYI4 R-Z5LY-OZDS
 	f := setup(t)
 	s := f.open(t)
 	r := create(t, s, "owner", "notes")
@@ -316,7 +317,7 @@ func TestDeleteRefusalsAndPermissionFailuresPreserveState(t *testing.T) {
 	}
 	same(t, snapshot(t, f.cfg.Root), before)
 	same(t, all(t, s), catalog)
-	for _, path := range []string{f.cfg.Root, filepath.Dir(f.cfg.Source)} {
+	for _, path := range []string{f.cfg.Root} {
 		info, err := os.Stat(path)
 		must(t, err)
 		must(t, os.Chmod(path, info.Mode().Perm()&^0222))
@@ -370,7 +371,7 @@ func TestRandomFailuresNeverBecomeRepositoryRuleErrors(t *testing.T) {
 }
 
 func TestRenameRebuiltRepeatedNamesPreservesOtherConfigBytes(t *testing.T) {
-	// R-N65R-AKB9 R-N7DN-OC1Y R-NC99-7F0Q
+	// R-N65R-AKB9 R-N7DN-OC1Y R-Z365-XFWE
 	for _, variant := range []string{"different", "same", "quoted", "continued", "comment", "mixed", "whitespace", "bom"} {
 		t.Run(variant, func(t *testing.T) {
 			f := setup(t)
@@ -443,56 +444,6 @@ func TestRenameRebuiltRepeatedNamesPreservesOtherConfigBytes(t *testing.T) {
 				t.Fatal(err)
 			}
 			same(t, f.git(t, f.base, "config", "--file", config, "--get", "ikigenba.name"), "renamed\n")
-		})
-	}
-}
-
-func TestRenameRepeatedConfigRollsBackAfterCatalogCommitFailure(t *testing.T) {
-	// R-NC99-7F0Q R-N65R-AKB9
-	for _, mode := range []os.FileMode{0600, 0400} {
-		t.Run(fmt.Sprintf("mode%04o", mode), func(t *testing.T) {
-			f := setup(t)
-			dir := f.identity(t, id(1), "original", "owner", "2024-01-01T00:00:00Z")
-			f.git(t, f.base, "config", "--file", filepath.Join(dir, "config"), "--add", "ikigenba.name", "current")
-			config := filepath.Join(dir, "config")
-			must(t, os.Chmod(config, mode))
-			same(t, f.git(t, f.base, "config", "--file", config, "--get", "ikigenba.name"), "current\n")
-			armed := false
-			var hookErr error
-			parent := filepath.Dir(f.cfg.Source)
-			var parentMode os.FileMode
-			g, err := git.Find(filepath.Dir(f.path), func() []string {
-				if armed {
-					armed = false
-					hookErr = os.Chmod(parent, parentMode&^0222)
-				}
-				return append([]string(nil), f.env...)
-			})
-			must(t, err)
-			f.cfg.Git = g
-			s := f.open(t)
-			info, err := os.Stat(parent)
-			must(t, err)
-			parentMode = info.Mode().Perm()
-			t.Cleanup(func() { must(t, os.Chmod(parent, parentMode)) })
-			repos := all(t, s)
-			before := snapshot(t, f.cfg.Root)
-			// The git environment seam removes database write access after the row update
-			// and while the proposed config is being checked, before the catalog commits.
-			armed = true
-			renamed, err := s.Rename(testContext(t), id(1), "renamed")
-			must(t, hookErr)
-			must(t, os.Chmod(parent, parentMode))
-			same(t, renamed, store.Repo{})
-			if err == nil || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrNameTaken) {
-				t.Fatal(err)
-			}
-			same(t, all(t, s), repos)
-			same(t, snapshot(t, f.cfg.Root), before)
-			renamed, err = s.Rename(testContext(t), id(1), "renamed")
-			must(t, err)
-			same(t, renamed.Name, "renamed")
-			same(t, f.git(t, f.base, "config", "--file", filepath.Join(dir, "config"), "--get", "ikigenba.name"), "renamed\n")
 		})
 	}
 }

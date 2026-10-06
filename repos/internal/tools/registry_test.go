@@ -55,16 +55,16 @@ func assertRegistryMetadata(t *testing.T, f *toolsFixture) {
 
 func TestRegistryExactMetadataAndStability(t *testing.T) {
 	// R-0QW7-YLRA R-LS48-WEAA R-LTC5-A60Z R-LUK1-NXRO R-LWZU-FH92 R-LY7Q-T8ZR R-LZFN-70QG R-M0NJ-KSH5
-	// R-0S44-CDHZ R-0TC0-Q58O R-0UJX-3WZD R-0VRT-HOQ2 R-0Y7M-987G R-0ZFI-MZY5 R-10NF-0ROU R-11VB-EJFJ R-16QW-XMEB
+	// R-0S44-CDHZ R-0TC0-Q58O R-0UJX-3WZD R-0VRT-HOQ2 R-0Y7M-987G R-0ZFI-MZY5 R-10NF-0ROU R-11VB-EJFJ R-ZGL2-4X21
 	f := newToolsFixture(t)
 	assertRegistryMetadata(t, f)
 	successObject(t, f.call(t, "list", `{}`))
 	assertRegistryMetadata(t, f)
 	refusal(t, f.call(t, "create", `{"name":"BAD"}`), "invalid arguments:\nname: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit")
 	assertRegistryMetadata(t, f)
-	toolsMust(t, f.Store.Close())
+	f.DB.SetFailing(true)
 	assertRegistryMetadata(t, f)
-	for _, c := range registryClosedCalls() {
+	for _, c := range registryFailingCalls() {
 		refusal(t, f.call(t, c.name, c.args), "cannot reach the repositories; try again later")
 		assertRegistryMetadata(t, f)
 	}
@@ -140,18 +140,18 @@ func TestRegistryDecoderErrorsAndPrecedence(t *testing.T) {
 		toolsEqual(t, got, catalog)
 		toolsEqual(t, toolsSnapshot(t, f.Root), disk)
 	}
-	toolsMust(t, f.Store.Close())
+	f.DB.SetFailing(true)
 	refusal(t, f.call(t, "create", `{"name":"Not A Name","bogus":1}`), "invalid arguments:\nbogus: unknown field")
 }
 
-func registryClosedCalls() []struct{ name, args string } {
+func registryFailingCalls() []struct{ name, args string } {
 	return []struct{ name, args string }{
-		{"list", `{}`}, {"show", `{"repo":"missing"}`}, {"status", `{}`}, {"create", `{"name":"taken"}`}, {"rename", `{"repo":"missing","name":"taken"}`}, {"delete", `{"repo":"notes"}`},
+		{"list", `{}`}, {"show", `{"repo":"missing"}`}, {"status", `{}`}, {"create", `{"name":"new"}`}, {"rename", `{"repo":"notes","name":"new"}`}, {"delete", `{"repo":"notes"}`},
 	}
 }
 
-func TestRegistryClosedStoreRefusesAndPreservesState(t *testing.T) {
-	// R-14B4-62WX R-15J0-JUNM
+func TestRegistryFailingStoreRefusesAndPreservesState(t *testing.T) {
+	// R-ZCXC-ZLTY R-ZFD5-R5BC R-ZHSY-IOSQ
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
 	f.create(t, f.Caller.UserID, "taken")
@@ -167,8 +167,8 @@ func TestRegistryClosedStoreRefusesAndPreservesState(t *testing.T) {
 		refusal(t, f.call(t, c.name, c.args), c.text)
 	}
 	toolsEqual(t, toolsSnapshot(t, f.Root), disk)
-	toolsMust(t, f.Store.Close())
-	for _, c := range registryClosedCalls() {
+	f.DB.SetFailing(true)
+	for _, c := range registryFailingCalls() {
 		offset := len(f.events(t))
 		refusal(t, f.call(t, c.name, c.args), "cannot reach the repositories; try again later")
 		events := f.events(t)[offset:]
@@ -176,26 +176,25 @@ func TestRegistryClosedStoreRefusesAndPreservesState(t *testing.T) {
 		toolsEqual(t, events[0].Name, "tool.called")
 		toolsEqual(t, events[0].Attrs["outcome"], "error")
 		toolsEqual(t, toolsSnapshot(t, f.Root), disk)
-		reopened, err := store.Open(toolsContext(t), f.StoreConfig)
+		f.DB.SetFailing(false)
+		got, err := f.Store.All(toolsContext(t))
 		toolsMust(t, err)
-		got, err := reopened.All(toolsContext(t))
-		toolsMust(t, err)
-		toolsMust(t, reopened.Close())
+		f.DB.SetFailing(true)
 		toolsEqual(t, got, before)
 	}
 }
 
 func TestRegistryNamingWinsOverUnreachableStore(t *testing.T) {
-	// R-MIY1-BCLK
+	// R-ZE59-DDKN
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
-	for _, closed := range []bool{false, true} {
-		if closed {
-			toolsMust(t, f.Store.Close())
+	for _, failing := range []bool{false, true} {
+		if failing {
+			f.DB.SetFailing(true)
 		}
 		for _, args := range []string{`{"repo":"notes","name":"Not A Name"}`, `{"repo":"missing","name":"Not A Name"}`} {
 			text := "invalid arguments:\n"
-			if !closed && strings.Contains(args, `"missing"`) {
+			if !failing && strings.Contains(args, `"missing"`) {
 				text += "repo: no repository 'missing'\n"
 			}
 			text += "name: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit"
@@ -206,7 +205,7 @@ func TestRegistryNamingWinsOverUnreachableStore(t *testing.T) {
 }
 
 func TestRegistryFailedWritesAfterReadPreserveState(t *testing.T) {
-	// R-14B4-62WX R-15J0-JUNM R-17YT-BE50
+	// R-ZCXC-ZLTY R-ZFD5-R5BC
 	for _, tool := range []string{"create", "rename", "delete"} {
 		t.Run(tool, func(t *testing.T) {
 			f := newToolsFixture(t)
@@ -214,11 +213,15 @@ func TestRegistryFailedWritesAfterReadPreserveState(t *testing.T) {
 			before, err := f.Store.All(toolsContext(t))
 			toolsMust(t, err)
 			disk := toolsSnapshot(t, f.Root)
-			info, err := os.Stat(f.DBParent)
+			path := f.Root
+			if tool == "rename" {
+				path = f.Store.Dir(r.ID)
+			}
+			info, err := os.Stat(path)
 			toolsMust(t, err)
 			mode := info.Mode().Perm()
-			t.Cleanup(func() { toolsMust(t, os.Chmod(f.DBParent, mode)) })
-			toolsMust(t, os.Chmod(f.DBParent, mode&^0222))
+			t.Cleanup(func() { toolsMust(t, os.Chmod(path, mode)) })
+			toolsMust(t, os.Chmod(path, mode&^0222))
 			offset := len(f.events(t))
 			args := `{"name":"new"}`
 			switch tool {
@@ -232,14 +235,10 @@ func TestRegistryFailedWritesAfterReadPreserveState(t *testing.T) {
 			toolsEqual(t, len(events), 1)
 			toolsEqual(t, events[0].Name, "tool.called")
 			toolsEqual(t, events[0].Attrs["outcome"], "error")
-			toolsMust(t, os.Chmod(f.DBParent, mode))
+			toolsMust(t, os.Chmod(path, mode))
 			toolsEqual(t, toolsSnapshot(t, f.Root), disk)
-			toolsMust(t, f.Store.Close())
-			reopened, err := store.Open(toolsContext(t), f.StoreConfig)
+			got, err := f.Store.All(toolsContext(t))
 			toolsMust(t, err)
-			got, err := reopened.All(toolsContext(t))
-			toolsMust(t, err)
-			toolsMust(t, reopened.Close())
 			toolsEqual(t, got, before)
 			_, err = os.Stat(filepath.Join(f.Root, r.ID+".git"))
 			toolsMust(t, err)

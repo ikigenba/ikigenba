@@ -38,7 +38,7 @@ func TestResolutionPrecedesRoutingAndLimits(t *testing.T) {
 				must(t, os.Remove(filepath.Join(f.store.Dir(repo.ID), "HEAD")))
 				must(t, f.store.Verify(deadline(t), f.writer))
 			case "closed":
-				must(t, f.store.Close())
+				f.db.SetFailing(true)
 			}
 			trace := filepath.Join(f.root, "refusal-trace.json")
 			f.gitRun("", "config", "--file", filepath.Join(f.root, "global"), "trace2.eventTarget", trace)

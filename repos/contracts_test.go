@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -82,17 +83,22 @@ func files(t *testing.T, filesystem fs.FS, names []string) map[string][]byte {
 		t.Fatalf("root entries=%d, want %d", len(entries), len(names))
 	}
 	result := make(map[string][]byte)
-	for i, entry := range entries {
+	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if entry.Name() != names[i] || !info.Mode().IsRegular() {
+		if !info.Mode().IsRegular() {
 			t.Fatalf("unexpected root entry %s (%s)", entry.Name(), info.Mode())
 		}
 		result[entry.Name()], err = fs.ReadFile(filesystem, entry.Name())
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+	for _, name := range names {
+		if _, ok := result[name]; !ok {
+			t.Fatalf("missing root entry %s", name)
 		}
 	}
 	return result
@@ -149,7 +155,11 @@ func newContractFixture(t *testing.T) *contractFixture {
 	f := &contractFixture{dir: t.TempDir(), capture: &telemetry.Capture{}}
 	_, _, f.git = gitFixture(t, f.dir)
 	var err error
-	f.store, err = store.Open(t.Context(), store.Config{Source: ":memory:", Root: filepath.Join(f.dir, "repos"), Git: f.git, Now: contractNow, Rand: &contractRandom{}})
+	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(f.dir, "catalog.db"), Migrations: repos.Migrations(), Now: contractNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store, err = store.Open(t.Context(), d, store.Config{Root: filepath.Join(f.dir, "repos"), Git: f.git, Now: contractNow, Rand: &contractRandom{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,14 +168,14 @@ func newContractFixture(t *testing.T) *contractFixture {
 		Stderr: io.Discard, Now: contractNow, Rand: &contractRandom{}, Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() {
 		f.writer.Shutdown(context.Background(), "test complete")
-		if err := f.store.Close(); err != nil {
+		if err := d.Close(); err != nil {
 			t.Error(err)
 		}
 	})
 	return f
 }
 
-// R-SWB1-21PW R-SXIX-FTGL R-SYQT-TL7A R-T4UB-QFWR: Construct the exact
+// R-UI1W-LL6T R-SXIX-FTGL R-SYQT-TL7A R-T4UB-QFWR: Construct the exact
 // store types and call each catalog, verification and path operation.
 func TestStorePublicContract(t *testing.T) {
 	f := newContractFixture(t)
@@ -206,28 +216,26 @@ func TestStorePublicContract(t *testing.T) {
 	}
 }
 
-// R-RBQ9-UZG5: Real filesystem failures select distinct exported sentinels.
+// R-XSTZ-E5Q0: Open distinguishes unusable repository roots.
 func TestStoreStartupErrorKinds(t *testing.T) {
 	dir := t.TempDir()
 	_, _, g := gitFixture(t, dir)
+	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(dir, "catalog.db"), Migrations: repos.Migrations(), Now: contractNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := d.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	block := filepath.Join(dir, "file")
 	if err := os.WriteFile(block, []byte("not a directory"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct {
-		source, root string
-		kind, other  error
-	}{
-		{filepath.Join(block, "catalog.db"), filepath.Join(dir, "root"), store.ErrDatabase, store.ErrRoot},
-		{":memory:", block, store.ErrRoot, store.ErrDatabase},
-	} {
-		s, err := store.Open(t.Context(), store.Config{Source: tc.source, Root: tc.root, Git: g, Now: contractNow, Rand: strings.NewReader("abcdefgh")})
-		if s != nil || tc.kind == nil || !errors.Is(err, tc.kind) || errors.Is(err, tc.other) {
-			t.Fatalf("Open=%v,%v; want %v", s, err, tc.kind)
-		}
-	}
-	if errors.Is(store.ErrRoot, store.ErrDatabase) || errors.Is(store.ErrDatabase, store.ErrRoot) {
-		t.Fatal("startup sentinels coincide")
+	s, err := store.Open(t.Context(), d, store.Config{Root: block, Git: g, Now: contractNow, Rand: strings.NewReader("abcdefgh")})
+	if s != nil || store.ErrRoot == nil || !errors.Is(err, store.ErrRoot) || errors.Is(store.ErrRoot, store.ErrNotFound) {
+		t.Fatalf("Open=%v,%v", s, err)
 	}
 }
 

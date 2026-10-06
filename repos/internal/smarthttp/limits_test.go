@@ -643,7 +643,7 @@ func TestWaitAndRepositoryReresolution(t *testing.T) {
 				case "delete":
 					must(t, f.store.Delete(deadline(t), repo.ID))
 				case "close":
-					must(t, f.store.Close())
+					f.db.SetFailing(true)
 				}
 				held.Release()
 				w := finishRequest(t, done)

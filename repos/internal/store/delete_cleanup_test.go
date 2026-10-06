@@ -15,13 +15,10 @@ import (
 )
 
 func TestDeleteLateOwnedRootPermissionFaultLeavesExactState(t *testing.T) {
-	// R-NTBU-K7EG R-WY0N-16WU
-	for _, memory := range []bool{false, true} {
+	// R-Z5LY-OZDS R-UT10-1IV2
+	for _, memory := range []bool{false} {
 		t.Run(map[bool]string{false: "file", true: "memory"}[memory], func(t *testing.T) {
 			f := setup(t)
-			if memory {
-				f.cfg.Source = ":memory:"
-			}
 			s := f.open(t)
 			r := create(t, s, "owner", "notes")
 			other := create(t, s, "other", "keep")
@@ -88,7 +85,7 @@ func TestDeleteLateOwnedRootPermissionFaultLeavesExactState(t *testing.T) {
 			same(t, all(t, s), wantRows)
 			same(t, snapshot(t, f.cfg.Root), wantTree)
 			if !memory {
-				must(t, s.Close())
+				f.close(t)
 				s = f.open(t)
 				same(t, all(t, s), wantRows)
 				same(t, snapshot(t, f.cfg.Root), wantTree)

@@ -14,10 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/settings"
@@ -57,6 +59,7 @@ func (r *webRandom) Read(p []byte) (int, error) {
 }
 
 type webFixture struct {
+	db          *db.DB
 	cfg         Config
 	dir         string
 	gitPath     string
@@ -89,7 +92,11 @@ func newWebFixture(t *testing.T) *webFixture {
 	}
 	now := func() time.Time { return time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC) }
 	random := &webRandom{}
-	s, err := store.Open(t.Context(), store.Config{Source: filepath.Join(f.dir, "repos.db"), Root: filepath.Join(f.dir, "repos"), Git: g, Now: now, Rand: random})
+	f.db, err = db.Open(t.Context(), db.Config{Path: filepath.Join(f.dir, "repos.db"), Migrations: repos.Migrations(), Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(t.Context(), f.db, store.Config{Root: filepath.Join(f.dir, "repos"), Git: g, Now: now, Rand: random})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +107,7 @@ func newWebFixture(t *testing.T) *webFixture {
 	}
 	f.setWriter(t, f.capture, random, now)
 	t.Cleanup(func() {
-		if err := s.Close(); err != nil {
+		if err := f.db.Close(); err != nil {
 			t.Error(err)
 		}
 	})

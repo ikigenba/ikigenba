@@ -16,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/settings"
@@ -79,6 +81,7 @@ type fixture struct {
 	root, executable string
 	env              []string
 	git              *git.Git
+	db               *db.DB
 	store            *store.Store
 	clock            *drivenClock
 	settings         settings.Settings
@@ -99,14 +102,16 @@ func setup(t *testing.T) *fixture {
 	c := newClock()
 	capture := new(telemetry.Capture)
 	w := telemetry.New(telemetry.Config{Service: "repos", Sink: capture, Now: func() time.Time { return epoch }, Rand: new(sequence), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
-	s, err := store.Open(deadline(t), store.Config{Source: filepath.Join(root, "catalog.db"), Root: filepath.Join(root, "repos"), Git: g, Now: func() time.Time { return epoch }, Rand: new(sequence)})
+	d, err := db.Open(deadline(t), db.Config{Path: filepath.Join(root, "catalog.db"), Migrations: repos.Migrations(), Now: func() time.Time { return epoch }})
 	must(t, err)
-	f := &fixture{t: t, root: root, executable: path, env: env, git: g, store: s, clock: c, settings: settings.Defaults(), writer: w, capture: capture}
+	s, err := store.Open(deadline(t), d, store.Config{Root: filepath.Join(root, "repos"), Git: g, Now: func() time.Time { return epoch }, Rand: new(sequence)})
+	must(t, err)
+	f := &fixture{t: t, root: root, executable: path, env: env, git: g, db: d, store: s, clock: c, settings: settings.Defaults(), writer: w, capture: capture}
 	f.settings.ReadSlots = 1
 	f.settings.WriteSlots = 1
 	f.settings.QueueLength = 1
 	f.resetLimits()
-	t.Cleanup(func() { must(t, s.Close()); w.Shutdown(deadline(t), "test") })
+	t.Cleanup(func() { must(t, d.Close()); w.Shutdown(deadline(t), "test") })
 	return f
 }
 func (f *fixture) resetLimits() {

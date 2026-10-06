@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -17,7 +18,7 @@ import (
 )
 
 // R-PK7O-8WUI R-PLFK-MOL7 R-PMNH-0GBW R-PP39-RZTA R-PQB6-5RJZ
-// R-PNVD-E82L R-UF6I-9Q35
+// R-PNVD-E82L R-Y2L6-GBNK
 func TestServeRefusalOrderAndNoEffects(t *testing.T) {
 	cases := []struct {
 		name string
@@ -136,7 +137,7 @@ func TestServeTakesExactlyDescriptorThreeBeforeGit(t *testing.T) {
 	}
 }
 
-// R-7YDI-LY4I R-7ATG-PX7A
+// R-YB4H-4PUF
 func TestServeStoreFailureBeforeOtherEffects(t *testing.T) {
 	for _, kind := range []string{"database", "root"} {
 		t.Run(kind, func(t *testing.T) {
@@ -171,7 +172,11 @@ func TestServeStoreFailureBeforeOtherEffects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, expectedError := store.Open(t.Context(), store.Config{Source: filepath.Join(f.dir, "state", "repos.db"), Root: filepath.Join(f.dir, "state", "repos"), Git: g, Now: f.p.Now, Rand: f.random})
+			d, expectedError := db.Open(t.Context(), statusConfig(f.dir))
+			if expectedError == nil {
+				_, expectedError = store.Open(t.Context(), d, store.Config{Root: filepath.Join(f.dir, "state", "repos"), Git: g, Now: f.p.Now, Rand: f.random})
+				_ = d.Close()
+			}
 			if expectedError == nil {
 				t.Fatal("fixture did not produce Store.Open failure")
 			}
@@ -205,7 +210,7 @@ func TestServeStoreFailureBeforeOtherEffects(t *testing.T) {
 	}
 }
 
-// R-4D5L-S59I
+// R-YCCD-IHL4
 func TestServeCancelledBeforeStoreIsSilent(t *testing.T) {
 	f := newServeFixture(t)
 	f.notification(t)

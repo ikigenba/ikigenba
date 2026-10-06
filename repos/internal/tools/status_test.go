@@ -147,7 +147,7 @@ func statusWaitCanceled(t *testing.T, done <-chan error) {
 func TestStatusRefusesUnreachableList(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
-	toolsMust(t, f.Store.Close())
+	f.DB.SetFailing(true)
 	refusal(t, f.call(t, "status", "{}"), "cannot reach the repositories; try again later")
 	assertOnlyToolCalls(t, f, 0, "error")
 }

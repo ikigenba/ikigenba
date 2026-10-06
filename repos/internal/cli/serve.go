@@ -13,7 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/maintenance"
@@ -121,19 +123,27 @@ func serve(ctx context.Context, p Process) int {
 		source = rand.Reader
 	}
 	random := &randomSource{source: source}
-	s, err := store.Open(ctx, store.Config{Source: filepath.Join(p.Dir, "state", "repos.db"), Root: filepath.Join(p.Dir, "state", "repos"), Git: g, Now: p.Now, Rand: random})
+	d, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "repos.db"), Migrations: repos.Migrations(), Now: p.Now})
+	if err != nil {
+		if ctx.Err() != nil {
+			return ExitSuccess
+		}
+		diagnostic.diagnostic("cannot open database state/repos.db: " + strings.ReplaceAll(err.Error(), "\n", " "))
+		return ExitServerFailed
+	}
+	defer func() { _ = d.Close() }()
+	s, err := store.Open(ctx, d, store.Config{Root: filepath.Join(p.Dir, "state", "repos"), Git: g, Now: p.Now, Rand: random})
 	if err != nil {
 		if ctx.Err() != nil {
 			return ExitSuccess
 		}
 		if errors.Is(err, store.ErrRoot) {
-			diagnostic.diagnostic("cannot create directory state/repos: " + err.Error())
+			diagnostic.diagnostic("cannot create directory state/repos: " + strings.ReplaceAll(err.Error(), "\n", " "))
 		} else {
-			diagnostic.diagnostic("cannot open database state/repos.db: " + err.Error())
+			diagnostic.diagnostic("cannot open database state/repos.db: " + strings.ReplaceAll(err.Error(), "\n", " "))
 		}
 		return ExitServerFailed
 	}
-	defer func() { _ = s.Close() }()
 	w := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: Version, Sink: p.Sink, Stderr: diagnostic, Now: p.Now, Sleep: p.Sleep, Rand: random})
 	err = s.Verify(ctx, w)
 	if ctx.Err() != nil {
@@ -142,7 +152,7 @@ func serve(ctx context.Context, p Process) int {
 	}
 	if err != nil {
 		flushStart(w)
-		diagnostic.diagnostic("cannot open database state/repos.db: " + err.Error())
+		diagnostic.diagnostic("cannot open database state/repos.db: " + strings.ReplaceAll(err.Error(), "\n", " "))
 		return ExitServerFailed
 	}
 	servicesPath := environmentValue(p, "IKIGENBA_SERVICES")

@@ -23,3 +23,12 @@ func Etc() fs.FS {
 	f, _ := fs.Sub(etc, "etc")
 	return f
 }
+
+//go:embed migrations/*
+var migrations embed.FS
+
+// Migrations returns the embedded catalog migrations at their root.
+func Migrations() fs.FS {
+	f, _ := fs.Sub(migrations, "migrations")
+	return f
+}

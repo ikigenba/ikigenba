@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,7 +41,7 @@ func (s *Store) identified(ctx context.Context, entry os.DirEntry) (Repo, bool) 
 	return Repo{ID: id, Name: values[1], Owner: values[2], Created: created.UTC(), Available: true}, true
 }
 
-func (s *Store) rebuild(ctx context.Context) error {
+func (s *Store) rebuild(ctx context.Context, tx *sql.Tx) error {
 	entries, err := os.ReadDir(s.cfg.Root)
 	if err != nil {
 		return err
@@ -60,11 +61,6 @@ func (s *Store) rebuild(ctx context.Context) error {
 		}
 		return repos[i].ID < repos[j].ID
 	})
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
 	seen := make(map[[2]string]bool)
 	for _, r := range repos {
 		key := [2]string{r.Owner, r.Name}
@@ -77,5 +73,5 @@ func (s *Store) rebuild(ctx context.Context) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
