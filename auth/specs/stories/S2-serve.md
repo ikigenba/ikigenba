@@ -70,6 +70,15 @@ auth checks its environment first — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 `IKIGENBA_CALLBACK_URL` — then looks for its socket, and only then opens its
 SQLite database at `state/auth.db`, relative to its working directory. So a
 start refused as a usage error has touched nothing, not even the database.
+Opening it, auth creates `state/` if it is absent and `state/auth.db` if it is
+absent, brings the database up to date by applying, in order, every migration
+it carries that the database has not had (`S1-bootstrap.md`), and only then
+serves and tells systemd it is ready. A database it cannot open, or one that
+records a migration it does not carry, is a start it refuses, with one line on
+stderr, `auth: cannot open database state/auth.db: <reason>`, and exit status
+1. The users, sessions, sign-ins in flight and tokens it keeps there outlive
+every restart and deploy. auth is the database's only writer, and the host
+replicates it as the manifest declares (`S1-bootstrap.md`).
 Starting touches no network: the Google settings are read and required at
 startup, but Google itself is reached only when a human signs in
 (`S3-sign-in.md`), so auth serves even while Google is unreachable, and
@@ -176,7 +185,8 @@ Preconditions:
   connections.
 - `/opt/auth/etc/env` sets `IKIGENBA_SERVICES` to the host's services file,
   which has an entry named `telemetry` whose socket accepts events.
-- `/opt/auth/state/auth.db` exists, from an earlier start.
+- `/opt/auth/state/auth.db` exists, from an earlier start, and records no
+  migration this auth does not carry.
 - `ikigenba-auth.service` is not running.
 
 Postconditions:
@@ -185,7 +195,9 @@ Postconditions:
   `ikigenba-auth.socket` passed it: a connection there, and every connection
   queued before auth started, is answered by auth.
 - auth listens on no other socket.
-- `/opt/auth/state/auth.db` is the database it opened; it existed already.
+- `/opt/auth/state/auth.db` is the database it opened; it existed already,
+  and is now up to date. Every user, session, and token it held is still
+  there.
 - No network call to Google was made; the Google settings were read from the
   environment, not checked against Google.
 - auth records `service.started` with `version=v<semver>`, the version
@@ -200,7 +212,8 @@ it is absent, then creates `state/auth.db` and its schema and serves. The
 same start succeeds when `state/` already exists and only the database is
 absent. Neither a fresh deployment nor any other first start needs the
 directory created beforehand. The paths are relative to auth's working
-directory.
+directory. A database auth creates holds no users, sessions, or tokens: the
+first member to sign in is the first user.
 
 Command:
 
@@ -232,8 +245,57 @@ Preconditions:
 Postconditions:
 
 - `state/` exists, created by auth if it was absent.
-- `state/auth.db` now exists, with its schema, created by this start.
+- `state/auth.db` now exists, created by this start, and is up to date:
+  `auth db status` prints `0001 applied <time>` and `0002 applied <time>`,
+  each `<time>` being the moment this start applied it (`S1-bootstrap.md`).
+- The database holds no users, sessions, or tokens.
 - auth is serving on the socket it was passed, and on no other.
+- auth records `service.started` with `version=v<semver>`, the version
+  `auth --version` prints, under no request id and no user.
+- It keeps running until it is signalled.
+
+## The host starts auth over a database an earlier auth wrote
+
+An auth from before the migrations kept its database without recording any
+migration. The first start of this auth on it applies both migrations it
+carries: `0001` finds the tables already there and changes nothing, and
+`0002` gives each token that still has a bare id the prefixed one
+(`S5-tokens.md`). Every user, session, sign-in in flight and token the
+database held is still there, and from then on the database is up to date.
+
+Command:
+
+```
+$ auth
+```
+
+Output:
+
+```
+```
+
+Does not exit. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `IKIGENBA_SERVICES` names a services file with an entry named `telemetry`
+  whose socket accepts events.
+- `state/auth.db` exists, written by an auth from before the migrations, and
+  records no migration.
+
+Postconditions:
+
+- auth is serving on the socket it was passed, over the same `state/auth.db`.
+- `auth db status` prints `0001 applied <time>` and `0002 applied <time>`,
+  each `<time>` being the moment this start applied it (`S1-bootstrap.md`).
+- Every user, session, and token the database held is still there; a token's
+  id now carries the `tok_` prefix, and nothing else about it has changed
+  (`S5-tokens.md`).
 - auth records `service.started` with `version=v<semver>`, the version
   `auth --version` prints, under no request id and no user.
 - It keeps running until it is signalled.
@@ -357,6 +419,50 @@ Postconditions:
 - Nothing has changed. auth served nothing, told systemd nothing, and recorded
   no event.
 
+## The host starts auth with a database a newer auth has upgraded
+
+A deploy rolled back to an older binary leaves it over a database a newer auth
+has upgraded: the database records a migration this auth does not carry, so
+its schema is one this auth does not understand. Rather than read it, auth
+refuses to start, naming the version it does not know, and the rollback fails
+loudly instead of answering `/check` from a schema it misreads. There is no way
+back down a migration; restoring the database from before the upgrade is the
+rollback. `auth db status` shows the version as `unknown`
+(`S1-bootstrap.md`). Under systemd the start fails, and `systemctl start`
+reports it.
+
+Command:
+
+```
+$ auth
+```
+
+Output:
+
+```
+auth: cannot open database state/auth.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version
+this auth does not carry, zero-padded to four digits: `0003`.
+
+Preconditions:
+
+- `bin/auth` exists and is on the `PATH` as `auth`, carrying migrations `0001`
+  and `0002` only.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `state/auth.db` exists and records versions `0001`, `0002`, and `0003` as
+  applied.
+
+Postconditions:
+
+- Nothing has changed: the database still records `0001`, `0002`, and `0003`
+  and holds the users, sessions, and tokens it held. auth served nothing, told
+  systemd nothing, and recorded no event.
+
 ## The host stops auth
 
 `systemctl stop` and `systemctl restart` send `SIGTERM`; a developer's `Ctrl-C`
@@ -466,7 +572,11 @@ new one being ready, connections wait in the socket's queue instead of being
 refused — nginx's `/check` and `/check/open` subrequests for every other app
 among them — so neither a visitor to auth nor a visitor to any app auth guards
 sees auth missing. That holds because auth finishes what it accepted before it
-exits and leaves the socket where systemd put it.
+exits and leaves the socket where systemd put it. Users, sessions, and tokens
+outlive the deploy: the new auth opens the same `state/auth.db`, bringing it
+up to date first when the new binary carries a migration the database has not
+had, so a visitor signed in before the deploy is still signed in after it and
+every token still authenticates.
 
 Command:
 
@@ -501,7 +611,8 @@ Postconditions:
   `service.started` with `version=v<semver>`, the version of the binary the
   deploy installed, so the trail shows the deploy as a new version in a start event.
 - A new auth process is serving on the same socket, over the same
-  `state/auth.db`.
+  `state/auth.db`, now up to date. Every user, session, and token the old
+  auth held is still there.
 
 ## The host starts auth without a socket
 

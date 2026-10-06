@@ -648,13 +648,14 @@ Postconditions:
 ## A user's token from before ids were prefixed keeps working
 
 An auth that predates the `tok_` prefix gave a token a bare 26-character
-Crockford id. When auth opens a database holding such tokens, it gives each
-the prefixed id, `tok_` followed by the same 26 characters, and changes
-nothing else about it, so a token minted before keeps its secret, name,
-times, and state, and keeps authenticating. Opening the database again
-changes nothing more. From then on the token's URLs and events name it by the
-prefixed id; its bare id names no token, so an action URL carrying it answers
-404 as any unknown id does.
+Crockford id. auth's migration `0002` gives each such token the prefixed id,
+`tok_` followed by the same 26 characters, and changes nothing else about it,
+so a token minted before keeps its secret, name, times, and state, and keeps
+authenticating. auth applies `0002` when it starts on a database that has not
+had it (`S2-serve.md`), and applies it once: starting again changes nothing
+more, and `auth db status` lists it applied (`S1-bootstrap.md`). From then on
+the token's URLs and events name it by the prefixed id; its bare id names no
+token, so an action URL carrying it answers 404 as any unknown id does.
 
 Request:
 
@@ -678,17 +679,17 @@ times, and status as they were. The row's forms POST to
 
 Preconditions:
 
-- auth's database was written by an earlier auth, and holds a token the user
-  owns, enabled, whose id is the bare `<bare-id>` and whose secret is
-  `ikp_<token>`.
+- auth's database was written by an earlier auth, has not had migration
+  `0002` applied, and holds a token the user owns, enabled, whose id is the
+  bare `<bare-id>` and whose secret is `ikp_<token>`.
 - auth has since been started on that database and is serving.
 - The user is signed in; the cookie names a live session.
 
 Postconditions:
 
 - Nothing has changed by this request. The token's id has been
-  `tok_<bare-id>` since auth opened the database; its secret, name, times, and
-  state are unchanged.
+  `tok_<bare-id>` since auth started on the database and applied `0002`; its
+  secret, name, times, and state are unchanged.
 - `ikp_<token>` still authenticates: `/check` honors it as in `nginx checks a
   request with a token` (S4), and records `check.allowed` with
   `token=tok_<bare-id>`.
