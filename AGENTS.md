@@ -16,7 +16,7 @@ Platform apps, each one Go binary behind the host's nginx:
 
 Shared library:
 
-- `appkit` holds what every app shares: page chrome, identity, the MCP server and client, and telemetry.
+- `appkit` holds what every app shares: page chrome, identity, the MCP server and client, telemetry, and the database open path.
 
 Develop, deploy, operate:
 

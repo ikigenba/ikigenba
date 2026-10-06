@@ -1,6 +1,6 @@
 # appkit
 
-appkit holds what every app shares: page chrome, identity, the MCP server and client, and telemetry. It is a Go library with one concern per package and no package privileged; the module root exports nothing. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
+appkit holds what every app shares: page chrome, identity, the MCP server and client, telemetry, and the database open path. It is a Go library with one concern per package and no package privileged; the module root exports nothing. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -10,6 +10,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `identity` is the caller nginx authenticated (`X-User-Id`, `X-User-Email`, `X-Request-Id`): the middleware that requires it, and forwarding it on a call to a sibling service.
 - `mcp` is the Model Context Protocol: the server a service mounts at `/mcp` with its tools, and the client the gateway and service tests use.
 - `telemetry` is the suite's event trail: the event contract, the writer that queues and delivers a service's events, its sinks, the wire to the telemetry service, and the request middleware and sibling client that record every request and sibling call.
+- `db` is a service's SQLite database: opening it, reading and writing it through transactions, the failure seam its tests use, and its migrations and their status.
 - The build run writes the Go source and the tests. `page/assets/`, `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets
@@ -23,7 +24,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
-Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires nothing today.
+Prefer the standard library, then a widely used public module; adding one needs human approval. `go.mod` requires only `modernc.org/sqlite`, the pure-Go SQLite driver, and only `db` imports it.
 
 ## Test files
 
