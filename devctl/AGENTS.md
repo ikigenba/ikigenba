@@ -25,7 +25,7 @@ What the operator, human or agent, supplies when running the built `devctl` agai
 
 - **Run from inside the checkout.** Every command that touches AWS or a host runs from a directory inside this repository's checkout; its `infra/terraform.tfvars.json` is the one statement of the root domain and region.
 - **One AWS profile, named after the root.** `~/.aws/config` holds a profile named exactly as the root file spells the root domain (`ikigenba.dev`), with a live SSO session before any cloud command (`aws sso login --profile ikigenba.dev`). No account id is configured anywhere; the account is whatever that profile reaches.
-- **ACME email.** `space create --acme-email`, and `space init --acme-email` when changing it, take `ops@ikigenba.dev`, the address the stories use. It must be one the CA will accept.
+- **ACME email.** The address `space create --acme-email`, and `space init --acme-email` when changing it, take is a question for the user. Ask every time; never take one from the specs or tests, or reuse one from an earlier space.
 - **ssh.** The developer's ssh configuration reaches a space's instance as `ec2-user` with the platform's key pair, which is named after the root.
 
 ## Test files
