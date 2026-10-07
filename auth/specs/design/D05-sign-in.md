@@ -148,15 +148,21 @@ and a page's **written markup**; the **card titled** a name, the **alert**,
 and the **icon**; and the **apex name** a page shows.
 
 Every auth page is titled `auth`, links the stylesheet at `/_appkit/theme.css`,
-loads the button feedback script at `/_appkit/feedback.js` with one deferred
-`script` element, and declares the phone-width viewport. The stylesheet, the
-fonts it loads, the launcher's script, and the feedback script are appkit's
-shared files, served by auth under `/_appkit/` through `page.Static()`; the
-asset-serving design (D08) owns that, and this design refers to the stylesheet
-and the feedback script only by their URLs. appkit's `banner` template links
-neither, so each page links both in its own head: a page opts in to the
-feedback script by linking it, as it links the stylesheet, whether or not it
-has a banner. What the script does in a browser — press feedback on buttons,
+links the favicon at `/_appkit/favicon.svg` as its SVG icon, loads the button
+feedback script at `/_appkit/feedback.js` with one deferred `script` element,
+and declares the phone-width viewport. The stylesheet, the fonts it loads, the
+launcher's script, the feedback script, and the favicon are appkit's shared
+files, served by auth under `/_appkit/` through `page.Static()`; the
+asset-serving design (D08) owns that, and this design refers to the
+stylesheet, the favicon, and the feedback script only by their URLs. appkit's
+`banner` template links none of them, so each page links all three in its own
+head: a page opts in to the feedback script and the favicon by linking them,
+as it links the stylesheet, whether or not it has a banner. Every page auth
+draws is an auth page — the sign-in page, the cancelled and not-a-member
+sign-in cards, the profile, and the token pages of D07 — so each carries the
+favicon; auth's plain-text failures and its redirects are not
+pages and carry none. A browser that asks for `/favicon.ico` instead gets
+auth's ordinary 404. What the script does in a browser — press feedback on buttons,
 copying a secret with a toast (D07) — is appkit's and needs a JavaScript
 engine the gates do not have, so what is fixed is the hook a standard-library
 test can see: the `script` start tag in the head, its `src`, and its `defer`.
@@ -438,6 +444,7 @@ were recorded.
 - R-08U8-JUAH: auth's design defines an **auth page** as a response body that a requirement of auth's design states is an auth page, is drawn as a sign-in card, or is drawn with the banner; the written markup (R-056J-EJ2E) of every auth page MUST hold exactly one `body` start tag and, after it, exactly one `</body>` end tag.
 - R-0A24-XM16: The written markup of every auth page MUST hold exactly one tag span whose name is `title` matched ASCII case-insensitively, anywhere in it, and that tag span MUST lie before the `body` start tag, MUST be a start tag for `title`, and MUST be followed immediately by exactly `auth</title>`.
 - R-0BA1-BDRV: Every auth page MUST hold, before its `body` start tag, exactly one `link` start tag carrying `rel` reading `stylesheet`, and that start tag MUST carry `href` reading `/_appkit/theme.css`.
+- R-YN4H-5WV1: Every auth page MUST hold, before its `body` start tag, exactly one `link` start tag carrying `rel` reading `icon`, and that start tag MUST carry `type` reading `image/svg+xml` and `href` reading `/_appkit/favicon.svg`.
 - R-ZB86-LWXV: Every auth page MUST hold, before its `body` start tag, exactly one `script` start tag carrying `src` reading `/_appkit/feedback.js`, and that start tag MUST hold an attribute name (R-0M94-RBG4) that is exactly `defer`.
 - R-0YG4-L0V2: Every auth page MUST hold, before its `body` start tag, exactly one `meta` start tag carrying `name` reading `viewport`, and that start tag MUST carry `content` reading `width=device-width, initial-scale=1`.
 - R-0DPU-2X99: In the written markup of every auth page, the read value of every occurrence (R-BSTK-NA80) of `action` or `formaction` in any tag span, and of every occurrence of `href` in a tag span whose name is `a` matched ASCII case-insensitively, MUST contain no ASCII tab, line feed, or carriage return and MUST either be exactly `/` or begin with `/` followed by a character that is neither `/` nor `\`.

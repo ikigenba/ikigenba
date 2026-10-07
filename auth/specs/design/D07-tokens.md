@@ -26,7 +26,8 @@ with no banner.
 D05 owns the words every page auth draws is described in, and this design uses
 them by name without restating them: an **auth page** and what it carries in
 its head (the title `auth`, the stylesheet at `/_appkit/theme.css`, the
-deferred feedback script at `/_appkit/feedback.js`, the phone-width viewport,
+favicon at `/_appkit/favicon.svg`, the deferred feedback script at
+`/_appkit/feedback.js`, the phone-width viewport,
 nothing loaded from another host, every outside value escaped); a page
 **drawn with the banner** for a user, whose banner is appkit's, drawn from the data the server's `Banner` function returns, as is
 the footer that ends it, and the page's **written markup**, the page with that
