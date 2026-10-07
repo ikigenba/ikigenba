@@ -113,7 +113,7 @@ func TestIdentityBeforeRouting(t *testing.T) {
 	}
 }
 func TestExactPathsAnd404(t *testing.T) {
-	// R-QM3J-N515 R-QNBG-0WRU R-C1RI-0X9U R-RHSX-L6B7
+	// R-QM3J-N515 R-QNBG-0WRU R-UOEK-WNRS R-RHSX-L6B7
 	f := newFixture(t)
 	for _, path := range []string{"/mcp/", "/mcp/a", "/ingest/", "/ingest/a", "/about/", "/_appkit", "/assets/", "/assets/a", "/logout", "/index.html", "//", "/nope", "/nope/", "/x/../", "/x/./", "/_APPKIT/feedback.js", "/_APPKIT/favicon.svg", "/favicon.svg", "/_appkit-extra/favicon.svg"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CUSTOM"} {
