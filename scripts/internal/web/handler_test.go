@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -404,13 +405,14 @@ func TestServicesSocketNotContacted(t *testing.T) {
 	}
 }
 
-// R-ADOT-ZOJK R-AHCJ-4ZRN R-Z86M-SY8X R-ZAMF-KHQB R-ZBUB-Y9H0 R-ZD28-C17P R-AL08-AAZQ R-ANG1-1UH4 R-ZGPX-HCFS R-ZHXT-V46H
+// R-CBDU-XW5S R-CCLR-BNWH R-CDTN-PFN6 R-ZAMF-KHQB R-ZBUB-Y9H0 R-CF1K-37DV R-CG9G-GZ4K R-CHHC-UQV9 R-ZGPX-HCFS R-ZHXT-V46H
 func TestSharedStaticFiles(t *testing.T) {
 	f := makeFixture(t, nil)
 	g := makeFixture(t, nil)
 
 	baseline := map[string]*httptest.ResponseRecorder{}
-	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "favicon.svg", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
+	files := sharedFiles(t, f.h)
+	for name := range files {
 		baseline[name] = serve(f.h, "GET", page.StaticPrefix+name, "owner", "", "request")
 	}
 	if err := f.db.Close(); err != nil {
@@ -418,13 +420,17 @@ func TestSharedStaticFiles(t *testing.T) {
 	}
 	t.Chdir(t.TempDir())
 	bodies := map[string]string{}
-	for name, mime := range map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"} {
+	for name, mime := range files {
+		cache := "no-cache"
+		if mime == "font/woff2" {
+			cache = "public, max-age=31536000, immutable"
+		}
 		p := page.StaticPrefix + name
 		got := serve(f.h, "GET", p, "owner", "", "request")
 		if !bytes.Equal(baseline[name].Body.Bytes(), got.Body.Bytes()) {
 			t.Fatal(name, "body changed after catalog close and working-directory change")
 		}
-		if got.Code != 200 || got.Body.Len() == 0 || !reflect.DeepEqual(got.Header().Values("Content-Type"), []string{mime}) || !reflect.DeepEqual(got.Header().Values("Cache-Control"), []string{"no-cache"}) {
+		if got.Code != 200 || got.Body.Len() == 0 || !reflect.DeepEqual(got.Header().Values("Content-Type"), []string{mime}) || !reflect.DeepEqual(got.Header().Values("Cache-Control"), []string{cache}) {
 			t.Fatal(name, got.Code, got.Header())
 		}
 		tag := got.Header().Get("ETag")
@@ -451,15 +457,17 @@ func TestSharedStaticFiles(t *testing.T) {
 			t.Fatal(head)
 		}
 		for _, method := range []string{"GET", "HEAD"} {
-			for _, match := range []string{"*", tag, "W/" + tag, ` , "different", W/` + tag + `, `} {
-				r := httptest.NewRequest(method, p, nil)
-				r.Header.Set("X-User-Id", "owner")
-				r.Header.Set("If-None-Match", match)
-				r.Header.Set("If-Modified-Since", "Thu, 01 Jan 2099 00:00:00 GMT")
-				w := httptest.NewRecorder()
-				f.h.ServeHTTP(w, r)
-				if w.Code != 304 || w.Body.Len() != 0 || !reflect.DeepEqual(w.Header().Values("ETag"), []string{tag}) || !reflect.DeepEqual(w.Header().Values("Cache-Control"), []string{"no-cache"}) {
-					t.Fatal(match, w)
+			for _, modified := range []string{"", "malformed", "Tue, 04 Mar 2025 05:06:07 GMT", "Thu, 01 Jan 2099 00:00:00 GMT"} {
+				for _, match := range []string{"*", tag, "W/" + tag, ` , "different", W/` + tag + `, `, " ,\tW/" + tag + "\t,", tag + ", " + tag} {
+					r := httptest.NewRequest(method, p, nil)
+					r.Header.Set("X-User-Id", "owner")
+					r.Header.Set("If-None-Match", match)
+					r.Header.Set("If-Modified-Since", modified)
+					w := httptest.NewRecorder()
+					f.h.ServeHTTP(w, r)
+					if w.Code != 304 || w.Body.Len() != 0 || !reflect.DeepEqual(w.Header().Values("ETag"), []string{tag}) || !reflect.DeepEqual(w.Header().Values("Cache-Control"), []string{cache}) {
+						t.Fatal(match, w)
+					}
 				}
 			}
 			for _, modified := range []string{"", "malformed", "Tue, 04 Mar 2025 05:06:07 GMT", "Thu, 01 Jan 2099 00:00:00 GMT"} {
@@ -472,13 +480,13 @@ func TestSharedStaticFiles(t *testing.T) {
 					}
 					w := httptest.NewRecorder()
 					f.h.ServeHTTP(w, r)
-					if w.Code != 200 || !reflect.DeepEqual(w.Header().Values("ETag"), []string{tag}) || !reflect.DeepEqual(w.Header().Values("Cache-Control"), []string{"no-cache"}) || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{mime}) || (method == "GET" && w.Body.String() != got.Body.String()) || (method == "HEAD" && w.Body.Len() != 0) {
+					if w.Code != 200 || !reflect.DeepEqual(w.Header().Values("ETag"), []string{tag}) || !reflect.DeepEqual(w.Header().Values("Cache-Control"), []string{cache}) || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{mime}) || (method == "GET" && w.Body.String() != got.Body.String()) || (method == "HEAD" && w.Body.Len() != 0) {
 						t.Fatal(name, method, match, modified, w)
 					}
 				}
 			}
 		}
-		for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+		for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "custom"} {
 			r := httptest.NewRequest(method, p, nil)
 			r.Header.Set("X-User-Id", "owner")
 			r.Header.Set("If-None-Match", tag)
@@ -489,11 +497,63 @@ func TestSharedStaticFiles(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/favicon.svg/", "/_appkit/FAVICON.SVG"} {
-		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
-			got := serve(f.h, method, path, "owner", "", "request")
-			if got.Code != 404 || strings.Contains(got.Body.String(), "There is nothing at this address.") {
-				t.Fatal(path, got)
+	paths := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css"}
+	for name := range files {
+		paths = append(paths, page.StaticPrefix+name+"/", page.StaticPrefix+name+"/x", page.StaticPrefix+strings.ToUpper(name))
+	}
+	for _, path := range paths {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
+			for _, match := range []string{"", "*", `"absent"`, "malformed"} {
+				r := httptest.NewRequest(method, path, nil)
+				r.Header.Set("X-User-Id", "owner")
+				r.Header.Set("If-None-Match", match)
+				got := httptest.NewRecorder()
+				f.h.ServeHTTP(got, r)
+				if got.Code != 404 || strings.Contains(got.Body.String(), "There is nothing at this address.") {
+					t.Fatal(path, got)
+				}
+			}
+		}
+	}
+}
+
+// R-CA5Y-K4F3
+func sharedFiles(t *testing.T, h http.Handler) map[string]string {
+	t.Helper()
+	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
+	css := serve(h, "GET", "/_appkit/theme.css", "owner", "", "request")
+	if css.Code != 200 {
+		t.Fatalf("font discovery: status %d", css.Code)
+	}
+	files[strings.TrimPrefix(page.PreloadURL(), page.StaticPrefix)] = "font/woff2"
+	for _, match := range regexp.MustCompile(`url\("([^"]*)"\)`).FindAllStringSubmatch(css.Body.String(), -1) {
+		name := match[1]
+		if strings.HasSuffix(name, ".woff2") && !strings.ContainsAny(name, "/\\:\"?#%") {
+			files[name] = "font/woff2"
+		}
+	}
+	return files
+}
+
+// R-CIP9-8ILY
+func TestSharedStaticPlainFontAliasesMissing(t *testing.T) {
+	f := makeFixture(t, nil)
+	hashed := regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`)
+	for name, mime := range sharedFiles(t, f.h) {
+		if mime != "font/woff2" || !hashed.MatchString(name) {
+			continue
+		}
+		path := page.StaticPrefix + hashed.ReplaceAllString(name, ".woff2")
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "custom"} {
+			for _, match := range []string{"", "*", `"absent"`, "malformed"} {
+				r := httptest.NewRequest(method, path, nil)
+				r.Header.Set("X-User-Id", "owner")
+				r.Header.Set("If-None-Match", match)
+				w := httptest.NewRecorder()
+				f.h.ServeHTTP(w, r)
+				if w.Code != 404 || strings.Contains(w.Body.String(), "There is nothing at this address.") {
+					t.Fatalf("%s %s validator %q: %d %s", method, path, match, w.Code, w.Body.String())
+				}
 			}
 		}
 	}
