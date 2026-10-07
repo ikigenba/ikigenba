@@ -11,7 +11,8 @@ types; and the platform's button feedback script, `/_appkit/feedback.js`,
 which every page loads with or without a launcher, makes an enabled button
 visibly react when the user presses it. The stylesheet a page links is not
 script: it changes how the content
-looks, never what the content is. An nginx gate in front of dummy
+looks, never what the content is; nor is the icon a page links, the
+platform's favicon, which a browser shows in the page's tab. An nginx gate in front of dummy
 authenticates every request and sets `X-User-Id` and `X-User-Email` on the
 request it passes upstream; a sibling app calling dummy forwards the ones it
 received (`S2`). dummy trusts those two headers absolutely and has no
@@ -126,11 +127,12 @@ decides what goes into the banner, and the platform how it is drawn.
 
 Every HTML page dummy sends — the panel and every page with the banner: the
 404, the 405, the 415, and the 422 redraw (`S5`) — links `/_appkit/theme.css`
-as its stylesheet, loads `/_appkit/feedback.js`, and declares the phone-width
+as its stylesheet, links `/_appkit/favicon.svg` as its icon, loads
+`/_appkit/feedback.js`, and declares the phone-width
 viewport, so a phone shows it at the phone's own width rather than as a
 shrunken desktop page. The missing-header 500 and the 503, being bare text,
 have none of them. The stylesheet, the fonts it loads, the launcher's script,
-and the button feedback script are the platform's shared files, served by
+the button feedback script, and the favicon are the platform's shared files, served by
 dummy under `/_appkit/` (`S8`); a page makes no request to any third party.
 dummy serves nothing under `/assets/`: a path there is a path that does not
 exist, like any other.
@@ -159,7 +161,7 @@ every event writes nothing to stderr at all (`S2`).
 The routes are `GET /`, which sends the caller to the panel; `GET /widgets`,
 the panel page; `GET /widgets/table`, the table fragment (`S4`); `POST
 /widgets`, which creates a widget (`S5`); `/_appkit/<name>`, the stylesheet,
-launcher script, button feedback script, fonts, and licences that every
+launcher script, button feedback script, favicon, fonts, and licences that every
 page shares (`S8`); and
 `/mcp`, exactly that path, the MCP endpoint that offers the widgets to MCP
 clients, whose answers, to every method, are `S9-mcp.md`'s and never one of
@@ -216,8 +218,8 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `dummy` that links
-`/_appkit/theme.css` as its stylesheet, loads `/_appkit/feedback.js`, and
-declares the phone-width viewport. Its banner holds the mark, whose text is
+`/_appkit/theme.css` as its stylesheet, links `/_appkit/favicon.svg` as its
+icon, loads `/_appkit/feedback.js`, and declares the phone-width viewport. Its banner holds the mark, whose text is
 `ikigenba` and which names the service `dummy`; the profile link, labelled
 `Profile` and titled `mg@example.com`, leading to `http://localhost:3001/`;
 and the sign-out button reading `Sign out` in a form that POSTs to
@@ -678,8 +680,8 @@ Content-Type: text/html; charset=utf-8
 Status 404. The body is an HTML document with the same banner and footer as
 the panel — the mark, the profile link titled `mg@example.com` leading to
 `http://localhost:3001/`, and the sign-out button POSTing to
-`http://localhost:3001/logout`, with the same title, stylesheet link, feedback
-script, and viewport as every page (above) — which, between the banner and
+`http://localhost:3001/logout`, with the same title, stylesheet link, icon link,
+feedback script, and viewport as every page (above) — which, between the banner and
 the footer, says the page was not found and carries a link to `/widgets`.
 
 Preconditions:
@@ -716,8 +718,8 @@ Content-Type: text/html; charset=utf-8
 Status 405. The body is an HTML document with the same banner and footer as
 the panel — the mark, the profile link titled `mg@example.com` leading to
 `http://localhost:3001/`, and the sign-out button POSTing to
-`http://localhost:3001/logout` — with the same title, stylesheet link, feedback
-script, and viewport as every page (above), which, between the banner and
+`http://localhost:3001/logout` — with the same title, stylesheet link, icon link,
+feedback script, and viewport as every page (above), which, between the banner and
 the footer, says the method is not allowed and carries a link to `/widgets`.
 `PUT` and `PATCH` are refused the same way.
 

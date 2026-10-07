@@ -38,7 +38,7 @@ A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
 new row is visible. A submission dummy reads and rejects is answered `422`
 whose body is the panel page re-rendered with the same banner and footer as a `GET
-/widgets` — the same title, stylesheet link, feedback script, and viewport,
+/widgets` — the same title, stylesheet link, icon link, feedback script, and viewport,
 and after the banner the page's `Widgets` heading with its subtitle
 counting the widgets as they are (`3 widgets · refreshes every 5 seconds`
 for those three, `S3`), and beneath it the table exactly as it was and
@@ -464,8 +464,8 @@ Content-Type: text/html; charset=utf-8
 Status 415. The body is an HTML document with the same banner and footer as
 the panel — the mark, the profile link titled `mg@example.com` leading to
 `http://localhost:3001/`, and the sign-out button POSTing to
-`http://localhost:3001/logout`, with the title, stylesheet link, feedback
-script, and viewport every page carries (`S3`) — which, between the banner
+`http://localhost:3001/logout`, with the title, stylesheet link, icon link,
+feedback script, and viewport every page carries (`S3`) — which, between the banner
 and the footer, says the media type is not supported and carries a link to
 `/widgets`. The
 caller is identified, so this failure is a page with that banner, as the 404 and

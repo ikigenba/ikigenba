@@ -43,7 +43,8 @@ and the fonts that stylesheet loads are under the same
 `https://dummy.sbx.ikigenba.dev/_appkit/` (`S8-assets.md`): a browser showing
 the panel requests its style from dummy's own host and from no other origin,
 Google Fonts included. Its button feedback script is
-`https://dummy.sbx.ikigenba.dev/_appkit/feedback.js`, from the same host. In
+`https://dummy.sbx.ikigenba.dev/_appkit/feedback.js` and its icon
+`https://dummy.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host. In
 the banner, the profile link leads to
 `https://auth.sbx.ikigenba.dev/`, their profile in auth on the same space, and
 the `Sign out` button is in a form that POSTs to
