@@ -28,7 +28,7 @@ import (
 )
 
 // Version is the release version shared by every interface.
-var Version = "v0.2.0"
+var Version = "v0.2.1"
 
 // Command constants define products and exit statuses.
 const (
