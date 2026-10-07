@@ -335,6 +335,21 @@ func assertMarkupCommon(t *testing.T, body, written, path, email string) {
 
 const markupSummary = "Git repositories for the suite's content. Agents create repositories with the tools below and push to them with ordinary git over HTTPS. Each repository belongs to the user who created it, and only that user can see it or reach it."
 
+// R-QSP1-T3N8
+func assertMarkupIcon(t *testing.T, written string) {
+	t.Helper()
+	var icons []markupTag
+	for _, tag := range markupNamed(written, "link", false) {
+		if tag.has("rel", "icon") {
+			icons = append(icons, tag)
+		}
+	}
+	body := markupNamed(written, "body", false)
+	if len(icons) != 1 || len(body) == 0 || icons[0].end > body[0].start || !icons[0].has("href", "/_appkit/favicon.svg") || !icons[0].has("type", "image/svg+xml") {
+		t.Fatalf("favicon link count/location/href/type: %v", icons)
+	}
+}
+
 var markupToolNames = []string{"list", "show", "status", "create", "rename", "delete"}
 var markupToolDescriptions = []string{
 	"The repositories you own, by name.",
@@ -542,6 +557,7 @@ func TestMarkupPages(t *testing.T) {
 					}
 					body := w.Body.String()
 					written := markupWritten(t, body, banner)
+					assertMarkupIcon(t, written)
 					assertMarkupCommon(t, body, written, path, email)
 					assertMarkupLauncher(t, body, banner)
 					if path == "/" {

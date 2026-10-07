@@ -28,17 +28,18 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
 )
 
-// R-AE0Z-CVH4
+// R-R8JQ-S4A9
 func TestIdentityBeforeEveryRoute(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
 	before := f.gitCalls.Load()
-	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/_appkit/feedback.js", "/_appkit/nope", "/_appkit", "/mcp", "/events/", "/declarations/", "/notes.git/info/refs?service=git-upload-pack", "/nope"} {
+	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/feedback.js", "/_appkit/favicon.svg", "/_appkit/InterVariable.woff2", "/_appkit/InterVariable-Italic.woff2", "/_appkit/JetBrainsMono.woff2", "/_appkit/OFL.txt", "/_appkit/TABLER-LICENSE.txt", "/_appkit/nope", "/_appkit", "/favicon.ico", "/mcp", "/events/", "/declarations/", "/notes.git/info/refs?service=git-upload-pack", "/nope"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, values := range [][]string{nil, {""}, {"", "later-user"}} {
 				r := httptest.NewRequest(method, path, strings.NewReader(`{"name":"intruder"}`))
 				r.Header["X-User-Id"] = values
 				r.Header.Set("Content-Type", "application/json")
+				r.Header.Set("If-None-Match", "*")
 				r.Header.Set("X-Request-Id", "missing-user")
 				got, baseline := httptest.NewRecorder(), httptest.NewRecorder()
 				h.ServeHTTP(got, r.Clone(r.Context()))
@@ -63,12 +64,12 @@ func TestIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-DXZO-AO7B
+// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-RC7F-XFIC
 func TestExactRoutesAndNotFound(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
 	before := f.gitCalls.Load()
-	paths := []string{"/nope", "/assets/theme.css", "/mcp/", "/mcp/tool", "/about/", "/notes", "/notes/info/refs", "/_appkit", "/index.html", "//", "/x/../", "/x/notes.git/info/refs", "/notes.gitx"}
+	paths := []string{"/nope", "/assets/theme.css", "/assets/favicon.svg", "/favicon.ico", "/mcp/", "/mcp/tool", "/about/", "/notes", "/notes/info/refs", "/_appkit", "/index.html", "//", "/x/../", "/x/notes.git/info/refs", "/notes.gitx"}
 	for _, path := range paths {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := httptest.NewRequest(method, "http://misleading.test"+path+"?route=/mcp", strings.NewReader("ignored"))
@@ -271,7 +272,7 @@ func TestNoSiblingConnections(t *testing.T) {
 	}
 }
 
-// R-R4B1-UCYG R-8394-513A R-HSN6-LZ13 R-R6QU-LWFU R-RCUC-IR5B
+// R-R4B1-UCYG R-8394-513A R-RFV5-2QQF R-R6QU-LWFU R-RCUC-IR5B
 func TestRequestTraceAcrossRoutes(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -283,6 +284,9 @@ func TestRequestTraceAcrossRoutes(t *testing.T) {
 		{"HEAD", "/", "user", 200}, {"HEAD", "/about", "user", 200},
 		{"GET", "/_appkit/theme.css", "user", 200}, {"HEAD", "/_appkit/theme.css", "user", 200},
 		{"GET", "/_appkit/feedback.js", "user", 200}, {"HEAD", "/_appkit/feedback.js", "user", 200},
+		{"GET", "/_appkit/favicon.svg", "user", 200}, {"HEAD", "/_appkit/favicon.svg", "user", 200},
+		{"POST", "/_appkit/favicon.svg", "user", 405}, {"GET", "/_appkit/favicon.svg", "", 500},
+		{"GET", "/favicon.ico", "user", 404}, {"POST", "/assets/favicon.svg", "user", 404},
 		{"POST", "/_appkit/feedback.js", "user", 405}, {"GET", "/_appkit/nope", "user", 404},
 		{"HEAD", "/_appkit/nope", "", 500},
 		{"POST", "/about", "user", 405}, {"GET", "/nope", "user", 404},
@@ -317,13 +321,27 @@ func TestRequestTraceAcrossRoutes(t *testing.T) {
 			t.Fatal("unknown-repository byte count fixture wrong")
 		}
 	}
+	r := httptest.NewRequest("GET", "/_appkit/favicon.svg?ignored=yes", strings.NewReader("ignored payload"))
+	r.Header.Set("X-User-Id", "user")
+	r.Header.Set("X-Request-Id", "favicon-revalidated")
+	r.Header.Set("If-None-Match", "*")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusNotModified || w.Body.Len() != 0 {
+		t.Fatalf("revalidated favicon: %d %q", w.Code, w.Body.String())
+	}
+	events := webEventsFor(f.events(t), "favicon-revalidated")
+	assertWebTrace(t, events, "user", "GET", r.URL.Path, http.StatusNotModified, 0, 0)
+	if len(events) != 2 {
+		t.Fatalf("revalidated favicon emitted domain event: %v", events)
+	}
 	repo := f.repo(t, "user", "notes")
 	f.cfg.Limits.Drain()
-	w := webRequest(h, "GET", "/notes.git/info/refs?service=git-upload-pack", "user", "drained", nil)
+	w = webRequest(h, "GET", "/notes.git/info/refs?service=git-upload-pack", "user", "drained", nil)
 	if w.Code != 503 {
 		t.Fatalf("draining: %d %q for %s", w.Code, w.Body.String(), repo.Name)
 	}
-	events := webEventsFor(f.events(t), "drained")
+	events = webEventsFor(f.events(t), "drained")
 	assertWebTrace(t, events, "user", "GET", "/notes.git/info/refs", 503, 0, int64(w.Body.Len()))
 	if len(events) != 3 || events[1].Name != "operation.rejected" {
 		t.Fatalf("draining trace: %v", events)

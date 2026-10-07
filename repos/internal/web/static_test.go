@@ -14,6 +14,7 @@ var webSharedFiles = map[string]string{
 	"theme.css":                  "text/css; charset=utf-8",
 	"launcher.js":                "text/javascript; charset=utf-8",
 	"feedback.js":                "text/javascript; charset=utf-8",
+	"favicon.svg":                "image/svg+xml",
 	"InterVariable.woff2":        "font/woff2",
 	"InterVariable-Italic.woff2": "font/woff2",
 	"JetBrainsMono.woff2":        "font/woff2",
@@ -21,11 +22,11 @@ var webSharedFiles = map[string]string{
 	"TABLER-LICENSE.txt":         "text/plain; charset=utf-8",
 }
 
-// R-HK3V-XKU8 R-76T4-MSOY
+// R-QXKN-C6M0 R-76T4-MSOY
 func TestStaticDelegation(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
-	paths := []string{"/_appkit/", "/_appkit/nope", "/_appkit/THEME.CSS", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/FEEDBACK.JS", "/_appkit/feedback.js/", "/%5fappkit/%66eedback.js", "/_appkit/../feedback.js"}
+	paths := []string{"/_appkit/", "/_appkit/nope", "/_appkit/THEME.CSS", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/FEEDBACK.JS", "/_appkit/feedback.js/", "/%5fappkit/%66eedback.js", "/%5fappkit/%66avicon.svg", "/_appkit/FAVICON.SVG", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/../feedback.js"}
 	for name := range webSharedFiles {
 		paths = append(paths, page.StaticPrefix+name)
 	}
@@ -46,7 +47,7 @@ func TestStaticDelegation(t *testing.T) {
 	}
 }
 
-// R-HLBS-BCKX R-798X-EC6C R-7AGT-S3X1 R-HNRL-2W2B
+// R-R00G-3Q3E R-798X-EC6C R-7AGT-S3X1 R-R63Y-0KSV
 func TestSharedFilesAndHead(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -93,7 +94,7 @@ func assertWebETag(t *testing.T, h http.Header) {
 	}
 }
 
-// R-7BOQ-5VNQ R-HMJO-P4BM
+// R-7BOQ-5VNQ R-R2G8-V9KS
 func TestSharedRevalidation(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -118,11 +119,13 @@ func TestSharedRevalidation(t *testing.T) {
 			}
 		}
 		for _, miss := range []string{"\"other\"", ", W/\"first\", \"second\", "} {
-			for _, modified := range []string{"Mon, 01 Jan 1900 00:00:00 GMT", "Tue, 01 Jan 2100 00:00:00 GMT"} {
+			for _, modified := range []string{"", "Mon, 01 Jan 1900 00:00:00 GMT", "Tue, 01 Jan 2100 00:00:00 GMT", "invalid"} {
 				r := httptest.NewRequest("GET", path, nil)
 				r.Header.Set("X-User-Id", "user")
 				r.Header.Set("If-None-Match", miss)
-				r.Header.Set("If-Modified-Since", modified)
+				if modified != "" {
+					r.Header.Set("If-Modified-Since", modified)
+				}
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, r)
 				if w.Code != 200 || w.Header().Get("ETag") != tag || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{webSharedFiles[name]}) || w.Body.String() != get.Body.String() {
@@ -151,7 +154,7 @@ func TestStaticRefusals(t *testing.T) {
 				}
 			}
 		}
-		for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS"} {
+		for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/FAVICON.SVG"} {
 			for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 				r := httptest.NewRequest(method, path, nil)
 				r.Header.Set("X-User-Id", "user")
