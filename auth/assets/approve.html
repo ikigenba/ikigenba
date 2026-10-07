@@ -18,7 +18,7 @@
      the primary) and button.secondary[type=submit][name=decision][value=deny]
      "Deny". The banner follows <body> and the footer precedes </body> with
      nothing between. No other form, button, select, a, svg or script. */}}
-{{define "approve"}}<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/_appkit/theme.css"><link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg"><script src="/_appkit/feedback.js" defer></script><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{template "banner" .Banner}}<main>
+{{define "approve"}}<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg"><script src="/_appkit/feedback.js" defer></script><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{template "banner" .Banner}}<main>
 <section class="card">
 <header><h2>Connect {{.ClientName}}</h2></header>
 <p>{{.ClientName}} wants to act as you at the MCP gateway, {{.Gateway}}, until {{.Until}}.</p>
