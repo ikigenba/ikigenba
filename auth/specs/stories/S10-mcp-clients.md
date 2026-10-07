@@ -416,10 +416,14 @@ Its content's visible text is the heading `Connect Claude Code`, the sentence
 `Claude Code wants to act as you at the MCP gateway, mcp.sbx.ikigenba.dev, until 2027-01-05.`,
 the sentence
 `Approve only if you started this from a client you trust. You can revoke it from your profile at any time.`,
-and two buttons, `Approve` and `Deny`. The client's name is its registered
-name, shown as text exactly as registered and never read as markup. The host is
+the sentence `After you approve, you return to localhost:53682.`, and two
+buttons, `Approve` and `Deny`. The client's name is its registered name, shown
+as text exactly as registered and never read as markup. The gateway's host is
 the MCP origin's host name, a port included when the origin has one, and the
-date is 90 days after the page is drawn, in UTC, as `YYYY-MM-DD`. Both buttons
+date is 90 days after the page is drawn, in UTC, as `YYYY-MM-DD`. The host the
+person returns to is the resolved redirect URI's host as that URI writes it, a
+port included when it has one and nothing else of the URI, so for a client
+registered at an `https` URI the page names that URI's host. Both buttons
 submit one form whose method is POST and whose action is `/authorize`. The form
 carries, as fields the person does not see, `response_type` `code`, `client_id`
 `<client-id>`, `redirect_uri` `http://localhost:53682/callback`,
@@ -463,12 +467,13 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the approve page of `A signed-in person is asked to
-approve an MCP client`, except that its form's `redirect_uri` field is
-`http://localhost:61000/callback`. A requested URI that differs from the
-registered one in anything but the port — its host (`127.0.0.1` for
-`localhost`), its scheme, or its path — does not match (`An MCP client asks
-for authorization with an unknown client or a redirect URI it did not
-register`).
+approve an MCP client`, except that it reads
+`After you approve, you return to localhost:61000.` and its form's
+`redirect_uri` field is `http://localhost:61000/callback`. A requested URI
+that differs from the registered one in anything but the port — its host
+(`127.0.0.1` for `localhost`), its scheme, or its path — does not match (`An
+MCP client asks for authorization with an unknown client or a redirect URI it
+did not register`).
 
 Preconditions:
 
