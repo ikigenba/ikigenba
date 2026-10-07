@@ -8,14 +8,14 @@ import (
 	"github.com/ikigenba/ikigenba/mcp"
 )
 
-// R-YA7M-0RL7
+// R-RE1G-4RW8
 func TestAssets(t *testing.T) {
 	files := func(assets func() fs.FS) fs.FS { return assets() }(mcp.Assets)
 	entries, err := fs.ReadDir(files, ".")
-	if err != nil || len(entries) != 3 {
+	if err != nil || len(entries) != 1 {
 		t.Fatalf("embedded files: %v, %v", entries, err)
 	}
-	for i, name := range []string{"connect.html", "setup.sh", "setup.txt"} {
+	for i, name := range []string{"connect.html"} {
 		if entries[i].Name() != name || !entries[i].Type().IsRegular() {
 			t.Fatalf("embedded entry %d: %v", i, entries[i])
 		}

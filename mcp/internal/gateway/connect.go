@@ -18,7 +18,7 @@ var appkitStatic = page.Static()
 type connectData struct {
 	Banner   page.Banner
 	Endpoint string
-	SetupURL string
+	Server   string
 }
 
 func serveAssets(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +51,7 @@ func serveConnect(w http.ResponseWriter, r *http.Request, cfg Config, entries se
 	}
 	origin := strings.TrimSuffix(addresses.TokenURL, "/")
 	u := page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: addresses.TokenURL, LogoutURL: origin + "/logout"}
-	data := connectData{Banner: cfg.Banner(u), Endpoint: addresses.Endpoint, SetupURL: addresses.Origin + "/setup.txt"}
+	data := connectData{Banner: cfg.Banner(u), Endpoint: addresses.Endpoint, Server: addresses.Server}
 	var body bytes.Buffer
 	if err := connectTemplates.ExecuteTemplate(&body, "connect", data); err != nil {
 		panic(err)

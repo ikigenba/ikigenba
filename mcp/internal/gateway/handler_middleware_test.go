@@ -69,7 +69,7 @@ func TestHandlerRequestTrail(t *testing.T) {
 	writer, capture := handlerTelemetry(t, nil)
 	h := gateway.Handler(handlerConfig(t, writer))
 	cases := []struct{ path, method, user, id string }{
-		{"/", "GET", "first", "provided"}, {"/", "HEAD", "", ""}, {"/", "POST", "", ""}, {"/setup.txt", "GET", "", ""}, {"/setup.sh", "GET", "person", ""}, {"/setup.sh", "HEAD", "", ""}, {"/setup.txt", "POST", "", ""}, {"/_appkit/theme.css", "GET", "person", ""}, {"/_appkit/theme.css", "GET", "", ""}, {"/unknown", "CUSTOM", "person", ""}, {"/setup.txt/x", "GET", "", ""}, {"/mcp/a,,b", "POST", "person", ""}, {"/mcp", "DELETE", "person", ""}, {"/mcp/a,,b", "POST", "", ""},
+		{"/", "GET", "first", "provided"}, {"/", "HEAD", "", ""}, {"/", "POST", "", ""}, {"/.well-known/oauth-protected-resource", "GET", "", ""}, {"/.well-known/oauth-protected-resource/mcp", "GET", "person", ""}, {"/.well-known/oauth-protected-resource/mcp/a,,b", "HEAD", "", ""}, {"/.well-known/oauth-protected-resource/", "POST", "", ""}, {"/_appkit/theme.css", "GET", "person", ""}, {"/_appkit/theme.css", "GET", "", ""}, {"/unknown", "CUSTOM", "person", ""}, {"/setup.txt/x", "GET", "", ""}, {"/mcp/a,,b", "POST", "person", ""}, {"/mcp", "DELETE", "person", ""}, {"/mcp/a,,b", "POST", "", ""},
 	}
 	for _, tc := range cases {
 		before := len(capture.Events())

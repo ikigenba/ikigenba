@@ -68,8 +68,8 @@ func Handler(cfg Config) http.Handler {
 			cfg.MCP.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestStateKey{}, state)))
 			return
 		}
-		if path == "/setup.txt" || path == "/setup.sh" {
-			serveSetup(w, r, entries)
+		if path == metadataPath || strings.HasPrefix(path, metadataPath+"/") {
+			serveMetadata(w, r, entries)
 			return
 		}
 		if strings.HasPrefix(path, page.StaticPrefix) {

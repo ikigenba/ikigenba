@@ -272,8 +272,8 @@ func TestMarkupBareAttributeOccurrences(t *testing.T) {
 // R-TDDS-AX5P R-S953-OHOS R-SAD0-29FH
 // R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-D1VT-C7H9 R-D33P-PZ7Y R-T16S-H7QR
 // R-KYQ9-8QIO
-// R-UDJA-V6WH R-UIEW-E9V9 R-UER7-8YN6 R-UH70-0I4K R-UFZ3-MQDV
-// R-UKUP-5TCN R-T4UH-MIYU R-TC5V-X5F0
+// R-UDJA-V6WH R-RLCU-FECE R-RP0J-KPKH R-RQ8F-YHB6 R-RSO8-Q0SK
+// R-RNSN-6XTS R-RRGC-C91V R-T4UH-MIYU R-TC5V-X5F0
 func TestPlainPageMarkupHooksAndText(t *testing.T) {
 	for _, installed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "empty", true: "services"}[installed], func(t *testing.T) {
@@ -367,23 +367,23 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 				t.Fatal("endpoint not code")
 			}
 			checkContent(t, written, endpointTag, endpoint)
-			profile := oneTag(t, attributed(written, "id", "profile-link"))
-			if profile.name != "a" || !slices.Contains(profile.attrs["href"], b.ProfileURL) {
-				t.Fatalf("profile link %#v", profile)
+			if len(readTags(written, "a", false)) != 0 {
+				t.Fatal("link in written markup")
 			}
-			checkContent(t, written, profile, "profile")
 			headings := readTags(written, "h2", false)
-			if len(headings) != 2 {
+			if len(headings) != 3 {
 				t.Fatalf("headings: %d", len(headings))
 			}
-			checkContent(t, written, headings[0], "Automatic Install")
-			checkContent(t, written, headings[1], "Manual Install")
-			setupURL := oneTag(t, attributed(written, "id", "setup-url"))
-			if setupURL.name != "code" || headings[0].start <= h1.start || headings[1].start <= h1.start || setupURL.start <= headings[0].start || setupURL.start >= headings[1].start || endpointTag.start <= headings[1].start || profile.start <= headings[1].start {
-				t.Fatal("section hooks out of order")
+			ids := []string{"claude-code", "codex", "endpoint"}
+			commands := []string{"claude mcp add --scope project --transport http space-test " + endpoint, "codex mcp add space-test --url " + endpoint, endpoint}
+			for i, heading := range headings {
+				checkContent(t, written, heading, []string{"Claude Code", "Codex", "Other clients"}[i])
+				code := oneTag(t, attributed(written, "id", ids[i]))
+				if code.name != "code" || heading.start <= h1.start || code.start <= heading.start || i < 2 && code.start >= headings[i+1].start {
+					t.Fatal("section hooks out of order")
+				}
+				checkContent(t, written, code, commands[i])
 			}
-			setupAddress := "https://mcp.space.test:8443/setup.txt"
-			checkContent(t, written, setupURL, setupAddress)
 			var blocks []markupTag
 			for _, tag := range readTags(written, "", false) {
 				for _, classes := range tag.attrs["class"] {
@@ -393,7 +393,7 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 					}
 				}
 			}
-			if len(blocks) != 2 {
+			if len(blocks) != 3 {
 				t.Fatalf("copy blocks: %d", len(blocks))
 			}
 			for i, block := range blocks {
@@ -407,20 +407,18 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 					t.Fatal("copy button type")
 				}
 				checkContent(t, content, button, "Copy")
-				id := []string{"setup-url", "endpoint"}[i]
+				id := ids[i]
 				oneTag(t, attributed(content, "id", id))
 			}
 			text := visibleText(written)
 			if strings.Contains(text, normalise(r.Header.Get("X-User-Email"))) {
 				t.Fatal("email in written visible text")
 			}
-			for _, phrase := range []string{"Connect MCP Client", "Automatic Install", "Ask your agent to follow these instructions:", setupAddress, "Copy", "Manual Install", endpoint, "Copy", "Every request must send the header Authorization: Bearer <token>.", "Create a token on your profile."} {
-				i := strings.Index(text, phrase)
-				if i < 0 {
-					t.Fatalf("missing/out of order visible phrase %q in %q", phrase, text)
-				}
-				text = text[i+len(phrase):]
+			wantText := strings.Join([]string{"Connect MCP Client", "Claude Code", commands[0], "Copy", "Codex", commands[1], "Copy", "Other clients", endpoint, "Copy"}, " ")
+			if text != wantText {
+				t.Fatalf("visible text %q want %q", text, wantText)
 			}
+
 		})
 	}
 }
@@ -465,7 +463,7 @@ func answer(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-// R-YF37-JUJZ R-SK47-4FD1
+// R-RF9C-IJMX R-SK47-4FD1
 func TestGatewayTemplateSet(t *testing.T) {
 	templates, err := page.Templates().ParseFS(assets.Assets(), "*.html")
 	if err != nil {
@@ -475,12 +473,12 @@ func TestGatewayTemplateSet(t *testing.T) {
 		t.Fatal("connect template absent")
 	}
 	var out bytes.Buffer
-	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "SetupURL": "https://mcp.example.test/setup.txt"}); err != nil {
+	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "Server": "example-test"}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// R-SNRW-9QL4 R-UCBE-HF5S R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
+// R-SNRW-9QL4 R-RIX1-NUV0 R-SBKW-G166 R-SCSS-TSWV R-SE0P-7KNK R-SF8L-LCE9 R-SHOE-CVVN
 func TestConnectExactlyRendersRequestData(t *testing.T) {
 	for _, proto := range []string{"", "http", "https", "HTTP", "http, https", " https"} {
 		for _, host := range []string{"mcp.space.test:8443", "mcp.space.test:", "mcp.", "space.test:word", "mcp.mcp.space.test", "mcp.space<&>.test:8443"} {
@@ -513,7 +511,7 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 						t.Fatalf("banner calls: %#v want %#v", users, u)
 					}
 					endpoint := scheme + "://" + host + "/mcp"
-					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "SetupURL": scheme + "://" + host + "/setup.txt"}
+					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "Server": map[string]string{"mcp.space.test:8443": "space-test", "mcp.space.test:": "space-test", "mcp.": "mcp-", "space.test:word": "space-test-word", "mcp.mcp.space.test": "mcp-space-test", "mcp.space<&>.test:8443": "space----test"}[host]}
 					set, err := page.Templates().ParseFS(assets.Assets(), "*.html")
 					if err != nil {
 						t.Fatal(err)
@@ -556,10 +554,10 @@ func TestConnectRejectsOtherMethods(t *testing.T) {
 	}
 }
 
-// R-SMJZ-VYUF R-YL6P-GP9G
+// R-SMJZ-VYUF R-RK4Y-1MLP
 func TestUnknownPathsReturnExact404(t *testing.T) {
 	h := gateway.Handler(pageConfig(t, "", basicBanner))
-	for _, path := range []string{"/_appkit", "/assets/", "/assets/connect.html", "/logout", "/index.html", "/setup", "/setup.txt/", "/setup.sh/", "/setup.txt/x", "/setup.sh/x", "//", "/nope/", "/x/../", "/./", "/x/%2e%2e/", "/%61ssets/theme.css"} {
+	for _, path := range []string{"/_appkit", "/assets/", "/assets/connect.html", "/logout", "/index.html", "/setup", "/setup.txt", "/setup.sh", "/.well-known", "/.well-known/", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resourcex", "/setup.txt/", "/setup.sh/", "/setup.txt/x", "/setup.sh/x", "//", "/nope/", "/x/../", "/./", "/x/%2e%2e/", "/%61ssets/theme.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "OPTIONS"} {
 			for _, identity := range []string{"signed", "absent", "empty"} {
 				r := pageRequest(method, path+"?ignored=yes")
@@ -601,7 +599,7 @@ func TestNonMCPRoutesNeitherSetCookiesNorContactBackends(t *testing.T) {
 	entry := service("alpha", "backend", true, true)
 	entry["socket"] = socket
 	h := gateway.Handler(pageConfig(t, servicesFile(t, []map[string]any{entry}), basicBanner))
-	for _, path := range []string{"/", "/setup.txt", "/setup.sh", "/_appkit/theme.css", "/_appkit/../theme.css", "/logout", "/assets/connect.html", "/unknown"} {
+	for _, path := range []string{"/", "/setup.txt", "/setup.sh", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp/a,,b", "/_appkit/theme.css", "/_appkit/../theme.css", "/logout", "/assets/connect.html", "/unknown"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			for _, user := range []string{"person", ""} {
 				r := pageRequest(method, path)
@@ -671,23 +669,33 @@ func TestConnectWrittenMarkupIgnoresOtherServices(t *testing.T) {
 	}
 }
 
-// R-UFZ3-MQDV
-func TestConnectProfileHookUsesBannerProfileURL(t *testing.T) {
-	for _, url := range []string{"", "http://accounts.test:8080/base/", "https://accounts.test/base/"} {
-		cfg := pageConfig(t, "", func(u page.User) page.Banner {
-			b := basicBanner(u)
-			b.ProfileURL = url
-			return b
-		})
-		r := pageRequest("GET", "/")
-		b := basicBanner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: url, LogoutURL: "https://auth.space.test/logout"})
-		body := answer(gateway.Handler(cfg), r).Body.String()
-		written := strings.Replace(body, renderAppkit(t, "banner", b), "", 1)
-		written = strings.Replace(written, renderAppkit(t, "footer", b), "", 1)
-		profile := oneTag(t, attributed(written, "id", "profile-link"))
-		if profile.name != "a" || !slices.Contains(profile.attrs["href"], url) {
-			t.Fatalf("profile hook %#v, want href %q", profile, url)
+// R-6P2M-PC2C R-RHP5-A34B
+func TestConnectServerNamesAndCommands(t *testing.T) {
+	h := gateway.Handler(pageConfig(t, "", basicBanner))
+	for _, tc := range []struct{ host, server string }{
+		{"mcp.sbx.ikigenba.dev", "sbx-ikigenba-dev"},
+		{"mcp.sbx.ikigenba.dev:443", "sbx-ikigenba-dev"},
+		{"mcp.SBX.Ikigenba.Dev", "sbx-ikigenba-dev"},
+		{"MCP.sbx.ikigenba.dev", "mcp-sbx-ikigenba-dev"},
+		{"mcp.wip-mcp.localhost:7403", "wip-mcp-localhost"},
+		{"mcp.Az09_-é界.test:12", "az09-----test"},
+		{"mcp.a\xff\xfe.test", "a---test"},
+		{"mcp.mcp.A.Test:", "mcp-a-test"},
+		{"mcp.a.test:port", "a-test-port"},
+		{"mcp.", "mcp-"},
+	} {
+		for _, proto := range []string{"http", "https", "HTTPS", ""} {
+			r := pageRequest("GET", "/")
+			r.Host = tc.host
+			r.Header.Set("X-Forwarded-Proto", proto)
+			body := answer(h, r).Body.String()
+			scheme := "https"
+			if proto == "http" {
+				scheme = "http"
+			}
+			endpoint := scheme + "://" + tc.host + "/mcp"
+			checkContent(t, body, oneTag(t, attributed(body, "id", "claude-code")), "claude mcp add --scope project --transport http "+tc.server+" "+endpoint)
+			checkContent(t, body, oneTag(t, attributed(body, "id", "codex")), "codex mcp add "+tc.server+" --url "+endpoint)
 		}
-		checkContent(t, written, profile, "profile")
 	}
 }
