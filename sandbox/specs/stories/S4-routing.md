@@ -1,6 +1,6 @@
 # Stories — routing
 
-Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, neither is the default app, and neither manifest sets `guests = true`. When `auth` is present, every request for an app other than `auth` is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` (or, on the general paths of an app that welcomes guests, `/check/open`) answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect, as on a host, and a 401 on a path of git's smart HTTP protocol, one ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, draws a Basic challenge in its place. On the server of an app whose manifest sets `guests = true`, every other path puts the same subrequest to auth's `/check/open` instead, which answers as `/check` does except that where `/check` would answer 401 it answers 200 with no `X-User-Id` and no `X-User-Email`, so no 401 arises there and no browser is sent to sign in; `/mcp`, every path under `/mcp/`, and git's three paths keep `/check` and their challenges. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does.
+Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, neither is the default app, and neither manifest sets `guests = true`. When `auth` is present, every request for an app other than `auth` is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` (or, on the general paths of an app that welcomes guests, `/check/open`) answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect and a 403 from `/check` there draws an `invalid_token` bearer challenge in its place, each naming the MCP gateway's protected-resource metadata at the sandbox's own `mcp` name, as on a host, and a 401 on a path of git's smart HTTP protocol, one ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, draws a Basic challenge in its place. On the server of an app whose manifest sets `guests = true`, every other path puts the same subrequest to auth's `/check/open` instead, which answers as `/check` does except that where `/check` would answer 401 it answers 200 with no `X-User-Id` and no `X-User-Email`, so no 401 arises there and no browser is sent to sign in; `/mcp`, every path under `/mcp/`, and git's three paths keep `/check` and their challenges. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does.
 
 ## A browser reaches an app at its own name
 
@@ -236,7 +236,7 @@ Postconditions:
 
 ## An MCP client reaches an app without a credential
 
-An MCP client is a program, not a browser, and cannot follow a redirect to a sign-in page. So under `/mcp`, a 401 from `/check` is answered `401` by nginx itself, with a challenge naming the scheme to use and one line saying what to send. `/mcp` itself and every path under `/mcp/` behave the same; a path that only begins with the same letters, such as `/mcpx`, is sent to sign in like any other. The challenge is given on every app's server auth stands in front of, whatever the app's manifest's `mcp` holds, as on a host.
+An MCP client is a program, not a browser, and cannot follow a redirect to a sign-in page. So under `/mcp`, a 401 from `/check` is answered `401` by nginx itself, with a challenge naming the scheme to use and where to learn how to get a token — the MCP gateway's protected-resource metadata, at the sandbox's own `mcp` name and port whichever app was asked and whether or not the checkout holds `mcp` — and one line saying what to send. `/mcp` itself and every path under `/mcp/` behave the same; a path that only begins with the same letters, such as `/mcpx`, is sent to sign in like any other. The challenge is given on every app's server auth stands in front of, whatever the app's manifest's `mcp` holds, as on a host.
 
 Request:
 
@@ -253,7 +253,7 @@ Response:
 ```
 HTTP/1.1 401 Unauthorized
 Content-Type: text/plain
-WWW-Authenticate: Bearer realm="ikigenba"
+WWW-Authenticate: Bearer realm="ikigenba", resource_metadata="http://mcp.wip.localhost:7400/.well-known/oauth-protected-resource"
 ```
 
 Status 401. The body is the one line `authentication required: send Authorization: Bearer <token>` ending in a newline, where `<token>` is those seven characters as written, not a value filled in.
@@ -325,9 +325,9 @@ Postconditions:
 - auth's `/check` received the request's `Authorization` header and no body, with `X-Original-Method: GET`, `X-Original-Host: dummy.wip.localhost` and `X-Original-URI: /notes.git/info/refs?service=git-upload-pack`.
 - dummy received `GET /notes.git/info/refs?service=git-upload-pack` with `X-User-Id` and `X-User-Email` set from auth's answer.
 
-## A client whose credential auth refuses reaches an app
+## An MCP client whose token auth refuses reaches an app
 
-A client auth knows but will not let in, such as one sending a token that is revoked or expired, gets auth's 403 unchanged, under `/mcp` and everywhere else. Only a 401 sends a browser to sign in or draws the MCP or git challenge.
+A client auth knows but will not let in, such as one sending a token that is revoked, expired or issued for another host, is told under `/mcp` that its token is no good and where to get another. An MCP client starts signing in again only on a 401, so nginx answers auth's 403 there with a `401` whose bearer challenge says `invalid_token` and names the MCP gateway's protected-resource metadata, with the same one line as a request with no credential. An expired or revoked token so heals itself: the client's next call prompts its user to sign in. `/mcp` itself and every path under `/mcp/` behave the same, on every app's server auth stands in front of, as on a host.
 
 Request:
 
@@ -336,7 +336,40 @@ $ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:740
 ```
 
 ```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:7400/mcp/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer error="invalid_token", resource_metadata="http://mcp.wip.localhost:7400/.well-known/oauth-protected-resource"
+```
+
+Status 401. The body is the one line `authentication required: send Authorization: Bearer <token>` ending in a newline, where `<token>` is those seven characters as written, not a value filled in.
+
+Preconditions:
+
+- `wip` is up with `auth` and `dummy`, and both services are active.
+- auth's `/check` answers 403 for `ikp_<token>`.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached dummy's socket; auth's `/check` itself answered 403, and only nginx's answer to the client changed.
+
+## A client whose credential auth refuses reaches an app
+
+Outside `/mcp`, a client auth knows but will not let in, such as one sending a token that is revoked or expired, gets auth's 403 unchanged, on an app's general paths and on git's. Only a 401 sends a browser to sign in or draws the git challenge.
+
+Request:
+
+```
 $ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:7400/widgets
+```
+
+```
+$ curl -si -u 'git:ikp_<token>' 'http://dummy.wip.localhost:7400/notes.git/info/refs?service=git-upload-pack'
 ```
 
 Response:
@@ -477,13 +510,9 @@ Postconditions:
 
 ## A client whose credential auth refuses reaches an app that welcomes guests
 
-Welcoming guests admits a request `/check` would answer 401, not one auth refuses with 403. A client sending a token that is revoked or expired gets auth's 403 unchanged, from `/check` under `/mcp` and from `/check/open` everywhere else.
+Welcoming guests admits a request `/check` would answer 401, not one auth refuses with 403. A client sending a token that is revoked or expired gets auth's 403 from `/check/open` unchanged on the app's general paths.
 
 Request:
-
-```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:7400/mcp
-```
 
 ```
 $ curl -si -H 'Authorization: Bearer ikp_<token>' http://dummy.wip.localhost:7400/widgets
@@ -505,11 +534,12 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing reached dummy's socket.
-- The first request was put to `/check`, the second to `/check/open`.
+- The request was put to `/check/open`, not `/check`.
+- Under `/mcp` the same token is put to `/check`, and its 403 draws the `invalid_token` 401 of the `MCP client whose token auth refuses reaches an app` story, exactly as on an app that does not welcome guests.
 
 ## An MCP client reaches an app that welcomes guests without a credential
 
-Welcoming guests opens an app's general paths only. Under `/mcp` the request is still put to `/check`, and its 401 still draws the bearer challenge, as on any other app's server.
+Welcoming guests opens an app's general paths only. Under `/mcp` the request is still put to `/check`, and its 401 still draws the bearer challenge, naming the same metadata, as on any other app's server.
 
 Request:
 
@@ -526,7 +556,7 @@ Response:
 ```
 HTTP/1.1 401 Unauthorized
 Content-Type: text/plain
-WWW-Authenticate: Bearer realm="ikigenba"
+WWW-Authenticate: Bearer realm="ikigenba", resource_metadata="http://mcp.wip.localhost:7400/.well-known/oauth-protected-resource"
 ```
 
 Status 401. The body is the one line `authentication required: send Authorization: Bearer <token>` ending in a newline, where `<token>` is those seven characters as written, not a value filled in.
