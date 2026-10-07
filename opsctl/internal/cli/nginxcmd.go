@@ -37,10 +37,12 @@ host.apex names also answers at the parent of host.name; until that app is
 routed, the parent answers 404. A routed app named auth is the authenticator:
 every other app's block then requires a valid session, checked against auth's
 /check, while auth's own name is not gated. Under /mcp, a request without a
-valid credential is answered 401 instead of being sent to sign in; so is a
-git smart HTTP request, with a Basic challenge so git asks for the token. An
-app whose manifest sets guests admits a request without a credential
-elsewhere, checked against auth's /check/open.
+valid credential, or with one auth refuses, is answered 401 naming the MCP
+gateway's protected-resource metadata instead of being sent to sign in or
+refused; a git smart HTTP request without a credential is answered 401 too,
+with a Basic challenge so git asks for the token. An app whose manifest sets
+guests admits a request without a credential elsewhere, checked against
+auth's /check/open.
 `
 
 func runNginx(args []string, stdout, stderr io.Writer, deps Deps) exitCode {

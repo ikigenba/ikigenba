@@ -112,7 +112,7 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 
 // R-78QR-PFQ3
 // R-WILI-A3EP
-// R-EKHF-6EW1
+// R-W7T2-75GD
 // R-WOP0-6Y46
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
@@ -153,7 +153,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-EKHF-6EW1
+// R-W7T2-75GD
 // R-WOP0-6Y46
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
@@ -226,9 +226,9 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-EKHF-6EW1
+// R-W7T2-75GD
 // R-EPD0-PHUT
-// R-ET0P-UT2W
+// R-W5D9-FLYZ
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -335,7 +335,7 @@ func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	}
 }
 
-// R-EZ47-RNSD
+// R-W90Y-KX72
 func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
@@ -373,7 +373,7 @@ func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	}
 }
 
-// R-F1K0-J79R
+// R-WA8U-YOXR
 func TestRenderOriginalRequestHeadersOnlyInAuthenticatorSubrequest(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1227,7 +1227,12 @@ func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexNa
 		"    }\n\n" +
 		"    location @mcp_unauthorized {\n" +
 		"        default_type text/plain;\n" +
-		"        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\"' always;\n" +
+		"        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\", resource_metadata=\"https://mcp." + hostName + "/.well-known/oauth-protected-resource\"' always;\n" +
+		"        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n" +
+		"    }\n\n" +
+		"    location @mcp_invalid_token {\n" +
+		"        default_type text/plain;\n" +
+		"        add_header   WWW-Authenticate 'Bearer error=\"invalid_token\", resource_metadata=\"https://mcp." + hostName + "/.well-known/oauth-protected-resource\"' always;\n" +
 		"        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n" +
 		"    }\n\n" +
 		"    location @git_unauthorized {\n" +
@@ -1242,11 +1247,15 @@ func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexNa
 }
 
 func wiredProxyLocation(name, location, unauthorized string) string {
+	invalidToken := ""
+	if unauthorized == "@mcp_unauthorized" {
+		invalidToken = "        error_page       403 = @mcp_invalid_token;\n"
+	}
 	return "    location " + location + " {\n" +
 		"        auth_request     /_ikigenba/check;\n" +
 		"        auth_request_set $auth_user_id    $upstream_http_x_user_id;\n" +
 		"        auth_request_set $auth_user_email $upstream_http_x_user_email;\n" +
-		"        error_page       401 = " + unauthorized + ";\n\n" +
+		"        error_page       401 = " + unauthorized + ";\n" + invalidToken + "\n" +
 		"        proxy_pass       http://unix:/run/ikigenba/" + name + ".sock:;\n" +
 		"        proxy_set_header Host              $host;\n" +
 		"        proxy_set_header X-Real-IP         $remote_addr;\n" +
@@ -1437,7 +1446,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-7B6K-GZ7H R-EKHF-6EW1 R-78QR-PFQ3
+// R-7B6K-GZ7H R-W7T2-75GD R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")
@@ -1626,65 +1635,67 @@ func TestUpdateRejectsInvalidApexBeforeHostWork(t *testing.T) {
 	}
 }
 
-// R-F7NI-G1Z8
+// R-WBGR-CGOG
 func TestRenderMCPAndGitReservationsIgnoreManifestMCP(t *testing.T) {
-	for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
-		t.Run(strings.TrimSpace(manifestMCP), func(t *testing.T) {
-			root := t.TempDir()
-			writeManifest(t, root, "auth", "app = \"auth\"\n")
-			writeManifest(t, root, "notes", "app = \"notes\"\n"+manifestMCP)
-			writeManifest(t, root, "disabled", "app = \"disabled\"\n"+manifestMCP)
-			env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
-				if command.Args[3] == "ikigenba-disabled.socket" {
-					return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+	for _, guests := range []bool{false, true} {
+		for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
+			t.Run(strings.TrimSpace(manifestMCP), func(t *testing.T) {
+				root := t.TempDir()
+				writeManifest(t, root, "auth", "app = \"auth\"\n")
+				writeManifest(t, root, "notes", "app = \"notes\"\nguests = "+strconv.FormatBool(guests)+"\n"+manifestMCP)
+				writeManifest(t, root, "disabled", "app = \"disabled\"\nguests = "+strconv.FormatBool(guests)+"\n"+manifestMCP)
+				env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+					if command.Args[3] == "ikigenba-disabled.socket" {
+						return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+					}
+					return host.Result{}, nil
+				}}
+				got, err := nginx.Render(context.Background(), env, "space.example.test", "")
+				if err != nil {
+					t.Fatal(err)
 				}
-				return host.Result{}, nil
-			}}
-			got, err := nginx.Render(context.Background(), env, "space.example.test", "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			wired := serverBlockFor(t, string(got), "notes.space.example.test")
-			for _, location := range []string{"@mcp_unauthorized", "@git_unauthorized", "= /mcp", "^~ /mcp/", "~ /(info/refs|git-upload-pack|git-receive-pack)$"} {
-				locationFor(t, wired, location)
-			}
-			for _, name := range []string{"auth", "disabled"} {
-				block := serverBlockFor(t, string(got), name+".space.example.test")
-				for _, reserved := range []string{"/mcp", "@mcp_unauthorized", "@git_unauthorized", "info/refs", "git-upload-pack", "git-receive-pack"} {
-					if strings.Contains(block, reserved) {
-						t.Fatalf("%s carries reserved %q: %s", name, reserved, block)
+				wired := serverBlockFor(t, string(got), "notes.space.example.test")
+				for _, location := range []string{"@mcp_unauthorized", "@mcp_invalid_token", "@git_unauthorized", "= /mcp", "^~ /mcp/", "~ /(info/refs|git-upload-pack|git-receive-pack)$"} {
+					locationFor(t, wired, location)
+				}
+				for _, name := range []string{"auth", "disabled"} {
+					block := serverBlockFor(t, string(got), name+".space.example.test")
+					for _, reserved := range []string{"/mcp", "@mcp_unauthorized", "@mcp_invalid_token", "@git_unauthorized", "info/refs", "git-upload-pack", "git-receive-pack"} {
+						if strings.Contains(block, reserved) {
+							t.Fatalf("%s carries reserved %q: %s", name, reserved, block)
+						}
 					}
 				}
-			}
-			if err := os.RemoveAll(filepath.Join(root, "opt", "auth")); err != nil {
-				t.Fatal(err)
-			}
-			plain, err := nginx.Render(context.Background(), env, "space.example.test", "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, reserved := range []string{"/mcp", "@mcp_unauthorized", "@git_unauthorized", "info/refs", "git-upload-pack", "git-receive-pack"} {
-				if strings.Contains(string(plain), reserved) {
-					t.Fatalf("plain config carries reserved %q: %s", reserved, plain)
+				if err := os.RemoveAll(filepath.Join(root, "opt", "auth")); err != nil {
+					t.Fatal(err)
 				}
-			}
-		})
+				plain, err := nginx.Render(context.Background(), env, "space.example.test", "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, reserved := range []string{"/mcp", "@mcp_unauthorized", "@mcp_invalid_token", "@git_unauthorized", "info/refs", "git-upload-pack", "git-receive-pack"} {
+					if strings.Contains(string(plain), reserved) {
+						t.Fatalf("plain config carries reserved %q: %s", reserved, plain)
+					}
+				}
+			})
+		}
 	}
 }
 
-// R-L0DL-6GWV
-func TestRenderMCP401MappingAndPathBoundaries(t *testing.T) {
+// R-WDWK-405U
+func TestRenderMCPStatusMappingAndPathBoundaries(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
 		block := serverBlockFor(t, got, name+".space.example.test")
 		for _, location := range []string{"= /mcp", "^~ /mcp/"} {
 			section := locationFor(t, block, location)
-			if strings.Count(section, "error_page") != 1 || !strings.Contains(section, "error_page       401 = @mcp_unauthorized;") || strings.Contains(section, "@auth_redirect") {
+			if strings.Count(section, "error_page") != 2 || !strings.Contains(section, "error_page       403 = @mcp_invalid_token;") || !strings.Contains(section, "error_page       401 = @mcp_unauthorized;") || strings.Contains(section, "@auth_redirect") {
 				t.Fatalf("MCP status mapping: %s", section)
 			}
 		}
-		// R-ET0P-UT2W: the complete wired shape adds the two git locations.
-		if strings.Count(block, "    location ") != 8 {
+		// R-W5D9-FLYZ: the complete wired shape adds the two git locations.
+		if strings.Count(block, "    location ") != 9 {
 			t.Fatalf("unexpected location overrides: %s", block)
 		}
 		browser := locationFor(t, block, "/")
@@ -1694,18 +1705,48 @@ func TestRenderMCP401MappingAndPathBoundaries(t *testing.T) {
 	}
 }
 
-// R-7JPV-5DEC
-func TestRenderMCPUnauthorizedExactResponse(t *testing.T) {
-	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
-	want := "    location @mcp_unauthorized {\n" +
-		"        default_type text/plain;\n" +
-		"        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\"' always;\n" +
-		"        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n" +
-		"    }\n"
-	for _, name := range []string{"beta", "notes", "web"} {
-		block := serverBlockFor(t, got, name+".space.example.test")
-		if section := locationFor(t, block, "@mcp_unauthorized"); section != want {
-			t.Fatalf("unauthorized response = %q, want %q", section, want)
+// R-WF4G-HRWJ R-WGCC-VJN8 R-WDWK-405U
+func TestRenderMCPChallengesAndStatusMapping(t *testing.T) {
+	for _, hostName := range []string{"space.example.test", "other.example.test"} {
+		for _, guests := range []bool{false, true} {
+			for _, gateway := range []bool{false, true} {
+				root := t.TempDir()
+				writeManifest(t, root, "auth", "app = 'auth'\n")
+				writeManifest(t, root, "notes", "app = 'notes'\nguests = "+strconv.FormatBool(guests)+"\n")
+				if gateway {
+					writeManifest(t, root, "mcp", "app = 'mcp'\n")
+				}
+				got, err := nginx.Render(context.Background(), enabledEnv(root), hostName, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				names := []string{"notes"}
+				if gateway {
+					names = append(names, "mcp")
+				}
+				for _, name := range names {
+					block := serverBlockFor(t, string(got), name+"."+hostName)
+					for _, challenge := range []struct{ location, parameter string }{
+						{"@mcp_unauthorized", `realm="ikigenba"`},
+						{"@mcp_invalid_token", `error="invalid_token"`},
+					} {
+						want := "    location " + challenge.location + " {\n" +
+							"        default_type text/plain;\n" +
+							"        add_header   WWW-Authenticate 'Bearer " + challenge.parameter + ", resource_metadata=\"https://mcp." + hostName + "/.well-known/oauth-protected-resource\"' always;\n" +
+							"        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n" +
+							"    }\n"
+						if section := locationFor(t, block, challenge.location); section != want {
+							t.Fatalf("host=%s guests=%v gateway=%v %s response = %q, want %q", hostName, guests, gateway, challenge.location, section, want)
+						}
+					}
+					for _, location := range []string{"= /mcp", "^~ /mcp/"} {
+						section := locationFor(t, block, location)
+						if strings.Count(section, "error_page") != 2 || !strings.Contains(section, "error_page       401 = @mcp_unauthorized;") || !strings.Contains(section, "error_page       403 = @mcp_invalid_token;") || strings.Contains(section, "@auth_redirect") {
+							t.Fatalf("MCP mapping for %s: %s", location, section)
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -1732,7 +1773,7 @@ func TestRenderGitLocationBoundariesAndCredentialRelay(t *testing.T) {
 		if include < 0 || include > strings.Index(block, "    location "+location) {
 			t.Fatal("app fragment must precede generated regular expressions")
 		}
-		// R-ET0P-UT2W: these generated locations have this exact order.
+		// R-W5D9-FLYZ: these generated locations have this exact order.
 		mcpExact := strings.Index(block, "    location = /mcp {\n")
 		mcpPrefix := strings.Index(block, "    location ^~ /mcp/ {\n")
 		git := strings.Index(block, "    location "+location+" {\n")

@@ -378,7 +378,12 @@ func writeWiredLocations(output *strings.Builder, name, hostName string, guests 
 	output.WriteString("    }\n\n")
 	output.WriteString("    location @mcp_unauthorized {\n")
 	output.WriteString("        default_type text/plain;\n")
-	output.WriteString("        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\"' always;\n")
+	output.WriteString("        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\", resource_metadata=\"https://mcp." + hostName + "/.well-known/oauth-protected-resource\"' always;\n")
+	output.WriteString("        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n")
+	output.WriteString("    }\n\n")
+	output.WriteString("    location @mcp_invalid_token {\n")
+	output.WriteString("        default_type text/plain;\n")
+	output.WriteString("        add_header   WWW-Authenticate 'Bearer error=\"invalid_token\", resource_metadata=\"https://mcp." + hostName + "/.well-known/oauth-protected-resource\"' always;\n")
 	output.WriteString("        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n")
 	output.WriteString("    }\n\n")
 	output.WriteString("    location @git_unauthorized {\n")
@@ -406,6 +411,9 @@ func writeAuthenticatedLocation(output *strings.Builder, name, location, unautho
 	output.WriteString("        auth_request_set $auth_user_email $upstream_http_x_user_email;\n")
 	if !open {
 		output.WriteString("        error_page       401 = " + unauthorized + ";\n")
+		if unauthorized == "@mcp_unauthorized" {
+			output.WriteString("        error_page       403 = @mcp_invalid_token;\n")
+		}
 	}
 	output.WriteByte('\n')
 	writeProxy(output, name)
