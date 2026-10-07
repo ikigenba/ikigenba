@@ -1,8 +1,8 @@
 # Stories — assets
 
-The files that give scripts' pages the platform's visual style, their service launcher, their button feedback and their favicon, and how scripts serves them. They are the platform's shared web files, the same for every platform app, and scripts does not author them. scripts serves exactly nine of them under `/_appkit/`, each with a fixed `Content-Type`: `theme.css`, the platform style's stylesheet, as `text/css; charset=utf-8`, whose `@font-face` rules name the font files beside it; `launcher.js`, the service launcher's script, and `feedback.js`, the button feedback script, both as `text/javascript; charset=utf-8`; `favicon.svg`, the platform's one favicon, as `image/svg+xml`; the Inter and JetBrains Mono fonts, `InterVariable.woff2`, `InterVariable-Italic.woff2`, and `JetBrainsMono.woff2`, as `font/woff2`; and two licences as `text/plain; charset=utf-8`: `OFL.txt`, the fonts' licence, and `TABLER-LICENSE.txt`, the licence of the Tabler icons the platform style draws. They are inside the binary: scripts reads nothing from disk to answer for them, a host holds no copy of them, and a page needs nothing from any other host — no font service and no third-party request of any kind. Nothing else under `/_appkit/` exists, whatever the method: not `/_appkit/` itself, not another file name, not a served name with a further `/` or segment after it, and not a served name in other letter case. A served file takes `GET` and `HEAD` and refuses any other method. `_appkit` can never be a script's name, since a script's name begins with a letter or a digit (`S06`), so nothing under `/_appkit/` is ever a script's page or a run's file.
+The files that give scripts' pages the platform's visual style, their service launcher, their button feedback and their favicon, and how scripts serves them. They are the platform's shared web files, the same for every platform app, and scripts does not author them. scripts serves them under `/_appkit/`, each with a fixed `Content-Type`: `theme.css`, the platform style's stylesheet, as `text/css; charset=utf-8`, whose `@font-face` rules name the font files beside it; `launcher.js`, the service launcher's script, and `feedback.js`, the button feedback script, both as `text/javascript; charset=utf-8`; `favicon.svg`, the platform's one favicon, as `image/svg+xml`; the Inter and JetBrains Mono fonts as `font/woff2`, each served only under the name the stylesheet's `@font-face` rules give it, `<font>.<hash>.woff2`, where `<font>` is `InterVariable`, `InterVariable-Italic`, or `JetBrainsMono` and `<hash>` follows from the font's content alone, so a font whose content changes is served under a new name; and two licences as `text/plain; charset=utf-8`: `OFL.txt`, the fonts' licence, and `TABLER-LICENSE.txt`, the licence of the Tabler icons the platform style draws. They are inside the binary: scripts reads nothing from disk to answer for them, a host holds no copy of them, and a page needs nothing from any other host — no font service and no third-party request of any kind. Nothing else under `/_appkit/` exists, whatever the method: not `/_appkit/` itself, not another file name, not a served name with a further `/` or segment after it, not a font's name without its hash, such as `/_appkit/InterVariable.woff2`, and not a served name in other letter case. A served file takes `GET` and `HEAD` and refuses any other method. `_appkit` can never be a script's name, since a script's name begins with a letter or a digit (`S06`), so nothing under `/_appkit/` is ever a script's page or a run's file.
 
-Every served file answered 200 or 304 carries a strong `ETag` and exactly one `Cache-Control: no-cache`, so a browser keeps its copy but asks each time whether it is still current, and an unchanged file costs a `304` rather than the bytes again. The `ETag`'s value is opaque — no story fixes it, and `"<etag>"` below stands for whatever the server sent. What is fixed is the relation: the value follows from the file's content alone, so the same content always yields the same value and different content a different one. A body is the same bytes on every request to the same scripts binary; no story fixes its content. The stories do not fix how scripts answers a `Range` request, whether it sends `Last-Modified`, how it treats `If-Match`, `If-Unmodified-Since`, `If-Range`, an `If-Modified-Since` with no `If-None-Match`, or an `If-None-Match` that is not a well-formed list of tags.
+Every served file answered 200 or 304 carries a strong `ETag` and exactly one `Cache-Control`. A font's is `public, max-age=31536000, immutable`: its name changes whenever its content does, so a browser keeps a font it has fetched for a year without asking again. Every other file's is `no-cache`, so a browser keeps its copy but asks each time whether it is still current, and an unchanged file costs a `304` rather than the bytes again. The `ETag`'s value is opaque — no story fixes it, and `"<etag>"` below stands for whatever the server sent. What is fixed is the relation: the value follows from the file's content alone, so the same content always yields the same value and different content a different one. A body is the same bytes on every request to the same scripts binary; no story fixes its content. The stories do not fix how scripts answers a `Range` request, whether it sends `Last-Modified`, how it treats `If-Match`, `If-Unmodified-Since`, `If-Range`, an `If-Modified-Since` with no `If-None-Match`, or an `If-None-Match` that is not a well-formed list of tags.
 
 The asset routes are routes like any other. scripts serves nothing to guests: every request reaching it comes through the host's nginx, which sets `X-User-Id` and `X-User-Email` on each request it passes upstream, and the identity check runs first here as on every route (`S03`). The requests below therefore carry both headers explicitly, and go to a running scripts (`S02`) at its own name, `Host: scripts.sbx.ikigenba.dev`. Every request here, whatever its answer, adds `request.started` and `request.finished` to scripts' trail, as on every route (`S03`), under the caller's user, and while telemetry takes every event nothing reaches stderr. A served file reads no catalog, no repository, and no run folder, and runs no git, so it is served even while scripts cannot reach its catalog. A response block shows the status line and the headers the story fixes; a header it does not show, `Date` say, is not fixed.
 
@@ -40,12 +40,12 @@ Postconditions:
 
 ## A browser fetches a font
 
-The stylesheet's `@font-face` rules name the font files beside it, so a browser applying the style asks scripts for each font it needs, under the same `/_appkit/` the stylesheet came from. `<font>` is `InterVariable`, `InterVariable-Italic`, or `JetBrainsMono`.
+The stylesheet's `@font-face` rules name each font by its hashed name beside it, so a browser applying the style asks scripts for each font it needs under that name, under the same `/_appkit/` the stylesheet came from. `<font>` is `InterVariable`, `InterVariable-Italic`, or `JetBrainsMono`, and `<font>.<hash>.woff2` is the name the stylesheet gives that font.
 
 Request:
 
 ```
-GET /_appkit/<font>.woff2 HTTP/1.1
+GET /_appkit/<font>.<hash>.woff2 HTTP/1.1
 Host: scripts.sbx.ikigenba.dev
 X-User-Id: u_7f3a9c21
 X-User-Email: mg@example.com
@@ -57,10 +57,10 @@ Response:
 HTTP/1.1 200 OK
 Content-Type: font/woff2
 ETag: "<etag>"
-Cache-Control: no-cache
+Cache-Control: public, max-age=31536000, immutable
 ```
 
-Status 200. The body is the font `<font>.woff2` names. `Cache-Control` appears once.
+Status 200. The body is the font `<font>.<hash>.woff2` names. `Cache-Control` appears once.
 
 Preconditions:
 
@@ -253,7 +253,7 @@ ETag: "<etag>"
 Cache-Control: no-cache
 ```
 
-Status 304. The body is empty. The `ETag` returned is the one the 200 for the same file carries, and `Cache-Control: no-cache` appears once, as on the 200. Every served file is revalidated this way, and a `HEAD` that matches is answered the same.
+Status 304. The body is empty. The `ETag` returned is the one the 200 for the same file carries, and `Cache-Control: no-cache` appears once, as on the 200. Every served file is revalidated this way, and a `HEAD` that matches is answered the same. A font's 304 carries the font's own `Cache-Control`, as on its 200.
 
 Preconditions:
 
@@ -330,7 +330,7 @@ ETag: "<etag>"
 Cache-Control: no-cache
 ```
 
-Status 200. The body is empty. The `ETag` is the one a `GET` of the same file returns, and `Cache-Control` appears once. Every served file answers `HEAD` this way, with its own `Content-Type`.
+Status 200. The body is empty. The `ETag` is the one a `GET` of the same file returns, and `Cache-Control` appears once. Every served file answers `HEAD` this way, with its own `Content-Type` and `Cache-Control`.
 
 Preconditions:
 
@@ -343,7 +343,7 @@ Postconditions:
 
 ## A caller asks for an asset that does not exist
 
-The files under `/_appkit/` are the nine above and nothing more, so the prefix itself, any other name, a served name with more after it, and a served name in other letter case all name nothing, whatever the method: a `POST` to a missing file's path is a 404 like a `GET`, never a 405. `/_appkit/banner.html` is one such path. None of them is a script's path, so none is answered with scripts' not-found page (`S12`).
+The files under `/_appkit/` are the ones above and nothing more, so the prefix itself, any other name, a font's name without its hash, a served name with more after it, and a served name in other letter case all name nothing, whatever the method: a `POST` to a missing file's path is a 404 like a `GET`, never a 405. `/_appkit/banner.html` is one such path. None of them is a script's path, so none is answered with scripts' not-found page (`S12`).
 
 Request:
 
@@ -363,6 +363,13 @@ X-User-Email: mg@example.com
 
 ```
 GET /_appkit/banner.html HTTP/1.1
+Host: scripts.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+```
+
+```
+GET /_appkit/InterVariable.woff2 HTTP/1.1
 Host: scripts.sbx.ikigenba.dev
 X-User-Id: u_7f3a9c21
 X-User-Email: mg@example.com
@@ -415,7 +422,7 @@ Postconditions:
 
 ## A caller sends an asset a method it does not take
 
-A served file is read-only: scripts serves it and nothing changes it. This holds only for the nine served paths; any method on a missing file's path is a 404. `Allow` names the two methods a served file takes.
+A served file is read-only: scripts serves it and nothing changes it. This holds only for the served paths; any method on a missing file's path is a 404. `Allow` names the two methods a served file takes.
 
 Request:
 
