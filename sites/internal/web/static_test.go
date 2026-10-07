@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-// R-67YR-SHGC R-696O-6971 R-RH3C-EKZZ R-DMWP-R6AY R-F04K-TWPO
-// R-W6K9-QDFF R-6AEK-K0XQ R-6BMG-XSOF R-F506-CZOG R-F682-QRF5
+// R-JWZ7-341J R-JZEZ-UNIX R-RH3C-EKZZ R-DMWP-R6AY R-F04K-TWPO
+// R-W6K9-QDFF R-K1US-M70B R-K4AL-DQHP R-F506-CZOG R-F682-QRF5
 func TestSharedFiles(t *testing.T) {
 	f := fresh(t)
 	other := fresh(t)
 	emptyDirectory := t.TempDir()
 	t.Chdir(f.root)
-	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
+	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
 	identities := []map[string]string{nil, {"X-User-Id": ""}, {"X-User-Id": "user"}}
 	tags := map[string]string{}
 	for name, contentType := range files {
@@ -42,6 +42,7 @@ func TestSharedFiles(t *testing.T) {
 					if repeat.Code != 200 || repeat.Body.String() != got.Body.String() || len(repeat.Header().Values("Content-Type")) != 1 || repeat.Header().Get("Content-Type") != contentType || repeat.Header().Get("ETag") != tag {
 						t.Fatalf("shared file %s varies with directory, handler or identity: %d %v", name, repeat.Code, repeat.Header())
 					}
+					sharedCacheHeaders(t, repeat.Header(), tag)
 				}
 			}
 		}
@@ -51,6 +52,7 @@ func TestSharedFiles(t *testing.T) {
 				if r.Code != 304 || r.Body.Len() != 0 || r.Header().Get("ETag") != tag {
 					t.Fatalf("match %s %s: %d", name, match, r.Code)
 				}
+				sharedCacheHeaders(t, r.Header(), tag)
 			}
 			for _, identity := range identities {
 				for _, modified := range []string{"", "bad", "Wed, 21 Oct 2015 07:28:00 GMT", "Wed, 21 Oct 2099 07:28:00 GMT"} {
@@ -65,6 +67,7 @@ func TestSharedFiles(t *testing.T) {
 					if r.Code != 200 || r.Header().Get("ETag") != tag || len(r.Header().Values("Content-Type")) != 1 || r.Header().Get("Content-Type") != contentType || (method == "GET" && r.Body.String() != got.Body.String()) || (method == "HEAD" && r.Body.Len() != 0) {
 						t.Fatalf("nonmatch %s %s with If-Modified-Since %q: %d %v", name, method, modified, r.Code, r.Header())
 					}
+					sharedCacheHeaders(t, r.Header(), tag)
 				}
 			}
 		}
@@ -86,12 +89,19 @@ func TestSharedFiles(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/feedback.js/", "/_appkit/feedback.js/x", "/_appkit/FEEDBACK.JS"} {
+	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/feedback.js/", "/_appkit/feedback.js/x", "/_appkit/FEEDBACK.JS", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/FAVICON.SVG"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := f.get(t, method, path, "sites", "", map[string]string{"If-None-Match": "*"})
 			if r.Code != 404 || strings.Contains(r.Body.String(), "There is nothing at this address.") {
 				t.Fatalf("unknown static %s %s %d", method, path, r.Code)
 			}
 		}
+	}
+}
+
+func sharedCacheHeaders(t *testing.T, headers http.Header, tag string) {
+	t.Helper()
+	if len(headers.Values("ETag")) != 1 || headers.Get("ETag") != tag || len(headers.Values("Cache-Control")) != 1 || headers.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("shared file cache headers: %v", headers)
 	}
 }

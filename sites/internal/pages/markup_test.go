@@ -387,6 +387,46 @@ func commonHead(t *testing.T, m string) {
 	}
 }
 
+func faviconHead(t *testing.T, m string) {
+	t.Helper()
+	var icons []tag
+	for _, x := range tags(m, "link") {
+		if x.has("rel", "icon") {
+			icons = append(icons, x)
+		}
+	}
+	icon := one(t, icons, "link")
+	attr(t, icon, "href", "/_appkit/favicon.svg")
+	attr(t, icon, "type", "image/svg+xml")
+	bodies := tags(m, "body")
+	if len(bodies) == 0 || icon.start >= bodies[0].start {
+		t.Fatal("favicon link not before body")
+	}
+}
+
+// R-JS3L-K12R
+func TestPlainPagesFavicon(t *testing.T) {
+	cfg := config(t, catalog(t))
+	h := identity.Optional(pages.Handler(cfg))
+	for _, path := range []string{"/", "/about"} {
+		r := request("GET", path, "alice", "alice@example.test")
+		b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, ""), LogoutURL: urls.AuthLogout(r, "")})
+		faviconHead(t, written(t, answer(h, r).Body.String(), b))
+	}
+}
+
+// R-JUJE-BKK5
+func TestNoticeFavicon(t *testing.T) {
+	s := load(t)
+	b := page.Banner{Service: "notice-sites", Version: "test.build+local"}
+	for _, name := range []string{"notfound", "unavailable"} {
+		w := answer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.Write(w, r, http.StatusServiceUnavailable, name, pages.NoticeData{Banner: b})
+		}), request("GET", "/", "", ""))
+		faviconHead(t, w.Body.String())
+	}
+}
+
 func feedbackHead(t *testing.T, m string) {
 	t.Helper()
 	var feedback []tag
