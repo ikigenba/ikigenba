@@ -41,6 +41,7 @@ auth's own failures, not pages: one line of plain text, with no banner.
 D05 owns the words every page auth draws is described in, and this design uses
 them by name without restating them: an **auth page** and what it carries in
 its head (the title `auth`, the stylesheet at `/_appkit/theme.css`, the
+preload of upright Inter from `page.PreloadURL()`, the
 favicon at `/_appkit/favicon.svg`, the deferred feedback script at
 `/_appkit/feedback.js`, the phone-width viewport,
 nothing loaded from another host, every outside value escaped); a page

@@ -20,7 +20,8 @@ auth depends on appkit, the platform's shared library, beside auth's Google
 libraries, and on four of its packages. The first is
 `github.com/ikigenba/ikigenba/appkit/page`, the banner kit, whose exported
 surface is `StaticPrefix = "/_appkit/"`, `Static() http.Handler`,
-`Templates() *template.Template`, `New(service, version string) *Kit`,
+`Templates() *template.Template`, `PreloadURL() string`,
+`New(service, version string) *Kit`,
 `(*Kit).Banner(User) Banner`, and the plain data types `User`, `Banner` and
 `Service`. The second is `github.com/ikigenba/ikigenba/appkit/telemetry`, the
 suite's event trail: the `Writer` auth records its events through, the
@@ -49,7 +50,8 @@ it (D08), and its own code never reads the services file, which `page` and
 telemetry's socket sink read through appkit's `services` package. appkit owns
 the banner's markup, the launcher's markup and script, the page footer's
 markup, the feedback script, the favicon, the stylesheet, the fonts and
-their licences; auth authors none of them and carries no copy.
+their licences, and the font preload link and its URL; auth authors none of
+them and carries no copy.
 
 The style files come from appkit, which serves them itself (D08). The pages
 auth draws are its own templates, drawn around appkit's banner templates: the
@@ -114,10 +116,13 @@ files at or below the embedding package's directory, so the root package
 holding exactly those two files, the same on every call and depending on no
 file beside the binary. **auth's template set** is what the handlers draw
 those pages from: a fresh set from appkit's `page.Templates()`, which already
-defines `banner`, `launcher` and `footer`, with every file of `Assets()`
-parsed into it and no template function added. The code adds no markup of its
-own around them, so a test renders the same template with the same data and
-compares the bytes.
+defines `banner`, `launcher`, `footer` and `preload`, with every file of
+`Assets()` parsed into it and no template function added. The code adds no
+markup of its own around them, so a test renders the same template with the
+same data and compares the bytes. A template in `assets/` that writes a
+page's head, as `approve.html` does, invokes `{{template "preload"}}` there,
+so the page preloads upright Inter (D05) without auth writing a font name or
+hash.
 
 The database's schema is inside the binary too. It is a sequence of migration
 files in `migrations/` at the module root, which only a package at the module
