@@ -271,6 +271,7 @@ func TestMarkupBareAttributeOccurrences(t *testing.T) {
 // R-S31L-RMZB R-S49I-5EQ0 R-S5HE-J6GP R-S6PA-WY7E R-S7X7-APY3
 // R-TDDS-AX5P R-S953-OHOS R-SAD0-29FH
 // R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-D1VT-C7H9 R-D33P-PZ7Y R-T16S-H7QR
+// R-KYQ9-8QIO
 // R-UDJA-V6WH R-UIEW-E9V9 R-UER7-8YN6 R-UH70-0I4K R-UFZ3-MQDV
 // R-UKUP-5TCN R-T4UH-MIYU R-TC5V-X5F0
 func TestPlainPageMarkupHooksAndText(t *testing.T) {
@@ -313,6 +314,16 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 			stylesheet := oneTag(t, ofName(attributed(written, "rel", "stylesheet"), "link"))
 			if stylesheet.name != "link" || stylesheet.end > writtenBody.start || !slices.Contains(stylesheet.attrs["href"], "/_appkit/theme.css") {
 				t.Fatalf("stylesheet %#v", stylesheet)
+			}
+			var icons []markupTag
+			for _, link := range readTags(written, "link", false) {
+				if slices.Contains(link.attrs["rel"], "icon") {
+					icons = append(icons, link)
+				}
+			}
+			icon := oneTag(t, icons)
+			if icon.end > writtenBody.start || !slices.Contains(icon.attrs["href"], "/_appkit/favicon.svg") || !slices.Contains(icon.attrs["type"], "image/svg+xml") {
+				t.Fatalf("favicon %#v", icon)
 			}
 			viewport := oneTag(t, ofName(attributed(written, "name", "viewport"), "meta"))
 			if viewport.name != "meta" || viewport.end > writtenBody.start || !slices.Contains(viewport.attrs["content"], "width=device-width, initial-scale=1") {
