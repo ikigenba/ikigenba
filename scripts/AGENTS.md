@@ -103,8 +103,8 @@ run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.13.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.13.0`: a release that
+  - appkit `v0.14.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.14.0`: a release that
     exports the `db` package. See Adopting appkit below.
   - `golang.org/x/sys`. It, appkit and the modules they pull in are scripts'
     only dependencies.
