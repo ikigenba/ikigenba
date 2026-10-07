@@ -388,6 +388,33 @@ func TestPlainPageFrameAndResources(t *testing.T) {
 	}
 }
 
+func TestPlainPageIcon(t *testing.T) {
+	// R-BY3S-VM1R
+	for _, listed := range []bool{false, true} {
+		b := page.Banner{Service: "chosen-service", Version: "chosen-version", Email: "reader@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"}
+		if listed {
+			b.Services = []page.Service{{Name: "auth", URL: "https://auth.example.test", Icon: template.HTML("icon"), Enabled: true}}
+		}
+		h := pageHandler(t, b)
+		for _, path := range []string{"/", "/about"} {
+			s := pageWritten(t, pageBody(t, h, path), b)
+			var icons []pageSpan
+			for _, tag := range pageTags(s, "link", false) {
+				if pageAttrIs(s, tag, "rel", "icon") {
+					icons = append(icons, tag)
+				}
+			}
+			if len(icons) != 1 {
+				t.Fatalf("%s icon link count: %d", path, len(icons))
+			}
+			icon := icons[0]
+			if icon.end > pageFirst(t, s, "body").start || !pageAttrIs(s, icon, "href", "/_appkit/favicon.svg") || !pageAttrIs(s, icon, "type", "image/svg+xml") {
+				t.Fatalf("%s icon hook: %s", path, s[icon.start:icon.end])
+			}
+		}
+	}
+}
+
 const pageSummary = "The suite's trail of events. Every service on this host records what it does here: each request it serves, each call it makes to a sibling, each MCP tool it runs, and the events of its own domain."
 
 var pageToolNames = []string{"catalog", "search", "count", "trace"}

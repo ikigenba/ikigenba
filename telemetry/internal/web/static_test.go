@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -11,15 +12,31 @@ import (
 )
 
 func TestSharedFiles(t *testing.T) {
-	// R-8JMY-S2KQ R-8KUV-5UBF R-QVUQ-PAYP R-8M2R-JM24 R-QYAJ-GUG3 R-QZIF-UM6S R-R0QC-8DXH R-R1Y8-M5O6 R-R4E1-DP5K R-R5LX-RGW9
+	// R-C47A-SGR8 R-C6N3-K08M R-QVUQ-PAYP R-CAAS-PBGP R-QYAJ-GUG3 R-QZIF-UM6S R-R0QC-8DXH R-R1Y8-M5O6 R-R4E1-DP5K R-R5LX-RGW9
 	f := newFixture(t)
 	second := web.Handler(freshServer(t, f, f.cfg))
 	static := page.Static()
-	for _, tc := range []struct{ name, content string }{{"theme.css", "text/css; charset=utf-8"}, {"launcher.js", "text/javascript; charset=utf-8"}, {"feedback.js", "text/javascript; charset=utf-8"}, {"InterVariable.woff2", "font/woff2"}, {"InterVariable-Italic.woff2", "font/woff2"}, {"JetBrainsMono.woff2", "font/woff2"}, {"OFL.txt", "text/plain; charset=utf-8"}, {"TABLER-LICENSE.txt", "text/plain; charset=utf-8"}} {
+	files := []struct{ name, content string }{
+		{"theme.css", "text/css; charset=utf-8"},
+		{"launcher.js", "text/javascript; charset=utf-8"},
+		{"feedback.js", "text/javascript; charset=utf-8"},
+		{"favicon.svg", "image/svg+xml"},
+		{"InterVariable.woff2", "font/woff2"},
+		{"InterVariable-Italic.woff2", "font/woff2"},
+		{"JetBrainsMono.woff2", "font/woff2"},
+		{"OFL.txt", "text/plain; charset=utf-8"},
+		{"TABLER-LICENSE.txt", "text/plain; charset=utf-8"},
+	}
+	for _, tc := range files {
 		path := page.StaticPrefix + tc.name
 		get := request(f.h, "GET", path, "u")
 		again := request(second, "GET", path, "u")
 		equalResponse(t, get, again)
+		equalResponse(t, get, request(f.h, "GET", path, "u"))
+		equalResponse(t, get, request(static, "GET", path, "u"))
+		// URL.Path, including an escaped filename's decoded first byte, selects the file.
+		escaped := fmt.Sprintf("%s%%%02X%s", page.StaticPrefix, tc.name[0], tc.name[1:])
+		equalResponse(t, get, request(f.h, "GET", escaped+"?ignored=1", "u"))
 		if get.Code != 200 || get.Body.Len() == 0 || !reflect.DeepEqual(get.Header().Values("Content-Type"), []string{tc.content}) || !reflect.DeepEqual(get.Header().Values("Cache-Control"), []string{"no-cache"}) || len(get.Header().Values("ETag")) != 1 {
 			t.Fatal(tc, get.Code, get.Header())
 		}
@@ -28,11 +45,12 @@ func TestSharedFiles(t *testing.T) {
 			t.Fatal(etag)
 		}
 		head := request(f.h, "HEAD", path, "u")
+		equalResponse(t, head, request(static, "HEAD", path, "u"))
 		if head.Code != 200 || head.Body.Len() != 0 {
 			t.Fatal(head)
 		}
 		for _, name := range []string{"Content-Type", "Cache-Control", "ETag"} {
-			if head.Header().Get(name) != get.Header().Get(name) {
+			if !reflect.DeepEqual(head.Header().Values(name), get.Header().Values(name)) {
 				t.Fatal(name)
 			}
 		}
@@ -86,7 +104,11 @@ func TestSharedFiles(t *testing.T) {
 			equalResponse(t, out, want)
 		}
 	}
-	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/FEEDBACK.JS", "/_appkit/feedback.js/", "/_appkit/feedback.js/x"} {
+	invalid := []string{page.StaticPrefix, page.StaticPrefix + "banner.html", page.StaticPrefix + "nope.css"}
+	for _, tc := range files {
+		invalid = append(invalid, page.StaticPrefix+tc.name+"/", page.StaticPrefix+tc.name+"/x", page.StaticPrefix+strings.ToUpper(tc.name))
+	}
+	for _, path := range invalid {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := httptest.NewRequest(method, "http://example"+path, nil)
 			r.Header.Set("X-User-Id", "u")

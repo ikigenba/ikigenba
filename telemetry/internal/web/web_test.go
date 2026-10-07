@@ -113,11 +113,18 @@ func TestIdentityBeforeRouting(t *testing.T) {
 	}
 }
 func TestExactPathsAnd404(t *testing.T) {
-	// R-QM3J-N515 R-QNBG-0WRU R-8IF2-EAU1 R-RHSX-L6B7
+	// R-QM3J-N515 R-QNBG-0WRU R-C1RI-0X9U R-RHSX-L6B7
 	f := newFixture(t)
-	for _, path := range []string{"/mcp/", "/mcp/a", "/ingest/", "/ingest/a", "/about/", "/_appkit", "/assets/", "/assets/a", "/logout", "/index.html", "//", "/nope", "/nope/", "/x/../", "/x/./", "/_APPKIT/feedback.js"} {
-		for _, method := range []string{"GET", "HEAD", "POST"} {
-			out := request(f.h, method, path+"?x=1", "u")
+	for _, path := range []string{"/mcp/", "/mcp/a", "/ingest/", "/ingest/a", "/about/", "/_appkit", "/assets/", "/assets/a", "/logout", "/index.html", "//", "/nope", "/nope/", "/x/../", "/x/./", "/_APPKIT/feedback.js", "/_APPKIT/favicon.svg", "/favicon.svg", "/_appkit-extra/favicon.svg"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CUSTOM"} {
+			r := httptest.NewRequest(method, "http://another.example"+path+"?path=/_appkit/favicon.svg", strings.NewReader("ignored body"))
+			r.Header.Set("X-User-Id", "u")
+			r.Header.Set("X-Request-Id", "fixed-request")
+			r.Header.Set("If-None-Match", "*")
+			r.Header.Set("Range", "bytes=0-7")
+			r.Header.Set("X-Original-URL", "/_appkit/favicon.svg")
+			out := httptest.NewRecorder()
+			f.h.ServeHTTP(out, r)
 			want := "not found\n"
 			if method == "HEAD" {
 				want = ""
