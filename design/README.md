@@ -13,6 +13,7 @@ design/
     theme.css       the entire style — tokens, elements, components
     feedback.js     button press and copy feedback, the toast
     lab.js          the page-switcher toolbar
+    favicon.svg     the suite's favicon, linked from every page
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: banner, widgets table, add form, states
@@ -25,6 +26,7 @@ design/
     scripts-run.html
                     one run: details, input, output, files, other states
     events.html     events' landing: its subscribers and its MCP tools
+    icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
 ```
@@ -192,6 +194,10 @@ error; a key/value list; a card/panel; an empty state.
   `<svg class="ico">` is 16px in buttons and links, 18px by default. Filled
   variants, as CSS masks in `--i-ok`, `--i-warn`, `--i-err`, `--i-info`,
   `--i-alert`, `--i-neutral`, mark status, alerts, and field errors.
+- Favicon: `favicon.svg`, *ik* stroked in an outline rounded square at the
+  outline icons' weight, ink on light; it flips to near-white under
+  `prefers-color-scheme: dark`. One icon for the whole suite; every page links
+  it with `<link rel="icon" type="image/svg+xml">`.
 - Motion is feedback only, and brief. Every button scales to .96 while held
   and, on click, springs back just past full size (`.pulse`, .96 → 1.04 → 1
   over .28s). The press stays under reduced motion: it is small and follows

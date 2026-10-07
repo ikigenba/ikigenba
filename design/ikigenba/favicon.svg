@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#0a0a0a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <style>circle { fill: #0a0a0a; } @media (prefers-color-scheme: dark) { svg { stroke: #fdfdfd; } circle { fill: #fdfdfd; } }</style>
+  <rect x="4" y="4" width="24" height="24" rx="7"/>
+  <path d="M11.5 15v7"/>
+  <circle cx="11.5" cy="10.25" r="1.9" stroke="none"/>
+  <path d="M17 9.5v12.5M22 14.5l-5 4.5M18.6 17.6l3.4 4.4"/>
+</svg>
