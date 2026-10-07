@@ -2,25 +2,32 @@ package web_test
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
-// R-JWZ7-341J R-JZEZ-UNIX R-RH3C-EKZZ R-DMWP-R6AY R-F04K-TWPO
-// R-W6K9-QDFF R-K1US-M70B R-K4AL-DQHP R-F506-CZOG R-F682-QRF5
+// R-8ED5-8WC1 R-8GSY-0FTF R-8J8Q-RZAT R-DMWP-R6AY R-F04K-TWPO
+// R-8MWF-XAIW R-8PC8-OU0A R-8SZX-U58D R-F506-CZOG R-F682-QRF5
 func TestSharedFiles(t *testing.T) {
 	f := fresh(t)
 	other := fresh(t)
 	emptyDirectory := t.TempDir()
 	t.Chdir(f.root)
-	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
+	files := sharedFiles(t, f)
 	identities := []map[string]string{nil, {"X-User-Id": ""}, {"X-User-Id": "user"}}
 	tags := map[string]string{}
 	for name, contentType := range files {
-		path := "/_appkit/" + name
+		path := page.StaticPrefix + name
+		cache := "no-cache"
+		if contentType == "font/woff2" {
+			cache = "public, max-age=31536000, immutable"
+		}
 		got := f.get(t, "GET", path, "sites", "", nil)
 		tag := got.Header().Get("ETag")
-		if got.Code != 200 || got.Body.Len() == 0 || len(got.Header().Values("Content-Type")) != 1 || got.Header().Get("Content-Type") != contentType || len(got.Header().Values("ETag")) != 1 || len(got.Header().Values("Cache-Control")) != 1 || got.Header().Get("Cache-Control") != "no-cache" || len(tag) < 2 || tag[0] != '"' || tag[len(tag)-1] != '"' {
+		if got.Code != 200 || got.Body.Len() == 0 || len(got.Header().Values("Content-Type")) != 1 || got.Header().Get("Content-Type") != contentType || len(got.Header().Values("ETag")) != 1 || len(got.Header().Values("Cache-Control")) != 1 || got.Header().Get("Cache-Control") != cache || len(tag) < 2 || tag[0] != '"' || tag[len(tag)-1] != '"' {
 			t.Fatalf("%s: %d %v", name, got.Code, got.Header())
 		}
 		for _, b := range []byte(tag[1 : len(tag)-1]) {
@@ -42,17 +49,23 @@ func TestSharedFiles(t *testing.T) {
 					if repeat.Code != 200 || repeat.Body.String() != got.Body.String() || len(repeat.Header().Values("Content-Type")) != 1 || repeat.Header().Get("Content-Type") != contentType || repeat.Header().Get("ETag") != tag {
 						t.Fatalf("shared file %s varies with directory, handler or identity: %d %v", name, repeat.Code, repeat.Header())
 					}
-					sharedCacheHeaders(t, repeat.Header(), tag)
+					sharedCacheHeaders(t, repeat.Header(), tag, cache)
 				}
 			}
 		}
 		for _, method := range []string{"GET", "HEAD"} {
 			for _, match := range []string{"*", tag, "W/" + tag, " , \"other\",\tW/" + tag + " , "} {
-				r := f.get(t, method, path, "sites", "", map[string]string{"If-None-Match": match, "If-Modified-Since": "bad"})
-				if r.Code != 304 || r.Body.Len() != 0 || r.Header().Get("ETag") != tag {
-					t.Fatalf("match %s %s: %d", name, match, r.Code)
+				for _, modified := range []string{"", "bad", "Wed, 21 Oct 2015 07:28:00 GMT", "Wed, 21 Oct 2099 07:28:00 GMT"} {
+					headers := map[string]string{"If-None-Match": match}
+					if modified != "" {
+						headers["If-Modified-Since"] = modified
+					}
+					r := f.get(t, method, path, "sites", "", headers)
+					if r.Code != 304 || r.Body.Len() != 0 || r.Header().Get("ETag") != tag {
+						t.Fatalf("match %s %s modified %q: %d", name, match, modified, r.Code)
+					}
+					sharedCacheHeaders(t, r.Header(), tag, cache)
 				}
-				sharedCacheHeaders(t, r.Header(), tag)
 			}
 			for _, identity := range identities {
 				for _, modified := range []string{"", "bad", "Wed, 21 Oct 2015 07:28:00 GMT", "Wed, 21 Oct 2099 07:28:00 GMT"} {
@@ -67,7 +80,7 @@ func TestSharedFiles(t *testing.T) {
 					if r.Code != 200 || r.Header().Get("ETag") != tag || len(r.Header().Values("Content-Type")) != 1 || r.Header().Get("Content-Type") != contentType || (method == "GET" && r.Body.String() != got.Body.String()) || (method == "HEAD" && r.Body.Len() != 0) {
 						t.Fatalf("nonmatch %s %s with If-Modified-Since %q: %d %v", name, method, modified, r.Code, r.Header())
 					}
-					sharedCacheHeaders(t, r.Header(), tag)
+					sharedCacheHeaders(t, r.Header(), tag, cache)
 				}
 			}
 		}
@@ -99,9 +112,51 @@ func TestSharedFiles(t *testing.T) {
 	}
 }
 
-func sharedCacheHeaders(t *testing.T, headers http.Header, tag string) {
+func sharedCacheHeaders(t *testing.T, headers http.Header, tag, cache string) {
 	t.Helper()
-	if len(headers.Values("ETag")) != 1 || headers.Get("ETag") != tag || len(headers.Values("Cache-Control")) != 1 || headers.Get("Cache-Control") != "no-cache" {
+	if len(headers.Values("ETag")) != 1 || headers.Get("ETag") != tag || len(headers.Values("Cache-Control")) != 1 || headers.Get("Cache-Control") != cache {
 		t.Fatalf("shared file cache headers: %v", headers)
+	}
+}
+
+// R-8BXC-HCUN
+func sharedFiles(t *testing.T, f *fixture) map[string]string {
+	t.Helper()
+	files := map[string]string{
+		"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8",
+		"feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml",
+		"OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8",
+	}
+	css := f.get(t, "GET", page.StaticPrefix+"theme.css", "sites", "", nil)
+	if css.Code != http.StatusOK {
+		t.Fatalf("stylesheet discovery: %d", css.Code)
+	}
+	files[strings.TrimPrefix(page.PreloadURL(), page.StaticPrefix)] = "font/woff2"
+	for _, match := range regexp.MustCompile(`url\("([^"]*)"\)`).FindAllStringSubmatch(css.Body.String(), -1) {
+		name := match[1]
+		if strings.HasSuffix(name, ".woff2") && !strings.ContainsAny(name, `/\:"?#%`) {
+			files[name] = "font/woff2"
+		}
+	}
+	return files
+}
+
+// R-8WNM-ZGGG
+func TestSharedFilesPlainFontAliasesMissing(t *testing.T) {
+	f := fresh(t)
+	hashed := regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`)
+	for name, contentType := range sharedFiles(t, f) {
+		if contentType != "font/woff2" || !hashed.MatchString(name) {
+			continue
+		}
+		path := page.StaticPrefix + hashed.ReplaceAllString(name, ".woff2")
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
+			for _, validator := range []string{"", "*", `W/"stale"`} {
+				r := f.get(t, method, path, "sites", "", map[string]string{"If-None-Match": validator})
+				if r.Code != http.StatusNotFound {
+					t.Fatalf("%s %s: %d", method, path, r.Code)
+				}
+			}
+		}
 	}
 }
