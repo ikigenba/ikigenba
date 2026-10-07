@@ -1,8 +1,8 @@
 # Stories — assets
 
-The files that give sites' pages the platform's visual style, their service launcher and their button feedback, and how sites serves them. They are the platform's shared web files, the same for every platform app, and sites does not author them. sites serves exactly eight of them under `/_appkit/`, each with a fixed `Content-Type`: `theme.css`, the platform style's stylesheet, as `text/css; charset=utf-8`, whose `@font-face` rules name the font files beside it; `launcher.js`, the service launcher's script, and `feedback.js`, the button feedback script, both as `text/javascript; charset=utf-8`; the Inter and JetBrains Mono fonts, `InterVariable.woff2`, `InterVariable-Italic.woff2`, and `JetBrainsMono.woff2`, as `font/woff2`; and two licences as `text/plain; charset=utf-8`: `OFL.txt`, the fonts' licence, and `TABLER-LICENSE.txt`, the licence of the Tabler icons the platform style draws. They are inside the binary: sites reads nothing from disk to answer for them, a host holds no copy of them, and a page needs nothing from any other host — no font service and no third-party request of any kind. Nothing else under `/_appkit/` exists, whatever the method: not `/_appkit/` itself, not another file name, not a served name with a further `/` or segment after it, and not a served name in other letter case. A served file takes `GET` and `HEAD` and refuses any other method. `_appkit` can never be a site's slug, since a site's name begins with a letter or a digit (`S06`), so nothing under `/_appkit/` is ever a site's file; a site's own stylesheet, fonts, and scripts are its own files under `/<slug>/` (`S11`).
+The files that give sites' pages the platform's visual style, their service launcher, their button feedback and their icon, and how sites serves them. They are the platform's shared web files, the same for every platform app, and sites does not author them. sites serves exactly nine of them under `/_appkit/`, each with a fixed `Content-Type`: `theme.css`, the platform style's stylesheet, as `text/css; charset=utf-8`, whose `@font-face` rules name the font files beside it; `launcher.js`, the service launcher's script, and `feedback.js`, the button feedback script, both as `text/javascript; charset=utf-8`; `favicon.svg`, the suite's icon, which a browser shows beside a page's title, as `image/svg+xml`; the Inter and JetBrains Mono fonts, `InterVariable.woff2`, `InterVariable-Italic.woff2`, and `JetBrainsMono.woff2`, as `font/woff2`; and two licences as `text/plain; charset=utf-8`: `OFL.txt`, the fonts' licence, and `TABLER-LICENSE.txt`, the licence of the Tabler icons the platform style draws. They are inside the binary: sites reads nothing from disk to answer for them, a host holds no copy of them, and a page needs nothing from any other host — no font service and no third-party request of any kind. Nothing else under `/_appkit/` exists, whatever the method: not `/_appkit/` itself, not another file name, not a served name with a further `/` or segment after it, and not a served name in other letter case. A served file takes `GET` and `HEAD` and refuses any other method. `_appkit` can never be a site's slug, since a site's name begins with a letter or a digit (`S06`), so nothing under `/_appkit/` is ever a site's file; a site's own stylesheet, fonts, and scripts are its own files under `/<slug>/` (`S11`).
 
-Unlike the landing page and the about screen (`S03`), which are for signed-in users, the shared files are served to guests and users alike, with no identity required: the not-found and unavailable pages a guest meets at a site link `/_appkit/theme.css` and load `/_appkit/feedback.js` (`S11`, `S16`), and a guest's browser must be able to draw them. A request from a signed-in user carries `X-User-Id` and `X-User-Email`, and a guest's carries neither; the answer is the same for both, byte for byte. A served file is no site's, so serving one sets no visitor cookie and records no `site.viewed` (`S14`).
+Unlike the landing page and the about screen (`S03`), which are for signed-in users, the shared files are served to guests and users alike, with no identity required: the not-found and unavailable pages a guest meets at a site link `/_appkit/theme.css` and `/_appkit/favicon.svg` and load `/_appkit/feedback.js` (`S11`, `S16`), and a guest's browser must be able to draw them. A request from a signed-in user carries `X-User-Id` and `X-User-Email`, and a guest's carries neither; the answer is the same for both, byte for byte. A served file is no site's, so serving one sets no visitor cookie and records no `site.viewed` (`S14`).
 
 Every served file answered 200 or 304 carries a strong `ETag` and exactly one `Cache-Control: no-cache`, so a browser keeps its copy but asks each time whether it is still current, and an unchanged file costs a `304` rather than the bytes again. The `ETag`'s value is opaque — no story fixes it, and `"<etag>"` below stands for whatever the server sent. What is fixed is the relation: the value follows from the file's content alone, so the same content always yields the same value and different content a different one. A body is the same bytes on every request to the same sites binary; no story fixes its content. The stories do not fix how sites answers a `Range` request, whether it sends `Last-Modified`, how it treats `If-Match`, `If-Unmodified-Since`, `If-Range`, an `If-Modified-Since` with no `If-None-Match`, or an `If-None-Match` that is not a well-formed list of tags.
 
@@ -61,7 +61,7 @@ ETag: "<etag>"
 Cache-Control: no-cache
 ```
 
-Status 200. The body is the platform style's stylesheet, the same bytes as in `A browser fetches a page's stylesheet`, and the `ETag` is the same tag. Every served file is served to a guest this way, the fonts, the launcher's script, the button feedback script, and the licences included, and a guest's `HEAD`, revalidation, refused method, and missing file are answered as the stories below answer a user's. An empty `X-User-Id`, or an `X-User-Email` with no `X-User-Id`, is a guest's request all the same.
+Status 200. The body is the platform style's stylesheet, the same bytes as in `A browser fetches a page's stylesheet`, and the `ETag` is the same tag. Every served file is served to a guest this way, the fonts, the launcher's script, the button feedback script, the icon, and the licences included, and a guest's `HEAD`, revalidation, refused method, and missing file are answered as the stories below answer a user's. An empty `X-User-Id`, or an `X-User-Email` with no `X-User-Id`, is a guest's request all the same.
 
 Preconditions:
 
@@ -165,6 +165,38 @@ Cache-Control: no-cache
 ```
 
 Status 200. The body is the button feedback script. `Cache-Control` appears once.
+
+Preconditions:
+
+- sites is serving.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A browser fetches the page's icon
+
+Every page sites draws — the landing page, the about screen, and the not-found and unavailable pages — links the suite's icon at `/_appkit/favicon.svg` (`S03`, `S11`, `S16`), so a browser drawing the page asks sites for it to show beside the page's title. A site's own files are the site's and carry no icon of sites' (`S11`).
+
+Request:
+
+```
+GET /_appkit/favicon.svg HTTP/1.1
+Host: sites.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: image/svg+xml
+ETag: "<etag>"
+Cache-Control: no-cache
+```
+
+Status 200. The body is the suite's icon, an SVG image. `Cache-Control` appears once.
 
 Preconditions:
 
@@ -350,7 +382,7 @@ Postconditions:
 
 ## A caller asks for an asset that does not exist
 
-The files under `/_appkit/` are the eight above and nothing more, so the prefix itself, any other name, a served name with more after it, and a served name in other letter case all name nothing, whatever the method: a `POST` to a missing file's path is a 404 like a `GET`, never a 405. `/_appkit/banner.html` is one such path. None of them is a site's path, so none is answered with sites' not-found page, sets a cookie, or records a `site.viewed`.
+The files under `/_appkit/` are the nine above and nothing more, so the prefix itself, any other name, a served name with more after it, and a served name in other letter case all name nothing, whatever the method: a `POST` to a missing file's path is a 404 like a `GET`, never a 405. `/_appkit/banner.html` is one such path. None of them is a site's path, so none is answered with sites' not-found page, sets a cookie, or records a `site.viewed`.
 
 Request:
 
@@ -427,7 +459,7 @@ Postconditions:
 
 ## A caller sends an asset a method it does not take
 
-A served file is read-only: sites serves it and nothing changes it. This holds only for the eight served paths; any method on a missing file's path is a 404. `Allow` names the two methods a served file takes. A guest is refused the same way.
+A served file is read-only: sites serves it and nothing changes it. This holds only for the nine served paths; any method on a missing file's path is a 404. `Allow` names the two methods a served file takes. A guest is refused the same way.
 
 Request:
 
