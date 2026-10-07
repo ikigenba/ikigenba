@@ -2,7 +2,7 @@ module github.com/ikigenba/ikigenba/dummy
 
 go 1.26
 
-require github.com/ikigenba/ikigenba/appkit v0.12.1
+require github.com/ikigenba/ikigenba/appkit v0.14.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
