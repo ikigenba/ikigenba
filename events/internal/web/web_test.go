@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -222,16 +223,37 @@ func TestMCPDelegation(t *testing.T) {
 	}
 }
 
-// R-5COF-APL7 R-5DWB-OHBW R-D7C0-NGJF R-5GC4-G0TA R-D9RT-F00T R-P12O-UL4K R-5HK0-TSJZ R-DDFI-KB8W R-DENE-Y2ZL
+// R-E5ST-IR1Y
+func sharedFiles(t *testing.T, h http.Handler) map[string]string {
+	t.Helper()
+	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8", "favicon.svg": "image/svg+xml"}
+	css := request(h, "GET", page.StaticPrefix+"theme.css", "u")
+	if css.Code != http.StatusOK {
+		t.Fatalf("stylesheet discovery: status %d", css.Code)
+	}
+	files[strings.TrimPrefix(page.PreloadURL(), page.StaticPrefix)] = "font/woff2"
+	for _, match := range regexp.MustCompile(`url\("([^"]*)"\)`).FindAllStringSubmatch(css.Body.String(), -1) {
+		name := match[1]
+		if strings.HasSuffix(name, ".woff2") && !strings.ContainsAny(name, "/\\:\"?#%") {
+			files[name] = "font/woff2"
+		}
+	}
+	return files
+}
+
+// R-EO3B-9B6D R-F55W-M3K3 R-FM8H-YVXT R-G4IZ-PG28 R-GKDO-OGP9 R-H1GA-192Z R-HIIV-E1GP R-DDFI-KB8W R-DENE-Y2ZL
 func TestSharedFiles(t *testing.T) {
 	h, p, _, _, _ := fixture(t)
 	secondHandler, secondPages, _, _, _ := fixture(t)
-	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8", "favicon.svg": "image/svg+xml"}
-	for name, media := range files {
+	for name, media := range sharedFiles(t, h) {
 		path := page.StaticPrefix + name
+		cache := "no-cache"
+		if media == "font/woff2" {
+			cache = "public, max-age=31536000, immutable"
+		}
 		plain := request(h, "GET", path, "u")
 		etag := plain.Header().Get("ETag")
-		if plain.Code != 200 || plain.Body.Len() == 0 || plain.Header().Get("Content-Type") != media || len(plain.Header().Values("Content-Type")) != 1 || len(plain.Header().Values("Cache-Control")) != 1 || len(plain.Header().Values("ETag")) != 1 || len(etag) < 2 || etag[0] != '"' || etag[len(etag)-1] != '"' || plain.Header().Get("Cache-Control") != "no-cache" {
+		if plain.Code != 200 || plain.Body.Len() == 0 || plain.Header().Get("Content-Type") != media || len(plain.Header().Values("Content-Type")) != 1 || len(plain.Header().Values("Cache-Control")) != 1 || len(plain.Header().Values("ETag")) != 1 || len(etag) < 2 || etag[0] != '"' || etag[len(etag)-1] != '"' || plain.Header().Get("Cache-Control") != cache {
 			t.Fatal(name, plain.Code, plain.Header())
 		}
 		for _, b := range []byte(etag[1 : len(etag)-1]) {
@@ -244,32 +266,38 @@ func TestSharedFiles(t *testing.T) {
 			t.Fatal(name)
 		}
 		head := request(h, "HEAD", path, "u")
-		if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Type") != media || head.Header().Get("ETag") != etag || head.Header().Get("Cache-Control") != plain.Header().Get("Cache-Control") || len(head.Header().Values("ETag")) != 1 || len(head.Header().Values("Cache-Control")) != 1 {
+		if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Type") != media || len(head.Header().Values("Content-Type")) != 1 || head.Header().Get("ETag") != etag || head.Header().Get("Cache-Control") != plain.Header().Get("Cache-Control") || len(head.Header().Values("ETag")) != 1 || len(head.Header().Values("Cache-Control")) != 1 {
 			t.Fatal(head)
 		}
 		for _, method := range []string{"GET", "HEAD"} {
-			for _, tag := range []string{"*", `"other", W/` + etag + ", "} {
-				r := httptest.NewRequest(method, path, nil)
+			for _, tag := range []string{"*", etag, "W/" + etag, " ,\tW/" + etag + "\t,", `"other", ` + etag, etag + ", " + etag} {
+				for _, modified := range []string{"", "Sun, 06 Nov 1994 08:49:37 GMT", "Sun, 06 Nov 2094 08:49:37 GMT", "malformed"} {
+					r := httptest.NewRequest(method, path, nil)
+					r.Header.Set("X-User-Id", "u")
+					r.Header.Set("If-None-Match", tag)
+					r.Header.Set("If-Modified-Since", modified)
+					out := httptest.NewRecorder()
+					h.ServeHTTP(out, r)
+					if out.Code != 304 || out.Body.Len() != 0 || out.Header().Get("ETag") != etag || len(out.Header().Values("ETag")) != 1 || out.Header().Get("Cache-Control") != cache || len(out.Header().Values("Cache-Control")) != 1 {
+						t.Fatal(out)
+					}
+				}
+			}
+		}
+		for _, tag := range []string{`"other"`, `W/"other"`, ` , "other" , , W/"stale" ,`, `"*"`} {
+			for _, modified := range []string{"", "Sun, 06 Nov 1994 08:49:37 GMT", "Sun, 06 Nov 2094 08:49:37 GMT", "malformed"} {
+				r := httptest.NewRequest("GET", path, nil)
 				r.Header.Set("X-User-Id", "u")
 				r.Header.Set("If-None-Match", tag)
-				r.Header.Set("If-Modified-Since", "Sun, 06 Nov 2094 08:49:37 GMT")
+				r.Header.Set("If-Modified-Since", modified)
 				out := httptest.NewRecorder()
 				h.ServeHTTP(out, r)
-				if out.Code != 304 || out.Body.Len() != 0 || out.Header().Get("ETag") != etag || len(out.Header().Values("ETag")) != 1 || out.Header().Get("Cache-Control") != "no-cache" || len(out.Header().Values("Cache-Control")) != 1 {
+				if out.Code != 200 || out.Body.String() != plain.Body.String() || out.Header().Get("ETag") != etag || out.Header().Get("Content-Type") != media || len(out.Header().Values("Content-Type")) != 1 || len(out.Header().Values("ETag")) != 1 || out.Header().Get("Cache-Control") != cache || len(out.Header().Values("Cache-Control")) != 1 {
 					t.Fatal(out)
 				}
 			}
 		}
-		r := httptest.NewRequest("GET", path, nil)
-		r.Header.Set("X-User-Id", "u")
-		r.Header.Set("If-None-Match", `W/"other"`)
-		r.Header.Set("If-Modified-Since", "Sun, 06 Nov 2094 08:49:37 GMT")
-		out := httptest.NewRecorder()
-		h.ServeHTTP(out, r)
-		if out.Code != 200 || out.Body.String() != plain.Body.String() || out.Header().Get("ETag") != etag || out.Header().Get("Content-Type") != media || len(out.Header().Values("Content-Type")) != 1 || len(out.Header().Values("ETag")) != 1 || out.Header().Get("Cache-Control") != "no-cache" || len(out.Header().Values("Cache-Control")) != 1 {
-			t.Fatal(out)
-		}
-		for _, method := range []string{"POST", "PUT", "DELETE"} {
+		for _, method := range []string{"POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
 			for _, tag := range []string{"", "*", etag} {
 				r := httptest.NewRequest(method, path, strings.NewReader("input"))
 				r.Header.Set("X-User-Id", "u")
@@ -298,7 +326,11 @@ func TestSharedFiles(t *testing.T) {
 // R-D4W7-VX21
 func TestAppkitDelegation(t *testing.T) {
 	h, p, _, _, _ := fixture(t)
-	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt", "favicon.svg", "", "nope.css", "favicon.svg/", "FAVICON.SVG"} {
+	names := []string{"", "nope.css", "favicon.svg/", "FAVICON.SVG"}
+	for name := range sharedFiles(t, h) {
+		names = append(names, name)
+	}
+	for _, name := range names {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, headers := range []http.Header{
 				{},
@@ -320,6 +352,27 @@ func TestAppkitDelegation(t *testing.T) {
 	}
 	if len(p.calls) != 0 {
 		t.Fatal(p.calls)
+	}
+}
+
+// R-HZLG-QTUF
+func TestPlainFontAliasesNotFound(t *testing.T) {
+	h, p, _, _, _ := fixture(t)
+	hashed := regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`)
+	for name, media := range sharedFiles(t, h) {
+		if media != "font/woff2" || !hashed.MatchString(name) {
+			continue
+		}
+		path := page.StaticPrefix + hashed.ReplaceAllString(name, ".woff2")
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
+			out := request(h, method, path, "u")
+			if out.Code != http.StatusNotFound {
+				t.Fatalf("%s %s: status %d", method, path, out.Code)
+			}
+		}
+	}
+	if len(p.calls) != 0 {
+		t.Fatal("font aliases called pages", p.calls)
 	}
 }
 

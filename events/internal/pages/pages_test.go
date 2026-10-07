@@ -97,14 +97,26 @@ func contents(t *testing.T, body, tag, attribute string) string {
 func sharedAssets(t *testing.T, body string, launcher bool) {
 	t.Helper()
 	counts := map[string]int{}
+	bodyStart := regexp.MustCompile(`<body\b[^>]*>`).FindStringIndex(body)
+	if bodyStart == nil {
+		t.Fatal("document body absent")
+	}
 	attributes := regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9_-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?`)
-	for _, tag := range regexp.MustCompile(`<(link|meta|script|img)\b([^>]*)>`).FindAllStringSubmatch(body, -1) {
+	for _, span := range regexp.MustCompile(`<(link|meta|script|img)\b([^>]*)>`).FindAllStringSubmatchIndex(body, -1) {
+		tag := []string{body[span[0]:span[1]], body[span[2]:span[3]], body[span[4]:span[5]]}
 		attrs := map[string]string{}
 		for _, a := range attributes.FindAllStringSubmatch(tag[2], -1) {
 			attrs[a[1]] = html.UnescapeString(a[2] + a[3] + a[4])
 		}
 		switch tag[1] {
 		case "link":
+			if attrs["rel"] == "preload" && span[0] < bodyStart[0] {
+				counts["preload"]++
+				crossorigin, present := attrs["crossorigin"]
+				if attrs["as"] != "font" || attrs["type"] != "font/woff2" || attrs["href"] != page.PreloadURL() || !present || crossorigin != "" {
+					t.Fatal("font preload attributes or position", tag[0])
+				}
+			}
 			if attrs["rel"] == "stylesheet" {
 				counts["stylesheet"]++
 				if attrs["href"] != "/_appkit/theme.css" {
@@ -151,20 +163,20 @@ func sharedAssets(t *testing.T, body string, launcher bool) {
 	if launcher {
 		wantLauncher = 1
 	}
-	for key, want := range map[string]int{"stylesheet": 1, "icon": 1, "viewport": 1, "feedback": 1, "launcher": wantLauncher} {
+	for key, want := range map[string]int{"stylesheet": 1, "preload": 1, "icon": 1, "viewport": 1, "feedback": 1, "launcher": wantLauncher} {
 		if counts[key] != want {
 			t.Fatalf("%s count: got %d, want %d", key, counts[key], want)
 		}
 	}
 }
 
-// R-5IRX-7KAO
+// R-5IRX-7KAO R-28U1-8RGR
 func TestSharedPageAssets(t *testing.T) {
 	d, st, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
 	p := pages.New(pages.Config{ServicesPath: path, Store: st, Version: "test"})
 	// Launcher icon markup is verbatim and excluded from the page's asset contract.
-	icon := `<svg><link rel="icon" href="https://icon.test/favicon.svg"><link rel="stylesheet" href="https://icon.test/style.css"><meta name="viewport" content="icon"><script src="https://icon.test/script.js"></script><img src="https://icon.test/image.svg"></svg>`
+	icon := `<svg><link rel="icon" href="https://icon.test/favicon.svg"><link rel="stylesheet" href="https://icon.test/style.css"><link rel="preload" href="https://icon.test/font.woff2"><meta name="viewport" content="icon"><script src="https://icon.test/script.js"></script><img src="https://icon.test/image.svg"></svg>`
 	encodedIcon, err := json.Marshal(icon)
 	must(t, err)
 	for _, services := range []struct {
