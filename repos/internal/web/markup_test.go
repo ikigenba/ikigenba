@@ -512,6 +512,28 @@ func assertMarkupLauncher(t *testing.T, body string, banner page.Banner) {
 	}
 }
 
+// R-B7YS-YOFZ
+func assertMarkupPreload(t *testing.T, written string) {
+	t.Helper()
+	bodies := markupNamed(written, "body", false)
+	if len(bodies) == 0 {
+		t.Fatal("page body absent")
+	}
+	count := 0
+	for _, tag := range markupNamed(written, "link", false) {
+		if !tag.has("rel", "preload") {
+			continue
+		}
+		count++
+		if tag.start >= bodies[0].start || !tag.has("as", "font") || !tag.has("type", "font/woff2") || !tag.has("href", page.PreloadURL()) || (!tag.bare("crossorigin") && !tag.has("crossorigin", "")) {
+			t.Fatalf("font preload attributes or placement: %s", written[tag.start:tag.end])
+		}
+	}
+	if count != 1 {
+		t.Fatalf("font preload count = %d", count)
+	}
+}
+
 // R-5HU5-I9M8 R-5J21-W1CX R-5K9Y-9T3M R-5LHU-NKUB R-5MPR-1CL0 R-67G1-JG6T
 func TestMarkupPages(t *testing.T) {
 	for _, fixture := range []struct {
@@ -557,6 +579,7 @@ func TestMarkupPages(t *testing.T) {
 					}
 					body := w.Body.String()
 					written := markupWritten(t, body, banner)
+					assertMarkupPreload(t, written)
 					assertMarkupIcon(t, written)
 					assertMarkupCommon(t, body, written, path, email)
 					assertMarkupLauncher(t, body, banner)

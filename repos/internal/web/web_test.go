@@ -21,6 +21,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos/internal/clone"
@@ -28,12 +29,16 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
 )
 
-// R-R8JQ-S4A9
+// R-BIXW-EM48
 func TestIdentityBeforeEveryRoute(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
 	before := f.gitCalls.Load()
-	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/feedback.js", "/_appkit/favicon.svg", "/_appkit/InterVariable.woff2", "/_appkit/InterVariable-Italic.woff2", "/_appkit/JetBrainsMono.woff2", "/_appkit/OFL.txt", "/_appkit/TABLER-LICENSE.txt", "/_appkit/nope", "/_appkit", "/favicon.ico", "/mcp", "/events/", "/declarations/", "/notes.git/info/refs?service=git-upload-pack", "/nope"} {
+	paths := []string{"/", "/about", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/feedback.js", "/_appkit/favicon.svg", "/_appkit/OFL.txt", "/_appkit/TABLER-LICENSE.txt", "/_appkit/nope", "/_appkit", "/favicon.ico", "/mcp", "/events/", "/declarations/", "/notes.git/info/refs?service=git-upload-pack", "/nope"}
+	for name := range webSharedFiles(t, h) {
+		paths = append(paths, page.StaticPrefix+name)
+	}
+	for _, path := range paths {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, values := range [][]string{nil, {""}, {"", "later-user"}} {
 				r := httptest.NewRequest(method, path, strings.NewReader(`{"name":"intruder"}`))
@@ -64,7 +69,7 @@ func TestIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-RC7F-XFIC
+// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-BK5S-SDUX
 func TestExactRoutesAndNotFound(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -272,7 +277,7 @@ func TestNoSiblingConnections(t *testing.T) {
 	}
 }
 
-// R-R4B1-UCYG R-8394-513A R-RFV5-2QQF R-R6QU-LWFU R-RCUC-IR5B
+// R-R4B1-UCYG R-8394-513A R-BLDP-65LM R-R6QU-LWFU R-RCUC-IR5B
 func TestRequestTraceAcrossRoutes(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -868,5 +873,32 @@ func TestConcurrentRequestsKeepTheirOwnCallers(t *testing.T) {
 			t.Fatalf("response %s: %d", answer.id, answer.w.Code)
 		}
 		assertWebTrace(t, webEventsFor(events, answer.id), answer.user, "GET", answer.path, status, 0, int64(answer.w.Body.Len()))
+	}
+}
+
+// R-BLDP-65LM
+func TestSharedPathsEmitOnlyRequestTrace(t *testing.T) {
+	f := newWebFixture(t)
+	h := Handler(f.cfg)
+	paths := []string{"/", "/about", "/nope", "/_appkit/", "/_appkit/nope", "/_appkit/theme.css/x"}
+	for name := range webSharedFiles(t, h) {
+		paths = append(paths, page.StaticPrefix+name)
+	}
+	for i, path := range paths {
+		for j, method := range []string{"GET", "HEAD", "POST", "DELETE", "custom"} {
+			for k, validator := range []string{"", "*", `W/"stale"`} {
+				id := fmt.Sprintf("shared-trace-%d-%d-%d", i, j, k)
+				r := httptest.NewRequest(method, path+"?ignored=true", strings.NewReader("ignored body"))
+				r.Header.Set("X-User-Id", "user")
+				r.Header.Set("X-Request-Id", id)
+				r.Header.Set("If-None-Match", validator)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				events := webEventsFor(f.events(t), id)
+				if len(events) != 2 || events[0].Name != "request.started" || events[1].Name != "request.finished" {
+					t.Fatalf("%s %s validator %q: %v", method, path, validator, events)
+				}
+			}
+		}
 	}
 }
