@@ -78,8 +78,8 @@ and `etc/`.
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.13.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.13.0`: a release that
+  - appkit `v0.14.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.14.0`: a release that
     exports the `db` and `events` packages. It and the modules it pulls in
     are events' only dependencies. See Adopting appkit below.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
