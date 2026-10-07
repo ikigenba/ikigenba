@@ -54,7 +54,8 @@ block: each gains an `auth_request` subrequest to `auth`'s `/check`, so a
 request reaches the app only once `auth` has answered it a valid session — the
 *wired* shape, save for an app that serves guests (below). In a wired block the client's own `X-User-Id` and `X-User-Email`
 never reach the app; nginx sets them from `auth`'s answer instead, turns a 401
-into a redirect to `auth`, and passes a 403 through. The subrequest tells
+into a redirect to `auth`, and passes a 403 through (save under `/mcp`,
+below). The subrequest tells
 `auth` which request it is checking: the client's method, host, and request
 target — path and any query string — as `X-Original-Method`,
 `X-Original-Host`, and `X-Original-URI`, always overwriting whatever the
@@ -72,10 +73,18 @@ protocol programs rather than browsers use to call an app's tools. Every wired
 block answers them with the same subrequest to `/check` and the same identity
 relay as `location /`, with one difference: a request `auth` answers 401 is
 not sent to sign in, since the client is not a browser that could follow the
-redirect. It is answered `401` with `WWW-Authenticate: Bearer realm="ikigenba"`
+redirect. It is answered `401` with `WWW-Authenticate: Bearer
+realm="ikigenba", resource_metadata="<mcp origin>/.well-known/oauth-protected-resource"`
 and the one line of plain text `authentication required: send Authorization:
 Bearer <token>`, where `<token>` is literal text telling the client what to
-send. A 403 from `auth` still reaches the client unchanged. Every wired block
+send. A request `auth` answers 403 — a token it refuses — is answered `401`
+too, with `WWW-Authenticate: Bearer error="invalid_token",
+resource_metadata="<mcp origin>/.well-known/oauth-protected-resource"` and the
+same line, because an MCP client starts signing in again only on a 401. The
+`<mcp origin>` is the MCP gateway's, `https://mcp.<host.name>`, whichever app
+was asked and whether or not an `mcp` app is routed; the document it names is
+the gateway's to serve. Everywhere outside `/mcp` and `/mcp/...` a 403 from
+`auth` still reaches the client unchanged. Every wired block
 carries these locations whatever the app's manifest says about `mcp`: the
 paths are the suite's, not an app's opt-in. Only `/mcp` itself and paths
 under `/mcp/` are reserved — `/mcpx` is an ordinary path and redirects to sign
@@ -177,10 +186,12 @@ host.apex names also answers at the parent of host.name; until that app is
 routed, the parent answers 404. A routed app named auth is the authenticator:
 every other app's block then requires a valid session, checked against auth's
 /check, while auth's own name is not gated. Under /mcp, a request without a
-valid credential is answered 401 instead of being sent to sign in; so is a
-git smart HTTP request, with a Basic challenge so git asks for the token. An
-app whose manifest sets guests admits a request without a credential
-elsewhere, checked against auth's /check/open.
+valid credential, or with one auth refuses, is answered 401 naming the MCP
+gateway's protected-resource metadata instead of being sent to sign in or
+refused; a git smart HTTP request without a credential is answered 401 too,
+with a Basic challenge so git asks for the token. An app whose manifest sets
+guests admits a request without a credential elsewhere, checked against
+auth's /check/open.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -550,7 +561,10 @@ URL as `return=`; a 403 reaches the client unchanged. Between the redirect and
 `location /`, each wired block carries the MCP locations: `/mcp` exactly and
 everything under `/mcp/` are checked and relayed like `location /`, but a 401
 from `auth` is answered by `@mcp_unauthorized` — the `401` with its
-`WWW-Authenticate` header and one-line body — instead of the redirect. After
+`WWW-Authenticate` header and one-line body — instead of the redirect, and a
+403 from `auth` by `@mcp_invalid_token`, the `invalid_token` 401 with the same
+body. Both headers name `https://mcp.sbx.ikigenba.dev`, the gateway's origin
+on this host, though no `mcp` app is installed here. After
 them comes the git location: a path ending `/info/refs`, `/git-upload-pack`,
 or `/git-receive-pack` is checked and relayed the same way, and a 401 from
 `auth` is answered by `@git_unauthorized`, a Basic challenge. The `\n` in
@@ -649,7 +663,13 @@ server {
 
     location @mcp_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer realm="ikigenba"' always;
+        add_header   WWW-Authenticate 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location @mcp_invalid_token {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
@@ -664,6 +684,7 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+        error_page       403 = @mcp_invalid_token;
 
         proxy_pass       http://unix:/run/ikigenba/crm.sock:;
         proxy_set_header Host              $host;
@@ -680,6 +701,7 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+        error_page       403 = @mcp_invalid_token;
 
         proxy_pass       http://unix:/run/ikigenba/crm.sock:;
         proxy_set_header Host              $host;
@@ -752,7 +774,13 @@ server {
 
     location @mcp_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer realm="ikigenba"' always;
+        add_header   WWW-Authenticate 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location @mcp_invalid_token {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
@@ -767,6 +795,7 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+        error_page       403 = @mcp_invalid_token;
 
         proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
         proxy_set_header Host              $host;
@@ -783,6 +812,7 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+        error_page       403 = @mcp_invalid_token;
 
         proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
         proxy_set_header Host              $host;
@@ -984,7 +1014,13 @@ server {
 
     location @mcp_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer realm="ikigenba"' always;
+        add_header   WWW-Authenticate 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location @mcp_invalid_token {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
@@ -999,6 +1035,7 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+        error_page       403 = @mcp_invalid_token;
 
         proxy_pass       http://unix:/run/ikigenba/sites.sock:;
         proxy_set_header Host              $host;
@@ -1015,6 +1052,7 @@ server {
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @mcp_unauthorized;
+        error_page       403 = @mcp_invalid_token;
 
         proxy_pass       http://unix:/run/ikigenba/sites.sock:;
         proxy_set_header Host              $host;
@@ -1133,8 +1171,10 @@ Postconditions:
 An MCP client is a program, not a browser: a redirect to a sign-in page is
 nothing it can follow. So on a wired app, a request under `/mcp` that `auth`
 answers 401 is answered `401` by nginx itself, with a challenge naming the
-scheme the client should use and one line saying what to send. `/mcp` itself
-and any path under `/mcp/` behave the same.
+scheme the client should use and where to find out how to get a token — the
+MCP gateway's protected-resource metadata — and one line saying what to send.
+`/mcp` itself and any path under `/mcp/` behave the same, and the metadata is
+the gateway's whichever app was asked.
 
 Request:
 
@@ -1151,7 +1191,7 @@ Response:
 ```
 HTTP/1.1 401 Unauthorized
 Content-Type: text/plain
-WWW-Authenticate: Bearer realm="ikigenba"
+WWW-Authenticate: Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"
 ```
 
 Status 401. The body is the one line `authentication required: send
@@ -1174,10 +1214,14 @@ Postconditions:
 
 ## An MCP client whose token the authenticator refuses reaches a wired app
 
-A client that sends a bearer token `auth` will not honor — unknown, disabled,
-expired, or its owner's sign-in lapsed — gets `auth`'s 403, exactly as it
-would at `/`. Only 401 is turned into the MCP challenge; a refusal is not a
-request to authenticate, and it reaches the client unchanged.
+A client that sends a bearer token `auth` will not honor — unknown, revoked,
+disabled, expired, issued for another host, or its owner's sign-in lapsed —
+is told its token is no good and where to get another. An MCP client starts
+signing in again only on a 401, so under `/mcp` nginx answers `auth`'s 403
+with a `401` whose challenge says `invalid_token` and names the MCP gateway's
+protected-resource metadata, with the same one line as a request with no
+credential. That way an expired or revoked token heals itself: the client's
+next call prompts its user to sign in.
 
 Request:
 
@@ -1192,10 +1236,14 @@ $ curl -si -H 'Authorization: Bearer ikp_<token>' https://crm.sbx.ikigenba.dev/m
 Response:
 
 ```
-HTTP/1.1 403 Forbidden
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"
 ```
 
-Status 403. The body is not fixed.
+Status 401. The body is the one line `authentication required: send
+Authorization: Bearer <token>`, ending in a newline, where `<token>` is those
+seven characters as written, not a value filled in.
 
 Preconditions:
 
@@ -1205,7 +1253,14 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`; `/check`
+  itself answered 403, and only nginx's answer to the client changed.
+- Outside `/mcp` and `/mcp/...` the same token still gets `auth`'s 403
+  unchanged: at `https://crm.sbx.ikigenba.dev/`, and at a git path such as
+  `https://crm.sbx.ikigenba.dev/notes.git/info/refs`, as the `git client sends
+  its token as the password` story says.
+- Under the configuration of the `host running an app that serves guests`
+  story, `https://sites.sbx.ikigenba.dev/mcp` answers the same.
 
 ## A browser reaches a wired app outside `/mcp` without signing in
 
@@ -1296,8 +1351,8 @@ Postconditions:
 Once challenged, git sends `Authorization: Basic` holding a username and the
 token as the password. `auth` decides it as it decides a bearer token, and
 the request reaches the app as a request at `/` does once admitted, with the
-identity `auth` gave. A token `auth` refuses gets its 403 unchanged, as under
-`/mcp`.
+identity `auth` gave. A token `auth` refuses gets its 403 unchanged, as at
+`/`; only `/mcp` and `/mcp/...` turn a refusal into a 401.
 
 Request:
 
@@ -1392,7 +1447,7 @@ Response:
 ```
 HTTP/1.1 401 Unauthorized
 Content-Type: text/plain
-WWW-Authenticate: Bearer realm="ikigenba"
+WWW-Authenticate: Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"
 ```
 
 Status 401. The body is the one line `authentication required: send
