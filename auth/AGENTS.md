@@ -1,20 +1,24 @@
 # auth
 
-auth signs users in and answers nginx's identity subrequest for every other app. One Go binary serves it on the socket it is passed as descriptor 3, behind the host's nginx; users sign in through Google's OIDC issuer, and users, sessions and API tokens live in its own SQLite database, `state/auth.db` resolved against the working directory and opened through appkit's `db` package. In a sandbox it runs behind the sandbox's nginx, which sets `IKIGENBA_PUBLIC_URL` and `IKIGENBA_CALLBACK_URL` (D03); a host sets neither. It is built on appkit for pages, identity, telemetry and the database. The contract is `specs/design/`; this file restates none of it.
+auth signs users in and answers nginx's identity subrequest for every other app. One Go binary serves it on the socket it is passed as descriptor 3, behind the host's nginx; users sign in through Google's OIDC issuer, and it is the OAuth authorization server MCP clients register with and are approved through. Users, sessions, API and MCP client tokens, MCP client registrations and authorization codes live in its own SQLite database, `state/auth.db` resolved against the working directory and opened through appkit's `db` package. In a sandbox it runs behind the sandbox's nginx, which sets `IKIGENBA_PUBLIC_URL` and `IKIGENBA_CALLBACK_URL` (D03); a host sets neither. It is built on appkit for pages, identity, telemetry and the database. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
 - `specs/` is the contract: `stories/` and `design/`.
-- `share/icon.svg` is the launcher icon. The build run never writes it; the user or the delivering agent changes it.
+- `assets/` is the page markup, and `share/icon.svg` the launcher icon. The build run never writes them; the user or the delivering agent changes them.
 - `migrations/` holds the database's migrations, which the root package embeds; the build run writes it.
-- The root package `auth` embeds `migrations/`. `cmd/auth` is the binary. `internal/` is everything else, one package per concern.
+- The root package `auth` embeds `migrations/` and `assets/`. `cmd/auth` is the binary. `internal/` is everything else, one package per concern.
 - `etc/` is what the host needs: `manifest.toml`.
 - `state/` is where a running auth keeps `auth.db`; it is created at run time and never committed.
-- The build run writes the Go source, the tests, `migrations/`, `go.mod`, `go.sum` and `etc/`. `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
+- The build run writes the Go source, the tests, `migrations/`, `go.mod`, `go.sum` and `etc/`. `assets/`, `share/icon.svg`, `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets
 
-auth holds no stylesheet, fonts or licences; appkit's `page` package serves them. `share/icon.svg` is the Tabler outline `user-circle` from `design/ikigenba/icons/tabler/`, stripped as `design/README.md` asks of a launcher icon. `devctl build` packs it beside `bin/` and `etc/`.
+auth holds no stylesheet, fonts or licences; appkit's `page` package serves them.
+
+`assets/` holds `approve.html`, the approve page, and `mcp-clients.html`, the profile's `MCP clients` card, `html/template` files that follow the repository's `design/`. They are an input to the spec. The root package embeds them, since Go's `embed` reaches only files at or below its own directory, and the code executes them by template name from auth's template set (D01), adding no markup of its own around them. Design names each template, the data it receives and the hooks it emits; tests assert on those hooks and on visible text, never on layout. A template that is missing or wrong, a state a story names that it cannot show, or a hook design names that it lacks is filed in `specs/issues/`; the run never edits an asset to close one.
+
+`share/icon.svg` is the Tabler outline `user-circle` from `design/ikigenba/icons/tabler/`, stripped as `design/README.md` asks of a launcher icon. `devctl build` packs it beside `bin/` and `etc/`.
 
 ## Toolchain
 
@@ -40,9 +44,9 @@ The test files are every `*_test.go` in the module: the root package, `cmd/auth`
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-`specs/` holds no `*_test.go`.
+`specs/` and `assets/` hold no `*_test.go`.
 
-**No id-shaped literal in a fixture.** No auth value has a requirement tag's shape: user, session and login-state ids are 26 Crockford base32 chars (`internal/idcodec`, no hyphen), token ids `tok_` plus 26, token secrets `ikp_` plus 52, stored secret hashes 64 lowercase hex chars, and request ids 32 lowercase hex chars. No auth literal can be mistaken for a tag.
+**No id-shaped literal in a fixture.** No auth value has a requirement tag's shape: user, session and login-state ids are 26 Crockford base32 chars (`internal/idcodec`, no hyphen), authorization codes 26 Crockford base32 chars, token ids `tok_` plus 26, MCP client ids `cli_` plus 26, token secrets `ikp_` plus 52, stored secret hashes 64 lowercase hex chars, and request ids 32 lowercase hex chars. No auth literal can be mistaken for a tag.
 
 ## Test discipline
 
@@ -52,9 +56,9 @@ These rules govern everything `go test ./...` runs. Tests are offline (loopback 
 
 **Google is faked, never called.** auth reaches Google's OIDC issuer only through `Process.OIDCIssuer`. Tests stand up a loopback issuer (discovery document, keys and token endpoint on `127.0.0.1:0`) and inject its URL, so no test reaches `accounts.google.com`.
 
-**The database is the test's own.** A test that needs a store opens its own database with appkit's `db.Open` at a path in its own temporary directory, with `auth.Migrations()` and a clock it controls, closes the handle when it ends, and builds the store over that handle with `store.New`; nothing touches `/opt/auth`, the checkout's `state/` or a shared file. A `Run`-level fixture lives under the test's `Dir`: a regular file named `state`, a file at `state/auth.db` that is not a database, or a database a test's own `db.Open` made and then changed through `DB.Write`, such as one recording a version `auth.Migrations()` does not hold. A store failure, D03's `500` among them, is provoked with `SetFailing(true)` on the handle the store a server-level test handed `server.New` was built over, never by corrupting the file, removing permissions or closing the store; where only one statement must fail, the test creates through `DB.Write` on that handle a trigger that aborts it. A store test builds the old-shape fixture for D04's token-id migration in its own tree as D04 names: `db.Open` with `auth.Migrations()`, `CreateToken` through a store over that handle, then through `DB.Write` strip the `tok_` prefix and drop `schema_migrations`, close the handle, and open the file again. Tests prove auth's use of the database, its schema, its store and its wiring, never SQLite's own guarantees (atomicity, durability, locking) and never appkit's `db` contract (opening, migrations, transactions, `db status`), which appkit's own tests prove.
+**The database is the test's own.** A test that needs a store opens its own database with appkit's `db.Open` at a path in its own temporary directory, with `auth.Migrations()` and a clock it controls, closes the handle when it ends, and builds the store over that handle with `store.New`; nothing touches `/opt/auth`, the checkout's `state/` or a shared file. A `Run`-level fixture lives under the test's `Dir`: a regular file named `state`, a file at `state/auth.db` that is not a database, or a database a test's own `db.Open` made and then changed through `DB.Write`, such as one recording a version `auth.Migrations()` does not hold. A store failure, D03's `500` among them, is provoked with `SetFailing(true)` on the handle the store a server-level test handed `server.New` was built over, never by corrupting the file, removing permissions or closing the store; where only one statement must fail, the test creates through `DB.Write` on that handle a trigger that aborts it. A store test builds the old-shape fixtures for D04's migrations in its own tree as D04 names: `db.Open` with `auth.Migrations()`, `CreateToken` through a store over that handle, then through `DB.Write` drop `clients`, `auth_codes` and `tokens.kind`/`tokens.host`, and either delete version 3's `schema_migrations` row or also strip the `tok_` prefix and drop `schema_migrations`; then close the handle and open the file again. Tests prove auth's use of the database, its schema, its store and its wiring, never SQLite's own guarantees (atomicity, durability, locking) and never appkit's `db` contract (opening, migrations, transactions, `db status`), which appkit's own tests prove.
 
-**The clock is injected.** `Process.Now` supplies every timestamp. Session idle (15m) and cap (18h), the 30d token login window and token expiry (30d/90d/365d) are tested by advancing what `Now` returns. A test that sleeps to age a session or token is a bug.
+**The clock is injected.** `Process.Now` supplies every timestamp. Session idle (15m) and cap (18h), the 30d token login window, token expiry (30d/90d/365d), the 90d MCP client token, the 10m authorization code and the 24h unused client registration are tested by advancing what `Now` returns. A test that sleeps to age a session or token is a bug.
 
 **Randomness is injected.** `Process.Rand` supplies the bytes `idcodec` mints ids and secrets from, so values under test are reproducible.
 
@@ -66,7 +70,7 @@ These rules govern everything `go test ./...` runs. Tests are offline (loopback 
 
 **No test runs the page's scripts.** The pages carry appkit's feedback script and, when there are services, appkit's launcher script. The gates have no browser or JavaScript engine, and adding one is an unapproved dependency, so a test asserts what a response body carries, never what a script would do with it.
 
-**No test reads the checkout.** A test opens no file of this module, not source, `go.mod`, `go.sum`, `etc/` or `share/`, walks no directory, and never parses or reflects over code. It proves structure by use: importing the package, constructing the type, calling the function, or running the built binary in the one exec'ing test.
+**No test reads the checkout.** A test opens no file of this module, not source, `go.mod`, `go.sum`, `etc/`, `share/` or `assets/`, walks no directory, and never parses or reflects over code. It proves structure by use: importing the package, constructing the type, calling the function, or running the built binary in the one exec'ing test.
 
 **auth binds nothing; a test makes its listener.** auth serves on the listener it is passed (D01, D03). A test makes its own, a loopback TCP listener on `127.0.0.1:0` or a Unix socket in a temporary directory, never a fixed port. A `cli.Run`-level serve test hands it to `Run` through `Process.Inherit`, sets `LISTEN_PID` to the `Process.Pid` it chose and `LISTEN_FDS` to `1` in the environment map, alongside the three Google settings, and records `Unsetenv` calls with a function of its own; it never leaves `Inherit` nil, which would take the test process's real descriptor 3. Failure paths inject an `Inherit` that errors or a listener whose `Accept` fails. A test learns `Run` is serving the way systemd does: it binds a Unix datagram socket in a short temporary directory (`os.MkdirTemp`, since a socket path is limited to 108 bytes and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for `READY=1` with a deadline that fails the test. It stops `Run` by cancelling the context, never by a signal.
 

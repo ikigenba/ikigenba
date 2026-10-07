@@ -1,0 +1,38 @@
+{{/* The approve page at GET /authorize (D09): one card asking the signed-in
+     person to approve or deny an MCP client. Data (D09's approve data):
+     .Banner (a page.Banner, for banner and footer); .ClientName (the
+     client's registered name, written as text); .Gateway (the MCP origin
+     without its scheme); .Until (YYYY-MM-DD, when the token would expire);
+     .ReturnHost (where the browser returns); and the values the form posts
+     back: .ClientID, .RedirectURI, .Challenge, .State (empty when the request
+     had none) and .Resource. Hooks: main holds one section.card titled by
+     h2 "Connect <ClientName>"; three p, in order: "<ClientName> wants to act
+     as you at the MCP gateway, <Gateway>, until <Until>.", "Approve only if
+     you started this from a client you trust. You can revoke it from your
+     profile at any time." and "After you approve, you return to
+     <ReturnHost>."; then form[method=post][action=/authorize] holding
+     hidden inputs response_type=code, client_id, redirect_uri,
+     code_challenge, code_challenge_method=S256, resource and, only when
+     .State is not empty, state; then div.actions holding
+     button[type=submit][name=decision][value=approve] "Approve" (no class,
+     the primary) and button.secondary[type=submit][name=decision][value=deny]
+     "Deny". The banner follows <body> and the footer precedes </body> with
+     nothing between. No other form, button, select, a, svg or script. */}}
+{{define "approve"}}<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/_appkit/theme.css"><link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg"><script src="/_appkit/feedback.js" defer></script><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{template "banner" .Banner}}<main>
+<section class="card">
+<header><h2>Connect {{.ClientName}}</h2></header>
+<p>{{.ClientName}} wants to act as you at the MCP gateway, {{.Gateway}}, until {{.Until}}.</p>
+<p>Approve only if you started this from a client you trust. You can revoke it from your profile at any time.</p>
+<p>After you approve, you return to {{.ReturnHost}}.</p>
+<form method="post" action="/authorize">
+<input type="hidden" name="response_type" value="code">
+<input type="hidden" name="client_id" value="{{.ClientID}}">
+<input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
+<input type="hidden" name="code_challenge" value="{{.Challenge}}">
+<input type="hidden" name="code_challenge_method" value="S256">
+<input type="hidden" name="resource" value="{{.Resource}}">
+{{if .State}}<input type="hidden" name="state" value="{{.State}}">
+{{end}}<div class="actions"><button type="submit" name="decision" value="approve">Approve</button> <button class="secondary" type="submit" name="decision" value="deny">Deny</button></div>
+</form>
+</section>
+</main>{{template "footer" .Banner}}</body></html>{{end}}

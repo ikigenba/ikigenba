@@ -11,7 +11,7 @@ import (
 var _ func() fs.FS = auth.Migrations
 
 func TestEmbeddedMigrationsIgnoreWorkingDirectory(t *testing.T) {
-	// R-7E9O-NIZ0
+	// R-G55N-V09H
 	// R-7FHL-1APP
 	files := auth.Migrations()
 	entries, err := fs.ReadDir(files, ".")
