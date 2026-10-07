@@ -35,7 +35,7 @@ func tokenProfileRequest(session string) *http.Request {
 }
 
 func TestTokenRefusalBodiesAreSingleLines(t *testing.T) {
-	// R-T01Q-F5J7: all mutation origin refusals and nonexistent/foreign action targets are single plain-text lines.
+	// R-5GDS-WQSP: all mutation origin refusals and nonexistent/foreign action targets are single plain-text lines.
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "owner")
 	other, _ := tokenTestIdentity(t, st, "other")
@@ -389,7 +389,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	assertAuthPage(t, body)
 	api := tokenCard(t, body, "API tokens")
 	create := tokenCard(t, body, "Create a token")
-	// R-15RI-VNB8, R-ZXV5-3WM8: flush header and sole empty token panel; no table/scrolling wrapper.
+	// R-15RI-VNB8, R-5AAA-ZW38: flush header and sole empty token panel; no table/scrolling wrapper.
 	tokenAttrs(t, api, map[string]string{"class": "card flush"})
 	header := tokenElements(api, "header")[0]
 	panel := tokenElements(api, "div")[0]
@@ -460,7 +460,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 		}
 		secrets = append(secrets, secret)
 		if c.used != nil {
-			if _, err := st.TouchTokenIdentity(secret, *c.used); err != nil {
+			if _, err := st.TouchTokenIdentity(secret, "mcp.green.example", *c.used); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -475,6 +475,12 @@ func TestTokenPopulatedProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	secrets = append(secrets, foreignSecret)
+	clientUsed := tokenTestNow.Add(-30 * time.Minute)
+	client, clientSecret := mintProfileClient(t, st, user.ID, "common clock client", tokenTestNow.Add(-90*24*time.Hour+90*time.Minute))
+	if _, err := st.TouchTokenIdentity(clientSecret, "mcp.green.example", clientUsed); err != nil {
+		t.Fatal(err)
+	}
+	secrets = append(secrets, clientSecret)
 	tokens, err := st.ListTokens(user.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -500,13 +506,13 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	api := tokenCard(t, body, "API tokens")
 	panel := tokenElements(api, "div")[0]
 	table := tokenElements(panel, "table")
-	// R-ZSZJ-KTNG: populated token panel is table-scroll with one table and no empty state.
+	// R-52YW-P9N2: populated token panel is table-scroll with one table and no empty state.
 	tokenAttrs(t, panel, map[string]string{"class": "table-scroll"})
 	if len(table) != 1 {
 		t.Fatal("populated panel wrong")
 	}
-	tokenAssertNoPanel(t, fixtureWrittenMarkup(t, body), "", "empty")
-	// R-ZU7F-YLE5: table consists of head then body, with precisely six ordered column names.
+	tokenAssertNoPanel(t, api, "", "empty")
+	// R-546T-31DR: table consists of head then body, with precisely six ordered column names.
 	head := tokenElement(t, table[0], "thead")
 	tbody := tokenElement(t, table[0], "tbody")
 	tokenConsists(t, tokenElement(t, table[0], "table"), tokenElements(table[0], "thead")[0], tokenElements(table[0], "tbody")[0])
@@ -523,7 +529,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	}
 	tokenConsists(t, tokenElement(t, headRows[0], "tr"), ths...)
 	tokenConsists(t, head, headRows...)
-	// R-ZVFC-CD4U, R-ZWN8-Q4VJ: one row per owned token, sorted used-first, usage desc, creation desc for ties and never-used.
+	// R-55EP-GT4G, R-592E-M4CJ R-57UI-8CLU: one row per owned token, sorted used-first, usage desc, creation desc for ties and never-used.
 	rows := tokenElements(tbody, "tr")
 	if len(rows) != len(cases) {
 		t.Fatalf("row count=%d", len(rows))
@@ -608,8 +614,32 @@ func TestTokenPopulatedProfile(t *testing.T) {
 		}
 	}
 
+	// R-1D2X-69RE: the client row's elapsed text and expired state share the same actual draw reading as every personal row.
+	clients := tokenCard(t, body, "MCP clients")
+	clientRows := tokenElements(tokenElement(t, clients, "tbody"), "tr")
+	if len(clientRows) != 1 || !strings.Contains(clientRows[0], `action="/tokens/`+client.ID+`/revoke"`) {
+		t.Fatal("client row missing or duplicated")
+	}
+	clientCells := tokenElements(clientRows[0], "td")
+	if len(clientCells) != 5 {
+		t.Fatal("client cells")
+	}
+	observedClientUsed := pageText(clientCells[2])
+	observedClientExpiry := pageText(clientCells[3])
+	tokenAssertTime(t, clientCells[2], clientUsed, true, observedClientUsed)
+	remaining := commonReadings[:0]
+	for _, reading := range commonReadings {
+		expiryText := tokenMinute(*client.ExpiresAt)
+		if !client.ExpiresAt.After(reading) {
+			expiryText = "Expired"
+		}
+		if tokenElapsed(reading.Sub(clientUsed)) == observedClientUsed && expiryText == observedClientExpiry {
+			remaining = append(remaining, reading)
+		}
+	}
+	commonReadings = remaining
 	if len(commonReadings) == 0 {
-		t.Fatal("row elapsed values do not share any actual injected clock reading")
+		t.Fatal("personal and client row elapsed/expiry values do not share any actual injected clock reading")
 	}
 	// R-1LM7-UNY9: profiles do not disclose any stored plaintext secret.
 	for _, secret := range secrets {
@@ -779,7 +809,7 @@ func TestTokenContractPermittedShapesAndFieldSlots(t *testing.T) {
 func tokenTemplateFixture(t *testing.T, name string, data any) string {
 	t.Helper()
 	w := httptest.NewRecorder()
-	if err := authTemplates.ExecuteTemplate(w, name, data); err != nil {
+	if err := pageTemplates.ExecuteTemplate(w, name, data); err != nil {
 		t.Fatal(err)
 	}
 	return w.Body.String()

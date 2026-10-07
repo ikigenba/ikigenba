@@ -80,7 +80,7 @@ func trailRequest(method, target string) *http.Request {
 
 func assertTrail(t *testing.T, events []telemetry.Event, r *http.Request, status int, names ...string) {
 	t.Helper()
-	// R-75XV-RVPL R-8OLV-6T5E R-T6HN-3SJG R-BD85-ZXX8: the writer's captured envelope defines the ordered request trail.
+	// R-10QY-2VS1 R-11YU-GNIQ R-T6HN-3SJG R-BD85-ZXX8: the writer's captured envelope defines the ordered request trail.
 	want := append([]string{"request.started"}, names...)
 	want = append(want, "request.finished")
 	got := make([]string, len(events))
@@ -326,7 +326,7 @@ func TestSignInRefusalTrail(t *testing.T) {
 }
 
 func TestTokenAndCheckTrail(t *testing.T) {
-	// R-TW3J-4Z41 R-9RMT-85YC R-TZR8-AAC4 R-9SUP-LXP1: token changes emit exactly the token ID, and repeated toggles emit nothing.
+	// R-TW3J-4Z41 token changes emit exactly the token ID, and repeated toggles emit nothing.
 	st := openServerStore(t, filepath.Join(t.TempDir(), "auth.db"), &identityRand{}, func() time.Time { return signInNow })
 	user, _, err := st.UpsertUserOnLogin("issuer", "owner", "owner@green.example", signInNow)
 	if err != nil {
@@ -433,7 +433,7 @@ func testCheckTrail(t *testing.T, f *trailFixture, st *store.Store, user store.U
 		assertTrail(t, events, r, w.Code)
 	}
 	var previous *telemetry.Event
-	// R-2XQU-WL0O: refusal causes expose the same event.
+	// refusal causes expose the same event.
 	for _, reason := range []string{"unknown", "disabled", "expired", "stale"} {
 		r := trailRequest("GET", "/check")
 		value := secret
@@ -492,7 +492,7 @@ func testCheckTrail(t *testing.T, f *trailFixture, st *store.Store, user store.U
 }
 
 func TestBasicRefusalTrailHidesUsernameAndCause(t *testing.T) {
-	// R-OOVI-E3O1: all Basic refusal causes, malformed forms, and usernames have identical check events apart from Time.
+	// all Basic refusal causes, malformed forms, and usernames have identical check events apart from Time.
 	var expected *telemetry.Event
 	for _, cause := range []string{"unknown", "disabled", "expired", "stale-owner", "malformed"} {
 		fixture, session, secret := basicOutcomeFixture(t, cause)
@@ -563,7 +563,7 @@ func TestCheckCredentialKindForIgnoredSchemesAndDatabaseFailure(t *testing.T) {
 }
 
 func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
-	// R-8M62-F9O0: reopening the old token shape makes only the prefixed route actionable.
+	// R-14EN-8704: reopening the old token shape makes only the prefixed route actionable.
 	for _, action := range []string{"enable", "disable", "delete"} {
 		t.Run(action, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "auth.db")
@@ -588,6 +588,11 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 			bare := strings.TrimPrefix(token.ID, idcodec.TokenIDPrefix)
 			handle := serverStoreDB(t, st)
 			if err := handle.Write(context.Background(), func(tx *sql.Tx) error {
+				for _, query := range []string{`DROP TABLE clients`, `DROP TABLE auth_codes`, `ALTER TABLE tokens DROP COLUMN kind`, `ALTER TABLE tokens DROP COLUMN host`} {
+					if _, err := tx.ExecContext(context.Background(), query); err != nil {
+						return err
+					}
+				}
 				if _, err := tx.ExecContext(context.Background(), `UPDATE tokens SET id = ? WHERE id = ?`, bare, token.ID); err != nil {
 					return err
 				}
@@ -643,7 +648,7 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 }
 
 func TestDomainFailuresRecordOnlyRequiredEvents(t *testing.T) {
-	// R-9SUP-LXP1 R-THGQ-JQ7P R-TUVM-R7DC: rejected operations and store failures do not masquerade as state changes.
+	// R-THGQ-JQ7P R-TUVM-R7DC: rejected operations and store failures do not masquerade as state changes.
 	st := openSignInStore(t)
 	user, _, err := st.UpsertUserOnLogin("issuer", "owner", "owner@green.example", signInNow)
 	if err != nil {
@@ -706,10 +711,13 @@ func TestRequestTrailPanicStatus(t *testing.T) {
 }
 
 func TestOriginalMetadataPreservesCredentialStateChanges(t *testing.T) {
-	// R-TR7X-LW59: each equivalent fresh credential must be touched at the advanced clock with or without original-request metadata.
+	// R-XDIL-E776: each equivalent fresh credential must be touched at the advanced clock with or without original-request metadata.
 	advanced := signInNow.Add(10 * time.Minute)
 	variants := []map[string]string{
 		nil,
+		{"X-Original-Host": "mcp.sbx.ikigenba.dev"},
+		{"X-Original-Host": "repos.sbx.ikigenba.dev"},
+		{"X-Original-Host": "mcp.sbx.ikigenba.dev:7400"},
 		{"X-Original-Method": "DELETE"},
 		{"X-Original-Host": "untrusted"},
 		{"X-Original-URI": "/different?private"},

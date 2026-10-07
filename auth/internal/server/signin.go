@@ -30,14 +30,20 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.tokenRows(identity.UserID, s.now())
+	drawTime := s.now()
+	rows, err := s.tokenRows(identity.UserID, drawTime)
+	if err != nil {
+		s.writeServerError(w, r, err)
+		return
+	}
+	clients, err := s.profileClients(identity.UserID, drawTime)
 	if err != nil {
 		s.writeServerError(w, r, err)
 		return
 	}
 	writeAuthPage(w, http.StatusOK, authPageData{Banner: s.pageBanner(identity.Email), Profile: &profilePageData{
 		Apex: apexName(r.Host), Email: identity.Email, Workspace: s.cfg.WorkspaceDomain,
-		Rows: rows, Create: tokenCreateValues("", "90d", false),
+		Rows: rows, Clients: clients, Create: tokenCreateValues("", "90d", false),
 	}})
 }
 

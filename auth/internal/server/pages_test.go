@@ -882,7 +882,7 @@ func TestCancelledAndNonmemberCards(t *testing.T) {
 }
 
 func TestProfileFrameAndAccount(t *testing.T) {
-	// R-ZZ31-HOCX R-10VX-CKCG R-123T-QC35 R-13BQ-43TU R-0USF-FPMZ
+	// R-ZZ31-HOCX R-10VX-CKCG R-123T-QC35 R-51R0-BHWD R-0USF-FPMZ
 	st := openSignInStore(t)
 	email := `member<&"@example.com`
 	workspace := `workspace<&".test`
@@ -902,12 +902,12 @@ func TestProfileFrameAndAccount(t *testing.T) {
 	assertNoSetCookie(t, w)
 	assertAuthPage(t, w.Body.String())
 	main := assertChrome(t, w.Body.String(), email)
-	seq := pageSequence(t, main, "h1", "p", "section", "section", "section")
+	seq := pageSequence(t, main, "h1", "p", "section", "section", "section", "section")
 	if pageText(pageContent(main, seq[0])) != "Your account" || pageText(pageContent(main, seq[1])) != "You're signed in to ikigenba.dev." {
 		t.Fatal("profile headings")
 	}
-	for i, title := range []string{"Account", "API tokens", "Create a token"} {
-		card := pageContent(main, seq[i+2])
+	for i, title := range []string{"Account", "API tokens", "Create a token", "MCP clients"} {
+		card := strings.TrimLeft(pageContent(main, seq[i+2]), " \t\r\n\f")
 		head := pageTags(card)[0]
 		if head.start != 0 || head.name != "header" {
 			t.Fatal("card not headed")

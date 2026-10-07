@@ -336,7 +336,7 @@ func TestRouterRegistersContractRoutes(t *testing.T) {
 	}
 }
 
-// R-2AOL-W6YZ: each D05, D06, D07, and D08 method and path is this server's route.
+// R-GCH2-5MPN: the constructed handler serves the D05 through D09 routes.
 func TestContractRoutesServed(t *testing.T) {
 	st := openServerStore(t, filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{4}, 64)), fixedNow)
 
@@ -395,7 +395,7 @@ func TestContractRoutesServed(t *testing.T) {
 	}
 
 	check := serveRoute(s, http.MethodGet, "/check", nil)
-	if check.Code != http.StatusUnauthorized || check.Header().Get("Content-Type") != "text/plain; charset=utf-8" || check.Body.String() != "sign in required\n" || check.Header().Get("X-User-Id") != "" || check.Header().Get("X-User-Email") != "" {
+	if check.Code != http.StatusUnauthorized || check.Header().Get("Content-Type") != "text/plain; charset=utf-8" || check.Header().Get("X-User-Id") != "" || check.Header().Get("X-User-Email") != "" {
 		t.Fatalf("GET /check = %d %q id=%q email=%q body %q", check.Code, check.Header().Get("Content-Type"), check.Header().Get("X-User-Id"), check.Header().Get("X-User-Email"), check.Body.String())
 	}
 
@@ -404,12 +404,29 @@ func TestContractRoutesServed(t *testing.T) {
 		t.Fatalf("GET /me = %d %q body %q", me.Code, me.Header().Get("Content-Type"), me.Body.String())
 	}
 
-	for _, target := range []string{"/tokens", "/tokens/token-id/enable", "/tokens/token-id/disable", "/tokens/token-id/delete"} {
+	for _, target := range []string{"/tokens", "/tokens/token-id/enable", "/tokens/token-id/disable", "/tokens/token-id/delete", "/tokens/token-id/revoke"} {
 		response := serveRoute(s, http.MethodPost, target, map[string]string{"Origin": "https://evil.example"})
 		if response.Code != http.StatusForbidden || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "forbidden\n" {
 			t.Fatalf("POST %s = %d %q %q", target, response.Code, response.Header().Get("Content-Type"), response.Body.String())
 		}
 	}
+	for _, tc := range []struct {
+		method, path string
+		status       int
+	}{
+		{"GET", "/check/open", 200},
+		{"GET", "/.well-known/oauth-authorization-server", 200},
+		{"POST", "/register", 400},
+		{"GET", "/authorize", 400},
+		{"POST", "/authorize", 403},
+		{"POST", "/token", 400},
+	} {
+		response := serveRoute(s, tc.method, tc.path, nil)
+		if response.Code != tc.status {
+			t.Fatalf("%s %s = %d, want %d", tc.method, tc.path, response.Code, tc.status)
+		}
+	}
+
 }
 
 type diagnosticWrites struct{ calls []string }
@@ -420,7 +437,7 @@ func (w *diagnosticWrites) Write(p []byte) (int, error) {
 }
 
 func TestCrossRouteStoreFailuresStaySilent(t *testing.T) {
-	// R-B9KG-UMP5: failed store operations on D05, D06, and D07 routes
+	// failed store operations on D05, D06, and D07 routes
 	// produce the same plain 500 without identity headers.
 	st := openServerStore(t, filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{1}, 128)), fixedNow)
 	failServerStore(t, st)

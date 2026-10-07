@@ -31,7 +31,7 @@ func newTestStore(t *testing.T, path string, random io.Reader) (*Store, error) {
 	return New(d, random), nil
 }
 
-func stripFixtureTokenPrefixes(t *testing.T, path string, tokens []Token) {
+func stripFixtureTokenPrefixes(t *testing.T, path string, tokens []Token, bare bool) {
 	t.Helper()
 	d, err := db.Open(context.Background(), db.Config{Path: path, Migrations: auth.Migrations(), Now: sessionTestNow})
 	if err != nil {
@@ -39,11 +39,23 @@ func stripFixtureTokenPrefixes(t *testing.T, path string, tokens []Token) {
 	}
 	if err := d.Write(context.Background(), func(tx *sql.Tx) error {
 		for _, token := range tokens {
+			if !bare {
+				break
+			}
 			if _, err := tx.ExecContext(context.Background(), `UPDATE tokens SET id = ? WHERE id = ?`, strings.TrimPrefix(token.ID, idcodec.TokenIDPrefix), token.ID); err != nil {
 				return err
 			}
 		}
-		_, err := tx.ExecContext(context.Background(), `DROP TABLE schema_migrations`)
+		for _, stmt := range []string{"DROP TABLE clients", "DROP TABLE auth_codes", "ALTER TABLE tokens DROP COLUMN kind", "ALTER TABLE tokens DROP COLUMN host"} {
+			if _, err := tx.ExecContext(context.Background(), stmt); err != nil {
+				return err
+			}
+		}
+		statement := "DELETE FROM schema_migrations WHERE version = 3"
+		if bare {
+			statement = "DROP TABLE schema_migrations"
+		}
+		_, err := tx.ExecContext(context.Background(), statement)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -57,9 +69,9 @@ func stripFixtureTokenPrefixes(t *testing.T, path string, tokens []Token) {
 var _ func(*db.DB, io.Reader) *Store = New
 
 func TestSchemaTablesColumnsAndIndexes(t *testing.T) {
-	// R-8G2K-IEYJ
-	// R-8HAG-W6P8
-	// R-78DO-JF6Z
+	// R-FAO6-AQQ4
+	// R-FD3Z-2A7I
+	// R-F9G9-WYZF
 	st, err := newTestStore(t, filepath.Join(t.TempDir(), "auth.db"), strings.NewReader(strings.Repeat("r", 64)))
 	if err != nil {
 		t.Fatal(err)
@@ -83,10 +95,10 @@ func TestSchemaTablesColumnsAndIndexes(t *testing.T) {
 		if err := rows.Close(); err != nil {
 			return err
 		}
-		if strings.Join(names, ",") != "login_states,schema_migrations,sessions,tokens,users" {
+		if strings.Join(names, ",") != "auth_codes,clients,login_states,schema_migrations,sessions,tokens,users" {
 			t.Fatalf("tables: %v", names)
 		}
-		for _, schema := range []struct{ table, columns string }{{"users", "id,issuer,subject,email,last_google_login"}, {"sessions", "id,user_id,login_at,last_used_at"}, {"login_states", "state,verifier,return_url"}, {"tokens", "id,user_id,name,hash,enabled,created_at,expires_at,last_used_at"}} {
+		for _, schema := range []struct{ table, columns string }{{"users", "id,issuer,subject,email,last_google_login"}, {"sessions", "id,user_id,login_at,last_used_at"}, {"login_states", "state,verifier,return_url"}, {"tokens", "id,user_id,name,hash,enabled,created_at,expires_at,last_used_at,kind,host"}, {"clients", "id,name,redirect_uris,created_at,received_token"}, {"auth_codes", "code,client_id,user_id,redirect_uri,challenge,resource,issued_at"}} {
 			table, want := schema.table, schema.columns
 			var count int
 			if err := tx.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil {
@@ -214,14 +226,14 @@ func TestStorePersistsDomainStateAcrossHandles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.TouchTokenIdentity(secret, now.Add(time.Minute)); err != nil {
+	if _, err := st.TouchTokenIdentity(secret, "", now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	sessionIdentity, err := st.LookupSessionIdentity(session.ID, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokenIdentity, err := st.LookupTokenIdentity(secret, now)
+	tokenIdentity, err := st.LookupTokenIdentity(secret, "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +252,7 @@ func TestStorePersistsDomainStateAcrossHandles(t *testing.T) {
 	if err != nil || gotSession != sessionIdentity {
 		t.Fatalf("session: %#v, %v", gotSession, err)
 	}
-	gotToken, err := later.LookupTokenIdentity(secret, now)
+	gotToken, err := later.LookupTokenIdentity(secret, "", now)
 	if err != nil || gotToken != tokenIdentity {
 		t.Fatalf("token identity: %#v, %v", gotToken, err)
 	}
@@ -255,7 +267,7 @@ func TestStorePersistsDomainStateAcrossHandles(t *testing.T) {
 }
 
 func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
-	// R-8JQ9-NQ6M
+	// R-FGRO-7LFL
 	// R-8CEV-D3QG
 	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "auth.db"), Migrations: auth.Migrations(), Now: sessionTestNow})
 	if err != nil {
@@ -266,7 +278,7 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	st := New(d, bytes.NewReader(sequentialStoreBytes(96)))
+	st := New(d, bytes.NewReader(sequentialStoreBytes(256)))
 	now := sessionTestNow()
 	// Initial domain records make recovery observable for every lookup and mutation.
 	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", now)
@@ -282,6 +294,18 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 		t.Fatal(err)
 	}
 	token, secret, err := st.CreateToken(user.ID, "token", ExpiryNever, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := st.RegisterClient("Agent", []string{"https://client/cb"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := st.CreateAuthCode(client.ID, user.ID, "redirect", "challenge", "resource", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientToken, _, err := st.CreateClientToken(code, "host", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,8 +327,17 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 		{"list tokens", func() error { _, err := st.ListTokens(user.ID); return err }},
 		{"set enabled", func() error { return st.SetTokenEnabled(user.ID, token.ID, true) }},
 		{"delete token", func() error { return st.DeleteToken(user.ID, token.ID) }},
-		{"lookup token", func() error { _, err := st.LookupTokenIdentity(secret, now); return err }},
-		{"touch token", func() error { _, err := st.TouchTokenIdentity(secret, now); return err }},
+		{"lookup token", func() error { _, err := st.LookupTokenIdentity(secret, "", now); return err }},
+		{"touch token", func() error { _, err := st.TouchTokenIdentity(secret, "", now); return err }},
+		{"register client", func() error { _, err := st.RegisterClient("new", nil, now); return err }},
+		{"lookup client", func() error { _, err := st.LookupClient(client.ID, now); return err }},
+		{"create code", func() error {
+			_, err := st.CreateAuthCode(client.ID, user.ID, "redirect", "challenge", "resource", now)
+			return err
+		}},
+		{"consume code", func() error { _, err := st.ConsumeAuthCode(code.Code, now); return err }},
+		{"create client token", func() error { _, _, err := st.CreateClientToken(code, "host", now); return err }},
+		{"revoke token", func() error { return st.RevokeToken(user.ID, clientToken.ID) }},
 	}
 	d.SetFailing(true)
 	for _, c := range calls {
@@ -314,8 +347,8 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 	}
 	d.SetFailing(false)
 	// Fresh entropy after the original records; failure must leave every record intact.
-	st.rand = bytes.NewReader(sequentialStoreBytes(176)[96:])
-	for _, i := range []int{0, 1, 2, 3, 5, 6, 7, 8, 9, 11, 12, 4, 10} {
+	st.rand = bytes.NewReader(tokenSequentialBytes(4096)[256:])
+	for _, i := range []int{0, 1, 2, 3, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 4, 10} {
 		c := calls[i]
 		if err := c.call(); err != nil {
 			t.Errorf("%s recovery: %v", c.name, err)
@@ -327,7 +360,7 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 	if _, err := st.ConsumeLoginState(state.State); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("consumed state: %v", err)
 	}
-	if _, err := st.LookupTokenIdentity(secret, now); !errors.Is(err, ErrNotFound) {
+	if _, err := st.LookupTokenIdentity(secret, "", now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("token deletion: %v", err)
 	}
 }
@@ -341,6 +374,8 @@ func domainRows(t *testing.T, st *Store) map[string][][]any {
 			{"sessions", `SELECT * FROM sessions ORDER BY id`},
 			{"login_states", `SELECT * FROM login_states ORDER BY state`},
 			{"tokens", `SELECT * FROM tokens ORDER BY id`},
+			{"clients", `SELECT * FROM clients ORDER BY id`},
+			{"auth_codes", `SELECT * FROM auth_codes ORDER BY code`},
 		} {
 			table := fixture.table
 			rows, err := tx.QueryContext(context.Background(), fixture.query)

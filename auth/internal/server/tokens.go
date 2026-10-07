@@ -90,6 +90,9 @@ func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {
 		err = s.st.SetTokenEnabled(identity.UserID, r.PathValue("id"), true)
 	case "disable":
 		err = s.st.SetTokenEnabled(identity.UserID, r.PathValue("id"), false)
+	case "revoke":
+		event = "token.revoked"
+		err = s.st.RevokeToken(identity.UserID, r.PathValue("id"))
 	case "delete":
 		event = "token.deleted"
 		err = s.st.DeleteToken(identity.UserID, r.PathValue("id"))

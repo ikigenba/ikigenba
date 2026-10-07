@@ -25,10 +25,10 @@ var (
 	_ func(*Store, string, string, bool) error = (*Store).SetTokenEnabled
 	// R-4YGD-ZBX7
 	_ func(*Store, string, string) error = (*Store).DeleteToken
-	// R-4ZOA-D3NW
-	_ func(*Store, string, time.Time) (Identity, error) = (*Store).LookupTokenIdentity
-	// R-50W6-QVEL
-	_ func(*Store, string, time.Time) (Identity, error) = (*Store).TouchTokenIdentity
+	// R-F24V-MCJ9
+	_ func(*Store, string, string, time.Time) (Identity, error) = (*Store).LookupTokenIdentity
+	// R-F3CS-049Y
+	_ func(*Store, string, string, time.Time) (Identity, error) = (*Store).TouchTokenIdentity
 )
 
 func TestCreateTokenSecondResultIsPlaintextSecret(t *testing.T) {
@@ -53,12 +53,12 @@ func withCreateToken(t *testing.T, create func(*Store, string, string, Expiry, t
 		t.Fatalf("CreateToken() = (%#v, %q), want plaintext %q with stored hash %q", token, secret, wantSecret, idcodec.HashSecret(wantSecret))
 	}
 
-	got, err := st.LookupTokenIdentity(secret, now)
+	got, err := st.LookupTokenIdentity(secret, "", now)
 	wantIdentity := Identity{UserID: "owner", Email: "owner@example.com", TokenID: token.ID}
 	if err != nil || got != wantIdentity {
 		t.Fatalf("LookupTokenIdentity(plaintext) = %#v, %v; want %#v", got, err, wantIdentity)
 	}
-	if _, err := st.LookupTokenIdentity(token.Hash, now); !errors.Is(err, ErrNotFound) {
+	if _, err := st.LookupTokenIdentity(token.Hash, "", now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("LookupTokenIdentity(stored hash) error = %v, want ErrNotFound", err)
 	}
 	if err := st.db.Close(); err != nil {
@@ -84,7 +84,7 @@ func withCreateToken(t *testing.T, create func(*Store, string, string, Expiry, t
 }
 
 func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
-	// R-T1M1-KPKO
+	// R-FHZK-LD6A
 	// R-5O2A-0IHS
 	// R-G99G-TBAH (persisted representation only)
 	now := tokenTestNow()
@@ -116,6 +116,7 @@ func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 				UserID:    "owner",
 				Name:      "deploy token",
 				Hash:      idcodec.HashSecret(wantSecret),
+				Kind:      TokenPersonal,
 				Enabled:   true,
 				CreatedAt: now,
 			}
@@ -187,7 +188,7 @@ func TestListTokensOwnerScopeExactFieldsAndOrder(t *testing.T) {
 }
 
 func TestSetTokenEnabledStrictOwnerScope(t *testing.T) {
-	// R-5RPZ-5TPV
+	// R-FJ7G-Z4WZ
 	st, ownerToken, foreignToken := tokenMutationFixture(t)
 	if err := st.SetTokenEnabled("owner", ownerToken, false); err != nil {
 		t.Fatalf("disable owned token: %v", err)
@@ -214,7 +215,7 @@ func TestSetTokenEnabledStrictOwnerScope(t *testing.T) {
 }
 
 func TestDeleteTokenStrictOwnerScope(t *testing.T) {
-	// R-5SXV-JLGK
+	// R-FKFD-CWNO
 	st, ownerToken, foreignToken := tokenMutationFixture(t)
 	for _, tokenID := range []string{foreignToken, "missing"} {
 		before := allTokenStates(t, st)
@@ -231,14 +232,14 @@ func TestDeleteTokenStrictOwnerScope(t *testing.T) {
 	if _, err := tokenLastUsed(t, st, ownerToken); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("deleted token query error = %v, want sql.ErrNoRows", err)
 	}
-	if _, err := st.LookupTokenIdentity("owner-secret", tokenTestNow()); !errors.Is(err, ErrNotFound) {
+	if _, err := st.LookupTokenIdentity("owner-secret", "", tokenTestNow()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted token still authenticates: %v", err)
 	}
 }
 
 func TestLookupTokenIdentityBoundariesAndNoMutation(t *testing.T) {
-	// R-5U5R-XD79
-	// R-5VDO-B4XY
+	// R-FMRY-1QMC
+	// R-FNZU-FID1
 	st := openTokenTestStore(t, bytes.NewReader(nil))
 	now := tokenTestNow()
 	insertTokenUser(t, st, "fresh", "fresh@example.com", now.Add(-TokenLoginWindow))
@@ -266,7 +267,7 @@ func TestLookupTokenIdentityBoundariesAndNoMutation(t *testing.T) {
 	before := allTokenStates(t, st)
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := st.LookupTokenIdentity(tt.secret, now)
+			got, err := st.LookupTokenIdentity(tt.secret, "", now)
 			if tt.live {
 				want := Identity{UserID: "fresh", Email: "fresh@example.com", TokenID: tt.name}
 				if err != nil || got != want {
@@ -277,7 +278,7 @@ func TestLookupTokenIdentityBoundariesAndNoMutation(t *testing.T) {
 			}
 		})
 	}
-	if got, err := st.LookupTokenIdentity("unknown", now); !errors.Is(err, ErrNotFound) || got != (Identity{}) {
+	if got, err := st.LookupTokenIdentity("unknown", "", now); !errors.Is(err, ErrNotFound) || got != (Identity{}) {
 		t.Fatalf("unknown LookupTokenIdentity() = %#v, %v; want zero identity and ErrNotFound", got, err)
 	}
 	if after := allTokenStates(t, st); !reflect.DeepEqual(after, before) {
@@ -286,7 +287,7 @@ func TestLookupTokenIdentityBoundariesAndNoMutation(t *testing.T) {
 }
 
 func TestTouchTokenIdentityUpdatesOnlyAuthenticatingToken(t *testing.T) {
-	// R-5WLK-OWON
+	// R-FO32-I7VR
 	st := openTokenTestStore(t, bytes.NewReader(nil))
 	now := tokenTestNow()
 	insertTokenUser(t, st, "fresh", "fresh@example.com", now.Add(-TokenLoginWindow))
@@ -306,7 +307,7 @@ func TestTouchTokenIdentityUpdatesOnlyAuthenticatingToken(t *testing.T) {
 		nonTargetBefore[id] = lastUsed
 	}
 
-	got, err := st.TouchTokenIdentity("live-secret", now)
+	got, err := st.TouchTokenIdentity("live-secret", "", now)
 	want := Identity{UserID: "fresh", Email: "fresh@example.com", TokenID: "live"}
 	if err != nil || got != want {
 		t.Fatalf("TouchTokenIdentity(live) = %#v, %v; want %#v, nil", got, err, want)
@@ -326,7 +327,7 @@ func TestTouchTokenIdentityUpdatesOnlyAuthenticatingToken(t *testing.T) {
 
 	for _, secret := range []string{"disabled-secret", "expired-secret", "stale-secret", "unknown-secret"} {
 		before := allTokenStates(t, st)
-		identity, err := st.TouchTokenIdentity(secret, now)
+		identity, err := st.TouchTokenIdentity(secret, "", now)
 		if !errors.Is(err, ErrNotFound) || identity != (Identity{}) {
 			t.Errorf("TouchTokenIdentity(%q) = %#v, %v; want zero identity and ErrNotFound", secret, identity, err)
 		}
@@ -409,7 +410,7 @@ func readToken(t *testing.T, st *Store, id string) Token {
 		var err error
 		token, err = scanToken(tx.QueryRowContext(
 			context.Background(),
-			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens WHERE id = ?`,
+			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host FROM tokens WHERE id = ?`,
 			id,
 		))
 		return err
@@ -426,7 +427,7 @@ func allTokenStates(t *testing.T, st *Store) []Token {
 	err := st.db.Read(context.Background(), func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(
 			context.Background(),
-			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`,
+			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host FROM tokens ORDER BY id`,
 		)
 		if err != nil {
 			t.Fatalf("query all tokens: %v", err)

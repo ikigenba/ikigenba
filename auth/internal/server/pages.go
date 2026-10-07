@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/auth"
 )
 
 type authPageData struct {
@@ -28,6 +29,7 @@ type pageAlertData struct {
 type profilePageData struct {
 	Apex, Email, Workspace string
 	Rows                   []tokenRowData
+	Clients                mcpClientsData
 	Create                 tokenCreateData
 }
 
@@ -37,7 +39,7 @@ const authPageTemplates = `{{define "page"}}<!DOCTYPE html><html><head><title>au
 {{define "signIn"}}<main class="auth-page"><section class="card"><span class="mark">ikigenba</span> <h1>Sign in to {{template "value" .Apex}}</h1> {{if .Alert}}{{template "alert" .Alert}}{{else}}<p>{{template "value" .Sentence}}</p>{{end}} <a class="button secondary large google" href="{{.Link}}">{{.Word}}</a>{{if .Footer}} <footer>{{template "value" .Footer}}</footer>{{end}}</section></main>{{end}}
 {{define "alert"}}<div class="alert" data-kind="{{.Kind}}" role="{{.Role}}"><strong>{{template "value" .Title}}</strong> <p>{{template "value" .Message}}</p></div>{{end}}
 {{define "chrome"}}{{template "banner" .Banner}}<main>{{if .Profile}}{{template "profile" .Profile}}{{else if .Create}}{{template "tokenCreate" .Create}}{{else if .Created}}{{template "tokenCreated" .Created}}{{end}}</main>{{template "footer" .Banner}}{{end}}
-{{define "profile"}}<h1>Your account</h1><p>You're signed in to {{template "value" .Apex}}.</p><section class="card"><header><h2>Account</h2></header><dl class="kv"><dt>Email</dt><dd>{{template "value" .Email}}</dd><dt>Workspace</dt><dd>{{template "value" .Workspace}}</dd><dt>Signed in via</dt><dd>Google</dd></dl></section>{{template "tokenList" .Rows}}{{template "tokenCreate" .Create}}{{end}}
+{{define "profile"}}<h1>Your account</h1><p>You're signed in to {{template "value" .Apex}}.</p><section class="card"><header><h2>Account</h2></header><dl class="kv"><dt>Email</dt><dd>{{template "value" .Email}}</dd><dt>Workspace</dt><dd>{{template "value" .Workspace}}</dd><dt>Signed in via</dt><dd>Google</dd></dl></section>{{template "tokenList" .Rows}}{{template "tokenCreate" .Create}}{{template "mcp-clients" .Clients}}{{end}}
 `
 
 // html/template replaces a NUL in a dynamic string with U+FFFD. The read
@@ -45,7 +47,13 @@ const authPageTemplates = `{{define "page"}}<!DOCTYPE html><html><head><title>au
 // between independently context-escaped segments. No segment is trusted HTML.
 const pageValueTemplate = `{{define "value"}}{{range $i, $part := splitNUL .}}{{if $i}}` + "\x00" + `{{end}}{{$part}}{{end}}{{end}}`
 
-var authTemplates = template.Must(page.Templates().Funcs(template.FuncMap{
+func makeAuthTemplates() (*template.Template, error) {
+	return page.Templates().ParseFS(auth.Assets(), "*.html")
+}
+
+var authTemplates = template.Must(makeAuthTemplates())
+
+var pageTemplates = template.Must(template.Must(authTemplates.Clone()).Funcs(template.FuncMap{
 	"splitNUL": func(value string) []string { return strings.Split(value, "\x00") },
 }).Parse(authPageTemplates + tokenPageTemplates + pageValueTemplate))
 
@@ -54,7 +62,7 @@ func writeAuthPage(w http.ResponseWriter, status int, data authPageData) {
 	w.WriteHeader(status)
 	// The templates and their selection are static; external values enter only
 	// through typed data and html/template's contextual escaping.
-	_ = authTemplates.ExecuteTemplate(w, "page", data)
+	_ = pageTemplates.ExecuteTemplate(w, "page", data)
 }
 
 func writeSignInPage(w http.ResponseWriter, host, workspace, returnURL string) {

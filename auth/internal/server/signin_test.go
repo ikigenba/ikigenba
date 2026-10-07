@@ -418,7 +418,7 @@ func TestLoginStartDiscoveryFailureRemovesState(t *testing.T) {
 	}, &stderr)
 
 	w := serveSignInWithRequestID(s, "/login/google?return=https%3A%2F%2Fapp.green.example%2Fafter", "start-request")
-	// R-2YYR-ACRD: discovery failure is a single-line 502 with no identity, cookie, or leftover state.
+	// R-136Q-UF9F: discovery failure is a single-line 502 with no identity, cookie, or leftover state.
 	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("discovery failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
@@ -1327,7 +1327,7 @@ func assertSignInStoreFailure(t *testing.T, w *httptest.ResponseRecorder, writes
 	if cause == nil {
 		t.Fatal("injected store operation did not fail")
 	}
-	// R-B9KG-UMP5: failed store operations on D05 routes produce a plain,
+	// failed store operations on D05 routes produce a plain,
 	// single-line 500 without identity headers or a session cookie.
 	if w.Code != http.StatusInternalServerError || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) || w.Header().Get(HeaderUserID) != "" || w.Header().Get(HeaderUserEmail) != "" {
 		t.Fatalf("store failure response = %d %#v %q", w.Code, w.Header(), w.Body.String())
@@ -1470,12 +1470,24 @@ func TestLoginStartCleanupFailureKeeps502(t *testing.T) {
 	var writes signInDiagnosticWrites
 	s := newStatusTestServer(t, 502, Config{Banner: testPageBanner, Store: st, Google: gc, Rand: &signInRand{next: 1}}, &writes)
 	w := serveSignInWithRequestID(s, "/login/google", "discovery-request")
-	// R-B9KG-UMP5: the cleanup store error is the declared exception to the
+	// R-136Q-UF9F: the cleanup store error is the declared exception to the
 	// general store-error 500 rule; discovery remains a 502.
 	if w.Code != http.StatusBadGateway || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(w.Body.String()) {
 		t.Fatalf("discovery with cleanup failure = %d %#v %q", w.Code, w.Header(), w.Body.String())
 	}
 	assertNoSetCookie(t, w)
+	if len(signInUserRows(t, st)) != 0 || len(signInSessionRows(t, st)) != 0 {
+		t.Fatal("discovery failure created user or session")
+	}
+	var remainingStates int
+	if err := serverStoreDB(t, st).Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(), `SELECT count(*) FROM login_states`).Scan(&remainingStates)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if remainingStates > 1 {
+		t.Fatalf("failed cleanup left %d states; only its created state may remain", remainingStates)
+	}
 	_, cause := gc.AuthCodeURL("state", "verifier", redirectURI("auth.green.example", ""))
 	if cause == nil {
 		t.Fatal("closed issuer unexpectedly discovered")

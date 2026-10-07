@@ -137,8 +137,8 @@ func TestIdentityStoreFailureReturns500AndStaysSilent(t *testing.T) {
 	}{
 		{name: "check/session", path: "/check", sessionID: session.ID, reason: func() error { _, err := fixture.store.TouchSession(session.ID, identityNow); return err }(), requestID: "trace-17"},
 		{name: "me/session", path: "/me", sessionID: session.ID, reason: func() error { _, err := fixture.store.LookupSessionIdentity(session.ID, identityNow); return err }()},
-		{name: "check/bearer", path: "/check", bearer: secret, reason: func() error { _, err := fixture.store.TouchTokenIdentity(secret, identityNow); return err }()},
-		{name: "me/bearer", path: "/me", bearer: secret, reason: func() error { _, err := fixture.store.LookupTokenIdentity(secret, identityNow); return err }()},
+		{name: "check/bearer", path: "/check", bearer: secret, reason: func() error { _, err := fixture.store.TouchTokenIdentity(secret, "", identityNow); return err }()},
+		{name: "me/bearer", path: "/me", bearer: secret, reason: func() error { _, err := fixture.store.LookupTokenIdentity(secret, "", identityNow); return err }()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.reason == nil {
@@ -150,7 +150,7 @@ func TestIdentityStoreFailureReturns500AndStaysSilent(t *testing.T) {
 			req.Header.Set("X-Request-Id", tc.requestID)
 			response := serveIdentity(srv.ServeHTTP, req)
 
-			// R-B9KG-UMP5: a store failure overrides credential refusals on both routes.
+			// a store failure overrides credential refusals on both routes.
 			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(response.Body.String()) {
 				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 			}
@@ -302,7 +302,7 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 			before := fixture.snapshot(t)
 			response := serveIdentity(fixture.server(t).handleCheck, identityRequest("/check", session.ID, secret))
 
-			// R-FFTS-VQFU: every refusal cause is 403 with neither identity header,
+			// R-FP7Q-TA3Q: every refusal cause is 403 with neither identity header,
 			// changes no stored session or token, and is the same response bytes —
 			// status, headers, and body — without pinning what the body says.
 			// R-NN2M-J7OI: even a refused bearer prevents fallback to the live cookie.
@@ -449,7 +449,7 @@ func TestMeRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 			before := fixture.snapshot(t)
 			response := serveIdentity(fixture.server(t).handleMe, identityRequest("/me", session.ID, secret))
 
-			// R-2TME-OFZ2: all refusal causes yield the same single-line token-refused response.
+			// R-AATS-UO6Y: all refusal causes yield the same single-line token-refused response.
 			// R-NN2M-J7OI: a refused bearer does not fall back to a live session.
 			// R-2UUB-27PR: refused /me paths do not change any stored row.
 			assertPlainRefusal(t, response, http.StatusForbidden, "token refused\n")
@@ -910,10 +910,10 @@ type identitySessionRow struct {
 type identityLoginStateRow struct{ state, verifier, returnURL string }
 
 type identityTokenRow struct {
-	id, userID, name, hash string
-	enabled                bool
-	createdAt              int64
-	expiresAt, lastUsedAt  sql.NullInt64
+	id, userID, name, hash, kind, host string
+	enabled                            bool
+	createdAt                          int64
+	expiresAt, lastUsedAt              sql.NullInt64
 }
 
 func (f identityFixture) snapshot(t *testing.T) identitySnapshot {
@@ -944,9 +944,9 @@ func (f identityFixture) snapshot(t *testing.T) identitySnapshot {
 			snapshot.loginStates = append(snapshot.loginStates, row)
 			return nil
 		})
-		readRows(t, tx, `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`, func(rows *sql.Rows) error {
+		readRows(t, tx, `SELECT id, user_id, name, hash, kind, host, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`, func(rows *sql.Rows) error {
 			var row identityTokenRow
-			if err := rows.Scan(&row.id, &row.userID, &row.name, &row.hash, &row.enabled, &row.createdAt, &row.expiresAt, &row.lastUsedAt); err != nil {
+			if err := rows.Scan(&row.id, &row.userID, &row.name, &row.hash, &row.kind, &row.host, &row.enabled, &row.createdAt, &row.expiresAt, &row.lastUsedAt); err != nil {
 				return err
 			}
 			snapshot.tokens = append(snapshot.tokens, row)

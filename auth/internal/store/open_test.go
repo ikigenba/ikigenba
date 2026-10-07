@@ -37,12 +37,14 @@ func TestFoundationContract(t *testing.T) {
 		ReturnURL string
 	}{})
 
-	// R-4CI7-3GKP
+	// R-EMA6-NBW8
 	_ = Token(struct {
 		ID         string
 		UserID     string
 		Name       string
 		Hash       string
+		Kind       TokenKind
+		Host       string
 		Enabled    bool
 		CreatedAt  time.Time
 		ExpiresAt  *time.Time
@@ -167,10 +169,10 @@ func TestErrNotFoundForMissingAndOtherOwnerRows(t *testing.T) {
 	if got, err := st.ConsumeLoginState("missing-state"); err == nil || !errors.Is(err, ErrNotFound) || got != (LoginState{}) {
 		t.Errorf("ConsumeLoginState(missing) = %#v, %v; want zero login state and ErrNotFound", got, err)
 	}
-	if got, err := st.LookupTokenIdentity("missing-secret", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
+	if got, err := st.LookupTokenIdentity("missing-secret", "", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
 		t.Errorf("LookupTokenIdentity(missing) = %#v, %v; want zero identity and ErrNotFound", got, err)
 	}
-	if got, err := st.TouchTokenIdentity("missing-secret", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
+	if got, err := st.TouchTokenIdentity("missing-secret", "", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
 		t.Errorf("TouchTokenIdentity(missing) = %#v, %v; want zero identity and ErrNotFound", got, err)
 	}
 	if err := st.SetTokenEnabled("owner", "missing-token", false); err == nil || !errors.Is(err, ErrNotFound) {

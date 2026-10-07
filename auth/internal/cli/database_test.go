@@ -5,9 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -66,7 +69,7 @@ func TestDatabaseStatus(t *testing.T) {
 				case "applied":
 					changeDatabase(t, p, "")
 				case "unknown":
-					changeDatabase(t, p, "INSERT INTO schema_migrations(version,applied_at) VALUES (3, '2026-01-02T03:04:05.000000Z')")
+					changeDatabase(t, p, fmt.Sprintf("INSERT INTO schema_migrations(version,applied_at) VALUES (%d, '2026-01-02T03:04:05.000000Z')", unknownMigrationVersion(t)))
 				case "invalid":
 					if err := os.Mkdir(filepath.Join(p.Dir, "state"), 0700); err != nil {
 						t.Fatal(err)
@@ -155,51 +158,91 @@ func TestDatabaseCommandGrammar(t *testing.T) {
 }
 
 func TestDatabaseOpenFailures(t *testing.T) {
-	// R-86BD-G90Z R-7D1S-9R8B
+	// R-GG4R-AXXQ R-7D1S-9R8B
 	for _, kind := range []string{"state file", "invalid", "unknown"} {
-		t.Run(kind, func(t *testing.T) {
-			p := baseProcess(goodEnv(), t.TempDir(), nil)
-			switch kind {
-			case "state file":
-				if err := os.WriteFile(filepath.Join(p.Dir, "state"), []byte("blocked"), 0600); err != nil {
+		for _, relative := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/relative=%v", kind, relative), func(t *testing.T) {
+				p := baseProcess(goodEnv(), t.TempDir(), nil)
+				if relative {
+					t.Chdir(p.Dir)
+					p.Dir = ""
+				}
+				switch kind {
+				case "state file":
+					if err := os.WriteFile(filepath.Join(p.Dir, "state"), []byte("blocked"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				case "invalid":
+					if err := os.Mkdir(filepath.Join(p.Dir, "state"), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(p.Dir, "state", "auth.db"), []byte("not sqlite"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				case "unknown":
+					changeDatabase(t, p, fmt.Sprintf("INSERT INTO schema_migrations(version,applied_at) VALUES (%d, '2026-01-02T03:04:05.000000Z')", unknownMigrationVersion(t)))
+				}
+				_, openErr := db.Open(t.Context(), db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now})
+				if openErr == nil {
+					t.Fatal("fixture unexpectedly opens")
+				}
+				if kind == "unknown" && !strings.Contains(openErr.Error(), fmt.Sprintf("%04d", unknownMigrationVersion(t))) {
+					t.Fatalf("unknown version absent from error: %v", openErr)
+				}
+				ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+				if err != nil {
 					t.Fatal(err)
 				}
-			case "invalid":
-				if err := os.Mkdir(filepath.Join(p.Dir, "state"), 0700); err != nil {
-					t.Fatal(err)
+				tracked := &unacceptedListener{trackedListener: trackedListener{Listener: ln}, t: t}
+				p.Inherit = func(uintptr) (net.Listener, error) { return tracked, nil }
+				p.Banner = func(page.User) page.Banner { t.Fatal("banner before serve"); return page.Banner{} }
+				notifications, addr := databaseReady(t)
+				env := goodEnv()
+				env["NOTIFY_SOCKET"] = addr
+				p.LookupEnv = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+				want := "auth: cannot open database state/auth.db: " + strings.ReplaceAll(openErr.Error(), "\n", " ") + "\n"
+				if code := Run(t.Context(), p); code != 1 || p.Stderr.(*countWriter).String() != want || p.Stdout.(*bytes.Buffer).Len() != 0 || !tracked.closed.Load() {
+					t.Fatalf("code=%d out=%q diag=%q closed=%v", code, p.Stdout, p.Stderr, tracked.closed.Load())
 				}
-				if err := os.WriteFile(filepath.Join(p.Dir, "state", "auth.db"), []byte("not sqlite"), 0600); err != nil {
-					t.Fatal(err)
+				if p.Stderr.(*countWriter).calls != 1 {
+					t.Fatal("split diagnostic")
 				}
-			case "unknown":
-				changeDatabase(t, p, "INSERT INTO schema_migrations(version,applied_at) VALUES (3, '2026-01-02T03:04:05.000000Z')")
-			}
-			_, openErr := db.Open(t.Context(), db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now})
-			if openErr == nil {
-				t.Fatal("fixture unexpectedly opens")
-			}
-			ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			tracked := &trackedListener{Listener: ln}
-			p.Inherit = func(uintptr) (net.Listener, error) { return tracked, nil }
-			p.Banner = func(page.User) page.Banner { t.Fatal("banner before serve"); return page.Banner{} }
-			notifications, addr := databaseReady(t)
-			env := goodEnv()
-			env["NOTIFY_SOCKET"] = addr
-			p.LookupEnv = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
-			want := "auth: cannot open database state/auth.db: " + strings.ReplaceAll(openErr.Error(), "\n", " ") + "\n"
-			if code := Run(t.Context(), p); code != 1 || p.Stderr.(*countWriter).String() != want || p.Stdout.(*bytes.Buffer).Len() != 0 || !tracked.closed.Load() {
-				t.Fatalf("code=%d out=%q diag=%q closed=%v", code, p.Stdout, p.Stderr, tracked.closed.Load())
-			}
-			if p.Stderr.(*countWriter).calls != 1 {
-				t.Fatal("split diagnostic")
-			}
-			assertNoNotification(t, notifications)
-		})
+				assertNoNotification(t, notifications)
+			})
+		}
 	}
 }
+
+type unacceptedListener struct {
+	trackedListener
+	t *testing.T
+}
+
+func (ln *unacceptedListener) Accept() (net.Conn, error) {
+	ln.t.Error("database failure accepted a connection")
+	return nil, errors.New("unexpected accept")
+}
+
+func unknownMigrationVersion(t *testing.T) int {
+	t.Helper()
+	entries, err := fs.ReadDir(auth.Migrations(), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	greatest := 0
+	for _, entry := range entries {
+		prefix, _, _ := strings.Cut(entry.Name(), "_")
+		version, err := strconv.Atoi(prefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if version > greatest {
+			greatest = version
+		}
+	}
+	return greatest + 1
+}
+
 func databaseReady(t *testing.T) (*net.UnixConn, string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "auth-db-")
@@ -217,7 +260,7 @@ func databaseReady(t *testing.T) (*net.UnixConn, string) {
 }
 
 func TestDatabaseReadyMigrationClock(t *testing.T) {
-	// R-853H-2HAA R-7GPH-F2GE R-7BTV-VZHM
+	// R-GHCN-OPOF R-7GPH-F2GE R-7BTV-VZHM
 	for _, kind := range []string{"absent", "empty state", "legacy", "applied"} {
 		t.Run(kind, func(t *testing.T) {
 			p := baseProcess(goodEnv(), t.TempDir(), nil)
@@ -227,7 +270,7 @@ func TestDatabaseReadyMigrationClock(t *testing.T) {
 				}
 			}
 			if kind == "legacy" {
-				changeDatabase(t, p, "DROP TABLE schema_migrations")
+				changeDatabase(t, p, "DROP TABLE schema_migrations; DROP TABLE clients; DROP TABLE auth_codes; ALTER TABLE tokens DROP COLUMN kind; ALTER TABLE tokens DROP COLUMN host")
 			}
 			if kind == "applied" {
 				changeDatabase(t, p, "")
@@ -262,6 +305,10 @@ func TestDatabaseReadyMigrationClock(t *testing.T) {
 			if string(buf[:n]) != "READY=1" {
 				t.Fatal("readiness")
 			}
+			info, statErr := os.Stat(filepath.Join(p.Dir, "state", "auth.db"))
+			if statErr != nil || !info.Mode().IsRegular() {
+				t.Fatalf("database is not regular: %v", statErr)
+			}
 			got, err := statusOf(t, p)
 			if err != nil || got != want {
 				t.Fatalf("status=%q want=%q err=%v", got, want, err)
@@ -289,7 +336,7 @@ func (s *readyOrderSink) Deliver(ctx context.Context, e telemetry.Event) error {
 }
 
 func TestStartedIsRecordedAfterReadiness(t *testing.T) {
-	// R-8NDY-T1EP: the injected clock observes readiness synchronously when
+	// R-GL0C-U0WI: the injected clock observes readiness synchronously when
 	// the first event is formed, rather than after asynchronous delivery.
 	p := baseProcess(goodEnv(), t.TempDir(), nil)
 	changeDatabase(t, p, "") // An up-to-date database does not read the migration clock.

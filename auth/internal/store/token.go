@@ -34,14 +34,15 @@ func (s *Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (
 			UserID:    userID,
 			Name:      name,
 			Hash:      idcodec.HashSecret(secret),
+			Kind:      TokenPersonal,
 			Enabled:   true,
 			CreatedAt: now,
 			ExpiresAt: expiresAt,
 		}
 		if _, err := tx.ExecContext(
 			context.Background(),
-			`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+			`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'personal', '')`,
 			token.ID,
 			token.UserID,
 			token.Name,
@@ -67,7 +68,7 @@ func (s *Store) ListTokens(userID string) ([]Token, error) {
 	err := s.db.Read(context.Background(), func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(
 			context.Background(),
-			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at
+			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
 		 FROM tokens
 		 WHERE user_id = ?
 		 ORDER BY created_at DESC, id ASC`,
@@ -103,7 +104,7 @@ func (s *Store) SetTokenEnabled(userID, tokenID string, enabled bool) error {
 	err := s.db.Write(context.Background(), func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(
 			context.Background(),
-			`UPDATE tokens SET enabled = ? WHERE id = ? AND user_id = ?`,
+			`UPDATE tokens SET enabled = ? WHERE id = ? AND user_id = ? AND kind = 'personal'`,
 			enabled,
 			tokenID,
 			userID,
@@ -119,7 +120,7 @@ func (s *Store) SetTokenEnabled(userID, tokenID string, enabled bool) error {
 // DeleteToken deletes the user's token, or returns ErrNotFound.
 func (s *Store) DeleteToken(userID, tokenID string) error {
 	err := s.db.Write(context.Background(), func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(context.Background(), `DELETE FROM tokens WHERE id = ? AND user_id = ?`, tokenID, userID)
+		result, err := tx.ExecContext(context.Background(), `DELETE FROM tokens WHERE id = ? AND user_id = ? AND kind = 'personal'`, tokenID, userID)
 		if err != nil {
 			return fmt.Errorf("delete token: %w", err)
 		}
@@ -129,7 +130,7 @@ func (s *Store) DeleteToken(userID, tokenID string) error {
 }
 
 // LookupTokenIdentity returns the token's user when the secret is usable at now.
-func (s *Store) LookupTokenIdentity(secret string, now time.Time) (Identity, error) {
+func (s *Store) LookupTokenIdentity(secret, host string, now time.Time) (Identity, error) {
 	var identity Identity
 	err := s.db.Read(context.Background(), func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(
@@ -139,9 +140,11 @@ func (s *Store) LookupTokenIdentity(secret string, now time.Time) (Identity, err
 		 JOIN users ON users.id = tokens.user_id
 		 WHERE tokens.hash = ?
 		   AND tokens.enabled = 1
+ AND (tokens.kind = 'personal' OR (tokens.kind = 'client' AND ? <> '' AND tokens.host = ? COLLATE NOCASE))
 		   AND (tokens.expires_at IS NULL OR tokens.expires_at > ?)
 		   AND users.last_google_login >= ?`,
 			idcodec.HashSecret(secret),
+			host, host,
 			now.UnixNano(),
 			now.Add(-TokenLoginWindow).UnixNano(),
 		).Scan(&identity.UserID, &identity.Email, &identity.TokenID)
@@ -161,7 +164,7 @@ func (s *Store) LookupTokenIdentity(secret string, now time.Time) (Identity, err
 }
 
 // TouchTokenIdentity records last use and returns the token's user when the secret is usable at now.
-func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, error) {
+func (s *Store) TouchTokenIdentity(secret, host string, now time.Time) (Identity, error) {
 	var identity Identity
 	err := s.db.Write(context.Background(), func(tx *sql.Tx) error {
 		var userID string
@@ -171,6 +174,7 @@ func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, erro
 		 SET last_used_at = ?
 		 WHERE hash = ?
 		   AND enabled = 1
+ AND (kind = 'personal' OR (kind = 'client' AND ? <> '' AND host = ? COLLATE NOCASE))
 		   AND (expires_at IS NULL OR expires_at > ?)
 		   AND EXISTS (
 		       SELECT 1 FROM users
@@ -180,6 +184,7 @@ func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, erro
 		 RETURNING user_id, id`,
 			now.UnixNano(),
 			idcodec.HashSecret(secret),
+			host, host,
 			now.UnixNano(),
 			now.Add(-TokenLoginWindow).UnixNano(),
 		).Scan(&userID, &identity.TokenID)
@@ -248,6 +253,8 @@ func scanToken(scanner tokenScanner) (Token, error) {
 		&createdAt,
 		&expiresAt,
 		&lastUsedAt,
+		&token.Kind,
+		&token.Host,
 	); err != nil {
 		return Token{}, err
 	}

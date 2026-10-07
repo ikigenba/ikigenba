@@ -107,7 +107,7 @@ func TestTokenRoutesFailingStoreReturns500(t *testing.T) {
 			response := httptest.NewRecorder()
 			srv.ServeHTTP(response, tc.req)
 
-			// R-B9KG-UMP5: a failed store lookup is 500 plain text with no identity headers.
+			// R-GDOY-JEGC: a failed store lookup is 500 plain text with no identity headers.
 			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(response.Body.String()) {
 				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 			}
@@ -157,7 +157,7 @@ func TestTokenMutationStoreFailuresReport500(t *testing.T) {
 			response := httptest.NewRecorder()
 			srv.ServeHTTP(response, tc.req)
 
-			// R-B9KG-UMP5: token write failures return one plain-text line.
+			// R-GDOY-JEGC: token write failures return one plain-text line.
 			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || !singlePlainLine(response.Body.String()) {
 				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 			}
@@ -299,7 +299,7 @@ func TestTokenToggleAndDeleteEffects(t *testing.T) {
 		response := httptest.NewRecorder()
 		srv.handleTokenAction(response, tokenActionRequest(session.ID, token.ID, tt.action))
 
-		// R-ND35-URWZ: enable and disable update the owned token and redirect to the profile.
+		// R-5BI7-DNTX: enable and disable update the owned token and redirect to the profile.
 		if response.Code != http.StatusFound || response.Header().Get("Location") != "/" {
 			t.Fatalf("%s response = %d Location %q", tt.action, response.Code, response.Header().Get("Location"))
 		}
@@ -312,7 +312,7 @@ func TestTokenToggleAndDeleteEffects(t *testing.T) {
 	response := httptest.NewRecorder()
 	srv.handleTokenAction(response, tokenActionRequest(session.ID, token.ID, "delete"))
 
-	// R-NFIY-MBED: deletion redirects, removes the row, and makes the secret unauthenticating.
+	// R-5CQ3-RFKM: deletion redirects, removes the row, and makes the secret unauthenticating.
 	if response.Code != http.StatusFound || response.Header().Get("Location") != "/" {
 		t.Fatalf("delete response = %d Location %q", response.Code, response.Header().Get("Location"))
 	}
@@ -320,7 +320,7 @@ func TestTokenToggleAndDeleteEffects(t *testing.T) {
 	if err != nil || len(tokens) != 0 {
 		t.Fatalf("after delete ListTokens() = %#v, %v; want empty", tokens, err)
 	}
-	if _, err := st.LookupTokenIdentity(secret, tokenTestNow); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.LookupTokenIdentity(secret, "mcp.green.example", tokenTestNow); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("deleted secret LookupTokenIdentity() error = %v, want ErrNotFound", err)
 	}
 }
@@ -350,7 +350,7 @@ func TestTokenActionsHideOwnershipAndDoNotMutateOnNotFound(t *testing.T) {
 				response := httptest.NewRecorder()
 				tokenTestServer(t, st).handleTokenAction(response, tokenActionRequest(session.ID, tokenID, action))
 
-				// R-NGQV-0352: foreign and nonexistent ids are indistinguishable 404s with no mutation.
+				// R-5DY0-57BB: foreign and nonexistent ids are indistinguishable 404s with no mutation.
 				if response.Code != http.StatusNotFound || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
 					t.Fatalf("response = %d %q, want 404 plain text", response.Code, response.Header().Get("Content-Type"))
 				}
@@ -406,7 +406,7 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 				response := httptest.NewRecorder()
 				tokenTestServer(t, st).httpServer.Handler.ServeHTTP(response, req)
 
-				// R-NHYR-DUVR: an Origin that is not the service's own is 403 plain
+				// R-5F5W-IZ20: an Origin that is not the service's own is 403 plain
 				// text and does not create, enable, disable, or delete.
 				if response.Code != http.StatusForbidden || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
 					t.Fatalf("response = %d %q, want 403 plain text", response.Code, response.Header().Get("Content-Type"))
@@ -418,7 +418,7 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 				if !reflect.DeepEqual(after, before) {
 					t.Errorf("tokens changed: %#v -> %#v", before, after)
 				}
-				_, lookupErr := st.LookupTokenIdentity(secret, tokenTestNow)
+				_, lookupErr := st.LookupTokenIdentity(secret, "mcp.green.example", tokenTestNow)
 				if action == "enable" {
 					if !errors.Is(lookupErr, store.ErrNotFound) {
 						t.Errorf("disabled secret became usable: %v", lookupErr)

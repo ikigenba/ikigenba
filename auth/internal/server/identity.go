@@ -63,10 +63,10 @@ func (s *Server) identity(r *http.Request, touch bool) (store.Identity, bool, er
 			return store.Identity{}, true, store.ErrNotFound
 		}
 		if touch {
-			identity, err := s.st.TouchTokenIdentity(secret, s.now())
+			identity, err := s.st.TouchTokenIdentity(secret, stripNumericPort(r.Header.Get("X-Original-Host")), s.now())
 			return identity, true, err
 		}
-		identity, err := s.st.LookupTokenIdentity(secret, s.now())
+		identity, err := s.st.LookupTokenIdentity(secret, "", s.now())
 		return identity, true, err
 	}
 

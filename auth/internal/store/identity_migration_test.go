@@ -52,8 +52,8 @@ func TestIdentitiesNameOnlyHonoredTokens(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, lookup := range []func(string, time.Time) (Identity, error){st.LookupTokenIdentity, st.TouchTokenIdentity} {
-			identity, err := lookup(secret, now)
+		for _, lookup := range []func(string, string, time.Time) (Identity, error){st.LookupTokenIdentity, st.TouchTokenIdentity} {
+			identity, err := lookup(secret, "", now)
 			if err != nil || identity.TokenID != token.ID {
 				t.Fatalf("token identity = %#v, %v; want token id %q", identity, err, token.ID)
 			}
@@ -62,8 +62,16 @@ func TestIdentitiesNameOnlyHonoredTokens(t *testing.T) {
 }
 
 func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
-	// R-8DMR-QVH5
-	// R-8EUO-4N7U
+	testMigrationPreservesRecords(t, true)
+}
+func TestOpenMigratesVersionTwoWithoutChangingRecords(t *testing.T) {
+	// R-F70H-5FI1
+	// R-F88D-J78Q
+	testMigrationPreservesRecords(t, false)
+}
+func testMigrationPreservesRecords(t *testing.T, bare bool) {
+	// R-F4KO-DW0N
+	// R-F5SK-RNRC
 	path := filepath.Join(t.TempDir(), "auth.db")
 	st, err := newTestStore(t, path, bytes.NewReader(sequentialStoreBytes(240)))
 	if err != nil {
@@ -91,7 +99,7 @@ func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
 			t.Fatal(err)
 		}
 		if i%2 == 1 {
-			if _, err := st.TouchTokenIdentity(secret, now.Add(time.Second)); err != nil {
+			if _, err := st.TouchTokenIdentity(secret, "", now.Add(time.Second)); err != nil {
 				t.Fatal(err)
 			}
 			touched := now.Add(time.Second)
@@ -111,11 +119,14 @@ func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Keep one already-prefixed token alongside three old-shape tokens.
-	stripFixtureTokenPrefixes(t, path, tokens[:3])
+	stripFixtureTokenPrefixes(t, path, tokens[:3], bare)
 	for range 2 {
 		st, err = newTestStore(t, path, bytes.NewReader(nil))
 		if err != nil {
 			t.Fatal(err)
+		}
+		if rowCountAll(t, st, "clients") != 0 || rowCountAll(t, st, "auth_codes") != 0 {
+			t.Fatal("migration must create empty client/code tables")
 		}
 		if after := domainRows(t, st); !reflect.DeepEqual(after, before) {
 			t.Fatalf("migration changed domain rows: before %#v, after %#v", before, after)
@@ -156,8 +167,8 @@ func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
 		t.Fatalf("login state after migration = %#v, %v; want %#v", gotState, err, state)
 	}
 	for i, token := range tokens {
-		for _, lookup := range []func(string, time.Time) (Identity, error){st.LookupTokenIdentity, st.TouchTokenIdentity} {
-			identity, err := lookup(secrets[i], now.Add(time.Minute))
+		for _, lookup := range []func(string, string, time.Time) (Identity, error){st.LookupTokenIdentity, st.TouchTokenIdentity} {
+			identity, err := lookup(secrets[i], "ANY.HOST", now.Add(time.Minute))
 			if token.Enabled {
 				want := Identity{UserID: user.ID, Email: user.Email, TokenID: token.ID}
 				if err != nil || identity != want {

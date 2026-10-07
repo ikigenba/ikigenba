@@ -64,6 +64,11 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET /check", s.handleCheck)
 	mux.HandleFunc("GET /check/open", s.handleCheck)
 	mux.HandleFunc("GET /me", s.handleMe)
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.handleOAuthMetadata)
+	mux.HandleFunc("POST /register", s.handleRegister)
+	mux.HandleFunc("GET /authorize", s.handleAuthorize)
+	mux.HandleFunc("POST /authorize", s.handleAuthorize)
+	mux.HandleFunc("POST /token", s.handleOAuthToken)
 	mux.HandleFunc("POST /tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /tokens/{id}/{action}", s.handleTokenAction)
 

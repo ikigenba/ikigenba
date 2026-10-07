@@ -14,6 +14,8 @@ const (
 	Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 	// TokenIDPrefix identifies token entities.
 	TokenIDPrefix = "tok_"
+	// ClientIDPrefix identifies registered clients.
+	ClientIDPrefix = "cli_"
 	// SecretPrefix is the prefix of a minted secret.
 	SecretPrefix = "ikp_"
 )

@@ -239,7 +239,7 @@ func TestConfigAndSocketValidation(t *testing.T) {
 }
 
 func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
-	// R-GM45-T0NX R-83VK-OPJL R-86BD-G90Z
+	// R-GM45-T0NX R-83VK-OPJL
 	env := goodEnv()
 	source := testSource(t)
 	p := baseProcess(env, source, nil)
@@ -405,7 +405,7 @@ func TestRunClosesListenerOnLaterFailure(t *testing.T) {
 }
 
 func TestServeReadinessAndInjectedSeam(t *testing.T) {
-	// R-7BTV-VZHM R-88R6-7SID R-89Z2-LK92 R-N3VE-FLYK R-N6B7-75FY R-B74O-337R R-OYUS-DBTQ
+	// R-7BTV-VZHM R-GIKK-2HF4 R-GJSG-G95T R-N3VE-FLYK R-N6B7-75FY R-B74O-337R R-OYUS-DBTQ
 	for _, preexisting := range []bool{false, true} {
 		t.Run(strconv.FormatBool(preexisting), func(t *testing.T) {
 			source := testSource(t)
@@ -473,7 +473,7 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 }
 
 func TestRunWiresIssuerAndRandomness(t *testing.T) {
-	// R-88R6-7SID R-7BTV-VZHM: serve a request through Run's inherited listener.
+	// R-GIKK-2HF4 R-7BTV-VZHM: serve a request through Run's inherited listener.
 	var issuerCalls atomic.Int32
 	credentials := make(chan [2]string, 1)
 	var issuer *httptest.Server
