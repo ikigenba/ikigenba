@@ -2,7 +2,7 @@
 
 auth's pages take the platform's visual style and its service launcher from files auth does not author: the stylesheet every page links, the fonts that stylesheet loads, the launcher's script, the button-feedback script every page links, and the licences of the fonts and of the Tabler icons the style draws. They are the platform's shared web files, the same for every app, and they come from appkit's `page` package (`github.com/ikigenba/ikigenba/appkit/page`, `D01-layout-and-run-seam`), which embeds them and serves them through the handler `page.Static()` returns, under the prefix `page.StaticPrefix`, `/_appkit/`. This design is how auth mounts that handler and what a caller observes of it through auth.
 
-auth carries no style file of its own any more. The hand-maintained `assets/` directory, the root package `auth` that embedded it as `Assets`, the `/assets/` route and auth's own extension-to-`Content-Type` table are gone; a path under `/assets/` is now an ordinary path that does not exist, answered 404 by `D03-serve`'s routing like any other unknown path.
+auth carries no style file of its own any more. The style files its `assets/` directory once held, the `/assets/` route that served them and auth's own extension-to-`Content-Type` table are gone; a path under `/assets/` is now an ordinary path that does not exist, answered 404 by `D03-serve`'s routing like any other unknown path. `assets/` now holds auth's own page templates, which the root package embeds as `Assets` and the handlers draw into pages, never serve as files (`D01-layout-and-run-seam`); they link the stylesheet this design mounts and carry none of their own.
 
 ## Mounting ahead of everything auth keeps
 

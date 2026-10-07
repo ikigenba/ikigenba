@@ -188,18 +188,21 @@ Exit codes:
 $ auth db status
 0001 applied 2026-10-05T14:03:07.123456Z
 0002 applied 2026-10-05T14:03:07.125003Z
+0003 applied 2026-10-05T14:03:07.126518Z
 $ echo $?
 0
 
 $ auth db status          # before the first start
 0001 pending
 0002 pending
+0003 pending
 
-$ auth db status          # a newer auth has applied 0003
+$ auth db status          # a newer auth has applied 0004
 0001 applied 2026-10-05T14:03:07.123456Z
 0002 applied 2026-10-05T14:03:07.125003Z
-0003 unknown 2026-10-06T09:12:44.000017Z
-auth: <appkit's error, naming 0003>
+0003 applied 2026-10-05T14:03:07.126518Z
+0004 unknown 2026-10-06T09:12:44.000017Z
+auth: <appkit's error, naming 0004>
 $ echo $?
 1
 

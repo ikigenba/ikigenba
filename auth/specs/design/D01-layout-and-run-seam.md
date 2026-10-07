@@ -3,8 +3,9 @@
 auth is one Go binary that serves the platform's auth service. This document
 fixes the skeleton the rest of the auth design hangs on: the module path, the
 packages the later documents name, the one platform library it depends on,
-the run seam through which the program touches the outside world, and the
-migrations that give its database its schema. It designs no
+the run seam through which the program touches the outside world, the
+migrations that give its database its schema, and the page templates its
+`assets/` directory holds. It designs no
 endpoint, no config validation, no OAuth flow, and no persistence behavior —
 only where those things live and how they are wired and tested. The later
 design documents attach their contracts to the packages this document names:
@@ -51,8 +52,11 @@ markup, the feedback script, the favicon, the stylesheet, the fonts and
 their licences; auth authors none of them and carries no copy.
 
 The style files come from appkit, which serves them itself (D08). The pages
-auth draws are its own templates in `internal/server` (D05, D07), drawn around
-appkit's banner templates.
+auth draws are its own templates, drawn around appkit's banner templates: the
+sign-in pages and the profile's older parts are templates in
+`internal/server` (D05, D07), and the newer ones are human-authored files in
+`assets/`, embedded by the root package (below): the approve page an MCP
+client sends its user to (D09) and the profile's `MCP clients` card (D07).
 
 `page.New` is the one place the kit touches the process: its documentation
 says "New captures the host services path for the named app", and it reads
@@ -93,24 +97,41 @@ and without touching the environment. `internal/cli` hands the source on,
 unchanged, to `internal/server` through `server.Config` (D03) and never calls
 it itself.
 
-The checkout carries two hand-authored inputs beside the code:
-`etc/manifest.toml` (D02) and `share/icon.svg`, auth's icon, an SVG image a
-human draws from Tabler's outline `user-circle` icon; its presence in the
-package is what lists auth in the platform's launcher on a space. The build
-run never writes it. Everything auth serves is inside the binary — its own templates and appkit's
-embedded files alike.
+Beside the code the checkout carries `etc/manifest.toml` (D02), the page
+templates in `assets/` (below), and `share/icon.svg`, auth's icon, an SVG
+image a human draws from Tabler's outline `user-circle` icon; its presence in
+the package is what lists auth in the platform's launcher on a space. The
+build run never writes the icon or `assets/`. Everything auth serves is inside the binary — its own templates, those in
+`internal/server` and those in `assets/`, and appkit's embedded files alike.
+
+`assets/` at the module root holds auth's own page templates as Go
+`html/template` files: `approve.html`, whose template is `approve`, and
+`mcp-clients.html`, whose template is `mcp-clients`. They follow the platform's
+visual style, and the user or the delivering agent writes them;
+the build run reads them and never writes them. Go's `embed` reaches only
+files at or below the embedding package's directory, so the root package
+`auth` embeds them, beside the migrations, and exports `Assets`, a file system
+holding exactly those two files, the same on every call and depending on no
+file beside the binary. **auth's template set** is what the handlers draw
+those pages from: a fresh set from appkit's `page.Templates()`, which already
+defines `banner`, `launcher` and `footer`, with every file of `Assets()`
+parsed into it and no template function added. The code adds no markup of its
+own around them, so a test renders the same template with the same data and
+compares the bytes.
 
 The database's schema is inside the binary too. It is a sequence of migration
 files in `migrations/` at the module root, which only a package at the module
-root can embed, so the root package `auth` exists for them and exports
-`Migrations`, a file system holding exactly the two migrations this auth
+root can embed, so the root package `auth` embeds them too and exports
+`Migrations`, a file system holding exactly the three migrations this auth
 carries. `0001_baseline.sql` is the schema auth has always created, its users,
 sessions, login states and tokens (D04 declares it), written so that it
 creates each table and index only if it does not exist and seeds nothing, so
 a database an earlier auth wrote before it carried migrations is adopted as it
 is. `0002_token_id_prefix.sql` gives every token that still carries a bare
 26-character id the `tok_` prefix (D04); it transforms rows that are there and
-adds none. That file system is what `Run` hands `db.Open` and `db.Status`, and
+adds none. `0003_mcp_clients.sql` gives every token a kind and a host, making
+each existing one a personal token bound to no host, and adds the tables that
+hold MCP clients' registrations and authorization codes (D04). That file system is what `Run` hands `db.Open` and `db.Status`, and
 what a test hands `db.Open` to make a database of auth's shape in its own
 temporary directory. It is the same on every call and depends on no file
 beside the binary. A later migration is a new file there with the next
@@ -257,8 +278,12 @@ that wants a particular reason cancels with a cause of its own choosing
 - R-2C9G-ACYG: `internal/version` MUST export `var Version string` whose value is a leading `v` followed by a semantic version.
 - R-3WNI-4FXO: `main` MUST terminate the process with the exact integer that `cli.Run` returns as the process exit status.
 - R-7D1S-9R8B: `cli.Run` MUST return `0` on success, `1` on a failure that is not a usage error (the server failing, a database it cannot open, or a `db status` that fails, D02 and D03), and `2` on a usage error.
-- R-7E9O-NIZ0: The module's root package, imported from the path `github.com/ikigenba/ikigenba/auth` with the package name `auth`, MUST export `func Migrations() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `0001_baseline.sql` and `0002_token_id_prefix.sql` and no other entry.
-- R-7FHL-1APP: Every call to the root package's `Migrations` MUST return a file system holding the same two files with the same contents, whatever the process working directory is, a directory that holds no `migrations/` directory included.
+- R-G55N-V09H: The module's root package, imported from the path `github.com/ikigenba/ikigenba/auth` with the package name `auth`, MUST export `func Migrations() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `0001_baseline.sql`, `0002_token_id_prefix.sql`, and `0003_mcp_clients.sql` and no other entry.
+- R-G6DK-8S06: Every call to the root package's `Migrations` MUST return a file system holding the same three files with the same contents, whatever the process working directory is, a directory that holds no `migrations/` directory included.
+- R-G7LG-MJQV: The module's root package, imported from the path `github.com/ikigenba/ikigenba/auth` with the package name `auth`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `approve.html` and `mcp-clients.html` and no other entry, embedded from the files of the same names in the module's `assets/` directory.
+- R-G8TD-0BHK: Every call to the root package's `Assets` MUST return a file system holding the same files with the same contents, whatever the process working directory is, a directory that holds no `assets/` directory included.
+- R-GA19-E389: auth's design defines **auth's template set** as the `*template.Template`, where `template` is the standard library's `html/template`, that results from calling the `ParseFS` method of a set `page.Templates()` returned with the file system the root package's `Assets()` returns (R-G7LG-MJQV) and the single pattern `*.html`, no function having been added to that set by `Funcs`; and every requirement of auth's design that names auth's template set MUST denote a set so made.
+- R-GB95-RUYY: Making auth's template set MUST succeed, its `ParseFS` call returning a nil error, and the set made MUST define a template named `approve` and a template named `mcp-clients`.
 - R-7GPH-F2GE: auth's design defines the **database path** of a `Run` as `filepath.Join(p.Dir, "state", "auth.db")`, where `filepath` is the standard library's `path/filepath` and `p` is the `Process` given to that `Run`, a relative path resolved against the process working directory when `p.Dir` is empty; every requirement of auth's design that names the database path MUST denote this.
 - R-7BTV-VZHM: Given a `Process` whose `Stdout` and `Stderr` are in-memory buffers, `Args` an explicit slice, `LookupEnv` a fake lookup, `Unsetenv` nil or a recorder, `Pid` a value the test chose, `Inherit` a function returning a listener the test made, `Now` a fixed clock, `Rand` a deterministic reader, `OIDCIssuer` a loopback URL, `Dir` a temporary directory the test owns, `Banner` a function the test wrote, and `Sink` a `*telemetry.Capture` or a sink the test wrote, `cli.Run` MUST take every input and produce every output through that `Process` — reading arguments only from `Args`, environment only through `LookupEnv`, every time it records or compares against stored state, every event's time, and the time of every migration it applies only through `Now`, randomness, the request ids it mints included, only through `Rand`, except the request id appkit's `telemetry.Middleware` mints after its read of `Rand` fails (appkit D14, R-DRSL-TU2H), which MAY come from `crypto/rand`, and banner data only through `Banner`, delivering events only through `Sink`, and removing environment variables only through `Unsetenv` — and MUST NOT read the real process arguments, the real process environment, the real process id, or a global random source other than for such a request id; the drain deadline of D03 and `net/http`'s own deadlines are measured in real elapsed time and are not read through `Now`.
 - R-M22I-KPZ1: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.
