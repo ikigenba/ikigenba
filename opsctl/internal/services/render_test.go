@@ -273,7 +273,7 @@ func TestRenderMinimalJSONEscapesAndRoundTrip(t *testing.T) {
 	}
 }
 
-// R-YL1D-6QXU
+// R-HKOW-0O97
 func TestRenderRejectsUnembeddableIcons(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -313,6 +313,20 @@ func TestRenderRejectsUnembeddableIcons(t *testing.T) {
 
 func assertIconWriteFailure(t *testing.T, root, want string) {
 	t.Helper()
+	// An unsuccessful regeneration must also preserve an absent publication.
+	var absentCommands []host.Command
+	changes, writeErr := Write(context.Background(), renderWriteEnv(t, root, nil, &absentCommands), "box.example")
+	if changes != nil || writeErr == nil || writeErr.Error() != want {
+		t.Fatalf("Write without publication = %v, %v; want nil and %q", changes, writeErr, want)
+	}
+	for _, command := range absentCommands {
+		if command.Name != "systemctl" {
+			t.Fatalf("command after failed icon: %+v", command)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(root, "var", "lib", "ikigenba")); !os.IsNotExist(err) {
+		t.Fatalf("services directory created after icon failure: %v", err)
+	}
 	file := filepath.Join(root, "var", "lib", "ikigenba", "services.json")
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		t.Fatal(err)
@@ -344,7 +358,7 @@ func assertIconWriteFailure(t *testing.T, root, want string) {
 	}
 }
 
-// R-YL1D-6QXU
+// R-HKOW-0O97
 func TestWritePreservesFileOnIconReadFailure(t *testing.T) {
 	root := t.TempDir()
 	icon := renderFixture(t, root, "bad", "app = \"bad\"\n", true, []byte("<svg/>"))
@@ -364,7 +378,7 @@ func TestWritePreservesFileOnIconReadFailure(t *testing.T) {
 	assertIconWriteFailure(t, root, want)
 }
 
-// R-YL1D-6QXU
+// R-HKOW-0O97
 func TestRenderDoesNotApplyInstallIconChecks(t *testing.T) {
 	root := t.TempDir()
 	icon := []byte(strings.Repeat("x", 65537))

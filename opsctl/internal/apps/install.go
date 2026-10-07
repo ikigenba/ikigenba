@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"net/url"
 	"os"
 	"path"
@@ -180,7 +181,7 @@ func (workflow *installWorkflow) publishUnit(ctx context.Context) error {
 		return failInstallStage(workflow.hooks, "unit", failure)
 	}
 	app := workflow.checked.manifest.App
-	if err := workflow.hooks.Report("unit", socketUnitName(app)+", "+appUnitName(app), true); err != nil {
+	if err := workflow.hooks.Report("unit", socketUnitName(app)+", "+appUnitName(app)+workflow.checked.warnings, true); err != nil {
 		return &InstallError{Code: 1, Message: "install failed", Cause: err}
 	}
 	return nil
@@ -217,6 +218,7 @@ type inspectedArtifact struct {
 	entries  []archiveEntry
 	active   bool
 	disabled bool
+	warnings string
 }
 
 func (artifact *inspectedArtifact) hasTopLevel(name string) bool {
@@ -535,12 +537,16 @@ func validateArchivePath(name string) (string, error) {
 }
 
 func completeFileStage(ctx context.Context, env host.Env, artifact *inspectedArtifact) *stageFailure {
+	suiteCeiling, appCeiling, failure := inspectInstallSlices(env.Root, artifact)
+	if failure != nil {
+		return failure
+	}
 	services, err := Discover(env.Root)
 	if err != nil {
 		return &stageFailure{code: 1, detail: err.Error(), cause: err}
 	}
 	for _, service := range services {
-		if service.ManifestError != nil {
+		if service.Name != artifact.manifest.App && service.ManifestError != nil {
 			err = fmt.Errorf("%s: %w", safeDiagnosticToken(service.Name), service.ManifestError)
 			return &stageFailure{code: 1, detail: err.Error(), cause: err}
 		}
@@ -548,6 +554,10 @@ func completeFileStage(ctx context.Context, env host.Env, artifact *inspectedArt
 			err = fmt.Errorf("%s: %s is already the default app", safeDiagnosticToken(artifact.manifest.App), safeDiagnosticToken(service.Name))
 			return &stageFailure{code: 1, detail: err.Error(), cause: err}
 		}
+	}
+	artifact.warnings, err = installMemoryWarnings(env.Root, artifact.manifest, services, suiteCeiling, appCeiling)
+	if err != nil {
+		return operationalFailure(err)
 	}
 	unit := appUnitName(artifact.manifest.App)
 	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", unit}})
@@ -569,6 +579,122 @@ func completeFileStage(ctx context.Context, env host.Env, artifact *inspectedArt
 		return operationalFailure(err)
 	}
 	return nil
+}
+
+func inspectInstallSlices(root string, artifact *inspectedArtifact) (int64, int64, *stageFailure) {
+	suite, err := readInstallSlice(root, "ikigenba.slice", true)
+	if err != nil {
+		return 0, 0, operationalFailure(err)
+	}
+	slice := artifact.manifest.Resources.Slice
+	unit := "ikigenba-" + slice + ".slice"
+	ceiling, err := readInstallSlice(root, unit, slice == "apps")
+	if err != nil {
+		return 0, 0, operationalFailure(err)
+	}
+	if slice == "core" {
+		ceiling = suite
+		unit = "ikigenba.slice"
+	}
+	memory := artifact.manifest.Resources.MemoryMax
+	if memory > ceiling {
+		err := fmt.Errorf("%s: etc/manifest.toml: memory_max %s is more than %s's MemoryMax %s", safeDiagnosticToken(artifact.basename), renderMemory(big.NewInt(memory)), unit, renderMemory(big.NewInt(ceiling)))
+		return 0, 0, &stageFailure{code: 2, detail: err.Error(), cause: err}
+	}
+	return suite, ceiling, nil
+}
+
+func readInstallSlice(root, unit string, needsMemory bool) (int64, error) {
+	hostPath := "/etc/systemd/system/" + unit
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", hostPath, err)
+	}
+	defer func() { _ = filesystem.Close() }()
+	relative := "etc/systemd/system/" + unit
+	var data []byte
+	if needsMemory {
+		data, err = filesystem.ReadFile(relative)
+	} else {
+		_, err = filesystem.Stat(relative)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("%s is missing; run 'opsctl init'", hostPath)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", hostPath, err)
+	}
+	if !needsMemory {
+		return 0, nil
+	}
+	value := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "MemoryMax=") {
+			value = strings.TrimPrefix(line, "MemoryMax=")
+		}
+	}
+	count, ok := memoryBytes(tomlValue{kind: tomlString, text: value})
+	if !ok {
+		return 0, fmt.Errorf("%s has no MemoryMax; run 'opsctl init'", hostPath)
+	}
+	return count, nil
+}
+
+func renderMemory(count *big.Int) string {
+	for _, scale := range []struct {
+		bytes  int64
+		suffix string
+	}{{1048576, "M"}, {1024, "K"}} {
+		quotient, remainder := new(big.Int), new(big.Int)
+		quotient.QuoRem(count, big.NewInt(scale.bytes), remainder)
+		if remainder.Sign() == 0 {
+			return quotient.String() + scale.suffix
+		}
+	}
+	return count.String()
+}
+
+func installMemoryWarnings(root string, incoming Manifest, services []Service, suiteCeiling, appCeiling int64) (string, error) {
+	all, apps := big.NewInt(134217728), new(big.Int)
+	count := func(resources Resources) {
+		all.Add(all, big.NewInt(resources.MemoryMax))
+		if resources.Slice == "apps" {
+			apps.Add(apps, big.NewInt(resources.MemoryMax))
+		}
+	}
+	for _, service := range services {
+		if service.Name == incoming.App || ValidateName(service.Name) != nil {
+			continue
+		}
+		info, err := lstatTimeoutPath(root, rootedHostPath(root, "opt", service.Name, "bin", service.Name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		resources := defaultResources()
+		if service.Manifest != nil {
+			resources = service.Manifest.Resources
+		}
+		count(resources)
+	}
+	count(incoming.Resources)
+	warning := func(unit string, sum *big.Int, ceiling int64) string {
+		twice := new(big.Int).Mul(big.NewInt(ceiling), big.NewInt(2))
+		if sum.Cmp(twice) <= 0 {
+			return ""
+		}
+		return fmt.Sprintf("; warning: %s memory_max adds up to %s, more than twice its MemoryMax %s", unit, renderMemory(sum), renderMemory(big.NewInt(ceiling)))
+	}
+	result := ""
+	if incoming.Resources.Slice == "apps" {
+		result = warning("ikigenba-apps.slice", apps, appCeiling)
+	}
+	return result + warning("ikigenba.slice", all, suiteCeiling), nil
 }
 
 func manifestDetail(manifest Manifest) string {
@@ -1026,14 +1152,19 @@ func serviceUnitBytes(root, app string, stopSeconds int64, resources Resources) 
 	appRoot := rootedHostPath(root, "opt", app)
 	socket := socketUnitName(app)
 	var limits strings.Builder
-	if resources.CPUWeight != 0 {
-		fmt.Fprintf(&limits, "CPUWeight=%d\n", resources.CPUWeight)
+	if resources.Slice == "" {
+		resources = defaultResources()
 	}
-	if resources.MemoryMax != 0 {
-		fmt.Fprintf(&limits, "MemoryMax=%d\n", resources.MemoryMax)
+	fmt.Fprintf(&limits, "Slice=ikigenba-%s.slice\nCPUWeight=%d\nMemoryMax=%d\n", resources.Slice, resources.CPUWeight, resources.MemoryMax)
+	if resources.Slice == "core" {
+		limits.WriteString("MemoryLow=32M\n")
 	}
-	if resources.IOWeight != 0 {
-		fmt.Fprintf(&limits, "IOWeight=%d\n", resources.IOWeight)
+	fmt.Fprintf(&limits, "Environment=GOMEMLIMIT=%d\n", resources.GoMemoryLimit)
+	if resources.Delegate {
+		limits.WriteString("Delegate=yes\n")
+	}
+	if resources.OOMPolicy == "continue" {
+		limits.WriteString("OOMPolicy=continue\n")
 	}
 	return []byte("[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + "\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
@@ -1199,7 +1330,7 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 			continue
 		}
 		if service.ManifestError != nil {
-			return fmt.Errorf("%s: %w", service.Name, service.ManifestError)
+			return fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)
 		}
 		installed = append(installed, service)
 	}

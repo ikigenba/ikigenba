@@ -92,7 +92,7 @@ func TestWriteOwnsServicesPublication(t *testing.T) {
 var _ func(context.Context, host.Env, string) (Changes, error) = Write
 
 func TestWritePreflightLeavesExistingFileAlone(t *testing.T) {
-	// R-8GOM-7A05
+	// R-HJGZ-MWII
 	root := t.TempDir()
 	file := servicesFile(root)
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
@@ -122,7 +122,7 @@ func TestWritePreflightLeavesExistingFileAlone(t *testing.T) {
 }
 
 func TestWritePreflightFailuresLeaveFileAlone(t *testing.T) {
-	// R-8GOM-7A05
+	// R-HJGZ-MWII
 	for _, cause := range []string{"discover", "manifest", "disabled"} {
 		t.Run(cause, func(t *testing.T) {
 			root := t.TempDir()
@@ -564,5 +564,52 @@ func TestWriteToleratesUnreadableAndMalformedPreviousFile(t *testing.T) {
 				t.Fatalf("changes=%v, error=%v", changes, err)
 			}
 		})
+	}
+}
+
+// R-HJGZ-MWII
+func TestWriteRejectsFirstManifestExactlyBeforeQueriesOrPublication(t *testing.T) {
+	for _, manifest := range []string{"[resources]\nio_weight = 50\n", "[resources]\nunknown = 1\n", "app = [\n"} {
+		for _, existing := range []bool{false, true} {
+			t.Run(manifest, func(t *testing.T) {
+				root := t.TempDir()
+				writeLauncher(t, root, "alpha")
+				renderFixture(t, root, "repos", manifest, false, nil)
+				renderFixture(t, root, "zeta", "app = [\n", false, nil)
+				file := servicesFile(root)
+				if existing {
+					if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(file, []byte("previous"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				_, parseErr := apps.ParseManifest([]byte(manifest))
+				if parseErr == nil {
+					t.Fatal("fixture parsed")
+				}
+				want := "repos: etc/manifest.toml: " + parseErr.Error()
+				calls := 0
+				changes, err := Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) { calls++; return host.Result{}, nil }}, "example.test")
+				if changes != nil || err == nil || err.Error() != want || calls != 0 {
+					t.Fatalf("Write = %v, %v, calls %d; want nil, %q, 0", changes, err, calls, want)
+				}
+				info, statErr := os.Lstat(file)
+				if !existing {
+					if !os.IsNotExist(statErr) {
+						t.Fatalf("publication created: %v", statErr)
+					}
+					if _, err := os.Stat(filepath.Dir(file)); !os.IsNotExist(err) {
+						t.Fatalf("services directory created: %v", err)
+					}
+					return
+				}
+				directory, dirErr := os.Lstat(filepath.Dir(file))
+				if statErr != nil || dirErr != nil || info.Mode().Perm() != 0o600 || directory.Mode().Perm() != 0o700 || string(readPublishedServices(t, root)) != "previous" {
+					t.Fatalf("publication changed: %v, %v", info, statErr)
+				}
+			})
+		}
 	}
 }

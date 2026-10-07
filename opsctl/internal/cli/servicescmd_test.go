@@ -32,7 +32,7 @@ func servicesFixtureCommand(command host.Command) (host.Result, bool) {
 }
 
 func TestInstallServicesStagePublishesNormalizedNameAndStopsOnError(t *testing.T) {
-	// R-YNH5-YAF8 R-2MWD-JW16 R-YOP2-C25X R-YPWY-PTWM
+	// R-YNH5-YAF8 R-3GF7-5PQ9 R-3IUZ-X97N R-3HN3-JHGY
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)
@@ -238,7 +238,7 @@ func TestLifecycleServicesStageRunsOnceAfterNginx(t *testing.T) {
 }
 
 func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
-	// R-K6Y1-HOHH R-8SVM-0ZF3
+	// R-341K-A2GT R-8SVM-0ZF3
 	for _, failure := range []string{"", "nginx", "services"} {
 		for _, disabled := range []bool{false, true} {
 			t.Run(failure+fmt.Sprint(disabled), func(t *testing.T) {
@@ -249,6 +249,7 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 				deps.DNS.LookupNS = func(context.Context, string) ([]string, error) { return []string{"ns1"}, nil }
 				deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
 				writeUninstallFile(t, deps.Root, "etc/nginx/conf.d/ikigenba.conf", "previous")
+				writeUninstallFile(t, deps.Root, "var/lib/ikigenba/services.json", "previous services\n")
 				writeUninstallFile(t, deps.Root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n")
 				writeUninstallFile(t, deps.Root, "opt/notes/etc/env", "DRAIN_SECONDS=5\nOTHER=keep\n")
 				writeUninstallFile(t, deps.Root, "opt/notes/bin/notes", "binary")
@@ -310,6 +311,12 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 				if calls != wantCalls {
 					t.Fatalf("calls %d want %d outcome %d %q %q", calls, wantCalls, code, stdout, stderr)
 				}
+				if failure == "nginx" {
+					data, err := os.ReadFile(filepath.Join(deps.Root, "var/lib/ikigenba/services.json"))
+					if err != nil || string(data) != "previous services\n" {
+						t.Fatalf("nginx failure changed services file: %q %v", data, err)
+					}
+				}
 				if failure != "" {
 					if code != 1 || stderr == "" {
 						t.Fatalf("failure %d %q", code, stderr)
@@ -343,7 +350,7 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 }
 
 func TestInstallServicesReportsEntryChangesWithAndWithoutIcons(t *testing.T) {
-	// R-YNH5-YAF8 R-YPWY-PTWM R-YOP2-C25X
+	// R-YNH5-YAF8 R-3HN3-JHGY R-3IUZ-X97N
 	for _, disabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(disabled), func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)

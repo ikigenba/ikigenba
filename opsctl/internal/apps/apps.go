@@ -16,11 +16,14 @@ type Database struct {
 	Path   string
 }
 
-// Resources holds optional systemd resource limits; zero leaves the default.
+// Resources holds the service cgroup and runtime resource settings.
 type Resources struct {
-	CPUWeight int
-	MemoryMax int64
-	IOWeight  int
+	Slice         string
+	MemoryMax     int64
+	GoMemoryLimit int64
+	CPUWeight     int
+	Delegate      bool
+	OOMPolicy     string
 }
 
 // Manifest describes the capabilities declared by an installed app.

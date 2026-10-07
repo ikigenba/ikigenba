@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
@@ -530,7 +531,7 @@ func TestNginxExternalFailuresUseCommandDiagnostics(t *testing.T) {
 
 func TestNginxStandaloneRenderAndApplyFailures(t *testing.T) {
 	// R-G0B8-HTXJ
-	// R-G1J4-VLO8
+	// R-HI93-94RT
 	// R-O32H-GB28
 	// R-K5Q5-3WQS
 	tests := []struct {
@@ -597,5 +598,33 @@ func writeNginxManifest(t *testing.T, root, name, contents string) {
 	}
 	if err := os.WriteFile(filepath.Join(directory, "manifest.toml"), []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// R-HI93-94RT
+func TestNginxManifestRejectionsUseExactStandaloneDiagnostic(t *testing.T) {
+	for _, command := range []string{"show", "apply"} {
+		t.Run(command, func(t *testing.T) {
+			root := configuredNginxRoot(t)
+			manifest := "[resources]\nio_weight = 50\n"
+			writeNginxManifest(t, root, "alpha", "app = \"alpha\"\ndefault = true\n")
+			writeNginxManifest(t, root, "beta", "app = \"beta\"\ndefault = true\n")
+			writeNginxManifest(t, root, "repos", manifest)
+			writeNginxManifest(t, root, "zeta", "app = [\n")
+			_, parseErr := apps.ParseManifest([]byte(manifest))
+			if parseErr == nil {
+				t.Fatal("fixture parsed")
+			}
+			want := "opsctl: repos: etc/manifest.toml: " + parseErr.Error() + "\n"
+			before := treeState(t, root)
+			calls := 0
+			stdout, stderr, code := invoke([]string{"nginx", command}, cli.Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) { calls++; return host.Result{}, nil }})
+			if code != 1 || stdout != "" || stderr != want || calls != 0 {
+				t.Fatalf("exit %d stdout %q stderr %q calls %d; want %q", code, stdout, stderr, calls, want)
+			}
+			if !reflect.DeepEqual(before, treeState(t, root)) {
+				t.Fatal("failed command changed host state")
+			}
+		})
 	}
 }

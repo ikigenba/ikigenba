@@ -15,7 +15,7 @@ import (
 )
 
 func TestInstallChecksIconBeforeDiscoveryWithoutMutation(t *testing.T) {
-	// R-2KGK-SCJS
+	// R-ZQOD-9F2O
 	tests := []struct {
 		name    string
 		entries []installTarEntry
@@ -62,7 +62,7 @@ func TestInstallChecksIconBeforeDiscoveryWithoutMutation(t *testing.T) {
 }
 
 func TestInstallPreservesPassingIconAndSetsServicesEnvironment(t *testing.T) {
-	// R-2KGK-SCJS R-UQEV-85OK
+	// R-ZQOD-9F2O R-UQEV-85OK
 	icon := append([]byte{0xef, 0xbb, 0xbf}, []byte("<svg><!-- unchanged bytes --></svg>\n")...)
 	for _, data := range [][]byte{nil, icon, []byte("<svg>" + strings.Repeat(" ", 65536-len("<svg></svg>")) + "</svg>")} {
 		fixture := newCompletedInstallFixture(t, t.TempDir(), false)
@@ -82,7 +82,7 @@ func TestInstallPreservesPassingIconAndSetsServicesEnvironment(t *testing.T) {
 }
 
 func TestInstallChecksCompleteArtifactBeforeIcon(t *testing.T) {
-	// R-2KGK-SCJS R-2LOH-64AH
+	// R-ZQOD-9F2O R-ARPR-LLC3
 	for _, entries := range [][]installTarEntry{
 		{regularEntry("bin/notes", nil, 0o755)},
 		{regularEntry("etc/manifest.toml", []byte("app = [\n"), 0o644), regularEntry("bin/notes", nil, 0o755)},

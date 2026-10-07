@@ -20,6 +20,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 	// R-UPYU-093W
 	t.Run("success is reported after every file check", func(t *testing.T) {
 		root := t.TempDir()
+		installSliceFixtures(t, root)
 		archive := validInstallTar(t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
 		var reports []installReport
 		var commands []commandCall
@@ -117,6 +118,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 		for _, test := range cases {
 			t.Run(test.name, func(t *testing.T) {
 				root := t.TempDir()
+				installSliceFixtures(t, root)
 				if test.setup != nil {
 					test.setup(t, root)
 				}
@@ -169,6 +171,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 		for _, actionFails := range []bool{false, true} {
 			t.Run(map[bool]string{false: "successful action", true: "failed action"}[actionFails], func(t *testing.T) {
 				root := t.TempDir()
+				installSliceFixtures(t, root)
 				reportFailure := errors.New("report write failed")
 				actionFailure := errors.New("observe active state failed")
 				fileReports := 0
@@ -221,7 +224,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 }
 
 func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
-	// R-2MWD-JW16
+	// R-3GF7-5PQ9
 	for _, failAt := range []string{"", "nginx", "services", "litestream"} {
 		name := failAt
 		if name == "" {
@@ -311,7 +314,7 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 }
 
 func TestInstallOwnedStagesStopOnActionAndReportFailures(t *testing.T) {
-	// R-2MWD-JW16
+	// R-3GF7-5PQ9
 	stages := []string{"fetch", "file", "secrets", "unpack", "unit", "service"}
 	for index, stage := range stages {
 		for _, actionFails := range []bool{false, true} {

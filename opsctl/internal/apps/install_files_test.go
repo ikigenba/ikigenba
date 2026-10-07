@@ -18,7 +18,7 @@ import (
 )
 
 func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
-	// R-2LOH-64AH
+	// R-ARPR-LLC3
 	manifest := []byte("app = \"notes\"\n")
 	tests := []struct {
 		name    string
@@ -56,7 +56,7 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 }
 
 func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
-	// R-2LOH-64AH
+	// R-ARPR-LLC3
 	root := t.TempDir()
 	archive := tarEntries(t, []installTarEntry{
 		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o644),
@@ -72,7 +72,7 @@ func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
 }
 
 func TestInstallDiscoversDefaultsBeforeSecretsOrMutation(t *testing.T) {
-	// R-OUAD-BPMU
+	// R-ZPGG-VNBZ
 	archive := validInstallTar(t, "app = \"notes\"\ndefault = true\n")
 	for _, test := range []struct {
 		name     string
@@ -199,8 +199,8 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 }
 
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
-	// R-2LOH-64AH
-	// R-OUAD-BPMU
+	// R-ARPR-LLC3
+	// R-ZPGG-VNBZ
 	// R-WY7U-IS2M
 	// R-UQEV-85OK
 	// R-18WH-VAMP
@@ -271,7 +271,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 }
 
 func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-2LOH-64AH
+	// R-ARPR-LLC3
 	root := t.TempDir()
 	outside := t.TempDir()
 	writeFixture(t, filepath.Join(outside, "marker"), []byte("unchanged"), 0o600)
@@ -331,6 +331,7 @@ func runInstallArchive(
 	afterXZ func(host.Command) (host.Result, error),
 ) ([]installReport, []host.Command, error) {
 	t.Helper()
+	installSliceFixtures(t, root)
 	store := installStoreAt(t, root, map[string]string{"host.name": "HOST.EXAMPLE.", "aws.region": "us-east-1"})
 	client := &installCloudClient{
 		get: func(context.Context, string) (io.ReadCloser, error) {

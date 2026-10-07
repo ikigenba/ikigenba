@@ -220,11 +220,13 @@ func discoverDatabases(root string) ([]databaseService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("discover databases: %w", err)
 	}
-	databases := make([]databaseService, 0, len(services))
 	for _, service := range services {
 		if service.ManifestError != nil {
-			return nil, fmt.Errorf("service %q manifest: %w", service.Name, service.ManifestError)
+			return nil, fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)
 		}
+	}
+	databases := make([]databaseService, 0, len(services))
+	for _, service := range services {
 		if service.Manifest == nil || service.Manifest.Database == nil {
 			continue
 		}

@@ -222,12 +222,14 @@ func discoverRoutedServices(root string) ([]apps.Service, string, error) {
 		return nil, "", fmt.Errorf("render nginx configuration: %w", err)
 	}
 
+	for _, service := range services {
+		if service.ManifestError != nil {
+			return nil, "", fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)
+		}
+	}
 	var routed []apps.Service
 	var defaultService string
 	for _, service := range services {
-		if service.ManifestError != nil {
-			return nil, "", fmt.Errorf("service %q manifest: %w", service.Name, service.ManifestError)
-		}
 		if service.Manifest == nil || service.Manifest.App == "" {
 			continue
 		}

@@ -34,6 +34,11 @@ func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry
 	if err != nil {
 		return nil, nil, err
 	}
+	for _, service := range services {
+		if service.ManifestError != nil {
+			return nil, nil, fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)
+		}
+	}
 	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open host root: %w", err)
@@ -42,9 +47,6 @@ func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry
 
 	entries := make([]entry, 0, len(services))
 	for _, service := range services {
-		if service.ManifestError != nil {
-			return nil, nil, fmt.Errorf("%s: %w", service.Name, service.ManifestError)
-		}
 		if service.Manifest == nil || service.Manifest.App == "" {
 			continue
 		}

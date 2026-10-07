@@ -153,10 +153,11 @@ func TestServiceModelUsesHostLocalInputs(t *testing.T) {
 	root := t.TempDir()
 	manifestData := []byte("app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
 	wantManifest := apps.Manifest{
-		App:      "notes",
-		Secrets:  []string{},
-		Env:      map[string]string{},
-		Database: &apps.Database{Engine: "sqlite", Path: "state/notes.db"},
+		App:       "notes",
+		Secrets:   []string{},
+		Env:       map[string]string{},
+		Database:  &apps.Database{Engine: "sqlite", Path: "state/notes.db"},
+		Resources: apps.Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100},
 	}
 	writeManifest(t, root, "notes", string(manifestData))
 	mkdirAll(t, filepath.Join(root, "opt", "notes", "state"))

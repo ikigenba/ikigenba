@@ -47,7 +47,7 @@ func TestManifestFields(t *testing.T) {
 		Secrets:     []string{"TOKEN"},
 		Env:         map[string]string{"MODE": "production"},
 		Database:    database,
-		Resources:   apps.Resources{CPUWeight: 100, MemoryMax: 1048576, IOWeight: 200},
+		Resources:   apps.Resources{Slice: "core", CPUWeight: 100, MemoryMax: 1048576, GoMemoryLimit: 786432},
 	}
 	var (
 		app         string
@@ -63,7 +63,7 @@ func TestManifestFields(t *testing.T) {
 	app, description, mcp, isDefault, secrets, env, db = manifest.App, manifest.Description, manifest.MCP, manifest.Default, manifest.Secrets, manifest.Env, manifest.Database
 	guests = manifest.Guests
 	resources = manifest.Resources
-	if app != "notes" || description != "Offers notes tools" || !mcp || !guests || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database || resources != (apps.Resources{CPUWeight: 100, MemoryMax: 1048576, IOWeight: 200}) {
+	if app != "notes" || description != "Offers notes tools" || !mcp || !guests || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database || resources != (apps.Resources{Slice: "core", CPUWeight: 100, MemoryMax: 1048576, GoMemoryLimit: 786432}) {
 		t.Fatalf("Manifest = %#v", manifest)
 	}
 }
@@ -230,7 +230,7 @@ func TestParseManifestRejectsMalformedTOMLWithoutPartialResult(t *testing.T) {
 	}
 }
 
-// R-RHJO-G1CM R-RIRK-TT3B R-XSFU-AXFW
+// R-ZATO-AEFN R-RIRK-TT3B R-XSFU-AXFW
 func TestParseManifestMapsFieldsAndSuppliesEmptyCollections(t *testing.T) {
 	data := []byte(`app = "crm"
 description = "  Offers CRM tools  "
@@ -249,7 +249,10 @@ path = "state/crm.db"
 [resources]
 cpu_weight = 100
 memory_max = "512M"
-io_weight = 200
+slice = "core"
+go_memory_limit = "256M"
+delegate = true
+oom_policy = "continue"
 `)
 	manifest, err := apps.ParseManifest(data)
 	if err != nil {
@@ -263,7 +266,7 @@ io_weight = 200
 		Default:     true,
 		Secrets:     []string{"CRM_API_KEY", "CRM_API_SECRET"},
 		Env:         map[string]string{"OUTBOX_RETENTION_DAYS": "7"},
-		Resources:   apps.Resources{CPUWeight: 100, MemoryMax: 536870912, IOWeight: 200},
+		Resources:   apps.Resources{Slice: "core", CPUWeight: 100, MemoryMax: 536870912, GoMemoryLimit: 268435456, Delegate: true, OOMPolicy: "continue"},
 		Database: &apps.Database{
 			Engine: "sqlite",
 			Path:   "state/crm.db",
@@ -277,7 +280,7 @@ io_weight = 200
 	if err != nil {
 		t.Fatalf("ParseManifest(empty) returned error: %v", err)
 	}
-	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Guests || minimal.Default || minimal.Database != nil || minimal.Resources != (apps.Resources{}) {
+	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Guests || minimal.Default || minimal.Database != nil || minimal.Resources != (apps.Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100}) {
 		t.Fatalf("ParseManifest(empty) did not retain scalar zero values: %#v", minimal)
 	}
 	if minimal.Secrets == nil || len(minimal.Secrets) != 0 || minimal.Env == nil || len(minimal.Env) != 0 {
@@ -294,7 +297,7 @@ env = { OUTBOX_RETENTION_DAYS = """7""" }
 database.engine = '''sqlite'''
 database.path = """
 state/crm.db"""
-resources = { cpu_weight = 100, memory_max = "512M", io_weight = 200 }
+resources = { cpu_weight = 100, memory_max = "512M", slice = "core", go_memory_limit = "256M", delegate = true, oom_policy = "continue" }
 `)
 	decoded, err := apps.ParseManifest(equivalent)
 	if err != nil {
@@ -419,7 +422,7 @@ resources = { cpu_weight = 100, memory_max = "512M", io_weight = 200 }
 	}
 }
 
-// R-RIRK-TT3B R-RHJO-G1CM R-XSFU-AXFW R-YBA6-4L0A
+// R-RIRK-TT3B R-ZATO-AEFN R-XSFU-AXFW R-YBA6-4L0A
 func TestParseManifestValidatesRecognizedFieldsAndIgnoresOthers(t *testing.T) {
 	valid := []byte(`title = """unrelated
 title"""

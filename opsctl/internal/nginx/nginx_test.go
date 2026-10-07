@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
 )
@@ -547,7 +548,7 @@ func TestRenderReturnsNoCandidateOnDiscoveryFailure(t *testing.T) {
 }
 
 func TestRenderRejectsManifestFailuresAndConflictingDefaults(t *testing.T) {
-	// R-G1J4-VLO8
+	// R-HI93-94RT
 	t.Parallel()
 	tests := []struct {
 		name      string
@@ -594,7 +595,7 @@ func TestRenderRejectsManifestFailuresAndConflictingDefaults(t *testing.T) {
 
 func TestApplyPropagatesRenderAndPublicationFailuresWithoutHostWork(t *testing.T) {
 	// R-G0B8-HTXJ
-	// R-G1J4-VLO8
+	// R-HI93-94RT
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -1841,5 +1842,37 @@ func TestRenderOnlyQueriesRoutedSocketsReadOnly(t *testing.T) {
 	}
 	if after := snapshotTree(t, root); !reflect.DeepEqual(before, after) {
 		t.Fatal("Render changed files")
+	}
+}
+
+// R-HI93-94RT
+func TestManifestRejectionPrecedesDefaultConflictsWithoutSideEffects(t *testing.T) {
+	t.Parallel()
+	for _, manifest := range []string{"[resources]\nio_weight = 50\n", "[resources]\nmystery = 1\n", "app = [\n"} {
+		t.Run(manifest, func(t *testing.T) {
+			root := t.TempDir()
+			writeManifest(t, root, "alpha", "app = \"alpha\"\ndefault = true\n")
+			writeManifest(t, root, "beta", "app = \"beta\"\ndefault = true\n")
+			writeManifest(t, root, "repos", manifest)
+			writeManifest(t, root, "zeta", "app = [\n")
+			_, parseErr := apps.ParseManifest([]byte(manifest))
+			if parseErr == nil {
+				t.Fatal("fixture parsed")
+			}
+			want := "repos: etc/manifest.toml: " + parseErr.Error()
+			before := snapshotTree(t, root)
+			calls := 0
+			env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) { calls++; return host.Result{}, nil }}
+			candidate, err := nginx.Render(context.Background(), env, "example.test", "")
+			if candidate != nil || err == nil || err.Error() != want {
+				t.Fatalf("Render = %q, %v; want nil, %q", candidate, err, want)
+			}
+			if err := nginx.Apply(context.Background(), env, "example.test", ""); err == nil || err.Error() != want {
+				t.Fatalf("Apply = %v; want %q", err, want)
+			}
+			if calls != 0 || !reflect.DeepEqual(before, snapshotTree(t, root)) {
+				t.Fatal("invalid manifest changed host state or executed commands")
+			}
+		})
 	}
 }

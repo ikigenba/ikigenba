@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
@@ -36,6 +37,10 @@ Checks, in order:
 
 Sequence:
   certificate  obtain the host's certificate, or renew it if it is due
+  slices       write ikigenba.slice, ikigenba-core.slice and
+               ikigenba-apps.slice, sized from the host's memory, and the
+               drop-in that puts nginx in ikigenba-core.slice; restart nginx
+               when the drop-in changed
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
@@ -43,7 +48,9 @@ Sequence:
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
                disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them
+               an app's manifest declares are kept as install wrote them;
+               a manifest that is no longer valid stops init before
+               any app is rewritten
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -52,7 +59,7 @@ Configuration keys:
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-782X-L1K9
+	// R-NYQ5-F9V5
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -330,7 +337,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-X4JP-5YR7 R-V0E8-TY5K
 	// R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
-	// R-ZIB1-SI40
+	// R-ZIB1-SI40 R-341K-A2GT
 	// R-YZO5-RZU6 R-5E43-77RM
 	// R-YYIY-T743
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
@@ -412,6 +419,19 @@ func TestInitHealthyPreflight(t *testing.T) {
 			return result, nil
 		}
 		commands = append(commands, strings.Join(append([]string{command.Name}, command.Args...), " "))
+		if command.Name == "nginx" {
+			for path, want := range map[string]string{
+				"etc/systemd/system/ikigenba.slice":                "[Unit]\nDescription=Ikigenba suite\n\n[Slice]\nCPUWeight=100\nMemoryMax=1536M\n",
+				"etc/systemd/system/ikigenba-core.slice":           "[Unit]\nDescription=Ikigenba core\n\n[Slice]\nCPUWeight=300\n",
+				"etc/systemd/system/ikigenba-apps.slice":           "[Unit]\nDescription=Ikigenba apps\n\n[Slice]\nCPUWeight=100\nMemoryMax=1024M\nMemoryHigh=960M\n",
+				"etc/systemd/system/nginx.service.d/ikigenba.conf": "[Service]\nSlice=ikigenba-core.slice\nCPUWeight=100\nMemoryMax=128M\nMemoryLow=32M\n",
+			} {
+				got, err := fs.ReadFile(os.DirFS(deps.Root), path)
+				if err != nil || string(got) != want {
+					t.Fatalf("slice before nginx %s = %q, %v", path, got, err)
+				}
+			}
+		}
 		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
 			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
 		}
@@ -445,6 +465,8 @@ func TestInitHealthyPreflight(t *testing.T) {
 	}
 	wantCommands := []string{
 		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com -d deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
+		"systemctl daemon-reload",
+		"systemctl restart nginx",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"nginx -t",
 		"systemctl reload-or-restart nginx",
@@ -526,6 +548,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 		completed   []string
 	}{
 		{name: "certificate", failCommand: "certbot certonly", label: "certbot certonly", cause: "certificate transport failed"},
+		{name: "slices", failCommand: "systemctl restart nginx", label: "systemctl restart nginx", cause: "slice transport failed", completed: []string{"certificate"}},
 		{name: "nginx", failCommand: "nginx -t", label: "nginx -t", cause: "nginx transport failed", completed: []string{"certificate"}},
 		{name: "replication", failCommand: "systemctl enable litestream.service", label: "enable litestream.service", cause: "replication transport failed", completed: []string{"certificate", "nginx"}},
 		{name: "timers", failCommand: "systemctl daemon-reload", label: "reload systemd units", cause: "timer transport failed", completed: []string{"certificate", "nginx", "litestream"}},
@@ -564,6 +587,8 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 			certbotCommand := "certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.example.com -d api.example.com -d *.api.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt")
 			allCommands := []string{
 				certbotCommand,
+				"systemctl daemon-reload",
+				"systemctl restart nginx",
 				"nginx -t",
 				"systemctl reload-or-restart nginx",
 				"systemctl enable litestream.service",
@@ -572,7 +597,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 			}
 			failIndex := -1
 			for i, command := range allCommands {
-				if command == tc.failCommand || strings.HasPrefix(command, tc.failCommand+" ") {
+				if (command == tc.failCommand || strings.HasPrefix(command, tc.failCommand+" ")) && (tc.name != "timers" || i == len(allCommands)-1) {
 					failIndex = i
 					break
 				}
@@ -588,7 +613,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 				}
 				invocation := strings.Join(append([]string{command.Name}, command.Args...), " ")
 				commands = append(commands, invocation)
-				if invocation == allCommands[failIndex] {
+				if len(commands)-1 == failIndex {
 					return host.Result{
 						Stdout: []byte(tc.name + " captured stdout\n"),
 						Stderr: []byte(tc.name + " captured stderr\n"),
@@ -1164,7 +1189,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-K6Y1-HOHH R-YZO5-RZU6 R-V0E8-TY5K
+	// R-341K-A2GT R-YZO5-RZU6 R-V0E8-TY5K
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -1316,6 +1341,9 @@ func cloneBoolMap(source map[string]bool) map[string]bool {
 func initDeps(t *testing.T, values map[string]string) cli.Deps {
 	t.Helper()
 	deps := depsAt(t, 0)
+	deps.Now = func() time.Time { return time.Unix(1, 0) }
+	deps.Getenv = func(string) string { return "" }
+	writeCLIInstallFile(t, filepath.Join(deps.Root, "proc/meminfo"), "MemTotal: 1954816 kB\n")
 	store := config.Store{Root: deps.Root}
 	for key, value := range values {
 		if err := store.Set(key, value); err != nil {

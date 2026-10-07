@@ -29,10 +29,23 @@ ships share/icon.svg appears in the service launcher and an app that declares
 a [database] is replicated from the moment it is installed. litestream.service
 is restarted only when its configuration changed.
 
-The manifest's [resources] table, if any, sets the service's CPU weight
-(cpu_weight, 1-10000), memory ceiling (memory_max, bytes with an optional K, M
-or G), and IO weight (io_weight, 1-10000). They bound the app and every
-process it starts together. A key left out leaves systemd's default.
+The manifest's [resources] table, if any, places the service and bounds the
+app and every process it starts together:
+  slice            "core" or "apps" (default "apps"): ikigenba-core.slice or
+                   ikigenba-apps.slice, which 'opsctl init' writes
+  memory_max       memory ceiling, bytes with an optional K, M or G (default
+                   128M); no more than ikigenba-apps.slice's MemoryMax, or
+                   ikigenba.slice's for a core app
+  go_memory_limit  GOMEMLIMIT for the app, in the same form (default 75% of
+                   memory_max, rounded down); no more than memory_max
+  cpu_weight       CPU share within the slice, 1-10000 (default 100)
+  delegate         true to delegate the service's control group (used by
+                   scripts)
+  oom_policy       "continue" to keep the service running when the kernel
+                   kills one of its processes (used by repos)
+A core app also keeps 32M of memory under pressure. When the memory_max values
+in ikigenba-apps.slice, or in ikigenba.slice with nginx's 128M, add up to more
+than twice the slice's ceiling, the unit line says so; the install goes on.
 
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
@@ -42,7 +55,7 @@ Configuration keys:
 `
 
 func TestInstallHelpIsInert(t *testing.T) {
-	// R-804M-DRM8
+	// R-ZN0O-43UL
 	for _, uid := range []int{0, 1, -1, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			t.Run(fmt.Sprintf("%s/%d", option, uid), func(t *testing.T) {

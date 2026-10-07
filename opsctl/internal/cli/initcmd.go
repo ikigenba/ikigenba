@@ -41,6 +41,10 @@ Checks, in order:
 
 Sequence:
   certificate  obtain the host's certificate, or renew it if it is due
+  slices       write ikigenba.slice, ikigenba-core.slice and
+               ikigenba-apps.slice, sized from the host's memory, and the
+               drop-in that puts nginx in ikigenba-core.slice; restart nginx
+               when the drop-in changed
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
@@ -48,7 +52,9 @@ Sequence:
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
                disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them
+               an app's manifest declares are kept as install wrote them;
+               a manifest that is no longer valid stops init before
+               any app is rewritten
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -320,6 +326,9 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 	}
 	if err == nil {
 		err = cert.Obtain(ctx, env, p.host, email, apexApp != "")
+	}
+	if err == nil {
+		err = apps.SetupSlices(ctx, env)
 	}
 	if err == nil {
 		err = nginx.Apply(ctx, env, p.host, apexApp)

@@ -42,7 +42,7 @@ func TestReadTimeoutsUsesSpaceWideDefaultsAndNoManifestOverride(t *testing.T) {
 		t.Fatalf("ReadTimeouts(empty values) = %#v, %v", got, err)
 	}
 	manifest, err := apps.ParseManifest([]byte("drain_seconds = 99\nstop_seconds = 100\n"))
-	if err != nil || !reflect.DeepEqual(manifest, apps.Manifest{Secrets: []string{}, Env: map[string]string{}}) {
+	if err != nil || !reflect.DeepEqual(manifest, apps.Manifest{Secrets: []string{}, Env: map[string]string{}, Resources: apps.Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100}}) {
 		t.Fatalf("manifest settings = %#v, %v", manifest, err)
 	}
 	if err := store.Set("apps.drain_seconds", "7"); err != nil {

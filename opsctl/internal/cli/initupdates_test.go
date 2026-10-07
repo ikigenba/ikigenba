@@ -140,7 +140,7 @@ type initReportWriter struct {
 func (w initReportWriter) Write(data []byte) (int, error) { return w.write(data) }
 
 func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
-	// R-7BQM-QCSC
+	// R-0CMK-5AF6
 	deps := initDeps(t, map[string]string{
 		dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZONE", "host.name": "HOST.Example.Com.",
 		"acme.email": "operator@example.com", "aws.region": "us-east-2", "backup.s3_uri": "s3://bucket/host/",
@@ -151,7 +151,7 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"notes", "tasks"} {
+	for _, name := range []string{"notes", "tasks", "todos"} {
 		appDir := filepath.Join(deps.Root, "opt", name)
 		writeCLIInstallFile(t, filepath.Join(appDir, "bin", name), "installed binary\n")
 		env := "DRAIN_SECONDS=5\n"
@@ -159,7 +159,10 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 			env += apps.ServicesEnv + "=old-path\n"
 		}
 		writeCLIInstallFile(t, filepath.Join(appDir, "etc", "env"), env)
-		writeCLIInstallFile(t, filepath.Join(appDir, "etc", "manifest.toml"), "app = \""+name+"\"\n[resources]\ncpu_weight = 350\nmemory_max = \"512M\"\nio_weight = 125\n")
+		writeCLIInstallFile(t, filepath.Join(appDir, "etc", "manifest.toml"), "app = \""+name+"\"\n[resources]\ncpu_weight = 350\nmemory_max = \"512M\"\nslice = \"core\"\ngo_memory_limit = \"384M\"\ndelegate = true\noom_policy = \"continue\"\n")
+		if name == "todos" {
+			writeCLIInstallFile(t, filepath.Join(appDir, "etc", "manifest.toml"), "app = \"todos\"\n")
+		}
 		writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/systemd/system", "ikigenba-"+name+".service"), "old service\n")
 	}
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
@@ -179,7 +182,7 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 			switch command.Args[0] {
 			case "show":
 				state := "enabled"
-				if unit == "ikigenba-tasks.socket" {
+				if unit != "ikigenba-notes.socket" {
 					state = "disabled"
 				}
 				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=" + state + "\n")}, nil
@@ -208,7 +211,7 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 		if code != 0 || stderr != "" {
 			t.Fatalf("run %d failed: exit %d stderr %q", run, code, stderr)
 		}
-		for _, name := range []string{"notes", "tasks"} {
+		for _, name := range []string{"notes", "tasks", "todos"} {
 			env, err := fs.ReadFile(os.DirFS(deps.Root), "opt/"+name+"/etc/env")
 			if err != nil {
 				t.Fatal(err)
@@ -218,7 +221,11 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertInitSettingLines(t, unit, []string{fmt.Sprintf("TimeoutStopSec=%d\n", stop), "CPUWeight=350\n", "MemoryMax=536870912\n", "IOWeight=125\n"})
+			if name == "todos" {
+				assertInitSettingLines(t, unit, []string{fmt.Sprintf("TimeoutStopSec=%d\n", stop), "CPUWeight=100\n", "MemoryMax=134217728\n", "Slice=ikigenba-apps.slice\n", "Environment=GOMEMLIMIT=100663296\n"})
+			} else {
+				assertInitSettingLines(t, unit, []string{fmt.Sprintf("TimeoutStopSec=%d\n", stop), "CPUWeight=350\n", "MemoryMax=536870912\n", "Slice=ikigenba-core.slice\n", "MemoryLow=32M\n", "Environment=GOMEMLIMIT=402653184\n", "Delegate=yes\n", "OOMPolicy=continue\n"})
+			}
 		}
 		wantControls := []string{"restart ikigenba-notes.service"}
 		if run == 1 {
@@ -228,6 +235,46 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 			t.Errorf("run %d app controls = %v, want %v (tasks stays disabled)", run, controls, wantControls)
 		}
 	}
+	before := map[string][]byte{}
+	for _, name := range []string{"notes", "tasks", "todos"} {
+		for _, path := range []string{"opt/" + name + "/etc/env", "etc/systemd/system/ikigenba-" + name + ".service"} {
+			data, err := fs.ReadFile(os.DirFS(deps.Root), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before[path] = data
+		}
+	}
+	store := config.Store{Root: deps.Root}
+	for key, value := range map[string]string{"apps.drain_seconds": "11", "apps.stop_seconds": "29"} {
+		if err := store.Set(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	execute := deps.Execute
+	deps.Execute = func(ctx context.Context, command host.Command) (host.Result, error) {
+		result, err := execute(ctx, command)
+		if command.Name == "systemctl" && strings.Join(command.Args, " ") == "restart ikigenba-renew-certificate.timer" {
+			writeCLIInstallFile(t, filepath.Join(deps.Root, "opt/tasks/etc/manifest.toml"), "app = \"tasks\"\n[resources]\nio_weight = 50\n")
+		}
+		return result, err
+	}
+	controls = nil
+	_, stderr, code := invoke([]string{"init"}, deps)
+	want := "opsctl: tasks: etc/manifest.toml: 'resources.io_weight' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy\n"
+	if code != 1 || stderr != want {
+		t.Fatalf("invalid apps manifest = %d %q, want 1 %q", code, stderr, want)
+	}
+	for path, want := range before {
+		got, err := fs.ReadFile(os.DirFS(deps.Root), path)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Errorf("app changed on invalid manifest: %s = %q, %v", path, got, err)
+		}
+	}
+	if len(controls) != 0 {
+		t.Errorf("invalid apps manifest caused controls %v", controls)
+	}
+
 }
 
 func assertInitSettingLines(t *testing.T, data []byte, settings []string) {

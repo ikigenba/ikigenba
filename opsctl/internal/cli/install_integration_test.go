@@ -61,7 +61,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
-	// R-YOP2-C25X R-YPWY-PTWM
+	// R-3IUZ-X97N R-3HN3-JHGY
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 }
 
 func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
-	// R-YPWY-PTWM
+	// R-3HN3-JHGY
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-YOP2-C25X, R-YPWY-PTWM, R-2MWD-JW16, R-YSCR-HDE0, R-EOKC-P8UO
+	// R-3IUZ-X97N, R-3HN3-JHGY, R-3GF7-5PQ9, R-YSCR-HDE0, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
@@ -168,7 +168,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-YOP2-C25X, R-YSCR-HDE0
+	// R-3IUZ-X97N, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -191,7 +191,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-YOP2-C25X, R-YSCR-HDE0
+	// R-3IUZ-X97N, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -212,7 +212,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-YOP2-C25X, R-YSCR-HDE0
+	// R-3IUZ-X97N, R-YSCR-HDE0
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -259,7 +259,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	// R-YPWY-PTWM
+	// R-3HN3-JHGY
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -294,7 +294,7 @@ func TestInstallCLIRejectsInvalidAppTimeoutsBeforeFetch(t *testing.T) {
 }
 
 func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
-	// R-YOP2-C25X, R-YPWY-PTWM, R-YSCR-HDE0
+	// R-3IUZ-X97N, R-3HN3-JHGY, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -561,6 +561,9 @@ func newCLIInstallFixture(t *testing.T) *cliInstallFixture {
 		if err := os.MkdirAll(directory, 0o750); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, unit := range []string{"ikigenba.slice", "ikigenba-apps.slice", "ikigenba-core.slice"} {
+		writeCLIInstallFile(t, filepath.Join(root, "etc/systemd/system", unit), "[Slice]\nMemoryMax=4096M\n")
 	}
 	store := config.Store{Root: root}
 	for key, value := range map[string]string{

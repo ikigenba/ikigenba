@@ -25,7 +25,7 @@ func TestDatabaseFiles(t *testing.T) {
 }
 
 func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
-	// R-JKH0-KRY9 R-JPCM-3UX1 R-LEL8-NRBG
+	// R-JKH0-KRY9 R-HLWS-EFZW R-LEL8-NRBG
 	root, store := regenerationFixture(t)
 	for key, value := range map[string]string{
 		"backup.s3_uri":              "s3://backups.example/hosts/example/",
@@ -226,7 +226,7 @@ func TestRegenerateRejectsReservedDatabaseService(t *testing.T) {
 }
 
 func TestRegenerateReportsDiscoveryAndManifestFailures(t *testing.T) {
-	// R-JPCM-3UX1
+	// R-HLWS-EFZW
 	t.Run("discovery", func(t *testing.T) {
 		storeRoot, store := regenerationFixture(t)
 		missing := filepath.Join(storeRoot, "missing")
@@ -379,4 +379,42 @@ func readLitestream(t *testing.T, root string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+// R-HLWS-EFZW
+func TestRegeneratePreservesPublicationOnExactFirstManifestRejection(t *testing.T) {
+	for _, manifest := range []string{"[resources]\nio_weight = 50\n", "[resources]\nunknown = 1\n", "app = [\n"} {
+		for _, existing := range []bool{false, true} {
+			t.Run(manifest, func(t *testing.T) {
+				root, store := regenerationFixture(t)
+				writeService(t, root, "repos", manifest)
+				writeService(t, root, "zeta", "app = [\n")
+				file := filepath.Join(root, "etc/litestream.yml")
+				if existing {
+					if err := os.WriteFile(file, []byte("previous"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				_, parseErr := apps.ParseManifest([]byte(manifest))
+				if parseErr == nil {
+					t.Fatal("fixture parsed")
+				}
+				want := "repos: etc/manifest.toml: " + parseErr.Error()
+				changed, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store)
+				if changed || err == nil || err.Error() != want {
+					t.Fatalf("Regenerate = %v, %v; want false, %q", changed, err, want)
+				}
+				info, statErr := os.Stat(file)
+				if !existing {
+					if !os.IsNotExist(statErr) {
+						t.Fatalf("publication created: %v", statErr)
+					}
+					return
+				}
+				if statErr != nil || info.Mode().Perm() != 0o600 || readLitestream(t, root) != "previous" {
+					t.Fatalf("publication changed: %v, %v", info, statErr)
+				}
+			})
+		}
+	}
 }

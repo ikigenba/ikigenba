@@ -456,39 +456,65 @@ func (decoder *manifestDecoder) setResource(key string, value tomlValue) {
 	decoder.resources[key] = value
 }
 
+func defaultResources() Resources {
+	return Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100}
+}
+
 func parseResources(values map[string]tomlValue) (Resources, error) {
-	var result Resources
-	for _, key := range []string{"cpu_weight", "memory_max", "io_weight"} {
-		value, exists := values[key]
-		if !exists {
-			continue
+	result := defaultResources()
+	if value, exists := values["slice"]; exists {
+		if value.kind != tomlString || value.text != "core" && value.text != "apps" {
+			return Resources{}, errors.New("'resources.slice' must be \"core\" or \"apps\"")
 		}
-		if key == "memory_max" {
-			memory, ok := memoryBytes(value)
-			if !ok {
-				return Resources{}, errors.New("'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G")
-			}
-			result.MemoryMax = memory
-			continue
+		result.Slice = value.text
+	}
+	if value, exists := values["memory_max"]; exists {
+		memory, ok := memoryBytes(value)
+		if !ok {
+			return Resources{}, errors.New("'resources.memory_max' must be a whole number of bytes, optionally followed by K, M, or G")
 		}
+		result.MemoryMax = memory
+	}
+	result.GoMemoryLimit = result.MemoryMax/4*3 + result.MemoryMax%4*3/4
+	if value, exists := values["go_memory_limit"]; exists {
+		memory, ok := memoryBytes(value)
+		if !ok {
+			return Resources{}, errors.New("'resources.go_memory_limit' must be a whole number of bytes, optionally followed by K, M, or G")
+		}
+		if memory > result.MemoryMax {
+			return Resources{}, errors.New("'resources.go_memory_limit' must not be larger than 'resources.memory_max'")
+		}
+		result.GoMemoryLimit = memory
+	}
+	if value, exists := values["cpu_weight"]; exists {
 		if value.kind != tomlInteger || value.integer < 1 || value.integer > 10000 {
-			return Resources{}, fmt.Errorf("'resources.%s' must be a whole number from 1 to 10000", key)
+			return Resources{}, errors.New("'resources.cpu_weight' must be a whole number from 1 to 10000")
 		}
-		if key == "cpu_weight" {
-			result.CPUWeight = int(value.integer)
-		} else {
-			result.IOWeight = int(value.integer)
+		result.CPUWeight = int(value.integer)
+	}
+	if value, exists := values["delegate"]; exists {
+		if value.kind != tomlBoolean {
+			return Resources{}, errors.New("'resources.delegate' must be true or false")
 		}
+		result.Delegate = value.boolean
+	}
+	if value, exists := values["oom_policy"]; exists {
+		if value.kind != tomlString || value.text != "continue" {
+			return Resources{}, errors.New("'resources.oom_policy' must be \"continue\"")
+		}
+		result.OOMPolicy = value.text
 	}
 	var unknown []string
 	for key := range values {
-		if key != "cpu_weight" && key != "memory_max" && key != "io_weight" {
+		switch key {
+		case "slice", "memory_max", "go_memory_limit", "cpu_weight", "delegate", "oom_policy":
+		default:
 			unknown = append(unknown, key)
 		}
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return Resources{}, fmt.Errorf("'resources.%s' is not allowed; the resources are cpu_weight, memory_max, and io_weight", unknown[0])
+		return Resources{}, fmt.Errorf("'resources.%s' is not allowed; the resources are slice, memory_max, go_memory_limit, cpu_weight, delegate, and oom_policy", unknown[0])
 	}
 	return result, nil
 }

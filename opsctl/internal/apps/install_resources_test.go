@@ -24,15 +24,15 @@ func expectedResourceService(root string, stop int64, resourceLines string) stri
 		"[Install]\nWantedBy=multi-user.target\n"
 }
 
-// R-81CI-RJCX R-83SB-J2UB
+// R-ZWRV-69S5 R-ZXZR-K1IU
 func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
 	for _, test := range []struct{ name, table, lines string }{
-		{"absent", "", ""},
-		{"empty", "[resources]\n", ""},
-		{"memory", "[resources]\nmemory_max = '512M'\n", "MemoryMax=536870912\n"},
-		{"cpu", "[resources]\ncpu_weight = 1\n", "CPUWeight=1\n"},
-		{"io", "[resources]\nio_weight = 10000\n", "IOWeight=10000\n"},
-		{"all", "[resources]\nio_weight = 200\nmemory_max = '512M'\ncpu_weight = 100\n", "CPUWeight=100\nMemoryMax=536870912\nIOWeight=200\n"},
+		{"absent", "", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
+		{"empty", "[resources]\n", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
+		{"memory", "[resources]\nmemory_max = '512M'\n", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=536870912\nEnvironment=GOMEMLIMIT=402653184\n"},
+		{"cpu", "[resources]\ncpu_weight = 1\n", "Slice=ikigenba-apps.slice\nCPUWeight=1\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
+		{"core", "[resources]\nslice = 'core'\nmemory_max = '256M'\n", "Slice=ikigenba-core.slice\nCPUWeight=100\nMemoryMax=268435456\nMemoryLow=32M\nEnvironment=GOMEMLIMIT=201326592\n"},
+		{"all", "[resources]\nslice = 'core'\nmemory_max = '512M'\ngo_memory_limit = '400M'\ncpu_weight = 200\ndelegate = true\noom_policy = 'continue'\n", "Slice=ikigenba-core.slice\nCPUWeight=200\nMemoryMax=536870912\nMemoryLow=32M\nEnvironment=GOMEMLIMIT=419430400\nDelegate=yes\nOOMPolicy=continue\n"},
 	} {
 		for _, mode := range []string{"fresh", "installed", "disabled"} {
 			t.Run(test.name+"/"+mode, func(t *testing.T) {
@@ -62,7 +62,7 @@ func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
 					path    string
 					allowed map[string]bool
 				}{
-					{servicePath, map[string]bool{"Description": true, "Requires": true, "After": true, "Type": true, "ExecStart": true, "WorkingDirectory": true, "EnvironmentFile": true, "User": true, "Restart": true, "TimeoutStopSec": true, "CPUWeight": true, "MemoryMax": true, "IOWeight": true, "WantedBy": true}},
+					{servicePath, map[string]bool{"Description": true, "Requires": true, "After": true, "Type": true, "ExecStart": true, "WorkingDirectory": true, "EnvironmentFile": true, "User": true, "Restart": true, "TimeoutStopSec": true, "CPUWeight": true, "MemoryMax": true, "Slice": true, "MemoryLow": true, "Environment": true, "Delegate": true, "OOMPolicy": true, "WantedBy": true}},
 					{socketPath, map[string]bool{"Description": true, "ListenStream": true, "SocketUser": true, "SocketGroup": true, "SocketMode": true, "RemoveOnStop": true, "Backlog": true, "WantedBy": true}},
 				} {
 					data, err := os.ReadFile(unit.path)
@@ -80,10 +80,10 @@ func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
 	}
 }
 
-// R-82KF-5B3M
+// R-07QY-M7GE
 func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 	for _, manifest := range []string{
-		"app = 'notes'\n[resources]\ncpu_weight = 100\nmemory_max = '512M'\nio_weight = 200\n",
+		"app = 'notes'\n[resources]\ncpu_weight = 100\nmemory_max = '512M'\nslice = 'core'\ndelegate = true\noom_policy = 'continue'\n",
 		"app = 'notes'\n[resources]\nmemory_max = '512M'\n",
 		"app = 'notes'\n", "",
 	} {
@@ -98,11 +98,11 @@ func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 			writeFixture(t, envPath, []byte("# keep\nDRAIN_SECONDS=05\nKEEP='literal'\nIKIGENBA_SERVICES=old\nTAIL=x"), 0o640)
 			unitPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
 			writeFixture(t, unitPath, []byte(expectedResourceService(root, 10, "CPUWeight=999\nIOWeight=300\n")), 0o644)
-			resourceLines := ""
+			resourceLines := "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"
 			if strings.Contains(manifest, "cpu_weight") {
-				resourceLines = "CPUWeight=100\nMemoryMax=536870912\nIOWeight=200\n"
+				resourceLines = "Slice=ikigenba-core.slice\nCPUWeight=100\nMemoryMax=536870912\nMemoryLow=32M\nEnvironment=GOMEMLIMIT=402653184\nDelegate=yes\nOOMPolicy=continue\n"
 			} else if strings.Contains(manifest, "memory_max") {
-				resourceLines = "MemoryMax=536870912\n"
+				resourceLines = "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=536870912\nEnvironment=GOMEMLIMIT=402653184\n"
 			}
 			store := installStoreAt(t, root, map[string]string{"apps.drain_seconds": "0008", "apps.stop_seconds": "00020"})
 			env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
@@ -148,9 +148,9 @@ func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 	}
 }
 
-// R-82KF-5B3M
+// R-07QY-M7GE
 func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T) {
-	for _, manifest := range []string{"invalid = [", "app = 'other'", "app = 'zeta'\n[resources]\nmemory_max = '512MB'"} {
+	for _, manifest := range []string{"invalid = [", "app = 'other'", "app = 'zeta'\n[resources]\nio_weight = 50", "app = 'zeta'\n[resources]\nmemory_max = '512MB'"} {
 		root := t.TempDir()
 		store := installStoreAt(t, root, nil)
 		for _, name := range []string{"alpha", "zeta"} {
@@ -165,6 +165,9 @@ func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T
 			t.Fatal("command after manifest error")
 			return host.Result{}, nil
 		}}, store)
+		if _, parseErr := apps.ParseManifest([]byte(manifest)); parseErr != nil && (err == nil || err.Error() != "zeta: etc/manifest.toml: "+parseErr.Error()) {
+			t.Fatalf("manifest error = %v; want exact parser reason %v", err, parseErr)
+		}
 		if err == nil || !strings.Contains(err.Error(), "zeta") {
 			t.Fatalf("manifest failure = %v; want zeta identified", err)
 		}
@@ -174,7 +177,7 @@ func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T
 	}
 }
 
-// R-82KF-5B3M
+// R-07QY-M7GE
 func TestSetupTimeoutsRejectsUnreadableEnvironment(t *testing.T) {
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
