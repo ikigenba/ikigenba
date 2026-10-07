@@ -3,10 +3,12 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -14,16 +16,54 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
-var sharedFiles = map[string]string{
-	"theme.css":                  "text/css; charset=utf-8",
-	"launcher.js":                "text/javascript; charset=utf-8",
-	"feedback.js":                "text/javascript; charset=utf-8",
-	"favicon.svg":                "image/svg+xml",
-	"InterVariable.woff2":        "font/woff2",
-	"InterVariable-Italic.woff2": "font/woff2",
-	"JetBrainsMono.woff2":        "font/woff2",
-	"OFL.txt":                    "text/plain; charset=utf-8",
-	"TABLER-LICENSE.txt":         "text/plain; charset=utf-8",
+func sharedAssetFiles(t *testing.T, s *Server) map[string]string {
+	t.Helper()
+	files := map[string]string{
+		"theme.css":          "text/css; charset=utf-8",
+		"launcher.js":        "text/javascript; charset=utf-8",
+		"feedback.js":        "text/javascript; charset=utf-8",
+		"favicon.svg":        "image/svg+xml",
+		"OFL.txt":            "text/plain; charset=utf-8",
+		"TABLER-LICENSE.txt": "text/plain; charset=utf-8",
+	}
+	css := assetRequest(s, "GET", page.StaticPrefix+"theme.css", nil)
+	if css.Code != http.StatusOK {
+		t.Fatalf("theme CSS status = %d", css.Code)
+	}
+	for _, match := range regexp.MustCompile(`url\("([^"]*\.woff2)"\)`).FindAllStringSubmatch(css.Body.String(), -1) {
+		files[match[1]] = "font/woff2"
+	}
+	return files
+}
+
+func TestSharedAssetFontNames(t *testing.T) {
+	// R-SD2F-ARHO: CSS names exactly three hashed fonts, with upright Inter preloaded.
+	s := newTestServer(t, Config{})
+	fonts := map[string]bool{}
+	pattern := regexp.MustCompile(`^(InterVariable|InterVariable-Italic|JetBrainsMono)\.[0-9a-f]{16}\.woff2$`)
+	for name, contentType := range sharedAssetFiles(t, s) {
+		if contentType != "font/woff2" {
+			continue
+		}
+		match := pattern.FindStringSubmatch(name)
+		if len(match) != 2 || fonts[match[1]] {
+			t.Fatalf("unexpected or duplicate font name: %q", name)
+		}
+		fonts[match[1]] = true
+		if match[1] == "InterVariable" && page.PreloadURL() != page.StaticPrefix+name {
+			t.Fatalf("preload URL = %q, upright font path = %q", page.PreloadURL(), page.StaticPrefix+name)
+		}
+	}
+	if len(fonts) != 3 {
+		t.Fatalf("font names = %v, want all three families", fonts)
+	}
+}
+
+func sharedAssetCache(name string) string {
+	if strings.HasSuffix(name, ".woff2") {
+		return "public, max-age=31536000, immutable"
+	}
+	return "no-cache"
 }
 
 func assetRequest(h http.Handler, method, target string, headers http.Header) *httptest.ResponseRecorder {
@@ -71,12 +111,12 @@ func assertStrongAssetTag(t *testing.T, w *httptest.ResponseRecorder) string {
 }
 
 func TestSharedAssetRepresentations(t *testing.T) {
-	// R-YT7Z-2RKI: the nine shared files are nonempty and have their specified types.
-	// R-4PQJ-VKID: 200 and 304 carry one strong tag and no-cache.
+	// R-SFI8-2AZ2: the nine shared files are nonempty and have their specified types.
+	// R-SGQ4-G2PR: 200 and 304 carry one strong tag and file-specific cache policy.
 	// R-1GDL-HS81: the body and tag are stable within and across servers.
 	// R-1HLH-VJYQ: HEAD has the GET representation headers and no body.
 	s, other := newTestServer(t, Config{}), newTestServer(t, Config{})
-	for name, contentType := range sharedFiles {
+	for name, contentType := range sharedAssetFiles(t, s) {
 		t.Run(name, func(t *testing.T) {
 			target := page.StaticPrefix + name
 			get := assetRequest(s, "GET", target, nil)
@@ -85,7 +125,7 @@ func TestSharedAssetRepresentations(t *testing.T) {
 			}
 			assertAssetHeader(t, get, "Content-Type", contentType)
 			tag := assertStrongAssetTag(t, get)
-			assertAssetHeader(t, get, "Cache-Control", "no-cache")
+			assertAssetHeader(t, get, "Cache-Control", sharedAssetCache(name))
 			for _, server := range []*Server{s, other} {
 				again := assetRequest(server, "GET", target, nil)
 				if !bytes.Equal(again.Body.Bytes(), get.Body.Bytes()) || again.Header().Get("ETag") != tag {
@@ -104,16 +144,16 @@ func TestSharedAssetRepresentations(t *testing.T) {
 				t.Fatalf("conditional status %d", cached.Code)
 			}
 			assertStrongAssetTag(t, cached)
-			assertAssetHeader(t, cached, "Cache-Control", "no-cache")
+			assertAssetHeader(t, cached, "Cache-Control", sharedAssetCache(name))
 		})
 	}
 }
 
 func TestSharedAssetConditionalRequests(t *testing.T) {
-	// R-1ITE-9BPF: matching well-formed lists or * yield empty 304 for GET and HEAD.
-	// R-YVNR-UB1W: nonmatching well-formed lists yield the GET representation.
+	// R-SHY0-TUGG: matching well-formed lists or * yield empty 304 for GET and HEAD.
+	// R-SJ5X-7M75: nonmatching well-formed lists yield the GET representation.
 	s := newTestServer(t, Config{})
-	for name, contentType := range sharedFiles {
+	for name, contentType := range sharedAssetFiles(t, s) {
 		target := page.StaticPrefix + name
 		get := assetRequest(s, "GET", target, nil)
 		tag := get.Header().Get("ETag")
@@ -125,6 +165,8 @@ func TestSharedAssetConditionalRequests(t *testing.T) {
 						t.Fatalf("%s %s match %q modified %q = %d body %q", method, name, match, modified, w.Code, w.Body.String())
 					}
 					assertAssetHeader(t, w, "ETag", tag)
+					assertStrongAssetTag(t, w)
+					assertAssetHeader(t, w, "Cache-Control", sharedAssetCache(name))
 				}
 			}
 			for _, match := range []string{"\"other\"", "W/\"other\"", " ,\t\"other\" , W/\"different\", ,"} {
@@ -134,28 +176,30 @@ func TestSharedAssetConditionalRequests(t *testing.T) {
 				}
 				assertAssetHeader(t, w, "Content-Type", contentType)
 				assertAssetHeader(t, w, "ETag", tag)
+				assertStrongAssetTag(t, w)
+				assertAssetHeader(t, w, "Cache-Control", sharedAssetCache(name))
 			}
 		}
 	}
 }
 
 func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
-	// R-YQS6-B834: decoded byte-exact page.StaticPrefix and nine file names define the paths.
+	// R-SBUI-WZQZ: decoded byte-exact prefix, fixed names and CSS font names define the paths.
 	// R-55ES-LBDV: every appkit path delegates unchanged, including unspecified header behavior.
 	// R-2U35-R9SL: unsupported methods on files yield 405 and Allow.
-	// R-2VB2-51JA: non-file appkit paths yield 404 for any method or condition.
+	// R-SKDT-LDXU: non-file appkit paths yield 404 for any method or condition.
 	s := newTestServer(t, Config{})
 	static := page.Static()
 	if page.StaticPrefix != "/_appkit/" {
 		t.Fatalf("shared asset prefix = %q, want /_appkit/", page.StaticPrefix)
 	}
-	missing := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/missing", "/_appkit/THEME.CSS", "/_appkit/theme.cssX", "/_appkit/theme.css/child", "/_appkit//theme.css", "/_appkit/./theme.css", "/_appkit/../theme.css", "/_appkit/%2ftheme.css"}
-	for name := range sharedFiles {
+	missing := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/InterVariable.woff2", "/_appkit/InterVariable-Italic.woff2", "/_appkit/JetBrainsMono.woff2", "/_appkit/missing", "/_appkit/THEME.CSS", "/_appkit/theme.cssX", "/_appkit/theme.css/child", "/_appkit//theme.css", "/_appkit/./theme.css", "/_appkit/../theme.css", "/_appkit/%2ftheme.css"}
+	for name := range sharedAssetFiles(t, s) {
 		missing = append(missing, page.StaticPrefix+strings.ToUpper(name), page.StaticPrefix+name+"extra", page.StaticPrefix+name+"/child")
 	}
 	targets := append([]string{}, missing...)
-	for name := range sharedFiles {
-		targets = append(targets, page.StaticPrefix+name)
+	for name := range sharedAssetFiles(t, s) {
+		targets = append(targets, page.StaticPrefix+name, fmt.Sprintf("%s%%%02X%s", page.StaticPrefix, name[0], name[1:]))
 	}
 	targets = append(targets, "/_appkit/%74heme.css", "/_appkit/%66eedback.js", "/_appkit/%66avicon.svg")
 	conditions := []http.Header{
@@ -222,7 +266,7 @@ func TestSharedAssetCredentialAndStoreIndependence(t *testing.T) {
 	}
 	s := newTestServer(t, Config{Store: st, Now: fixedNow})
 	targets := []string{"/_appkit/", "/_appkit/missing", "/_appkit//theme.css"}
-	for name := range sharedFiles {
+	for name := range sharedAssetFiles(t, s) {
 		targets = append(targets, page.StaticPrefix+name)
 	}
 	type testCase struct {

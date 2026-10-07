@@ -444,6 +444,7 @@ func TestOAuthApprovePage(t *testing.T) {
 				}
 				body := w.Body.String()
 				assertAuthPage(t, body)
+				assertAuthPagePreload(t, body)
 				main := pageContent(body, pageOne(t, body, "main"))
 				sections := pageSequence(t, main, "section")
 				section := pageContent(main, sections[0])

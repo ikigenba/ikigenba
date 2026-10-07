@@ -688,6 +688,30 @@ func assertAuthPageFavicon(t *testing.T, body string) {
 	pageAttr(t, icons[0], "href", "/_appkit/favicon.svg")
 }
 
+func assertAuthPagePreload(t *testing.T, body string) {
+	t.Helper()
+	// R-SAMM-J80A: every auth page has exactly one font preload before body.
+	bodyAt := pageOne(t, body, "body").start
+	var links []pageTag
+	for _, tag := range pageElements(body, "link") {
+		if tag.start < bodyAt {
+			values := pageAttrs(tag)["rel"]
+			if len(values) == 1 && values[0] == "preload" {
+				links = append(links, tag)
+			}
+		}
+	}
+	if len(links) != 1 {
+		t.Fatalf("preload links before body = %d, want 1", len(links))
+	}
+	pageAttr(t, links[0], "as", "font")
+	pageAttr(t, links[0], "type", "font/woff2")
+	pageAttr(t, links[0], "href", page.PreloadURL())
+	if !slices.Contains(pageAttributeNames(links[0]), "crossorigin") {
+		t.Fatal("font preload lacks crossorigin")
+	}
+}
+
 func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 	// R-08U8-JUAH R-0A24-XM16 R-0BA1-BDRV R-0YG4-L0V2 R-ZB86-LWXV
 	// R-0DPU-2X99 R-0EXQ-GOZY R-0G5M-UGQN R-0HDJ-88HC R-0ZO0-YSLR
@@ -734,6 +758,7 @@ func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 			}
 			assertAuthPage(t, w.Body.String())
 			assertAuthPageFavicon(t, w.Body.String())
+			assertAuthPagePreload(t, w.Body.String())
 			if strings.HasPrefix(name, "profile") || name == "created" || name == "rejected" {
 				assertChrome(t, w.Body.String(), email)
 			}
