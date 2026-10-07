@@ -1,12 +1,11 @@
 {{/* The connect page at GET /: how to point an MCP client at the gateway.
-     Data: .Banner (a page.Banner, for banner and footer; .Banner.ProfileURL is
-     auth's profile page, where API tokens are made); .Endpoint (the unscoped
-     URL, <scheme>://<Host>/mcp); .SetupURL (<scheme>://<Host>/setup.txt, the
-     instructions an agent reads). Hooks: h1 "Connect MCP Client"; h2 "Automatic
-     Install" then h2 "Manual Install"; two div.secret copy blocks, each with one
-     code and one button[type=button] "Copy", the first holding code#setup-url
-     (.SetupURL), the second code#endpoint (.Endpoint); a#profile-link "profile"
-     after Manual Install. */}}
+     Data: .Banner (a page.Banner, for banner and footer); .Endpoint (the
+     unscoped URL, <scheme>://<Host>/mcp); .Server (the server name the two
+     commands give the gateway). Hooks: h1 "Connect MCP Client"; h2 "Claude
+     Code", then h2 "Codex", then h2 "Other clients", each followed by one
+     div.secret copy block holding one code and one button[type=button] "Copy":
+     code#claude-code (the Claude Code command), code#codex (the Codex command)
+     and code#endpoint (.Endpoint). The page's own markup holds no link. */}}
 {{define "connect"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>mcp</title></head>
@@ -15,14 +14,25 @@
 <main>
 <h1>Connect MCP Client</h1>
 <section>
-<div class="section-head"><div><h2>Automatic Install</h2><p>Ask your agent to follow these instructions:</p></div></div>
-<div class="secret"><code id="setup-url">{{.SetupURL}}</code><button class="secondary" type="button"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"></path><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"></path></svg>Copy</button></div>
+<div class="section-head"><div><h2>Claude Code</h2></div></div>
+<div class="secret">
+<code id="claude-code">claude mcp add --scope project --transport http {{.Server}} {{.Endpoint}}</code>
+<button class="secondary" type="button"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"></path><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"></path></svg>Copy</button>
+</div>
 </section>
 <section>
-<div class="section-head"><div><h2>Manual Install</h2></div></div>
-<div class="secret"><code id="endpoint">{{.Endpoint}}</code><button class="secondary" type="button"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"></path><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"></path></svg>Copy</button></div>
-<p>Every request must send the header <code>Authorization: Bearer &lt;token&gt;</code>.</p>
-<p>Create a token on your <a id="profile-link" href="{{.Banner.ProfileURL}}">profile</a>.</p>
+<div class="section-head"><div><h2>Codex</h2></div></div>
+<div class="secret">
+<code id="codex">codex mcp add {{.Server}} --url {{.Endpoint}}</code>
+<button class="secondary" type="button"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"></path><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"></path></svg>Copy</button>
+</div>
+</section>
+<section>
+<div class="section-head"><div><h2>Other clients</h2></div></div>
+<div class="secret">
+<code id="endpoint">{{.Endpoint}}</code>
+<button class="secondary" type="button"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"></path><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"></path></svg>Copy</button>
+</div>
 </section>
 </main>
 {{template "footer" .Banner}}
