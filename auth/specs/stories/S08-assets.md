@@ -3,39 +3,43 @@
 The files that give auth's pages the platform's visual style, its service
 launcher, its button feedback and its favicon, and how auth serves them. They
 are the platform's shared web files, the same for every platform app, and auth
-does not author them. auth serves exactly nine of them under `/_appkit/`, each
-with a fixed `Content-Type`: `theme.css`, the platform style's stylesheet, as
-`text/css; charset=utf-8`, whose `@font-face` rules name the font files
-beside it; `launcher.js`, the service launcher's script, and `feedback.js`,
-the button feedback script, both as `text/javascript; charset=utf-8`;
-`favicon.svg`, the platform's one favicon, as `image/svg+xml`; the Inter and
-JetBrains Mono fonts, `InterVariable.woff2`, `InterVariable-Italic.woff2`, and
-`JetBrainsMono.woff2`, as `font/woff2`; and
-two licences as `text/plain; charset=utf-8`: `OFL.txt`, the fonts' licence, and
-`TABLER-LICENSE.txt`, the licence of the Tabler icons the platform style
-draws. They are inside the binary: auth reads nothing from disk to answer for
-them, a host holds no copy of them, and a page needs nothing from any other
-host — no font service and no third-party request of any kind. Nothing else
-under `/_appkit/` exists, whatever the method: not `/_appkit/` itself, not
-another file name, not a served name with a further `/` or segment after it,
-and not a served name in other letter case. A served file takes `GET` and
-`HEAD` and refuses any other method. auth no longer serves anything under
-`/assets/`; a path there is an ordinary path that does not exist, and auth
-answers it 404.
+does not author them. auth serves them under `/_appkit/`, each with a fixed
+`Content-Type`: `theme.css`, the platform style's stylesheet, as
+`text/css; charset=utf-8`, whose `@font-face` rules name the font files beside
+it; `launcher.js`, the service launcher's script, and `feedback.js`, the button
+feedback script, both as `text/javascript; charset=utf-8`; `favicon.svg`, the
+platform's one favicon, as `image/svg+xml`; the Inter and JetBrains Mono fonts
+as `font/woff2`, each served only under the name the stylesheet's `@font-face`
+rules give it, `<font>.<hash>.woff2`, where `<font>` is `InterVariable`,
+`InterVariable-Italic`, or `JetBrainsMono` and `<hash>` follows from the
+font's content alone, so a font whose content changes is served under a new
+name; and two licences as `text/plain; charset=utf-8`: `OFL.txt`, the fonts'
+licence, and `TABLER-LICENSE.txt`, the licence of the Tabler icons the
+platform style draws. They are inside the binary: auth reads nothing from disk
+to answer for them, a host holds no copy of them, and a page needs nothing
+from any other host — no font service and no third-party request of any kind.
+Nothing else under `/_appkit/` exists, whatever the method: not `/_appkit/`
+itself, not another file name, not a served name with a further `/` or segment
+after it, not a font's name without its hash, such as
+`/_appkit/InterVariable.woff2`, and not a served name in other letter case. A
+served file takes `GET` and `HEAD` and refuses any other method. auth no
+longer serves anything under `/assets/`; a path there is an ordinary path that
+does not exist, and auth answers it 404.
 
 Every served file answered 200 or 304 carries a strong `ETag` and exactly one
-`Cache-Control: no-cache`, so a browser keeps its copy but asks each time
-whether it is still current, and an unchanged file costs a `304` rather than
-the bytes again. The `ETag`'s value is opaque — no story fixes it, and
-`"<etag>"` below stands for whatever the server sent. What is fixed is the
-relation: the value follows from the file's content alone, so the same
-content always yields the same value and different content a different one.
-A body is the same bytes on every request to the same auth binary; no story
-fixes its content. The stories do not fix how auth answers a `Range`
-request, whether it sends `Last-Modified`, how it treats `If-Match`,
-`If-Unmodified-Since`, `If-Range`, an `If-Modified-Since` with no
-`If-None-Match`, or an `If-None-Match` that is not a well-formed list of
-tags.
+`Cache-Control`. A font's is `public, max-age=31536000, immutable`: its name
+changes whenever its content does, so a browser keeps a font it has fetched
+for a year without asking again. Every other file's is `no-cache`, so a
+browser keeps its copy but asks each time whether it is still current, and an
+unchanged file costs a `304` rather than the bytes again. The `ETag`'s value
+is opaque — no story fixes it, and `"<etag>"` below stands for whatever the
+server sent. What is fixed is the relation: the value follows from the file's
+content alone, so the same content always yields the same value and different
+content a different one. A body is the same bytes on every request to the same
+auth binary; no story fixes its content. The stories do not fix how auth
+answers a `Range` request, whether it sends `Last-Modified`, how it treats
+`If-Match`, `If-Unmodified-Since`, `If-Range`, an `If-Modified-Since` with no
+`If-None-Match`, or an `If-None-Match` that is not a well-formed list of tags.
 
 A served file is the same for everyone. auth is the platform's identity
 provider, so no identity gate stands in front of it, and a visitor drawing
@@ -87,15 +91,16 @@ Postconditions:
 
 ## A browser fetches a font
 
-The stylesheet's `@font-face` rules name the font files beside it, so a
-browser applying the style asks auth for each font it needs, under the same
-`/_appkit/` the stylesheet came from. `<font>` is `InterVariable`,
-`InterVariable-Italic`, or `JetBrainsMono`.
+The stylesheet's `@font-face` rules name each font by its hashed name beside
+it, so a browser applying the style asks auth for each font it needs
+under that name, under the same `/_appkit/` the stylesheet came from.
+`<font>` is `InterVariable`, `InterVariable-Italic`, or `JetBrainsMono`, and
+`<font>.<hash>.woff2` is the name the stylesheet gives that font.
 
 Request:
 
 ```
-GET /_appkit/<font>.woff2 HTTP/1.1
+GET /_appkit/<font>.<hash>.woff2 HTTP/1.1
 ```
 
 Response:
@@ -104,11 +109,11 @@ Response:
 HTTP/1.1 200 OK
 Content-Type: font/woff2
 ETag: "<etag>"
-Cache-Control: no-cache
+Cache-Control: public, max-age=31536000, immutable
 ```
 
-Status 200. The body is the font `<font>.woff2` names. `Cache-Control`
-appears once.
+Status 200. The body is the font `<font>.<hash>.woff2` names.
+`Cache-Control` appears once.
 
 Preconditions:
 
@@ -300,7 +305,8 @@ Cache-Control: no-cache
 Status 304. The body is empty. The `ETag` returned is the one the 200 for the
 same file carries, and `Cache-Control: no-cache` appears once, as on the 200.
 Every served file is revalidated this way, and a `HEAD` that matches is
-answered the same.
+answered the same. A font's 304 carries the font's own `Cache-Control`, as on
+its 200.
 
 Preconditions:
 
@@ -380,7 +386,7 @@ Cache-Control: no-cache
 
 Status 200. The body is empty. The `ETag` is the one a `GET` of the same file
 returns, and `Cache-Control` appears once. Every served file answers `HEAD`
-this way, with its own `Content-Type`.
+this way, with its own `Content-Type` and `Cache-Control`.
 
 Preconditions:
 
@@ -392,12 +398,12 @@ Postconditions:
 
 ## A caller asks for an asset that does not exist
 
-The files under `/_appkit/` are the nine above and nothing more, so the
-prefix itself, any other name, a served name with more after it, and a served
-name in other letter case all name nothing, whatever the method: a `POST` to
-a missing file's path is a 404 like a `GET`, never a 405.
-`/_appkit/banner.html` is one such path. The old `/assets/` paths, such as
-`/assets/theme.css`, name nothing either.
+The files under `/_appkit/` are the ones above and nothing more, so the prefix
+itself, any other name, a font's name without its hash, a served name with
+more after it, and a served name in other letter case all name nothing,
+whatever the method: a `POST` to a missing file's path is a 404 like a `GET`,
+never a 405. `/_appkit/banner.html` is one such path. The old `/assets/`
+paths, such as `/assets/theme.css`, name nothing either.
 
 Request:
 
@@ -411,6 +417,10 @@ GET /_appkit/ HTTP/1.1
 
 ```
 GET /_appkit/banner.html HTTP/1.1
+```
+
+```
+GET /_appkit/InterVariable.woff2 HTTP/1.1
 ```
 
 ```
@@ -452,7 +462,7 @@ Postconditions:
 ## A caller sends an asset a method it does not take
 
 A served file is read-only: auth serves it and nothing changes it. This holds
-only for the nine served paths; any method on a missing file's path is a
+only for the served paths; any method on a missing file's path is a
 404. `Allow` names the two methods a served file takes.
 
 Request:
