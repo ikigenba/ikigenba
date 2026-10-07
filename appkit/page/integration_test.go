@@ -27,7 +27,7 @@ func TestEmbeddedAssetsIgnoreWorkingDirectory(t *testing.T) {
 		bodies := make(map[string][]byte)
 		for _, name := range staticNames {
 			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, StaticPrefix+name, nil))
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, staticPath(t, name), nil))
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("%s: status %d", name, recorder.Code)
 			}

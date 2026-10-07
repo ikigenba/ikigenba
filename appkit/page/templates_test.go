@@ -226,12 +226,12 @@ func TestTemplatesSignature(t *testing.T) {
 }
 
 func TestTemplatesEmbeddedDefinitions(t *testing.T) {
-	// R-IA7X-972M
+	// R-55GA-E3MI
 	markup, err := assetsFS.ReadFile("assets/banner.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, err := template.New("reference").Parse(string(markup))
+	expected, err := template.New("reference").Funcs(template.FuncMap{"preloadURL": PreloadURL}).Parse(string(markup))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestTemplatesEmbeddedDefinitions(t *testing.T) {
 	if actual == nil {
 		t.Fatal("nil set")
 	}
-	for _, name := range []string{"banner", "launcher", "footer"} {
+	for _, name := range []string{"banner", "launcher", "footer", "preload"} {
 		if actual.Lookup(name) == nil {
 			t.Fatalf("missing %s", name)
 		}
@@ -252,9 +252,9 @@ func TestTemplatesEmbeddedDefinitions(t *testing.T) {
 }
 
 func TestTemplatesNames(t *testing.T) {
-	// R-YJ6S-QL2Q
+	// R-56O6-RVD7
 	set := Templates()
-	allowed := []string{"appkit", "banner", "launcher", "footer"}
+	allowed := []string{"appkit", "banner", "launcher", "footer", "preload"}
 	// R-YHYW-CTC1
 	if set.Name() != "appkit" {
 		t.Fatalf("root name %q", set.Name())
@@ -294,10 +294,10 @@ func TestTemplatesIndependent(t *testing.T) {
 }
 
 func TestTemplatesConsumerParse(t *testing.T) {
-	// R-IDVM-EIAP
-	const page = `{{define "page"}}{{template "banner" .}}{{template "launcher" .}}{{template "footer" .}}{{end}}`
+	// R-57W3-5N3W
+	const page = `{{define "page"}}{{template "banner" .}}{{template "launcher" .}}{{template "footer" .}}{{template "preload"}}{{end}}`
 	data := templateFixture()
-	want := templateExecute(t, Templates(), "banner", data) + templateExecute(t, Templates(), "launcher", data) + templateExecute(t, Templates(), "footer", data)
+	want := templateExecute(t, Templates(), "banner", data) + templateExecute(t, Templates(), "launcher", data) + templateExecute(t, Templates(), "footer", data) + templateExecute(t, Templates(), "preload", nil)
 	for _, mode := range []string{"Parse", "ParseFS"} {
 		t.Run(mode, func(t *testing.T) {
 			set := Templates()
@@ -311,7 +311,7 @@ func TestTemplatesConsumerParse(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got := templateExecute(t, set, "page", data); got != want {
-				t.Fatal("consumer did not render banner, launcher, and footer")
+				t.Fatal("consumer did not render banner, launcher, footer, and preload")
 			}
 		})
 	}
@@ -751,5 +751,46 @@ func TestTemplatesIconOutputScope(t *testing.T) {
 		if footer.text != data.Service+" "+data.Version {
 			t.Fatal("Icon changed footer text")
 		}
+	}
+}
+
+func TestTemplatesPreloadURLFunction(t *testing.T) {
+	// R-5ABV-X6LA
+	for _, mode := range []string{"Parse", "ParseFS"} {
+		set := Templates()
+		const markup = `{{define "consumerURL"}}{{preloadURL}}{{end}}`
+		var err error
+		if mode == "Parse" {
+			_, err = set.Parse(markup)
+		} else {
+			_, err = set.ParseFS(fstest.MapFS{"consumer.html": &fstest.MapFile{Data: []byte(markup)}}, "consumer.html")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := templateExecute(t, set, "consumerURL", nil); got != PreloadURL() {
+			t.Fatalf("preloadURL = %q, want %q", got, PreloadURL())
+		}
+	}
+}
+
+func TestPreloadTemplate(t *testing.T) {
+	// R-593Z-JEUL
+	set, err := Templates().Parse(`{{define "head"}}{{template "preload"}}{{end}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := templateExecute(t, set, "head", nil)
+	root := templateDocument(t, output)
+	link := templateOne(t, root, "link")
+	want := map[string]string{"rel": "preload", "as": "font", "type": "font/woff2", "crossorigin": "", "href": PreloadURL()}
+	if len(link.attrs) != len(want) || len(root.children) != 1 {
+		t.Fatalf("preload output = %q", output)
+	}
+	for name, value := range want {
+		templateAttr(t, link, name, value)
+	}
+	if strings.TrimSpace(output[:link.markupStart]) != "" || strings.TrimSpace(output[link.markupEnd:]) != "" {
+		t.Fatalf("output outside link = %q", output)
 	}
 }

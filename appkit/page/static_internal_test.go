@@ -9,12 +9,9 @@ import (
 )
 
 func TestStaticEntityTagsAreQuotedSHA256Digests(t *testing.T) {
-	// R-JEGL-VMJJ
+	// R-4ZCS-H8X1
 	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "favicon.svg", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
-		content, err := assetsFS.ReadFile("assets/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
+		content := staticServedBytes(t, name)
 		want := fmt.Sprintf(`"%x"`, sha256.Sum256(content))
 		for range 2 {
 			handler := Static()
@@ -34,7 +31,7 @@ func TestStaticEntityTagsAreQuotedSHA256Digests(t *testing.T) {
 					{"If-Range": {`"different"`}},
 					{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
 				} {
-					request := httptest.NewRequest(method, StaticPrefix+name, nil)
+					request := httptest.NewRequest(method, staticPath(t, name), nil)
 					request.Header = headers.Clone()
 					response := httptest.NewRecorder()
 					handler.ServeHTTP(response, request)

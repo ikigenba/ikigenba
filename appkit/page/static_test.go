@@ -2,6 +2,7 @@ package page
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +31,26 @@ func staticBytes(t *testing.T, name string) []byte {
 	data, err := assetsFS.ReadFile("assets/" + name)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return data
+}
+
+func staticPath(t *testing.T, name string) string {
+	t.Helper()
+	if strings.HasSuffix(name, ".woff2") {
+		digest := sha256.Sum256(staticBytes(t, name))
+		return StaticPrefix + strings.TrimSuffix(name, ".woff2") + fmt.Sprintf(".%x.woff2", digest[:8])
+	}
+	return StaticPrefix + name
+}
+
+func staticServedBytes(t *testing.T, name string) []byte {
+	t.Helper()
+	data := staticBytes(t, name)
+	if name == "theme.css" {
+		for _, font := range []string{"InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2"} {
+			data = bytes.ReplaceAll(data, []byte(`url("`+font+`")`), []byte(`url("`+strings.TrimPrefix(staticPath(t, font), StaticPrefix)+`")`))
+		}
 	}
 	return data
 }
@@ -82,17 +103,17 @@ func TestStaticFactory(t *testing.T) {
 }
 
 func TestStaticGETBytes(t *testing.T) {
-	// R-41SF-T97T
+	// R-4S1E-6MGV
 	handler := Static()
 	for _, file := range staticFiles {
 		t.Run(file.name, func(t *testing.T) {
-			want := staticBytes(t, file.name)
-			etag := staticResponse(handler, http.MethodGet, StaticPrefix+file.name).Header().Get("ETag")
+			want := staticServedBytes(t, file.name)
+			etag := staticResponse(handler, http.MethodGet, staticPath(t, file.name)).Header().Get("ETag")
 			for _, target := range []string{
-				StaticPrefix + file.name,
-				StaticPrefix + file.name + "?download=1&path=banner.html",
-				"/%5Fappkit/" + file.name,
-				"/_appkit%2F" + file.name,
+				staticPath(t, file.name),
+				staticPath(t, file.name) + "?download=1&path=banner.html",
+				"/%5Fappkit/" + strings.TrimPrefix(staticPath(t, file.name), StaticPrefix),
+				"/_appkit%2F" + strings.TrimPrefix(staticPath(t, file.name), StaticPrefix),
 			} {
 				for _, headers := range staticNonmatchingHeaders(etag) {
 					response := staticConditionalResponse(handler, http.MethodGet, target, headers)
@@ -106,10 +127,10 @@ func TestStaticGETBytes(t *testing.T) {
 }
 
 func TestStaticContentTypes(t *testing.T) {
-	// R-46O1-CC6L
+	// R-4T9A-KE7K
 	handler := Static()
 	for _, file := range staticFiles {
-		etag := staticResponse(handler, http.MethodGet, StaticPrefix+file.name).Header().Get("ETag")
+		etag := staticResponse(handler, http.MethodGet, staticPath(t, file.name)).Header().Get("ETag")
 		headers := append(staticNonmatchingHeaders(etag),
 			http.Header{"Range": {"bytes=0-3"}},
 			http.Header{"If-Match": {`"different"`}},
@@ -119,7 +140,7 @@ func TestStaticContentTypes(t *testing.T) {
 		)
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			for _, header := range headers {
-				response := staticConditionalResponse(handler, method, StaticPrefix+file.name, header)
+				response := staticConditionalResponse(handler, method, staticPath(t, file.name), header)
 				if response.Code == http.StatusOK {
 					if values := response.Header().Values("Content-Type"); len(values) != 1 || values[0] != file.contentType {
 						t.Errorf("%s %s with %v: Content-Type %q; want exactly %q", method, file.name, header, values, file.contentType)
@@ -134,8 +155,8 @@ func TestStaticHEAD(t *testing.T) {
 	// R-J8D3-YRU2
 	handler := Static()
 	for _, file := range staticFiles {
-		get := staticResponse(handler, http.MethodGet, StaticPrefix+file.name)
-		for _, target := range []string{StaticPrefix + file.name, "/%5Fappkit/" + file.name + "?x=1"} {
+		get := staticResponse(handler, http.MethodGet, staticPath(t, file.name))
+		for _, target := range []string{staticPath(t, file.name), "/%5Fappkit/" + strings.TrimPrefix(staticPath(t, file.name), StaticPrefix) + "?x=1"} {
 			for _, headers := range staticNonmatchingHeaders(get.Header().Get("ETag")) {
 				response := staticConditionalResponse(handler, http.MethodHead, target, headers)
 				if response.Code != http.StatusOK || response.Body.Len() != 0 || response.Header().Get("Content-Type") != get.Header().Get("Content-Type") {
@@ -151,15 +172,15 @@ func TestStaticUnknownPaths(t *testing.T) {
 	paths := []string{StaticPrefix, StaticPrefix + "banner.html", "/", "/_appkit", "/_appkit/missing", "/_appkit/assets/theme.css"}
 	for _, file := range staticFiles {
 		paths = append(paths,
-			StaticPrefix+file.name+"/",
-			StaticPrefix+file.name+"/child",
-			StaticPrefix+strings.ToUpper(file.name),
+			staticPath(t, file.name)+"/",
+			staticPath(t, file.name)+"/child",
+			StaticPrefix+strings.ToUpper(strings.TrimPrefix(staticPath(t, file.name), StaticPrefix)),
 			StaticPrefix+"./"+file.name,
 			StaticPrefix+"/"+file.name,
 			StaticPrefix+"child/../"+file.name,
 			"/"+file.name,
 			"/_appkit-other/"+file.name,
-			StaticPrefix+file.name+"%2F",
+			staticPath(t, file.name)+"%2F",
 		)
 	}
 	handler := Static()
@@ -179,10 +200,10 @@ func TestStaticDisallowedMethods(t *testing.T) {
 	// R-JASW-QBBG
 	handler := Static()
 	for _, file := range staticFiles {
-		want := staticBytes(t, file.name)
+		want := staticServedBytes(t, file.name)
 		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace, "CUSTOM", "get", "head"} {
 			for _, headers := range []http.Header{{}, {"If-None-Match": {"*"}}, {"Range": {"bytes=0-3"}}} {
-				response := staticConditionalResponse(handler, method, StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(handler, method, staticPath(t, file.name), headers)
 				if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != "GET, HEAD" || bytes.Equal(response.Body.Bytes(), want) {
 					t.Errorf("%s %s with %v: status %d, Allow %q, body equals asset: %t", method, file.name, headers, response.Code, response.Header().Get("Allow"), bytes.Equal(response.Body.Bytes(), want))
 				}
@@ -200,7 +221,7 @@ func TestStaticConcurrentFactories(t *testing.T) {
 	var cases []requestCase
 	for _, file := range staticFiles {
 		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
-			cases = append(cases, requestCase{method, StaticPrefix + file.name})
+			cases = append(cases, requestCase{method, staticPath(t, file.name)})
 		}
 	}
 	cases = append(cases, requestCase{http.MethodOptions, StaticPrefix + "banner.html"})
@@ -235,10 +256,10 @@ func TestStaticConcurrentFactories(t *testing.T) {
 func TestStaticStrongEntityTags(t *testing.T) {
 	// R-JC0T-4325
 	for _, file := range staticFiles {
-		etag := staticResponse(Static(), http.MethodGet, StaticPrefix+file.name).Header().Get("ETag")
+		etag := staticResponse(Static(), http.MethodGet, staticPath(t, file.name)).Header().Get("ETag")
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			for _, headers := range staticNonmatchingHeaders(etag) {
-				response := staticConditionalResponse(Static(), method, StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(Static(), method, staticPath(t, file.name), headers)
 				assertStrongEntityTag(t, response.Header().Values("ETag"))
 			}
 		}
@@ -250,7 +271,7 @@ func TestStaticStrongEntityTags(t *testing.T) {
 				{"If-Range": {`"different"`}},
 				{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
 			} {
-				response := staticConditionalResponse(Static(), method, StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(Static(), method, staticPath(t, file.name), headers)
 				if response.Code == http.StatusOK {
 					assertStrongEntityTag(t, response.Header().Values("ETag"))
 				}
@@ -277,8 +298,13 @@ func assertStrongEntityTag(t *testing.T, values []string) {
 }
 
 func TestStaticCacheControl(t *testing.T) {
-	// R-JD8P-HUSU
+	// R-4WWZ-PPFN
+	// R-4Y4W-3H6C
 	for _, file := range staticFiles {
+		want := "no-cache"
+		if file.contentType == "font/woff2" {
+			want = "public, max-age=31536000, immutable"
+		}
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			for _, headers := range []http.Header{
 				{},
@@ -290,9 +316,9 @@ func TestStaticCacheControl(t *testing.T) {
 				{"If-Range": {`"different"`}},
 				{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
 			} {
-				response := staticConditionalResponse(Static(), method, StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(Static(), method, staticPath(t, file.name), headers)
 				if response.Code == http.StatusOK || response.Code == http.StatusNotModified {
-					if values := response.Header().Values("Cache-Control"); len(values) != 1 || values[0] != "no-cache" {
+					if values := response.Header().Values("Cache-Control"); len(values) != 1 || values[0] != want {
 						t.Errorf("%s %s with %v: Cache-Control = %q", method, file.name, headers, values)
 					}
 				}
@@ -305,7 +331,7 @@ func TestStaticIfNoneMatch(t *testing.T) {
 	// R-JFOI-9EA8
 	for _, file := range staticFiles {
 		handler := Static()
-		path := StaticPrefix + file.name
+		path := staticPath(t, file.name)
 		etag := staticResponse(handler, http.MethodGet, path).Header().Get("ETag")
 		cases := []struct {
 			value string
@@ -350,7 +376,7 @@ func TestStaticNotModified(t *testing.T) {
 	// R-JGWE-N60X
 	for _, file := range staticFiles {
 		handler := Static()
-		path := StaticPrefix + file.name
+		path := staticPath(t, file.name)
 		etag := staticResponse(handler, http.MethodGet, path).Header().Get("ETag")
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			for _, condition := range []string{"*", etag, "W/" + etag, `"other", W/` + etag + ", ,"} {
@@ -366,6 +392,78 @@ func TestStaticNotModified(t *testing.T) {
 					}
 				}
 			}
+		}
+	}
+}
+
+func TestPreloadURLSignature(t *testing.T) {
+	// R-530H-MK54
+	if _, ok := any(PreloadURL).(func() string); !ok {
+		t.Fatalf("PreloadURL has type %T, want func() string", PreloadURL)
+	}
+}
+
+func TestPreloadURL(t *testing.T) {
+	// R-548E-0BVT
+	want := staticPath(t, "InterVariable.woff2")
+	for range 3 {
+		if got := PreloadURL(); got != want {
+			t.Fatalf("PreloadURL = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestFontHashedPaths(t *testing.T) {
+	// R-4QTH-SUQ6
+	for _, font := range []string{"InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2"} {
+		path := staticPath(t, font)
+		got := staticResponse(Static(), http.MethodGet, path)
+		if got.Code != http.StatusOK || !bytes.Equal(got.Body.Bytes(), staticBytes(t, font)) {
+			t.Fatalf("%s: status %d, font bytes differ: %t", path, got.Code, !bytes.Equal(got.Body.Bytes(), staticBytes(t, font)))
+		}
+	}
+}
+
+func TestFontUnservedNames(t *testing.T) {
+	// R-50KO-V0NQ
+	for _, font := range []string{"InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2"} {
+		correctPath := staticPath(t, font)
+		digest := strings.TrimSuffix(strings.TrimPrefix(correctPath, StaticPrefix+strings.TrimSuffix(font, ".woff2")+"."), ".woff2")
+		wrong := "0" + digest[1:]
+		if wrong == digest {
+			wrong = "1" + digest[1:]
+		}
+		paths := []string{StaticPrefix + font}
+		for _, hash := range []string{wrong, strings.ToUpper(digest), digest[:15], digest + "0", "f", strings.Repeat("A", 64)} {
+			if hash != digest {
+				paths = append(paths, StaticPrefix+strings.TrimSuffix(font, ".woff2")+"."+hash+".woff2")
+			}
+		}
+		for _, path := range paths {
+			for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace, "CUSTOM"} {
+				if got := staticResponse(Static(), method, path); got.Code != http.StatusNotFound {
+					t.Errorf("%s %s: status %d, want 404", method, path, got.Code)
+				}
+			}
+		}
+	}
+}
+
+func TestStylesheetExactRewrite(t *testing.T) {
+	// R-4UH6-Y5Y9
+	got := staticResponse(Static(), http.MethodGet, StaticPrefix+"theme.css")
+	if !bytes.Equal(got.Body.Bytes(), staticServedBytes(t, "theme.css")) {
+		t.Fatal("stylesheet differs from exact font URL replacement")
+	}
+}
+
+func TestStylesheetReferencesHashedFonts(t *testing.T) {
+	// R-4VP3-BXOY
+	got := staticResponse(Static(), http.MethodGet, StaticPrefix+"theme.css")
+	for _, font := range []string{"InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2"} {
+		want := `url("` + strings.TrimPrefix(staticPath(t, font), StaticPrefix) + `")`
+		if !strings.Contains(got.Body.String(), want) {
+			t.Errorf("stylesheet lacks %s", want)
 		}
 	}
 }

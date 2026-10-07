@@ -3,7 +3,6 @@ package page
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"io/fs"
 	"net/http"
 	"strings"
 )
@@ -11,18 +10,74 @@ import (
 // StaticPrefix is the URL prefix for the shared browser assets.
 const StaticPrefix = "/_appkit/"
 
+// PreloadURL returns the immutable URL of the upright Inter font.
+func PreloadURL() string {
+	return preloadPath
+}
+
 // Static returns a handler for the shared stylesheet, scripts, favicon, fonts, and licences.
 func Static() http.Handler {
-	return staticHandler{files: assetsFS}
+	return staticHandler{}
 }
 
-type staticHandler struct {
-	files fs.ReadFileFS
+type browserAsset struct {
+	data         []byte
+	contentType  string
+	etag         string
+	cacheControl string
 }
 
-func (h staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	name, contentType := staticAsset(r.URL.Path)
-	if name == "" {
+var servedAssets, preloadPath = prepareAssets()
+
+func prepareAssets() (map[string]browserAsset, string) {
+	files := map[string]string{
+		"theme.css":                  "text/css; charset=utf-8",
+		"launcher.js":                "text/javascript; charset=utf-8",
+		"feedback.js":                "text/javascript; charset=utf-8",
+		"favicon.svg":                "image/svg+xml",
+		"InterVariable.woff2":        "font/woff2",
+		"InterVariable-Italic.woff2": "font/woff2",
+		"JetBrainsMono.woff2":        "font/woff2",
+		"OFL.txt":                    "text/plain; charset=utf-8",
+		"TABLER-LICENSE.txt":         "text/plain; charset=utf-8",
+	}
+	assets := make(map[string]browserAsset, len(files))
+	var replacements []string
+	var preload string
+	for name, contentType := range files {
+		data, err := assetsFS.ReadFile("assets/" + name)
+		if err != nil {
+			panic(err)
+		}
+		cacheControl := "no-cache"
+		servedName := name
+		if contentType == "font/woff2" {
+			digest := sha256.Sum256(data)
+			servedName = strings.TrimSuffix(name, ".woff2") + "." + hex.EncodeToString(digest[:8]) + ".woff2"
+			cacheControl = "public, max-age=31536000, immutable"
+			replacements = append(replacements, `url("`+name+`")`, `url("`+servedName+`")`)
+			if name == "InterVariable.woff2" {
+				preload = StaticPrefix + servedName
+			}
+		}
+		assets[StaticPrefix+servedName] = browserAsset{data: data, contentType: contentType, cacheControl: cacheControl}
+	}
+	stylesheet := assets[StaticPrefix+"theme.css"]
+	stylesheet.data = []byte(strings.NewReplacer(replacements...).Replace(string(stylesheet.data)))
+	assets[StaticPrefix+"theme.css"] = stylesheet
+	for path, asset := range assets {
+		digest := sha256.Sum256(asset.data)
+		asset.etag = `"` + hex.EncodeToString(digest[:]) + `"`
+		assets[path] = asset
+	}
+	return assets, preload
+}
+
+type staticHandler struct{}
+
+func (staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	asset, found := servedAssets[r.URL.Path]
+	if !found {
 		http.NotFound(w, r)
 		return
 	}
@@ -31,17 +86,10 @@ func (h staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	data, err := h.files.ReadFile("assets/" + name)
-	if err != nil {
-		http.Error(w, "asset unavailable", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", contentType)
-	digest := sha256.Sum256(data)
-	etag := `"` + hex.EncodeToString(digest[:]) + `"`
-	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "no-cache")
-	if values := r.Header.Values("If-None-Match"); len(values) == 1 && matchesEntityTag(values[0], etag) {
+	w.Header().Set("Content-Type", asset.contentType)
+	w.Header().Set("ETag", asset.etag)
+	w.Header().Set("Cache-Control", asset.cacheControl)
+	if values := r.Header.Values("If-None-Match"); len(values) == 1 && matchesEntityTag(values[0], asset.etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -49,7 +97,7 @@ func (h staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		// ResponseWriter reports connection failures to the HTTP server;
 		// there is no additional response to send after writing has begun.
-		_, _ = w.Write(data)
+		_, _ = w.Write(asset.data)
 	}
 }
 
@@ -92,29 +140,4 @@ func matchesEntityTag(value, etag string) bool {
 		}
 	}
 	return matched
-}
-
-func staticAsset(path string) (name, contentType string) {
-	switch path {
-	case StaticPrefix + "theme.css":
-		return "theme.css", "text/css; charset=utf-8"
-	case StaticPrefix + "launcher.js":
-		return "launcher.js", "text/javascript; charset=utf-8"
-	case StaticPrefix + "feedback.js":
-		return "feedback.js", "text/javascript; charset=utf-8"
-	case StaticPrefix + "favicon.svg":
-		return "favicon.svg", "image/svg+xml"
-	case StaticPrefix + "InterVariable.woff2":
-		return "InterVariable.woff2", "font/woff2"
-	case StaticPrefix + "InterVariable-Italic.woff2":
-		return "InterVariable-Italic.woff2", "font/woff2"
-	case StaticPrefix + "JetBrainsMono.woff2":
-		return "JetBrainsMono.woff2", "font/woff2"
-	case StaticPrefix + "OFL.txt":
-		return "OFL.txt", "text/plain; charset=utf-8"
-	case StaticPrefix + "TABLER-LICENSE.txt":
-		return "TABLER-LICENSE.txt", "text/plain; charset=utf-8"
-	default:
-		return "", ""
-	}
 }
