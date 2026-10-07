@@ -1,6 +1,6 @@
 # D03-page-templates
 
-The banner's markup is a human-written asset, `banner.html`, a Go `html/template` file embedded from `page/assets/` that defines three templates, `banner`, `launcher`, and `footer`. `page.Templates` parses it from the embedded copy and hands the app a fresh template set to parse its own pages into. The code writes no markup of its own. This document names the data each template receives and the hooks it emits in each state; the asset author makes the markup carry them, and the tests assert on these hooks and on visible text, never on layout. A hook this design names that the asset lacks is an issue for a human.
+The banner's markup is a human-written asset, `banner.html`, a Go `html/template` file embedded from `page/assets/` that defines four templates, `banner`, `launcher`, `footer`, and `preload`. `page.Templates` parses it from the embedded copy and hands the app a fresh template set to parse its own pages into. The code writes no markup of its own. This document names the data each template receives and the hooks it emits in each state; the asset author makes the markup carry them, and the tests assert on these hooks and on visible text, never on layout. A hook this design names that the asset lacks is an issue for a human.
 
 The hooks follow the repository's app and launcher mock-ups in `design/`. The banner and footer appear only on pages shown to a signed-in user (D02).
 
@@ -18,6 +18,10 @@ The set's own root template is named `appkit`, after the library.
 
 `footer` also receives a `page.Banner` and renders the page's footer: the app's service name and its version, separated by one space (`<service> <version>`). The version is shown exactly as the app gave it to `page.New`. Each page places the footer itself as the last child of its `body`, with `{{template "footer" .Banner}}`, just as it places the banner at the top with `{{template "banner" .Banner}}`.
 
+## `preload`
+
+`preload` takes no data and renders the one link that has the browser fetch upright Inter before the stylesheet asks for it: a `link` with `rel="preload"`, `as="font"`, `type="font/woff2"`, `crossorigin`, and the font's hashed URL, `page.PreloadURL` (D04), as its `href`. A font preload needs `crossorigin` even on the same origin, or the browser fetches the font a second time. Every page places it in its own `head` with `{{template "preload"}}`, beside its stylesheet link. The asset cannot know the hash, so the set carries a template function, `preloadURL`, that returns the same URL; `preload` calls it, and so may a consumer's own template. A page appkit does not parse renders the same link itself from `page.PreloadURL`.
+
 ## Escaping
 
 Every string the templates emit — the service name, version, email, URLs, service names — goes through `html/template`'s contextual autoescaping, as the standard library documents it: markup characters become character references, and a URL with a scheme `html/template` does not allow is replaced by `#ZgotmplZ`. The icon is the one exception. It is `template.HTML` and is inserted verbatim, a trust D02 explains.
@@ -30,16 +34,17 @@ None of that is a requirement. The toolchain is the Go standard library with no 
 
 ## Notes for the asset author
 
-These are decisions about the assets, recorded here so the human writing them has them in one place; the build run neither writes nor tests them. In `theme.css`, the launcher's icon selectors are `nav.services a > svg` (changed in the repository's `design/ikigenba/theme.css` first, then copied), and app icons carry no `svg.ico` class. App icons carry no `aria-hidden`: the link's text is the service name. The stylesheet hides the mark's black square with `body > header > .launcher + .mark::before`, so the launcher button must be the mark's immediately preceding element sibling inside the `header`, and the services popover hangs from the banner's left edge. The stylesheet and fonts are copied from `design/` with a header naming the `design/` commit they came from.
+These are decisions about the assets, recorded here so the human writing them has them in one place; the build run neither writes nor tests them. In `theme.css`, the launcher's icon selectors are `nav.services a > svg` (changed in the repository's `design/ikigenba/theme.css` first, then copied), and app icons carry no `svg.ico` class. App icons carry no `aria-hidden`: the link's text is the service name. The stylesheet hides the mark's black square with `body > header > .launcher + .mark::before`, so the launcher button must be the mark's immediately preceding element sibling inside the `header`, and the services popover hangs from the banner's left edge. The stylesheet and fonts are copied from `design/` with a header naming the `design/` commit they came from. `preload` is defined in `banner.html` beside the other three and takes its `href` from `{{preloadURL}}`, never a written font name or hash.
 
 ## REQUIREMENTS
 
 - R-I900-VFBX: Package `page` MUST export `func Templates() *template.Template`, where `template` is the standard library's `html/template`.
-- R-IA7X-972M: `page.Templates` MUST return a non-nil template set that defines the templates `banner`, `launcher`, and `footer`, parsed from the embedded asset `banner.html`, embedded from `page/assets/`.
+- R-55GA-E3MI: `page.Templates` MUST return a non-nil template set that defines the templates `banner`, `launcher`, `footer`, and `preload`, parsed from the embedded asset `banner.html`, embedded from `page/assets/`.
 - R-YHYW-CTC1: The template `page.Templates` returns MUST have the name `appkit`.
-- R-YJ6S-QL2Q: The name of every template in the set `page.Templates` returns MUST be `appkit`, `banner`, `launcher`, or `footer`.
+- R-56O6-RVD7: The name of every template in the set `page.Templates` returns MUST be `appkit`, `banner`, `launcher`, `footer`, or `preload`.
 - R-ICNQ-0QK0: Each `page.Templates` call MUST return a new set independent of every other call's, so parsing templates into, redefining templates in, or executing one returned set does not change the templates or output of another.
-- R-IDVM-EIAP: Templates a consumer parses into the set `page.Templates` returns, with `ParseFS` or `Parse`, MUST be able to invoke `banner`, `launcher`, and `footer`, and executing such a template MUST render them as the other requirements in this document describe.
+- R-57W3-5N3W: Templates a consumer parses into the set `page.Templates` returns, with `ParseFS` or `Parse`, MUST be able to invoke `banner`, `launcher`, `footer`, and `preload`, and executing such a template MUST render them as the other requirements in this document describe.
+- R-5ABV-X6LA: The set `page.Templates` returns MUST provide a template function named `preloadURL`, taking no arguments, that a template a consumer parses into the set can call and that returns the string `page.PreloadURL` returns.
 - R-IF3I-SA1E: `banner`, executed with a `page.Banner`, MUST emit a `strong` element with class `mark`, whose `data-service` attribute value is the `Banner`'s `Service` as R-IYLW-WLWI renders it and whose text is `ikigenba`.
 - R-IGBF-61S3: `banner`, executed with a `page.Banner`, MUST emit exactly one `a` element with class `profile`, whose `href` attribute value is the `Banner`'s `ProfileURL` as R-IYLW-WLWI renders it, which has the attribute `aria-label="Profile"` and a `title` attribute whose value is the `Banner`'s `Email` as R-IYLW-WLWI renders it, and whose content contains no text other than whitespace.
 - R-IHJB-JTIS: `banner`, executed with a `page.Banner`, MUST emit a `form` element with attribute `method="post"` whose `action` attribute value is the `Banner`'s `LogoutURL` as R-IYLW-WLWI renders it, containing a `button` element with attribute `type="submit"` whose visible text is `Sign out`.
@@ -60,3 +65,4 @@ These are decisions about the assets, recorded here so the human writing them ha
 - R-IZTT-ADN7: The `Icon` of each `page.Service` MUST appear in `launcher`'s output byte-for-byte unaltered, markup characters included.
 - R-G687-LP8Y: Every requirement of this document that counts, requires, forbids, or places elements, attributes, or text in a template's output MUST be read as applying to that output with the bytes of each inserted `Icon` removed, except for what a requirement states about the `Icon` itself.
 - R-J11P-O5DW: `footer`, executed with a `page.Banner`, MUST emit, ignoring whitespace before and after it, exactly one `footer` element and nothing else, whose content is the text of the `Banner`'s `Service` as R-IYLW-WLWI renders it, then one space, then its `Version` as R-IYLW-WLWI renders it.
+- R-593Z-JEUL: `preload`, executed with no data, as `{{template "preload"}}` invokes it, MUST emit, ignoring whitespace before and after it, exactly one `link` element and nothing else, whose attributes, in any order, are exactly `rel="preload"`, `as="font"`, `type="font/woff2"`, `crossorigin` with no value or the empty value, and `href` whose value is the string `page.PreloadURL` returns.
