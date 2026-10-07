@@ -272,6 +272,7 @@ func TestMarkupBareAttributeOccurrences(t *testing.T) {
 // R-TDDS-AX5P R-S953-OHOS R-SAD0-29FH
 // R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-D1VT-C7H9 R-D33P-PZ7Y R-T16S-H7QR
 // R-KYQ9-8QIO
+// R-RFG9-KLDO
 // R-UDJA-V6WH R-RLCU-FECE R-ROH2-5F5O R-RQWU-WYN2 R-RSO8-Q0SK
 // R-RNSN-6XTS R-RJLG-MC6W R-T4UH-MIYU R-TC5V-X5F0
 func TestPlainPageMarkupHooksAndText(t *testing.T) {
@@ -314,6 +315,16 @@ func TestPlainPageMarkupHooksAndText(t *testing.T) {
 			stylesheet := oneTag(t, ofName(attributed(written, "rel", "stylesheet"), "link"))
 			if stylesheet.name != "link" || stylesheet.end > writtenBody.start || !slices.Contains(stylesheet.attrs["href"], "/_appkit/theme.css") {
 				t.Fatalf("stylesheet %#v", stylesheet)
+			}
+			var preloads []markupTag
+			for _, link := range readTags(written, "link", false) {
+				if slices.Contains(link.attrs["rel"], "preload") {
+					preloads = append(preloads, link)
+				}
+			}
+			preload := oneTag(t, preloads)
+			if preload.start >= writtenBody.start || !slices.Contains(preload.attrs["as"], "font") || !slices.Contains(preload.attrs["type"], "font/woff2") || !slices.Contains(preload.attrs["href"], page.PreloadURL()) || preload.bareAttrs["crossorigin"] == 0 && !slices.Contains(preload.attrs["crossorigin"], "") {
+				t.Fatalf("font preload attributes or position: %#v", preload)
 			}
 			var icons []markupTag
 			for _, link := range readTags(written, "link", false) {
