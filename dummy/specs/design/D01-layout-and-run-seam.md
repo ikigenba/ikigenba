@@ -32,8 +32,8 @@ documented contracts, and uses five of them:
   page.Banner` method yields the data the banner and footer are drawn from;
   `page.Templates()` is a fresh template set defining `banner`, `launcher` and
   `footer`, into which dummy parses its own templates; `page.Static()` serves
-  the shared stylesheet, fonts, licences, launcher script and feedback script
-  under `page.StaticPrefix` (`/_appkit/`).
+  the shared stylesheet, fonts, licences, launcher script, feedback script
+  and favicon under `page.StaticPrefix` (`/_appkit/`).
 - `identity` (`github.com/ikigenba/ikigenba/appkit/identity`) —
   `identity.Require(next)` wraps dummy's whole handler, so every request
   reaches dummy's routes and `/mcp` only with an `X-User-Id`, and is otherwise
@@ -65,8 +65,8 @@ documented contracts, and uses five of them:
   tests re-prove none of it.
 
 appkit owns the banner's, the footer's and the launcher's markup, the
-launcher's script, the feedback script, the stylesheet, the fonts and their
-licences, the MCP transport, the reading of the services file, the database
+launcher's script, the feedback script, the favicon, the stylesheet, the
+fonts and their licences, the MCP transport, the reading of the services file, the database
 handle, how migrations are applied and recorded and what `db status` prints
 of them, and the event envelope, its delivery and the framework events (`service.started`,
 `service.stopping`, `request.started`, `request.finished`, `tool.called`);
