@@ -399,9 +399,9 @@ func TestRoutingFragmentEscaping(t *testing.T) {
 }
 
 func TestRoutingGatedLocations(t *testing.T) {
-	// R-EBCD-K7ZY R-GS71-L59E R-4ID8-5ODT R-GVUQ-QGHH R-GX2N-4886 R-GQZ5-7DIP R-GKVN-AIT8 R-GH7Y-57L5
+	// R-EBCD-K7ZY R-WHK9-9BDX R-WK02-0UVB R-GVUQ-QGHH R-WL7Y-EMM0 R-GQZ5-7DIP R-GKVN-AIT8 R-GH7Y-57L5
 	// R-8JN0-I3HC R-8KUW-VV81 R-8M2T-9MYQ
-	// R-5GAR-J3SA R-TF87-C7C6 R-5IQK-AN9O R-56JK-GXUQ R-T94P-FCMP
+	// R-5GAR-J3SA R-TF87-C7C6 R-WMFU-SECP R-WNNR-663E R-56JK-GXUQ R-T94P-FCMP
 	for _, setting := range []struct {
 		name, manifest     string
 		guests, defaultApp bool
@@ -425,7 +425,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 				names = append(names, "wip.localhost")
 			}
 			server := routingServer(t, http, names...)
-			keys := []string{"listen", "server_name", "include", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location"}
+			keys := []string{"listen", "server_name", "include", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location"}
 			if setting.guests {
 				keys = append(keys, "location")
 			}
@@ -461,12 +461,18 @@ func TestRoutingGatedLocations(t *testing.T) {
 				} else {
 					keys = append(keys, "error_page")
 				}
+				if spec.handler == "bearer" {
+					keys = append(keys, "error_page")
+				}
 				routingKeys(t, loc.children, keys...)
 				routingFind(t, loc.children, "auth_request", checkPath)
 				routingFind(t, loc.children, "auth_request_set", "$sandbox_user_id", "$upstream_http_x_user_id")
 				routingFind(t, loc.children, "auth_request_set", "$sandbox_user_email", "$upstream_http_x_user_email")
 				if !open {
 					routingFind(t, loc.children, "error_page", "401", "=", "@sandbox_"+spec.handler)
+				}
+				if spec.handler == "bearer" {
+					routingFind(t, loc.children, "error_page", "403", "=", "@sandbox_invalid_token")
 				}
 				routingFind(t, loc.children, "proxy_pass", "http://app_dummy")
 				routingHeaders(t, loc, "$sandbox_user_id", "$sandbox_user_email")
@@ -484,14 +490,36 @@ func TestRoutingGatedLocations(t *testing.T) {
 			bearer := routingFind(t, server.children, "location", "@sandbox_bearer_reply")
 			routingKeys(t, bearer.children, "default_type", "add_header", "return")
 			routingFind(t, bearer.children, "default_type", "text/plain")
-			routingFind(t, bearer.children, "add_header", "WWW-Authenticate", `Bearer realm="ikigenba"`, "always")
+			routingFind(t, bearer.children, "add_header", "WWW-Authenticate", `Bearer realm="ikigenba", resource_metadata="http://mcp.wip.localhost:7400/.well-known/oauth-protected-resource"`, "always")
 			routingFind(t, bearer.children, "return", "401", "authentication required: send Authorization: Bearer <token>\n")
+			invalid := routingFind(t, server.children, "location", "@sandbox_invalid_token")
+			routingKeys(t, invalid.children, "default_type", "add_header", "return")
+			routingFind(t, invalid.children, "default_type", "text/plain")
+			routingFind(t, invalid.children, "add_header", "WWW-Authenticate", `Bearer error="invalid_token", resource_metadata="http://mcp.wip.localhost:7400/.well-known/oauth-protected-resource"`, "always")
+			routingFind(t, invalid.children, "return", "401", "authentication required: send Authorization: Bearer <token>\n")
 			git := routingFind(t, server.children, "location", "@sandbox_git_reply")
 			routingKeys(t, git.children, "default_type", "add_header", "return")
 			routingFind(t, git.children, "default_type", "text/plain")
 			routingFind(t, git.children, "add_header", "WWW-Authenticate", `Basic realm="ikigenba"`, "always")
 			routingFind(t, git.children, "return", "401", "authentication required: send your token as the password\n")
 		})
+	}
+}
+
+func TestRoutingBearerMetadataWithMCPApp(t *testing.T) {
+	// R-WMFU-SECP R-WNNR-663E
+	apps := []appInfo{{Name: "auth"}, {Name: "dummy"}, {Name: "mcp"}}
+	http := routingFind(t, parseRoutingConfig(t, string(renderNginxConfig("/data", "/worktree", "dev", 7411, 100, apps))), "http")
+	server := routingServer(t, http, "dummy.dev.localhost")
+	for _, reply := range []struct{ location, challenge string }{
+		{"@sandbox_bearer_reply", `Bearer realm="ikigenba", resource_metadata="http://mcp.dev.localhost:7411/.well-known/oauth-protected-resource"`},
+		{"@sandbox_invalid_token", `Bearer error="invalid_token", resource_metadata="http://mcp.dev.localhost:7411/.well-known/oauth-protected-resource"`},
+	} {
+		loc := routingFind(t, server.children, "location", reply.location)
+		routingKeys(t, loc.children, "default_type", "add_header", "return")
+		routingFind(t, loc.children, "default_type", "text/plain")
+		routingFind(t, loc.children, "add_header", "WWW-Authenticate", reply.challenge, "always")
+		routingFind(t, loc.children, "return", "401", "authentication required: send Authorization: Bearer <token>\n")
 	}
 }
 

@@ -42,6 +42,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 	directive("    ", "return", "404")
 	b.WriteString("  }\n")
 	authOrigin := fmt.Sprintf("http://auth.%s.localhost:%d", name, port)
+	mcpMetadata := fmt.Sprintf("http://mcp.%s.localhost:%d/.well-known/oauth-protected-resource", name, port)
 	if hasAuth {
 		b.WriteString("  server {\n")
 		directive("    ", "listen", listen)
@@ -108,6 +109,9 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 				if !open {
 					directive("      ", "error_page", "401", "=", "@sandbox_"+location.handler)
 				}
+				if location.handler == "bearer" {
+					directive("      ", "error_page", "403", "=", "@sandbox_invalid_token")
+				}
 				directive("      ", "proxy_pass", "http://app_"+app.Name)
 				forward("$sandbox_user_id", "$sandbox_user_email")
 				b.WriteString("    }\n")
@@ -123,7 +127,11 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			directive("      ", "return", "302", nginxWord(authOrigin+"/?return=$scheme://$http_host$request_uri"))
 			b.WriteString("    }\n    location @sandbox_bearer_reply {\n")
 			directive("      ", "default_type", "text/plain")
-			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Bearer realm="ikigenba"`), "always")
+			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Bearer realm="ikigenba", resource_metadata="`+mcpMetadata+`"`), "always")
+			directive("      ", "return", "401", `"authentication required: send Authorization: Bearer <token>\n"`)
+			b.WriteString("    }\n    location @sandbox_invalid_token {\n")
+			directive("      ", "default_type", "text/plain")
+			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Bearer error="invalid_token", resource_metadata="`+mcpMetadata+`"`), "always")
 			directive("      ", "return", "401", `"authentication required: send Authorization: Bearer <token>\n"`)
 			b.WriteString("    }\n    location @sandbox_git_reply {\n")
 			directive("      ", "default_type", "text/plain")
