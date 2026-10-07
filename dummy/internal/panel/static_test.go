@@ -4,22 +4,48 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
-var sharedFiles = []struct{ name, contentType string }{
-	{"theme.css", "text/css; charset=utf-8"},
-	{"launcher.js", "text/javascript; charset=utf-8"},
-	{"feedback.js", "text/javascript; charset=utf-8"},
-	{"favicon.svg", "image/svg+xml"},
-	{"InterVariable.woff2", "font/woff2"},
-	{"InterVariable-Italic.woff2", "font/woff2"},
-	{"JetBrainsMono.woff2", "font/woff2"},
-	{"OFL.txt", "text/plain; charset=utf-8"},
-	{"TABLER-LICENSE.txt", "text/plain; charset=utf-8"},
+type sharedFile struct{ name, contentType string }
+
+// R-Y5IB-5Y4Y
+func sharedFiles(t *testing.T, h http.Handler) []sharedFile {
+	t.Helper()
+	if page.StaticPrefix != "/_appkit/" {
+		t.Fatalf("static prefix = %q", page.StaticPrefix)
+	}
+	files := []sharedFile{
+		{"theme.css", "text/css; charset=utf-8"},
+		{"launcher.js", "text/javascript; charset=utf-8"},
+		{"feedback.js", "text/javascript; charset=utf-8"},
+		{"favicon.svg", "image/svg+xml"},
+		{"OFL.txt", "text/plain; charset=utf-8"},
+		{"TABLER-LICENSE.txt", "text/plain; charset=utf-8"},
+	}
+	css := pageTestResponse(h, pageTestRequest("GET", page.StaticPrefix+"theme.css"))
+	if css.Code != http.StatusOK {
+		t.Fatalf("stylesheet discovery: status %d", css.Code)
+	}
+	seen := map[string]bool{}
+	addFont := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			files = append(files, sharedFile{strings.TrimPrefix(path, page.StaticPrefix), "font/woff2"})
+		}
+	}
+	addFont(page.PreloadURL())
+	for _, match := range regexp.MustCompile(`url\("([^"]*)"\)`).FindAllStringSubmatch(css.Body.String(), -1) {
+		name := match[1]
+		if strings.HasSuffix(name, ".woff2") && !strings.ContainsAny(name, "/\\:\"?#%") {
+			addFont(page.StaticPrefix + name)
+		}
+	}
+	return files
 }
 
 func staticTestHandler(t *testing.T) http.Handler {
@@ -38,16 +64,13 @@ func staticStrongTag(tag string) bool {
 	return true
 }
 
-// R-MKRS-8DIX R-19LL-IENZ
+// R-19LL-IENZ
 func TestSharedStaticDelegation(t *testing.T) {
-	if page.StaticPrefix != "/_appkit/" {
-		t.Fatalf("static prefix = %q", page.StaticPrefix)
-	}
+	h := staticTestHandler(t)
 	paths := []string{"/_appkit/", "/_appkit/missing", "/_appkit/../widgets", "/_appkit/%2Ftheme.css", "/_appkit/%74heme.css"}
-	for _, file := range sharedFiles {
+	for _, file := range sharedFiles(t, h) {
 		paths = append(paths, "/_appkit/"+file.name, "/_appkit/"+file.name+"/extra", "/_appkit/"+strings.ToUpper(file.name))
 	}
-	h := staticTestHandler(t)
 	static := page.Static()
 	for _, path := range paths {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
@@ -69,10 +92,10 @@ func TestSharedStaticDelegation(t *testing.T) {
 	}
 }
 
-// R-MOFH-DOR0 R-1FP3-F9DG R-M9E7-IAKV
+// R-Y6Q7-JPVN R-Y960-B9D1 R-YADW-P13Q R-M9E7-IAKV
 func TestSharedStaticContentAndCache(t *testing.T) {
 	first, second := staticTestHandler(t), staticTestHandler(t)
-	for _, file := range sharedFiles {
+	for _, file := range sharedFiles(t, first) {
 		path := "/_appkit/" + file.name
 		base := pageTestResponse(first, pageTestRequest("GET", path))
 		if base.Code != 200 || base.Body.Len() == 0 || !reflect.DeepEqual(base.Header().Values("Content-Type"), []string{file.contentType}) {
@@ -84,6 +107,10 @@ func TestSharedStaticContentAndCache(t *testing.T) {
 				t.Fatalf("unstable content or tag: %s", path)
 			}
 		}
+		cache := "no-cache"
+		if file.contentType == "font/woff2" {
+			cache = "public, max-age=31536000, immutable"
+		}
 		for _, method := range []string{"GET", "HEAD"} {
 			for _, validator := range []string{"", "*"} {
 				r := pageTestRequest(method, path)
@@ -92,7 +119,7 @@ func TestSharedStaticContentAndCache(t *testing.T) {
 				}
 				got := pageTestResponse(first, r)
 				tags := got.Header().Values("ETag")
-				if len(tags) != 1 || !staticStrongTag(tags[0]) || !reflect.DeepEqual(got.Header().Values("Cache-Control"), []string{"no-cache"}) {
+				if len(tags) != 1 || !staticStrongTag(tags[0]) || !reflect.DeepEqual(got.Header().Values("Cache-Control"), []string{cache}) {
 					t.Fatalf("%s cache headers: %v", path, got.Header())
 				}
 			}
@@ -100,10 +127,10 @@ func TestSharedStaticContentAndCache(t *testing.T) {
 	}
 }
 
-// R-MAM3-W2BK R-MBU0-9U29
+// R-YBLT-2SUF R-YCTP-GKL4
 func TestSharedStaticRevalidation(t *testing.T) {
 	h := staticTestHandler(t)
-	for _, file := range sharedFiles {
+	for _, file := range sharedFiles(t, h) {
 		path := "/_appkit/" + file.name
 		base := pageTestResponse(h, pageTestRequest("GET", path))
 		tag := base.Header().Get("ETag")
@@ -137,7 +164,7 @@ func TestSharedStaticRevalidation(t *testing.T) {
 // R-MD1W-NLSY
 func TestSharedStaticRefusedMethods(t *testing.T) {
 	h := staticTestHandler(t)
-	for _, file := range sharedFiles {
+	for _, file := range sharedFiles(t, h) {
 		for _, method := range []string{"POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
 			for _, validator := range []string{"", "*", `"stale"`, "malformed"} {
 				r := pageTestRequest(method, "/_appkit/"+file.name)
@@ -155,7 +182,7 @@ func TestSharedStaticRefusedMethods(t *testing.T) {
 func TestSharedStaticMissingPaths(t *testing.T) {
 	h := staticTestHandler(t)
 	paths := []string{"/_appkit/", "/_appkit/missing", "/_appkit/banner.html"}
-	for _, file := range sharedFiles {
+	for _, file := range sharedFiles(t, h) {
 		paths = append(paths, "/_appkit/"+file.name+"/extra", "/_appkit/"+file.name+"x", "/_appkit/"+file.name+"%2Fextra", "/_appkit/"+strings.ToUpper(file.name))
 	}
 	for _, path := range paths {
@@ -172,15 +199,33 @@ func TestSharedStaticMissingPaths(t *testing.T) {
 	}
 }
 
-// R-MQVA-588E
+// R-Y7Y3-XHMC
 func TestSharedStaticHead(t *testing.T) {
 	h := staticTestHandler(t)
-	for _, file := range sharedFiles {
+	for _, file := range sharedFiles(t, h) {
 		path := "/_appkit/" + file.name
 		get := pageTestResponse(h, pageTestRequest(http.MethodGet, path))
 		head := pageTestResponse(h, pageTestRequest(http.MethodHead, path))
 		if head.Code != http.StatusOK || head.Body.Len() != 0 || !reflect.DeepEqual(head.Header().Values("Content-Type"), []string{file.contentType}) || head.Header().Get("ETag") != get.Header().Get("ETag") {
 			t.Fatalf("HEAD %s: %d %v body=%q", path, head.Code, head.Header(), head.Body.String())
+		}
+	}
+}
+
+// R-YE1L-UCBT
+func TestSharedStaticPlainFontAliasesMissing(t *testing.T) {
+	h := staticTestHandler(t)
+	hashed := regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`)
+	for _, file := range sharedFiles(t, h) {
+		if file.contentType != "font/woff2" || !hashed.MatchString(file.name) {
+			continue
+		}
+		path := page.StaticPrefix + hashed.ReplaceAllString(file.name, ".woff2")
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
+			got := pageTestResponse(h, pageTestRequest(method, path))
+			if got.Code != http.StatusNotFound {
+				t.Fatalf("%s %s: status %d", method, path, got.Code)
+			}
 		}
 	}
 }

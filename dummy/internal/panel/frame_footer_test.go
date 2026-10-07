@@ -152,3 +152,45 @@ func TestFrameEmailHasNoVisibleText(t *testing.T) {
 		}
 	}
 }
+
+// R-Y4AE-S6E9
+func TestFrameDocumentsPreloadSharedFont(t *testing.T) {
+	for _, services := range [][]page.Service{nil, {{Name: "other", URL: "/other", Enabled: true}}} {
+		for _, r := range pageTestDocuments() {
+			h := coreHandler(t, panelTestStore(t), pageTestEchoingBanner(services), io.Discard)
+			out := pageTestResponse(h, r)
+			if out.Body.Len() == 0 || out.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+				t.Fatal("expected HTML document")
+			}
+			data := pageTestBannerData(r)
+			data.Services = services
+			body := pageTestStrip(frameTestWritten(t, out.Body.String(), data))
+			bodies := pageTestTags(body, "body", false)
+			if len(bodies) == 0 {
+				t.Fatal("document body absent")
+			}
+			hasValue := func(tag, name, value string) bool {
+				for _, attr := range coreAttributes(tag) {
+					if attr.valued && strings.EqualFold(attr.name, name) && attr.value == value {
+						return true
+					}
+				}
+				return false
+			}
+			count := 0
+			for _, span := range pageTestTags(body, "link", false) {
+				tag := body[span[0]:span[1]]
+				if !hasValue(tag, "rel", "preload") {
+					continue
+				}
+				count++
+				if span[0] >= bodies[0][0] || !hasValue(tag, "as", "font") || !hasValue(tag, "type", "font/woff2") || !hasValue(tag, "href", page.PreloadURL()) || !pageTestBareAttribute(tag, "crossorigin") && !hasValue(tag, "crossorigin", "") {
+					t.Fatalf("font preload attributes or position: %s", tag)
+				}
+			}
+			if count != 1 {
+				t.Fatalf("font preload count = %d", count)
+			}
+		}
+	}
+}
