@@ -94,8 +94,8 @@ run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.12.1`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.12.1`: a release whose
+  - appkit `v0.14.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.14.0`: a release whose
     `identity` package exports `Optional`, the middleware that lets a guest
     through with an empty caller, and which exports the `db` package. See
     Adopting appkit below. It and the modules it pulls in are sites' only
