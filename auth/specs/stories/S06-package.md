@@ -6,18 +6,18 @@ into `/opt/auth/`. Its contents are the whole of what auth ships: the static
 `linux/amd64` binary, the manifest, and `share/icon.svg`, nothing else.
 `share/icon.svg` is auth's icon, an SVG image a human authors from the Tabler
 outline icon `user-circle`; its presence is what lists auth in the platform's
-service launcher on a space (`S7-on-a-space.md`), and no story fixes its
+service launcher on a space (`S07-on-a-space.md`), and no story fixes its
 content further than that. auth carries its pages, the platform's shared
 files, and its database schema inside the binary — its HTML is embedded, the
 stylesheet, fonts, licences, launcher script, button feedback script, and
-favicon it serves at `/_appkit/` need no file beside it (`S8-assets.md`), and
+favicon it serves at `/_appkit/` need no file beside it (`S08-assets.md`), and
 the migrations it applies to its database are in the binary too —
 so it keeps nothing under `etc/` but the manifest and nothing under `share/`
 but the icon, and no other member exists. No `assets/` directory and no font
 file ships beside the binary. The version is in the file's name and in the
 binary, never in a member's path. The database is not in the file: auth
 creates `state/auth.db` under its working directory on first start
-(`S2-serve.md`), and the manifest's `[database]` table declares it so that the
+(`S02-serve.md`), and the manifest's `[database]` table declares it so that the
 host replicates it.
 
 ## A developer lists what the file holds

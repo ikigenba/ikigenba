@@ -42,18 +42,18 @@ provider, so no identity gate stands in front of it, and a visitor drawing
 the sign-in page has no session yet: a file under `/_appkit/` needs no
 credential, is answered the same whether or not the request carries a
 session cookie or a token, and no answer sets a cookie. The requests below
-carry neither, and go to a running auth (`S2-serve.md`), started with its
+carry neither, and go to a running auth (`S02-serve.md`), started with its
 Google settings; they reach it through nginx on a space. Each request is
 shown as the HTTP request auth receives, with the headers the story depends
 on. Every request is on a space; a request that shows no `Host` header
 carries `Host: auth.sbx.ikigenba.dev`, on the space `sbx.ikigenba.dev`
-(`S3-sign-in.md`). A response block shows the status line and the headers
+(`S03-sign-in.md`). A response block shows the status line and the headers
 the story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A browser fetches the stylesheet
 
 Every HTML page auth sends links `/_appkit/theme.css` as its stylesheet
-(`S3-sign-in.md`, `S5-tokens.md`), so a browser drawing the sign-in page or
+(`S03-sign-in.md`, `S05-tokens.md`), so a browser drawing the sign-in page or
 the profile asks for it next. The response is the style itself, typed so the
 browser applies it, with the tag its next visit will quote back.
 
@@ -121,7 +121,7 @@ Postconditions:
 ## A browser fetches the launcher's script
 
 The banner's service launcher runs a script, and every page with a launcher
-loads it from `/_appkit/launcher.js` (`S3-sign-in.md`), so a browser drawing
+loads it from `/_appkit/launcher.js` (`S03-sign-in.md`), so a browser drawing
 such a page asks auth for it as it does for the stylesheet.
 
 Request:
@@ -153,7 +153,7 @@ Postconditions:
 ## A browser fetches the button feedback script
 
 Every HTML page auth sends loads the platform's button feedback script from
-`/_appkit/feedback.js` (`S3-sign-in.md`, `S5-tokens.md`), with or without a
+`/_appkit/feedback.js` (`S03-sign-in.md`, `S05-tokens.md`), with or without a
 banner or a launcher, so a browser drawing the sign-in page or the profile
 asks auth for it as it does for the stylesheet.
 
@@ -186,7 +186,7 @@ Postconditions:
 ## A browser fetches the favicon
 
 Every HTML page auth sends links the platform's favicon at
-`/_appkit/favicon.svg` as its icon (`S3-sign-in.md`, `S5-tokens.md`), with or
+`/_appkit/favicon.svg` as its icon (`S03-sign-in.md`, `S05-tokens.md`), with or
 without a banner or a launcher, so a browser drawing the sign-in page or the
 profile asks auth for it to show in the page's tab.
 

@@ -1,8 +1,8 @@
 # Stories — on a space
 
-auth reached through a space: the file `S6-package.md` describes, deployed with
+auth reached through a space: the file `S06-package.md` describes, deployed with
 `devctl deploy`, installed by `opsctl`, and answered by nginx at `auth.<space>`
-over TLS, which nginx passes on to auth (`S2-serve.md`). Deployed like any app,
+over TLS, which nginx passes on to auth (`S02-serve.md`). Deployed like any app,
 auth is also the authenticator: once it is installed, the host's nginx routes
 every other app through auth's `/check`, or `/check/open` for an app that serves
 guests, an internal subrequest to auth, before serving it. opsctl refuses to
@@ -18,9 +18,9 @@ only by their published commands. `dummy` is the example protected app, deployed
 on the same space through its own `S7-on-a-space.md` chain. The `telemetry`
 service is deployed and active on the same space too, so the host's services
 file has an entry named `telemetry`, and every event auth records reaches the
-trail (`S2-serve.md`). On the `/check` and `/check/open` subrequests the space's
+trail (`S02-serve.md`). On the `/check` and `/check/open` subrequests the space's
 nginx names the request it is deciding in `X-Original-Method`,
-`X-Original-Host`, and `X-Original-URI` (`S4-check.md`), and gives it the same
+`X-Original-Host`, and `X-Original-URI` (`S04-check.md`), and gives it the same
 `X-Request-Id` as the request it forwards to the app, so auth's check event and
 the app's own record of the request share one request id.
 
@@ -43,7 +43,7 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the sign-in page (`S3-sign-in.md`): an HTML page
+Status 200. The body is the sign-in page (`S03-sign-in.md`): an HTML page
 whose title is `auth`, which links `/_appkit/theme.css` as its stylesheet,
 which links `/_appkit/favicon.svg` as its icon, which loads
 `/_appkit/feedback.js`, and whose visible text includes the
@@ -75,12 +75,12 @@ Postconditions:
 ## A user on a space opens the service launcher
 
 On a space the host sets `IKIGENBA_SERVICES` in auth's environment to the
-path of its services file (`S2-serve.md`), and that file lists auth with an
-icon because auth's package ships `share/icon.svg` (`S6-package.md`).
+path of its services file (`S02-serve.md`), and that file lists auth with an
+icon because auth's package ships `share/icon.svg` (`S06-package.md`).
 So the profile a
 signed-in user reaches at auth's own hostname carries the launcher in its
 banner, and auth is one of the services it offers. The launcher's text and
-behavior are `S3-sign-in.md`'s; this story fixes only what the user sees on a
+behavior are `S03-sign-in.md`'s; this story fixes only what the user sees on a
 space.
 
 Request:
@@ -96,14 +96,14 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the profile (`S3-sign-in.md`), drawn with the banner,
+Status 200. The body is the profile (`S03-sign-in.md`), drawn with the banner,
 and its stylesheet is `https://auth.sbx.ikigenba.dev/_appkit/theme.css`. Its
 banner carries the launcher button labelled `Services`. In a browser, pressing
 the button opens a list of the space's services with a search box labelled
 `Find a service`; each entry shows a service's icon and name, as
-`S3-sign-in.md` tells. auth's own entry is in the list and is marked as the
+`S03-sign-in.md` tells. auth's own entry is in the list and is marked as the
 current page. The launcher's script is
-`https://auth.sbx.ikigenba.dev/_appkit/launcher.js` (`S8-assets.md`), so the
+`https://auth.sbx.ikigenba.dev/_appkit/launcher.js` (`S08-assets.md`), so the
 launcher, like the style, needs nothing from any other origin. Its button
 feedback script is `https://auth.sbx.ikigenba.dev/_appkit/feedback.js` and
 its icon `https://auth.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the
@@ -116,7 +116,7 @@ Preconditions:
   `auth/v<semver>` tag and `auth/dist/auth-v<semver>.tar.xz` exist, the
   `devctl deploy` of auth exited 0, and `space status` shows `auth v<semver>
   active active -`.
-- `auth/dist/auth-v<semver>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
+- `auth/dist/auth-v<semver>.tar.xz` holds `share/icon.svg` (`S06-package.md`).
 - The host sets `IKIGENBA_SERVICES` in auth's environment to the path of its
   services file, and that file lists auth with its icon.
 - The request carries an `ikigenba_session` cookie naming a live session on
@@ -126,12 +126,12 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Serving the profile does not touch the session
-  (`S3-sign-in.md`).
+  (`S03-sign-in.md`).
 
 ## A visitor reaches an app on a space without signing in
 
 A visitor asks a protected app for a page with no accepted credential. The
-host's nginx asks auth's `/check` first, auth answers 401 (`S4-check.md`), and
+host's nginx asks auth's `/check` first, auth answers 401 (`S04-check.md`), and
 nginx turns that into a redirect to auth's sign-in page carrying the original
 URL to return to. auth itself does not serve this request; it only decides it,
 and the space's nginx executes the redirect.
@@ -187,7 +187,7 @@ Postconditions:
 
 An agent asks a protected app for a page carrying a personal access token. The
 host's nginx asks auth's `/check`, auth answers 200 with `X-User-Id` and
-`X-User-Email` (`S4-check.md`), nginx sets those two headers on the request it
+`X-User-Email` (`S04-check.md`), nginx sets those two headers on the request it
 forwards to the app — removing any `X-User-*` the agent supplied — and the app
 answers. The app sees the identity headers; what it does with them is the app's
 own behavior, not auth's.
@@ -224,7 +224,7 @@ Preconditions:
   `X-User-Email` set from auth's answer and any client-supplied `X-User-*`
   removed. This routing is a property of the space, added by opsctl's nginx
   generation (a separate sub-project).
-- The agent holds a valid token `ikp_<token>` (`S5-tokens.md`) whose id is
+- The agent holds a valid token `ikp_<token>` (`S05-tokens.md`) whose id is
   `<token-id>`, `tok_` followed by 26 Crockford base32 characters, and whose
   owner, the user `<user-id>`, signed in through Google within the last 30
   days, so the token is honored.
@@ -232,7 +232,7 @@ Preconditions:
 Postconditions:
 
 - The token's last-used time is updated by the `/check` subrequest
-  (`S4-check.md`); nothing else has changed.
+  (`S04-check.md`); nothing else has changed.
 - auth records `check.allowed` with `outcome=allowed`, `credential=token`,
   `method=GET`, `host=dummy.sbx.ikigenba.dev`, `path=/widgets`, and
   `token=<token-id>`, under request id `<request-id>`, the one nginx gave the

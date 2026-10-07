@@ -8,7 +8,7 @@ both active, with auth at `http://auth.wip.localhost:7400` and dummy at
 `http://dummy.wip.localhost:7400`. Browsers and curl resolve every name under
 `localhost` to the loopback address. The sandbox gives auth the environment of
 a host — its Google settings, `WORKSPACE_DOMAIN=michaelgreenly.dev`,
-`DRAIN_SECONDS`, and `IKIGENBA_SERVICES` (`S2-serve.md`) — and variables a
+`DRAIN_SECONDS`, and `IKIGENBA_SERVICES` (`S02-serve.md`) — and variables a
 host never sets, of which auth reads two:
 `IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400`, auth's own public origin,
 and `IKIGENBA_CALLBACK_URL=http://localhost:7400`, the origin Google sends a
@@ -16,25 +16,28 @@ browser back to (it does not read `IKIGENBA_SANDBOX`). Google accepts a sign-in 
 `http://localhost:<port>` but never to a name under `localhost`, so the
 sandbox's nginx answers every request to bare `http://localhost:7400`,
 whatever its path, with a 302 to the same path and query at
-`http://auth.wip.localhost:7400`. Everything else is auth as `S3-sign-in.md`
-and `S5-tokens.md` tell it, on the space auth reads from the request's `Host`:
-here `wip.localhost:7400`, whose host name is `wip.localhost`, which is also
-the apex the pages name. These stories fix only what the two variables change;
-on a host neither is set and every earlier group holds as written. The
+`http://auth.wip.localhost:7400`. Everything else is auth as `S03-sign-in.md`,
+`S05-tokens.md`, and `S10-mcp-clients.md` tell it, on the space auth reads
+from the request's `Host`: here `wip.localhost:7400`, whose host name is
+`wip.localhost`, which is also the apex the pages name. The space's MCP
+gateway is auth's own origin with its `auth.` label swapped for `mcp.`, so
+here it is `http://mcp.wip.localhost:7400`, and an MCP client's token is bound
+to the host `mcp.wip.localhost` (`S10-mcp-clients.md`). These stories fix only
+what the two variables change; on a host neither is set and every earlier group holds as written. The
 sandbox's nginx and its bounce are the sandbox's own (a separate
 sub-project), named here only by their observable effect, as
-`S7-on-a-space.md` names the space's nginx. Every request below is a
+`S07-on-a-space.md` names the space's nginx. Every request below is a
 `$ curl -si` line to the sandbox, standing in for the browser's own request;
 responses pass through the sandbox's nginx over HTTP/1.1.
 
-auth records its trail in a sandbox as on a host (`S2-serve.md`), delivering
+auth records its trail in a sandbox as on a host (`S02-serve.md`), delivering
 each event to the entry named `telemetry` in the services file
 `IKIGENBA_SERVICES` names. That file lists every app of the sandbox, so when
 the sandbox also holds the `telemetry` app auth's events reach its trail;
 a sandbox without it gives auth nowhere to deliver them, and auth writes each
-to stderr as an undelivered event (`S2-serve.md`), where `sandbox logs auth`
+to stderr as an undelivered event (`S02-serve.md`), where `sandbox logs auth`
 shows it. The sandbox's routing through `/check` names the request it decides
-on the subrequest as a space's does (`S4-check.md`): `X-Original-Method`, its
+on the subrequest as a space's does (`S04-check.md`): `X-Original-Method`, its
 method; `X-Original-Host`, its host name without the port, such as
 `dummy.wip.localhost`; and `X-Original-URI`, its path and query. So auth's
 check events in a sandbox record `host=dummy.wip.localhost` for a request to
@@ -59,7 +62,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the sign-in page (`S3-sign-in.md`), drawn as a sign-in
+Status 200. The body is the sign-in page (`S03-sign-in.md`), drawn as a sign-in
 card, whose visible text is the mark `ikigenba`, the heading
 `Sign in to wip.localhost`, the sentence
 `Access is limited to Google accounts in the michaelgreenly.dev workspace.`,
@@ -101,7 +104,7 @@ Location: https://accounts.google.com/o/oauth2/v2/auth?...
 ```
 
 Status 302. The `Location` is Google's authorization endpoint with the query
-`S3-sign-in.md` fixes — the client id from `GOOGLE_CLIENT_ID`,
+`S03-sign-in.md` fixes — the client id from `GOOGLE_CLIENT_ID`,
 `hd=michaelgreenly.dev`, a `state`, and a PKCE `code_challenge` with
 `code_challenge_method=S256` — except that its `redirect_uri` is
 `http://localhost:7400/login/google/callback`, `IKIGENBA_CALLBACK_URL`
@@ -116,7 +119,7 @@ Preconditions:
 Postconditions:
 
 - An in-flight login state has been recorded, named by the `state` value in
-  the `Location`, as in `S3-sign-in.md`. No user and no session exist yet.
+  the `Location`, as in `S03-sign-in.md`. No user and no session exist yet.
 
 ## Google sends a visitor in a sandbox back through the bare localhost address
 
@@ -158,7 +161,7 @@ The bounced callback reaches auth at its own name. auth matches the login
 state and exchanges the code with Google naming the same `redirect_uri` it
 sent at the start, `http://localhost:7400/login/google/callback`, not one made
 from this request's `Host`; Google honors the code only for the address it
-was issued to. The member is provisioned or refreshed as in `S3-sign-in.md`
+was issued to. The member is provisioned or refreshed as in `S03-sign-in.md`
 and gets a session.
 
 Request:
@@ -176,7 +179,7 @@ Set-Cookie: ikigenba_session=<opaque>; Domain=wip.localhost; Path=/; Secure; Htt
 ```
 
 Status 302. Redirects to auth's own `/`. The cookie has the attributes every
-session cookie has (`S3-sign-in.md`); its `Domain` is the space with its port
+session cookie has (`S03-sign-in.md`); its `Domain` is the space with its port
 removed, `wip.localhost`, so it reaches auth, dummy, and every other name under
 `wip.localhost`. It is `Secure` here as on a host: browsers treat a page at
 `http://<name>.localhost` as a secure context, so they keep a `Secure` cookie
@@ -197,7 +200,7 @@ Preconditions:
 
 Postconditions:
 
-- The user is provisioned or refreshed as in `S3-sign-in.md`, a session exists
+- The user is provisioned or refreshed as in `S03-sign-in.md`, a session exists
   server-side, named by the cookie, and the user's last-Google-login time is
   set.
 - The in-flight login state is consumed.
@@ -326,7 +329,7 @@ Postconditions:
 
 An `Origin` naming the sandbox's hosts is on this space only with the scheme
 and port of `IKIGENBA_PUBLIC_URL`. One that differs in either is refused as a
-cross-site `POST` is (`S3-sign-in.md`): `https://dummy.wip.localhost:7400`
+cross-site `POST` is (`S03-sign-in.md`): `https://dummy.wip.localhost:7400`
 (the scheme a host would use), `http://dummy.wip.localhost:7401` (another
 port, such as another sandbox's), and `http://dummy.wip.localhost` (no port).
 So is an origin whose host is not under `wip.localhost`, such as
@@ -367,7 +370,7 @@ A token is created from auth's profile in the sandbox, as a human does to hand
 one to an agent working in the worktree. The token actions accept only auth's
 own origin, which in a sandbox is `IKIGENBA_PUBLIC_URL`,
 `http://auth.wip.localhost:7400`. Everything else about creating a token is
-`S5-tokens.md`'s.
+`S05-tokens.md`'s.
 
 Request:
 
@@ -382,7 +385,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the `Token created` page of `S5-tokens.md`, holding
+Status 200. The body is the `Token created` page of `S05-tokens.md`, holding
 the new token's plaintext secret, `ikp_` then 52 Crockford base32 characters,
 exactly once.
 
@@ -397,13 +400,13 @@ Postconditions:
 - One token record named `wip-agent`, enabled and expiring in 30 days, now
   belongs to the user; only a hash of its secret is stored. The token
   authenticates requests to dummy through the sandbox's routing through
-  `/check` (`S4-check.md`).
+  `/check` (`S04-check.md`).
 
 ## A user manages a token in a sandbox
 
 Disabling, enabling, and deleting a token from the profile in a sandbox take
 the same own origin, `http://auth.wip.localhost:7400`, and otherwise behave as
-`S5-tokens.md` tells.
+`S05-tokens.md` tells.
 
 Request:
 
@@ -434,18 +437,18 @@ Preconditions:
   `IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400`.
 - The request carries an `ikigenba_session` cookie naming a live session.
 - `<token-id>` is the id of a token the user owns: `tok_` followed by 26
-  Crockford base32 characters (`S5-tokens.md`), never its secret.
+  Crockford base32 characters (`S05-tokens.md`), never its secret.
 
 Postconditions:
 
 - After the disable request the token is disabled, after the enable request it
   is enabled again, and after the delete request it is gone, as in
-  `S5-tokens.md`.
+  `S05-tokens.md`.
 
 ## A token request in a sandbox from another origin is refused
 
 In a sandbox auth's own origin is exactly `IKIGENBA_PUBLIC_URL`, so a token
-`POST` from any other origin is refused as `S5-tokens.md`'s cross-site one is:
+`POST` from any other origin is refused as `S05-tokens.md`'s cross-site one is:
 the origin a host would use, `https://auth.wip.localhost:7400`; another app in
 the same sandbox, `http://dummy.wip.localhost:7400`; and auth's name on
 another port, `http://auth.wip.localhost:7401`. Every token action URL

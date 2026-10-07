@@ -1,38 +1,49 @@
 # Stories — tokens
 
 The token actions a signed-in user drives from their profile. The requests go
-to a running auth (`S2-serve.md`), started with its Google settings and
+to a running auth (`S02-serve.md`), started with its Google settings and
 `IKIGENBA_PUBLIC_URL` unset, as on a host; they reach it through nginx on a
 space. Each request is shown as the HTTP request auth receives, with the
 headers the story depends on. Every request is on a space; a request that shows
 no `Host` header carries `Host: auth.sbx.ikigenba.dev`, on the space
-`sbx.ikigenba.dev` (`S3-sign-in.md`). Every request carries a valid
+`sbx.ikigenba.dev` (`S03-sign-in.md`). Every request carries a valid
 `ikigenba_session` cookie, and every state-changing request is a POST that also
 carries an `Origin` header matching the service's own origin:
-`IKIGENBA_PUBLIC_URL` when it is set, as in a sandbox (`S9-in-a-sandbox.md`),
-and otherwise `https://auth.<space>`, here `https://auth.sbx.ikigenba.dev`. A
-user may hold many tokens. A token's secret has the form `ikp_` followed by 52
-Crockford base32 characters (`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`),
+`IKIGENBA_PUBLIC_URL` when it is set, as in a sandbox (`S09-in-a-sandbox.md`),
+and otherwise `https://auth.<space>`, here `https://auth.sbx.ikigenba.dev`.
+auth holds two kinds of token. A personal token is one the user creates from
+the `Create a token` card and manages from the `API tokens` card. An MCP
+client token is minted only when the user approves an MCP client
+(`S10-mcp-clients.md`): it is named after the client, expires 90 days after
+the approval, is honored only at the space's MCP gateway (`S04-check.md`), and
+is managed from the `MCP clients` card, where the only action is to revoke it.
+A user may hold many tokens of each kind. A token's secret has the form
+`ikp_` followed by 52 Crockford base32 characters (`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`),
 the encoding of 32 random bytes; it is shown once at creation and never again,
 and only a hash of it is stored. Separately, each token carries its own id,
 `tok_` followed by 26 random Crockford base32 characters, written `<token-id>`
 below; it is the segment of the action URLs (`POST /tokens/<token-id>/enable`,
-`/disable`, `/delete`), and it is not the secret. Every action is a POST:
-acting on a token id that is not the user's own or does not exist answers 404,
-and a POST whose `Origin` is not the service's own origin answers 403. Those
-failures, like every text/plain failure auth answers, are one line of plain
+`/disable`, `/delete` for a personal token, `/revoke` for an MCP client
+token), and it is not the secret. Every action is a POST: acting on a token id
+that is not the user's own, does not exist, or names a token of the other
+kind answers 404, and a POST whose `Origin` is not the service's own origin
+answers 403. Those failures, like every text/plain failure auth answers, are one line of plain
 text with no banner. The whole profile page is S3's story; the stories here fix
-the token table and its empty state, the `Create a token` card, and the two
-pages token creation draws.
+the `API tokens` table and its empty state, which list personal tokens only;
+the `Create a token` card, which creates personal tokens only, and the two
+pages token creation draws; and the `MCP clients` card and its empty state,
+which list MCP client tokens only.
 
 Every request here is in the trail through the request events every request
-records (`S2-serve.md`). An action that changes a token also records one token
+records (`S02-serve.md`). An action that changes a token also records one token
 event, under the request's id and the acting user's id: `token.minted` when a
 token is created, `token.disabled`, `token.enabled`, and `token.deleted` when
-one is disabled, enabled, or deleted. Each carries exactly one attribute,
+a personal token is disabled, enabled, or deleted, and `token.revoked` when an
+MCP client token is revoked. An MCP client token's `token.minted` is recorded
+when it is minted (`S10-mcp-clients.md`). Each carries exactly one attribute,
 `token`, the token's `<token-id>`. None carries the token's secret, its name,
 or its expiry. A request that changes no token — a rejected submission, a 404,
-a 403, or a 500 because auth's database failed (`S4-check.md`) — records no
+a 403, or a 500 because auth's database failed (`S04-check.md`) — records no
 token event.
 
 Every HTML page these stories fix is drawn with the banner (S3): its
@@ -114,7 +125,7 @@ inside that `<code>` element: the button carries no copy of it. In a browser,
 pressing `Copy` puts the text of the `<code>` element, the secret, on the
 clipboard and shows a toast reading `Copied to clipboard`; if copying fails,
 the secret's text is selected instead and an error toast shows. That is the
-button feedback script's doing (`S8-assets.md`); the page carries no script
+button feedback script's doing (`S08-assets.md`); the page carries no script
 of its own.
 The secret appears in this response only and in no later page.
 
@@ -311,13 +322,14 @@ Postconditions:
 
 ## A user lists their tokens
 
-The profile lists the tokens the user owns so they can manage each one. This
-story fixes the `API tokens` card on the profile; the profile page as a whole
-is S3's story. The rows run most recently used first, by last-used time, so
+The profile lists the personal tokens the user owns so they can manage each
+one. This story fixes the `API tokens` card on the profile; the profile page
+as a whole is S3's story. The rows run most recently used first, by last-used time, so
 the token used last is at the top. Tokens with the same last-used time run
 newest first by created time. Tokens never used come after every token that
 has been used, newest first by created time among themselves. In the example
-the page is drawn at `2026-09-28 10:00:00 UTC` and the user owns six tokens:
+the page is drawn at `2026-09-28 10:00:00 UTC` and the user owns six personal
+tokens:
 
 ```
 name            created (UTC)     last used (UTC)      expires (UTC)     enabled
@@ -349,8 +361,8 @@ the text
 `Personal access tokens let scripts and tools act as you. Send one as a bearer token.`
 Beneath it a `<div class="table-scroll">` holds a table whose header cells are
 `Name`, `Created`, `Last used`, `Expires`, `Status`, and a last, empty cell
-over the actions. There is one row for each token the user owns, most
-recently used first — for the example, `ci-deploy`, `nightly-sync`,
+over the actions. There is one row for each personal token the user owns,
+most recently used first — for the example, `ci-deploy`, `nightly-sync`,
 `laptop-cli`, `old-backup`, `grafana-scrape`, `spare-key`, in that order:
 
 - `Name` is the token's name.
@@ -385,7 +397,8 @@ No plaintext secret appears anywhere on the page.
 Preconditions:
 
 - The user is signed in; the cookie names a live session.
-- The user owns the six example tokens above, and no others.
+- The user owns the six example personal tokens above, and no other personal
+  tokens.
 - The page is drawn at `2026-09-28 10:00:00 UTC`.
 
 Postconditions:
@@ -459,8 +472,9 @@ Postconditions:
 
 ## A user with no tokens opens the profile
 
-A user who has created no tokens, or has deleted them all, sees why the card
-is there and what to do next rather than an empty table.
+A user who has created no personal tokens, or has deleted them all, sees why
+the card is there and what to do next rather than an empty table, whatever MCP
+clients they have approved.
 
 Request:
 
@@ -480,13 +494,13 @@ Status 200. The body is the profile page (S3), whose
 `<section class="card flush">` headed `API tokens` carries the same header
 text as when tokens exist, and in place of the table holds a
 `<div class="empty">` containing an `<h3>` reading `No tokens yet` and the
-text `Create one below when a script or tool needs to act as you.` The page
+text `Create one below when a script or tool needs to act as you.` The card
 has no token table and no token row.
 
 Preconditions:
 
 - The user is signed in; the cookie names a live session.
-- The user owns no tokens.
+- The user owns no personal tokens. They may own MCP client tokens.
 
 Postconditions:
 
@@ -527,8 +541,8 @@ Preconditions:
 
 - The user is signed in; the cookie names a live session.
 - The `Origin` header equals the service's own origin.
-- The `<token-id>` names a token the user owns; before the first request it is
-  enabled.
+- The `<token-id>` names a personal token the user owns; before the first
+  request it is enabled.
 
 Postconditions:
 
@@ -565,7 +579,7 @@ Preconditions:
 
 - The user is signed in; the cookie names a live session.
 - The `Origin` header equals the service's own origin.
-- The `<token-id>` names a token the user owns.
+- The `<token-id>` names a personal token the user owns.
 
 Postconditions:
 
@@ -577,7 +591,9 @@ Postconditions:
 ## A user acts on a token that is not theirs
 
 A token id that belongs to another user, or that names no token at all, is not
-the user's to act on. All three actions behave the same way.
+the user's to act on. All three actions behave the same way. An id naming one
+of the user's own MCP client tokens is answered the same way (`A user revokes
+an MCP client that is not theirs`).
 
 Request:
 
@@ -607,12 +623,215 @@ Postconditions:
 
 - Nothing has changed. auth records no token event.
 
+## A user lists their MCP clients
+
+The profile lists the MCP client tokens the user owns, one row for each
+client approval, so they can see which clients act as them and revoke any.
+This story fixes the `MCP clients` card on the profile; the profile page as a
+whole is S3's story. The rows run in the order the `API tokens` table uses
+(`A user lists their tokens`): most recently used first, by last-used time;
+tokens with the same last-used time newest first by approved time; tokens
+never used after every token that has been used, newest first by approved
+time among themselves. Approving a client again adds a row and leaves the
+earlier ones as they were, so a client the user approved again after its
+token expired has two rows. In the example the page is drawn at
+`2026-09-28 10:00:00 UTC` and the user owns four MCP client tokens and one
+personal token, `ci-deploy`:
+
+```
+client          approved (UTC)    last used (UTC)      expires (UTC)
+Claude Code     2026-09-20 14:05  2026-09-28 09:58:10  2026-12-19 14:05
+Cursor          2026-08-15 09:30  2026-09-27 18:00:00  2026-11-13 09:30
+Claude Code     2026-06-10 08:00  2026-07-01 12:00:00  2026-09-08 08:00
+MCP Inspector   2026-09-27 16:40  never used           2026-12-26 16:40
+```
+
+Request:
+
+```
+GET / HTTP/1.1
+Cookie: ikigenba_session=<id>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile page (S3), which holds, after the
+`Create a token` card, a card headed `MCP clients`, whose header also carries
+the text
+`MCP clients you approve act as you at the MCP gateway. Revoke one to sign it out.`
+The card holds a table whose column headings are `Client`, `Approved`,
+`Last used`, and `Expires`, and a last, empty heading over the action. There
+is one row for each MCP client token the user owns — for the example, the
+`Claude Code` approved `2026-09-20 14:05`, `Cursor`, the `Claude Code`
+approved `2026-06-10 08:00`, and `MCP Inspector`, in that order:
+
+- `Client` is the token's name, the client's name as it registered
+  (`S10-mcp-clients.md`), shown as text exactly as registered.
+- `Approved` shows when the token was issued, as the `API tokens` table's
+  `Created` shows a time, so the first row's reads `2026-09-20 14:05 UTC`.
+- `Last used` reads exactly as the `API tokens` table's `Last used` does, the
+  elapsed wording `A user reads how long ago each token was last used` fixes,
+  titled with the exact last-used time: the first row's reads `1 minute ago`
+  titled `2026-09-28 09:58 UTC`, `Cursor`'s `16 hours ago` titled
+  `2026-09-27 18:00 UTC`, and the older `Claude Code`'s `88 days ago` titled
+  `2026-07-01 12:00 UTC`. A token never used reads `Never`
+  (`MCP Inspector`).
+- `Expires` shows the expiry time as the `API tokens` table's `Expires` does,
+  so the first row's reads `2026-12-19 14:05 UTC`, except that a token whose
+  expiry is past reads `Expired`, titled with its exact expiry time, which a
+  browser shows as its tooltip: the older `Claude Code`'s reads `Expired`
+  titled `2026-09-08 08:00 UTC`.
+- Each row's one action is a `Revoke` button in a form whose method is POST
+  and whose action is the token's revoke URL (`/tokens/<token-id>/revoke`). A row
+  offers no other action: an MCP client token cannot be disabled, enabled, or
+  deleted.
+
+An MCP client token never appears in the `API tokens` table, and a personal
+token never appears in this card: `ci-deploy` is a row of the `API tokens`
+table only, and none of the four clients is. The card has no form that creates
+a token. No plaintext secret appears anywhere on the page.
+
+Preconditions:
+
+- The user is signed in; the cookie names a live session.
+- The user owns the four example MCP client tokens above and the one personal
+  token `ci-deploy`, and no others.
+- The page is drawn at `2026-09-28 10:00:00 UTC`.
+
+Postconditions:
+
+- No token is created, changed, or removed.
+
+## A user with no MCP clients opens the profile
+
+A user who has approved no MCP client, or has revoked every one, sees why the
+card is there and how a client gets onto it rather than an empty table.
+
+Request:
+
+```
+GET / HTTP/1.1
+Cookie: ikigenba_session=<id>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile page (S3), whose card headed
+`MCP clients` carries the same header text as when MCP client tokens exist,
+and in place of the table holds the heading `No MCP clients yet` and the text
+`A client appears here once you approve it from its login.` The card has no
+table and no row.
+
+Preconditions:
+
+- The user is signed in; the cookie names a live session.
+- The user owns no MCP client tokens. They may own personal tokens.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A user revokes an MCP client
+
+Revoking signs the client out: the token is removed and its secret can no
+longer authenticate, at the MCP gateway or anywhere else. A client the user
+revoked comes back only through a new approval (`S10-mcp-clients.md`).
+
+Request:
+
+```
+POST /tokens/<token-id>/revoke HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: https://auth.sbx.ikigenba.dev
+```
+
+Response:
+
+```
+HTTP/1.1 302 Found
+Location: /
+```
+
+Status 302. The response redirects to `/` (the profile), where the token's
+row is gone from the `MCP clients` card.
+
+Preconditions:
+
+- The user is signed in; the cookie names a live session.
+- The `Origin` header equals the service's own origin.
+- The `<token-id>` names an MCP client token the user owns.
+
+Postconditions:
+
+- The token record is gone. Its secret no longer authenticates any request
+  (S4). The user's other tokens, including any other token for the same
+  client, are unchanged.
+- auth records `token.revoked` with `token=<token-id>`, under the request's id
+  and the user's id.
+
+## A user revokes an MCP client that is not theirs
+
+A token id that belongs to another user, that names no token, or that names
+one of the user's own personal tokens is not an MCP client the user can
+revoke. Likewise a personal token's actions do not apply to an MCP client
+token: the enable, disable, and delete URLs carrying the id of the user's own
+MCP client token behave the same way.
+
+Request:
+
+```
+POST /tokens/<token-id>/revoke HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: https://auth.sbx.ikigenba.dev
+```
+
+```
+POST /tokens/<token-id>/disable HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: https://auth.sbx.ikigenba.dev
+```
+
+Response (each):
+
+```
+HTTP/1.1 404 Not Found
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 404. The enable and delete URLs answer 404 the same way as the
+disable URL for such an id.
+
+Preconditions:
+
+- The user is signed in; the cookie names a live session.
+- The `Origin` header equals the service's own origin.
+- For the revoke URL, the `<token-id>` names a token owned by a different
+  user, names no token, or names a personal token the user owns.
+- For the enable, disable, and delete URLs, the `<token-id>` names an MCP
+  client token the user owns.
+
+Postconditions:
+
+- Nothing has changed: the token named, if any, is as it was. auth records no
+  token event.
+
 ## Another site posts to the profile
 
 A cross-site POST is refused on two lines: `SameSite=Lax` already keeps the
 session cookie from riding a cross-site request, and, as the explicit second
 line, a POST whose `Origin` is not the service's own origin is refused
-outright. This applies to `/tokens` and to every token action URL.
+outright. This applies to `/tokens` and to every token action URL, the MCP
+client token's revoke URL included.
 
 Request:
 
@@ -633,7 +852,8 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 403. A POST to any token action URL (`/tokens/<token-id>/enable`,
-`/disable`, `/delete`) with a foreign `Origin` is refused the same way.
+`/disable`, `/delete`, `/revoke`) with a foreign `Origin` is refused the same
+way.
 
 Preconditions:
 
@@ -652,8 +872,8 @@ Crockford id. auth's migration `0002` gives each such token the prefixed id,
 `tok_` followed by the same 26 characters, and changes nothing else about it,
 so a token minted before keeps its secret, name, times, and state, and keeps
 authenticating. auth applies `0002` when it starts on a database that has not
-had it (`S2-serve.md`), and applies it once: starting again changes nothing
-more, and `auth db status` lists it applied (`S1-bootstrap.md`). From then on
+had it (`S02-serve.md`), and applies it once: starting again changes nothing
+more, and `auth db status` lists it applied (`S01-bootstrap.md`). From then on
 the token's URLs and events name it by the prefixed id; its bare id names no
 token, so an action URL carrying it answers 404 as any unknown id does.
 

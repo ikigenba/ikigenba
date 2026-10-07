@@ -5,14 +5,15 @@ exit codes. auth is an app of the platform: one Go binary that serves the auth
 service. On a host it runs as `/opt/auth/bin/auth` with `/opt/auth` as its
 working directory and its environment read from `/opt/auth/etc/env`; a
 developer runs the same binary from the checkout. With no command it serves
-(`S2-serve.md`); the commands here are what the build, and an operator, ask of
+(`S02-serve.md`); the commands here are what the build, and an operator, ask of
 it. They serve nothing and record no event: the trail of events is what auth
-records while it serves (`S2-serve.md`). auth keeps its users, sessions,
+records while it serves (`S02-serve.md`). auth keeps its users, sessions,
 sign-ins in flight and tokens in its database, the SQLite file `state/auth.db`
 under its working directory, which it creates and brings up to date when it
-starts (`S2-serve.md`). The database's schema is a sequence of numbered
+starts (`S02-serve.md`). The database's schema is a sequence of numbered
 migrations, each with a four-digit version, that the binary carries and
-applies in order; this auth carries two, versions `0001` and `0002`.
+applies in order; this auth carries three, versions `0001`, `0002` and
+`0003`.
 
 ## A developer asks which version they have
 
@@ -21,7 +22,7 @@ developer's build and a deployed binary report the same string. Its shape is
 `v<semver>`: a `v`, then a semantic version, prerelease and build metadata
 included. Its value is data and is not fixed here. It is also the `version`
 auth records in `service.started` each time it starts serving
-(`S2-serve.md`), so the trail names the release that was running.
+(`S02-serve.md`), so the trail names the release that was running.
 
 Command:
 
@@ -56,7 +57,7 @@ secrets it needs, its Workspace domain, and its SQLite database, at
 `[resources]` table places it among the platform's core services, which keep
 a small memory reserve ahead of other apps, and caps its memory at 128M. It
 declares no port: auth serves on the socket the host passes it
-(`S2-serve.md`), and a manifest carrying `port` is refused by `devctl build`
+(`S02-serve.md`), and a manifest carrying `port` is refused by `devctl build`
 and by opsctl.
 
 Command:
@@ -187,6 +188,7 @@ Output:
 ```
 0001 applied 2026-10-05T14:03:07.123456Z
 0002 applied 2026-10-05T14:03:07.125003Z
+0003 applied 2026-10-05T14:03:07.126518Z
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. Each time is the one the
@@ -197,8 +199,9 @@ Preconditions:
 - `bin/auth` exists.
 - The working directory holds `state/auth.db`, which an auth of this version
   created or brought up to date, applying version `0001` at
-  `2026-10-05T14:03:07.123456Z` and version `0002` at
-  `2026-10-05T14:03:07.125003Z`. On a host the working directory is
+  `2026-10-05T14:03:07.123456Z`, version `0002` at
+  `2026-10-05T14:03:07.125003Z` and version `0003` at
+  `2026-10-05T14:03:07.126518Z`. On a host the working directory is
   `/opt/auth` and the operator is a user who can read the database.
 
 Postconditions:
@@ -222,6 +225,7 @@ Output:
 ```
 0001 pending
 0002 pending
+0003 pending
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -239,10 +243,11 @@ Postconditions:
 ## An operator checks a database an earlier auth wrote
 
 An auth from before the migrations kept its database without recording any
-migration. Until this auth first starts on it, `auth db status` reports both
-of the binary's migrations as pending: the next start applies them, `0001`
-changing nothing that is already there and `0002` giving the tokens the ids
-they now carry (`S5-tokens.md`).
+migration. Until this auth first starts on it, `auth db status` reports all
+three of the binary's migrations as pending: the next start applies them,
+`0001` changing nothing that is already there, `0002` giving the tokens the
+ids they now carry, and `0003` making each token a personal token, changing
+nothing else about it (`S05-tokens.md`).
 
 Command:
 
@@ -255,6 +260,7 @@ Output:
 ```
 0001 pending
 0002 pending
+0003 pending
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -273,7 +279,7 @@ Postconditions:
 
 A newer auth has applied a migration this binary does not carry, as when a
 deploy is rolled back to an older binary over a database the newer one
-upgraded. This auth cannot serve such a database (`S2-serve.md`), and
+upgraded. This auth cannot serve such a database (`S02-serve.md`), and
 `auth db status` shows why: it prints every line as usual, the version it does
 not know among them as `unknown`, then says so on stderr and fails.
 
@@ -288,19 +294,21 @@ Output:
 ```
 0001 applied 2026-10-05T14:03:07.123456Z
 0002 applied 2026-10-05T14:03:07.125003Z
-0003 unknown 2026-10-06T09:12:44.000017Z
+0003 applied 2026-10-05T14:03:07.126518Z
+0004 unknown 2026-10-06T09:12:44.000017Z
 auth: <reason>
 ```
 
-Exits 1. The `0001`, `0002` and `0003` lines are on stdout; the last line is
-on stderr. `<reason>` names the unknown version, `0003`.
+Exits 1. The `0001`, `0002`, `0003` and `0004` lines are on stdout; the last
+line is on stderr. `<reason>` names the unknown version, `0004`.
 
 Preconditions:
 
-- `bin/auth` exists, carrying migrations `0001` and `0002` only.
+- `bin/auth` exists, carrying migrations `0001`, `0002` and `0003` only.
 - The working directory holds `state/auth.db`, which records version `0001`
   applied at `2026-10-05T14:03:07.123456Z`, version `0002` applied at
-  `2026-10-05T14:03:07.125003Z`, and version `0003` applied at
+  `2026-10-05T14:03:07.125003Z`, version `0003` applied at
+  `2026-10-05T14:03:07.126518Z`, and version `0004` applied at
   `2026-10-06T09:12:44.000017Z`.
 
 Postconditions:

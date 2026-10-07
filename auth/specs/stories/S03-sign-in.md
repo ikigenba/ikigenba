@@ -2,7 +2,7 @@
 
 The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
-and sign-out at `/logout`. The requests go to a running auth (`S2-serve.md`),
+and sign-out at `/logout`. The requests go to a running auth (`S02-serve.md`),
 started with its Google settings, `IKIGENBA_SERVICES` naming a services file
 whose one entry is the telemetry service's, named `telemetry`, carrying no
 icon, and accepting events at its socket — so the trail is reachable and the
@@ -15,16 +15,16 @@ leading `auth.` label, and the stories below use the space `sbx.ikigenba.dev`,
 whose auth is `auth.sbx.ikigenba.dev`. The facts that depend on the space's own
 hostname — the callback `redirect_uri`, the session cookie's `Domain`, and
 which return URLs count as being under the space — are stated for that space,
-and `S7-on-a-space.md` proves the whole path on a real one. In a sandbox, where
+and `S07-on-a-space.md` proves the whole path on a real one. In a sandbox, where
 those two variables are set, the same flow differs only where they say
-(`S2-serve.md`), and `S9-in-a-sandbox.md` tells it there.
+(`S02-serve.md`), and `S09-in-a-sandbox.md` tells it there.
 
 The session cookie is named `ikigenba_session`; it carries `Domain=<space>`
 with any port dropped (the space host and every subdomain), `Path=/`, `Secure`,
 `HttpOnly`, and `SameSite=Lax`, so the response blocks below show it with
 `Domain=sbx.ikigenba.dev`. Its path covers every path on those hosts, including
 auth's `/`, `/tokens`, and `/logout`, and other apps' paths. A login records
-the user's last-Google-login time, which `S4-check.md` reads when it decides a
+the user's last-Google-login time, which `S04-check.md` reads when it decides a
 token.
 
 Users are keyed by `(issuer, subject)` from the ID token; the email is a copy
@@ -42,7 +42,7 @@ carries. With
 `IKIGENBA_PUBLIC_URL` unset, as on a host, that is `https` with no port:
 `https://<space>` and `https://<host>.<space>`, auth's own
 `https://auth.<space>` among them. With it set, as in a sandbox, it is the
-scheme and port of `IKIGENBA_PUBLIC_URL` (`S2-serve.md`).
+scheme and port of `IKIGENBA_PUBLIC_URL` (`S02-serve.md`).
 
 A page fixes its visible text and the markup the stylesheet keys on: an
 element or class is quoted where the stylesheet hooks in, the visible text is
@@ -54,7 +54,7 @@ shows it at the phone's own width rather than as a shrunken desktop page. The
 favicon is the platform's one icon, which a browser shows in the page's tab.
 The stylesheet, the fonts it loads, the launcher's script, the button
 feedback script, and the favicon are the platform's shared files,
-served by auth under `/_appkit/` (`S8-assets.md`); a page makes no request to
+served by auth under `/_appkit/` (`S08-assets.md`); a page makes no request to
 any other host. The button feedback script, which every page loads with or
 without a banner or a launcher, makes an enabled button, or a link styled as
 one, visibly react in a browser as the user presses it. auth serves nothing
@@ -74,8 +74,9 @@ footer, and its `<body>` holds `<main class="auth-page">`, which holds one
 `<span class="mark">ikigenba</span>`, and its heading is `<h1>` reading
 `Sign in to <apex>`. Its way forward is a link styled as a button,
 `<a class="button secondary large google">`, that starts a Google sign-in. A
-page for a signed-in user — the profile here, and the token-created page and
-the rejected-create page (`S5-tokens.md`) — is drawn with the banner, the same
+page for a signed-in user — the profile here, the token-created page and
+the rejected-create page (`S05-tokens.md`), and the approve page
+(`S10-mcp-clients.md`) — is drawn with the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
 mark, the profile icon, and a sign-out button, in that order; when the page
 has a launcher (below), the launcher button comes first, immediately before
@@ -89,7 +90,7 @@ icon and no text; the email is not part of the page's visible text there. The
 banner is followed by one `<main>` element holding the page's content, and the
 page ends with the page footer, a `<footer>` that is the last thing in the
 body, reading `auth <version>`: the service's name, one space, and auth's
-version exactly as `auth --version` prints it (`S1-bootstrap.md`). The
+version exactly as `auth --version` prints it (`S01-bootstrap.md`). The
 version is data; no story fixes its value.
 
 The sign-out button signs the user out of the whole space in one click. It
@@ -101,7 +102,7 @@ text is `Sign out` alone.
 The launcher is the banner's way to the platform's other services. It is
 there only when the host's services file lists services: auth takes the
 file's path from `IKIGENBA_SERVICES`, which it reads once, when it starts
-(`S2-serve.md`), and it reads the file itself afresh for every page, so a
+(`S02-serve.md`), and it reads the file itself afresh for every page, so a
 rewrite of the file shows on the next page without a restart. The file is
 opsctl's: a JSON object whose `services` member is an array; each entry is an
 object with `name`, a non-empty string; `url`, `description`, and `socket`,
@@ -140,7 +141,7 @@ visitor may not be signed in. A response block shows the status line and
 only the headers the story fixes; a header it does not show is not fixed.
 
 Every request here is in the trail through the request events every request
-records (`S2-serve.md`), and none of these routes records a check event. The
+records (`S02-serve.md`), and none of these routes records a check event. The
 flow adds its own events, each under the request's id. A sign-in that completes
 records `user.signed_in`, under the signed-in user's id; the first sign-in of an
 account records `user.created` before it, under the new user's id. A sign-out
@@ -151,7 +152,7 @@ matched no login state; `cancelled`, the visitor declined at Google;
 `not_member`, the account is outside the Workspace; and `provider_failed`,
 Google failed the exchange or could not be reached. None of these events carries
 any other attribute: never an email, a session id, a Google code, or a `state`
-value. A request answered 500 because auth's database failed (`S4-check.md`)
+value. A request answered 500 because auth's database failed (`S04-check.md`)
 records none of these events. The 502s are handled failures: auth writes nothing
 to stderr for them, and the request's `request.finished` carries the 502.
 
@@ -363,7 +364,7 @@ Postconditions:
 - No login state is recorded. No user, no session, and no cookie are created.
   Nothing has changed.
 - No sign-in had begun, so auth records no flow event; the request's
-  `request.finished` carries status `502` (`S2-serve.md`).
+  `request.finished` carries status `502` (`S02-serve.md`).
 - auth wrote nothing to stderr.
 
 ## Google returns a member for the first time
@@ -492,7 +493,7 @@ Postconditions:
   exists, and the user's last-Google-login time is updated.
 - For an HTTPS return URL, the browser sends the new cookie to the
   returned path. When the URL belongs to another app routed through `/check`
-  as in `S7-on-a-space.md`, that app's request authenticates with the session
+  as in `S07-on-a-space.md`, that app's request authenticates with the session
   without another sign-in.
 - The in-flight login state is consumed.
 - auth records `user.signed_in`, preceded by `user.created` when the account
@@ -697,32 +698,35 @@ Postconditions:
 - No user row, no session, and no cookie are created.
 - auth records `sign_in.refused` with `reason=provider_failed`, under the
   request's id and no user; the request's `request.finished` carries status
-  `502` (`S2-serve.md`).
+  `502` (`S02-serve.md`).
 - auth wrote nothing to stderr.
 
 ## A user asks for the profile
 
 With a live session the index is the profile, drawn with the banner:
-who the user is, the tokens they hold, and the form that creates another. A
+who the user is, the tokens they hold, the form that creates another, and the
+MCP clients they have approved. A
 `?return=<url>` is ignored because the visitor is already signed in. A
 browser that has just completed sign-in sends the received cookie
 automatically on this HTTPS path and sees this profile; the session is not
 limited to the login callback's path.
 
 The page's heading is `<h1>` reading `Your account`, with the subtitle
-`You're signed in to <apex>.` beneath it. Three cards follow, each a
+`You're signed in to <apex>.` beneath it. Four cards follow, each a
 `<section class="card">` whose heading is an `<h2>` in the card's `<header>`.
 The `Account` card holds `<dl class="kv">` pairing `Email` with the user's
 email, `Workspace` with `WORKSPACE_DOMAIN`, and `Signed in via` with `Google`.
 The `API tokens` card is `<section class="card flush">`; its header also
 reads `Personal access tokens let scripts and tools act as you. Send one as a bearer token.`
-It holds the user's tokens as a table inside `<div class="table-scroll">`,
+It holds the user's personal tokens as a table inside `<div class="table-scroll">`,
 whose header cells read `Name`, `Created`, `Last used`, `Expires`, and
 `Status`, then one empty cell over the row actions. What each row shows, the
 order of the rows, and what the card holds instead of the table when the user
-has no tokens are `S5-tokens.md`'s. No token's secret appears anywhere on the
-profile. The third card is the `Create a token` card that `S5-tokens.md`
-defines, whose form POSTs to `/tokens` with fields `name` and `expires`.
+has no tokens are `S05-tokens.md`'s. No token's secret appears anywhere on the
+profile. The third card is the `Create a token` card that `S05-tokens.md`
+defines, whose form POSTs to `/tokens` with fields `name` and `expires`. The
+fourth is the `MCP clients` card, after `Create a token`, which lists the MCP
+clients the user has approved; what it holds is `S05-tokens.md`'s.
 
 Request:
 
@@ -757,11 +761,12 @@ services file lists no service with an icon here. Inside the page's one
 `You're signed in to ikigenba.dev.`; the `Account` card reading `Email`
 `ada@michaelgreenly.dev`, `Workspace` `michaelgreenly.dev`, and
 `Signed in via` `Google`; the `API tokens` card with its explanation and the
-user's tokens (`S5-tokens.md`); and the `Create a token` card, whose form
-POSTs to `/tokens` with fields `name` and `expires` (`S5-tokens.md`); in a
-browser, its `Create token` button, like `Sign out`, visibly reacts as the
-user presses it. After the `<main>`, the page ends with the page footer
-reading `auth <version>`, where `<version>` is what `auth --version` prints.
+user's personal tokens (`S05-tokens.md`); the `Create a token` card, whose
+form POSTs to `/tokens` with fields `name` and `expires` (`S05-tokens.md`);
+and the `MCP clients` card with its explanation and the MCP clients the user
+has approved (`S05-tokens.md`). In a browser, the `Create token` button, like
+`Sign out`, visibly reacts as the user presses it. After the `<main>`, the
+page ends with the page footer reading `auth <version>`, where `<version>` is what `auth --version` prints.
 Both forms return the same page; the `?return=<url>` is ignored.
 
 Preconditions:
@@ -777,7 +782,7 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Serving the profile does not touch the session; the touch
-  happens at `/check` (`S4-check.md`).
+  happens at `/check` (`S04-check.md`).
 
 ## A user signs out
 
@@ -909,7 +914,7 @@ Postconditions:
 
 - The session still exists; nothing has changed.
 - auth records no `user.signed_out`; the request's `request.finished`
-  carries the 403 (`S2-serve.md`).
+  carries the 403 (`S02-serve.md`).
 
 ## A user signs out with no Origin
 
@@ -943,7 +948,7 @@ Postconditions:
 
 - The session still exists; nothing has changed.
 - auth records no `user.signed_out`; the request's `request.finished`
-  carries the 403 (`S2-serve.md`).
+  carries the 403 (`S02-serve.md`).
 
 ## A user on a host with services opens the launcher
 
@@ -1021,7 +1026,7 @@ Postconditions:
 ## A user on a host with no services file sees no launcher
 
 A host may have no services file, and nothing names one: `IKIGENBA_SERVICES`
-is unset (`S2-serve.md`). The banner is then the banner without a launcher,
+is unset (`S02-serve.md`). The banner is then the banner without a launcher,
 and the page is otherwise the same page a host with a services file serves.
 
 Request:
@@ -1060,7 +1065,7 @@ Postconditions:
 - auth wrote nothing to stderr about the launcher. With no services file
   there is no `telemetry` entry, so the request's own events are undelivered:
   stderr holds one `auth: undelivered event: <event>` line for each of its
-  `request.started` and `request.finished` (`S2-serve.md`), and nothing else
+  `request.started` and `request.finished` (`S02-serve.md`), and nothing else
   for this request.
 
 ## A user on a host whose services file is missing sees no launcher
@@ -1106,7 +1111,7 @@ Postconditions:
 - auth wrote nothing to stderr about the launcher. With no services file
   there is no `telemetry` entry, so the request's own events are undelivered:
   stderr holds one `auth: undelivered event: <event>` line for each of its
-  `request.started` and `request.finished` (`S2-serve.md`), and nothing else
+  `request.started` and `request.finished` (`S02-serve.md`), and nothing else
   for this request.
 
 ## A user sees the launcher follow a change to the services file

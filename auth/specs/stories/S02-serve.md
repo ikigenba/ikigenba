@@ -27,12 +27,12 @@ settings in opsctl's configuration, opsctl writes the drain into every app's
 drain) into every service unit, and an app's manifest never sets either.
 `IKIGENBA_SERVICES` is the path of the host's services file, which lists the
 platform's services for the launcher in the banner of auth's signed-in pages
-(`S3-sign-in.md`) and names the telemetry service auth delivers its events to
+(`S03-sign-in.md`) and names the telemetry service auth delivers its events to
 (below). On a host, opsctl sets it in the environment the host gives auth,
 normally `/var/lib/ikigenba/services.json`; on a host that has no services
 file it is unset, and auth's pages then carry no launcher. For the banner auth
 reads the variable once, when it starts, and never fails to start over it:
-unset, empty, a path not in its plain form (`S3-sign-in.md`), or naming a file
+unset, empty, a path not in its plain form (`S03-sign-in.md`), or naming a file
 that is missing or unreadable, auth starts and serves all the same, and says
 nothing about the launcher. A services file it cannot use also leaves auth no
 telemetry service to deliver its events to, which is trouble of its own (see
@@ -45,13 +45,13 @@ part, no path (not even a trailing `/`), no query, and no fragment. A host sets
 neither, and with neither set auth's own origin is `https://auth.<space>`, the
 Google `redirect_uri` is `https://auth.<space>/login/google/callback` for the
 space the request's `Host` names, and sign-out accepts origins on the space
-over `https` with no port (`S3-sign-in.md`). A sandbox, the local runner a
+over `https` with no port (`S03-sign-in.md`). A sandbox, the local runner a
 developer runs the platform in, sets both: a sandbox named `wip` on port 7400
 sets `IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400` and
-`IKIGENBA_CALLBACK_URL=http://localhost:7400` (`S9-in-a-sandbox.md`). When
+`IKIGENBA_CALLBACK_URL=http://localhost:7400` (`S09-in-a-sandbox.md`). When
 `IKIGENBA_PUBLIC_URL` is set, it is auth's own origin, the one its token
-actions accept (`S5-tokens.md`), and sign-out accepts origins on the space with
-its scheme and port instead of `https` and none (`S3-sign-in.md`). When
+actions accept (`S05-tokens.md`), and sign-out accepts origins on the space with
+its scheme and port instead of `https` and none (`S03-sign-in.md`). When
 `IKIGENBA_CALLBACK_URL` is set, the Google `redirect_uri` is that value
 followed by `/login/google/callback` —
 `http://localhost:7400/login/google/callback` in that sandbox — the same in the
@@ -72,17 +72,17 @@ SQLite database at `state/auth.db`, relative to its working directory. So a
 start refused as a usage error has touched nothing, not even the database.
 Opening it, auth creates `state/` if it is absent and `state/auth.db` if it is
 absent, brings the database up to date by applying, in order, every migration
-it carries that the database has not had (`S1-bootstrap.md`), and only then
+it carries that the database has not had (`S01-bootstrap.md`), and only then
 serves and tells systemd it is ready. A database it cannot open, or one that
 records a migration it does not carry, is a start it refuses, with one line on
 stderr, `auth: cannot open database state/auth.db: <reason>`, and exit status
 1. The users, sessions, sign-ins in flight and tokens it keeps there outlive
 every restart and deploy. auth is the database's only writer, and the host
-replicates it as the manifest declares (`S1-bootstrap.md`).
+replicates it as the manifest declares (`S01-bootstrap.md`).
 Starting touches no network: the Google settings are read and required at
 startup, but Google itself is reached only when a human signs in
-(`S3-sign-in.md`), so auth serves even while Google is unreachable, and
-`/check` and `/me` keep answering from the local database (`S4-check.md`). In
+(`S03-sign-in.md`), so auth serves even while Google is unreachable, and
+`/check` and `/me` keep answering from the local database (`S04-check.md`). In
 the stories below that run `auth` directly, its environment sets
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
 `WORKSPACE_DOMAIN=michaelgreenly.dev`, and leaves `IKIGENBA_PUBLIC_URL` and
@@ -104,7 +104,7 @@ otherwise the telemetry service is reachable, so every event auth records
 reaches the trail.
 
 - Once auth is serving, as it reports ready, it records `service.started` with
-  `version`, the string `auth --version` prints (`S1-bootstrap.md`); its
+  `version`, the string `auth --version` prints (`S01-bootstrap.md`); its
   request id and user are empty. A start that fails before auth is serving
   records no event.
 - Every request auth serves — its pages, `/check`, `/check/open`, `/me`, the
@@ -141,7 +141,7 @@ order, `time`, `service`, `event`, `request_id`, `user`, and `attrs`. auth
 then goes on serving: telemetry being unreachable never stops auth from
 starting or answering. A request auth answers is not trouble, whatever its
 status. A handled failure — a 500 when auth's own database fails a request
-(`S4-check.md`), a 502 when Google fails a sign-in (`S3-sign-in.md`) — writes
+(`S04-check.md`), a 502 when Google fails a sign-in (`S03-sign-in.md`) — writes
 nothing to stderr; its `request.finished` records the status, and the request
 id ties it to nginx's log of the same request.
 
@@ -246,8 +246,9 @@ Postconditions:
 
 - `state/` exists, created by auth if it was absent.
 - `state/auth.db` now exists, created by this start, and is up to date:
-  `auth db status` prints `0001 applied <time>` and `0002 applied <time>`,
-  each `<time>` being the moment this start applied it (`S1-bootstrap.md`).
+  `auth db status` prints `0001 applied <time>`, `0002 applied <time>` and
+  `0003 applied <time>`, each `<time>` being the moment this start applied it
+  (`S01-bootstrap.md`).
 - The database holds no users, sessions, or tokens.
 - auth is serving on the socket it was passed, and on no other.
 - auth records `service.started` with `version=v<semver>`, the version
@@ -257,10 +258,11 @@ Postconditions:
 ## The host starts auth over a database an earlier auth wrote
 
 An auth from before the migrations kept its database without recording any
-migration. The first start of this auth on it applies both migrations it
-carries: `0001` finds the tables already there and changes nothing, and
-`0002` gives each token that still has a bare id the prefixed one
-(`S5-tokens.md`). Every user, session, sign-in in flight and token the
+migration. The first start of this auth on it applies all three migrations it
+carries: `0001` finds the tables already there and changes nothing, `0002`
+gives each token that still has a bare id the prefixed one, and `0003` makes
+each token a personal token, changing nothing else about it
+(`S05-tokens.md`). Every user, session, sign-in in flight and token the
 database held is still there, and from then on the database is up to date.
 
 Command:
@@ -291,11 +293,13 @@ Preconditions:
 Postconditions:
 
 - auth is serving on the socket it was passed, over the same `state/auth.db`.
-- `auth db status` prints `0001 applied <time>` and `0002 applied <time>`,
-  each `<time>` being the moment this start applied it (`S1-bootstrap.md`).
+- `auth db status` prints `0001 applied <time>`, `0002 applied <time>` and
+  `0003 applied <time>`, each `<time>` being the moment this start applied it
+  (`S01-bootstrap.md`).
 - Every user, session, and token the database held is still there; a token's
-  id now carries the `tok_` prefix, and nothing else about it has changed
-  (`S5-tokens.md`).
+  id now carries the `tok_` prefix and the token is a personal token, and
+  nothing else about it has changed: it keeps its secret, name, times and
+  state, and authenticates everywhere it did (`S05-tokens.md`).
 - auth records `service.started` with `version=v<semver>`, the version
   `auth --version` prints, under no request id and no user.
 - It keeps running until it is signalled.
@@ -428,7 +432,7 @@ refuses to start, naming the version it does not know, and the rollback fails
 loudly instead of answering `/check` from a schema it misreads. There is no way
 back down a migration; restoring the database from before the upgrade is the
 rollback. `auth db status` shows the version as `unknown`
-(`S1-bootstrap.md`). Under systemd the start fails, and `systemctl start`
+(`S01-bootstrap.md`). Under systemd the start fails, and `systemctl start`
 reports it.
 
 Command:
@@ -444,24 +448,24 @@ auth: cannot open database state/auth.db: <reason>
 ```
 
 Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version
-this auth does not carry, zero-padded to four digits: `0003`.
+this auth does not carry, zero-padded to four digits: `0004`.
 
 Preconditions:
 
-- `bin/auth` exists and is on the `PATH` as `auth`, carrying migrations `0001`
-  and `0002` only.
+- `bin/auth` exists and is on the `PATH` as `auth`, carrying migrations `0001`,
+  `0002` and `0003` only.
 - auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
   socket is passed in, as file descriptor 3.
-- `state/auth.db` exists and records versions `0001`, `0002`, and `0003` as
-  applied.
+- `state/auth.db` exists and records versions `0001`, `0002`, `0003`, and
+  `0004` as applied.
 
 Postconditions:
 
-- Nothing has changed: the database still records `0001`, `0002`, and `0003`
-  and holds the users, sessions, and tokens it held. auth served nothing, told
-  systemd nothing, and recorded no event.
+- Nothing has changed: the database still records `0001`, `0002`, `0003`,
+  and `0004` and holds the users, sessions, and tokens it held. auth served
+  nothing, told systemd nothing, and recorded no event.
 
 ## The host stops auth
 
