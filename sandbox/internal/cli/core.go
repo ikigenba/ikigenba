@@ -10,7 +10,7 @@ import (
 )
 
 // Version is the source-declared version reported by sandbox.
-var Version = "v0.1.0"
+var Version = "v0.2.0"
 
 type invocation struct {
 	ctx            context.Context
