@@ -15,7 +15,7 @@ import (
 )
 
 func TestCgroupSetupAndCollection(t *testing.T) {
-	// R-HGKZ-W41S R-HHSW-9VSH R-HJ0S-NNJ6 R-HLGL-F70K
+	// R-HGKZ-W41S R-HHSW-9VSH R-PB39-5WUV R-HLGL-F70K
 	for _, kill := range []bool{false, true} {
 		t.Run(strconv.FormatBool(kill), func(t *testing.T) {
 			d, env := fixture(t, "import os\nprint(os.getpid(), flush=True)\nwhile not os.path.exists('release'): pass\n")
@@ -26,8 +26,15 @@ func TestCgroupSetupAndCollection(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { p.Kill(); wait(t, p) })
+			placed, err := os.ReadFile(filepath.Clean(filepath.Join(group, "cgroup.procs")))
+			if err != nil {
+				t.Fatal(err)
+			}
 			pid := out.next(t)
-			for name, want := range map[string]string{"memory.max": "268435456", "memory.oom.group": "1", "pids.max": "64", "memory.swap.max": "0", "cgroup.procs": pid} {
+			if string(placed) != pid {
+				t.Fatalf("cgroup.procs at Start return = %q, process pid = %q", placed, pid)
+			}
+			for name, want := range map[string]string{"memory.max": "268435456", "memory.oom.group": "1", "pids.max": "64", "memory.swap.max": "0"} {
 				b, err := os.ReadFile(filepath.Clean(filepath.Join(group, name)))
 				if err != nil || string(b) != want {
 					t.Fatalf("%s = %q, %v", name, b, err)
@@ -71,8 +78,8 @@ func TestCgroupSetupAndCollection(t *testing.T) {
 }
 
 func TestCgroupStartRefusalsAndCleanup(t *testing.T) {
-	// R-HK8P-1F9V R-HNWE-6QHY R-HQC6-Y9ZC
-	for _, bad := range []string{"memory.max", "memory.oom.group", "pids.max", "memory.swap.max", "cgroup.procs", "parent", "regular", "memory-zero", "pids-zero", "dir", "env", "context"} {
+	// R-PCB5-JOLK R-PDJ1-XGC9 R-HNWE-6QHY R-HQC6-Y9ZC
+	for _, bad := range []string{"memory.max", "memory.oom.group", "pids.max", "memory.swap.max", "cgroup.procs", "unreadable", "parent", "regular", "memory-zero", "pids-zero", "dir", "env", "context"} {
 		t.Run(bad, func(t *testing.T) {
 			d, env := fixture(t, "while True: pass\n")
 			root := t.TempDir()
@@ -99,6 +106,16 @@ func TestCgroupStartRefusalsAndCleanup(t *testing.T) {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
+			case "unreadable":
+				if err := os.Mkdir(group, 0700); err != nil {
+					t.Fatal(err)
+				}
+				// Restore permissions so the test can remove its own fixture.
+				t.Cleanup(func() { _ = syscall.Chmod(group, 0700) })
+				if err := syscall.Chmod(group, 0333); err != nil {
+					t.Fatal(err)
+				}
+				exists = true
 			default:
 				if err := os.Mkdir(group, 0700); err != nil {
 					t.Fatal(err)
@@ -112,8 +129,21 @@ func TestCgroupStartRefusalsAndCleanup(t *testing.T) {
 			if err == nil || p != nil {
 				t.Fatalf("Start = %v, %v", p, err)
 			}
-			if _, err = os.Stat(spec.Cgroup); !exists && !errors.Is(err, os.ErrNotExist) {
+			st, err := os.Stat(spec.Cgroup)
+			if exists {
+				if err != nil || !st.IsDir() {
+					t.Fatalf("preexisting group removed: %v", err)
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("new group remains: %v", err)
+			}
+			if bad == "unreadable" {
+				for name, want := range map[string]string{"memory.max": "1", "memory.oom.group": "1", "pids.max": "1", "memory.swap.max": "0"} {
+					b, err := os.ReadFile(filepath.Clean(filepath.Join(group, name)))
+					if err != nil || string(b) != want {
+						t.Fatalf("%s = %q, %v", name, b, err)
+					}
+				}
 			}
 			procs, err := os.ReadDir("/proc")
 			if err != nil {

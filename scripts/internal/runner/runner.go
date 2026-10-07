@@ -100,6 +100,7 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 			}
 		}
 	}
+	attrs := &syscall.SysProcAttr{Setpgid: true}
 	if s.Cgroup != "" {
 		for _, v := range []struct{ name, value string }{
 			{"memory.max", strconv.FormatInt(s.MemoryMax, 10)}, {"memory.oom.group", "1"},
@@ -108,6 +109,19 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 			if err := os.WriteFile(filepath.Join(s.Cgroup, v.name), []byte(v.value), 0600); err != nil {
 				return nil, err
 			}
+		}
+		group, err := os.Open(s.Cgroup)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = group.Close() }()
+		var fs syscall.Statfs_t
+		if err := syscall.Fstatfs(int(group.Fd()), &fs); err != nil {
+			return nil, err
+		}
+		if fs.Type == unix.CGROUP2_SUPER_MAGIC {
+			attrs.UseCgroupFD = true
+			attrs.CgroupFD = int(group.Fd())
 		}
 	}
 	in, e := os.Open(os.DevNull)
@@ -144,11 +158,11 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 	files[0] = in.Fd()
 	files[1] = uintptr(out.write)
 	files[2] = uintptr(errout.write)
-	pid, e := syscall.ForkExec(exe, []string{exe, "main.py"}, &syscall.ProcAttr{Dir: s.Dir, Env: s.Env, Files: files, Sys: &syscall.SysProcAttr{Setpgid: true}})
+	pid, e := syscall.ForkExec(exe, []string{exe, "main.py"}, &syscall.ProcAttr{Dir: s.Dir, Env: s.Env, Files: files, Sys: attrs})
 	if e != nil {
 		return nil, e
 	}
-	if s.Cgroup != "" {
+	if s.Cgroup != "" && !attrs.UseCgroupFD {
 		if err := os.WriteFile(filepath.Join(s.Cgroup, "cgroup.procs"), []byte(strconv.Itoa(pid)), 0600); err != nil {
 			_ = syscall.Kill(-pid, syscall.SIGKILL)
 			var status syscall.WaitStatus
