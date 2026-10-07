@@ -222,15 +222,16 @@ func TestMCPDelegation(t *testing.T) {
 	}
 }
 
-// R-D3OB-I5BC R-D4W7-VX21 R-D644-9OSQ R-D7C0-NGJF R-D8JX-18A4 R-D9RT-F00T R-P12O-UL4K R-DC7M-6JI7 R-DDFI-KB8W R-DENE-Y2ZL
+// R-5COF-APL7 R-5DWB-OHBW R-D7C0-NGJF R-5GC4-G0TA R-D9RT-F00T R-P12O-UL4K R-5HK0-TSJZ R-DDFI-KB8W R-DENE-Y2ZL
 func TestSharedFiles(t *testing.T) {
 	h, p, _, _, _ := fixture(t)
-	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
+	secondHandler, secondPages, _, _, _ := fixture(t)
+	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "InterVariable.woff2": "font/woff2", "InterVariable-Italic.woff2": "font/woff2", "JetBrainsMono.woff2": "font/woff2", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8", "favicon.svg": "image/svg+xml"}
 	for name, media := range files {
 		path := page.StaticPrefix + name
 		plain := request(h, "GET", path, "u")
 		etag := plain.Header().Get("ETag")
-		if plain.Code != 200 || plain.Body.Len() == 0 || plain.Header().Get("Content-Type") != media || len(plain.Header().Values("ETag")) != 1 || len(etag) < 2 || etag[0] != '"' || etag[len(etag)-1] != '"' || plain.Header().Get("Cache-Control") != "no-cache" {
+		if plain.Code != 200 || plain.Body.Len() == 0 || plain.Header().Get("Content-Type") != media || len(plain.Header().Values("Content-Type")) != 1 || len(plain.Header().Values("Cache-Control")) != 1 || len(plain.Header().Values("ETag")) != 1 || len(etag) < 2 || etag[0] != '"' || etag[len(etag)-1] != '"' || plain.Header().Get("Cache-Control") != "no-cache" {
 			t.Fatal(name, plain.Code, plain.Header())
 		}
 		for _, b := range []byte(etag[1 : len(etag)-1]) {
@@ -238,12 +239,12 @@ func TestSharedFiles(t *testing.T) {
 				t.Fatal(etag)
 			}
 		}
-		second := request(h, "GET", path, "u")
-		if second.Body.String() != plain.Body.String() || second.Header().Get("ETag") != etag {
+		second := request(secondHandler, "GET", path, "u")
+		if second.Code != 200 || second.Body.String() != plain.Body.String() || second.Header().Get("ETag") != etag {
 			t.Fatal(name)
 		}
 		head := request(h, "HEAD", path, "u")
-		if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Type") != media || head.Header().Get("ETag") != etag || head.Header().Get("Cache-Control") != "no-cache" {
+		if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Type") != media || head.Header().Get("ETag") != etag || head.Header().Get("Cache-Control") != plain.Header().Get("Cache-Control") || len(head.Header().Values("ETag")) != 1 || len(head.Header().Values("Cache-Control")) != 1 {
 			t.Fatal(head)
 		}
 		for _, method := range []string{"GET", "HEAD"} {
@@ -254,7 +255,7 @@ func TestSharedFiles(t *testing.T) {
 				r.Header.Set("If-Modified-Since", "Sun, 06 Nov 2094 08:49:37 GMT")
 				out := httptest.NewRecorder()
 				h.ServeHTTP(out, r)
-				if out.Code != 304 || out.Body.Len() != 0 || out.Header().Get("ETag") != etag {
+				if out.Code != 304 || out.Body.Len() != 0 || out.Header().Get("ETag") != etag || len(out.Header().Values("ETag")) != 1 || out.Header().Get("Cache-Control") != "no-cache" || len(out.Header().Values("Cache-Control")) != 1 {
 					t.Fatal(out)
 				}
 			}
@@ -265,19 +266,55 @@ func TestSharedFiles(t *testing.T) {
 		r.Header.Set("If-Modified-Since", "Sun, 06 Nov 2094 08:49:37 GMT")
 		out := httptest.NewRecorder()
 		h.ServeHTTP(out, r)
-		if out.Code != 200 || out.Body.String() != plain.Body.String() || out.Header().Get("ETag") != etag || out.Header().Get("Content-Type") != media {
+		if out.Code != 200 || out.Body.String() != plain.Body.String() || out.Header().Get("ETag") != etag || out.Header().Get("Content-Type") != media || len(out.Header().Values("Content-Type")) != 1 || len(out.Header().Values("ETag")) != 1 || out.Header().Get("Cache-Control") != "no-cache" || len(out.Header().Values("Cache-Control")) != 1 {
 			t.Fatal(out)
 		}
-		out = request(h, "POST", path, "u")
-		if out.Code != 405 || out.Header().Get("Allow") != "GET, HEAD" {
-			t.Fatal(out)
+		for _, method := range []string{"POST", "PUT", "DELETE"} {
+			for _, tag := range []string{"", "*", etag} {
+				r := httptest.NewRequest(method, path, strings.NewReader("input"))
+				r.Header.Set("X-User-Id", "u")
+				r.Header.Set("If-None-Match", tag)
+				out := httptest.NewRecorder()
+				h.ServeHTTP(out, r)
+				if out.Code != 405 || out.Header().Get("Allow") != "GET, HEAD" || len(out.Header().Values("Allow")) != 1 {
+					t.Fatal(out)
+				}
+			}
 		}
 	}
-	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS"} {
-		for _, method := range []string{"GET", "POST"} {
+	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/FAVICON.SVG"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			out := request(h, method, path, "u")
 			if out.Code != 404 {
 				t.Fatal(path, out)
+			}
+		}
+	}
+	if len(p.calls) != 0 || len(secondPages.calls) != 0 {
+		t.Fatal(p.calls, secondPages.calls)
+	}
+}
+
+// R-D4W7-VX21
+func TestAppkitDelegation(t *testing.T) {
+	h, p, _, _, _ := fixture(t)
+	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt", "favicon.svg", "", "nope.css", "favicon.svg/", "FAVICON.SVG"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
+			for _, headers := range []http.Header{
+				{},
+				{"If-None-Match": {"*"}, "If-Modified-Since": {"Sun, 06 Nov 2094 08:49:37 GMT"}},
+				{"Range": {"bytes=0-7"}, "If-Range": {`"other"`}},
+				{"If-Match": {`"other"`}, "If-Unmodified-Since": {"Sun, 06 Nov 1994 08:49:37 GMT"}},
+			} {
+				r := httptest.NewRequest(method, page.StaticPrefix+name+"?q=x", strings.NewReader("body"))
+				r.Header = headers.Clone()
+				r.Header.Set("X-User-Id", "u")
+				actual, expected := httptest.NewRecorder(), httptest.NewRecorder()
+				page.Static().ServeHTTP(expected, r.Clone(r.Context()))
+				h.ServeHTTP(actual, r)
+				if actual.Code != expected.Code || actual.Body.String() != expected.Body.String() || !reflect.DeepEqual(actual.Header(), expected.Header()) {
+					t.Fatalf("%s %s: routed response differs from page.Static", method, r.URL.Path)
+				}
 			}
 		}
 	}

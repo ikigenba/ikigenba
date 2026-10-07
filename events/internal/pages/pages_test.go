@@ -3,6 +3,7 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"html"
 	"html/template"
 	"net/http"
@@ -95,21 +96,109 @@ func contents(t *testing.T, body, tag, attribute string) string {
 }
 func sharedAssets(t *testing.T, body string, launcher bool) {
 	t.Helper()
-	for _, match := range regexp.MustCompile(`<(link|script|img)\b[^>]*>`).FindAllString(body, -1) {
-		for _, attr := range regexp.MustCompile(`(?:href|src)="([^"]*)"`).FindAllStringSubmatch(match, -1) {
-			if !strings.HasPrefix(html.UnescapeString(attr[1]), "/_appkit/") {
-				t.Fatalf("external asset: %s", match)
+	counts := map[string]int{}
+	attributes := regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9_-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?`)
+	for _, tag := range regexp.MustCompile(`<(link|meta|script|img)\b([^>]*)>`).FindAllStringSubmatch(body, -1) {
+		attrs := map[string]string{}
+		for _, a := range attributes.FindAllStringSubmatch(tag[2], -1) {
+			attrs[a[1]] = html.UnescapeString(a[2] + a[3] + a[4])
+		}
+		switch tag[1] {
+		case "link":
+			if attrs["rel"] == "stylesheet" {
+				counts["stylesheet"]++
+				if attrs["href"] != "/_appkit/theme.css" {
+					t.Fatal("stylesheet", tag[0])
+				}
+			}
+			if attrs["rel"] == "icon" {
+				counts["icon"]++
+				if attrs["href"] != "/_appkit/favicon.svg" || attrs["type"] != "image/svg+xml" {
+					t.Fatal("favicon", tag[0])
+				}
+			}
+		case "meta":
+			if attrs["name"] == "viewport" {
+				counts["viewport"]++
+				if attrs["content"] != "width=device-width, initial-scale=1" {
+					t.Fatal("viewport", tag[0])
+				}
+			}
+		case "script":
+			switch attrs["src"] {
+			case "/_appkit/feedback.js":
+				counts["feedback"]++
+				if _, ok := attrs["defer"]; !ok {
+					t.Fatal("feedback without defer", tag[0])
+				}
+			case "/_appkit/launcher.js":
+				counts["launcher"]++
+			default:
+				t.Fatal("unexpected script", tag[0])
+			}
+		}
+		assetAttr := "src"
+		if tag[1] == "link" {
+			assetAttr = "href"
+		}
+		if tag[1] != "meta" {
+			if value, ok := attrs[assetAttr]; ok && !strings.HasPrefix(value, "/_appkit/") {
+				t.Fatal("external asset", tag[0])
 			}
 		}
 	}
-	want := 1
+	wantLauncher := 0
 	if launcher {
-		want = 2
+		wantLauncher = 1
 	}
-	if strings.Count(body, "<script") != want || strings.Count(body, `src="/_appkit/feedback.js" defer`) != 1 || strings.Count(body, `src="/_appkit/launcher.js"`) != want-1 || strings.Count(body, `rel="stylesheet"`) != 1 || strings.Count(body, `href="/_appkit/theme.css"`) != 1 || strings.Count(body, `name="viewport" content="width=device-width, initial-scale=1"`) != 1 {
-		t.Fatal("shared asset hooks", body)
+	for key, want := range map[string]int{"stylesheet": 1, "icon": 1, "viewport": 1, "feedback": 1, "launcher": wantLauncher} {
+		if counts[key] != want {
+			t.Fatalf("%s count: got %d, want %d", key, counts[key], want)
+		}
 	}
 }
+
+// R-5IRX-7KAO
+func TestSharedPageAssets(t *testing.T) {
+	d, st, _ := fixture(t)
+	path := filepath.Join(t.TempDir(), "services.json")
+	p := pages.New(pages.Config{ServicesPath: path, Store: st, Version: "test"})
+	// Launcher icon markup is verbatim and excluded from the page's asset contract.
+	icon := `<svg><link rel="icon" href="https://icon.test/favicon.svg"><link rel="stylesheet" href="https://icon.test/style.css"><meta name="viewport" content="icon"><script src="https://icon.test/script.js"></script><img src="https://icon.test/image.svg"></svg>`
+	encodedIcon, err := json.Marshal(icon)
+	must(t, err)
+	for _, services := range []struct {
+		name, data string
+		launcher   bool
+	}{
+		{"empty", `{"services":[]}`, false},
+		{"no-icons", `{"services":[{"name":"auth","url":"https://auth.test","description":"auth","socket":"","mcp":false,"enabled":true}]}`, false},
+		{"icons", `{"services":[{"name":"events","url":"https://events.test","description":"events","socket":"","mcp":true,"enabled":true,"icon":` + string(encodedIcon) + `},{"name":"other","url":"https://other.test","description":"other","socket":"","mcp":false,"enabled":false,"icon":` + string(encodedIcon) + `}]}`, true},
+	} {
+		t.Run(services.name, func(t *testing.T) {
+			must(t, os.WriteFile(path, []byte(services.data), 0600))
+			for _, failing := range []bool{false, true} {
+				d.SetFailing(failing)
+				for _, method := range []string{"GET", "POST", "DELETE"} {
+					for _, route := range []struct {
+						name    string
+						handler func(http.ResponseWriter, *http.Request)
+					}{{"landing", p.Landing}, {"about", p.About}, {"notfound", p.NotFound}} {
+						t.Run(route.name+"/"+strconv.FormatBool(failing)+"/"+method, func(t *testing.T) {
+							out := invoke(route.handler, method)
+							body := out.Body.String()
+							if services.launcher && out.Code == 200 && !strings.Contains(body, icon) {
+								t.Fatal("launcher icon fixture was not inserted")
+							}
+							sharedAssets(t, strings.ReplaceAll(body, icon, ""), services.launcher && out.Code == 200)
+						})
+					}
+				}
+			}
+		})
+	}
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
@@ -191,7 +280,7 @@ func TestExactTemplateAnswers(t *testing.T) {
 	check(t, invoke(nilStore.NotFound, "POST"), 404, expected(t, "notfound", notice))
 }
 
-// R-QS59-7TZB R-MZMS-U7R3 R-RCVJ-PXL4 R-MVZ3-OWJ0 R-RGJ8-V8T7 R-RIZ1-MSAL R-RK6Y-0K1A R-N0UP-7ZHS
+// R-QS59-7TZB R-MZMS-U7R3 R-RCVJ-PXL4 R-MVZ3-OWJ0 R-RGJ8-V8T7 R-RIZ1-MSAL R-RK6Y-0K1A
 func TestVisibleHooks(t *testing.T) {
 	d, st, _ := fixture(t)
 	p := pages.New(pages.Config{Store: st, Version: "test-build"})
@@ -345,9 +434,6 @@ func TestVisibleHooks(t *testing.T) {
 			t.Fatal("h1 count", b)
 		}
 		sharedAssets(t, b, false)
-		if strings.Count(b, `rel="stylesheet"`) != 1 || strings.Count(b, `href="/_appkit/theme.css"`) != 1 || strings.Count(b, `name="viewport" content="width=device-width, initial-scale=1"`) != 1 || strings.Count(b, `src="/_appkit/feedback.js" defer`) != 1 || strings.Count(b, "<script") != 1 {
-			t.Fatal(b)
-		}
 	}
 }
 
