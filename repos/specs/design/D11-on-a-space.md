@@ -17,7 +17,7 @@ repos on a space is the same binary serving on the same terms as under a test: a
 | Outcome | Owner |
 |---|---|
 | landing page on a space: title, headings, tools, guidance naming `credential.https://*.sbx.ikigenba.dev.helper`, about link, footer version | `D04-pages`; guidance text and scope `D07-tools`; footer version `D01-layout-and-run-seam` |
-| style, fonts, launcher script and button-feedback script from repos' own `/_appkit/` | `D04-pages` over appkit's `page` |
+| style, fonts, launcher script, button-feedback script and favicon from repos' own `/_appkit/` | `D04-pages` over appkit's `page` |
 | banner's profile link and sign-out form at `auth.<space>` | appkit's `page` banner from the services file, wired by `D04-pages` |
 | launcher button, repos' entry with its icon | `D04-pages` (the button); opsctl's `S9-services.md` (the icon in the entry); the list a browser opens is appkit's script and a space-level check |
 | `request.started`/`request.finished` under nginx's id and the gate's user | `D03-serve`; the id and user are set by opsctl's nginx (`S5-nginx.md`) |
