@@ -37,10 +37,6 @@ In a sandbox sites is the same binary in the same arrangement: the sandbox build
 
 One outcome of the stories is not met, by decision: the `tools/list` entry of `apex` carries no `outputSchema` (U1). `S05-mcp.md` lists `apex` with an output schema describing `apex` as either null or a site object. appkit's schema rule has no nullable form, so a typed `apex` could never answer `{"apex":null}`, which every apex story requires; `apex` is therefore registered with `mcp.AddRawTool`, which writes no `outputSchema`, and its handler builds the result by hand (`D09-tools`, prose and R-X6XI-XMN1). Every result `apex` gives is the one the stories show; only the listing differs. Keeping the results right is worth more than the schema line; the departure ends when appkit's schema rule gains a nullable form.
 
-## The font scenarios of S04
-
-`S04-assets.md` still describes the fonts as appkit served them before it named them by a hash of their bytes: it says sites serves nine files, has a browser fetch `/_appkit/<font>.woff2` for `<font>` `InterVariable`, `InterVariable-Italic` or `JetBrainsMono` and get 200, and lets every served file revalidate with `no-cache`. The appkit release sites requires serves the fonts only under hashed names, with `Cache-Control: public, max-age=31536000, immutable`, and answers the plain names 404, so `D06-pages` follows appkit (R-8BXC-HCUN, R-8J8Q-RZAT, R-8WNM-ZGGG) and those scenarios now disagree with the design. Whether the stories are rewritten to the hashed names is an open question for the stories' owner; the preload itself is not user-visible and no story names it.
-
 ## What only a space can show
 
 These outcomes are space-level checks: no test of sites can make them, and they are verified by running the stories on a space or in a sandbox. They are recorded here, not required.
