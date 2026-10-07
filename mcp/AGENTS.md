@@ -20,7 +20,7 @@ mcp holds no stylesheet, fonts or licences; appkit's `page` package serves them.
 
 - Go 1.26 or later.
 - A C compiler cgo can use, such as `gcc`: `go test -race` needs it (gate 4). The release build is cgo-free (gate 3).
-- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit `v0.10.0`, whose `identity` package exports `Optional`, the middleware that lets a guest through with an empty caller (see Adopting appkit).
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit `v0.14.0`, whose `identity` package exports `Optional`, the middleware that lets a guest through with an empty caller (see Adopting appkit).
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
 - GNU `make`, for the developer targets; no gate runs through it.
@@ -29,7 +29,7 @@ Prefer the standard library, then a widely used public module; adding one needs 
 
 ### Adopting appkit
 
-appkit is required only at a published release, `appkit/<version>` on origin (see the root `AGENTS.md`); the build run sets it with `go get github.com/ikigenba/ikigenba/appkit@v0.10.0`.
+appkit is required only at a published release, `appkit/<version>` on origin (see the root `AGENTS.md`); the build run sets it with `go get github.com/ikigenba/ikigenba/appkit@v0.14.0`.
 
 ## Test files
 

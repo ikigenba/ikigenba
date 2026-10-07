@@ -1,8 +1,2 @@
-github.com/ikigenba/ikigenba/appkit v0.7.1 h1:FgPWnRC4GDKtHkMpVfoXfnSU/wR36b6Uka5bPSDxyJs=
-github.com/ikigenba/ikigenba/appkit v0.7.1/go.mod h1:ECOkZ27X6KwHYO3+FkTqH33qOQ1ABUcbWSC7Uafuqc4=
-github.com/ikigenba/ikigenba/appkit v0.8.0 h1:GLNcPrcLud2Srzj2lOpO+dyKf2mv1qRs/BbrRnm/SEM=
-github.com/ikigenba/ikigenba/appkit v0.8.0/go.mod h1:ECOkZ27X6KwHYO3+FkTqH33qOQ1ABUcbWSC7Uafuqc4=
-github.com/ikigenba/ikigenba/appkit v0.9.0 h1:0by3oOqj9VDMnAq8OxXx9OHbQ7DdJpcDsKun2413s80=
-github.com/ikigenba/ikigenba/appkit v0.9.0/go.mod h1:ECOkZ27X6KwHYO3+FkTqH33qOQ1ABUcbWSC7Uafuqc4=
-github.com/ikigenba/ikigenba/appkit v0.10.0 h1:XKWua7bLC4GuiWNG7wFYu6xUlxEcZxtEW4Ccj/U60+w=
-github.com/ikigenba/ikigenba/appkit v0.10.0/go.mod h1:ECOkZ27X6KwHYO3+FkTqH33qOQ1ABUcbWSC7Uafuqc4=
+github.com/ikigenba/ikigenba/appkit v0.14.0 h1:aYlR1bHbS1522uIX9DB+A0XAxKMsGUoqHjdkCkUxp7Y=
+github.com/ikigenba/ikigenba/appkit v0.14.0/go.mod h1:mtzrkbEtQsW51jjUBavA/X78DKF/UcEYw+gFqSpwXBA=
