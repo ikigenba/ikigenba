@@ -10,7 +10,7 @@ import (
 
 func TestStaticEntityTagsAreQuotedSHA256Digests(t *testing.T) {
 	// R-JEGL-VMJJ
-	for _, name := range []string{"theme.css", "launcher.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
+	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "favicon.svg", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
 		content, err := assetsFS.ReadFile("assets/" + name)
 		if err != nil {
 			t.Fatal(err)

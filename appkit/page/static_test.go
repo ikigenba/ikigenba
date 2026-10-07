@@ -17,6 +17,7 @@ var staticFiles = []struct {
 	{"theme.css", "text/css; charset=utf-8"},
 	{"launcher.js", "text/javascript; charset=utf-8"},
 	{"feedback.js", "text/javascript; charset=utf-8"},
+	{"favicon.svg", "image/svg+xml"},
 	{"InterVariable.woff2", "font/woff2"},
 	{"InterVariable-Italic.woff2", "font/woff2"},
 	{"JetBrainsMono.woff2", "font/woff2"},
@@ -81,7 +82,7 @@ func TestStaticFactory(t *testing.T) {
 }
 
 func TestStaticGETBytes(t *testing.T) {
-	// R-KHOJ-N7A3
+	// R-41SF-T97T
 	handler := Static()
 	for _, file := range staticFiles {
 		t.Run(file.name, func(t *testing.T) {
@@ -105,7 +106,7 @@ func TestStaticGETBytes(t *testing.T) {
 }
 
 func TestStaticContentTypes(t *testing.T) {
-	// R-KK4C-EQRH
+	// R-46O1-CC6L
 	handler := Static()
 	for _, file := range staticFiles {
 		etag := staticResponse(handler, http.MethodGet, StaticPrefix+file.name).Header().Get("ETag")

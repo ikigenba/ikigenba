@@ -11,7 +11,7 @@ import (
 // StaticPrefix is the URL prefix for the shared browser assets.
 const StaticPrefix = "/_appkit/"
 
-// Static returns a handler for the shared stylesheet, script, fonts, and licences.
+// Static returns a handler for the shared stylesheet, scripts, favicon, fonts, and licences.
 func Static() http.Handler {
 	return staticHandler{files: assetsFS}
 }
@@ -102,6 +102,8 @@ func staticAsset(path string) (name, contentType string) {
 		return "launcher.js", "text/javascript; charset=utf-8"
 	case StaticPrefix + "feedback.js":
 		return "feedback.js", "text/javascript; charset=utf-8"
+	case StaticPrefix + "favicon.svg":
+		return "favicon.svg", "image/svg+xml"
 	case StaticPrefix + "InterVariable.woff2":
 		return "InterVariable.woff2", "font/woff2"
 	case StaticPrefix + "InterVariable-Italic.woff2":
