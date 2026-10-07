@@ -48,10 +48,12 @@ A page fixes its visible text and the markup the stylesheet keys on: an
 element or class is quoted where the stylesheet hooks in, the visible text is
 stated as fact in the story's status line, and no body is quoted whole. Every
 HTML page auth serves is titled `auth`, links `/_appkit/theme.css` as its
-stylesheet, loads `/_appkit/feedback.js`, and declares the phone-width
-viewport, so a phone shows it at the phone's own width rather than as a
-shrunken desktop page. The stylesheet, the fonts it loads, the launcher's
-script, and the button feedback script are the platform's shared files,
+stylesheet, links `/_appkit/favicon.svg` as its icon, loads
+`/_appkit/feedback.js`, and declares the phone-width viewport, so a phone
+shows it at the phone's own width rather than as a shrunken desktop page. The
+favicon is the platform's one icon, which a browser shows in the page's tab.
+The stylesheet, the fonts it loads, the launcher's script, the button
+feedback script, and the favicon are the platform's shared files,
 served by auth under `/_appkit/` (`S8-assets.md`); a page makes no request to
 any other host. The button feedback script, which every page loads with or
 without a banner or a launcher, makes an enabled button, or a link styled as

@@ -1,15 +1,16 @@
 # Stories — assets
 
 The files that give auth's pages the platform's visual style, its service
-launcher and its button feedback, and how auth serves them. They are the
-platform's shared web files, the same for every platform app, and auth does
-not author them. auth serves exactly eight of them under `/_appkit/`, each
+launcher, its button feedback and its favicon, and how auth serves them. They
+are the platform's shared web files, the same for every platform app, and auth
+does not author them. auth serves exactly nine of them under `/_appkit/`, each
 with a fixed `Content-Type`: `theme.css`, the platform style's stylesheet, as
 `text/css; charset=utf-8`, whose `@font-face` rules name the font files
 beside it; `launcher.js`, the service launcher's script, and `feedback.js`,
-the button feedback script, both as `text/javascript; charset=utf-8`; the
-Inter and JetBrains Mono fonts, `InterVariable.woff2`,
-`InterVariable-Italic.woff2`, and `JetBrainsMono.woff2`, as `font/woff2`; and
+the button feedback script, both as `text/javascript; charset=utf-8`;
+`favicon.svg`, the platform's one favicon, as `image/svg+xml`; the Inter and
+JetBrains Mono fonts, `InterVariable.woff2`, `InterVariable-Italic.woff2`, and
+`JetBrainsMono.woff2`, as `font/woff2`; and
 two licences as `text/plain; charset=utf-8`: `OFL.txt`, the fonts' licence, and
 `TABLER-LICENSE.txt`, the licence of the Tabler icons the platform style
 draws. They are inside the binary: auth reads nothing from disk to answer for
@@ -172,6 +173,39 @@ Cache-Control: no-cache
 ```
 
 Status 200. The body is the button feedback script. `Cache-Control` appears
+once.
+
+Preconditions:
+
+- auth is serving.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A browser fetches the favicon
+
+Every HTML page auth sends links the platform's favicon at
+`/_appkit/favicon.svg` as its icon (`S3-sign-in.md`, `S5-tokens.md`), with or
+without a banner or a launcher, so a browser drawing the sign-in page or the
+profile asks auth for it to show in the page's tab.
+
+Request:
+
+```
+GET /_appkit/favicon.svg HTTP/1.1
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: image/svg+xml
+ETag: "<etag>"
+Cache-Control: no-cache
+```
+
+Status 200. The body is the favicon, an SVG image. `Cache-Control` appears
 once.
 
 Preconditions:
@@ -358,7 +392,7 @@ Postconditions:
 
 ## A caller asks for an asset that does not exist
 
-The files under `/_appkit/` are the eight above and nothing more, so the
+The files under `/_appkit/` are the nine above and nothing more, so the
 prefix itself, any other name, a served name with more after it, and a served
 name in other letter case all name nothing, whatever the method: a `POST` to
 a missing file's path is a 404 like a `GET`, never a 405.
@@ -418,7 +452,7 @@ Postconditions:
 ## A caller sends an asset a method it does not take
 
 A served file is read-only: auth serves it and nothing changes it. This holds
-only for the eight served paths; any method on a missing file's path is a
+only for the nine served paths; any method on a missing file's path is a
 404. `Allow` names the two methods a served file takes.
 
 Request:

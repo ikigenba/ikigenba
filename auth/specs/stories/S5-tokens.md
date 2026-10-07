@@ -36,9 +36,9 @@ a 403, or a 500 because auth's database failed (`S4-check.md`) — records no
 token event.
 
 Every HTML page these stories fix is drawn with the banner (S3): its
-`<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet, loads
-`/_appkit/feedback.js`, so that in a browser an enabled button visibly reacts
-as the user presses it (S3), and declares the phone-width viewport, it opens
+`<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet, links
+`/_appkit/favicon.svg` as its icon, loads `/_appkit/feedback.js`, so that in
+a browser an enabled button visibly reacts as the user presses it (S3), and declares the phone-width viewport, it opens
 with the banner — when auth's services file lists services with an icon, the
 launcher (S3), whose button comes first, immediately before the mark; then
 the mark, the profile icon titled with the user's email as a link to `/`, and

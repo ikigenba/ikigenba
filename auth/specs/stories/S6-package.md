@@ -5,13 +5,13 @@ commit that an `auth/v<semver>` tag points at, and `opsctl install` unpacks it
 into `/opt/auth/`. Its contents are the whole of what auth ships: the static
 `linux/amd64` binary, the manifest, and `share/icon.svg`, nothing else.
 `share/icon.svg` is auth's icon, an SVG image a human authors from the Tabler
-outline icon `fingerprint`; its presence is what lists auth in the platform's
+outline icon `user-circle`; its presence is what lists auth in the platform's
 service launcher on a space (`S7-on-a-space.md`), and no story fixes its
 content further than that. auth carries its pages, the platform's shared
 files, and its database schema inside the binary — its HTML is embedded, the
-stylesheet, fonts, licences, launcher script, and button feedback script it
-serves at `/_appkit/` need no file beside it (`S8-assets.md`), and the
-migrations it applies to its database are in the binary too —
+stylesheet, fonts, licences, launcher script, button feedback script, and
+favicon it serves at `/_appkit/` need no file beside it (`S8-assets.md`), and
+the migrations it applies to its database are in the binary too —
 so it keeps nothing under `etc/` but the manifest and nothing under `share/`
 but the icon, and no other member exists. No `assets/` directory and no font
 file ships beside the binary. The version is in the file's name and in the
