@@ -989,6 +989,63 @@ func feedbackHead(t *testing.T, body string) {
 		t.Fatal("feedback script lacks a bare defer attribute")
 	}
 }
+
+func faviconHead(t *testing.T, body string) {
+	t.Helper()
+	var icons []element
+	for _, e := range elements(body, "link") {
+		if hasAttr(e, "rel", "icon") {
+			icons = append(icons, e)
+		}
+	}
+	requireEqual(t, len(icons), 1)
+	bodies := elements(body, "body")
+	if len(bodies) == 0 || icons[0].end > bodies[0].start {
+		t.Fatal("favicon link not before first body")
+	}
+	attr(t, icons[0], "href", "/_appkit/favicon.svg")
+	attr(t, icons[0], "type", "image/svg+xml")
+}
+
+// R-A7LC-2TU3
+func TestPlainPageFavicon(t *testing.T) {
+	f := setup(t)
+	sc := f.create(t, "owner", "plain-script")
+	u := f.add(t, sc, 501, store.StatusRunning, "", 0, 0)
+	for _, b := range []page.Banner{fixedBanner, {Service: "runner-Blue.7", Version: "build+candidate.8"}} {
+		f.cfg.Banner = func(page.User) page.Banner { return b }
+		f.handler = identity.Require(pages.Handler(f.cfg))
+		for _, path := range []string{"/", "/about", "/plain-script/", "/plain-script/runs/" + u.ID + "/"} {
+			t.Run(b.Service+path, func(t *testing.T) {
+				w := f.request(context.Background(), "GET", path, "owner")
+				requireEqual(t, w.Code, http.StatusOK)
+				faviconHead(t, written(t, w.Body.String(), b))
+			})
+		}
+	}
+}
+
+// R-AA14-UDBH
+func TestNoticeFavicon(t *testing.T) {
+	set, err := pages.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range []page.Banner{
+		fixedBanner,
+		{Service: "runner-Blue.7", Version: "build+candidate.8"},
+		{Service: "alternate", Version: "snapshot-42"},
+	} {
+		for _, status := range []int{200, 404, 503, 599} {
+			t.Run(b.Service+"/"+fmt.Sprint(status), func(t *testing.T) {
+				w := httptest.NewRecorder()
+				set.Write(w, httptest.NewRequest("GET", "/unrelated", nil), status, "notfound", pages.NoticeData{Banner: b})
+				faviconHead(t, w.Body.String())
+			})
+		}
+	}
+}
+
 func launcherScripts(t *testing.T, body string) {
 	t.Helper()
 	launchers := 0
