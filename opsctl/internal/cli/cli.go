@@ -64,7 +64,7 @@ Run 'opsctl <command> --help' for details on a command.
 `
 
 // version is the opsctl semantic version, fixed in source.
-const version = "v0.13.0"
+const version = "v0.14.0"
 
 // Deps carries what a command cannot be deterministic about.
 type Deps struct {
