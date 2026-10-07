@@ -6,7 +6,7 @@
    Palette: ink — the interface is greyscale; black is the accent, blue is for
    links and focus only. Light grounds. */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400..700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400..700&display=fallback");
 
 /* ---------------------------------------------------------------- tokens */
 :root {

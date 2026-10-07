@@ -46,6 +46,11 @@ design/
   weight and italic on screen is the real cut. The design faces render every
   page; system stacks exist only as fallbacks. Google Fonts is the only
   external request.
+- Fonts load without a flash. Every `@font-face` uses `font-display:
+  fallback`. In production a service serves each font file at a
+  content-addressed URL (the file's hash in its name), cached `public,
+  max-age=31536000, immutable`, and every page preloads upright Inter; italic
+  and JetBrains Mono are not preloaded.
 - Light grounds. Colors are custom properties on `:root`.
 - Every page fits a 375px-wide screen; a wide table scrolls inside its own
   container.
