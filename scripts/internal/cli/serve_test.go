@@ -38,7 +38,7 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
-// R-S5NJ-XROQ R-96QM-GJY0 R-AF9N-8W16 R-AGHJ-MNRV R-BWX8-2SNQ
+// R-S5NJ-XROQ R-L0GY-Y8DJ R-AF9N-8W16 R-AGHJ-MNRV R-BWX8-2SNQ
 func TestStartupSettingsComeFirst(t *testing.T) {
 	for _, key := range []string{"DRAIN_SECONDS", "TREE_MAX_BYTES", "OUTPUT_MAX_BYTES", "OPERATION_SECONDS", "SCRIPT_SECONDS", "RUN_KEEP_DAYS", "RUN_KEEP_COUNT"} {
 		t.Run(key, func(t *testing.T) {
@@ -228,7 +228,7 @@ func TestStateFailures(t *testing.T) {
 	}
 }
 
-// R-ZV2S-V0UF R-ZYQI-0C2I R-B63F-NUCG R-WNGS-KWCF R-1NPH-4V58 R-BPLT-S67K R-K58H-2BO4 R-JWRY-JRPM
+// R-ZV2S-V0UF R-LJZD-2K8N R-B63F-NUCG R-WNGS-KWCF R-1NPH-4V58 R-L2WR-PRUX R-K58H-2BO4 R-LQ2U-ZEY4
 func TestReadyInitialStateAndLifecycle(t *testing.T) {
 	for _, servicesPath := range []string{"", "absent", "malformed"} {
 		t.Run(servicesPath, func(t *testing.T) {
@@ -296,7 +296,7 @@ func TestReadyInitialStateAndLifecycle(t *testing.T) {
 			if start.Service != "scripts" || start.RequestID != "" || start.User != "" || !reflect.DeepEqual(start.Attrs, telemetry.Attrs{"version": cli.Version}) {
 				t.Fatalf("start %v", start)
 			}
-			allowed := " DRAIN_SECONDS REPOS_DIR TREE_MAX_BYTES OUTPUT_MAX_BYTES OPERATION_SECONDS SCRIPT_SECONDS RUN_KEEP_DAYS RUN_KEEP_COUNT IKIGENBA_SERVICES LISTEN_PID LISTEN_FDS NOTIFY_SOCKET PATH "
+			allowed := " DRAIN_SECONDS REPOS_DIR TREE_MAX_BYTES OUTPUT_MAX_BYTES OPERATION_SECONDS SCRIPT_SECONDS RUN_MEMORY_MAX_BYTES RUNS_MEMORY_MAX_BYTES RUNS_CPU_PERCENT RUN_PIDS_MAX RUN_MAX_ACTIVE RUN_MAX_QUEUED RUN_KEEP_DAYS RUN_KEEP_COUNT IKIGENBA_SERVICES LISTEN_PID LISTEN_FDS NOTIFY_SOCKET PATH "
 			for key := range seen {
 				if !strings.Contains(allowed, " "+key+" ") {
 					t.Errorf("looked up %s", key)
@@ -370,7 +370,7 @@ func TestCatalogPathsSurviveRestart(t *testing.T) {
 	third.stop()
 }
 
-// R-09PL-G9QR R-B7BC-1M35
+// R-LNN2-7VGQ R-B7BC-1M35
 func TestCancellationAndNotificationFailure(t *testing.T) {
 	h := newHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -413,7 +413,7 @@ func seedCatalog(t *testing.T, h *runHarness) (store.Script, []store.Run) {
 	return sc, records
 }
 
-// R-AYS1-D7WA R-AZZX-QZMZ R-079S-OQ9D R-1K1R-ZJX5
+// R-AYS1-D7WA R-LL79-GBZC R-LMF5-U3Q1 R-LOUY-LN7F
 func TestRecoveryAndPruningBeforeReady(t *testing.T) {
 	for _, cancelStart := range []bool{false, true} {
 		t.Run(strconv.FormatBool(cancelStart), func(t *testing.T) {
@@ -520,7 +520,7 @@ func TestAcceptFailuresAndPanicAvoidGlobalLogger(t *testing.T) {
 	}
 }
 
-// R-1ZWG-YKK6 R-22C9-Q41K R-2C3G-S9Z4 R-2EJ9-JTGI
+// R-1ZWG-YKK6 R-22C9-Q41K R-LRAR-D6OT R-2EJ9-JTGI
 func TestQuietServeAndLifecycleOrdering(t *testing.T) {
 	h := newHarness(t)
 	h.repository("raise SystemExit(3)\n")
@@ -617,7 +617,7 @@ func TestUndeliveredEventsUseWholeDiagnostics(t *testing.T) {
 
 var _ io.Writer = (*lockedBuffer)(nil)
 
-// R-9AEB-LV63 R-ASOJ-GD6T R-S4FN-JZY1
+// R-L1OV-C048 R-ASOJ-GD6T R-S4FN-JZY1
 func TestGitEnvironmentAndAllProductsRemainUnderDir(t *testing.T) {
 	h := newHarness(t)
 	h.repository("import os\nwith open(os.path.join(os.environ['IKIGENBA_OUT_DIR'], 'answer.txt'),'w') as f: f.write('answer')\n")
@@ -636,7 +636,7 @@ func TestGitEnvironmentAndAllProductsRemainUnderDir(t *testing.T) {
 		return orig()
 	}
 	h.start()
-	before := outsideSnapshot(t, h.root, h.p.Dir)
+	before := outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)
 	sc := h.create("alpha")
 	r := h.call("run", map[string]any{"name": "alpha"})
 	h.event("run.finished")
@@ -649,7 +649,7 @@ func TestGitEnvironmentAndAllProductsRemainUnderDir(t *testing.T) {
 	if envCalls == 0 {
 		t.Fatal("git did not consume injected environment")
 	}
-	if !reflect.DeepEqual(before, outsideSnapshot(t, h.root, h.p.Dir)) {
+	if !reflect.DeepEqual(before, outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)) {
 		t.Fatal("changed files outside process directory")
 	}
 	b, e := os.ReadFile(filepath.Join(h.p.Dir, "state", "runs", sc["id"].(string), r["id"].(string), "out", "answer.txt"))
@@ -658,19 +658,23 @@ func TestGitEnvironmentAndAllProductsRemainUnderDir(t *testing.T) {
 		t.Fatalf("output %q", b)
 	}
 }
-func outsideSnapshot(t *testing.T, root, excluded string) map[string]string {
+func outsideSnapshot(t *testing.T, root string, excluded ...string) map[string]string {
 	t.Helper()
 	scoped, e := os.OpenRoot(root)
 	mustCLI(t, e)
 	defer func() { _ = scoped.Close() }()
 	result := map[string]string{}
-	excludedRel, e := filepath.Rel(root, excluded)
-	mustCLI(t, e)
+	excludedPaths := map[string]bool{}
+	for _, path := range excluded {
+		rel, err := filepath.Rel(root, path)
+		mustCLI(t, err)
+		excludedPaths[rel] = true
+	}
 	mustCLI(t, fs.WalkDir(scoped.FS(), ".", func(p string, d fs.DirEntry, e error) error {
 		if e != nil {
 			return e
 		}
-		if p == excludedRel {
+		if excludedPaths[p] {
 			return filepath.SkipDir
 		}
 		if d.IsDir() {
@@ -687,7 +691,7 @@ func outsideSnapshot(t *testing.T, root, excluded string) map[string]string {
 	return result
 }
 
-// R-B17U-4RDO
+// R-LTQK-4Q67
 func TestRecoveryCatalogFailureRefusesStartup(t *testing.T) {
 	h := newHarness(t)
 	seedCatalog(t, h)

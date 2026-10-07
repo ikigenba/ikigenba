@@ -8,19 +8,22 @@ import (
 
 // Settings holds startup values in their declared units.
 type Settings struct {
-	DrainSeconds, TreeMaxBytes, OutputMaxBytes, OperationSeconds, ScriptSeconds, RunKeepDays, RunKeepCount int64
-	ReposDir                                                                                               string
+	DrainSeconds, TreeMaxBytes, OutputMaxBytes, OperationSeconds, ScriptSeconds, RunMemoryMaxBytes, RunsMemoryMaxBytes, RunsCPUPercent, RunPidsMax, RunMaxActive, RunMaxQueued, RunKeepDays, RunKeepCount int64
+	ReposDir                                                                                                                                                                                              string
 }
 
 // Defaults returns the values used for unset or empty variables.
 func Defaults() Settings {
-	return Settings{5, 268435456, 1048576, 600, 600, 15, 10, "../repos/state/repos"}
+	return Settings{5, 268435456, 1048576, 600, 600, 268435456, 536870912, 100, 64, 2, 10, 15, 10, "../repos/state/repos"}
 }
 
 // Error identifies the first unacceptable startup value.
 type Error struct{ Name, Value, Unit string }
 
 func (e *Error) Error() string {
+	if e.Unit == "percentage" {
+		return e.Name + " is '" + e.Value + "', not a positive whole percentage"
+	}
 	return e.Name + " is '" + e.Value + "', not a positive whole number of " + e.Unit
 }
 
@@ -36,6 +39,12 @@ func Read(lookup func(key string) (string, bool)) (Settings, error) {
 		{"OUTPUT_MAX_BYTES", "bytes", &s.OutputMaxBytes},
 		{"OPERATION_SECONDS", "seconds", &s.OperationSeconds},
 		{"SCRIPT_SECONDS", "seconds", &s.ScriptSeconds},
+		{"RUN_MEMORY_MAX_BYTES", "bytes", &s.RunMemoryMaxBytes},
+		{"RUNS_MEMORY_MAX_BYTES", "bytes", &s.RunsMemoryMaxBytes},
+		{"RUNS_CPU_PERCENT", "percentage", &s.RunsCPUPercent},
+		{"RUN_PIDS_MAX", "processes", &s.RunPidsMax},
+		{"RUN_MAX_ACTIVE", "runs", &s.RunMaxActive},
+		{"RUN_MAX_QUEUED", "runs", &s.RunMaxQueued},
 		{"RUN_KEEP_DAYS", "days", &s.RunKeepDays},
 		{"RUN_KEEP_COUNT", "runs", &s.RunKeepCount},
 	}

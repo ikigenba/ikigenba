@@ -62,7 +62,7 @@ func fileSetup(t *testing.T) *fileFixture {
 		t.Fatal(e)
 	}
 	dir := t.TempDir()
-	core := runs.New(runs.Config{Runs: dir})
+	core := runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Runs: dir})
 	f := &fileFixture{t: t, pages: set, banner: page.Banner{Service: "distinct-files-banner", Version: "fixture", Email: "banner@example.test", ProfileURL: "/fixture-profile", LogoutURL: "/fixture-logout"}, dir: dir, st: st, db: d, core: core, run: r, folder: core.Folder(r)}
 	// R-ZJ5Q-8VX6 R-ZKDM-MNNV R-ZMTF-E759
 	f.handler = identity.Require(web.Files(web.FilesConfig{func(u page.User) page.Banner {
@@ -532,5 +532,33 @@ func TestFilesCatalogRefusalsUnknownRun(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestQueuedFiles(t *testing.T) {
+	// R-SZZC-R09X
+	f := fileSetup(t)
+	sc, e := f.st.Find(context.Background(), "alice", "report")
+	if e != nil {
+		t.Fatal(e)
+	}
+	r, e := f.st.AddRun(context.Background(), store.Run{ID: "run_4444444444444444", Script: sc.ID, SHA: strings.Repeat("a", 40), Ref: "main", User: "alice", Trigger: store.TriggerManual, Status: store.StatusQueued, Started: time.Unix(100, 0)})
+	if e != nil {
+		t.Fatal(e)
+	}
+	f.run = r
+	f.folder = f.core.Folder(r)
+	fileWrite(t, filepath.Join(f.folder, runs.InputFile), []byte(`{"value":1}`))
+	for _, method := range []string{"GET", "HEAD"} {
+		for _, stream := range []string{runs.StdoutFile, runs.StderrFile} {
+			w := f.request(context.Background(), method, fileURL(f, stream), "alice")
+			if w.Code != 404 || (method == "HEAD" && w.Body.Len() != 0) {
+				t.Fatal(w.Code, w.Body.String())
+			}
+		}
+	}
+	w := f.request(context.Background(), "GET", fileURL(f, runs.InputFile), "alice")
+	if w.Code != 200 || w.Body.String() != `{"value":1}` {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }

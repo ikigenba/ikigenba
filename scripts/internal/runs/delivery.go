@@ -29,6 +29,33 @@ func (c *Core) Deliver(ctx context.Context, d events.Delivery) events.Outcome {
 	if len(subs) == 0 {
 		return events.Skip()
 	}
+	// Snapshot all admission decisions before creating any subscriber's folder.
+	needed := make([]store.Script, 0, len(subs))
+	for _, sc := range subs {
+		done, e := c.cfg.Store.Delivered(ctx, sc.ID, d.Event.ID)
+		if e != nil {
+			return events.Fail(store.Unreachable)
+		}
+		if !done {
+			needed = append(needed, sc)
+		}
+	}
+	if len(needed) == 0 {
+		return events.OK()
+	}
+	c.mu.Lock()
+	unavailable := c.cfg.Unavailable != ""
+	freeActive := max(int64(0), c.cfg.MaxActive-int64(len(c.active))-c.starting)
+	freeQueue := max(int64(0), c.cfg.MaxQueued-int64(len(c.queue)))
+	full := int64(len(needed)) > freeActive+freeQueue
+	c.mu.Unlock()
+	if unavailable {
+		return events.Fail(c.unavailable().Error())
+	}
+	if full {
+		return events.Fail(c.queueFull().Error())
+	}
+	subs = needed
 	input, err := d.Event.MarshalJSON()
 	if err != nil {
 		return events.Fail(store.Unreachable)
@@ -37,7 +64,7 @@ func (c *Core) Deliver(ctx context.Context, d events.Delivery) events.Outcome {
 	results := make(chan error, len(subs))
 	for _, sc := range subs {
 		go func() {
-			_, err := c.Run(ctx, sc, Request{Input: input, Caller: identity.Caller{UserID: sc.Owner, RequestID: caller.RequestID}, Cause: events.Cause{ID: d.Event.ID, Depth: d.Event.Depth}})
+			_, err := c.run(ctx, sc, Request{Input: input, Caller: identity.Caller{UserID: sc.Owner, RequestID: caller.RequestID}, Cause: events.Cause{ID: d.Event.ID, Depth: d.Event.Depth}}, true)
 			results <- err
 		}()
 	}

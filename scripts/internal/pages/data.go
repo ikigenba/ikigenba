@@ -26,6 +26,8 @@ func repository(ctx context.Context, cfg Config, sc store.Script) Repo {
 func datetime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 func status(u store.Run) (word, kind string) {
 	switch u.Status {
+	case store.StatusQueued:
+		return "queued", "info"
 	case store.StatusRunning:
 		return "running", "info"
 	case store.StatusExited:
@@ -43,7 +45,7 @@ func status(u store.Run) (word, kind string) {
 	}
 }
 func duration(u store.Run) string {
-	if u.Status == store.StatusRunning || u.Status == store.StatusFailed {
+	if u.Status == store.StatusQueued || u.Status == store.StatusRunning || u.Status == store.StatusFailed {
 		return ""
 	}
 	d := int64(u.Finished.Sub(u.Started) / time.Second)
@@ -89,6 +91,8 @@ func failure(ctx context.Context, cfg Config, sc store.Script, u store.Run) *Fai
 		return &Failure{"The tree is too large", "The commit's files add up to more than " + strconv.FormatInt(cfg.TreeMaxBytes, 10) + " bytes. The script was not started."}
 	case store.ReasonGitFailed:
 		return &Failure{"git failed", "git could not read the repository " + repo + ". The script was not started."}
+	case store.ReasonQueueAbandoned:
+		return &Failure{"The run never left the queue", "The run was waiting for a slot when scripts stopped. The script was not started."}
 	case store.ReasonTimedOut:
 		return &Failure{"git took too long", "git took longer than " + strconv.FormatInt(cfg.OperationSeconds, 10) + " seconds. The script was not started."}
 	default:
@@ -98,7 +102,13 @@ func failure(ctx context.Context, cfg Config, sc store.Script, u store.Run) *Fai
 func runData(ctx context.Context, cfg Config, sc store.Script, u store.Run, b page.Banner) RunData {
 	word, kind := status(u)
 	out, errout := cfg.Runs.Sizes(u)
-	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: word, Kind: kind, Running: u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
+	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: word, Kind: kind, Running: u.Status == store.StatusQueued || u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
+	switch u.Status {
+	case store.StatusQueued:
+		c.Notice = "Queued"
+	case store.StatusRunning:
+		c.Notice = "Running"
+	}
 	if !c.Running {
 		c.Finished = u.Finished.UTC().Format("2006-01-02 15:04:05 UTC")
 		c.FinishedAt = datetime(u.Finished)

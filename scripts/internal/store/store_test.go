@@ -158,7 +158,7 @@ type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("random unavailable") }
 func TestWordsAndNames(t *testing.T) {
-	// R-KJY1-TEST R-KL5Y-76JI R-R66G-0772 R-XX43-QPZC R-RDHU-ATN8
+	// R-8X3J-K44N R-8YBF-XVVC R-R66G-0772 R-XX43-QPZC R-RDHU-ATN8
 	equal(t, []string{store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed}, []string{"running", "exited", "killed", "timed_out", "failed"})
 	equal(t, []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed}, []string{"repository_missing", "commit_missing", "too_large", "git_failed", "timed_out", "start_failed"})
 	equal(t, store.TriggerManual, "manual")
@@ -188,7 +188,7 @@ func TestWordsAndNames(t *testing.T) {
 }
 
 func TestScriptsAndPersistence(t *testing.T) {
-	// R-R2IQ-UVYZ R-KIQ5-FN24 R-KOTN-CHRL R-R9U5-5IF5 R-XZJW-I9GQ R-Y0RS-W17F R-LD7M-ZWLH R-LFNF-RG2V R-LGVC-57TK R-LI38-IZK9 R-LJB4-WRAY R-LKJ1-AJ1N R-Y1ZP-9SY4 R-LMYU-22J1
+	// R-R2IQ-UVYZ R-RMLU-90BA R-KOTN-CHRL R-R9U5-5IF5 R-XZJW-I9GQ R-Y0RS-W17F R-LD7M-ZWLH R-LFNF-RG2V R-LGVC-57TK R-LI38-IZK9 R-LJB4-WRAY R-LKJ1-AJ1N R-Y1ZP-9SY4 R-LMYU-22J1
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	z := create(t, s, "alice", "zulu")
@@ -274,7 +274,7 @@ func TestScriptsAndPersistence(t *testing.T) {
 	create(t, s, "bob", "alpha")
 }
 func TestCreateFailuresAndCollisions(t *testing.T) {
-	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-S0NX-KGQF
+	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-9BQC-5D0Z
 	random := bytes.NewReader(bytes.Repeat([]byte{1, 2, 3, 4, 5, 6, 7, 8}, 9))
 	s := configured(t, "", store.Config{Rand: random, Now: func() time.Time { return stamp }})
 	defer func() { must(t, closeStore(s)) }()
@@ -392,7 +392,7 @@ func TestRunTransitionsAndReads(t *testing.T) {
 }
 
 func TestRunValidation(t *testing.T) {
-	// R-LPEM-TM0F R-8T1L-I4LR
+	// R-LPEM-TM0F R-99AJ-DTJL
 	s := open(t, "")
 	sc := create(t, s, "alice", "alpha")
 	base := run(sc, 10)
@@ -474,7 +474,7 @@ func TestRunValidation(t *testing.T) {
 	equal(t, content(t, s), before)
 }
 func TestRetention(t *testing.T) {
-	// R-M0DQ-9JOO R-M1LM-NBFD
+	// R-9AIF-RLAA R-M1LM-NBFD
 	s := open(t, "")
 	a := create(t, s, "alice", "alpha")
 	b := create(t, s, "bob", "beta")
@@ -654,7 +654,7 @@ func TestConcurrentWrites(t *testing.T) {
 	equal(t, rr, []store.Run{})
 }
 func TestClosedAndCancelled(t *testing.T) {
-	// R-Y6VA-SVWW R-Y837-6NNL R-S0NX-KGQF
+	// R-Y6VA-SVWW R-Y837-6NNL R-9BQC-5D0Z
 	path := filepath.Join(t.TempDir(), "scripts.db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")
@@ -708,7 +708,7 @@ func TestClosedAndCancelled(t *testing.T) {
 }
 
 func TestRetentionBeyondDurationRange(t *testing.T) {
-	// R-M0DQ-9JOO
+	// R-9AIF-RLAA
 	s := open(t, "")
 	sc := create(t, s, "alice", "alpha")
 	old := run(sc, 1)

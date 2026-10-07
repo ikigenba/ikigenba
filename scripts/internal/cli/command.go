@@ -59,6 +59,12 @@ TREE_MAX_BYTES = "268435456"
 OUTPUT_MAX_BYTES = "1048576"
 OPERATION_SECONDS = "600"
 SCRIPT_SECONDS = "600"
+RUN_MEMORY_MAX_BYTES = "268435456"
+RUNS_MEMORY_MAX_BYTES = "536870912"
+RUNS_CPU_PERCENT = "100"
+RUN_PIDS_MAX = "64"
+RUN_MAX_ACTIVE = "2"
+RUN_MAX_QUEUED = "10"
 RUN_KEEP_DAYS = "15"
 RUN_KEEP_COUNT = "10"
 
@@ -67,9 +73,10 @@ engine = "sqlite"
 path = "state/scripts.db"
 
 [resources]
-cpu_weight = 50
-memory_max = "1G"
-io_weight = 50
+slice = "apps"
+memory_max = "896M"
+go_memory_limit = "128M"
+delegate = true
 `
 
 func command(args []string, dir string, stdout, stderr io.Writer) (bool, int) {

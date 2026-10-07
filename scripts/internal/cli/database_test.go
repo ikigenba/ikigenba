@@ -86,7 +86,7 @@ func TestDatabaseStatusResolvesEmptyDirAgainstWorkingDirectory(t *testing.T) {
 	}
 }
 
-// R-GUQD-MYEF R-ZV2S-V0UF R-ZYQI-0C2I
+// R-3MMB-1HNE R-ZV2S-V0UF R-LJZD-2K8N
 func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 	for _, kind := range []string{"absent", "empty-state", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
@@ -233,7 +233,7 @@ func TestEarlyStartupFailuresLeaveRunRecordsUnchanged(t *testing.T) {
 	}
 }
 
-// R-079S-OQ9D R-09PL-G9QR R-1K1R-ZJX5
+// R-LMF5-U3Q1 R-LNN2-7VGQ R-LOUY-LN7F
 func TestCancellationAfterCatalogOpenSettlesAndFlushesRecovery(t *testing.T) {
 	h := newHarness(t)
 	path := filepath.Join(h.p.Dir, "state", "scripts.db")
@@ -243,8 +243,12 @@ func TestCancellationAfterCatalogOpenSettlesAndFlushesRecovery(t *testing.T) {
 	script, err := catalog.Create(context.Background(), store.Draft{Owner: "owner", Name: "recover", Repo: "rep_0102030405060708", Ref: "main"})
 	mustCLI(t, err)
 	ids := []string{"run_0102030405060708", "run_1112131415161718"}
-	for _, id := range ids {
-		_, err = catalog.AddRun(context.Background(), store.Run{ID: id, Script: script.ID, SHA: strings.Repeat("a", 40), Ref: "main", User: "owner", RequestID: "earlier", Trigger: store.TriggerManual, Status: store.StatusRunning, Started: h.now.Add(-time.Hour)})
+	for i, id := range ids {
+		status := store.StatusRunning
+		if i == 1 {
+			status = store.StatusQueued
+		}
+		_, err = catalog.AddRun(context.Background(), store.Run{ID: id, Script: script.ID, SHA: strings.Repeat("a", 40), Ref: "main", User: "owner", RequestID: "earlier", Trigger: store.TriggerManual, Status: status, Started: h.now.Add(-time.Hour)})
 		mustCLI(t, err)
 	}
 	mustCLI(t, handle.Close())
@@ -266,7 +270,11 @@ func TestCancellationAfterCatalogOpenSettlesAndFlushesRecovery(t *testing.T) {
 	remaining := map[string]bool{ids[0]: true, ids[1]: true}
 	for _, event := range events {
 		id, ok := event.Attrs["run"].(string)
-		if !ok || !remaining[id] || event.Name != "run.finished" || event.Attrs["status"] != "killed" {
+		status := store.StatusKilled
+		if id == ids[1] {
+			status = store.StatusFailed
+		}
+		if !ok || !remaining[id] || event.Name != "run.finished" || event.Attrs["status"] != status || id == ids[1] && event.Attrs["reason"] != store.ReasonQueueAbandoned {
 			t.Fatalf("recovery event %v", event)
 		}
 		delete(remaining, id)
@@ -278,7 +286,11 @@ func TestCancellationAfterCatalogOpenSettlesAndFlushesRecovery(t *testing.T) {
 	for _, id := range ids {
 		record, err := catalog.RunByID(context.Background(), id)
 		mustCLI(t, err)
-		if record.Status != store.StatusKilled {
+		status := store.StatusKilled
+		if id == ids[1] {
+			status = store.StatusFailed
+		}
+		if record.Status != status || id == ids[1] && record.Reason != store.ReasonQueueAbandoned {
 			t.Fatalf("unsettled recovery %v", record)
 		}
 	}

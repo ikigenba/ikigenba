@@ -201,6 +201,10 @@ func Run(ctx context.Context, p Process) int {
 	if e = os.MkdirAll(runDir, 0700); e != nil {
 		return fail(ExitServerFailed, "cannot create directory state/runs: "+e.Error())
 	}
+	cgroup, unavailable := prepareCgroup(p, cfg)
+	if unavailable != "" {
+		_, _ = stderr.Write([]byte("scripts: runs are unavailable: " + unavailable + "\n"))
+	}
 	sink := p.Sink
 	if sink == nil {
 		sink = telemetry.NewSocketSink()
@@ -214,7 +218,7 @@ func Run(ctx context.Context, p Process) int {
 	}
 	src := source.New(source.Config{Repos: repos, Git: g, Limits: lim})
 	services, _ := p.LookupEnv("IKIGENBA_SERVICES")
-	core := runs.New(runs.Config{Store: catalog, Source: src, Writer: writer, Runs: runDir, Path: path, Services: services, ScriptSeconds: cfg.ScriptSeconds, OutputMaxBytes: cfg.OutputMaxBytes, KeepDays: cfg.RunKeepDays, KeepCount: cfg.RunKeepCount, Now: p.Now, ScriptAfter: p.ScriptAfter, Rand: random})
+	core := runs.New(runs.Config{Cgroup: cgroup, Unavailable: unavailable, RunMemoryMaxBytes: cfg.RunMemoryMaxBytes, RunPidsMax: cfg.RunPidsMax, MaxActive: cfg.RunMaxActive, MaxQueued: cfg.RunMaxQueued, Store: catalog, Source: src, Writer: writer, Runs: runDir, Path: path, Services: services, ScriptSeconds: cfg.ScriptSeconds, OutputMaxBytes: cfg.OutputMaxBytes, KeepDays: cfg.RunKeepDays, KeepCount: cfg.RunKeepCount, Now: p.Now, ScriptAfter: p.ScriptAfter, Rand: random})
 	abort := func() {
 		stderr.Lock()
 		stderr.quietStop = true

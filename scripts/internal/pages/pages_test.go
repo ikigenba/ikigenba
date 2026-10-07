@@ -76,7 +76,7 @@ func requireAbsent(t *testing.T, body string, values ...string) {
 	}
 }
 
-// R-VKHH-HQ5X R-VMXA-99NB R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-71OM-92EA R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7 R-WCJ6-AG7W R-WDR2-O7YL R-WEYZ-1ZPA R-WHER-TJ6O
+// R-VKHH-HQ5X R-VMXA-99NB R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-7TOP-X110 R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7 R-WCJ6-AG7W R-WDR2-O7YL R-WEYZ-1ZPA R-WHER-TJ6O
 func TestTemplateSetAndData(t *testing.T) {
 	const serviceName = pages.ServiceName
 	const description = pages.Description
@@ -177,7 +177,7 @@ func setup(t *testing.T) *fixture {
 	}
 	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: fixedBanner.Version, Sink: &telemetry.Capture{}, Stderr: io.Discard, Now: func() time.Time { return fixedTime }, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 1024)), Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() { w.Shutdown(context.Background(), "done") })
-	core := runs.New(runs.Config{Store: s, Source: src, Writer: w, Runs: filepath.Join(dir, "runs"), ScriptSeconds: 1, OutputMaxBytes: 1, KeepDays: 30, KeepCount: 10, Now: func() time.Time { return fixedTime }, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Rand: bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8})})
+	core := runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Store: s, Source: src, Writer: w, Runs: filepath.Join(dir, "runs"), ScriptSeconds: 1, OutputMaxBytes: 1, KeepDays: 30, KeepCount: 10, Now: func() time.Time { return fixedTime }, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Rand: bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8})})
 	set, e := pages.Load()
 	if e != nil {
 		t.Fatal(e)
@@ -225,6 +225,9 @@ func (f *fixture) request(ctx context.Context, method, path, owner string) *http
 func (f *fixture) add(t *testing.T, sc store.Script, i int, status, reason string, seconds int64, exit int) store.Run {
 	t.Helper()
 	u := store.Run{ID: fmt.Sprintf("run_%016x", i), Script: sc.ID, SHA: strings.Repeat("a", 40), Ref: "main", User: sc.Owner, RequestID: strings.Repeat("b", 32), Trigger: store.TriggerManual, Status: store.StatusRunning, Started: fixedTime.Add(time.Duration(i) * time.Second)}
+	if status == store.StatusQueued {
+		u.Status = status
+	}
 	if status == store.StatusFailed {
 		u.Status = status
 		u.Reason = reason
@@ -235,7 +238,7 @@ func (f *fixture) add(t *testing.T, sc store.Script, i int, status, reason strin
 	if e != nil {
 		t.Fatal(e)
 	}
-	if status != store.StatusRunning && status != store.StatusFailed {
+	if status != store.StatusQueued && status != store.StatusRunning && status != store.StatusFailed {
 		u, e = f.cfg.Store.FinishRun(context.Background(), u.ID, store.Ending{Status: status, ExitCode: exit, Finished: u.Started.Add(time.Duration(seconds) * time.Second), StdoutBytes: 1229, StderrBytes: 69, Truncated: true})
 		if e != nil {
 			t.Fatal(e)
@@ -415,7 +418,7 @@ func TestPageRoutesAndData(t *testing.T) {
 	requireEqual(t, w.Body.String(), rendered(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
 }
 
-// R-WMAD-CM5G R-WNI9-QDW5 R-WOQ6-45MU R-WSDV-9GUX R-744F-0LVO R-WUTO-10CB R-X3CY-PEJ6
+// R-SSNY-GDTR R-SXJJ-ZGSJ R-WOQ6-45MU R-STVU-U5KG R-7UWM-ASRP R-WUTO-10CB R-X3CY-PEJ6
 func TestRunPageData(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -434,6 +437,7 @@ func TestRunPageData(t *testing.T) {
 		{store.StatusFailed, store.ReasonTooLarge, "failed", "err", "The tree is too large", "The commit's files add up to more than 1229 bytes. The script was not started.", 0, 0},
 		{store.StatusFailed, store.ReasonGitFailed, "failed", "err", "git failed", "git could not read the repository Repository. The script was not started.", 0, 0},
 		{store.StatusFailed, store.ReasonTimedOut, "failed", "err", "git took too long", "git took longer than 12 seconds. The script was not started.", 0, 0},
+		{store.StatusFailed, store.ReasonQueueAbandoned, "failed", "err", "The run never left the queue", "The run was waiting for a slot when scripts stopped. The script was not started.", 0, 0},
 		{store.StatusFailed, store.ReasonStartFailed, "failed", "err", "The script could not start", "The script's process could not be launched. The script was not started.", 0, 0},
 	}
 	for i, c := range cases {
@@ -467,21 +471,27 @@ func TestRunPageData(t *testing.T) {
 		b.ProfileURL = "https://auth.sbx.example/"
 		b.LogoutURL = "https://auth.sbx.example/logout"
 		dur := ""
-		if c.status != store.StatusRunning && c.status != store.StatusFailed {
+		if c.status != store.StatusQueued && c.status != store.StatusRunning && c.status != store.StatusFailed {
 			dur = fmt.Sprintf("%ds", c.seconds)
 			if c.seconds >= 60 {
 				dur = fmt.Sprintf("%dm %ds", c.seconds/60, c.seconds%60)
 			}
 		}
 		outSize, errSize := "1.2 kB", "69 B"
-		if c.status == store.StatusRunning {
+		if c.status == store.StatusQueued || c.status == store.StatusRunning {
 			errSize = "0 B"
 		}
 		if c.status == store.StatusFailed {
 			outSize = "0 B"
 			errSize = "0 B"
 		}
-		card := pages.RunCard{ID: u.ID, URL: path, Status: c.word, Kind: c.kind, Running: c.status == store.StatusRunning, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: dur, Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: outSize, StderrSize: errSize, Truncated: u.Truncated}
+		card := pages.RunCard{ID: u.ID, URL: path, Status: c.word, Kind: c.kind, Running: c.status == store.StatusRunning || c.status == store.StatusQueued, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: dur, Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: outSize, StderrSize: errSize, Truncated: u.Truncated}
+		if card.Running {
+			card.Notice = "Running"
+			if c.status == store.StatusQueued {
+				card.Notice = "Queued"
+			}
+		}
 		if !card.Running {
 			card.Finished = u.Finished.UTC().Format("2006-01-02 15:04:05 UTC")
 			card.FinishedAt = u.Finished.UTC().Format(time.RFC3339)
@@ -1069,7 +1079,7 @@ func breadcrumbs(t *testing.T, body string, wants []pages.ScriptLink) {
 	}
 }
 
-// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-76K7-S5D2 R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
+// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-SYRG-D8J8 R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
 func TestCatalogScriptAboutHooks(t *testing.T) {
 	f := setup(t)
 	b := fixedBanner
@@ -1118,7 +1128,7 @@ func TestCatalogScriptAboutHooks(t *testing.T) {
 	dts := elements(tools.body, "dt")
 	dds := elements(tools.body, "dd")
 	names := []string{"list", "show", "create", "update", "delete", "subscribe", "unsubscribe", "run", "runs", "result", "cancel"}
-	desc := []string{"The scripts you own, by name.", "One of your scripts, with its repository, its ref and its last run.", "Create a script from one of your repositories and a ref.", "Change the ref one of your scripts runs from.", "Delete one of your scripts and every run it has.", "Run one of your scripts each time an event of a given name is delivered.", "Stop running one of your scripts on an event it is subscribed to.", "Start a run of one of your scripts and return its id, status and commit.", "The runs of one of your scripts, newest first.", "One run whole: its details, its output so far, and the files it wrote.", "End one of your runs that is still running."}
+	desc := []string{"The scripts you own, by name.", "One of your scripts, with its repository, its ref and its last run.", "Create a script from one of your repositories and a ref.", "Change the ref one of your scripts runs from.", "Delete one of your scripts and every run it has.", "Run one of your scripts each time an event of a given name is delivered.", "Stop running one of your scripts on an event it is subscribed to.", "Start a run of one of your scripts and return its id, status and commit.", "The runs of one of your scripts, newest first.", "One run whole: its details, its output so far, and the files it wrote.", "End one of your runs that is still queued or running."}
 	requireEqual(t, len(dts), 11)
 	requireEqual(t, len(dds), 11)
 	for i, n := range names {
@@ -1407,7 +1417,7 @@ func verifyScriptCard(t *testing.T, body string, sc store.Script, n int, repo, r
 	holding(t, normalise(runsSection.body), "Runs", "Newest first. A run still running shows its progress when the page is reloaded.")
 }
 
-// R-YPW5-2E4I R-YR41-G5V7 R-YSBX-TXLW R-YTJU-7PCL R-XVTU-RJ72 R-XX1R-5AXR R-O0JI-4BYG R-YYFF-QSBD
+// R-YPW5-2E4I R-7W4I-OKIE R-YSBX-TXLW R-YTJU-7PCL R-XVTU-RJ72 R-XX1R-5AXR R-O0JI-4BYG R-YYFF-QSBD
 func verifyRunHooks(t *testing.T, body string, d pages.RunData) {
 	t.Helper()
 	body = written(t, body, d.Banner)
@@ -1436,7 +1446,8 @@ func verifyRunHooks(t *testing.T, body string, d pages.RunData) {
 		running := typedID(t, body, "div", "running")
 		requireEqual(t, running.tag, "div")
 		attr(t, running, "data-kind", "info")
-		holding(t, normalise(running.body), "Running", "The page does not stream. Reload it to see more output.")
+		requireEqual(t, normalise(typedID(t, running.body, "strong", "notice").body), d.Run.Notice)
+		holding(t, normalise(running.body), d.Run.Notice, "The page does not stream. Reload it to see more output.")
 		reload := typedID(t, body, "a", "reload")
 		requireEqual(t, reload.tag, "a")
 		attr(t, reload, "href", c.URL)
@@ -1753,7 +1764,7 @@ func TestNoticeAndEmptyRunFiles(t *testing.T) {
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
 	path := "/alpha/runs/" + u.ID + "/"
-	d := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: pages.RunCard{ID: u.ID, URL: path, Status: "running", Kind: "info", Running: true, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: "0 B", StderrSize: "0 B"}}
+	d := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: pages.RunCard{ID: u.ID, URL: path, Status: "running", Kind: "info", Running: true, Notice: "Running", Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: "0 B", StderrSize: "0 B"}}
 	w = f.request(context.Background(), "GET", path, "owner")
 	requireEqual(t, w.Body.String(), rendered(t, "run", d))
 	verifyRunHooks(t, w.Body.String(), d)
@@ -1988,7 +1999,7 @@ func holding(t *testing.T, s string, values ...string) {
 
 // The anonymous conversions prove the complete ordered data contracts by use;
 // adding, removing, reordering or changing a field makes these fail to compile.
-// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-71OM-92EA R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-W8VH-54ZT
+// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-7TOP-X110 R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-W8VH-54ZT
 func TestDataContracts(t *testing.T) {
 	_ = struct {
 		Banner  page.Banner
@@ -2024,12 +2035,12 @@ func TestDataContracts(t *testing.T) {
 	}(pages.RunData{})
 	_ = struct{ Name, URL string }(pages.ScriptLink{})
 	_ = struct {
-		ID, URL, Status, Kind                                                                                                  string
-		Running                                                                                                                bool
-		Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
-		Truncated                                                                                                              bool
-		Failure                                                                                                                *pages.Failure
-		FilesGone                                                                                                              bool
+		ID, URL, Status, Kind                                                                                                          string
+		Running                                                                                                                        bool
+		Notice, Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
+		Truncated                                                                                                                      bool
+		Failure                                                                                                                        *pages.Failure
+		FilesGone                                                                                                                      bool
 	}(pages.RunCard{})
 	_ = struct{ Title, Reason string }(pages.Failure{})
 	_ = struct{ Size, Text, URL string }(pages.FileText{})
@@ -2089,7 +2100,7 @@ func TestBannerCallCounts(t *testing.T) {
 	f.mu.Unlock()
 }
 
-// R-WNI9-QDW5 R-WMAD-CM5G R-744F-0LVO
+// R-SXJJ-ZGSJ R-SSNY-GDTR R-7UWM-ASRP
 func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -2183,7 +2194,7 @@ func TestScriptSubscriptions(t *testing.T) {
 	check([]string{"repo.pushed"})
 }
 
-// R-71OM-92EA R-744F-0LVO R-7900-JOUG
+// R-7TOP-X110 R-7UWM-ASRP R-7900-JOUG
 func TestRunEventOrigin(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -2207,5 +2218,33 @@ func TestRunEventOrigin(t *testing.T) {
 			requireEqual(t, normalise(code.body), u.Event)
 			requireAbsent(t, visibleText(w.Body.String()), "Started by the run tool.")
 		}
+	}
+}
+
+// R-SSNY-GDTR R-SXJJ-ZGSJ R-7UWM-ASRP R-7W4I-OKIE
+func TestQueuedPage(t *testing.T) {
+	f := setup(t)
+	sc := f.create(t, "owner", "alpha")
+	u := f.add(t, sc, 90, store.StatusQueued, "", 0, 0)
+	path := "/alpha/runs/" + u.ID + "/"
+	writeFile(t, filepath.Join(f.cfg.Runs.Folder(u), runs.InputFile), "{}")
+	w := f.request(context.Background(), "GET", path, "owner")
+	requireEqual(t, w.Code, 200)
+	body := w.Body.String()
+	requireEqual(t, normalise(typedID(t, body, "strong", "notice").body), "Queued")
+	running := typedID(t, body, "div", "running")
+	attr(t, running, "data-kind", "info")
+	holding(t, normalise(running.body), "Queued", "The page does not stream. Reload it to see more output.")
+	attr(t, typedID(t, body, "a", "reload"), "href", path)
+	requireEqual(t, countID(body, "stdout"), 0)
+	requireEqual(t, countID(body, "stderr"), 0)
+	requireEqual(t, normalise(typedID(t, body, "p", "no-files").body), "No files.")
+	facts := typedID(t, body, "dl", "run")
+	requireAbsent(t, normalise(facts.body), "Finished", "Duration")
+	requireContains(t, normalise(facts.body), "stdout 0 B · stderr 0 B")
+	requireEqual(t, normalise(typedID(t, body, "p", "headline").body), "queued started "+u.Started.UTC().Format("2006-01-02 15:04:05 UTC"))
+	for _, path := range []string{"/", "/alpha/"} {
+		body = f.request(context.Background(), "GET", path, "owner").Body.String()
+		some(t, body, "span", func(e element) bool { return hasAttr(e, "data-kind", "info") && normalise(e.body) == "queued" })
 	}
 }

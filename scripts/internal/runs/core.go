@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"math"
@@ -39,16 +40,23 @@ var ErrDraining = errors.New("scripts is draining")
 // ErrStarting reports another call preparing the same event and script.
 var ErrStarting = errors.New("a run for this event is starting")
 
+// ErrQueueFull refuses admission when the queue is full.
+var ErrQueueFull = errors.New("run queue full")
+
+// ErrNoCgroup refuses runs when control group preparation failed.
+var ErrNoCgroup = errors.New("runs unavailable")
+
 // Config supplies the catalog, process environment, bounds and runtime hooks.
 type Config struct {
-	Store                                              *store.Store
-	Source                                             *source.Source
-	Writer                                             *telemetry.Writer
-	Runs, Path, Services                               string
-	ScriptSeconds, OutputMaxBytes, KeepDays, KeepCount int64
-	Now                                                func() time.Time
-	ScriptAfter                                        func(time.Duration) <-chan time.Time
-	Rand                                               io.Reader
+	Store                                               *store.Store
+	Source                                              *source.Source
+	Writer                                              *telemetry.Writer
+	Runs, Path, Services, Cgroup, Unavailable           string
+	ScriptSeconds, OutputMaxBytes, KeepDays, KeepCount  int64
+	RunMemoryMaxBytes, RunPidsMax, MaxActive, MaxQueued int64
+	Now                                                 func() time.Time
+	ScriptAfter                                         func(time.Duration) <-chan time.Time
+	Rand                                                io.Reader
 }
 
 // Request gives one run its ref, input and caller.
@@ -63,6 +71,11 @@ type pending struct {
 	script string
 	event  string
 	cancel context.CancelCauseFunc
+}
+type queued struct {
+	record  store.Run
+	started time.Time
+	depth   int
 }
 type active struct {
 	mu       sync.Mutex
@@ -87,6 +100,8 @@ type Core struct {
 	drainContext     context.Context
 	pending          map[*pending]struct{}
 	active           map[string]*active
+	queue            []*queued
+	starting         int64
 	deleting         map[string]bool
 }
 
@@ -187,11 +202,34 @@ func seconds(n int64) time.Duration {
 }
 
 // Run prepares and starts a run, returning before its process exits.
-func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (result store.Run, failure error) {
+func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (store.Run, error) {
+	return c.run(ctx, sc, req, false)
+}
+
+func (c *Core) unavailable() error {
+	return &refusal{"runs are unavailable: " + c.cfg.Unavailable, ErrNoCgroup}
+}
+func (c *Core) queueFull() error {
+	return &refusal{fmt.Sprintf("the run queue is full (%d queued); try again later", c.cfg.MaxQueued), ErrQueueFull}
+}
+
+type refusal struct {
+	text  string
+	cause error
+}
+
+func (e *refusal) Error() string { return e.text }
+func (e *refusal) Unwrap() error { return e.cause }
+
+func (c *Core) run(ctx context.Context, sc store.Script, req Request, delivery bool) (result store.Run, failure error) {
 	c.mu.Lock()
 	if c.draining {
 		c.mu.Unlock()
 		return store.Run{}, ErrDraining
+	}
+	if c.cfg.Unavailable != "" {
+		c.mu.Unlock()
+		return store.Run{}, c.unavailable()
 	}
 	if c.deleting[sc.ID] {
 		c.mu.Unlock()
@@ -217,6 +255,10 @@ func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (result st
 				return store.Run{}, ErrStarting
 			}
 		}
+	}
+	if !delivery && int64(len(c.queue)) >= c.cfg.MaxQueued {
+		c.mu.Unlock()
+		return store.Run{}, c.queueFull()
 	}
 	callCtx, cancel := context.WithCancelCause(ctx)
 	p := &pending{script: sc.ID, event: req.Cause.ID, cancel: cancel}
@@ -297,37 +339,50 @@ func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (result st
 		if e = os.Mkdir(filepath.Join(dir, OutDir), 0700); e != nil {
 			return store.Run{}, e
 		}
-		out, e = newHead(filepath.Join(dir, StdoutFile), c.cfg.OutputMaxBytes)
-		if e != nil {
-			return store.Run{}, e
-		}
-		errOut, e = newHead(filepath.Join(dir, StderrFile), c.cfg.OutputMaxBytes)
-		if e != nil {
-			return store.Run{}, e
-		}
-		abs, e := filepath.Abs(dir)
-		if e != nil {
-			return store.Run{}, e
-		}
-		env := []string{"PATH=" + c.cfg.Path, "HOME=" + abs, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + id, "IKIGENBA_SCRIPT=" + sc.ID, "IKIGENBA_SHA=" + sha, "IKIGENBA_RUN_DIR=" + abs, "IKIGENBA_OUT_DIR=" + filepath.Join(abs, OutDir), "IKIGENBA_INPUT=" + filepath.Join(abs, InputFile), "IKIGENBA_USER_ID=" + req.Caller.UserID, "IKIGENBA_REQUEST_ID=" + req.Caller.RequestID, "IKIGENBA_EVENT_ID=" + req.Cause.ID, "IKIGENBA_EVENT_DEPTH=" + strconv.Itoa(req.Cause.Depth), "IKIGENBA_SERVICES=" + c.cfg.Services}
-		proc, runErr = runner.Start(callCtx, runner.Spec{Dir: filepath.Join(abs, TreeDir), Env: env, Stdout: out, Stderr: errOut})
-		if runErr != nil {
-			reason = store.ReasonStartFailed
-			out.close()
-			errOut.close()
-			out = nil
-			errOut = nil
-			if e = os.Remove(filepath.Join(dir, StdoutFile)); e != nil {
-				return store.Run{}, e
-			}
-			if e = os.Remove(filepath.Join(dir, StderrFile)); e != nil {
-				return store.Run{}, e
-			}
-		}
+	}
+	// Admission and slot acquisition share one boundary.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e = context.Cause(callCtx); e != nil {
+		return store.Run{}, e
+	}
+	if c.halted || (c.drainContext != nil && c.drainContext.Err() != nil) {
+		return store.Run{}, limits.ErrHalted
+	}
+	if c.deleting[sc.ID] {
+		return store.Run{}, store.ErrNotFound
 	}
 	var timer <-chan time.Time
-	if proc != nil {
-		timer = c.cfg.ScriptAfter(seconds(c.cfg.ScriptSeconds))
+	if runErr == nil {
+		if int64(len(c.active))+c.starting >= c.cfg.MaxActive || len(c.queue) > 0 {
+			if c.draining {
+				runErr = errors.New("queue abandoned")
+				reason = store.ReasonQueueAbandoned
+			} else {
+				r.Status = store.StatusQueued
+			}
+		} else {
+			c.starting++
+			c.mu.Unlock()
+			proc, out, errOut, runErr = c.launch(callCtx, r, req.Cause.Depth)
+			if proc != nil {
+				timer = c.cfg.ScriptAfter(seconds(c.cfg.ScriptSeconds))
+			}
+			c.mu.Lock()
+			c.starting--
+			if e = context.Cause(callCtx); e != nil {
+				return store.Run{}, e
+			}
+			if c.halted || (c.drainContext != nil && c.drainContext.Err() != nil) {
+				return store.Run{}, limits.ErrHalted
+			}
+			if c.deleting[sc.ID] {
+				return store.Run{}, store.ErrNotFound
+			}
+			if runErr != nil {
+				reason = store.ReasonStartFailed
+			}
+		}
 	}
 	finished := time.Time{}
 	if runErr != nil {
@@ -348,37 +403,99 @@ func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (result st
 		finished = c.cfg.Now()
 		r.Finished = later(finished, started)
 	}
-	// Admission, deletion and the drain deadline share this catalog boundary.
-	c.mu.Lock()
-	if e = context.Cause(callCtx); e != nil {
-		c.mu.Unlock()
-		return store.Run{}, e
-	}
-	if c.halted || (c.drainContext != nil && c.drainContext.Err() != nil) {
-		c.mu.Unlock()
-		return store.Run{}, limits.ErrHalted
-	}
-	if c.deleting[sc.ID] {
-		c.mu.Unlock()
-		return store.Run{}, store.ErrNotFound
-	}
 	r, e = c.cfg.Store.AddRun(callCtx, r)
 	if e != nil {
-		c.mu.Unlock()
 		return store.Run{}, e
 	}
-	if proc != nil {
+	switch {
+	case proc != nil:
 		a := &active{process: proc, record: r, started: started, out: out, err: errOut, done: make(chan struct{})}
 		c.active[id] = a
 		c.emit(r, "run.started", 0)
-		c.mu.Unlock()
 		go c.watch(context.WithoutCancel(ctx), a, timer)
-	} else {
-		c.mu.Unlock()
+	case r.Status == store.StatusQueued:
+		c.queue = append(c.queue, &queued{record: r, started: started, depth: req.Cause.Depth})
+	default:
 		_ = c.Prune(context.Background())
 		c.emit(r, "run.finished", finished.Sub(started))
 	}
 	return r, nil
+}
+
+// launch makes streams only for a process that can start.
+func (c *Core) launch(ctx context.Context, r store.Run, depth int) (*runner.Process, *headWriter, *headWriter, error) {
+	dir := c.Folder(r)
+	out, e := newHead(filepath.Join(dir, StdoutFile), c.cfg.OutputMaxBytes)
+	if e != nil {
+		return nil, nil, nil, e
+	}
+	errOut, e := newHead(filepath.Join(dir, StderrFile), c.cfg.OutputMaxBytes)
+	if e != nil {
+		out.close()
+		_ = os.Remove(filepath.Join(dir, StdoutFile))
+		return nil, nil, nil, e
+	}
+	abs, e := filepath.Abs(dir)
+	if e != nil {
+		out.close()
+		errOut.close()
+		return nil, nil, nil, e
+	}
+	env := []string{"PATH=" + c.cfg.Path, "HOME=" + abs, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + r.ID, "IKIGENBA_SCRIPT=" + r.Script, "IKIGENBA_SHA=" + r.SHA, "IKIGENBA_RUN_DIR=" + abs, "IKIGENBA_OUT_DIR=" + filepath.Join(abs, OutDir), "IKIGENBA_INPUT=" + filepath.Join(abs, InputFile), "IKIGENBA_USER_ID=" + r.User, "IKIGENBA_REQUEST_ID=" + r.RequestID, "IKIGENBA_EVENT_ID=" + r.Event, "IKIGENBA_EVENT_DEPTH=" + strconv.Itoa(depth), "IKIGENBA_SERVICES=" + c.cfg.Services}
+	group := ""
+	if c.cfg.Cgroup != "" {
+		group = filepath.Join(c.cfg.Cgroup, r.ID)
+	}
+	proc, e := runner.Start(ctx, runner.Spec{Dir: filepath.Join(abs, TreeDir), Env: env, Stdout: out, Stderr: errOut, Cgroup: group, MemoryMax: c.cfg.RunMemoryMaxBytes, PidsMax: c.cfg.RunPidsMax})
+	if e != nil {
+		out.close()
+		errOut.close()
+		_ = os.Remove(filepath.Join(dir, StdoutFile))
+		_ = os.Remove(filepath.Join(dir, StderrFile))
+		return nil, nil, nil, e
+	}
+	return proc, out, errOut, nil
+}
+
+// finishQueued runs under the core lock, excluding promotion and cancellation.
+func (c *Core) finishQueued(ctx context.Context, q *queued, status, reason string, prune bool) (store.Run, error) {
+	now := c.cfg.Now()
+	r, e := c.cfg.Store.FinishRun(ctx, q.record.ID, store.Ending{Status: status, Reason: reason, Finished: later(now, q.record.Started)})
+	if e != nil {
+		return store.Run{}, e
+	}
+	if prune {
+		_ = c.Prune(ctx)
+	}
+	c.emit(r, "run.finished", now.Sub(q.started))
+	return r, nil
+}
+
+// promote runs under the core lock after the released slot's finishing event.
+func (c *Core) promote() {
+	for !c.draining && len(c.queue) > 0 && int64(len(c.active))+c.starting < c.cfg.MaxActive {
+		q := c.queue[0]
+		c.queue = c.queue[1:]
+		proc, out, errOut, e := c.launch(context.Background(), q.record, q.depth)
+		if e != nil {
+			_, _ = c.finishQueued(context.Background(), q, store.StatusFailed, store.ReasonStartFailed, true)
+			continue
+		}
+		timer := c.cfg.ScriptAfter(seconds(c.cfg.ScriptSeconds))
+		r, e := c.cfg.Store.StartRun(context.Background(), q.record.ID)
+		if e != nil {
+			proc.Kill()
+			proc.Wait()
+			out.close()
+			errOut.close()
+			continue
+		}
+		a := &active{process: proc, record: r, started: q.started, out: out, err: errOut, done: make(chan struct{})}
+		c.active[r.ID] = a
+		c.emit(r, "run.started", 0)
+		go c.watch(context.Background(), a, timer)
+	}
+	c.signal()
 }
 
 type headWriter struct {
@@ -467,6 +584,7 @@ func (c *Core) watch(ctx context.Context, a *active, timer <-chan time.Time) {
 	a.mu.Unlock()
 	c.mu.Lock()
 	delete(c.active, a.record.ID)
+	c.promote()
 	close(a.done)
 	c.signal()
 	c.mu.Unlock()
@@ -474,14 +592,30 @@ func (c *Core) watch(ctx context.Context, a *active, timer <-chan time.Time) {
 
 // Cancel kills a running run and waits for its ending event.
 func (c *Core) Cancel(ctx context.Context, id string) (store.Run, error) {
+	c.mu.Lock()
 	r, e := c.cfg.Store.RunByID(ctx, id)
 	if e != nil {
+		c.mu.Unlock()
 		return store.Run{}, e
 	}
-	if r.Status != store.StatusRunning {
+	if r.Status != store.StatusRunning && r.Status != store.StatusQueued {
+		c.mu.Unlock()
 		return store.Run{}, store.ErrEnded
 	}
-	c.mu.Lock()
+	if r.Status == store.StatusQueued {
+		defer c.mu.Unlock()
+		q := &queued{record: r, started: r.Started}
+		for i, v := range c.queue {
+			if v.record.ID == id {
+				q = v
+				c.queue = append(c.queue[:i], c.queue[i+1:]...)
+				break
+			}
+		}
+		result, e := c.finishQueued(ctx, q, store.StatusKilled, "", true)
+		c.signal()
+		return result, e
+	}
 	a := c.active[id]
 	c.mu.Unlock()
 	if a == nil {
@@ -515,6 +649,18 @@ func (c *Core) settle(ctx context.Context, r store.Run, prune bool) (store.Run, 
 func (c *Core) Delete(ctx context.Context, script string) error {
 	c.mu.Lock()
 	c.deleting[script] = true
+	for i := 0; i < len(c.queue); {
+		q := c.queue[i]
+		if q.record.Script != script {
+			i++
+			continue
+		}
+		c.queue = append(c.queue[:i], c.queue[i+1:]...)
+		if _, e := c.finishQueued(ctx, q, store.StatusKilled, "", true); e != nil {
+			c.mu.Unlock()
+			return e
+		}
+	}
 	for p := range c.pending {
 		if p.script == script {
 			p.cancel(store.ErrNotFound)
@@ -536,13 +682,14 @@ func (c *Core) Delete(ctx context.Context, script string) error {
 		<-changed
 		c.mu.Lock()
 	}
+
 	c.mu.Unlock()
 	rs, e := c.cfg.Store.Runs(ctx, script)
 	if e != nil {
 		return e
 	}
 	for _, r := range rs {
-		if r.Status == store.StatusRunning {
+		if r.Status == store.StatusRunning || r.Status == store.StatusQueued {
 			_, e = c.Cancel(ctx, r.ID)
 			if e != nil && !errors.Is(e, store.ErrEnded) {
 				return e
@@ -566,6 +713,15 @@ func (c *Core) Recover(ctx context.Context) error {
 	}
 	for _, r := range rs {
 		if _, e = c.settle(ctx, r, false); e != nil {
+			return e
+		}
+	}
+	rs, e = c.cfg.Store.Queued(ctx)
+	if e != nil {
+		return e
+	}
+	for _, r := range rs {
+		if _, e = c.finishQueued(ctx, &queued{record: r, started: r.Started}, store.StatusFailed, store.ReasonQueueAbandoned, false); e != nil {
 			return e
 		}
 	}
@@ -596,6 +752,10 @@ func (c *Core) Drain(ctx context.Context) {
 	c.mu.Lock()
 	c.draining = true
 	c.drainContext = ctx
+	for _, q := range c.queue {
+		_, _ = c.finishQueued(context.Background(), q, store.StatusFailed, store.ReasonQueueAbandoned, true)
+	}
+	c.queue = nil
 	c.signal()
 	c.mu.Unlock()
 	deadline := ctx.Done()

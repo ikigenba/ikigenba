@@ -116,7 +116,10 @@ func newHarness(t *testing.T) *runHarness {
 	h.notify, e = net.ListenUnixgram("unixgram", &net.UnixAddr{Name: filepath.Join(short, "ready"), Net: "unixgram"})
 	mustCLI(t, e)
 	h.env["NOTIFY_SOCKET"] = h.notify.LocalAddr().String()
-	h.p = cli.Process{Pid: 123, Dir: filepath.Join(root, "scripts"), LookupEnv: h.lookup, Environ: h.environ, Unsetenv: h.unset, Inherit: func(fd uintptr) (net.Listener, error) {
+	cgroup := filepath.Join(root, "cgroup")
+	mustCLI(t, os.Mkdir(cgroup, 0700))
+	mustCLI(t, os.WriteFile(filepath.Join(cgroup, "cgroup.procs"), []byte("123\n"), 0600))
+	h.p = cli.Process{Cgroup: cgroup, Pid: 123, Dir: filepath.Join(root, "scripts"), LookupEnv: h.lookup, Environ: h.environ, Unsetenv: h.unset, Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			return nil, errors.New("unexpected descriptor")
 		}

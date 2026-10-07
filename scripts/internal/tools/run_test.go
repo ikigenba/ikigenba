@@ -28,7 +28,7 @@ import (
 )
 
 func TestRunRecordsAndFiles(t *testing.T) {
-	// R-IZHY-8LMQ R-J5LG-5GC7 R-7HJB-831B R-7IR7-LUS0 R-7L70-DE9E R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-5GWX-3L9F R-5I4T-HD04 R-5KKM-8WHI R-5N0F-0FYW R-5O8B-E7PL R-5QO4-5R6Z
+	// R-IZHY-8LMQ R-J5LG-5GC7 R-7HJB-831B R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-T9QJ-T67H R-5I4T-HD04 R-5KKM-8WHI R-5N0F-0FYW R-5O8B-E7PL R-TDE8-YHFK
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	if got := string(object(t, h.call("runs", tools.RunsArgs{Name: "job"}))); got != `{"runs":[]}` {
@@ -120,7 +120,7 @@ func TestRunRecordsAndFiles(t *testing.T) {
 }
 
 func TestLiveRunCancelAndDelete(t *testing.T) {
-	// R-5PG7-RZGA R-C3ZU-EVIM R-C2RY-13RX R-54PX-9VUH R-5GWX-3L9F
+	// R-5PG7-RZGA R-TEM5-C969 R-C2RY-13RX R-54PX-9VUH R-T9QJ-T67H
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	must(t, e)
 	defer func() { _ = listener.Close() }()
@@ -205,7 +205,7 @@ func TestLiveRunCancelAndDelete(t *testing.T) {
 }
 
 func TestDrainAndRunFolderFailure(t *testing.T) {
-	// R-I507-KTJ8 R-I683-YL9X R-8FOH-XNSR
+	// R-RE2J-KM4F R-RGIC-C5LT R-8FOH-XNSR
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	must(t, os.MkdirAll(filepath.Join(h.root, "runs"), 0700))
@@ -367,7 +367,7 @@ func lifecycleUntil(t *testing.T, predicate func() bool) {
 }
 
 func TestDrainRunVariantsAndArrival(t *testing.T) {
-	// R-I507-KTJ8
+	// R-RE2J-KM4F
 	h := setup(t, "print(1)\n")
 	h.create("own")
 	_, e := h.st.Create(context.Background(), store.Draft{Owner: "bob", Name: "foreign", Repo: "rep_1111111111111111", Ref: "main"})
@@ -420,7 +420,7 @@ func TestDrainRunVariantsAndArrival(t *testing.T) {
 }
 
 func TestStartAnswersMetadataAndDefaultInput(t *testing.T) {
-	// R-5GWX-3L9F R-5KKM-8WHI
+	// R-T9QJ-T67H R-5KKM-8WHI
 	for _, mode := range []string{"running-omitted", "running-empty", "unresolved", "resolved-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			h, sc, _, conn := paused(t)
@@ -498,7 +498,7 @@ func TestStartAnswersMetadataAndDefaultInput(t *testing.T) {
 }
 
 func TestOwnEndedCancelPreservesRecords(t *testing.T) {
-	// R-5QO4-5R6Z
+	// R-TDE8-YHFK
 	for i, status := range []string{store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed} {
 		t.Run(status, func(t *testing.T) {
 			h, sc, live, conn := paused(t)
@@ -533,7 +533,7 @@ func TestOwnEndedCancelPreservesRecords(t *testing.T) {
 }
 
 func TestCancelKillsGroupAndRetainsBytes(t *testing.T) {
-	// R-C3ZU-EVIM
+	// R-TEM5-C969
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	must(t, e)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -655,4 +655,155 @@ func lifecycleProcessGone(pid string) bool {
 	}
 	_, tail, ok := strings.Cut(string(b), ") ")
 	return ok && strings.HasPrefix(tail, "Z ")
+}
+
+func TestQueuedToolsLifecycle(t *testing.T) {
+	// R-T179-4S0M R-T9QJ-T67H R-RE2J-KM4F R-TH1Y-3SNN R-TDE8-YHFK R-TI9U-HKEC R-TJHQ-VC51 R-TC6C-KPOV
+	listener, e := net.Listen("tcp", "127.0.0.1:0")
+	must(t, e)
+	defer func() { _ = listener.Close() }()
+	ctx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stop()
+	closeListener := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer closeListener()
+	script := fmt.Sprintf("import socket,os,json\nvalue=json.load(open(os.environ['IKIGENBA_INPUT']))\nif 'marker' in value: open(value['marker'],'w').write('started')\ns=socket.create_connection(('127.0.0.1',%d))\ns.sendall(b'ready')\ns.recv(1)\n", listener.Addr().(*net.TCPAddr).Port)
+	h := setup(t, script, func(c *runs.Config) { c.MaxActive = 1; c.MaxQueued = 10; c.KeepCount = 100 })
+	sc := h.create("job")
+	active := decode[tools.Started](t, h.call("run", tools.RunArgs{Name: sc.Name, Input: json.RawMessage(`{}`)}))
+	conn, e := listener.Accept()
+	must(t, e)
+	defer func() { _ = conn.Close() }()
+	deadline, _ := ctx.Deadline()
+	must(t, conn.SetDeadline(deadline))
+	_, e = io.ReadFull(conn, make([]byte, 5))
+	must(t, e)
+	if active.Status != store.StatusRunning {
+		t.Fatal(active)
+	}
+	var queued []store.Run
+	var markers []string
+	for i := range 10 {
+		marker := filepath.Join(h.root, fmt.Sprintf("queued-marker-%d", i))
+		markers = append(markers, marker)
+		u := caller()
+		u.RequestID = "queued-request"
+		answer := h.raw("run", fmt.Sprintf(`{"name":"job","input":{"marker":%q}}`, marker), u)
+		start := decode[tools.Started](t, answer)
+		r, e := h.st.RunByID(context.Background(), start.ID)
+		must(t, e)
+		assertWire(t, answer, wire(t, member{"id", r.ID}, member{"status", store.StatusQueued}, member{"sha", r.SHA}))
+		if r.Status != store.StatusQueued || r.Script != sc.ID || r.User != u.UserID || r.RequestID != u.RequestID || r.Trigger != store.TriggerManual || r.Ref != sc.Ref || r.SHA == "" {
+			t.Fatal(r)
+		}
+		queued = append(queued, r)
+		v := decode[tools.RunResult](t, h.call("result", tools.ResultArgs{Run: r.ID}))
+		if v.Status != store.StatusQueued || v.Finished != nil || v.ExitCode != nil || v.StdoutBytes != 0 || v.StderrBytes != 0 || v.Stdout == nil || *v.Stdout != "" || v.Stderr == nil || *v.Stderr != "" || v.Files == nil || len(*v.Files) != 0 {
+			t.Fatal(v)
+		}
+	}
+	removeTrace(t, h)
+	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), "the run queue is full (10 queued); try again later")
+	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), "no script named 'missing'")
+	noGit(t, h)
+	q := queued[0]
+	before, e := os.ReadDir(h.core.Folder(q))
+	must(t, e)
+	ended := decode[tools.RunEntry](t, h.call("cancel", tools.CancelArgs{Run: q.ID}))
+	if ended.Status != store.StatusKilled || ended.Finished == nil || ended.ExitCode != nil {
+		t.Fatal(ended)
+	}
+	after, e := os.ReadDir(h.core.Folder(q))
+	must(t, e)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("queued cancellation changed folder")
+	}
+	result := decode[tools.RunResult](t, h.call("result", tools.ResultArgs{Run: q.ID}))
+	if result.Status != store.StatusKilled || result.StdoutBytes != 0 || result.StderrBytes != 0 || result.Stdout == nil || *result.Stdout != "" || result.Stderr == nil || *result.Stderr != "" || result.Files == nil || len(*result.Files) != 0 {
+		t.Fatal(result)
+	}
+	_ = object(t, h.call("delete", tools.DeleteArgs{Name: sc.Name}))
+	for _, r := range queued {
+		refusal(t, h.call("result", tools.ResultArgs{Run: r.ID}), "no run '"+r.ID+"'")
+		refusal(t, h.call("cancel", tools.CancelArgs{Run: r.ID}), "no run '"+r.ID+"'")
+	}
+	for _, marker := range markers {
+		if _, e := os.Stat(marker); !os.IsNotExist(e) {
+			t.Fatal("queued run started", marker, e)
+		}
+	}
+	// Ending the active run cannot launch any deleted or cancelled queued run.
+	_, e = conn.Read(make([]byte, 1))
+	if !errors.Is(e, io.EOF) {
+		t.Fatal(e)
+	}
+	if _, e = os.Stat(filepath.Join(h.root, "runs", sc.ID)); !os.IsNotExist(e) {
+		t.Fatal(e)
+	}
+	_ = object(t, h.call("list", tools.ListArgs{}))
+	noGit(t, h)
+}
+
+// R-TI9U-HKEC
+func TestQueuedCancelStaysKilledAfterRunningRunEnds(t *testing.T) {
+	ctx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stop()
+	deadline, _ := ctx.Deadline()
+	listener, e := net.Listen("tcp", "127.0.0.1:0")
+	must(t, e)
+	defer func() { _ = listener.Close() }()
+	must(t, listener.(*net.TCPListener).SetDeadline(deadline))
+	script := fmt.Sprintf("import socket,os,json\nv=json.load(open(os.environ['IKIGENBA_INPUT']))\nif 'marker' in v: open(v['marker'],'w').write('started')\ns=socket.create_connection(('127.0.0.1',%d))\ns.sendall(b'ready')\ns.recv(1)\n", listener.Addr().(*net.TCPAddr).Port)
+	h := setup(t, script, func(c *runs.Config) { c.MaxActive = 1; c.KeepCount = 100 })
+	sc := h.create("job")
+	active := decode[tools.Started](t, h.call("run", tools.RunArgs{Name: sc.Name, Input: json.RawMessage(`{}`)}))
+	conn, e := listener.Accept()
+	must(t, e)
+	defer func() { _ = conn.Close() }()
+	must(t, conn.SetDeadline(deadline))
+	_, e = io.ReadFull(conn, make([]byte, 5))
+	must(t, e)
+	marker := filepath.Join(h.root, "canceled-marker")
+	q := decode[tools.Started](t, h.call("run", tools.RunArgs{Name: sc.Name, Input: json.RawMessage(fmt.Sprintf(`{"marker":%q}`, marker))}))
+	next := decode[tools.Started](t, h.call("run", tools.RunArgs{Name: sc.Name, Input: json.RawMessage(`{}`)}))
+	aBefore, e := h.st.RunByID(context.Background(), active.ID)
+	must(t, e)
+	nBefore, e := h.st.RunByID(context.Background(), next.ID)
+	must(t, e)
+	_ = decode[tools.RunEntry](t, h.call("cancel", tools.CancelArgs{Run: q.ID}))
+	for _, before := range []store.Run{aBefore, nBefore} {
+		after, e := h.st.RunByID(context.Background(), before.ID)
+		must(t, e)
+		if after != before {
+			t.Fatal("cancellation changed another record", before, after)
+		}
+	}
+	_, e = conn.Write([]byte("x"))
+	must(t, e)
+	// The successor reaching its socket proves the earlier slot was released.
+	successor, e := listener.Accept()
+	must(t, e)
+	defer func() { _ = successor.Close() }()
+	must(t, successor.SetDeadline(deadline))
+	_, e = io.ReadFull(successor, make([]byte, 5))
+	must(t, e)
+	if _, e = os.Stat(marker); !os.IsNotExist(e) {
+		t.Fatal("canceled process started", e)
+	}
+	result := decode[tools.RunResult](t, h.call("result", tools.ResultArgs{Run: q.ID}))
+	if result.Status != store.StatusKilled || result.StdoutBytes != 0 || result.StderrBytes != 0 || result.Stdout == nil || *result.Stdout != "" || result.Stderr == nil || *result.Stderr != "" || result.Files == nil || len(*result.Files) != 0 {
+		t.Fatal(result)
+	}
+	_ = object(t, h.call("delete", tools.DeleteArgs{Name: sc.Name}))
+}
+
+func TestUnavailableRunRefusal(t *testing.T) {
+	// R-RE2J-KM4F R-TC6C-KPOV
+	h := setup(t, "print(1)\n", func(c *runs.Config) { c.Unavailable = "no delegation" })
+	h.create("job")
+	removeTrace(t, h)
+	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), "runs are unavailable: no delegation")
+	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), "no script named 'missing'")
+	h.core.Drain(context.Background())
+	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), "scripts is stopping; try again later")
+	noGit(t, h)
 }

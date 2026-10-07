@@ -56,7 +56,7 @@ func TestNewStoreOverHandle(t *testing.T) {
 	equal(t, got, sc)
 }
 
-// R-YE6P-3ID2
+// R-94EX-UQKT
 func TestAdoptEarlierGobCatalog(t *testing.T) {
 	for _, shape := range []string{"no-row", "empty-maps", "records"} {
 		t.Run(shape, func(t *testing.T) {
@@ -73,11 +73,11 @@ func TestAdoptEarlierGobCatalog(t *testing.T) {
 				for i, owner := range []string{"alice", "bob"} {
 					sc := store.Script{ID: []string{"scr_0000000000000001", "scr_0000000000000002"}[i], Name: []string{"alpha", "beta"}[i], Owner: owner, Repo: "repo", Ref: "main", Created: stamp.UTC().Truncate(time.Second)}
 					stored.Scripts[sc.ID] = sc
-					for j, status := range []string{store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed} {
+					for j, status := range []string{store.StatusQueued, store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed} {
 						r := run(sc, i*10+j+1)
 						r.Started = stamp.UTC().Truncate(time.Second).Add(-time.Duration(j) * time.Hour)
 						r.Status = status
-						if status != store.StatusRunning {
+						if status != store.StatusRunning && status != store.StatusQueued {
 							r.Finished = r.Started.Add(time.Minute)
 							r.StdoutBytes = 12
 							r.StderrBytes = 7
@@ -153,7 +153,7 @@ func TestAdoptEarlierGobCatalog(t *testing.T) {
 	}
 }
 
-// R-RZG1-6OZQ R-1G35-QHOA
+// R-95MU-8IBI R-96UQ-MA27
 func TestUpgradeBaselineCatalog(t *testing.T) {
 	for _, baseline := range []bool{false, true} {
 		for _, records := range []bool{false, true} {

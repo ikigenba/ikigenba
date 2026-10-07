@@ -44,9 +44,9 @@ func binaryMust(t *testing.T, err error) {
 }
 
 func TestBinary(t *testing.T) {
-	// R-9BM7-ZMWS R-K2VG-GMF3 R-8U9H-VWCG R-K5B9-85WH R-K6J5-LXN6
-	// R-K7R1-ZPDV R-K8YY-DH4K R-KA6U-R8V9 R-8XX7-17KJ
-	// R-SGMN-DPCZ R-BODX-EEGV R-XW4F-83YL
+	// R-9BM7-ZMWS R-K2VG-GMF3 R-L44O-3JLM R-K5B9-85WH R-K6J5-LXN6
+	// R-K7R1-ZPDV R-K8YY-DH4K R-KA6U-R8V9 R-LSIN-QYFI
+	// R-L5CK-HBCB R-BODX-EEGV R-XW4F-83YL
 	t.Setenv(services.Variable, "")
 	root := t.TempDir()
 	t.Cleanup(func() {
@@ -285,7 +285,7 @@ func TestBinary(t *testing.T) {
 		case <-time.After(10 * time.Second):
 			t.Fatal("binary did not stop")
 		}
-		if out.Len() != 0 || quiet && errOut.Len() != 0 {
+		if out.Len() != 0 || quiet && !regexp.MustCompile(`^scripts: runs are unavailable: [^\n]+\n$`).MatchString(errOut.String()) {
 			t.Fatalf("streams %q %q", out.String(), errOut.String())
 		}
 	}
@@ -399,26 +399,32 @@ func TestBinary(t *testing.T) {
 	c, out, errOut = start(servicePath)
 	scriptID := call("create", map[string]any{"name": "files-proof", "repo": "rep_0102030405060708"})["id"].(string)
 	neverID := call("create", map[string]any{"name": "never-run", "repo": "rep_0102030405060708"})["id"].(string)
-	runID := call("run", map[string]any{"name": "files-proof", "input": map[string]any{"value": "kept"}})["id"].(string)
-	finishDeadline := time.NewTimer(10 * time.Second)
-	for {
-		record := call("result", map[string]any{"run": runID})
-		if record["status"] == "exited" {
-			break
-		}
-		if record["status"] != "running" {
-			t.Fatalf("fixture run %v", record)
-		}
-		select {
-		case <-finishDeadline.C:
-			t.Fatal("fixture run did not end")
-		default:
-		}
+	ctx, cancelRun := context.WithTimeout(context.Background(), 10*time.Second)
+	refused, e := client.CallTool(ctx, caller, "run", json.RawMessage(`{"name":"files-proof"}`))
+	cancelRun()
+	binaryMust(t, e)
+	refusal, e := refused.MarshalJSON()
+	binaryMust(t, e)
+	if !refused.IsError() || !strings.Contains(string(refusal), "runs are unavailable: ") {
+		t.Fatalf("unavailable run: %s", refusal)
 	}
-	finishDeadline.Stop()
 	stop(c, syscall.SIGTERM, out, errOut, true)
+	runID := "run_1122334455667788"
+	seedDB, e := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }})
+	binaryMust(t, e)
+	seedStore := store.New(seedDB, store.Config{Now: func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }, Rand: bytes.NewReader(make([]byte, 64))})
+	_, e = seedStore.AddRun(context.Background(), store.Run{ID: runID, Script: scriptID, SHA: strings.Repeat("a", 40), Ref: "main", Trigger: store.TriggerManual, Status: store.StatusRunning, User: "owner", Started: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)})
+	binaryMust(t, e)
+	_, e = seedStore.FinishRun(context.Background(), runID, store.Ending{Status: store.StatusExited, Finished: time.Date(2025, 1, 1, 0, 0, 1, 0, time.UTC)})
+	binaryMust(t, e)
+	binaryMust(t, seedDB.Close())
 	runsRoot := filepath.Join(dir, "state", "runs")
 	folder := filepath.Join(runsRoot, scriptID, runID)
+	binaryMust(t, os.MkdirAll(folder, 0700))
+	for _, name := range []string{"input.json", "stdout", "stderr"} {
+		binaryMust(t, os.WriteFile(filepath.Join(folder, name), []byte("fixture"), 0600))
+	}
+
 	outside := filepath.Join(root, "link-targets")
 	binaryMust(t, os.MkdirAll(filepath.Join(outside, "directory"), 0700))
 	binaryMust(t, os.WriteFile(filepath.Join(outside, "file"), []byte("outside preserved"), 0600))

@@ -125,7 +125,7 @@ func fixture(t *testing.T, script string, extra ...map[string]string) *harness {
 	s := settings.Defaults()
 	h.limit = limits.New(s, limits.Clock{After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
 	writer := telemetry.New(telemetry.Config{Service: "scripts", Sink: h.sink, Stderr: io.Discard, Now: h.readNow, Rand: &sequence{}})
-	h.cfg = runs.Config{Store: st, Source: source.New(source.Config{Repos: filepath.Dir(h.repo), Git: g, Limits: h.limit}), Writer: writer, Runs: filepath.Join(root, "state", "runs"), Path: path, Services: filepath.Join(root, "services"), ScriptSeconds: 9, OutputMaxBytes: 1024, KeepDays: 1, KeepCount: 1, Now: h.readNow, ScriptAfter: func(d time.Duration) <-chan time.Time {
+	h.cfg = runs.Config{Store: st, Source: source.New(source.Config{Repos: filepath.Dir(h.repo), Git: g, Limits: h.limit}), Writer: writer, Runs: filepath.Join(root, "state", "runs"), Path: path, Services: filepath.Join(root, "services"), RunMemoryMaxBytes: 268435456, RunPidsMax: 64, MaxActive: 64, MaxQueued: 64, ScriptSeconds: 9, OutputMaxBytes: 1024, KeepDays: 1, KeepCount: 1, Now: h.readNow, ScriptAfter: func(d time.Duration) <-chan time.Time {
 		ch := make(chan time.Time, 1)
 		h.timers <- ch
 		h.durations <- d
@@ -251,7 +251,7 @@ func entries(t *testing.T, dir string) []string {
 	return ns
 }
 
-// R-TRAW-TG9L R-S1VT-Y8H4 R-TTQP-KZQZ R-TUYL-YRHO R-TW6I-CJ8D R-TXEE-QAZ2
+// R-XPH4-TLSB R-S1VT-Y8H4 R-TTQP-KZQZ R-TUYL-YRHO R-TW6I-CJ8D R-TXEE-QAZ2
 // R-S33Q-C07T R-UREI-OYCM R-U4PT-0XF8 R-U75L-SGWM R-U8DI-68NB R-U9LE-K0E0
 // R-S978-8UXA R-UC17-BJVE R-UFOW-GV3H R-V2DM-4W0V R-J746-MBVK R-VG9V-XZCB R-VI8B-3WNW
 func TestRunFolderEnvironmentAndLifetime(t *testing.T) {
@@ -362,7 +362,7 @@ while not os.path.exists(os.path.join(root,'release')): pass
 	}
 }
 
-// R-UD93-PBM3 R-UEH0-33CS R-UGWS-UMU6 R-UJCL-M6BK R-XGH6-DUYX
+// R-UD93-PBM3 R-UEH0-33CS R-UGWS-UMU6 R-Y0G8-9JGK R-XGH6-DUYX
 func TestOutputBoundsExitAndTimer(t *testing.T) {
 	for _, tc := range []struct {
 		name, script string
@@ -403,7 +403,7 @@ func TestOutputBoundsExitAndTimer(t *testing.T) {
 	}
 }
 
-// R-UXZE-7F7W R-XF9A-0388 R-U123-VM75 R-U5XP-EP5X
+// R-XQP1-7DJ0 R-XF9A-0388 R-U123-VM75 R-U5XP-EP5X
 func TestConcurrentRunsAndLiveSizes(t *testing.T) {
 	script := `import os,sys
 raw=open(os.environ['IKIGENBA_INPUT'],'rb').read()
@@ -446,7 +446,7 @@ while not os.path.exists(os.path.join(os.environ['IKIGENBA_RUN_DIR'],'release'))
 }
 func fileExists(path string) bool { s, e := os.Stat(path); return e == nil && s.Mode().IsRegular() }
 
-// R-XCTH-8JQU R-JD7O-J6L1 R-V61B-A78Y R-V797-NYZN R-V8H4-1QQC R-JEFK-WYBQ R-JFNH-AQ2F R-VFSI-CD6I R-J5WA-8K4V
+// R-XCTH-8JQU R-JD7O-J6L1 R-XRWX-L59P R-V797-NYZN R-V8H4-1QQC R-JEFK-WYBQ R-JFNH-AQ2F R-VFSI-CD6I R-XWSJ-488H
 func TestTimeoutCancelAndDrainKill(t *testing.T) {
 	for _, mode := range []string{"timeout", "cancel", "drain"} {
 		t.Run(mode, func(t *testing.T) {
@@ -783,7 +783,7 @@ func (h *harness) addRecord(status string, started time.Time) store.Run {
 	return r
 }
 
-// R-VAWW-TA7Q R-V2UZ-QI6O R-TZU7-HUGG R-U123-VM75
+// R-XZ8B-VRPV R-V2UZ-QI6O R-TZU7-HUGG R-U123-VM75
 func TestRecoverAndForeignCancel(t *testing.T) {
 	h := fixture(t, waitScript)
 	r := h.addRecord(store.StatusRunning, h.readNow().Add(-time.Hour))
@@ -921,7 +921,7 @@ func TestPruneKeepingAndReadOnlyRemoval(t *testing.T) {
 	}
 }
 
-// R-V42W-49XD R-V6IO-VTER R-V8YH-NCW5
+// R-XT4T-YX0E R-V6IO-VTER R-V8YH-NCW5
 func TestDeleteKillsOnlyItsScript(t *testing.T) {
 	h := fixture(t, waitScript)
 	r := h.run(nil)
@@ -947,7 +947,7 @@ func TestDeleteKillsOnlyItsScript(t *testing.T) {
 	h.finished(r2.ID)
 }
 
-// R-U2A0-9DXU R-VC4T-71YF R-VF1Z-K7LM
+// R-U2A0-9DXU R-XVKM-QGHS R-XY0F-HZZ6
 func TestGracefulDrainKeepsAcceptedCalls(t *testing.T) {
 	h := fixture(t, waitScript)
 	entered := make(chan struct{})
@@ -1139,7 +1139,7 @@ func TestEndingCatalogFailureHasNoFinishedEvent(t *testing.T) {
 
 func readOnlyDirectory() os.FileMode { return os.FileMode(0700) &^ os.FileMode(0222) }
 
-// R-FKYP-VVQK R-VFSI-CD6I R-J5WA-8K4V R-UWRH-TNH7
+// R-FKYP-VVQK R-VFSI-CD6I R-XWSJ-488H R-UWRH-TNH7
 func TestDrainDeadlineCutsOffProcessBeforeCatalogAdmission(t *testing.T) {
 	h := fixture(t, waitScript)
 	entered := make(chan struct{})
@@ -1223,7 +1223,7 @@ func (r *checkedRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-U5XP-EP5X R-UXZE-7F7W
+// R-U5XP-EP5X R-XQP1-7DJ0
 func TestCoreSerializesRandomAcrossConcurrentCalls(t *testing.T) {
 	h := fixture(t, waitScript)
 	random := &checkedRandom{}

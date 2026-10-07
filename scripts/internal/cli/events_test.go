@@ -13,11 +13,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/events"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
@@ -54,7 +56,7 @@ func postDelivery(t *testing.T, h *runHarness, id string, body []byte, outcome s
 	}
 }
 
-// R-SXL7-W9R6 R-SV5F-4Q9S
+// R-SXL7-W9R6 R-TKPN-93VQ
 func TestDeliveryTrailOrigins(t *testing.T) {
 	h := newHarness(t)
 	h.repository("pass\n")
@@ -103,6 +105,121 @@ func TestDeliveryTrailOrigins(t *testing.T) {
 				t.Fatal(e)
 			}
 		}
+	}
+}
+
+// R-TLXJ-MVMF R-TN5G-0ND4
+func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) {
+	for _, mode := range []string{"immediate", "queued", "cancel", "queued-cancel", "drain", "queued-drain", "missing"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newHarness(t)
+			h.repository(waitingMain)
+			h.set("RUN_MAX_ACTIVE", "1")
+			h.set("DRAIN_SECONDS", "1")
+			h.p.Sink = &h.sink.capture
+			h.start()
+			sc := h.create("subscriber")
+			h.call("subscribe", map[string]any{"name": "subscriber", "event": "repo.pushed"})
+			var active map[string]any
+			queued := mode == "queued" || mode == "queued-cancel" || mode == "queued-drain"
+			if queued {
+				active = h.call("run", map[string]any{"name": "subscriber"})
+			}
+			if mode == "missing" {
+				h.call("update", map[string]any{"name": "subscriber", "ref": "missing"})
+			}
+			postDelivery(t, h, "delivery-catalog-origin", deliveryBody(t, h, "repo.pushed", "evt_0123456789abcdef"), "ok")
+			handle, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
+			mustCLI(t, e)
+			defer func() { mustCLI(t, handle.Close()) }()
+			st := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+			records, e := st.Runs(context.Background(), sc["id"].(string))
+			mustCLI(t, e)
+			var r store.Run
+			eventRuns := map[string]bool{}
+			for _, record := range records {
+				if record.Event == "evt_0123456789abcdef" {
+					r = record
+					eventRuns[record.ID] = true
+				}
+			}
+			if r.ID == "" || r.RequestID != "delivery-catalog-origin" || r.User != "owner" || r.Trigger != store.TriggerEvent {
+				t.Fatal(r)
+			}
+			if queued && r.Status != store.StatusQueued {
+				t.Fatal(r)
+			}
+			switch mode {
+			case "immediate":
+				releaseQueued(t, h, sc["id"], r.ID)
+				waitCredentialRun(t, h, r.ID, "exited")
+			case "queued":
+				releaseQueued(t, h, sc["id"], active["id"])
+				deadline := time.NewTimer(10 * time.Second)
+				for {
+					next, e := st.RunByID(context.Background(), r.ID)
+					mustCLI(t, e)
+					if next.Status == store.StatusRunning {
+						break
+					}
+					select {
+					case <-deadline.C:
+						t.Fatal("event run was not promoted")
+					default:
+					}
+				}
+				deadline.Stop()
+				releaseQueued(t, h, sc["id"], r.ID)
+				waitCredentialRun(t, h, r.ID, "exited")
+			case "cancel", "queued-cancel":
+				h.call("cancel", map[string]any{"run": r.ID})
+				if queued {
+					releaseQueued(t, h, sc["id"], active["id"])
+					waitCredentialRun(t, h, active["id"].(string), "exited")
+				}
+			}
+			h.stop()
+			r, e = st.RunByID(context.Background(), r.ID)
+			mustCLI(t, e)
+			es := h.sink.capture.Events()
+			for _, line := range h.stderr.snapshot() {
+				if strings.HasPrefix(string(line), "scripts: undelivered event: ") {
+					var ev struct {
+						Name      string          `json:"event"`
+						RequestID string          `json:"request_id"`
+						User      string          `json:"user"`
+						Attrs     telemetry.Attrs `json:"attrs"`
+					}
+					mustCLI(t, json.Unmarshal([]byte(strings.TrimPrefix(strings.TrimSpace(string(line)), "scripts: undelivered event: ")), &ev))
+					es = append(es, telemetry.Event{Name: ev.Name, RequestID: ev.RequestID, User: ev.User, Attrs: ev.Attrs})
+				}
+			}
+			end := trailEvent(t, es, "run.finished", r.ID)
+			if end.RequestID != r.RequestID || end.User != r.User {
+				t.Fatal(end, r)
+			}
+			starts := 0
+			for _, ev := range es {
+				id, _ := ev.Attrs["run"].(string)
+				if ev.Name == "run.started" && eventRuns[id] {
+					starts++
+					if ev.RequestID != r.RequestID || ev.User != r.User {
+						t.Fatal(ev, r)
+					}
+					expectAttrs(t, ev, telemetry.Attrs{"run": r.ID, "script": r.Script, "sha": r.SHA, "trigger": "event"})
+				}
+			}
+			wantStarts := 1
+			if mode == "missing" || mode == "queued-cancel" || mode == "queued-drain" {
+				wantStarts = 0
+			}
+			if starts != wantStarts {
+				t.Fatal("start count", starts, wantStarts)
+			}
+			if wantStarts == 1 && !queued {
+				trailEvent(t, trailWindow(t, es, r.RequestID), "run.started", r.ID)
+			}
+		})
 	}
 }
 

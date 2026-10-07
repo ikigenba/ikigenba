@@ -11,7 +11,7 @@ import (
 )
 
 func TestNormalizedRunRecordRefusals(t *testing.T) {
-	// R-RB21-JA5U
+	// R-90R8-PFCQ
 	zeroFraction := time.Time{}.Add(750 * time.Millisecond)
 	tests := []struct {
 		name   string
@@ -83,7 +83,7 @@ func TestNormalizedRunRecordRefusals(t *testing.T) {
 }
 
 func TestNormalizedAddRunPersistence(t *testing.T) {
-	// R-RB21-JA5U R-Y4FI-1CFI
+	// R-90R8-PFCQ R-Y4FI-1CFI
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")
@@ -97,7 +97,7 @@ func TestNormalizedAddRunPersistence(t *testing.T) {
 		r.Started = started.In(time.FixedZone("offset", 7200))
 		inputs = append(inputs, r)
 	}
-	for _, reason := range []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed} {
+	for _, reason := range []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed, store.ReasonQueueAbandoned} {
 		for _, sha := range []string{"", "0123456789abcdef0123456789abcdef01234567"} {
 			for _, truncated := range []bool{false, true} {
 				r := run(sc, len(inputs)+1)
@@ -143,7 +143,7 @@ func TestNormalizedAddRunPersistence(t *testing.T) {
 }
 
 func TestNormalizedEndingRefusals(t *testing.T) {
-	// R-RB21-JA5U
+	// R-90R8-PFCQ
 	zeroFraction := time.Time{}.Add(750 * time.Millisecond)
 	for i, e := range []store.Ending{
 		{Status: store.StatusRunning, Finished: stamp},
@@ -186,7 +186,7 @@ func TestNormalizedEndingRefusals(t *testing.T) {
 }
 
 func TestNormalizedFinishRun(t *testing.T) {
-	// R-RB21-JA5U R-LQMJ-7DR4
+	// R-90R8-PFCQ R-982N-01SW
 	endings := []store.Ending{}
 	for _, code := range []int{0, 1, 254, 255} {
 		endings = append(endings, store.Ending{Status: store.StatusExited, ExitCode: code})
@@ -237,17 +237,17 @@ func TestNormalizedFinishRun(t *testing.T) {
 func assertReturnedRun(t *testing.T, r store.Run) {
 	t.Helper()
 	switch r.Status {
-	case store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed:
+	case store.StatusQueued, store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed:
 	default:
 		t.Fatalf("unknown status %q", r.Status)
 	}
-	equal(t, r.Finished.IsZero(), r.Status == store.StatusRunning)
+	equal(t, r.Finished.IsZero(), r.Status == store.StatusRunning || r.Status == store.StatusQueued)
 	if r.Status != store.StatusExited {
 		equal(t, r.ExitCode, 0)
 	}
 	if r.Status == store.StatusFailed {
 		switch r.Reason {
-		case store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed:
+		case store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed, store.ReasonQueueAbandoned:
 		default:
 			t.Fatalf("unknown failure reason %q", r.Reason)
 		}
@@ -272,13 +272,13 @@ func assertReturnedScript(t *testing.T, sc store.Script) {
 }
 
 func TestEveryStoreReturnedRecord(t *testing.T) {
-	// R-KTP8-VKQD
+	// R-9371-GYU4
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	scripts := []store.Script{}
 	n := 0
 	statuses := []string{store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed}
-	reasons := []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed}
+	reasons := []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed, store.ReasonQueueAbandoned}
 	for _, status := range statuses {
 		for _, reason := range reasons {
 			if status != store.StatusFailed && reason != reasons[0] {

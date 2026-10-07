@@ -64,8 +64,106 @@ func noNewWork(t *testing.T, h *harness) {
 	}
 }
 
-// R-SBN1-0EEO R-T4WM-6W7C R-BHGX-FC05 R-SHQI-X945 R-SIYF-B0UU R-BMCI-YEYX
-// R-SYT4-A1HV R-T010-NT8K R-T18X-1KZ9 R-T2GT-FCPY
+// R-2T51-2K1E
+func TestDeliveryUnavailableRefusesOnlyUndeliveredSubscribers(t *testing.T) {
+	h := queuedHarness(t)
+	subscribe(t, h, h.sc)
+	h.cfg.Unavailable = "delegation missing"
+	var calls atomic.Int32
+	h.sourceAfter(func(time.Duration) <-chan time.Time { calls.Add(1); return make(chan time.Time) })
+	d := events.Delivery{Event: deliveredEvent(), Attempt: 1}
+	if got := h.core.Deliver(context.Background(), d); got != events.Fail("runs are unavailable: delegation missing") {
+		t.Fatal(got)
+	}
+	noNewWork(t, h)
+	if calls.Load() != 0 || len(h.timers) != 0 {
+		t.Fatal("refusal started git or a process")
+	}
+	irrelevant := d
+	irrelevant.Event.Name = "repo.created"
+	if got := h.core.Deliver(context.Background(), irrelevant); got != events.Skip() {
+		t.Fatal(got)
+	}
+	h.cfg.Unavailable = ""
+	h.core = runs.New(h.cfg)
+	if got := h.core.Deliver(context.Background(), d); got != events.OK() {
+		t.Fatal(got)
+	}
+	rs := runList(t, h, h.sc)
+	if len(rs) != 1 || rs[0].Status != store.StatusRunning || rs[0].Event != d.Event.ID {
+		t.Fatal(rs)
+	}
+	h.release(rs[0])
+	h.finished(rs[0].ID)
+	beforeCalls := calls.Load()
+	beforeFolders := runFolderSnapshot(t, h.cfg.Runs)
+	beforeEvents := h.sink.capture.Events()
+	h.cfg.Unavailable = "delegation missing"
+	h.core = runs.New(h.cfg)
+	if got := h.core.Deliver(context.Background(), d); got != events.OK() {
+		t.Fatal(got)
+	}
+	if calls.Load() != beforeCalls || len(runList(t, h, h.sc)) != 1 || !reflect.DeepEqual(beforeFolders, runFolderSnapshot(t, h.cfg.Runs)) || !reflect.DeepEqual(beforeEvents, h.sink.capture.Events()) {
+		t.Fatal("already delivered event created work")
+	}
+}
+
+// R-2UCX-GBS3
+func TestDeliveryFullQueueRefusesBeforeAnyPreparation(t *testing.T) {
+	h := queuedHarness(t)
+	h.cfg.MaxQueued = 1
+	var calls atomic.Int32
+	h.sourceAfter(func(time.Duration) <-chan time.Time { calls.Add(1); return make(chan time.Time) })
+	subscribe(t, h, h.sc)
+	a := h.run(nil)
+	b := h.run(nil)
+	assertQueued(t, h, b)
+	// Establish the running script's complete initial output and delivered start event.
+	until(t, func() bool {
+		path := filepath.Join(h.core.Folder(a), runs.StdoutFile)
+		if !fileExists(path) || !strings.HasSuffix(string(read(t, path)), "\n") {
+			return false
+		}
+		for _, ev := range h.sink.capture.Events() {
+			if ev.Name == "run.started" && ev.Attrs["run"] == a.ID {
+				return true
+			}
+		}
+		return false
+	})
+	beforeCalls := calls.Load()
+	beforeFolders := runFolderSnapshot(t, h.cfg.Runs)
+	beforeEvents := h.sink.capture.Events()
+	d := events.Delivery{Event: deliveredEvent(), Attempt: 1}
+	if got := h.core.Deliver(context.Background(), d); got != events.Fail("the run queue is full (1 queued); try again later") {
+		t.Fatal(got)
+	}
+	if calls.Load() != beforeCalls || len(h.timers) != 1 || !reflect.DeepEqual(beforeFolders, runFolderSnapshot(t, h.cfg.Runs)) || !reflect.DeepEqual(beforeEvents, h.sink.capture.Events()) || len(runList(t, h, h.sc)) != 2 || h.record(a.ID) != a || h.record(b.ID) != b {
+		t.Fatal("full delivery changed existing work")
+	}
+	_, e := h.core.Cancel(context.Background(), b.ID)
+	must(t, e)
+	h.finished(b.ID)
+	if got := h.core.Deliver(context.Background(), d); got != events.OK() {
+		t.Fatal(got)
+	}
+	var queued store.Run
+	for _, r := range runList(t, h, h.sc) {
+		if r.Event == d.Event.ID {
+			queued = r
+		}
+	}
+	assertQueued(t, h, queued)
+	h.release(a)
+	h.finished(a.ID)
+	until(t, func() bool { return h.record(queued.ID).Status == store.StatusRunning })
+	h.release(queued)
+	h.finished(queued.ID)
+}
+
+// R-SBN1-0EEO R-T4WM-6W7C R-2LTM-RXL8 R-SHQI-X945 R-SIYF-B0UU R-2O9F-JH2M
+//
+//	R-T18X-1KZ9 R-T2GT-FCPY
 func TestDeliveryCanonicalRunsAndTrail(t *testing.T) {
 	script := `import os,json
 with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
@@ -290,7 +388,7 @@ func TestStartingSentinel(t *testing.T) {
 	}
 }
 
-// R-SP1X-7VKB R-SRHP-ZF1P
+// R-SP1X-7VKB R-2QP8-B0K0
 func TestDeliveryIgnoresCancellationAndStartsSideBySide(t *testing.T) {
 	for _, mode := range []string{"cancelled", "cancel-during", "parallel"} {
 		t.Run(mode, func(t *testing.T) {
@@ -343,7 +441,7 @@ func TestDeliveryIgnoresCancellationAndStartsSideBySide(t *testing.T) {
 	}
 }
 
-// R-SAF4-MMNZ R-SLE8-2KC8 R-BIOT-T3QU R-BL4M-KN88 R-BJWQ-6VHJ
+// R-SAF4-MMNZ R-SLE8-2KC8 R-BIOT-T3QU R-2RX4-OSAP R-2PHB-X8TB
 func TestEventAdmissionAndDuplicateMemory(t *testing.T) {
 	h := fixture(t, waitScript)
 	subscribe(t, h, h.sc)
@@ -440,7 +538,7 @@ func TestEventAdmissionAndDuplicateMemory(t *testing.T) {
 	check()
 }
 
-// R-SK6B-OSLJ: delivery runs use the run core's bounds, endings and keeping.
+// R-2N1J-5PBX: delivery runs use the run core's bounds, endings and keeping.
 func TestDeliveryUsesRunBoundsAndEndings(t *testing.T) {
 	for _, mode := range []string{"timeout", "cancel", "drain-waits", "output", "tree"} {
 		t.Run(mode, func(t *testing.T) {
@@ -519,7 +617,7 @@ func TestDeliveryUsesRunBoundsAndEndings(t *testing.T) {
 	}
 }
 
-// R-BJWQ-6VHJ R-BMCI-YEYX: partial deliveries retain earlier records for retries.
+// R-2PHB-X8TB R-2O9F-JH2M: partial deliveries retain earlier records for retries.
 func TestDeliveryPartialFailureRetryAndDrainCutoff(t *testing.T) {
 	for _, mode := range []string{"catalog", "drain"} {
 		t.Run(mode, func(t *testing.T) {

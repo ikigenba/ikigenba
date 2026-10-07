@@ -81,7 +81,7 @@ func makeFixture(t *testing.T, sink telemetry.Sink) *fixture {
 	t.Cleanup(func() { writer.Shutdown(context.Background(), "done") })
 	lim := limits.New(settings.Defaults(), limits.Clock{After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
 	src := source.New(source.Config{Repos: filepath.Join(t.TempDir(), "repos"), Limits: lim})
-	core := runs.New(runs.Config{Store: st, Source: src, Writer: writer, Runs: t.TempDir(), Now: now, Rand: rand, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
+	core := runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Store: st, Source: src, Writer: writer, Runs: t.TempDir(), Now: now, Rand: rand, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
 	f.cfg = web.Config{func(_ page.User) page.Banner { return page.Banner{Service: pages.ServiceName, Version: "fixture"} }, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "fixture", Telemetry: writer}), "", st, src, core, lim, writer}
 	f.h = web.Handler(f.cfg)
 	return f
@@ -531,7 +531,7 @@ func repositoryFixture(t *testing.T, f *fixture) string {
 	}
 	f.cfg.Source = source.New(source.Config{Repos: root, Git: g, Limits: f.cfg.Limits})
 	s := f.cfg.Limits.Settings()
-	f.cfg.Runs = runs.New(runs.Config{Store: f.cfg.Store, Source: f.cfg.Source, Writer: f.cfg.Telemetry, Runs: t.TempDir(), Path: path, Now: f.cfg.Telemetry.Now, Rand: &sequence{}, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, ScriptSeconds: s.ScriptSeconds, OutputMaxBytes: s.OutputMaxBytes, KeepDays: s.RunKeepDays, KeepCount: s.RunKeepCount})
+	f.cfg.Runs = runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Store: f.cfg.Store, Source: f.cfg.Source, Writer: f.cfg.Telemetry, Runs: t.TempDir(), Path: path, Now: f.cfg.Telemetry.Now, Rand: &sequence{}, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, ScriptSeconds: s.ScriptSeconds, OutputMaxBytes: s.OutputMaxBytes, KeepDays: s.RunKeepDays, KeepCount: s.RunKeepCount})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()

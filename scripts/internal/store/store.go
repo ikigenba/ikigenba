@@ -23,6 +23,7 @@ import (
 const (
 	ScriptPrefix            = "scr_"
 	RunPrefix               = "run_"
+	StatusQueued            = "queued"
 	StatusRunning           = "running"
 	StatusExited            = "exited"
 	StatusKilled            = "killed"
@@ -34,6 +35,7 @@ const (
 	ReasonGitFailed         = "git_failed"
 	ReasonTimedOut          = "timed_out"
 	ReasonStartFailed       = "start_failed"
+	ReasonQueueAbandoned    = "queue_abandoned"
 	TriggerManual           = "manual"
 	TriggerEvent            = "event"
 	Unreachable             = "cannot reach the catalog; try again later"
@@ -91,6 +93,7 @@ type Ending struct {
 	Finished                 time.Time
 	StdoutBytes, StderrBytes int64
 	Truncated                bool
+	Reason                   string
 }
 type content struct {
 	Scripts map[string]Script
@@ -409,7 +412,7 @@ func (s *catalog) delete(ctx context.Context, id string) error {
 }
 func validReason(r string) bool {
 	switch r {
-	case ReasonRepositoryMissing, ReasonCommitMissing, ReasonTooLarge, ReasonGitFailed, ReasonTimedOut, ReasonStartFailed:
+	case ReasonRepositoryMissing, ReasonCommitMissing, ReasonTooLarge, ReasonGitFailed, ReasonTimedOut, ReasonStartFailed, ReasonQueueAbandoned:
 		return true
 	}
 	return false
@@ -419,7 +422,7 @@ func validRun(r Run) bool {
 		return false
 	}
 	switch r.Status {
-	case StatusRunning:
+	case StatusRunning, StatusQueued:
 		return r.SHA != "" && r.ExitCode == 0 && r.StdoutBytes == 0 && r.StderrBytes == 0 && r.Finished.IsZero() && !r.Truncated && r.Reason == ""
 	case StatusFailed:
 		return validReason(r.Reason) && r.ExitCode == 0 && !normalize(r.Finished).IsZero() && !normalize(r.Finished).Before(normalize(r.Started))
@@ -427,7 +430,7 @@ func validRun(r Run) bool {
 	return false
 }
 func validEnding(e Ending) bool {
-	return !normalize(e.Finished).IsZero() && e.StdoutBytes >= 0 && e.StderrBytes >= 0 && (e.Status == StatusExited && e.ExitCode >= 0 && e.ExitCode <= 255 || (e.Status == StatusKilled || e.Status == StatusTimedOut) && e.ExitCode == 0)
+	return !normalize(e.Finished).IsZero() && e.StdoutBytes >= 0 && e.StderrBytes >= 0 && (e.Status == StatusExited && e.ExitCode >= 0 && e.ExitCode <= 255 && e.Reason == "" || (e.Status == StatusKilled || e.Status == StatusTimedOut) && e.ExitCode == 0 && e.Reason == "" || e.Status == StatusFailed && e.ExitCode == 0 && (e.Reason == ReasonStartFailed || e.Reason == ReasonQueueAbandoned))
 }
 
 // AddRun records a newly running or failed run.
@@ -470,8 +473,11 @@ func (s *catalog) finishRun(ctx context.Context, id string, e Ending) (Run, erro
 	if !ok {
 		return Run{}, ErrNotFound
 	}
-	if r.Status != StatusRunning {
+	if r.Status != StatusRunning && r.Status != StatusQueued {
 		return Run{}, ErrEnded
+	}
+	if r.Status == StatusRunning && e.Status == StatusFailed || r.Status == StatusQueued && (e.Status != StatusKilled && e.Status != StatusFailed || e.StdoutBytes != 0 || e.StderrBytes != 0 || e.Truncated) {
+		return Run{}, errors.New("ending does not fit run")
 	}
 	if normalize(e.Finished).Before(r.Started) {
 		return Run{}, errors.New("ending precedes start")
@@ -482,6 +488,7 @@ func (s *catalog) finishRun(ctx context.Context, id string, e Ending) (Run, erro
 	r.StdoutBytes = e.StdoutBytes
 	r.StderrBytes = e.StderrBytes
 	r.Truncated = e.Truncated
+	r.Reason = e.Reason
 	c := s.copy()
 	c.Runs[id] = r
 	if err := s.save(ctx, c); err != nil {
@@ -538,7 +545,7 @@ func (s *catalog) pastKeeping(now time.Time, days, count int64) ([]Run, error) {
 	sort.Strings(ids)
 	for _, id := range ids {
 		for rank, r := range s.runs(id) {
-			if int64(rank) >= count && r.Status != StatusRunning && pastAge(now, r.Started, days) {
+			if int64(rank) >= count && r.Status != StatusRunning && r.Status != StatusQueued && pastAge(now, r.Started, days) {
 				out = append(out, r)
 			}
 		}
@@ -748,4 +755,43 @@ func (s *Store) SetRef(ctx context.Context, id, ref string) (Script, bool, error
 		return Script{}, false, err
 	}
 	return out, changed, nil
+}
+
+// StartRun changes a queued run to running without changing its request time.
+func (s *Store) StartRun(ctx context.Context, id string) (Run, error) {
+	var out Run
+	err := s.transaction(ctx, true, func(c *catalog) error {
+		r, ok := c.data.Runs[id]
+		if !ok {
+			return ErrNotFound
+		}
+		if r.Status != StatusQueued {
+			return ErrEnded
+		}
+		r.Status = StatusRunning
+		data := c.copy()
+		data.Runs[id] = r
+		if err := c.save(ctx, data); err != nil {
+			return err
+		}
+		out = r
+		return nil
+	})
+	return out, err
+}
+
+// Queued returns all waiting runs in ascending id order.
+func (s *Store) Queued(ctx context.Context) ([]Run, error) {
+	var out []Run
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		out = []Run{}
+		for _, r := range c.data.Runs {
+			if r.Status == StatusQueued {
+				out = append(out, r)
+			}
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+		return nil
+	})
+	return out, err
 }

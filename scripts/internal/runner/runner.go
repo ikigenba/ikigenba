@@ -27,16 +27,19 @@ var ErrNotFound = errors.New("interpreter not found")
 
 // Spec describes a script's complete process environment.
 type Spec struct {
-	Dir    string
-	Env    []string
-	Stdout io.Writer
-	Stderr io.Writer
+	Dir                string
+	Env                []string
+	Stdout             io.Writer
+	Stderr             io.Writer
+	Cgroup             string
+	MemoryMax, PidsMax int64
 }
 
 // Process owns a script and the process group it leads.
 type Process struct {
 	mu                sync.Mutex
 	pid               int
+	cgroup            string
 	killed, collected bool
 	done              chan struct{}
 	code              int
@@ -59,6 +62,17 @@ func Find(path string) (string, error) {
 
 // Start returns as soon as the script is launched, independently of later context cancellation.
 func Start(ctx context.Context, s Spec) (*Process, error) {
+	preserveGroup := false
+	if s.Cgroup != "" {
+		st, err := os.Stat(s.Cgroup)
+		preserveGroup = err == nil && st.IsDir()
+	}
+	success := false
+	defer func() {
+		if s.Cgroup != "" && !preserveGroup && !success {
+			_ = os.RemoveAll(s.Cgroup)
+		}
+	}()
 	if ctx.Err() != nil {
 		return nil, context.Cause(ctx)
 	}
@@ -71,6 +85,30 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 	exe, e := Find(path)
 	if e != nil {
 		return nil, e
+	}
+	if s.Cgroup != "" {
+		if s.MemoryMax < 1 || s.PidsMax < 1 {
+			return nil, errors.New("invalid cgroup limit")
+		}
+		if st, err := os.Stat(s.Cgroup); err == nil {
+			if !st.IsDir() {
+				return nil, errors.New("cgroup is not a directory")
+			}
+		} else {
+			if err = os.Mkdir(s.Cgroup, 0700); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if s.Cgroup != "" {
+		for _, v := range []struct{ name, value string }{
+			{"memory.max", strconv.FormatInt(s.MemoryMax, 10)}, {"memory.oom.group", "1"},
+			{"pids.max", strconv.FormatInt(s.PidsMax, 10)}, {"memory.swap.max", "0"},
+		} {
+			if err := os.WriteFile(filepath.Join(s.Cgroup, v.name), []byte(v.value), 0600); err != nil {
+				return nil, err
+			}
+		}
 	}
 	in, e := os.Open(os.DevNull)
 	if e != nil {
@@ -110,7 +148,23 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 	if e != nil {
 		return nil, e
 	}
-	p := &Process{pid: pid, done: make(chan struct{})}
+	if s.Cgroup != "" {
+		if err := os.WriteFile(filepath.Join(s.Cgroup, "cgroup.procs"), []byte(strconv.Itoa(pid)), 0600); err != nil {
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			var status syscall.WaitStatus
+			for {
+				if _, err := syscall.Wait4(pid, &status, 0, nil); err != syscall.EINTR {
+					break
+				}
+			}
+			for groupAlive(pid) {
+				runtime.Gosched()
+			}
+			return nil, err
+		}
+	}
+	success = true
+	p := &Process{pid: pid, cgroup: s.Cgroup, done: make(chan struct{})}
 	out.start()
 	errout.start()
 	go p.collect(out, errout)
@@ -195,6 +249,12 @@ func (p *Process) collect(out, errout *stream) {
 	}
 	out.finish()
 	errout.finish()
+	if p.cgroup != "" {
+		_ = os.WriteFile(filepath.Join(p.cgroup, "cgroup.kill"), []byte("1"), 0600)
+		if err := os.Remove(p.cgroup); err != nil {
+			_ = os.RemoveAll(p.cgroup)
+		}
+	}
 	close(p.done)
 }
 func groupAlive(group int) bool {

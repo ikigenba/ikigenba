@@ -111,7 +111,7 @@ func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
 }
 
 func TestSubscriptionMutationsPreserveEventRun(t *testing.T) {
-	// R-7HRM-C18L R-7K7F-3KPZ R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-7L70-DE9E R-7MEW-R603
+	// R-7HRM-C18L R-7K7F-3KPZ R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603
 	h, sc, r, conn := pausedCause(t, events.Cause{ID: "evt_1122334455667788", Depth: 2})
 	ctx := context.Background()
 	other, e := h.st.Create(ctx, store.Draft{Owner: "bob", Name: "another", Repo: sc.Repo, Ref: "main"})
@@ -184,7 +184,7 @@ func TestSubscriptionMutationsPreserveEventRun(t *testing.T) {
 }
 
 func TestEventRunWireAcrossStatuses(t *testing.T) {
-	// R-7HJB-831B R-7IR7-LUS0 R-7L70-DE9E R-7MEW-R603
+	// R-7HJB-831B R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603
 	h := setup(t, "print(1)\n")
 	sc := h.create("event-records")
 	ctx := context.Background()

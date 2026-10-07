@@ -79,7 +79,7 @@ func TestCatalogLifecycle(t *testing.T) {
 	if taken {
 		t.Fatal("name still taken")
 	}
-	// R-4YMF-D150 R-4XEI-Z9EB
+	// R-TC6C-KPOV R-4XEI-Z9EB
 	if _, e = os.Stat(h.trace); !os.IsNotExist(e) {
 		t.Fatal("read/update/delete ran git", e)
 	}

@@ -95,12 +95,12 @@ type ScriptLink struct{ Name, URL string }
 
 // RunCard is the formatted headline and details of a run.
 type RunCard struct {
-	ID, URL, Status, Kind                                                                                                  string
-	Running                                                                                                                bool
-	Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
-	Truncated                                                                                                              bool
-	Failure                                                                                                                *Failure
-	FilesGone                                                                                                              bool
+	ID, URL, Status, Kind                                                                                                          string
+	Running                                                                                                                        bool
+	Notice, Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
+	Truncated                                                                                                                      bool
+	Failure                                                                                                                        *Failure
+	FilesGone                                                                                                                      bool
 }
 
 // Failure explains why a script did not start.

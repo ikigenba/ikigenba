@@ -99,7 +99,7 @@ func (o *observed) next(t *testing.T) string {
 func (o *observed) text() string { o.mu.Lock(); defer o.mu.Unlock(); return o.b.String() }
 
 func TestProcessEnvironment(t *testing.T) {
-	// R-IT1C-MIBU R-9LE2-6YPB R-8VHE-9O35 R-X4A6-K5JZ R-IZ4U-JD1B R-J0CQ-X4S0 R-J2SJ-OO9E R-XADO-H09G
+	// R-HGKZ-W41S R-9LE2-6YPB R-8VHE-9O35 R-X4A6-K5JZ R-IZ4U-JD1B R-J0CQ-X4S0 R-J2SJ-OO9E R-XADO-H09G
 	d, env := fixture(t, `import os,sys,json
 print(json.dumps([sys.argv,sorted(os.listdir()),"%d.%d" % sys.version_info[:2],os.getpgrp()==os.getpid(),os.getpgrp()==os.getpgid(os.getppid()),len(sys.stdin.read()),os.getuid(),os.geteuid(),os.getgid(),os.getegid()]))
 sys.stderr.buffer.write(open('/proc/self/environ','rb').read())

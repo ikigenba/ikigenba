@@ -118,7 +118,7 @@ func TestSubscriptionsLifecycle(t *testing.T) {
 	equal(t, got[0].ID, b.ID)
 }
 
-// R-RIDF-TWM0 R-RKT8-LG3E R-S0NX-KGQF R-R9U5-5IF5
+// R-RIDF-TWM0 R-RKT8-LG3E R-9BQC-5D0Z R-R9U5-5IF5
 func TestSubscriptionRefusals(t *testing.T) {
 	s := open(t, "")
 	a := create(t, s, "alice", "alpha")
@@ -173,7 +173,7 @@ func TestSubscriptionRefusals(t *testing.T) {
 	equal(t, content(t, s), before)
 }
 
-// R-R4YJ-MFGD R-RC9X-X1WJ R-RQWQ-IASV R-RS4M-W2JK R-RB21-JA5U
+// R-R4YJ-MFGD R-RC9X-X1WJ R-RQWQ-IASV R-RS4M-W2JK R-90R8-PFCQ
 func TestEventRunMemory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)

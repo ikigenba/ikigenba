@@ -31,7 +31,7 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// R-1XBL-2MBE R-TAN4-QOQ0 R-TD2X-I87E R-TFIQ-9ROS R-TGQM-NJFH
+// R-1XBL-2MBE R-L6KG-V330 R-TD2X-I87E R-TFIQ-9ROS R-L7SD-8UTP
 func TestCommandConstants(t *testing.T) {
 	const usage string = cli.Usage
 	const manifest string = cli.Manifest
@@ -46,7 +46,7 @@ func TestCommandConstants(t *testing.T) {
 	if usage != wantUsage {
 		t.Fatalf("usage %q", usage)
 	}
-	wantManifest := "app = \"scripts\"\ndescription = \"Python scripts run from the suite's repositories\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nREPOS_DIR = \"../repos/state/repos\"\nTREE_MAX_BYTES = \"268435456\"\nOUTPUT_MAX_BYTES = \"1048576\"\nOPERATION_SECONDS = \"600\"\nSCRIPT_SECONDS = \"600\"\nRUN_KEEP_DAYS = \"15\"\nRUN_KEEP_COUNT = \"10\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scripts.db\"\n\n[resources]\ncpu_weight = 50\nmemory_max = \"1G\"\nio_weight = 50\n"
+	wantManifest := "app = \"scripts\"\ndescription = \"Python scripts run from the suite's repositories\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nREPOS_DIR = \"../repos/state/repos\"\nTREE_MAX_BYTES = \"268435456\"\nOUTPUT_MAX_BYTES = \"1048576\"\nOPERATION_SECONDS = \"600\"\nSCRIPT_SECONDS = \"600\"\nRUN_MEMORY_MAX_BYTES = \"268435456\"\nRUNS_MEMORY_MAX_BYTES = \"536870912\"\nRUNS_CPU_PERCENT = \"100\"\nRUN_PIDS_MAX = \"64\"\nRUN_MAX_ACTIVE = \"2\"\nRUN_MAX_QUEUED = \"10\"\nRUN_KEEP_DAYS = \"15\"\nRUN_KEEP_COUNT = \"10\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scripts.db\"\n\n[resources]\nslice = \"apps\"\nmemory_max = \"896M\"\ngo_memory_limit = \"128M\"\ndelegate = true\n"
 	if manifest != wantManifest {
 		t.Fatalf("manifest %q", manifest)
 	}
@@ -54,7 +54,7 @@ func TestCommandConstants(t *testing.T) {
 		t.Fatal("description differs")
 	}
 	d := settings.Defaults()
-	env := fmt.Sprintf("[env]\nREPOS_DIR = %q\nTREE_MAX_BYTES = \"%d\"\nOUTPUT_MAX_BYTES = \"%d\"\nOPERATION_SECONDS = \"%d\"\nSCRIPT_SECONDS = \"%d\"\nRUN_KEEP_DAYS = \"%d\"\nRUN_KEEP_COUNT = \"%d\"\n\n", d.ReposDir, d.TreeMaxBytes, d.OutputMaxBytes, d.OperationSeconds, d.ScriptSeconds, d.RunKeepDays, d.RunKeepCount)
+	env := fmt.Sprintf("[env]\nREPOS_DIR = %q\nTREE_MAX_BYTES = \"%d\"\nOUTPUT_MAX_BYTES = \"%d\"\nOPERATION_SECONDS = \"%d\"\nSCRIPT_SECONDS = \"%d\"\nRUN_MEMORY_MAX_BYTES = \"%d\"\nRUNS_MEMORY_MAX_BYTES = \"%d\"\nRUNS_CPU_PERCENT = \"%d\"\nRUN_PIDS_MAX = \"%d\"\nRUN_MAX_ACTIVE = \"%d\"\nRUN_MAX_QUEUED = \"%d\"\nRUN_KEEP_DAYS = \"%d\"\nRUN_KEEP_COUNT = \"%d\"\n\n", d.ReposDir, d.TreeMaxBytes, d.OutputMaxBytes, d.OperationSeconds, d.ScriptSeconds, d.RunMemoryMaxBytes, d.RunsMemoryMaxBytes, d.RunsCPUPercent, d.RunPidsMax, d.RunMaxActive, d.RunMaxQueued, d.RunKeepDays, d.RunKeepCount)
 	start := strings.Index(manifest, "[env]\n")
 	end := strings.Index(manifest[start:], "\n\n") + start + 2
 	if manifest[start:end] != env {

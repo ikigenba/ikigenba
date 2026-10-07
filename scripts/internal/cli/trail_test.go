@@ -137,7 +137,7 @@ func trailScript(t *testing.T, es []telemetry.Event, id, name string, script any
 func TestTrailCatalogAndRunWindows(t *testing.T) {
 	// R-LGMM-YPRO R-T6FP-IEX5 R-T7NL-W6NU R-T8VI-9YEJ R-TA3E-NQ58
 	// R-TBBB-1HVX R-TDR3-T1DB R-TEZ0-6T40 R-TG6W-KKUP R-TIMP-C4C3
-	// R-TJUL-PW2S R-STXI-QYJ3 R-SV5F-4Q9S R-TOQ7-8Z1K R-U253-GG77
+	// R-TJUL-PW2S R-STXI-QYJ3 R-TKPN-93VQ R-TOQ7-8Z1K R-U253-GG77
 	// R-TR60-0IIY R-LHUJ-CHID R-LJ2F-Q992 R-6JBK-EM35 R-XP0H-295S
 	h := newHarness(t)
 	h.repository("import time\ntime.sleep(3600)\n")

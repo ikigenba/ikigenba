@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,7 +34,7 @@ func main() {
 		}
 	}()
 	code := cli.Run(ctx, cli.Process{
-		Args: os.Args[1:], LookupEnv: os.LookupEnv, Environ: os.Environ,
+		Cgroup: controlGroup(), Args: os.Args[1:], LookupEnv: os.LookupEnv, Environ: os.Environ,
 		Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
 		Banner: page.New(pages.ServiceName, cli.Version).Banner,
 		MCP: func(w *telemetry.Writer) *mcp.Server {
@@ -42,4 +44,17 @@ func main() {
 	signal.Stop(signals)
 	cancel(context.Canceled)
 	os.Exit(code)
+}
+
+func controlGroup() string {
+	b, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if path, ok := strings.CutPrefix(line, "0::"); ok {
+			return filepath.Join("/sys/fs/cgroup", path)
+		}
+	}
+	return ""
 }
