@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit 2400e6b. The design lab's
+   Copied from design/ikigenba/theme.css at commit 487a63b. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -12,21 +12,21 @@
   font-family: "Inter";
   font-style: normal;
   font-weight: 100 900;
-  font-display: swap;
+  font-display: fallback;
   src: url("InterVariable.woff2") format("woff2");
 }
 @font-face {
   font-family: "Inter";
   font-style: italic;
   font-weight: 100 900;
-  font-display: swap;
+  font-display: fallback;
   src: url("InterVariable-Italic.woff2") format("woff2");
 }
 @font-face {
   font-family: "JetBrains Mono";
   font-style: normal;
   font-weight: 100 800;
-  font-display: swap;
+  font-display: fallback;
   src: url("JetBrainsMono.woff2") format("woff2");
 }
 
