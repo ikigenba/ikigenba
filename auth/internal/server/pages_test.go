@@ -668,6 +668,26 @@ func assertPageAlert(t *testing.T, text, kind, role, title, message string) {
 		t.Fatal("alert contents")
 	}
 }
+func assertAuthPageFavicon(t *testing.T, body string) {
+	t.Helper()
+	// R-YN4H-5WV1: every emitted auth page links exactly one SVG favicon before body.
+	bodyAt := pageOne(t, body, "body").start
+	var icons []pageTag
+	for _, tag := range pageElements(body, "link") {
+		if tag.start < bodyAt {
+			values := pageAttrs(tag)["rel"]
+			if len(values) == 1 && values[0] == "icon" {
+				icons = append(icons, tag)
+			}
+		}
+	}
+	if len(icons) != 1 {
+		t.Fatalf("favicon links before body = %d, want 1", len(icons))
+	}
+	pageAttr(t, icons[0], "type", "image/svg+xml")
+	pageAttr(t, icons[0], "href", "/_appkit/favicon.svg")
+}
+
 func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 	// R-08U8-JUAH R-0A24-XM16 R-0BA1-BDRV R-0YG4-L0V2 R-ZB86-LWXV
 	// R-0DPU-2X99 R-0EXQ-GOZY R-0G5M-UGQN R-0HDJ-88HC R-0ZO0-YSLR
@@ -713,6 +733,7 @@ func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 				t.Fatalf("not HTML: %d %s", w.Code, w.Body.String())
 			}
 			assertAuthPage(t, w.Body.String())
+			assertAuthPageFavicon(t, w.Body.String())
 			if strings.HasPrefix(name, "profile") || name == "created" || name == "rejected" {
 				assertChrome(t, w.Body.String(), email)
 			}

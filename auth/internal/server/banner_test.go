@@ -103,6 +103,7 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 				t.Fatalf("request %d calls=%v want=%v", i, calls, wantUser)
 			}
 			body := w.Body.String()
+			assertAuthPageFavicon(t, body)
 			banner := renderTestBanner(t, returned)
 			footer := renderTestFooter(t, returned)
 			bodies := pageElements(body, "body")

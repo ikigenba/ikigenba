@@ -18,6 +18,7 @@ var sharedFiles = map[string]string{
 	"theme.css":                  "text/css; charset=utf-8",
 	"launcher.js":                "text/javascript; charset=utf-8",
 	"feedback.js":                "text/javascript; charset=utf-8",
+	"favicon.svg":                "image/svg+xml",
 	"InterVariable.woff2":        "font/woff2",
 	"InterVariable-Italic.woff2": "font/woff2",
 	"JetBrainsMono.woff2":        "font/woff2",
@@ -70,7 +71,7 @@ func assertStrongAssetTag(t *testing.T, w *httptest.ResponseRecorder) string {
 }
 
 func TestSharedAssetRepresentations(t *testing.T) {
-	// R-ZG3S-4ZWN: the eight shared files are nonempty and have their specified types.
+	// R-YT7Z-2RKI: the nine shared files are nonempty and have their specified types.
 	// R-4PQJ-VKID: 200 and 304 carry one strong tag and no-cache.
 	// R-1GDL-HS81: the body and tag are stable within and across servers.
 	// R-1HLH-VJYQ: HEAD has the GET representation headers and no body.
@@ -110,7 +111,7 @@ func TestSharedAssetRepresentations(t *testing.T) {
 
 func TestSharedAssetConditionalRequests(t *testing.T) {
 	// R-1ITE-9BPF: matching well-formed lists or * yield empty 304 for GET and HEAD.
-	// R-ZHBO-IRNC: nonmatching well-formed lists yield the GET representation.
+	// R-YVNR-UB1W: nonmatching well-formed lists yield the GET representation.
 	s := newTestServer(t, Config{})
 	for name, contentType := range sharedFiles {
 		target := page.StaticPrefix + name
@@ -139,7 +140,7 @@ func TestSharedAssetConditionalRequests(t *testing.T) {
 }
 
 func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
-	// R-ZEVV-R85Y: decoded byte-exact page.StaticPrefix and file names define the paths.
+	// R-YQS6-B834: decoded byte-exact page.StaticPrefix and nine file names define the paths.
 	// R-55ES-LBDV: every appkit path delegates unchanged, including unspecified header behavior.
 	// R-2U35-R9SL: unsupported methods on files yield 405 and Allow.
 	// R-2VB2-51JA: non-file appkit paths yield 404 for any method or condition.
@@ -150,13 +151,13 @@ func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
 	}
 	missing := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/missing", "/_appkit/THEME.CSS", "/_appkit/theme.cssX", "/_appkit/theme.css/child", "/_appkit//theme.css", "/_appkit/./theme.css", "/_appkit/../theme.css", "/_appkit/%2ftheme.css"}
 	for name := range sharedFiles {
-		missing = append(missing, page.StaticPrefix+strings.ToUpper(name), page.StaticPrefix+name+"extra")
+		missing = append(missing, page.StaticPrefix+strings.ToUpper(name), page.StaticPrefix+name+"extra", page.StaticPrefix+name+"/child")
 	}
 	targets := append([]string{}, missing...)
 	for name := range sharedFiles {
 		targets = append(targets, page.StaticPrefix+name)
 	}
-	targets = append(targets, "/_appkit/%74heme.css", "/_appkit/%66eedback.js")
+	targets = append(targets, "/_appkit/%74heme.css", "/_appkit/%66eedback.js", "/_appkit/%66avicon.svg")
 	conditions := []http.Header{
 		nil,
 		{"If-None-Match": {"*"}},
@@ -199,6 +200,7 @@ func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
 	// URL.Path is decoded before delegation.
 	assertAssetResponseEqual(t, assetRequest(s, "GET", "/_appkit/%74heme.css", nil), assetRequest(s, "GET", "/_appkit/theme.css", nil))
 	assertAssetResponseEqual(t, assetRequest(s, "GET", "/_appkit/%66eedback.js", nil), assetRequest(s, "GET", "/_appkit/feedback.js", nil))
+	assertAssetResponseEqual(t, assetRequest(s, "GET", "/_appkit/%66avicon.svg", nil), assetRequest(s, "GET", "/_appkit/favicon.svg", nil))
 }
 
 func TestSharedAssetCredentialAndStoreIndependence(t *testing.T) {
