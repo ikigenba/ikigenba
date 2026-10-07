@@ -37,7 +37,8 @@ registered with the one redirect URI `http://localhost:53682/callback`.
 An authorization request carries, in its query, `response_type`, `client_id`,
 `redirect_uri`, `code_challenge`, `code_challenge_method`, `state`, `resource`,
 and `scope`, written `<challenge>` and `<state>` below where their values do
-not matter. `scope` is ignored, whatever it holds. A request whose `redirect_uri`
+not matter. `scope` is ignored, whatever it holds, unless it holds a NUL
+character, which no parameter may hold. A request whose `redirect_uri`
 is absent uses the client's one registered URI when it registered exactly one.
 auth does not send a browser back to a URI it cannot trust: a request naming an
 unknown client, or a redirect URI the client did not register, is answered
@@ -268,7 +269,9 @@ Status 400. The body's `error` is `invalid_redirect_uri`. An entry that is
 refused the same way is any other `http` host, a custom scheme such as
 `myapp://callback`, a URL with a fragment such as
 `http://localhost:53682/callback#x`, a value that is not an absolute URL, or an
-entry longer than 2048 bytes.
+entry longer than 2048 bytes. An entry holding a NUL character is not answered
+here but as metadata auth cannot read (`An MCP client registers metadata auth
+cannot read`).
 
 Preconditions:
 
@@ -317,7 +320,8 @@ Postconditions:
 
 auth keeps registrations small: a body is at most 64 KiB and a `client_name`,
 when sent, is a string of 1 to 200 characters. A body that is not a JSON object
-is not metadata at all.
+is not metadata at all. No client legitimately sends a NUL character, so
+neither the name nor any redirect URI may hold one.
 
 Request:
 
@@ -337,8 +341,11 @@ Content-Type: application/json
 
 Status 400. The body's `error` is `invalid_client_metadata`. A body that is not
 a JSON object (a JSON array, or text that is not JSON), a body longer than
-64 KiB, and a `client_name` that is not a string or is longer than 200
-characters are each answered the same way.
+64 KiB, a `client_name` that is not a string or is longer than 200
+characters, and a `client_name` or a `redirect_uris` entry holding a NUL
+character (`\u0000` in the JSON) are each answered the same way. A redirect URI
+holding a NUL is answered `invalid_client_metadata`, not
+`invalid_redirect_uri`.
 
 Preconditions:
 
@@ -612,6 +619,44 @@ Postconditions:
 
 - Nothing has changed: no code was issued. auth records no client event.
 
+## An MCP client asks for authorization with a NUL character in a parameter
+
+No client legitimately sends a NUL character, so a request holding one in any
+parameter, in its name or its value, whether auth reads that parameter or
+ignores it, is refused before any other fault once the client and redirect URI
+are known. A NUL in the `client_id` or `redirect_uri` auth reads names no registration or
+matches no registered URI, and is answered as `An MCP client asks for
+authorization with an unknown client or a redirect URI it did not register`
+tells.
+
+Request:
+
+```
+GET /authorize?response_type=code&client_id=<client-id>&redirect_uri=http%3A%2F%2Flocalhost%3A53682%2Fcallback&code_challenge=<challenge>&code_challenge_method=S256&state=<state>&scope=a%00b HTTP/1.1
+Cookie: ikigenba_session=<id>
+```
+
+Response:
+
+```
+HTTP/1.1 302 Found
+Location: http://localhost:53682/callback?error=invalid_request&state=<state>
+```
+
+Status 302. A `state` holding a NUL is answered the same way and sent back
+like any `state`, its NUL written `%00` in the `Location`: a `state` of `a%00b`
+in the request comes back as `state=a%00b`. The request is answered so with or
+without a session; the approve page is not drawn.
+
+Preconditions:
+
+- A registration `<client-id>` exists with the one redirect URI
+  `http://localhost:53682/callback`.
+
+Postconditions:
+
+- Nothing has changed: no code was issued. auth records no client event.
+
 ## A person approves an MCP client
 
 Pressing `Approve` sends the browser back to the client with a code the client
@@ -832,7 +877,9 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 400. The body is one line of plain text, with no banner. The response
-has no `Location`.
+has no `Location`. A `decision` holding a NUL character is not answered here but
+as `An MCP client asks for authorization with a NUL character in a parameter`
+tells.
 
 Preconditions:
 
