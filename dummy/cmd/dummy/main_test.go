@@ -224,7 +224,11 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal, env []string, di
 			servicesValue = servicesPath
 		}
 		t.Setenv(services.Variable, servicesValue)
-		assertAppkitFrame(t, string(body), page.New(panel.ServiceName, display).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")}))
+		banner := page.New(panel.ServiceName, display).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")})
+		if sig == syscall.SIGTERM && string(banner.Icon) != mainServiceIcon {
+			t.Fatalf("banner icon = %q, want services file icon %q", banner.Icon, mainServiceIcon)
+		}
+		assertAppkitFrame(t, string(body), banner)
 		assertMCPWiring(t, client, display)
 		if sig == syscall.SIGTERM {
 			assertDiscovery(t, client, "First description", true)
@@ -347,9 +351,11 @@ func assertAppkitFrame(t *testing.T, body string, banner page.Banner) {
 	}
 }
 
+const mainServiceIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
+
 func writeServices(t *testing.T, path, description, telemetrySocket string) {
 	t.Helper()
-	entry := map[string]any{"name": panel.ServiceName, "url": "/widgets", "description": description, "socket": "dummy.sock", "enabled": true, "mcp": true, "icon": ""}
+	entry := map[string]any{"name": panel.ServiceName, "url": "/widgets", "description": description, "socket": "dummy.sock", "enabled": true, "mcp": true, "icon": mainServiceIcon}
 	data, err := json.Marshal(map[string]any{"services": []any{entry, map[string]any{"name": telemetry.ServiceName, "socket": telemetrySocket, "url": "", "description": "", "enabled": true, "mcp": false}}})
 	if err != nil {
 		t.Fatal(err)

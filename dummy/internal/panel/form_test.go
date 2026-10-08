@@ -686,10 +686,24 @@ func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 			}
 			assertFormErrors(t, markup, map[string]string{}, widget.FieldErrors{})
 			visible := pageTestVisible(w.Body.String())
-			for _, want := range []string{"Sign out", panel.UnsupportedMediaTypeMessage} {
-				if !strings.Contains(visible, want) {
-					t.Errorf("unsupported chrome lacks %q", want)
+			if !strings.Contains(visible, panel.UnsupportedMediaTypeMessage) {
+				t.Errorf("unsupported answer lacks %q", panel.UnsupportedMediaTypeMessage)
+			}
+			signout := false
+			for _, button := range formTags(w.Body.String(), "button") {
+				class, _ := pageTestAttribute(button, "class")
+				if !slices.Contains(strings.Fields(class), "signout") {
+					continue
 				}
+				signout = true
+				for attribute, want := range map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"} {
+					if got, _ := pageTestAttribute(button, attribute); got != want {
+						t.Errorf("sign-out %s = %q, want %q", attribute, got, want)
+					}
+				}
+			}
+			if !signout {
+				t.Error("unsupported chrome lacks sign-out button")
 			}
 			pageTestChrome(t, w.Body.String(), r)
 			back := false
