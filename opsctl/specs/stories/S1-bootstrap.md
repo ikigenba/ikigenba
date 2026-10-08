@@ -112,8 +112,9 @@ Postconditions:
 ## An operator runs opsctl as an ordinary user
 
 Every command opsctl has reads or writes something only root may touch —
-`/etc/ikigenba/`, `/etc/nginx/`, `/etc/systemd/system/`, `/opt/` — so running
-it as anyone else is a mistake it refuses before it touches anything.
+`/etc/ikigenba/`, `/etc/nginx/`, `/etc/systemd/system/`, `/opt/`,
+`/var/opt/` — so running it as anyone else is a mistake it refuses before it
+touches anything.
 
 Command:
 

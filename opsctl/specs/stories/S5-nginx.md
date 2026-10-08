@@ -11,10 +11,11 @@ configuration` under `Commands:`, and `init`'s sequence gains the step
 `nginx.conf`.
 
 A service is discovered, never registered: any `/opt/<name>/` holding an
-`etc/` or a `state/` directory is one. A service is *routed* when it also has
-an `etc/manifest.toml` naming its `app`; one without is known to the host but
-gets no server block, which is what a service holding only `state/` looks
-like, and what one that was uninstalled looks like. Routed services answer at `<name>.<host.name>`, and the
+`etc/`, or any `/var/opt/ikigenba/<name>/` holding a `state/`, is one. A
+service is *routed* when it also has an `/opt/<name>/etc/manifest.toml` naming
+its `app`; one without is known to the host but gets no server block, which
+is what a service with only a `/var/opt/ikigenba/<name>/state/` looks like,
+and what one that was uninstalled looks like. Routed services answer at `<name>.<host.name>`, and the
 one whose manifest says `default = true` also answers at `<host.name>`.
 
 A routed app is *disabled* when systemd reports its socket unit,
@@ -63,8 +64,8 @@ client sent under those names. `auth`'s own block is left
 *unwired*, and its `/check` and `/check/open` answer 404 to any public request
 — each is reachable only as an internal subrequest, and the guard is there
 whether or not any app serves guests. Recognition is by a routed manifest, not the
-name alone: an `/opt/auth/` with no `etc/manifest.toml` naming its `app` is
-not the authenticator, and with no routed `auth` on the host every block is unwired
+name alone: an `auth` service with no `/opt/auth/etc/manifest.toml` naming
+its `app` is not the authenticator, and with no routed `auth` on the host every block is unwired
 — the fail-open frame, which is what these stories show unless one says a
 routed `auth` is present.
 
@@ -174,10 +175,11 @@ Configuration keys:
   host.name  the fully-qualified name this host answers at
   host.apex  the app that answers at the parent of host.name; unset means none
 
-A service is any /opt/<name>/ with an etc/ or state/ directory. One with an
-etc/manifest.toml naming its app answers at <name>.<host.name>, proxied to
-its socket /run/ikigenba/<name>.sock, and the one whose manifest sets default
-answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
+A service is any /opt/<name>/ with an etc/ directory, or any
+/var/opt/ikigenba/<name>/ with a state/ directory. One with an
+/opt/<name>/etc/manifest.toml naming its app answers at <name>.<host.name>,
+proxied to its socket /run/ikigenba/<name>.sock, and the one whose manifest
+sets default answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
 included in its server block. An app whose socket unit systemd reports
 disabled keeps its names, and its block answers 503. Every proxied request
 carries X-Request-Id set to nginx's own request id, which also ends its
@@ -257,7 +259,8 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- No directory under `/opt/` holds an `etc/` or a `state/`.
+- No directory under `/opt/` holds an `etc/`, and none under
+  `/var/opt/ikigenba/` holds a `state/`.
 
 Postconditions:
 
@@ -362,7 +365,8 @@ Preconditions:
   `default = false`.
 - Neither app ships an `etc/nginx.conf`; the include matches nothing and
   nginx accepts it.
-- `/opt/gmail/` holds a `state/` and no `etc/manifest.toml`.
+- `/var/opt/ikigenba/gmail/` holds a `state/`, and there is no
+  `/opt/gmail/etc/manifest.toml`.
 - No app named `auth` is routed — there is no `/opt/auth/` with a manifest
   naming its `app` — so no block carries `auth_request` and the host is fail-open.
 
@@ -529,8 +533,9 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is `crm`.
-- No directory under `/opt/` holds an `etc/` or a `state/`; or `/opt/crm/`
-  holds a `state/` and no manifest.
+- No directory under `/opt/` holds an `etc/`, and none under
+  `/var/opt/ikigenba/` holds a `state/`; or `/var/opt/ikigenba/crm/` holds a
+  `state/` and there is no `/opt/crm/etc/manifest.toml`.
 - No routed `auth` is present; nothing is wired, and the 404 frame is
   unchanged.
 
@@ -1131,8 +1136,9 @@ Postconditions:
 
 ## An operator reads the configuration where auth is present but not routed
 
-An `/opt/auth/` is on disk, but it has no `etc/manifest.toml` naming its app — a
-`state/` restored from backup, say, or an `etc/` that ships no manifest. It is
+An `auth` service is on disk, but there is no `/opt/auth/etc/manifest.toml`
+naming its app — the `/var/opt/ikigenba/auth/state/` an uninstall leaves
+behind, say, or an `/opt/auth/etc/` that ships no manifest. It is
 a known service but not a routed one, so it is not the authenticator: there is
 nowhere to send a subrequest. Recognition takes a routed manifest, not the
 directory and not the name, so the host stays fail-open and `auth` gets no
@@ -1156,8 +1162,8 @@ Preconditions:
 - `/opt/crm/etc/manifest.toml` names `app = "crm"` and `default = true`;
   `/opt/dashboard/etc/manifest.toml` names `app = "dashboard"` and no
   `default`.
-- `/opt/auth/` holds a `state/`, or an `etc/` with no `manifest.toml` naming
-  its `app`.
+- `/var/opt/ikigenba/auth/` holds a `state/` and there is no `/opt/auth/`,
+  or `/opt/auth/` holds an `etc/` with no `manifest.toml` naming its `app`.
 
 Postconditions:
 

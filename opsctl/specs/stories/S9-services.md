@@ -202,8 +202,8 @@ Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev`.
 - No `/opt/<name>/` holds both an `etc/manifest.toml` naming its `app` and a
-  `bin/<name>`; or no directory under `/opt/` holds an `etc/` or a `state/` at
-  all.
+  `bin/<name>`; or no directory under `/opt/` holds an `etc/` and none under
+  `/var/opt/ikigenba/` holds a `state/`.
 - `opsctl init` or `opsctl install` has run on the host.
 
 Postconditions:
@@ -245,8 +245,8 @@ Preconditions:
 - `/opt/notes/etc/manifest.toml` names `app = "notes"`, sets
   `description = "Shared notes"` and `mcp = true`, and
   `/opt/notes/share/icon.svg` exists, but `/opt/notes/bin/notes` does not.
-- `/opt/wiki/` holds a `state/` and a `share/icon.svg`, and no
-  `etc/manifest.toml`.
+- `/var/opt/ikigenba/wiki/` holds a `state/`, so `wiki` is a service, and
+  `/opt/wiki/` holds a `share/icon.svg` and no `etc/`.
 
 Postconditions:
 

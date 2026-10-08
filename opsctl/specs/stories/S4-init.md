@@ -39,7 +39,9 @@ edit to something `init` generated. From the developer's machine that pair is
 `devctl space init`, which sets the keys `create` set and runs `init` again;
 `create` runs it once and `space init` runs it on any later day. Two of the
 generated files also answer to
-what is under `/opt`, and the nginx file to which apps are disabled as well.
+what is under `/opt` — `/etc/litestream.yml` to what is under
+`/var/opt/ikigenba` too — and the nginx file to which apps are disabled as
+well.
 So does `/var/lib/ikigenba/services.json`, the services file
 (`S9-services.md`), which `init` rewrites every run without printing a line
 for it;
@@ -268,8 +270,9 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No setup command ran, no file under `/etc`, `/opt`, or
-  `/var/lib/ikigenba` was created, modified, or removed.
+- Nothing has changed. No setup command ran, no file under `/etc`, `/opt`,
+  `/var/opt/ikigenba`, or `/var/lib/ikigenba` was created, modified, or
+  removed.
 
 ## An operator runs init again after fixing what it found
 
@@ -409,8 +412,8 @@ Preconditions:
   `DRAIN_SECONDS=5` and a stop timeout of `10` seconds. `notes` was disabled
   with `opsctl disable notes`.
 - `crm`'s and `dashboard`'s sockets are listening, and neither is disabled.
-- `/opt/gmail/` holds a `state/` and no `bin/gmail`: it is a service, not an
-  installed app.
+- `/var/opt/ikigenba/gmail/` holds a `state/` and there is no `/opt/gmail/`:
+  it is a service, not an installed app.
 
 Postconditions:
 
@@ -424,7 +427,8 @@ Postconditions:
 - `notes` was not started, restarted, or enabled: both its units are still
   disabled and inactive and its names still answer `503`. When it is enabled
   it starts with the new values.
-- `/opt/gmail/` was not touched and no unit was written for it.
+- `/var/opt/ikigenba/gmail/` was not touched, `/opt/gmail/` was not created,
+  and no unit was written for it.
 - Running `init` again writes the same values, restarts no app, and prints
   the same lines.
 
