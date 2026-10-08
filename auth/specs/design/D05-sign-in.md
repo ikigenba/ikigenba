@@ -38,8 +38,13 @@ Google can stand in for tests while production points at Google itself. Every
 Google fact stated as a requirement below is proven by the evidence gathered for
 this design (a live fetch of Google's discovery document plus Google's published
 OpenID-Connect docs); no requirement asserts Google bytes beyond what that
-evidence documents. Deferring discovery is auth's own timing decision, not a
-claim about Google's bytes, so it needs no new observation.
+evidence documents. The authorization URL fixes `prompt=select_account`, the
+value Google's OpenID Connect documentation ("Authentication URI parameters",
+`prompt`) defines as asking the user to select an account, so every sign-in
+shows Google's account chooser rather than silently reusing the browser's
+account; no other `prompt` value is sent. Deferring discovery is auth's own
+timing decision, not a claim about Google's bytes, so it needs no new
+observation.
 
 The session is carried by a cookie named `ikigenba_session`. auth learns its own
 place in the world from each request's `Host`: the *space* is that host with a
@@ -411,7 +416,7 @@ were recorded.
 - R-ICXY-ERNZ: `internal/server` MUST export `const SessionCookieName = "ikigenba_session"`, the name of the session cookie; other designs reference this name rather than re-declaring it.
 - R-KWWH-UJGR: `NewClient` MUST build the client from `GOOGLE_CLIENT_ID` (as `clientID`), `GOOGLE_CLIENT_SECRET` (as `clientSecret`), `WORKSPACE_DOMAIN` (as `workspaceDomain`), and `Process.OIDCIssuer` (as `issuer`) without performing any I/O, and MUST NOT contact the `issuer` at construction; the client MUST discover the Google OAuth 2.0 / OIDC endpoints and JWKS from that `issuer`'s OpenID configuration on demand when a sign-in needs them (in `AuthCodeURL` and `Exchange`), so that a loopback fake standing in as `Process.OIDCIssuer` fully replaces Google in tests; a discovery that fails MUST NOT be remembered — a later sign-in retries it; the `redirect_uri` MUST NOT be fixed at construction — it is derived per request and passed to `AuthCodeURL` and `Exchange`.
 - R-KZCA-M2Y5: When the client cannot discover the `issuer`'s endpoints (the `issuer` is unreachable or its OpenID configuration cannot be fetched), `AuthCodeURL` MUST return a non-nil error and an empty URL string.
-- R-TTTA-C8HY: `AuthCodeURL` MUST return a URL addressed to the `authorization_endpoint` discovered from the client's issuer (for Google's issuer this is `https://accounts.google.com/o/oauth2/v2/auth`), whose query carries the OAuth client id (from `GOOGLE_CLIENT_ID`), `hd` set to `WORKSPACE_DOMAIN`, the `redirect_uri`, the given `state`, a `code_challenge` that is the S256 hash of the given `verifier`, and `code_challenge_method=S256`.
+- R-HAV6-ITBJ: `AuthCodeURL` MUST return a URL addressed to the `authorization_endpoint` discovered from the client's issuer (for Google's issuer this is `https://accounts.google.com/o/oauth2/v2/auth`), whose query carries the OAuth client id (from `GOOGLE_CLIENT_ID`), `hd` set to `WORKSPACE_DOMAIN`, exactly one `prompt` parameter, whose value is `select_account`, the `redirect_uri`, the given `state`, a `code_challenge` that is the S256 hash of the given `verifier`, and `code_challenge_method=S256`.
 - R-TXGZ-HJQ1: `Exchange` MUST POST the code, PKCE `verifier`, and the given `redirectURI` to the `token_endpoint` discovered from the client's issuer (for Google's issuer this is `https://oauth2.googleapis.com/token`), MUST send to that endpoint the same `redirect_uri` value it was given (matching the one used at authorization), MUST verify the returned ID token's RS256 signature against the discovered JWKS, MUST accept an issuer claim of either `accounts.google.com` or `https://accounts.google.com`, and MUST return `Claims` populated from the verified token; a failed exchange, unreachable endpoint, or failed verification MUST return a non-nil error.
 - R-J1MC-TVZ3: On a successful sign-in the response MUST set the `SessionCookieName` cookie to the created session's opaque id with attributes `Domain=<cookie domain>` (R-9Y8U-AAQ2), `Path=/`, `Secure`, `HttpOnly`, and `SameSite=Lax`, so that a cookie jar following RFC 6265 given the response for the request's own `https` URL, port included, stores the cookie and returns it for `https` URLs whose host is the cookie domain or ends with `.` followed by it.
 - R-J2U9-7NPS: On logout the response MUST clear the `SessionCookieName` cookie with an empty value, `Max-Age=0`, and the same domain, path, and security attributes as the login cookie (`Domain=<cookie domain>` (R-9Y8U-AAQ2), `Path=/`, `Secure`, `HttpOnly`, `SameSite=Lax`), so that a cookie jar following RFC 6265 that holds the login cookie, given the response for the request's own `https` URL, no longer returns it.
