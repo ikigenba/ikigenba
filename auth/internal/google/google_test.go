@@ -398,7 +398,7 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse authorization URL: %v", err)
 	}
-	// R-TTTA-C8HY
+	// R-HAV6-ITBJ
 	if authURL.Scheme+"://"+authURL.Host+authURL.Path != fake.server.URL+"/custom-authorization" {
 		t.Errorf("authorization endpoint = %q, want %q", authURL.String(), fake.server.URL+"/custom-authorization")
 	}
@@ -416,6 +416,9 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 			t.Errorf("authorization query %s = %q, want %q", key, got, want)
 		}
 	}
+	if got := authURL.Query()["prompt"]; len(got) != 1 || got[0] != "select_account" {
+		t.Errorf("authorization query prompt = %q, want exactly one select_account", got)
+	}
 	second, err := client.AuthCodeURL("other-state", "other-verifier", "https://auth.other.test/callback")
 	if err != nil {
 		t.Fatalf("second AuthCodeURL: %v", err)
@@ -425,6 +428,35 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 	}
 	if fake.discoveryRequests() != 1 {
 		t.Errorf("discovery requests after second AuthCodeURL = %d, want 1", fake.discoveryRequests())
+	}
+}
+
+func TestAuthorizationURLReplacesEndpointPrompt(t *testing.T) {
+	// R-HAV6-ITBJ
+	for _, endpointQuery := range []string{
+		"prompt=consent",
+		"prompt=none&prompt=consent",
+		"prompt=select_account&prompt=select_account",
+	} {
+		t.Run(endpointQuery, func(t *testing.T) {
+			fake := newFakeIssuer(t)
+			fake.setPaths("/custom-authorization?tenant=example&"+endpointQuery, "/token", "/jwks")
+			client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
+			rawURL, err := client.AuthCodeURL("login-state", "verifier", "https://auth.example.test/callback")
+			if err != nil {
+				t.Fatalf("AuthCodeURL: %v", err)
+			}
+			authURL, err := url.Parse(rawURL)
+			if err != nil {
+				t.Fatalf("parse authorization URL: %v", err)
+			}
+			if got := authURL.Query()["prompt"]; len(got) != 1 || got[0] != "select_account" {
+				t.Errorf("authorization query prompt = %q, want exactly one select_account", got)
+			}
+			if authURL.Scheme+"://"+authURL.Host+authURL.Path != fake.server.URL+"/custom-authorization" || authURL.Query().Get("tenant") != "example" {
+				t.Errorf("authorization endpoint parameters changed: %s", authURL)
+			}
+		})
 	}
 }
 

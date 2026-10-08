@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -55,11 +56,18 @@ func (c *Client) AuthCodeURL(state, verifier, redirectURI string) (string, error
 		return "", err
 	}
 
-	return config.AuthCodeURL(
+	authURL, err := url.Parse(config.AuthCodeURL(
 		state,
 		oauth2.SetAuthURLParam("hd", c.workspace),
 		oauth2.S256ChallengeOption(verifier),
-	), nil
+	))
+	if err != nil {
+		return "", fmt.Errorf("build authorization URL: %w", err)
+	}
+	query := authURL.Query()
+	query.Set("prompt", "select_account")
+	authURL.RawQuery = query.Encode()
+	return authURL.String(), nil
 }
 
 // Exchange exchanges a code and verifies the returned Google ID token.
