@@ -38,7 +38,7 @@ func iconEntry(name, url, icon string, enabled bool) map[string]any {
 }
 
 func TestPublicSurface(t *testing.T) {
-	// R-HLTX-LS8Q R-HT5B-WEOW R-HUD8-A6FL R-HVL4-NY6A R-HY0X-FHNO
+	// R-HLTX-LS8Q R-HT5B-WEOW R-HUD8-A6FL R-SGAN-GQS4 R-HY0X-FHNO
 	t.Setenv(services.Variable, "")
 	user := page.User{"email", "/profile", "/logout"}
 	if user.Email != "email" || user.ProfileURL != "/profile" || user.LogoutURL != "/logout" {
@@ -49,8 +49,8 @@ func TestPublicSurface(t *testing.T) {
 	if service.Name != "app" || service.URL != "/app" || service.Icon != icon || !service.Enabled || service.Current {
 		t.Fatal("Service fields or order")
 	}
-	banner := page.Banner{"app", "build", user.Email, user.ProfileURL, user.LogoutURL, []page.Service{service}}
-	if banner.Service != "app" || banner.Version != "build" || banner.Email != user.Email || banner.ProfileURL != user.ProfileURL || banner.LogoutURL != user.LogoutURL || banner.Services[0] != service {
+	banner := page.Banner{"app", icon, "build", user.Email, user.ProfileURL, user.LogoutURL, []page.Service{service}}
+	if banner.Service != "app" || banner.Icon != icon || banner.Version != "build" || banner.Email != user.Email || banner.ProfileURL != user.ProfileURL || banner.LogoutURL != user.LogoutURL || banner.Services[0] != service {
 		t.Fatal("Banner fields or order")
 	}
 	useBanner := func(bannerOf func(page.User) page.Banner) { _ = bannerOf(user) }
@@ -212,5 +212,46 @@ func TestConcurrentBanner(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("concurrent result: %+v", got)
 		}
+	}
+}
+
+func TestBannerCurrentIcon(t *testing.T) {
+	// R-SHIJ-UIIT
+	path := filepath.Join(t.TempDir(), "services.json")
+	t.Setenv(services.Variable, path)
+	kit := page.New("app", "build")
+	for _, test := range []struct {
+		name    string
+		entries []map[string]any
+		want    template.HTML
+	}{
+		{"first current after other services", []map[string]any{iconEntry("other", "/", "other", true), entry("app", "/", true), iconEntry("app", "/", "<svg>\n&amp;é</svg>", false), iconEntry("app", "/", "second", true)}, "<svg>\n&amp;é</svg>"},
+		{"empty first current icon", []map[string]any{iconEntry("app", "/", "", true), iconEntry("app", "/", "second", true)}, ""},
+		{"name matching is exact", []map[string]any{iconEntry("APP", "/", "other", true)}, ""},
+		{"current lacks icon", []map[string]any{entry("app", "/", true), iconEntry("other", "/", "other", true)}, ""},
+		{"no entries", nil, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			writeEntries(t, path, test.entries)
+			if got := kit.Banner(page.User{}).Icon; got != test.want {
+				t.Fatalf("Icon = %q, want %q", got, test.want)
+			}
+		})
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := kit.Banner(page.User{}).Icon; got != "" {
+		t.Fatalf("missing file Icon = %q", got)
+	}
+	t.Setenv(services.Variable, "")
+	if got := page.New("app", "build").Banner(page.User{}).Icon; got != "" {
+		t.Fatalf("empty path Icon = %q", got)
+	}
+	if err := os.Unsetenv(services.Variable); err != nil {
+		t.Fatal(err)
+	}
+	if got := page.New("app", "build").Banner(page.User{}).Icon; got != "" {
+		t.Fatalf("unset path Icon = %q", got)
 	}
 }
