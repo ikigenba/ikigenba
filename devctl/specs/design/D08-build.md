@@ -1,40 +1,24 @@
 # D08-build
 
-`devctl build` takes one operand and builds in one of two forms, which
-coexist until the per-app form goes away. An operand that names an app in the
-developer's checkout, an entry of the checkout root that D04's discovery
-qualifies (`(*Checkout).HasApp`), is the per-app build; any other operand is
-resolved as a commit in the local repository (`(*Checkout).ResolveCommit`)
-and is the suite build. Release tags are `r<N>` or carry a slash, so no app
-name is also a tag; when a name is both, the app wins.
-
-The per-app build produces one linux/amd64 artifact from a clean commit, named
-by `HEAD`'s full commit sha: `<app>/dist/<app>-<sha>.tar.xz`. It reads no tag,
-and none is needed or made, so whatever tags point at `HEAD`, or none, the
-file is the same; two apps built at one commit carry the same sha. Branch
-ancestry imposes no restriction and nothing about the branch is recorded. The
-binary's emitted manifest must match the committed manifest; the manifest is
-the only thing build asks the binary for, and it never runs the binary's
-`--version`. Artifact publishing preserves an earlier file on failure. A
-committed manifest that still names a `port` is refused when the app is
-resolved, before anything is compiled (D04 R-NM90-RHFN), so no file opsctl
-would refuse is ever written.
-
-The suite build makes one release of the whole suite from one commit. It
-resolves the operand, a full sha, a shorter sha or a tag, to the full sha
+`devctl build` takes one operand, a commit, and makes one release of the
+whole suite from it. It resolves the operand, a full sha, a shorter sha or a
+tag, to the full sha in the local repository (`(*Checkout).ResolveCommit`)
 without fetching, checks that sha out into a temporary detached worktree
 under `dist/` at the checkout root, and builds from that tree alone: the
 developer's working tree, `HEAD`, branch, index and cleanliness are not
-consulted, and the release depends on the operand only through the sha. The
-worktree is removed before build returns, whatever the outcome. The apps are
-those D04's discovery finds in the worktree. Every refusal that needs no
-compiler, a broken or `port`-naming manifest, an unusable app name (including
-`opsctl`, whose directory in the release is opsctl's own), an app holding
-`sbin/` or `include/`, happens before anything is compiled. The apps are then
-compiled in name order, each checked against the manifest committed at that
-commit exactly as the per-app build checks it, and opsctl, which has no
-manifest, is compiled last; the first failure stops the build. Nothing is
-injected into any binary.
+consulted, and the release depends on the operand only through the sha. An
+operand that resolves to no commit is refused, whatever else it names, an
+app's directory included. The worktree is removed before build returns,
+whatever the outcome. The apps are those D04's discovery finds in the
+worktree. Every refusal that needs no compiler, a broken or `port`-naming
+manifest (D04 R-NM90-RHFN), an unusable app name (including `opsctl`, whose
+directory in the release is opsctl's own), an app holding `sbin/` or
+`include/`, happens before anything is compiled. The apps are then compiled
+in name order, and opsctl, which has no manifest, last; the first failure
+stops the build. Each app's binary is asked for its manifest, the only thing
+build asks it for, and what it emits must be byte for byte the manifest
+committed at that commit; build never runs the binary's `--version`. Nothing
+is injected into any binary.
 
 The release is `dist/<sha>.tar.xz` at the checkout root (`ReleaseFile`),
 printed relative to the checkout root. Its one top-level entry is `<sha>/`,
@@ -42,8 +26,8 @@ which holds `release.json` (the sha, the build time from the run seam's
 clock, and the devctl version, which `cli.Run` hands to `build.Run`), one
 directory per app with `bin/<app>`, the emitted `etc/manifest.toml`, the
 rest of `etc/` and any `share/`, `libexec/` and `lib/`, and `opsctl/bin/opsctl`.
-As in the per-app build, an earlier file of the same name survives any
-failure.
+An earlier file of the same name survives any failure. The requirements
+below call this the suite build.
 
 `deploy` of a release (D09) and `space create` (D07) build the release the
 same way, without re-running the CLI: `Suite` is the suite build for an
@@ -63,74 +47,37 @@ against.
 
 - R-6DMZ-9OZX: When `--help` or `-h` appears anywhere among the arguments `build.Run` is given, `build.Run` MUST write the `build` usage text to `stdout`, return a nil error, call no method of `*checkout.Checkout`, and pass no `seam.Cmd` to `deps.Exec`, verified at least by `devctl build --help` and `devctl build crm --help` each printing that text to stdout with empty stderr and exit 0.
 
-- R-F82W-SRCX: `build` MUST take exactly one operand, `<sha|tag>` or `<app>`, and MUST accept no option other than `--help` and `-h`.
+- R-QYEN-A3U9: `build` MUST take exactly one operand, `<sha|tag>`, and MUST accept no option other than `--help` and `-h`.
 
-- R-F9AT-6J3M: `devctl build` with no operand MUST write exactly the three lines `devctl: build needs <sha|tag> or <app>`, an empty line, and `see 'devctl build --help' for usage` to stderr, write nothing to stdout, pass no `seam.Cmd` to `deps.Exec`, and exit 2.
+- R-QZMJ-NVKY: `devctl build` with no operand MUST write exactly the three lines `devctl: build needs <sha|tag>`, an empty line, and `see 'devctl build --help' for usage` to stderr, write nothing to stdout, pass no `seam.Cmd` to `deps.Exec`, and exit 2.
 
-- R-FAIP-KAUB: `devctl build` with more than one operand MUST write exactly the three lines `devctl: build takes one <sha|tag> or <app>`, an empty line, and `see 'devctl build --help' for usage` to stderr, write nothing to stdout, pass no `seam.Cmd` to `deps.Exec`, and exit 2.
+- R-R0UG-1NBN: `devctl build` with more than one operand MUST write exactly the three lines `devctl: build takes one <sha|tag>`, an empty line, and `see 'devctl build --help' for usage` to stderr, write nothing to stdout, pass no `seam.Cmd` to `deps.Exec`, and exit 2.
 
 - R-6IIK-SRYP: An argument of `build` that begins with `-` and is neither `--help` nor `-h` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl build --help' for usage` to be written to stderr, nothing to stdout, and exit 2.
 
-- R-FBQL-Y2L0: `cli.Run` MUST dispatch the command `build` to `build.Run`, passing the arguments that follow `build`, as `version` the version string that `devctl --version` prints without its newline, the `stdout` writer `cli.Run` was given, and `deps`, MUST return 0 when `build.Run` returns a nil error, and `build` MUST call `deps.Cloud` not at all, verified with a recording fake `Deps.Cloud` that is left with no call by `devctl build crm` and by `devctl build r1`.
-
-- R-RBMT-WHDT: `build` MUST NOT read the root file `infra/terraform.tfvars.json`, verified at least by `devctl build --help` and `devctl build crm` each producing the same stdout, stderr, and exit code in a checkout whose root file is absent, in one whose root file is malformed, and in one whose root file is well-formed.
-
-- R-6M69-Y36S: When `(*Checkout).Clean` returns false, `build` MUST return a `*UsageError` whose `Message` is `the working tree has uncommitted changes; commit them first` and whose `Help` is empty, so that `devctl build crm` writes that message as the single stderr line `devctl: the working tree has uncommitted changes; commit them first`, writes nothing to stdout, and exits 2.
-
-- R-6UPK-MHDN: `build` MUST compare that process's standard output with the contents of the file at `checkout.ManifestFile` under the app's `Dir` and MUST return a `*StaleManifestError` for the app's `Name` when the two are not byte-identical, verified at least by reproducing the single stderr line `devctl: crm: etc/manifest.toml does not match what the binary emits; run 'crm manifest > crm/etc/manifest.toml' and commit` with empty stdout, exit 2, and no `seam.Cmd` whose `Path` is `tar` passed to `deps.Exec`.
-
-- R-FCYI-BUBP: On a successful per-app build `build` MUST write to `stdout` exactly `File(<app>, <sha>)`, where `<sha>` is what `(*Checkout).Head` returned, followed by one newline and nothing else, write nothing to stderr, and exit 0, verified at least by reproducing the single line `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` for the app `crm` when the fake `git rev-parse HEAD` prints `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`; and `build` MUST write nothing to `stdout` in every outcome in which it returns a non-nil error.
+- R-R22C-FF2C: `cli.Run` MUST dispatch the command `build` to `build.Run`, passing the arguments that follow `build`, as `version` the version string that `devctl --version` prints without its newline, the `stdout` writer `cli.Run` was given, and `deps`, MUST return 0 when `build.Run` returns a nil error, and `build` MUST call `deps.Cloud` not at all, verified with a recording fake `Deps.Cloud` that is left with no call by `devctl build r1`.
 
 - R-70T2-JC34: When `deps.Exec` returns a non-nil error for the `go` `Cmd`, the app binary's `Cmd`, or the `tar` `Cmd`, `build` MUST return an error that `errors.As` does not match to a `*ProcessError` and whose message contains that `seam.Cmd`'s `Path`, so that `cli.Run` reports it as a single stderr line and exit 1.
 
 - R-EM3N-CKUL: Package `internal/build` MUST export a `ProcessError` struct whose fields are exactly `Label string`, `Status int`, and `Stderr string`, with the methods `Error() string`, returning `<Label>: exit status <Status>`, `Detail() string`, returning `seam.QuoteOutput(Stderr)`, and `ExitCode() int`, returning 1.
 
-- R-FE6E-PM2E: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work without reading the root file and before any external operation:
+- R-R3A8-T6T1: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work without reading the root file and before any external operation:
 
   ```
   Usage: devctl build <sha|tag>
-         devctl build <app>
 
   Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
   release holding every app and opsctl. <sha> is the full commit sha the argument
   resolves to; the working tree is not read.
-
-  Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
-  deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
-  the working tree must have no uncommitted changes.
   ```
 
-- R-FPLY-TD2F: The per-app build MUST refuse an app name for which `appref.ValidName` is false, as R-FOE2-FLBQ states, passing to `deps.Exec` no `seam.Cmd` other than that of `checkout.Open`, even when the working tree has uncommitted changes; it MUST resolve the app with `(*Checkout).App`, require a clean working tree with `(*Checkout).Clean`, and resolve HEAD with `(*Checkout).Head` before passing any `seam.Cmd` whose `Path` is `go` to `deps.Exec`; a refusal MUST leave dist untouched.
-
-- R-FOE2-FLBQ: The per-app build MUST reject an app name for which `appref.ValidName` is false before compiling or writing dist, with a `UsageError` whose message is `'<app>' is not a usable app name` and whose help is empty, yielding exit 2.
-
-- R-FTJ7-VZFC: The per-app build MUST compile the selected app exactly once with Go for linux/amd64 with cgo disabled, into temporary output under that app’s dist directory, by passing to `deps.Exec` exactly one `seam.Cmd` whose `Path` is `go`, whose `Dir` is the app’s `Dir` so its own module is used, and whose `Args` name the package path `./cmd/<app>`, where `<app>` is the app’s `Name`, as the package to build; it MUST not inject a version at build time. A compiler nonzero exit MUST become ProcessError labeled `build <app>` with its exit status and stderr.
-
-- R-FGM7-H5JS: The only `seam.Cmd` values whose `Path` is `git` that the per-app build passes to `deps.Exec` MUST be those of `checkout.Open`, `(*Checkout).Clean`, and `(*Checkout).Head`, so that no tag or branch is read, created, or moved and the file is named the same whether `HEAD` is tagged or not and on a branch or detached; verified at least by a successful `devctl build crm` with a recording fake `deps.Exec` that writes `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` for a `HEAD` of `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`.
-
-- R-FHU3-UXAH: The per-app build MUST create an xz-compressed tar artifact whose relative root members are exactly `bin/<app>`, the emitted `etc/manifest.toml`, the other regular files under the app’s `etc/`, and optional `share/` files with their original relative paths and bytes; no archive member path MUST contain a version directory. Compression failures MUST use `ProcessError` and preserve an earlier artifact unchanged.
-
-- R-5LK0-1DC3: Build MUST replace the final artifact only after all compilation, manifest and archive operations succeed; any failure MUST preserve earlier files and remove temporary output. The static linux/amd64 executable MUST remain executable inside the archive.
-
-- R-5MRW-F52S: Package `internal/build` MUST export `DistDir(app string) string` and `File(app, sha string) string`.
-
-- R-5NZS-SWTH: `build.DistDir` MUST return `<app>/dist`; `build.File` MUST return `<app>/dist/<app>-<sha>.tar.xz`, preserving the supplied sha verbatim, verified at least by `File("crm", "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a")` returning `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`.
-
-- R-FK9W-MGRV: After compiling an app, build MUST execute that app's staged executable with the single argument `manifest` through Deps.Exec and use that stdout as the emitted manifest; a nonzero exit MUST yield ProcessError labeled `<app> manifest` carrying the exit status and stderr.
-
-- R-5P7P-6OK6: On successful build the artifact MUST contain the same executable used for manifest validation, its emitted manifest, and unchanged bytes for all other regular files under the app's etc directory and optional share directory.
-
-- R-FJ20-8P16: The per-app build MUST write only under the selected app’s dist directory, creating it if needed; on return it MUST leave only the completed artifact and paths that existed before invocation, with temporary paths removed on success and failure.
-
-- R-FLHT-08IK: For each app it compiles, `build` MUST pass to `deps.Exec` exactly one `seam.Cmd` whose `Path` is that app's staged binary, the one whose `Args` are exactly `manifest`, MUST NOT run that binary with `--version` or any other argument, and MUST pass no `seam.Cmd` whose `Path` is opsctl's staged binary, verified at least by a successful `devctl build crm` and a successful `devctl build r1` with a recording fake `deps.Exec` in which every staged binary's `--version` would exit non-zero.
+- R-R4I5-6YJQ: For each app it compiles, `build` MUST pass to `deps.Exec` exactly one `seam.Cmd` whose `Path` is that app's staged binary, the one whose `Args` are exactly `manifest`, MUST NOT run that binary with `--version` or any other argument, and MUST pass no `seam.Cmd` whose `Path` is opsctl's staged binary, verified at least by a successful `devctl build r1` with a recording fake `deps.Exec` in which every staged binary's `--version` would exit non-zero.
 
 - R-FNXL-RRZY: Package `internal/build` MUST export `ReleaseFile(sha string) string`.
 
 - R-FP5I-5JQN: `build.ReleaseFile` MUST return `dist/<sha>.tar.xz`, preserving the supplied sha verbatim, verified at least by `ReleaseFile("4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a")` returning `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`.
 
-- R-FQDE-JBHC: `build` MUST perform the per-app build of its one operand when `(*Checkout).HasApp` of that operand returns true on the checkout `checkout.Open` found from `deps.Dir`, and the suite build of that operand otherwise; verified at least by `devctl build crm` in a temporary checkout where `crm/` qualifies as an app writing `crm/dist/crm-<sha>.tar.xz`, with `<sha>` what the fake `git rev-parse HEAD` prints, and passing no `seam.Cmd` whose `Args` begin with `rev-parse` and `--verify`, although the fake `git` would resolve `crm` as a commit; and by `devctl build r1` in a temporary checkout holding no `r1` entry writing `dist/<sha>.tar.xz`, with `<sha>` the full sha the fake `git` resolves `r1` to.
-
-- R-HZ5O-K5OE: When the suite build's `(*Checkout).ResolveCommit` of the operand reports no commit, `build` MUST return a `*UsageError` whose `Message` is `'<operand>' is neither an app in the checkout nor a commit` and whose `Help` is empty, and MUST pass no further `seam.Cmd` to `deps.Exec`, so that `devctl build bogus` writes the single stderr line `devctl: 'bogus' is neither an app in the checkout nor a commit`, writes nothing to stdout, exits 2, and leaves every file of the checkout, `dist/` included, as it was; verified at least by `bogus`, and by `main`, `HEAD` and `HEAD~1` with a fake `git` that would resolve each of them as a revision but exits non-zero for `refs/tags/<operand>^{commit}`, each passing no `seam.Cmd` other than those of `checkout.Open` and `ResolveCommit`.
+- R-R5Q1-KQAF: When `(*Checkout).ResolveCommit` of the operand reports no commit, `build` MUST return a `*UsageError` whose `Message` is `'<operand>' is not a commit` and whose `Help` is empty, and MUST pass no further `seam.Cmd` to `deps.Exec`, so that `devctl build bogus` writes the single stderr line `devctl: 'bogus' is not a commit`, writes nothing to stdout, exits 2, and leaves every file of the checkout, `dist/` included, as it was; verified at least by `bogus`, by `crm` in a temporary checkout where `crm/` is an app with a `main` package and a manifest and the fake `git` resolves no tag `crm`, and by `main`, `HEAD` and `HEAD~1` with a fake `git` that would resolve each of them as a revision but exits non-zero for `refs/tags/<operand>^{commit}`, each passing no `seam.Cmd` other than those of `checkout.Open` and `ResolveCommit`.
 
 - R-I0DK-XXF3: The only `seam.Cmd` values whose `Path` is `git` that the suite build passes to `deps.Exec` MUST be that of `checkout.Open`, one of `(*Checkout).ResolveCommit` with the operand as typed, one of `(*Checkout).AddWorktree`, and one of `(*Checkout).RemoveWorktree`, so that nothing is fetched, no tag, branch, `HEAD`, index or cleanliness of the developer's checkout is changed, and none is read except the tag `refs/tags/<operand>` that `ResolveCommit` reads for an operand in the tag form; and the release MUST depend on the operand only through the full sha `ResolveCommit` returned; verified at least by `devctl build r1`, `devctl build 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` and `devctl build 4b22285`, with a fake `git` resolving each to `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` and the same fake `Now`, each writing the stdout line `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` and a release with the same member paths, member bytes and `release.json`.
 
@@ -167,3 +114,7 @@ against.
 - R-VL50-AX22: Package `internal/build` MUST export a `Release` struct whose fields are exactly `SHA string`, `File string`, and `Manifests []checkout.Manifest`, and `Suite(ctx context.Context, c *checkout.Checkout, sha, version string) (Release, error)`.
 
 - R-VNKT-2GJG: `build.Suite` MUST perform the suite build of the full commit sha `sha` in the checkout `c`, with `c.Deps` as `deps` and `version` as the `version` that `release.json` records, so that every requirement of this design about the suite build holds for it as it holds for `devctl build <sha>`, except that `Suite` passes no `seam.Cmd` of `checkout.Open` or `(*Checkout).ResolveCommit`, writes to no stdout, and returns its failures to its caller instead of through `cli.Run`; on success it MUST return a `Release` whose `SHA` is `sha`, whose `File` is `ReleaseFile(sha)`, relative to the checkout root, and whose `Manifests` hold, in ascending app order, one `checkout.Manifest` per app of the release, the one `checkout.DecodeManifest` gives for the bytes of that app's `<sha>/<app>/etc/manifest.toml` member; verified at least by `Suite` over a fake worktree holding the apps `auth`, whose manifest lists `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `secrets`, and `dummy`, which lists none, returning `SHA` `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, `File` `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, and those two manifests in that order, and leaving at that `File` a release with the same member paths, member bytes and `release.json` as `devctl build 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` given the same fakes and `Now`; and by a failed `dashboard` compile returning the same `*ProcessError` labeled `build dashboard`.
+
+- R-R6XX-YI14: For each app it compiles, `build` MUST take the standard output of that app's `manifest` run, the one `seam.Cmd` R-R4I5-6YJQ states, as the app's emitted manifest; when that run exits non-zero it MUST return a `*ProcessError` whose `Label` is `<app> manifest` and which carries that exit status and standard error; and when the emitted bytes are not byte-identical to the file R-G2KE-D0WA names it MUST return a `*StaleManifestError` for the app's `Name`; in either case it MUST pass no `seam.Cmd` whose `Path` is `tar`; verified at least through `cli.Run` by reproducing the single stderr line `devctl: crm: etc/manifest.toml does not match what the binary emits; run 'crm manifest > crm/etc/manifest.toml' and commit` with empty stdout and exit 2 for an emitted manifest that differs from the committed one by one trailing newline, and by a `crm manifest` run exiting 1 with the standard error `boom` writing to stderr exactly `devctl: crm manifest: exit status 1`, an empty line, and `> boom`, with empty stdout and exit 1.
+
+- R-R85U-C9RT: `build` MUST write nothing to `stdout` in every outcome in which it returns a non-nil error.

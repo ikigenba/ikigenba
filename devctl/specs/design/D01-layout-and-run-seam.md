@@ -30,4 +30,4 @@ the root as the profile name, the process runners, and the clock.
 
 - R-BRO3-7UK9: `seam.Stream` MUST terminate and reap its process when its context is cancelled; tests MUST prove delivery before exit and cancellation completion with controlled local processes and no network access.
 
-- R-BU3V-ZE1N: Every relative path read or written by a command MUST resolve under `Deps.Dir` or the checkout root returned by `checkout.Open`; an explicit absolute deploy file operand MUST be read at that path. Commands MUST NOT discover or read the developer’s home directory. Every process directory MUST be explicitly supplied through `seam.Cmd.Dir`; tests MUST use temporary paths and fake process runners.
+- R-RGP5-0NYO: Every relative path read or written by a command MUST resolve under `Deps.Dir` or the checkout root returned by `checkout.Open`. Commands MUST NOT discover or read the developer’s home directory. Every process directory MUST be explicitly supplied through `seam.Cmd.Dir`; tests MUST use temporary paths and fake process runners.

@@ -1,21 +1,13 @@
 # D10-host-setup
 
-Shared host setup is the part of putting opsctl on a space's host that
-`space create` (D07) and `space init` (D11) have in common, and the
-configuration store operations that `apex` (D14) needs on top of them. It
-lives in `internal/hostsetup` and reaches opsctl only through its published
-interface: the release assets it publishes, and the installed commands run
-over ssh through `host.Host` (D06).
-
-A host gets its opsctl in one of two ways. A space created from a release
-(D07) runs the opsctl inside that release, by its absolute path, from the
-moment the release is unpacked, and every later activate brings its own; no
-published opsctl is fetched. `space init --opsctl` (D11), which stays until
-the per-app form goes away and is not used on a host that runs a release,
-fetches the named release's installer from opsctl's documented release
-download onto the host and runs it. No version is pinned anywhere in devctl,
-and devctl never relies on anything the installer leaves on the host besides
-the installed `opsctl`.
+Host setup is the configuration store work `space create` (D07) does on a
+space's host, and the single-key operations that `apex` (D14) needs on top of
+it. It lives in `internal/hostsetup` and reaches opsctl only through the
+installed commands run over ssh through `host.Host` (D06). A host gets its
+opsctl from the release it runs: a space created from a release (D07) runs
+the opsctl inside that release, by its absolute path, from the moment the
+release is unpacked, and every later activate brings its own. No published
+opsctl is fetched and no version is pinned anywhere in devctl.
 
 Configuration is the eleven keys the installed opsctl declares, and nothing
 else. Five derive from the root, the zone, and the space: `host.name` is the
@@ -23,14 +15,15 @@ space domain, `dns.provider` is `route53`, `dns.zones` is the root and the
 zone id, `aws.region` is the region, and `backup.s3_uri` is the bucket named
 after the root followed by the space's label. Four are the backup periods,
 which derive from nothing on the developer's side: create sets them to the
-defaults declared here, and init leaves whatever the host holds. `acme.email`
-is set when the caller supplies an address and left alone otherwise. The
+defaults declared here, and `Configure` leaves them alone when it is given
+none. `acme.email` is set when the caller supplies an address and left alone
+otherwise. The
 inputs are plain values carried in one `Config`, so a caller cannot hand the
 host an inconsistent pair. Every key is set with its own `sudo opsctl config
 set KEY=VALUE`, in a fixed order, and the count of keys set is what the
 callers print. `Config.Opsctl` names the opsctl the keys are set with: empty,
-the `opsctl` on root's PATH, as `space init` uses it; for `space create`, the
-release's own, by absolute path. The eleventh key, `host.apex`, is never touched by
+the `opsctl` on root's PATH; for `space create`, the release's own, by
+absolute path. The eleventh key, `host.apex`, is never touched by
 `Configure`: in this package only the single-key operations change it, for
 `apex set` and `apex clear`. The one exception is outside the package: create,
 clearing a restored store, deletes it with a direct `config del` run by the
@@ -48,14 +41,6 @@ Failures of every operation here are the `*host.CommandError` D06 defines,
 returned unchanged, so the diagnostic relay is the one D06 states.
 
 ## REQUIREMENTS
-
-- R-ZERJ-X644: `Upgrade` MUST fetch `<DownloadURL>/opsctl/<version>/install.sh` on the host with `curl -fsSL -o InstallerPath <that URL>` through `(host.Host).Run` with step `opsctl`, then run `sudo bash InstallerPath <version>` through `(host.Host).Sudo` with step `opsctl`, even if the requested version equals the installed version; the first failure MUST stop further work and be returned unchanged. It MUST not consult the releases listing, discover a newer version, set configuration, or run any file the installer left on the host.
-
-- R-G670-Y0YJ: `Version` MUST invoke installed `sudo opsctl version` with step `opsctl` and carry its stdout, with trailing newlines removed, into the kept-version display; it MUST not validate, interpret or use that text to choose behavior or a release, and MUST return host execution errors unchanged.
-
-- R-GEQB-MF5E: Package `internal/hostsetup` MUST export `Upgrade(ctx context.Context, h host.Host, version string) error`.
-
-- R-GFY8-06W3: Package `internal/hostsetup` MUST export `Version(ctx context.Context, h host.Host) (string, error)`.
 
 - R-5O2A-WNPM: Package `internal/hostsetup` MUST export the constants `KeyHostName = "host.name"`, `KeyHostApex = "host.apex"`, `KeyACMEEmail = "acme.email"`, `KeyAWSRegion = "aws.region"`, `KeyBackupS3URI = "backup.s3_uri"`, `KeyBackupServiceFilesSeconds = "backup.service_files_seconds"`, `KeyBackupHostFilesSeconds = "backup.host_files_seconds"`, `KeyBackupServiceDBSeconds = "backup.service_db_seconds"`, `KeyBackupServiceWALSeconds = "backup.service_wal_seconds"`, `KeyDNSProvider = "dns.provider"`, and `KeyDNSZones = "dns.zones"`.
 
@@ -83,10 +68,10 @@ returned unchanged, so the diagnostic relay is the one D06 states.
 
 - R-8TEO-0MUN: `Configure`, `SetKey`, `DelKey`, and `GetKey` MUST NOT parse, validate, or interpret the standard output or standard error of any opsctl command beyond what R-8QYV-93D9 states, and MUST NOT alter the bytes of an `Output` or `*host.CommandError` they return.
 
-- R-WFMH-V6LF: Package `internal/hostsetup` MUST export `DownloadURL = "https://github.com/ikigenba/ikigenba/releases/download"`, `InstallerPath = "/tmp/opsctl-install"`, and `DNSProvider = "route53"`.
+- R-RSW4-UDDM: Package `internal/hostsetup` MUST export `DNSProvider = "route53"`.
 
 - R-WGUE-8YC4: Package `internal/hostsetup` MUST export `Config`, a struct whose fields are exactly `Root string`, `Region string`, `ZoneID string`, `Space spaceref.Space`, `Email string`, `Periods *BackupPeriods`, and `Opsctl string`.
 
 - R-WI2A-MQ2T: `Configure` MUST set its keys through one call to `(h).Sudo` per key, each with the step `step` and exactly the arguments `<program>`, `config`, `set`, and `<key>=<value>`, where `<program>` is `cfg.Opsctl` when it is not empty and `opsctl` when it is, and MUST issue them in this order: `KeyHostName`, `KeyDNSProvider`, `KeyDNSZones`, `KeyAWSRegion`, `KeyBackupS3URI`, then, only when `cfg.Periods` is not nil, `KeyBackupHostFilesSeconds`, `KeyBackupServiceFilesSeconds`, `KeyBackupServiceDBSeconds`, and `KeyBackupServiceWALSeconds`, then, only when `cfg.Email` is not empty, `KeyACMEEmail`, and MUST NOT make any other `Deps.Exec` or `Deps.Stream` call; verified at least by the remote argument vector `sudo opsctl config set host.name=sbx1.ikigenba.dev` for an empty `Opsctl` and `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl config set host.name=sbx1.ikigenba.dev` for that `Opsctl`.
 
-- R-8GWZ-UVC6: `Configure`, `Upgrade`, and `Version` MUST NOT issue any command whose arguments name `KeyHostApex`; `SetKey` and `DelKey`, called by `apex set` and `apex clear` (D14), MUST be the only operations of this package that set or remove `host.apex`; the one other command that changes it is outside this package: `space create`'s `restore` step (D07) removes it with a direct `(host.Host).Sudo` of `config del host.apex` run by its release's opsctl, which `DelKey`, always running the `opsctl` on root's PATH, cannot run.
+- R-RU41-854B: `Configure` MUST NOT issue any command whose arguments name `KeyHostApex`; `SetKey` and `DelKey`, called by `apex set` and `apex clear` (D14), MUST be the only operations of this package that set or remove `host.apex`; the one other command that changes it is outside this package: `space create`'s `restore` step (D07) removes it with a direct `(host.Host).Sudo` of `config del host.apex` run by its release's opsctl, which `DelKey`, always running the `opsctl` on root's PATH, cannot run.

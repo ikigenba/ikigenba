@@ -27,8 +27,8 @@ What devctl makes for a space is named after the space: the role and its
 instance profile are the space domain, the records are `<space domain>` and
 `*.<space domain>`, and the backup prefix in the bucket named after the root
 is the space's label followed by `/`. Under that prefix opsctl writes the
-backups, and its snapshots under `snapshots/`; deploy uploads under `deploy/`;
-and seed (D15) copies snapshots into `seed/`. `SnapshotPrefix` and
+backups, and its snapshots under `snapshots/`; earlier per-app deploys left
+files under `deploy/`; and seed (D15) copies snapshots into `seed/`. `SnapshotPrefix` and
 `SeedPrefix` name those two, beside `BackupPrefix`. `--delete-backups` deletes
 every object under the whole prefix, snapshots and seed copies included, so a
 destroyed space leaves nothing a later seed could take. The role's one inline policy is built
@@ -59,7 +59,7 @@ it wrote to stderr, each line prefixed `> `. A command's product is on its
 stdout and its diagnostic on its stderr (the repository's command-line
 convention), so a failing opsctl's report comes first and its reason after it;
 neither is dropped because the other is present. devctl never asserts what
-those bytes say. D07, D09, D10, D11, D12, D13, D14, D16 and D17 issue every
+those bytes say. D07, D09, D10, D12, D13, D14, D16 and D17 issue every
 host command through this one shape. `Copy` is the one way a file reaches a
 host from the developer's machine: `scp` with the same options and target as
 `ssh`, failing with the same `*CommandError`, so a failed copy is reported
@@ -91,7 +91,7 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-9ANZ-12GL: The document `PolicyDocument` returns MUST grant `ssm:GetParameter` on exactly the resource `arn:aws:ssm:*:*:parameter/<sp.Domain>/*` and MUST grant no other `ssm:` action, so that the host reads each app's secrets object that create and `secrets push` write and nothing outside the space's prefix; verified at least by parsing the JSON for the space `sbx1` under `ikigenba.dev` and finding an `Allow` statement for `ssm:GetParameter` whose only resource is `arn:aws:ssm:*:*:parameter/sbx1.ikigenba.dev/*`, no action beginning `ssm:Put`, `ssm:Delete`, or `ssm:*`, and no resource naming `parameter/ikigenba/`.
 
-- R-9D3R-SLXZ: The document `PolicyDocument` returns MUST grant `s3:GetObject` and `s3:PutObject` on exactly `arn:aws:s3:::<root>/<sp.Label>/*`, and `s3:ListBucket` on `arn:aws:s3:::<root>` only under a `StringLike` condition on `s3:prefix` whose values are exactly `<sp.Label>/` and `<sp.Label>/*`, and MUST grant no other `s3:` action and no `s3:` action on any other resource, so that the host reads `<sp.Label>/deploy/`, writes under `<sp.Label>/`, and gains no access to another space's prefix; verified at least by parsing the JSON for `sbx1` under `ikigenba.dev` and finding the object resource `arn:aws:s3:::ikigenba.dev/sbx1/*`, the bucket resource `arn:aws:s3:::ikigenba.dev` with the prefixes `sbx1/` and `sbx1/*`, and no resource or prefix naming `sbx2/`.
+- R-RRO8-GLMX: The document `PolicyDocument` returns MUST grant `s3:GetObject` and `s3:PutObject` on exactly `arn:aws:s3:::<root>/<sp.Label>/*`, and `s3:ListBucket` on `arn:aws:s3:::<root>` only under a `StringLike` condition on `s3:prefix` whose values are exactly `<sp.Label>/` and `<sp.Label>/*`, and MUST grant no other `s3:` action and no `s3:` action on any other resource, so that the host reads and writes under `<sp.Label>/` and gains no access to another space's prefix; verified at least by parsing the JSON for `sbx1` under `ikigenba.dev` and finding the object resource `arn:aws:s3:::ikigenba.dev/sbx1/*`, the bucket resource `arn:aws:s3:::ikigenba.dev` with the prefixes `sbx1/` and `sbx1/*`, and no resource or prefix naming `sbx2/`.
 
 - R-VS6F-NBYG: The document `PolicyDocument` returns MUST grant exactly three Route 53 permissions and no other `route53:` action: `route53:ListResourceRecordSets` on `arn:aws:route53:::hostedzone/<zoneID>`, `route53:GetChange` on `arn:aws:route53:::change/*`, and `route53:ChangeResourceRecordSets` on `arn:aws:route53:::hostedzone/<zoneID>` under a `ForAllValues:StringEquals` condition requiring `route53:ChangeResourceRecordSetsRecordTypes` to equal `TXT` and a `ForAllValues:StringLike` condition whose `route53:ChangeResourceRecordSetsNormalizedRecordNames` values are exactly `<sp.Domain>` and `*.<sp.Domain>` when `apex` is false, and exactly those two and `_acme-challenge.<root>` when `apex` is true; verified at least by parsing the JSON for `sbx1` under `ikigenba.dev` with the zone id `Z09565073GHK8BYWQ1A78` and each value of `apex`, checking that the `route53:ChangeResourceRecordSetsRecordTypes` values are exactly `TXT`, that the `route53:ChangeResourceRecordSetsNormalizedRecordNames` values are exactly `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev` when `apex` is false, and those two and `_acme-challenge.ikigenba.dev` when `apex` is true, and that `route53:ListHostedZones` is absent.
 
@@ -208,9 +208,9 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-UZ4D-VJ20: `space destroy`, `space stop`, `space start`, and `space status` invoked with more than one operand MUST each write `devctl: space <subcommand> takes only <space>`, and `space list` invoked with any operand MUST write `devctl: space list takes no arguments`, as the first of exactly three lines followed by an empty line and `see 'devctl space --help' for usage` on stderr, write nothing to stdout, call `Deps.Cloud` not at all, pass no `seam.Cmd` to `Deps.Exec`, and exit 2.
 
-- R-JF4H-OOXX: The `space` subcommands MUST be exactly `list`, `create`, `destroy`, `stop`, `start`, `init`, `status`, `restart`, `disable`, `enable`, and `logs`; `list` takes no operand, `destroy`, `stop`, `start`, and `status` take exactly one `<space>` operand, and `destroy` alone among those five accepts options, exactly `--no-backup`, `--delete-secrets`, and `--delete-backups`, in addition to help; the grammars of `create`, `init`, `restart`, `disable`, `enable`, and `logs` MUST be those their owning packages declare.
+- R-RMSM-XIO5: The `space` subcommands MUST be exactly `list`, `create`, `destroy`, `stop`, `start`, `status`, `restart`, `disable`, `enable`, and `logs`; `list` takes no operand, `destroy`, `stop`, `start`, and `status` take exactly one `<space>` operand, and `destroy` alone among those five accepts options, exactly `--no-backup`, `--delete-secrets`, and `--delete-backups`, in addition to help; the grammars of `create`, `restart`, `disable`, `enable`, and `logs` MUST be those their owning packages declare.
 
-- R-JHKA-G8FB: An argument of `space` or of one of its subcommands other than `create`, `init`, `restart`, `disable`, `enable`, and `logs` that begins with `-` and is none of `--help`, `-h`, and — for `destroy` only — `--no-backup`, `--delete-secrets`, and `--delete-backups` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl space --help' for usage` to be written to stderr, nothing to stdout, and exit 2, with `Deps.Cloud` not called and no `seam.Cmd` passed to `Deps.Exec`; verified at least by `devctl space stop sbx1 --no-backup` and `devctl space destroy sbx1 --no-backup=true`.
+- R-RO0J-BAEU: An argument of `space` or of one of its subcommands other than `create`, `restart`, `disable`, `enable`, and `logs` that begins with `-` and is none of `--help`, `-h`, and — for `destroy` only — `--no-backup`, `--delete-secrets`, and `--delete-backups` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl space --help' for usage` to be written to stderr, nothing to stdout, and exit 2, with `Deps.Cloud` not called and no `seam.Cmd` passed to `Deps.Exec`; verified at least by `devctl space stop sbx1 --no-backup` and `devctl space destroy sbx1 --no-backup=true`.
 
 - R-V3ZZ-EM0S: `space destroy` MUST accept each of `--no-backup`, `--delete-secrets`, and `--delete-backups` on either side of its `<space>` operand and in any order, with repeated occurrences of one option having the same effect as one, and each option MUST govern only its own step — `--no-backup` the `retire` step, `--delete-secrets` the `secrets` step, and `--delete-backups` the `backups` step; a value-bearing form such as `--no-backup=true` or `--delete-secrets=yes` MUST be an unknown option.
 
@@ -266,15 +266,15 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-8YVJ-0IZI: `space list` and `space status` MUST perform no cloud mutation and MUST leave local checkout files unchanged; status MUST execute no host command other than its single `sudo opsctl status` invocation. Tests MUST use cloud fakes that fail on mutation and verify the host command count for both populated and empty results.
 
-- R-UO7P-Z41B: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+- R-RQGC-2TW8: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
 
   ```
   Usage: devctl space <subcommand> [arguments]
 
-  List, create, destroy, stop, start, initialise, and inspect spaces, and
-  restart, disable, enable, or read the journal of one app on one. A space is
-  one label under the root domain; <space> is that label or the full domain.
-  The cloud's tags are the only registry.
+  List, create, destroy, stop, start, and inspect spaces, and restart, disable,
+  enable, or read the journal of one app on one. A space is one label under the
+  root domain; <space> is that label or the full domain. The cloud's tags are
+  the only registry.
 
   Subcommands:
     list                       one line per space
@@ -282,7 +282,6 @@ release's label among them, are opsctl's and never parsed here.
     destroy <space> [options]  remove the space and everything it owned
     stop <space>               stop the instance; state is kept
     start <space>              start the instance; its address is unchanged
-    init <space> [options]     set the host's keys again and run opsctl init
     status <space>             one line per app: commit, label, service state, socket state, database journal mode
     restart <space> <app>      restart one app's service on the host
     disable <space> <app>      stop one app and keep it from starting until enabled
@@ -297,10 +296,6 @@ release's label among them, are opsctl's and never parsed here.
     --no-backup             skip the final backup the host takes before it goes
     --delete-secrets        delete the space's secrets; they are kept otherwise
     --delete-backups        delete the space's backups; they are kept otherwise
-
-  Options (init):
-    --opsctl <version>      move the host to this opsctl release first
-    --acme-email <address>  change where the CA sends the space's expiry warnings
 
   Options (logs):
     --follow                keep printing as the app writes, until interrupted
@@ -318,7 +313,7 @@ release's label among them, are opsctl's and never parsed here.
   socket state and database journal mode. A host with no apps prints nothing.
   ```
 
-- R-UQNI-QNIP: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space init` to `spaceinit.Run`, `space restart`, `space disable`, `space enable`, and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create and init receive the arguments after their subcommand, spaceapps receives the subcommand and the arguments after it, create alone also receives as `version` the version string that `devctl --version` prints without its newline, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
+- R-RP8F-P25J: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space restart`, `space disable`, `space enable`, and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create receives the arguments after its subcommand and, as `version`, the version string that `devctl --version` prints without its newline, spaceapps receives the subcommand and the arguments after it, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
 
 - R-URVF-4F9E: Package `internal/host` MUST export the method `Copy(ctx context.Context, step, local, remote string) error` on `Host`.
 

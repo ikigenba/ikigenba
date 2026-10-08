@@ -8,35 +8,21 @@ where it is decoded. `build` therefore refuses it before compiling anything,
 and every command that reads the checkout's apps refuses the same way, as it
 already does for any other broken manifest.
 An app's `main` package sits at `cmd/<name>/` under its directory, like every
-other binary in the repository. The shared appref package defines the usable-name
-grammar build and deploy share, and the grammar of the file build writes and
-deploy takes: a usable app, `-`, the full commit sha in 40 lowercase hex
-digits, and `.tar.xz`. The per-app build reads no tag; for it the checkout
-offers `HEAD`'s sha and whether the tree is clean. appref also keeps the
-`v<semver>` version grammar, which only opsctl's release tags use (D10).
+other binary in the repository. The shared appref package defines the
+usable-name grammar that build, `apex set` and logs share.
 
-For the suite build (D08) the checkout offers four more things. `HasApp`
-says whether one entry of the root qualifies as an app by the same criteria
-`Apps` uses, without decoding any manifest, so that a broken manifest
-elsewhere in the developer's tree cannot decide how an operand is read.
-`ResolveCommit` accepts exactly two forms and turns either into the full
-commit sha with `git rev-parse --verify --quiet`, fetching nothing: a
-lowercase hex string of 4 to 40 characters, resolved as an object name and
-accepted only when the sha begins with it, and anything else, resolved only
-as the tag `refs/tags/<name>` and peeled to its commit. A hex string is never
-looked up as a tag, and a branch, `HEAD` or any other revision expression
-resolves to nothing; a name that resolves to no commit is a negative answer,
-not an error. `AddWorktree` and `RemoveWorktree` create and remove a detached linked
+For the build (D08) the checkout offers three more things. `ResolveCommit`
+accepts exactly two forms and turns either into the full commit sha with
+`git rev-parse --verify --quiet`, fetching nothing: a lowercase hex string of
+4 to 40 characters, resolved as an object name and accepted only when the sha
+begins with it, and anything else, resolved only as the tag
+`refs/tags/<name>` and peeled to its commit. A hex string is never looked up
+as a tag, and a branch, `HEAD` or any other revision expression resolves to
+nothing; a name that resolves to no commit is a negative answer, not an
+error. `AddWorktree` and `RemoveWorktree` create and remove a detached linked
 worktree at a given directory. A `Checkout` whose `Root` is such a worktree
 is an ordinary checkout of that commit, and `Apps` on it discovers the apps
 the commit holds.
-
-For a space created without a named release (D07) the checkout offers one
-more: `NewestRelease` lists the local repository's tags, fetching nothing,
-and picks the newest release tag, a tag named exactly `r<N>` with the highest
-`N`, so `r10` is newer than `r9` and a release candidate such as `r3-rc1`, or
-any tag that is not exactly `r<N>`, is never chosen. Finding none is a
-negative answer, not an error.
 
 The checkout is also where the platform is stated. devctl has no
 configuration of its own: the root domain and its region live in the root
@@ -67,8 +53,8 @@ the stories show `Crm.sbx1` refused as a bad label. The reserved app names
 `appref.ValidName` rejects apply to the `<app>` part of `<app>.<space>`, with
 the same `is not a usable app name` diagnostic build and logs use, and do not
 apply to a space label: they exist because of collisions with host-side
-service names and the keys under a space's prefix (`host/`, `deploy/`,
-`snapshots/`, `seed/`), and a space label never sits in those positions. A
+service names and the keys under a space's prefix (`host/`, `deploy/`, which
+earlier per-app deploys wrote, `snapshots/`, `seed/`), and a space label never sits in those positions. A
 space label does sit at the top of the bucket, beside `golden/`, which holds
 the golden sets (D15), so the one reserved space label is `golden`: `Parse`
 refuses it, bare or as a full domain, and `ParseApp` refuses it as the space
@@ -103,17 +89,13 @@ looked up.
 
 - R-VYWC-5HZJ: `(*Checkout).Path` MUST return `Root` joined with `elem` by the path separator, cleaned, and MUST return `Root` when `elem` is empty.
 
-- R-QG5U-LTSE: `checkout.Open` consumers MUST resolve checkout app paths and the root file under `Checkout.Root`, even when `Deps.Dir` is a subdirectory. Deploy file operands MUST instead follow D9: relative to `Deps.Dir`, or unchanged when absolute, never against `Checkout.Root`, although deploy discovers the checkout to read the root file. Every `seam.Cmd` that `internal/checkout` passes to `Deps.Exec` other than Open's MUST carry Dir equal to Root; tests MUST cover different Dir and Root values and a relative deploy operand.
+- R-RFH8-MW7Z: `checkout.Open` consumers MUST resolve checkout app paths and the root file under `Checkout.Root`, even when `Deps.Dir` is a subdirectory. Every `seam.Cmd` that `internal/checkout` passes to `Deps.Exec` other than Open's MUST carry Dir equal to Root; tests MUST cover different Dir and Root values.
 
 - R-L5YW-0VX6: `(*Checkout).Apps` MUST return one `App` for each entry of `Root` that is a directory, holds a regular file at `ManifestFile`, and holds at least one file directly in its `cmd/<name>` directory whose name ends in `.go` but not in `_test.go` and whose package clause is `main`, where `<name>` is that entry's name, so that such a file directly in the entry, in a `cmd/<other>` directory for any `<other>` that is not `<name>`, or in a subdirectory of `cmd/<name>` does not qualify the entry; each carrying that directory's name as `Name`, `Path(Name)` as `Dir`, and the `Manifest` decoded from its `ManifestFile` as `Manifest`; MUST return them sorted ascending by `Name`; MUST return an empty result and a nil error when `Root` holds no such entry; and MUST pass no `seam.Cmd` to `Deps.Exec`.
 
 - R-W2K1-AT7M: `(*Checkout).Apps` MUST return a `*ManifestError` whose `App` is the directory's name when that directory's `ManifestFile` cannot be read or `DecodeManifest` of its contents fails, with that failure's error as `Err`, and MUST return a `*ManifestError` whose `App` is the directory's name and whose `Detail` is `app is '<decoded app>', not '<directory name>'` when the decoded `Manifest.App` is not that directory's name.
 
 - R-W3RX-OKYB: `(*Checkout).App` MUST return the `App` whose `Name` equals `name` among those `Apps` returns, MUST return a `*NoAppError` for `name` when there is none, and MUST return the error `Apps` returned when `Apps` failed.
-
-- R-W7FM-TW6E: `(*Checkout).Head` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `rev-parse` and `HEAD`, and whose `Dir` is `Root`, and when that process exits 0 MUST return its standard output with its trailing newlines removed.
-
-- R-W8NJ-7NX3: `(*Checkout).Clean` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `status` and `--porcelain`, and whose `Dir` is `Root`, and when that process exits 0 MUST return true if and only if its standard output is empty, so that an untracked file reported as a change makes the result false.
 
 - R-WDJ4-QQVV: `keyring.Lookup` MUST return the value of `deps.Getenv(name)` with its trailing newlines removed, and MUST pass no `seam.Cmd` to `deps.Exec`, when that value is not empty after that removal.
 
@@ -125,11 +107,7 @@ looked up.
 
 - R-WKUJ-1DC1: When a command fails because `keyring.Lookup` of a name that an app's `Manifest.Secrets` lists returned a `*NoValueError`, `cli.Run` MUST write the single line `devctl: <app>: no value for '<name>' in the keyring or the environment` to stderr, where `<app>` is that app's `Name`, write nothing further to stdout, and return 2, verified at least for `secrets push` and `space create` each reproducing `devctl: crm: no value for 'CRM_API_KEY' in the keyring or the environment`.
 
-- R-5AKW-LFNU: Package `internal/checkout` MUST export the methods `Head(ctx context.Context) (string, error)` and `Clean(ctx context.Context) (bool, error)` on `*Checkout`.
-
 - R-CJPS-0KM8: Package `internal/checkout` MUST export `ManifestFile = "etc/manifest.toml"`.
-
-- R-5BSS-Z7EJ: `Head` and `Clean` MUST return a `*GitError` carrying the command arguments, exit status and stderr for any non-zero process exit, and a non-`GitError` wrapping the runner error when `Deps.Exec` cannot run the process.
 
 - R-CM5K-S43M: Package `internal/checkout` MUST export `Manifest` with exactly `App string` and `Secrets []string`, decoded from the TOML keys `app` and `secrets`.
 
@@ -143,15 +121,7 @@ looked up.
 
 - R-S6EM-KPG8: `appref.ValidName` MUST accept ASCII lowercase letters, digits and hyphens in a label of 1–63 bytes with an alphanumeric first and last byte, except exactly `host`, `deploy`, `snapshots`, `seed`, `backup-host`, `backup-services`, and `renew-certificate`, which MUST be rejected.
 
-- R-CS92-OYT3: `appref.ValidVersion` MUST accept a literal `v` followed by three dot-separated nonnegative decimal integers without leading zeroes, optionally followed by a hyphen and nonempty dot-separated ASCII alphanumeric/hyphen prerelease identifiers (numeric identifiers have no leading zeroes), optionally followed by `+` and nonempty dot-separated ASCII alphanumeric/hyphen metadata identifiers; all other forms MUST be rejected.
-
-- R-5D0P-CZ58: `appref.ParseFile` MUST succeed only for a basename that is a name `ValidName` accepts, then `-`, then exactly 40 bytes each an ASCII digit or a lowercase letter `a` to `f`, then `.tar.xz`, returning that name as `app` and those 40 bytes as `sha`, each verbatim, and a nil error; it MUST return a non-nil error for every other input; verified at least by accepting `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` as `crm` and `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` and `my-app-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` as `my-app`, and by rejecting `notes.tar.xz`, `crm-latest.tar.xz`, `crm-v0.1.0.tar.xz`, `crm-4b22285.tar.xz`, `crm-4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz`, the 41-digit `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a0.tar.xz`, `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6g.tar.xz`, `-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, `host-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.gz`, and `dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`.
-
 - R-CVWR-UA16: Package `internal/appref` MUST export `ValidName(name string) bool`.
-
-- R-CX4O-81RV: Package `internal/appref` MUST export `ValidVersion(version string) bool`.
-
-- R-5E8L-QQVX: Package `internal/appref` MUST export `ParseFile(name string) (app, sha string, err error)`.
 
 - R-Q2QY-ECMR: Package `internal/checkout` MUST export `RootFilePath = "infra/terraform.tfvars.json"`.
 
@@ -200,10 +170,6 @@ looked up.
 - R-S8UF-C8XM: When `spaceref.Parse` would otherwise succeed with a `Label` equal to `ReservedLabel`, it MUST instead return a zero `Space` and a `*ReservedLabelError` whose `Label` is that `Label`; verified at least by `golden` and `golden.ikigenba.dev` with root `ikigenba.dev` each giving `'golden' is not a usable space label: golden/ holds the golden sets`, by `goldens` and `golden-1` being accepted, and through `cli.Run`, in a temporary checkout whose root file names `ikigenba.dev`, by `devctl space create golden --acme-email ops@ikigenba.dev` and `devctl space status golden.ikigenba.dev` each writing that single line to stderr with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.
 
 - R-SA2B-Q0OB: When `spaceref.ParseApp` would otherwise succeed with a `Space.Label` equal to `ReservedLabel`, it MUST instead return a zero `App` and a `*ReservedLabelError` whose `Label` is that `Label`, after every refusal R-QTKQ-TAY1 states; verified at least by `crm.golden` and `crm.golden.ikigenba.dev` with root `ikigenba.dev` each giving `'golden' is not a usable space label: golden/ holds the golden sets`, and by `host.golden` giving `'host' is not a usable app name`.
-
-- R-EYBP-QLFD: Package `internal/checkout` MUST export the method `HasApp(name string) bool` on `*Checkout`.
-
-- R-EZJM-4D62: `(*Checkout).HasApp` MUST return true if and only if `name` is the name of an entry of `Root` that is a directory, holds a regular file at `ManifestFile`, and holds at least one file directly in its `cmd/<name>` directory whose name ends in `.go` but not in `_test.go` and whose package clause is `main`, whatever that entry's or any other entry's manifest holds; it MUST return false for a `name` that is empty, is `.` or `..`, or holds a `/`, and MUST pass no `seam.Cmd` to `Deps.Exec`; verified at least by true for an entry `crm` whose manifest is not valid TOML, for one whose manifest names a `port`, for `crm` while another entry's manifest is not valid TOML, and for an entry `Crm`, and by false for `bogus`, for an entry without a manifest, for an entry whose only `main` file sits directly in it, for `crm/cmd`, and for `devctl/v1.2.0`.
 
 - R-F0RI-I4WR: Package `internal/checkout` MUST export the methods `ResolveCommit(ctx context.Context, rev string) (sha string, ok bool, err error)`, `AddWorktree(ctx context.Context, dir, sha string) error`, and `RemoveWorktree(ctx context.Context, dir string) error` on `*Checkout`.
 

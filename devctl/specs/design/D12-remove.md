@@ -21,7 +21,7 @@ checkout precondition beyond the root file being present and well formed.
 Nothing in the account changes. Remove makes no call to SSM, S3, Route 53, or
 IAM, and no EC2 call beyond the lookup: the secrets parameter stays where
 `secrets push` put it, every object under the space's prefix stays in the
-bucket (the deployed file included), and the apex record is not touched. If the
+bucket, and the apex record is not touched. If the
 removed app was the space's apex app, what the root answers is opsctl's
 business (S7, D14); remove neither moves nor clears the apex.
 
@@ -36,7 +36,7 @@ holds data for but never installed are both simply whatever opsctl wrote.
 Ordering is the shared rule and is not restated here: usage errors first, then
 the root file, then the operand, then the first cloud call (D04 R-N1LD-IX1I and
 R-ST4K-APZN). The cli mapping of a `*cloud.NoSpaceError` to
-`devctl: no space at '<domain>'`, exit 1, is D03's (R-R10I-DEAA); of the
+`devctl: no space at '<domain>'`, exit 1, is D03's (R-RLKQ-JQXG); of the
 checkout and root-file errors to exit 2, D04's (R-EX3T-CTOO); of every error
 carrying `ExitCode()` and `Detail()`, D05's (R-D4G2-IO81); of everything else,
 D05's fallback (R-0D99-FN33), which is how a `*space.NotRunningError` becomes
