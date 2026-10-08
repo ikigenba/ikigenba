@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -46,16 +47,18 @@ func handleCount(t *testing.T, d *db.DB) int {
 }
 func handleIncrement(tx *sql.Tx) error { _, e := tx.Exec("UPDATE counter SET n=n+1"); return e }
 
-// R-PP6A-6S9R R-PQE6-KK0G R-LJ0T-HFKI R-1CZF-Y7YJ
+// R-1097-YE7C R-PQE6-KK0G R-LJ0T-HFKI R-1CZF-Y7YJ
 func TestHandleAPI(t *testing.T) {
 	// An unkeyed literal requires exactly the declared field sequence.
-	cfg := db.Config{filepath.Join(t.TempDir(), "db"), fstest.MapFS{}, func() time.Time { return time.Unix(42, 0) }}
+	cfg := db.Config{filepath.Join(t.TempDir(), "db"), fstest.MapFS{}, func() time.Time { return time.Unix(42, 0) }, "dummy", io.Discard}
 	var shape struct {
 		Path       string
 		Migrations fs.FS
 		Now        func() time.Time
+		Service    string
+		Stderr     io.Writer
 	} = cfg
-	cfg = db.Config{shape.Path, shape.Migrations, shape.Now}
+	cfg = db.Config{shape.Path, shape.Migrations, shape.Now, shape.Service, shape.Stderr}
 	api := struct {
 		Open       func(context.Context, db.Config) (*db.DB, error)
 		Read       func(context.Context, func(*sql.Tx) error) error

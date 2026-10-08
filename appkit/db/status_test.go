@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 )
 
-// R-QB4H-2NM9 R-P68C-RQSP R-BBYT-8YTC R-QJNR-R1T4 R-QNBG-WD17
+// R-QB4H-2NM9 R-P68C-RQSP R-XR4B-O7MZ R-QJNR-R1T4 R-QNBG-WD17 R-154T-HH64
 func TestStatusReportsUnionWithoutApplyingOrReadingClock(t *testing.T) {
 	cfg := migrationConfig(t, "CREATE TABLE untouched(value TEXT)", "INSERT INTO untouched VALUES('must not run')", "SELECT 3")
 	conn := rawDatabase(t, cfg.Path)
@@ -20,6 +21,8 @@ func TestStatusReportsUnionWithoutApplyingOrReadingClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Now = func() time.Time { t.Fatal("Status called clock"); return time.Time{} }
+	diagnostics := &migrationRecordingWriter{}
+	cfg.Stderr = diagnostics
 	before, err := os.ReadFile(cfg.Path)
 	if err != nil {
 		t.Fatal(err)
@@ -27,8 +30,11 @@ func TestStatusReportsUnionWithoutApplyingOrReadingClock(t *testing.T) {
 	var output bytes.Buffer
 	status := db.Status
 	err = status(context.Background(), cfg, &output)
-	if !errors.Is(err, db.ErrUnknownVersion) {
+	if err != nil {
 		t.Fatalf("error %v", err)
+	}
+	if len(diagnostics.writes) != 0 {
+		t.Fatalf("Status diagnostics %q", diagnostics.writes)
 	}
 	if want := "0001 applied first time\n0002 pending\n0003 pending\n0004 unknown future time\n"; output.String() != want {
 		t.Fatalf("output %q", output.String())
@@ -50,19 +56,18 @@ func TestStatusReportsUnionWithoutApplyingOrReadingClock(t *testing.T) {
 	}
 }
 
-// R-TN4J-9EWI R-BBYT-8YTC R-P68C-RQSP
-func TestStatusErrorNamesLowestUnknownVersion(t *testing.T) {
+// R-XR4B-O7MZ R-P68C-RQSP
+func TestStatusAcceptsUnknownVersions(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		versions []int
-		message  string
 		output   string
 	}{
-		{"single", []int{12}, "unknown migration version: 0012", "0001 pending\n0012 unknown past\n"},
-		{"multiple", []int{40, 12, 3}, "unknown migration version: 0003", "0001 pending\n0003 unknown past\n0012 unknown past\n0040 unknown past\n"},
-		{"zero", []int{12, 0, 4}, "unknown migration version: 0000", "0000 unknown past\n0001 pending\n0004 unknown past\n0012 unknown past\n"},
-		{"negative", []int{12, -3, 0}, "unknown migration version: -003", "-003 unknown past\n0000 unknown past\n0001 pending\n0012 unknown past\n"},
-		{"five digits", []int{12000, 10000}, "unknown migration version: 10000", "0001 pending\n10000 unknown past\n12000 unknown past\n"},
+		{"single", []int{12}, "0001 pending\n0012 unknown past\n"},
+		{"multiple", []int{40, 12, 3}, "0001 pending\n0003 unknown past\n0012 unknown past\n0040 unknown past\n"},
+		{"zero", []int{12, 0, 4}, "0000 unknown past\n0001 pending\n0004 unknown past\n0012 unknown past\n"},
+		{"negative", []int{12, -3, 0}, "-003 unknown past\n0000 unknown past\n0001 pending\n0012 unknown past\n"},
+		{"five digits", []int{12000, 10000}, "0001 pending\n10000 unknown past\n12000 unknown past\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := migrationConfig(t, "SELECT 1")
@@ -77,8 +82,8 @@ func TestStatusErrorNamesLowestUnknownVersion(t *testing.T) {
 			}
 			var output bytes.Buffer
 			err := db.Status(context.Background(), cfg, &output)
-			if !errors.Is(err, db.ErrUnknownVersion) || err.Error() != tc.message {
-				t.Fatalf("Status error = %v; want %q wrapping ErrUnknownVersion", err, tc.message)
+			if err != nil {
+				t.Fatalf("Status error = %v", err)
 			}
 			if output.String() != tc.output {
 				t.Fatalf("Status output = %q; want %q", output.String(), tc.output)
@@ -114,7 +119,7 @@ func TestStatusPreservesRollbackJournalMode(t *testing.T) {
 	}
 }
 
-// R-P7G9-5IJE R-QQZ6-1O9A
+// R-P7G9-5IJE R-XR4B-O7MZ
 func TestStatusAbsentDatabaseCreatesNothing(t *testing.T) {
 	cfg := migrationConfig(t, "SELECT 1", "SELECT 2")
 	root := filepath.Dir(cfg.Path)
@@ -132,7 +137,7 @@ func TestStatusAbsentDatabaseCreatesNothing(t *testing.T) {
 	}
 }
 
-// R-P8O5-JAA3 R-QQZ6-1O9A R-QJNR-R1T4
+// R-P8O5-JAA3 R-XR4B-O7MZ R-QJNR-R1T4
 func TestStatusDatabaseWithoutMigrationTable(t *testing.T) {
 	cfg := migrationConfig(t, "SELECT 1", "SELECT 2")
 	conn := rawDatabase(t, cfg.Path)
@@ -175,7 +180,7 @@ func TestStatusRejectsSpecialPathsWithoutOutputOrFiles(t *testing.T) {
 	}
 }
 
-// R-NIYW-1WBH R-QES6-7YUC
+// R-NIYW-1WBH
 func TestStatusInvalidMigrationsPrecedeUnknownVersion(t *testing.T) {
 	cfg := migrationConfig(t)
 	conn := rawDatabase(t, cfg.Path)
@@ -185,7 +190,7 @@ func TestStatusInvalidMigrationsPrecedeUnknownVersion(t *testing.T) {
 	cfg.Migrations = nil
 	var output bytes.Buffer
 	err := db.Status(context.Background(), cfg, &output)
-	if err == nil || errors.Is(err, db.ErrUnknownVersion) || output.Len() != 0 {
+	if err == nil || output.Len() != 0 {
 		t.Fatalf("error %v output %q", err, output.String())
 	}
 }
@@ -261,7 +266,7 @@ func TestStatusReturnsWriterError(t *testing.T) {
 	}
 }
 
-// R-QQZ6-1O9A R-P68C-RQSP R-P7G9-5IJE
+// R-XR4B-O7MZ R-P68C-RQSP R-P7G9-5IJE
 func TestStatusAllKnownVersionsReturnsNil(t *testing.T) {
 	cfg := migrationConfig(t, "SELECT 1")
 	handle := openMigrationDB(t, cfg)
@@ -279,5 +284,63 @@ func TestStatusAllKnownVersionsReturnsNil(t *testing.T) {
 	output.Reset()
 	if err := db.Status(context.Background(), empty, &output); err != nil || output.Len() != 0 {
 		t.Fatalf("empty error %v output %q", err, output.String())
+	}
+}
+
+// R-154T-HH64
+func TestStatusNeverWritesDiagnostics(t *testing.T) {
+	for _, kind := range []string{"absent", "known", "untracked", "ahead", "invalid path", "invalid migrations", "corrupt", "done context", "writer error"} {
+		t.Run(kind, func(t *testing.T) {
+			cfg := migrationConfig(t, "SELECT 1")
+			diagnostics := &migrationRecordingWriter{}
+			cfg.Stderr = diagnostics
+			ctx := context.Background()
+			var output bytes.Buffer
+			var writer io.Writer = &output
+			wantSuccess := true
+			switch kind {
+			case "known", "ahead":
+				handle := openMigrationDB(t, cfg)
+				if err := handle.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if kind == "ahead" {
+					conn := rawDatabase(t, cfg.Path)
+					if _, err := conn.Exec("INSERT INTO schema_migrations VALUES(2,'future')"); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case "untracked":
+				conn := rawDatabase(t, cfg.Path)
+				if _, err := conn.Exec("CREATE TABLE existing(value TEXT)"); err != nil {
+					t.Fatal(err)
+				}
+			case "invalid path":
+				cfg.Path = ":memory:"
+				wantSuccess = false
+			case "invalid migrations":
+				cfg.Migrations = nil
+				wantSuccess = false
+			case "corrupt":
+				if err := os.WriteFile(cfg.Path, []byte("not SQLite"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				wantSuccess = false
+			case "done context":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+				wantSuccess = false
+			case "writer error":
+				writer = migrationErrorWriter{errors.New("output unavailable")}
+				wantSuccess = false
+			}
+			if err := db.Status(ctx, cfg, writer); (err == nil) != wantSuccess {
+				t.Fatalf("Status error = %v", err)
+			}
+			if len(diagnostics.writes) != 0 {
+				t.Fatalf("Status diagnostics %q", diagnostics.writes)
+			}
+		})
 	}
 }

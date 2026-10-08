@@ -28,6 +28,8 @@ type Config struct {
 	Path       string
 	Migrations fs.FS
 	Now        func() time.Time
+	Service    string
+	Stderr     io.Writer
 }
 
 // DB routes transactions through separate reader and writer pools.
@@ -84,7 +86,8 @@ func Open(ctx context.Context, cfg Config) (*DB, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	if err = applyMigrations(ctx, writer, migrations, cfg.Now); err != nil {
+	unknown, err := applyMigrations(ctx, writer, migrations, cfg.Now)
+	if err != nil {
 		return nil, errors.Join(err, writer.Close())
 	}
 	reader, err := sql.Open("sqlite", databaseURI(path, true))
@@ -95,6 +98,9 @@ func Open(ctx context.Context, cfg Config) (*DB, error) {
 	reader.SetMaxIdleConns(Readers)
 	if err = reader.PingContext(ctx); err != nil {
 		return nil, errors.Join(err, reader.Close(), writer.Close())
+	}
+	if unknown != nil && cfg.Stderr != nil {
+		_, _ = fmt.Fprintf(cfg.Stderr, "%s: unknown migration version %04d: database is ahead of this binary\n", cfg.Service, *unknown)
 	}
 	return &DB{reader: reader, writer: writer}, nil
 }

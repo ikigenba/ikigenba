@@ -15,7 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -27,9 +27,10 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 )
 
-// R-NP2D-YR0Y
+// R-XNGM-IWEW
 func TestConsumerOwnsOutput(t *testing.T) {
 	root := t.TempDir()
 	stdout := contractFile(t)
@@ -57,7 +58,7 @@ func TestConsumerOwnsOutput(t *testing.T) {
 	}
 }
 
-// R-NQAA-CIRN
+// R-XOOI-WO5L
 func TestPublicAPIWorkingDirectoryIndependence(t *testing.T) {
 	root := t.TempDir()
 	first, second := filepath.Join(root, "first"), filepath.Join(root, "second")
@@ -85,7 +86,7 @@ func TestPublicAPIWorkingDirectoryIndependence(t *testing.T) {
 	want := contractExercise(t, root, false)
 	t.Chdir(second)
 	got := contractExercise(t, root, false)
-	if !reflect.DeepEqual(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("working directory changed public behavior\nfirst: %#v\nsecond: %#v", want, got)
 	}
 }
@@ -118,6 +119,13 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 	t.Helper()
 	var observed []string
 	note := func(name string, values ...any) { observed = append(observed, name+": "+fmt.Sprint(values...)) }
+	for _, commit := range []string{"", "abc", "abcdefghijk", "abcdefghijk-dirty", "世甲乙丙丁戊己庚辛-dirty"} {
+		for _, release := range []string{"", "host-label"} {
+			t.Setenv(version.CommitVariable, commit)
+			t.Setenv(version.ReleaseVariable, release)
+			note("version.Display", version.Display())
+		}
+	}
 	path := filepath.Join(root, "services.json")
 	content := `{"services":[{"name":"sample","url":"https://sample.example","description":"Sample.","socket":"/not-opened/sample.sock","enabled":true,"mcp":true,"icon":"<svg></svg>"}]}`
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
@@ -181,6 +189,14 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		note("Require", rec.Code, rec.Body.String())
+		optional := identity.Optional(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c, ok := identity.FromContext(r.Context())
+			note("Optional next", c, ok)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		rec = httptest.NewRecorder()
+		optional.ServeHTTP(rec, req)
+		note("Optional", rec.Code, rec.Body.String())
 	}
 	for _, r := range []mcp.Result{mcp.TextResult("text"), mcp.ErrorResult("failure"), {}} {
 		data, err := r.MarshalJSON()
@@ -449,7 +465,8 @@ func TestDatabasePackageImport(t *testing.T) {
 func contractDatabaseExercise(t *testing.T, root string, note func(string, ...any)) {
 	t.Helper()
 	ctx := context.Background()
-	cfg := db.Config{Path: filepath.Join(root, "contract.db"), Migrations: fstest.MapFS{"0001_data.sql": &fstest.MapFile{Data: []byte("CREATE TABLE data(n INTEGER)")}}, Now: func() time.Time { return time.Unix(42, 0) }}
+	var diagnostics bytes.Buffer
+	cfg := db.Config{Path: filepath.Join(root, "contract.db"), Migrations: fstest.MapFS{"0001_data.sql": &fstest.MapFile{Data: []byte("CREATE TABLE data(n INTEGER)")}}, Now: func() time.Time { return time.Unix(42, 0) }, Service: "sample", Stderr: &diagnostics}
 	handle, err := db.Open(ctx, cfg)
 	note("db.Open", handle != nil, err)
 	if err != nil {
@@ -501,4 +518,37 @@ func contractDatabaseExercise(t *testing.T, root string, note func(string, ...an
 	status.Reset()
 	statusErr = db.Status(ctx, invalid, &status)
 	note("db.Status invalid migrations", statusErr, status.String())
+	for _, logging := range []bool{true, false} {
+		diagnostics.Reset()
+		var stderr io.Writer
+		if logging {
+			stderr = &diagnostics
+		}
+		ahead := cfg
+		ahead.Path = filepath.Join(root, fmt.Sprintf("ahead-%t.db", logging))
+		ahead.Stderr = stderr
+		newer, err := db.Open(ctx, ahead)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = newer.Write(ctx, func(tx *sql.Tx) error {
+			_, err := tx.Exec("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(2, '2024-01-02T03:04:05.000000Z')")
+			return err
+		})
+		closeErr := newer.Close()
+		if err != nil || closeErr != nil {
+			t.Fatalf("prepare ahead database: write=%v close=%v", err, closeErr)
+		}
+		diagnostics.Reset()
+		older, err := db.Open(ctx, ahead)
+		note("db.Open ahead", older != nil, err, diagnostics.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		note("db.Close ahead", older.Close())
+		status.Reset()
+		statusErr := db.Status(ctx, ahead, &status)
+		note("db.Status ahead", statusErr, status.String(), diagnostics.String())
+	}
+	note("db diagnostics", diagnostics.String())
 }

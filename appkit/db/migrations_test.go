@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -64,7 +63,7 @@ func migrationScalar(t *testing.T, handle *db.DB, query string) string {
 	return value
 }
 
-// R-QCCD-GFCY R-QDK9-U73N R-QES6-7YUC
+// R-QCCD-GFCY R-QDK9-U73N
 func TestInvalidMigrationsLeaveDiskUntouched(t *testing.T) {
 	cases := map[string]fs.FS{
 		"nil":       nil,
@@ -82,7 +81,7 @@ func TestInvalidMigrationsLeaveDiskUntouched(t *testing.T) {
 			absent := filepath.Join(root, "missing", "state.db")
 			cfg := db.Config{Path: absent, Migrations: files}
 			handle, err := db.Open(context.Background(), cfg)
-			if handle != nil || err == nil || errors.Is(err, db.ErrUnknownVersion) {
+			if handle != nil || err == nil {
 				t.Fatalf("Open = %v, %v", handle, err)
 			}
 			entries, err := os.ReadDir(root)
@@ -103,7 +102,7 @@ func TestInvalidMigrationsLeaveDiskUntouched(t *testing.T) {
 			}
 			cfg.Path = existing
 			handle, err = db.Open(context.Background(), cfg)
-			if handle != nil || err == nil || errors.Is(err, db.ErrUnknownVersion) {
+			if handle != nil || err == nil {
 				t.Fatalf("Open = %v, %v", handle, err)
 			}
 			after, err := os.ReadFile(filepath.Clean(existing))
@@ -121,7 +120,7 @@ func TestInvalidMigrationsLeaveDiskUntouched(t *testing.T) {
 	}
 }
 
-// R-N0OE-BC72 R-N1WA-P3XR R-QG02-LQL1
+// R-N0OE-BC72 R-9YY6-OFZ0 R-QG02-LQL1
 func TestMigrationSchemaOrderStatementsAndTimes(t *testing.T) {
 	cfg := migrationConfig(t, "CREATE TABLE items(value TEXT); INSERT INTO items VALUES('first');", "UPDATE items SET value=value||'-second'; INSERT INTO items VALUES('third');")
 	base := cfg.Now()
@@ -245,26 +244,31 @@ func TestFailedMigrationRollsBackOnlyItsVersion(t *testing.T) {
 	}
 }
 
-// R-MVSS-S98A R-JZVB-L0R9 R-TLWM-VN5T R-N97O-ZQDX
-func TestUnknownMigrationRefusesOpenBeforeAnyMigration(t *testing.T) {
-	if db.ErrUnknownVersion == nil {
-		t.Fatal("nil sentinel")
-	}
+// R-XPWF-AFWA R-11H4-C5Y1 R-12P0-PXOQ R-N97O-ZQDX R-A1DZ-FZGE
+func TestUnknownMigrationAcceptsOpenWithoutAnyMigration(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		versions []int
 		message  string
 	}{
-		{"single", []int{12}, "unknown migration version: 0012"},
-		{"multiple", []int{40, 12, 3}, "unknown migration version: 0003"},
-		{"zero", []int{12, 0, 4}, "unknown migration version: 0000"},
-		{"negative", []int{12, -3, 0}, "unknown migration version: -003"},
-		{"five digits", []int{12000, 10000}, "unknown migration version: 10000"},
+		{"single", []int{12}, "dummy: unknown migration version 0012: database is ahead of this binary\n"},
+		{"multiple", []int{40, 12, 3}, "dummy: unknown migration version 0003: database is ahead of this binary\n"},
+		{"zero", []int{12, 0, 4}, "dummy: unknown migration version 0000: database is ahead of this binary\n"},
+		{"negative", []int{12, -3, 0}, "dummy: unknown migration version -003: database is ahead of this binary\n"},
+		{"five digits", []int{12000, 10000}, "dummy: unknown migration version 10000: database is ahead of this binary\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := migrationConfig(t, "CREATE TABLE must_not_exist(value TEXT)")
+			cfg := migrationConfig(t, "SELECT 1", "SELECT 2")
+			seed := openMigrationDB(t, cfg)
+			if err := seed.Close(); err != nil {
+				t.Fatal(err)
+			}
+			cfg.Migrations = migrationFiles("CREATE TABLE must_not_exist(value TEXT)")
+			cfg.Service = "dummy"
+			diagnostics := &migrationRecordingWriter{}
+			cfg.Stderr = diagnostics
 			conn := rawDatabase(t, cfg.Path)
-			if _, err := conn.Exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT)"); err != nil {
+			if _, err := conn.Exec("DELETE FROM schema_migrations"); err != nil {
 				t.Fatal(err)
 			}
 			for _, version := range tc.versions {
@@ -273,8 +277,19 @@ func TestUnknownMigrationRefusesOpenBeforeAnyMigration(t *testing.T) {
 				}
 			}
 			handle, err := db.Open(context.Background(), cfg)
-			if handle != nil || !errors.Is(err, db.ErrUnknownVersion) || err.Error() != tc.message {
-				t.Fatalf("Open = %v, %v; want nil handle and %q wrapping ErrUnknownVersion", handle, err, tc.message)
+			if handle == nil || err != nil {
+				t.Fatalf("Open = %v, %v", handle, err)
+			}
+			if len(diagnostics.writes) != 1 || diagnostics.writes[0] != tc.message {
+				t.Fatalf("diagnostics %q; want one write %q", diagnostics.writes, tc.message)
+			}
+			if err := handle.Close(); err != nil {
+				t.Fatal(err)
+			}
+			cfg.Stderr = nil
+			handle = openMigrationDB(t, cfg)
+			if err := handle.Close(); err != nil {
+				t.Fatal(err)
 			}
 			var count int
 			if err := conn.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='must_not_exist'").Scan(&count); err != nil || count != 0 {
@@ -287,7 +302,7 @@ func TestUnknownMigrationRefusesOpenBeforeAnyMigration(t *testing.T) {
 	}
 }
 
-// R-N0OE-BC72 R-N1WA-P3XR R-QG02-LQL1
+// R-N0OE-BC72 R-9YY6-OFZ0 R-QG02-LQL1
 func TestMigrationMetadataSchemaRestoredAfterSuccessfulAlter(t *testing.T) {
 	cfg := migrationConfig(t, "SELECT 1", "ALTER TABLE schema_migrations ADD COLUMN extra TEXT;")
 	handle := openMigrationDB(t, cfg)
@@ -327,7 +342,7 @@ func TestMigrationMetadataSchemaRestoredAfterSuccessfulAlter(t *testing.T) {
 	}
 }
 
-// R-N1WA-P3XR R-QG02-LQL1
+// R-9YY6-OFZ0 R-QG02-LQL1
 func TestMigrationBookkeepingIgnoresMetadataSchemaObjects(t *testing.T) {
 	for name, statement := range map[string]string{
 		"insert-trigger":  `CREATE TRIGGER "erase_record" AFTER INSERT ON schema_migrations BEGIN DELETE FROM schema_migrations; END;`,
@@ -370,5 +385,54 @@ func TestMigrationBookkeepingRepairsMissingTimestampColumn(t *testing.T) {
 	}
 	if got := migrationScalar(t, reopened, "SELECT group_concat(name, ',') FROM pragma_table_info('schema_migrations')"); got != "version,applied_at" {
 		t.Fatal(got)
+	}
+}
+
+type migrationRecordingWriter struct{ writes []string }
+
+func (w *migrationRecordingWriter) Write(p []byte) (int, error) {
+	w.writes = append(w.writes, string(p))
+	return len(p), nil
+}
+
+// R-12P0-PXOQ R-A1DZ-FZGE
+func TestOpenWritesNoDiagnosticsExceptAheadWarning(t *testing.T) {
+	for _, kind := range []string{"fresh", "reopen", "invalid path", "invalid migrations", "failed migration"} {
+		t.Run(kind, func(t *testing.T) {
+			for _, withWriter := range []bool{true, false} {
+				cfg := migrationConfig(t, "SELECT 1")
+				if kind == "reopen" {
+					handle := openMigrationDB(t, cfg)
+					if err := handle.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				switch kind {
+				case "invalid path":
+					cfg.Path = ":memory:"
+				case "invalid migrations":
+					cfg.Migrations = nil
+				case "failed migration":
+					cfg.Migrations = migrationFiles("INVALID SQL")
+				}
+				diagnostics := &migrationRecordingWriter{}
+				if withWriter {
+					cfg.Stderr = diagnostics
+				}
+				handle, err := db.Open(context.Background(), cfg)
+				wantSuccess := kind == "fresh" || kind == "reopen"
+				if (err == nil) != wantSuccess || (handle != nil) != wantSuccess {
+					t.Fatalf("Open = %v, %v", handle, err)
+				}
+				if handle != nil {
+					if err := handle.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if len(diagnostics.writes) != 0 {
+					t.Fatalf("unexpected diagnostics %q", diagnostics.writes)
+				}
+			}
+		})
 	}
 }

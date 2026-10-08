@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-// ErrUnknownVersion reports a database migrated by a newer binary.
-var ErrUnknownVersion = errors.New("unknown migration version")
-
 type migration struct {
 	version int
 	name    string
@@ -118,10 +115,10 @@ func appliedVersions(ctx context.Context, conn *sql.DB) (map[int]string, error) 
 	return result, nil
 }
 
-func applyMigrations(ctx context.Context, writer *sql.DB, migrations []migration, now func() time.Time) error {
+func applyMigrations(ctx context.Context, writer *sql.DB, migrations []migration, now func() time.Time) (*int, error) {
 	applied, err := appliedVersions(ctx, writer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	lowestUnknown, unknown := 0, false
 	for version := range applied {
@@ -129,28 +126,28 @@ func applyMigrations(ctx context.Context, writer *sql.DB, migrations []migration
 			lowestUnknown, unknown = version, true
 		}
 	}
-	if unknown {
-		return fmt.Errorf("%w: %04d", ErrUnknownVersion, lowestUnknown)
-	}
 	if _, err := writer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT)"); err != nil {
-		return fmt.Errorf("create migration table: %w", err)
+		return nil, fmt.Errorf("create migration table: %w", err)
 	}
 	valid, err := migrationSchemaValid(ctx, writer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !valid {
 		tx, err := writer.BeginTx(ctx, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := restoreMigrationSchema(ctx, tx, applied); err != nil {
 			_ = tx.Rollback()
-			return err
+			return nil, err
 		}
 		if err := tx.Commit(); err != nil {
-			return err
+			return nil, err
 		}
+	}
+	if unknown {
+		return &lowestUnknown, nil
 	}
 	if now == nil {
 		now = time.Now
@@ -161,11 +158,11 @@ func applyMigrations(ctx context.Context, writer *sql.DB, migrations []migration
 		}
 		timestamp, err := applyMigration(ctx, writer, item, now, applied)
 		if err != nil {
-			return fmt.Errorf("migration %s: %w", item.name, err)
+			return nil, fmt.Errorf("migration %s: %w", item.name, err)
 		}
 		applied[item.version] = timestamp
 	}
-	return nil
+	return nil, nil
 }
 
 func applyMigration(ctx context.Context, writer *sql.DB, item migration, now func() time.Time, applied map[int]string) (string, error) {
