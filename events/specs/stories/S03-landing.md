@@ -1,6 +1,6 @@
 # Stories — landing
 
-The landing page, the about screen, and the frame events' pages are drawn in: what a running events answers at `/` and `/about`, and the rules every route of events shares. The landing page, at `/`, tells a signed-in user what events is, lists its subscribers with where each is in the log and how far behind, and names the five tools an agent inspects the bus and unsticks subscribers with; the about screen, at `/about`, shows events' name, its version, and its description. Both are server-rendered HTML, and the whole of each page's content arrives in the response body, the launcher's list included; neither page carries a script of its own, and no script adds content a user sees: the launcher's, `/_appkit/launcher.js`, which a page loads only with the launcher, only filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. Every page of events is for a signed-in user, and events serves nothing to guests: its manifest declares no `guests`, so on a host with an authenticator nginx sends a visitor with no credential to auth's sign-in before the request reaches events. Every signed-in user sees the same pages: events shows each user the whole bus. nginx sets `X-User-Id` and `X-User-Email` on every request it passes upstream, the caller auth authenticated, with the request's id in `X-Request-Id`, and events trusts those headers (`S02`). So a request that arrives without `X-User-Id`, or with it empty, means nginx or a sibling is misconfigured — a server fault, not a bad request — and every route of events but `/emit` answers it the same way, before it looks at the path or the method (below). The requests go to a running events (`S02`), each shown as the HTTP request events receives, with the headers the story depends on; a developer stands in for nginx by passing those headers by hand. events is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
+The landing page, the about screen, and the frame events' pages are drawn in: what a running events answers at `/` and `/about`, and the rules every route of events shares. The landing page, at `/`, tells a signed-in user what events is, lists its subscribers with where each is in the log and how far behind, and names the five tools an agent inspects the bus and unsticks subscribers with; the about screen, at `/about`, shows events' name, its version, and its description. Both are server-rendered HTML, and the whole of each page's content arrives in the response body, the launcher's list included; neither page carries a script of its own, and no script adds content a user sees: the launcher's, `/_appkit/launcher.js`, which a page loads only with the launcher, only filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. Every page of events is for a signed-in user, and events serves nothing to guests: its manifest declares no `guests`, so on a host with an authenticator nginx sends a visitor with no credential to auth's sign-in before the request reaches events. Every signed-in user sees the same pages: events shows each user the whole bus. nginx sets `X-User-Id` and `X-User-Email` on every request it passes upstream, the caller auth authenticated, with the request's id in `X-Request-Id`, and events trusts those headers (`S02`). So a request that arrives without `X-User-Id`, or with it empty, means nginx or a sibling is misconfigured — a server fault, not a bad request — and every route of events but `/emit` answers it the same way, before it looks at the path or the method (below). The requests go to a running events (`S02`), each shown as the HTTP request events receives, with the headers the story depends on; a developer stands in for nginx by passing those headers by hand. events is started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
 
 ```
 {
@@ -63,8 +63,8 @@ The page has no `div#no-subscribers`. Below that is the section headed `MCP tool
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file and is readable by events, and telemetry takes every event.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file and is readable by events, and telemetry takes every event.
 - The log is in the state this group shares (above).
 
 Postconditions:
@@ -105,7 +105,7 @@ Status 200. The body is the landing page of `A user opens the landing page`, but
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file holds the suite's services file.
 - events records no subscriber (`S10`).
 
 Postconditions:
@@ -138,8 +138,8 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 - The log is in the state this group shares.
 
 Postconditions:
@@ -172,8 +172,8 @@ Status 200. The body is an HTML document titled `About events`, with the same st
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file, and telemetry takes every event.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file, and telemetry takes every event.
 
 Postconditions:
 
@@ -220,7 +220,7 @@ Postconditions:
 
 ## A user on a host with services opens the launcher
 
-On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from events to any of them without typing an address. Here `/var/lib/ikigenba/services.json` is the suite's services file with an `icon` on each of its eight entries, `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`, `sites`, and `telemetry`, each holding the SVG text of that service's icon; events' own is the one its package ships, `share/icon.svg` (`S16`). The launcher lists every service that carries an icon, whether or not it is an MCP service.
+On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from events to any of them without typing an address. Here `/run/ikigenba/services.json` is the suite's services file with an `icon` on each of its eight entries, `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`, `sites`, and `telemetry`, each holding the SVG text of that service's icon; events' own is the one its package ships, `share/icon.svg` (`S16`). The launcher lists every service that carries an icon, whether or not it is an MCP service.
 
 In a browser, the list is closed when the page loads, and pressing the launcher button opens it. Typing in the search field keeps only the entries whose name contains the typed text, ignoring case and any spaces around it; clearing the field shows them all again. When the text matches no entry, the no-match line appears, reading `No service matches “<text>”.` with the typed text in quotation marks. Pressing Enter in the search field opens the first entry still shown that is a working link, and does nothing when there is none. That filtering is the whole of what `/_appkit/launcher.js` does: every entry, and the no-match line, arrived with the page.
 
@@ -245,8 +245,8 @@ Status 200. The body is the landing page of `A user opens the landing page`, wit
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
 - The log is in the state this group shares.
 
 Postconditions:
@@ -278,8 +278,8 @@ Status 200. The body is the landing page of `A user opens the landing page`: the
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` does not exist.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` does not exist.
 - The log is in the state this group shares.
 
 Postconditions:
@@ -289,7 +289,7 @@ Postconditions:
 
 ## A user sees the launcher follow a change to the services file
 
-The host rewrites the services file when a service is installed or switched on or off, and events reads the file afresh for every page, so the next page a user loads shows the new list without events being restarted. Here the host has switched `dummy` off since events started: `/var/lib/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
+The host rewrites the services file when a service is installed or switched on or off, and events reads the file afresh for every page, so the next page a user loads shows the new list without events being restarted. Here the host has switched `dummy` off since events started: `/run/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
 
 Request:
 
@@ -312,8 +312,8 @@ Status 200. The body is the landing page with the launcher, as in `A user on a h
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment while `/var/lib/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
-- `/var/lib/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment while `/run/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
+- `/run/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
 - The log is in the state this group shares.
 
 Postconditions:
@@ -322,7 +322,7 @@ Postconditions:
 
 ## A user on a host whose services file names no auth still gets auth's links
 
-The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one events build serves whichever space it is installed on. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry.
+The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one events build serves whichever space it is installed on. Here `/run/ikigenba/services.json` is the suite's services file without the `auth` entry.
 
 Request:
 
@@ -368,8 +368,8 @@ Status 200. The body is the landing page of `A user opens the landing page`, and
 
 Preconditions:
 
-- events is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
+- events is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
 - The log is in the state this group shares.
 
 Postconditions:

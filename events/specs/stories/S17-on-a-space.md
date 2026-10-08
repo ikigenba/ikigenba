@@ -1,6 +1,6 @@
 # Stories — on a space
 
-events reached through a space: the file `S16` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `events.<space>` over TLS, so on the space `sbx.ikigenba.dev` events answers at `events.sbx.ikigenba.dev`. nginx on the space proxies to events' socket, `/run/ikigenba/events.sock` (`S02`), and includes events' own `etc/nginx.conf` in that server (`S16`), so `/emit` at the public name answers 404 while the same path on the socket takes every sibling's events (`S07`). events' manifest declares no `guests` (`S02`), so the space's nginx asks auth's `/check` for every path of events: a request with no credential never reaches events, and is sent to sign in at a page or challenged at `/mcp`, by nginx itself; one with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check` subrequest carried. The host's services file is `/var/lib/ikigenba/services.json`, which opsctl writes and names in every app's environment as `IKIGENBA_SERVICES`; it lists events under the name `events`, with `url` `https://events.sbx.ikigenba.dev`, the socket `/run/ikigenba/events.sock`, and marked for MCP since its manifest has `mcp = true`. That entry is how every producer on the host finds the bus: a service that emits looks up the entry named `events` and posts to its socket. The same file is how events finds the services it asks for declarations and delivers to (`S06`, `S11`), each at its own socket, and the MCP gateway offers events' five tools through `https://mcp.sbx.ikigenba.dev/mcp`. events runs as `/opt/events/bin/events` with `/opt/events` as its working directory, so its log is `/opt/events/state/events.db`, the database the manifest's `[database]` table declares (`S16`); the host keeps it across releases and replicates it continuously, which is opsctl's doing and is named here only by its effect. `/opt/events/etc/env` carries the six settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`. The stories prove the whole path from checkout to browser, curl, and agent, and nothing about events that the earlier groups do not already say. devctl and opsctl are named only by the commands they offer. repos and scripts are deployed and active on the space; repos declares that it emits `repo.pushed` and scripts that it accepts every event (`S06`), so scripts is a subscriber (`S10`). A guest is curl with no cookie and no `Authorization` header; a signed-in caller sends the token `ikp_<token>`, whose id is `<token-id>`, owned by `u_7f3a9c21`, `mg@example.com`, as `Authorization: Bearer ikp_<token>`. The MCP requests are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision are not repeated. Trail records are named by their attributes, as `S14` records them.
+events reached through a space: the suite release `S16` describes, deployed with `devctl deploy`, activated by `opsctl`, and answered by nginx at `events.<space>` over TLS, so on the space `sbx.ikigenba.dev` events answers at `events.sbx.ikigenba.dev`. nginx on the space proxies to events' socket, `/run/ikigenba/events.sock` (`S02`), and includes events' own `etc/nginx.conf` in that server (`S16`), so `/emit` at the public name answers 404 while the same path on the socket takes every sibling's events (`S07`). events' manifest declares no `guests` (`S02`), so the space's nginx asks auth's `/check` for every path of events: a request with no credential never reaches events, and is sent to sign in at a page or challenged at `/mcp`, by nginx itself; one with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check` subrequest carried. The host's services file is `/run/ikigenba/services.json`, which opsctl writes and names in every app's environment as `IKIGENBA_SERVICES`; it lists events under the name `events`, with `url` `https://events.sbx.ikigenba.dev`, the socket `/run/ikigenba/events.sock`, and marked for MCP since its manifest has `mcp = true`. That entry is how every producer on the host finds the bus: a service that emits looks up the entry named `events` and posts to its socket. The same file is how events finds the services it asks for declarations and delivers to (`S06`, `S11`), each at its own socket, and the MCP gateway offers events' five tools through `https://mcp.sbx.ikigenba.dev/mcp`. events runs as `/opt/ikigenba/current/events/bin/events` with `/var/opt/ikigenba/events` as its working directory, so its log is `/var/opt/ikigenba/events/state/events.db`, the database the manifest's `[database]` table declares (`S16`); the host keeps it across releases and replicates it continuously, which is opsctl's doing and is named here only by its effect. `/etc/opt/ikigenba/events/env` carries the six settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`. The stories prove the whole path from checkout to browser, curl, and agent, and nothing about events that the earlier groups do not already say. devctl and opsctl are named only by the commands they offer. repos and scripts are deployed and active on the space; repos declares that it emits `repo.pushed` and scripts that it accepts every event (`S06`), so scripts is a subscriber (`S10`). A guest is curl with no cookie and no `Authorization` header; a signed-in caller sends the token `ikp_<token>`, whose id is `<token-id>`, owned by `u_7f3a9c21`, `mg@example.com`, as `Authorization: Bearer ikp_<token>`. The MCP requests are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision are not repeated. Trail records are named by their attributes, as `S14` records them.
 
 ## A user on a space reaches events' landing page
 
@@ -23,11 +23,10 @@ Status 200. The body is the landing page (`S03`): an HTML page whose title is `e
 
 Preconditions:
 
-- The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`, and `opsctl` is installed on it.
-- `devctl build events`, run in a clean tree at the commit `<sha>`, wrote `events/dist/events-<sha>.tar.xz` (`S16`). No tag is needed.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev events/dist/events-<sha>.tar.xz` exited 0.
+- The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev <sha>` exited 0, having built the release `dist/<sha>.tar.xz` of the commit `<sha>` (`S16`) and activated it on the space. No tag is needed.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows events' service and socket `active`, in the layout devctl's and opsctl's stories own.
-- auth, telemetry, repos, and scripts are deployed and active on the space through their own chains.
+- auth, telemetry, repos, and scripts are in the same release and active on the space.
 - `ikp_<token>` is a token auth honors, owned by `u_7f3a9c21`, `mg@example.com`.
 
 Postconditions:
@@ -116,7 +115,7 @@ Status 404. The body is not fixed. A request to the same path with no credential
 
 Preconditions:
 
-- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, so the host's nginx includes `/opt/events/etc/nginx.conf` in events' server.
+- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, so the host's nginx includes `/opt/ikigenba/current/events/etc/nginx.conf` in events' server.
 - The agent holds `ikp_<token>`, a token auth honors, owned by `u_7f3a9c21`.
 - events holds no event `evt_1d6f3a8c5e2b9047`.
 
@@ -199,9 +198,10 @@ Output:
 
 ```
 source: ok (events/<tarball>, <size>)
+secrets: ok (0 keys)
 stop: ok (ikigenba-events.socket, ikigenba-events.service, litestream.service)
-files: ok (/opt/events/etc, /opt/events/state, <n> files)
-db: ok (/opt/events/state/events.db, newest <time>)
+files: ok (/etc/opt/ikigenba/events/env, /var/opt/ikigenba/events/state, <n> files)
+db: ok (/var/opt/ikigenba/events/state/events.db, newest <time>)
 litestream: ok (unchanged)
 start: ok (litestream.service, ikigenba-events.socket, ikigenba-events.service)
 ```
@@ -212,16 +212,16 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, and the host has replicated `/opt/events/state/events.db`.
+- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, and the host has replicated `/var/opt/ikigenba/events/state/events.db`.
 - `aws.region` and `backup.s3_uri` are set in opsctl's configuration, and the host's role can read under that prefix.
-- `<backup.s3_uri>events/` holds at least one files backup of events, of `/opt/events/etc/` and `/opt/events/state/`.
+- `<backup.s3_uri>events/` holds at least one files backup of events, of `/var/opt/ikigenba/events/state/`.
 - The newest point the replica holds has the log through `seq` 1040, and scripts `ok` with its cursor at 1032.
 - Since that point, and before the restore, events accepted the events with `seq` 1041 to 1046, delivered every event through 1046 to scripts, and scripts answered each ok, so `subscribers` answered scripts' cursor 1046 and lag 0.
 - scripts answers every delivery ok.
 
 Postconditions:
 
-- events is serving again on `/run/ikigenba/events.sock`, over the restored `/opt/events/state/events.db`.
+- events is serving again on `/run/ikigenba/events.sock`, over the restored `/var/opt/ikigenba/events/state/events.db`.
 - `search` (`S09`) finds no event whose `seq` is above 1040 from before the restore: the events once at 1041 to 1046 are gone and are never delivered again. The `seq` numbers they had may be given again, to the next events events accepts, so a `seq` names an event only within one history of the log; a consumer recognizes an event by its `id`.
 - scripts has been delivered again, in `seq` order, the events at 1033 to 1040, each with the `id`, `seq`, and `received` it had before; once it has answered them, `subscribers` (`S10`) answers scripts `ok` with its cursor at 1040 and lag 0.
 - The trail holds this events' `service.started` after the restore, and an `event.delivered` with `service=scripts` for each of the deliveries made again, each naming its event's id under `event` (`S14`).
