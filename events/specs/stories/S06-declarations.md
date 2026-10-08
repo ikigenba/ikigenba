@@ -1,6 +1,6 @@
 # Stories — declarations
 
-How events knows what each service emits and accepts. Every service on the bus serves its declaration at `GET /declarations` on its own socket: a JSON object whose `emits` lists each event name the service emits with the attribute names it declares for it, and whose `accepts` lists the event names it takes deliveries of, `*` standing for every event. events reads the services file `IKIGENBA_SERVICES` names, afresh each time, and asks every service the file marks `"enabled": true` for its declaration, on the socket the file gives for it; a service the file marks `"enabled": false` is not asked. It asks them all when it starts, before it tells systemd it is ready (`S02`), and again every `EVENTS_DECLARATIONS_SECONDS` seconds, 60 by default. It keeps each answer as that service's declaration, in its database, so a declaration outlives a restart of events. A service the file no longer enables, or no longer lists, is dropped at the next ask, the one at start included: from then it declares nothing, as if events had never heard from it. A services file that cannot be read is another matter: at start, with no services file, nothing is declared; at a later refresh it counts as no answer, so every held declaration stays and no subscriber becomes gone because of it. It also asks a service at once when an event arrives at `/emit` (`S07`) whose `service` is that service and whose `event` is a name the declaration events holds for it does not list among its `emits`, and judges the event by the answer, so a producer deployed with a new event since events last asked has its first event of that name accepted, not refused. A service that answers nothing — nothing answers on its socket, it answers that it has no such path, it answers with an error, or what it answers is not a declaration — keeps the declaration events last had from it; a service events has never had a declaration from declares nothing, so it emits nothing events accepts and accepts nothing. What events holds is what `catalog` (`S08`) answers, what `/emit` judges an event by (`S07`), and whom events delivers to (`S10`, `S11`). Each ask is a call to a sibling, which events' trail records as `sibling.called` (`S14`). Asking writes nothing to stdout or stderr and changes nothing in events' log.
+How events knows what each service emits and accepts. Every service on the bus serves its declaration at `GET /declarations` on its own socket: a JSON object whose `emits` lists each event name the service emits with the attribute names it declares for it, and whose `accepts` lists the event names it takes deliveries of, `*` standing for every event. Each `emits` element's `event`, and each `accepts` element but a bare `*`, is an event name, in the shape `S07` gives, or a pattern: a name of two or more words in which one or more words are exactly `*`, a `*` word matching exactly one word, so that `cron.*.fired` matches `cron.hourly.fired` but neither `cron.fired` nor `cron.hourly.daily.fired`. A bare `*` in `accepts` keeps its meaning, every event, and is not a pattern. A word that holds `*` beside other characters, as `cron.h*.fired` does, makes neither a name nor a pattern, so an answer holding one is not a declaration. A service declares that it emits a name when an `emits` element's `event` equals the name or is a pattern that matches it. A pattern in `accepts` is held with the rest of the declaration, and `catalog` lists the service under that pattern's entry when some service declares that it emits that pattern (`S08`). events reads the services file `IKIGENBA_SERVICES` names, afresh each time, and asks every service the file marks `"enabled": true` for its declaration, on the socket the file gives for it; a service the file marks `"enabled": false` is not asked. It asks them all when it starts, before it tells systemd it is ready (`S02`), and again every `EVENTS_DECLARATIONS_SECONDS` seconds, 60 by default. It keeps each answer as that service's declaration, in its database, so a declaration outlives a restart of events. A service the file no longer enables, or no longer lists, is dropped at the next ask, the one at start included: from then it declares nothing, as if events had never heard from it. A services file that cannot be read is another matter: at start, with no services file, nothing is declared; at a later refresh it counts as no answer, so every held declaration stays and no subscriber becomes gone because of it. It also asks a service at once when an event arrives at `/emit` (`S07`) whose `service` is that service and whose `event` is a name the declaration events holds for it does not declare that it emits, and judges the event by the answer, so a producer deployed with a new event since events last asked has its first event of that name accepted, not refused. A service that answers nothing — nothing answers on its socket, it answers that it has no such path, it answers with an error, or what it answers is not a declaration — keeps the declaration events last had from it; a service events has never had a declaration from declares nothing, so it emits nothing events accepts and accepts nothing. What events holds is what `catalog` (`S08`) answers, what `/emit` judges an event by (`S07`), and whom events delivers to (`S10`, `S11`). Each ask is a call to a sibling, which events' trail records as `sibling.called` (`S14`). Asking writes nothing to stdout or stderr and changes nothing in events' log.
 
 events is serving on the host (`S02`) with every setting at its default, and it is `2026-10-05T09:32:00Z`. Unless a story says otherwise, the services file, `/var/lib/ikigenba/services.json`, enables `repos`, on `/run/ikigenba/repos.sock`, `scripts`, on `/run/ikigenba/scripts.sock`, and `sites`, a service the stories suppose, on `/run/ikigenba/sites.sock`, beside services that declare nothing; events has asked all three since it started and holds their answers, `repos`':
 
@@ -50,6 +50,34 @@ Postconditions:
 
 - events holds `repos`' declaration: `catalog` (`S08`) lists `repo.pushed` as emitted by `repos` with the attribute names `repo`, `ref`, `old`, and `new`, and an event `repos` emits named `repo.pushed` is accepted (`S07`).
 - events asks `repos` again `EVENTS_DECLARATIONS_SECONDS` seconds later, and every `EVENTS_DECLARATIONS_SECONDS` seconds after that while it serves.
+- Nothing has changed in events' log.
+
+## events holds a declaration whose names are patterns
+
+`cron`, a service the story supposes, emits one event per schedule each time the schedule fires, `cron.hourly.fired` for a schedule named `hourly`, and cannot list in advance every schedule a user will make. It declares the name it emits as the pattern `cron.*.fired`, and events holds the pattern as it holds any declaration.
+
+Request:
+
+```
+GET /declarations HTTP/1.1
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is `cron`'s declaration, `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}`.
+
+Preconditions:
+
+- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`, which answers `GET /declarations` with the declaration above. The log holds no event from `cron`.
+
+Postconditions:
+
+- events holds `cron`'s declaration: a `catalog` call (`S08`) with `{"service":"cron"}` answers `{"events":[{"event":"cron.*.fired","emits":[{"service":"cron","attrs":["schedule"]}],"accepts":["scripts"],"count":0}]}`, `scripts`, which accepts every event, listed under the pattern, and an event `cron` emits named `cron.hourly.fired` is accepted (`S07`).
 - Nothing has changed in events' log.
 
 ## events learns a changed declaration at its next refresh
@@ -210,7 +238,7 @@ Postconditions:
 
 ## A service that answers with an error keeps what it last declared
 
-`repos` is in trouble and answers `GET /declarations` with 500. An error is no declaration, so events keeps what `repos` last declared, and asks again at the next refresh. An answer of 200 whose body is not a declaration — not JSON, `{"emits":"repo.pushed"}`, or an `emits` naming `Repo.Pushed` — is no declaration either, and is treated the same way.
+`repos` is in trouble and answers `GET /declarations` with 500. An error is no declaration, so events keeps what `repos` last declared, and asks again at the next refresh. An answer of 200 whose body is not a declaration — not JSON, `{"emits":"repo.pushed"}`, an `emits` naming `Repo.Pushed`, or one naming `cron.h*.fired` — is no declaration either, and is treated the same way.
 
 Request:
 

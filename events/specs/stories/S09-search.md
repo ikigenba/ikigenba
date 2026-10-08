@@ -1,6 +1,6 @@
 # Stories — search
 
-`search`, the read tool that lists the events of the retained log that match a filter, newest first, a page at a time. Newest means the highest `seq`: the log's order is the order events accepted the events, and `search` reads it backwards, whatever the events' own `time`s say, since a producer can emit an event a moment before another service's but have it reach events a moment after. Its arguments are all optional, and their schema is the input schema `S05` gives for `search`. The filters: `services`, an array of service names, keeps the events any of them emitted; `events`, an array of event names, keeps the events carrying any of them; `user`, a string, keeps the events whose `user` is exactly it; `request_id`, a string, keeps the events whose `request_id` is exactly it; `cause`, a string, keeps the events whose `cause` is exactly it; `attrs`, an object whose values are strings, numbers, or booleans, keeps the events whose attributes carry every one of its keys with exactly that value, a number matching a number and a string a string; `since`, an RFC 3339 time, keeps the events whose `time` is at or after it; and `until`, an RFC 3339 time, keeps the events whose `time` is before it. A time is compared as an instant, so that a `since` that is not before `until` matches nothing. An empty string given as `user`, `request_id`, or `cause` is a value like any other: it keeps the events whose member is empty. A filter left out is unbounded; the filters given are ANDed. The page: `limit`, a whole number from 1 to 500, 50 when left out, is the most events one answer holds; `cursor`, the value a previous answer gave, continues from where that answer stopped, with the same filters. Only the retained log is searched: an event the sweep has removed (`S13`) is found by no search.
+`search`, the read tool that lists the events of the retained log that match a filter, newest first, a page at a time. Newest means the highest `seq`: the log's order is the order events accepted the events, and `search` reads it backwards, whatever the events' own `time`s say, since a producer can emit an event a moment before another service's but have it reach events a moment after. Its arguments are all optional, and their schema is the input schema `S05` gives for `search`. The filters: `services`, an array of service names, keeps the events any of them emitted; `events`, an array of strings, keeps the events whose `event` is exactly one of them, a pattern (`S06`) given there being a string like any other, which keeps nothing, since no event carries a `*` (`S07`); `user`, a string, keeps the events whose `user` is exactly it; `request_id`, a string, keeps the events whose `request_id` is exactly it; `cause`, a string, keeps the events whose `cause` is exactly it; `attrs`, an object whose values are strings, numbers, or booleans, keeps the events whose attributes carry every one of its keys with exactly that value, a number matching a number and a string a string; `since`, an RFC 3339 time, keeps the events whose `time` is at or after it; and `until`, an RFC 3339 time, keeps the events whose `time` is before it. A time is compared as an instant, so that a `since` that is not before `until` matches nothing. An empty string given as `user`, `request_id`, or `cause` is a value like any other: it keeps the events whose member is empty. A filter left out is unbounded; the filters given are ANDed. The page: `limit`, a whole number from 1 to 500, 50 when left out, is the most events one answer holds; `cursor`, the value a previous answer gave, continues from where that answer stopped, with the same filters. Only the retained log is searched: an event the sweep has removed (`S13`) is found by no search.
 
 The result is `{"records":[...]}`, one record per event, and, when more events match than the page holds, a second member, `"cursor":"<cursor>"`, an opaque string; passing it back as `cursor`, with the same filters, answers the next page, and the last page has no `cursor` member. A page carries `limit` records, or fewer only on the last page. A record is the event as events stored it: its eleven members `id`, `time`, `service`, `event`, `request_id`, `user`, `attrs`, `cause`, and `depth`, exactly as the producer emitted them (`S07`), and `seq` and `received`, which events gave it when it accepted it. The order of the members within a record, and of the keys within `attrs`, is not fixed; the records below are laid out in one order for reading. A refusal the tool makes is an `isError` result with one text block: `since is not an RFC 3339 time: '<value>'` and `until is not an RFC 3339 time: '<value>'` for a time the tool cannot read; `limit must be between 1 and 500, got <n>` for a limit outside the range; `cursor is not one search issued` for a cursor that no search answered; `cannot reach the log; try again later` when events cannot reach its log. An empty `cursor` is the same as leaving it out: the first page. A filter that matches nothing is an empty page, `{"records":[]}`, never an error. `search` changes nothing, and it is of kind `read`.
 
@@ -494,6 +494,48 @@ and a `content` array of one text block whose text is exactly that line.
 Preconditions:
 
 - The preamble's.
+
+Postconditions:
+
+- Nothing has changed; the log is as it was.
+
+## An agent searches by a pattern
+
+`events` matches an event's name exactly. A pattern given there is not expanded to the names it matches: it is a string like any other, and no event's name holds a `*`, so it keeps nothing. To find what a pattern covers, the agent asks `catalog` (`S08`) for the names and gives them.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: a8f3c1e7b2d94605f1e8c3a7b9d2e4f6
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: call
+
+{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"call","arguments":{"service":"events","tool":"search","args":{"events":["cron.*.fired"]}},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 19 whose `result` has no `isError` member, a `structuredContent` of
+
+```
+{"records":[]}
+```
+
+and a `content` array of one text block whose text is exactly that line. With `{"events":["cron.hourly.fired"]}` the answer is the two `cron` events, 4184 then 4183.
+
+Preconditions:
+
+- The preamble's, except that it is `2026-10-05T11:02:00Z`, that the services file also enables `cron`, a service the stories suppose, whose declaration is `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}` (`S06`), and that events' log also holds, after the eight above, two `cron.hourly.fired` events `cron` emitted, `seq` 4183 and 4184, as `S08`'s `An agent reads the catalog of a service that declares a pattern` shows them. No event has been accepted since 4184.
 
 Postconditions:
 

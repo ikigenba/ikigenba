@@ -6,7 +6,7 @@ How an event gets onto the bus: a service emits it by posting it to events' sock
 {"id":"<id>","time":"<time>","service":"<service>","event":"<event>","request_id":"<request-id>","user":"<user>","attrs":{<attributes>},"cause":"<cause>","depth":<depth>}
 ```
 
-`id` is the event's own id, which its producer gives it: `evt_` followed by sixteen lowercase hexadecimal digits. `time` is when the producer emitted it, UTC to the microsecond, as `2026-10-05T09:40:12.318442Z`: exactly six fractional digits and a `Z`. `service` is the producer's name and is never empty. `event` is the event's name: two lowercase words joined by one `.`, noun then past-tense verb, each word a lowercase ASCII letter followed by lowercase letters and digits, with single `_` allowed between them, so that the whole matches `^[a-z][a-z0-9]*(_[a-z0-9]+)*\.[a-z][a-z0-9]*(_[a-z0-9]+)*$`, `repo.pushed` say. `request_id` and `user` are the request and the user that caused it, strings, each empty when there is none. `attrs` is an object, flat: every value is a string, a number, or `true` or `false`, and every key is lowercase, starting with a letter, with digits and single underscores allowed. `cause` is the id of the event whose handling led the producer to emit this one, and is empty when a person or an agent started the chain; `depth` is 0 when `cause` is empty, and otherwise the cause's depth plus one. events accepts an event only when its producer, the service its `service` names, has declared that it emits events of that name (`S06`), and only when its `depth` is at most `EVENTS_DEPTH_MAX`, 8 by default (`S02`). That is all it asks of an event beyond its shape: its attributes are not compared with the attribute names its producer declared, its `cause` is not looked up in the log, and its `depth` is not compared with the cause's, so an event whose cause the log does not hold, or no longer holds, is accepted all the same. An event it accepts it stores with two members more: `seq`, the event's place in the log, one more than the last event accepted before it, and `received`, the moment events accepted it, UTC to the microsecond in the same layout as `time`; `search` (`S09`) answers it so, and events delivers it to every service that accepts it (`S10`, `S11`). events keeps one copy of an event: an event whose `id` the log already holds is not stored again, and is answered 204 before events looks at its producer's declaration or its depth. events judges a post in this order, and the first check it fails is the answer: the method, the content type, the size of the body as it arrived, the shape of the body, the size of the event as events writes it out, whether the log already holds its `id`, and then the producer's declaration and the depth. Every answer has an empty body, and the status says everything a producer acts on: 204, the event is in the log; 4xx, the event itself is at fault and sending it again cannot succeed; 500, it can be sent again. A post to `/emit` adds no `request.started` or `request.finished` to events' trail, whatever its answer; a refused post stores nothing and records no `event.accepted` (`S14`), and events writes nothing to stderr for any post in this group: a refused or lost event is its producer's to report, as the producer's own stories tell.
+`id` is the event's own id, which its producer gives it: `evt_` followed by sixteen lowercase hexadecimal digits. `time` is when the producer emitted it, UTC to the microsecond, as `2026-10-05T09:40:12.318442Z`: exactly six fractional digits and a `Z`. `service` is the producer's name and is never empty. `event` is the event's name: two or more lowercase words joined by single `.`s, each word a lowercase ASCII letter followed by lowercase letters and digits, with single `_` allowed between them, so that the whole matches `^[a-z][a-z0-9]*(_[a-z0-9]+)*(\.[a-z][a-z0-9]*(_[a-z0-9]+)*)+$`, `repo.pushed` or `cron.hourly.fired` say; a name never holds `*`. `request_id` and `user` are the request and the user that caused it, strings, each empty when there is none. `attrs` is an object, flat: every value is a string, a number, or `true` or `false`, and every key is lowercase, starting with a letter, with digits and single underscores allowed. `cause` is the id of the event whose handling led the producer to emit this one, and is empty when a person or an agent started the chain; `depth` is 0 when `cause` is empty, and otherwise the cause's depth plus one. events accepts an event only when its producer, the service its `service` names, has declared that it emits events of that name (`S06`): its declaration has an `emits` element whose `event` equals the name or, failing that, one whose `event` is a pattern that matches it; and only when its `depth` is at most `EVENTS_DEPTH_MAX`, 8 by default (`S02`). That is all it asks of an event beyond its shape: its attributes are not compared with the attribute names its producer declared, its `cause` is not looked up in the log, and its `depth` is not compared with the cause's, so an event whose cause the log does not hold, or no longer holds, is accepted all the same. An event it accepts it stores with two members more: `seq`, the event's place in the log, one more than the last event accepted before it, and `received`, the moment events accepted it, UTC to the microsecond in the same layout as `time`; `search` (`S09`) answers it so, and events delivers it to every service that accepts it (`S10`, `S11`). events keeps one copy of an event: an event whose `id` the log already holds is not stored again, and is answered 204 before events looks at its producer's declaration or its depth. events judges a post in this order, and the first check it fails is the answer: the method, the content type, the size of the body as it arrived, the shape of the body, the size of the event as events writes it out, whether the log already holds its `id`, and then the producer's declaration and the depth. Every answer has an empty body, and the status says everything a producer acts on: 204, the event is in the log; 4xx, the event itself is at fault and sending it again cannot succeed; 500, it can be sent again. A post to `/emit` adds no `request.started` or `request.finished` to events' trail, whatever its answer; a refused post stores nothing and records no `event.accepted` (`S14`), and events writes nothing to stderr for any post in this group: a refused or lost event is its producer's to report, as the producer's own stories tell.
 
 events is serving on the host (`S02`) with every setting at its default, and holds `repos`', `scripts`', and `sites`' declarations as `S06`'s preamble gives them; its log holds `S09`'s eight events, `seq` 4175 to 4182. The requests below are made on the socket by a developer, as the `ikigenba` user, standing in for the service the event names.
 
@@ -49,6 +49,50 @@ Postconditions:
 
   ```
   event.accepted cause= event=evt_578b5c72dc4ee60c
+  ```
+
+- events wrote nothing to stderr.
+
+## cron emits an event a pattern it declares matches
+
+`cron` declares that it emits `cron.*.fired` (`S06`), and here its schedule `hourly` fires and it emits `cron.hourly.fired`. No `emits` element of its declaration equals the name, but the pattern matches it, so the name is declared, and events stores the event without asking `cron` again.
+
+Request:
+
+```
+POST /emit HTTP/1.1
+Content-Type: application/json
+
+{"id":"evt_f93076e37ecfe1df","time":"2026-10-05T09:40:00.004218Z","service":"cron","event":"cron.hourly.fired","request_id":"","user":"","attrs":{"schedule":"hourly"},"cause":"","depth":0}
+```
+
+Response:
+
+```
+HTTP/1.1 204 No Content
+```
+
+Status 204. The body is empty.
+
+Preconditions:
+
+- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`, and events holds its declaration, `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}` (`S06`). The log holds no event `evt_f93076e37ecfe1df`, and its last event has `seq` 4182.
+
+Postconditions:
+
+- events did not ask `cron` for its declaration.
+- events' log holds the event, with `seq` 4183. A `search` (`S09`) with `{"limit":1}` answers it first, as the newest event of the log:
+
+  ```
+  {"records":[{"id":"evt_f93076e37ecfe1df","time":"2026-10-05T09:40:00.004218Z","service":"cron","event":"cron.hourly.fired","request_id":"","user":"","attrs":{"schedule":"hourly"},"cause":"","depth":0,"seq":4183,"received":"<received>"}],"cursor":"<cursor>"}
+  ```
+
+  where every member but `seq` and `received` is as posted, and `<received>` is the moment events accepted the event, in the layout of `time`.
+- `catalog` (`S08`) counts one `cron.hourly.fired`, emitted by `cron` with the attribute name `schedule`.
+- telemetry has received, from events, one `event.accepted` (`S14`):
+
+  ```
+  event.accepted cause= event=evt_f93076e37ecfe1df
   ```
 
 - events wrote nothing to stderr.
@@ -281,6 +325,37 @@ Postconditions:
 - Nothing was stored: the log still ends at `seq` 4182, and a `search` (`S09`) with `{"events":["repo.deleted"]}` answers `{"records":[]}`. events recorded no `event.accepted`.
 - events wrote nothing to stderr.
 
+## cron emits a name its pattern does not match
+
+`cron` declares that it emits `cron.*.fired` and nothing else, and here emits `cron.hourly.daily.fired`, one word longer than the pattern: a `*` word matches exactly one word, so the pattern does not match it. The declaration events holds does not declare the name, so events asks `cron` again first (`S06`); `cron` still declares only the pattern, and the event is refused. `cron.fired`, one word shorter, is refused the same way.
+
+Request:
+
+```
+POST /emit HTTP/1.1
+Content-Type: application/json
+
+{"id":"evt_2ebe3bd7cfdbd28c","time":"2026-10-05T09:41:00.003127Z","service":"cron","event":"cron.hourly.daily.fired","request_id":"","user":"","attrs":{"schedule":"hourly"},"cause":"","depth":0}
+```
+
+Response:
+
+```
+HTTP/1.1 422 Unprocessable Entity
+```
+
+Status 422. The body is empty.
+
+Preconditions:
+
+- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`; events holds its declaration, and `cron` answers `GET /declarations` with the same, `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}` (`S06`).
+
+Postconditions:
+
+- Between the post and the answer, events asked `cron` for its declaration, once.
+- Nothing was stored: the log still ends at `seq` 4182, and a `search` (`S09`) with `{"events":["cron.hourly.daily.fired"]}` answers `{"records":[]}`. events recorded no `event.accepted`.
+- events wrote nothing to stderr.
+
 ## A service emits an event deeper than a chain may go
 
 Events that cause events can loop: a service that reacts to its own events, or two that react to each other's, would fill the log for ever. `EVENTS_DEPTH_MAX` bounds every chain: an event whose `depth` is greater is refused, and the chain stops there. Here `depth` 9 is one past the default 8.
@@ -484,7 +559,7 @@ A well-formed JSON text that is not exactly an event, as the preamble shapes one
 - an `id` that is not a string, or not `evt_` and sixteen lowercase hexadecimal digits: `evt_578B5C72DC4EE60C`, `evt_578b5c72`, `578b5c72dc4ee60c`, or `""`;
 - a `time` that is not a string, or not in the shape the preamble gives: `2026-10-05T09:40:12Z` (no fraction), `2026-10-05T09:40:12.318Z` (three digits), `2026-10-05T09:40:12.318442+00:00` (an offset), `2026-10-05 09:40:12.318442Z` (a space);
 - a `service` that is not a string, or is `""`;
-- an `event` that is not a string, or not a name: `pushed`, `Repo.Pushed`, `repo..pushed`, `repo.pushed.`, `repo.pushed.tag`, `repo__x.pushed`, and `2fa.enabled` are refused;
+- an `event` that is not a string, or not a name: `pushed`, `Repo.Pushed`, `repo..pushed`, `repo.pushed.`, `repo__x.pushed`, `2fa.enabled`, `*`, `cron.*.fired`, and `cron.h*.fired` are refused;
 - a `request_id` or `user` that is not a string;
 - an `attrs` that is not an object, or holds a nested value, `"ref":{"name":"main"}` or `"refs":["main"]`, a `null`, a key that is not lowercase-with-underscores, `Repo`, `_id`, or `old-sha` say, or the same key twice;
 - a `cause` that is not a string, or is neither empty nor an event id in the shape of `id`, `push-1` say;
