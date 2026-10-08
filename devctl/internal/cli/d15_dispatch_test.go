@@ -134,8 +134,8 @@ func TestGoldenAndSeedDispatchMatchesSuccessfulPackageRun(t *testing.T) {
 }
 
 func TestCommandsOutsideRootFileSetIgnoreInvalidRootFile(t *testing.T) {
-	// R-UI48-29BU
-	fixture := newCLIBuildFixture(t)
+	// R-YPS2-X32R
+	fixture := newCLISuiteFixture(t)
 	if err := os.MkdirAll(filepath.Join(fixture.root, "infra"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +148,8 @@ func TestCommandsOutsideRootFileSetIgnoreInvalidRootFile(t *testing.T) {
 		cloudCalls++
 		return cloud.Clients{}, nil
 	}
-	result := invokeWithDeps(deps, "build", "crm")
-	if result.code != 0 || result.stderr != "" || !strings.HasPrefix(result.stdout, "crm/dist/crm-") {
+	result := invokeWithDeps(deps, "build", "r1")
+	if result.code != 0 || result.stderr != "" || !strings.HasPrefix(result.stdout, "dist/") {
 		t.Fatalf("build with invalid root file: %#v", result)
 	}
 	assertResult(t, invokeWithDeps(deps, "version"), 0, version+"\n", "")

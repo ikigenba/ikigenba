@@ -412,7 +412,7 @@ func d05WriteNames(writes []pushWrite) []string {
 }
 
 func TestPushDoesNotDeployOrOperateHost(t *testing.T) {
-	// R-652E-5P77
+	// R-0V8X-LLL0
 	root := d05Checkout(t)
 	ssm := &d05SSM{}
 	opener := d05WorkingCloud(ssm)

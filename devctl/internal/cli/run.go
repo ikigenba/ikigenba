@@ -15,7 +15,6 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/deploy"
 	"github.com/ikigenba/ikigenba/devctl/internal/golden"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
-	"github.com/ikigenba/ikigenba/devctl/internal/remove"
 	"github.com/ikigenba/ikigenba/devctl/internal/restore"
 	"github.com/ikigenba/ikigenba/devctl/internal/rollback"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
@@ -24,7 +23,6 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
 	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
-	"github.com/ikigenba/ikigenba/devctl/internal/spaceinit"
 )
 
 var version = "v0.6.0"
@@ -35,12 +33,11 @@ Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
-  space     list, create, destroy, stop, start, initialise, and inspect spaces
+  space     list, create, destroy, stop, start, and inspect spaces
   secrets   push and list an app's secrets for a space
-  build     build the suite or one app into a deployable file
-  deploy    put a release or a built app file on a space
+  build     build the suite at a commit into a release
+  deploy    put a release on a space
   rollback  put a space back on the release it ran before
-  remove    take an app off a space
   restore   put a space's app back from its backups
   golden    capture a space's data as a named golden set
   seed      give a space a golden set's or another space's data
@@ -72,7 +69,6 @@ var commandSet = map[string]struct{}{
 	"deploy":   {},
 	"restore":  {},
 	"rollback": {},
-	"remove":   {},
 	"apex":     {},
 	"golden":   {},
 	"seed":     {},
@@ -143,9 +139,6 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	if invocation.command == "restore" {
 		return operationError(stderr, restore.Run(ctx, invocation.arguments, stdout, deps))
 	}
-	if invocation.command == "remove" {
-		return operationError(stderr, remove.Run(ctx, invocation.arguments, stdout, deps))
-	}
 	if invocation.command == "secrets" {
 		return operationError(stderr, secrets.Run(ctx, invocation.arguments, stdout, deps))
 	}
@@ -161,7 +154,7 @@ func helpArguments(command string, arguments []string) []string {
 		case "space":
 			if _, ok := map[string]struct{}{
 				"list": {}, "create": {}, "destroy": {}, "stop": {}, "start": {},
-				"init": {}, "status": {}, "restart": {}, "logs": {},
+				"status": {}, "restart": {}, "logs": {},
 			}[arguments[0]]; ok {
 				return []string{arguments[0], "--help"}
 			}
@@ -177,12 +170,8 @@ func helpArguments(command string, arguments []string) []string {
 func missingCommandOptionValue(command string, arguments []string) (string, string) {
 	options := map[string]struct{}{}
 	helpCommand := ""
-	switch {
-	case command == "space" && len(arguments) != 0 && arguments[0] == "init":
-		options["--opsctl"] = struct{}{}
-		options["--acme-email"] = struct{}{}
-		helpCommand = "devctl space --help"
-	case command == "restore":
+	switch command {
+	case "restore":
 		options["--at"] = struct{}{}
 		helpCommand = "devctl restore --help"
 	default:
@@ -209,8 +198,6 @@ func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.De
 		switch args[0] {
 		case "create":
 			return spacecreate.Run(ctx, args[1:], version, stdout, deps)
-		case "init":
-			return spaceinit.Run(ctx, args[1:], stdout, deps)
 		case "restart":
 			return spaceapps.Run(ctx, args, stdout, deps)
 		case "disable":

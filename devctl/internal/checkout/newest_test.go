@@ -13,8 +13,8 @@ import (
 func TestNewestRelease(t *testing.T) {
 	// R-ULRX-7KJX R-UMZT-LCAM
 	for _, tc := range []struct{ output, want string }{
-		{"auth/v0.18.2\nr1\nr10\nr2\nr3-rc1\nr9x\nR11\nr01\nrr5\nv1.0.0\n", "r10"},
-		{"r9\nr100000000000000000000\n", "r100000000000000000000"}, {"r0\n", "r0"}, {"r1-rc1\nauth/v0.18.2\n", ""}, {"", ""},
+		{"auth/arbitrary-tag\nr1\nr10\nr2\nr3-rc1\nr9x\nR11\nr01\nrr5\nnon-release-tag\n", "r10"},
+		{"r9\nr100000000000000000000\n", "r100000000000000000000"}, {"r0\n", "r0"}, {"r1-rc1\nauth/arbitrary-tag\n", ""}, {"", ""},
 	} {
 		calls := 0
 		c := Checkout{Root: "/root", Deps: seam.Deps{Dir: "/root/sub", Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {

@@ -22,7 +22,6 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
 	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
-	"github.com/ikigenba/ikigenba/devctl/internal/spaceinit"
 )
 
 var _ func(context.Context, []string, io.Reader, io.Writer, io.Writer, seam.Deps) int = Run
@@ -33,12 +32,11 @@ Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
-  space     list, create, destroy, stop, start, initialise, and inspect spaces
+  space     list, create, destroy, stop, start, and inspect spaces
   secrets   push and list an app's secrets for a space
-  build     build the suite or one app into a deployable file
-  deploy    put a release or a built app file on a space
+  build     build the suite at a commit into a release
+  deploy    put a release on a space
   rollback  put a space back on the release it ran before
-  remove    take an app off a space
   restore   put a space's app back from its backups
   golden    capture a space's data as a named golden set
   seed      give a space a golden set's or another space's data
@@ -102,10 +100,10 @@ Arguments:
 
 const expectedD06Usage = `Usage: devctl space <subcommand> [arguments]
 
-List, create, destroy, stop, start, initialise, and inspect spaces, and
-restart, disable, enable, or read the journal of one app on one. A space is
-one label under the root domain; <space> is that label or the full domain.
-The cloud's tags are the only registry.
+List, create, destroy, stop, start, and inspect spaces, and restart, disable,
+enable, or read the journal of one app on one. A space is one label under the
+root domain; <space> is that label or the full domain. The cloud's tags are
+the only registry.
 
 Subcommands:
   list                       one line per space
@@ -113,7 +111,6 @@ Subcommands:
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
-  init <space> [options]     set the host's keys again and run opsctl init
   status <space>             one line per app: commit, label, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
   disable <space> <app>      stop one app and keep it from starting until enabled
@@ -128,10 +125,6 @@ Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
   --delete-secrets        delete the space's secrets; they are kept otherwise
   --delete-backups        delete the space's backups; they are kept otherwise
-
-Options (init):
-  --opsctl <version>      move the host to this opsctl release first
-  --acme-email <address>  change where the CA sends the space's expiry warnings
 
 Options (logs):
   --follow                keep printing as the app writes, until interrupted
@@ -234,7 +227,7 @@ func TestUnknownTopLevelOption(t *testing.T) {
 }
 
 func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
-	// R-UI48-29BU R-N1LD-IX1I
+	// R-YPS2-X32R R-N1LD-IX1I
 	tests := []struct {
 		name    string
 		args    []string
@@ -242,9 +235,8 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 	}{
 		{name: "space", args: []string{"space", "list"}},
 		{name: "secrets", args: []string{"secrets", "list", "sbx1"}},
-		{name: "deploy", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "deploy", args: []string{"deploy", "sbx1", "r1"}, prepare: prepareCLIRelease},
 		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
-		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
 		{name: "rollback", args: []string{"rollback", "sbx1"}},
 		{name: "apex", args: []string{"apex", "show"}},
 		{name: "golden", args: []string{"golden", "capture", "sbx1", "demo"}},
@@ -283,12 +275,10 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 		{name: "space invalid", args: []string{"space", "list"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "secrets missing", args: []string{"secrets", "list", "sbx1"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
 		{name: "secrets invalid", args: []string{"secrets", "list", "sbx1"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
-		{name: "deploy missing", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive, wantStdout: "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n", wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
-		{name: "deploy invalid", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive, rootFile: `{}`, wantStdout: "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n", wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "deploy missing", args: []string{"deploy", "sbx1", "r1"}, prepare: prepareCLIRelease, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "deploy invalid", args: []string{"deploy", "sbx1", "r1"}, prepare: prepareCLIRelease, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "restore missing", args: []string{"restore", "sbx1", "crm"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
 		{name: "restore invalid", args: []string{"restore", "sbx1", "crm"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
-		{name: "remove missing", args: []string{"remove", "sbx1", "crm"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
-		{name: "remove invalid", args: []string{"remove", "sbx1", "crm"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "apex missing", args: []string{"apex", "show"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
 		{name: "apex invalid", args: []string{"apex", "show"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "golden missing", args: []string{"golden", "capture", "sbx1", "demo"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
@@ -336,15 +326,13 @@ func TestEveryCloudCommandStopsAtMissingRootFile(t *testing.T) {
 		{name: "space destroy", args: []string{"space", "destroy", "sbx1"}},
 		{name: "space stop", args: []string{"space", "stop", "sbx1"}},
 		{name: "space start", args: []string{"space", "start", "sbx1"}},
-		{name: "space init", args: []string{"space", "init", "sbx1"}},
 		{name: "space status", args: []string{"space", "status", "sbx1"}},
 		{name: "space restart", args: []string{"space", "restart", "sbx1", "crm"}},
 		{name: "space logs", args: []string{"space", "logs", "sbx1", "crm"}},
 		{name: "secrets push", args: []string{"secrets", "push", "sbx1"}},
 		{name: "secrets list", args: []string{"secrets", "list", "sbx1"}},
-		{name: "deploy", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "deploy", args: []string{"deploy", "sbx1", "r1"}, prepare: prepareCLIRelease},
 		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
-		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
 		{name: "apex set", args: []string{"apex", "set", "crm.sbx1"}},
 		{name: "apex show", args: []string{"apex", "show"}},
 		{name: "apex clear", args: []string{"apex", "clear"}},
@@ -383,15 +371,13 @@ func TestEverySpaceOperandUsesSharedGrammarBeforeCloud(t *testing.T) {
 		{name: "space destroy", args: []string{"space", "destroy", "crm.sbx1"}},
 		{name: "space stop", args: []string{"space", "stop", "crm.sbx1"}},
 		{name: "space start", args: []string{"space", "start", "crm.sbx1"}},
-		{name: "space init", args: []string{"space", "init", "crm.sbx1"}},
 		{name: "space status", args: []string{"space", "status", "crm.sbx1"}},
 		{name: "space restart", args: []string{"space", "restart", "crm.sbx1", "crm"}},
 		{name: "space logs", args: []string{"space", "logs", "crm.sbx1", "crm"}},
 		{name: "secrets push", args: []string{"secrets", "push", "crm.sbx1"}},
 		{name: "secrets list", args: []string{"secrets", "list", "crm.sbx1"}},
-		{name: "deploy", args: []string{"deploy", "crm.sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "deploy", args: []string{"deploy", "crm.sbx1", "r1"}, prepare: prepareCLIRelease},
 		{name: "restore", args: []string{"restore", "crm.sbx1", "crm"}},
-		{name: "remove", args: []string{"remove", "crm.sbx1", "crm"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -407,9 +393,6 @@ func TestEverySpaceOperandUsesSharedGrammarBeforeCloud(t *testing.T) {
 			result := invokeWithDeps(deps, test.args...)
 			want := "devctl: 'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'\n"
 			wantStdout := ""
-			if test.name == "deploy" {
-				wantStdout = "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n"
-			}
 			if result.code != 2 || result.stdout != wantStdout || result.stderr != want || cloudCalls != 0 {
 				t.Fatalf("Run(%q) = %#v, cloud calls %d", test.args, result, cloudCalls)
 			}
@@ -508,7 +491,7 @@ func TestFailedStepWritesNoStepLine(t *testing.T) {
 }
 
 func TestCommandsReportMissingSpace(t *testing.T) {
-	// R-R10I-DEAA
+	// R-YTFS-2EAU
 	tests := []struct {
 		name    string
 		args    []string
@@ -517,12 +500,10 @@ func TestCommandsReportMissingSpace(t *testing.T) {
 		{name: "space stop", args: []string{"space", "stop", "gone"}},
 		{name: "space start", args: []string{"space", "start", "gone"}},
 		{name: "space status", args: []string{"space", "status", "gone"}},
-		{name: "space init", args: []string{"space", "init", "gone"}},
 		{name: "space restart", args: []string{"space", "restart", "gone", "crm"}},
 		{name: "space logs", args: []string{"space", "logs", "gone", "crm"}},
 		{name: "secrets push", args: []string{"secrets", "push", "gone", "crm"}, prepare: prepareCLIApp},
-		{name: "deploy", args: []string{"deploy", "gone", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
-		{name: "remove", args: []string{"remove", "gone", "crm"}},
+		{name: "deploy", args: []string{"deploy", "gone", "r1"}, prepare: prepareCLIRelease},
 		{name: "restore", args: []string{"restore", "gone", "crm"}},
 		{name: "apex set", args: []string{"apex", "set", "crm.gone"}},
 	}
@@ -537,9 +518,6 @@ func TestCommandsReportMissingSpace(t *testing.T) {
 				return cliClients(ec2, &cliRoute53{}), nil
 			}
 			wantStdout := ""
-			if test.name == "deploy" {
-				wantStdout = "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n"
-			}
 			assertResult(t, invokeWithDeps(deps, test.args...), 1, wantStdout, "devctl: no space at 'gone.example.test'\n")
 			if !reflect.DeepEqual(ec2.listDomains, []string{"example.test"}) {
 				t.Fatalf("EC2 ListSpaceInstances domains = %q, want LookupSpace through example.test", ec2.listDomains)
@@ -561,7 +539,6 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"deploy", "--help"},
 		{"rollback", "--help"},
 		{"restore", "--help"},
-		{"remove", "--help"},
 		{"apex", "--help"},
 		{"golden", "--help"},
 		{"seed", "--help"},
@@ -571,7 +548,6 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"deploy", "sbx1", "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"},
 		{"rollback", "sbx1"},
 		{"restore", "sbx1", "crm"},
-		{"remove", "sbx1", "crm"},
 		{"apex", "show"},
 		{"golden", "capture", "sbx1", "demo"},
 		{"seed", "sbx2", "demo"},
@@ -639,13 +615,13 @@ func TestVersionRejectsArguments(t *testing.T) {
 }
 
 func TestTopLevelCommandSet(t *testing.T) {
-	// R-UFOF-APUG
+	// R-YNCA-5JLD
 	got := make([]string, 0, len(commandSet))
 	for command := range commandSet {
 		got = append(got, command)
 	}
 	sort.Strings(got)
-	want := []string{"apex", "build", "deploy", "golden", "remove", "restore", "rollback", "secrets", "seed", "space", "version"}
+	want := []string{"apex", "build", "deploy", "golden", "restore", "rollback", "secrets", "seed", "space", "version"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("top-level commands = %q, want %q", got, want)
 	}
@@ -657,7 +633,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-UJC4-G12J
+	// R-YS7V-OMK5
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}
@@ -686,7 +662,7 @@ func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 		command []string
 		want    string
 	}{
-		// R-UO7P-Z41B
+		// R-RQGC-2TW8
 		{name: "space", command: []string{"space"}, want: expectedD06Usage},
 		// R-UPD6-TD4G
 		{name: "list", command: []string{"space", "list"}, want: expectedD06ListUsage},
@@ -753,7 +729,7 @@ func TestSpaceRejectsExtraOperandsBeforeEffects(t *testing.T) {
 }
 
 func TestSpaceRejectsUnknownOptionsBeforeEffects(t *testing.T) {
-	// R-JHKA-G8FB
+	// R-RO0J-BAEU
 	tests := [][]string{
 		{"space", "--wat"},
 		{"space", "--help", "--wat"},
@@ -1203,11 +1179,8 @@ func prepareCLIApp(t *testing.T, deps seam.Deps) seam.Deps {
 	return deps
 }
 
-func prepareCLIArchive(t *testing.T, deps seam.Deps) seam.Deps {
+func prepareCLIRelease(t *testing.T, deps seam.Deps) seam.Deps {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(deps.Dir, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"), []byte("archive"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	deps.Exec = cliCheckoutAndHostExec(t, deps.Exec)
 	return deps
 }
@@ -1230,11 +1203,6 @@ func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner 
 		switch command.Path {
 		case "git":
 			return checkoutExec(ctx, command)
-		case "tar":
-			if len(command.Args) != 0 && command.Args[0] == "-t" {
-				return seam.Result{Stdout: []byte("etc/manifest.toml\nbin/crm\n")}, nil
-			}
-			return seam.Result{Stdout: []byte("app = \"crm\"\n")}, nil
 		case "ssh":
 			return seam.Result{}, nil
 		default:
@@ -1245,7 +1213,7 @@ func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner 
 }
 
 func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
-	// R-UQNI-QNIP
+	// R-RP8F-P25J
 	type target func(context.Context, []string, io.Writer, seam.Deps) error
 	tests := []struct {
 		name   string
@@ -1256,7 +1224,6 @@ func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
 		{name: "create", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
 			return spacecreate.Run(ctx, args, version, out, deps)
 		}, direct: []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}},
-		{name: "init", args: []string{"space", "init", "sbx1"}, run: spaceinit.Run, direct: []string{"sbx1"}},
 		{name: "restart", args: []string{"space", "restart", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"restart", "sbx1", "crm"}},
 		{name: "disable", args: []string{"space", "disable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"disable", "sbx1", "crm"}},
 		{name: "enable", args: []string{"space", "enable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"enable", "sbx1", "crm"}},
@@ -1320,7 +1287,6 @@ func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
 		{args: []string{"space", "create", "sbx1"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
 			return spacecreate.Run(ctx, args, version, out, deps)
 		}, direct: []string{"sbx1"}},
-		{args: []string{"space", "init", "sbx1", "extra"}, run: spaceinit.Run, direct: []string{"sbx1", "extra"}},
 		{args: []string{"space", "restart", "sbx1"}, run: spaceapps.Run, direct: []string{"restart", "sbx1"}},
 		{args: []string{"space", "logs", "sbx1"}, run: spaceapps.Run, direct: []string{"logs", "sbx1"}},
 		{args: []string{"space", "status"}, run: space.Run, direct: []string{"status"}},

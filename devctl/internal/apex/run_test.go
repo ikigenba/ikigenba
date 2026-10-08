@@ -107,8 +107,8 @@ func TestGrammarAndHelpAreSideEffectFree(t *testing.T) {
 }
 
 func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
-	// R-XA3Z-FG4S R-4FMY-R7QW R-4GUV-4ZHL R-4I2R-IR8A R-VX21-6EX8
-	// R-SNXG-N0VB R-4LQG-O2GD R-VY9X-K6NX R-4O69-FLXR
+	// R-P4G8-WHR8 R-YVVK-TXS8 R-4GUV-4ZHL R-YX3H-7PIX R-VX21-6EX8
+	// R-SNXG-N0VB R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
 	f := successfulFake()
 	deps := testDeps(t, f)
 	var stdout bytes.Buffer
@@ -157,7 +157,7 @@ func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
 }
 
 func TestSetPreflightRefusesBeforeOutputOrMutation(t *testing.T) {
-	// R-4FMY-R7QW
+	// R-YVVK-TXS8
 	tests := []struct {
 		name string
 		edit func(*fake)
@@ -182,7 +182,7 @@ func TestSetPreflightRefusesBeforeOutputOrMutation(t *testing.T) {
 }
 
 func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
-	// R-XA3Z-FG4S R-4FMY-R7QW
+	// R-P4G8-WHR8 R-YVVK-TXS8
 	t.Run("root discovery", func(t *testing.T) {
 		want := errors.New("git unavailable")
 		cloudCalls := 0
@@ -287,7 +287,7 @@ func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
 }
 
 func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
-	// R-4GUV-4ZHL R-VX21-6EX8 R-SNXG-N0VB R-4LQG-O2GD R-VY9X-K6NX R-4O69-FLXR
+	// R-4GUV-4ZHL R-VX21-6EX8 R-SNXG-N0VB R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
 	const spaceLine = "space: ok (sbx1.ikigenba.dev running, 18.118.7.42)\n"
 	const roleLine = "role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)\n"
 	const hostLine = "host: ok (host.apex=crm, certificate obtained, nginx applied)\n"

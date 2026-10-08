@@ -12,23 +12,18 @@ import (
 const (
 	helpCommand = "devctl build --help"
 	usageText   = `Usage: devctl build <sha|tag>
-       devctl build <app>
 
 Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
 release holding every app and opsctl. <sha> is the full commit sha the argument
 resolves to; the working tree is not read.
-
-Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
-deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
-the working tree must have no uncommitted changes.
 `
 )
 
-// Run builds the app named by args.
+// Run builds the suite at the commit named by args.
 func Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error {
 	if containsHelp(args) {
-		_, err := io.WriteString(stdout, usageText)
-		return err
+		_, _ = io.WriteString(stdout, usageText)
+		return nil
 	}
 
 	for _, arg := range args {
@@ -39,18 +34,15 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 
 	switch len(args) {
 	case 0:
-		return usage("build needs <sha|tag> or <app>")
+		return usage("build needs <sha|tag>")
 	case 1:
 		opened, err := checkout.Open(ctx, deps)
 		if err != nil {
 			return err
 		}
-		if opened.HasApp(args[0]) {
-			return run(ctx, args[0], opened, stdout, deps)
-		}
 		return runSuite(ctx, opened, args[0], version, stdout)
 	default:
-		return usage("build takes one <sha|tag> or <app>")
+		return usage("build takes one <sha|tag>")
 	}
 }
 

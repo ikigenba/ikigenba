@@ -3,8 +3,6 @@ package deploy
 import (
 	"fmt"
 	"strings"
-
-	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
 // UsageError reports invalid deploy command syntax.
@@ -27,17 +25,6 @@ func (e *UsageError) Detail() string {
 // ExitCode returns the command-line usage status.
 func (e *UsageError) ExitCode() int { return 2 }
 
-// NoFileError reports a path that does not name a regular file.
-type NoFileError struct {
-	Path string
-}
-
-// Error returns the missing-file diagnostic.
-func (e *NoFileError) Error() string { return fmt.Sprintf("no such file '%s'", e.Path) }
-
-// ExitCode returns the command-line usage status.
-func (e *NoFileError) ExitCode() int { return 2 }
-
 // MissingSecretsError reports manifest secrets absent from the target space.
 type MissingSecretsError struct {
 	App   string
@@ -57,55 +44,3 @@ func (e *MissingSecretsError) Detail() string {
 
 // ExitCode returns the command-line usage status.
 func (e *MissingSecretsError) ExitCode() int { return 2 }
-
-// ProcessError reports a command that exited unsuccessfully.
-type ProcessError struct {
-	Label  string
-	Status int
-	Stderr string
-}
-
-// Error returns the command label and exit status.
-func (e *ProcessError) Error() string {
-	return fmt.Sprintf("%s: exit status %d", e.Label, e.Status)
-}
-
-// Detail returns the command's standard error as quoted output.
-func (e *ProcessError) Detail() string { return seam.QuoteOutput(e.Stderr) }
-
-// ExitCode returns the ordinary failure status.
-func (e *ProcessError) ExitCode() int { return 1 }
-
-// FileError reports why an artifact is not a deployable build output.
-type FileError struct {
-	Path   string
-	Reason string
-}
-
-// Error returns the artifact validation diagnostic.
-func (e *FileError) Error() string {
-	return fmt.Sprintf("'%s' is not an app file build wrote: %s", e.Path, e.Reason)
-}
-
-// ExitCode returns the command-line usage status.
-func (e *FileError) ExitCode() int { return 2 }
-
-// ReleaseFileError redirects a suite archive to the release form.
-type ReleaseFileError struct {
-	Path  string
-	Space string
-	SHA   string
-}
-
-// Error returns the release archive diagnostic.
-func (e *ReleaseFileError) Error() string {
-	return fmt.Sprintf("'%s' is a release, not an app file", e.Path)
-}
-
-// Detail returns the command that deploys the release.
-func (e *ReleaseFileError) Detail() string {
-	return fmt.Sprintf("run 'devctl deploy %s %s'", e.Space, e.SHA)
-}
-
-// ExitCode returns the command-line usage status.
-func (e *ReleaseFileError) ExitCode() int { return 2 }

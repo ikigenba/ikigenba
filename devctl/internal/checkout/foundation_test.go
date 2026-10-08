@@ -62,10 +62,6 @@ func TestFoundationPublicShapes(t *testing.T) {
 	assertSignature[func(*checkout.Checkout, ...string) string]((*checkout.Checkout).Path)
 	assertSignature[func(*checkout.Checkout) ([]checkout.App, error)]((*checkout.Checkout).Apps)
 	assertSignature[func(*checkout.Checkout, string) (checkout.App, error)]((*checkout.Checkout).App)
-
-	// R-5AKW-LFNU
-	assertSignature[func(*checkout.Checkout, context.Context) (string, error)]((*checkout.Checkout).Head)
-	assertSignature[func(*checkout.Checkout, context.Context) (bool, error)]((*checkout.Checkout).Clean)
 }
 
 func TestFoundationErrors(t *testing.T) {
@@ -167,7 +163,7 @@ func TestOpenFailures(t *testing.T) {
 
 func TestPath(t *testing.T) {
 	t.Parallel()
-	// R-BU3V-ZE1N
+	// R-RGP5-0NYO
 
 	opened := &checkout.Checkout{Root: filepath.Join("root", "checkout")}
 	// R-VYWC-5HZJ

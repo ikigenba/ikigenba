@@ -31,13 +31,11 @@ func TestCheckoutErrorsThroughCLI(t *testing.T) {
 	})
 
 	t.Run("manifest", func(t *testing.T) {
-		root := writeD04CLIApp(t)
-		manifest := filepath.Join(root, "crm", checkout.ManifestFile)
-		if err := os.WriteFile(manifest, []byte("app = \"other\"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		assertResult(t, invokeWithDeps(d04CheckoutDeps(t, root), "build", "crm"), 2, "",
-			"devctl: crm: etc/manifest.toml: app is 'other', not 'crm'\n")
+		f := newCLISuiteFixture(t)
+		f.apps = []string{"crm"}
+		f.files = map[string]string{"crm/etc/manifest.toml": `app = "other"` + "\n"}
+		assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 2, "", "devctl: crm: etc/manifest.toml: app is 'other', not 'crm'\n")
+
 	})
 
 	t.Run("not in checkout", func(t *testing.T) {
@@ -84,11 +82,11 @@ func TestCheckoutGitErrorsThroughCLI(t *testing.T) {
 		{
 			name:   "nonempty stderr",
 			stderr: "fatal: first line\nsecond line\n",
-			want:   "devctl: git status --porcelain: exit status 23\n\n> fatal: first line\n> second line\n",
+			want:   "devctl: git tag --list --no-column: exit status 23\n\n> fatal: first line\n> second line\n",
 		},
 		{
 			name: "empty stderr",
-			want: "devctl: git status --porcelain: exit status 23\n",
+			want: "devctl: git tag --list --no-column: exit status 23\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -99,7 +97,7 @@ func TestCheckoutGitErrorsThroughCLI(t *testing.T) {
 					switch {
 					case command.Path == "git" && reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}):
 						return seam.Result{Stdout: []byte(root + "\n")}, nil
-					case command.Path == "git" && reflect.DeepEqual(command.Args, []string{"status", "--porcelain"}):
+					case command.Path == "git" && reflect.DeepEqual(command.Args, []string{"tag", "--list", "--no-column"}):
 						return seam.Result{ExitCode: 23, Stderr: []byte(test.stderr)}, nil
 					default:
 						t.Fatalf("unexpected command = %#v", command)
@@ -109,7 +107,7 @@ func TestCheckoutGitErrorsThroughCLI(t *testing.T) {
 			}
 			var stdout, stderr bytes.Buffer
 			stdout.WriteString("preceding output\n")
-			code := Run(context.Background(), []string{"build", "crm"}, strings.NewReader(""), &stdout, &stderr, deps)
+			code := Run(context.Background(), []string{"space", "create", "sbx1", "--acme-email", "alerts@example.test"}, strings.NewReader(""), &stdout, &stderr, deps)
 			if code != 1 {
 				t.Errorf("Run exit code = %d, want 1", code)
 			}

@@ -1,2 +1,2 @@
-// Package hostsetup owns release discovery and opsctl setup.
+// Package hostsetup owns opsctl host configuration.
 package hostsetup

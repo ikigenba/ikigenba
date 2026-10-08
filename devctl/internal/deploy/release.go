@@ -22,7 +22,7 @@ func runRelease(ctx context.Context, invocation invocation, version string, stdo
 	if err != nil {
 		return err
 	}
-	sha, label, err := release.Resolve(ctx, c, invocation.file)
+	sha, label, err := release.Resolve(ctx, c, invocation.operand)
 	if err != nil {
 		return err
 	}

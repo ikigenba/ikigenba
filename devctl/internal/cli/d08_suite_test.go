@@ -19,20 +19,9 @@ import (
 const cliSuiteSHA = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
 
 func TestSuiteDispatchThroughCLI(t *testing.T) {
-	// R-FBQL-Y2L0 R-FQDE-JBHC R-G683-IC4D
+	// R-R22C-FF2C R-G683-IC4D R-R4I5-6YJQ
 	fixture := newCLISuiteFixture(t)
 	fixture.apps = []string{"crm"}
-	// A developer app wins even when git could resolve its name as a commit.
-	perApp := newCLIBuildFixture(t)
-	assertResult(t, invokeWithDeps(perApp.deps(), "build", "crm"), 0, "crm/dist/crm-"+cliSuiteSHA+".tar.xz\n", "")
-	for _, args := range perApp.gitArgs {
-		if len(args) > 1 && args[0] == "rev-parse" && args[1] == "--verify" {
-			t.Fatalf("per-app resolved commit: %q", args)
-		}
-	}
-	if perApp.cloudCalls != 0 {
-		t.Fatalf("per-app Cloud calls = %d", perApp.cloudCalls)
-	}
 	assertResult(t, invokeWithDeps(fixture.deps(), "build", "r1"), 0, "dist/"+cliSuiteSHA+".tar.xz\n", "")
 	if fixture.cloudCalls != 0 {
 		t.Fatalf("suite Cloud calls = %d", fixture.cloudCalls)
@@ -150,12 +139,14 @@ func TestSuiteManifestErrorsThroughCLI(t *testing.T) {
 }
 
 func TestSuiteCommitRefusalsThroughCLI(t *testing.T) {
-	// R-FS1R-KWJT R-HZ5O-K5OE
-	for _, operand := range []string{"bogus", "main", "HEAD", "HEAD~1"} {
+	// R-FS1R-KWJT R-R5Q1-KQAF
+	for _, operand := range []string{"bogus", "crm", "main", "HEAD", "HEAD~1"} {
 		t.Run(operand, func(t *testing.T) {
 			f := newCLISuiteFixture(t)
 			f.noCommit = true
-			assertResult(t, invokeWithDeps(f.deps(), "build", operand), 2, "", "devctl: '"+operand+"' is neither an app in the checkout nor a commit\n")
+			f.write(filepath.Join(f.root, "crm", "cmd", "crm", "main.go"), "package main\n")
+			f.write(filepath.Join(f.root, "crm", "etc", "manifest.toml"), `app = "crm"`+"\n")
+			assertResult(t, invokeWithDeps(f.deps(), "build", operand), 2, "", "devctl: '"+operand+"' is not a commit\n")
 			f.assertNoCompile(t)
 			if f.worktree != "" {
 				t.Fatal("worktree added after refused commit")
@@ -225,6 +216,7 @@ type cliSuiteFixture struct {
 	failCompile                      string
 	noCommit, resolveFails, tarFails bool
 	stale, removeFails               bool
+	manifestFails, manifestNewline   bool
 	cloudCalls, tarCalls, removals   int
 	compiled                         []string
 	compilerOutputs                  map[string]string
@@ -359,6 +351,12 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 		f.manifestCalls[app]++
 		if f.manifestCalls[app] != 1 {
 			f.t.Fatalf("duplicate manifest call for %s", app)
+		}
+		if f.manifestFails {
+			return seam.Result{ExitCode: 1, Stderr: []byte("boom")}, nil
+		}
+		if f.manifestNewline {
+			return seam.Result{Stdout: []byte("app = \"" + app + "\"\n\n")}, nil
 		}
 		if f.stale {
 			return seam.Result{Stdout: []byte("stale")}, nil

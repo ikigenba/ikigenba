@@ -18,12 +18,11 @@ Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
-  space     list, create, destroy, stop, start, initialise, and inspect spaces
+  space     list, create, destroy, stop, start, and inspect spaces
   secrets   push and list an app's secrets for a space
-  build     build the suite or one app into a deployable file
-  deploy    put a release or a built app file on a space
+  build     build the suite at a commit into a release
+  deploy    put a release on a space
   rollback  put a space back on the release it ran before
-  remove    take an app off a space
   restore   put a space's app back from its backups
   golden    capture a space's data as a named golden set
   seed      give a space a golden set's or another space's data

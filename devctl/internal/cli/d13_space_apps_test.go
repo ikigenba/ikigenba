@@ -16,15 +16,15 @@ import (
 
 const wantSpaceRestartUsage = `Usage: devctl space restart <space> <app>
 
-Have opsctl restart one app's service. Deploy the existing file to apply pushed
-secrets; a restart uses the environment already installed on the host.
+Have opsctl restart one app's service. Deploy the space's release again to
+apply pushed secrets; a restart uses the environment already on the host.
 `
 
 const wantSpaceDisableUsage = `Usage: devctl space disable <space> <app>
 
 Have opsctl take one app offline: stop its socket and service and keep both
 from starting until 'devctl space enable'. Its release, data and units stay
-on the host, and deploy, restore, init and restart leave it disabled.
+on the host, and deploy, restore and restart leave it disabled.
 `
 
 const wantSpaceEnableUsage = `Usage: devctl space enable <space> <app>
@@ -45,7 +45,7 @@ Options:
 `
 
 func TestSpaceAppHelpBeforeExternalAccess(t *testing.T) {
-	// R-0QP0-DXBO R-0RWW-RP2D R-JRBH-IECV R-JSJD-W63K
+	// R-RVBX-LWV0 R-0RWW-RP2D R-RWJT-ZOLP R-JSJD-W63K
 	for _, tc := range []struct{ subcommand, option, want string }{
 		{"restart", "--help", wantSpaceRestartUsage}, {"restart", "-h", wantSpaceRestartUsage},
 		{"disable", "--help", wantSpaceDisableUsage}, {"disable", "-h", wantSpaceDisableUsage},
@@ -101,7 +101,7 @@ func TestSpaceAppSyntaxThroughCLI(t *testing.T) {
 }
 
 func TestSpaceAppResolutionThroughCLI(t *testing.T) {
-	// R-2ER7-N15V
+	// R-YUNO-G61J
 	for _, subcommand := range []string{"restart", "disable", "enable", "logs"} {
 		missing := newD13Fixture(t, nil)
 		assertResult(t, invokeWithDeps(missing.deps(), "space", subcommand, "gone", "crm"), 1, "", "devctl: no space at 'gone.ikigenba.dev'\n")

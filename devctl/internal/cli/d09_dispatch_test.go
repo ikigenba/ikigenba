@@ -30,44 +30,6 @@ Options:
 before that moment, and the database is rebuilt to the moment itself.
 `
 
-func TestCLIDispatchesDeployAndFormatsHostFailure(t *testing.T) {
-	// R-VQ0L-U00U
-	root := d09Root(t)
-	name := "gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz"
-	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	deps := d09Deps(t, root, 0)
-	var ssh []seam.Cmd
-	baseExec := deps.Exec
-	deps.Exec = func(ctx context.Context, cmd seam.Cmd) (seam.Result, error) {
-		if cmd.Path == "ssh" {
-			ssh = append(ssh, cmd)
-			return seam.Result{Stdout: []byte("installed\n"), Stderr: []byte("notice\n")}, nil
-		}
-		return baseExec(ctx, cmd)
-	}
-	result := invokeWithDeps(deps, "deploy", "sbx1", name)
-	wantOut := "file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz)\ninstall: ok (opsctl installed gmail)\n"
-	assertResult(t, result, 0, wantOut, "")
-	if len(ssh) != 1 || ssh[0].Path != "ssh" || ssh[0].Args[6] != "ec2-user@18.118.7.42" || ssh[0].Args[7] != "'sudo' 'opsctl' 'install' 's3://ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz'" {
-		t.Fatalf("install command = %#v", ssh)
-	}
-
-	deps = d09Deps(t, root, 1)
-	baseExec = deps.Exec
-	deps.Exec = func(ctx context.Context, cmd seam.Cmd) (seam.Result, error) {
-		if cmd.Path == "ssh" {
-			return seam.Result{ExitCode: 1, Stdout: []byte("install failed\nmore output\n"), Stderr: []byte("permission denied\nmore error\n")}, nil
-		}
-		return baseExec(ctx, cmd)
-	}
-	result = invokeWithDeps(deps, "deploy", "sbx1", name)
-	wantOut = "file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz)\n"
-	wantErr := "devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz: exit status 1\n\n> install failed\n> more output\n> permission denied\n> more error\n"
-	assertResult(t, result, 1, wantOut, wantErr)
-}
-
 func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
 	// R-OSMO-BF0Q
 	root := d09Root(t)
@@ -89,7 +51,7 @@ func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
 }
 
 func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
-	// R-VXC0-4MH0 R-JW73-1HBN R-ORER-XNA1
+	// R-JW73-1HBN R-ORER-XNA1
 	outside := t.TempDir()
 	for _, option := range []string{"--help", "-h"} {
 		result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", option)
@@ -99,24 +61,11 @@ func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
 
 	result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", "sbx1")
 	assertResult(t, result, 2, "", "devctl: restore needs <space> and <app>\n\nsee 'devctl restore --help' for usage\n")
-
-	result = invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "deploy", "sbx1", "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
-	assertResult(t, result, 2, "", "devctl: no such file 'crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz'\n")
-
-	if err := os.WriteFile(filepath.Join(outside, "notes.tar.xz"), []byte("artifact"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result = invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "deploy", "sbx1", "notes.tar.xz")
-	assertResult(t, result, 2, "", "devctl: 'notes.tar.xz' is not an app file build wrote: name is not <app>-<sha>.tar.xz\n")
 }
 
 func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
-	// R-5WJ3-HB0C R-2B3I-HPXS
+	// R-2B3I-HPXS
 	root := d09Root(t)
-	name := "gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz"
-	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	for _, test := range []struct {
 		name, operand, diagnostic string
 		instances                 []cloud.Instance
@@ -126,7 +75,6 @@ func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			deps := d09DepsWithInstances(t, root, test.instances, 0)
-			assertResult(t, invokeWithDeps(deps, "deploy", test.operand, name), 1, "file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)\n", test.diagnostic)
 			assertResult(t, invokeWithDeps(deps, "restore", test.operand, "crm"), 1, "", test.diagnostic)
 		})
 	}
@@ -152,11 +100,6 @@ func d09DepsWithInstances(t *testing.T, root string, instances []cloud.Instance,
 	t.Helper()
 	return seam.Deps{EUID: 1, Dir: root, Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
 		switch cmd.Path {
-		case "tar":
-			if cmd.Args[0] == "-t" {
-				return seam.Result{Stdout: []byte("etc/manifest.toml\nbin/gmail\n")}, nil
-			}
-			return seam.Result{Stdout: []byte("app = \"gmail\"\nsecrets = [\"A\", \"B\"]\n")}, nil
 		case "git":
 			return seam.Result{Stdout: []byte(root + "\n")}, nil
 		case "ssh":
@@ -166,7 +109,7 @@ func d09DepsWithInstances(t *testing.T, root string, instances []cloud.Instance,
 			return seam.Result{}, nil
 		}
 	}, Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-		return cloud.Clients{STS: d09STS{}, EC2: d09EC2{instances: instances}, SSM: d09SSM{}, S3: d09S3{}}, nil
+		return cloud.Clients{STS: d09STS{}, EC2: d09EC2{instances: instances}}, nil
 	}}
 }
 
@@ -185,14 +128,6 @@ func (f d09EC2) ListSpaceInstances(context.Context, string) ([]cloud.Instance, e
 	}
 	return []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"}}, nil
 }
-
-type d09SSM struct{ cloud.SSM }
-
-func (d09SSM) GetParameter(context.Context, string) (string, error) { return `{"A":"a","B":"b"}`, nil }
-
-type d09S3 struct{ cloud.S3 }
-
-func (d09S3) PutObject(context.Context, string, string, io.Reader, int64) error { return nil }
 
 func d09FailExec(t *testing.T) seam.Runner {
 	t.Helper()
@@ -361,8 +296,8 @@ func (s deployNoS3) CopyObject(context.Context, string, string, string) error {
 }
 
 func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
-	// R-VQ0L-U00U R-VR8I-7RRJ R-W9IZ-YBVY R-WAQW-C3MN R-WBYS-PVDC R-WD6P-3N41
-	for _, operand := range []string{"r1", "auth/v0.18.2", "4b22285"} {
+	// R-VQ0L-U00U R-RALN-3T97 R-W9IZ-YBVY R-WAQW-C3MN R-WBYS-PVDC R-WD6P-3N41
+	for _, operand := range []string{"r1", "auth/" + strings.TrimPrefix(version, "v"), "4b22285"} {
 		t.Run(operand, func(t *testing.T) {
 			f := newDeployRelease(t)
 			version := invokeWithDeps(f.deps(), "--version").stdout

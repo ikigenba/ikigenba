@@ -1,2 +1,2 @@
-// Package appref owns application-name, artifact SHA, and version grammar.
+// Package appref owns application-name grammar.
 package appref

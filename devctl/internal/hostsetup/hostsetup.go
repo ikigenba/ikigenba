@@ -62,25 +62,6 @@ type Config struct {
 	Opsctl  string
 }
 
-// Upgrade fetches and installs the requested opsctl release.
-func Upgrade(ctx context.Context, target host.Host, version string) error {
-	url := DownloadURL + "/opsctl/" + version + "/install.sh"
-	if _, err := target.Run(ctx, "opsctl", "curl", "-fsSL", "-o", InstallerPath, url); err != nil {
-		return err
-	}
-	_, err := target.Sudo(ctx, "opsctl", "bash", InstallerPath, version)
-	return err
-}
-
-// Version returns the version text reported by the installed opsctl binary.
-func Version(ctx context.Context, target host.Host) (string, error) {
-	output, err := target.Sudo(ctx, "opsctl", "opsctl", "version")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimRight(output.Stdout, "\r\n"), nil
-}
-
 // Configure sets the host keys devctl owns, preserving every other host key.
 func Configure(
 	ctx context.Context,

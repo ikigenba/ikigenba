@@ -344,7 +344,7 @@ func TestSuiteCommitFormsHaveSameRelease(t *testing.T) {
 }
 func TestSuiteCompileCommands(t *testing.T) {
 	// R-I1LH-BP5S
-	// R-FLHT-08IK
+	// R-R4I5-6YJQ
 	f := newSuite(t)
 	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
 	f.put(f.root, "go.work", "go 1.26\n", 0o644)
@@ -481,14 +481,14 @@ func TestSuiteCleanupEveryOutcome(t *testing.T) {
 }
 
 func TestSuiteNoCommitOrResolveErrorStops(t *testing.T) {
-	// R-HZ5O-K5OE
+	// R-R5Q1-KQAF
 	// R-FS1R-KWJT
 	for _, operand := range []string{"bogus", "main", "HEAD", "HEAD~1"} {
 		f := newSuite(t)
 		f.fail = "resolve"
 		out, err := f.run(context.Background(), operand)
 		var usage *build.UsageError
-		if !errors.As(err, &usage) || usage.Message != "'"+operand+"' is neither an app in the checkout nor a commit" || usage.Help != "" || out != "" {
+		if !errors.As(err, &usage) || usage.Message != "'"+operand+"' is not a commit" || usage.Help != "" || out != "" {
 			t.Fatalf("operand %s stdout %q error %#v", operand, out, err)
 		}
 		if len(f.commands) > 2 || f.count("git") != len(f.commands) {

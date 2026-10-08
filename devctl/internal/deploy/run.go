@@ -1,54 +1,32 @@
 package deploy
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/appref"
-	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
-	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
-	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
-	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
-	"github.com/ikigenba/ikigenba/devctl/internal/space"
-	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
 const (
 	helpCommand = "devctl deploy --help"
 	helpText    = `Usage: devctl deploy <space> <sha|tag>
-       devctl deploy <space> <file>
 
 Build the suite at <sha|tag> as build does, check that the space holds every
 secret the release's manifests declare, copy dist/<sha>.tar.xz to the space's
 host, unpack it into /opt/ikigenba/releases/<sha>/, and have that release's
 opsctl activate it. A tag is the release's label, exactly as typed; a sha
 gives none.
-
-Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
-space's deploy/ prefix in the bucket and have opsctl on the space install it
-from there. The app and commit sha (40 lowercase hex digits) are read from the
-file name.
-
-An argument that ends in .tar.xz is a <file>; any other is a <sha|tag>.
 `
 )
 
 type invocation struct {
-	space string
-	file  string
-	app   string
-	sha   string
-	path  string
+	space   string
+	operand string
 }
 
-// Run executes a deploy command.
+// Run builds and deploys a suite release.
 func Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error {
 	invocation, help, err := parseInvocation(args)
 	if err != nil {
@@ -58,86 +36,7 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 		_, _ = fmt.Fprint(stdout, helpText)
 		return nil
 	}
-	if !strings.HasSuffix(invocation.file, ".tar.xz") {
-		return runRelease(ctx, invocation, version, stdout, deps)
-	}
-	invocation, err = validateFile(invocation, deps.Dir)
-	if err != nil {
-		return err
-	}
-	manifest, err := inspectArchive(ctx, invocation, deps.Defaults())
-	if err != nil {
-		return err
-	}
-	space.Step(stdout, "file", invocation.app+" "+invocation.sha)
-
-	root, err := checkout.ReadRootFile(ctx, deps.Defaults())
-	if err != nil {
-		return err
-	}
-	spaceRef, err := spaceref.Parse(invocation.space, root.Domain)
-	if err != nil {
-		return err
-	}
-	session, err := cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)
-	if err != nil {
-		return err
-	}
-	targetSpace, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, spaceRef.Domain)
-	if err != nil {
-		return err
-	}
-	if targetSpace.State != cloud.StateRunning {
-		return &space.NotRunningError{Domain: spaceRef.Domain, State: targetSpace.State}
-	}
-
-	held, err := secrets.Names(ctx, session.Clients.SSM, spaceRef.Domain, invocation.app)
-	if err != nil {
-		return err
-	}
-	heldSet := make(map[string]struct{}, len(held))
-	for _, name := range held {
-		heldSet[name] = struct{}{}
-	}
-	required := make(map[string]struct{}, len(manifest.Secrets))
-	for _, name := range manifest.Secrets {
-		required[name] = struct{}{}
-	}
-	missing := make([]string, 0)
-	for name := range required {
-		if _, ok := heldSet[name]; !ok {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) != 0 {
-		sort.Strings(missing)
-		return &MissingSecretsError{App: invocation.app, Space: spaceRef.Label, Names: missing}
-	}
-	space.Step(stdout, "secrets", fmt.Sprintf("%d keys", len(required)))
-
-	artifact, err := os.ReadFile(invocation.path)
-	if err != nil {
-		return err
-	}
-	filename := filepath.Base(invocation.file)
-	key := ObjectKey(spaceRef.Label, filename)
-	bucket := root.Domain
-	if err := session.Clients.S3.PutObject(ctx, bucket, key, bytes.NewReader(artifact), int64(len(artifact))); err != nil {
-		return err
-	}
-	space.Step(stdout, "upload", "-> "+bucket+"/"+key)
-
-	uri := "s3://" + bucket + "/" + key
-	if _, err := (host.Host{Address: targetSpace.Address, Deps: deps}).Sudo(ctx, "install", "opsctl", "install", uri); err != nil {
-		return err
-	}
-	space.Step(stdout, "install", "opsctl installed "+invocation.app)
-	return nil
-}
-
-// ObjectKey returns the deploy object key for an artifact basename.
-func ObjectKey(label, filename string) string {
-	return label + "/deploy/" + filename
+	return runRelease(ctx, invocation, version, stdout, deps)
 }
 
 func parseInvocation(args []string) (invocation, bool, error) {
@@ -152,94 +51,12 @@ func parseInvocation(args []string) (invocation, bool, error) {
 		}
 	}
 	if len(args) < 2 {
-		return invocation{}, false, usage("deploy needs <space> and <sha|tag> or <file>")
+		return invocation{}, false, usage("deploy needs <space> and <sha|tag>")
 	}
 	if len(args) > 2 {
-		return invocation{}, false, usage("deploy takes only <space> and one <sha|tag> or <file>")
+		return invocation{}, false, usage("deploy takes only <space> and <sha|tag>")
 	}
-	return invocation{space: args[0], file: args[1]}, false, nil
-}
-
-func validateFile(value invocation, dir string) (invocation, error) {
-	path := value.file
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(dir, path)
-	}
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return invocation{}, &NoFileError{Path: value.file}
-	}
-
-	basename := filepath.Base(value.file)
-	shaName := strings.TrimSuffix(basename, ".tar.xz")
-	if len(shaName) == 40 && strings.Trim(shaName, "0123456789abcdef") == "" {
-		return invocation{}, &ReleaseFileError{Path: value.file, Space: value.space, SHA: shaName}
-	}
-	app, sha, err := appref.ParseFile(filepath.Base(value.file))
-	if err != nil {
-		return invocation{}, &FileError{
-			Path:   value.file,
-			Reason: "name is not <app>-<sha>.tar.xz",
-		}
-	}
-	value.app = app
-	value.sha = sha
-	value.path = path
-	return value, nil
-}
-
-func inspectArchive(ctx context.Context, value invocation, deps seam.Deps) (checkout.Manifest, error) {
-	list := seam.Cmd{
-		Path: "tar",
-		Args: []string{"-t", "-J", "-f", value.file},
-		Dir:  deps.Dir,
-	}
-	result, err := runArchiveCommand(ctx, deps, list)
-	if err != nil {
-		return checkout.Manifest{}, err
-	}
-	members := make(map[string]struct{})
-	for line := range strings.SplitSeq(string(result.Stdout), "\n") {
-		if line != "" {
-			members[line] = struct{}{}
-		}
-	}
-	if _, ok := members[checkout.ManifestFile]; !ok {
-		return checkout.Manifest{}, &FileError{Path: value.file, Reason: "no " + checkout.ManifestFile + " in the archive"}
-	}
-
-	extract := seam.Cmd{
-		Path: "tar",
-		Args: []string{"-x", "-J", "-O", "-f", value.file, checkout.ManifestFile},
-		Dir:  deps.Dir,
-	}
-	result, err = runArchiveCommand(ctx, deps, extract)
-	if err != nil {
-		return checkout.Manifest{}, err
-	}
-	manifest, err := checkout.DecodeManifest(bytes.NewReader(result.Stdout))
-	if err != nil {
-		return checkout.Manifest{}, &FileError{Path: value.file, Reason: checkout.ManifestFile + ": " + err.Error()}
-	}
-	if manifest.App != value.app {
-		return checkout.Manifest{}, &FileError{Path: value.file, Reason: "manifest app does not match file name"}
-	}
-	if _, ok := members["bin/"+manifest.App]; !ok {
-		return checkout.Manifest{}, &FileError{Path: value.file, Reason: "no bin/" + manifest.App + " in the archive"}
-	}
-	return manifest, nil
-}
-
-func runArchiveCommand(ctx context.Context, deps seam.Deps, command seam.Cmd) (seam.Result, error) {
-	result, err := deps.Exec(ctx, command)
-	if err != nil {
-		return seam.Result{}, fmt.Errorf("%s: %w", command.Path, err)
-	}
-	if result.ExitCode != 0 {
-		label := strings.Join(append([]string{command.Path}, command.Args...), " ")
-		return seam.Result{}, &ProcessError{Label: label, Status: result.ExitCode, Stderr: string(result.Stderr)}
-	}
-	return result, nil
+	return invocation{space: args[0], operand: args[1]}, false, nil
 }
 
 func usage(message string) *UsageError {

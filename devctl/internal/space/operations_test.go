@@ -25,7 +25,7 @@ const (
 )
 
 func TestRunListCurrentRootAndApex(t *testing.T) {
-	// R-RJ9Z-1OB0 R-XBBV-T7VH R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-8YVJ-0IZI
+	// R-RJ9Z-1OB0 R-P5O5-A9HX R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-8YVJ-0IZI
 	_ = []func(context.Context, []string, io.Writer, seam.Deps) error{Run}
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{

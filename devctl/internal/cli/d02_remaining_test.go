@@ -11,20 +11,12 @@ import (
 )
 
 const expectedDeployUsage = `Usage: devctl deploy <space> <sha|tag>
-       devctl deploy <space> <file>
 
 Build the suite at <sha|tag> as build does, check that the space holds every
 secret the release's manifests declare, copy dist/<sha>.tar.xz to the space's
 host, unpack it into /opt/ikigenba/releases/<sha>/, and have that release's
 opsctl activate it. A tag is the release's label, exactly as typed; a sha
 gives none.
-
-Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
-space's deploy/ prefix in the bucket and have opsctl on the space install it
-from there. The app and commit sha (40 lowercase hex digits) are read from the
-file name.
-
-An argument that ends in .tar.xz is a <file>; any other is a <sha|tag>.
 `
 
 const expectedRestoreUsage = `Usage: devctl restore <space> <app> [--at <timestamp>]
@@ -56,7 +48,7 @@ Run 'devctl apex <subcommand> --help' for details.
 `
 
 func TestEveryCommandHelpIsExact(t *testing.T) {
-	// R-UGWB-OHL5
+	// R-YOK6-JBC2
 	tests := []struct {
 		command string
 		want    string
@@ -67,7 +59,6 @@ func TestEveryCommandHelpIsExact(t *testing.T) {
 		{command: "deploy", want: expectedDeployUsage},
 		{command: "rollback", want: expectedRollbackUsage},
 		{command: "restore", want: expectedRestoreUsage},
-		{command: "remove", want: wantRemoveUsage},
 		{command: "apex", want: expectedApexUsage},
 		{command: "golden", want: expectedGoldenUsage},
 		{command: "seed", want: expectedSeedUsage},
@@ -93,7 +84,6 @@ func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
 		{name: "build", args: []string{"build", "--bad", "--help"}, want: expectedBuildUsage},
 		{name: "deploy", args: []string{"deploy", "--bad", "--help"}, want: expectedDeployUsage},
 		{name: "restore", args: []string{"restore", "--at", "--bad", "--help"}, want: expectedRestoreUsage},
-		{name: "remove", args: []string{"remove", "--bad", "--help"}, want: wantRemoveUsage},
 		{name: "apex", args: []string{"apex", "set", "--bad", "--help"}, want: expectedApexUsage},
 		{name: "golden", args: []string{"golden", "capture", "--bad", "--help"}, want: expectedGoldenUsage},
 		{name: "seed", args: []string{"seed", "--bad", "--help"}, want: expectedSeedUsage},
@@ -115,7 +105,7 @@ func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
 }
 
 func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
-	// R-C8QO-KMXZ
+	// R-RJ4X-S7G2
 	tests := []struct {
 		name   string
 		args   []string
@@ -124,9 +114,6 @@ func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
 	}{
 		{name: "create missing", args: []string{"space", "create", "sbx1", "--acme-email"}, option: "--acme-email", help: "devctl space --help"},
 		{name: "create empty", args: []string{"space", "create", "sbx1", "--acme-email="}, option: "--acme-email", help: "devctl space --help"},
-		{name: "init opsctl missing", args: []string{"space", "init", "sbx1", "--opsctl"}, option: "--opsctl", help: "devctl space --help"},
-		{name: "init opsctl empty", args: []string{"space", "init", "sbx1", "--opsctl="}, option: "--opsctl", help: "devctl space --help"},
-		{name: "init email option-like", args: []string{"space", "init", "sbx1", "--acme-email", "--bad"}, option: "--acme-email", help: "devctl space --help"},
 		{name: "restore missing", args: []string{"restore", "sbx1", "app", "--at"}, option: "--at", help: "devctl restore --help"},
 		{name: "restore empty", args: []string{"restore", "sbx1", "app", "--at="}, option: "--at", help: "devctl restore --help"},
 		{name: "restore option-like", args: []string{"restore", "sbx1", "app", "--at", "--bad"}, option: "--at", help: "devctl restore --help"},

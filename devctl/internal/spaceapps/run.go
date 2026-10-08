@@ -20,15 +20,15 @@ const helpCommand = "devctl space --help"
 
 const restartHelp = `Usage: devctl space restart <space> <app>
 
-Have opsctl restart one app's service. Deploy the existing file to apply pushed
-secrets; a restart uses the environment already installed on the host.
+Have opsctl restart one app's service. Deploy the space's release again to
+apply pushed secrets; a restart uses the environment already on the host.
 `
 
 const disableHelp = `Usage: devctl space disable <space> <app>
 
 Have opsctl take one app offline: stop its socket and service and keep both
 from starting until 'devctl space enable'. Its release, data and units stay
-on the host, and deploy, restore, init and restart leave it disabled.
+on the host, and deploy, restore and restart leave it disabled.
 `
 
 const enableHelp = `Usage: devctl space enable <space> <app>

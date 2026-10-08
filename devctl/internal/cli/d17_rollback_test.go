@@ -62,7 +62,7 @@ func TestRollbackUsageBeforeExternalAccess(t *testing.T) {
 func TestRollbackLookupRefusals(t *testing.T) {
 	// R-X58D-WD60
 	for _, stopped := range []bool{false, true} {
-		h := newD11Harness(t)
+		h := newRollbackHarness(t)
 		operand := "gone"
 		want := "devctl: no space at 'gone.ikigenba.dev'\n"
 		if stopped {
@@ -80,7 +80,7 @@ func TestRollbackLookupRefusals(t *testing.T) {
 func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
 	// R-X1KO-R1XX R-X6GA-A4WP R-X7O6-NWNE
 	for _, failed := range []bool{false, true} {
-		h := newD11Harness(t)
+		h := newRollbackHarness(t)
 		deps := h.deps()
 		strict := &rollbackCloudFake{t: t, instances: h.instances}
 		deps.Cloud = func(_ context.Context, profile, region string) (cloud.Clients, error) {
@@ -135,7 +135,7 @@ func TestRollbackReturnsRootFailureUnchanged(t *testing.T) {
 }
 
 func TestChangedRootPreflightsThroughCLI(t *testing.T) {
-	// R-XBBV-T7VH R-XA3Z-FG4S
+	// R-P5O5-A9HX R-P4G8-WHR8
 	for _, args := range [][]string{{"space", "stop", "sbx1"}, {"apex", "show"}} {
 		deps := checkoutDeps(t, `{"domain":"example.test","region":"eu-west-1"}`)
 		calls := 0
@@ -244,4 +244,43 @@ func TestRollbackReturnsCloudFailuresUnchangedBeforeHost(t *testing.T) {
 			}
 		})
 	}
+}
+
+type rollbackHarness struct {
+	t                     *testing.T
+	root                  string
+	instances             []cloud.Instance
+	sshCalls, streamCalls int
+	cloud.STS
+	cloud.EC2
+}
+
+func newRollbackHarness(t *testing.T) *rollbackHarness {
+	return &rollbackHarness{t: t, root: d09Root(t), instances: []cloud.Instance{
+		{ID: "i-2", Space: "sbx2.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"},
+		{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"},
+	}}
+}
+func (h *rollbackHarness) deps() seam.Deps {
+	return seam.Deps{EUID: 1, Dir: h.root,
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			return cloud.Clients{STS: h, EC2: h}, nil
+		},
+		Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+			if c.Path != "git" {
+				h.sshCalls++
+				h.t.Fatalf("unexpected Exec %#v", c)
+			}
+			return seam.Result{Stdout: []byte(h.root + "\n")}, nil
+		},
+		Stream: func(context.Context, seam.Cmd, io.Writer) (seam.Result, error) {
+			h.streamCalls++
+			h.t.Fatal("unexpected Stream")
+			return seam.Result{}, nil
+		},
+	}
+}
+func (*rollbackHarness) CallerAccountID(context.Context) (string, error) { return "123456789012", nil }
+func (h *rollbackHarness) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
+	return h.instances, nil
 }

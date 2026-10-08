@@ -21,7 +21,7 @@ func runSuite(ctx context.Context, opened *checkout.Checkout, operand, version s
 		return err
 	}
 	if !found {
-		return &UsageError{Message: fmt.Sprintf("'%s' is neither an app in the checkout nor a commit", operand)}
+		return &UsageError{Message: fmt.Sprintf("'%s' is not a commit", operand)}
 	}
 	release, err := Suite(ctx, opened, sha, version)
 	if err != nil {

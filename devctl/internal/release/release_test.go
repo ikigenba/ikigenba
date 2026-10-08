@@ -30,7 +30,7 @@ func TestIdentityAndResolution(t *testing.T) {
 	if e.Error() != "'r9' is not a commit" || e.ExitCode() != 2 {
 		t.Fatal(e)
 	}
-	for _, rev := range []string{"r1", "r3-rc1", "auth/v0.18.2", "4B22285", "abc", sha + "0", "4b22", "4b22285", "deadbeef", sha} {
+	for _, rev := range []string{"r1", "r3-rc1", "auth/arbitrary-tag", "4B22285", "abc", sha + "0", "4b22", "4b22285", "deadbeef", sha} {
 		want := rev
 		if rev == "4b22" || rev == "4b22285" || rev == "deadbeef" || rev == sha {
 			want = ""

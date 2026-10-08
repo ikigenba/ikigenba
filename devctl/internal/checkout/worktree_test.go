@@ -38,7 +38,7 @@ func TestResolveCommitHexAndTagForms(t *testing.T) {
 	const sha = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
 	tests := []struct{ rev, object string }{
 		{"4b22", "4b22"}, {"4b22285", "4b22285"}, {sha, sha},
-		{"r1", "refs/tags/r1"}, {"devctl/v1.2.0", "refs/tags/devctl/v1.2.0"},
+		{"r1", "refs/tags/r1"}, {"devctl/arbitrary-tag", "refs/tags/devctl/arbitrary-tag"},
 		{"main", "refs/tags/main"}, {"HEAD", "refs/tags/HEAD"},
 		{"4B22285", "refs/tags/4B22285"}, {"abc", "refs/tags/abc"}, {sha + "0", "refs/tags/" + sha + "0"},
 		{"1234", "1234"}, {"a-b/c.d", "refs/tags/a-b/c.d"},
@@ -155,5 +155,31 @@ func TestWorktreeCommandsAndFailures(t *testing.T) {
 			}
 			assertCommands(t, *commands, seam.Cmd{Path: "git", Args: test.args, Dir: opened.Root})
 		})
+	}
+}
+
+func checkoutWithGitResult(t *testing.T, result seam.Result, runnerErr error) (*Checkout, *[]seam.Cmd) {
+	t.Helper()
+	commands := new([]seam.Cmd)
+	checkout := &Checkout{
+		Root: "/work/checkout",
+		Deps: seam.Deps{
+			Dir: "/work/checkout/subdirectory",
+			Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+				*commands = append(*commands, command)
+				return result, runnerErr
+			},
+		},
+	}
+	return checkout, commands
+}
+
+func assertCommands(t *testing.T, got []seam.Cmd, want seam.Cmd) {
+	t.Helper()
+	if len(got) != 1 {
+		t.Fatalf("commands = %#v, want exactly one", got)
+	}
+	if !reflect.DeepEqual(got[0], want) {
+		t.Fatalf("command = %#v, want %#v", got[0], want)
 	}
 }

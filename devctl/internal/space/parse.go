@@ -22,10 +22,10 @@ What a space is running is 'devctl space status'.
 
 const usageText = `Usage: devctl space <subcommand> [arguments]
 
-List, create, destroy, stop, start, initialise, and inspect spaces, and
-restart, disable, enable, or read the journal of one app on one. A space is
-one label under the root domain; <space> is that label or the full domain.
-The cloud's tags are the only registry.
+List, create, destroy, stop, start, and inspect spaces, and restart, disable,
+enable, or read the journal of one app on one. A space is one label under the
+root domain; <space> is that label or the full domain. The cloud's tags are
+the only registry.
 
 Subcommands:
   list                       one line per space
@@ -33,7 +33,6 @@ Subcommands:
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
-  init <space> [options]     set the host's keys again and run opsctl init
   status <space>             one line per app: commit, label, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
   disable <space> <app>      stop one app and keep it from starting until enabled
@@ -48,10 +47,6 @@ Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
   --delete-secrets        delete the space's secrets; they are kept otherwise
   --delete-backups        delete the space's backups; they are kept otherwise
-
-Options (init):
-  --opsctl <version>      move the host to this opsctl release first
-  --acme-email <address>  change where the CA sends the space's expiry warnings
 
 Options (logs):
   --follow                keep printing as the app writes, until interrupted
@@ -108,7 +103,6 @@ var subcommands = map[string]struct{}{
 	"destroy": {},
 	"stop":    {},
 	"start":   {},
-	"init":    {},
 	"status":  {},
 	"restart": {},
 	"disable": {},
@@ -141,7 +135,7 @@ func parseInvocation(args []string) (invocation, error) {
 
 	// These subcommands own their grammars in their own packages. The CLI
 	// dispatcher normally routes them there without calling this package.
-	if subcommand == "create" || subcommand == "init" || subcommand == "restart" || subcommand == "disable" || subcommand == "enable" || subcommand == "logs" {
+	if subcommand == "create" || subcommand == "restart" || subcommand == "disable" || subcommand == "enable" || subcommand == "logs" {
 		return result, nil
 	}
 

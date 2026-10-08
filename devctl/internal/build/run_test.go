@@ -12,15 +12,10 @@ import (
 )
 
 const wantUsage = `Usage: devctl build <sha|tag>
-       devctl build <app>
 
 Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
 release holding every app and opsctl. <sha> is the full commit sha the argument
 resolves to; the working tree is not read.
-
-Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
-deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
-the working tree must have no uncommitted changes.
 `
 
 func TestRunPublicSignature(_ *testing.T) {
@@ -30,7 +25,7 @@ func TestRunPublicSignature(_ *testing.T) {
 
 func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
-	// R-FE6E-PM2E
+	// R-R3A8-T6T1
 	for _, args := range [][]string{
 		{"--help"},
 		{"-h"},
@@ -58,14 +53,14 @@ func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {
 }
 
 func TestRunArgumentParsing(t *testing.T) {
-	// R-F82W-SRCX
+	// R-QYEN-A3U9
 	tests := []struct {
 		name    string
 		args    []string
 		message string
 	}{
-		{name: "missing", message: "build needs <sha|tag> or <app>"},
-		{name: "extra", args: []string{"crm", "api"}, message: "build takes one <sha|tag> or <app>"},
+		{name: "missing", message: "build needs <sha|tag>"},
+		{name: "extra", args: []string{"crm", "api"}, message: "build takes one <sha|tag>"},
 		{name: "long option", args: []string{"--force", "crm"}, message: "unknown option '--force'"},
 		{name: "short option", args: []string{"crm", "-v"}, message: "unknown option '-v'"},
 	}
@@ -85,7 +80,6 @@ func TestRunArgumentParsing(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func stringsForName(args []string) string {

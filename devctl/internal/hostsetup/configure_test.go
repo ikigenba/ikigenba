@@ -263,24 +263,15 @@ func TestSingleKeyOperations(t *testing.T) {
 }
 
 func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
-	// R-8GWZ-UVC6
+	// R-RU41-854B
 	var commands []seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 		commands = append(commands, command)
-		if command.Path == "curl" {
-			return seam.Result{Stdout: []byte(`[{"tag_name":"opsctl/v1.2.3","published_at":"2026-01-01T00:00:00Z","assets":[{"name":"install.sh","browser_download_url":"https://example.test/install"}]}]`)}, nil
-		}
-		return seam.Result{Stdout: []byte("v1.2.3\n")}, nil
+		return seam.Result{Stdout: []byte("opaque output\n")}, nil
 	}}
 	target := host.Host{Address: "192.0.2.10", Deps: deps}
 	cfg := Config{Root: "example.test", Region: "us-east-1", ZoneID: "ZONE", Space: spaceref.Space{Label: "sbx", Domain: "sbx.example.test"}}
 	if _, err := Configure(context.Background(), target, "configuration", cfg); err != nil {
-		t.Fatal(err)
-	}
-	if err := Upgrade(context.Background(), target, "v1.2.3"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Version(context.Background(), target); err != nil {
 		t.Fatal(err)
 	}
 	for _, command := range logicalCommands(commands) {

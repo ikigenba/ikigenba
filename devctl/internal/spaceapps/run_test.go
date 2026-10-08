@@ -34,7 +34,7 @@ func TestPublicContract(t *testing.T) {
 }
 
 func TestHelpAndSyntaxBeforeExternalAccess(t *testing.T) {
-	// R-JK03-7RWP R-JL7Z-LJNE R-0QP0-DXBO R-0RWW-RP2D R-JRBH-IECV R-JSJD-W63K
+	// R-JK03-7RWP R-JL7Z-LJNE R-RVBX-LWV0 R-0RWW-RP2D R-RWJT-ZOLP R-JSJD-W63K
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -83,7 +83,7 @@ func TestHelpAndSyntaxBeforeExternalAccess(t *testing.T) {
 }
 
 func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
-	// R-2ER7-N15V
+	// R-YUNO-G61J
 	for _, subcommand := range []string{"restart", "disable", "enable", "logs"} {
 		for _, tc := range []struct {
 			name      string

@@ -61,7 +61,7 @@ func TestPolicyParameterAccess(t *testing.T) {
 }
 
 func TestPolicyObjectAccess(t *testing.T) {
-	// R-9D3R-SLXZ
+	// R-RRO8-GLMX
 	p := samplePolicy(t, false)
 	var actions []string
 	for _, statement := range p.Statement {
