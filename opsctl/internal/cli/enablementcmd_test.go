@@ -278,7 +278,7 @@ func enablementFailureRoot(t *testing.T) string {
 }
 
 func TestEnablementStagesAndIdempotence(t *testing.T) {
-	// R-YW0G-MOM3 R-YYG9-E83H R-YX8D-0GCS
+	// R-YW0G-MOM3 R-YYG9-E83H R-F6G6-SAGR
 	root := t.TempDir()
 	store := config.Store{Root: root}
 	for key, value := range map[string]string{"host.name": "SBX.Example.Test.", "host.apex": "notes"} {
@@ -479,4 +479,149 @@ func TestEnablementRejectsInvalidNameBeforeConfiguration(t *testing.T) {
 			t.Fatalf("%s = exit %d stdout %q stderr %q", action, code, stdout, stderr)
 		}
 	}
+}
+
+func TestReleasedEnablementPreservesReleaseAndPublishesRuntimeServices(t *testing.T) {
+	// R-GPBN-ZYU0 R-F6G6-SAGR
+	root, sha := cliReleasedRoot(t, "candidate")
+	if err := (config.Store{Root: root}).Set("host.name", "sbx.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	for path, data := range map[string]string{"etc/systemd/system/ikigenba-notes.service": "service", "etc/systemd/system/ikigenba-notes.socket": "socket", "etc/opt/ikigenba/notes/env": "SECRET=kept\n"} {
+		writeUninstallFile(t, root, path, data)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "etc/nginx/conf.d"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("releases/"+sha, filepath.Join(root, "opt/ikigenba/previous")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "usr/local/bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/opt/ikigenba/current/opsctl/bin/opsctl", filepath.Join(root, "usr/local/bin/opsctl")); err != nil {
+		t.Fatal(err)
+	}
+	preserved := snapshotReleasedCLIPaths(t, root, "opt/ikigenba", "usr/local/bin/opsctl", "etc/opt/ikigenba/notes", "etc/systemd/system/ikigenba-notes.service", "etc/systemd/system/ikigenba-notes.socket")
+	disabled, socketActive, serviceActive := false, true, true
+	controls := 0
+	execute := func(_ context.Context, cmd host.Command) (host.Result, error) {
+		switch cmd.Name {
+		case "id":
+			if reflect.DeepEqual(cmd.Args, []string{"--user", "ikigenba"}) {
+				return host.Result{Stdout: []byte("1000\n")}, nil
+			}
+			return host.Result{Stdout: []byte("ikigenba\n")}, nil
+		case "nginx", "chown", "useradd":
+			return host.Result{}, nil
+		case "systemctl":
+			if cmd.Args[0] == "show" {
+				enabled, active := "enabled", "inactive"
+				if disabled {
+					enabled = "disabled"
+				}
+				unit := cmd.Args[len(cmd.Args)-1]
+				if strings.HasSuffix(unit, ".socket") && socketActive || strings.HasSuffix(unit, ".service") && serviceActive {
+					active = "active"
+				}
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=" + enabled + "\nActiveState=" + active + "\n")}, nil
+			}
+			if cmd.Args[0] == "is-active" {
+				state := "inactive"
+				if serviceActive {
+					state = "active"
+				}
+				return host.Result{Stdout: []byte(state + "\n")}, nil
+			}
+			controls++
+			switch cmd.Args[0] {
+			case "stop":
+				if strings.HasSuffix(cmd.Args[1], ".socket") {
+					socketActive = false
+				} else {
+					serviceActive = false
+				}
+			case "disable":
+				disabled = true
+			case "enable":
+				disabled = false
+			case "start":
+				if strings.HasSuffix(cmd.Args[1], ".socket") {
+					socketActive = true
+				} else {
+					serviceActive = true
+				}
+			}
+			return host.Result{}, nil
+		default:
+			t.Fatalf("unexpected release command: %#v", cmd)
+			return host.Result{}, nil
+		}
+	}
+	deps := cli.Deps{Root: root, EUID: 0, Execute: execute}
+	for _, action := range []string{"disable", "enable"} {
+		stdout, stderr, code := invoke([]string{action, "notes"}, deps)
+		if code != 0 || stderr != "" || !strings.Contains(stdout, "services: ok (") {
+			t.Fatalf("%s exit %d stdout %q stderr %q", action, code, stdout, stderr)
+		}
+		if action == "enable" && !strings.HasSuffix(stdout, "service: ok (notes "+sha[:7]+" active)\n") {
+			t.Fatalf("enable output %q", stdout)
+		}
+		if got := snapshotReleasedCLIPaths(t, root, "opt/ikigenba", "usr/local/bin/opsctl", "etc/opt/ikigenba/notes", "etc/systemd/system/ikigenba-notes.service", "etc/systemd/system/ikigenba-notes.socket"); !reflect.DeepEqual(got, preserved) {
+			t.Fatalf("%s changed release or environment", action)
+		}
+		before, err := readFixtureFile(root, "run/ikigenba/services.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		controlsBefore := controls
+		stdout, stderr, code = invoke([]string{action, "notes"}, deps)
+		after, err := readFixtureFile(root, "run/ikigenba/services.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code != 0 || stderr != "" || !strings.Contains(stdout, "services: ok (unchanged)\n") || controls != controlsBefore || !bytes.Equal(before, after) {
+			t.Fatalf("repeat %s exit %d stdout %q stderr %q controls %d to %d", action, code, stdout, stderr, controlsBefore, controls)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(root, "var/lib/ikigenba/services.json")); !os.IsNotExist(err) {
+		t.Fatalf("released enablement wrote per-app services: %v", err)
+	}
+}
+
+func snapshotReleasedCLIPaths(t *testing.T, root string, paths ...string) map[string]string {
+	t.Helper()
+	result := map[string]string{}
+	for _, path := range paths {
+		err := filepath.WalkDir(filepath.Join(root, path), func(name string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			relative, err := filepath.Rel(root, name)
+			if err != nil {
+				return err
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(name)
+				if err != nil {
+					return err
+				}
+				result[relative] = "link:" + target
+				return nil
+			}
+			data, err := readFixtureFile(root, relative)
+			if err != nil {
+				return err
+			}
+			result[relative] = string(data)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return result
 }

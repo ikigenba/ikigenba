@@ -14,8 +14,9 @@ import (
 const nginxUsage = `Usage: opsctl nginx <subcommand>
 
 Generate /etc/nginx/conf.d/ikigenba.conf from the configuration store, the
-services under /opt, and which apps systemd reports disabled. The file is generated, never edited; opsctl writes no
-other file under /etc/nginx.
+release /opt/ikigenba/current names, and which apps systemd reports disabled.
+The file is generated, never edited; opsctl writes no other file under
+/etc/nginx.
 
 Subcommands:
   show   print the configuration opsctl would write
@@ -25,13 +26,14 @@ Configuration keys:
   host.name  the fully-qualified name this host answers at
   host.apex  the app that answers at the parent of host.name; unset means none
 
-A service is any /opt/<name>/ with an etc/ directory, or any
-/var/opt/ikigenba/<name>/ with a state/ directory. One with an
-/opt/<name>/etc/manifest.toml naming its app answers at <name>.<host.name>,
-proxied to its socket /run/ikigenba/<name>.sock, and the one whose manifest
-sets default answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
-included in its server block. An app whose socket unit systemd reports
-disabled keeps its names, and its block answers 503. Every proxied request
+Each app in the current release, /opt/ikigenba/current/<name>/, answers at
+<name>.<host.name>, proxied to its socket /run/ikigenba/<name>.sock, and the
+one whose manifest sets default answers at <host.name> as well. Its own
+/opt/ikigenba/current/<name>/etc/nginx.conf, if it ships one, is included in
+its server block. A service that only keeps state under
+/var/opt/ikigenba/<name>/ gets no block. On a host with no
+/opt/ikigenba/current, the apps are those under /opt/<name>/ instead. An
+app whose socket unit systemd reports disabled keeps its names, and its block answers 503. Every proxied request
 carries X-Request-Id set to nginx's own request id, which also ends its
 access-log line. The app
 host.apex names also answers at the parent of host.name; until that app is

@@ -1,30 +1,49 @@
-package apps
+package apps_test
 
-import "testing"
+import (
+	"testing"
 
-func TestManifestDisownsUsesTOMLIdentityDespiteSchemaFaults(t *testing.T) {
-	// R-20O1-EI5C
-	for _, test := range []struct {
+	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
+)
+
+// R-91JC-LNPM R-90BG-7VYX
+func TestDiscoveredManifestIdentityAndFaultsStayPerService(t *testing.T) {
+	for _, fixture := range []struct {
 		name, data string
-		disowns    bool
+		fault      bool
 	}{
 		{"matching", "app = 'notes'\n", false},
-		{"absent", "[env]\nKEY = 'plain'\n", true},
+		{"absent", "[env]\nKEY = 'plain'\n", false},
 		{"other", "app = 'other'\n", true},
 		{"integer", "app = 42\n", true},
 		{"array", "app = ['notes']\n", true},
 		{"table", "[app]\nname = 'notes'\n", true},
-		{"matching schema fault", "app = 'notes'\n[resources]\nio_weight = 50\n", false},
+		{"matching schema fault", "app = 'notes'\n[resources]\nio_weight = 50\n", true},
 		{"different schema fault", "app = 'other'\n[resources]\nio_weight = 50\n", true},
 		{"different array table", "app = 'other'\n[[database]]\npath = 'state/db'\n", true},
-		{"bad syntax", "app = \n", false},
-		{"duplicate key", "app = 'notes'\napp = 'other'\n", false},
-		{"bad syntax after different identity", "app = 'other'\n[broken\n", false},
-		{"invalid utf8", "app = 'other'\n#\xff", false},
+		{"bad syntax", "app = \n", true},
+		{"duplicate key", "app = 'notes'\napp = 'other'\n", true},
+		{"bad syntax after different identity", "app = 'other'\n[broken\n", true},
+		{"invalid utf8", "app = 'other'\n#\xff", true},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			if got := ManifestDisowns([]byte(test.data), "notes"); got != test.disowns {
-				t.Fatalf("ManifestDisowns = %v, want %v", got, test.disowns)
+		t.Run(fixture.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeManifest(t, root, "notes", fixture.data)
+			writeManifest(t, root, "unaffected", "app = 'unaffected'\n")
+			services, err := apps.Discover(root)
+			if err != nil || len(services) != 2 {
+				t.Fatalf("Discover=%#v,%v", services, err)
+			}
+			notes := services[0]
+			if notes.Name != "notes" || (notes.ManifestError != nil) != fixture.fault || (notes.Manifest == nil) != fixture.fault {
+				t.Fatalf("notes=%#v; fault=%v", notes, fixture.fault)
+			}
+			if !fixture.fault && notes.Manifest.App != "" && notes.Manifest.App != "notes" {
+				t.Fatalf("accepted mismatching app: %#v", notes.Manifest)
+			}
+			other := services[1]
+			if other.Name != "unaffected" || other.Manifest == nil || other.Manifest.App != "unaffected" || other.ManifestError != nil {
+				t.Fatalf("unaffected=%#v", other)
 			}
 		})
 	}

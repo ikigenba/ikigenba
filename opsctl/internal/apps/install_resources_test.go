@@ -25,7 +25,7 @@ func expectedResourceService(root string, stop int64, resourceLines string) stri
 }
 
 func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
-	// R-ZFRI-3USX R-ZKN3-MXRP
+	// R-DR8E-PXBL R-EKHZ-WF49
 	for _, test := range []struct{ name, table, lines string }{
 		{"absent", "", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
 		{"empty", "[resources]\n", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
@@ -81,7 +81,7 @@ func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
 }
 
 func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
-	// R-1XWP-GAXY
+	// R-DSGB-3P2A
 	for _, manifest := range []string{
 		"app = 'notes'\n[resources]\ncpu_weight = 100\nmemory_max = '512M'\nslice = 'core'\ndelegate = true\noom_policy = 'continue'\n",
 		"app = 'notes'\n[resources]\nmemory_max = '512M'\n",
@@ -152,7 +152,7 @@ func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 }
 
 func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T) {
-	// R-1XWP-GAXY
+	// R-DSGB-3P2A
 	for _, manifest := range []string{"invalid = [", "app = 'other'", "app = 'zeta'\n[resources]\nio_weight = 50", "app = 'zeta'\n[resources]\nmemory_max = '512MB'"} {
 		root := t.TempDir()
 		store := installStoreAt(t, root, nil)
@@ -181,7 +181,7 @@ func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T
 }
 
 func TestSetupTimeoutsRejectsUnreadableEnvironment(t *testing.T) {
-	// R-1XWP-GAXY
+	// R-DSGB-3P2A
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "notes"), []byte("binary"), 0o750)

@@ -106,7 +106,7 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 }
 
 func TestSetupTimeoutsUpdatesOnlyInstalledAppsInNameOrder(t *testing.T) {
-	// R-1XWP-GAXY
+	// R-DSGB-3P2A
 	//  R-Y1GZ-HRRY
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{"apps.drain_seconds": "8", "apps.stop_seconds": "20"})
@@ -202,7 +202,7 @@ func TestSetupTimeoutsStopsAfterReloadFailure(t *testing.T) {
 }
 
 func TestSetupTimeoutsReturnsMissingEnvWithoutWritingUnit(t *testing.T) {
-	// R-1XWP-GAXY
+	// R-DSGB-3P2A
 	//
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)

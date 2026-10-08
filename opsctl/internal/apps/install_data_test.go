@@ -15,7 +15,7 @@ import (
 )
 
 func TestInstallDataRulesMoveDropAndRefuse(t *testing.T) {
-	// R-YZWT-4U5W R-Z787-FGM2 R-ZAVW-KRU5
+	// R-DTO7-HGSZ R-E0ZL-S395 R-E27I-5UZU
 	//
 	for _, tc := range []struct {
 		name                                   string
@@ -162,7 +162,7 @@ func TestInstallDataRulesMoveDropAndRefuse(t *testing.T) {
 }
 
 func TestDataEntriesAreJudgedWithoutFollowingLinks(t *testing.T) {
-	// R-YZWT-4U5W
+	// R-DTO7-HGSZ
 	//
 	root := t.TempDir()
 	old := filepath.Join(root, "opt", "notes")
@@ -197,7 +197,7 @@ func TestDataEntriesAreJudgedWithoutFollowingLinks(t *testing.T) {
 }
 
 func TestDataRenameFailurePreservesAndRetryFinishes(t *testing.T) {
-	// R-YZWT-4U5W
+	// R-DTO7-HGSZ
 	//
 	root := t.TempDir()
 	old := filepath.Join(root, "opt", "notes")
@@ -236,7 +236,7 @@ func TestDataRenameFailurePreservesAndRetryFinishes(t *testing.T) {
 }
 
 func TestInstallDataDirectoryAndAppRootOwnership(t *testing.T) {
-	// R-Z2CL-WDNA
+	// R-E8B0-2PPB
 	//  R-WFP6-33XJ
 	root := t.TempDir()
 	fixture := newCompletedInstallFixture(t, root, false)
@@ -274,7 +274,7 @@ func TestInstallDataDirectoryAndAppRootOwnership(t *testing.T) {
 }
 
 func TestInstallFailuresBeforeDataDoNotCreateDataTree(t *testing.T) {
-	// R-Z14P-ILWL
+	// R-E3FE-JMQJ
 	//
 	for _, stage := range []string{"configuration", "timing", "fetch", "file", "secrets"} {
 		t.Run(stage, func(t *testing.T) {
@@ -320,7 +320,7 @@ func sameFileOwner(before, after os.FileInfo) bool {
 }
 
 func TestInstallDataStopsEachActiveUnitIndependently(t *testing.T) {
-	// R-ZAVW-KRU5
+	// R-E27I-5UZU
 	//
 	for _, tc := range []struct{ service, socket bool }{{true, false}, {false, true}, {false, false}} {
 		t.Run(fmt.Sprintf("service=%t/socket=%t", tc.service, tc.socket), func(t *testing.T) {
@@ -358,7 +358,7 @@ func TestInstallDataStopsEachActiveUnitIndependently(t *testing.T) {
 }
 
 func TestInstallNormalizesExistingDataDirectoryAndKeepsParents(t *testing.T) {
-	// R-Z2CL-WDNA
+	// R-E8B0-2PPB
 	//
 	root := t.TempDir()
 	data := filepath.Join(root, "var", "opt", "ikigenba", "notes")

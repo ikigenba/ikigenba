@@ -13,7 +13,7 @@ import (
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
-	// R-1DS3-EDLH
+	// R-8O4G-E6JZ
 	stdout, stderr, code := runBinary(t, buildOpsctl(t), exec.Command("./opsctl", "--help"))
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
@@ -26,6 +26,7 @@ func TestBinaryHelp(t *testing.T) {
 Operate the ikigenba platform host. Must run as root.
 
 Commands:
+  activate  make an unpacked release the one this host runs
   backup    back up a service's files to S3
   cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
@@ -39,10 +40,12 @@ Commands:
   restart   restart an installed app's service
   restore   restore a service from its backups
   retire    stop every service and take the host's final backup
+  rollback  go back to the release this host ran before
+  services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
-  status    print every installed app, its version and its state
+  status    print every service, its release and its state
   uninstall take an app off the host, keeping its data
-  version   print the version
+  version   print the release this opsctl belongs to
 
 Options:
   -h, --help     print this help
@@ -65,7 +68,7 @@ Run 'opsctl <command> --help' for details on a command.
 // runs it, observing that arguments reach cli.Run, its output reaches the
 // process's standard streams, and its return value is the exit code.
 func TestBinaryPassesArgumentsStreamsAndExitCode(t *testing.T) {
-	// R-F8UL-1VTD
+	// R-T4Z9-6OCB
 	dir := buildOpsctl(t)
 
 	t.Run("unknown command", func(t *testing.T) {

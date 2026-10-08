@@ -35,7 +35,7 @@ func writeEnv(t *testing.T, root string, commands *[]host.Command) host.Env {
 }
 
 func servicesFile(root string) string {
-	return filepath.Join(root, strings.TrimPrefix(apps.ServicesPath, "/"))
+	return filepath.Join(root, strings.TrimPrefix(apps.PerAppServicesPath, "/"))
 }
 
 func writeLauncher(t *testing.T, root, name string) {
@@ -78,7 +78,7 @@ func writeLauncherEnv(t *testing.T, root string, commands *[]host.Command, disab
 }
 
 func TestWriteOwnsServicesPublication(t *testing.T) {
-	root := t.TempDir()
+	root := perAppRoot(t)
 	_, err := Write(context.Background(), writeEnv(t, root, nil), "example.test")
 	if err != nil {
 		t.Fatal(err)
@@ -92,8 +92,8 @@ func TestWriteOwnsServicesPublication(t *testing.T) {
 var _ func(context.Context, host.Env, string) (Changes, error) = Write
 
 func TestWritePreflightLeavesExistingFileAlone(t *testing.T) {
-	// R-HJGZ-MWII
-	root := t.TempDir()
+	// R-9CIG-1LDV
+	root := perAppRoot(t)
 	file := servicesFile(root)
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		t.Fatal(err)
@@ -122,10 +122,10 @@ func TestWritePreflightLeavesExistingFileAlone(t *testing.T) {
 }
 
 func TestWritePreflightFailuresLeaveFileAlone(t *testing.T) {
-	// R-HJGZ-MWII
+	// R-9CIG-1LDV
 	for _, cause := range []string{"discover", "manifest", "disabled"} {
 		t.Run(cause, func(t *testing.T) {
-			root := t.TempDir()
+			root := perAppRoot(t)
 			file := servicesFile(root)
 			if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 				t.Fatal(err)
@@ -137,6 +137,9 @@ func TestWritePreflightFailuresLeaveFileAlone(t *testing.T) {
 			env := writeEnv(t, root, &commands)
 			switch cause {
 			case "discover":
+				if err := os.RemoveAll(filepath.Join(root, "opt")); err != nil {
+					t.Fatal(err)
+				}
 				if err := os.WriteFile(filepath.Join(root, "opt"), []byte("not directory"), 0o600); err != nil {
 					t.Fatal(err)
 				}
@@ -162,7 +165,7 @@ func TestWritePreflightFailuresLeaveFileAlone(t *testing.T) {
 			}
 			if cause == "manifest" {
 				services, discoverErr := apps.Discover(root)
-				if discoverErr != nil || len(services) != 1 || services[0].ManifestError == nil ||
+				if discoverErr != nil || len(services) != 2 || services[0].ManifestError == nil ||
 					!strings.Contains(err.Error(), "broken") || !strings.Contains(err.Error(), services[0].ManifestError.Error()) {
 					t.Fatalf("manifest error lost service or failure: %v; discovered=%v, %v", err, services, discoverErr)
 				}
@@ -189,13 +192,13 @@ func TestWritePreflightFailuresLeaveFileAlone(t *testing.T) {
 }
 
 func TestWriteEnsuresAccountThenDirectoryMode(t *testing.T) {
-	// R-8J4E-YTHJ
-	root := t.TempDir()
+	// R-9EY8-T4V9
+	root := perAppRoot(t)
 	env := writeEnv(t, root, nil)
 	baseExecute := env.Execute
 	env.Execute = func(ctx context.Context, command host.Command) (host.Result, error) {
 		if command.Name == "id" {
-			if _, err := os.Lstat(filepath.Join(root, servicesDirectory)); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Lstat(filepath.Join(root, "var/lib/ikigenba")); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("directory changed before account: %v", err)
 			}
 		}
@@ -204,15 +207,15 @@ func TestWriteEnsuresAccountThenDirectoryMode(t *testing.T) {
 	if _, err := Write(context.Background(), env, "example.test"); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Lstat(filepath.Join(root, servicesDirectory))
+	info, err := os.Lstat(filepath.Join(root, "var/lib/ikigenba"))
 	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o750 {
 		t.Fatalf("services directory: %v, %v", info, err)
 	}
 }
 
 func TestWriteAccountFailureAndExistingDirectory(t *testing.T) {
-	// R-8J4E-YTHJ
-	root := t.TempDir()
+	// R-9EY8-T4V9
+	root := perAppRoot(t)
 	env := writeEnv(t, root, nil)
 	env.Execute = func(_ context.Context, _ host.Command) (host.Result, error) {
 		return host.Result{ExitCode: 1}, errors.New("account unavailable")
@@ -220,10 +223,10 @@ func TestWriteAccountFailureAndExistingDirectory(t *testing.T) {
 	if changes, err := Write(context.Background(), env, "example.test"); err == nil || changes != nil {
 		t.Fatalf("account failure: %v, %v", changes, err)
 	}
-	if _, err := os.Lstat(filepath.Join(root, servicesDirectory)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(root, "var/lib/ikigenba")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("account failure created directory: %v", err)
 	}
-	for _, directory := range []string{"var", filepath.Join("var", "lib"), servicesDirectory} {
+	for _, directory := range []string{"var", filepath.Join("var", "lib"), "var/lib/ikigenba"} {
 		if err := os.MkdirAll(filepath.Join(root, directory), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -232,11 +235,11 @@ func TestWriteAccountFailureAndExistingDirectory(t *testing.T) {
 	if _, err := Write(context.Background(), env, "example.test"); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Lstat(filepath.Join(root, servicesDirectory))
+	info, err := os.Lstat(filepath.Join(root, "var/lib/ikigenba"))
 	if err != nil || info.Mode().Perm() != 0o750 {
 		t.Fatalf("existing directory mode: %v, %v", info, err)
 	}
-	other := t.TempDir()
+	other := perAppRoot(t)
 	if _, err := Write(context.Background(), writeEnv(t, other, nil), "example.test"); err != nil {
 		t.Fatal(err)
 	}
@@ -249,8 +252,8 @@ func TestWriteAccountFailureAndExistingDirectory(t *testing.T) {
 }
 
 func TestWriteKeepsExactFileAndAtomicallyReplacesDifferentFile(t *testing.T) {
-	// R-8KCB-CL88
-	root := t.TempDir()
+	// R-9HE1-KOCN
+	root := perAppRoot(t)
 	env := writeEnv(t, root, nil)
 	if _, err := Write(context.Background(), env, "example.test"); err != nil {
 		t.Fatal(err)
@@ -284,8 +287,8 @@ func TestWriteKeepsExactFileAndAtomicallyReplacesDifferentFile(t *testing.T) {
 }
 
 func TestWriteRetainsPreviousFileUntilRename(t *testing.T) {
-	// R-8KCB-CL88
-	root := t.TempDir()
+	// R-9HE1-KOCN
+	root := perAppRoot(t)
 	file := servicesFile(root)
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
 		t.Fatal(err)
@@ -322,8 +325,8 @@ func TestWriteRetainsPreviousFileUntilRename(t *testing.T) {
 }
 
 func TestWriteAppliesFileModeAndOwnership(t *testing.T) {
-	// R-8LK7-QCYX
-	root := t.TempDir()
+	// R-9ILX-YG3C
+	root := perAppRoot(t)
 	var commands []host.Command
 	if _, err := Write(context.Background(), writeEnv(t, root, &commands), "example.test"); err != nil {
 		t.Fatal(err)
@@ -348,8 +351,8 @@ func TestWriteAppliesFileModeAndOwnership(t *testing.T) {
 }
 
 func TestWriteOwnsStagedAndKeptFiles(t *testing.T) {
-	// R-8LK7-QCYX
-	root := t.TempDir()
+	// R-9ILX-YG3C
+	root := perAppRoot(t)
 	file := servicesFile(root)
 	var owned []string
 	env := writeEnv(t, root, nil)
@@ -394,7 +397,7 @@ func TestWriteOwnsStagedAndKeptFiles(t *testing.T) {
 
 func TestWriteChownFailurePreservesPreviousFile(t *testing.T) {
 	// R-8MS4-44PM
-	root := t.TempDir()
+	root := perAppRoot(t)
 	file := servicesFile(root)
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
 		t.Fatal(err)
@@ -430,7 +433,7 @@ func TestWriteFailurePreservesAbsenceAndCleansTemporary(t *testing.T) {
 	// R-8MS4-44PM
 	for _, cause := range []string{"account", "directory", "ownership", "rename"} {
 		t.Run(cause, func(t *testing.T) {
-			root := t.TempDir()
+			root := perAppRoot(t)
 			file := servicesFile(root)
 			if cause == "directory" {
 				if err := os.WriteFile(filepath.Join(root, "var"), []byte("blocking ancestor"), 0o600); err != nil {
@@ -482,8 +485,8 @@ func TestWriteFailurePreservesAbsenceAndCleansTemporary(t *testing.T) {
 }
 
 func TestWriteExecutesOnlyAccountAndOwnershipCommands(t *testing.T) {
-	// R-8O00-HWGB
-	root := t.TempDir()
+	// R-BZML-VP81
+	root := perAppRoot(t)
 	writeLauncher(t, root, "running")
 	var commands []host.Command
 	if _, err := Write(context.Background(), writeLauncherEnv(t, root, &commands, false), "example.test"); err != nil {
@@ -500,7 +503,7 @@ func TestWriteExecutesOnlyAccountAndOwnershipCommands(t *testing.T) {
 
 func TestWriteReturnsChangesFromPublishedEntries(t *testing.T) {
 	// R-YM99-KIOJ
-	root := t.TempDir()
+	root := perAppRoot(t)
 	writeLauncher(t, root, "running")
 	file := servicesFile(root)
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
@@ -543,7 +546,7 @@ func TestWriteToleratesUnreadableAndMalformedPreviousFile(t *testing.T) {
 	// R-8QFT-9FXP
 	for _, prior := range []string{"absent", "unreadable", "malformed"} {
 		t.Run(prior, func(t *testing.T) {
-			root := t.TempDir()
+			root := perAppRoot(t)
 			writeLauncher(t, root, "running")
 			file := servicesFile(root)
 			if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
@@ -567,12 +570,12 @@ func TestWriteToleratesUnreadableAndMalformedPreviousFile(t *testing.T) {
 	}
 }
 
-// R-HJGZ-MWII
+// R-9CIG-1LDV
 func TestWriteRejectsFirstManifestExactlyBeforeQueriesOrPublication(t *testing.T) {
 	for _, manifest := range []string{"[resources]\nio_weight = 50\n", "[resources]\nunknown = 1\n", "app = [\n"} {
 		for _, existing := range []bool{false, true} {
 			t.Run(manifest, func(t *testing.T) {
-				root := t.TempDir()
+				root := perAppRoot(t)
 				writeLauncher(t, root, "alpha")
 				renderFixture(t, root, "repos", manifest, false, nil)
 				renderFixture(t, root, "zeta", "app = [\n", false, nil)

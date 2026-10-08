@@ -22,8 +22,8 @@ snapshot of one run carries the same timestamp.
 
 The database copy is rebuilt from the replica litestream.service keeps, so
 nothing is stopped; it may trail the live database by the changes litestream
-has not yet shipped. Never copied: /opt/SERVICE/, which a deploy brings;
-cache/; anything opsctl generates, the environment file that holds the
+has not yet shipped. Never copied: /opt/ikigenba/, which 'opsctl activate'
+brings; cache/; anything opsctl generates, the environment file that holds the
 service's secrets among them; and the database's -wal and -shm and its
 litestream metadata directory.
 

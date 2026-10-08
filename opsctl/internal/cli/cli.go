@@ -7,14 +7,16 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
-	"github.com/ikigenba/ikigenba/opsctl/internal/host"
-
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
 type exitCode int
@@ -32,6 +34,7 @@ const usageText = `Usage: opsctl [options] <command> [arguments]
 Operate the ikigenba platform host. Must run as root.
 
 Commands:
+  activate  make an unpacked release the one this host runs
   backup    back up a service's files to S3
   cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
@@ -45,10 +48,12 @@ Commands:
   restart   restart an installed app's service
   restore   restore a service from its backups
   retire    stop every service and take the host's final backup
+  rollback  go back to the release this host ran before
+  services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
-  status    print every installed app, its version and its state
+  status    print every service, its release and its state
   uninstall take an app off the host, keeping its data
-  version   print the version
+  version   print the release this opsctl belongs to
 
 Options:
   -h, --help     print this help
@@ -63,9 +68,6 @@ Exit codes:
 Run 'opsctl <command> --help' for details on a command.
 `
 
-// version is the opsctl semantic version, fixed in source.
-const version = "v0.16.1"
-
 // Deps carries what a command cannot be deterministic about.
 type Deps struct {
 	Root       string                                                   // filesystem root every host path is resolved under ("/" in production)
@@ -76,6 +78,8 @@ type Deps struct {
 	LookupHost func(ctx context.Context, host string) ([]string, error) // name resolution; nil uses net.DefaultResolver.LookupHost
 	Execute    func(context.Context, host.Command) (host.Result, error)
 	Now        func() time.Time
+	Executable func() (string, error)
+	Exec       func(string, []string, []string) error
 	Cloud      cloud.Env
 }
 
@@ -122,6 +126,12 @@ func normalizeDeps(deps Deps) Deps {
 	if deps.Now == nil {
 		deps.Now = time.Now
 	}
+	if deps.Executable == nil {
+		deps.Executable = os.Executable
+	}
+	if deps.Exec == nil {
+		deps.Exec = syscall.Exec
+	}
 	return deps
 }
 
@@ -135,7 +145,7 @@ func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return writeOut(stdout, usageText)
 	}
 	if showVersion {
-		return writeOut(stdout, version+"\n")
+		return writeOut(stdout, releaseVersion(deps)+"\n")
 	}
 	if len(rest) == 0 {
 		writeUsageError(stderr, "no command given")
@@ -215,6 +225,12 @@ func diagnosticArg(s string) string {
 
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
+	case "activate":
+		return runActivate(args, stdout, stderr, deps)
+	case "rollback":
+		return runRollback(args, stdout, stderr, deps)
+	case "services":
+		return runServices(args, stdout, stderr, deps)
 	case "restore":
 		return runRestore(args, stdout, stderr, deps)
 	case "retire":
@@ -242,7 +258,7 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 	case "status":
 		return runStatus(args, stdout, stderr, deps)
 	case "version":
-		return writeOut(stdout, version+"\n")
+		return writeOut(stdout, releaseVersion(deps)+"\n")
 	default:
 		writeUsageError(stderr, "unknown command '"+diagnosticArg(name)+"'")
 		return exitUsage
@@ -331,4 +347,16 @@ func quoteCapture(stderr io.Writer, capture []byte) {
 		}
 		capture = rest
 	}
+}
+
+func releaseVersion(deps Deps) string {
+	path, err := deps.Executable()
+	if err != nil {
+		return ""
+	}
+	r, ok := release.Of(deps.Root, path)
+	if !ok {
+		return ""
+	}
+	return r.Display()
 }

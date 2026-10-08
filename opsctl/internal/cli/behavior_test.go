@@ -86,7 +86,7 @@ func TestNonVersionCommandsRefuseWithoutHostAccess(t *testing.T) {
 }
 
 func TestInformationalAndGrammarCallsAreInert(t *testing.T) {
-	// R-ESHJ-XJRU
+	// R-8RS5-JHS2
 	cases := [][]string{nil, {"--help"}, {"-h"}, {"version"}, {"--version"}, {"-V"}, {"unknown"}, {"--unknown"}}
 	for _, name := range allCommands {
 		cases = append(cases, []string{name, "--help"}, []string{name, "-h"})

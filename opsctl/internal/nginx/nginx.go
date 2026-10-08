@@ -220,7 +220,7 @@ func execute(ctx context.Context, env host.Env, label, name string, args ...stri
 func discoverRoutedServices(root string) ([]apps.Service, string, error) {
 	services, err := apps.Discover(root)
 	if err != nil {
-		return nil, "", fmt.Errorf("render nginx configuration: %w", err)
+		return nil, "", fmt.Errorf("render nginx configuration: discover services: %w", err)
 	}
 
 	for _, service := range services {
@@ -286,13 +286,13 @@ func writeServiceBlocks(output *strings.Builder, hostName, apexApp, apexName str
 		case disabled[service.Name]:
 			output.WriteString("\n    return              503;\n")
 		case !authenticated:
-			writeInclude(output, service.Name)
+			writeInclude(output, service.Dir)
 			writeUpstreamLocation(output, service.Name)
 		case service.Name == authenticatorServiceName:
-			writeInclude(output, service.Name)
+			writeInclude(output, service.Dir)
 			writeUnwiredLocations(output, service.Name)
 		default:
-			writeInclude(output, service.Name)
+			writeInclude(output, service.Dir)
 			writeWiredLocations(output, service.Name, hostName, service.Manifest.Guests)
 		}
 		output.WriteString("}\n")
@@ -320,7 +320,7 @@ func writeServerPreamble(output *strings.Builder, service apps.Service, hostName
 }
 
 func writeInclude(output *strings.Builder, name string) {
-	output.WriteString("\n    include /opt/")
+	output.WriteString("\n    include ")
 	output.WriteString(name)
 	output.WriteString("/etc/nginx.conf*;\n\n")
 }

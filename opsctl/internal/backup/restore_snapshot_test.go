@@ -41,7 +41,7 @@ func snapshotRestoreExecute(t *testing.T, root string, events *[]string) func(co
 	}
 }
 func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing.T) {
-	// R-1W2L-4XPW R-FMVM-I2DD R-24BQ-JTDF R-FU70-SOTJ R-GCHI-J8XY R-GDPE-X0ON R-GG57-OK61 R-GHD4-2BWQ R-GIL0-G3NF
+	// R-FTMA-1XJY R-FMVM-I2DD R-FYHV-L0IQ R-G9GZ-0Y6Z R-GCHI-J8XY R-G892-N6GA R-G9GZ-0Y6Z R-GHD4-2BWQ R-G892-N6GA
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -66,7 +66,7 @@ func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing
 	from := "s3://another-bucket/seed/object.tar.zst"
 	client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}, secrets: map[string]string{"TOKEN": "new token", "IGNORED": "private"}}
 	var events []string
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { return nil })
 	if err != nil {
 		t.Fatalf("Restore = %+v, %v", report, err)
 	}
@@ -146,7 +146,7 @@ func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
 				client.bodies[tc.from] = tc.body
 			}
 			var events []string
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", tc.at, tc.from, func(context.Context) error { t.Fatal("callback invoked"); return nil })
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", tc.at, tc.from, nil, func(context.Context) error { t.Fatal("callback invoked"); return nil })
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("report %+v error %v", report, err)
 			}
@@ -173,7 +173,7 @@ func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
 }
 
 func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
-	// R-GDPE-X0ON R-FMVM-I2DD R-GIL0-G3NF
+	// R-G892-N6GA R-FMVM-I2DD R-G892-N6GA
 	for _, tc := range []struct {
 		name, manifest string
 		values         map[string]string
@@ -208,7 +208,7 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 			writeFile(t, root, "var/opt/ikigenba/notes/state/sentinel", "unchanged", 0o600)
 			before := fileTreeSnapshot(t, root)
 			var events []string
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { t.Fatal("callback invoked"); return nil })
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { t.Fatal("callback invoked"); return nil })
 			var failure *backup.RestoreError
 			if !errors.As(err, &failure) || failure.Stage != "secrets" || len(failure.Stopped) != 0 || len(report.Steps) != 2 || report.Steps[1].Name != "secrets" || report.Steps[1].Err == nil || report.Steps[1].Detail != "" || !strings.Contains(report.Steps[1].Err.Error(), tc.want) {
 				t.Fatalf("Restore %+v error %#v", report, err)
@@ -232,7 +232,7 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 }
 
 func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
-	// R-GG57-OK61 R-FU70-SOTJ R-GDPE-X0ON
+	// R-G9GZ-0Y6Z R-G9GZ-0Y6Z R-G892-N6GA
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -247,7 +247,7 @@ func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
 	from := "s3://bucket/snapshot"
 	client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}}
 	var events []string
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 5 || report.Steps[1].Detail != "0 keys" || report.Steps[3].Detail != "/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 0 files" {
 		t.Fatalf("Restore %+v %v", report, err)
 	}
@@ -260,7 +260,7 @@ func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
 }
 
 func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing.T) {
-	// R-GG57-OK61 R-GDPE-X0ON R-GIL0-G3NF
+	// R-G9GZ-0Y6Z R-G892-N6GA R-G892-N6GA
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -274,7 +274,7 @@ func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing
 	from := "s3://bucket/snapshot"
 	client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}}
 	var events []string
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 5 || len(client.parameters) != 0 {
 		t.Fatalf("Restore %+v %v parameters %v", report, err, client.parameters)
 	}
@@ -285,7 +285,7 @@ func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing
 }
 
 func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
-	// R-GG57-OK61 R-FMVM-I2DD R-GIL0-G3NF
+	// R-G9GZ-0Y6Z R-FMVM-I2DD R-G892-N6GA
 	for _, tc := range []struct{ name, failCommand, stage string }{
 		{name: "account", failCommand: "id --user ikigenba", stage: "ownership"},
 		{name: "publication", stage: "environment"},
@@ -325,7 +325,7 @@ func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
 					t.Cleanup(func() { _ = rootFS.Chmod(directory, 0755); _ = rootFS.Close() })
 				}
 				return result, err
-			}}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { t.Fatal("callback invoked"); return nil })
+			}}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { t.Fatal("callback invoked"); return nil })
 			var failure *backup.RestoreError
 			if !errors.As(err, &failure) || failure.Stage != tc.stage || (tc.stage == "ownership" && !errors.Is(err, cause)) || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 				t.Fatalf("Restore %+v error %#v", report, err)
@@ -366,7 +366,7 @@ func TestRestoreSnapshotMapsDatabaseOwnership(t *testing.T) {
 	from := "s3://bucket/snapshot"
 	client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}}
 	var events []string
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 7 {
 		t.Fatalf("Restore %+v %v", report, err)
 	}

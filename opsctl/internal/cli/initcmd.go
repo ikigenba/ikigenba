@@ -46,18 +46,28 @@ Sequence:
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
-               installed app whose manifest is no longer valid, or whose
-               state/ is still under /opt/APP/, stops init here, before
-               this step or any after it writes anything
+               app whose manifest is no longer valid, or on a host without
+               releases an installed app whose state/ is still under
+               /opt/APP/, stops init here, before this step or any after
+               it writes anything
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
-  apps         write the drain and stop settings into every installed app,
+  apps         write the drain and stop settings into every app,
                restarting each enabled app whose settings changed; a
-               disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them
+               disabled app is rewritten and left disabled. On a host that
+               runs releases the apps are the current release's, each
+               given the environment and units activate writes, and
+               ikigenba-services.service is written and enabled. The
+               resources an app's manifest declares are kept as activate
+               or install wrote them
+
+When /usr/local/bin/opsctl does not exist, init makes it a link before the
+sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
+otherwise to the running opsctl, so certbot's hooks find opsctl on PATH.
 
 Configuration keys:
+  aws.region          the region this host's parameters live in
   host.name           the fully-qualified name this host answers at, at or under a configured zone
   apps.drain_seconds  how long an app may drain when stopped (default 5)
   apps.stop_seconds   how long systemd waits for an app to stop (default 10)
@@ -326,13 +336,20 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 		}
 	}
 	if err == nil {
+		err = ensureInitOpsctl(p.deps)
+	}
+	if err == nil {
 		err = cert.Obtain(ctx, env, p.host, email, apexApp != "")
 	}
 	if err == nil {
 		err = apps.SetupSlices(ctx, env)
 	}
 	if err == nil {
-		err = checkInitStateMoved(p.deps.Root)
+		var layout apps.Layout
+		layout, err = apps.ReadLayout(p.deps.Root)
+		if err == nil && layout == apps.PerApp {
+			err = checkInitStateMoved(p.deps.Root)
+		}
 	}
 	if err == nil {
 		err = nginx.Apply(ctx, env, p.host, apexApp)
@@ -347,7 +364,7 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 		err = backup.SetupTimers(ctx, env, p.store)
 	}
 	if err == nil {
-		err = apps.SetupTimeouts(ctx, env, p.store)
+		err = setupInitApps(ctx, env, p.store, p.deps.Cloud, p.host)
 	}
 	if err != nil {
 		writeDiagnostic(stderr, err)

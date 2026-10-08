@@ -112,8 +112,8 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 
 // R-78QR-PFQ3
 // R-RKG1-RXRJ
-// R-RQJJ-OSH0
-// R-RMVU-JH8X
+// R-UPHP-5NUJ
+// R-UKM3-MKVR
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -153,8 +153,8 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-RQJJ-OSH0
-// R-RMVU-JH8X
+// R-UPHP-5NUJ
+// R-UKM3-MKVR
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -230,9 +230,9 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-RQJJ-OSH0
-// R-IG97-7F7H
-// R-RO3Q-X8ZM
+// R-UPHP-5NUJ
+// R-ULU0-0CMG
+// R-UN1W-E4D5
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -339,7 +339,7 @@ func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	}
 }
 
-// R-RRRG-2K7P
+// R-UQPL-JFL8
 func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
@@ -377,7 +377,7 @@ func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	}
 }
 
-// R-RU78-U3P3
+// R-URXH-X7BX
 func TestRenderOriginalRequestHeadersOnlyInAuthenticatorSubrequest(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1460,7 +1460,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-RLNY-5PI8 R-RQJJ-OSH0 R-78QR-PFQ3
+// R-UWT3-GAAP R-UPHP-5NUJ R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")
@@ -1649,7 +1649,7 @@ func TestUpdateRejectsInvalidApexBeforeHostWork(t *testing.T) {
 	}
 }
 
-// R-RVF5-7VFS
+// R-UT5E-AZ2M
 func TestRenderMCPAndGitReservationsIgnoreManifestMCP(t *testing.T) {
 	for _, guests := range []bool{false, true} {
 		for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
@@ -1708,7 +1708,7 @@ func TestRenderMCPStatusMappingAndPathBoundaries(t *testing.T) {
 				t.Fatalf("MCP status mapping: %s", section)
 			}
 		}
-		// R-RO3Q-X8ZM: the complete wired shape adds the two git locations.
+		// R-UN1W-E4D5: the complete wired shape adds the two git locations.
 		if strings.Count(block, "    location ") != 12 {
 			t.Fatalf("unexpected location overrides: %s", block)
 		}
@@ -1787,7 +1787,7 @@ func TestRenderGitLocationBoundariesAndCredentialRelay(t *testing.T) {
 		if include < 0 || include > strings.Index(block, "    location "+location) {
 			t.Fatal("app fragment must precede generated regular expressions")
 		}
-		// R-RO3Q-X8ZM: these generated locations have this exact order.
+		// R-UN1W-E4D5: these generated locations have this exact order.
 		mcpExact := strings.Index(block, "    location = /mcp {\n")
 		mcpPrefix := strings.Index(block, "    location ^~ /mcp/ {\n")
 		git := strings.Index(block, "    location "+location+" {\n")

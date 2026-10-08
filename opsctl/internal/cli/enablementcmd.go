@@ -16,9 +16,9 @@ const disableUsage = `Usage: opsctl disable APP
 
 Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
-request. The nginx configuration and /var/lib/ikigenba/services.json are then
+request. The nginx configuration and /run/ikigenba/services.json are then
 regenerated, so APP's names answer 503 and the service launcher shows APP
-disabled until it is enabled. Nothing on disk under /opt/APP/ or
+disabled until it is enabled. Nothing on disk under /opt/ikigenba/ or
 /var/opt/ikigenba/APP/ changes.
 'opsctl enable APP' undoes it.
 
@@ -33,10 +33,10 @@ Configuration keys:
 const enableUsage = `Usage: opsctl enable APP
 
 Enable ikigenba-APP.socket and ikigenba-APP.service and start the socket,
-regenerate the nginx configuration and /var/lib/ikigenba/services.json so
-APP's names reach it again and the service launcher shows it enabled, then
-start the service and report it as the last line of 'opsctl install' does.
-Nothing on disk under /opt/APP/ changes.
+regenerate the nginx configuration and /run/ikigenba/services.json so APP's
+names reach it again and the service launcher shows it enabled, then start
+the service and report it as 'opsctl activate' reports each app.
+Nothing on disk under /opt/ikigenba/ changes.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at

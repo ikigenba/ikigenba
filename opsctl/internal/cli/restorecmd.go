@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
@@ -22,16 +23,25 @@ Replace /var/opt/ikigenba/SERVICE/state/ with a backup, and, when SERVICE
 declares a [database], replace that database with what litestream holds.
 Without --at or --from both halves are the newest there is. With --from,
 everything comes from the one snapshot at that URI instead, database included.
-SERVICE must be installed: its installed etc/manifest.toml says what it
-declares, and nothing under /opt/SERVICE/ is touched. An etc/ that an older
-backup or snapshot holds is ignored. A SERVICE that is not installed, or whose
-state/ or environment file is still under /opt/SERVICE/, is refused: install
-it first.
+SERVICE must be an app in the current release: its
+/opt/ikigenba/current/SERVICE/etc/manifest.toml says what it declares, and
+nothing under /opt/ikigenba/ is touched. An etc/ that an older backup or
+snapshot holds is ignored. A SERVICE that is not in the current release is
+refused.
+
+On a host laid out per app, with no /opt/ikigenba/current, SERVICE must be
+installed under /opt/SERVICE/ instead, whichever opsctl runs the restore, and
+one that is not, or whose state/ or environment file is still under
+/opt/SERVICE/, is refused: install it first. On a fresh host, with neither
+/opt/ikigenba/current nor any app under /opt/, the opsctl inside a release,
+/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl, restores against that
+release: SERVICE must be one of its apps, and its manifest there says what it
+declares. Any other opsctl refuses to run there at all.
 
 The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
-restore writes it as 'opsctl install' does, from the parameter
-/<host.name>/SERVICE and the installed manifest, reading the parameter before
-anything is stopped.
+restore writes it as 'opsctl activate' does, from the parameter
+/<host.name>/SERVICE, the manifest, and the commit and label of the release
+it restores against, reading the parameter before anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -43,7 +53,8 @@ app stays disabled: neither of its units is enabled or started. A failed
 restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
-the installed manifests, as 'opsctl install' does.
+the manifests of the release the restore runs against, as 'opsctl activate'
+does.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
@@ -115,8 +126,16 @@ func runRestoreWithStore(args []string, stdout, stderr io.Writer, deps Deps, sto
 		}
 	}
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
+	var own *release.Release
+	if deps.Executable != nil {
+		if executable, err := deps.Executable(); err == nil {
+			if found, ok := release.Of(deps.Root, executable); ok {
+				own = &found
+			}
+		}
+	}
 	report, runErr := backup.Restore(
-		context.Background(), env, deps.Cloud, config.Store{Root: deps.Root}, invocation.service, invocation.at, invocation.from,
+		context.Background(), env, deps.Cloud, config.Store{Root: deps.Root}, invocation.service, invocation.at, invocation.from, own,
 		func(ctx context.Context) error {
 			if err := nginx.Write(ctx, env, hostName, apexApp); err != nil {
 				return err

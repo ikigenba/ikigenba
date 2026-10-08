@@ -50,7 +50,7 @@ func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
 }
 
 func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
-	// R-XRPS-FLUE R-ZWU3-GN6N
+	// R-XRPS-FLUE R-FCJO-P568
 	for _, test := range []struct {
 		name   string
 		mutate func(*testing.T, *uninstallFixture)
@@ -119,7 +119,7 @@ func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
 
 func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	// R-YBI2-GUY1
-	// R-ZVM7-2VFY R-HB1B-4G10 R-ZWU3-GN6N
+	// R-FBBS-BDFJ R-EMXS-NYLN R-FCJO-P568
 	fixture := newUninstallFixture(t, "active")
 	actionErr := errors.New("stop transport failed")
 	reportErr := errors.New("report write failed")
@@ -147,7 +147,7 @@ func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 }
 
 func TestUninstallConfigureFailurePreservesOwnedOutcomes(t *testing.T) {
-	// R-ZWU3-GN6N
+	// R-FCJO-P568
 	fixture := newUninstallFixture(t, "active")
 	configureErr := errors.New("configuration failed")
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
@@ -211,7 +211,7 @@ func TestUninstallStopsOnlyActiveUnitsAndAlwaysDisables(t *testing.T) {
 }
 
 func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
-	// R-ZY1Z-UEXC
+	// R-FA3V-XLOU
 	fixture := newUninstallFixture(t, "inactive")
 	unit := filepath.Join(fixture.root, "etc/systemd/system/ikigenba-notes.service")
 	outside := filepath.Join(t.TempDir(), "outside.service")
@@ -247,7 +247,7 @@ func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
 }
 
 func TestUninstallRemovesOnlyAppPayloadWithoutFollowingSymlinks(t *testing.T) {
-	// R-01PO-ZQ5F
+	// R-ELPW-A6UY
 	fixture := newUninstallFixture(t, "inactive")
 	stateFile := filepath.Join(fixture.root, "var/opt/ikigenba/notes/state/data.db")
 	writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/state/data.db", "preserved state")
@@ -417,7 +417,7 @@ func snapshotUninstallTree(t *testing.T, root string) map[string]string {
 }
 
 func TestUninstallRemovesEnvironmentTreeAndKeepsParents(t *testing.T) {
-	// R-01PO-ZQ5F R-045H-R9MT
+	// R-ELPW-A6UY R-9571-QYXP
 	for _, mode := range []string{"directory", "symlink", "absent", "parents absent"} {
 		t.Run(mode, func(t *testing.T) {
 			fixture := newUninstallFixture(t, "inactive")

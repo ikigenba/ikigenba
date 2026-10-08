@@ -68,23 +68,23 @@ func TestManifestFields(t *testing.T) {
 	}
 }
 
-// R-YQ4V-23UD
+// R-8T01-X9IR
 func TestServiceFields(t *testing.T) {
 	manifest := &apps.Manifest{App: "notes"}
 	cause := errors.New("bad manifest")
-	service := apps.Service{Name: "notes", Manifest: manifest, ManifestError: cause}
+	service := apps.Service{Name: "notes", Dir: "/opt/notes", Manifest: manifest, ManifestError: cause}
 	var (
 		name        string
 		model       *apps.Manifest
 		manifestErr error
 	)
 	name, model, manifestErr = service.Name, service.Manifest, service.ManifestError
-	if name != "notes" || model != manifest || !errors.Is(manifestErr, cause) {
+	if name != "notes" || service.Dir != "/opt/notes" || model != manifest || !errors.Is(manifestErr, cause) {
 		t.Fatalf("Service = %#v", service)
 	}
 }
 
-// R-158S-PZEM
+// R-SWFY-IA5G R-SYVR-9TMU R-T03N-NLDJ
 func TestValidateName(t *testing.T) {
 	valid := []string{
 		"a",
@@ -117,6 +117,7 @@ func TestValidateName(t *testing.T) {
 		"backup-host",
 		"BACKUP-SERVICES",
 		"renew-certificate",
+		"services", "SERVICES", "opsctl", "OPSCTL",
 	}
 	for _, name := range invalid {
 		err := apps.ValidateName(name)
@@ -124,7 +125,7 @@ func TestValidateName(t *testing.T) {
 			t.Errorf("ValidateName(%q) returned nil", name)
 			continue
 		}
-		if !strings.Contains(err.Error(), name) {
+		if err.Error() != "'"+name+"' is not a usable app name" {
 			t.Errorf("ValidateName(%q) error %q does not identify the name", name, err)
 		}
 	}
@@ -638,7 +639,7 @@ func TestParseManifestPortErrorTakesPrecedence(t *testing.T) {
 }
 
 func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
-	// R-YXH0-DAOI
+	// R-T2JG-F4UX
 	valid := []string{
 		"[database]\nengine = \"sqlite\"\npath = \"state/app.db\"",
 		"[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"",

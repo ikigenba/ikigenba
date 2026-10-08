@@ -17,7 +17,7 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-ZC3S-YJKU R-ZFRI-3USX
+	// R-EAQS-U96P R-DR8E-PXBL
 	//  R-GHRP-XY8C
 	root := t.TempDir()
 	statePath := filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "db")
@@ -85,7 +85,7 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 }
 
 func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
-	// R-Z8G3-T8CR
+	// R-E9IW-GHG0
 	//
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	if err := fixture.run(); err != nil {
@@ -186,7 +186,7 @@ func TestInstallCreatesOptWithoutChangingExistingOpt(t *testing.T) {
 }
 
 func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
-	// R-ZGZE-HMJM
+	// R-DW40-90AD
 	//  R-GHRP-XY8C
 	root := t.TempDir()
 	state := filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "keep")
@@ -257,7 +257,7 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 }
 
 func TestInstallReportsInstalledTreeShapingFailures(t *testing.T) {
-	// R-EOG7-Y07G R-YSCR-HDE0
+	// R-EOG7-Y07G R-DXBW-MS12
 	ownershipFailure := errors.New("ownership failed")
 	for _, test := range []struct {
 		name      string
@@ -302,7 +302,7 @@ func TestInstallReportsInstalledTreeShapingFailures(t *testing.T) {
 }
 
 func TestInstallStageActionAndReportFailuresStopInOrder(t *testing.T) {
-	// R-YSCR-HDE0
+	// R-DXBW-MS12
 	stages := []struct {
 		name      string
 		configure func(*completedInstallFixture, error)
@@ -528,7 +528,7 @@ func TestInstallStartsOrRestartsAndReportsBinaryVersion(t *testing.T) {
 }
 
 func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
-	// R-ZC3S-YJKU
+	// R-EAQS-U96P
 	//   R-UNJ1-8PMI
 	root := t.TempDir()
 	servicePath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")

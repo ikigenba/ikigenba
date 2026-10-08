@@ -112,7 +112,7 @@ func (model *lifecycleModel) hooks() apps.LifecycleHooks {
 }
 
 func TestLifecycleDomainAPIsAndNameValidation(t *testing.T) {
-	// R-V71F-D1HM R-HB1B-4G10
+	// R-V71F-D1HM R-EMXS-NYLN
 	for _, operation := range []func(context.Context, host.Env, string, apps.LifecycleHooks) error{apps.Disable, apps.Enable} {
 		called := false
 		err := operation(context.Background(), host.Env{Root: "/missing", Execute: func(context.Context, host.Command) (host.Result, error) { called = true; return host.Result{}, nil }}, "../bad", apps.LifecycleHooks{})
@@ -157,7 +157,7 @@ func TestDisabledReadsOnlySocketEnablement(t *testing.T) {
 }
 
 func TestDisableAuthRefusalPrecedesHostAccess(t *testing.T) {
-	// R-VVFF-0GBI
+	// R-F40E-0QZD
 	called := false
 	var reports []uninstallReport
 	err := apps.Disable(context.Background(), host.Env{Root: "/missing", Execute: func(context.Context, host.Command) (host.Result, error) { called = true; return host.Result{}, nil }}, "auth", apps.LifecycleHooks{
@@ -206,7 +206,7 @@ func TestDisableOrderAndIdempotence(t *testing.T) {
 }
 
 func TestEnableOrderIdempotenceAndServiceReport(t *testing.T) {
-	// R-XWLD-YOT6 R-W0B0-JJAA
+	// R-XWLD-YOT6 R-F58A-EIQ2
 	root := lifecycleRoot(t)
 	before := readRestartTree(t, root)
 	model := &lifecycleModel{version: "v9.2"}
@@ -243,11 +243,11 @@ func TestEnableOrderIdempotenceAndServiceReport(t *testing.T) {
 }
 
 func TestStatusSocketFieldRetainsDisabledAndIndependentFacts(t *testing.T) {
-	// R-VPBX-3LM1
+	// R-F1KL-97HZ
 	root := lifecycleRoot(t)
 	model := &lifecycleModel{socketActive: true, serviceActive: false, version: "v3"}
 	rows, err := apps.Status(context.Background(), host.Env{Root: root, Execute: model.execute})
-	if err != nil || !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "v3", State: "inactive", Socket: "disabled", JournalMode: "-"}}) {
+	if err != nil || !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "v3", Label: "-", State: "inactive", Socket: "disabled", JournalMode: "-"}}) {
 		t.Fatalf("Status=%#v,%v", rows, err)
 	}
 	wantSocket := host.Command{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=ActiveState", "--property=UnitFileState", "ikigenba-notes.socket"}}
@@ -257,7 +257,7 @@ func TestStatusSocketFieldRetainsDisabledAndIndependentFacts(t *testing.T) {
 }
 
 func TestUninstallRetainsStateOnlyDiscoveryWithoutCreatingState(t *testing.T) {
-	// R-HDH3-VZIE
+	// R-EO5P-1QCC
 	for _, state := range []bool{false, true} {
 		fixture := newUninstallFixture(t, "inactive")
 		if state {
@@ -271,7 +271,7 @@ func TestUninstallRetainsStateOnlyDiscoveryWithoutCreatingState(t *testing.T) {
 			t.Fatal(err)
 		}
 		if state {
-			if !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "-", State: "-", Socket: "-", JournalMode: "-"}}) {
+			if !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "-", Label: "-", State: "-", Socket: "-", JournalMode: "-"}}) {
 				t.Fatalf("state-only rows=%#v", rows)
 			}
 			data, readErr := os.ReadFile(filepath.Join(fixture.root, "var/opt/ikigenba/notes/state/data.db"))
@@ -285,7 +285,7 @@ func TestUninstallRetainsStateOnlyDiscoveryWithoutCreatingState(t *testing.T) {
 }
 
 func TestAllLifecycleActionsRejectMissingAndUninstalledWithoutExecution(t *testing.T) {
-	// R-HB1B-4G10
+	// R-EMXS-NYLN
 	type action struct {
 		name string
 		run  func(context.Context, host.Env, string) error
@@ -343,7 +343,7 @@ func TestAllLifecycleActionsRejectMissingAndUninstalledWithoutExecution(t *testi
 }
 
 func TestEnableFailureReportsJournalAndLeavesEnabledUnits(t *testing.T) {
-	// R-W0B0-JJAA
+	// R-F58A-EIQ2
 	root := lifecycleRoot(t)
 	model := &lifecycleModel{version: "v5", failCommand: "systemctl start ikigenba-notes.service"}
 	err := apps.Enable(context.Background(), host.Env{Root: root, Execute: model.execute}, "notes", model.hooks())
@@ -364,7 +364,7 @@ func TestEnableFailureReportsJournalAndLeavesEnabledUnits(t *testing.T) {
 }
 
 func TestDisableAndEnableFailAtFirstStageForMissingUnit(t *testing.T) {
-	// R-VVFF-0GBI
+	// R-F40E-0QZD
 	for _, operation := range []struct {
 		name, step string
 		run        func(context.Context, host.Env, string, apps.LifecycleHooks) error
@@ -387,7 +387,7 @@ func TestDisableAndEnableFailAtFirstStageForMissingUnit(t *testing.T) {
 }
 
 func TestRestartDisabledKeepsBothUnitsDownAndReadsInstalledVersion(t *testing.T) {
-	// R-HJKL-SU7V
+	// R-EXWW-3W9W
 	root := lifecycleRoot(t)
 	model := &lifecycleModel{version: "v7.4", socketEnabled: false, serviceEnabled: false}
 	before := readRestartTree(t, root)
@@ -408,7 +408,7 @@ func TestRestartDisabledKeepsBothUnitsDownAndReadsInstalledVersion(t *testing.T)
 }
 
 func TestUninstallDataMovesBetweenStopAndUnitRemoval(t *testing.T) {
-	// R-ZZ9W-86O1 R-ZVM7-2VFY
+	// R-F7O3-627G R-FBBS-BDFJ
 	for _, tc := range []struct {
 		name                   string
 		state, cache, newCache bool
@@ -483,7 +483,7 @@ func TestUninstallDataMovesBetweenStopAndUnitRemoval(t *testing.T) {
 }
 
 func TestUninstallDataConflictRetainsStoppedAppAndBothTrees(t *testing.T) {
-	// R-ZZ9W-86O1 R-ZWU3-GN6N
+	// R-F7O3-627G R-FCJO-P568
 	fixture := newUninstallFixture(t, "active")
 	writeFixturePath(t, fixture.root, "opt/notes/state/item", "old")
 	writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/state/item", "new")
@@ -512,7 +512,7 @@ func TestUninstallDataConflictRetainsStoppedAppAndBothTrees(t *testing.T) {
 }
 
 func TestUninstallEmptyDataDoesNotCreateDataRoot(t *testing.T) {
-	// R-ZZ9W-86O1
+	// R-F7O3-627G
 	fixture := newUninstallFixture(t, "inactive")
 	removeFixturePath(t, fixture.root, "var")
 	if err := fixture.uninstall(); err != nil {
@@ -527,7 +527,7 @@ func TestUninstallEmptyDataDoesNotCreateDataRoot(t *testing.T) {
 }
 
 func TestUninstallDataReportFailureStopsBeforeRemovingUnit(t *testing.T) {
-	// R-ZVM7-2VFY R-ZWU3-GN6N
+	// R-FBBS-BDFJ R-FCJO-P568
 	fixture := newUninstallFixture(t, "active")
 	writeFixturePath(t, fixture.root, "opt/notes/state/item", "saved")
 	failure := errors.New("data report unavailable")
@@ -552,7 +552,7 @@ func TestUninstallDataReportFailureStopsBeforeRemovingUnit(t *testing.T) {
 }
 
 func TestUninstallMigrationPreparesExistingDataDirectoryOnlyWhenMoving(t *testing.T) {
-	// R-ZZ9W-86O1
+	// R-F7O3-627G
 	for _, mode := range []string{"move", "drop", "unchanged"} {
 		t.Run(mode, func(t *testing.T) {
 			fixture := newUninstallFixture(t, "inactive")
@@ -606,7 +606,7 @@ func TestUninstallMigrationPreparesExistingDataDirectoryOnlyWhenMoving(t *testin
 }
 
 func TestLifecycleRejectsSymlinkServiceParentsBeforeExecution(t *testing.T) {
-	// R-HB1B-4G10
+	// R-EMXS-NYLN
 	for _, parent := range []string{"opt", "var/opt/ikigenba"} {
 		for _, action := range []string{"uninstall", "restart", "disable", "enable"} {
 			t.Run(parent+"/"+action, func(t *testing.T) {
@@ -651,7 +651,7 @@ func TestLifecycleRejectsSymlinkServiceParentsBeforeExecution(t *testing.T) {
 }
 
 func TestLifecycleServiceCriterionAcceptsAlternateRealParent(t *testing.T) {
-	// R-HB1B-4G10
+	// R-EMXS-NYLN
 	for _, symlinkParent := range []string{"opt", "var/opt/ikigenba"} {
 		root := t.TempDir()
 		writeFixturePath(t, root, "actual/marker", "untouched")

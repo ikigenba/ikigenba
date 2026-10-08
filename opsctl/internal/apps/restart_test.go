@@ -57,7 +57,7 @@ func TestRestartRejectsInvalidAndUninstalledAppsBeforeExecution(t *testing.T) {
 }
 
 func TestRestartUsesInstalledUnitAndBinaryWithoutChangingHostFiles(t *testing.T) {
-	// R-HJKL-SU7V
+	// R-EXWW-3W9W
 	// R-MBTM-17TU R-AMEV-4J2G
 	for _, initialState := range []string{"active", "inactive", "failed"} {
 		t.Run(initialState, func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestRestartUsesInstalledUnitAndBinaryWithoutChangingHostFiles(t *testing.T)
 }
 
 func TestRestartChecksResultingStateAfterSuccessfulRestart(t *testing.T) {
-	// R-HJKL-SU7V
+	// R-EXWW-3W9W
 	// R-ME9E-SRB8
 	for _, resultingState := range []string{"active", "inactive", "failed"} {
 		t.Run(resultingState, func(t *testing.T) {
@@ -133,8 +133,8 @@ func TestRestartChecksResultingStateAfterSuccessfulRestart(t *testing.T) {
 				if resultingState == "failed" {
 					rows, statusErr := apps.Status(context.Background(), host.Env{Root: root, Execute: service.execute(root)})
 					wantRows := []apps.StatusRow{
-						{Name: "notes", Version: "v2.4.6", State: "failed", Socket: "-", JournalMode: "-"},
-						{Name: "other", Version: "-", State: "-", Socket: "-", JournalMode: "-"},
+						{Name: "notes", Version: "v2.4.6", Label: "-", State: "failed", Socket: "-", JournalMode: "-"},
+						{Name: "other", Version: "-", Label: "-", State: "-", Socket: "-", JournalMode: "-"},
 					}
 					if statusErr != nil || !reflect.DeepEqual(rows, wantRows) {
 						t.Fatalf("Status after resulting failure = (%#v, %v), want (%#v, nil)", rows, statusErr, wantRows)

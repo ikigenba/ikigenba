@@ -140,7 +140,7 @@ type initReportWriter struct {
 func (w initReportWriter) Write(data []byte) (int, error) { return w.write(data) }
 
 func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
-	// R-YRDI-GFZ1
+	// R-V6KA-IG89
 	deps := initDeps(t, map[string]string{
 		dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZONE", "host.name": "HOST.Example.Com.",
 		"acme.email": "operator@example.com", "aws.region": "us-east-2", "backup.s3_uri": "s3://bucket/host/",
@@ -218,7 +218,7 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertInitSettingLines(t, env, []string{fmt.Sprintf("DRAIN_SECONDS=%d\n", drain), apps.ServicesEnv + "=" + apps.ServicesPath + "\n"})
+			assertInitSettingLines(t, env, []string{fmt.Sprintf("DRAIN_SECONDS=%d\n", drain), apps.ServicesEnv + "=" + apps.PerAppServicesPath + "\n"})
 			legacy, err := fs.ReadFile(os.DirFS(deps.Root), "opt/"+name+"/etc/env")
 			if err != nil || string(legacy) != "LEGACY=preserved\nDRAIN_SECONDS=1\n" {
 				t.Fatalf("legacy environment changed: %q, %v", legacy, err)

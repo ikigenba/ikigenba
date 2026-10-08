@@ -15,7 +15,7 @@ import (
 )
 
 func TestNginxRegeneratorContractAndPreflight(t *testing.T) {
-	// R-1NHS-71WK R-G6E0-ME8H
+	// R-1NHS-71WK R-GAOV-EPXO
 	var regenerator backup.NginxRegenerator = func(context.Context) error { return nil }
 	var regenerate func(context.Context) error = regenerator
 	if err := regenerate(context.Background()); err != nil {
@@ -36,14 +36,14 @@ func TestNginxRegeneratorContractAndPreflight(t *testing.T) {
 	}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
 		used = true
 		return nil, errors.New("unexpected cloud access")
-	}}, store, "notes", nil, "", nil)
+	}}, store, "notes", nil, "", nil, nil)
 	if err == nil || err.Error() != "restore nginx regeneration is not configured" || len(report.Steps) != 0 || used {
 		t.Fatalf("nil regenerator = %+v, %v, boundary used %v", report, err, used)
 	}
 }
 
 func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
-	// R-G6E0-ME8H
+	// R-GAOV-EPXO
 	for _, test := range []struct {
 		name      string
 		service   string
@@ -66,7 +66,7 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 			body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("published"), uid: os.Getuid(), gid: os.Getgid()})
 			executor := &restoreStageExecutor{t: t, root: root, installed: test.installed, active: test.active}
 			calls := 0
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientForService(t, body, test.service).open}, store, test.service, nil, "", func(context.Context) error {
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientForService(t, body, test.service).open}, store, test.service, nil, "", nil, func(context.Context) error {
 				calls++
 				if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/"+test.service+"/state/value")); got != "published" {
 					t.Fatalf("nginx ran before restored files were published: %q", got)
@@ -84,7 +84,7 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 }
 
 func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
-	// R-G6E0-ME8H R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-GAOV-EPXO R-G7FZ-2AO2 R-FMVM-I2DD
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -94,7 +94,7 @@ func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("published"), uid: os.Getuid(), gid: os.Getgid()})
 	executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true}
 	cause := errors.New("nginx publication unavailable")
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return cause })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return cause })
 	var failure *backup.RestoreError
 	if err == nil || !errors.Is(err, cause) || !errors.As(err, &failure) || failure.Stage != "nginx regeneration" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service"}) {
 		t.Fatalf("Restore() error = %#v", err)

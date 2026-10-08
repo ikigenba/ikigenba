@@ -19,8 +19,9 @@ import (
 const wantNginxUsage = `Usage: opsctl nginx <subcommand>
 
 Generate /etc/nginx/conf.d/ikigenba.conf from the configuration store, the
-services under /opt, and which apps systemd reports disabled. The file is generated, never edited; opsctl writes no
-other file under /etc/nginx.
+release /opt/ikigenba/current names, and which apps systemd reports disabled.
+The file is generated, never edited; opsctl writes no other file under
+/etc/nginx.
 
 Subcommands:
   show   print the configuration opsctl would write
@@ -30,13 +31,14 @@ Configuration keys:
   host.name  the fully-qualified name this host answers at
   host.apex  the app that answers at the parent of host.name; unset means none
 
-A service is any /opt/<name>/ with an etc/ directory, or any
-/var/opt/ikigenba/<name>/ with a state/ directory. One with an
-/opt/<name>/etc/manifest.toml naming its app answers at <name>.<host.name>,
-proxied to its socket /run/ikigenba/<name>.sock, and the one whose manifest
-sets default answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
-included in its server block. An app whose socket unit systemd reports
-disabled keeps its names, and its block answers 503. Every proxied request
+Each app in the current release, /opt/ikigenba/current/<name>/, answers at
+<name>.<host.name>, proxied to its socket /run/ikigenba/<name>.sock, and the
+one whose manifest sets default answers at <host.name> as well. Its own
+/opt/ikigenba/current/<name>/etc/nginx.conf, if it ships one, is included in
+its server block. A service that only keeps state under
+/var/opt/ikigenba/<name>/ gets no block. On a host with no
+/opt/ikigenba/current, the apps are those under /opt/<name>/ instead. An
+app whose socket unit systemd reports disabled keeps its names, and its block answers 503. Every proxied request
 carries X-Request-Id set to nginx's own request id, which also ends its
 access-log line. The app
 host.apex names also answers at the parent of host.name; until that app is
@@ -152,7 +154,7 @@ server {
 `
 
 func TestNginxHelpIsExactAndInert(t *testing.T) {
-	// R-IBDL-OC8P
+	// R-UJE7-8T52
 	for _, uid := range []int{0, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			called := false
@@ -297,7 +299,7 @@ func TestNginxShowPrintsRenderedConfiguration(t *testing.T) {
 
 func TestNginxApplyUsesHostEnvironmentAndSuppressesSuccessOutput(t *testing.T) {
 	// R-O1UL-2JBJ
-	// R-K5Q5-3WQS
+	// R-EKTF-JNCW
 	root := t.TempDir()
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -554,7 +556,7 @@ func TestNginxRejectsApexWithoutParentBeforeDomainWork(t *testing.T) {
 
 func TestNginxExternalFailuresUseCommandDiagnostics(t *testing.T) {
 	// R-2P2U-ULPL
-	// R-K5Q5-3WQS
+	// R-EKTF-JNCW
 	for _, test := range []struct {
 		name        string
 		failCommand string
@@ -587,7 +589,7 @@ func TestNginxStandaloneRenderAndApplyFailures(t *testing.T) {
 	// R-G0B8-HTXJ
 	// R-HI93-94RT
 	// R-O32H-GB28
-	// R-K5Q5-3WQS
+	// R-EKTF-JNCW
 	tests := []struct {
 		name    string
 		command string
@@ -598,7 +600,7 @@ func TestNginxStandaloneRenderAndApplyFailures(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "opt"), []byte("not a directory"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, want: []string{"discover services", "read /opt"}},
+		}, want: []string{"discover services", "not a directory"}},
 		{name: "show malformed manifest", command: "show", setup: func(t *testing.T, root string) {
 			writeNginxManifest(t, root, "broken", "app = [\n")
 		}, want: []string{"broken", "manifest"}},
@@ -683,7 +685,7 @@ func TestNginxManifestRejectionsUseExactStandaloneDiagnostic(t *testing.T) {
 	}
 }
 
-// R-YTTB-7ZGF
+// R-V1OO-ZD9H
 func TestStandaloneNginxAcceptsUnmovedInstalledState(t *testing.T) {
 	for _, subcommand := range []string{"show", "apply"} {
 		t.Run(subcommand, func(t *testing.T) {

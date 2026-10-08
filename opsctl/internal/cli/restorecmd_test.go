@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
 const wantRestoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
@@ -26,16 +27,25 @@ Replace /var/opt/ikigenba/SERVICE/state/ with a backup, and, when SERVICE
 declares a [database], replace that database with what litestream holds.
 Without --at or --from both halves are the newest there is. With --from,
 everything comes from the one snapshot at that URI instead, database included.
-SERVICE must be installed: its installed etc/manifest.toml says what it
-declares, and nothing under /opt/SERVICE/ is touched. An etc/ that an older
-backup or snapshot holds is ignored. A SERVICE that is not installed, or whose
-state/ or environment file is still under /opt/SERVICE/, is refused: install
-it first.
+SERVICE must be an app in the current release: its
+/opt/ikigenba/current/SERVICE/etc/manifest.toml says what it declares, and
+nothing under /opt/ikigenba/ is touched. An etc/ that an older backup or
+snapshot holds is ignored. A SERVICE that is not in the current release is
+refused.
+
+On a host laid out per app, with no /opt/ikigenba/current, SERVICE must be
+installed under /opt/SERVICE/ instead, whichever opsctl runs the restore, and
+one that is not, or whose state/ or environment file is still under
+/opt/SERVICE/, is refused: install it first. On a fresh host, with neither
+/opt/ikigenba/current nor any app under /opt/, the opsctl inside a release,
+/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl, restores against that
+release: SERVICE must be one of its apps, and its manifest there says what it
+declares. Any other opsctl refuses to run there at all.
 
 The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
-restore writes it as 'opsctl install' does, from the parameter
-/<host.name>/SERVICE and the installed manifest, reading the parameter before
-anything is stopped.
+restore writes it as 'opsctl activate' does, from the parameter
+/<host.name>/SERVICE, the manifest, and the commit and label of the release
+it restores against, reading the parameter before anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -47,7 +57,8 @@ app stays disabled: neither of its units is enabled or started. A failed
 restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
-the installed manifests, as 'opsctl install' does.
+the manifests of the release the restore runs against, as 'opsctl activate'
+does.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
@@ -72,7 +83,7 @@ Configuration keys:
 `
 
 func TestRestoreHelpIsExactAndInert(t *testing.T) {
-	// R-G3Y7-UUR3
+	// R-G716-9EPL
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "host-state")
@@ -195,7 +206,7 @@ func TestRestoreInvalidNonRootInvocationReportsGrammarBeforeRefusal(t *testing.T
 }
 
 func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
-	// R-XHYL-DFWU R-LU4V-WM38 R-LZ82-QJF7
+	// R-LATX-7H12 R-GD4O-69F2
 	root := configuredBackupRoot(t)
 	installRestoreCLI(t, root, "app = \"notes\"\n")
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -298,7 +309,7 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 }
 
 func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
-	// R-LU4V-WM38 R-LZ82-QJF7
+	// R-GD4O-69F2
 	for _, test := range []struct {
 		name          string
 		nginxFails    bool
@@ -374,7 +385,7 @@ func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
 }
 
 func TestRestoreSourceFailureLeavesServicesFileUnchanged(t *testing.T) {
-	// R-LU4V-WM38 R-LZ82-QJF7
+	// R-GD4O-69F2
 	root := configuredBackupRoot(t)
 	installRestoreCLI(t, root, "app = \"notes\"\n")
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -420,7 +431,7 @@ func readRestoreServicesFile(t *testing.T, root string) string {
 }
 
 func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
-	// R-289K-YN4U R-XHYL-DFWU R-2J8O-EKT3
+	// R-289K-YN4U R-LATX-7H12 R-GKG2-GVV8
 	const (
 		older  = "2026-09-16T10:00:00Z"
 		later  = "2026-09-16T11:00:00Z"
@@ -508,7 +519,7 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 }
 
 func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
-	// R-XHYL-DFWU
+	// R-LATX-7H12
 	root := configuredBackupRoot(t)
 	installRestoreCLI(t, root, "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -579,7 +590,7 @@ func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 }
 
 func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
-	// R-XHYL-DFWU
+	// R-LATX-7H12
 	for _, test := range []struct {
 		name  string
 		setup func(*testing.T, string)
@@ -622,7 +633,7 @@ func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
 }
 
 func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
-	// R-XHYL-DFWU
+	// R-LATX-7H12
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
@@ -660,7 +671,7 @@ func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
 }
 
 func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
-	// R-XHYL-DFWU R-2J8O-EKT3
+	// R-LATX-7H12 R-GKG2-GVV8
 	root := configuredBackupRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
@@ -699,7 +710,7 @@ func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
 }
 
 func TestRestoreOutcomePreservesReportsStoppedUnitsAndCommandDetail(t *testing.T) {
-	// R-XHYL-DFWU
+	// R-LATX-7H12
 	commandErr := &host.CommandError{Label: "stop litestream.service", Result: host.Result{ExitCode: 1, Stdout: []byte("partial\n"), Stderr: []byte("secret\r\n")}}
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{
 		{Name: "source", Detail: "notes/stamp.tar.zst, 1.0 MiB"},
@@ -736,7 +747,7 @@ func TestRestoreOutcomePreservesReportsStoppedUnitsAndCommandDetail(t *testing.T
 }
 
 func TestRestoreReportWriteFailureIsOperational(t *testing.T) {
-	// R-XHYL-DFWU
+	// R-LATX-7H12
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{{Name: "source", Detail: "ready"}}}
 	var stderr bytes.Buffer
 	code := renderRestoreOutcome(failingRestoreWriter{}, &stderr, "notes", report, nil)
@@ -779,7 +790,7 @@ func makeRestoreCLIArchive(t *testing.T, files map[string]string) []byte {
 }
 
 func TestRestoreFromFailuresRenderReportedSteps(t *testing.T) {
-	// R-2J8O-EKT3
+	// R-GKG2-GVV8
 	const uri = "s3://other.example/seed/object.tar.zst"
 	for _, stage := range []string{"source", "secrets"} {
 		t.Run(stage, func(t *testing.T) {
@@ -837,7 +848,7 @@ func (client *restoreFromCLICloud) ReadSecrets(_ context.Context, parameter stri
 }
 
 func TestRestoreCommandRefusesUnmovedStateAtSource(t *testing.T) {
-	// R-21VX-S9W1
+	// R-FUU6-FPAN
 	root := configuredBackupRoot(t)
 	installRestoreCLI(t, root, "app = \"notes\"\n")
 	store := config.Store{Root: root}
@@ -887,7 +898,7 @@ func installRestoreCLI(t *testing.T, root, manifest string) {
 }
 
 func TestRestoreEarlyFailuresDoNotRegenerateServices(t *testing.T) {
-	// R-LU4V-WM38 R-LZ82-QJF7
+	// R-GD4O-69F2
 	for _, stage := range []string{"source", "stop", "files", "db", "litestream"} {
 		t.Run(stage, func(t *testing.T) {
 			root := configuredBackupRoot(t)
@@ -972,5 +983,58 @@ func TestRestoreEarlyFailuresDoNotRegenerateServices(t *testing.T) {
 				t.Fatalf("nginx callback ran: %v", err)
 			}
 		})
+	}
+}
+
+func TestRestoreCommandUsesOwnReleaseOnFreshHost(t *testing.T) {
+	// R-GD4O-69F2 R-GKG2-GVV8
+	for _, mode := range []string{"own", "outside", "executable failure"} {
+		for _, option := range [][]string{nil, {"--at", "2026-09-16T10:00:00Z"}, {"--from", "s3://other/snapshot"}} {
+			t.Run(mode+strings.Join(option, " "), func(t *testing.T) {
+				root := configuredBackupRoot(t)
+				if err := (config.Store{Root: root}).Set("host.name", "host.example.test"); err != nil {
+					t.Fatal(err)
+				}
+				sha := strings.Repeat("c", 40)
+				executable := filepath.Join(root, "opt/ikigenba/releases", sha, "opsctl/bin/opsctl")
+				if err := os.MkdirAll(filepath.Dir(executable), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(executable, []byte("binary"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				metadata := filepath.Join(root, "opt/ikigenba/releases", sha, release.MetadataName)
+				if err := os.WriteFile(metadata, []byte(`{"sha":"`+sha+`"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				used := false
+				deps := Deps{Root: root, EUID: 0, Executable: func() (string, error) {
+					if mode == "executable failure" {
+						return "", errors.New("unavailable")
+					}
+					if mode == "outside" {
+						return filepath.Join(root, "usr/bin/opsctl"), nil
+					}
+					return executable, nil
+				}, Execute: func(context.Context, host.Command) (host.Result, error) {
+					used = true
+					return host.Result{}, errors.New("unexpected command")
+				}, Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
+					used = true
+					return nil, errors.New("unexpected cloud")
+				}}}
+				args := append([]string{"restore", "crm"}, option...)
+				stdout, stderr, code := invokeBackupCLI(args, deps)
+				wantOut := ""
+				wantErr := "opsctl: restore needs a release; run /opt/ikigenba/releases/<sha>/opsctl/bin/opsctl restore crm\n"
+				if mode == "own" {
+					wantOut = "source: failed: crm is not in release " + sha[:7] + "\n"
+					wantErr = "opsctl: restore crm failed at source\n"
+				}
+				if code != 1 || stdout != wantOut || stderr != wantErr || used {
+					t.Fatalf("code=%d stdout=%q stderr=%q used=%v", code, stdout, stderr, used)
+				}
+			})
+		}
 	}
 }

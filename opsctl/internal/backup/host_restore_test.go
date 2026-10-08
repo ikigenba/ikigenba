@@ -144,7 +144,7 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 }
 
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
-	// R-FKFT-QIVZ R-HUTO-NMJ7 R-LZ82-QJF7
+	// R-FKFT-QIVZ R-HUTO-NMJ7 R-9JTU-C7U1
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
@@ -155,6 +155,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	writeFile(t, root, "etc/nginx/nginx.conf", "untouched nginx", 0o600)
 	writeFile(t, root, "etc/systemd/system/ikigenba-app.service", "untouched unit", 0o600)
 	writeFile(t, root, "var/lib/ikigenba/services.json", "generated launcher", 0o640)
+	writeFile(t, root, "run/ikigenba/services.json", "runtime services sentinel", 0o640)
 	writeFile(t, root, "var/lib/ikigenba/sentinel", "untouched sibling", 0o600)
 	servicesBefore := fileTreeSnapshot(t, filepath.Join(root, "var/lib/ikigenba"))
 	untouched := map[string]string{
@@ -164,6 +165,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 		"etc/nginx/nginx.conf":                    "untouched nginx",
 		"etc/systemd/system/ikigenba-app.service": "untouched unit",
 		"var/lib/ikigenba/services.json":          "generated launcher",
+		"run/ikigenba/services.json":              "runtime services sentinel",
 		"var/lib/ikigenba/sentinel":               "untouched sibling",
 	}
 	body := hostRestoreArchive(t,

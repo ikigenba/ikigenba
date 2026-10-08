@@ -25,7 +25,7 @@ func TestDatabaseFiles(t *testing.T) {
 }
 
 func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
-	// R-JKH0-KRY9 R-HLWS-EFZW R-F4L4-RI8Y
+	// R-JKH0-KRY9 R-HLWS-EFZW R-FDRL-2WWX
 	root, store := regenerationFixture(t)
 	for key, value := range map[string]string{
 		"backup.s3_uri":              "s3://backups.example/hosts/example/",
@@ -67,7 +67,7 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 }
 
 func TestRegenerateEmptyDatabaseSequence(t *testing.T) {
-	// R-F4L4-RI8Y
+	// R-FDRL-2WWX
 	root, store := regenerationFixture(t)
 	writeService(t, root, "notes", "app = \"notes\"\n")
 	if _, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store); err != nil {
@@ -179,7 +179,7 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 }
 
 func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
-	// R-F4L4-RI8Y R-1A4E-92DE
+	// R-FDRL-2WWX R-1A4E-92DE
 	root, store := regenerationFixture(t)
 	for _, key := range []string{"backup.service_db_seconds", "backup.service_wal_seconds"} {
 		if err := store.Set(key, "9223372036"); err != nil {
@@ -419,5 +419,55 @@ func TestRegeneratePreservesPublicationOnExactFirstManifestRejection(t *testing.
 				}
 			})
 		}
+	}
+}
+
+func TestRegenerateServicesUsesSuppliedServices(t *testing.T) {
+	// R-GQJK-DQKP R-GRRG-RIBE
+	root, store := regenerationFixture(t)
+	writeService(t, root, "unrelated", "invalid TOML!")
+	services := []apps.Service{
+		{Name: "zeta", Manifest: &apps.Manifest{Database: &apps.Database{Engine: "sqlite", Path: "state/z.db"}}},
+		{Name: "data-only"},
+		{Name: "alpha", Manifest: &apps.Manifest{Database: &apps.Database{Engine: "sqlite", Path: "state/a.db"}}},
+	}
+	changed, err := backup.RegenerateServices(context.Background(), host.Env{Root: root}, store, services)
+	if err != nil || !changed {
+		t.Fatalf("RegenerateServices = %v, %v", changed, err)
+	}
+	contents := readLitestream(t, root)
+	alpha := filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/alpha/state/a.db"))
+	zeta := filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/zeta/state/z.db"))
+	if !strings.Contains(contents, alpha) || strings.Index(contents, zeta) < strings.Index(contents, alpha) || strings.Contains(contents, "data-only") || strings.Contains(contents, "unrelated") {
+		t.Fatalf("configuration = %s", contents)
+	}
+	if services[0].Name != "zeta" {
+		t.Fatal("caller services reordered")
+	}
+	if changed, err := backup.RegenerateServices(context.Background(), host.Env{Root: root}, store, services); err != nil || changed {
+		t.Fatalf("repeat = %v, %v", changed, err)
+	}
+	// Empty supplied services stay empty even when discovery would fail.
+	if _, err := backup.RegenerateServices(context.Background(), host.Env{Root: root}, store, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(readLitestream(t, root), "dbs: []\n") {
+		t.Fatal("empty services did not generate empty dbs")
+	}
+}
+
+func TestRegenerateServicesMatchesDiscoveredServices(t *testing.T) {
+	// R-GRRG-RIBE
+	root, store := regenerationFixture(t)
+	writeService(t, root, "notes", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
+	services, err := apps.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := backup.RegenerateServices(context.Background(), host.Env{Root: root}, store, services); err != nil || changed {
+		t.Fatalf("supplied result differs: %v, %v", changed, err)
 	}
 }

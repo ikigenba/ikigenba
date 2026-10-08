@@ -4,12 +4,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
-// R-G6SM-I0K3
+// R-8Z3J-U488
 // R-G34X-CPC0
 func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T) {
 	missingRoot := t.TempDir()
@@ -110,21 +112,13 @@ func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T)
 		t.Fatalf("create escaping state symlink: %v", err)
 	}
 
-	services, err = apps.Discover(nestedRoot)
-	if err != nil {
-		t.Fatalf("Discover with nested escaping symlinks returned error: %v", err)
+	if _, err := apps.ReadLayout(nestedRoot); err == nil {
+		t.Fatal("ReadLayout did not report failure to examine escaping etc")
 	}
-	if got, want := serviceNames(services), []string{"etc-escape", "manifest-escape"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("Discover with nested escaping symlinks names = %v, want %v", got, want)
-	}
-	for _, service := range services {
-		if service.Manifest != nil || service.ManifestError == nil {
-			t.Errorf("service through escaping manifest path = %#v, want contained read failure", service)
-		}
-	}
+
 }
 
-// R-XYJC-7S5D
+// R-90BG-7VYX
 func TestDiscoverKeepsManifestFailuresPerService(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "good", "app = \"good\"\n")
@@ -158,7 +152,7 @@ func TestDiscoverKeepsManifestFailuresPerService(t *testing.T) {
 	}
 }
 
-// R-G98F-9K1H
+// R-91JC-LNPM
 func TestDiscoverUsesDirectoryIdentityAndRetainsStateOnlyServices(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "directory-name", "app = \"other-name\"\n")
@@ -320,7 +314,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeSnapshotEntry {
 }
 
 func TestEnvironmentDirectoriesDoNotMakeServices(t *testing.T) {
-	// R-045H-R9MT
+	// R-9571-QYXP
 	root := t.TempDir()
 	mkdirAll(t, filepath.Join(root, "opt", "package", "etc"))
 	mkdirAll(t, filepath.Join(root, apps.DataRoot, "data", "state"))
@@ -334,5 +328,131 @@ func TestEnvironmentDirectoriesDoNotMakeServices(t *testing.T) {
 	after, err := apps.Discover(root)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatalf("environment affected discovery: before %#v after %#v: %v", before, after, err)
+	}
+}
+
+// R-8VFU-OT05 R-8WNR-2KQU
+func TestLayoutUsesCurrentEntryBeforePerAppPackages(t *testing.T) {
+	if string(apps.Fresh) != "fresh host" || string(apps.PerApp) != "per app" || string(apps.Released) != "releases" {
+		t.Fatal("layout constants")
+	}
+	for _, kind := range []string{"absent", "package", "ikigenba", "data", "dangling", "regular", "directory"} {
+		root := t.TempDir()
+		want := apps.Fresh
+		switch kind {
+		case "package":
+			mkdirAll(t, filepath.Join(root, "opt/notes/etc"))
+			want = apps.PerApp
+		case "ikigenba":
+			mkdirAll(t, filepath.Join(root, "opt/ikigenba/etc"))
+		case "data":
+			mkdirAll(t, filepath.Join(root, apps.DataRoot, "notes/state"))
+		case "dangling":
+			mkdirAll(t, filepath.Join(root, "opt/ikigenba"))
+			if err := os.Symlink("releases/missing", filepath.Join(root, "opt/ikigenba/current")); err != nil {
+				t.Fatal(err)
+			}
+			want = apps.Released
+		case "regular":
+			writeFile(t, filepath.Join(root, "opt/ikigenba/current"), []byte("entry"))
+			want = apps.Released
+		case "directory":
+			mkdirAll(t, filepath.Join(root, "opt/ikigenba/current"))
+			want = apps.Released
+		}
+		layout, err := apps.ReadLayout(root)
+		if err != nil || layout != want {
+			t.Fatalf("%s => %q %v", kind, layout, err)
+		}
+	}
+}
+
+// R-8Z3J-U488 R-8T01-X9IR R-90BG-7VYX R-91JC-LNPM R-9PXC-92JI
+func TestDiscoverReleasedPackagesAndDataOnlyServices(t *testing.T) {
+	root := t.TempDir()
+	sha := strings.Repeat("b", 40)
+	folder := filepath.Join(root, release.ReleasesDir, sha)
+	releasedPackage(t, folder, "valid", "app = \"valid\"\n")
+	releasedPackage(t, folder, "broken", "broken TOML")
+	mkdirAll(t, filepath.Join(folder, "opsctl/bin"))
+	writeFile(t, filepath.Join(folder, "opsctl/bin/opsctl"), []byte("binary"))
+	for _, name := range []string{"no-manifest", "no-binary", "directory-binary"} {
+		mkdirAll(t, filepath.Join(folder, name, "bin"))
+	}
+	writeFile(t, filepath.Join(folder, "no-manifest/bin/no-manifest"), []byte("binary"))
+	writeFile(t, filepath.Join(folder, "no-binary/etc/manifest.toml"), []byte(""))
+	mkdirAll(t, filepath.Join(folder, "directory-binary/bin/directory-binary"))
+	writeFile(t, filepath.Join(folder, "directory-binary/etc/manifest.toml"), []byte(""))
+	if err := os.Symlink("valid", filepath.Join(folder, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeManifest(t, root, "old-only", "app = \"old-only\"\n")
+	writeManifest(t, root, "valid", "app = \"other\"\n")
+	mkdirAll(t, filepath.Join(root, apps.DataRoot, "kept/state"))
+	mkdirAll(t, filepath.Join(root, apps.DataRoot, "valid/state"))
+	if err := os.Symlink("releases/"+sha, filepath.Join(root, release.CurrentLink)); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, root)
+	services, err := apps.Discover(root)
+	if err != nil || !reflect.DeepEqual(serviceNames(services), []string{"broken", "kept", "valid"}) {
+		t.Fatalf("%#v %v", services, err)
+	}
+	byName := servicesByName(services)
+	if got := byName["valid"]; got.Dir != release.CurrentLink+"/valid" || got.Manifest == nil || got.Manifest.App != "valid" {
+		t.Fatal(got)
+	}
+	if got := byName["broken"]; got.Dir != release.CurrentLink+"/broken" || got.Manifest != nil || got.ManifestError == nil {
+		t.Fatal(got)
+	}
+	if got := byName["kept"]; got.Dir != "" || got.Manifest != nil || got.ManifestError != nil {
+		t.Fatal(got)
+	}
+	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
+		t.Fatal("discovery wrote filesystem")
+	}
+	dangling := t.TempDir()
+	mkdirAll(t, filepath.Join(dangling, "opt/ikigenba"))
+	if err := os.Symlink("releases/"+sha, filepath.Join(dangling, release.CurrentLink)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := apps.Discover(dangling); err != nil || len(got) != 0 {
+		t.Fatal(got, err)
+	}
+}
+func releasedPackage(t *testing.T, folder, name, manifest string) {
+	t.Helper()
+	writeFile(t, filepath.Join(folder, name, "bin", name), []byte("binary"))
+	writeFile(t, filepath.Join(folder, name, "etc/manifest.toml"), []byte(manifest))
+}
+
+// R-U9YN-KYA0 R-UB6J-YQ0P
+func TestDiscoverReleaseUsesExplicitReleaseWithoutChangingLinks(t *testing.T) {
+	root := t.TempDir()
+	sha := strings.Repeat("c", 40)
+	folder := filepath.Join(root, release.ReleasesDir, sha)
+	releasedPackage(t, folder, "explicit", "app = \"explicit\"\n")
+	mkdirAll(t, filepath.Join(root, apps.DataRoot, "kept/state"))
+	writeManifest(t, root, "per-app", "app = \"per-app\"\n")
+	for _, current := range []bool{false, true} {
+		if current {
+			if err := os.Symlink("releases/"+strings.Repeat("d", 40), filepath.Join(root, release.CurrentLink)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before := snapshotTree(t, root)
+		services, err := apps.DiscoverRelease(root, sha)
+		if err != nil || !reflect.DeepEqual(serviceNames(services), []string{"explicit", "kept"}) {
+			t.Fatal(services, err)
+		}
+		if services[0].Dir != release.ReleasesDir+"/"+sha+"/explicit" || services[0].Manifest == nil || services[1].Dir != "" {
+			t.Fatal(services)
+		}
+		if !reflect.DeepEqual(before, snapshotTree(t, root)) {
+			t.Fatal("explicit discovery wrote")
+		}
+	}
+	if _, err := apps.DiscoverRelease(root, strings.Repeat("e", 40)); err == nil {
+		t.Fatal("missing release accepted")
 	}
 }

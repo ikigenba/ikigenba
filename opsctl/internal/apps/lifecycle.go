@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
 // UninstallHooks connects app removal to CLI-owned reporting and configuration.
@@ -22,6 +23,7 @@ type UninstallHooks struct {
 type StatusRow struct {
 	Name        string
 	Version     string
+	Label       string
 	State       string
 	Socket      string
 	JournalMode string
@@ -95,11 +97,16 @@ func uninstallFiles(root, app string) (Manifest, error) {
 	}
 	defer func() { _ = filesystem.Close() }()
 
-	appPath := path.Join("opt", app)
-	if err := requireAppDirectory(filesystem, app); err != nil {
+	service, err := lifecycleService(root, app)
+	if err != nil {
 		return Manifest{}, err
 	}
-	if err := requireInstalledBinary(filesystem, app); err != nil {
+	directory, err := release.Resolve(root, service.Dir)
+	if err != nil {
+		return Manifest{}, &LifecycleError{Code: 1, Message: "inspect installed app failed", Cause: err}
+	}
+	appPath := strings.TrimPrefix(strings.TrimPrefix(directory, root), "/")
+	if err := requirePackageBinary(filesystem, appPath, app); err != nil {
 		return Manifest{}, err
 	}
 	info, err := filesystem.Lstat(path.Join(appPath, "etc"))
@@ -550,55 +557,87 @@ func restartInstalledUnit(ctx context.Context, env host.Env, app string) error {
 	return nil
 }
 
+func lifecycleService(root, app string) (Service, error) {
+	layout, err := ReadLayout(root)
+	if err != nil {
+		return Service{}, &LifecycleError{Code: 1, Message: err.Error(), Cause: err}
+	}
+	if layout == Released {
+		_, _, err := release.Current(root)
+		if err != nil {
+			return Service{}, &LifecycleError{Code: 1, Message: err.Error(), Cause: err}
+		}
+	}
+
+	services, err := Discover(root)
+	if err != nil {
+		return Service{}, &LifecycleError{Code: 1, Message: err.Error(), Cause: err}
+	}
+	for _, service := range services {
+		if service.Name != app {
+			continue
+		}
+		if service.Dir == "" {
+			layout, err := ReadLayout(root)
+			if err != nil {
+				return Service{}, &LifecycleError{Code: 1, Message: err.Error(), Cause: err}
+			}
+			message := app + " is not installed"
+			if layout == Released {
+				message = app + " is not in the current release"
+			}
+			return Service{}, &LifecycleError{Code: 1, Message: message}
+		}
+		return service, nil
+	}
+	return Service{}, &LifecycleError{Code: 1, Message: fmt.Sprintf("no service '%s'", safeDiagnosticToken(app))}
+}
+
 func restartVersion(ctx context.Context, env host.Env, app string) (string, error) {
-	binary := rootedHostPath(env.Root, "opt", app, "bin", app)
+	layout, err := ReadLayout(env.Root)
+	if err != nil {
+		return "", &LifecycleError{Code: 1, Message: err.Error(), Cause: err}
+	}
+	if layout == Released {
+		r, _, err := release.Current(env.Root)
+		if err != nil {
+			return "", &LifecycleError{Code: 1, Message: err.Error(), Cause: err}
+		}
+		return r.Short(), nil
+	}
+	service, err := lifecycleService(env.Root, app)
+	if err != nil {
+		return "", err
+	}
+	binary := rootedHostPath(env.Root, service.Dir, "bin", app)
 	result, err := env.Execute(ctx, host.Command{Name: binary, Args: []string{"--version"}})
 	if err != nil {
-		cause := commandTransportError(fmt.Sprintf("execute %s binary", safeDiagnosticToken(app)), err)
-		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: cause}
+		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: commandTransportError("execute "+app+" binary", err)}
 	}
 	if result.ExitCode != 0 {
-		cause := &host.CommandError{Label: fmt.Sprintf("execute %s binary", safeDiagnosticToken(app)), Result: result}
-		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: cause}
+		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: &host.CommandError{Label: "execute " + app + " binary", Result: result}}
 	}
 	return trimVersionLineEnding(string(result.Stdout)), nil
 }
 
 func restartPrerequisites(root, app string) error {
-	filesystem, err := os.OpenRoot(root)
+	service, err := lifecycleService(root, app)
+	if err != nil {
+		return err
+	}
+	directory, err := release.Resolve(root, service.Dir)
+	if err != nil {
+		return &LifecycleError{Code: 1, Message: "inspect installed app failed", Cause: err}
+	}
+	fs, err := os.OpenRoot(root)
 	if err != nil {
 		return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
 	}
-	defer func() { _ = filesystem.Close() }()
-
-	if err := requireAppDirectory(filesystem, app); err != nil {
-		return err
-	}
-	return requireInstalledBinary(filesystem, app)
+	defer func() { _ = fs.Close() }()
+	return requirePackageBinary(fs, strings.TrimPrefix(strings.TrimPrefix(directory, root), "/"), app)
 }
 
-func requireAppDirectory(filesystem *os.Root, app string) error {
-	for _, location := range []struct{ parent, marker string }{{path.Join("opt", app), "etc"}, {path.Join(strings.TrimPrefix(DataRoot, "/"), app), "state"}} {
-		parent, err := filesystem.Lstat(location.parent)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
-		}
-		if err != nil || !parent.IsDir() {
-			continue
-		}
-		info, err := filesystem.Lstat(path.Join(location.parent, location.marker))
-		if err == nil && info.IsDir() {
-			return nil
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
-		}
-	}
-	return &LifecycleError{Code: 1, Message: fmt.Sprintf("no service '%s'", safeDiagnosticToken(app))}
-}
-
-func requireInstalledBinary(filesystem *os.Root, app string) error {
-	appPath := path.Join("opt", app)
+func requirePackageBinary(filesystem *os.Root, appPath, app string) error {
 	info, err := filesystem.Lstat(path.Join(appPath, "bin"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -643,20 +682,39 @@ func restartStartFailure(ctx context.Context, env host.Env, app, unit string, st
 
 // Status reports the independently observable state of every discovered service.
 func Status(ctx context.Context, env host.Env) ([]StatusRow, error) {
+	layout, err := ReadLayout(env.Root)
+	if err != nil {
+		return nil, err
+	}
+	var r release.Release
+	if layout == Released {
+		r, _, err = release.Current(env.Root)
+		if err != nil {
+			return nil, err
+		}
+	}
 	services, err := Discover(env.Root)
 	if err != nil {
 		return nil, &LifecycleError{Code: 1, Message: "status failed", Cause: err}
 	}
-
 	rows := make([]StatusRow, 0, len(services))
 	for _, service := range services {
-		row := StatusRow{
-			Name:        service.Name,
-			Version:     serviceVersion(ctx, env, service.Name),
-			State:       serviceState(ctx, env, service.Name),
-			Socket:      socketState(ctx, env, service.Name),
-			JournalMode: serviceJournalMode(env.Root, service),
+		row := StatusRow{Name: service.Name, Version: "-", Label: "-", State: "-", Socket: "-", JournalMode: "-"}
+		if layout == Released && service.Dir == "" {
+			rows = append(rows, row)
+			continue
 		}
+		if layout == Released {
+			row.Version = r.Short()
+			if r.Label != "" {
+				row.Label = r.Label
+			}
+		} else if service.Dir != "" {
+			row.Version = serviceVersion(ctx, env, service.Name)
+		}
+		row.State = serviceState(ctx, env, service.Name)
+		row.Socket = socketState(ctx, env, service.Name)
+		row.JournalMode = serviceJournalMode(env.Root, service)
 		rows = append(rows, row)
 	}
 	return rows, nil

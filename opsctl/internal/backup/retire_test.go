@@ -22,7 +22,7 @@ var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.RetireRes
 
 func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 	// R-Y91D-XNRC R-Z3JR-9L00 R-X9FA-P1PZ R-XAN7-2TGO
-	// R-YW7H-7AUJ R-DEYN-CSFV
+	// R-YW7H-7AUJ R-L9M0-TPAD
 	shape := backup.RetireResult{
 		Services:          []string{"alpha"},
 		Disabled:          []string{"ikigenba-alpha.service"},
@@ -374,7 +374,7 @@ func containsRetireCommand(commands []string, want string) bool {
 }
 
 func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
-	// R-DEYN-CSFV
+	// R-L9M0-TPAD
 	tests := []struct {
 		name   string
 		output func(string) []byte
@@ -442,7 +442,7 @@ func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
 }
 
 func TestRetireSyncCommandFailuresStopWithoutRetry(t *testing.T) {
-	// R-DEYN-CSFV
+	// R-L9M0-TPAD
 	transportErr := errors.New("control socket unavailable")
 	tests := []struct {
 		name    string
@@ -484,7 +484,7 @@ func TestRetireSyncCommandFailuresStopWithoutRetry(t *testing.T) {
 }
 
 func TestRetireRetainsPartialProofAndOrderedStopError(t *testing.T) {
-	// R-DEYN-CSFV
+	// R-L9M0-TPAD
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
@@ -522,7 +522,7 @@ func TestRetireRetainsPartialProofAndOrderedStopError(t *testing.T) {
 }
 
 func TestRetireSuccessfulProofStillRequiresLitestreamStop(t *testing.T) {
-	// R-DEYN-CSFV
+	// R-L9M0-TPAD
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
@@ -770,7 +770,7 @@ func containsRetireAction(commands []string, action string) bool {
 }
 
 func TestRetireSkipsUnmovedDatabaseAndReportsFileFailure(t *testing.T) {
-	// R-DEYN-CSFV R-JIF3-56FZ
+	// R-L9M0-TPAD R-L8E4-FXJO
 	for _, kind := range []string{"directory", "file", "symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
@@ -797,5 +797,27 @@ func TestRetireSkipsUnmovedDatabaseAndReportsFileFailure(t *testing.T) {
 				t.Fatalf("commands %v, puts %v", executor.commands, client.puts)
 			}
 		})
+	}
+}
+
+func TestReleasedRetireSynchronizesDespiteOldPerAppState(t *testing.T) {
+	// R-L9M0-TPAD
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	writeFile(t, root, "opt/ikigenba/releases/fixture/alpha/bin/alpha", "binary", 0o700)
+	writeFile(t, root, "opt/ikigenba/releases/fixture/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
+	if err := os.Symlink("releases/fixture", filepath.Join(root, "opt/ikigenba/current")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "opt/alpha/state/value", "old data", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "live", 0o600)
+	executor := newRetireExecutor(map[string]bool{"alpha": true})
+	client := newFileCloud()
+	got, err := backup.Retire(context.Background(), fileHostEnv(root, executor.execute), cloud.Env{Open: client.open}, store)
+	if err != nil || !got.ServicesStopped || !got.LitestreamStopped || !reflect.DeepEqual(got.SyncedDatabases, []string{"app.db"}) || len(got.Files) != 1 || got.Files[0].Err != nil || got.Host.Err != nil {
+		t.Fatalf("Retire = %+v, %v", got, err)
+	}
+	if countCommands(executor.commands, "litestream sync ") != 1 || len(client.puts) != 2 {
+		t.Fatalf("commands %v, puts %v", executor.commands, client.puts)
 	}
 }

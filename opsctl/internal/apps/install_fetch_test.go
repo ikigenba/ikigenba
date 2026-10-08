@@ -310,7 +310,7 @@ func TestInstallReportsSpecifiedManifestFailures(t *testing.T) {
 		{"missing", emptyTar(t), "bundle.tar.xz: no etc/manifest.toml in the file", "no etc/manifest.toml in the file"},
 		{"malformed", tarWithManifest(t, malformed), "bundle.tar.xz: etc/manifest.toml: invalid manifest: line 4: missing value", "invalid manifest: line 4: missing value"},
 		{"port refused", tarWithManifest(t, []byte("app = \"notes\"\nport = 3000\n")), "bundle.tar.xz: etc/manifest.toml: 'port' is not allowed; the host gives the app its socket", "'port' is not allowed; the host gives the app its socket"},
-		{"unusable name", tarWithManifest(t, []byte("app = \"bad/name\"\n")), "'bad/name' is not a usable app name", "invalid manifest: unusable app name \"bad/name\""},
+		{"unusable name", tarWithManifest(t, []byte("app = \"bad/name\"\n")), "'bad/name' is not a usable app name", "invalid manifest: 'bad/name' is not a usable app name"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

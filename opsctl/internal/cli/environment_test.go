@@ -9,7 +9,6 @@ import (
 )
 
 func TestRunPassesEnvironmentToDNSOperation(t *testing.T) {
-	// R-5E43-77RM
 	t.Setenv("CERTBOT_DOMAIN", "live.example")
 	t.Setenv("CERTBOT_VALIDATION", "live-secret")
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{"ZONE": {{Name: "example.com", Type: "SOA"}, {Name: "example.com", Type: "NS", Values: []string{"ns.example"}}}}}
@@ -43,7 +42,6 @@ func TestRunPassesEnvironmentToDNSOperation(t *testing.T) {
 }
 
 func TestRunNormalizesDefaultTimeBeforeDomainOperation(t *testing.T) {
-	// R-5E43-77RM
 	deps := depsAt(t, 0)
 	store := config.Store{Root: deps.Root}
 	for key, value := range map[string]string{

@@ -22,7 +22,7 @@ func guestsServiceBlock(name string, defaultService bool, hostName, apexName str
 	return strict[:browserStart] + browser
 }
 
-// R-RPBN-B0QB R-RQJJ-OSH0 R-IG97-7F7H R-RVF5-7VFS
+// R-UO9S-RW3U R-UPHP-5NUJ R-ULU0-0CMG R-UT5E-AZ2M
 func TestRenderGuestsExactShapeAndBlockSelection(t *testing.T) {
 	for _, authState := range []string{"absent", "unrouted", "enabled", "disabled"} {
 		for _, guests := range []string{"", "guests = false\n", "guests = true\n"} {
@@ -71,7 +71,7 @@ func TestRenderGuestsExactShapeAndBlockSelection(t *testing.T) {
 	}
 }
 
-// R-RWN1-LN6H R-RRRG-2K7P R-RU78-U3P3 R-INKL-I1NN R-EO54-BQ44
+// R-UY0Z-U21E R-UQPL-JFL8 R-URXH-X7BX R-INKL-I1NN R-EO54-BQ44
 func TestRenderGuestsIdentityAndRequestDirectives(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = 'auth'\n")

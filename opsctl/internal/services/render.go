@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
@@ -35,7 +36,7 @@ func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry
 		return nil, nil, err
 	}
 	for _, service := range services {
-		if service.ManifestError != nil {
+		if service.Dir != "" && service.ManifestError != nil {
 			return nil, nil, fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)
 		}
 	}
@@ -47,10 +48,10 @@ func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry
 
 	entries := make([]entry, 0, len(services))
 	for _, service := range services {
-		if service.Manifest == nil || service.Manifest.App == "" {
+		if service.Dir == "" || service.Manifest == nil || service.Manifest.App == "" {
 			continue
 		}
-		base := path.Join("opt", service.Name)
+		base := strings.TrimPrefix(service.Dir, "/")
 		binary, err := filesystem.Lstat(path.Join(base, "bin", service.Name))
 		if errors.Is(err, os.ErrNotExist) || err == nil && !binary.Mode().IsRegular() {
 			continue

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -52,11 +53,25 @@ func DatabaseFiles(database apps.Database) []string {
 // Regenerate derives the shared Litestream configuration from host settings
 // and discovered service manifests.
 func Regenerate(ctx context.Context, env host.Env, store config.Store) (bool, error) {
-	settings, services, err := regenerationInputs(ctx, env.Root, store)
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("regenerate litestream configuration: %w", err)
+	}
+	settings, err := readReplicationSettings(store)
 	if err != nil {
 		return false, err
 	}
-	return updateConfiguration(ctx, env.Root, renderConfiguration(env.Root, settings, services))
+	services, err := apps.Discover(env.Root)
+	if err != nil {
+		return false, fmt.Errorf("discover databases: %w", err)
+	}
+	databases, err := declaredDatabases(services)
+	if err != nil {
+		return false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("regenerate litestream configuration: %w", err)
+	}
+	return updateConfiguration(ctx, env.Root, renderConfiguration(env.Root, settings, databases))
 }
 
 // SetupReplication generates the shared Litestream configuration and enables
@@ -97,23 +112,23 @@ func executeReplicationCommand(ctx context.Context, env host.Env, label, action 
 	return nil
 }
 
-func regenerationInputs(ctx context.Context, root string, store config.Store) (replicationSettings, []databaseService, error) {
+// RegenerateServices derives replication configuration from the supplied services.
+func RegenerateServices(ctx context.Context, env host.Env, store config.Store, services []apps.Service) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return replicationSettings{}, nil, fmt.Errorf("regenerate litestream configuration: %w", err)
+		return false, fmt.Errorf("regenerate litestream configuration: %w", err)
 	}
-
 	settings, err := readReplicationSettings(store)
 	if err != nil {
-		return replicationSettings{}, nil, err
+		return false, err
 	}
-	services, err := discoverDatabases(root)
+	databases, err := declaredDatabases(services)
 	if err != nil {
-		return replicationSettings{}, nil, err
+		return false, err
 	}
 	if err := ctx.Err(); err != nil {
-		return replicationSettings{}, nil, fmt.Errorf("regenerate litestream configuration: %w", err)
+		return false, fmt.Errorf("regenerate litestream configuration: %w", err)
 	}
-	return settings, services, nil
+	return updateConfiguration(ctx, env.Root, renderConfiguration(env.Root, settings, databases))
 }
 
 func updateConfiguration(ctx context.Context, root string, contents []byte) (bool, error) {
@@ -215,11 +230,9 @@ func validateS3Prefix(prefix string) error {
 	return nil
 }
 
-func discoverDatabases(root string) ([]databaseService, error) {
-	services, err := apps.Discover(root)
-	if err != nil {
-		return nil, fmt.Errorf("discover databases: %w", err)
-	}
+func declaredDatabases(services []apps.Service) ([]databaseService, error) {
+	services = append([]apps.Service(nil), services...)
+	sort.Slice(services, func(i, j int) bool { return services[i].Name < services[j].Name })
 	for _, service := range services {
 		if service.ManifestError != nil {
 			return nil, fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)

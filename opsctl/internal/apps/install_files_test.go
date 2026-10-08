@@ -18,7 +18,7 @@ import (
 )
 
 func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
-	// R-ZPIP-60QH
+	// R-EEEH-ZKES
 	//
 	manifest := []byte("app = \"notes\"\n")
 	tests := []struct {
@@ -56,7 +56,7 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 }
 
 func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
-	// R-ZPIP-60QH
+	// R-EEEH-ZKES
 	//
 	root := t.TempDir()
 	archive := tarEntries(t, []installTarEntry{
@@ -157,7 +157,7 @@ func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
 }
 
 func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
-	// R-ZUEA-P3P9
+	// R-DNKP-KM3I
 	//
 	secretValue := "top-secret\nsecond-line"
 	tests := []struct {
@@ -201,7 +201,7 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 }
 
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
-	// R-ZEJL-Q328 R-ZUEA-P3P9 R-045H-R9MT R-YW93-ZIXT
+	// R-DUW3-V8JO R-DNKP-KM3I R-9571-QYXP R-T1BK-1D48
 	//
 	// R-ZPGG-VNBZ
 	// R-WY7U-IS2M
@@ -280,7 +280,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 }
 
 func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-ZPIP-60QH
+	// R-EEEH-ZKES
 	//
 	root := t.TempDir()
 	outside := t.TempDir()

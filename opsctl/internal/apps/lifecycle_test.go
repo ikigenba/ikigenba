@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
@@ -39,11 +40,11 @@ func TestLifecycleAPITypes(t *testing.T) {
 		t.Fatal("UninstallHooks did not carry its hooks")
 	}
 
-	// R-YXG9-CQAJ
-	row := apps.StatusRow{Name: "notes", Version: "v1", State: "active", Socket: "enabled", JournalMode: "wal"}
+	// R-EWOZ-Q4J7
+	row := apps.StatusRow{Name: "notes", Version: "v1", Label: "label", State: "active", Socket: "enabled", JournalMode: "wal"}
 	var rowName, rowVersion, rowState, rowSocket, rowJournal string
 	rowName, rowVersion, rowState, rowSocket, rowJournal = row.Name, row.Version, row.State, row.Socket, row.JournalMode
-	if rowName != "notes" || rowVersion != "v1" || rowState != "active" || rowSocket != "enabled" || rowJournal != "wal" {
+	if rowName != "notes" || rowVersion != "v1" || row.Label != "label" || rowState != "active" || rowSocket != "enabled" || rowJournal != "wal" {
 		t.Fatalf("StatusRow = %#v", row)
 	}
 
@@ -92,15 +93,14 @@ func TestStatusEmptyAndDiscoveryFailure(t *testing.T) {
 
 	missing := filepath.Join(root, "missing-root")
 	rows, err = apps.Status(context.Background(), host.Env{Root: missing})
-	var failure *apps.LifecycleError
-	if rows != nil || !errors.As(err, &failure) || failure.Code != 1 || failure.Message != "status failed" || failure.Cause == nil {
+	if rows != nil || err == nil || !strings.Contains(err.Error(), "missing-root") {
 		t.Fatalf("Status with missing root = (%#v, %#v), want lifecycle discovery failure", rows, err)
 	}
 }
 
 func TestStatusReportsIndependentCurrentFactsInNameOrder(t *testing.T) {
-	// R-MFHB-6J1X
-	// R-VPBX-3LM1
+	// R-F0CO-VFRA
+	// R-F1KL-97HZ
 	root := t.TempDir()
 	writeStatusService(t, root, "zeta", "app = \"zeta\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 1)
 	writeStatusService(t, root, "alpha", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 2)
@@ -140,10 +140,10 @@ func TestStatusReportsIndependentCurrentFactsInNameOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []apps.StatusRow{
-		{Name: "alpha", Version: "v1.2.3", State: "active", Socket: "-", JournalMode: "wal"},
-		{Name: "bad_name", Version: "odd-version", State: "-", Socket: "-", JournalMode: "delete"},
-		{Name: "broken", Version: "-", State: "-", Socket: "-", JournalMode: "-"},
-		{Name: "zeta", Version: "v9\nkept", State: "failed", Socket: "-", JournalMode: "delete"},
+		{Name: "alpha", Version: "v1.2.3", Label: "-", State: "active", Socket: "-", JournalMode: "wal"},
+		{Name: "bad_name", Version: "odd-version", Label: "-", State: "-", Socket: "-", JournalMode: "delete"},
+		{Name: "broken", Version: "-", Label: "-", State: "-", Socket: "-", JournalMode: "-"},
+		{Name: "zeta", Version: "v9\nkept", Label: "-", State: "failed", Socket: "-", JournalMode: "delete"},
 	}
 	if !reflect.DeepEqual(rows, want) {
 		t.Fatalf("Status rows = %#v, want %#v", rows, want)
@@ -176,7 +176,7 @@ func TestStatusIsReadOnlyAndKeepsManifestFailuresIndependent(t *testing.T) {
 		}
 		return host.Result{Stdout: []byte("v4\n")}, nil
 	}})
-	if err != nil || !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "v4", State: "inactive", Socket: "inactive", JournalMode: "-"}}) {
+	if err != nil || !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "v4", Label: "-", State: "inactive", Socket: "inactive", JournalMode: "-"}}) {
 		t.Fatalf("Status = (%#v, %v)", rows, err)
 	}
 	after, err := rootFS.ReadFile("opt/notes/etc/manifest.toml")
@@ -280,7 +280,7 @@ func sqliteDatabase(mode byte) []byte {
 }
 
 func TestStatusUsesOnlyRootedDataDirectoryForDatabase(t *testing.T) {
-	// R-YW93-ZIXT
+	// R-T1BK-1D48
 	root := t.TempDir()
 	writeStatusService(t, root, "notes", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 2)
 	writeFixturePath(t, root, "opt/notes/state/app.db", string(sqliteDatabase(1)))

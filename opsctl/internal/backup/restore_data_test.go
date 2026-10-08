@@ -16,7 +16,8 @@ import (
 )
 
 func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
-	// R-21VX-S9W1
+	// R-FW22-TH1C
+	// R-FUU6-FPAN
 	for _, kind := range []string{"directory", "file", "dangling symlink"} {
 		for _, snapshot := range []bool{false, true} {
 			for _, dataExists := range []bool{false, true} {
@@ -56,7 +57,7 @@ func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
 					client := &snapshotRestoreCloud{restoreCloud: base, secrets: map[string]string{"TOKEN": "never read"}}
 					executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true}
 					before := fileTreeSnapshot(t, root)
-					report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { t.Fatal("callback called"); return nil })
+					report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { t.Fatal("callback called"); return nil })
 					var failure *backup.RestoreError
 					want := "/opt/notes/state has not moved; install notes first"
 					if !errors.As(err, &failure) || failure.Stage != "source" || len(failure.Stopped) != 0 || len(report.Steps) != 1 || report.Steps[0].Name != "source" || report.Steps[0].Detail != "" || report.Steps[0].Err == nil || report.Steps[0].Err.Error() != want {
@@ -72,7 +73,7 @@ func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
 }
 
 func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T) {
-	// R-FU70-SOTJ R-FWMT-K8AX
+	// R-G9GZ-0Y6Z R-GFKG-XSWG
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "new parents", true: "existing parents"}[existing], func(t *testing.T) {
 			root := t.TempDir()
@@ -89,7 +90,7 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 			}
 			body := hostRestoreArchive(t, restoreMember{name: "etc/env", data: []byte("OLD=archive\n")}, restoreMember{name: "state", typeflag: tar.TypeDir, mode: 0750}, restoreMember{name: "state/value", data: []byte("restored")})
 			executor := &restoreStageExecutor{t: t, root: root}
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return nil })
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return nil })
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -143,14 +144,14 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 }
 
 func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
-	// R-FWMT-K8AX
+	// R-GFKG-XSWG
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old", 0600)
 	body := hostRestoreArchive(t, restoreMember{name: "etc/new", data: []byte("new")}, restoreMember{name: "state/value", data: []byte("new")})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "chown ikigenba:ikigenba " + filepath.Join(root, "var/opt/ikigenba/notes"), failErr: errors.New("ownership unavailable")}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { t.Fatal("callback called"); return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { t.Fatal("callback called"); return nil })
 	if err == nil || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 		t.Fatalf("Restore = %+v %v", report, err)
 	}
@@ -163,7 +164,7 @@ func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
 }
 
 func TestRestoreNewDataAccountFailureHasOwnershipStage(t *testing.T) {
-	// R-FWMT-K8AX R-G8TT-DXPV
+	// R-GFKG-XSWG R-G8TT-DXPV
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -171,7 +172,7 @@ func TestRestoreNewDataAccountFailureHasOwnershipStage(t *testing.T) {
 	body := hostRestoreArchive(t, restoreMember{name: "etc/new", data: []byte("new")}, restoreMember{name: "state/value", data: []byte("new")})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "id --user ikigenba", failErr: errors.New("account unavailable")}
 	before := fileTreeSnapshot(t, root)
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { t.Fatal("callback called"); return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { t.Fatal("callback called"); return nil })
 	var failure *backup.RestoreError
 	if !errors.As(err, &failure) || failure.Stage != "ownership" || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 		t.Fatalf("Restore = %+v %v", report, err)
@@ -182,7 +183,7 @@ func TestRestoreNewDataAccountFailureHasOwnershipStage(t *testing.T) {
 }
 
 func TestRestoreLegacyInspectionCannotFollowAncestorsOutsideRoot(t *testing.T) {
-	// R-21VX-S9W1 R-GU6L-Z0L7
+	// R-GSZD-5A23 R-GU6L-Z0L7
 	root := t.TempDir()
 	outside := t.TempDir()
 	store := restoreConfiguredStore(t, root)
@@ -193,9 +194,9 @@ func TestRestoreLegacyInspectionCannotFollowAncestorsOutsideRoot(t *testing.T) {
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new")})
 	executor := &restoreStageExecutor{t: t, root: root}
 	before := fileTreeSnapshot(t, outside)
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { t.Fatal("callback called"); return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { t.Fatal("callback called"); return nil })
 	var failure *backup.RestoreError
-	if !errors.As(err, &failure) || failure.Stage != "source" || len(failure.Stopped) != 0 || len(report.Steps) != 1 || report.Steps[0].Err == nil || strings.Contains(err.Error(), "has not moved") {
+	if err == nil || errors.As(err, &failure) || len(report.Steps) != 0 || strings.Contains(err.Error(), "has not moved") {
 		t.Fatalf("Restore traversed outside root = %+v %v", report, err)
 	}
 	if len(executor.commands) != 0 || !reflect.DeepEqual(before, fileTreeSnapshot(t, outside)) {

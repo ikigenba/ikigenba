@@ -19,16 +19,19 @@ Copy every service's state/, /var/opt/ikigenba/SERVICE/state/, to the prefix
 in backup.s3_uri, under the service's own name, or just SERVICE when one is
 named.
 
-Never copied: /opt/SERVICE/, which a deploy brings; cache/; anything opsctl
-generates, the service's environment file among them; and -- for a service that
+Never copied: /opt/ikigenba/, which 'opsctl activate' brings; cache/;
+anything opsctl generates, the service's environment file among them; and --
+for a service that
 declares a [database] -- the database file, its -wal and -shm, and its
 litestream metadata directory. Those are replicated continuously by
 litestream.service. The host's own /etc/ikigenba/ and /etc/letsencrypt/ are
 'opsctl host backup'.
 
-A service declares its database with a [database] table in etc/manifest.toml
-naming its engine and its path. 'opsctl init' writes the timer that runs this
-at backup.service_files_seconds.
+A service is an app in the current release, /opt/ikigenba/current/SERVICE/,
+or any SERVICE whose state/ is kept under /var/opt/ikigenba/SERVICE/. It
+declares its database with a [database] table in etc/manifest.toml naming its
+engine and its path. 'opsctl init' writes the timer that runs this at
+backup.service_files_seconds.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in

@@ -21,7 +21,7 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store, string) ([]backup.SnapshotResult, error) = backup.Snapshot
 
 func TestSnapshotArchivesReplicaAndOrdinaryFiles(t *testing.T) {
-	// R-1G7W-5X2V R-1HFS-JOTK R-FD4F-FWFT R-FECB-TO6I R-1OR6-UB9Q
+	// R-1G7W-5X2V R-1HFS-JOTK R-FOQO-IUL6 R-FIN6-LZVP R-1OR6-UB9Q
 	for _, live := range []bool{true, false} {
 		t.Run(map[bool]string{true: "live", false: "absent"}[live], func(t *testing.T) {
 			root := t.TempDir()
@@ -111,7 +111,7 @@ func TestSnapshotArchivesReplicaAndOrdinaryFiles(t *testing.T) {
 }
 
 func TestSnapshotSharedSelectionAndConfiguration(t *testing.T) {
-	// R-FAOM-OCYF R-1OR6-UB9Q
+	// R-FPYK-WMBV R-1OR6-UB9Q
 	for _, item := range []struct{ key, value, want string }{{"backup.s3_uri", "", "backup.s3_uri not set"}, {"aws.region", "", "aws.region not set"}, {"backup.s3_uri", "s3://bucket/../bad", "backup.s3_uri"}} {
 		t.Run(item.want, func(t *testing.T) {
 			root := t.TempDir()
@@ -164,7 +164,7 @@ func TestSnapshotSharedSelectionAndConfiguration(t *testing.T) {
 }
 
 func TestSnapshotTimestampAndCollision(t *testing.T) {
-	// R-1JVL-B8AY R-FD4F-FWFT
+	// R-1JVL-B8AY R-FOQO-IUL6
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	for _, name := range []string{"alpha", "zeta"} {
@@ -198,7 +198,7 @@ func TestSnapshotTimestampAndCollision(t *testing.T) {
 }
 
 func TestSnapshotReplicaFailuresContinueAndClean(t *testing.T) {
-	// R-FFK8-7FX7 R-FGS4-L7NW R-1OR6-UB9Q
+	// R-FR6H-AE2K R-FNIS-52UH R-1OR6-UB9Q
 	for _, kind := range []string{"empty", "missing", "execute", "exit", "compression", "upload", "cancel"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
@@ -288,7 +288,7 @@ func TestSnapshotReplicaFailuresContinueAndClean(t *testing.T) {
 }
 
 func TestSnapshotCanonicalReadFailureAndManifestFailure(t *testing.T) {
-	// R-FGS4-L7NW
+	// R-FNIS-52UH
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/outbox", "private", 0o000)
@@ -306,7 +306,7 @@ func TestSnapshotCanonicalReadFailureAndManifestFailure(t *testing.T) {
 }
 
 func TestSnapshotUploadInterruptionRetainsEarlierResults(t *testing.T) {
-	// R-FGS4-L7NW
+	// R-FNIS-52UH
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
@@ -333,7 +333,7 @@ func TestSnapshotUploadInterruptionRetainsEarlierResults(t *testing.T) {
 }
 
 func TestFilesReservedDiscoveredNamesFailBeforeDataReads(t *testing.T) {
-	// R-T7OU-NQ6M
+	// R-FHFA-8850
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	var names []string
@@ -353,7 +353,7 @@ func TestFilesReservedDiscoveredNamesFailBeforeDataReads(t *testing.T) {
 }
 
 func TestSnapshotWithoutDatabasePreservesCompleteState(t *testing.T) {
-	// R-FD4F-FWFT R-1OR6-UB9Q
+	// R-FOQO-IUL6 R-1OR6-UB9Q
 	for _, manifest := range []bool{false, true} {
 		t.Run(map[bool]string{false: "no manifest", true: "no database"}[manifest], func(t *testing.T) {
 			root := t.TempDir()

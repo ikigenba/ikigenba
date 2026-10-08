@@ -25,7 +25,7 @@ func servicesFixtureCommand(command host.Command) (host.Result, bool) {
 	if command.Name == "id" && strings.Join(command.Args, " ") == "--group --name ikigenba" {
 		return host.Result{Stdout: []byte("ikigenba\n")}, true
 	}
-	if command.Name == "chown" && len(command.Args) == 3 && command.Args[0] == "root:ikigenba" && strings.HasSuffix(command.Args[1], "/var/lib/ikigenba") {
+	if command.Name == "chown" && command.Args[0] == "root:ikigenba" && (len(command.Args) == 2 || len(command.Args) == 3 && strings.HasSuffix(command.Args[1], "/var/lib/ikigenba")) {
 		return host.Result{}, true
 	}
 	return host.Result{}, false
@@ -74,14 +74,14 @@ func TestInstallServicesStagePublishesNormalizedNameAndStopsOnError(t *testing.T
 }
 
 func TestNginxServicesPublicationAfterSuccessOnly(t *testing.T) {
-	// R-K5Q5-3WQS R-8SVM-0ZF3
+	// R-EKTF-JNCW R-XTC1-NPBI
 	for _, failure := range []string{"", "nginx", "services"} {
 		t.Run(failure, func(t *testing.T) {
 			root := configuredNginxRoot(t)
 			if err := os.MkdirAll(filepath.Join(root, "etc/nginx/conf.d"), 0o750); err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(root, "var/lib/ikigenba/services.json")
+			path := filepath.Join(root, "run/ikigenba/services.json")
 			writeCLIInstallFile(t, path, "previous\n")
 			var calls []string
 			deps := cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, c host.Command) (host.Result, error) {
@@ -100,7 +100,7 @@ func TestNginxServicesPublicationAfterSuccessOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = filesystem.Close() })
-			data, err := filesystem.ReadFile("var/lib/ikigenba/services.json")
+			data, err := filesystem.ReadFile("run/ikigenba/services.json")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -238,7 +238,7 @@ func TestLifecycleServicesStageRunsOnceAfterNginx(t *testing.T) {
 }
 
 func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
-	// R-341K-A2GT R-8SVM-0ZF3
+	//  R-XTC1-NPBI
 	for _, failure := range []string{"", "nginx", "services"} {
 		for _, disabled := range []bool{false, true} {
 			t.Run(failure+fmt.Sprint(disabled), func(t *testing.T) {
@@ -330,7 +330,7 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 					t.Fatalf("success %d %q", code, stderr)
 				}
 				data, err := os.ReadFile(filepath.Join(deps.Root, "etc/opt/ikigenba/notes/env"))
-				if err != nil || string(data) != "DRAIN_SECONDS=7\nOTHER=keep\n"+apps.ServicesEnv+"="+apps.ServicesPath+"\n" {
+				if err != nil || string(data) != "DRAIN_SECONDS=7\nOTHER=keep\n"+apps.ServicesEnv+"="+apps.PerAppServicesPath+"\n" {
 					t.Fatalf("env %q %v", data, err)
 				}
 				unit, err := os.ReadFile(filepath.Join(deps.Root, "etc/systemd/system/ikigenba-notes.service"))
@@ -354,7 +354,7 @@ func TestInstallServicesReportsEntryChangesWithAndWithoutIcons(t *testing.T) {
 	for _, disabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(disabled), func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)
-			if err := os.Remove(filepath.Join(fixture.root, apps.ServicesPath)); err != nil {
+			if err := os.Remove(filepath.Join(fixture.root, apps.PerAppServicesPath)); err != nil {
 				t.Fatal(err)
 			}
 			fixture.disabled = disabled
@@ -381,7 +381,7 @@ func TestInstallServicesReportsEntryChangesWithAndWithoutIcons(t *testing.T) {
 				if code != 0 || stderr != "" || !strings.Contains(stdout, want) {
 					t.Fatalf("%s outcome %d %q %q", step.name, code, stdout, stderr)
 				}
-				data, err := os.ReadFile(filepath.Join(fixture.root, apps.ServicesPath))
+				data, err := os.ReadFile(filepath.Join(fixture.root, apps.PerAppServicesPath))
 				if err != nil {
 					t.Fatal(err)
 				}

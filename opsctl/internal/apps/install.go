@@ -950,7 +950,13 @@ func validateEnvironment(manifest Manifest, secrets map[string]string) error {
 			return fmt.Errorf("%s: secret %q contains a forbidden character", safeDiagnosticToken(manifest.App), name)
 		}
 	}
-	for name, value := range manifest.Env {
+	names := make([]string, 0, len(manifest.Env))
+	for name := range manifest.Env {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		value := manifest.Env[name]
 		if !validEnvironmentName(name) {
 			return fmt.Errorf("%s: invalid setting name %q", safeDiagnosticToken(manifest.App), name)
 		}
@@ -1004,7 +1010,7 @@ func renderEnvironment(manifest Manifest, secrets map[string]string, drainSecond
 	output.WriteString("DRAIN_SECONDS=")
 	output.WriteString(strconv.FormatInt(drainSeconds, 10))
 	output.WriteByte('\n')
-	output.WriteString(ServicesEnv + "=" + ServicesPath + "\n")
+	output.WriteString(ServicesEnv + "=" + PerAppServicesPath + "\n")
 	return []byte(output.String())
 }
 
@@ -1330,10 +1336,18 @@ func socketUnitBytes(root, app string) []byte {
 func serviceUnitBytes(root, app string, stopSeconds int64, resources Resources) []byte {
 	appRoot := rootedHostPath(root, "opt", app)
 	socket := socketUnitName(app)
-	var limits strings.Builder
 	if resources.Slice == "" {
 		resources = defaultResources()
 	}
+	return []byte("[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + "\n\n" +
+		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
+		"WorkingDirectory=" + rootedHostPath(root, DataRoot, app) + "\nEnvironmentFile=" + rootedHostPath(root, EnvRoot, app, "env") + "\n" +
+		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stopSeconds, 10) + "\n" + resourceUnitLines(resources) + "\n" +
+		"[Install]\nWantedBy=multi-user.target\n")
+}
+
+func resourceUnitLines(resources Resources) string {
+	var limits strings.Builder
 	fmt.Fprintf(&limits, "Slice=ikigenba-%s.slice\nCPUWeight=%d\nMemoryMax=%d\n", resources.Slice, resources.CPUWeight, resources.MemoryMax)
 	if resources.Slice == "core" {
 		limits.WriteString("MemoryLow=32M\n")
@@ -1345,11 +1359,7 @@ func serviceUnitBytes(root, app string, stopSeconds int64, resources Resources) 
 	if resources.OOMPolicy == "continue" {
 		limits.WriteString("OOMPolicy=continue\n")
 	}
-	return []byte("[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + "\n\n" +
-		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
-		"WorkingDirectory=" + rootedHostPath(root, DataRoot, app) + "\nEnvironmentFile=" + rootedHostPath(root, EnvRoot, app, "env") + "\n" +
-		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stopSeconds, 10) + "\n" + limits.String() + "\n" +
-		"[Install]\nWantedBy=multi-user.target\n")
+	return limits.String()
 }
 
 func publishAtomicFile(filesystem *os.Root, directory, destination string, contents []byte, mode fs.FileMode) error {
@@ -1529,7 +1539,7 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 			return fmt.Errorf("%s: read etc/env: %w", service.Name, readErr)
 		}
 		updated := updateEnvironmentEntry(current, "DRAIN_SECONDS", strconv.FormatInt(timeouts.DrainSeconds, 10))
-		updated = updateEnvironmentEntry(updated, ServicesEnv, ServicesPath)
+		updated = updateEnvironmentEntry(updated, ServicesEnv, PerAppServicesPath)
 		appChanged := !bytes.Equal(current, updated)
 		if appChanged {
 			if err := writeTimeoutFile(env.Root, envPath, updated, 0o600); err != nil {

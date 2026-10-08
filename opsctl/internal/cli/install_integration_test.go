@@ -19,8 +19,8 @@ import (
 )
 
 func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
-	// R-2407-D5NF R-21KE-LM61 R-F5T1-59ZN
-	//
+	// R-E5V7-B67X
+	// R-DW40-90AD R-EBYP-80XE
 	fixture := newCLIInstallFixture(t)
 	stdout, stderr, code := fixture.invoke()
 	if code != 0 || stderr != "" {
@@ -36,8 +36,31 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"services: ok (unchanged)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
+
 	if stdout != wantOutput {
 		t.Fatalf("stdout = %q, want %q", stdout, wantOutput)
+	}
+	for _, tree := range []string{"bin", "etc"} {
+		err := filepath.WalkDir(filepath.Join(fixture.root, "opt/notes", tree), func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			want := os.FileMode(0640)
+			if entry.IsDir() || path == filepath.Join(fixture.root, "opt/notes/bin/notes") {
+				want = 0750
+			}
+			if info.Mode().Perm() != want {
+				t.Errorf("installed mode %s = %o, want %o", path, info.Mode().Perm(), want)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	fixture.assertOrderedCommands(t, []string{
 		"xz --decompress --stdout",
@@ -65,7 +88,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
-	//
+	// R-E5V7-B67X
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -109,7 +132,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 }
 
 func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
-	//
+	// R-E5V7-B67X
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -141,8 +164,8 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-2583-QXE4
-	// , , , R-YSCR-HDE0, R-EOKC-P8UO
+	// R-EBYP-80XE
+	// R-DXBW-MS12, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
@@ -178,7 +201,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// , R-YSCR-HDE0
+	// R-DXBW-MS12
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -202,7 +225,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// , R-YSCR-HDE0
+	// R-DXBW-MS12
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -224,7 +247,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// , R-YSCR-HDE0
+	// R-DXBW-MS12
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -271,7 +294,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	//
+	// R-E5V7-B67X
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -306,7 +329,8 @@ func TestInstallCLIRejectsInvalidAppTimeoutsBeforeFetch(t *testing.T) {
 }
 
 func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
-	// , , R-YSCR-HDE0
+	// R-E5V7-B67X
+	// R-DXBW-MS12
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -781,7 +805,7 @@ func writeCLIInstallFile(t *testing.T, name, contents string) {
 }
 
 func TestInstallRegeneratesReplicationAndRestartsOnlyWhenChanged(t *testing.T) {
-	// R-F5T1-59ZN R-2407-D5NF
+	// R-FEZH-GONM
 	fixture := newCLIInstallFixture(t)
 	stdout, stderr, code := fixture.invoke()
 	if code != 0 || stderr != "" {

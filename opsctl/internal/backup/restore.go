@@ -22,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
 // NginxRegenerator rebuilds nginx configuration after restored files have
@@ -76,7 +77,7 @@ type serviceRestoreSource struct {
 
 // Restore selects and validates the requested service backup before any host
 // state is changed.
-func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store, service string, at *time.Time, from string, regenerateNginx NginxRegenerator) (RestoreReport, error) {
+func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store, service string, at *time.Time, from string, own *release.Release, regenerateNginx NginxRegenerator) (RestoreReport, error) {
 	var report RestoreReport
 	if invalidFileServiceName(service) {
 		return report, fmt.Errorf("invalid service %q", service)
@@ -114,7 +115,25 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	if cloudEnv.Open == nil {
 		return report, errors.New("restore service: cloud access is not configured")
 	}
-	manifest, err := installedRestoreManifest(env.Root, service)
+	layout, err := apps.ReadLayout(env.Root)
+	if err != nil {
+		return report, err
+	}
+	var restoreRelease *release.Release
+	switch layout {
+	case apps.Released:
+		current, _, currentErr := release.Current(env.Root)
+		if currentErr != nil {
+			return report, currentErr
+		}
+		restoreRelease = &current
+	case apps.Fresh:
+		if own == nil {
+			return report, fmt.Errorf("restore needs a release; run /opt/ikigenba/releases/<sha>/opsctl/bin/opsctl restore %s", service)
+		}
+		restoreRelease = own
+	}
+	manifest, err := restoreManifest(env.Root, service, layout, restoreRelease)
 	if err != nil {
 		return failRestoreStep(report, service, "source", "source", err, nil)
 	}
@@ -156,7 +175,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		sourceName = from
 	}
 	report.Steps = append(report.Steps, RestoreStep{Name: "source", Detail: fmt.Sprintf("%s, %.1f MiB", sourceName, float64(source.size)/1048576)})
-	environment, err := apps.PrepareEnvironment(ctx, client, store, hostName, service, manifest)
+	environment, err := prepareRestoreEnvironment(ctx, cloudEnv, client, store, region, hostName, service, manifest, restoreRelease)
 	if err != nil {
 		return failRestoreStep(report, service, "secrets", "secrets", err, nil)
 	}
@@ -167,33 +186,36 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	report.Steps = append(report.Steps, RestoreStep{Name: "secrets", Detail: fmt.Sprintf("%d keys", len(keys))})
 	socket := "ikigenba-" + service + ".socket"
 	serviceUnit := "ikigenba-" + service + ".service"
-	unitActive, err := inspectRestoreUnit(ctx, env, socket)
-	if err != nil {
-		return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
-	}
-	unitDisabled, err := apps.Disabled(ctx, env, service)
-	if err != nil {
-		return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
-	}
-	activationIntent, err := hasRestoreActivationMarker(env.Root, service)
-	if err != nil {
-		return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
-	}
-	activationIntent = !unitDisabled && (activationIntent || unitActive)
-	if unitActive && !unitDisabled {
-		if err := publishRestoreActivationMarker(env.Root, service); err != nil {
+	unitActive, unitDisabled, activationIntent := false, false, false
+	if layout != apps.Fresh {
+		unitActive, err = inspectRestoreUnit(ctx, env, socket)
+		if err != nil {
+			return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
+		}
+		unitDisabled, err = apps.Disabled(ctx, env, service)
+		if err != nil {
+			return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
+		}
+		activationIntent, err = hasRestoreActivationMarker(env.Root, service)
+		if err != nil {
 			return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
 		}
-	}
-	if err := runRestoreCommand(ctx, env, "stop "+socket, "stop", socket); err != nil {
-		return failRestoreStep(report, service, "stop", "stop", err, nil)
-	}
-	if err := runRestoreCommand(ctx, env, "stop "+serviceUnit, "stop", serviceUnit); err != nil {
-		var stopped []string
-		if activationIntent {
-			stopped = []string{socket}
+		activationIntent = !unitDisabled && (activationIntent || unitActive)
+		if unitActive && !unitDisabled {
+			if err := publishRestoreActivationMarker(env.Root, service); err != nil {
+				return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
+			}
 		}
-		return failRestoreStep(report, service, "stop", "stop", err, stopped)
+		if err := runRestoreCommand(ctx, env, "stop "+socket, "stop", socket); err != nil {
+			return failRestoreStep(report, service, "stop", "stop", err, nil)
+		}
+		if err := runRestoreCommand(ctx, env, "stop "+serviceUnit, "stop", serviceUnit); err != nil {
+			var stopped []string
+			if activationIntent {
+				stopped = []string{socket}
+			}
+			return failRestoreStep(report, service, "stop", "stop", err, stopped)
+		}
 	}
 
 	databaseIncoming := manifest.Database != nil
@@ -208,7 +230,14 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 			return failRestoreStep(report, service, "stop", "stop", err, stopped)
 		}
 	}
-	report.Steps = append(report.Steps, RestoreStep{Name: "stop", Detail: restoreStopDetail(socket, serviceUnit, unitActive, unitDisabled, databaseIncoming)})
+	stopDetail := restoreStopDetail(socket, serviceUnit, unitActive, unitDisabled, databaseIncoming)
+	if layout == apps.Fresh {
+		stopDetail = "none"
+		if databaseIncoming {
+			stopDetail = "litestream.service"
+		}
+	}
+	report.Steps = append(report.Steps, RestoreStep{Name: "stop", Detail: stopDetail})
 	stopped := restoreStoppedUnits(socket, serviceUnit, activationIntent, litestreamActive)
 
 	identity, err := prepareRestoreIdentity(ctx, env)
@@ -219,7 +248,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	if err != nil {
 		return failRestoreStep(report, service, "files", "files", err, stopped)
 	}
-	if err := apps.PublishEnvironment(env.Root, service, environment); err != nil {
+	if err := publishRestoreEnvironment(env, service, environment, restoreRelease); err != nil {
 		return failRestoreStep(report, service, "files", "environment", err, stopped)
 	}
 
@@ -254,7 +283,17 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		}
 		report.Steps = append(report.Steps, RestoreStep{Name: "db", Detail: detail})
 
-		changed, regenerateErr := Regenerate(ctx, env, store)
+		var changed bool
+		var regenerateErr error
+		if layout == apps.Fresh {
+			var services []apps.Service
+			services, regenerateErr = apps.DiscoverRelease(env.Root, restoreRelease.SHA)
+			if regenerateErr == nil {
+				changed, regenerateErr = RegenerateServices(ctx, env, store, services)
+			}
+		} else {
+			changed, regenerateErr = Regenerate(ctx, env, store)
+		}
 		if regenerateErr != nil {
 			return failRestoreStep(report, service, "litestream", "litestream regeneration", regenerateErr, stopped)
 		}
@@ -264,8 +303,10 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		}
 		report.Steps = append(report.Steps, RestoreStep{Name: "litestream", Detail: regenerateDetail})
 	}
-	if err := regenerateNginx(ctx); err != nil {
-		return report, &RestoreError{Service: service, Stage: "nginx regeneration", Err: err, Stopped: stopped}
+	if layout != apps.Fresh {
+		if err := regenerateNginx(ctx); err != nil {
+			return report, &RestoreError{Service: service, Stage: "nginx regeneration", Err: err, Stopped: stopped}
+		}
 	}
 	if databaseIncoming {
 		if err := runRestoreCommand(ctx, env, "start litestream.service", "start", "litestream.service"); err != nil {
@@ -274,6 +315,12 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		stopped = removeStoppedUnit(stopped, "litestream.service")
 	}
 	startDetail := restoreStartDetail(socket, serviceUnit, unitDisabled, activationIntent, databaseIncoming)
+	if layout == apps.Fresh {
+		startDetail = "none"
+		if databaseIncoming {
+			startDetail = "litestream.service"
+		}
+	}
 	if activationIntent {
 		if err := runRestoreCommand(ctx, env, "start "+socket, "start", socket); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)

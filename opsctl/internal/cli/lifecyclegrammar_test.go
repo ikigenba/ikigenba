@@ -32,17 +32,21 @@ declared stops being replicated once litestream has shipped what it holds.
 
 The parameter /<host.name>/APP is not touched: it is devctl's.
 
+On a host that runs releases, one where /opt/ikigenba/current exists,
+uninstall refuses and changes nothing: an app leaves such a host when
+'opsctl activate' puts a release without it in place.
+
 Configuration keys:
   host.name  the fully-qualified name this host answers at
 `
 
 const wantRestartUsage = `Usage: opsctl restart APP
 
-Restart ikigenba-APP.service and report the service as the last line of
-'opsctl install' does. The socket is never restarted: it keeps listening, so
+Restart ikigenba-APP.service and report the service as 'opsctl activate'
+reports each app. The socket is never restarted: it keeps listening, so
 requests that arrive during the restart wait and are answered by the new
 process. Nothing on disk changes: the binary, the environment file, and the
-units are what the last install wrote, so a secret pushed since then is not
+units are what the last activate wrote, so a secret pushed since then is not
 picked up here, nor a timing setting changed since then ('opsctl init'
 applies those). A service that is inactive or failed is started, and so is
 its socket if it was stopped. A disabled app is not started: it stays
@@ -51,12 +55,19 @@ disabled until 'opsctl enable'.
 
 const wantStatusUsage = `Usage: opsctl status
 
-Print one line per service on this host, in name order: its name, the version
-its own binary reports, the state of its service unit, the state of its socket
-unit, and the journal mode of the database its manifest declares. A service is
-any /opt/<name>/ with an etc/ directory or any /var/opt/ikigenba/<name>/ with
-a state/ directory; '-' means opsctl could not ask, or there was nothing to
-ask.
+Print one line per service on this host, in name order: its name, the short
+commit of the release it runs, that release's label or '-' when it has none,
+the state of its service unit, the state of its socket unit, and the journal
+mode of the database its manifest declares.
+A service is an app the current release (/opt/ikigenba/current) holds, or any
+/var/opt/ikigenba/<name>/ with a state/ directory. A service with only its
+kept state is data only, and every field after its name is '-'. '-' means
+opsctl could not ask, or there was nothing to ask.
+
+On a host not yet running releases, a service is any /opt/<name>/ with an
+etc/ directory or any /var/opt/ikigenba/<name>/ with a state/ directory, and
+the second field is the version its own binary reports and the third is
+always '-'.
 
 A service that is inactive behind an active socket is idle, not down: its
 socket starts it again when the next request arrives. The socket's field reads
@@ -75,9 +86,9 @@ const wantDisableUsage = `Usage: opsctl disable APP
 
 Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
-request. The nginx configuration and /var/lib/ikigenba/services.json are then
+request. The nginx configuration and /run/ikigenba/services.json are then
 regenerated, so APP's names answer 503 and the service launcher shows APP
-disabled until it is enabled. Nothing on disk under /opt/APP/ or
+disabled until it is enabled. Nothing on disk under /opt/ikigenba/ or
 /var/opt/ikigenba/APP/ changes.
 'opsctl enable APP' undoes it.
 
@@ -92,10 +103,10 @@ Configuration keys:
 const wantEnableUsage = `Usage: opsctl enable APP
 
 Enable ikigenba-APP.socket and ikigenba-APP.service and start the socket,
-regenerate the nginx configuration and /var/lib/ikigenba/services.json so
-APP's names reach it again and the service launcher shows it enabled, then
-start the service and report it as the last line of 'opsctl install' does.
-Nothing on disk under /opt/APP/ changes.
+regenerate the nginx configuration and /run/ikigenba/services.json so APP's
+names reach it again and the service launcher shows it enabled, then start
+the service and report it as 'opsctl activate' reports each app.
+Nothing on disk under /opt/ikigenba/ changes.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
@@ -103,27 +114,27 @@ Configuration keys:
 `
 
 func TestUninstallHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-00HS-LYEQ
+	// R-EQLH-T9TQ
 	assertLifecycleHelp(t, "uninstall", wantUninstallUsage)
 }
 
 func TestRestartHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-VAP4-ICPP
+	// R-ERTE-71KF
 	assertLifecycleHelp(t, "restart", wantRestartUsage)
 }
 
 func TestStatusHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-H8LI-CWJM
+	// R-ET1A-KTB4
 	assertLifecycleHelp(t, "status", wantStatusUsage)
 }
 
 func TestDisableHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-H9TE-QOAB
+	// R-EU96-YL1T
 	assertLifecycleHelp(t, "disable", wantDisableUsage)
 }
 
 func TestEnableHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-V2LV-1V3I
+	// R-EVH3-CCSI
 	assertLifecycleHelp(t, "enable", wantEnableUsage)
 }
 

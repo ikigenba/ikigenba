@@ -17,13 +17,14 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
-// R-1W2L-4XPW
-var _ func(context.Context, host.Env, cloud.Env, config.Store, string, *time.Time, string, backup.NginxRegenerator) (backup.RestoreReport, error) = backup.Restore
+// R-FTMA-1XJY
+var _ func(context.Context, host.Env, cloud.Env, config.Store, string, *time.Time, string, *release.Release, backup.NginxRegenerator) (backup.RestoreReport, error) = backup.Restore
 
 func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
-	// R-1W2L-4XPW R-FMVM-I2DD
+	// R-FTMA-1XJY R-FMVM-I2DD
 	const (
 		older  = "2026-09-16T10:00:00Z"
 		cutoff = "2026-09-16T10:30:00Z"
@@ -56,7 +57,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 				bodies:  map[string][]byte{olderURI: olderBody, newerURI: newerBody},
 			}
 			executor := &restoreIntegrationExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T10:00:00Z"},{"timestamp":"2026-09-16T12:00:00Z"}]`}
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", test.at, "", func(context.Context) error {
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", test.at, "", &release.Release{SHA: strings.Repeat("a", 40), Label: "ignored"}, func(context.Context) error {
 				executor.events = append(executor.events, "nginx")
 				return nil
 			})
@@ -91,7 +92,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 }
 
 func TestRestoreValidArchiveIgnoresArchivedDatabaseAndOtherServices(t *testing.T) {
-	// R-FQJB-NDLG R-24BQ-JTDF R-G1IF-3B9P R-LVCS-ADTX
+	// R-FQJB-NDLG R-FYHV-L0IQ R-LC1T-L8RR R-GGSD-BKN5
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -113,7 +114,7 @@ func TestRestoreValidArchiveIgnoresArchivedDatabaseAndOtherServices(t *testing.T
 	)
 	client := restoreClientFor(t, body)
 	executor := &restoreIntegrationExecutor{t: t, root: root, installed: true}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", nil, func(context.Context) error {
 		executor.events = append(executor.events, "nginx")
 		return nil
 	})
@@ -164,7 +165,7 @@ func TestRestoreValidArchiveIgnoresArchivedDatabaseAndOtherServices(t *testing.T
 }
 
 func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
-	// R-D4R8-7TVQ R-G0AI-PJJ0 R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-D4R8-7TVQ R-G4LD-HV87 R-G7FZ-2AO2 R-FMVM-I2DD
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -174,7 +175,7 @@ func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
 	body := restoreIntegrationDatabaseArchive(t, "published before database failure")
 	client := restoreClientFor(t, body)
 	executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true, ltx: `[]`}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", nil, func(context.Context) error {
 		executor.events = append(executor.events, "unexpected nginx")
 		return nil
 	})
@@ -195,7 +196,7 @@ func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
 	}
 	executor.events = nil
 	executor.ltx = `[{"timestamp":"2026-09-16T11:00:00Z"}]`
-	report, err = backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error {
+	report, err = backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", nil, func(context.Context) error {
 		executor.events = append(executor.events, "nginx")
 		return nil
 	})
@@ -224,7 +225,7 @@ func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
 }
 
 func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
-	// R-D4R8-7TVQ R-G1IF-3B9P
+	// R-D4R8-7TVQ R-LC1T-L8RR
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -235,14 +236,14 @@ func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
 	client := restoreClientFor(t, body)
 	executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true}
 	cause := errors.New("nginx failed")
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return cause })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", nil, func(context.Context) error { return cause })
 	var failure *backup.RestoreError
 	if !errors.Is(err, cause) || !errors.As(err, &failure) || failure.Stage != "nginx regeneration" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service"}) || len(report.Steps) != 4 {
 		t.Fatalf("first Restore() = %+v, %#v", report.Steps, err)
 	}
 	assertRestoreMarker(t, root)
 	executor.events = nil
-	report, err = backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error {
+	report, err = backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", nil, func(context.Context) error {
 		executor.events = append(executor.events, "nginx")
 		return nil
 	})
@@ -272,7 +273,7 @@ func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
 }
 
 func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
-	// R-FSZ4-EX2U R-G1IF-3B9P
+	// R-G0XO-CK04 R-LC1T-L8RR
 	for _, test := range []struct {
 		name         string
 		service      string
@@ -311,7 +312,7 @@ func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
 			store := restoreConfiguredStore(t, root)
 			body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("restored")})
 			executor := &restoreIntegrationExecutor{t: t, root: root, installed: test.installed, active: test.active, socketLoadState: test.loadState}
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientForService(t, body, test.service).open}, store, test.service, nil, "", func(context.Context) error {
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientForService(t, body, test.service).open}, store, test.service, nil, "", nil, func(context.Context) error {
 				executor.events = append(executor.events, "nginx")
 				return nil
 			})
@@ -338,7 +339,7 @@ func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
 }
 
 func TestRestoreStartFailuresRetainOnlyUnitsStillStopped(t *testing.T) {
-	// R-G0AI-PJJ0 R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-G4LD-HV87 R-G7FZ-2AO2 R-FMVM-I2DD
 	for _, test := range []struct {
 		name        string
 		failCommand string
@@ -357,7 +358,7 @@ func TestRestoreStartFailuresRetainOnlyUnitsStillStopped(t *testing.T) {
 			store := restoreConfiguredStore(t, root)
 			body := restoreIntegrationDatabaseArchive(t, "restored before restart failure")
 			executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`, failCommand: test.failCommand}
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error {
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error {
 				executor.events = append(executor.events, "nginx")
 				return nil
 			})
@@ -394,7 +395,7 @@ func TestRestoreCloudAndCancellationFailuresStopTheirStages(t *testing.T) {
 		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			used = true
 			return host.Result{}, nil
-		}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return nil, cause }}, restoreConfiguredStore(t, root), "notes", nil, "", func(context.Context) error {
+		}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return nil, cause }}, restoreConfiguredStore(t, root), "notes", nil, "", nil, func(context.Context) error {
 			used = true
 			return nil
 		})
@@ -415,7 +416,7 @@ func TestRestoreCloudAndCancellationFailuresStopTheirStages(t *testing.T) {
 		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			used = true
 			return host.Result{}, nil
-		}}, cloud.Env{Open: client.open}, restoreConfiguredStore(t, root), "notes", nil, "", func(context.Context) error {
+		}}, cloud.Env{Open: client.open}, restoreConfiguredStore(t, root), "notes", nil, "", nil, func(context.Context) error {
 			used = true
 			return nil
 		})
@@ -443,7 +444,7 @@ func TestRestoreCloudAndCancellationFailuresStopTheirStages(t *testing.T) {
 			}
 			return executor.execute(commandContext, command)
 		}
-		report, err := backup.Restore(ctx, host.Env{Root: root, Execute: execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error {
+		report, err := backup.Restore(ctx, host.Env{Root: root, Execute: execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error {
 			executor.events = append(executor.events, "unexpected nginx")
 			return nil
 		})
@@ -476,7 +477,7 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 			t.Fatal(err)
 		}
 		executor := &restoreIntegrationExecutor{t: t, root: root, installed: true}
-		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", func(context.Context) error {
+		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", nil, func(context.Context) error {
 			executor.events = append(executor.events, "unexpected nginx")
 			return nil
 		})
@@ -509,7 +510,7 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 			t.Fatal(err)
 		}
 		executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true}
-		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", func(context.Context) error {
+		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", nil, func(context.Context) error {
 			executor.events = append(executor.events, "unexpected nginx")
 			return nil
 		})
@@ -558,7 +559,7 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 			_ = rootFS.Chmod("run/opsctl/restore", 0o700)
 			_ = rootFS.Close()
 		})
-		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: execute}, cloud.Env{Open: restoreClientFor(t, databaseBody).open}, store, "notes", nil, "", func(context.Context) error {
+		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: execute}, cloud.Env{Open: restoreClientFor(t, databaseBody).open}, store, "notes", nil, "", nil, func(context.Context) error {
 			executor.events = append(executor.events, "nginx")
 			return nil
 		})
@@ -578,7 +579,7 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 }
 
 func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
-	// R-G0AI-PJJ0
+	// R-G4LD-HV87
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -586,7 +587,7 @@ func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
 	}
 	body := restoreIntegrationDatabaseArchive(t, "restored while inactive")
 	executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", nil, func(context.Context) error {
 		executor.events = append(executor.events, "nginx")
 		return nil
 	})
@@ -616,7 +617,7 @@ func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
 }
 
 func TestRestoreDisabledAppNeverRestartsAndClearsMarker(t *testing.T) {
-	// R-FSZ4-EX2U R-G0AI-PJJ0 R-G1IF-3B9P R-XKEE-4ZE8
+	// R-G0XO-CK04 R-G5T9-VMYW R-LC1T-L8RR R-XKEE-4ZE8
 	for _, test := range []struct {
 		name, manifest, wantStop, wantStart string
 		wantSteps                           int
@@ -649,7 +650,7 @@ func TestRestoreDisabledAppNeverRestartsAndClearsMarker(t *testing.T) {
 			body := hostRestoreArchive(t, entries...)
 			writeFile(t, root, "run/opsctl/restore/notes.active", "", 0o600)
 			executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true, disabled: true, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", func(context.Context) error { return nil })
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", nil, func(context.Context) error { return nil })
 			if err != nil || len(report.Steps) != test.wantSteps || report.Steps[2].Detail != test.wantStop || report.Steps[len(report.Steps)-1].Detail != test.wantStart {
 				t.Fatalf("Restore() = %+v, %v", report, err)
 			}
@@ -687,7 +688,7 @@ func TestRestoreStoppedListsOnlyActiveUnitsWithIntent(t *testing.T) {
 			}
 			body := restoreIntegrationDatabaseArchive(t, "restored")
 			executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: test.active, disabled: test.disabled, litestreamInactive: test.litestreamInactive, litestreamLoadState: test.litestreamLoadState, ltx: `[]`}
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", func(context.Context) error { return nil })
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, restoreConfiguredStore(t, root), "notes", nil, "", nil, func(context.Context) error { return nil })
 			var failure *backup.RestoreError
 			if !errors.As(err, &failure) || failure.Stage != "litestream restore" || !reflect.DeepEqual(failure.Stopped, test.wantStopped) || len(report.Steps) != 5 || report.Steps[4].Name != "db" {
 				t.Fatalf("Restore() = %+v, %#v; stopped %v", report, err, test.wantStopped)
@@ -697,7 +698,7 @@ func TestRestoreStoppedListsOnlyActiveUnitsWithIntent(t *testing.T) {
 }
 
 func TestRestoreFailuresBeforeRegenerationDoNotCallCallback(t *testing.T) {
-	// R-G6E0-ME8H
+	// R-GAOV-EPXO
 	for _, test := range []struct {
 		name            string
 		failCommand     string
@@ -735,7 +736,7 @@ func TestRestoreFailuresBeforeRegenerationDoNotCallCallback(t *testing.T) {
 			}
 			executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true, failCommand: test.failCommand, ltx: test.ltx}
 			callbackCalls := 0
-			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error {
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error {
 				callbackCalls++
 				return nil
 			})
@@ -751,7 +752,7 @@ func TestRestoreFailuresBeforeRegenerationDoNotCallCallback(t *testing.T) {
 }
 
 func TestRestoreDatabaseDoesNotTouchOtherServiceOrCloud(t *testing.T) {
-	// R-LVCS-ADTX
+	// R-LC1T-L8RR
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -767,7 +768,7 @@ func TestRestoreDatabaseDoesNotTouchOtherServiceOrCloud(t *testing.T) {
 	body := restoreIntegrationDatabaseArchive(t, "database restore")
 	client := restoreClientFor(t, body)
 	executor := &restoreIntegrationExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", nil, func(context.Context) error {
 		executor.events = append(executor.events, "nginx")
 		return nil
 	})

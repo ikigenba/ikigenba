@@ -23,7 +23,7 @@ import (
 )
 
 func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
-	// R-W9B4-QTH7 R-HDH3-VZIE R-YTKN-V54P
+	// R-W9B4-QTH7 R-EO5P-1QCC R-YTKN-V54P
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service", "etc/systemd/system/ikigenba-tasks.socket")
@@ -151,7 +151,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		}
 		return host.Result{}, errors.New("unavailable")
 	}})
-	if statusCode != 0 || statusErr != "" || !strings.HasPrefix(statusOut, "notes - - - -\n") {
+	if statusCode != 0 || statusErr != "" || !strings.HasPrefix(statusOut, "notes - - - - -\n") {
 		t.Fatalf("retained state status = exit %d stdout %q stderr %q", statusCode, statusOut, statusErr)
 	}
 
@@ -250,7 +250,7 @@ func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
 }
 
 func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
-	// R-XRPS-FLUE R-ZWU3-GN6N
+	// R-XRPS-FLUE R-FCJO-P568
 	for _, test := range []struct {
 		name       string
 		app        string
@@ -259,7 +259,7 @@ func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 		wantStderr string
 		code       int
 	}{
-		{name: "invalid name", app: "bad/name", root: func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }, wantStderr: "opsctl: 'bad/name' is not a usable app name\n", code: 2},
+		{name: "invalid name", app: "bad/name", root: func(t *testing.T) string { return t.TempDir() }, wantStderr: "opsctl: 'bad/name' is not a usable app name\n", code: 2},
 		{name: "host name absent", app: "notes", root: func(t *testing.T) string { return t.TempDir() }, wantStderr: "opsctl: host.name not set\n", code: 1},
 		{name: "service absent", app: "notes", root: func(t *testing.T) string {
 			root := t.TempDir()
@@ -428,7 +428,7 @@ func waitForUninstallConfigReaderClose(name string) error {
 }
 
 func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
-	// R-XRPS-FLUE R-YTKN-V54P R-HDH3-VZIE
+	// R-XRPS-FLUE R-YTKN-V54P R-EO5P-1QCC
 	root := uninstallCommandRoot(t, true)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -491,7 +491,7 @@ func TestUninstallRejectsConfiguredApexWithoutParentBeforeEffects(t *testing.T) 
 }
 
 func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
-	// R-ZVM7-2VFY R-VRRP-V53F
+	// R-FBBS-BDFJ R-VRRP-V53F
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -535,7 +535,7 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 }
 
 func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
-	// R-ZVM7-2VFY R-VRRP-V53F R-ZWU3-GN6N
+	// R-FBBS-BDFJ R-VRRP-V53F R-FCJO-P568
 	tests := []struct {
 		stage     string
 		wantSteps []string
@@ -598,7 +598,7 @@ func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
 }
 
 func TestUninstallReportWriteFailuresAreNotRetried(t *testing.T) {
-	// R-ZVM7-2VFY R-VRRP-V53F R-ZWU3-GN6N
+	// R-FBBS-BDFJ R-VRRP-V53F R-FCJO-P568
 	for _, stage := range []string{"stop", "unit", "files", "nginx", "services", "litestream"} {
 		t.Run(stage, func(t *testing.T) {
 			root := uninstallCommandRoot(t, true)
@@ -654,7 +654,7 @@ func assertNoLifecycleCommandsAfter(t *testing.T, stage string, commands []host.
 }
 
 func TestUninstallWithoutStateDoesNotCreateDiscoverableService(t *testing.T) {
-	// R-HDH3-VZIE
+	// R-EO5P-1QCC
 	root := uninstallCommandRoot(t, false)
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
@@ -814,7 +814,7 @@ func (writer *failStepWriter) Write(data []byte) (int, error) {
 }
 
 func TestUninstallDataRefusalReportsOnlyStopAndData(t *testing.T) {
-	// R-ZZ9W-86O1 R-ZVM7-2VFY
+	// R-F7O3-627G R-FBBS-BDFJ
 	root := uninstallCommandRoot(t, true)
 	writeUninstallFile(t, root, "opt/notes/state/old", "legacy state")
 	writeUninstallFile(t, root, "opt/notes/cache/old", "legacy cache")
@@ -838,7 +838,7 @@ func TestUninstallDataRefusalReportsOnlyStopAndData(t *testing.T) {
 }
 
 func TestUninstallCommandReportsRemovedExternalEnvironment(t *testing.T) {
-	// R-01PO-ZQ5F R-ZVM7-2VFY
+	// R-ELPW-A6UY R-FBBS-BDFJ
 	root := uninstallCommandRoot(t, false)
 	writeUninstallFile(t, root, "etc/opt/ikigenba/notes/env", "SECRET=value\n")
 	writeUninstallFile(t, root, "etc/opt/ikigenba/tasks/env", "OTHER=value\n")

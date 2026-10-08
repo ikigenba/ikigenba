@@ -20,7 +20,7 @@ import (
 )
 
 func TestRestoreInstalledIdentityAndFaultPrecedeMigrationAndCloud(t *testing.T) {
-	// R-20O1-EI5C R-FMVM-I2DD
+	// R-FUU6-FPAN R-FMVM-I2DD
 	for _, tc := range []struct {
 		name, manifest       string
 		binary, manifestFile bool
@@ -38,6 +38,7 @@ func TestRestoreInstalledIdentityAndFaultPrecedeMigrationAndCloud(t *testing.T) 
 		for _, from := range []string{"", "s3://elsewhere/snapshot"} {
 			t.Run(tc.name+from, func(t *testing.T) {
 				root := t.TempDir()
+				writeFile(t, root, "opt/other/etc/manifest.toml", "app='other'\n", 0600)
 				store := restoreConfiguredStore(t, root)
 				if tc.binary {
 					writeFile(t, root, "opt/notes/bin/notes", "binary", 0700)
@@ -57,7 +58,7 @@ func TestRestoreInstalledIdentityAndFaultPrecedeMigrationAndCloud(t *testing.T) 
 				report, err := backup.Restore(context.Background(), env, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
 					used = true
 					return nil, errors.New("unexpected cloud")
-				}}, store, "notes", nil, from, func(context.Context) error { used = true; return nil })
+				}}, store, "notes", nil, from, nil, func(context.Context) error { used = true; return nil })
 				want := "notes is not installed; install notes first"
 				if tc.fault {
 					_, fault := apps.ParseManifest([]byte(tc.manifest))
@@ -76,7 +77,7 @@ func TestRestoreInstalledIdentityAndFaultPrecedeMigrationAndCloud(t *testing.T) 
 }
 
 func TestRestoreMissingMigratedEnvironmentEntryIsInert(t *testing.T) {
-	// R-233U-61MQ
+	// R-FX9Z-78S1
 	for _, legacyEnv := range []bool{false, true} {
 		for _, from := range []string{"", "s3://elsewhere/snapshot"} {
 			t.Run(from+map[bool]string{false: "absent old env", true: "old env"}[legacyEnv], func(t *testing.T) {
@@ -89,7 +90,7 @@ func TestRestoreMissingMigratedEnvironmentEntryIsInert(t *testing.T) {
 				}
 				before := fileTreeSnapshot(t, root)
 				used := false
-				report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) { used = true; return host.Result{}, nil }}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { used = true; return nil, nil }}, store, "notes", nil, from, func(context.Context) error { used = true; return nil })
+				report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) { used = true; return host.Result{}, nil }}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { used = true; return nil, nil }}, store, "notes", nil, from, nil, func(context.Context) error { used = true; return nil })
 				var failure *backup.RestoreError
 				if !errors.As(err, &failure) || failure.Stage != "source" || len(failure.Stopped) != 0 || len(report.Steps) != 1 || report.Steps[0].Err == nil || report.Steps[0].Err.Error() != "/opt/notes/etc/env has not moved; install notes first" || used || !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
 					t.Fatalf("environment preflight: %+v %v used=%v", report, err, used)
@@ -100,7 +101,7 @@ func TestRestoreMissingMigratedEnvironmentEntryIsInert(t *testing.T) {
 }
 
 func TestRestoreMigratedEnvSymlinkAndOldCacheAreAcceptedWithoutFollowing(t *testing.T) {
-	// R-233U-61MQ R-21VX-S9W1 R-FQJB-NDLG
+	// R-FX9Z-78S1 R-FUU6-FPAN R-FQJB-NDLG
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -124,7 +125,7 @@ func TestRestoreMigratedEnvSymlinkAndOldCacheAreAcceptedWithoutFollowing(t *test
 	writeFile(t, root, "opt/notes/cache/keep", "cache", 0600)
 	writeFile(t, root, "opt/notes/etc/env", "legacy env", 0600)
 	body := hostRestoreArchive(t, restoreMember{name: "etc/manifest.toml", data: []byte("app=\n")}, restoreMember{name: "etc/env", data: []byte("BAD=archive")}, restoreMember{name: "state/link", typeflag: tar.TypeSymlink, linkname: outside})
-	report, err := backup.Restore(context.Background(), restoreServiceHostEnv(t, root), cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), restoreServiceHostEnv(t, root), cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return nil })
 	if err != nil || len(report.Steps) != 5 || report.Steps[3].Detail != "/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 1 files" {
 		t.Fatalf("Restore: %+v %v", report, err)
 	}
@@ -143,7 +144,7 @@ func TestRestoreMigratedEnvSymlinkAndOldCacheAreAcceptedWithoutFollowing(t *test
 }
 
 func TestRestoreEnvironmentPublicationReplacesOnlySelectedFileWithoutChown(t *testing.T) {
-	// R-GG57-OK61 R-FU70-SOTJ R-GDPE-X0ON R-GIL0-G3NF
+	// R-G9GZ-0Y6Z R-G9GZ-0Y6Z R-G892-N6GA R-G892-N6GA
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -157,7 +158,7 @@ func TestRestoreEnvironmentPublicationReplacesOnlySelectedFileWithoutChown(t *te
 	body := hostRestoreArchive(t, restoreMember{name: "etc/env", data: []byte("TOKEN=archived")}, restoreMember{name: "state/value", data: []byte("state")})
 	client := &snapshotRestoreCloud{restoreCloud: restoreClientFor(t, body), secrets: map[string]string{"TOKEN": "secret value", "UNREQUESTED": "hidden"}}
 	executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", nil, func(context.Context) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}

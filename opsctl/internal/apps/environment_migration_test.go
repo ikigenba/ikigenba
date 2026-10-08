@@ -14,7 +14,7 @@ import (
 )
 
 func TestEnvironmentPublicationCreatesDirectoriesAndReplacesWholeFile(t *testing.T) {
-	// R-02XL-DHW4 R-05DE-51DI R-045H-R9MT
+	// R-02XL-DHW4 R-DOSL-YDU7 R-9571-QYXP
 	root := t.TempDir()
 	if apps.EnvRoot != "/etc/opt/ikigenba" {
 		t.Fatalf("EnvRoot %q", apps.EnvRoot)
@@ -60,7 +60,7 @@ func TestEnvironmentPublicationCreatesDirectoriesAndReplacesWholeFile(t *testing
 }
 
 func TestInstallMigratesLegacyEnvironmentWithoutStoppingSocket(t *testing.T) {
-	// R-JN0V-H3K4 R-ZEJL-Q328 R-045H-R9MT
+	// R-DQ0I-C5KW R-DUW3-V8JO R-9571-QYXP
 	root := t.TempDir()
 	fixture := newCompletedInstallFixture(t, root, true)
 	unitPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
@@ -129,7 +129,7 @@ func TestInstallMigratesLegacyEnvironmentWithoutStoppingSocket(t *testing.T) {
 }
 
 func TestSetupTimeoutsMigrationGuardPrecedesManifestErrors(t *testing.T) {
-	// R-1XWP-GAXY R-ZI7A-VEAB
+	// R-DSGB-3P2A R-ZI7A-VEAB
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	for _, name := range []string{"alpha", "zeta"} {
@@ -151,7 +151,7 @@ func TestSetupTimeoutsMigrationGuardPrecedesManifestErrors(t *testing.T) {
 }
 
 func TestInstallKeepsPackagedEtcEnvSeparateFromHostEnvironment(t *testing.T) {
-	// R-ZPIP-60QH R-ZEJL-Q328 R-ZGZE-HMJM R-045H-R9MT
+	// R-EEEH-ZKES R-DUW3-V8JO R-DW40-90AD R-9571-QYXP
 	root := t.TempDir()
 	artifact := tarEntries(t, []installTarEntry{
 		regularEntry("etc/manifest.toml", []byte("app='notes'\n"), 0o644),

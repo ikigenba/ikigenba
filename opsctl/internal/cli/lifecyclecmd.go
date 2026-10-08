@@ -17,11 +17,11 @@ import (
 
 const restartUsage = `Usage: opsctl restart APP
 
-Restart ikigenba-APP.service and report the service as the last line of
-'opsctl install' does. The socket is never restarted: it keeps listening, so
+Restart ikigenba-APP.service and report the service as 'opsctl activate'
+reports each app. The socket is never restarted: it keeps listening, so
 requests that arrive during the restart wait and are answered by the new
 process. Nothing on disk changes: the binary, the environment file, and the
-units are what the last install wrote, so a secret pushed since then is not
+units are what the last activate wrote, so a secret pushed since then is not
 picked up here, nor a timing setting changed since then ('opsctl init'
 applies those). A service that is inactive or failed is started, and so is
 its socket if it was stopped. A disabled app is not started: it stays
@@ -51,6 +51,10 @@ declared stops being replicated once litestream has shipped what it holds.
 
 The parameter /<host.name>/APP is not touched: it is devctl's.
 
+On a host that runs releases, one where /opt/ikigenba/current exists,
+uninstall refuses and changes nothing: an app leaves such a host when
+'opsctl activate' puts a release without it in place.
+
 Configuration keys:
   host.name  the fully-qualified name this host answers at
 `
@@ -74,6 +78,9 @@ func runLifecycleAction(name string, args []string, stdout, stderr io.Writer, de
 		return runRestart(args[0], stdout, stderr, deps)
 	}
 	if name == "uninstall" {
+		if code := requirePerAppLayout(deps, stderr); code != exitOK {
+			return code
+		}
 		return runUninstall(args[0], stdout, stderr, deps)
 	}
 	return runEnablement(name, args[0], stdout, stderr, deps)
@@ -262,4 +269,17 @@ func lifecycleHostConfig(deps Deps, stderr io.Writer) (config.Store, string, str
 func writeLifecycleUsageError(stderr io.Writer, command, message string) exitCode {
 	_, _ = io.WriteString(stderr, "opsctl: "+message+"\n\nsee 'opsctl "+command+" --help' for usage\n")
 	return exitUsage
+}
+
+func requirePerAppLayout(deps Deps, stderr io.Writer) exitCode {
+	layout, err := apps.ReadLayout(deps.Root)
+	if err != nil {
+		writeDiagnostic(stderr, err)
+		return exitFail
+	}
+	if layout == apps.Released {
+		writeDiagnostic(stderr, errors.New("this host runs releases; deploy with 'opsctl activate'"))
+		return exitFail
+	}
+	return exitOK
 }

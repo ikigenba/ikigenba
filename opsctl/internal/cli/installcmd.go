@@ -57,6 +57,10 @@ A core app also keeps 32M of memory under pressure. When the memory_max values
 in ikigenba-apps.slice, or in ikigenba.slice with nginx's 128M, add up to more
 than twice the slice's ceiling, the unit line says so; the install goes on.
 
+On a host that runs releases, one where /opt/ikigenba/current exists, install
+refuses and changes nothing: apps reach such a host only through
+'opsctl activate'.
+
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
   host.name           the fully-qualified name this host answers at
@@ -81,6 +85,10 @@ func runInstall(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return code
 	}
 
+	if code := requirePerAppLayout(deps, stderr); code != exitOK {
+		return code
+	}
+
 	env := host.Env{
 		Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now,
 	}
@@ -101,7 +109,7 @@ func runInstall(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	}
 	if hostName != "" && apexApp != "" {
 		if _, err := host.Apex(hostName); err != nil {
-			writeDiagnostic(stderr, err)
+			writeDiagnostic(stderr, fmt.Errorf("host.apex is set but host.name '%s' has no parent domain", hostName))
 			return exitFail
 		}
 	}
@@ -239,7 +247,7 @@ func validInstallURI(value string) bool {
 	return err == nil && parsed.Scheme == "s3" && parsed.Host != "" &&
 		strings.TrimPrefix(parsed.EscapedPath(), "/") != "" && parsed.RawQuery == "" && !parsed.ForceQuery &&
 		parsed.Fragment == "" && !strings.Contains(value, "#") &&
-		parsed.User == nil && !parsed.OmitHost && parsed.Opaque == ""
+		parsed.User == nil && parsed.Port() == "" && !strings.Contains(parsed.Host, ":") && !parsed.OmitHost && parsed.Opaque == ""
 }
 
 func writeInstallUsageError(stderr io.Writer, message string) exitCode {

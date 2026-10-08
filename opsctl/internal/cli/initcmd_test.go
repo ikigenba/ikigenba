@@ -42,25 +42,35 @@ Sequence:
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
-               installed app whose manifest is no longer valid, or whose
-               state/ is still under /opt/APP/, stops init here, before
-               this step or any after it writes anything
+               app whose manifest is no longer valid, or on a host without
+               releases an installed app whose state/ is still under
+               /opt/APP/, stops init here, before this step or any after
+               it writes anything
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
-  apps         write the drain and stop settings into every installed app,
+  apps         write the drain and stop settings into every app,
                restarting each enabled app whose settings changed; a
-               disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them
+               disabled app is rewritten and left disabled. On a host that
+               runs releases the apps are the current release's, each
+               given the environment and units activate writes, and
+               ikigenba-services.service is written and enabled. The
+               resources an app's manifest declares are kept as activate
+               or install wrote them
+
+When /usr/local/bin/opsctl does not exist, init makes it a link before the
+sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
+otherwise to the running opsctl, so certbot's hooks find opsctl on PATH.
 
 Configuration keys:
+  aws.region          the region this host's parameters live in
   host.name           the fully-qualified name this host answers at, at or under a configured zone
   apps.drain_seconds  how long an app may drain when stopped (default 5)
   apps.stop_seconds   how long systemd waits for an app to stop (default 10)
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-O1MF-1N60
+	// R-NFC1-CZ2U
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -335,12 +345,13 @@ func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
 }
 
 func TestInitHealthyPreflight(t *testing.T) {
+	// R-FEZH-GONM
 	// R-X4JP-5YR7
 	// R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
-	// R-ZIB1-SI40 R-341K-A2GT R-F5T1-59ZN
-	// R-5E43-77RM
-	// R-YYIY-T743
+	// R-ZIB1-SI40
+	// R-8LON-MN2L
+	// R-V44H-QWQV
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -879,7 +890,7 @@ func TestInitPreflightIgnoresHostApex(t *testing.T) {
 }
 
 func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
-	// R-ZKQU-K1LE R-ZLYQ-XTC3
+	// R-ZKQU-K1LE R-V903-9ZPN
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "localhost", Type: "SOA"},
@@ -918,7 +929,15 @@ func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
 	if code != 1 || stdout != wantStdout || stderr != "opsctl: host.apex is set but host.name 'localhost' has no parent domain\n" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 1 stdout %q and apex diagnostic", code, stdout, stderr, wantStdout)
 	}
-	if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
+	link := filepath.Join(deps.Root, "usr/local/bin/opsctl")
+	if target, err := os.Readlink(link); err != nil || target != "/bin/opsctl" {
+		t.Fatal(target, err)
+	}
+	after := treeState(t, deps.Root)
+	for _, path := range []string{"usr", "usr/local", "usr/local/bin", "usr/local/bin/opsctl"} {
+		delete(after, path)
+	}
+	if !reflect.DeepEqual(after, before) {
 		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
 	}
 }
@@ -1190,7 +1209,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-341K-A2GT R-YV17-LR74
+	// R-YV17-LR74
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -1342,6 +1361,9 @@ func cloneBoolMap(source map[string]bool) map[string]bool {
 func initDeps(t *testing.T, values map[string]string) cli.Deps {
 	t.Helper()
 	deps := depsAt(t, 0)
+	executable := filepath.Join(deps.Root, "bin/opsctl")
+	writeCLIInstallFile(t, executable, "fixture")
+	deps.Executable = func() (string, error) { return executable, nil }
 	deps.Now = func() time.Time { return time.Unix(1, 0) }
 	deps.Getenv = func(string) string { return "" }
 	writeCLIInstallFile(t, filepath.Join(deps.Root, "proc/meminfo"), "MemTotal: 1954816 kB\n")
@@ -1404,7 +1426,7 @@ func treeState(t *testing.T, root string) map[string]treeEntry {
 	return state
 }
 
-// R-YTTB-7ZGF
+// R-V7S6-W7YY
 func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) {
 	for _, stateKind := range []string{"directory", "file", "dangling symlink"} {
 		t.Run(stateKind, func(t *testing.T) {
@@ -1467,7 +1489,7 @@ func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) 
 	}
 }
 
-// R-YTTB-7ZGF
+// R-V7S6-W7YY
 func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	for _, kind := range []string{"cache only", "no binary", "directory binary", "invalid name", "not discovered"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1512,9 +1534,10 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	}
 }
 
-// R-YTTB-7ZGF
+// R-V7S6-W7YY
 func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
 	deps := readyStateGuardDeps(t)
+	writeCLIInstallFile(t, filepath.Join(deps.Root, "usr/local/bin/opsctl"), "already installed")
 	if err := os.WriteFile(filepath.Join(deps.Root, "opt"), []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1529,7 +1552,7 @@ func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
 		return host.Result{}, nil
 	}
 	stdout, stderr, code := invoke([]string{"init"}, deps)
-	if code != 1 || !strings.HasPrefix(stderr, "opsctl: discover services: read /opt:") || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") {
+	if code != 1 || !strings.HasPrefix(stderr, "opsctl: ") || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") {
 		t.Fatalf("init = %d, %q, %q", code, stdout, stderr)
 	}
 	if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
@@ -1565,7 +1588,7 @@ func makeStateGuardApp(t *testing.T, root, name string, binary bool) {
 	}
 }
 
-// R-YTTB-7ZGF
+// R-V7S6-W7YY
 func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(t *testing.T) {
 	for _, earlierState := range []bool{false, true} {
 		t.Run(map[bool]string{false: "environment first", true: "state wins"}[earlierState], func(t *testing.T) {
@@ -1615,7 +1638,7 @@ func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(
 	}
 }
 
-// R-YTTB-7ZGF
+// R-V7S6-W7YY
 func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	for _, kind := range []string{"regular", "dangling symlink", "directory"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1665,7 +1688,7 @@ func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	}
 }
 
-// R-YTTB-7ZGF
+// R-V7S6-W7YY
 func TestInitEnvironmentGuardPropagatesFilesystemFailureAfterSlices(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	makeStateGuardApp(t, deps.Root, "notes", true)
@@ -1686,5 +1709,86 @@ func TestInitEnvironmentGuardPropagatesFilesystemFailureAfterSlices(t *testing.T
 	}
 	if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
 		t.Fatal("filesystem failure changed state after slices")
+	}
+}
+
+func TestInitServicesPublicationFollowsNginxAndStopsOnFailure(t *testing.T) {
+	// R-XTC1-NPBI R-FEZH-GONM
+	for _, stage := range []string{"success", "nginx", "services"} {
+		t.Run(stage, func(t *testing.T) {
+			deps := readyStateGuardDeps(t)
+			store := config.Store{Root: deps.Root}
+			for k, v := range map[string]string{"host.name": "API.Example.Com.", "aws.region": "region", "backup.s3_uri": "s3://bucket/host/"} {
+				if err := store.Set(k, v); err != nil {
+					t.Fatal(err)
+				}
+			}
+			makeStateGuardApp(t, deps.Root, "notes", true)
+			writeCLIInstallFile(t, filepath.Join(deps.Root, "opt/notes/etc/manifest.toml"), "app='notes'\n")
+			writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/opt/ikigenba/notes/env"), "fixture\n")
+			servicesFile := filepath.Join(deps.Root, "var/lib/ikigenba/services.json")
+			writeCLIInstallFile(t, servicesFile, "old listing\n")
+			var commands []string
+			published := 0
+			nginxSucceeded := false
+			replication := false
+			deps.Execute = func(_ context.Context, c host.Command) (host.Result, error) {
+				line := c.Name + " " + strings.Join(c.Args, " ")
+				commands = append(commands, line)
+				if c.Name == "nginx" && stage == "nginx" {
+					return host.Result{ExitCode: 9}, nil
+				}
+				if c.Name == "systemctl" && strings.Join(c.Args, " ") == "reload-or-restart nginx" {
+					nginxSucceeded = true
+				}
+				if c.Name == "chown" && len(c.Args) >= 2 && (c.Args[len(c.Args)-1] == servicesFile || strings.HasPrefix(c.Args[len(c.Args)-1], filepath.Dir(servicesFile)+"/.services-")) {
+					published++
+					if !nginxSucceeded {
+						t.Fatal("services published before nginx succeeded")
+					}
+					if stage == "services" {
+						return host.Result{ExitCode: 7}, nil
+					}
+				}
+				if c.Name == "systemctl" && strings.Join(c.Args, " ") == "enable litestream.service" {
+					replication = true
+					if published != 1 {
+						t.Fatal("replication preceded exactly one services publication", published)
+					}
+				}
+				if result, handled := servicesFixtureCommand(c); handled {
+					return result, nil
+				}
+				if c.Name == "systemctl" && len(c.Args) > 0 && c.Args[0] == "show" {
+					return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+				}
+				return host.Result{}, nil
+			}
+			out, diagnostic, code := invoke([]string{"init"}, deps)
+			if !strings.Contains(out, "host.name: ok (api.example.com)\n") {
+				t.Fatal(out)
+			}
+			if stage == "success" {
+				if code != 0 || diagnostic != "" || published != 1 || !replication {
+					t.Fatal(code, diagnostic, published, replication)
+				}
+				data, err := readFixtureFile(deps.Root, "var/lib/ikigenba/services.json")
+				if err != nil || !strings.Contains(string(data), "notes.api.example.com") {
+					t.Fatal(string(data), err)
+				}
+			} else {
+				if code != 1 || diagnostic == "" || replication {
+					t.Fatal(code, diagnostic, commands)
+				}
+				if stage == "nginx" {
+					data, err := readFixtureFile(deps.Root, "var/lib/ikigenba/services.json")
+					if err != nil || string(data) != "old listing\n" || published != 0 {
+						t.Fatal(string(data), err, published)
+					}
+				} else if published != 1 {
+					t.Fatal("services invoked repeatedly", published)
+				}
+			}
+		})
 	}
 }

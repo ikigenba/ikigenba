@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
@@ -18,6 +19,8 @@ import (
 func main() {
 	os.Exit(cli.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, cli.Deps{
 		Root:       "/",
+		Executable: os.Executable,
+		Exec:       syscall.Exec,
 		EUID:       os.Geteuid(),
 		Getenv:     os.Getenv,
 		DNS:        dns.Env{Open: route53.Open},

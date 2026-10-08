@@ -52,6 +52,10 @@ A core app also keeps 32M of memory under pressure. When the memory_max values
 in ikigenba-apps.slice, or in ikigenba.slice with nginx's 128M, add up to more
 than twice the slice's ceiling, the unit line says so; the install goes on.
 
+On a host that runs releases, one where /opt/ikigenba/current exists, install
+refuses and changes nothing: apps reach such a host only through
+'opsctl activate'.
+
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
   host.name           the fully-qualified name this host answers at
@@ -60,8 +64,7 @@ Configuration keys:
 `
 
 func TestInstallHelpIsInert(t *testing.T) {
-	// R-ZDBP-CBBJ
-	//
+	// R-DYJT-0JRR
 	for _, uid := range []int{0, 1, -1, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			t.Run(fmt.Sprintf("%s/%d", option, uid), func(t *testing.T) {
@@ -116,7 +119,7 @@ func TestInstallGrammarBeforeHostAccess(t *testing.T) {
 }
 
 func TestInstallReadsApexConfigurationBeforeWorkflow(t *testing.T) {
-	// R-WZFQ-WJTB
+	// R-DZRP-EBIG
 	for _, test := range []struct {
 		name     string
 		hostName string

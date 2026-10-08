@@ -10,7 +10,7 @@ import (
 )
 
 func TestInstallCLICommandPreservesTransportCauses(t *testing.T) {
-	// R-YSCR-HDE0
+	// R-EOKC-P8UO
 	transportErr := errors.New("connection lost")
 	result := host.Result{Stderr: []byte("partial detail\n")}
 	env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {
@@ -34,7 +34,7 @@ func TestInstallCLICommandPreservesTransportCauses(t *testing.T) {
 }
 
 func TestInstallReportEscapesFailureLineBreaks(t *testing.T) {
-	// R-YSCR-HDE0
+	// R-DXBW-MS12
 	var output bytes.Buffer
 	if err := writeInstallReport(&output, "nginx", "first\rsecond\nthird", false); err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestInstallReportEscapesFailureLineBreaks(t *testing.T) {
 }
 
 func TestInstallCLIConfigurationFailuresPreserveActionAndReportCauses(t *testing.T) {
-	// R-YSCR-HDE0
+	// R-DXBW-MS12
 	for _, step := range []string{"nginx", "litestream"} {
 		t.Run(step, func(t *testing.T) {
 			actionErr := errors.New(step + " action failed")

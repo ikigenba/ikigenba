@@ -12,7 +12,9 @@ const (
 	// IconPath is the launcher icon's path beneath an app root.
 	IconPath = "share/icon.svg"
 	// ServicesPath is the published launcher document's host path.
-	ServicesPath = "/var/lib/ikigenba/services.json"
+	ServicesPath = "/run/ikigenba/services.json"
+	// PerAppServicesPath is the persistent per-app launcher document.
+	PerAppServicesPath = "/var/lib/ikigenba/services.json"
 	// ServicesEnv names the environment value containing the launcher document.
 	ServicesEnv = "IKIGENBA_SERVICES"
 )

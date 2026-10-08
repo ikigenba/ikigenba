@@ -101,11 +101,14 @@ func invalidSeconds(key, value string) error {
 // Service describes an app discovered on the host.
 type Service struct {
 	Name          string
+	Dir           string
 	Manifest      *Manifest
 	ManifestError error
 }
 
 var reservedNames = map[string]struct{}{
+	"services":          {},
+	"opsctl":            {},
 	"host":              {},
 	"deploy":            {},
 	"snapshots":         {},
@@ -120,7 +123,7 @@ type unusableAppNameError struct {
 }
 
 func (failure *unusableAppNameError) Error() string {
-	return fmt.Sprintf("unusable app name %q", failure.name)
+	return fmt.Sprintf("'%s' is not a usable app name", failure.name)
 }
 
 // ValidateName reports whether name can safely identify an app.

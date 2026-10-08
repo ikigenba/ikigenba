@@ -20,7 +20,7 @@ import (
 )
 
 func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testing.T) {
-	// R-FXUP-Y01M R-FZ2M-BRSB R-G564-8MHS R-GA1P-RPGK R-24BQ-JTDF
+	// R-G25K-QBQT R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-GA1P-RPGK R-FYHV-L0IQ
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)
@@ -41,7 +41,7 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 		sidecars: true,
 	}
 	nginxCalls := 0
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error {
 		nginxCalls++
 		configuration, readErr := readRootedRestoreFile(root, "etc/litestream.yml")
 		if readErr != nil || !strings.Contains(string(configuration), "/var/opt/ikigenba/notes/state/nested/app.db") {
@@ -90,7 +90,7 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 }
 
 func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
-	// R-FXUP-Y01M
+	// R-G25K-QBQT
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -100,7 +100,7 @@ func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
 	body := databaseRestoreArchive(t, false)
 	at := time.Date(2026, 9, 16, 10, 30, 0, 123000000, time.UTC)
 	executor := &databaseRestoreExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T09:00:00Z"},{"timestamp":"2026-09-16T11:00:00Z"}]`}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", &at, "", func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", &at, "", nil, func(context.Context) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
 }
 
 func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
-	// R-FXUP-Y01M
+	// R-G25K-QBQT
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -122,7 +122,7 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 	at := time.Date(2026, 9, 16, 10, 30, 0, 123000000, time.UTC)
 	executor := &databaseRestoreExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"},{"timestamp":"2026-09-16T12:00:00Z"}]`}
 	body := databaseRestoreArchive(t, false)
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", &at, "", func(context.Context) error { return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", &at, "", nil, func(context.Context) error { return nil })
 	var restoreErr *backup.RestoreError
 	if err == nil || err.Error() != "notes: litestream restore: no snapshot under the prefix" || !errors.As(err, &restoreErr) || restoreErr.Stage != "litestream restore" || restoreErr.Err.Error() != "no snapshot under the prefix" {
 		t.Fatalf("Restore() error = %#v", err)
@@ -151,7 +151,7 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 }
 
 func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T) {
-	// R-FZ2M-BRSB R-F5T1-59ZN
+	// R-G3DH-43HI
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -165,7 +165,7 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 	}
 	body := hostRestoreArchive(t, restoreMember{name: "etc/manifest.toml", data: []byte(manifest)}, restoreMember{name: "state/value", data: []byte("restored")})
 	executor := &databaseRestoreExecutor{t: t, root: root, installed: true, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error {
 		executor.events = append(executor.events, "nginx")
 		return nil
 	})
@@ -191,7 +191,7 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 }
 
 func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
-	// R-FXUP-Y01M
+	// R-G25K-QBQT
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -204,7 +204,7 @@ func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
 		restoreMember{name: "state/app.db-shm", data: []byte("stale shm")},
 	)
 	executor := &databaseRestoreExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`, requireAbsentSidecars: true}
-	if _, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return nil }); err != nil {
+	if _, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
@@ -230,7 +230,7 @@ func TestRestoreDatabaseMissingSnapshotStopsAtFailedDatabaseStep(t *testing.T) {
 	)
 	executor := &databaseRestoreExecutor{t: t, root: root, installed: true, active: true, ltx: `[]`}
 	nginxCalls := 0
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error {
 		nginxCalls++
 		return nil
 	})
@@ -265,7 +265,7 @@ func TestRestoreDatabaseRejectsNonSQLiteBeforeRegenerationOrStarts(t *testing.T)
 	store := restoreConfiguredStore(t, root)
 	executor := &databaseRestoreExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`, invalidDatabase: true}
 	nginxCalls := 0
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, databaseRestoreArchive(t, false)).open}, store, "notes", nil, "", func(context.Context) error { nginxCalls++; return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, databaseRestoreArchive(t, false)).open}, store, "notes", nil, "", nil, func(context.Context) error { nginxCalls++; return nil })
 	var restoreErr *backup.RestoreError
 	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "wal mode" || len(report.Steps) != 5 || report.Steps[4].Name != "db" || report.Steps[4].Err == nil || nginxCalls != 0 || containsEventFragment(executor.events, "systemctl start") {
 		t.Fatalf("Restore() = %+v, %#v; nginx %d events %v", report, err, nginxCalls, executor.events)
@@ -282,7 +282,7 @@ func TestRestoreDatabaseOwnershipFailurePreventsLaterLifecycle(t *testing.T) {
 	store := restoreConfiguredStore(t, root)
 	executor := &databaseRestoreExecutor{t: t, root: root, uid: os.Getuid(), gid: os.Getgid(), ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`, invalidSidecar: true}
 	nginxCalls := 0
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, databaseRestoreArchive(t, true)).open}, store, "notes", nil, "", func(context.Context) error { nginxCalls++; return nil })
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, databaseRestoreArchive(t, true)).open}, store, "notes", nil, "", nil, func(context.Context) error { nginxCalls++; return nil })
 	var restoreErr *backup.RestoreError
 	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "database ownership" || len(report.Steps) != 5 || report.Steps[4].Name != "db" || report.Steps[4].Err == nil || nginxCalls != 0 || containsEventFragment(executor.events, "systemctl start") {
 		t.Fatalf("Restore() = %+v, %#v; nginx %d events %v", report, err, nginxCalls, executor.events)
@@ -303,7 +303,7 @@ func TestRestoreDatabaseOwnershipUsesSymbolicArchiveMemberWithoutManifestApp(t *
 		restoreMember{name: "state/value", data: []byte("owned source member"), uid: uid + 100000, gid: gid + 100000, uname: "ikigenba", gname: "ikigenba"},
 	)
 	executor := &databaseRestoreExecutor{t: t, root: root, uid: uid, gid: gid, sidecars: true, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
-	if _, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return nil }); err != nil {
+	if _, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !containsString(executor.events, "getent passwd ikigenba") {

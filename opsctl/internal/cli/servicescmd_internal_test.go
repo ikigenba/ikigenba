@@ -79,7 +79,7 @@ func TestInstallConfigureServicesActionAndReportFailuresPreserveBothCauses(t *te
 }
 
 func TestRestoreServicesPublicationIsSilentAndRunsOnlyAfterNginx(t *testing.T) {
-	// R-8SVM-0ZF3
+	// R-XTC1-NPBI
 	for _, failure := range []string{"", "source", "nginx", "services"} {
 		t.Run(failure, func(t *testing.T) {
 			root := configuredBackupRoot(t)

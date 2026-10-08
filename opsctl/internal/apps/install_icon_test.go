@@ -15,7 +15,7 @@ import (
 )
 
 func TestInstallChecksIconBeforeDiscoveryWithoutMutation(t *testing.T) {
-	// R-ZQQL-JSH6
+	// R-ED6L-LSO3
 	//
 	tests := []struct {
 		name    string
@@ -63,7 +63,7 @@ func TestInstallChecksIconBeforeDiscoveryWithoutMutation(t *testing.T) {
 }
 
 func TestInstallPreservesPassingIconAndSetsServicesEnvironment(t *testing.T) {
-	// R-ZUEA-P3P9
+	// R-DNKP-KM3I
 	//
 	icon := append([]byte{0xef, 0xbb, 0xbf}, []byte("<svg><!-- unchanged bytes --></svg>\n")...)
 	for _, data := range [][]byte{nil, icon, []byte("<svg>" + strings.Repeat(" ", 65536-len("<svg></svg>")) + "</svg>")} {
@@ -79,7 +79,7 @@ func TestInstallPreservesPassingIconAndSetsServicesEnvironment(t *testing.T) {
 		if data != nil {
 			assertFile(t, filepath.Join(fixture.root, "opt", "notes", "share", "icon.svg"), string(data))
 		}
-		assertFile(t, filepath.Join(fixture.root, "etc", "opt", "ikigenba", "notes", "env"), "DRAIN_SECONDS=5\n"+apps.ServicesEnv+"="+apps.ServicesPath+"\n")
+		assertFile(t, filepath.Join(fixture.root, "etc", "opt", "ikigenba", "notes", "env"), "DRAIN_SECONDS=5\n"+apps.ServicesEnv+"="+apps.PerAppServicesPath+"\n")
 	}
 }
 
@@ -101,7 +101,7 @@ func TestInstallChecksCompleteArtifactBeforeIcon(t *testing.T) {
 }
 
 func TestInstallPreservesEnsureAccountFailure(t *testing.T) {
-	// R-Z8G3-T8CR
+	// R-E9IW-GHG0
 	//
 	root := t.TempDir()
 	cause := errors.New("account transport unavailable")

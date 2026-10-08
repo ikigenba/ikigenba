@@ -103,7 +103,7 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 }
 
 func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
-	// R-T7OU-NQ6M R-F70X-J1QC R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
+	// R-FHFA-8850 R-FG7D-UGEB R-DE0V-MEV8 R-Z9DH-5EZK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o640)
@@ -198,7 +198,7 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 }
 
 func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
-	// R-T7OU-NQ6M
+	// R-FHFA-8850
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "var/opt/ikigenba/notes/state/value", "notes", 0o600)
@@ -859,7 +859,7 @@ func fileTreeSnapshot(t *testing.T, root string) []string {
 }
 
 func TestBackupRejectsUnmovedStateBeforeReadsAndContinues(t *testing.T) {
-	// R-JIF3-56FZ
+	// R-L8E4-FXJO
 	for _, kind := range []string{"directory", "file", "symlink"} {
 		for _, snapshot := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/snapshot=%t", kind, snapshot), func(t *testing.T) {
@@ -912,7 +912,7 @@ func TestBackupRejectsUnmovedStateBeforeReadsAndContinues(t *testing.T) {
 }
 
 func TestFilesLegacyStateAloneIsNotAService(t *testing.T) {
-	// R-T7OU-NQ6M
+	// R-FHFA-8850
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/state/value", "legacy", 0o600)
@@ -925,7 +925,7 @@ func TestFilesLegacyStateAloneIsNotAService(t *testing.T) {
 }
 
 func TestFilesCanonicalReadFailure(t *testing.T) {
-	// R-F88T-WTH1
+	// R-FMAV-RB3S
 	for _, name := range []string{"opt/crm/etc/manifest.toml", "var/opt/ikigenba/crm/state/outbox"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
@@ -942,7 +942,7 @@ func TestFilesCanonicalReadFailure(t *testing.T) {
 }
 
 func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
-	// R-T7OU-NQ6M R-FAOM-OCYF
+	// R-FHFA-8850 R-FPYK-WMBV
 	for _, location := range []struct{ parent, marker, alternate, alternateMarker string }{
 		{"opt", "etc", "var/opt/ikigenba", "state"},
 		{"var/opt/ikigenba", "state", "opt", "etc"},
@@ -992,6 +992,108 @@ func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+func TestReleasedBackupSelectionIgnoresPerAppEntries(t *testing.T) {
+	// R-FHFA-8850 R-L8E4-FXJO R-FPYK-WMBV R-FG7D-UGEB R-FOQO-IUL6
+	for _, snapshot := range []bool{false, true} {
+		t.Run(fmt.Sprintf("snapshot=%t", snapshot), func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			writeFile(t, root, "opt/ikigenba/releases/fixture/notes/bin/notes", "binary", 0o700)
+			writeFile(t, root, "opt/ikigenba/releases/fixture/notes/etc/manifest.toml", "app = \"notes\"\n", 0o600)
+			if err := os.Symlink("releases/fixture", filepath.Join(root, "opt/ikigenba/current")); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, root, "opt/notes/etc/manifest.toml", "invalid TOML!", 0o600)
+			writeFile(t, root, "opt/notes/state/value", "legacy ignored", 0o600)
+			writeFile(t, root, "opt/other/etc/manifest.toml", "app = \"other\"\n", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/notes/state/value", "current data", 0o600)
+			watch := newFileAccessWatch(t, filepath.Join(root, "opt/notes/etc/manifest.toml"), filepath.Join(root, "opt/notes/state/value"))
+			client := newFileCloud()
+			executor := &fileExecutor{unmapped: true}
+			env := fileHostEnv(root, executor.execute)
+			if snapshot {
+				got, err := backup.Snapshot(context.Background(), env, cloud.Env{Open: client.open}, store, "notes")
+				if err != nil || len(got) != 1 || got[0].Err != nil {
+					t.Fatalf("Snapshot = %+v, %v", got, err)
+				}
+				got, err = backup.Snapshot(context.Background(), env, cloud.Env{Open: client.open}, store, "other")
+				if err == nil || err.Error() != "no service 'other'" || len(got) != 0 {
+					t.Fatalf("other Snapshot = %+v, %v", got, err)
+				}
+			} else {
+				got, err := backup.Files(context.Background(), env, cloud.Env{Open: client.open}, store, "notes")
+				if err != nil || len(got) != 1 || got[0].Err != nil {
+					t.Fatalf("Files = %+v, %v", got, err)
+				}
+				got, err = backup.Files(context.Background(), env, cloud.Env{Open: client.open}, store, "other")
+				if err == nil || err.Error() != "no service 'other'" || len(got) != 0 {
+					t.Fatalf("other Files = %+v, %v", got, err)
+				}
+			}
+			watch.assertQuiet(t)
+			if len(client.objects) != 1 {
+				t.Fatalf("objects = %v", client.objects)
+			}
+		})
+	}
+}
+
+func TestExplicitBackupIgnoresIkigenbaPackageDirectory(t *testing.T) {
+	// R-FHFA-8850 R-FPYK-WMBV
+	for _, snapshot := range []bool{false, true} {
+		for _, state := range []bool{false, true} {
+			t.Run(fmt.Sprintf("snapshot=%t/state=%t", snapshot, state), func(t *testing.T) {
+				root := t.TempDir()
+				store := configuredFileStore(t, root)
+				writeFile(t, root, "opt/ikigenba/etc/manifest.toml", "invalid TOML!", 0o600)
+				if state {
+					writeFile(t, root, "var/opt/ikigenba/ikigenba/state/value", "data-only", 0o600)
+				}
+				watch := newFileAccessWatch(t, filepath.Join(root, "opt/ikigenba/etc/manifest.toml"))
+				client := newFileCloud()
+				executor := &fileExecutor{unmapped: true}
+				env := fileHostEnv(root, executor.execute)
+				opens := 0
+				cloudEnv := cloud.Env{Open: func(ctx context.Context, region string) (cloud.Client, error) {
+					opens++
+					return client.open(ctx, region)
+				}}
+				var count int
+				var runErr, resultErr error
+				if snapshot {
+					got, err := backup.Snapshot(context.Background(), env, cloudEnv, store, "ikigenba")
+					count, runErr = len(got), err
+					if count != 0 {
+						resultErr = got[0].Err
+					}
+				} else {
+					got, err := backup.Files(context.Background(), env, cloudEnv, store, "ikigenba")
+					count, runErr = len(got), err
+					if count != 0 {
+						resultErr = got[0].Err
+					}
+				}
+				watch.assertQuiet(t)
+				if !state {
+					if runErr == nil || runErr.Error() != "no service 'ikigenba'" || count != 0 || opens != 0 || len(executor.commands) != 0 {
+						t.Fatalf("count %d error %v opens %d commands %v", count, runErr, opens, executor.commands)
+					}
+				} else {
+					if runErr != nil || count != 1 || resultErr != nil || opens != 1 || len(client.objects) != 1 {
+						t.Fatalf("count %d error %v result error %v opens %d objects %v", count, runErr, resultErr, opens, client.objects)
+					}
+					for _, body := range client.objects {
+						members := readTestArchive(t, body)
+						if string(members["state/value"].data) != "data-only" {
+							t.Fatalf("members = %v", members)
+						}
+					}
+				}
+			})
 		}
 	}
 }

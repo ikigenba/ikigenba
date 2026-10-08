@@ -24,7 +24,7 @@ func installSliceFixtures(t *testing.T, root string) {
 
 // R-ZT46-0YK2
 func TestInstallSliceChecksPrecedeDiscoveryAndMutation(t *testing.T) {
-	// R-ZT6E-BBYK R-22SA-ZDWQ
+	// R-EFME-DC5H R-EGUA-R3W6
 	for _, test := range []struct {
 		name, slice, unit, contents, memory, want string
 		missing                                   bool
@@ -126,7 +126,7 @@ func TestInstallReplacesItsOwnRejectedManifest(t *testing.T) {
 }
 
 func TestInstallReportsExactMemoryWarningsWithoutStopping(t *testing.T) {
-	// R-1Z4L-U2ON R-20CI-7UFC
+	// R-EJA3-INDK R-EI27-4VMV
 	type installed struct{ name, slice, memory, kind string }
 	for _, test := range []struct {
 		name, slice, memory, suite, apps, want string

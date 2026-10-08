@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -20,6 +19,7 @@ const wantUsage = `Usage: opsctl [options] <command> [arguments]
 Operate the ikigenba platform host. Must run as root.
 
 Commands:
+  activate  make an unpacked release the one this host runs
   backup    back up a service's files to S3
   cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
@@ -33,10 +33,12 @@ Commands:
   restart   restart an installed app's service
   restore   restore a service from its backups
   retire    stop every service and take the host's final backup
+  rollback  go back to the release this host ran before
+  services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
-  status    print every installed app, its version and its state
+  status    print every service, its release and its state
   uninstall take an app off the host, keeping its data
-  version   print the version
+  version   print the release this opsctl belongs to
 
 Options:
   -h, --help     print this help
@@ -70,7 +72,7 @@ func wantVersion(t *testing.T) string {
 	t.Helper()
 	stdout, stderr, code := invoke([]string{"version"}, cli.Deps{Root: t.TempDir(), EUID: 1})
 	line, found := strings.CutSuffix(stdout, "\n")
-	if code != 0 || stderr != "" || !found || line == "" || strings.Contains(line, "\n") {
+	if code != 0 || stderr != "" || !found || strings.Contains(line, "\n") {
 		t.Fatalf("version: exit %d stdout %q stderr %q, want exit 0 and one line on stdout", code, stdout, stderr)
 	}
 	return line
@@ -195,10 +197,10 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-1CK7-0LUS
+	// R-8MWK-0ETA
 	user := depsAt(t, 1)
 
-	wantCommands := []string{"backup", "cert", "config", "disable", "dns", "enable", "host", "init", "install", "nginx", "restart", "restore", "retire", "snapshot", "status", "uninstall", "version"}
+	wantCommands := []string{"activate", "backup", "cert", "config", "disable", "dns", "enable", "host", "init", "install", "nginx", "restart", "restore", "retire", "rollback", "services", "snapshot", "status", "uninstall", "version"}
 	for _, name := range wantCommands {
 		_, stderr, _ := invoke([]string{name}, user)
 		if strings.Contains(stderr, "unknown command") {
@@ -242,7 +244,7 @@ func TestCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-1DS3-EDLH
+	// R-8O4G-E6JZ
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)
@@ -318,12 +320,8 @@ func TestUnknownOption(t *testing.T) {
 }
 
 func TestVersionIndependentOfEnvironmentAndStore(t *testing.T) {
-	// R-FA2H-FNK2
+	// R-8PCC-RYAO
 	baseline := wantVersion(t)
-	re := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
-	if !re.MatchString(baseline) {
-		t.Errorf("version = %q, want to match %s", baseline, re.String())
-	}
 
 	override := baseline + "-override"
 	root := t.TempDir()
@@ -358,10 +356,9 @@ func TestVersionIndependentOfEnvironmentAndStore(t *testing.T) {
 }
 
 func TestVersionOutput(t *testing.T) {
-	// R-FBAD-TFAR
+	// R-8QK9-5Q1D
 	user := depsAt(t, 1)
 	var want string
-	versionPattern := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\n$`)
 	for _, args := range [][]string{{"version"}, {"-V"}, {"--version"}} {
 		stdout, stderr, code := invoke(args, user)
 		if code != 0 {
@@ -370,8 +367,8 @@ func TestVersionOutput(t *testing.T) {
 		if stderr != "" {
 			t.Errorf("%q: stderr = %q, want empty", args, stderr)
 		}
-		if !versionPattern.MatchString(stdout) {
-			t.Errorf("%q: stdout = %q, want exactly one semantic-version line", args, stdout)
+		if stdout != "\n" {
+			t.Errorf("outside release stdout = %q", stdout)
 		}
 		if want == "" {
 			want = stdout
@@ -417,6 +414,7 @@ func TestActionRequiresRoot(t *testing.T) {
 
 func TestHelpAndVersionWithoutRoot(t *testing.T) {
 	// R-ND05-9WG9
+	// R-8RS5-JHS2
 	user := depsAt(t, 1)
 	cases := []struct {
 		args []string

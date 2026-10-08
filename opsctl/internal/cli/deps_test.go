@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -80,7 +81,7 @@ func TestDepsFallbacksAndInjections(t *testing.T) {
 }
 
 func TestDepsFields(t *testing.T) {
-	// R-Y46O-68HV
+	// R-8KGR-8VBW
 	deps := Deps{
 		Root:       "/root",
 		EUID:       7,
@@ -91,6 +92,16 @@ func TestDepsFields(t *testing.T) {
 		Execute:    func(context.Context, host.Command) (host.Result, error) { return host.Result{ExitCode: 3}, nil },
 		Now:        func() time.Time { return time.Unix(9, 0) },
 		Cloud:      cloud.Env{},
+		Executable: func() (string, error) { return "injected-path", nil },
+		Exec:       func(string, []string, []string) error { return errors.New("exec fixture") },
+	}
+	executable := typed[func() (string, error)](deps.Executable)
+	replacement := typed[func(string, []string, []string) error](deps.Exec)
+	if path, err := executable(); path != "injected-path" || err != nil {
+		t.Fatal(path, err)
+	}
+	if replacement("program", nil, nil) == nil {
+		t.Fatal("Exec dependency not used")
 	}
 	root := typed[string](deps.Root)
 	euid := typed[int](deps.EUID)
@@ -120,13 +131,13 @@ func TestDepsFields(t *testing.T) {
 }
 
 func TestNormalizeDeps(t *testing.T) {
-	// R-5E43-77RM
+	// R-8LON-MN2L
 	t.Setenv("OPSCTL_EMPTY_ENV", "live value")
 	got := normalizeDeps(Deps{})
 	if got.Getenv("OPSCTL_EMPTY_ENV") != "" {
 		t.Fatal("nil Getenv read live environment")
 	}
-	for _, pair := range [][2]any{{got.LookPath, exec.LookPath}, {got.LookupHost, net.DefaultResolver.LookupHost}, {got.Now, time.Now}} {
+	for _, pair := range [][2]any{{got.LookPath, exec.LookPath}, {got.LookupHost, net.DefaultResolver.LookupHost}, {got.Now, time.Now}, {got.Executable, os.Executable}, {got.Exec, syscall.Exec}} {
 		if reflect.ValueOf(pair[0]).Pointer() != reflect.ValueOf(pair[1]).Pointer() {
 			t.Fatal("default dependency was not installed")
 		}
@@ -137,9 +148,9 @@ func TestNormalizeDeps(t *testing.T) {
 	if now.Before(before) || now.After(after) {
 		t.Fatalf("default Now = %v outside %v .. %v", now, before, after)
 	}
-	supplied := Deps{Root: t.TempDir(), EUID: 123, Getenv: func(string) string { return "injected" }, LookPath: func(string) (string, error) { return "injected", nil }, LookupHost: func(context.Context, string) ([]string, error) { return []string{"injected"}, nil }, Now: func() time.Time { return time.Unix(123, 0) }, Execute: func(context.Context, host.Command) (host.Result, error) { return host.Result{}, nil }, Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return nil, nil }}, DNS: dns.Env{}}
+	supplied := Deps{Root: t.TempDir(), EUID: 123, Getenv: func(string) string { return "injected" }, LookPath: func(string) (string, error) { return "injected", nil }, LookupHost: func(context.Context, string) ([]string, error) { return []string{"injected"}, nil }, Now: func() time.Time { return time.Unix(123, 0) }, Execute: func(context.Context, host.Command) (host.Result, error) { return host.Result{}, nil }, Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return nil, nil }}, DNS: dns.Env{}, Executable: func() (string, error) { return "injected-path", nil }, Exec: func(string, []string, []string) error { return errors.New("injected") }}
 	normalized := normalizeDeps(supplied)
-	for _, name := range []string{"Getenv", "LookPath", "LookupHost", "Now", "Execute"} {
+	for _, name := range []string{"Getenv", "LookPath", "LookupHost", "Now", "Execute", "Executable", "Exec"} {
 		if reflect.ValueOf(normalized).FieldByName(name).Pointer() != reflect.ValueOf(supplied).FieldByName(name).Pointer() {
 			t.Errorf("supplied %s replaced", name)
 		}

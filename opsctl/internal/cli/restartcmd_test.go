@@ -14,7 +14,7 @@ import (
 )
 
 func TestRestartCommandReportsResultingServiceState(t *testing.T) {
-	// R-VO40-PTVC
+	// R-EZ4S-HO0L
 	for _, test := range []struct {
 		state      string
 		wantCode   int
@@ -77,7 +77,7 @@ func TestRestartCommandReportsResultingServiceState(t *testing.T) {
 }
 
 func TestRestartCommandReportsFailureOnceWithStartupJournal(t *testing.T) {
-	// R-VO40-PTVC
+	// R-EZ4S-HO0L
 	root := cliRestartRoot(t)
 	var commands []host.Command
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -106,7 +106,7 @@ func TestRestartCommandReportsFailureOnceWithStartupJournal(t *testing.T) {
 }
 
 func TestRestartReportsDisabledServiceWithoutStartingIt(t *testing.T) {
-	// R-VO40-PTVC
+	// R-EZ4S-HO0L
 	root := cliRestartRoot(t)
 	var commands []host.Command
 	stdout, stderr, code := invoke([]string{"restart", "notes"}, cli.Deps{Root: root, EUID: 0,
@@ -159,7 +159,7 @@ func TestRestartCommandValidationPrecedesServiceStage(t *testing.T) {
 }
 
 func TestRestartCommandDoesNotRetryFailedOutcomeWrite(t *testing.T) {
-	// R-VO40-PTVC
+	// R-EZ4S-HO0L
 	root := cliRestartRoot(t)
 	writeFailure := errors.New("service output unavailable")
 	output := &countingFailWriter{err: writeFailure}
@@ -204,4 +204,64 @@ func cliRestartRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func TestReleasedRestartReportsCommitAndPreservesReleaseFiles(t *testing.T) {
+	// R-EZ4S-HO0L R-GPBN-ZYU0
+	root, sha := cliReleasedRoot(t, "candidate")
+	writeUninstallFile(t, root, "etc/opt/ikigenba/notes/env", "SECRET=kept\n")
+	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-notes.service", "service content\n")
+	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-notes.socket", "socket content\n")
+	if err := os.Symlink("releases/"+sha, filepath.Join(root, "opt/ikigenba/previous")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "usr/local/bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/opt/ikigenba/current/opsctl/bin/opsctl", filepath.Join(root, "usr/local/bin/opsctl")); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{"opt/ikigenba/releases/" + sha + "/release.json", "opt/ikigenba/releases/" + sha + "/notes/bin/notes", "opt/ikigenba/releases/" + sha + "/notes/etc/manifest.toml", "etc/opt/ikigenba/notes/env", "etc/systemd/system/ikigenba-notes.service", "etc/systemd/system/ikigenba-notes.socket"}
+	before := map[string]string{}
+	for _, path := range paths {
+		data, err := readFixtureFile(root, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[path] = string(data)
+	}
+	stdout, stderr, code := invoke([]string{"restart", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, cmd host.Command) (host.Result, error) {
+		if cmd.Name != "systemctl" {
+			t.Fatalf("release restart executed app binary: %#v", cmd)
+		}
+		switch cmd.Args[0] {
+		case "show":
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+		case "restart":
+			if !reflect.DeepEqual(cmd.Args, []string{"restart", "ikigenba-notes.service"}) {
+				t.Fatalf("unexpected restart: %#v", cmd)
+			}
+			return host.Result{}, nil
+		case "is-active":
+			return host.Result{Stdout: []byte("active\n")}, nil
+		default:
+			t.Fatalf("unexpected command: %#v", cmd)
+			return host.Result{}, nil
+		}
+	}})
+	if code != 0 || stdout != "service: ok (notes "+sha[:7]+" active)\n" || stderr != "" {
+		t.Fatalf("exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	for path, want := range before {
+		got, err := readFixtureFile(root, path)
+		if err != nil || string(got) != want {
+			t.Fatalf("changed %s: %q %v", path, got, err)
+		}
+	}
+	for path, want := range map[string]string{"opt/ikigenba/current": "releases/" + sha, "opt/ikigenba/previous": "releases/" + sha, "usr/local/bin/opsctl": "/opt/ikigenba/current/opsctl/bin/opsctl"} {
+		got, err := os.Readlink(filepath.Join(root, path))
+		if err != nil || got != want {
+			t.Fatalf("changed link %s: %q %v", path, got, err)
+		}
+	}
 }

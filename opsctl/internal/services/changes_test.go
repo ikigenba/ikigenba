@@ -34,7 +34,7 @@ func TestWriteClassifiesEntryMemberDifferences(t *testing.T) {
 		{name: "enabled overrides changes", change: func(p map[string]any) { p["enabled"] = false; p["socket"] = "old" }, want: Enabled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := perAppRoot(t)
 			icon := renderFixture(t, root, "running", "app = \"running\"\n", true, []byte("<svg/>\n"))
 			if test.noIcon {
 				if err := os.Remove(icon); err != nil {
@@ -69,7 +69,7 @@ func TestWriteClassifiesEntryMemberDifferences(t *testing.T) {
 	for _, member := range []string{"url", "description", "socket", "enabled", "mcp"} {
 		for _, value := range []string{"missing", "null", "object"} {
 			t.Run(member+" "+value, func(t *testing.T) {
-				root := t.TempDir()
+				root := perAppRoot(t)
 				renderFixture(t, root, "running", "app = \"running\"\n", true, nil)
 				prior := map[string]any{"name": "running", "url": "https://running.example.test", "description": "", "socket": "/run/ikigenba/running.sock", "enabled": true, "mcp": false}
 				switch value {

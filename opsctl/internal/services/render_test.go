@@ -126,9 +126,9 @@ func publishedServices(t *testing.T, root string) []publishedEntry {
 	return document.Services
 }
 
-// R-YG5R-NNZ2
+// R-9A2N-A1WH
 func TestRenderSelectsExactlyListedServices(t *testing.T) {
-	root := t.TempDir()
+	root := perAppRoot(t)
 	icon := []byte("<svg/>\n")
 	renderFixture(t, root, "routed", "app = \"routed\"\n", true, icon)
 	renderFixture(t, root, "unrouted", "", true, icon)
@@ -160,9 +160,9 @@ func TestRenderSelectsExactlyListedServices(t *testing.T) {
 	}
 }
 
-// R-YHDO-1FPR
+// R-9BAJ-NTN6
 func TestRenderEntryValuesIncludeDefaultAndApex(t *testing.T) {
-	root := t.TempDir()
+	root := perAppRoot(t)
 	icon := []byte("<svg>full</svg>\r\n")
 	renderFixture(t, root, "alpha", "app = \"alpha\"\ndefault = true\ndescription = \"  A full description ☃  \"\nmcp = true\n", true, icon)
 	renderFixture(t, root, "apex", "app = \"apex\"\n", true, nil) // app named by host.apex
@@ -207,7 +207,7 @@ func TestRenderEntryValuesIncludeDefaultAndApex(t *testing.T) {
 
 // R-YILK-F7GG
 func TestRenderExactLayoutAndBytewiseOrder(t *testing.T) {
-	root := t.TempDir()
+	root := perAppRoot(t)
 	env := renderWriteEnv(t, root, map[string]bool{"zeta": true}, nil)
 	if _, err := Write(context.Background(), env, "box.example"); err != nil {
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestRenderExactLayoutAndBytewiseOrder(t *testing.T) {
 
 // R-YJTG-SZ75
 func TestRenderMinimalJSONEscapesAndRoundTrip(t *testing.T) {
-	root := t.TempDir()
+	root := perAppRoot(t)
 	var controls []byte
 	for character := byte(0); character < 32; character++ {
 		controls = append(controls, character)
@@ -276,7 +276,7 @@ func TestRenderMinimalJSONEscapesAndRoundTrip(t *testing.T) {
 	}
 }
 
-// R-HKOW-0O97
+// R-9DQC-FD4K
 func TestRenderRejectsUnembeddableIcons(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -303,7 +303,7 @@ func TestRenderRejectsUnembeddableIcons(t *testing.T) {
 		}, "bad: share/icon.svg is not valid UTF-8"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := perAppRoot(t)
 			icon := renderFixture(t, root, "bad", "app = \"bad\"\n", true, nil)
 			if err := os.MkdirAll(filepath.Dir(icon), 0o750); err != nil {
 				t.Fatal(err)
@@ -361,9 +361,9 @@ func assertIconWriteFailure(t *testing.T, root, want string) {
 	}
 }
 
-// R-HKOW-0O97
+// R-9DQC-FD4K
 func TestWritePreservesFileOnIconReadFailure(t *testing.T) {
-	root := t.TempDir()
+	root := perAppRoot(t)
 	icon := renderFixture(t, root, "bad", "app = \"bad\"\n", true, []byte("<svg/>"))
 	if err := os.Chmod(icon, 0); err != nil {
 		t.Fatal(err)
@@ -381,9 +381,9 @@ func TestWritePreservesFileOnIconReadFailure(t *testing.T) {
 	assertIconWriteFailure(t, root, want)
 }
 
-// R-HKOW-0O97
+// R-9DQC-FD4K
 func TestRenderDoesNotApplyInstallIconChecks(t *testing.T) {
-	root := t.TempDir()
+	root := perAppRoot(t)
 	icon := []byte(strings.Repeat("x", 65537))
 	renderFixture(t, root, "large", "app = \"large\"\n", true, icon)
 	if _, err := Write(context.Background(), renderWriteEnv(t, root, nil, nil), "box.example"); err != nil {
@@ -393,4 +393,13 @@ func TestRenderDoesNotApplyInstallIconChecks(t *testing.T) {
 	if len(entries) != 1 || entries[0].Icon != string(icon) {
 		t.Fatalf("published large non-SVG icon = %#v", entries)
 	}
+}
+
+func perAppRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "opt", "unrouted-fixture", "etc"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

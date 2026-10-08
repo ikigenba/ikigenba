@@ -192,9 +192,36 @@ func discoverFileService(root, name string) (apps.Service, bool, error) {
 	}
 	defer func() { _ = filesystem.Close() }()
 
+	layout := apps.PerApp
+	_, currentErr := filesystem.Lstat("opt/ikigenba/current")
+	if currentErr == nil {
+		layout = apps.Released
+	} else if !errors.Is(currentErr, os.ErrNotExist) {
+		return apps.Service{}, false, currentErr
+	}
 	servicePath := path.Join("opt", name)
+	if layout == apps.Released {
+		servicePath = path.Join("opt/ikigenba/current", name)
+	}
 
-	etc, err := rootedServiceMarker(filesystem, servicePath, "etc")
+	etc := false
+	if layout == apps.Released || name != "ikigenba" {
+		etc, err = rootedServiceMarker(filesystem, servicePath, "etc")
+	}
+	if err == nil && etc && layout == apps.Released {
+		info, statErr := filesystem.Stat(path.Join(servicePath, "bin", name))
+		etc = statErr == nil && info.Mode().IsRegular()
+		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			err = statErr
+		}
+		if etc {
+			_, statErr = filesystem.Lstat(path.Join(servicePath, "etc/manifest.toml"))
+			etc = statErr == nil
+			if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+				err = statErr
+			}
+		}
+	}
 	if err != nil {
 		return apps.Service{}, false, fmt.Errorf("discover service %q: %w", name, err)
 	}
@@ -207,6 +234,10 @@ func discoverFileService(root, name string) (apps.Service, bool, error) {
 	}
 
 	selected := apps.Service{Name: name}
+	if !etc {
+		return selected, true, nil
+	}
+	selected.Dir = "/" + servicePath
 	data, readErr := filesystem.ReadFile(path.Join(servicePath, "etc", "manifest.toml"))
 	switch {
 	case errors.Is(readErr, os.ErrNotExist):
@@ -461,12 +492,26 @@ func legacyStateError(root, service string) error {
 		return err
 	}
 	defer func() { _ = filesystem.Close() }()
+	_, currentErr := filesystem.Lstat("opt/ikigenba/current")
+	if currentErr == nil {
+		return nil
+	}
+	if !errors.Is(currentErr, os.ErrNotExist) {
+		return currentErr
+	}
 	_, err = filesystem.Lstat(path.Join("opt", service, "state"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	layout, err := apps.ReadLayout(root)
+	if err != nil {
+		return err
+	}
+	if layout != apps.PerApp {
+		return nil
 	}
 	return &legacyStateFailure{service: service}
 }
