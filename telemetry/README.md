@@ -12,12 +12,12 @@ home page says what it is.
 
 ## Installing it
 
-`telemetry` runs on an Ikigenba host. From a checkout at a release tag, build
-it and deploy it to a space with [`devctl`](../devctl):
+`telemetry` runs on an Ikigenba host. From a checkout, build the release and
+deploy it to a space with [`devctl`](../devctl):
 
 ```sh
-devctl build telemetry
-devctl deploy <space> telemetry/dist/telemetry-vX.Y.Z.tar.xz
+devctl build <sha|tag>
+devctl deploy <space> <sha|tag>
 ```
 
 ## Using it
