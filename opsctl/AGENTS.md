@@ -1,12 +1,12 @@
 # opsctl
 
-opsctl is the operator's CLI on a host; it bootstraps and manages that one deployment. It is a Go binary installed to `/usr/local/bin` on a Linux host that runs one complete deployment of the platform, run there as root, typically over ssh, by humans and agents. A project runs many such hosts over time, each created and torn down independently, and opsctl reasons only about the one it runs on. The module path is `github.com/ikigenba/ikigenba/opsctl`. The contract is `specs/design/`; this file restates none of it.
+opsctl is the operator's CLI on a host; it bootstraps and manages that one deployment. It is a Go binary that ships inside the suite release unpacked on a Linux host, run from `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`, with `/usr/local/bin/opsctl` a link to `/opt/ikigenba/current/opsctl/bin/opsctl` that every activate re-creates. The host runs one complete deployment of the platform, and opsctl runs there as root, typically over ssh, by humans and agents. A project runs many such hosts over time, each created and torn down independently, and opsctl reasons only about the one it runs on. The module path is `github.com/ikigenba/ikigenba/opsctl`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
 - `specs/` is the contract: `stories/` and `design/`.
 - `cmd/opsctl` is the binary. `internal/` is everything else, one package per concern.
-- `bootstrap.md` tells an agent how to bring a fresh host to the point where opsctl can be installed; `setup.md` picks up from there and installs and configures it.
+- `bootstrap.md` tells an agent how to bring a fresh host to the point where a release can be unpacked on it; `setup.md` picks up from there: with the release unpacked, it sets the config keys, runs `init`, and activates the release, all by the absolute path of the release's own opsctl.
 - The build run writes the Go source, the tests, `go.mod` and `go.sum`. `Makefile`, `.golangci.yml`, `install.sh`, `.goreleaser.yaml`, the two documents above and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Toolchain
@@ -18,11 +18,11 @@ opsctl is the operator's CLI on a host; it bootstraps and manages that one deplo
 
 Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
-Host tools such as nginx, certbot, systemctl, Litestream and archive utilities are observed on a host, never invoked on the gate machine. Tests go through the injected D01 boundaries and process fixtures; a tool's presence proves neither its protocol nor a successful operation.
+Host tools such as nginx, certbot, systemctl, Litestream and archive utilities are observed on a host, never invoked on the gate machine. Tests go through the injected D01 boundaries (`Deps.Root`, `EUID`, `Executable`, `Exec` and the rest) and process fixtures; a tool's presence proves neither its protocol nor a successful operation.
 
 ## Host
 
-opsctl runs on a space's host, as root. It is not designed to run on the developer's machine, and there is no permanent test host.
+opsctl runs on a space's host, as root, from the release it belongs to: `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`. `/usr/local/bin/opsctl` is a link to `/opt/ikigenba/current/opsctl/bin/opsctl`, re-created on every activate, so plain `opsctl` is always the running release's. It is not designed to run on the developer's machine, and there is no permanent test host.
 
 ## Test files
 
@@ -68,20 +68,10 @@ The `Requirements:` trailer lists the phase's ids so history stays greppable by 
 
 ## Build
 
-`make build` builds the binary from the checkout; `make install` runs `go install ./cmd/opsctl`; `make fmt` formats; `make test` and `make lint` run those gates. `make deploy` builds a linux/amd64 binary and installs it on `DEPLOY_HOST` as `DEPLOY_USER` over ssh, for trying a change on a host without a release. The gates themselves call the Go tool directly.
+`make build` builds the binary from the checkout; `make install` runs `go install ./cmd/opsctl`; `make fmt` formats; `make test` and `make lint` run those gates. `make deploy` builds a linux/amd64 binary and installs it on `DEPLOY_HOST` as `DEPLOY_USER` over ssh, for trying a change on a host without a release; the file it puts at `/usr/local/bin/opsctl` lasts only until the next activate re-creates the link. The gates themselves call the Go tool directly.
 
 ## Releasing
 
-Release machinery, the version bump, tags, `install.sh`, `.goreleaser.yaml` and `.github/workflows/release-opsctl.yml` at the repo root, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
+opsctl has no version of its own and no release of its own: it ships inside the suite release, built with `devctl build <sha|tag>` and put on a host with `devctl deploy <space> <sha|tag>`, and `opsctl version` prints its release's display string (label and short sha, or the short sha). There is no version literal to set. Building and unpacking a release are devctl's, and the build run neither reads nor tests that machinery.
 
-1. Set the version literal in `internal/cli/cli.go` to `vX.Y.Z`. The binary reports it verbatim, and the release refuses a tag that does not match.
-2. Commit on `main` and push `main`.
-3. Tag the commit `opsctl/vX.Y.Z` and push the tag. The workflow builds with GoReleaser and publishes `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt` and `install.sh`; a prerelease tag (`opsctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
-4. On the host, as root, run that release's installer with the same version:
-
-```
-curl -fsSL -o /tmp/opsctl-install.sh https://github.com/ikigenba/ikigenba/releases/download/opsctl/vX.Y.Z/install.sh
-sudo bash /tmp/opsctl-install.sh vX.Y.Z
-```
-
-`opsctl version` then prints `vX.Y.Z`.
+The interim GitHub path, `opsctl/vX.Y.Z` tags, `.goreleaser.yaml`, `install.sh` and `.github/workflows/release-opsctl.yml`, is retired and not used after the cutover. Those files remain only until their removal.

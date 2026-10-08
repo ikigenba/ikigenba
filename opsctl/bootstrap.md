@@ -8,9 +8,9 @@ Linux host that you can reach as root over ssh**, with the wildcard under
 that name resolving to the same host, and with the host holding credentials
 that `opsctl` will later use for DNS and backups. That name is the host's
 name — `setup.md` enters it as `host.name` — and this document calls it
-`<name>`. Nothing about `opsctl` itself happens here. Installing and
-configuring it is the next document, `setup.md`, which assumes this one is
-done.
+`<name>`. Nothing about `opsctl` itself happens here. Unpacking a
+release on the host (devctl's job) and configuring and activating it is the
+next document, `setup.md`, which assumes this one is done.
 
 This document does not say how to create any of that. It says what must
 exist and leaves the how to you and the person you are working with. They
