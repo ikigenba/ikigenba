@@ -17,13 +17,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/events/internal/cli"
 )
 
-// R-Q0YV-7I42 R-06XG-JBD4 R-6KA0-OOQW R-6LHX-2GHL R-6MPT-G88A
+// R-9K3A-GTGR R-9MJ3-8CY5 R-06XG-JBD4 R-6KA0-OOQW R-6LHX-2GHL R-9NQZ-M4OU
 // R-6NXP-TZYZ R-6P5M-7RPO R-6QDI-LJGD R-C0NJ-9HL4
 func TestBinaryWiring(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
+	commit, release := "0123456789abcdef0123456789abcdef01234567", "test-release"
+	t.Setenv(version.CommitVariable, commit)
+	t.Setenv(version.ReleaseVariable, release)
+	display := version.Display()
+	identityEnv := []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 	binary := filepath.Join(t.TempDir(), "events")
 	build := exec.Command("go", "build")
 	build.Args = append(build.Args, "-o", binary, ".")
@@ -35,13 +41,13 @@ func TestBinaryWiring(t *testing.T) {
 		out, err string
 		code     int
 	}{
-		{[]string{"--version"}, cli.Version + "\n", "", cli.ExitSuccess},
+		{[]string{"--version"}, display + "\n", "", cli.ExitSuccess},
 		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
 		{[]string{"bogus"}, "", "events: unknown command 'bogus'\n\nsee 'events --help' for usage\n", cli.ExitUsage},
 		{nil, "", "events: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n", cli.ExitUsage},
 	} {
 		command := &exec.Cmd{Path: binary, Args: append([]string{binary}, tc.args...)}
-		command.Env = []string{}
+		command.Env = identityEnv
 		command.Dir = t.TempDir()
 		var stdout, stderr bytes.Buffer
 		command.Stdout = &stdout
@@ -57,6 +63,12 @@ func TestBinaryWiring(t *testing.T) {
 		if code != tc.code || stdout.String() != tc.out || stderr.String() != tc.err {
 			t.Fatalf("args %v: code %d stdout %q stderr %q", tc.args, code, stdout.String(), stderr.String())
 		}
+	}
+	command := &exec.Cmd{Path: binary, Args: []string{binary, "--version"}, Env: []string{}, Dir: t.TempDir()}
+	var emptyOut, emptyErr bytes.Buffer
+	command.Stdout, command.Stderr = &emptyOut, &emptyErr
+	if err := command.Run(); err != nil || emptyOut.String() != "\n" || emptyErr.Len() != 0 {
+		t.Fatalf("unset version: %v stdout %q stderr %q", err, emptyOut.String(), emptyErr.String())
 	}
 	for _, signal := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		t.Run(signal.String(), func(t *testing.T) {
@@ -138,7 +150,7 @@ func TestBinaryWiring(t *testing.T) {
 			defer cancel()
 			command := exec.CommandContext(ctx, "/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"`)
 			command.Args = append(command.Args, binary)
-			command.Env = []string{"IKIGENBA_SERVICES=" + servicesPath, "NOTIFY_SOCKET=" + notifyPath}
+			command.Env = append([]string{"IKIGENBA_SERVICES=" + servicesPath, "NOTIFY_SOCKET=" + notifyPath}, identityEnv...)
 			command.Dir = working
 			command.ExtraFiles = []*os.File{inherited}
 			var stdout, stderr bytes.Buffer
@@ -219,7 +231,7 @@ func TestBinaryWiring(t *testing.T) {
 				t.Fatalf("no started event: %#v", records)
 			}
 			first := records[started]
-			if first.RequestID != "" || first.User != "" || !reflect.DeepEqual(first.Attrs, map[string]any{"version": cli.Version}) {
+			if first.RequestID != "" || first.User != "" || !reflect.DeepEqual(first.Attrs, map[string]any{"version": display}) {
 				t.Fatalf("started %#v", first)
 			}
 			last := records[len(records)-1]

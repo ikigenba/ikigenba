@@ -38,7 +38,7 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
-// R-S5NJ-XROQ R-L0GY-Y8DJ R-AF9N-8W16 R-AGHJ-MNRV R-BWX8-2SNQ
+// R-S5NJ-XROQ R-GRVN-JE8T R-AF9N-8W16 R-AGHJ-MNRV R-BWX8-2SNQ
 func TestStartupSettingsComeFirst(t *testing.T) {
 	for _, key := range []string{"DRAIN_SECONDS", "TREE_MAX_BYTES", "OUTPUT_MAX_BYTES", "OPERATION_SECONDS", "SCRIPT_SECONDS", "RUN_KEEP_DAYS", "RUN_KEEP_COUNT"} {
 		t.Run(key, func(t *testing.T) {
@@ -178,7 +178,7 @@ func TestPrerequisitesBeforeState(t *testing.T) {
 	}
 }
 
-// R-ZRF3-PPMC R-03M3-JF1A
+// R-H1MU-LK6D R-H2UQ-ZBX2
 func TestStateFailures(t *testing.T) {
 	for _, kind := range []string{"state-file", "invalid-db", "runs-file"} {
 		t.Run(kind, func(t *testing.T) {
@@ -228,7 +228,7 @@ func TestStateFailures(t *testing.T) {
 	}
 }
 
-// R-ZV2S-V0UF R-LJZD-2K8N R-B63F-NUCG R-WNGS-KWCF R-1NPH-4V58 R-L2WR-PRUX R-K58H-2BO4 R-LQ2U-ZEY4
+// R-ZV2S-V0UF R-HJXC-C4AS R-B63F-NUCG R-WNGS-KWCF R-HOSX-V79K R-L2WR-PRUX R-K58H-2BO4 R-H8Y8-W6MJ
 func TestReadyInitialStateAndLifecycle(t *testing.T) {
 	for _, servicesPath := range []string{"", "absent", "malformed"} {
 		t.Run(servicesPath, func(t *testing.T) {
@@ -293,7 +293,7 @@ func TestReadyInitialStateAndLifecycle(t *testing.T) {
 				t.Fatalf("lifecycle %v", events)
 			}
 			start := events[0]
-			if start.Service != "scripts" || start.RequestID != "" || start.User != "" || !reflect.DeepEqual(start.Attrs, telemetry.Attrs{"version": cli.Version}) {
+			if start.Service != "scripts" || start.RequestID != "" || start.User != "" || !reflect.DeepEqual(start.Attrs, telemetry.Attrs{"version": testVersion}) {
 				t.Fatalf("start %v", start)
 			}
 			allowed := " DRAIN_SECONDS REPOS_DIR TREE_MAX_BYTES OUTPUT_MAX_BYTES OPERATION_SECONDS SCRIPT_SECONDS RUN_MEMORY_MAX_BYTES RUNS_MEMORY_MAX_BYTES RUNS_CPU_PERCENT RUN_PIDS_MAX RUN_MAX_ACTIVE RUN_MAX_QUEUED RUN_KEEP_DAYS RUN_KEEP_COUNT IKIGENBA_SERVICES LISTEN_PID LISTEN_FDS NOTIFY_SOCKET PATH "
@@ -309,7 +309,7 @@ func TestReadyInitialStateAndLifecycle(t *testing.T) {
 	}
 }
 
-// R-JUC5-S888 R-JRWD-0OQU R-JVK2-5ZYX R-JPGK-959G R-KDUJ-WK3C R-JZ7R-BB70 R-JXZU-XJGB R-WM8W-74LQ R-0C5E-7T85
+// R-JUC5-S888 R-JRWD-0OQU R-JVK2-5ZYX R-JPGK-959G R-KDUJ-WK3C R-JZ7R-BB70 R-JXZU-XJGB R-WM8W-74LQ R-HF1Q-T1C0
 func TestRunCompositionUsesInjectedState(t *testing.T) {
 	h := newHarness(t)
 	h.p.Rand = repeatingRandom(0x5a)
@@ -370,7 +370,7 @@ func TestCatalogPathsSurviveRestart(t *testing.T) {
 	third.stop()
 }
 
-// R-LNN2-7VGQ R-B7BC-1M35
+// R-H5AJ-QVEG R-B7BC-1M35
 func TestCancellationAndNotificationFailure(t *testing.T) {
 	h := newHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -413,7 +413,7 @@ func seedCatalog(t *testing.T, h *runHarness) (store.Script, []store.Run) {
 	return sc, records
 }
 
-// R-AYS1-D7WA R-LL79-GBZC R-LMF5-U3Q1 R-LOUY-LN7F
+// R-AYS1-D7WA R-LL79-GBZC R-HDTU-F9LB R-HG9N-6T2P
 func TestRecoveryAndPruningBeforeReady(t *testing.T) {
 	for _, cancelStart := range []bool{false, true} {
 		t.Run(strconv.FormatBool(cancelStart), func(t *testing.T) {
@@ -520,7 +520,7 @@ func TestAcceptFailuresAndPanicAvoidGlobalLogger(t *testing.T) {
 	}
 }
 
-// R-1ZWG-YKK6 R-22C9-Q41K R-LRAR-D6OT R-2EJ9-JTGI
+// R-HTOJ-EA8C R-HW4C-5TPQ R-H6IG-4N55 R-HXC8-JLGF
 func TestQuietServeAndLifecycleOrdering(t *testing.T) {
 	h := newHarness(t)
 	h.repository("raise SystemExit(3)\n")
@@ -617,7 +617,7 @@ func TestUndeliveredEventsUseWholeDiagnostics(t *testing.T) {
 
 var _ io.Writer = (*lockedBuffer)(nil)
 
-// R-L1OV-C048 R-ASOJ-GD6T R-S4FN-JZY1
+// R-HHHJ-KKTE R-ASOJ-GD6T R-S4FN-JZY1
 func TestGitEnvironmentAndAllProductsRemainUnderDir(t *testing.T) {
 	h := newHarness(t)
 	h.repository("import os\nwith open(os.path.join(os.environ['IKIGENBA_OUT_DIR'], 'answer.txt'),'w') as f: f.write('answer')\n")
@@ -691,7 +691,7 @@ func outsideSnapshot(t *testing.T, root string, excluded ...string) map[string]s
 	return result
 }
 
-// R-LTQK-4Q67
+// R-H42N-D3NR
 func TestRecoveryCatalogFailureRefusesStartup(t *testing.T) {
 	h := newHarness(t)
 	seedCatalog(t, h)
@@ -720,7 +720,7 @@ while not os.path.exists(os.path.join(os.environ['IKIGENBA_OUT_DIR'], 'release')
 print('finished')
 `
 
-// R-1OXD-IMVX R-0FT3-D4G8 R-1ZWG-YKK6
+// R-HQ0U-8Z09 R-HUWF-S1Z1 R-HTOJ-EA8C
 func TestGracefulDrainWaitsForRunThenStopsEarly(t *testing.T) {
 	h := newHarness(t)
 	h.set("DRAIN_SECONDS", "30")
@@ -779,7 +779,7 @@ func connectionDeadline(t *testing.T, addr string) {
 	}
 }
 
-// R-1SL2-NY40 R-22C9-Q41K R-24S2-HNIY R-0FT3-D4G8 R-BEMQ-C8JB
+// R-HSGN-0IHN R-HW4C-5TPQ R-HZS1-B4XT R-HUWF-S1Z1
 func TestDrainDeadlineKillsRunBeforeStoppingEvent(t *testing.T) {
 	h := newHarness(t)
 	h.repository("import os, subprocess, sys\nsubprocess.Popen([sys.executable, '-c', 'while True: pass'])\nwhile True: pass\n")
@@ -841,7 +841,7 @@ func assertNoProcess(t *testing.T, variable string) {
 	}
 }
 
-// R-1V0V-FHLE R-277V-970C
+// R-HYK4-XD74 R-I27U-2OF7
 func TestUnfinishedRequestStopsOnlyAfterEventDiagnostic(t *testing.T) {
 	h := newHarness(t)
 	h.start()
@@ -879,7 +879,7 @@ func TestUnfinishedRequestStopsOnlyAfterEventDiagnostic(t *testing.T) {
 	}
 }
 
-// R-1XGO-712S R-2AVK-EI8F
+// R-I0ZX-OWOI R-I3FQ-GG5W
 func TestBlockedGitIsKilledWithoutCutoffMutations(t *testing.T) {
 	h := newHarness(t)
 	h.repository("print('hello')\n")
@@ -916,9 +916,14 @@ emptied:
 			t.Fatal("git did not begin")
 		}
 	}
+	cancelledAt := time.Now()
 	h.cancel(errors.New("git deadline"))
 	if code := h.finish(); code != cli.ExitServerFailed {
 		t.Fatalf("cutoff %d %s", code, h.stderr.String())
+	}
+	assertNoProcess(t, "GIT_TRACE="+fifo)
+	if time.Since(cancelledAt) >= 2*time.Second {
+		t.Fatal("blocked git cutoff return and absence exceeded deadline plus one second")
 	}
 	for i := 0; i < 2; i++ {
 		select {
@@ -1093,7 +1098,7 @@ func (s *capturedRejection) Deliver(ctx context.Context, e telemetry.Event) erro
 	return telemetry.ErrRejected
 }
 
-// R-B63F-NUCG R-1NPH-4V58
+// R-B63F-NUCG R-HOSX-V79K
 func TestAbstractNotificationAndNoNotificationSocket(t *testing.T) {
 	t.Run("abstract", func(t *testing.T) {
 		h := newHarness(t)
@@ -1181,7 +1186,7 @@ func TestRequestIDUsesProcessRandomBytes(t *testing.T) {
 	}
 }
 
-// R-2EJ9-JTGI
+// R-HXC8-JLGF
 func TestStaleCatalogWithoutRequestsEmitsOnlyLifecycle(t *testing.T) {
 	h := newHarness(t)
 	h.repository("print('unused')\n")
@@ -1214,4 +1219,96 @@ func TestStaleCatalogWithoutRequestsEmitsOnlyLifecycle(t *testing.T) {
 	if h.stdout.String() != "" || h.stderr.String() != "" {
 		t.Fatalf("unexpected streams %q %q", h.stdout.String(), h.stderr.String())
 	}
+}
+
+// R-BEMQ-C8JB
+func TestDrainDeliversCompleteInProgressCreate(t *testing.T) {
+	h := newHarness(t)
+	h.set("DRAIN_SECONDS", "30")
+	h.repository("pass\n")
+	h.start()
+	fifo := filepath.Join(h.root, "graceful-git-trace")
+	mustCLI(t, syscall.Mkfifo(fifo, 0600))
+	h.set("GIT_TRACE", fifo)
+	statuses := make(chan int, 1)
+	h.http.Transport = responseTransport{RoundTripper: h.http.Transport, statuses: statuses}
+	type response struct {
+		result mcp.Result
+		err    error
+	}
+	done := make(chan response, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		result, err := h.client.CallTool(ctx, identity.Caller{UserID: "owner", RequestID: "graceful-create"}, "create", json.RawMessage(`{"name":"graceful","repo":"rep_0102030405060708"}`))
+		done <- response{result, err}
+	}()
+	select {
+	case <-h.gitTimers:
+	case <-time.After(10 * time.Second):
+		t.Fatal("create git did not begin")
+	}
+	cancelledAt := time.Now()
+	h.cancel(errors.New("graceful create"))
+	connectionDeadline(t, h.listener.Addr().String())
+	reader, err := os.OpenFile(filepath.Clean(fifo), os.O_RDWR, 0600)
+	mustCLI(t, err)
+	defer func() { _ = reader.Close() }()
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(io.Discard, reader); close(copied) }()
+	var answer response
+	select {
+	case answer = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("create did not complete during drain")
+	}
+	mustCLI(t, answer.err)
+	raw, err := answer.result.MarshalJSON()
+	mustCLI(t, err)
+	var body struct {
+		Structured struct{ ID, Name string } `json:"structuredContent"`
+	}
+	mustCLI(t, json.Unmarshal(raw, &body))
+	if answer.result.IsError() || body.Structured.ID == "" || body.Structured.Name != "graceful" {
+		t.Fatalf("incomplete create response %s", raw)
+	}
+	if status := <-statuses; status != http.StatusOK {
+		t.Fatalf("create HTTP status %d", status)
+	}
+	if code := h.finish(); code != cli.ExitSuccess || h.stderr.String() != "" || time.Since(cancelledAt) >= 30*time.Second {
+		t.Fatalf("graceful drain %d %q", code, h.stderr.String())
+	}
+	created, finished := false, false
+	for _, event := range h.sink.capture.Events() {
+		if event.RequestID == "graceful-create" {
+			if event.Name == "script.created" {
+				created = event.Attrs["script"] == body.Structured.ID
+			}
+			if event.Name == "request.finished" {
+				finished = event.Attrs["status"] == int64(http.StatusOK)
+			}
+		}
+	}
+	if !created || !finished {
+		t.Fatalf("create completion events missing: %v", h.sink.capture.Events())
+	}
+	mustCLI(t, reader.Close())
+	select {
+	case <-copied:
+	case <-time.After(time.Second):
+		t.Fatal("trace reader did not close")
+	}
+}
+
+type responseTransport struct {
+	http.RoundTripper
+	statuses chan int
+}
+
+func (r responseTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := r.RoundTripper.RoundTrip(request)
+	if response != nil {
+		r.statuses <- response.StatusCode
+	}
+	return response, err
 }

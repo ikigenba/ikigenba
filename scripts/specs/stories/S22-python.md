@@ -152,7 +152,7 @@ The space's host was launched before its first-boot script named `python3.12`, s
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/scripts-v<semver>.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/scripts-<sha>.tar.xz
 ```
 
 Output: install's step lines for scripts, as for any app, ending:
@@ -171,7 +171,7 @@ Preconditions:
 
 - The host of `sbx.ikigenba.dev` was launched before its first-boot script installed `python3.12`; opsctl has initialised it, and `git` is on the `PATH`.
 - No directory on the `PATH` scripts' service runs with holds an executable named `python3.12`.
-- scripts has never been installed on this host, and `scripts-v<semver>.tar.xz` is the release file (`S23`).
+- scripts has never been installed on this host, and `scripts-<sha>.tar.xz` is the file `devctl build scripts` wrote at the commit `<sha>` (`S23`).
 
 Postconditions:
 
@@ -190,11 +190,7 @@ $ sudo dnf install -y python3.12
 $ sudo opsctl restart scripts
 ```
 
-Output: dnf's report of the install, which this story does not fix, then:
-
-```
-service: ok (scripts v<semver> active)
-```
+Output: dnf's report of the install, which this story does not fix, then opsctl's one line for the restart, reporting scripts' service `ok` and `active`, in the layout opsctl's stories own (opsctl's `S7-apps.md`).
 
 Exits 0. opsctl's line is on stdout, after dnf's report; opsctl writes nothing to stderr.
 
@@ -208,5 +204,5 @@ Postconditions:
 
 - `python3.12` is installed on the host, on the `PATH` scripts' service runs with.
 - `ikigenba-scripts.service` is `active`: scripts started for the first time, creating `/opt/scripts/state/scripts.db` and `/opt/scripts/state/runs/` (`S02`), and is serving on `/run/ikigenba/scripts.sock`.
-- telemetry has received scripts' `service.started`, with the version `v<semver>` (`S02`).
+- telemetry has received scripts' `service.started`, whose `version` is `<display>`, the display string of the environment the host gives scripts (`S02`).
 - Every run of a script on this host runs with that `python3.12`.

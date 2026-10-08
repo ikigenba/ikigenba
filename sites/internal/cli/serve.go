@@ -126,7 +126,7 @@ func runServe(ctx context.Context, p Process) int {
 		random = rand.Reader
 	}
 	guarded := &runRandom{source: random}
-	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "sites.db"), Migrations: sites.Migrations(), Now: p.Now})
+	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "sites.db"), Migrations: sites.Migrations(), Now: p.Now, Service: pages.ServiceName, Stderr: stderr})
 	if handle != nil {
 		defer func() { _ = handle.Close() }()
 	}
@@ -179,7 +179,7 @@ func runServe(ctx context.Context, p Process) int {
 			return diagnostic(e.Error(), ExitServerFailed)
 		}
 	}
-	writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Sleep: p.Sleep, Rand: guarded})
+	writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: p.Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Sleep: p.Sleep, Rand: guarded})
 	handler := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(writer), ServicesPath: services, Store: catalog, Cache: trees, Limits: lim, Telemetry: writer, Rand: guarded})
 	if (!addressSet || address == "") && ctx.Err() != nil {
 		// Shutdown would record service.stopping before this run became ready.

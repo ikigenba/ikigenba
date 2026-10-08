@@ -29,6 +29,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
@@ -44,10 +45,14 @@ func binaryMust(t *testing.T, err error) {
 }
 
 func TestBinary(t *testing.T) {
-	// R-9BM7-ZMWS R-K2VG-GMF3 R-L44O-3JLM R-K5B9-85WH R-K6J5-LXN6
-	// R-K7R1-ZPDV R-K8YY-DH4K R-KA6U-R8V9 R-LSIN-QYFI
-	// R-L5CK-HBCB R-BODX-EEGV R-XW4F-83YL
+	// R-GT3J-X5ZI R-K2VG-GMF3 R-L44O-3JLM R-GUBG-AXQ7 R-GVJC-OPGW
+	// R-GWR9-2H7L R-K8YY-DH4K R-KA6U-R8V9 R-LSIN-QYFI
+	// R-GXZ5-G8YA R-BODX-EEGV R-XW4F-83YL
 	t.Setenv(services.Variable, "")
+	// R-I5VJ-7ZNA
+	t.Setenv(version.CommitVariable, strings.Repeat("c604e32", 6)[:40])
+	t.Setenv(version.ReleaseVariable, "142")
+	display := version.Display()
 	root := t.TempDir()
 	t.Cleanup(func() {
 		cleanup, e := os.OpenRoot(root)
@@ -78,6 +83,15 @@ func TestBinary(t *testing.T) {
 	env := []string{"HOME=" + root, "XDG_CONFIG_HOME=" + root, "PATH=" + filepath.Dir(git) + ":" + filepath.Dir(python), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=", "GIT_AUTHOR_NAME=Fixture", "GIT_COMMITTER_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.test", "GIT_COMMITTER_EMAIL=fixture@example.test", "GIT_AUTHOR_DATE=2025-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2025-01-01T00:00:00Z"}
 	dir := filepath.Join(root, "scripts")
 	binaryMust(t, os.Mkdir(dir, 0700))
+	bare := exec.Command(binary, "--version")
+	bare.Dir = dir
+	bare.Env = append([]string{}, env...)
+	var bareOut, bareErr bytes.Buffer
+	bare.Stdout, bare.Stderr = &bareOut, &bareErr
+	if err := bare.Run(); err != nil || bareOut.String() != "\n" || bareErr.Len() != 0 {
+		t.Fatalf("unidentified version stdout %q stderr %q: %v", bareOut.String(), bareErr.String(), err)
+	}
+	env = append(env, version.CommitVariable+"="+strings.Repeat("c604e32", 6)[:40], version.ReleaseVariable+"=142")
 	var pending bytes.Buffer
 	binaryMust(t, db.Status(context.Background(), db.Config{Path: filepath.Join(dir, "state", "scripts.db"), Migrations: scripts.Migrations()}, &pending))
 	for _, tc := range []struct {
@@ -85,7 +99,7 @@ func TestBinary(t *testing.T) {
 		out, err string
 		code     int
 	}{
-		{[]string{"--version"}, cli.Version + "\n", "", cli.ExitSuccess},
+		{[]string{"--version"}, display + "\n", "", cli.ExitSuccess},
 		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
 		{[]string{"--help"}, cli.Usage, "", cli.ExitSuccess},
 		{[]string{"db", "status"}, pending.String(), "", cli.ExitSuccess},
@@ -209,7 +223,7 @@ func TestBinary(t *testing.T) {
 		var v map[string]any
 		binaryMust(t, json.Unmarshal(b, &v))
 		meta := v["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"]
-		if !reflect.DeepEqual(meta, map[string]any{"name": pages.ServiceName, "version": cli.Version}) {
+		if !reflect.DeepEqual(meta, map[string]any{"name": pages.ServiceName, "version": display}) {
 			t.Fatalf("serverInfo %v", meta)
 		}
 		return v["structuredContent"].(map[string]any)
@@ -301,9 +315,9 @@ func TestBinary(t *testing.T) {
 		t.Fatal("runs nonempty")
 	}
 	_, body := request("/", http.MethodGet, "")
-	assertBinaryText(t, body, "footer", nil, pages.ServiceName+" "+cli.Version)
+	assertBinaryText(t, body, "footer", nil, pages.ServiceName+" "+display)
 	_, body = request("/about", http.MethodGet, "")
-	assertBinaryText(t, body, "dd", map[string]string{"id": "about-version"}, cli.Version)
+	assertBinaryText(t, body, "dd", map[string]string{"id": "about-version"}, display)
 	discover(nil)
 	call("create", map[string]any{"name": "alpha", "repo": "rep_0102030405060708"})
 	stop(c, syscall.SIGTERM, out, errOut, false)
@@ -359,7 +373,7 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("lifecycle events %v", snapshot)
 		}
 		for i, event := range snapshot {
-			name, attrs := "service.started", map[string]any{"version": cli.Version}
+			name, attrs := "service.started", map[string]any{"version": display}
 			if i == 1 {
 				name = "service.stopping"
 				attrs = map[string]any{"reason": map[syscall.Signal]string{syscall.SIGTERM: "SIGTERM", syscall.SIGINT: "SIGINT"}[sig]}

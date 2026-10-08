@@ -21,14 +21,14 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the landing page (`S03`): an HTML page whose title is `scripts`, whose banner's profile link is titled `mg@example.com`, the email of the token's owner, and leads to `https://auth.sbx.ikigenba.dev/`, whose banner's `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`, whose banner carries the launcher button `Services`, since the host's services file lists scripts with its icon, and whose visible text carries the heading `scripts`; the heading `Your scripts` and the table of the caller's scripts, `backfill`, `nightly-report`, `rotate-keys`, and `sync-crm`, in that order, each linking to its page at `/<name>/`, `backfill` saying `never run` and showing its repository by its id, since that repository is gone; not `digest`, which is `ann@example.com`'s; the heading `MCP tools` and the eleven tool names `list`, `show`, `create`, `update`, `delete`, `subscribe`, `unsubscribe`, `run`, `runs`, `result`, and `cancel`; and a link `About scripts` to `/about`; and whose footer reads `scripts v<semver>`, the version the deployed binary's `scripts --version` prints (`S01`), the same one `space status` reports for scripts. Its stylesheet is `https://scripts.sbx.ikigenba.dev/_appkit/theme.css` (`S04`): a browser showing the page requests its style from scripts' own host and from no other origin. Its button feedback script is `https://scripts.sbx.ikigenba.dev/_appkit/feedback.js` and its icon `https://scripts.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host.
+Status 200. The body is the landing page (`S03`): an HTML page whose title is `scripts`, whose banner's profile link is titled `mg@example.com`, the email of the token's owner, and leads to `https://auth.sbx.ikigenba.dev/`, whose banner's `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`, whose banner carries the launcher button `Services`, since the host's services file lists scripts with its icon, and whose visible text carries the heading `scripts`; the heading `Your scripts` and the table of the caller's scripts, `backfill`, `nightly-report`, `rotate-keys`, and `sync-crm`, in that order, each linking to its page at `/<name>/`, `backfill` saying `never run` and showing its repository by its id, since that repository is gone; not `digest`, which is `ann@example.com`'s; the heading `MCP tools` and the eleven tool names `list`, `show`, `create`, `update`, `delete`, `subscribe`, `unsubscribe`, `run`, `runs`, `result`, and `cancel`; and a link `About scripts` to `/about`; and whose footer reads `scripts <display>`, where `<display>` is whatever display string the host's environment gives scripts: the string the deployed binary's `scripts --version` prints under that same environment (`S01`), and empty when the host sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`. Its stylesheet is `https://scripts.sbx.ikigenba.dev/_appkit/theme.css` (`S04`): a browser showing the page requests its style from scripts' own host and from no other origin. Its button feedback script is `https://scripts.sbx.ikigenba.dev/_appkit/feedback.js` and its icon `https://scripts.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host.
 
 Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`, and `opsctl` is installed on it.
-- A tag `scripts/v<semver>` points at the commit `devctl build scripts` was run at, and it wrote `scripts/dist/scripts-v<semver>.tar.xz`.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev scripts/dist/scripts-v<semver>.tar.xz` exited 0.
-- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows `scripts v<semver> active active -`.
+- `devctl build scripts`, run in a clean tree at the commit `<sha>`, wrote `scripts/dist/scripts-<sha>.tar.xz` (`S23`). No tag is needed.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev scripts/dist/scripts-<sha>.tar.xz` exited 0.
+- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows scripts' service and socket `active`, in the layout devctl's and opsctl's stories own.
 - auth, repos, and telemetry are deployed and active on the space through their own chains, and `python3.12` is installed on the host (`S22`).
 - `ikp_<token>`, whose id is `<token-id>`, is a token auth honors, owned by `u_7f3a9c21`, `mg@example.com`.
 - The host sets `IKIGENBA_SERVICES` in scripts' environment to the path of its services file, and that file lists scripts with its icon, from `share/icon.svg` (`S23`).
@@ -59,7 +59,7 @@ Status 302. The body is not fixed, and the response carries no `www-authenticate
 
 Preconditions:
 
-- scripts `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`.
+- scripts is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`.
 - The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
 
 Postconditions:
@@ -88,7 +88,7 @@ Status 401. The body is the host's nginx's one line `authentication required: se
 
 Preconditions:
 
-- scripts `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`.
+- scripts is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`.
 - The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
 
 Postconditions:
@@ -127,7 +127,7 @@ Status 404. The body is not fixed. A request to either path with no credential i
 
 Preconditions:
 
-- scripts `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, so the host's nginx includes `/opt/scripts/etc/nginx.conf` in scripts' server.
+- scripts is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, so the host's nginx includes `/opt/scripts/etc/nginx.conf` in scripts' server.
 - The agent holds `ikp_<token>`, a token auth honors, owned by `u_7f3a9c21`.
 
 Postconditions:
@@ -188,11 +188,11 @@ The third, sent once the script has ended, which this one does within a second, 
 {"id":"<run>","script":"<id>","sha":"<sha>","ref":"main","user":"u_7f3a9c21","request_id":"<run-request>","trigger":"manual","status":"exited","exit_code":0,"started":"<started>","finished":"<finished>","stdout_bytes":10,"stderr_bytes":0,"truncated":false,"stdout":"hello, mg\n","stderr":"","files":[{"path":"greeting.txt","size":10}]}
 ```
 
-Sent before the script has ended, the same call answers with `status` `running`, no `exit_code` and no `finished`, and the output so far, and the agent calls it again. `<id>` is `scr_` followed by 16 lowercase hexadecimal digits, the same in the first and third; `<run>` is `run_` followed by 16 lowercase hexadecimal digits, the same in the second and third; `<run-request>` is the id nginx gave the second request. Each result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"v<semver>"}`, not scripts'.
+Sent before the script has ended, the same call answers with `status` `running`, no `exit_code` and no `finished`, and the output so far, and the agent calls it again. `<id>` is `scr_` followed by 16 lowercase hexadecimal digits, the same in the first and third; `<run>` is `run_` followed by 16 lowercase hexadecimal digits, the same in the second and third; `<run-request>` is the id nginx gave the second request. Each result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"<mcp display>"}`, where `<mcp display>` is the gateway's own display string, not scripts'.
 
 Preconditions:
 
-- scripts `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, and the host's services file lists `scripts` enabled, marked for MCP, with the socket `/run/ikigenba/scripts.sock`.
+- scripts is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, and the host's services file lists `scripts` enabled, marked for MCP, with the socket `/run/ikigenba/scripts.sock`.
 - mcp is deployed and active on the space through its own `S11-on-a-space.md` chain, serving `https://mcp.sbx.ikigenba.dev/mcp`.
 - `python3.12` is installed on the host and on the `PATH` scripts runs with (`S22`).
 - The agent holds `ikp_<token>`, owned by `u_7f3a9c21`, who owns the repository `hello`, `<rep>`, in repos, its `ikigenba.owner` `u_7f3a9c21` and its `main` at `<sha>`, a commit whose tree holds `main.py` above and nothing else, pushed with git as repos' `S17-on-a-space.md` tells.
@@ -255,7 +255,7 @@ Each command exits 0. The lines are on stdout; stderr is empty. `<run>` is the r
 
 Preconditions:
 
-- scripts `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, mcp is deployed and active as in `An agent on a space creates and runs a script through the gateway`, and `python3.12` is installed on the host and on the `PATH` scripts runs with (`S22`).
+- scripts is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches scripts' landing page`, mcp is deployed and active as in `An agent on a space creates and runs a script through the gateway`, and `python3.12` is installed on the host and on the `PATH` scripts runs with (`S22`).
 - `/opt/scripts/etc/env` holds every run setting at its manifest default.
 - `u_7f3a9c21` owns the repository `wait`, `<wait-rep>`, its `main` at `<sha>`, a commit whose tree holds `main.py` above and nothing else, and the script `wait`, running `<wait-rep>` at `main`.
 - No run is running or queued.

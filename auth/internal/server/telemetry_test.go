@@ -56,6 +56,8 @@ func newTrail(t *testing.T, cfg Config, random io.Reader) *trailFixture {
 
 func (f *trailFixture) events(t *testing.T) []telemetry.Event {
 	t.Helper()
+	// R-T5YJ-3Y97: observe the Config.Telemetry writer's recorded Events through
+	// Capture.Events after Flush, keeping their returned order and envelope fields.
 	if err := f.writer.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +69,8 @@ func (f *trailFixture) events(t *testing.T) []telemetry.Event {
 
 func (f *trailFixture) request(t *testing.T, r *http.Request) (*httptest.ResponseRecorder, []telemetry.Event) {
 	t.Helper()
+	// R-T76F-HPZW: observe events formed while this request is served, bounded
+	// by the ServeHTTP call, rather than grouping events by their request id.
 	before := len(f.events(t))
 	w := httptest.NewRecorder()
 	f.server.ServeHTTP(w, r)

@@ -11,11 +11,13 @@ import (
 	appkitmcp "github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/mcp/internal/cli"
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 )
 
 func main() {
+	v := version.Display()
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
@@ -32,9 +34,9 @@ func main() {
 	}()
 	code := cli.Run(ctx, cli.Process{
 		Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv,
-		Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
-		Banner: page.New(gateway.ServiceName, cli.Version).Banner,
-		MCP:    func(w *telemetry.Writer) *appkitmcp.Server { return gateway.NewServer(cli.Version, w) },
+		Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v,
+		Banner: page.New(gateway.ServiceName, v).Banner,
+		MCP:    func(w *telemetry.Writer) *appkitmcp.Server { return gateway.NewServer(v, w) },
 	})
 	signal.Stop(signals)
 	cancel(nil)

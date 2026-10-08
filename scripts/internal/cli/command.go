@@ -12,9 +12,6 @@ import (
 	"github.com/ikigenba/ikigenba/scripts"
 )
 
-// Version is the release version reported by the service.
-var Version = "v0.5.2"
-
 // Exit codes distinguish a successful command, a server failure and incorrect usage.
 const (
 	ExitSuccess = iota
@@ -79,7 +76,7 @@ go_memory_limit = "128M"
 delegate = true
 `
 
-func command(args []string, dir string, stdout, stderr io.Writer) (bool, int) {
+func command(args []string, dir, version string, stdout, stderr io.Writer) (bool, int) {
 	if len(args) == 0 {
 		return false, ExitSuccess
 	}
@@ -94,7 +91,7 @@ func command(args []string, dir string, stdout, stderr io.Writer) (bool, int) {
 	var text string
 	switch args[0] {
 	case "--version":
-		text = Version + "\n"
+		text = version + "\n"
 	case "manifest":
 		text = Manifest
 	case "--help":

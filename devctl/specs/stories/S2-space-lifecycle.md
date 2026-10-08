@@ -394,8 +394,8 @@ $ devctl space destroy staging
 $ devctl space create staging --acme-email ops@ikigenba.dev
 $ devctl restore staging crm
 $ devctl restore staging dashboard
-$ devctl deploy staging crm/dist/crm-v0.1.0.tar.xz
-$ devctl deploy staging dashboard/dist/dashboard-v0.0.9.tar.xz
+$ devctl deploy staging crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
+$ devctl deploy staging dashboard/dist/dashboard-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
 $ devctl space status staging
 ```
 
@@ -421,9 +421,11 @@ restore: ok (opsctl restore dashboard)
 install: ok (opsctl installed crm)
 ...
 install: ok (opsctl installed dashboard)
-crm v0.1.0 active active wal
-dashboard v0.0.9 active active -
+crm <version> active active wal
+dashboard <version> active active -
 ```
+
+Each `<version>` is whatever opsctl reports for that app's new binary.
 
 Each command exits 0. The lines are on stdout; stderr is empty.
 
@@ -435,8 +437,9 @@ Preconditions:
   deployed on it; `crm` declares a database. It does not hold the apex.
 - The developer's ssh configuration can reach the old instance and the new
   one as `ec2-user`.
-- `crm/dist/crm-v0.1.0.tar.xz` and `dashboard/dist/dashboard-v0.0.9.tar.xz`
-  exist, written by `build`.
+- `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` and
+  `dashboard/dist/dashboard-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`
+  exist, written by `build` at one commit.
 
 Postconditions:
 

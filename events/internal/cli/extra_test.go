@@ -27,7 +27,7 @@ func (s refusingSink) Deliver(context.Context, telemetry.Event) error {
 	return errors.New("sink refused")
 }
 
-// R-IKPT-SS28 R-98YL-W8I0
+// R-IKPT-SS28 R-9XI6-OAME
 func TestWriterPauseInjection(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	dir := t.TempDir()
@@ -40,7 +40,7 @@ func TestWriterPauseInjection(t *testing.T) {
 	defer cancel(context.Canceled)
 	var out, errw bytes.Buffer
 	done := make(chan int, 1)
-	p := cli.Process{Pid: 12, Dir: dir, Stdout: &out, Stderr: &errw, Sink: refusingSink{}, Rand: repeatByte(0x5a), LookupEnv: func(k string) (string, bool) {
+	p := cli.Process{Version: "seam-display", Pid: 12, Dir: dir, Stdout: &out, Stderr: &errw, Sink: refusingSink{}, Rand: repeatByte(0x5a), LookupEnv: func(k string) (string, bool) {
 		switch k {
 		case "LISTEN_PID":
 			return "12", true
@@ -92,7 +92,7 @@ func TestServingFailureDiagnostic(t *testing.T) {
 	}
 	var out bytes.Buffer
 	var errw writes
-	code := cli.Run(context.Background(), cli.Process{Pid: 12, Dir: t.TempDir(), Stdout: &out, Stderr: &errw, Sink: &telemetry.Capture{}, Rand: repeatByte(0x5a), LookupEnv: func(k string) (string, bool) {
+	code := cli.Run(context.Background(), cli.Process{Version: "seam-display", Pid: 12, Dir: t.TempDir(), Stdout: &out, Stderr: &errw, Sink: &telemetry.Capture{}, Rand: repeatByte(0x5a), LookupEnv: func(k string) (string, bool) {
 		if k == "LISTEN_PID" {
 			return "12", true
 		}

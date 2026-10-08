@@ -99,8 +99,8 @@ func newStartFixture(t *testing.T) *startFixture {
 	}
 	t.Cleanup(func() { _ = f.notify.Close() })
 	f.env["NOTIFY_SOCKET"] = f.notify.LocalAddr().String()
-	f.p = cli.Process{Dir: dir, Pid: 123, Stdout: &f.out, Stderr: &f.err, Rand: startRand{}, Now: func() time.Time { return time.Date(2020, 1, 2, 3, 4, 5, 123456789, time.FixedZone("test", 3600)) }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Sink: &f.capture, Banner: page.New(pages.ServiceName, cli.Version).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
-		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: cli.Version, Telemetry: w})
+	f.p = cli.Process{Version: "test display", Dir: dir, Pid: 123, Stdout: &f.out, Stderr: &f.err, Rand: startRand{}, Now: func() time.Time { return time.Date(2020, 1, 2, 3, 4, 5, 123456789, time.FixedZone("test", 3600)) }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Sink: &f.capture, Banner: page.New(pages.ServiceName, "test display").Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
+		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test display", Telemetry: w})
 	}, LookupEnv: func(k string) (string, bool) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -185,7 +185,7 @@ func (f *startFixture) get(t *testing.T, path string) *http.Response {
 	return res
 }
 
-// R-V89J-WCJE R-V9HG-A4A3 R-VAPC-NW0S R-VBX9-1NRH R-VD55-FFI6 R-VFKY-6YZK R-V6ZN-HU9K R-XU3M-79Q8 R-SLH1-GJRQ
+// R-V89J-WCJE R-V9HG-A4A3 R-VAPC-NW0S R-VBX9-1NRH R-VD55-FFI6 R-VFKY-6YZK R-V6ZN-HU9K R-SLH1-GJRQ
 func TestRunStartupRefusals(t *testing.T) {
 	for _, tc := range []struct{ name, pid, count, setting, want string }{{"setting", "123", "1", "abc", "DRAIN_SECONDS is 'abc', not a positive whole number of seconds"}, {"missing", "124", "1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"zero", "123", "0", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"space", "123", " 1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"plus", "123", "+1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"many", "123", "0002", "", "0002 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in"}, {"overflow", "123", "999999999999999999999999", "", "999999999999999999999999 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in"}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -216,7 +216,7 @@ func TestRunStartupRefusals(t *testing.T) {
 	}
 }
 
-// R-VGSU-KQQ9 R-VI0Q-YIGY R-VJ8N-CA7N R-VKGJ-Q1YC R-XLKB-IVJD
+// R-VGSU-KQQ9 R-VI0Q-YIGY R-VJ8N-CA7N R-VKGJ-Q1YC R-R2RJ-VWMJ
 func TestRunSocketAndGitRefusals(t *testing.T) {
 	for _, failure := range []string{"inherit", "git", "canceled"} {
 		t.Run(failure, func(t *testing.T) {
@@ -268,7 +268,7 @@ func TestRunSocketAndGitRefusals(t *testing.T) {
 	}
 }
 
-// R-XJ4I-RC1Z R-VO48-VD6F
+// R-WI3E-Z5N4 R-2B7Q-TPSR
 func TestRunFilesystemRefusals(t *testing.T) {
 	for _, path := range []string{"state", "state/sites.db", "cache", "cache/sites"} {
 		t.Run(path, func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestRunNotificationFailure(t *testing.T) {
 	}
 }
 
-// R-XKCF-53SO R-VSZU-EG57 R-XQ8P-U5CQ R-WZM4-N06V R-XO04-AF0R R-W8UJ-DGS8 R-XRNT-FQ8U R-YULW-P307 R-XU3M-79Q8 R-YPQB-601F
+// R-XKCF-53SO R-VSZU-EG57 R-XQ8P-U5CQ R-WZM4-N06V R-XO04-AF0R R-WMZ0-I8LW R-XRNT-FQ8U R-YULW-P307 R-YPQB-601F
 func TestRunFirstStartComposition(t *testing.T) {
 	for _, services := range []string{"", "missing", "malformed"} {
 		t.Run(services, func(t *testing.T) {
@@ -350,7 +350,7 @@ func TestRunFirstStartComposition(t *testing.T) {
 			calls := 0
 			f.p.MCP = func(w *telemetry.Writer) *mcp.Server {
 				calls++
-				return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: cli.Version, Telemetry: w})
+				return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test display", Telemetry: w})
 			}
 			f.start(t)
 			if _, e := os.Stat(filepath.Join(f.p.Dir, "state/sites.db")); e != nil {
@@ -370,14 +370,14 @@ func TestRunFirstStartComposition(t *testing.T) {
 			res := f.get(t, "/about")
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
-			if res.StatusCode != 200 || !bytes.Contains(body, []byte(cli.Version)) {
+			if res.StatusCode != 200 || !bytes.Contains(body, []byte("test display")) {
 				t.Fatalf("about %d %s", res.StatusCode, body)
 			}
 			if code := f.stop(t); code != cli.ExitSuccess {
 				t.Fatalf("exit=%d", code)
 			}
 			events := f.capture.Events()
-			if len(events) < 4 || events[0].Name != "service.started" || events[len(events)-1].Name != "service.stopping" || len(events[0].Attrs) != 1 || events[0].Attrs["version"] != cli.Version || events[0].RequestID != "" || events[0].User != "" {
+			if len(events) < 4 || events[0].Name != "service.started" || events[len(events)-1].Name != "service.stopping" || len(events[0].Attrs) != 1 || events[0].Attrs["version"] != "test display" || events[0].RequestID != "" || events[0].User != "" {
 				t.Fatal(events)
 			}
 			for _, e := range events {
@@ -590,7 +590,7 @@ func startReadFile(path string) ([]byte, error) {
 	return root.ReadFile(filepath.Base(path))
 }
 
-// R-XRNT-FQ8U R-W8UJ-DGS8
+// R-XRNT-FQ8U R-WMZ0-I8LW
 func TestRunStartupLeavesTreesAndRecordsOnlyLifecycle(t *testing.T) {
 	f := newStartFixture(t)
 	f.set("REPOS_DIR", filepath.Join(t.TempDir(), "absent"))
@@ -908,7 +908,7 @@ func TestRunReadinessPrecedesAcceptAndOccursOnce(t *testing.T) {
 	startNoNotification(t, f)
 }
 
-// R-VSZU-EG57 R-XLKB-IVJD R-XJ4I-RC1Z R-VO48-VD6F
+// R-VSZU-EG57 R-R2RJ-VWMJ R-WI3E-Z5N4 R-2B7Q-TPSR
 func TestRunCancellationAtStartupErrorChecks(t *testing.T) {
 	// Inject cancellation at each observation of the context, including the
 	// observation made after an opening failure. This drives startup without
@@ -965,7 +965,7 @@ func (c *startCancelObservation) Err() error {
 	return c.Context.Err()
 }
 
-// R-XLKB-IVJD
+// R-R2RJ-VWMJ
 func TestRunCancellationBeforeReady(t *testing.T) {
 	f := newStartFixture(t)
 	check := startGuardRefusal(t, f)
@@ -989,7 +989,7 @@ func TestRunCancellationBeforeReady(t *testing.T) {
 	}
 }
 
-// R-XLKB-IVJD
+// R-R2RJ-VWMJ
 func TestRunCancellationDuringServicesLookupWithoutNotify(t *testing.T) {
 	for _, unset := range []bool{true, false} {
 		t.Run(map[bool]string{true: "unset", false: "empty"}[unset], func(t *testing.T) {
@@ -1017,7 +1017,7 @@ func TestRunCancellationDuringServicesLookupWithoutNotify(t *testing.T) {
 	}
 }
 
-// R-XLKB-IVJD
+// R-R2RJ-VWMJ
 func TestRunCancellationDuringMCPConstructionWithoutNotify(t *testing.T) {
 	for _, unset := range []bool{true, false} {
 		t.Run(map[bool]string{true: "unset", false: "empty"}[unset], func(t *testing.T) {

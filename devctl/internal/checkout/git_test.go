@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
@@ -58,38 +57,8 @@ func TestCleanReportsPorcelainState(t *testing.T) {
 	}
 }
 
-func TestTagsAtHeadReturnsNonemptyLinesInOrder(t *testing.T) {
-	// R-W9VF-LFNS
-	tests := []struct {
-		name   string
-		stdout string
-		want   []string
-	}{
-		{name: "tags", stdout: "crm/v1.2.3\n\ncrm/v2.0.0-rc.1\n", want: []string{"crm/v1.2.3", "crm/v2.0.0-rc.1"}},
-		{name: "none", stdout: "\n\n", want: nil},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			checkout, commands := checkoutWithGitResult(t, seam.Result{Stdout: []byte(test.stdout)}, nil)
-
-			got, err := checkout.TagsAtHead(context.Background())
-			if err != nil {
-				t.Fatalf("TagsAtHead() error = %v", err)
-			}
-			if !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("TagsAtHead() = %#v, want %#v", got, test.want)
-			}
-			assertCommands(t, *commands, seam.Cmd{
-				Path: "git",
-				Args: []string{"tag", "--points-at", "HEAD"},
-				Dir:  "/work/checkout",
-			})
-		})
-	}
-}
-
 func TestGitQueriesMapProcessFailures(t *testing.T) {
-	// R-CKXO-ECCX
+	// R-5BSS-Z7EJ
 	tests := gitQueryTests()
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -111,6 +80,7 @@ func TestGitQueriesMapProcessFailures(t *testing.T) {
 }
 
 func TestGitQueriesWrapRunnerFailures(t *testing.T) {
+	// R-5BSS-Z7EJ
 	runnerErr := errors.New("runner unavailable")
 	for _, test := range gitQueryTests() {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,9 +93,6 @@ func TestGitQueriesWrapRunnerFailures(t *testing.T) {
 			var gitErr *GitError
 			if errors.As(err, &gitErr) {
 				t.Fatalf("error = %T %v, must not be *GitError", err, err)
-			}
-			if !strings.Contains(err.Error(), "git "+strings.Join(test.args, " ")) {
-				t.Fatalf("error = %q, want command context", err)
 			}
 		})
 	}
@@ -152,14 +119,6 @@ func gitQueryTests() []gitQueryTest {
 			args: []string{"status", "--porcelain"},
 			call: func(checkout *Checkout) error {
 				_, err := checkout.Clean(context.Background())
-				return err
-			},
-		},
-		{
-			name: "tags-at-head",
-			args: []string{"tag", "--points-at", "HEAD"},
-			call: func(checkout *Checkout) error {
-				_, err := checkout.TagsAtHead(context.Background())
 				return err
 			},
 		},

@@ -1,19 +1,8 @@
 package cli
 
 import (
-	"regexp"
 	"testing"
 )
-
-// R-KHH3-TJDH
-func TestVersionIsSemanticVersion(t *testing.T) {
-	t.Parallel()
-
-	semver := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$`)
-	if !semver.MatchString(Version) {
-		t.Errorf("Version %q is not v-prefixed Semantic Versioning", Version)
-	}
-}
 
 // R-SCNW-L802
 func TestManifestConstant(t *testing.T) {

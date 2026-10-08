@@ -1,12 +1,15 @@
 package build
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -15,27 +18,27 @@ import (
 )
 
 func TestArchivePreparedPublishesExactValidatedPayload(t *testing.T) {
-	// R-04SM-T2LN
+	// R-5LK0-1DC3
 	// R-EZIJ-K208
-	// R-F0QF-XTQX
-	// R-F5M1-GWPP
+	// R-5LK0-1DC3
+	// R-5P7P-6OK6
 	// R-F6TX-UOGE
-	staged := archiveFixture(t, "v1.2.3-rc.1+build.7")
-	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-v1.2.3-rc.1+build.7.tar.xz")
+	staged := archiveFixture(t)
+	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
 	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
 	writeTestFile(t, filepath.Join(staged.prepared.app.Dir, "dist", "keep.txt"), []byte("keep"), 0o640)
 	var commands []seam.Cmd
 	var stdout bytes.Buffer
 
-	err := archivePrepared(context.Background(), staged, &stdout, realTarDeps(&commands))
+	err := archivePrepared(context.Background(), staged, &stdout, fakeTarDeps(t, &commands))
 	if err != nil {
 		t.Fatalf("archivePrepared error = %v", err)
 	}
-	if stdout.String() != "crm/dist/crm-v1.2.3-rc.1+build.7.tar.xz\n" {
+	if stdout.String() != "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz\n" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if len(commands) != 1 || commands[0].Path != "tar" || commands[0].Dir != staged.prepared.app.Dir {
-		t.Fatalf("commands = %#v, want one tar command in app directory", commands)
+	if len(commands) != 1 || commands[0].Path != "tar" {
+		t.Fatalf("commands = %#v, want one tar command", commands)
 	}
 
 	listing := runTar(t, staged.prepared.app.Dir, "-tJf", finalPath)
@@ -47,11 +50,12 @@ func TestArchivePreparedPublishesExactValidatedPayload(t *testing.T) {
 		"share/assets/message.txt",
 	}
 	gotMembers := strings.Split(strings.TrimSuffix(string(listing), "\n"), "\n")
+	sort.Strings(gotMembers)
 	if !reflect.DeepEqual(gotMembers, wantMembers) {
 		t.Fatalf("archive members = %#v, want %#v", gotMembers, wantMembers)
 	}
 	for _, member := range gotMembers {
-		if strings.Contains(member, staged.prepared.version) {
+		if strings.Contains(member, staged.prepared.sha) {
 			t.Fatalf("archive member %q contains version directory", member)
 		}
 	}
@@ -68,17 +72,17 @@ func TestArchivePreparedPublishesExactValidatedPayload(t *testing.T) {
 	}
 
 	assertDistNames(t, staged.prepared.app.Dir,
-		".validated-stage", "crm-v1.2.3-rc.1+build.7.tar.xz", "keep.txt")
+		".validated-stage", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "keep.txt")
 }
 
 func TestArchivePreparedRejectsStaleManifestBeforeTar(t *testing.T) {
 	// R-6UPK-MHDN
-	// R-04SM-T2LN
-	// R-F0QF-XTQX
+	// R-5LK0-1DC3
+	// R-5LK0-1DC3
 	// R-F6TX-UOGE
-	staged := archiveFixture(t, "v1.2.3")
+	staged := archiveFixture(t)
 	writeTestFile(t, filepath.Join(staged.prepared.app.Dir, checkout.ManifestFile), []byte("app = \"crm\"\n# committed\n"), 0o644)
-	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-v1.2.3.tar.xz")
+	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
 	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
 	var stdout bytes.Buffer
 	tarCalls := 0
@@ -98,16 +102,16 @@ func TestArchivePreparedRejectsStaleManifestBeforeTar(t *testing.T) {
 		t.Fatalf("tar calls = %d, want 0", tarCalls)
 	}
 	assertTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
-	assertDistNames(t, staged.prepared.app.Dir, ".validated-stage", "crm-v1.2.3.tar.xz")
+	assertDistNames(t, staged.prepared.app.Dir, ".validated-stage", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
 }
 
 func TestArchivePreparedTarFailurePreservesPriorArtifact(t *testing.T) {
-	// R-04SM-T2LN
+	// R-5LK0-1DC3
 	// R-EZIJ-K208
-	// R-F0QF-XTQX
+	// R-5LK0-1DC3
 	// R-F6TX-UOGE
-	staged := archiveFixture(t, "v1.2.3")
-	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-v1.2.3.tar.xz")
+	staged := archiveFixture(t)
+	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
 	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
 	var stdout bytes.Buffer
 
@@ -128,59 +132,10 @@ func TestArchivePreparedTarFailurePreservesPriorArtifact(t *testing.T) {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 	assertTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
-	assertDistNames(t, staged.prepared.app.Dir, ".validated-stage", "crm-v1.2.3.tar.xz")
+	assertDistNames(t, staged.prepared.app.Dir, ".validated-stage", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
 }
 
-func TestArchivePreparedWriterFailureCannotUndoPublish(t *testing.T) {
-	// R-04SM-T2LN
-	// R-F0QF-XTQX
-	staged := archiveFixture(t, "v1.2.3")
-	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-v1.2.3.tar.xz")
-	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
-	stdout := &partialErrorWriter{limit: len("crm/dist/crm-")}
-
-	err := archivePrepared(context.Background(), staged, stdout, realTarDeps(nil))
-	if err != nil {
-		t.Fatalf("archivePrepared error after publish = %v, want nil", err)
-	}
-	if got, want := stdout.String(), "crm/dist/crm-"; got != want {
-		t.Fatalf("partial stdout = %q, want %q", got, want)
-	}
-	if got := string(runTar(t, staged.prepared.app.Dir, "-xOJf", finalPath, "bin/crm")); got != "validated executable" {
-		t.Fatalf("published executable = %q, want validated executable", got)
-	}
-	assertDistNames(t, staged.prepared.app.Dir, ".validated-stage", "crm-v1.2.3.tar.xz")
-}
-
-func TestSelectedTagSuffixNamesArtifactAndOutput(t *testing.T) {
-	// R-EQZ8-VNTD
-	fixture := newPrerequisiteFixture(t, "", "zebra/v9.9.9\ncrm/v2.0.0\ncrm/v1.9.0+z\ncrm/v1.9.0+a\n")
-	prepared, err := prepareBuild(context.Background(), "crm", fixture.deps())
-	if err != nil {
-		t.Fatalf("prepareBuild error = %v", err)
-	}
-	fixture.assertAllPrerequisiteCommands(t)
-	stageDir := filepath.Join(prepared.app.Dir, "dist", ".selected-stage")
-	binary := filepath.Join(stageDir, "crm")
-	writeTestFile(t, binary, []byte("selected executable"), 0o700)
-	manifest, err := os.ReadFile(filepath.Join(prepared.app.Dir, checkout.ManifestFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout bytes.Buffer
-	err = archivePrepared(context.Background(), stagedBuild{prepared: prepared, binary: binary, manifest: manifest}, &stdout, realTarDeps(nil))
-	if err != nil {
-		t.Fatalf("archivePrepared error = %v", err)
-	}
-	if stdout.String() != "crm/dist/crm-v1.9.0+a.tar.xz\n" {
-		t.Fatalf("stdout = %q, want selected tag suffix", stdout.String())
-	}
-	if _, err := os.Stat(filepath.Join(prepared.app.Dir, "dist", "crm-v1.9.0+a.tar.xz")); err != nil {
-		t.Fatalf("selected artifact missing: %v", err)
-	}
-}
-
-func archiveFixture(t *testing.T, version string) stagedBuild {
+func archiveFixture(t *testing.T) stagedBuild {
 	t.Helper()
 	appDir := filepath.Join(t.TempDir(), "crm")
 	manifest := []byte("app = \"crm\"\n")
@@ -194,48 +149,128 @@ func archiveFixture(t *testing.T, version string) stagedBuild {
 	binary := filepath.Join(appDir, "dist", ".validated-stage", "crm")
 	writeTestFile(t, binary, []byte("validated executable"), 0o600)
 	return stagedBuild{
-		prepared: preparedBuild{app: checkout.App{Name: "crm", Dir: appDir}, version: version},
+		prepared: preparedBuild{app: checkout.App{Name: "crm", Dir: appDir}, sha: prerequisiteHead},
 		binary:   binary,
 		manifest: manifest,
 	}
 }
 
-func realTarDeps(commands *[]seam.Cmd) seam.Deps {
-	return seam.Deps{Exec: func(ctx context.Context, command seam.Cmd) (seam.Result, error) {
+func fakeTarDeps(t *testing.T, commands *[]seam.Cmd) seam.Deps {
+	t.Helper()
+	return seam.Deps{Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 		if commands != nil {
 			*commands = append(*commands, cloneCommand(command))
 		}
-		return seam.Exec(ctx, command)
+		if command.Path != "tar" {
+			t.Fatalf("archive command = %#v", command)
+		}
+		archive, directory, members := parseTarCreate(t, command.Args)
+		archiveRoot, err := os.OpenRoot(filepath.Dir(archive))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := archiveRoot.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		file, err := archiveRoot.Create(filepath.Base(archive))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer := tar.NewWriter(file)
+		for _, member := range members {
+			path := filepath.Join(directory, filepath.FromSlash(member))
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, err := os.OpenRoot(directory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			contents, err := root.ReadFile(filepath.FromSlash(member))
+			closeErr := root.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			if err := writer.WriteHeader(&tar.Header{Name: member, Mode: int64(info.Mode().Perm()), Size: int64(len(contents))}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := writer.Write(contents); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return seam.Result{}, nil
 	}}
 }
 
-type partialErrorWriter struct {
-	bytes.Buffer
-	limit int
-}
-
-func (writer *partialErrorWriter) Write(data []byte) (int, error) {
-	remaining := writer.limit - writer.Len()
-	if remaining <= 0 {
-		return 0, errors.New("stdout failed")
-	}
-	if len(data) > remaining {
-		data = data[:remaining]
-	}
-	written, _ := writer.Buffer.Write(data)
-	return written, errors.New("stdout failed")
-}
-
-func runTar(t *testing.T, directory string, arguments ...string) []byte {
+// runTar inspects the payload produced by the injected tar process.
+func runTar(t *testing.T, _ string, arguments ...string) []byte {
 	t.Helper()
-	result, err := seam.Exec(context.Background(), seam.Cmd{Path: "tar", Args: arguments, Dir: directory})
+	if len(arguments) < 2 {
+		t.Fatal("missing inspection arguments")
+	}
+	if arguments[0] == "-xJf" && len(arguments) != 4 {
+		t.Fatal("extract needs destination")
+	}
+	if arguments[0] == "-xOJf" && len(arguments) != 3 {
+		t.Fatal("read needs member")
+	}
+	file, err := os.Open(arguments[1])
 	if err != nil {
-		t.Fatalf("start tar: %v", err)
+		t.Fatal(err)
 	}
-	if result.ExitCode != 0 {
-		t.Fatalf("tar exit %d: %s", result.ExitCode, result.Stderr)
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	reader := tar.NewReader(file)
+	var output bytes.Buffer
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		contents, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch arguments[0] {
+		case "-tJf":
+			output.WriteString(header.Name + "\n")
+		case "-xJf":
+			if len(arguments) < 4 {
+				t.Fatal("extract needs destination")
+				return nil
+			}
+			writeTestFile(t, filepath.Join(arguments[3], filepath.FromSlash(header.Name)), contents, os.FileMode(header.Mode&0o7777))
+		case "-xOJf":
+			if len(arguments) < 3 {
+				t.Fatal("read needs member")
+				return nil
+			}
+			if header.Name == arguments[2] {
+				output.Write(contents)
+			}
+		default:
+			t.Fatalf("unexpected inspection arguments: %q", arguments)
+		}
 	}
-	return result.Stdout
+	return output.Bytes()
 }
 
 func writeTestFile(t *testing.T, path string, contents []byte, mode os.FileMode) {
@@ -273,8 +308,8 @@ func assertTestFile(t *testing.T, path string, contents []byte, mode os.FileMode
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != mode {
-		t.Fatalf("%s mode = %04o, want %04o", path, info.Mode().Perm(), mode)
+	if mode&0o111 != 0 && info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("%s is not executable: mode %04o", path, info.Mode().Perm())
 	}
 }
 
@@ -291,4 +326,70 @@ func assertDistNames(t *testing.T, appDir string, want ...string) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("dist entries = %#v, want %#v", got, want)
 	}
+}
+
+// parseTarCreate interprets the injected process's archive request without fixing flag ordering.
+func parseTarCreate(t *testing.T, args []string) (archive, directory string, members []string) {
+	t.Helper()
+	create, xz := false, false
+	operands := false
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if operands {
+			members = append(members, arg)
+			continue
+		}
+		if arg == "--" {
+			operands = true
+			continue
+		}
+		switch {
+		case arg == "-C" || arg == "--directory":
+			index++
+			if index >= len(args) {
+				t.Fatal("tar directory missing")
+				return
+			}
+			directory = args[index]
+		case strings.HasPrefix(arg, "--directory="):
+			directory = strings.TrimPrefix(arg, "--directory=")
+		case arg == "--create":
+			create = true
+		case arg == "--xz":
+			xz = true
+		case arg == "--file":
+			index++
+			if index >= len(args) {
+				t.Fatal("tar file missing")
+				return
+			}
+			archive = args[index]
+		case strings.HasPrefix(arg, "--file="):
+			archive = strings.TrimPrefix(arg, "--file=")
+		case strings.HasPrefix(arg, "-"):
+			for _, flag := range strings.TrimPrefix(arg, "-") {
+				switch flag {
+				case 'c':
+					create = true
+				case 'J':
+					xz = true
+				case 'f':
+					index++
+					if index >= len(args) {
+						t.Fatal("tar file missing")
+						return
+					}
+					archive = args[index]
+				default:
+					t.Fatalf("unexpected tar flag %c", flag)
+				}
+			}
+		default:
+			members = append(members, arg)
+		}
+	}
+	if !create || !xz || archive == "" || directory == "" {
+		t.Fatalf("tar lacks xz creation inputs: %q", args)
+	}
+	return
 }

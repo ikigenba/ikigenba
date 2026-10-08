@@ -444,7 +444,7 @@ func TestDataPrivateEnvAndToken(t *testing.T) {
 	}, Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
 		switch cmd.Path {
 		case "git":
-			return seam.Result{Stdout: []byte(worktree + "\n")}, nil
+			return fixtureGitResult(cmd, worktree), nil
 		case "go":
 			if err := os.WriteFile(cmd.Args[2], []byte("binary"), 0600); err != nil {
 				return seam.Result{}, err

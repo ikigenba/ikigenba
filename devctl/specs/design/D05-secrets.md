@@ -136,6 +136,6 @@ own: only the lines the stories show.
 
 - R-D209-R4QN: `secrets push` MUST resolve the space before looking up secret values or writing parameters and return the lookup error unchanged; `secrets list` MUST read the requested parameters without requiring an instance, allowing retained objects to be listed after destruction.
 
-- R-D386-4WHC: `secrets push` MUST perform no host operation and MUST NOT deploy or restart an app; re-deploying an existing artifact MUST still upload and invoke install, even when its version is already installed, so a later deploy carries rotated secrets.
+- R-652E-5P77: `secrets push` MUST perform no host operation and MUST NOT deploy or restart an app; re-deploying an existing artifact MUST still upload and invoke install, even when that same file is already installed, so a later deploy carries rotated secrets.
 
 - R-D4G2-IO81: When a command's `Run` returns a non-nil error that `errors.As` matches to `interface{ ExitCode() int }`, `cli.Run` MUST write `devctl: ` followed by that error's message as the first line of stderr, MUST follow that line with exactly one empty line and the already-formatted result of `Detail() string` when `errors.As` also matches the error to `interface{ Detail() string }` and that result is not empty, MUST write nothing further to stdout, and MUST return the result of `ExitCode()`, which MUST be 1 or 2.

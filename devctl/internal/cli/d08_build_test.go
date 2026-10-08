@@ -15,10 +15,9 @@ import (
 
 const expectedBuildUsage = `Usage: devctl build <app>
 
-Build <app> for linux/amd64 and write <app>/dist/<app>-<version>.tar.xz, the
-file deploy copies to a host and opsctl installs. HEAD must be a commit that
-the app's version tag (<app>/v<semver>) points at, with no uncommitted
-changes.
+Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
+deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
+the working tree must have no uncommitted changes.
 `
 
 func TestBuildUsageDiagnosticsThroughCLI(t *testing.T) {
@@ -44,7 +43,7 @@ func TestBuildUsageDiagnosticsThroughCLI(t *testing.T) {
 
 func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
-	// R-HGAQ-5Q0J
+	// R-5GOE-IADB
 	for _, args := range [][]string{
 		{"build", "--help"},
 		{"build", "-h"},
@@ -73,14 +72,18 @@ func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 }
 
 func TestBuildDispatchesArgumentsStdoutAndDeps(t *testing.T) {
-	// R-R7Z4-R65Q
+	// R-R7Z4-R65Q R-5FGI-4IMM R-5KC3-NLLE R-5QFL-KGAV
 	fixture := newCLIBuildFixture(t)
 	result := invokeWithDeps(fixture.deps(), "build", "crm")
-	assertResult(t, result, 0, "crm/dist/crm-v1.2.3.tar.xz\n", "")
+	assertResult(t, result, 0, "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz\n", "")
 	if fixture.cloudCalls != 0 {
 		t.Fatalf("Cloud calls = %d, want zero", fixture.cloudCalls)
 	}
-	if !reflect.DeepEqual(fixture.binaryArgs, [][]string{{"--version"}, {"manifest"}}) {
+	wantGit := [][]string{{"rev-parse", "--show-toplevel"}, {"status", "--porcelain"}, {"rev-parse", "HEAD"}}
+	if !reflect.DeepEqual(fixture.gitArgs, wantGit) {
+		t.Fatalf("git arguments = %#v, want %#v", fixture.gitArgs, wantGit)
+	}
+	if !reflect.DeepEqual(fixture.binaryArgs, [][]string{{"manifest"}}) {
 		t.Fatalf("binary arguments = %#v, want forwarded build of crm", fixture.binaryArgs)
 	}
 }
@@ -101,7 +104,7 @@ func TestBuildIgnoresRootFile(t *testing.T) {
 		want runResult
 	}{
 		{name: "help", args: []string{"build", "--help"}, want: runResult{code: 0, stdout: expectedBuildUsage}},
-		{name: "build", args: []string{"build", "crm"}, want: runResult{code: 0, stdout: "crm/dist/crm-v1.2.3.tar.xz\n"}},
+		{name: "build", args: []string{"build", "crm"}, want: runResult{code: 0, stdout: "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz\n"}},
 	}
 
 	for _, invocation := range invocations {
@@ -158,6 +161,7 @@ type cliBuildFixture struct {
 	failPath   string
 	cloudCalls int
 	binaryArgs [][]string
+	gitArgs    [][]string
 }
 
 func newCLIBuildFixture(t *testing.T) *cliBuildFixture {
@@ -219,7 +223,7 @@ func (fixture *cliBuildFixture) exec(ctx context.Context, command seam.Cmd) (sea
 			return seam.Result{}, errors.New("could not start binary")
 		}
 		if reflect.DeepEqual(command.Args, []string{"--version"}) {
-			return seam.Result{Stdout: []byte("v1.2.3\n")}, nil
+			return seam.Result{ExitCode: 9, Stderr: []byte("version must not be requested")}, nil
 		}
 		if reflect.DeepEqual(command.Args, []string{"manifest"}) {
 			return seam.Result{Stdout: fixture.manifest}, nil
@@ -229,6 +233,7 @@ func (fixture *cliBuildFixture) exec(ctx context.Context, command seam.Cmd) (sea
 }
 
 func (fixture *cliBuildFixture) git(command seam.Cmd) (seam.Result, error) {
+	fixture.gitArgs = append(fixture.gitArgs, append([]string(nil), command.Args...))
 	switch {
 	case reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}):
 		if command.Dir != fixture.workDir {
@@ -244,12 +249,7 @@ func (fixture *cliBuildFixture) git(command seam.Cmd) (seam.Result, error) {
 		if command.Dir != fixture.root {
 			fixture.t.Fatalf("git rev-parse HEAD Dir = %q, want checkout root %q", command.Dir, fixture.root)
 		}
-		return seam.Result{Stdout: []byte("0123456789abcdef\n")}, nil
-	case reflect.DeepEqual(command.Args, []string{"tag", "--points-at", "HEAD"}):
-		if command.Dir != fixture.root {
-			fixture.t.Fatalf("git tag Dir = %q, want checkout root %q", command.Dir, fixture.root)
-		}
-		return seam.Result{Stdout: []byte("crm/v1.2.3\n")}, nil
+		return seam.Result{Stdout: []byte("4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a\n")}, nil
 	default:
 		return seam.Result{}, errors.New("unexpected git arguments")
 	}

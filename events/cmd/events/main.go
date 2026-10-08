@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/events/internal/cli"
 )
 
@@ -31,5 +32,5 @@ func run() int {
 		case <-ctx.Done():
 		}
 	}()
-	return cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Sink: telemetry.NewSocketSink()})
+	return cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: version.Display(), Sink: telemetry.NewSocketSink()})
 }

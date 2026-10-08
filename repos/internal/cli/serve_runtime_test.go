@@ -198,7 +198,7 @@ func awaitServePushStarted(t *testing.T, p *heldServePush) {
 	}
 }
 
-// R-D2AA-CMX9
+// R-KL94-6AAI
 func TestServeRetrySleepAndRepositoryRandomBytes(t *testing.T) {
 	f := newServeFixture(t)
 	var mu sync.Mutex
@@ -248,7 +248,7 @@ func TestServeRetrySleepAndRepositoryRandomBytes(t *testing.T) {
 	}
 }
 
-// R-9Y6A-DUU3 R-D2AA-CMX9
+// R-9Y6A-DUU3 R-KL94-6AAI
 func TestServeSelectedGitAndComposedEnvironmentReachChildren(t *testing.T) {
 	f := newServeFixture(t)
 	selectedDir := filepath.Join(f.dir, "first-path")
@@ -359,7 +359,7 @@ func TestServeSelectedGitAndComposedEnvironmentReachChildren(t *testing.T) {
 	}
 }
 
-// R-D2AA-CMX9
+// R-KL94-6AAI
 func TestServeInjectedQueueAndOperationTimersControlOutcomes(t *testing.T) {
 	f := newServeFixture(t)
 	serveHeldPushTrace(t, f)

@@ -17,12 +17,22 @@ applies in order; this auth carries three, versions `0001`, `0002` and
 
 ## A developer asks which version they have
 
-The version is a `var` in the source, never injected at build time, so a
-developer's build and a deployed binary report the same string. Its shape is
-`v<semver>`: a `v`, then a semantic version, prerelease and build metadata
-included. Its value is data and is not fixed here. It is also the `version`
-auth records in `service.started` each time it starts serving
-(`S02-serve.md`), so the trail names the release that was running.
+auth carries no version of its own: nothing in its source or its build names
+one. The environment tells it which code it is running, through two
+variables: `IKIGENBA_COMMIT`, the commit it was built from, and
+`IKIGENBA_RELEASE`, the label of the release, when there is one. From them
+auth builds its display string, `<display>`, which every later story uses
+with this meaning. With both set it is the label, one space, and the short
+commit in parentheses, `<label> (<short sha>)`; with only the commit it is the
+short commit alone; with only the label it is the label alone. The short
+commit is the first seven characters of `IKIGENBA_COMMIT`, or all of it when
+it is shorter; a value ending in `-dirty`, as a developer's sandbox marks a
+modified tree, is shortened without the suffix and keeps it after, as in
+`<short sha>-dirty`. Nothing else about either value is checked or changed.
+auth reads the two variables each time it is run with `--version`; an auth
+that serves reads them once, when it starts, and records the string as the
+`version` of its `service.started` (`S02-serve.md`), so the trail names the
+code that was running.
 
 Command:
 
@@ -33,7 +43,7 @@ $ auth --version
 Output:
 
 ```
-v<semver>
+<display>
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -41,6 +51,38 @@ Exits 0. The line is on stdout; stderr is empty.
 Preconditions:
 
 - `bin/auth` exists, built from the checkout with `make`.
+- `IKIGENBA_COMMIT` holds a commit, and `IKIGENBA_RELEASE` holds a label or
+  is unset; `<display>` is the string they make.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer asks which version they have with no identity set
+
+With neither variable set, or both empty, auth has no identity to show, and
+`<display>` is the empty string. It still answers, with an empty line, and
+still succeeds: a missing identity is not a failure.
+
+Command:
+
+```
+$ auth --version
+```
+
+Output:
+
+```
+
+```
+
+Exits 0. stdout holds one empty line, a single newline and nothing else;
+stderr is empty.
+
+Preconditions:
+
+- `bin/auth` exists.
+- `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` are both unset or empty.
 
 Postconditions:
 
@@ -174,8 +216,8 @@ UTC to the microsecond; `<version> pending` for one the binary carries that
 the database has not had applied; and `<version> unknown <applied-at>` for one
 the database records that the binary does not carry. It reads `state/auth.db`
 relative to its working directory and only looks: it applies nothing and
-changes nothing. Like `manifest` and `--version`, it needs no socket and reads
-no environment, so it needs none of the Google settings.
+changes nothing. Like `manifest`, it needs no socket and reads no
+environment, so it needs none of the Google settings.
 
 Command:
 
@@ -197,8 +239,8 @@ database records for that version.
 Preconditions:
 
 - `bin/auth` exists.
-- The working directory holds `state/auth.db`, which an auth of this version
-  created or brought up to date, applying version `0001` at
+- The working directory holds `state/auth.db`, which an auth carrying the same
+  migrations created or brought up to date, applying version `0001` at
   `2026-10-05T14:03:07.123456Z`, version `0002` at
   `2026-10-05T14:03:07.125003Z` and version `0003` at
   `2026-10-05T14:03:07.126518Z`. On a host the working directory is
@@ -279,10 +321,12 @@ Postconditions:
 
 A newer auth has applied a migration this binary does not carry, as when a
 deploy is rolled back to an older binary over a database the newer one
-upgraded. This auth serves such a database as it finds it (`S02-serve.md`),
-and `auth db status` shows what it holds: every line as usual, the version it
-does not know among them as `unknown`. A database ahead of the binary is not a
-failure, so `auth db status` says nothing on stderr and succeeds.
+upgraded. Older code runs on newer data: this auth still serves such a
+database, applying nothing to it and warning that it is ahead
+(`S02-serve.md`). `auth db status` shows what the database holds: it prints
+every line as usual, the version it does not know among them as `unknown`,
+and succeeds. A database ahead of the binary is a state to report, not a
+failure.
 
 Command:
 

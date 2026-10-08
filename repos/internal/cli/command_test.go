@@ -20,7 +20,7 @@ func (w *recordedWrites) Write(p []byte) (int, error) {
 	return w.Buffer.Write(p)
 }
 
-// R-U6N7-LBWA R-U7V3-Z3MZ R-U930-CVDO R-XYXH-B0FH R-Y05D-OS66
+// R-KMH0-K217 R-U7V3-Z3MZ R-U930-CVDO R-XYXH-B0FH R-Y05D-OS66
 // R-UCQP-I6LR R-Y2L6-GBNK R-SCSM-XPUS R-Y3T2-U3E9
 func TestCommandDispatchAndDiagnostics(t *testing.T) {
 	cases := []struct {
@@ -29,7 +29,7 @@ func TestCommandDispatchAndDiagnostics(t *testing.T) {
 		arg  string
 		kind string
 	}{
-		{args: []string{"--version"}, out: cli.Version + "\n"},
+		{args: []string{"--version"}, out: "fixture-display" + "\n"},
 		{args: []string{"manifest"}, out: cli.Manifest},
 		{args: []string{"--help"}, out: cli.Usage},
 		{args: []string{"db"}, arg: "db", kind: "command"},

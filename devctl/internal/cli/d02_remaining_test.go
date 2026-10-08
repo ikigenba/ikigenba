@@ -12,9 +12,10 @@ import (
 
 const expectedDeployUsage = `Usage: devctl deploy <space> <file>
 
-Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
+Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
-from there. The app and tag (v<semver>) are read from the file name.
+from there. The app and commit sha (40 lowercase hex digits) are read from the
+file name.
 `
 
 const expectedRestoreUsage = `Usage: devctl restore <space> <app> [--at <timestamp>]

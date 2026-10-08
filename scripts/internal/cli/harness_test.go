@@ -28,6 +28,8 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
 )
 
+const testVersion = "test display"
+
 type lockedBuffer struct {
 	mu sync.Mutex
 	bytes.Buffer
@@ -119,7 +121,7 @@ func newHarness(t *testing.T) *runHarness {
 	cgroup := filepath.Join(root, "cgroup")
 	mustCLI(t, os.Mkdir(cgroup, 0700))
 	mustCLI(t, os.WriteFile(filepath.Join(cgroup, "cgroup.procs"), []byte("123\n"), 0600))
-	h.p = cli.Process{Cgroup: cgroup, Pid: 123, Dir: filepath.Join(root, "scripts"), LookupEnv: h.lookup, Environ: h.environ, Unsetenv: h.unset, Inherit: func(fd uintptr) (net.Listener, error) {
+	h.p = cli.Process{Version: testVersion, Cgroup: cgroup, Pid: 123, Dir: filepath.Join(root, "scripts"), LookupEnv: h.lookup, Environ: h.environ, Unsetenv: h.unset, Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			return nil, errors.New("unexpected descriptor")
 		}
@@ -134,8 +136,8 @@ func newHarness(t *testing.T) *runHarness {
 		h.timers <- ch
 		h.durations <- d
 		return ch
-	}, Banner: page.New(pages.ServiceName, cli.Version).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
-		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: cli.Version, Telemetry: w})
+	}, Banner: page.New(pages.ServiceName, testVersion).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
+		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: testVersion, Telemetry: w})
 	}}
 	h.http = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
 	h.client = mcp.NewClient(mcp.ClientConfig{Endpoint: "http://" + ln.Addr().String() + "/mcp", HTTPClient: h.http})

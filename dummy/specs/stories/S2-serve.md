@@ -38,11 +38,21 @@ it opens the database, so a start refused as a usage error has touched
 nothing, not even the database. Then it creates `state/` if it is absent and
 `state/dummy.db` if it is absent, brings the database up to date by applying,
 in order, every migration it carries that the database has not had (`S1`),
-and only then serves and tells systemd it is ready. A database it cannot open,
-or one that records a migration it does not carry, is a start it refuses, with
-one line on stderr, `dummy: cannot open database state/dummy.db: <reason>`,
-and exit status 1. dummy is the database's only writer, and the host
+and only then serves and tells systemd it is ready. A database it cannot open
+is a start it refuses, with one line on stderr,
+`dummy: cannot open database state/dummy.db: <reason>`, and exit status 1. A
+database that records a migration it does not carry is one a newer dummy has
+upgraded; dummy applies nothing to it, warns on stderr that it is ahead, and
+serves it as usual (below). dummy is the database's only writer, and the host
 replicates it as the manifest declares (`S1`).
+
+dummy's environment may also carry `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`,
+from which it builds `<display>`, the display string `dummy --version` prints
+under the same environment (`S1`). dummy reads them once, when it starts, and
+shows that string as its version wherever it shows one: in its
+`service.started` event (below), its pages' footer (`S3`), and its MCP
+`serverInfo` (`S9-mcp.md`). With neither set the string is empty, and dummy
+starts and serves all the same.
 
 dummy keeps a trail: it records what it does as events it sends to the
 platform's telemetry service, where an operator, or an agent working for one,
@@ -119,9 +129,8 @@ loopback port, and only the `ikigenba` user and nginx can connect to
 accepts connections into its queue, before dummy starts and while it is
 stopped; dummy's part is to serve what arrives on it. `systemctl start`
 returns once dummy has reported that it is ready. At that moment dummy
-records `service.started`, the first event of its trail, with the version it
-is running: a new version in a start event is how a deploy shows in the
-trail.
+records `service.started`, the first event of its trail, with `<display>` as
+its `version`: a new value there is how a deploy shows in the trail.
 
 Command:
 
@@ -157,10 +166,12 @@ Postconditions:
 - `/opt/dummy/state/dummy.db` is the database it opened, now up to date, and
   every widget it held is still there.
 - telemetry has received one event from dummy, with no request id and no
-  user, whose `version` is the version `dummy --version` prints (`S1`):
+  user, whose `version` is `<display>`, the string `dummy --version` prints
+  under the environment the host gives dummy (`S1`), the empty string when
+  that environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`:
 
   ```
-  {"time":"<time>","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+  {"time":"<time>","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"<display>"}}
   ```
 
 - dummy has written nothing to the journal.
@@ -211,8 +222,8 @@ Postconditions:
   this start applied it (`S1`).
 - dummy is serving on the socket it was passed, and on no other.
 - The database holds no widgets: the panel lists none (`S3`).
-- telemetry has received dummy's `service.started`, with the version
-  `dummy --version` prints.
+- telemetry has received dummy's `service.started`, whose `version` is
+  `<display>`.
 - It keeps running until it is signalled.
 
 ## The host starts dummy over an existing database
@@ -257,8 +268,8 @@ Postconditions:
 - The panel lists exactly `alpha` 3 `active`, `beta` 0 `paused`, and `gamma`
   12 `retired`, in that order, with the ids `<alpha-id>`, `<beta-id>`, and
   `<gamma-id>` (`S3`).
-- telemetry has received dummy's `service.started`, with the version
-  `dummy --version` prints.
+- telemetry has received dummy's `service.started`, whose `version` is
+  `<display>`.
 - It keeps running until it is signalled.
 
 ## The host starts dummy where its state directory cannot be created
@@ -339,11 +350,14 @@ Postconditions:
 
 A deploy rolled back to an older binary leaves it over a database a newer
 dummy has upgraded: the database records a migration this dummy does not
-carry, so its schema is one this dummy does not understand. Rather than read
-it, dummy refuses to start, naming the version it does not know, and the
-rollback fails loudly instead of serving wrong answers. There is no way back
-down a migration; restoring the database from before the upgrade is the
-rollback. `dummy db status` shows the version as `unknown` (`S1`).
+carry. Data never rolls back, so older code must run on newer data, and this
+dummy serves the database as it stands. It applies nothing, not even a
+migration it carries that the database lacks, and writes one line to stderr
+naming the lowest version it does not carry, zero-padded to four digits as
+`dummy db status` prints it; on a host that line goes to the journal. Then it
+serves and tells systemd it is ready, as in any start. The warning is a line
+on stderr only, not an event in the trail. `dummy db status` lists every
+version the database records, the unknown ones as `unknown` (`S1`).
 
 Command:
 
@@ -354,11 +368,11 @@ $ dummy
 Output:
 
 ```
-dummy: cannot open database state/dummy.db: <reason>
+dummy: unknown migration version 0002: database is ahead of this binary
 ```
 
-Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version
-this dummy does not carry, zero-padded to four digits: `0002`.
+Does not exit. The line is on stderr, written before dummy serves; stdout is
+empty.
 
 Preconditions:
 
@@ -367,13 +381,22 @@ Preconditions:
 - `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `1`: one listening
   socket is passed in, as file descriptor 3.
 - `DRAIN_SECONDS` is unset, or a positive whole number.
+- `IKIGENBA_SERVICES` names a services file whose `telemetry` entry takes
+  every event.
 - `state/dummy.db` exists and records versions `0001` and `0002` as applied.
+  It holds exactly these widgets, in creation order: `alpha` 3 `active`,
+  `beta` 0 `paused`, `gamma` 12 `retired`.
 
 Postconditions:
 
-- Nothing has changed: the database still records `0001` and `0002` and
-  holds the widgets it held. dummy served nothing, told systemd nothing, and
-  recorded no event.
+- The database still records `0001` and `0002`, and no other version; this
+  start applied nothing.
+- dummy is serving on the socket it was passed, over that `state/dummy.db`.
+- The panel lists exactly `alpha` 3 `active`, `beta` 0 `paused`, and `gamma`
+  12 `retired`, in that order (`S3`).
+- telemetry has received dummy's `service.started`, whose `version` is
+  `<display>`, and no event about the warning.
+- It keeps running until it is signalled.
 
 ## The host stops dummy
 
@@ -538,7 +561,7 @@ Postconditions:
   same order.
 - telemetry has received the old dummy's `service.stopping`, with `reason`
   `SIGTERM`, and after it the new dummy's `service.started`, whose `version`
-  is the version the new binary's `dummy --version` prints. Every request the
+  is the `<display>` of the new dummy's environment. Every request the
   old dummy answered is recorded before its `service.stopping`, and every
   request the new one answered after its `service.started`.
 
@@ -585,7 +608,7 @@ Postconditions:
   was ready:
 
   ```
-  dummy: undelivered event: {"time":"<time>","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+  dummy: undelivered event: {"time":"<time>","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"<display>"}}
   ```
 
 - Every event dummy records while telemetry cannot be reached is written to

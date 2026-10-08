@@ -18,9 +18,10 @@ whether that is systemd or a developer at a terminal standing in for it.
 
 The environment auth reads is the two Google secrets `GOOGLE_CLIENT_ID` and
 `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, `DRAIN_SECONDS`,
-`IKIGENBA_PUBLIC_URL`, `IKIGENBA_CALLBACK_URL`, and `IKIGENBA_SERVICES`. The
-first three are required. `DRAIN_SECONDS` is how long auth drains when stopped,
-a positive whole number of seconds, and 5 when it is unset or empty. On a host,
+`IKIGENBA_PUBLIC_URL`, `IKIGENBA_CALLBACK_URL`, `IKIGENBA_SERVICES`,
+`IKIGENBA_COMMIT`, and `IKIGENBA_RELEASE`. The first three are required.
+`DRAIN_SECONDS` is how long auth drains when stopped, a positive whole number
+of seconds, and 5 when it is unset or empty. On a host,
 opsctl owns that value and the service unit's stop timeout: both are space-wide
 settings in opsctl's configuration, opsctl writes the drain into every app's
 `etc/env` and the stop timeout (10 seconds by default, always longer than the
@@ -74,13 +75,14 @@ Opening it, auth creates `state/` if it is absent and `state/auth.db` if it is
 absent, brings the database up to date by applying, in order, every migration
 it carries that the database has not had (`S01-bootstrap.md`), and only then
 serves and tells systemd it is ready. A database it cannot open is a start it
-refuses, with one line on stderr, `auth: cannot open database state/auth.db:
-<reason>`, and exit status 1. A database that records a migration it does not
-carry, one a newer auth has upgraded, it serves as it finds it, applying
-nothing and warning once on stderr. The users, sessions, sign-ins in flight
-and tokens it keeps there outlive every restart and deploy. auth is the
-database's only writer, and the host replicates it as the manifest declares
-(`S01-bootstrap.md`).
+refuses, with one line on stderr,
+`auth: cannot open database state/auth.db: <reason>`, and exit status 1. A
+database that records a migration it does not carry is one a newer auth has
+upgraded; auth applies nothing to it, warns on stderr that it is ahead, and
+serves it as usual (see `The host starts auth with a database a newer auth has
+upgraded`). The users, sessions, sign-ins in flight and tokens it keeps there
+outlive every restart and deploy. auth is the database's only writer, and the host
+replicates it as the manifest declares (`S01-bootstrap.md`).
 Starting touches no network: the Google settings are read and required at
 startup, but Google itself is reached only when a human signs in
 (`S03-sign-in.md`), so auth serves even while Google is unreachable, and
@@ -89,6 +91,13 @@ the stories below that run `auth` directly, its environment sets
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
 `WORKSPACE_DOMAIN=michaelgreenly.dev`, and leaves `IKIGENBA_PUBLIC_URL` and
 `IKIGENBA_CALLBACK_URL` unset, unless a story says otherwise.
+
+`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` are optional too; from them auth
+builds `<display>`, the display string `auth --version` prints under the same
+environment (`S01-bootstrap.md`). auth reads them once, when it starts, and
+shows that string as its version wherever it shows one: in its
+`service.started` event (below) and its pages' footer (`S03-sign-in.md`). With
+neither set the string is empty, and auth starts and serves all the same.
 
 auth records what it does as a trail of events, which it delivers to the
 platform's telemetry service: the entry named `telemetry` in the services file
@@ -106,7 +115,8 @@ otherwise the telemetry service is reachable, so every event auth records
 reaches the trail.
 
 - Once auth is serving, as it reports ready, it records `service.started` with
-  `version`, the string `auth --version` prints (`S01-bootstrap.md`); its
+  `version`, the string `<display>` (`S01-bootstrap.md`), empty when the
+  environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`; its
   request id and user are empty. A start that fails before auth is serving
   records no event.
 - Every request auth serves — its pages, `/check`, `/check/open`, `/me`, the
@@ -204,8 +214,9 @@ Postconditions:
   there.
 - No network call to Google was made; the Google settings were read from the
   environment, not checked against Google.
-- auth records `service.started` with `version=v<semver>`, the version
-  `/opt/auth/bin/auth --version` prints, under no request id and no user.
+- auth records `service.started` with `version=<display>`, the string
+  `/opt/auth/bin/auth --version` prints under the environment the host gives
+  auth, under no request id and no user.
 - auth has written nothing to the journal.
 - It keeps running until it is signalled.
 
@@ -255,8 +266,8 @@ Postconditions:
   (`S01-bootstrap.md`).
 - The database holds no users, sessions, or tokens.
 - auth is serving on the socket it was passed, and on no other.
-- auth records `service.started` with `version=v<semver>`, the version
-  `auth --version` prints, under no request id and no user.
+- auth records `service.started` with `version=<display>`, under no request
+  id and no user.
 - It keeps running until it is signalled.
 
 ## The host starts auth over a database an earlier auth wrote
@@ -304,8 +315,8 @@ Postconditions:
   id now carries the `tok_` prefix and the token is a personal token, and
   nothing else about it has changed: it keeps its secret, name, times and
   state, and authenticates everywhere it did (`S05-tokens.md`).
-- auth records `service.started` with `version=v<semver>`, the version
-  `auth --version` prints, under no request id and no user.
+- auth records `service.started` with `version=<display>`, under no request
+  id and no user.
 - It keeps running until it is signalled.
 
 ## The host starts auth where telemetry cannot be reached
@@ -325,12 +336,13 @@ $ auth
 Output:
 
 ```
-auth: undelivered event: {"time":"<time>","service":"auth","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+auth: undelivered event: {"time":"<time>","service":"auth","event":"service.started","request_id":"","user":"","attrs":{"version":"<display>"}}
 ```
 
 Does not exit. The line is on stderr; stdout is empty. `<time>` is when auth
 became ready, in UTC, as `2026-10-02T14:03:09.123456Z`: six fractional digits
-and a `Z`. `v<semver>` is what `auth --version` prints. Every later event auth
+and a `Z`. `<display>` is what `auth --version` prints under the same
+environment (`S01-bootstrap.md`). Every later event auth
 records — the two of every request it serves, and `service.stopping` when it
 is stopped — is written the same way, one line each, in the order recorded.
 
@@ -430,16 +442,16 @@ Postconditions:
 ## The host starts auth with a database a newer auth has upgraded
 
 A deploy rolled back to an older binary leaves it over a database a newer auth
-has upgraded: the database records a migration this auth does not carry. Each
-release's migrations only add to the schema the release before it uses, so
-this auth serves that database as it finds it, and the rollback works. It
-applies nothing, not even a migration it carries that the database lacks, and
-otherwise starts and serves as it always does. It says once, on stderr, that
-the database is ahead of it, naming the lowest version it does not know,
-zero-padded to four digits; that line is no event, and nothing reaches the
-trail for it. `auth db status` lists every version it does not know as
-`unknown` (`S01-bootstrap.md`). Under systemd the start succeeds, and the
-journal holds the line.
+has upgraded: the database records a migration this auth does not carry. Data
+never rolls back, so older code must run on newer data, and this auth serves
+the database as it stands. It applies nothing, not even a migration it
+carries that the database lacks, and writes one line to stderr naming the
+lowest version it does not carry, zero-padded to four digits as
+`auth db status` prints it; on a host that line goes to the journal. Then it
+serves and tells systemd it is ready, as in any start. The warning is a line
+on stderr only, not an event in the trail. `auth db status` lists every
+version the database records, the unknown ones as `unknown`
+(`S01-bootstrap.md`).
 
 Command:
 
@@ -471,12 +483,13 @@ Preconditions:
 
 Postconditions:
 
-- auth is serving on the socket it was passed, over the same `state/auth.db`:
+- The database still records `0001`, `0002`, `0003`, and `0004`, and no
+  other version; this start applied nothing.
+- auth is serving on the socket it was passed, over that `state/auth.db`:
   `/check` with that member's session cookie answers 200 (`S04-check.md`).
-- Starting changed nothing in the database: it still records `0001`, `0002`,
-  `0003`, and `0004`, and holds the users, sessions, and tokens it held.
-- auth records `service.started` with `version=v<semver>`, the version
-  `auth --version` prints, under no request id and no user.
+  Every user, session, and token the database held is still there.
+- auth records `service.started` with `version=<display>`, under no request
+  id and no user, and no event about the warning.
 - The line above is all auth has written to stderr.
 - It keeps running until it is signalled.
 
@@ -625,8 +638,9 @@ Postconditions:
   answered it, with its `request.started` and `request.finished`.
 - The old auth recorded `service.stopping` with `reason=SIGTERM`, after the
   `request.finished` of every request it answered; the new auth recorded
-  `service.started` with `version=v<semver>`, the version of the binary the
-  deploy installed, so the trail shows the deploy as a new version in a start event.
+  `service.started` with `version=<display>`, the `<display>` of the new
+  auth's environment, so a new value there is how the deploy shows in the
+  trail.
 - A new auth process is serving on the same socket, over the same
   `state/auth.db`, now up to date. Every user, session, and token the old
   auth held is still there.

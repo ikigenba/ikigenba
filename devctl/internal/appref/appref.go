@@ -60,43 +60,25 @@ func ValidVersion(version string) bool {
 	return true
 }
 
-// VersionForTag extracts app's version from a checkout tag.
-func VersionForTag(app, tag string) (string, bool) {
-	if !ValidName(app) {
-		return "", false
-	}
-	version, found := strings.CutPrefix(tag, app+"/")
-	if !found || !ValidVersion(version) {
-		return "", false
-	}
-	return version, true
-}
-
-// ParseFile extracts the app and version from a release archive basename.
-func ParseFile(name string) (app, version string, err error) {
+// ParseFile extracts the app and commit SHA from an app archive basename.
+func ParseFile(name string) (app, sha string, err error) {
 	const suffix = ".tar.xz"
 	if strings.ContainsAny(name, `/\`) || !strings.HasSuffix(name, suffix) {
 		return "", "", fmt.Errorf("invalid app archive name %q", name)
 	}
 
 	stem := strings.TrimSuffix(name, suffix)
-	for i := 0; i < len(stem); i++ {
-		if stem[i] != '-' {
-			continue
-		}
-		candidateApp, candidateVersion := stem[:i], stem[i+1:]
-		if !ValidName(candidateApp) || !ValidVersion(candidateVersion) {
-			continue
-		}
-		if app != "" {
-			return "", "", fmt.Errorf("ambiguous app archive name %q", name)
-		}
-		app, version = candidateApp, candidateVersion
-	}
-	if app == "" {
+	separator := len(stem) - 41
+	if separator < 1 || stem[separator] != '-' || !ValidName(stem[:separator]) {
 		return "", "", fmt.Errorf("invalid app archive name %q", name)
 	}
-	return app, version, nil
+	sha = stem[separator+1:]
+	for i := range len(sha) {
+		if (sha[i] < '0' || sha[i] > '9') && (sha[i] < 'a' || sha[i] > 'f') {
+			return "", "", fmt.Errorf("invalid app archive name %q", name)
+		}
+	}
+	return stem[:separator], sha, nil
 }
 
 func validDecimal(value string) bool {

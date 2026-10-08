@@ -26,7 +26,7 @@ func Run(ctx context.Context, p Process) int {
 	known := true
 	switch p.Args[0] {
 	case "--version":
-		product = Version + "\n"
+		product = p.Version + "\n"
 	case "manifest":
 		product = Manifest
 	case "--help":

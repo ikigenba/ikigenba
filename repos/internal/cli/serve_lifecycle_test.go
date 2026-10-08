@@ -27,7 +27,7 @@ import (
 )
 
 // R-SE0J-BHLH R-PYUG-U5QU R-SF8F-P9C6 R-KNVY-XKGA R-9WYE-033E
-// R-3L4Q-ADYE R-D2AA-CMX9
+// R-KV0B-8G82 R-KL94-6AAI
 func TestServePersistentStoreAndInjectedWiring(t *testing.T) {
 	f := newServeFixture(t)
 	f.start(t)
@@ -55,7 +55,7 @@ func TestServePersistentStoreAndInjectedWiring(t *testing.T) {
 		t.Fatalf("create %v", created)
 	}
 	status, _, body := f.request(t, "/", "page")
-	if status != 200 || !bytes.Contains(body, []byte(web.ServiceName+" "+cli.Version)) || f.bannerCalls.Load() != 1 {
+	if status != 200 || !bytes.Contains(body, []byte(web.ServiceName+" "+f.p.Version)) || f.bannerCalls.Load() != 1 {
 		t.Fatalf("page status %d banner calls %d body %s", status, f.bannerCalls.Load(), body)
 	}
 	status, headers, _ := f.request(t, "/alpha.git/info/refs?service=git-upload-pack", "fetch")
@@ -98,9 +98,10 @@ func TestServePersistentStoreAndInjectedWiring(t *testing.T) {
 	f2.stop(t, "second stop", cli.ExitSuccess)
 }
 
-// R-Q3Q2-D8PM R-KQBR-P3XO R-KP3V-BC6Z R-KNVY-XKGA R-A0M3-5EBH
+// R-Q3Q2-D8PM R-KTSE-UOHD R-KP3V-BC6Z R-KNVY-XKGA R-A0M3-5EBH
 func TestServeReadyVerifyAndMaintenanceBeforeFirstAccept(t *testing.T) {
 	f := newServeFixture(t)
+	f.p.Version = "injected lifecycle display"
 	g, err := git.Find(filepath.Dir(f.gitPath), f.p.Environ)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +139,7 @@ func TestServeReadyVerifyAndMaintenanceBeforeFirstAccept(t *testing.T) {
 				if len(events) != 2 || events[0].Name != "repo.unavailable" || events[0].Attrs["repo"] != repo.ID || events[1].Name != "service.started" {
 					t.Errorf("events before Accept: %+v", events)
 				}
-				if events[1].RequestID != "" || events[1].User != "" || !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"version": cli.Version}) {
+				if events[1].RequestID != "" || events[1].User != "" || !reflect.DeepEqual(events[1].Attrs, telemetry.Attrs{"version": f.p.Version}) {
 					t.Errorf("start envelope %+v", events[1])
 				}
 				if f.mcpCalls.Load() != 1 {
@@ -195,7 +196,7 @@ func TestServeNotificationFailureHasNoStartedEventOrAccept(t *testing.T) {
 	}
 }
 
-// R-A31V-WXSV R-9WYE-033E
+// R-KXG3-ZZPG R-9WYE-033E
 func TestServeServicesStartToleranceAndCapturedPath(t *testing.T) {
 	for _, value := range []string{"", "missing", "malformed", "directory"} {
 		t.Run(value, func(t *testing.T) {

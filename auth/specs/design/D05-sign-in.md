@@ -311,8 +311,9 @@ as the template named `banner` in the set `page.Templates()` returns. auth
 decides what goes into it and where it goes; appkit decides how it is drawn.
 The data comes from the `Banner` function in `server.Config` (D03): in the
 running binary the `Banner` method of the kit `main` made with
-`page.New("auth", version.Version)` (D01), which adds the service's name,
-auth's release version, and the launcher's services, read afresh from the
+`page.New("auth", v)`, `v` being the display string `main` reads (D01), which
+adds the service's name, the display string `--version` prints, and the
+launcher's services, read afresh from the
 host's services file on every call; in a test,
 a closure returning whatever the case needs. auth calls it once per page it
 draws with the banner, with the **banner user**: the signed-in user's email,

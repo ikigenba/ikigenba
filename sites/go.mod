@@ -2,7 +2,7 @@ module github.com/ikigenba/ikigenba/sites
 
 go 1.26
 
-require github.com/ikigenba/ikigenba/appkit v0.15.0
+require github.com/ikigenba/ikigenba/appkit v0.16.1
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

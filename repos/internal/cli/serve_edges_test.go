@@ -98,7 +98,7 @@ func TestServeAbstractNotificationExactlyOnce(t *testing.T) {
 	noServeNotification(t, f.notify)
 }
 
-// R-YCCD-IHL4 R-KP3V-BC6Z
+// R-KW87-M7YR R-KP3V-BC6Z
 func TestServeCancellationDuringVerificationFinishesOnlyVerificationEvents(t *testing.T) {
 	f := newServeFixture(t)
 	g, err := git.Find(filepath.Dir(f.gitPath), f.p.Environ)
@@ -143,7 +143,7 @@ func TestServeCancellationDuringVerificationFinishesOnlyVerificationEvents(t *te
 	}
 }
 
-// R-A0M3-5EBH R-QJKR-C9CN R-D2AA-CMX9
+// R-A0M3-5EBH R-QJKR-C9CN R-KL94-6AAI
 func TestServeMaintenanceWiringAndStopLast(t *testing.T) {
 	f := newServeFixture(t)
 	finished := make(chan telemetry.Event, 1)
@@ -240,7 +240,7 @@ func TestServeDirOverridesPrivateWorkingDirectory(t *testing.T) {
 	}
 }
 
-// R-D2AA-CMX9 R-9WYE-033E R-KNVY-XKGA
+// R-KL94-6AAI R-9WYE-033E R-KNVY-XKGA
 func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 	f := newServeFixture(t)
 	f.p.Banner = func(u page.User) page.Banner {
@@ -248,12 +248,12 @@ func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 		if u.Email != "caller@example.test" {
 			t.Errorf("banner user %+v", u)
 		}
-		return page.Banner{Service: "injected-banner", Version: cli.Version, Email: u.Email}
+		return page.Banner{Service: "injected-banner", Version: "fixture-display", Email: u.Email}
 	}
 	f.p.MCP = func(w *telemetry.Writer) *mcp.Server {
 		f.mcpCalls.Add(1)
 		f.writer.Store(w)
-		return mcp.NewServer(mcp.ServerConfig{Name: "injected-mcp", Version: cli.Version, Telemetry: w, Instructions: func(context.Context) string { return "injected instructions" }})
+		return mcp.NewServer(mcp.ServerConfig{Name: "injected-mcp", Version: "fixture-display", Telemetry: w, Instructions: func(context.Context) string { return "injected instructions" }})
 	}
 	f.start(t)
 	r, err := http.NewRequestWithContext(t.Context(), "GET", "http://"+f.listener.Addr().String()+"/", nil)
@@ -271,7 +271,7 @@ func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != 200 || !strings.Contains(string(body), "injected-banner "+cli.Version) || f.bannerCalls.Load() != 1 {
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "injected-banner fixture-display") || f.bannerCalls.Load() != 1 {
 		t.Fatalf("injected banner not rendered: %d %s", resp.StatusCode, body)
 	}
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://" + f.listener.Addr().String() + "/mcp", HTTPClient: f.client()})
@@ -293,7 +293,7 @@ func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 	if err = json.Unmarshal(envelope.Meta["io.modelcontextprotocol/serverInfo"], &info); err != nil {
 		t.Fatal(err)
 	}
-	if len(info) != 2 || info["name"] != "injected-mcp" || info["version"] != cli.Version {
+	if len(info) != 2 || info["name"] != "injected-mcp" || info["version"] != "fixture-display" {
 		t.Fatalf("MCP factory result ignored: %s", raw)
 	}
 	f.stop(t, "injected outputs", cli.ExitSuccess)
@@ -302,7 +302,7 @@ func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 	}
 }
 
-// R-YCCD-IHL4
+// R-KW87-M7YR
 func TestServeDoneContextOverridesUnopenableState(t *testing.T) {
 	f := newServeFixture(t)
 	if err := os.WriteFile(filepath.Join(f.dir, "state"), []byte("unchanged"), 0600); err != nil {

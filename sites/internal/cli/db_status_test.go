@@ -42,7 +42,7 @@ func statusFixture(t *testing.T, cfg db.Config, change string) {
 	}
 }
 
-// R-Y1F0-HW6E R-Y2MW-VNX3 R-Y3UT-9FNS R-9VHM-MG7A R-WIJJ-A7T5 R-WX6B-VGPH R-XE8X-8937
+// R-WGVI-LDWF R-Y1F0-HW6E R-Y2MW-VNX3 R-WFNM-7M5Q R-9VHM-MG7A R-WIJJ-A7T5 R-WX6B-VGPH R-XE8X-8937
 func TestDatabaseStatusDelegation(t *testing.T) {
 	for _, fixture := range []string{"absent", "applied", "pending", "unknown", "invalid", "newline-path"} {
 		t.Run(fixture, func(t *testing.T) {
@@ -71,6 +71,9 @@ func TestDatabaseStatusDelegation(t *testing.T) {
 			}
 			var expected bytes.Buffer
 			expectedErr := db.Status(context.Background(), cfg, &expected)
+			if fixture == "unknown" && (expectedErr != nil || !strings.Contains(expected.String(), "9999")) {
+				t.Fatal("unknown version was not reported successfully", expectedErr, expected.String())
+			}
 			var out, stderr observedWriter
 			forbidden := func() { t.Fatal("status used process seam") }
 			p := cli.Process{Args: []string{"db", "status"}, Dir: dir, Stdout: &out, Stderr: &stderr,
@@ -120,7 +123,7 @@ func (w *statusErrorWriter) Write(p []byte) (int, error) {
 	return n, errors.New("output\nrefused")
 }
 
-// R-Y3UT-9FNS R-WX6B-VGPH
+// R-WFNM-7M5Q R-WX6B-VGPH
 func TestDatabaseStatusOutputErrorFlattened(t *testing.T) {
 	dir := t.TempDir()
 	cfg := statusConfig(dir)

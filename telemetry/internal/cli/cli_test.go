@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +34,7 @@ func refusedProcess(t *testing.T) (cli.Process, *bytes.Buffer, *writes) {
 	t.Helper()
 	stdout := new(bytes.Buffer)
 	stderr := new(writes)
-	p := cli.Process{Stdout: stdout, Stderr: stderr, Pid: 42, Dir: t.TempDir(), Rand: forbiddenReader{t}, Now: func() time.Time { t.Error("clock consulted"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Error("sleep consulted") }, Inherit: func(uintptr) (net.Listener, error) {
+	p := cli.Process{Stdout: stdout, Stderr: stderr, Pid: 42, Version: "injected display", Dir: t.TempDir(), Rand: forbiddenReader{t}, Now: func() time.Time { t.Error("clock consulted"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Error("sleep consulted") }, Inherit: func(uintptr) (net.Listener, error) {
 		t.Error("descriptor inherited")
 		return nil, errors.New("unexpected")
 	}, Unsetenv: func(string) error { t.Error("environment changed"); return nil }}
@@ -49,24 +48,8 @@ func assertEmpty(t *testing.T, dir string) {
 	}
 }
 
-// R-U3IP-MTPS R-U4QM-0LGH R-V80L-VTUN R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
+// R-V80L-VTUN R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
 func TestDeclarations(t *testing.T) {
-	version := &cli.Version
-	semanticVersion := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
-	if !semanticVersion.MatchString(*version) {
-		t.Fatalf("invalid version %q", *version)
-	}
-	// These examples exercise SemVer syntax; none declares the application's release.
-	for _, candidate := range []string{"v1.2.3-01", "v1.2.3-alpha.00", "v01.2.3", "v1.2.3-", "v1.2.3-alpha..1", "v1.2.3+", "v1.2.3+build..1", "v1.2.3-alpha_1"} {
-		if semanticVersion.MatchString(candidate) {
-			t.Fatalf("invalid SemVer accepted: %q", candidate)
-		}
-	}
-	for _, candidate := range []string{"v0.0.0", "v1.2.3-0", "v1.2.3-alpha.1", "v1.2.3-01a", "v1.2.3-999999999999999999999999999999999999999", "v1.2.3+01.build", "v1.2.3-alpha-1+metadata"} {
-		if !semanticVersion.MatchString(candidate) {
-			t.Fatalf("valid SemVer refused: %q", candidate)
-		}
-	}
 	const manifest = cli.Manifest
 	if manifest != "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n" {
 		t.Fatal("manifest")
@@ -85,14 +68,14 @@ func TestDeclarations(t *testing.T) {
 	}
 }
 
-// R-OOL9-U7RK R-OPT6-7ZI9 R-OR12-LR8Y R-R5W9-L9QD R-R745-Z1H2 R-OUOR-R2H1 R-R4OD-7HZO R-R8C2-CT7R R-UC20-B7WN R-R9JY-QKYG
+// R-TX82-Z3CB R-THDE-02PA R-OPT6-7ZI9 R-OR12-LR8Y R-R5W9-L9QD R-R745-Z1H2 R-OUOR-R2H1 R-R4OD-7HZO R-R8C2-CT7R R-UC20-B7WN R-R9JY-QKYG
 func TestCommands(t *testing.T) {
 	cases := []struct {
 		args                []string
 		product, diagnostic string
 		code                int
 	}{
-		{[]string{"--version"}, cli.Version + "\n", "", cli.ExitSuccess},
+		{[]string{"--version"}, "injected display" + "\n", "", cli.ExitSuccess},
 		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
 		{[]string{"--help"}, cli.Usage, "", cli.ExitSuccess},
 	}
@@ -178,7 +161,7 @@ func TestRefusedEnvironment(t *testing.T) {
 	}
 }
 
-// R-PMQG-JSJ0 R-PNYC-XK9P R-RGVD-17EM R-S41G-AUHT
+// R-PMQG-JSJ0 R-PNYC-XK9P R-RGVD-17EM R-TX82-Z3CB
 func TestInheritedFailure(t *testing.T) {
 	for _, fds := range []string{"1", "001"} {
 		p, out, errout := refusedProcess(t)
@@ -196,6 +179,20 @@ func TestInheritedFailure(t *testing.T) {
 		}
 		if cli.Run(context.Background(), p) != cli.ExitServerFailed || out.Len() != 0 || errout.text() != "telemetry: descriptor unavailable\n" || len(errout.calls) != 1 || calls != 1 || !reflect.DeepEqual(unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) || len(env) != 0 {
 			t.Fatalf("inherit failure %q %v", errout.text(), unset)
+		}
+		assertEmpty(t, p.Dir)
+	}
+}
+
+// R-THDE-02PA R-TG5H-MAYL
+func TestInjectedVersion(t *testing.T) {
+	for _, value := range []string{"", "display from caller", "line one\nline two"} {
+		p, out, errout := refusedProcess(t)
+		p.Version = value
+		p.Args = []string{"--version"}
+		p.LookupEnv = func(string) (string, bool) { t.Error("environment consulted"); return "", false }
+		if code := cli.Run(context.Background(), p); code != cli.ExitSuccess || out.String() != value+"\n" || errout.text() != "" {
+			t.Fatalf("version %q: %d %q %q", value, code, out.String(), errout.text())
 		}
 		assertEmpty(t, p.Dir)
 	}

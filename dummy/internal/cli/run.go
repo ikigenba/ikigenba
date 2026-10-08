@@ -31,6 +31,7 @@ type Process struct {
 	Pid       int
 	Stdout    io.Writer
 	Stderr    io.Writer
+	Version   string
 	Inherit   func(fd uintptr) (net.Listener, error)
 	Banner    func(u page.User) page.Banner
 	MCP       *mcp.Server
@@ -66,7 +67,7 @@ func Run(ctx context.Context, p Process) int {
 		if len(p.Args) == 1 {
 			switch p.Args[0] {
 			case "--version":
-				_, _ = io.WriteString(p.Stdout, Version+"\n")
+				_, _ = io.WriteString(p.Stdout, p.Version+"\n")
 				return ExitSuccess
 			case "manifest":
 				_, _ = io.WriteString(p.Stdout, Manifest)
@@ -124,7 +125,7 @@ func Run(ctx context.Context, p Process) int {
 	}
 	defer func() { _ = ln.Close() }()
 
-	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "dummy.db"), Migrations: dummy.Migrations(), Now: p.Now})
+	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "dummy.db"), Migrations: dummy.Migrations(), Now: p.Now, Service: panel.ServiceName, Stderr: stderr})
 	if err != nil {
 		writeDiagnostic(stderr, "dummy: cannot open database state/dummy.db: "+strings.ReplaceAll(err.Error(), "\n", " ")+"\n")
 		return ExitServerFailed

@@ -19,6 +19,7 @@ type Process struct {
 	Unsetenv           func(string) error
 	Pid                int
 	Stdout, Stderr     io.Writer
+	Version            string
 	Inherit            func(uintptr) (net.Listener, error)
 	Now                func() time.Time
 	Sleep              func(context.Context, time.Duration)

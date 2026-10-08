@@ -120,7 +120,7 @@ func (c *drainContext) Done() <-chan struct{} {
 
 // Run executes a command or serves and drains the inherited listener.
 func Run(ctx context.Context, p Process) int {
-	if handled, code := command(p.Args, p.Dir, p.Stdout, p.Stderr); handled {
+	if handled, code := command(p.Args, p.Dir, p.Version, p.Stdout, p.Stderr); handled {
 		return code
 	}
 	stderr := &serialWriter{w: p.Stderr}
@@ -188,7 +188,7 @@ func Run(ctx context.Context, p Process) int {
 		random = rand.Reader
 	}
 	random = &serialReader{r: random}
-	handle, e := db.Open(ctx, db.Config{Path: database, Migrations: scripts.Migrations(), Now: p.Now})
+	handle, e := db.Open(ctx, db.Config{Path: database, Migrations: scripts.Migrations(), Now: p.Now, Service: pages.ServiceName, Stderr: stderr})
 	if e != nil {
 		if ctx.Err() != nil {
 			return ExitSuccess
@@ -210,7 +210,7 @@ func Run(ctx context.Context, p Process) int {
 		sink = telemetry.NewSocketSink()
 	}
 	delivery := &serviceSink{sink: sink}
-	writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: Version, Sink: delivery, Stderr: stderr, Now: p.Now, Sleep: p.Sleep, Rand: random})
+	writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: p.Version, Sink: delivery, Stderr: stderr, Now: p.Now, Sleep: p.Sleep, Rand: random})
 	lim := limits.New(cfg, limits.Clock{After: p.After})
 	repos := cfg.ReposDir
 	if !filepath.IsAbs(repos) {

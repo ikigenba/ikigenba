@@ -12,7 +12,9 @@ answers is `D04-panel` and the designs it leads to.
 `Run` takes at most two arguments and the arguments decide everything. An
 empty `Args` means serve. The three recognised single arguments each write
 one product to `Stdout` and return `ExitSuccess` without touching the
-environment: `--version` writes `Version` and a newline, `manifest` writes
+environment: `--version` writes `Process.Version`, the display string `main`
+read (`D01-layout-and-run-seam`), and a newline, which is one empty line when
+the host set no identity, `manifest` writes
 `Manifest` exactly as declared, and `--help` writes `Usage`, the constant
 `D01-layout-and-run-seam` declares and whose value this design fixes byte for
 byte, so the help text is contract. The one two-word command is `db status`.
@@ -48,11 +50,13 @@ with its store's errors, so the diagnostic is one line whatever appkit's
 error holds. Whatever `db.Status` had already written to `Stdout` stays
 there: the findings are product, and the repository's command-line
 conventions send a report to stdout whole, bad news included. That is the one
-case in which a failure leaves anything on `Stdout`: a database that records
-a migration this dummy does not carry is reported line by line, the unknown
-version among them, and then refused, while a database that cannot be read
-yields no lines at all. `db status` reads no environment and takes no
-socket.
+case in which a failure may leave anything on `Stdout`. A database that
+records a migration this dummy does not carry, one a newer dummy upgraded, is
+not a failure: older code runs on newer data (`D03-serve`), appkit's
+`db.Status` lists every line, the unknown version among them, and returns
+nil, so `db status` writes nothing to `Stderr` and exits 0. A database that
+cannot be read yields no lines at all and exits 1. `db status` reads no
+environment and takes no socket.
 
 The help text says what dummy serves — the control panel, and its MCP tools
 at `/mcp` — and where — on the socket systemd passes in — and names the exit
@@ -62,7 +66,7 @@ error. `D03-serve` leans on that split: a start the caller got wrong (no
 socket, several sockets, a drain deadline that is not a number of seconds)
 exits 2, while trouble on the host — a socket that cannot be taken, a
 database that cannot be opened, a drain that runs out — exits 1, and so does
-a `db status` whose database cannot be read or is newer than the binary. The
+a `db status` whose database cannot be read. The
 constant for 1 keeps its name, `ExitServerFailed`; only the help text's word
 for it changed.
 
@@ -84,12 +88,13 @@ with the same stream.
 ## REQUIREMENTS
 
 - R-32FR-5LB4: `Usage` MUST be exactly `"Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"`.
-- R-QZLT-9HQT: When `Args` is exactly `["--version"]`, `Run` MUST write `Version` followed by a single `"\n"` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
+- R-J3FT-88NH: When `Args` is exactly `["--version"]`, `Run` MUST write `p.Version` followed by a single `"\n"` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`, so that an empty `p.Version` writes exactly `"\n"`.
 - R-RKC3-RLCM: When `Args` is exactly `["manifest"]`, `Run` MUST write exactly `Manifest` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
 - R-S6AA-NGP4: When `Args` is exactly `["--help"]`, `Run` MUST write exactly `Usage` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
 - R-363G-AWJ7: When `Args` is exactly `["db", "status"]`, `Run` MUST write to `Stdout` exactly the bytes, and nothing else, that appkit's `db.Status` (package `github.com/ikigenba/ikigenba/appkit/db`) writes to its writer when called with a context that is not done and a `db.Config` whose `Path` is `filepath.Join(p.Dir, "state", "dummy.db")` and whose `Migrations` is `dummy.Migrations()`, over the database as it is when `Run` is called; so that `Run` reports the migrations of `state/dummy.db` under `p.Dir`, or under the process working directory when `p.Dir` is empty.
 - R-37BC-OO9W: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-363G-AWJ7 describes returns nil, `Run` MUST write nothing to `Stderr` and return `ExitSuccess`.
-- R-38J9-2G0L: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-363G-AWJ7 describes returns a non-nil error `err`, `Run` MUST write exactly `"dummy: " + r + "\n"` to `Stderr`, where `r` is `err.Error()` with every newline character replaced by one space, and return `ExitServerFailed`, having written to `Stdout` what R-363G-AWJ7 states; so that a `p.Dir` whose `state/dummy.db` records a version that `dummy.Migrations()` does not hold gets on `Stdout` every line `db.Status` writes, the unknown version's among them, and that one line on `Stderr`.
+- R-J4NP-M0E6: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-363G-AWJ7 describes returns a non-nil error `err`, `Run` MUST write exactly `"dummy: " + r + "\n"` to `Stderr`, where `r` is `err.Error()` with every newline character replaced by one space, and return `ExitServerFailed`, having written to `Stdout` what R-363G-AWJ7 states.
+- R-J5VL-ZS4V: When `Args` is exactly `["db", "status"]` and `p.Dir`'s `state/dummy.db` is a SQLite database the process can read whose `schema_migrations` holds, besides the version of every migration `dummy.Migrations()` holds, a version that `dummy.Migrations()` does not hold, `Run` MUST write to `Stdout` what R-363G-AWJ7 states, write nothing to `Stderr`, and return `ExitSuccess`, so that a database a newer dummy upgraded is reported line by line, its unknown version among the lines, and is not a failure.
 - R-39R5-G7RA: When `Args` is exactly `["db", "status"]` and `p.Dir` names an empty directory, that directory MUST still be empty when `Run` returns.
 - R-3AZ1-TZHZ: When `Args` is not empty and is not exactly `["db", "status"]`, `Run` MUST create, remove or change nothing under `p.Dir`, so that when `p.Dir` names an empty directory it is still empty when `Run` returns.
 - R-33NN-JD1T: `Run` MUST treat `Args` as a usage error unless `Args` is empty or is exactly one of `["--version"]`, `["manifest"]`, `["--help"]`, or `["db", "status"]`.

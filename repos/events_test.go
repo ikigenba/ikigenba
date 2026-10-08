@@ -14,7 +14,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
-	"github.com/ikigenba/ikigenba/repos/internal/cli"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/maintenance"
 	"github.com/ikigenba/ikigenba/repos/internal/settings"
@@ -73,7 +72,7 @@ func exactEvent(t *testing.T, event telemetry.Event, request, user string, want 
 // the exact caller envelope and exactly two string attributes.
 func TestMutationEventContracts(t *testing.T) {
 	f := newContractFixture(t)
-	srv := mcp.NewServer(mcp.ServerConfig{Name: "repos", Version: cli.Version, Telemetry: f.writer})
+	srv := mcp.NewServer(mcp.ServerConfig{Name: "repos", Version: "fixture-display", Telemetry: f.writer})
 	tools.Register(srv, tools.Config{Store: f.store, Limits: f.limits, Telemetry: f.writer})
 	server := httptest.NewServer(telemetry.Middleware(f.writer, identity.Require(srv)))
 	defer server.Close()

@@ -63,10 +63,9 @@ func TestFoundationPublicShapes(t *testing.T) {
 	assertSignature[func(*checkout.Checkout) ([]checkout.App, error)]((*checkout.Checkout).Apps)
 	assertSignature[func(*checkout.Checkout, string) (checkout.App, error)]((*checkout.Checkout).App)
 
-	// R-CIHV-MSVJ
+	// R-5AKW-LFNU
 	assertSignature[func(*checkout.Checkout, context.Context) (string, error)]((*checkout.Checkout).Head)
 	assertSignature[func(*checkout.Checkout, context.Context) (bool, error)]((*checkout.Checkout).Clean)
-	assertSignature[func(*checkout.Checkout, context.Context) ([]string, error)]((*checkout.Checkout).TagsAtHead)
 }
 
 func TestFoundationErrors(t *testing.T) {

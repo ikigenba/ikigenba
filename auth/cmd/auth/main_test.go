@@ -22,17 +22,17 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/auth"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
-	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 // TestMainWiring is the one test that builds and executes auth. It verifies
 // the real process boundary, including socket activation and both signals.
 func TestMainWiring(t *testing.T) {
 	// R-3WNI-4FXO
-	// R-P02O-R3KF R-P2IH-IN1T R-7KD6-KDOH
+	// R-P2IH-IN1T R-7KD6-KDOH
 	// R-QB6N-JUCJ
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
@@ -41,6 +41,13 @@ func TestMainWiring(t *testing.T) {
 	// working directory, draws its banner from IKIGENBA_SERVICES, and stops
 	// with exit 0 on SIGTERM and on SIGINT, allowing only the ahead-database warning.
 	binary := buildBinary(t)
+	// R-8CMC-DS2O: expected identity comes from appkit under the same
+	// environment as the child, rather than from an auth version literal.
+	commit, release := "0123456789abcdef0123456789abcdef01234567", "wiring-fixture"
+	t.Setenv(version.CommitVariable, commit)
+	t.Setenv(version.ReleaseVariable, release)
+	display := version.Display()
+	identityEnv := []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 
 	for _, tc := range []struct {
 		name, wantOut, wantErr string
@@ -48,7 +55,10 @@ func TestMainWiring(t *testing.T) {
 		args                   []string
 		env                    []string
 	}{
-		{name: "version", args: []string{"--version"}, wantOut: version.Version + "\n"},
+		// R-8IPU-AMS5: a host identity is displayed verbatim; without either
+		// identity variable the executable emits exactly one empty line.
+		{name: "version", args: []string{"--version"}, env: identityEnv, wantOut: display + "\n"},
+		{name: "version without identity", args: []string{"--version"}, wantOut: "\n"},
 		{name: "manifest", args: []string{"manifest"}, wantOut: wantManifest},
 		{name: "bogus", args: []string{"bogus"}, wantErr: "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", wantCode: 2},
 		{name: "bare", env: googleEnv(), wantErr: "auth: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n", wantCode: 2},
@@ -64,7 +74,7 @@ func TestMainWiring(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		for _, ahead := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/ahead=%t", sig, ahead), func(t *testing.T) {
-				assertSocketActivated(t, binary, sig, ahead)
+				assertSocketActivated(t, binary, sig, ahead, identityEnv, display)
 			})
 		}
 	}
@@ -132,7 +142,7 @@ func childCode(t *testing.T, err error) int {
 	return exit.ExitCode()
 }
 
-func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahead bool) {
+func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahead bool, identityEnv []string, display string) {
 	t.Helper()
 	shortDir, err := os.MkdirTemp("", "auth-socket-")
 	if err != nil {
@@ -168,7 +178,8 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 	cmd := &exec.Cmd{Path: "/bin/sh", Args: []string{"/bin/sh", "-c", "LISTEN_PID=$$ LISTEN_FDS=1 exec \"$0\"", binary}}
 	cmd.Dir = work
 	cmd.Env = append(googleEnv(), "NOTIFY_SOCKET="+notifyPath)
-	// R-LVKU-QFNH R-LWSR-47E6: the child's events cross the socket sink,
+	cmd.Env = append(cmd.Env, identityEnv...)
+	// R-VJSN-K3C3 R-LWSR-47E6: the child's events cross the socket sink,
 	// and a services-file replacement redirects later events without restart.
 	first := new(wiringSink)
 	second := new(wiringSink)
@@ -257,7 +268,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 		writeServices(t, services, secondSocket)
 		// R-GNC2-6SEM: main leaves Inherit nil; the response comes from
 		// the listening socket supplied as descriptor 3.
-		// R-LRX5-L4FE: the cgo-free executable serves the live session from
+		// R-VL0J-XV2S: the cgo-free executable serves the live session from
 		// a working directory containing only state/auth.db.
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -285,8 +296,8 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 		if !bytes.Contains(body, []byte(`popovertarget="services"`)) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
 			t.Fatalf("main banner source has no launcher drawn from IKIGENBA_SERVICES: %s", body)
 		}
-		// R-LQP9-7COP: the real executable's banner page ends its body with
-		// the footer carrying the release value exported by internal/version.
+		// R-VIKR-6BLE: the real executable's banner page ends its body with
+		// the footer carrying appkit's display string for this run.
 		bodyContent := regexp.MustCompile(`(?s)<body\b[^>]*>(.*)</body>`).FindSubmatch(body)
 		if len(bodyContent) != 2 {
 			t.Fatalf("main page has no body element: %s", body)
@@ -296,8 +307,8 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 			t.Fatalf("main page body does not end with a footer: %s", bodyContent[1])
 		}
 		text := html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(string(footer[1]), ""))
-		if text != "auth "+version.Version {
-			t.Fatalf("main footer text = %q, want %q", text, "auth "+version.Version)
+		if text != "auth "+display {
+			t.Fatalf("main footer text = %q, want %q", text, "auth "+display)
 		}
 	}
 
@@ -316,7 +327,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 		t.Fatal("missing service.started")
 	}
 	started := firstEvents[0]
-	if started.Name != "service.started" || started.Service != "auth" || started.RequestID != "" || started.User != "" || len(started.Attrs) != 1 || started.Attrs["version"] != version.Version {
+	if started.Name != "service.started" || started.Service != "auth" || started.RequestID != "" || started.User != "" || len(started.Attrs) != 1 || started.Attrs["version"] != display {
 		t.Fatalf("start=%+v", started)
 	}
 	events := firstEvents

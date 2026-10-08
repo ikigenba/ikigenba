@@ -11,15 +11,17 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
 func main() {
-	kit := page.New(panel.ServiceName, cli.Version)
+	display := version.Display()
+	kit := page.New(panel.ServiceName, display)
 	gate := cli.NewGate(telemetry.NewSocketSink())
-	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: cli.Version, Sink: gate, Stderr: os.Stderr})
-	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: cli.Version, Telemetry: writer})
+	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: display, Sink: gate, Stderr: os.Stderr})
+	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: display, Telemetry: writer})
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
@@ -38,6 +40,7 @@ func main() {
 		Pid:       os.Getpid(),
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
+		Version:   display,
 		Banner:    kit.Banner,
 		MCP:       srv,
 		Telemetry: writer,

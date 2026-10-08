@@ -20,7 +20,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy"
-	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/tools"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -32,7 +31,7 @@ func clientOver(t *testing.T, s *widget.Store) *mcp.Client {
 	t.Helper()
 	t.Setenv(services.Variable, "")
 	writer, _, _ := capturingWriter(t)
-	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: cli.Version, Telemetry: writer})
+	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: "test display", Telemetry: writer})
 	// R-L86I-LW1U: using the public registration signature.
 	tools.Register(srv, s, writer)
 	httpServer := httptest.NewServer(identity.Require(srv))
@@ -116,7 +115,7 @@ func capturingWriter(t *testing.T) (*telemetry.Writer, *telemetry.Capture, *byte
 	t.Helper()
 	capture := &telemetry.Capture{}
 	stderr := &bytes.Buffer{}
-	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: cli.Version, Sink: capture, Stderr: stderr, Now: func() time.Time { return time.Unix(1000, 0) }, Sleep: func(context.Context, time.Duration) { t.Error("unexpected telemetry retry") }, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 4096))})
+	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: "test display", Sink: capture, Stderr: stderr, Now: func() time.Time { return time.Unix(1000, 0) }, Sleep: func(context.Context, time.Duration) { t.Error("unexpected telemetry retry") }, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 4096))})
 	t.Cleanup(func() {
 		writer.Shutdown(context.Background(), "test complete")
 		if stderr.Len() != 0 {
@@ -416,7 +415,7 @@ func TestToolDomainTelemetry(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	writer, capture, stderr := capturingWriter(t)
 	store := toolsTestStore(t)
-	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: cli.Version, Telemetry: writer})
+	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: "test display", Telemetry: writer})
 	tools.Register(srv, store, writer)
 	server := httptest.NewServer(identity.Require(srv))
 	t.Cleanup(server.Close)
