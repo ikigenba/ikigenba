@@ -252,6 +252,73 @@ func markupWritten(t *testing.T, body string, banner page.Banner) string {
 	return body[:bannerStart] + body[bannerEnd:footerStart] + body[footerEnd:]
 }
 
+// R-69VU-AZO7: observe the shared banner in each page's response.
+func assertMarkupBanner(t *testing.T, body string, banner page.Banner) {
+	t.Helper()
+	headers := markupNamed(body, "header", false)
+	if len(headers) == 0 {
+		t.Fatal("absent banner header")
+	}
+	header := markupContent(t, body, headers[0])
+	mark := markupOne(t, header, "strong")
+	if !mark.class("mark") || !mark.has("data-service", banner.Service) {
+		t.Fatal("banner mark hooks")
+	}
+	markContent := markupContent(t, header, mark)
+	favicon := markupOne(t, markContent, "img")
+	service := markupOne(t, markContent, "span")
+	if !favicon.has("src", "/_appkit/favicon.svg") || !favicon.has("alt", "") || !service.class("service") {
+		t.Fatal("banner favicon or service hooks")
+	}
+	if strings.TrimSpace(markContent[:favicon.start]) != "" || markupNormalize(markContent[favicon.end:service.start]) != "Ikigenba" {
+		t.Fatal("banner favicon and product order")
+	}
+	serviceContent := strings.TrimSpace(markupContent(t, markContent, service))
+	if !strings.HasPrefix(serviceContent, string(banner.Icon)) || strings.TrimSpace(serviceContent[len(banner.Icon):]) != template.HTMLEscapeString(banner.Service) {
+		t.Fatalf("banner service icon and name: %q", serviceContent)
+	}
+	serviceEnd := service.end + markupNamed(markContent[service.end:], "span", true)[0].end
+	if strings.TrimSpace(markContent[serviceEnd:]) != "" {
+		t.Fatal("extra banner mark content after service")
+	}
+	profile := markupOne(t, header, "a")
+	if !profile.class("profile") || !profile.has("title", banner.Email) {
+		t.Fatal("banner profile hooks")
+	}
+	form := markupOne(t, header, "form")
+	signoutContent := markupContent(t, header, form)
+	signout := markupOne(t, signoutContent, "button")
+	if !signout.class("signout") || !signout.has("type", "submit") || !signout.has("aria-label", "Sign out") || !signout.has("title", "Sign out") {
+		t.Fatal("banner sign-out hooks")
+	}
+	icon := markupContent(t, signoutContent, signout)
+	markupOne(t, icon, "svg")
+	if markupNormalize(icon) != "" {
+		t.Fatal("sign-out button has visible text")
+	}
+	children := []markupTag{mark}
+	for _, button := range markupNamed(header, "button", false) {
+		if button.class("launcher") {
+			children = append(children, button)
+		}
+	}
+	children = append(children, profile, form)
+	next := 0
+	for _, child := range children {
+		if child.start < next || strings.TrimSpace(header[next:child.start]) != "" {
+			t.Fatal("banner order: want only mark, optional launcher, profile and sign-out form")
+		}
+		ends := markupNamed(header[child.end:], child.name, true)
+		if len(ends) == 0 {
+			t.Fatalf("unclosed banner %s", child.name)
+		}
+		next = child.end + ends[0].end
+	}
+	if strings.TrimSpace(header[next:]) != "" {
+		t.Fatal("extra banner header content")
+	}
+}
+
 // R-6CBN-2J5L R-6DJJ-GAWA R-6ERF-U2MZ R-PG42-9VU0 R-PIJV-1FBE R-988F-R9HL R-6IF4-ZDV2 R-6JN1-D5LR R-6KUX-QXCG R-6M2U-4P35
 func assertMarkupCommon(t *testing.T, body, written, path, email string) {
 	t.Helper()
@@ -561,6 +628,11 @@ func TestMarkupPages(t *testing.T) {
 			var banner page.Banner
 			f.cfg.Banner = func(u page.User) page.Banner {
 				banner = page.Banner{Service: fixture.service, Version: fixture.version, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Services: fixture.launcher}
+				for _, entry := range fixture.launcher {
+					if entry.Current {
+						banner.Icon = entry.Icon
+					}
+				}
 				return banner
 			}
 			h := Handler(f.cfg)
@@ -578,6 +650,7 @@ func TestMarkupPages(t *testing.T) {
 						t.Fatalf("page %s status %d", path, w.Code)
 					}
 					body := w.Body.String()
+					assertMarkupBanner(t, body, banner)
 					written := markupWritten(t, body, banner)
 					assertMarkupPreload(t, written)
 					assertMarkupIcon(t, written)

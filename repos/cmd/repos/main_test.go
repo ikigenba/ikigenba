@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -29,6 +30,8 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
 	"github.com/ikigenba/ikigenba/repos/internal/web"
 )
+
+const binaryReposIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
 
 // TestBinary is the sole build/exec/signal test; runtime children receive only
 // the explicitly composed environment below. The build tool uses its normal
@@ -166,7 +169,11 @@ func TestBinary(t *testing.T) {
 	servicePath := filepath.Join(launcherDir, "services.json")
 	listed := []map[string]any{}
 	for _, name := range []string{"auth", "dummy", "repos"} {
-		listed = append(listed, map[string]any{"name": name, "url": "https://" + name + ".example.test", "description": "Published " + name, "socket": "", "enabled": true, "mcp": true, "icon": `<svg></svg>`})
+		icon := `<svg></svg>`
+		if name == web.ServiceName {
+			icon = binaryReposIcon
+		}
+		listed = append(listed, map[string]any{"name": name, "url": "https://" + name + ".example.test", "description": "Published " + name, "socket": "", "enabled": true, "mcp": true, "icon": icon})
 	}
 	writeBinaryServices(t, servicePath, listed)
 	list, err := services.Read(servicePath)
@@ -174,7 +181,7 @@ func TestBinary(t *testing.T) {
 		t.Fatalf("launcher fixture: %v %v", list, err)
 	}
 	for i, name := range []string{"auth", "dummy", "repos"} {
-		if list[i].Name != name || !list[i].Enabled || list[i].URL != "https://"+name+".example.test" || string(list[i].Icon) != `<svg></svg>` {
+		if list[i].Name != name || !list[i].Enabled || list[i].URL != "https://"+name+".example.test" || string(list[i].Icon) != listed[i]["icon"] {
 			t.Fatal("invalid launcher fixture")
 		}
 	}
@@ -182,6 +189,7 @@ func TestBinary(t *testing.T) {
 	_, body := launcher.request(t, http.MethodGet, "/", nil)
 	// R-HIVZ-JT3J: appkit's real kit loads the ordered service entries in main.
 	assertBinaryLauncher(t, body, list[2].URL)
+	assertBinaryBanner(t, body)
 	for _, description := range []string{"Published repos", "Changed instructions"} {
 		listed[2]["description"] = description
 		writeBinaryServices(t, servicePath, listed)
@@ -690,6 +698,70 @@ func binaryTags(body string) []binaryTag {
 		result = append(result, tag)
 	}
 	return result
+}
+
+// R-HIVZ-JT3J: observe the kit's current service icon and banner hooks.
+func assertBinaryBanner(t *testing.T, body string) {
+	t.Helper()
+	part := func(body, name, class string) (string, string) {
+		t.Helper()
+		pattern := regexp.MustCompile(`(?s)<` + name + `\b[^>]*>(.*?)</` + name + `>`)
+		for _, match := range pattern.FindAllStringSubmatch(body, -1) {
+			for _, tag := range binaryTags(match[0]) {
+				if tag.matches(name) && (class == "" || tag.has("class", class)) {
+					return match[0], match[1]
+				}
+			}
+		}
+		t.Fatalf("absent banner %s.%s", name, class)
+		return "", ""
+	}
+	visible := func(s string) string {
+		return strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(s, ""))), " ")
+	}
+	_, header := part(body, "header", "")
+	mark, markContent := part(header, "strong", "mark")
+	if !binaryTags(mark)[0].has("data-service", web.ServiceName) {
+		t.Fatal("banner service hook")
+	}
+	favicon := regexp.MustCompile(`<img\b[^>]*>`).FindString(markContent)
+	if favicon == "" || !binaryTags(favicon)[0].has("src", "/_appkit/favicon.svg") || !binaryTags(favicon)[0].has("alt", "") {
+		t.Fatal("banner favicon hooks")
+	}
+	service, serviceContent := part(markContent, "span", "service")
+	serviceContent = strings.TrimSpace(serviceContent)
+	if !strings.HasPrefix(strings.TrimSpace(markContent), favicon) || visible(strings.SplitN(markContent, service, 2)[0]) != "Ikigenba" || !strings.HasPrefix(serviceContent, binaryReposIcon) {
+		t.Fatalf("banner favicon, product, service icon and name: %q", markContent)
+	}
+	if strings.TrimSpace(serviceContent[len(binaryReposIcon):]) != web.ServiceName {
+		t.Fatalf("banner service name: %q", serviceContent)
+	}
+	launcher, _ := part(header, "button", "launcher")
+	profile, _ := part(header, "a", "profile")
+	form, formContent := part(header, "form", "")
+	if !binaryTags(profile)[0].has("title", "") {
+		t.Fatal("banner profile email title")
+	}
+	rest := header
+	for _, child := range []string{mark, launcher, profile, form} {
+		rest = strings.TrimSpace(rest)
+		if !strings.HasPrefix(rest, child) {
+			t.Fatal("banner order: want mark, launcher, profile and sign-out form")
+		}
+		rest = rest[len(child):]
+	}
+	if strings.TrimSpace(rest) != "" {
+		t.Fatal("extra banner header content")
+	}
+	button, signout := part(formContent, "button", "signout")
+	tag := binaryTags(button)[0]
+	if !tag.has("type", "submit") || !tag.has("aria-label", "Sign out") || !tag.has("title", "Sign out") {
+		t.Fatal("banner sign-out labels")
+	}
+	part(signout, "svg", "")
+	if visible(signout) != "" {
+		t.Fatal("sign-out button has visible text")
+	}
 }
 
 func assertBinaryLauncher(t *testing.T, body, url string) {
