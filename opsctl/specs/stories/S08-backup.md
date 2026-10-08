@@ -458,7 +458,7 @@ $ sudo opsctl backup; echo "exit $?"
 Output:
 
 ```
-crm: failed: /opt/crm/state has not moved; install crm first
+crm: failed: /opt/crm/state has not moved
 dashboard: ok (2026-09-12T03:00:04Z.tar.zst, 1.1 MiB)
 exit 1
 ```
@@ -910,7 +910,7 @@ Output:
 ```
 services: ok (crm, dashboard stopped)
 litestream: ok (stopped)
-crm: failed: /opt/crm/state has not moved; install crm first
+crm: failed: /opt/crm/state has not moved
 dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
 host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
 exit 1
@@ -1158,7 +1158,7 @@ $ sudo opsctl snapshot crm; echo "exit $?"
 Output:
 
 ```
-crm: failed: /opt/crm/state has not moved; install crm first
+crm: failed: /opt/crm/state has not moved
 exit 1
 ```
 
@@ -1236,7 +1236,7 @@ refused.
 On a host laid out per app, with no /opt/ikigenba/current, SERVICE must be
 installed under /opt/SERVICE/ instead, whichever opsctl runs the restore, and
 one that is not, or whose state/ or environment file is still under
-/opt/SERVICE/, is refused: install it first. On a fresh host, with neither
+/opt/SERVICE/, is refused. On a fresh host, with neither
 /opt/ikigenba/current nor any app under /opt/, the opsctl inside a release,
 /opt/ikigenba/releases/<sha>/opsctl/bin/opsctl, restores against that
 release: SERVICE must be one of its apps, and its manifest there says what it
@@ -1921,7 +1921,7 @@ $ sudo opsctl restore crm
 Output:
 
 ```
-source: failed: crm is not installed; install crm first
+source: failed: crm is not installed
 opsctl: restore crm failed at source
 ```
 
@@ -1966,7 +1966,7 @@ $ sudo opsctl restore crm
 Output:
 
 ```
-source: failed: /opt/crm/state has not moved; install crm first
+source: failed: /opt/crm/state has not moved
 opsctl: restore crm failed at source
 ```
 
@@ -2011,7 +2011,7 @@ $ sudo opsctl restore crm
 Output:
 
 ```
-source: failed: /opt/crm/etc/env has not moved; install crm first
+source: failed: /opt/crm/etc/env has not moved
 opsctl: restore crm failed at source
 ```
 

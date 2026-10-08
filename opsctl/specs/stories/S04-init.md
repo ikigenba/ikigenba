@@ -761,7 +761,7 @@ timeouts: ok (drain 5s, stop 10s)
 zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
 host sbx.ikigenba.dev: ok (zone ikigenba.dev)
 wildcard sbx.ikigenba.dev: ok (77.112.106.79)
-opsctl: crm: /opt/crm/state has not moved; install crm first
+opsctl: crm: /opt/crm/state has not moved
 exit 1
 ```
 
@@ -836,7 +836,7 @@ timeouts: ok (drain 5s, stop 10s)
 zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
 host sbx.ikigenba.dev: ok (zone ikigenba.dev)
 wildcard sbx.ikigenba.dev: ok (77.112.106.79)
-opsctl: crm: /opt/crm/etc/env has not moved; install crm first
+opsctl: crm: /opt/crm/etc/env has not moved
 exit 1
 ```
 

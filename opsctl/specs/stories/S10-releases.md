@@ -815,11 +815,11 @@ Output:
 
 ```
 release: ok (c604e32, r142)
-layout: failed: crm: /opt/crm/state has not moved; install crm first
+layout: failed: crm: /opt/crm/state has not moved
 opsctl: activate failed
 ```
 
-Exits 1. The step outcome lines are on stdout; the last line is on stderr. An app whose environment file is still `/opt/<app>/etc/env` gives `layout: failed: crm: /opt/crm/etc/env has not moved; install crm first` the same way. The first such app in name order is named, its state before its environment file.
+Exits 1. The step outcome lines are on stdout; the last line is on stderr. An app whose environment file is still `/opt/<app>/etc/env` gives `layout: failed: crm: /opt/crm/etc/env has not moved` the same way. The first such app in name order is named, its state before its environment file.
 
 Preconditions:
 
