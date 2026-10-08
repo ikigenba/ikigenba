@@ -230,7 +230,7 @@ Postconditions:
 
 ## An operator follows a trigger's deletion
 
-`delete` (`S10`) records `cron.<slug>.deleted`, with the trigger's id and the schedule it had. The trigger's earlier events still name that id, so its whole trail, from `cron.<slug>.created` through its fires to `cron.<slug>.deleted`, can be followed after it is gone, and no event names the id after it. A trigger later created with the same slug has a new id, so its events are told apart from the old one's though they share a name.
+`delete` (`S10`) records `cron.<slug>.deleted`, with the trigger's id and the schedule it had. The trigger's earlier events still name that id, so its whole trail, from `cron.<slug>.created` through its fires to `cron.<slug>.deleted`, can be followed after it is gone. Ids are drawn at random and are not derived from the slug; a trigger created with the slug later is a new trigger with its own id.
 
 Request:
 
@@ -278,7 +278,7 @@ Postconditions:
   ```
 
 - The event bus has received the same `cron.hourly.deleted`.
-- No later event names `crn_3f9a1c7e5b2d8046` (`S11`).
+- No later event is for the deleted trigger (`S11`).
 
 ## An operator follows a fire
 
