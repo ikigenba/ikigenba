@@ -55,12 +55,13 @@ Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its
   instance is `running`, and `opsctl` is installed on it.
-- A tag `auth/v<semver>` points at the commit `devctl build auth` was run at,
-  and it wrote `auth/dist/auth-v<semver>.tar.xz`.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev auth/dist/auth-v<semver>.tar.xz`
+- `devctl build auth`, run in a clean tree at the commit `<sha>`, wrote
+  `auth/dist/auth-<sha>.tar.xz` (`S06-package.md`). No tag is needed.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev auth/dist/auth-<sha>.tar.xz`
   exited 0.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
-  `auth v<semver> active active -`.
+  auth's service and socket `active`, in the layout devctl's and opsctl's
+  stories own.
 - The request carries no `ikigenba_session` cookie and no `Authorization`
   header.
 
@@ -112,11 +113,10 @@ same host.
 Preconditions:
 
 - The auth deploy chain above holds: the space exists in account
-  `602773793009`, its instance is `running`, `opsctl` is installed, the
-  `auth/v<semver>` tag and `auth/dist/auth-v<semver>.tar.xz` exist, the
-  `devctl deploy` of auth exited 0, and `space status` shows `auth v<semver>
-  active active -`.
-- `auth/dist/auth-v<semver>.tar.xz` holds `share/icon.svg` (`S06-package.md`).
+  `602773793009`, its instance is `running`, `opsctl` is installed,
+  `auth/dist/auth-<sha>.tar.xz` exists, the `devctl deploy` of auth exited 0,
+  and `space status` shows auth's service and socket `active`.
+- `auth/dist/auth-<sha>.tar.xz` holds `share/icon.svg` (`S06-package.md`).
 - The host sets `IKIGENBA_SERVICES` in auth's environment to the path of its
   services file, and that file lists auth with its icon.
 - The request carries an `ikigenba_session` cookie naming a live session on
@@ -155,13 +155,12 @@ Status 302. The visitor is sent to auth's sign-in page with the original URL as
 Preconditions:
 
 - The auth deploy chain above holds: the space exists in account
-  `602773793009`, its instance is `running`, `opsctl` is installed, the
-  `auth/v<semver>` tag and `auth/dist/auth-v<semver>.tar.xz` exist, the
-  `devctl deploy` of auth exited 0, and `space status` shows `auth v<semver>
-  active active -`.
+  `602773793009`, its instance is `running`, `opsctl` is installed,
+  `auth/dist/auth-<sha>.tar.xz` exists, the `devctl deploy` of auth exited 0,
+  and `space status` shows auth's service and socket `active`.
 - `dummy` is deployed and active on the same space through its own
-  `S7-on-a-space.md` chain, so `space status` also shows `dummy v<semver>
-  active active -`.
+  `S7-on-a-space.md` chain, so `space status` also shows dummy's service and
+  socket `active`.
 - The host's nginx routes every app other than auth through auth's `/check`
   before serving it, naming the request on the subrequest in
   `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`: a request with
