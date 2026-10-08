@@ -114,7 +114,7 @@
           <h3>Install a service on the host</h3>
           <p>opsctl lays the release down under <code>/opt</code>, wires its socket and nginx route, and starts it behind the identity check.</p>
         </div>
-        <pre><code><span class="prompt">$</span> ssh acme.ikigenba.com devctl deploy acme <sha|tag>
+        <pre><code><span class="prompt">$</span> devctl deploy acme 3f9c2d1
 <span class="prompt">$</span> ssh acme.ikigenba.com sudo opsctl enable dummy</code></pre>
       </li>
       <li>
