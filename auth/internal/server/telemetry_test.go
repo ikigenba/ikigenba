@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -80,7 +82,7 @@ func trailRequest(method, target string) *http.Request {
 
 func assertTrail(t *testing.T, events []telemetry.Event, r *http.Request, status int, names ...string) {
 	t.Helper()
-	// R-10QY-2VS1 R-11YU-GNIQ R-T6HN-3SJG R-BD85-ZXX8: the writer's captured envelope defines the ordered request trail.
+	// R-T5YJ-3Y97 R-T76F-HPZW R-T6HN-3SJG R-BD85-ZXX8: the writer's captured envelope defines the ordered request trail.
 	want := append([]string{"request.started"}, names...)
 	want = append(want, "request.finished")
 	got := make([]string, len(events))
@@ -112,6 +114,80 @@ func assertTrail(t *testing.T, events []telemetry.Event, r *http.Request, status
 		if e.User != r.Header.Get("X-User-Id") {
 			t.Fatalf("boundary user=%q", e.User)
 		}
+	}
+}
+
+type requestEventSink func(context.Context, telemetry.Event) error
+
+func (s requestEventSink) Deliver(ctx context.Context, event telemetry.Event) error {
+	return s(ctx, event)
+}
+
+func TestRequestEventsFormBeforeDelivery(t *testing.T) {
+	// R-T5YJ-3Y97 R-T76F-HPZW: a request's events are formed on Config.Telemetry
+	// while it is served, including events whose eventual delivery is rejected.
+	for _, reject := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reject=%t", reject), func(t *testing.T) {
+			var capture telemetry.Capture
+			var stderr bytes.Buffer
+			release := make(chan struct{})
+			releaseDelivery := sync.OnceFunc(func() { close(release) })
+			now := signInNow
+			writer := telemetry.New(telemetry.Config{
+				Service: "auth", Now: func() time.Time { return now }, Rand: &identityRand{}, Stderr: &stderr,
+				Sink: requestEventSink(func(ctx context.Context, event telemetry.Event) error {
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					_ = capture.Deliver(ctx, event)
+					if reject {
+						return fmt.Errorf("test refuses event: %w", telemetry.ErrRejected)
+					}
+					return nil
+				}),
+			})
+			t.Cleanup(func() {
+				releaseDelivery()
+				writer.Shutdown(context.Background(), "test")
+			})
+			s := New(Config{Store: openSignInStore(t), Now: func() time.Time { return now }, Rand: &identityRand{}, Banner: testPageBanner, Telemetry: writer})
+			r := trailRequest("GET", "/check")
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, r)
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("check status=%d, want 401", w.Code)
+			}
+			if len(capture.Events()) != 0 {
+				t.Fatal("request waited for or bypassed the held delivery")
+			}
+			now = now.Add(time.Hour)
+			releaseDelivery()
+			if err := writer.Flush(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			events := capture.Events()
+			assertTrail(t, events, r, http.StatusUnauthorized, "check.refused")
+			var wantStderr bytes.Buffer
+			for _, event := range events {
+				if !event.Time.Equal(signInNow.UTC().Truncate(time.Microsecond)) || event.Service != "auth" {
+					t.Fatalf("event formed outside the request: %+v", event)
+				}
+				if reject {
+					data, err := event.MarshalJSON()
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantStderr.WriteString("auth: undelivered event: ")
+					wantStderr.Write(data)
+					wantStderr.WriteByte('\n')
+				}
+			}
+			if stderr.String() != wantStderr.String() {
+				t.Fatalf("undelivered events=%q, want %q", stderr.String(), wantStderr.String())
+			}
+		})
 	}
 }
 

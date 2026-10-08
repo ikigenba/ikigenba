@@ -405,7 +405,7 @@ func TestRunClosesListenerOnLaterFailure(t *testing.T) {
 }
 
 func TestServeReadinessAndInjectedSeam(t *testing.T) {
-	// R-7BTV-VZHM R-GIKK-2HF4 R-GJSG-G95T R-N3VE-FLYK R-N6B7-75FY R-B74O-337R R-OYUS-DBTQ
+	// R-7BTV-VZHM R-T2AT-YN14 R-T3IQ-CERT R-N3VE-FLYK R-N6B7-75FY R-5RXL-FWKQ R-OYUS-DBTQ
 	for _, preexisting := range []bool{false, true} {
 		t.Run(strconv.FormatBool(preexisting), func(t *testing.T) {
 			source := testSource(t)
@@ -473,7 +473,7 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 }
 
 func TestRunWiresIssuerAndRandomness(t *testing.T) {
-	// R-GIKK-2HF4 R-7BTV-VZHM: serve a request through Run's inherited listener.
+	// R-T2AT-YN14 R-7BTV-VZHM: serve a request through Run's inherited listener.
 	var issuerCalls atomic.Int32
 	credentials := make(chan [2]string, 1)
 	var issuer *httptest.Server
@@ -620,7 +620,7 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	if code := <-done; code != 0 {
 		t.Fatalf("Run=%d diagnostic=%q", code, p.Stderr)
 	}
-	// R-B74O-337R R-2J42-BC4C: handled provider trouble records its status without a diagnostic.
+	// R-5RXL-FWKQ R-2J42-BC4C: handled provider trouble records its status without a diagnostic.
 	if got := p.Stderr.(*countWriter); got.String() != "" || got.calls != 0 || p.Stdout.(*bytes.Buffer).Len() != 0 {
 		t.Fatalf("stdout=%q stderr=%q calls=%d", p.Stdout, got.String(), got.calls)
 	}
@@ -972,7 +972,7 @@ func (w *overlapWriter) Write(b []byte) (int, error) {
 }
 
 func TestDiagnosticWriterSerializesCalls(t *testing.T) {
-	// R-2RNC-ZQB7: a full trail queue sends concurrent request events to the shared diagnostic writer.
+	// R-5T5H-TOBF: a full trail queue sends concurrent request events to the shared diagnostic writer.
 	underlying := new(overlapWriter)
 	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
 	defer issuer.Close()

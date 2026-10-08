@@ -191,7 +191,7 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 		return 1
 	}
 	defer func() { _ = ln.Close() }()
-	hdb, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now})
+	hdb, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now, Service: "auth", Stderr: stderr})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "auth: cannot open database state/auth.db: %s\n", strings.ReplaceAll(err.Error(), "\n", " "))
 		return 1

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/auth"
+	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
@@ -56,7 +58,7 @@ func assertEmptyDir(t *testing.T, dir string) {
 }
 
 func TestDatabaseStatus(t *testing.T) {
-	// R-7P8S-3GN9 R-7QGO-H8DY R-7ROK-V04N R-7SWH-8RVC R-7GPH-F2GE R-7LL2-Y5F6 R-7MSZ-BX5V R-7D1S-9R8B
+	// R-7P8S-3GN9 R-TAU4-N17Z R-TC21-0SYO R-7SWH-8RVC R-7GPH-F2GE R-7LL2-Y5F6 R-7MSZ-BX5V R-7D1S-9R8B
 	for _, kind := range []string{"absent", "applied", "unknown", "invalid"} {
 		for _, relative := range []bool{false, true} {
 			t.Run(kind+"/relative="+map[bool]string{false: "false", true: "true"}[relative], func(t *testing.T) {
@@ -79,6 +81,12 @@ func TestDatabaseStatus(t *testing.T) {
 					}
 				}
 				want, err := statusOf(t, p)
+				if kind == "unknown" && (err != nil || !strings.Contains(want, fmt.Sprintf("%04d", unknownMigrationVersion(t)))) {
+					t.Fatalf("ahead status=%q error=%v", want, err)
+				}
+				if kind == "invalid" && (err == nil || want != "") {
+					t.Fatalf("invalid status=%q error=%v", want, err)
+				}
 				p.Args = []string{"db", "status"}
 				p.LookupEnv = func(string) (string, bool) { t.Fatal("status read environment"); return "", false }
 				p.Unsetenv = func(string) error { t.Fatal("status removed environment"); return nil }
@@ -158,8 +166,8 @@ func TestDatabaseCommandGrammar(t *testing.T) {
 }
 
 func TestDatabaseOpenFailures(t *testing.T) {
-	// R-GG4R-AXXQ R-7D1S-9R8B
-	for _, kind := range []string{"state file", "invalid", "unknown"} {
+	// R-SYN4-TBT1 R-7D1S-9R8B
+	for _, kind := range []string{"state file", "invalid"} {
 		for _, relative := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/relative=%v", kind, relative), func(t *testing.T) {
 				p := baseProcess(goodEnv(), t.TempDir(), nil)
@@ -179,15 +187,10 @@ func TestDatabaseOpenFailures(t *testing.T) {
 					if err := os.WriteFile(filepath.Join(p.Dir, "state", "auth.db"), []byte("not sqlite"), 0600); err != nil {
 						t.Fatal(err)
 					}
-				case "unknown":
-					changeDatabase(t, p, fmt.Sprintf("INSERT INTO schema_migrations(version,applied_at) VALUES (%d, '2026-01-02T03:04:05.000000Z')", unknownMigrationVersion(t)))
 				}
 				_, openErr := db.Open(t.Context(), db.Config{Path: filepath.Join(p.Dir, "state", "auth.db"), Migrations: auth.Migrations(), Now: p.Now})
 				if openErr == nil {
 					t.Fatal("fixture unexpectedly opens")
-				}
-				if kind == "unknown" && !strings.Contains(openErr.Error(), fmt.Sprintf("%04d", unknownMigrationVersion(t))) {
-					t.Fatalf("unknown version absent from error: %v", openErr)
 				}
 				ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 				if err != nil {
@@ -336,7 +339,7 @@ func (s *readyOrderSink) Deliver(ctx context.Context, e telemetry.Event) error {
 }
 
 func TestStartedIsRecordedAfterReadiness(t *testing.T) {
-	// R-GL0C-U0WI: the injected clock observes readiness synchronously when
+	// R-T4QM-Q6II: the injected clock observes readiness synchronously when
 	// the first event is formed, rather than after asynchronous delivery.
 	p := baseProcess(goodEnv(), t.TempDir(), nil)
 	changeDatabase(t, p, "") // An up-to-date database does not read the migration clock.
@@ -387,5 +390,142 @@ func TestStartedIsRecordedAfterReadiness(t *testing.T) {
 	events := sink.capture.Events()
 	if len(events) != 2 || events[0].Name != "service.started" || events[0].RequestID != "" || events[0].User != "" || len(events[0].Attrs) != 1 || events[0].Attrs["version"] != version.Version || events[0].Time != fixed {
 		t.Fatalf("events=%v", events)
+	}
+}
+
+// warningOrderWriter observes the notification queue at the database warning.
+type warningOrderWriter struct {
+	countWriter
+	ready   *net.UnixConn
+	written chan struct{}
+	t       *testing.T
+}
+
+func (w *warningOrderWriter) Write(b []byte) (int, error) {
+	raw, err := w.ready.SyscallConn()
+	if err != nil {
+		w.t.Error(err)
+	} else {
+		var receiveErr error
+		if err := raw.Control(func(fd uintptr) {
+			_, _, receiveErr = syscall.Recvfrom(int(fd), make([]byte, 32), syscall.MSG_PEEK|syscall.MSG_DONTWAIT)
+		}); err != nil {
+			w.t.Error(err)
+		}
+		if !errors.Is(receiveErr, syscall.EAGAIN) {
+			w.t.Errorf("readiness preceded database warning: %v", receiveErr)
+		}
+	}
+	n, err := w.countWriter.Write(b)
+	select {
+	case w.written <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
+func TestRunServesAheadDatabase(t *testing.T) {
+	// R-LO9G-FT7B R-5RXL-FWKQ: the published database warning precedes
+	// readiness, the existing session works, and recorded versions stay intact.
+	for _, relative := range []bool{false, true} {
+		t.Run(fmt.Sprintf("relative=%v", relative), func(t *testing.T) {
+			p := baseProcess(goodEnv(), t.TempDir(), nil)
+			if relative {
+				t.Chdir(p.Dir)
+				p.Dir = ""
+			}
+			path := filepath.Join(p.Dir, "state", "auth.db")
+			h, err := db.Open(t.Context(), db.Config{Path: path, Migrations: auth.Migrations(), Now: p.Now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			st := store.New(h, p.Rand)
+			u, _, err := st.UpsertUserOnLogin("issuer", "subject", "user@example.test", p.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := st.CreateSession(u.ID, p.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.Write(t.Context(), func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,applied_at) VALUES (?, ?)", unknownMigrationVersion(t), "2026-01-02T03:04:05.000000Z")
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.Close(); err != nil {
+				t.Fatal(err)
+			}
+			wantStatus, err := statusOf(t, p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var warning countWriter
+			h, err = db.Open(t.Context(), db.Config{Path: path, Migrations: auth.Migrations(), Now: p.Now, Service: "auth", Stderr: &warning})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if warning.calls != 1 || warning.Len() == 0 {
+				t.Fatalf("reference warning=%q calls=%d", warning.String(), warning.calls)
+			}
+			ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ln.Close() })
+			p.Inherit = func(uintptr) (net.Listener, error) { return ln, nil }
+			ready, addr := databaseReady(t)
+			env := goodEnv()
+			env["NOTIFY_SOCKET"] = addr
+			p.LookupEnv = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+			diagnostic := &warningOrderWriter{ready: ready, written: make(chan struct{}, 1), t: t}
+			p.Stderr = diagnostic
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan int, 1)
+			go func() { done <- Run(ctx, p) }()
+			select {
+			case <-diagnostic.written:
+			case <-time.After(5 * time.Second):
+				t.Fatal("no database warning")
+			}
+			if err := ready.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			buf := make([]byte, 32)
+			n, _, err := ready.ReadFromUnix(buf)
+			if err != nil || string(buf[:n]) != "READY=1" {
+				t.Fatalf("readiness=%q error=%v", buf[:n], err)
+			}
+			after, err := statusOf(t, p)
+			if err != nil || after != wantStatus {
+				t.Fatalf("status after readiness=%q want=%q error=%v", after, wantStatus, err)
+			}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+"/check", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.AddCookie(&http.Cookie{Name: "ikigenba_session", Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			response, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("existing session check=%d", response.StatusCode)
+			}
+			cancel()
+			if code := <-done; code != 0 {
+				t.Fatalf("Run=%d diagnostic=%q", code, diagnostic.String())
+			}
+			if diagnostic.calls != 1 || diagnostic.String() != warning.String() || p.Stdout.(*bytes.Buffer).Len() != 0 {
+				t.Fatalf("diagnostic=%q calls=%d stdout=%q; want=%q", diagnostic.String(), diagnostic.calls, p.Stdout, warning.String())
+			}
+			assertNoNotification(t, ready)
+		})
 	}
 }
