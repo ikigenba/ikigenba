@@ -2,25 +2,34 @@
 
 Every request to the host arrives at nginx, and opsctl owns exactly one file
 under `/etc/nginx`: `/etc/nginx/conf.d/ikigenba.conf`. That file is a pure
-function of the configuration store, of what is on disk under `/opt`, and of
-which apps systemd reports disabled, so it is generated rather than edited, and it is never backed up — a restored host
-regenerates it.
+function of the configuration store, of the release `/opt/ikigenba/current`
+names, and of which apps systemd reports disabled, so it is generated rather
+than edited, and it is never backed up — a restored host regenerates it.
+`opsctl activate` and `opsctl rollback` regenerate it in their `nginx` step
+(`S10-releases.md`).
 
 The top-level usage gains the line `  nginx     generate the platform's nginx
 configuration` under `Commands:`, and `init`'s sequence gains the step
 `nginx.conf`.
 
-A service is discovered, never registered: any `/opt/<name>/` holding an
-`etc/`, or any `/var/opt/ikigenba/<name>/` holding a `state/`, is one. A
-service is *routed* when it also has an `/opt/<name>/etc/manifest.toml` naming
-its `app`; one without is known to the host but gets no server block, which
-is what a service with only a `/var/opt/ikigenba/<name>/state/` looks like,
-and what one that was uninstalled looks like. Routed services answer at `<name>.<host.name>`, and the
-one whose manifest says `default = true` also answers at `<host.name>`.
+A service is discovered, never registered. On a released host, one where
+`/opt/ikigenba/current` exists, a service is an app the release `current`
+names — a directory `/opt/ikigenba/current/<name>/` holding `bin/<name>` and
+`etc/manifest.toml` — or any `/var/opt/ikigenba/<name>/` holding a `state/`;
+an `/opt/<name>/` makes no service. A service is *routed* when it is an app in
+the current release. One that only keeps state, a *data-only* service — what
+an app the release no longer holds leaves behind — is known to the host but
+gets no server block. Routed services answer at `<name>.<host.name>`, and the
+one whose manifest says `default = true` also answers at `<host.name>`. These
+stories are written for a released host; on a host still laid out per app
+(`S07-apps.md`), with no `current`, `nginx` keeps that layout's rule: any
+`/opt/<name>/` holding an `etc/` is a service, routed when its
+`/opt/<name>/etc/manifest.toml` names its `app`, and its block includes
+`/opt/<name>/etc/nginx.conf*`.
 
 A routed app is *disabled* when systemd reports its socket unit,
 `ikigenba-<name>.socket`, disabled — the state `opsctl disable` leaves it in
-(`S7-apps.md`). Nothing else records it: nginx asks systemd, the way `status`
+(`S07-apps.md`). Nothing else records it: nginx asks systemd, the way `status`
 does. A disabled app keeps its block and every name it answers at, but the
 block answers `503` to every request but a preflight, which it answers `204`
 as every app's block does (below), and neither includes the app's own
@@ -31,7 +40,7 @@ disabled; it is routed as any other.
 A service's block carries the TLS frame, the app's own `etc/nginx.conf` if it
 ships one, and a `location /` that proxies to the app's Unix socket,
 `/run/ikigenba/<name>.sock`. No app listens on a TCP port: the socket is held
-by the app's socket unit (`S7-apps.md`), readable and writable by nginx and by
+by the app's socket unit (`S07-apps.md`), readable and writable by nginx and by
 no process outside the platform, so nginx is the only way in from the network.
 The app's file is included first, so a longer prefix in it — static files out
 of `share/`, say — wins over the proxy; the glob makes the include harmless
@@ -63,9 +72,9 @@ target — path and any query string — as `X-Original-Method`,
 client sent under those names. `auth`'s own block is left
 *unwired*, and its `/check` and `/check/open` answer 404 to any public request
 — each is reachable only as an internal subrequest, and the guard is there
-whether or not any app serves guests. Recognition is by a routed manifest, not the
-name alone: an `auth` service with no `/opt/auth/etc/manifest.toml` naming
-its `app` is not the authenticator, and with no routed `auth` on the host every block is unwired
+whether or not any app serves guests. Recognition is by an app in the current
+release, not the name alone: an `auth` that only keeps state under
+`/var/opt/ikigenba/auth/` is not the authenticator, and with no routed `auth` on the host every block is unwired
 — the fail-open frame, which is what these stories show unless one says a
 routed `auth` is present.
 
@@ -124,7 +133,7 @@ is on the path's end alone, so `/notes/info/refs` is reserved too, while
 `/info/refsx` is an ordinary path.
 
 An app that serves guests — visitors with no credential at all — says so with
-`guests = true` in its manifest (`S7-apps.md`); with no `guests`, or `guests =
+`guests = true` in its manifest (`S07-apps.md`); with no `guests`, or `guests =
 false`, it does not. On a host with a routed `auth`, such an app's wired block
 differs from any other in two places. It gains a second internal check,
 `/_ikigenba/check/open`, beside `/_ikigenba/check` and identical to it except
@@ -191,7 +200,7 @@ with fewer than three labels has no parent to answer at, and a `host.apex`
 set on one is refused by everything that reads it. The apex app is chosen
 independently of the manifest's `default`: one app may answer at the space's
 name and another at the apex, or the same app at both. When the named app is
-not routed — not installed, or only its data left on the host — the apex answers
+not routed — not in the current release, or only its data left on the host — the apex answers
 404 under the host's certificate until it is, so the name never falls to the
 handshake-rejecting default block once the certificate carries it.
 
@@ -213,8 +222,9 @@ Output:
 Usage: opsctl nginx <subcommand>
 
 Generate /etc/nginx/conf.d/ikigenba.conf from the configuration store, the
-services under /opt, and which apps systemd reports disabled. The file is generated, never edited; opsctl writes no
-other file under /etc/nginx.
+release /opt/ikigenba/current names, and which apps systemd reports disabled.
+The file is generated, never edited; opsctl writes no other file under
+/etc/nginx.
 
 Subcommands:
   show   print the configuration opsctl would write
@@ -224,13 +234,14 @@ Configuration keys:
   host.name  the fully-qualified name this host answers at
   host.apex  the app that answers at the parent of host.name; unset means none
 
-A service is any /opt/<name>/ with an etc/ directory, or any
-/var/opt/ikigenba/<name>/ with a state/ directory. One with an
-/opt/<name>/etc/manifest.toml naming its app answers at <name>.<host.name>,
-proxied to its socket /run/ikigenba/<name>.sock, and the one whose manifest
-sets default answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
-included in its server block. An app whose socket unit systemd reports
-disabled keeps its names, and its block answers 503. Every proxied request
+Each app in the current release, /opt/ikigenba/current/<name>/, answers at
+<name>.<host.name>, proxied to its socket /run/ikigenba/<name>.sock, and the
+one whose manifest sets default answers at <host.name> as well. Its own
+/opt/ikigenba/current/<name>/etc/nginx.conf, if it ships one, is included in
+its server block. A service that only keeps state under
+/var/opt/ikigenba/<name>/ gets no block. On a host with no
+/opt/ikigenba/current, the apps are those under /opt/<name>/ instead. An
+app whose socket unit systemd reports disabled keeps its names, and its block answers 503. Every proxied request
 carries X-Request-Id set to nginx's own request id, which also ends its
 access-log line. The app
 host.apex names also answers at the parent of host.name; until that app is
@@ -260,7 +271,7 @@ Postconditions:
 
 ## An operator reads the configuration a bare host would get
 
-Before any app is installed, the file is the frame: port 80 redirects
+Before any release is activated, the file is the frame: port 80 redirects
 everything to 443, an unknown name has its TLS handshake rejected outright
 rather than being answered with someone else's certificate, and the host's own
 name and its wildcard answer 404 under the host's certificate. The
@@ -350,14 +361,15 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- No directory under `/opt/` holds an `etc/`, and none under
-  `/var/opt/ikigenba/` holds a `state/`.
+- The host is fresh, as `init` leaves it before the first `activate`: there
+  is no `/opt/ikigenba/current` and no app laid out under `/opt/<name>/`. A
+  `state/` under `/var/opt/ikigenba/<name>/` would add no block.
 
 Postconditions:
 
 - Nothing has changed. `show` writes no file and reloads nothing.
-- No `/opt/<name>/` is routed, so there is no `auth` to recognize and nothing
-  to wire; the frame is fail-open because nothing is installed, not by choice.
+- No app is routed, so there is no `auth` to recognize and nothing to wire;
+  the frame is fail-open because no release is active, not by choice.
 
 ## An operator reads the configuration of a host running apps
 
@@ -464,7 +476,7 @@ server {
         return 204;
     }
 
-    include /opt/crm/etc/nginx.conf*;
+    include /opt/ikigenba/current/crm/etc/nginx.conf*;
 
     location / {
         proxy_pass       http://unix:/run/ikigenba/crm.sock:;
@@ -495,7 +507,7 @@ server {
         return 204;
     }
 
-    include /opt/dashboard/etc/nginx.conf*;
+    include /opt/ikigenba/current/dashboard/etc/nginx.conf*;
 
     location / {
         proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
@@ -514,20 +526,24 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- `/opt/crm/etc/manifest.toml` names `app = "crm"` and `default = true`.
-- `/opt/dashboard/etc/manifest.toml` names `app = "dashboard"` and no `default`, or
-  `default = false`.
+- `/opt/ikigenba/current` names the release `c604e32`, whose apps are `crm`
+  and `dashboard`.
+- `/opt/ikigenba/current/crm/etc/manifest.toml` names `app = "crm"` and
+  `default = true`.
+- `/opt/ikigenba/current/dashboard/etc/manifest.toml` names `app =
+  "dashboard"` and no `default`, or `default = false`.
 - Neither app ships an `etc/nginx.conf`; the include matches nothing and
   nginx accepts it.
-- `/var/opt/ikigenba/gmail/` holds a `state/`, and there is no
-  `/opt/gmail/etc/manifest.toml`.
-- No app named `auth` is routed — there is no `/opt/auth/` with a manifest
-  naming its `app` — so no block carries `auth_request` and the host is fail-open.
+- `/var/opt/ikigenba/gmail/` holds a `state/`, and the current release holds
+  no `gmail`: it is a data-only service.
+- No app named `auth` is in the current release, so no block carries
+  `auth_request` and the host is fail-open.
 
 Postconditions:
 
 - Nothing has changed. `gmail` has no block: it is a service the host will
-  back up, and not one nginx can route.
+  back up, and not one nginx can route. An `/opt/gmail/` left on the host
+  would change nothing.
 - Once applied, a request to `https://crm.sbx.ikigenba.dev` reaches `crm`
   through `/run/ikigenba/crm.sock` carrying an `X-Request-Id` that nginx
   generated, whatever `X-Request-Id` the client sent, and the access-log line
@@ -570,7 +586,7 @@ server {
         return 204;
     }
 
-    include /opt/dashboard/etc/nginx.conf*;
+    include /opt/ikigenba/current/dashboard/etc/nginx.conf*;
 
     location / {
         proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
@@ -592,7 +608,7 @@ Preconditions:
 - No routed `auth` is on the host, so the blocks keep the plain proxy shape
   shown; the apex changes only which names a block answers at, not its wiring.
 - The host's certificate covers `ikigenba.dev` as well (see
-  `S6-certificates.md`); `show` does not check, since it writes nothing.
+  `S06-certificates.md`); `show` does not check, since it writes nothing.
 
 Postconditions:
 
@@ -659,15 +675,17 @@ Postconditions:
   calls a disabled app` story shows; nothing reaches `/run/ikigenba/crm.sock`,
   which does not exist while `crm` is disabled. Had `crm` also held the apex,
   `ikigenba.dev` would answer `503` from the same block.
+- An `activate` or `rollback` leaves `crm` disabled, so the file it
+  regenerates holds this same block until `opsctl enable crm`.
 
 ## An operator reads the configuration when the apex app is not routed
 
-`host.apex` names an app that is not installed — not yet deployed, or taken
-off with `uninstall`. The apex still
+`host.apex` names an app that is not in the current release — not yet
+deployed, or dropped from the release with only its data kept. The apex still
 belongs to this host, so its name goes on the 404 block beside the space's
 name and wildcard, and answers 404 under the host's certificate rather than
-having its handshake rejected. The next `install` of that app moves the name
-to the app's block.
+having its handshake rejected. The next `activate` of a release that holds
+that app moves the name to the app's block.
 
 Command:
 
@@ -749,9 +767,9 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is `crm`.
-- No directory under `/opt/` holds an `etc/`, and none under
-  `/var/opt/ikigenba/` holds a `state/`; or `/var/opt/ikigenba/crm/` holds a
-  `state/` and there is no `/opt/crm/etc/manifest.toml`.
+- The host is fresh, as in the `bare host` story: no release is active, so no
+  app is routed. `/var/opt/ikigenba/crm/` may hold a `state/`; a data-only
+  `crm` is not routed either.
 - No routed `auth` is present; nothing is wired, and the 404 frame is
   unchanged.
 
@@ -784,7 +802,7 @@ the redirect and `location /`, each wired block carries the MCP locations:
 `401` with its `WWW-Authenticate` header and one-line body — instead of the
 redirect, and a 403 from `auth` by `@mcp_invalid_token`, the `invalid_token`
 401 with the same body. Both headers name `https://mcp.sbx.ikigenba.dev`, the
-gateway's origin on this host, though no `mcp` app is installed here. The API
+gateway's origin on this host, though the release holds no `mcp` app. The API
 locations follow them: `/api` exactly and everything under `/api/` are checked
 and relayed the same way, a 401 from `auth` is answered by
 `@api_unauthorized`, the plain Bearer challenge with its own one-line body,
@@ -892,7 +910,7 @@ server {
         return 204;
     }
 
-    include /opt/auth/etc/nginx.conf*;
+    include /opt/ikigenba/current/auth/etc/nginx.conf*;
 
     location = /check {
         return 404;
@@ -930,7 +948,7 @@ server {
         return 204;
     }
 
-    include /opt/crm/etc/nginx.conf*;
+    include /opt/ikigenba/current/crm/etc/nginx.conf*;
 
     location = /_ikigenba/check {
         internal;
@@ -1113,7 +1131,7 @@ server {
         return 204;
     }
 
-    include /opt/dashboard/etc/nginx.conf*;
+    include /opt/ikigenba/current/dashboard/etc/nginx.conf*;
 
     location = /_ikigenba/check {
         internal;
@@ -1284,11 +1302,14 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- `/opt/auth/etc/manifest.toml` names `app = "auth"` and no `default`, or
-  `default = false`.
-- `/opt/crm/etc/manifest.toml` names `app = "crm"` and `default = true`.
-- `/opt/dashboard/etc/manifest.toml` names `app = "dashboard"` and no `default`, or
-  `default = false`.
+- `/opt/ikigenba/current` names the release `c604e32`, whose apps are
+  `auth`, `crm`, and `dashboard`.
+- `/opt/ikigenba/current/auth/etc/manifest.toml` names `app = "auth"` and no
+  `default`, or `default = false`.
+- `/opt/ikigenba/current/crm/etc/manifest.toml` names `app = "crm"` and
+  `default = true`.
+- `/opt/ikigenba/current/dashboard/etc/manifest.toml` names `app =
+  "dashboard"` and no `default`, or `default = false`.
 - No app ships an `etc/nginx.conf`; each include matches nothing and nginx
   accepts it.
 
@@ -1423,7 +1444,7 @@ server {
         return 204;
     }
 
-    include /opt/auth/etc/nginx.conf*;
+    include /opt/ikigenba/current/auth/etc/nginx.conf*;
 
     location = /check {
         return 404;
@@ -1461,7 +1482,7 @@ server {
         return 204;
     }
 
-    include /opt/sites/etc/nginx.conf*;
+    include /opt/ikigenba/current/sites/etc/nginx.conf*;
 
     location = /_ikigenba/check {
         internal;
@@ -1645,21 +1666,23 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is `sites`.
-- `/opt/auth/etc/manifest.toml` names `app = "auth"` and no `default`, or
-  `default = false`.
-- `/opt/sites/etc/manifest.toml` names `app = "sites"` and `guests = true`,
-  and no `default`, or `default = false`.
+- `/opt/ikigenba/current` names the release `c604e32`, whose apps are `auth`
+  and `sites`.
+- `/opt/ikigenba/current/auth/etc/manifest.toml` names `app = "auth"` and no
+  `default`, or `default = false`.
+- `/opt/ikigenba/current/sites/etc/manifest.toml` names `app = "sites"` and
+  `guests = true`, and no `default`, or `default = false`.
 - No app ships an `etc/nginx.conf`; each include matches nothing and nginx
   accepts it.
 - The host's certificate covers `ikigenba.dev` as well (see
-  `S6-certificates.md`); `show` does not check, since it writes nothing.
+  `S06-certificates.md`); `show` does not check, since it writes nothing.
 
 Postconditions:
 
 - Nothing has changed. `show` writes no file and reloads nothing.
 - `guests` reaches only the block of the app that sets it. Had `crm` of the
-  `host running apps behind the authenticator` story been installed beside
-  `sites`, its block would be exactly as that story shows.
+  `host running apps behind the authenticator` story been in the release
+  beside `sites`, its block would be exactly as that story shows.
 - Had no routed `auth` been on the host, `sites`'s block would be the plain
   proxy block of the `host running apps` story, answering at the same names,
   with no `auth_request` of either kind: with no authenticator every app is
@@ -1674,13 +1697,14 @@ Postconditions:
 
 ## An operator reads the configuration where auth is present but not routed
 
-An `auth` service is on disk, but there is no `/opt/auth/etc/manifest.toml`
-naming its app — the `/var/opt/ikigenba/auth/state/` an uninstall leaves
-behind, say, or an `/opt/auth/etc/` that ships no manifest. It is
-a known service but not a routed one, so it is not the authenticator: there is
-nowhere to send a subrequest. Recognition takes a routed manifest, not the
-directory and not the name, so the host stays fail-open and `auth` gets no
-block of its own.
+An `auth` service keeps its state on the host, but the current release holds
+no `auth` — the `/var/opt/ikigenba/auth/state/` a release that dropped `auth`
+leaves behind, say. It is a data-only service, known but not routed, so it is
+not the authenticator: there is nowhere to send a subrequest. Recognition
+takes an app in the current release, not the directory and not the name, so
+the host stays fail-open and `auth` gets no block of its own. An
+`/opt/auth/` left on the host changes nothing: on a released host an
+`/opt/<name>/` makes no service.
 
 Command:
 
@@ -1697,18 +1721,20 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- `/opt/crm/etc/manifest.toml` names `app = "crm"` and `default = true`;
-  `/opt/dashboard/etc/manifest.toml` names `app = "dashboard"` and no
-  `default`.
-- `/var/opt/ikigenba/auth/` holds a `state/` and there is no `/opt/auth/`,
-  or `/opt/auth/` holds an `etc/` with no `manifest.toml` naming its `app`.
+- `/opt/ikigenba/current` names the release `c604e32`, whose apps are `crm`
+  and `dashboard`; `/opt/ikigenba/current/crm/etc/manifest.toml` names `app =
+  "crm"` and `default = true`, and
+  `/opt/ikigenba/current/dashboard/etc/manifest.toml` names `app =
+  "dashboard"` and no `default`.
+- `/var/opt/ikigenba/auth/` holds a `state/`, and the current release holds
+  no `auth`.
 
 Postconditions:
 
 - Nothing has changed.
 - `auth` has no block: unrouted, it is a service the host will back up and one
   nginx cannot route, and it is not the authenticator. No block is wired; the
-  host stays fail-open until an `auth` manifest naming its app is in place.
+  host stays fail-open until a release that holds `auth` is activated.
 
 ## An MCP client reaches a wired app without a credential
 
@@ -2415,7 +2441,7 @@ Status is whatever `crm` answers, and the body is `crm`'s.
 Preconditions:
 
 - The configuration of the `host running apps` story has been applied, and
-  `crm` is active. No `sites` app is installed.
+  `crm` is active. The current release holds no `sites` app.
 
 Postconditions:
 
@@ -2503,8 +2529,9 @@ it arrives rather than spooling it to disk first. The app says so in its own
 `etc/nginx.conf`, and opsctl changes nothing to let it: the file is included
 in the app's server block, and these three directives are ones nginx allows
 there and the generated locations do not set, so each location inherits them.
+The file comes with the app's tree in the release.
 
-`/opt/crm/etc/nginx.conf`:
+`/opt/ikigenba/current/crm/etc/nginx.conf`:
 
 ```
 client_max_body_size    0;
@@ -2520,7 +2547,7 @@ $ sudo opsctl nginx show
 
 Output: the configuration of the `host running apps behind the authenticator`
 story, byte for byte. The fragment is not copied into the file; the line
-`include /opt/crm/etc/nginx.conf*;` already in `crm`'s block is what brings
+`include /opt/ikigenba/current/crm/etc/nginx.conf*;` already in `crm`'s block is what brings
 it in.
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -2528,7 +2555,8 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - The host is the one in the `host running apps behind the authenticator`
-  story, and `/opt/crm/etc/nginx.conf` holds the three lines above.
+  story, and `/opt/ikigenba/current/crm/etc/nginx.conf` holds the three lines
+  above.
 
 Postconditions:
 
@@ -2547,8 +2575,8 @@ Postconditions:
 ## An operator applies the configuration
 
 `apply` writes the file, has nginx check the whole configuration, and reloads
-it. It also rewrites the services file, `/var/lib/ikigenba/services.json`
-(`S9-services.md`), so the two never disagree about which apps are disabled.
+it. It also rewrites the services file, `/run/ikigenba/services.json`
+(`S09-services.md`), so the two never disagree about which apps are disabled.
 Nothing is printed; the answer is the exit code.
 
 Command:
@@ -2568,6 +2596,7 @@ Preconditions:
 
 - `host.name` is set and the host's certificate exists at
   `/etc/letsencrypt/live/<host.name>/`.
+- `/opt/ikigenba/current` names a release.
 - `nginx` and `systemctl` are on the PATH.
 
 Postconditions:
@@ -2578,8 +2607,9 @@ Postconditions:
 - `nginx -t` passed and nginx has been reloaded; it is serving the new
   configuration and never stopped serving the old one.
 - No other file under `/etc/nginx` was created, modified, or removed.
-- `/var/lib/ikigenba/services.json` has been rewritten from the same store,
-  `/opt`, and disabled apps the nginx file was. Nothing was printed about it.
+- `/run/ikigenba/services.json` has been rewritten from the same store,
+  current release, and disabled apps the nginx file was. Nothing was printed
+  about it.
 - Applying again with nothing else changed rewrites the same bytes, passes
   the same test, reloads again, and exits 0.
 - When a routed `auth` wires the other blocks, `nginx -t` still passes: `-t`
@@ -2621,7 +2651,7 @@ Postconditions:
 - `/etc/nginx/conf.d/ikigenba.conf` is exactly as it was before the command:
   the candidate was written, rejected, and the previous content put back.
 - nginx was not reloaded and is serving what it was serving.
-- `/var/lib/ikigenba/services.json` is as it was before the command.
+- `/run/ikigenba/services.json` is as it was before the command.
 
 ## An agent applies on a host with no host.name
 

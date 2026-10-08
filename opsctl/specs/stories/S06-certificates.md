@@ -7,7 +7,7 @@ DNS records, so certbot proves the challenge through opsctl's own hooks. The
 certificate lives where certbot puts it, `/etc/letsencrypt/live/<host.name>/`,
 and that directory is backed up.
 
-The one host that holds the root domain's apex (see `S5-nginx.md`) answers at
+The one host that holds the root domain's apex (see `S05-nginx.md`) answers at
 `ikigenba.dev` as well, and the same certificate covers that name too: when
 `host.apex` is set, `obtain` asks for three names instead of two, and the
 third is proved at `_acme-challenge.ikigenba.dev`, a record outside the
@@ -33,7 +33,11 @@ to opt out of. The same step masks the certbot package's own
 host renews and the answer to "who renews" does not depend on packaging.
 What renewal does is still certbot's: the hooks `obtain` recorded re-prove
 the challenge through opsctl and reload nginx, for every name the lineage
-holds.
+holds. The hooks name `opsctl` bare, and certbot finds it on its PATH at
+`/usr/local/bin/opsctl`, which on a released host is a link to
+`/opt/ikigenba/current/opsctl/bin/opsctl`: whichever release the host runs
+answers the challenge, and no hook names a release. `init` makes that link
+before its `certificate` step when it is missing (`S04-init.md`).
 
 One configuration key:
 
@@ -111,6 +115,8 @@ Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev`, `acme.email` is set, `host.apex` is not
   set, and `certbot` is on the PATH.
+- `/usr/local/bin/opsctl` resolves to an opsctl, so certbot finds the hooks'
+  `opsctl` on its PATH.
 - `opsctl dns check` reports the zone holding `host.name` as ok.
 - The host can reach the CA.
 

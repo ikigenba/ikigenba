@@ -1,9 +1,9 @@
 # Stories — init
 
-`init` is the one command an agent runs after the install and the `config set`
-steps: it evaluates every prerequisite the platform needs, reports all of them
-at once, and only then runs the setup sequence. It is safe to re-run, and it
-is how a host says whether it is ready.
+`init` is the one command an agent runs after the release is unpacked and the
+`config set` steps: it evaluates every prerequisite the platform needs, reports
+all of them at once, and only then runs the setup sequence. It is safe to
+re-run, and it is how a host says whether it is ready.
 
 The top-level usage gains the line `  init      run the setup sequence behind
 one preflight` under `Commands:`.
@@ -15,40 +15,56 @@ One configuration key:
 | `host.name` | the fully-qualified name this host answers at, at or under a configured zone, e.g. `sbx.ikigenba.dev` |
 
 Its preflight and its `apps` step also read `apps.drain_seconds` and
-`apps.stop_seconds`, the two app timing keys `S7-apps.md` declares.
+`apps.stop_seconds`, the two app timing keys `S07-apps.md` declares.
 
 A host answers at one name: the space's, one label under the root domain.
 The records a bootstrap created are `<host.name>` and `*.<host.name>`, and
 the wildcard certificate, the nginx catch-all, and every app's own name all
 hang off it. The one host that also answers at the root's apex says so with
-`host.apex` (see `S5-nginx.md`); the preflight does not look at that key, and
+`host.apex` (see `S05-nginx.md`); the preflight does not look at that key, and
 a value the host cannot carry is refused by the `certificate` step, which is
 the first step that reads it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
-one to it, and each group that does says so; `S6-certificates.md` adds
-`certificate`, this group adds `slices`, `S5-nginx.md` adds `nginx.conf`,
-`S8-backup.md` adds `litestream` and `timers`, and `S7-apps.md` adds `apps`,
+one to it, and each group that does says so; `S06-certificates.md` adds
+`certificate`, this group adds `slices`, `S05-nginx.md` adds `nginx.conf`,
+`S08-backup.md` adds `litestream` and `timers`, and `S07-apps.md` adds `apps`,
 in that order. `slices` reads no manifest, so it comes before every step that
-does: a host whose installed manifests the running opsctl refuses still gets
-its slices, which `install` needs to judge a fixed release. Every setup
-command is idempotent, so `init` is too, and a step's inputs are read from
-the store every run — which is why
-changing a period or a zone is `config set` followed by `init`, and never an
-edit to something `init` generated. From the developer's machine that pair is
-`devctl space init`, which sets the keys `create` set and runs `init` again;
-`create` runs it once and `space init` runs it on any later day. Two of the
-generated files also answer to
-what is under `/opt` — `/etc/litestream.yml` to what is under
-`/var/opt/ikigenba` too — and the nginx file to which apps are disabled as
-well.
-So does `/var/lib/ikigenba/services.json`, the services file
-(`S9-services.md`), which `init` rewrites every run without printing a line
-for it;
-`install`, `uninstall`, `restore`, `disable`, and `enable` regenerate those
-themselves when they change what they answer to (see `S7-apps.md` and
-`S8-backup.md`); `init` remains the only
-command that enables the units behind them.
+does: a host whose installed manifests the running opsctl refuses still gets its
+slices, which `activate` and `install` need to judge a fixed release. Every
+setup command is idempotent, so `init` is too, and a step's inputs are read from
+the store every run — which is why changing a period or a zone is `config set`
+followed by `init`, and never an edit to something `init` generated. From the
+developer's machine that pair is `devctl space init`, which sets the keys
+`create` set and runs `init` again; `create` runs it once and `space init` runs
+it on any later day. Two of the generated files also answer to the apps on the
+host — `/etc/litestream.yml` to what is under `/var/opt/ikigenba` too — and the
+nginx file to which apps are disabled as well. So does the services file
+(`S09-services.md`), which `init` rewrites every run without printing a line for
+it; `activate`, `rollback`, `restore`, `disable`, and `enable` regenerate those
+themselves when they change what they answer to, and so do `install` and
+`uninstall` on a per-app host (see `S07-apps.md`, `S08-backup.md`, and
+`S10-releases.md`); `init` remains the only command that enables the units
+behind them.
+
+`init` runs on three kinds of host. A *released host* is one where
+`/opt/ikigenba/current` exists (`S10-releases.md`): its apps are the ones the
+release `current` names, the `apps` step writes each one's environment file and
+units exactly as `activate` does, together with the boot unit
+`ikigenba-services.service` (`S09-services.md`), and the services file is
+`/run/ikigenba/services.json`. A *per-app host* has no `current` and holds apps
+`install` put under `/opt/<app>/` (`S07-apps.md`): there `init` keeps that
+layout's behaviour, its apps are the installed ones, and the services file is
+`/var/lib/ikigenba/services.json`; a story written for that layout says so in
+its preconditions. A *fresh host* has neither: `init` does the host's own work —
+the certificate, the slices, an nginx file with no apps, an empty
+`/run/ikigenba/services.json`, the account `ikigenba`, Litestream, and the
+timers — and has no app to write. On any host, once the preflight has passed and
+before the `certificate` step, `init` makes `/usr/local/bin/opsctl` a link when
+it does not exist, so certbot finds the `opsctl` its hooks name: to
+`/opt/ikigenba/current/opsctl/bin/opsctl` when `current` exists, otherwise to
+the opsctl that is running. A `/usr/local/bin/opsctl` that exists, link or file,
+is left as it is. That link prints no line either.
 
 The suite runs inside three slices, systemd's way of grouping services so
 that they share a CPU weight and a memory ceiling. The `slices` step writes
@@ -75,8 +91,8 @@ theirs. Each file is the same bytes on every run with the same memory. systemd
 is reloaded only when one of the four files changed, and nginx is restarted,
 not just reloaded, only when its drop-in changed, because a running service
 moves to another slice only when it starts. Where each app goes, and how much
-it may hold, is `S7-apps.md`'s; `install` checks an app against the slice unit
-this step wrote, never against the host's memory.
+it may hold, is `S07-apps.md`'s; `activate` and `install` check an app against
+the slice unit this step wrote, never against the host's memory.
 
 The host's programs — `nginx`, `certbot`, `systemctl`, `litestream`, and
 `git` — are installed by the space's first boot, not by opsctl. `init` only
@@ -133,16 +149,25 @@ Sequence:
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
-               installed app whose manifest is no longer valid, or whose
-               state/ is still under /opt/APP/, stops init here, before
-               this step or any after it writes anything
+               app whose manifest is no longer valid, or on a host without
+               releases an installed app whose state/ is still under
+               /opt/APP/, stops init here, before this step or any after
+               it writes anything
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
-  apps         write the drain and stop settings into every installed app,
+  apps         write the drain and stop settings into every app,
                restarting each enabled app whose settings changed; a
-               disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them
+               disabled app is rewritten and left disabled. On a host that
+               runs releases the apps are the current release's, each
+               given the environment and units activate writes, and
+               ikigenba-services.service is written and enabled. The
+               resources an app's manifest declares are kept as activate
+               or install wrote them
+
+When /usr/local/bin/opsctl does not exist, init makes it a link before the
+sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
+otherwise to the running opsctl, so certbot's hooks find opsctl on PATH.
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -162,9 +187,10 @@ Postconditions:
 
 ## An agent initialises a host that is ready
 
-`devctl space create` has installed opsctl, set the keys, and now asks the
-host to check itself and finish its own setup. Every line is `ok`, so the
-sequence ran and the exit code is 0.
+`devctl space init` asks a host that runs releases to check itself and redo
+its own setup, through `opsctl` on the PATH. Every line is `ok`, so the
+sequence ran and the exit code is 0. The apps it writes are the ones the
+release `current` names; nothing under `/opt/<app>/` is read or written.
 
 Command:
 
@@ -202,23 +228,37 @@ Preconditions:
   apply.
 - Public DNS delegates the zone, and `sbx.ikigenba.dev` and
   `_opsctl-preflight.sbx.ikigenba.dev` resolve to the same address.
+- The host is a released host: `/opt/ikigenba/current` is a link to
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, whose last
+  `activate` gave the label `r142`, and `/usr/local/bin/opsctl` is a link to
+  `/opt/ikigenba/current/opsctl/bin/opsctl`.
 
 Postconditions:
 
 - The setup sequence has run: the host holds its certificate, the nginx file
-  generated from the store and what is under `/opt`, the three slices and
-  nginx's drop-in, `/etc/litestream.yml`
-  naming every declared database with `litestream.service` enabled, the two
-  backup unit pairs with each timer enabled whose period the store gives as
-  non-zero, and the certificate renewal pair with its timer enabled.
-- `/var/lib/ikigenba/services.json` has been rewritten from the store, what
-  is under `/opt`, and which apps are disabled. No line reports it.
-- Every installed app's environment file, `/etc/opt/ikigenba/<app>/env`,
-  holds `DRAIN_SECONDS=5` and
-  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit
-  names that file, a stop timeout of `10` seconds, and the resource settings
-  its installed manifest declares, or their defaults (`S7-apps.md`). An app that already
-  held those values was not restarted.
+  generated from the store and the release `current` names, the three slices and
+  nginx's drop-in, `/etc/litestream.yml` naming every database the current
+  release's manifests declare, with `litestream.service` enabled, the two backup
+  unit pairs with each timer enabled whose period the store gives as non-zero,
+  and the certificate renewal pair with its timer enabled.
+- `/run/ikigenba/services.json` has been rewritten from the store, the
+  current release, and which apps are disabled. No line reports it.
+- Every app in the current release has the environment file and units `activate`
+  writes (`S10-releases.md`): `/etc/opt/ikigenba/<app>/env` holds, besides its
+  secrets and its manifest's `[env]`, `DRAIN_SECONDS=5`,
+  `IKIGENBA_SERVICES=/run/ikigenba/services.json`,
+  `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and
+  `IKIGENBA_RELEASE=r142`; its service unit runs
+  `/opt/ikigenba/current/<app>/bin/<app>` in `/var/opt/ikigenba/<app>`, names
+  that environment file, has a stop timeout of `10` seconds, and carries the
+  resource settings the app's manifest in the current release declares, or their
+  defaults (`S07-apps.md`). An app that already held those values was not
+  restarted.
+- `ikigenba-services.service`, the oneshot that runs
+  `/usr/local/bin/opsctl services apply` at boot before every app's service,
+  is written and enabled, as `activate` leaves it.
+- No unit names a path under `/opt/<app>/`, and no `/opt/<app>/` was
+  created.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
@@ -229,6 +269,128 @@ a literal `*.sbx.ikigenba.dev` while `_opsctl-preflight.sbx.ikigenba.dev`
 resolves to the space's address. Whether that address is *this* host's cannot
 be known without asking the cloud, which opsctl never does; that the two
 lookups agree is the check.
+
+## An agent initialises a per-app host that is ready
+
+A host whose apps `install` put under `/opt/<app>/`, and which has not yet
+had its first `activate`, keeps that layout's behaviour: `init` writes the
+installed apps' settings where their units already look. The output is the
+ready host's.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- Every preflight check passes, as for the ready host, and the timing keys
+  are unset.
+- The host is a per-app host: `/opt/ikigenba/current` does not exist, and
+  each installed app's `bin/`, `etc/`, and `share/` are under `/opt/<app>/`,
+  as `install` left them.
+
+Postconditions:
+
+- The setup sequence has run, generated from the store and what is under
+  `/opt`.
+- `/var/lib/ikigenba/services.json` has been rewritten from the store, what
+  is under `/opt`, and which apps are disabled. No line reports it.
+  `/run/ikigenba/services.json` was not written.
+- Every installed app's environment file, `/etc/opt/ikigenba/<app>/env`,
+  holds `DRAIN_SECONDS=5` and
+  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit
+  names that file, a stop timeout of `10` seconds, and the resource settings
+  its installed manifest declares, or their defaults (`S07-apps.md`). An app
+  that already held those values was not restarted.
+- Every setup command is idempotent, so a host that was already set up is
+  unchanged by the run.
+
+## An agent initialises a fresh host before its first activate
+
+A new space has its packages from first boot, the suite release unpacked,
+and the store's keys set (`S02-config.md`), but nothing has activated a
+release, so `/usr/local/bin/opsctl` does not exist yet and the agent runs the
+release's own opsctl by its full path. `init` does the host's own work and no
+app's. It makes `/usr/local/bin/opsctl` a link to the opsctl that is running
+before it asks certbot for the certificate, so the hooks certbot records find
+`opsctl` on the PATH. The next command is that release's `activate`
+(`S10-releases.md`), which makes the link point through `current`.
+
+Command:
+
+```
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `nginx`, `certbot`, `systemctl`, `litestream`, and `git` are on the
+  host's PATH, installed by the space's first boot.
+- The ten keys of a configured host are set (`S02-config.md`), and every
+  other preflight check passes.
+- The release is unpacked at
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/`.
+- The host is a fresh host: neither `/opt/ikigenba/current` nor
+  `/opt/ikigenba/previous` exists, no `/opt/<app>/` and no app unit exists,
+  and `/usr/local/bin/opsctl` does not exist.
+- The account `ikigenba` does not exist yet.
+
+Postconditions:
+
+- `/usr/local/bin/opsctl` is a link to
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl`.
+- The host holds its certificate, covering `sbx.ikigenba.dev` and
+  `*.sbx.ikigenba.dev`, with hooks that name `opsctl` on the PATH.
+- The three slices and nginx's drop-in are written, sized from the host's
+  memory, and nginx runs in `ikigenba-core.slice`.
+- `/etc/nginx/conf.d/ikigenba.conf` is the configuration of a host with no
+  apps (`S05-nginx.md`), and nginx has been reloaded.
+- `/run/ikigenba/services.json` holds an empty `services` list
+  (`S09-services.md`).
+- The account `ikigenba` exists, created by `init`.
+- `/etc/litestream.yml` names no database and `litestream.service` is
+  enabled; the backup and renewal units are written, each timer enabled as on
+  any host.
+- No app was written: no `/etc/opt/ikigenba/<app>/`, no app unit, and no
+  `/opt/<app>/` exists, and `/opt/ikigenba/current` still does not exist.
+
+## An operator initialises a released host whose opsctl link is missing
+
+Someone removed `/usr/local/bin/opsctl`, so certbot's next renewal would not
+find the hooks' `opsctl`. The operator runs the current release's opsctl by
+its path, and `init` puts the link back. It points through `current`, not at
+the release folder, so it follows every later `activate` and `rollback`.
+
+Command:
+
+```
+$ sudo /opt/ikigenba/current/opsctl/bin/opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is the ready released host, except that `/usr/local/bin/opsctl`
+  does not exist.
+
+Postconditions:
+
+- `/usr/local/bin/opsctl` is a link to
+  `/opt/ikigenba/current/opsctl/bin/opsctl`.
+- Everything else is as after the ready host's run.
 
 ## An agent initialises a host that is not ready
 
@@ -273,8 +435,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No setup command ran, no file under `/etc`, `/opt`,
-  `/var/opt/ikigenba`, or `/var/lib/ikigenba` was created, modified, or
-  removed.
+  `/var/opt/ikigenba`, `/var/lib/ikigenba`, or `/run/ikigenba` was created,
+  modified, or removed, and `/usr/local/bin/opsctl` was not created.
 
 ## An operator runs init again after fixing what it found
 
@@ -302,10 +464,10 @@ Postconditions:
 
 ## An agent's first init puts the suite in its slices
 
-The first `init` on a fresh host writes the slices before any app is
-installed, so every app `install` later places has a slice to go into and a
-ceiling to be checked against. The step prints no line of its own; the run's
-output is the ready host's.
+The first `init` on a fresh host writes the slices before any app is activated
+or installed, so every app `activate` or `install` later places has a slice to
+go into and a ceiling to be checked against. The step prints no line of its own;
+the run's output is the ready host's.
 
 Command:
 
@@ -349,7 +511,7 @@ Postconditions:
 The slices are sized from the memory the host had when `init` last ran, not
 the memory it has now, so a host stopped and started as a bigger instance
 runs with the old ceilings until the operator runs `init`. Nothing else
-recomputes them: `install` reads the slice units as they are.
+recomputes them: `activate` and `install` read the slice units as they are.
 
 Command:
 
@@ -385,9 +547,9 @@ Postconditions:
 
 The two timing settings are store inputs like any other, so a change is
 `config set` followed by `init`. The `apps` step writes the new values into
-every installed app and restarts only the apps whose values changed. A
-restart refuses no request, because each app's socket keeps listening while
-its service restarts (`S7-apps.md`).
+every app of the current release and restarts only the apps whose values
+changed. A restart refuses no request, because each app's socket keeps
+listening while its service restarts (`S07-apps.md`).
 
 Command:
 
@@ -410,12 +572,12 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- The host is ready, and `crm`, `dashboard`, and `notes` are installed with
-  `DRAIN_SECONDS=5` and a stop timeout of `10` seconds. `notes` was disabled
-  with `opsctl disable notes`.
+- The host is the ready released host, and the current release holds `crm`,
+  `dashboard`, and `notes`, each with `DRAIN_SECONDS=5` and a stop timeout
+  of `10` seconds. `notes` was disabled with `opsctl disable notes`.
 - `crm`'s and `dashboard`'s sockets are listening, and neither is disabled.
-- `/var/opt/ikigenba/gmail/` holds a `state/` and there is no `/opt/gmail/`:
-  it is a service, not an installed app.
+- `/var/opt/ikigenba/gmail/` holds a `state/` and the current release holds
+  no `gmail`: it is a data-only service, not an app.
 
 Postconditions:
 
@@ -423,16 +585,72 @@ Postconditions:
   `/etc/opt/ikigenba/notes/env` hold `DRAIN_SECONDS=20`; every other line
   in them is as it was. All three service units stop with a timeout of
   `30` seconds, and each still carries the resources its app's manifest
-  declares, as install wrote them. systemd has been reloaded.
+  declares, as activate wrote them. systemd has been reloaded.
 - `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted,
   so each now runs with the new values. Their sockets were not restarted.
 - `notes` was not started, restarted, or enabled: both its units are still
   disabled and inactive and its names still answer `503`. When it is enabled
   it starts with the new values.
-- `/var/opt/ikigenba/gmail/` was not touched, `/opt/gmail/` was not created,
-  and no unit was written for it.
+- `/var/opt/ikigenba/gmail/` was not touched, no `/etc/opt/ikigenba/gmail/`
+  or `/opt/gmail/` was created, and no unit was written for it.
 - Running `init` again writes the same values, restarts no app, and prints
   the same lines.
+
+## An agent initialises a released host whose app's secret was never pushed
+
+On a released host the `apps` step writes each app's whole environment file,
+its secrets included, from the parameter `/<host.name>/<app>`, as `activate`
+does. A secret the manifest names that the parameter does not hold stops
+`init` at that step, in `install`'s words after `opsctl: <app>: `. Like
+`install`, it writes no app until every app's secrets are in hand, so no app
+is left with an environment file missing a value. The steps before `apps` have
+run.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output:
+
+```
+nginx: ok (/usr/sbin/nginx)
+certbot: ok (/usr/bin/certbot)
+systemctl: ok (/usr/bin/systemctl)
+litestream: ok (/usr/bin/litestream)
+git: ok (/usr/bin/git)
+dns.provider: ok (route53)
+dns.zones: ok (ikigenba.dev)
+host.name: ok (sbx.ikigenba.dev)
+timeouts: ok (drain 5s, stop 10s)
+zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
+host sbx.ikigenba.dev: ok (zone ikigenba.dev)
+wildcard sbx.ikigenba.dev: ok (77.112.106.79)
+opsctl: auth: no value for 'GOOGLE_CLIENT_SECRET' in /sbx.ikigenba.dev/auth
+exit 1
+```
+
+Exits 1. The `ok` lines are on stdout; the `opsctl:` line is on stderr.
+
+Preconditions:
+
+- Every preflight check passes, and the host's certificate is not due for
+  renewal.
+- The host is the ready released host, and `auth`, an app of the current
+  release, names `GOOGLE_CLIENT_SECRET` in its manifest, but
+  `/sbx.ikigenba.dev/auth` does not hold it, or does not exist.
+
+Postconditions:
+
+- The steps before `apps` ran as on the ready host: the slices, the nginx
+  file, `/run/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
+  are as they generate them.
+- No app changed: every app's environment file and units, and
+  `ikigenba-services.service`, are as they were, and no app was restarted.
+- Running `init` again before the secret is pushed stops at the same place
+  with the same output. After `/sbx.ikigenba.dev/auth` holds it, `init` runs
+  to the end.
 
 ## An agent initialises a host holding an app whose manifest is no longer valid
 
@@ -480,6 +698,7 @@ Preconditions:
 
 - Every preflight check passes, and the host's certificate is not due for
   renewal.
+- The host is a per-app host: `/opt/ikigenba/current` does not exist.
 - Neither the three slice units nor nginx's drop-in exists: the host has
   only ever run an opsctl that did not write them.
 - `repos` is installed, and `/opt/repos/etc/manifest.toml` has `[resources]`
@@ -551,6 +770,7 @@ Preconditions:
 
 - Every preflight check passes, and the host's certificate is not due for
   renewal.
+- The host is a per-app host: `/opt/ikigenba/current` does not exist.
 - `crm` and `dashboard` are installed, each with a valid manifest, and their
   sockets are listening.
 - `/opt/crm/` holds `bin/`, `etc/`, `share/`, and `state/`, and
@@ -579,10 +799,11 @@ Postconditions:
 
 An app installed before environment files lived under `/etc/opt/ikigenba/`
 keeps its file at `/opt/<name>/etc/env`, and its unit still names it there,
-until an install writes the new file and rewrites the unit. The `apps` step
-rewrites every installed app's unit to name `/etc/opt/ikigenba/<name>/env`
-and writes the store's values into that file, but it reads no parameter, so
-it cannot write the secrets a missing file needs; a unit naming a file that is
+until an install writes the new file and rewrites the unit. On a per-app
+host the `apps` step rewrites every installed app's unit to name
+`/etc/opt/ikigenba/<name>/env` and writes the store's values into that file,
+but it reads no parameter, so it cannot write the secrets a missing file
+needs; a unit naming a file that is
 not there would not start. So an installed app with no
 `/etc/opt/ikigenba/<name>/env` stops `init` the way an app whose data has not
 moved does: at the `nginx.conf` step, before anything generated from the
@@ -622,6 +843,7 @@ Preconditions:
 
 - Every preflight check passes, and the host's certificate is not due for
   renewal.
+- The host is a per-app host: `/opt/ikigenba/current` does not exist.
 - `crm` and `dashboard` are installed, each with a valid manifest, and their
   sockets are listening. Both have their `state/` under
   `/var/opt/ikigenba/<name>/`.
@@ -677,8 +899,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No setup command ran, no app's environment file or
-  unit was rewritten, `/var/lib/ikigenba/services.json` was not rewritten, and no app
-  was restarted.
+  unit was rewritten, the services file was not rewritten, and no app was
+  restarted.
 
 ## An operator gives init an argument
 

@@ -278,7 +278,13 @@ not replace it. The TTL is 60 seconds so the record expires quickly after the
 challenge. The hook waits for the value to be live before it returns, because
 certbot asks the CA to look the moment it comes back.
 
-When the host holds the apex (see `S6-certificates.md`), certbot runs the hook
+certbot runs the hook as the plain command `opsctl dns acme-auth`, found on
+its PATH at `/usr/local/bin/opsctl`. On a released host that is a link to
+`/opt/ikigenba/current/opsctl/bin/opsctl`, so a renewal after an `activate` or
+a `rollback` runs the hook of the release the host now runs; `init` makes the
+link when it is missing (`S04-init.md`).
+
+When the host holds the apex (see `S06-certificates.md`), certbot runs the hook
 a third time with `CERTBOT_DOMAIN=ikigenba.dev`, and the record goes to
 `_acme-challenge.ikigenba.dev`: a name outside the host's own subtree, mapped
 to the same zone by the same suffix rule, and written with the same verb.
@@ -299,7 +305,8 @@ Exits 0. Nothing is on stdout or stderr.
 Preconditions:
 
 - `ikigenba.dev` is a configured zone the host's credentials can write.
-- certbot is running the hook.
+- certbot is running the hook, and `/usr/local/bin/opsctl` resolves to an
+  opsctl.
 
 Postconditions:
 

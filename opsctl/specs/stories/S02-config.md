@@ -11,7 +11,10 @@ configuration store` under `Commands:`.
 Keys match `^[a-z0-9_.-]+$`, so a `list` line never needs quoting and dotted
 names such as `dns.zones` give later groups a namespace. Values are strings
 with no newline in them, so every value fits on one line. The empty string is
-a legal value and is not the same as the key being absent.
+a legal value and is not the same as the key being absent. A key no group
+declares is kept, listed, and returned like any other, and no command refuses
+the store for holding one, so an older opsctl works on a store a newer one
+wrote and leaves the newer keys as they are.
 
 ## An agent asks what `config` can do
 
@@ -53,32 +56,35 @@ Postconditions:
 
 ## An agent configures a fresh host
 
-`devctl space create` has just brought a host up and drives one `config set`
-per key over ssh; `devctl space init` drives the same sets again on a live
-host whenever what a key came from has changed. Nothing is printed: the answer
-to "did it work" is the exit code.
+`devctl space create` has just brought a host up and unpacked the suite
+release it will run, and drives one `config set` per key over ssh. Nothing
+yet links `/usr/local/bin/opsctl` (`init` does, `S04-init.md`), so it runs the
+release's own opsctl by its full path. `devctl space init` drives the same
+sets again on a live host, through `opsctl` on the PATH, whenever what a key
+came from has changed. Nothing is printed: the answer to "did it work" is the
+exit code.
 
 These ten are what `init` needs to bring the host to the state the store
 describes, and a host that has them all and nothing else is a configured host.
 opsctl's groups declare three other keys. `host.apex` is set later by
 `devctl apex set` on the one space that holds the root domain's apex and is
-absent everywhere else (see `S5-nginx.md`). `apps.drain_seconds` and
+absent everywhere else (see `S05-nginx.md`). `apps.drain_seconds` and
 `apps.stop_seconds` have defaults and are set only to change them (see
-`S7-apps.md`).
+`S07-apps.md`).
 
 Command:
 
 ```
-$ sudo opsctl config set host.name=sbx.ikigenba.dev
-$ sudo opsctl config set aws.region=us-east-2
-$ sudo opsctl config set acme.email=ops@ikigenba.dev
-$ sudo opsctl config set dns.provider=route53
-$ sudo opsctl config set dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78
-$ sudo opsctl config set backup.s3_uri=s3://ikigenba.dev/sbx/
-$ sudo opsctl config set backup.host_files_seconds=86400
-$ sudo opsctl config set backup.service_files_seconds=86400
-$ sudo opsctl config set backup.service_db_seconds=86400
-$ sudo opsctl config set backup.service_wal_seconds=300
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set host.name=sbx.ikigenba.dev
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set aws.region=us-east-2
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set acme.email=ops@ikigenba.dev
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set dns.provider=route53
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set backup.s3_uri=s3://ikigenba.dev/sbx/
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set backup.host_files_seconds=86400
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set backup.service_files_seconds=86400
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set backup.service_db_seconds=86400
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl config set backup.service_wal_seconds=300
 ```
 
 Output:
@@ -90,8 +96,11 @@ Each exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl` is installed on the host and is running as root.
-- `/etc/ikigenba/` may or may not exist.
+- The suite release `c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` is unpacked at
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/`, and
+  each command runs as root.
+- `/etc/ikigenba/` may or may not exist. `/usr/local/bin/opsctl` may or may
+  not exist.
 
 Postconditions:
 

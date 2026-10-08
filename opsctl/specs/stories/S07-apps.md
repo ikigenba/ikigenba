@@ -9,11 +9,37 @@ so a later install lands over it. Restarting an app changes nothing on disk.
 What each host is running is read back from the host itself, never from a
 record kept anywhere else.
 
+That is a per-app host: one with no `/opt/ikigenba/current`, whose apps
+arrived one file at a time. A released host, one where `/opt/ikigenba/current`
+exists, takes apps only through `opsctl activate`, which puts a whole suite
+release in place at once (`S10-releases.md`); `install` and `uninstall`
+refuse there and change nothing. The file, `/opt/<app>/`, and the `install`
+and `uninstall` stories below are a per-app host's, and say so in their
+preconditions.
+
+`restart`, `disable`, `enable`, and `status` are written for a released host.
+There a service is an app the release `current` names — a directory
+`/opt/ikigenba/current/<app>/` holding `bin/<app>` and `etc/manifest.toml` —
+or any `/var/opt/ikigenba/<name>/` holding a `state/`; `/opt/<name>/` makes no
+service. A service with only its kept state is a data-only service: it has no
+units, no nginx block, and no entry in the services file. Every app in the
+release reports the release's short sha, the first 7 characters of the commit
+it was built from, where a per-app host reports the version its binary
+answers: `c604e32` for the release
+`c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`. Each app's units are the ones
+activate writes: the service runs `/opt/ikigenba/current/<app>/bin/<app>`,
+and the services file is `/run/ikigenba/services.json`. On a per-app host
+these four commands keep that host's behaviour: a service is found under
+`/opt/` as below, the version is what the app's binary answers, and the
+services file is `/var/lib/ikigenba/services.json`. Their refusals there
+keep their old text: `restart`, `disable`, and `enable` of an app with no
+`/opt/gmail/` fail with `<step>: failed: gmail is not installed`.
+
 The name the manifest declares is checked before anything is written: it is a
 DNS label that is not `host`, `deploy`, `snapshots`, `seed`, `backup-host`,
 `backup-services`, or `renew-certificate`, the prefixes and unit names the
 host already uses. `snapshots` and `seed` are prefixes under the space's own
-(see `S8-backup.md`), where an app of that name would keep its backups and
+(see `S08-backup.md`), where an app of that name would keep its backups and
 replica beside them. devctl's build checks a name too, but a file can come
 from anywhere, so install does not trust that build checked.
 
@@ -25,7 +51,7 @@ The top-level usage gains six lines under `Commands:`:
   restart   restart an installed app's service
   disable   stop an installed app and keep it from starting
   enable    let a disabled app start again, and start it
-  status    print every installed app, its version and its state
+  status    print every service, its release and its state
 ```
 
 Three configuration keys:
@@ -41,7 +67,7 @@ the host gets the same values. Each must be a positive whole number, and
 `apps.stop_seconds` must be greater than `apps.drain_seconds`, so an app that
 drains for as long as it is allowed still exits on its own before systemd
 kills it. `install` writes them into the app it installs; `init` writes them
-into every installed app (see `S4-init.md`), which is how a changed value
+into every installed app (see `S04-init.md`), which is how a changed value
 reaches apps already on the host.
 
 The file's layout is devctl's contract and carries no version inside it:
@@ -60,7 +86,7 @@ control character (U+0000–U+001F, U+007F), so no line break. It may also carry
 guests, visitors with no credential. On a host with an authenticator, such a
 visitor reaches the app's pages, with no identity, instead of being sent to
 sign in, while `/mcp`, `/api`, and git paths stay challenged (see
-`S5-nginx.md`). On a host without one every app is already open, and `guests`
+`S05-nginx.md`). On a host without one every app is already open, and `guests`
 changes nothing.
 `guests` is not in the services file and no command shows it. The manifest
 names no port: no app listens on one, and a manifest that carries a `port` is
@@ -80,7 +106,7 @@ oom_policy = "continue"
 ```
 
 - `slice` is `"core"` or `"apps"`, the `ikigenba-core.slice` or
-  `ikigenba-apps.slice` that `init` writes (`S4-init.md`); absent means
+  `ikigenba-apps.slice` that `init` writes (`S04-init.md`); absent means
   `"apps"`. A core app is one the rest of the suite cannot work without:
   it shares nginx's slice and keeps 32 MiB of memory however short its
   neighbours are.
@@ -125,9 +151,10 @@ every installed app and nginx's 128 MiB.
 A file that carries `share/icon.svg` puts its app in the host's service
 launcher; nothing in the manifest does. `install` refuses an icon that is not
 an SVG image or is larger than 64 KiB. Every command here that regenerates
-nginx also rewrites `/var/lib/ikigenba/services.json`, the list of the host's
-installed services, each with its manifest's `description` and `mcp`, and its
-icon when it ships one (see `S9-services.md`), and reports it on a `services`
+nginx also rewrites the services file — `/var/lib/ikigenba/services.json` on
+a per-app host, `/run/ikigenba/services.json` on a released host — the list
+of the host's installed services, each with its manifest's `description` and `mcp`, and its
+icon when it ships one (see `S09-services.md`), and reports it on a `services`
 line right after the `nginx` line. Every installed app has an entry there,
 icon or not, so the line reports a change for any app that is added, removed,
 disabled, or enabled; a reinstall changes the app's entry only when its
@@ -152,9 +179,9 @@ The stories below install this manifest as it stands, with no
 `[resources]`, unless one says otherwise.
 
 A host may have no default app, in which case its own name answers 404 (see
-`S5-nginx.md`); it may never have two. The root domain's apex is a separate
+`S05-nginx.md`); it may never have two. The root domain's apex is a separate
 choice, made in the store rather than the manifest (`host.apex`, see
-`S5-nginx.md`): the app it names answers at `ikigenba.dev` as well, and
+`S05-nginx.md`): the app it names answers at `ikigenba.dev` as well, and
 `install` and `uninstall` report that name the way they report the space's.
 
 `install` reads the app, `default`, `secrets`, `description`, `mcp`, and
@@ -163,7 +190,7 @@ and the `[resources]` table into the service unit. The `[database]` table it rea
 regenerate `/etc/litestream.yml` from every manifest on the host, the way it
 regenerates nginx, so that a database arrives on the host and starts being
 replicated in the same command. What the table means, and what replication
-is, are `S8-backup.md`'s. It is in the manifest rather than the store because it
+is, are `S08-backup.md`'s. It is in the manifest rather than the store because it
 is a fact about the app, which travels with the app.
 
 Secret *values* never travel in the file. devctl wrote them to the parameter
@@ -174,8 +201,8 @@ can read no other space's parameters.
 An app's environment file is host configuration, not part of what the file
 brought: `/etc/opt/ikigenba/<app>/env`, owned `root:root` with mode `0600`.
 `install` writes it whole on every run from the manifest, the parameter, and
-the store, `restore` writes it the same way (see `S8-backup.md`), and `init`
-rewrites the store's values in it (see `S4-init.md`). It is never backed
+the store, `restore` writes it the same way (see `S08-backup.md`), and `init`
+rewrites the store's values in it (see `S04-init.md`). It is never backed
 up: it is generated, so a host writes it again rather than carrying a stale
 copy forward. `install` creates `/etc/opt/` and
 `/etc/opt/ikigenba/` owned `root:root` with mode `0755` if they are missing,
@@ -317,6 +344,10 @@ A core app also keeps 32M of memory under pressure. When the memory_max values
 in ikigenba-apps.slice, or in ikigenba.slice with nginx's 128M, add up to more
 than twice the slice's ceiling, the unit line says so; the install goes on.
 
+On a host that runs releases, one where /opt/ikigenba/current exists, install
+refuses and changes nothing: apps reach such a host only through
+'opsctl activate'.
+
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
   host.name           the fully-qualified name this host answers at
@@ -376,6 +407,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` and `aws.region` are set, and `init` reported the host ready.
 - `apps.drain_seconds` and `apps.stop_seconds` are unset.
 - The object holds `bin/crm`, `etc/manifest.toml`, and `share/icon.svg`, an
@@ -423,7 +455,7 @@ Postconditions:
   so `https://crm.sbx.ikigenba.dev` reaches `crm` through
   `/run/ikigenba/crm.sock`.
 - Were the installed app named `auth`, the same regeneration would wire every
-  other app's server block to the authenticator's `/check` (`S5-nginx.md`), so
+  other app's server block to the authenticator's `/check` (`S05-nginx.md`), so
   each begins requiring a valid session, except that an app whose manifest
   sets `guests = true` still lets a visitor with none reach its pages. The
   `nginx:` line still reports only
@@ -437,7 +469,7 @@ Postconditions:
   `<backup.s3_uri>crm/`.
   Because the file changed, `litestream.service` was restarted; it is running.
   Every other declared database on the host paused for the restart and is
-  replicating again, the same window `S8-backup.md` accepts for a restore.
+  replicating again, the same window `S08-backup.md` accepts for a restore.
 - The service is `active`, and the binary reports `v0.1.0`.
 - No other app on the host has changed.
 
@@ -474,6 +506,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `crm` is installed, its socket is listening, and its service is `active`.
 - `crm`'s `state/` and `cache/` are under `/var/opt/ikigenba/crm/`, and
   `/opt/crm/` holds neither.
@@ -534,6 +567,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `crm` is installed and disabled: both its units are disabled and inactive.
 - `crm`'s `state/` and `cache/` are under `/var/opt/ikigenba/crm/`, and
   `/opt/crm/` holds neither.
@@ -596,6 +630,7 @@ moved /opt/crm/state)`.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `crm` `v0.1.0` is installed, its socket is listening, and its service is
   `active` with `/opt/crm` as its working directory.
 - `/opt/crm/` holds `bin/`, `etc/`, `share/`, `state/`, and `cache/`.
@@ -674,6 +709,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `crm` `v0.1.0` is installed, its socket is listening, and its service is
   `active` with `/var/opt/ikigenba/crm` as its working directory and
   `/opt/crm/etc/env` as its environment file.
@@ -732,6 +768,7 @@ moves something, the moved list comes first: `data: ok
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `crm` is installed and running with `/var/opt/ikigenba/crm` as its working
   directory, and its `state/` is already under `/var/opt/ikigenba/crm/`.
 - Both `/opt/crm/cache/` and `/var/opt/ikigenba/crm/cache/` exist, and
@@ -778,6 +815,7 @@ Exits 1. The step outcome lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `crm` `v0.1.0` is installed and its service is `active`.
 - Both `/opt/crm/state/` and `/var/opt/ikigenba/crm/state/` exist.
 
@@ -822,6 +860,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `dashboard`'s manifest sets `default = true`, names no secrets, and carries
   no `description` or `mcp`.
 - The file ships no `share/icon.svg`.
@@ -875,6 +914,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is `crm`.
 - The host's certificate covers `ikigenba.dev` and the apex record points
   here: both are `devctl apex set`'s doing, before this deploy.
@@ -945,6 +985,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` is `sbx.ikigenba.dev`, and `init` reported the host ready on a
   t3.small, so `ikigenba-apps.slice` has `MemoryMax=1024M` and
   `ikigenba.slice` `MemoryMax=1536M`.
@@ -1018,6 +1059,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` is `sbx.ikigenba.dev`, and `init` reported the host ready on a
   t3.small.
 - The file's manifest is the one above, and it ships no `share/icon.svg`.
@@ -1083,6 +1125,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` is `sbx.ikigenba.dev`, and `init` reported the host ready on a
   t3.small, so `ikigenba-apps.slice` has `MemoryMax=1024M`.
 - The file's manifest is the one above, and it ships no `share/icon.svg`.
@@ -1141,6 +1184,7 @@ clause is the only one.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `init` reported the host ready on a t3.small, so `ikigenba-apps.slice` has
   `MemoryMax=1024M` and `ikigenba.slice` `MemoryMax=1536M`.
 - `auth` (`128M`) and `telemetry` (`256M`) are installed in the core slice,
@@ -1201,9 +1245,10 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` is `sbx.ikigenba.dev`, and `init` reported the host ready.
 - `auth` is installed, so every other app's server block is wired to the
-  authenticator (`S5-nginx.md`).
+  authenticator (`S05-nginx.md`).
 - The file's manifest is the one above, and it ships no `share/icon.svg`.
 - `sites` has never been installed on this host.
 
@@ -1252,6 +1297,7 @@ Exits 1. The fetch and file outcome lines are on stdout; the last line is on std
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `dashboard`'s manifest sets `default = true`.
 - `crm` is installed and its manifest sets `default = true`.
 
@@ -1287,6 +1333,7 @@ Exits 1. The step outcome lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - The manifest names `GMAIL_CLIENT_SECRET` and the parameter does not hold
   it, or the parameter does not exist at all.
 
@@ -1322,6 +1369,7 @@ validation. Each exits 2.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 
 Postconditions:
@@ -1354,6 +1402,7 @@ stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's `etc/manifest.toml` names `port = 3100`, whatever its value.
 
@@ -1397,6 +1446,7 @@ crm-v0.1.0.tar.xz: etc/manifest.toml: <decoder complaint>` on stdout and
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's `etc/manifest.toml` sets `mcp = true` and has no `description`,
   or one that is empty or holds only whitespace.
@@ -1432,6 +1482,7 @@ stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's `etc/manifest.toml` has a `description` holding a control
   character (U+0000–U+001F or U+007F): `"Customers\nand deals"`, say, whatever
@@ -1470,6 +1521,7 @@ the type it found, so it varies with the value.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's `etc/manifest.toml` sets `guests = "yes"`, or `guests = 1`, or
   any other value that is not a Boolean.
@@ -1539,6 +1591,7 @@ slice allows is the next story's.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's manifest is `repos`'s from "An agent installs an app that
   declares its resources" with `slice = "edge"`, or `"Core"`, or `""`, or
@@ -1580,6 +1633,7 @@ accepted.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `init` reported the host ready on a t3.small, so `ikigenba-apps.slice` has
   `MemoryMax=1024M` and `ikigenba.slice` `MemoryMax=1536M`.
 - The file's manifest is `repos`'s from "An agent installs an app that
@@ -1623,6 +1677,7 @@ its own.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `/etc/systemd/system/ikigenba.slice` exists with a `MemoryMax`, and
   `/etc/systemd/system/ikigenba-apps.slice` does not exist.
 - The file's manifest is `repos`'s from "An agent installs an app that
@@ -1668,6 +1723,7 @@ stderr. A `[database]` with no `engine` fails the same way.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's manifest is `crm`'s from the opening of this group with the
   `[database]` table above.
@@ -1705,6 +1761,7 @@ stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's `share/icon.svg` does not parse as XML with the root element
   `svg`: it is a PNG under that name, say.
@@ -1740,6 +1797,7 @@ stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's `share/icon.svg` is an SVG image larger than 64 KiB (65,536
   bytes).
@@ -1775,6 +1833,7 @@ whole number of seconds: '2.5'`, naming whichever key holds it, the same way.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `apps.drain_seconds` and `apps.stop_seconds` are both `5`.
 
 Postconditions:
@@ -1804,6 +1863,7 @@ is not a DNS label fails the same way.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `opsctl` is running as root.
 - The file's `etc/manifest.toml` declares `app = "host"`.
 
@@ -1848,6 +1908,7 @@ journal are on stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `gmail` has never been installed on this host.
 - `gmail`'s binary exits at start, before it tells systemd it is ready.
 - `gmail`'s manifest declares no database, and its file ships no
@@ -1896,6 +1957,38 @@ Postconditions:
 
 - Nothing has changed.
 
+## An agent installs an app on a host that runs releases
+
+A released host's apps are the release `current` names, all of them at one
+commit, so an app arriving by itself has no place there. `install` checks
+for `current` once it is running as root and its command line is good, and
+before it fetches anything.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.2.0.tar.xz
+```
+
+Output:
+
+```
+opsctl: this host runs releases; deploy with 'opsctl activate'
+```
+
+Exits 1. The line is on stderr; stdout is empty. A command line `install`
+refuses as a usage error is refused that way first, with exit 2.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- `/opt/ikigenba/current` exists: the host is a released host.
+
+Postconditions:
+
+- Nothing has changed. The object was not fetched, and nothing under
+  `/opt/`, `/etc/`, or `/var/opt/ikigenba/` was written.
+
 ## An operator asks what `uninstall` can do
 
 Command:
@@ -1933,6 +2026,10 @@ name stops answering, APP leaves the service launcher, and a database APP
 declared stops being replicated once litestream has shipped what it holds.
 
 The parameter /<host.name>/APP is not touched: it is devctl's.
+
+On a host that runs releases, one where /opt/ikigenba/current exists,
+uninstall refuses and changes nothing: an app leaves such a host when
+'opsctl activate' puts a release without it in place.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
@@ -1983,6 +2080,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` is set.
 - `crm` is installed, its socket is listening, and its service is `active`.
   Its manifest declares a
@@ -2014,7 +2112,7 @@ Postconditions:
   ikigenba.dev removed`: `host.apex` is not touched, so `ikigenba.dev` moves
   to the 404 block and answers from there until `crm` is installed again.
 - Were the uninstalled app named `auth`, the same regeneration would strip the
-  authenticator wiring from every other app's server block (`S5-nginx.md`), so
+  authenticator wiring from every other app's server block (`S05-nginx.md`), so
   each returns to fail-open. The `nginx:` line still reports only the
   uninstalled app's own name.
 - `/var/lib/ikigenba/services.json` has been rewritten and no longer lists
@@ -2067,6 +2165,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `dashboard` is installed, its manifest sets `default = true`, and it
   declares no database.
 - `dashboard` shipped no `share/icon.svg`; `/var/lib/ikigenba/services.json`
@@ -2116,6 +2215,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `host.name` is set.
 - `crm` is installed and its service is `active`. `/opt/crm/` holds `bin/`,
   `etc/`, `share/`, `state/`, and `cache/`, and `/var/opt/ikigenba/crm/`
@@ -2160,6 +2260,7 @@ Exits 1. The step outcome lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `crm` is installed and its service is `active`.
 - Both `/opt/crm/state/` and `/var/opt/ikigenba/crm/state/` exist.
 
@@ -2204,6 +2305,7 @@ also exit 1.
 
 Preconditions:
 
+- `/opt/ikigenba/current` does not exist: the host is a per-app host.
 - `/var/opt/ikigenba/gmail/` holds a `state/`, `/opt/gmail/` does not
   exist, and there is no `ikigenba-gmail.socket` or
   `ikigenba-gmail.service`; or `gmail` is no service at all.
@@ -2239,6 +2341,38 @@ Postconditions:
 
 - Nothing has changed.
 
+## An operator uninstalls an app on a host that runs releases
+
+On a released host an app leaves when an activate puts a release without it
+in place, and that keeps its state as `uninstall` would
+(`S10-releases.md`). `uninstall` checks for `current` once it is running as
+root and its command line is good, before it looks at the app.
+
+Command:
+
+```
+$ sudo opsctl uninstall crm
+```
+
+Output:
+
+```
+opsctl: this host runs releases; deploy with 'opsctl activate'
+```
+
+Exits 1. The line is on stderr; stdout is empty. A command line `uninstall`
+refuses as a usage error is refused that way first, with exit 2.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- `/opt/ikigenba/current` exists: the host is a released host.
+
+Postconditions:
+
+- Nothing has changed. No unit was stopped, disabled, or removed, and nothing
+  under `/opt/`, `/etc/`, or `/var/opt/ikigenba/` was written.
+
 ## An operator asks what `restart` can do
 
 Command:
@@ -2256,11 +2390,11 @@ Output:
 ```
 Usage: opsctl restart APP
 
-Restart ikigenba-APP.service and report the service as the last line of
-'opsctl install' does. The socket is never restarted: it keeps listening, so
+Restart ikigenba-APP.service and report the service as 'opsctl activate'
+reports each app. The socket is never restarted: it keeps listening, so
 requests that arrive during the restart wait and are answered by the new
 process. Nothing on disk changes: the binary, the environment file, and the
-units are what the last install wrote, so a secret pushed since then is not
+units are what the last activate wrote, so a secret pushed since then is not
 picked up here, nor a timing setting changed since then ('opsctl init'
 applies those). A service that is inactive or failed is started, and so is
 its socket if it was stopped. A disabled app is not started: it stays
@@ -2279,8 +2413,10 @@ Postconditions:
 
 ## A developer restarts an app
 
-`devctl space restart` runs this over ssh. The one line is install's
-`service` line: the same question asked of the same unit.
+`devctl space restart` runs this over ssh. The one line is activate's
+`service` line for one app: the same question asked of the same unit, with
+the short sha of the release `current` names where the app's version would
+be.
 
 Command:
 
@@ -2291,25 +2427,28 @@ $ sudo opsctl restart crm
 Output:
 
 ```
-service: ok (crm v0.1.0 active)
+service: ok (crm c604e32 active)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- `crm` is installed and enabled. Its service may be `active`, `inactive`, or
-  `failed`, and its unit names `/etc/opt/ikigenba/crm/env` as its
-  environment file.
+- `/opt/ikigenba/current` points at
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, whose
+  release holds `crm`.
+- `crm` is enabled. Its service may be `active`, `inactive`, or `failed`, and
+  its unit names `/etc/opt/ikigenba/crm/env` as its environment file.
 
 Postconditions:
 
-- `ikigenba-crm.service` is `active` and its main process is a new one.
+- `ikigenba-crm.service` is `active` and its main process is a new one,
+  running `/opt/ikigenba/current/crm/bin/crm`.
 - `ikigenba-crm.socket` is listening and was not restarted: a request that
   arrived during the restart waited on it and was answered by the new
   process. Had the socket been stopped, starting the service started it too.
-- Nothing under `/opt/crm/` or `/etc/` was written. The environment systemd
-  gave the new process is the file its unit names,
+- Nothing under `/opt/ikigenba/` or `/etc/` was written. The environment
+  systemd gave the new process is the file its unit names,
   `/etc/opt/ikigenba/crm/env`, as it was last written.
 - No unit was enabled or disabled, nginx was not reloaded, and
   `litestream.service` was not touched: the app closed and reopened its
@@ -2318,7 +2457,7 @@ Postconditions:
 
 ## A developer restarts an app whose service will not come back
 
-The same failure install reports, reported the same way: the step that failed
+The same failure activate reports, reported the same way: the step that failed
 and what the host said, each line quoted with `> `.
 
 Command:
@@ -2342,21 +2481,22 @@ journal are on stderr.
 
 Preconditions:
 
-- `crm` is installed and its binary exits at start.
+- `crm` is in the release `current` names, `c604e32`, and its binary exits
+  at start.
 
 Postconditions:
 
-- The service is `failed`, and `status` shows `crm v0.1.0 failed active wal`.
+- The service is `failed`, and `status` shows `crm c604e32 failed active wal`.
   The socket is still listening. Nothing
   on disk changed and nothing was rolled back: the host is left where an
   operator can look at it.
 
 ## A developer restarts a disabled app
 
-A disabled app stays disabled through every operation but `opsctl enable`, so
-`restart` starts nothing. The line reports the app as it is, the way `install`
-reports a disabled app, and the command succeeds: the host is in the state
-the operator chose.
+A disabled app stays disabled through every operation but `opsctl enable`,
+an activate included (`S10-releases.md`), so `restart` starts nothing. The
+line reports the app as it is, the way activate reports a disabled app, and
+the command succeeds: the host is in the state the operator chose.
 
 Command:
 
@@ -2367,21 +2507,26 @@ $ sudo opsctl restart crm
 Output:
 
 ```
-service: ok (crm v0.1.0 disabled)
+service: ok (crm c604e32 disabled)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- `crm` is installed and disabled: both its units are disabled and inactive.
+- `crm` is in the release `current` names, `c604e32`, and disabled: both its
+  units are disabled and inactive.
 
 Postconditions:
 
 - Nothing has changed. Neither unit was started or enabled, and `crm`'s
   names still answer `503`.
 
-## An operator restarts an app that is not installed
+## An operator restarts an app that is not in the current release
+
+A `/var/opt/ikigenba/gmail/` with a `state/` is a service, and the host backs
+it up, but with no `gmail` in the release `current` names there is nothing to
+run. A name that is no service at all is a stronger case of the same.
 
 Command:
 
@@ -2392,13 +2537,13 @@ $ sudo opsctl restart gmail
 Output:
 
 ```
-service: failed: gmail is not installed
+service: failed: gmail is not in the current release
 opsctl: restart failed
 ```
 
 Exits 1. The service outcome is on stdout; the command diagnostic is on stderr.
-A name that is no service at all, with neither an `/opt/gmail/` holding an
-`etc/` nor a `/var/opt/ikigenba/gmail/` holding a `state/`, gives
+A name that is no service at all, neither in the release `current` names nor
+a `/var/opt/ikigenba/gmail/` holding a `state/`, gives
 `service: failed: no service 'gmail'` on stdout and the same command diagnostic,
 also exit 1. With no operand the diagnostic is `opsctl: restart needs APP`,
 with more than one `opsctl: restart takes one APP`, each followed by the usage
@@ -2406,9 +2551,10 @@ hint and exit 2; these grammar failures have no service outcome and empty stdout
 
 Preconditions:
 
-- `/var/opt/ikigenba/gmail/` holds a `state/`, `/opt/gmail/` does not
-  exist, and there is no `ikigenba-gmail.socket` or
-  `ikigenba-gmail.service`; or `gmail` is no service at all.
+- `/opt/ikigenba/current` exists and its release holds no `gmail`.
+- `/var/opt/ikigenba/gmail/` holds a `state/`, and there is no
+  `ikigenba-gmail.socket` or `ikigenba-gmail.service`; or `gmail` is no
+  service at all.
 
 Postconditions:
 
@@ -2416,10 +2562,11 @@ Postconditions:
 
 ## An operator asks what `disable` and `enable` can do
 
-An installed app starts at boot and answers whenever its socket is reached.
-Disabling it keeps it installed — its files, its units, and its data stay —
-while neither of its units starts, at boot or on a request, until it is
-enabled again.
+An app in the current release starts at boot and answers whenever its socket
+is reached. Disabling it keeps it in place — its units, its data, and its
+place in the release stay — while neither of its units starts, at boot or on
+a request, until it is enabled again. An activate keeps a disabled app
+disabled, in the new release as in the old (`S10-releases.md`).
 
 Command:
 
@@ -2438,9 +2585,9 @@ Usage: opsctl disable APP
 
 Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
-request. The nginx configuration and /var/lib/ikigenba/services.json are then
+request. The nginx configuration and /run/ikigenba/services.json are then
 regenerated, so APP's names answer 503 and the service launcher shows APP
-disabled until it is enabled. Nothing on disk under /opt/APP/ or
+disabled until it is enabled. Nothing on disk under /opt/ikigenba/ or
 /var/opt/ikigenba/APP/ changes.
 'opsctl enable APP' undoes it.
 
@@ -2468,10 +2615,10 @@ Output:
 Usage: opsctl enable APP
 
 Enable ikigenba-APP.socket and ikigenba-APP.service and start the socket,
-regenerate the nginx configuration and /var/lib/ikigenba/services.json so
-APP's names reach it again and the service launcher shows it enabled, then
-start the service and report it as the last line of 'opsctl install' does.
-Nothing on disk under /opt/APP/ changes.
+regenerate the nginx configuration and /run/ikigenba/services.json so APP's
+names reach it again and the service launcher shows it enabled, then start
+the service and report it as 'opsctl activate' reports each app.
+Nothing on disk under /opt/ikigenba/ changes.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
@@ -2505,13 +2652,13 @@ services: ok (crm disabled)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. The `nginx` line names
-every name the app answers at, as `install`'s does.
+every name the app answers at.
 
 Preconditions:
 
-- `crm` is installed, both its units are enabled, its socket is listening,
-  and its service is `active`.
-- `/var/lib/ikigenba/services.json` lists `crm` as enabled.
+- `crm` is in the release `current` names, `c604e32`; both its units are
+  enabled, its socket is listening, and its service is `active`.
+- `/run/ikigenba/services.json` lists `crm` as enabled.
 
 Postconditions:
 
@@ -2521,14 +2668,16 @@ Postconditions:
 - Neither unit starts at the next boot, and no request can start the
   service: there is no socket to reach.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded:
-  `https://crm.sbx.ikigenba.dev` answers `503` (`S5-nginx.md`). Between the
+  `https://crm.sbx.ikigenba.dev` answers `503` (`S05-nginx.md`). Between the
   stop and the reload, a request found no socket and nginx answered it with
   an error of its own.
-- `/var/lib/ikigenba/services.json` has been rewritten and lists `crm` as not
+- `/run/ikigenba/services.json` has been rewritten and lists `crm` as not
   enabled.
-- Both unit files and everything under `/opt/crm/` and
+- Both unit files and everything under `/opt/ikigenba/` and
   `/var/opt/ikigenba/crm/` are as they were.
-  `status` shows `crm v0.1.0 inactive disabled wal`.
+  `status` shows `crm c604e32 inactive disabled wal`.
+- The next activate leaves `crm` disabled and does not start it
+  (`S10-releases.md`).
 - No other app on the host has changed.
 
 ## An operator enables a disabled app
@@ -2545,32 +2694,34 @@ Output:
 enable: ok (ikigenba-crm.socket, ikigenba-crm.service)
 nginx: ok (crm.sbx.ikigenba.dev)
 services: ok (crm enabled)
-service: ok (crm v0.1.0 active)
+service: ok (crm c604e32 active)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. A service that will not
 come up is reported as `restart` reports it: `service: failed: crm: service
 failed to start` on stdout, `opsctl: enable failed` and the quoted journal on
 stderr, exit 1, with both units left enabled, nginx routing the app's names
-to its socket, and `/var/lib/ikigenba/services.json` listing it as enabled.
+to its socket, and `/run/ikigenba/services.json` listing it as enabled.
 
 Preconditions:
 
-- `crm` is installed and both its units are disabled and inactive.
-- `/var/lib/ikigenba/services.json` lists `crm` as not enabled.
+- `crm` is in the release `current` names, `c604e32`, and both its units are
+  disabled and inactive.
+- `/run/ikigenba/services.json` lists `crm` as not enabled.
 
 Postconditions:
 
 - Both units are enabled, the socket is listening at
   `/run/ikigenba/crm.sock` — since before nginx was reloaded — and the
-  service is `active`. Both start at the next boot.
+  service is `active`. Both start at the next boot, and the next activate
+  starts `crm` with the rest.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded:
   `https://crm.sbx.ikigenba.dev` reaches `crm` again.
-- `/var/lib/ikigenba/services.json` has been rewritten and lists `crm` as
+- `/run/ikigenba/services.json` has been rewritten and lists `crm` as
   enabled.
-- Nothing under `/opt/crm/` or `/etc/` was written other than systemd's own
-  enablement links and the nginx configuration. The only other file written
-  is `/var/lib/ikigenba/services.json`.
+- Nothing under `/opt/ikigenba/` or `/etc/` was written other than systemd's
+  own enablement links and the nginx configuration. The only other file
+  written is `/run/ikigenba/services.json`.
 - No other app on the host has changed.
 
 ## An operator disables an app that is already disabled, or enables one that is already enabled
@@ -2605,7 +2756,7 @@ Output:
 enable: ok (ikigenba-crm.socket, ikigenba-crm.service already enabled)
 nginx: ok (unchanged)
 services: ok (unchanged)
-service: ok (crm v0.1.0 active)
+service: ok (crm c604e32 active)
 ```
 
 Each exits 0. The lines are on stdout; stderr is empty. The `service` line of
@@ -2615,24 +2766,23 @@ units.
 
 Preconditions:
 
-- For `disable`, `crm` is installed and both its units are already disabled
-  and inactive. For `enable`, both are already enabled and the service is
-  `active`.
+- `crm` is in the release `current` names, `c604e32`.
+- For `disable`, both its units are already disabled and inactive. For
+  `enable`, both are already enabled and the service is `active`.
 
 Postconditions:
 
 - Nothing has changed. No unit was enabled, disabled, started, or stopped,
   and nginx was not reloaded: the configuration it would have written is
-  byte for byte the one in place. `/var/lib/ikigenba/services.json` is byte
+  byte for byte the one in place. `/run/ikigenba/services.json` is byte
   for byte as it was.
 
 ## An operator tries to disable the authenticator
 
-An installed app named `auth` is the authenticator (`S5-nginx.md`): every
-other app's requests are checked against it. Disabling it would leave the
-other apps either open to anyone or answering errors, so `disable` refuses it
-always, whatever else is on the host, and checks this before it touches
-anything.
+An app named `auth` is the authenticator (`S05-nginx.md`): every other app's
+requests are checked against it. Disabling it would leave the other apps
+either open to anyone or answering errors, so `disable` refuses it always,
+whatever else is on the host, and checks this before it touches anything.
 
 Command:
 
@@ -2651,16 +2801,16 @@ Exits 1. The outcome line is on stdout; the command diagnostic is on stderr.
 
 Preconditions:
 
-- `auth` is installed.
+- `auth` is in the release `current` names.
 
 Postconditions:
 
 - Nothing has changed. Both of `auth`'s units are as they were, nginx was
-  neither regenerated nor reloaded, and `/var/lib/ikigenba/services.json` was
-  not rewritten. `uninstall` remains the only way to take
-  the authenticator off the host.
+  neither regenerated nor reloaded, and `/run/ikigenba/services.json` was
+  not rewritten. Only an activate of a release without `auth` takes the
+  authenticator off the host (`S10-releases.md`).
 
-## An operator disables or enables an app that is not installed
+## An operator disables or enables an app that is not in the current release
 
 Command:
 
@@ -2671,7 +2821,7 @@ $ sudo opsctl disable gmail
 Output:
 
 ```
-stop: failed: gmail is not installed
+stop: failed: gmail is not in the current release
 opsctl: disable failed
 ```
 
@@ -2684,20 +2834,21 @@ $ sudo opsctl enable gmail
 Output:
 
 ```
-enable: failed: gmail is not installed
+enable: failed: gmail is not in the current release
 opsctl: enable failed
 ```
 
 Each exits 1. The outcome line is on stdout; the command diagnostic is on
-stderr. A name that is no service at all, with neither an `/opt/gmail/`
-holding an `etc/` nor a `/var/opt/ikigenba/gmail/` holding a `state/`, gives
+stderr. A name that is no service at all, neither in the release `current`
+names nor a `/var/opt/ikigenba/gmail/` holding a `state/`, gives
 `failed: no service 'gmail'` in the outcome line instead, also exit 1.
 
 Preconditions:
 
-- `/var/opt/ikigenba/gmail/` holds a `state/`, `/opt/gmail/` does not
-  exist, and there is no `ikigenba-gmail.socket` or
-  `ikigenba-gmail.service`; or `gmail` is no service at all.
+- `/opt/ikigenba/current` exists and its release holds no `gmail`.
+- `/var/opt/ikigenba/gmail/` holds a `state/`, and there is no
+  `ikigenba-gmail.socket` or `ikigenba-gmail.service`; or `gmail` is no
+  service at all.
 
 Postconditions:
 
@@ -2749,12 +2900,17 @@ Output:
 ```
 Usage: opsctl status
 
-Print one line per service on this host, in name order: its name, the version
-its own binary reports, the state of its service unit, the state of its socket
-unit, and the journal mode of the database its manifest declares. A service is
-any /opt/<name>/ with an etc/ directory or any /var/opt/ikigenba/<name>/ with
-a state/ directory; '-' means opsctl could not ask, or there was nothing to
-ask.
+Print one line per service on this host, in name order: its name, the short
+commit of the release it runs, the state of its service unit, the state of
+its socket unit, and the journal mode of the database its manifest declares.
+A service is an app the current release (/opt/ikigenba/current) holds, or any
+/var/opt/ikigenba/<name>/ with a state/ directory. A service with only its
+kept state is data only, and every field after its name is '-'. '-' means
+opsctl could not ask, or there was nothing to ask.
+
+On a host not yet running releases, a service is any /opt/<name>/ with an
+etc/ directory or any /var/opt/ikigenba/<name>/ with a state/ directory, and
+the second field is the version its own binary reports.
 
 A service that is inactive behind an active socket is idle, not down: its
 socket starts it again when the next request arrives. The socket's field reads
@@ -2781,15 +2937,16 @@ Postconditions:
 
 ## A developer asks what a host is running
 
-The answer comes from the host and nowhere else: the services under `/opt`
-and `/var/opt/ikigenba`,
-each app's own binary asked its version with `--version`, each app's service
-and socket units asked their states, and each declared database asked its
-journal mode. Each state is the unit's own systemd state: `active`,
-`inactive`, or `failed` — except that the socket's field is `disabled` when
-systemd reports the socket unit disabled, whatever its state. One line
-per app, in name order. `devctl space status` runs exactly this over ssh and
-copies the output to the developer's terminal byte for byte.
+The answer comes from the host and nowhere else: the apps in the release
+`/opt/ikigenba/current` names and the kept state under `/var/opt/ikigenba`,
+each app shown with that release's short sha, each app's service and socket
+units asked their states, and each declared database asked its journal mode.
+Every app in the release shows the same sha: they were built and activated
+together. Each state is the unit's own systemd state: `active`, `inactive`,
+or `failed` — except that the socket's field is `disabled` when systemd
+reports the socket unit disabled, whatever its state. One line per service,
+in name order. `devctl space status` runs exactly this over ssh and copies
+the output to the developer's terminal byte for byte.
 
 The fifth field is `-` for a service that declares no database, because there
 was nothing to ask — the same `-` the other fields use.
@@ -2803,17 +2960,20 @@ $ sudo opsctl status
 Output:
 
 ```
-crm v0.1.0 active active wal
-dashboard v0.0.9 active active -
-gmail v0.1.0 failed active -
+crm c604e32 active active wal
+dashboard c604e32 active active -
+gmail c604e32 failed active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- Three apps are installed and every socket is listening. `gmail`'s service
-  is `failed`.
+- `/opt/ikigenba/current` points at
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, whose
+  release holds `crm`, `dashboard`, and `gmail`, and no other service is on
+  the host.
+- Every socket is listening. `gmail`'s service is `failed`.
 - `crm`'s manifest declares a `[database]` and that database is in WAL mode.
   Neither of the others declares one.
 
@@ -2839,17 +2999,19 @@ $ sudo opsctl status
 Output:
 
 ```
-crm v0.1.0 inactive disabled wal
-dashboard v0.0.9 active active -
+crm c604e32 inactive disabled wal
+dashboard c604e32 active active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `crm` is installed and disabled: both its units are disabled and inactive.
-  Its manifest declares a `[database]` in WAL mode.
-- `dashboard` is installed and enabled, and its service is `active`.
+- The release `current` names, `c604e32`, holds `crm` and `dashboard`, and
+  no other service is on the host.
+- `crm` is disabled: both its units are disabled and inactive. Its manifest
+  declares a `[database]` in WAL mode.
+- `dashboard` is enabled, and its service is `active`.
 
 Postconditions:
 
@@ -2857,6 +3019,9 @@ Postconditions:
   the line with exit 0 like a failed unit.
 
 ## A developer asks what a host with no apps is running
+
+A fresh host, with neither a release nor an app installed by itself, has no
+service to report.
 
 Command:
 
@@ -2873,19 +3038,20 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- No directory under `/opt/` holds an `etc/`, and none under
-  `/var/opt/ikigenba/` holds a `state/`.
+- `/opt/ikigenba/current` does not exist, no directory under `/opt/` holds
+  an `etc/`, and none under `/var/opt/ikigenba/` holds a `state/`.
 
 Postconditions:
 
 - Nothing has changed.
 
-## A developer asks about a host holding a service opsctl did not install
+## A developer asks about a host holding a data-only service
 
-A `/var/opt/ikigenba/<name>/` with a `state/` and no `/opt/<name>/` is what
-`uninstall` leaves behind. It is a service — the host will back it up — and it is
-not something opsctl can ask a version or a unit state of, so all three are
-`-`.
+A `/var/opt/ikigenba/<name>/` with a `state/` whose app is not in the release
+`current` names is what an activate leaves when it puts in place a release
+without that app (`S10-releases.md`), or what an uninstall left before the
+host ran releases. It is a service — the host will back it up — but it has no
+units and no release to report, so every field after its name is `-`.
 
 Command:
 
@@ -2896,7 +3062,7 @@ $ sudo opsctl status
 Output:
 
 ```
-crm v0.1.0 active active wal
+crm c604e32 active active wal
 gmail - - - -
 ```
 
@@ -2904,9 +3070,9 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `/var/opt/ikigenba/gmail/` holds a `state/`, `/opt/gmail/` does not
-  exist, and there is no `ikigenba-gmail.socket` or
-  `ikigenba-gmail.service`.
+- The release `current` names, `c604e32`, holds `crm` and no `gmail`.
+- `/var/opt/ikigenba/gmail/` holds a `state/`, and there is no
+  `ikigenba-gmail.socket` or `ikigenba-gmail.service`.
 
 Postconditions:
 
@@ -2934,14 +3100,15 @@ $ sudo opsctl status
 Output:
 
 ```
-crm v0.1.0 active active delete
-dashboard v0.0.9 active active -
+crm c604e32 active active delete
+dashboard c604e32 active active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
+- The release `current` names, `c604e32`, holds `crm` and `dashboard`.
 - `crm`'s manifest declares a `[database]` and that database's journal mode is
   `delete`.
 
@@ -2951,7 +3118,7 @@ Postconditions:
   putting the database back into WAL mode is the app's to do, not opsctl's.
 
 `crm` is healthy by every other measure in the line, which is the point of
-reporting this one. Its units are active, its version is what was installed, and
+reporting this one. Its units are active, it runs the current release, and
 its data has not been reaching S3 since whenever the mode changed.
 
 ## An operator gives status an argument

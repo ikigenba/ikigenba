@@ -48,7 +48,7 @@ Usage: opsctl [options] <command> [arguments]
 Operate the ikigenba platform host. Must run as root.
 
 Commands:
-  version   print the version
+  version   print the release this opsctl belongs to
 
 Options:
   -h, --help     print this help
@@ -75,9 +75,18 @@ Postconditions:
 
 ## An operator asks which opsctl a host has
 
-The version is a `var` in the source with a `v<major>.<minor>.<patch>` shape,
-never injected at build time, so a developer's build and a release report the
-same string.
+An opsctl belongs to the suite release it was unpacked with, so it answers
+with that release, never a version of its own. It finds the release from where
+its executable is, symlinks resolved:
+`/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl` belongs to the release
+`<sha>`. On a released host `/usr/local/bin/opsctl` is a link to
+`/opt/ikigenba/current/opsctl/bin/opsctl`, and `current` is a link to
+`/opt/ikigenba/releases/<sha>`, so `opsctl` on the PATH answers with the
+release the host runs. The answer is the release's display string: its label
+and the first seven characters of its sha, `r142 (c604e32)`. The sha is the
+one `/opt/ikigenba/releases/<sha>/release.json` names, and the label is the
+contents of `/opt/ikigenba/releases/<sha>/label`, which the last `activate` of
+that release wrote (`S10-releases.md`).
 
 Command:
 
@@ -96,14 +105,94 @@ $ opsctl --version
 Output:
 
 ```
-v0.1.0
+r142 (c604e32)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- `opsctl` is installed on the host.
+- `/opt/ikigenba/current` is a link to
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and
+  `/usr/local/bin/opsctl` is a link to
+  `/opt/ikigenba/current/opsctl/bin/opsctl`.
+- `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/release.json`
+  names the sha `c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and the release's
+  `label` holds `r142`.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator asks which opsctl a host has, and its release has no label
+
+A release activated without a label is named by its sha alone.
+
+Command:
+
+```
+$ opsctl version
+```
+
+```
+$ opsctl -V
+```
+
+```
+$ opsctl --version
+```
+
+Output:
+
+```
+c604e32
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- As for the previous story, except that
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/label`
+  does not exist: the release's last `activate` gave no label.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator asks an opsctl that belongs to no release
+
+An opsctl whose executable is not inside a release folder, such as one a
+developer copied onto a host by hand, has no release to name. It prints an
+empty line and still succeeds, so a caller that reads the line is never
+refused.
+
+Command:
+
+```
+$ /usr/local/bin/opsctl version
+```
+
+```
+$ /usr/local/bin/opsctl -V
+```
+
+```
+$ /usr/local/bin/opsctl --version
+```
+
+Output: one empty line.
+
+```
+
+```
+
+Exits 0. The empty line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `/usr/local/bin/opsctl` is a file, not a link into
+  `/opt/ikigenba/releases/`.
 
 Postconditions:
 
@@ -163,7 +252,8 @@ $ opsctl version
 $ opsctl config --help
 ```
 
-Output: the texts of the two stories above, and the `config` usage text.
+Output: the usage text and the version line of the stories above, and the
+`config` usage text.
 
 Exits 0. The text is on stdout; stderr is empty.
 
