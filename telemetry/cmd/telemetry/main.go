@@ -11,11 +11,13 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
 	"github.com/ikigenba/ikigenba/telemetry/internal/web"
 )
 
 func main() {
+	v := version.Display()
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
@@ -30,13 +32,13 @@ func main() {
 		case <-ctx.Done():
 		}
 	}()
-	kit := page.New(web.ServiceName, cli.Version)
+	kit := page.New(web.ServiceName, v)
 	code := cli.Run(ctx, cli.Process{
 		Args: os.Args[1:], LookupEnv: os.LookupEnv, Pid: os.Getpid(),
 		Stdout: os.Stdout, Stderr: os.Stderr, Unsetenv: os.Unsetenv,
-		Banner: kit.Banner,
+		Version: v, Banner: kit.Banner,
 		MCP: func(writer *telemetry.Writer) *mcp.Server {
-			return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: writer})
+			return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: v, Telemetry: writer})
 		},
 	})
 	signal.Stop(signals)
