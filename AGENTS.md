@@ -48,6 +48,8 @@ Stories and designs are working material, not a constraint. Only the build run a
 
 Versions are data. No test, fixture or requirement names a release version; a test that needs it reads the value the source declares and derives the rest from that.
 
+Interfaces between releases change by expand then contract: the database schema, the APIs between apps, and event payloads, which are persisted and may be delivered across the release boundary. The release before the current one must run on the current one's schema, so an old and new mix, during a rolling restart or after a rollback, works in both directions. A provider adds in one release and its callers use the addition in the next; callers stop using something in one release and the provider removes it in the next. Data rewrites follow the same rule as DDL. A migration is frozen once it has run on a production-grade space; before that it may be edited, and dev databases are reset.
+
 Adding an external dependency is a decision: ask the user, or in a delivery decide it and record it.
 
 A library in this repository (appkit, agentkit, toolkit) is consumed only as a published release: tag it `<lib>/vX.Y.Z` on `main`, push the tag, then require that version through the ordinary module proxy and checksum database. Never build against the local tree: no `replace` directives, no `go.work`, no locally tagged or seeded module cache, no `GONOSUMDB` or `GOPROXY=direct` workarounds. A change that needs a new library feature lands and releases the library first.
