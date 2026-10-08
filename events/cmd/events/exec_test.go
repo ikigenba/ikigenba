@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -21,8 +24,8 @@ import (
 	"github.com/ikigenba/ikigenba/events/internal/cli"
 )
 
-// R-9K3A-GTGR R-9MJ3-8CY5 R-06XG-JBD4 R-6KA0-OOQW R-6LHX-2GHL R-9NQZ-M4OU
-// R-6NXP-TZYZ R-6P5M-7RPO R-6QDI-LJGD R-C0NJ-9HL4
+// R-9K3A-GTGR R-G9V5-4WMD R-06XG-JBD4 R-6KA0-OOQW R-6LHX-2GHL R-9NQZ-M4OU
+// R-6NXP-TZYZ R-6P5M-7RPO R-6QDI-LJGD R-C0NJ-9HL4 R-GB31-IOD2
 func TestBinaryWiring(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
 	commit, release := "0123456789abcdef0123456789abcdef01234567", "test-release"
@@ -70,8 +73,13 @@ func TestBinaryWiring(t *testing.T) {
 	if err := command.Run(); err != nil || emptyOut.String() != "\n" || emptyErr.Len() != 0 {
 		t.Fatalf("unset version: %v stdout %q stderr %q", err, emptyOut.String(), emptyErr.String())
 	}
-	for _, signal := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
-		t.Run(signal.String(), func(t *testing.T) {
+	for _, start := range []struct {
+		name       string
+		signal     syscall.Signal
+		eventsIcon bool
+	}{{"SIGTERM", syscall.SIGTERM, false}, {"SIGINT", syscall.SIGINT, false}, {"events-icon", syscall.SIGTERM, true}} {
+		t.Run(start.name, func(t *testing.T) {
+			signal := start.signal
 			short, err := os.MkdirTemp("", "binary-")
 			if err != nil {
 				t.Fatal(err)
@@ -138,7 +146,16 @@ func TestBinaryWiring(t *testing.T) {
 			go func() { _ = trailServer.Serve(trailListener) }()
 			t.Cleanup(func() { _ = trailServer.Close() })
 			servicesPath := filepath.Join(short, "services.json")
-			services, err := json.Marshal(map[string]any{"services": []any{map[string]any{"name": "telemetry", "enabled": true, "socket": telemetryPath, "url": "", "description": "", "mcp": false}}})
+			entry := map[string]any{"name": "telemetry", "enabled": true, "socket": telemetryPath, "url": "", "description": "", "mcp": false}
+			if signal == syscall.SIGINT {
+				entry["icon"] = "<svg></svg>"
+			}
+			entries := []any{entry}
+			ownIcon := `<svg data-icon="events-own"></svg>`
+			if start.eventsIcon {
+				entries = append(entries, map[string]any{"name": "events", "enabled": true, "socket": socket, "url": "https://events.space.test", "description": "events", "mcp": true, "icon": ownIcon})
+			}
+			services, err := json.Marshal(map[string]any{"services": entries})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -176,6 +193,45 @@ func TestBinaryWiring(t *testing.T) {
 			}
 			if string(notification[:size]) != "READY=1" {
 				t.Fatalf("notification %q", notification[:size])
+			}
+			transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+			}}
+			t.Cleanup(transport.CloseIdleConnections)
+			client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
+			get := func(path string) string {
+				t.Helper()
+				request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://events.space.test"+path, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.Header.Set("X-User-Id", "binary-user")
+				response, err := client.Do(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(response.Body)
+				closeErr := response.Body.Close()
+				if err != nil || closeErr != nil || response.StatusCode != http.StatusOK {
+					t.Fatalf("GET %s: status %d read %v close %v", path, response.StatusCode, err, closeErr)
+				}
+				return string(body)
+			}
+			about := get("/about")
+			for id, want := range map[string]string{"about-name": "events", "about-version": display} {
+				match := regexp.MustCompile(`(?s)<dd id="` + id + `">(.*?)</dd>`).FindStringSubmatch(about)
+				if len(match) != 2 || strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(match[1], ""))), " ") != want {
+					t.Fatalf("%s: %s", id, about)
+				}
+			}
+			if signal == syscall.SIGINT || start.eventsIcon {
+				landing := get("/")
+				if !strings.Contains(landing, `src="/_appkit/launcher.js"`) {
+					t.Fatal("icon-bearing services did not produce launcher script")
+				}
+				if start.eventsIcon && !strings.Contains(landing, `<span class="service">`+ownIcon+`events</span>`) {
+					t.Fatal("main kit did not supply events' mark icon", landing)
+				}
 			}
 			info, err := os.Stat(filepath.Join(working, "state", "events.db"))
 			if err != nil || !info.Mode().IsRegular() {

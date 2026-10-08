@@ -23,6 +23,7 @@ import (
 	appEvents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events"
@@ -850,13 +851,13 @@ func TestEveryCallerSeesSameBus(t *testing.T) {
 }
 
 func TestLandingToolDescriptions(t *testing.T) {
-	// R-A4TK-YX2K
+	// R-G2JQ-UA67
 	h := newHarness(t, false)
 	listed, err := h.client.ListTools(context.Background(), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := pages.New(pages.Config{Store: h.st})
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, Store: h.st})
 	r := httptest.NewRequest(http.MethodGet, "https://events.space.test/", nil)
 	r.Header.Set("X-User-Id", caller.UserID)
 	r.Header.Set("X-User-Email", caller.Email)

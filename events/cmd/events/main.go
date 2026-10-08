@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ikigenba/ikigenba/appkit/events"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/events/internal/cli"
@@ -32,5 +34,7 @@ func run() int {
 		case <-ctx.Done():
 		}
 	}()
-	return cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: version.Display(), Sink: telemetry.NewSocketSink()})
+	v := version.Display()
+	kit := page.New(events.ServiceName, v)
+	return cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Banner: kit.Banner, Sink: telemetry.NewSocketSink()})
 }

@@ -170,11 +170,12 @@ func sharedAssets(t *testing.T, body string, launcher bool) {
 	}
 }
 
-// R-5IRX-7KAO R-28U1-8RGR
+// R-G7FC-DD4Z R-28U1-8RGR
 func TestSharedPageAssets(t *testing.T) {
 	d, st, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
-	p := pages.New(pages.Config{ServicesPath: path, Store: st, Version: "test"})
+	t.Setenv("IKIGENBA_SERVICES", path)
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, ServicesPath: path, Store: st})
 	// Launcher icon markup is verbatim and excluded from the page's asset contract.
 	icon := `<svg><link rel="icon" href="https://icon.test/favicon.svg"><link rel="stylesheet" href="https://icon.test/style.css"><link rel="preload" href="https://icon.test/font.woff2"><meta name="viewport" content="icon"><script src="https://icon.test/script.js"></script><img src="https://icon.test/image.svg"></svg>`
 	encodedIcon, err := json.Marshal(icon)
@@ -218,7 +219,7 @@ func must(t *testing.T, err error) {
 	}
 }
 
-// R-QH65-RWB2 R-QIE2-5O1R R-QJLY-JFSG R-QKTU-X7J5 R-QM1R-AZ9U R-QN9N-OR0J R-QOHK-2IR8 R-QPPG-GAHX R-QQXC-U28M R-QZGN-IGFH R-R0OJ-W866 R-R1WG-9ZWV R-R34C-NRNK R-R4C9-1JE9 R-R5K5-FB4Y R-R6S1-T2VN R-R7ZY-6UMC
+// R-QH65-RWB2 R-FWG8-XFGQ R-QJLY-JFSG R-QKTU-X7J5 R-QM1R-AZ9U R-QN9N-OR0J R-QOHK-2IR8 R-QPPG-GAHX R-QQXC-U28M R-FYW1-OYY4 R-R0OJ-W866 R-R1WG-9ZWV R-R34C-NRNK R-R4C9-1JE9 R-R5K5-FB4Y R-R6S1-T2VN R-R7ZY-6UMC
 func TestExactTemplateAnswers(t *testing.T) {
 	d, st, now := fixture(t)
 	ctx := context.Background()
@@ -229,7 +230,7 @@ func TestExactTemplateAnswers(t *testing.T) {
 	must(t, st.Deliver(ctx, appEvents.Event{ID: "evt_0000000000000001", Time: now, Service: "repos", Name: "repo.pushed", RequestID: "request", User: "user", Attrs: appEvents.Attrs{}}))
 	must(t, st.Pause(ctx, "sites", 1, "publish <failed>&"))
 	must(t, st.Forget(ctx, "gone"))
-	p := pages.New(pages.Config{Store: st, Version: "test-build"})
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test-build").Banner, Store: st})
 	var _ web.Pages = p
 	b := page.Banner{Service: appEvents.ServiceName, Version: "test-build", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
 	subs, err := st.Subscribers(ctx)
@@ -287,24 +288,24 @@ func TestExactTemplateAnswers(t *testing.T) {
 			}
 		}
 	}
-	nilStore := pages.New(pages.Config{Version: "test-build"})
+	nilStore := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test-build").Banner})
 	check(t, invoke(nilStore.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
 	check(t, invoke(nilStore.NotFound, "POST"), 404, expected(t, "notfound", notice))
 }
 
-// R-QS59-7TZB R-MZMS-U7R3 R-RCVJ-PXL4 R-A3LO-L5BV R-A61H-COT9 R-A79D-QGJY R-A8HA-48AN
+// R-QS59-7TZB R-MZMS-U7R3 R-RCVJ-PXL4 R-G1BU-GIFI R-G3RN-81WW R-G4ZJ-LTNL R-G67F-ZLEA
 func TestVisibleHooks(t *testing.T) {
 	for _, display := range []string{"test-build", ""} {
 		t.Run(display, func(t *testing.T) { visibleHooks(t, display) })
 	}
 }
 func visibleHooks(t *testing.T, display string) {
-	footer := "events"
+	footer := "banner-service"
 	if display != "" {
 		footer += " " + display
 	}
 	d, st, _ := fixture(t)
-	p := pages.New(pages.Config{Store: st, Version: display})
+	p := pages.New(pages.Config{Banner: page.New("banner-service", display).Banner, Store: st})
 	body := invoke(p.Landing, "GET").Body.String()
 	for _, tc := range []struct{ tag, attrs, want string }{{"title", "", "events"}, {"h1", "", "events"}, {"p", `id="summary" class="lede"`, "The suite's internal event bus: services emit events here, and each event is delivered, in order, to every service that accepts it."}, {"h2", `id="subscribers-title"`, "Subscribers"}, {"h3", `class="text-md"`, "No subscribers yet"}, {"a", `id="about-link" href="/about"`, "About events"}, {"footer", `class="footer"`, footer}} {
 		if tc.tag == "footer" {
@@ -401,7 +402,7 @@ func visibleHooks(t *testing.T, display string) {
 	if len(facts) != 6 {
 		t.Fatal(facts)
 	}
-	for i, want := range []string{"Name", "events", "Version", display, "Description", pages.Description} {
+	for i, want := range []string{"Name", "banner-service", "Version", display, "Description", pages.Description} {
 		kind := "dt"
 		if i%2 == 1 {
 			kind = "dd"
@@ -417,7 +418,7 @@ func visibleHooks(t *testing.T, display string) {
 	if strings.Count(aboutList, "<") != 12 {
 		t.Fatal("unexpected about facts", aboutList)
 	}
-	for _, tc := range []struct{ tag, attrs, want string }{{"title", "", "About events"}, {"h1", "", "About events"}, {"dd", `id="about-name"`, "events"}, {"dd", `id="about-version"`, display}, {"dd", `id="about-description"`, pages.Description}, {"a", `id="home-link" href="/"`, "Back to events"}} {
+	for _, tc := range []struct{ tag, attrs, want string }{{"title", "", "About events"}, {"h1", "", "About events"}, {"dd", `id="about-name"`, "banner-service"}, {"dd", `id="about-version"`, display}, {"dd", `id="about-description"`, pages.Description}, {"a", `id="home-link" href="/"`, "Back to events"}} {
 		if element(t, about, tc.tag, tc.attrs) != tc.want {
 			t.Fatal(tc)
 		}
@@ -458,11 +459,12 @@ func visibleHooks(t *testing.T, display string) {
 	}
 }
 
-// R-QTD5-LLQ0 R-QUL1-ZDGP R-QX0U-QWY3 R-QY8R-4OOS R-R97U-KMD1
+// R-QTD5-LLQ0 R-QUL1-ZDGP R-QX0U-QWY3 R-FXO5-B77F R-G03Y-2QOT
 func TestBannerRefreshAndFallback(t *testing.T) {
 	_, st, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
-	p := pages.New(pages.Config{ServicesPath: path, Store: st, Version: "test"})
+	t.Setenv("IKIGENBA_SERVICES", path)
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, ServicesPath: path, Store: st})
 	for _, host := range []string{"events.space.test:443", "EvEnTs.space.test", "space.test"} {
 		for _, proto := range []string{"http", "https", "HTTPS", "https, http", ""} {
 			r := httptest.NewRequest("GET", "/", nil)
@@ -492,12 +494,20 @@ func TestBannerRefreshAndFallback(t *testing.T) {
 		t.Fatal(before)
 	}
 	sharedAssets(t, before, true)
+	mark := contents(t, before, "strong", `class="mark"`)
+	if !strings.Contains(mark, `<span class="service"><svg></svg>events</span>`) {
+		t.Fatal("banner did not draw own icon", mark)
+	}
+	signout := regexp.MustCompile(`(?s)<button\b([^>]*)class="signout"([^>]*)>(.*?)</button>`).FindStringSubmatch(before)
+	if len(signout) != 4 || !strings.Contains(signout[2], `aria-label="Sign out"`) || !strings.Contains(signout[2], `title="Sign out"`) || text(signout[3]) != "" || !strings.Contains(signout[3], "<svg") {
+		t.Fatal("sign-out icon and labels", signout)
+	}
 	write(false)
 	after := invoke(p.Landing, "GET").Body.String()
-	if strings.Contains(after, `href="https://other.test"`) || !strings.Contains(after, `title="other is unavailable"`) {
+	if strings.Contains(after, `href="https://other.test"`) || !strings.Contains(after, `title="other is unavailable"`) || strings.Index(after, `title="other is unavailable"`) > strings.Index(after, `href="https://events.test"`) {
 		t.Fatal(after)
 	}
-	b := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://accounts.test/", LogoutURL: "https://accounts.test/logout", Services: []page.Service{{Name: "other", URL: "https://other.test", Icon: template.HTML("<svg></svg>"), Enabled: false}, {Name: "events", URL: "https://events.test", Icon: template.HTML("<svg></svg>"), Enabled: true, Current: true}}}
+	b := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://accounts.test/", LogoutURL: "https://accounts.test/logout", Icon: template.HTML("<svg></svg>"), Services: []page.Service{{Name: "other", URL: "https://other.test", Icon: template.HTML("<svg></svg>"), Enabled: false}, {Name: "events", URL: "https://events.test", Icon: template.HTML("<svg></svg>"), Enabled: true, Current: true}}}
 	check(t, invoke(p.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
 	must(t, os.WriteFile(path, []byte(`broken`), 0600))
 	if strings.Contains(invoke(p.About, "GET").Body.String(), `src="/_appkit/launcher.js"`) {
@@ -508,7 +518,7 @@ func TestBannerRefreshAndFallback(t *testing.T) {
 // R-RAFQ-YE3Q
 func TestConcurrentPages(t *testing.T) {
 	_, st, _ := fixture(t)
-	p := pages.New(pages.Config{Store: st, Version: "test"})
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, Store: st})
 	banner := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
 	cases := []struct {
 		handler func(http.ResponseWriter, *http.Request)
@@ -531,4 +541,68 @@ func TestConcurrentPages(t *testing.T) {
 		}
 	}
 	wg.Wait()
+}
+
+// R-FWG8-XFGQ R-FYW1-OYY4 R-FXO5-B77F R-G03Y-2QOT
+func TestBannerSourcePerAnswer(t *testing.T) {
+	d, st, _ := fixture(t)
+	path := filepath.Join(t.TempDir(), "services.json")
+	must(t, os.WriteFile(path, []byte(`{"services":[{"name":"auth","url":"https://accounts.test","description":"auth","socket":"","enabled":true,"mcp":false},{"name":"path-only","url":"https://path.test","description":"path","socket":"","enabled":true,"mcp":false,"icon":"<svg></svg>"}]}`), 0600))
+	var users []page.User
+	returned := page.Banner{
+		Service: "supplied-service", Version: "construction",
+		Email: "supplied-email", ProfileURL: "https://supplied.test/profile", LogoutURL: "https://supplied.test/out",
+		Icon:     template.HTML(`<svg data-icon="own"></svg>`),
+		Services: []page.Service{{Name: "source-only", URL: "https://source.test", Icon: template.HTML(`<svg data-icon="launcher"></svg>`), Enabled: true}},
+	}
+	source := func(u page.User) page.Banner {
+		users = append(users, u)
+		return returned
+	}
+	// An unkeyed construction uses the declared field order and types.
+	p := pages.New(pages.Config{source, path, st})
+	answer := 0
+	for _, failing := range []bool{false, true} {
+		d.SetFailing(failing)
+		for _, method := range []string{"GET", "HEAD"} {
+			for _, route := range []struct {
+				handler func(http.ResponseWriter, *http.Request)
+				name    string
+				status  int
+			}{{p.Landing, "landing", 200}, {p.About, "about", 200}, {p.NotFound, "notfound", 404}} {
+				name, status := route.name, route.status
+				if failing && name == "landing" {
+					name, status = "unavailable", 503
+				}
+				answer++
+				returned.Version = "answer-" + strconv.Itoa(answer)
+				before := len(users)
+				out := invoke(route.handler, method)
+				wantUser := page.User{}
+				var data any = pages.NoticeData{Banner: returned}
+				if name == "landing" || name == "about" {
+					wantUser = page.User{Email: "<person>&@example.test", ProfileURL: "https://accounts.test/", LogoutURL: "https://accounts.test/logout"}
+					if name == "landing" {
+						data = pages.LandingData{Banner: returned}
+					} else {
+						data = pages.AboutData{Banner: returned, Description: pages.Description}
+					}
+				}
+				found := false
+				for _, u := range users[before:] {
+					if u == wantUser {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("%s did not request banner for %#v; calls: %#v", name, wantUser, users[before:])
+				}
+				want := expected(t, name, data)
+				if method == "HEAD" {
+					want = ""
+				}
+				check(t, out, status, want)
+			}
+		}
+	}
 }

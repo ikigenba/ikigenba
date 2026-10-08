@@ -21,6 +21,7 @@ import (
 	appEvents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events"
@@ -108,6 +109,10 @@ func startRun(t *testing.T, dir string, env map[string]string, customize ...func
 	for _, configure := range customize {
 		configure(f)
 	}
+	t.Setenv(services.Variable, env[services.Variable])
+	if f.p.Banner == nil {
+		f.p.Banner = page.New(appEvents.ServiceName, f.p.Version).Banner
+	}
 	go func() { f.done <- cli.Run(ctx, f.p) }()
 	if err := notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
@@ -184,9 +189,9 @@ func call(t *testing.T, f *runFixture, name string, args any, id string) mcp.Res
 	return result
 }
 
-// R-9LB6-UL7G R-ZX69-H5FK R-09D9-AUUI R-BTC4-YV4Y R-BY7Q-HY3Q R-BZFM-VPUF
+// R-G8N8-R4VO R-ZX69-H5FK R-09D9-AUUI R-BTC4-YV4Y R-BY7Q-HY3Q R-BZFM-VPUF
 // R-IH24-NGU5 R-96IT-4P0M R-97QP-IGRB R-C6R1-6CAL R-9XI6-OAME R-ZTTZ-Z2G4
-// R-ZW9S-QLXI R-CBMM-PF9D R-ZXHP-4DO7 R-CAEQ-BNIO R-9YQ3-22D3 R-9ZXZ-FU3S
+// R-ZW9S-QLXI R-CBMM-PF9D R-ZXHP-4DO7 R-CAEQ-BNIO R-GCAX-WG3R R-9ZXZ-FU3S
 // R-CK5X-DTG8 R-A15V-TLUH R-A2DS-7DL6 R-E0E3-6NDU
 func TestRunWiring(t *testing.T) {
 	for _, servicePath := range []string{"", "missing", "broken", "valid"} {
@@ -208,7 +213,7 @@ func TestRunWiring(t *testing.T) {
 			resp := f.request(t, "GET", "/about", "", "")
 			about := body(t, resp)
 			match := regexp.MustCompile(`<dd id="about-version">(.*?)</dd>`).FindStringSubmatch(about)
-			if resp.StatusCode != 200 || len(match) != 2 || match[1] != f.p.Version {
+			if resp.StatusCode != 200 || len(match) != 2 || match[1] != f.p.Version || !strings.Contains(about, `<dd id="about-name">events</dd>`) {
 				t.Fatal("about version", about)
 			}
 			resp = f.request(t, "GET", "/", "", "landing")
@@ -485,7 +490,7 @@ func TestRunEventTrail(t *testing.T) {
 	}
 }
 
-// R-9YQ3-22D3 R-9ZXZ-FU3S R-9XI6-OAME R-A15V-TLUH R-A2DS-7DL6
+// R-GCAX-WG3R R-9ZXZ-FU3S R-9XI6-OAME R-A15V-TLUH R-A2DS-7DL6
 func TestEmptyRunVersion(t *testing.T) {
 	f := startRun(t, t.TempDir(), map[string]string{}, func(f *runFixture) { f.p.Version = "" })
 	about := body(t, f.request(t, "GET", "/about", "", "empty-about"))
@@ -524,5 +529,26 @@ func checkServerInfo(t *testing.T, body, display string) {
 	}
 	if !reflect.DeepEqual(info, map[string]string{"name": "events", "version": display}) {
 		t.Fatal(info)
+	}
+}
+
+// R-GCAX-WG3R R-G8N8-R4VO
+func TestRunSuppliedBanner(t *testing.T) {
+	f := startRun(t, t.TempDir(), map[string]string{}, func(f *runFixture) {
+		banner := func(u page.User) page.Banner {
+			return page.Banner{Service: "provided-service", Version: "provided-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL,
+				Services: []page.Service{{Name: "provided-launcher", URL: "https://provided.test", Enabled: true, Icon: "<svg></svg>"}}}
+		}
+		p := f.p
+		// Construct the complete declared Process shape and serve with it.
+		f.p = cli.Process{p.Args, p.LookupEnv, p.Unsetenv, p.Pid, p.Stdout, p.Stderr, p.Version, banner, p.Inherit, p.Now, p.Sleep, p.SweepAfter, p.RefreshAfter, p.AskAfter, p.TimeoutAfter, p.BackoffAfter, p.Rand, p.Dir, p.Sink}
+	})
+	about := body(t, f.request(t, "GET", "/about", "", "provided-about"))
+	if !strings.Contains(about, `<dd id="about-name">provided-service</dd>`) || !strings.Contains(about, `<dd id="about-version">provided-version</dd>`) {
+		t.Fatal("run did not use supplied banner", about)
+	}
+	landing := body(t, f.request(t, "GET", "/", "", "provided-landing"))
+	if !strings.Contains(landing, "provided-launcher") {
+		t.Fatal("run did not use supplied launcher", landing)
 	}
 }

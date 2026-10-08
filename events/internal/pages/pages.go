@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	appEvents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/events"
@@ -20,9 +19,9 @@ const Description = "The suite's internal event bus"
 
 // Config supplies the store and page identity.
 type Config struct {
+	Banner       func(u page.User) page.Banner
 	ServicesPath string
 	Store        *store.Store
-	Version      string
 }
 
 // Pages holds the immutable templates and page configuration.
@@ -58,11 +57,10 @@ func New(cfg Config) *Pages {
 }
 
 func (p *Pages) notice() page.Banner {
-	return page.Banner{Service: appEvents.ServiceName, Version: p.cfg.Version}
+	return p.cfg.Banner(page.User{})
 }
 func (p *Pages) banner(r *http.Request) page.Banner {
-	b := p.notice()
-	b.Email = r.Header.Get("X-User-Email")
+	u := page.User{Email: r.Header.Get("X-User-Email")}
 	scheme := r.Header.Get("X-Forwarded-Proto")
 	if scheme != "http" && scheme != "https" {
 		scheme = "https"
@@ -88,15 +86,10 @@ func (p *Pages) banner(r *http.Request) page.Banner {
 		if entry, ok := list.Find("auth"); ok && entry.URL != "" {
 			auth = entry.URL
 		}
-		for _, e := range list {
-			if e.HasIcon {
-				b.Services = append(b.Services, page.Service{Name: e.Name, URL: e.URL, Icon: e.Icon, Enabled: e.Enabled, Current: e.Name == appEvents.ServiceName})
-			}
-		}
 	}
-	b.ProfileURL = auth + "/"
-	b.LogoutURL = auth + "/logout"
-	return b
+	u.ProfileURL = auth + "/"
+	u.LogoutURL = auth + "/logout"
+	return p.cfg.Banner(u)
 }
 func row(s store.Subscriber) SubscriberRow {
 	kinds := map[store.Status]string{store.StatusOK: "ok", store.StatusPaused: "warn", store.StatusGone: "info"}

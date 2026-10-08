@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	appEvents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events"
@@ -46,6 +47,7 @@ type Process struct {
 	Stdout       io.Writer
 	Stderr       io.Writer
 	Version      string
+	Banner       func(u page.User) page.Banner
 	Inherit      func(fd uintptr) (net.Listener, error)
 	Now          func() time.Time
 	Sleep        func(ctx context.Context, d time.Duration)
@@ -111,7 +113,7 @@ func Run(ctx context.Context, p Process) int {
 	decl = declarations.New(declarations.Config{Store: st, Services: servicePath, Telemetry: writer, AskAfter: p.AskAfter})
 	srv := mcp.NewServer(mcp.ServerConfig{Name: appEvents.ServiceName, Version: p.Version, Telemetry: writer, Instructions: func(context.Context) string { return instructions(servicePath) }})
 	tools.Register(srv, tools.Config{Store: st, Telemetry: writer})
-	pg := pages.New(pages.Config{ServicesPath: servicePath, Store: st, Version: p.Version})
+	pg := pages.New(pages.Config{Banner: p.Banner, ServicesPath: servicePath, Store: st})
 	handler := web.Handler(web.Config{Pages: pg, MCP: srv, Sink: st, Telemetry: writer})
 	loop := delivery.New(delivery.Config{Store: st, Services: servicePath, Telemetry: writer, Settings: s, TimeoutAfter: p.TimeoutAfter, BackoffAfter: p.BackoffAfter})
 	notify, haveNotify := p.LookupEnv("NOTIFY_SOCKET")
