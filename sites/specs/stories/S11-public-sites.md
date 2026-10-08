@@ -339,7 +339,7 @@ Cache-Control: public, no-cache
 Set-Cookie: ikigenba_visitor=<visitor>; Path=/; Max-Age=34560000; HttpOnly; SameSite=Lax; Secure
 ```
 
-Status 404. The body is sites' not-found page: titled `Not found`, its heading `Not found` and its text `There is nothing at this address.`, with the footer `sites v<semver>` and no banner. There is no `ETag`.
+Status 404. The body is sites' not-found page: titled `Not found`, its heading `Not found` and its text `There is nothing at this address.`, with the footer `sites <display>` and no banner. There is no `ETag`.
 
 Preconditions:
 
