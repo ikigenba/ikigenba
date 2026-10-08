@@ -44,7 +44,7 @@ Every user sees the same bus: nothing a tool answers depends on who called.
 ## Story coverage
 
 - `S05`: tool list, order, names, first lines, schemas and annotations: R-D21A-JUFA, R-YW1S-U90F, R-D5OZ-P5ND, R-D6WW-2XE2, R-D84S-GP4R, R-D9CO-UGVG, R-DAKL-88M5; the log not read by `tools/list`: R-DBSH-M0CU; success and refusal forms: R-DE8A-DJU8, R-DFG6-RBKX; invalid arguments: R-YNII-5UTK; unknown tool: R-YPYA-XEAY; log unreachable: R-YOQE-JMK9; same bus for every user: R-DHVZ-IV2B; instructions and serverInfo: `D06-serve`; transport, earlier revisions, 405, identity: appkit through `D06-serve`; request records and `tool.called`: `D10-trail`.
-- `S08`: R-YYHL-LSHT, R-DLJO-O6AE, R-YR67-B61N, with the catalog's content from `D04-store` (R-7HW2-YLGD, R-E6AK-WQHU).
+- `S08`: R-YYHL-LSHT, R-DLJO-O6AE, R-YR67-B61N, with the catalog's content from `D04-store` (R-YLFP-E8EU, R-YMNL-S05J).
 - `S09`: R-VQH6-MZ9J, R-DP7D-THIH, R-DQFA-7996, R-DRN6-L0ZV, R-VRP3-0R08, R-DU2Z-CKH9, R-DVAV-QC7Y, R-DWIS-43YN, R-YX9P-80R4, with matching and paging from `D04-store` (R-E7IH-AI8J, R-E8QD-O9Z8, R-ECE2-TL7B, R-EDLZ-7CY0).
 - `S10`: R-D0TE-62OL, R-YZPH-ZK8I, with status, cursor, lag and since from `D04-store` (R-DKCE-0V5C and the `Declare`, `Forget` and `Next` requirements) and cursor movement by delivery from `D07-delivery`.
 - `S12`: R-E06H-9F6Q, R-YTM0-2PJ1, R-E2MA-0YO4, R-YUTW-GH9Q, R-YSE3-OXSC, with the state change from `D04-store` (R-DXRA-8CAZ, R-DYZ6-M41O, R-E072-ZVSD) and the deliveries that follow from `D07-delivery`.
