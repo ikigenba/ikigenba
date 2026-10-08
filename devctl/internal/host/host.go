@@ -177,3 +177,16 @@ func quoteCommand(args []string) string {
 	}
 	return strings.Join(quoted, " ")
 }
+
+// Copy transfers a local artifact to a literal remote path.
+func (h Host) Copy(ctx context.Context, step, local, remote string) error {
+	destination := h.Target() + ":" + remote
+	result, err := h.Deps.Defaults().Exec(ctx, seam.Cmd{Path: "scp", Dir: h.Deps.Dir, Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", local, destination}})
+	if err != nil {
+		return fmt.Errorf("scp: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return &CommandError{Step: step, Command: []string{"scp", local, destination}, Status: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr)}
+	}
+	return nil
+}

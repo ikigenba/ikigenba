@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/release"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
-	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
 type preflightResult struct {
-	apps           []checkout.App
+	checkout       *checkout.Checkout
+	sha, label     string
 	root           checkout.RootFile
 	sp             spaceref.Space
 	session        cloud.Session
@@ -24,12 +24,23 @@ type preflightResult struct {
 	boundaryARN    string
 }
 
-func preflight(ctx context.Context, deps seam.Deps, operand string) (preflightResult, error) {
+func preflight(ctx context.Context, deps seam.Deps, invocation invocation) (preflightResult, error) {
 	opened, err := checkout.Open(ctx, deps)
 	if err != nil {
 		return preflightResult{}, err
 	}
-	apps, err := opened.Apps()
+	rev := invocation.release
+	if rev == "" {
+		var found bool
+		rev, found, err = opened.NewestRelease(ctx)
+		if err != nil {
+			return preflightResult{}, err
+		}
+		if !found {
+			return preflightResult{}, &RefusedError{Message: "no r<N> release tag in this checkout; name one with --release <sha|tag>"}
+		}
+	}
+	sha, label, err := release.Resolve(ctx, opened, rev)
 	if err != nil {
 		return preflightResult{}, err
 	}
@@ -37,7 +48,7 @@ func preflight(ctx context.Context, deps seam.Deps, operand string) (preflightRe
 	if err != nil {
 		return preflightResult{}, err
 	}
-	sp, err := spaceref.Parse(operand, root.Domain)
+	sp, err := spaceref.Parse(invocation.operand, root.Domain)
 	if err != nil {
 		return preflightResult{}, err
 	}
@@ -90,16 +101,5 @@ func preflight(ctx context.Context, deps seam.Deps, operand string) (preflightRe
 		return preflightResult{}, &RefusedError{Message: fmt.Sprintf("a role for '%s' already exists", sp.Domain)}
 	}
 
-	return preflightResult{apps: apps, root: root, sp: sp, session: session, zone: zone, launchTemplate: launchTemplate, boundaryARN: boundaryARN}, nil
-}
-
-func pushSecretsAndReport(ctx context.Context, deps seam.Deps, result preflightResult, stdout io.Writer) ([]secrets.Entry, error) {
-	entries, err := secrets.Push(ctx, deps, result.session.Clients.SSM, result.sp.Domain, result.apps)
-	if err != nil {
-		return nil, err
-	}
-	space.Step(stdout, "account", fmt.Sprintf("%s, %s, %s", result.root.Domain, result.root.Region, result.session.AccountID))
-	space.Step(stdout, "domain", fmt.Sprintf("zone %s %s", result.zone.Name, result.zone.ID))
-	space.Step(stdout, "secrets", fmt.Sprintf("%d apps", len(entries)))
-	return entries, nil
+	return preflightResult{checkout: opened, sha: sha, label: label, root: root, sp: sp, session: session, zone: zone, launchTemplate: launchTemplate, boundaryARN: boundaryARN}, nil
 }

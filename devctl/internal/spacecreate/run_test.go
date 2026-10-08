@@ -3,6 +3,7 @@ package spacecreate
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/release"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
@@ -28,7 +30,7 @@ func TestAssumeRolePolicy(t *testing.T) {
 }
 
 func TestRunSignatureAndGrammar(t *testing.T) {
-	// R-Z2ND-8MJF R-8TLD-OA2V R-8UTA-21TK R-8W16-FTK9 R-3M5T-DZ38 R-E7GU-RBY9 R-8X92-TLAY
+	// R-UUB7-VYQS R-UVJ4-9QHH R-UWR0-NI86 R-8UTA-21TK R-8W16-FTK9 R-3M5T-DZ38 R-E7GU-RBY9 R-8X92-TLAY
 	tests := []struct {
 		name string
 		args []string
@@ -54,7 +56,7 @@ func TestRunSignatureAndGrammar(t *testing.T) {
 				return cloud.Clients{}, errors.New("unexpected")
 			}}
 			var stdout bytes.Buffer
-			err := Run(context.Background(), tc.args, &stdout, deps)
+			err := Run(context.Background(), tc.args, "test-version", &stdout, deps)
 			var usageErr *space.UsageError
 			if !errors.As(err, &usageErr) || usageErr.Message != tc.want || usageErr.Help != helpCommand || calls != 0 || stdout.Len() != 0 {
 				t.Fatalf("Run(%q) = error %#v, stdout %q, calls %d", tc.args, err, stdout.String(), calls)
@@ -73,40 +75,49 @@ func TestRunSignatureAndGrammar(t *testing.T) {
 }
 
 func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
-	// R-8YGZ-7D1N
+	// R-UXYX-19YV
+	//
 	for _, option := range []string{"--help", "-h"} {
 		calls := 0
 		deps := seam.Deps{Exec: func(context.Context, seam.Cmd) (seam.Result, error) { calls++; return seam.Result{}, nil }, Cloud: func(context.Context, string, string) (cloud.Clients, error) { calls++; return cloud.Clients{}, nil }}
 		var stdout bytes.Buffer
-		if err := Run(context.Background(), []string{option}, &stdout, deps); err != nil || stdout.String() != usageText || calls != 0 {
+		if err := Run(context.Background(), []string{option}, "test-version", &stdout, deps); err != nil || stdout.String() != usageText || calls != 0 {
 			t.Fatalf("help %s = %q, %v, calls %d", option, stdout.String(), err, calls)
 		}
 	}
 }
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
-	// R-SDQ0-VBWE R-924O-CO9Q R-9709-VR8I R-VTEC-13P5 R-9GRG-XX62
-	// R-EB4J-WN6C R-9J79-PGNG R-YMOE-CCEO R-VUM8-EVFU R-9LN2-H04U R-YSRW-9745 R-9MUY-URVJ
+	// R-V2UI-KCXN R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
+	// R-VA5W-UZDT R-VBDT-8R4I R-VCLP-MIV7 R-VDTM-0ALW R-VF1I-E2CL
+	// R-VG9E-RU3A R-VHHB-5LTZ R-VIP7-JDKO R-VJX3-X5BD
+	//
+	// R-EB4J-WN6C  R-YMOE-CCEO
 	f := newCreateFake(t)
 	f.objects = []cloud.Object{
 		{Key: "sbx1/host/old.tar.zst", Modified: time.Unix(1, 0)},
 		{Key: "sbx1/host/new.tar.zst", Modified: time.Unix(2, 0)},
 	}
 	var stdout bytes.Buffer
-	if err := Run(context.Background(), []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}, &stdout, f.deps()); err != nil {
+	if err := Run(context.Background(), []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}, "test-version", &stdout, f.deps()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	want := "account: ok (ikigenba.dev, us-east-2, 295229566359)\n" +
 		"domain: ok (zone ikigenba.dev ZONE1)\n" +
+		"build: ok (r2, dist/" + createSHA + ".tar.xz)\n" +
 		"secrets: ok (1 apps)\n" +
 		"role: ok (sbx1.ikigenba.dev)\n" +
 		"instance: ok (i-new running, 198.51.100.7)\n" +
 		"address: ok (elastic ip 18.118.7.42 associated)\n" +
 		"records: ok (created sbx1.ikigenba.dev, *.sbx1.ikigenba.dev -> 18.118.7.42, INSYNC)\n" +
 		"host: ok (status checks passed, cloud-init done)\n" +
-		"opsctl: ok (v9.8.7 installed, 10 keys set)\n" +
+		"copy: ok (" + createSHA + ".tar.xz -> 18.118.7.42)\n" +
+		"unpack: ok (/opt/ikigenba/releases/" + createSHA + ")\n" +
+		"opsctl: ok (10 keys set)\n" +
 		"restore: ok (host/new.tar.zst, 10 keys set again)\n" +
 		"init: ok\n" +
+		"restore: ok (opsctl restore crm)\n" +
+		"activate output\n" +
 		"sbx1.ikigenba.dev 18.118.7.42\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
@@ -120,7 +131,7 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 	if f.allocateRoot != "ikigenba.dev" || f.allocateSpace != "sbx1.ikigenba.dev" {
 		t.Fatalf("AllocateAddress arguments = %q, %q", f.allocateRoot, f.allocateSpace)
 	}
-	wantPrefix := []string{"git", "sts", "zone", "template", "boundary", "ns", "spaces", "role-exists", "profile-exists", "secret", "create-role", "put-policy", "create-profile", "add-role", "launch-ready", "run-instance", "describe", "allocate", "associate", "records", "change-status", "checks"}
+	wantPrefix := []string{"git", "git", "git", "sts", "zone", "template", "boundary", "ns", "spaces", "role-exists", "profile-exists", "build", "secret", "create-role", "put-policy", "create-profile", "add-role", "launch-ready", "run-instance", "describe", "allocate", "associate", "records", "change-status", "checks"}
 	if len(f.events) < len(wantPrefix) || !reflect.DeepEqual(f.events[:len(wantPrefix)], wantPrefix) {
 		t.Fatalf("events = %v", f.events)
 	}
@@ -135,7 +146,7 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 	if f.policy != wantPolicy || f.policyName != space.PolicyName {
 		t.Fatalf("policy = %q, %q", f.policyName, f.policy)
 	}
-	joined := strings.Join(f.remotes, "\n")
+	joined := strings.ReplaceAll(strings.Join(f.remotes, "\n"), release.Opsctl(createSHA), "opsctl")
 	if strings.Count(joined, "'opsctl' 'config' 'set'") != 20 || !strings.Contains(joined, "'opsctl' 'config' 'del' 'host.apex'") || !strings.Contains(joined, "'opsctl' 'host' 'restore'") {
 		t.Fatalf("remote commands:\n%s", joined)
 	}
@@ -163,7 +174,7 @@ func TestRunPreflightRefusalsAndRoleLength(t *testing.T) {
 			f := newCreateFake(t)
 			tc.change(f)
 			var out bytes.Buffer
-			err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &out, f.deps())
+			err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "test-version", &out, f.deps())
 			var refused *RefusedError
 			if !errors.As(err, &refused) || err.Error() != tc.want || out.Len() != 0 || contains(f.events, "secret") {
 				t.Fatalf("err=%v out=%q events=%v", err, out.String(), f.events)
@@ -174,43 +185,48 @@ func TestRunPreflightRefusalsAndRoleLength(t *testing.T) {
 	f := newCreateFake(t)
 	long := strings.Repeat("a", 52)
 	var out bytes.Buffer
-	err := Run(context.Background(), []string{long, "--acme-email=x"}, &out, f.deps())
+	err := Run(context.Background(), []string{long, "--acme-email=x"}, "test-version", &out, f.deps())
 	if err == nil || !strings.Contains(err.Error(), "role name is at most 64 characters") || f.openProfile != "" {
 		t.Fatalf("long role = %v, cloud profile %q", err, f.openProfile)
 	}
 	boundary := newCreateFake(t)
 	boundary.stopAt = "zone"
-	_ = Run(context.Background(), []string{strings.Repeat("a", 51), "--acme-email=x"}, io.Discard, boundary.deps())
+	_ = Run(context.Background(), []string{strings.Repeat("a", 51), "--acme-email=x"}, "test-version", io.Discard, boundary.deps())
 	if boundary.openProfile == "" {
 		t.Fatal("64-byte domain did not reach cloud")
 	}
 }
 
 func TestCreateStopsAtSecretsAndEmptyRestoreSkipsRestoreCommands(t *testing.T) {
-	// R-9709-VR8I R-9LN2-H04U
+	//
 	failure := newCreateFake(t)
 	failure.stopAt = "secret"
 	var stdout bytes.Buffer
-	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &stdout, failure.deps()); err == nil || stdout.Len() != 0 || contains(failure.events, "create-role") {
+	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "test-version", &stdout, failure.deps()); err == nil || !strings.HasSuffix(stdout.String(), ".tar.xz)\n") || contains(failure.events, "create-role") {
 		t.Fatalf("secret failure = %v, stdout %q, events %v", err, stdout.String(), failure.events)
 	}
 
 	empty := newCreateFake(t)
-	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, io.Discard, empty.deps()); err != nil {
+	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "test-version", io.Discard, empty.deps()); err != nil {
 		t.Fatalf("empty restore create: %v", err)
 	}
-	joined := strings.Join(empty.remotes, "\n")
+	joined := strings.ReplaceAll(strings.Join(empty.remotes, "\n"), release.Opsctl(createSHA), "opsctl")
 	if strings.Contains(joined, "'opsctl' 'host' 'restore'") || strings.Contains(joined, "'host.apex'") || strings.Count(joined, "'opsctl' 'config' 'set'") != 10 {
 		t.Fatalf("empty restore remote commands:\n%s", joined)
 	}
 }
 
 func TestNewestBackupBreaksModifiedTieByKey(t *testing.T) {
-	// R-9LN2-H04U
+	// R-VDTM-0ALW
+	f := newCreateFake(t)
 	when := time.Unix(1, 0)
-	got := newestObject([]cloud.Object{{Key: "sbx1/host/a", Modified: when}, {Key: "sbx1/host/z", Modified: when}})
-	if got.Key != "sbx1/host/z" {
-		t.Fatalf("newestObject tie = %q, want greater key", got.Key)
+	f.objects = []cloud.Object{{Key: "sbx1/host/a", Modified: when}, {Key: "sbx1/host/z", Modified: when}}
+	var out bytes.Buffer
+	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "build-version", &out, f.deps()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "restore: ok (host/z, 10 keys set again)\n") {
+		t.Fatalf("restore = %q", out.String())
 	}
 }
 
@@ -218,7 +234,9 @@ func resultSpace() spaceref.Space { return spaceref.Space{Label: "sbx1", Domain:
 
 type createFake struct {
 	t                                    *testing.T
+	commands                             []seam.Cmd
 	root                                 string
+	stopErr                              error
 	events, remotes                      []string
 	openProfile, openRegion, stopAt      string
 	findZone, findDomain, findType       string
@@ -260,27 +278,79 @@ func contains(values []string, want string) bool {
 func (f *createFake) event(name string) error {
 	f.events = append(f.events, name)
 	if f.stopAt == name {
+		if f.stopErr != nil {
+			return f.stopErr
+		}
 		return errors.New("stop at " + name)
 	}
 	return nil
 }
+
+const createSHA = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
+
 func (f *createFake) deps() seam.Deps {
-	return seam.Deps{Dir: f.root, EUID: 1, Getenv: func(string) string { return "" }, After: immediateAfter, Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
-		if cmd.Path == "git" {
-			_ = f.event("git")
-			return seam.Result{Stdout: []byte(f.root + "\n")}, nil
+	return seam.Deps{Dir: f.root, EUID: 1, Getenv: func(string) string { return "" }, Now: func() time.Time { return time.Unix(1, 0) }, After: immediateAfter, Exec: f.exec,
+		Stream: func(_ context.Context, c seam.Cmd, w io.Writer) (seam.Result, error) {
+			f.commands = append(f.commands, c)
+			f.remotes = append(f.remotes, c.Args[len(c.Args)-1])
+			_, err := io.WriteString(w, "activate output\n")
+			return seam.Result{}, err
+		},
+		Cloud: func(_ context.Context, profile, region string) (cloud.Clients, error) {
+			f.openProfile, f.openRegion = profile, region
+			return cloud.Clients{EC2: f, SSM: f, Route53: f, S3: f, IAM: f, STS: f}, nil
+		}}
+}
+func (f *createFake) exec(_ context.Context, c seam.Cmd) (seam.Result, error) {
+	f.commands = append(f.commands, c)
+	if c.Path == "git" {
+		if c.Args[0] == "worktree" {
+			if c.Args[1] == "add" {
+				if err := f.event("build"); err != nil {
+					return seam.Result{}, err
+				}
+				dir := c.Args[3]
+				mustWrite(f.t, filepath.Join(dir, "crm", "cmd", "crm", "main.go"), "package main\n")
+				mustWrite(f.t, filepath.Join(dir, "crm", "etc", "manifest.toml"), "app = \"crm\"\n")
+			}
+			return seam.Result{}, nil
 		}
-		if cmd.Path == "curl" {
-			_ = f.event("curl")
-			return seam.Result{Stdout: []byte(`[{"tag_name":"opsctl/v9.8.7","published_at":"2026-09-17T00:00:00Z","assets":[{"name":"install.sh","browser_download_url":"https://example.test/install.sh"}]}]`)}, nil
+		_ = f.event("git")
+		if c.Args[0] == "tag" {
+			return seam.Result{Stdout: []byte("r1\nr2\nr3-rc1\n")}, nil
 		}
-		f.events = append(f.events, "ssh")
-		f.remotes = append(f.remotes, cmd.Args[len(cmd.Args)-1])
+		if len(c.Args) > 1 && c.Args[1] == "--verify" {
+			return seam.Result{Stdout: []byte(createSHA + "\n")}, nil
+		}
+		return seam.Result{Stdout: []byte(f.root + "\n")}, nil
+	}
+	if c.Path == "go" {
+		mustWrite(f.t, c.Args[3], "binary")
 		return seam.Result{}, nil
-	}, Cloud: func(_ context.Context, profile, region string) (cloud.Clients, error) {
-		f.openProfile, f.openRegion = profile, region
-		return cloud.Clients{EC2: f, SSM: f, Route53: f, S3: f, IAM: f, STS: f}, nil
-	}}
+	}
+	if c.Path == "tar" {
+		mustWrite(f.t, c.Args[1], "archive")
+		return seam.Result{}, nil
+	}
+	if len(c.Args) == 1 && c.Args[0] == "manifest" {
+		data, err := os.ReadFile(filepath.Join(c.Dir, "etc", "manifest.toml"))
+		return seam.Result{Stdout: data}, err
+	}
+	if c.Path != "ssh" && c.Path != "scp" {
+		f.t.Fatalf("unexpected command %#v", c)
+	}
+	f.remotes = append(f.remotes, c.Args[len(c.Args)-1])
+	remote := c.Args[len(c.Args)-1]
+	if remote == "'mktemp'" {
+		return seam.Result{Stdout: []byte("/tmp/upload\n")}, nil
+	}
+	if strings.Contains(remote, "'test' '-e'") {
+		return seam.Result{ExitCode: 1}, nil
+	}
+	if strings.Contains(remote, "'mktemp' '-d'") {
+		return seam.Result{Stdout: []byte("/opt/ikigenba/releases/.unpack.fake\n")}, nil
+	}
+	return seam.Result{}, nil
 }
 
 func immediateAfter(time.Duration) <-chan time.Time {
@@ -430,7 +500,7 @@ func (f *createFake) DeleteInstanceProfile(context.Context, string) error       
 func (f *createFake) DeleteRole(context.Context, string) error                            { return nil }
 
 func TestCreateCheckoutFailuresPrecedeConnection(t *testing.T) {
-	// R-SDQ0-VBWE
+	//
 	t.Run("checkout", func(t *testing.T) {
 		want := errors.New("git sentinel")
 		deps := seam.Deps{Dir: t.TempDir(), Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
@@ -440,18 +510,18 @@ func TestCreateCheckoutFailuresPrecedeConnection(t *testing.T) {
 			return cloud.Clients{}, nil
 		}}
 		var out bytes.Buffer
-		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &out, deps)
+		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "test-version", &out, deps)
 		if !errors.Is(err, want) || out.Len() != 0 {
 			t.Fatalf("err=%v out=%q", err, out.String())
 		}
 	})
-	t.Run("apps before root", func(t *testing.T) {
+	t.Run("release before root", func(t *testing.T) {
 		f := newCreateFake(t)
 		mustWrite(t, filepath.Join(f.root, "crm", "etc", "manifest.toml"), "invalid toml [")
 		mustWrite(t, filepath.Join(f.root, "infra", "terraform.tfvars.json"), "invalid json")
 		var out bytes.Buffer
-		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &out, f.deps())
-		var manifest *checkout.ManifestError
+		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "test-version", &out, f.deps())
+		var manifest *checkout.RootFileError
 		if !errors.As(err, &manifest) || out.Len() != 0 || f.openProfile != "" {
 			t.Fatalf("err=%v out=%q profile=%q", err, out.String(), f.openProfile)
 		}
@@ -460,10 +530,118 @@ func TestCreateCheckoutFailuresPrecedeConnection(t *testing.T) {
 		f := newCreateFake(t)
 		mustWrite(t, filepath.Join(f.root, "infra", "terraform.tfvars.json"), "invalid json")
 		var out bytes.Buffer
-		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, &out, f.deps())
+		err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "test-version", &out, f.deps())
 		var root *checkout.RootFileError
 		if !errors.As(err, &root) || out.Len() != 0 || f.openProfile != "" {
 			t.Fatalf("err=%v out=%q profile=%q", err, out.String(), f.openProfile)
 		}
 	})
+}
+
+func TestCreatePropagatesCloudFailuresAndStops(t *testing.T) {
+	// R-V1MM-6L6Y R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4 R-VA5W-UZDT R-VIP7-JDKO
+	for _, stage := range []string{"zone", "template", "boundary", "ns", "spaces", "role-exists", "profile-exists", "create-role", "put-policy", "create-profile", "add-role", "launch-ready", "run-instance", "allocate", "associate", "records", "checks"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newCreateFake(t)
+			f.stopAt = stage
+			f.stopErr = errors.New("sentinel")
+			var out bytes.Buffer
+			err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "build-version", &out, f.deps())
+			if !errors.Is(err, f.stopErr) {
+				t.Fatalf("error %v want unchanged %v", err, f.stopErr)
+			}
+			if f.events[len(f.events)-1] != stage {
+				t.Fatalf("later events %v", f.events)
+			}
+			steps := map[string]string{"launch-ready": "role:", "run-instance": "instance:", "allocate": "address:", "associate": "address:", "records": "records:", "checks": "host:"}
+			if step := steps[stage]; step != "" && strings.Contains(out.String(), step) {
+				t.Fatalf("failed step output %q", out.String())
+			}
+			if strings.Contains(out.String(), "sbx1.ikigenba.dev 18.118.7.42") {
+				t.Fatalf("final output on failure %q", out.String())
+			}
+		})
+	}
+}
+
+func TestCreateForwardsVersionIntoBuiltRelease(t *testing.T) {
+	// R-V2UI-KCXN
+	f := newCreateFake(t)
+	deps := f.deps()
+	exec := deps.Exec
+	seen := false
+	const version = "version-forwarding-sentinel"
+	deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+		if c.Path == "tar" {
+			fixture, err := os.OpenRoot(c.Args[3])
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := fixture.ReadFile(createSHA + "/release.json")
+			closeErr := fixture.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			var metadata struct{ SHA, Devctl string }
+			if err := json.Unmarshal(data, &metadata); err != nil {
+				t.Fatal(err)
+			}
+			if metadata.Devctl != version || metadata.SHA != createSHA {
+				t.Fatalf("metadata %#v", metadata)
+			}
+			seen = true
+		}
+		return exec(ctx, c)
+	}
+	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, version, io.Discard, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("archive was not built")
+	}
+}
+
+func TestCreateReleaseQueryErrorsPropagate(t *testing.T) {
+	// R-V0EP-STG9
+	for _, query := range []string{"tag", "resolve"} {
+		t.Run(query, func(t *testing.T) {
+			f := newCreateFake(t)
+			deps := f.deps()
+			exec := deps.Exec
+			sentinel := errors.New("git release sentinel")
+			cloudCalls := 0
+			queries := 0
+			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+				cloudCalls++
+				t.Fatal("cloud after resolution failure")
+				return cloud.Clients{}, nil
+			}
+			deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+				if c.Path != "git" {
+					t.Fatalf("unexpected command %#v", c)
+				}
+				if query == "tag" && c.Args[0] == "tag" || query == "resolve" && len(c.Args) > 1 && c.Args[1] == "--verify" {
+					queries++
+					return seam.Result{}, sentinel
+				}
+				return exec(ctx, c)
+			}
+			args := []string{"sbx1", "--acme-email=x"}
+			if query == "resolve" {
+				args = append(args, "--release=r2")
+			}
+			var out bytes.Buffer
+			err := Run(context.Background(), args, "version", &out, deps)
+			want := "git rev-parse: " + sentinel.Error()
+			if query == "tag" {
+				want = "git tag --list --no-column: " + sentinel.Error()
+			}
+			if !errors.Is(err, sentinel) || err.Error() != want || queries != 1 || cloudCalls != 0 || out.Len() != 0 {
+				t.Fatalf("error %v queries %d cloud %d output %q", err, queries, cloudCalls, out.String())
+			}
+		})
+	}
 }

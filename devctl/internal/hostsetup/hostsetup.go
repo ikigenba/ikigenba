@@ -59,21 +59,7 @@ type Config struct {
 	Space   spaceref.Space
 	Email   string
 	Periods *BackupPeriods
-}
-
-// InstallLatest discovers and installs the newest published opsctl release.
-func InstallLatest(ctx context.Context, target host.Host) (string, error) {
-	release, err := Latest(ctx, target.Deps)
-	if err != nil {
-		return "", err
-	}
-	if _, err := target.Run(ctx, "opsctl", "curl", "-fsSL", "-o", InstallerPath, release.InstallerURL); err != nil {
-		return "", err
-	}
-	if _, err := target.Sudo(ctx, "opsctl", "bash", InstallerPath, release.Version); err != nil {
-		return "", err
-	}
-	return release.Version, nil
+	Opsctl  string
 }
 
 // Upgrade fetches and installs the requested opsctl release.
@@ -124,8 +110,12 @@ func Configure(
 	if cfg.Email != "" {
 		values = append(values, setting{KeyACMEEmail, cfg.Email})
 	}
+	program := cfg.Opsctl
+	if program == "" {
+		program = "opsctl"
+	}
 	for i, item := range values {
-		if err := SetKey(ctx, target, step, item.key, item.value); err != nil {
+		if _, err := target.Sudo(ctx, step, program, "config", "set", item.key+"="+item.value); err != nil {
 			return i, err
 		}
 	}

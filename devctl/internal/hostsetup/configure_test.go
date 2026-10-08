@@ -51,7 +51,7 @@ func TestConfigurationContract(t *testing.T) {
 		t.Fatalf("DefaultBackupPeriods() = %#v, want %#v", got, wantPeriods)
 	}
 
-	// R-8ERV-FDYB
+	// R-WGUE-8YC4
 	_ = Config(struct {
 		Root    string
 		Region  string
@@ -59,6 +59,7 @@ func TestConfigurationContract(t *testing.T) {
 		Space   spaceref.Space
 		Email   string
 		Periods *BackupPeriods
+		Opsctl  string
 	}{})
 
 	// R-8FZR-T5P0 R-8H7O-6XFP
@@ -69,7 +70,7 @@ func TestConfigurationContract(t *testing.T) {
 }
 
 func TestConfigureSetsDerivedDefaultsAndEmailInOrder(t *testing.T) {
-	// R-5PA7-AFGB R-8JNG-YGX3 R-8KVD-C8NS
+	// R-WI2A-MQ2T R-8JNG-YGX3 R-8KVD-C8NS
 	periods := DefaultBackupPeriods()
 	cfg := Config{
 		Root:    "ikigenba.dev",
@@ -262,7 +263,7 @@ func TestSingleKeyOperations(t *testing.T) {
 }
 
 func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
-	// R-5QI3-O770
+	// R-8GWZ-UVC6
 	var commands []seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 		commands = append(commands, command)
@@ -274,9 +275,6 @@ func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
 	target := host.Host{Address: "192.0.2.10", Deps: deps}
 	cfg := Config{Root: "example.test", Region: "us-east-1", ZoneID: "ZONE", Space: spaceref.Space{Label: "sbx", Domain: "sbx.example.test"}}
 	if _, err := Configure(context.Background(), target, "configuration", cfg); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := InstallLatest(context.Background(), target); err != nil {
 		t.Fatal(err)
 	}
 	if err := Upgrade(context.Background(), target, "v1.2.3"); err != nil {
@@ -324,4 +322,23 @@ func logicalCommands(commands []seam.Cmd) []string {
 		}
 	}
 	return logical
+}
+
+func TestConfigureUsesReleaseOpsctl(t *testing.T) {
+	// R-WI2A-MQ2T
+	var commands []seam.Cmd
+	program := "/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl"
+	cfg := Config{Root: "example.test", Region: "region", ZoneID: "zone", Space: spaceref.Space{Label: "sbx", Domain: "sbx1.ikigenba.dev"}, Opsctl: program}
+	count, err := Configure(context.Background(), recordingHost(&commands, nil), "setup", cfg)
+	if err != nil || count != 5 || len(commands) != 5 {
+		t.Fatalf("Configure %d %v", count, err)
+	}
+	for _, cmd := range commands {
+		if !strings.HasPrefix(cmd.Args[len(cmd.Args)-1], "'sudo' '"+program+"' 'config' 'set' ") {
+			t.Fatalf("command %#v", cmd)
+		}
+	}
+	if commands[0].Args[len(commands[0].Args)-1] != "'sudo' '"+program+"' 'config' 'set' 'host.name=sbx1.ikigenba.dev'" {
+		t.Fatal(commands[0])
+	}
 }

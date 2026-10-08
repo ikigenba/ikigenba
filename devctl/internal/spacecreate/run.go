@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/build"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
+	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
 
 // Run executes a space create command.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
+func Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error {
 	invocation, err := parseInvocation(args)
 	if err != nil {
 		return err
@@ -18,26 +22,29 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 		_, err := fmt.Fprint(stdout, usageText)
 		return err
 	}
-	return runCreate(ctx, stdout, deps, invocation)
-}
-
-// runCreate is the handoff from the create grammar to its ordered operation.
-// Keeping it isolated lets the provisioning phases extend the operation without
-// coupling command-line parsing to those steps.
-func runCreate(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation invocation) error {
-	result, err := preflight(ctx, deps, invocation.operand)
+	result, err := preflight(ctx, deps, invocation)
 	if err != nil {
 		return err
 	}
-	return beginProvisioning(ctx, stdout, deps, invocation, result)
-}
-
-// beginProvisioning crosses create's first mutation barrier. Later provisioning
-// steps continue from this single handoff after secrets have been pushed.
-func beginProvisioning(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation invocation, result preflightResult) error {
-	_, err := pushSecretsAndReport(ctx, deps, result, stdout)
+	space.Step(stdout, "account", fmt.Sprintf("%s, %s, %s", result.root.Domain, result.root.Region, result.session.AccountID))
+	space.Step(stdout, "domain", fmt.Sprintf("zone %s %s", result.zone.Name, result.zone.ID))
+	built, err := build.Suite(ctx, result.checkout, result.sha, version)
 	if err != nil {
 		return err
 	}
-	return provision(ctx, stdout, deps, invocation, result)
+	detail := built.File
+	if result.label != "" {
+		detail = result.label + ", " + detail
+	}
+	space.Step(stdout, "build", detail)
+	apps := make([]checkout.App, len(built.Manifests))
+	for i, manifest := range built.Manifests {
+		apps[i] = checkout.App{Name: manifest.App, Manifest: manifest}
+	}
+	entries, err := secrets.Push(ctx, deps, result.session.Clients.SSM, result.sp.Domain, apps)
+	if err != nil {
+		return err
+	}
+	space.Step(stdout, "secrets", fmt.Sprintf("%d apps", len(entries)))
+	return provision(ctx, stdout, deps, invocation, result, built)
 }

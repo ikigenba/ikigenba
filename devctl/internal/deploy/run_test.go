@@ -20,20 +20,29 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
-const deployHelp = `Usage: devctl deploy <space> <file>
+const deployHelp = `Usage: devctl deploy <space> <sha|tag>
+       devctl deploy <space> <file>
+
+Build the suite at <sha|tag> as build does, check that the space holds every
+secret the release's manifests declare, copy dist/<sha>.tar.xz to the space's
+host, unpack it into /opt/ikigenba/releases/<sha>/, and have that release's
+opsctl activate it. A tag is the release's label, exactly as typed; a sha
+gives none.
 
 Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
 from there. The app and commit sha (40 lowercase hex digits) are read from the
 file name.
+
+An argument that ends in .tar.xz is a <file>; any other is a <sha|tag>.
 `
 
-type runSignature func(context.Context, []string, io.Writer, seam.Deps) error
+type runSignature func(context.Context, []string, string, io.Writer, seam.Deps) error
 
 var _ runSignature = deploy.Run
 
 func TestDeployPublicContract(t *testing.T) {
-	// R-O0KZ-IOYR R-YR44-RQHN R-YSC1-5I8C R-O1SV-WGPG R-F81U-8G73 R-63UH-RXGI R-OIVH-9936
+	// R-VOSP-G8A5 R-YR44-RQHN R-YSC1-5I8C R-O1SV-WGPG R-F81U-8G73 R-VW43-QUQB R-OIVH-9936
 	_ = deploy.UsageError(struct {
 		Message string
 		Help    string
@@ -66,7 +75,7 @@ func TestDeployPublicContract(t *testing.T) {
 		t.Fatalf("ProcessError contract failed: %#v", process)
 	}
 	file := &deploy.FileError{Path: "notes.tar.xz", Reason: "name is not <app>-<sha>.tar.xz"}
-	if file.Error() != "'notes.tar.xz' is not a file build wrote: name is not <app>-<sha>.tar.xz" || file.ExitCode() != 2 {
+	if file.Error() != "'notes.tar.xz' is not an app file build wrote: name is not <app>-<sha>.tar.xz" || file.ExitCode() != 2 {
 		t.Fatalf("FileError contract failed: %#v", file)
 	}
 	if got := deploy.ObjectKey("sbx1", "crm-v0.1.0.tar.xz"); got != "sbx1/deploy/crm-v0.1.0.tar.xz" {
@@ -75,7 +84,7 @@ func TestDeployPublicContract(t *testing.T) {
 }
 
 func TestDeployResolvesAndValidatesFileBeforeParsing(t *testing.T) {
-	// R-08GB-YDTQ R-5U3A-PRIY R-5VB7-3J9N R-BU3V-ZE1N
+	// R-08GB-YDTQ R-WEEL-HEUQ R-VXC0-4MH0 R-BU3V-ZE1N
 	dir := t.TempDir()
 	absoluteDir := t.TempDir()
 	absolute := filepath.Join(absoluteDir, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
@@ -87,7 +96,7 @@ func TestDeployResolvesAndValidatesFileBeforeParsing(t *testing.T) {
 	for _, operand := range []string{"crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", absolute} {
 		t.Run(operand, func(t *testing.T) {
 			var commands []seam.Cmd
-			err := deploy.Run(context.Background(), []string{"sbx1", operand}, io.Discard, seam.Deps{
+			err := deploy.Run(context.Background(), []string{"sbx1", operand}, "test-version", io.Discard, seam.Deps{
 				Dir: dir,
 				Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 					commands = append(commands, command)
@@ -109,7 +118,7 @@ func TestDeployResolvesAndValidatesFileBeforeParsing(t *testing.T) {
 	for _, operand := range []string{"notes.tar.xz", "directory-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"} {
 		t.Run("not-regular-"+operand, func(t *testing.T) {
 			var stdout bytes.Buffer
-			err := deploy.Run(context.Background(), []string{"sbx1", operand}, &stdout, seam.Deps{Dir: dir, Exec: failRunner(t), Cloud: failCloud(t)})
+			err := deploy.Run(context.Background(), []string{"sbx1", operand}, "test-version", &stdout, seam.Deps{Dir: dir, Exec: failRunner(t), Cloud: failCloud(t)})
 			var noFile *deploy.NoFileError
 			if !errors.As(err, &noFile) || noFile.Path != operand || err.Error() != "no such file '"+operand+"'" || noFile.ExitCode() != 2 || stdout.Len() != 0 {
 				t.Fatalf("Run(%q) = %#v stdout %q", operand, err, stdout.String())
@@ -119,14 +128,14 @@ func TestDeployResolvesAndValidatesFileBeforeParsing(t *testing.T) {
 
 	for _, invalid := range []string{
 		"notes.tar.xz", "crm-latest.tar.xz", "crm-v0.1.0.tar.xz",
-		"crm-4b22285.tar.xz", "crm-4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz",
+		"4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz", "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6.tar.xz", "crm-4b22285.tar.xz", "crm-4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz",
 	} {
 		t.Run("invalid-name-"+invalid, func(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, invalid), []byte("artifact"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			var stdout bytes.Buffer
-			err := deploy.Run(context.Background(), []string{"sbx1", invalid}, &stdout, seam.Deps{Dir: dir, Exec: failRunner(t), Cloud: failCloud(t)})
+			err := deploy.Run(context.Background(), []string{"sbx1", invalid}, "test-version", &stdout, seam.Deps{Dir: dir, Exec: failRunner(t), Cloud: failCloud(t)})
 			var fileErr *deploy.FileError
 			if !errors.As(err, &fileErr) || fileErr.Path != invalid || fileErr.Reason != "name is not <app>-<sha>.tar.xz" || fileErr.ExitCode() != 2 || stdout.Len() != 0 {
 				t.Fatalf("invalid name = %#v stdout %q", err, stdout.String())
@@ -158,7 +167,7 @@ func TestDeployArchiveInspectionFailures(t *testing.T) {
 				test.reason = checkout.ManifestFile + ": " + decodeErr.Error()
 			}
 			var commands []seam.Cmd
-			err := deploy.Run(context.Background(), []string{"sbx1", operand}, io.Discard, seam.Deps{Dir: dir, Cloud: failCloud(t), Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+			err := deploy.Run(context.Background(), []string{"sbx1", operand}, "test-version", io.Discard, seam.Deps{Dir: dir, Cloud: failCloud(t), Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 				commands = append(commands, command)
 				if len(commands) == 1 {
 					return seam.Result{Stdout: []byte(test.members)}, nil
@@ -202,7 +211,7 @@ func TestDeployArchiveInspectionFailures(t *testing.T) {
 				t.Fatal(err)
 			}
 			calls := 0
-			err := deploy.Run(context.Background(), []string{"sbx1", operand}, io.Discard, seam.Deps{Dir: dir, Cloud: failCloud(t), Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			err := deploy.Run(context.Background(), []string{"sbx1", operand}, "test-version", io.Discard, seam.Deps{Dir: dir, Cloud: failCloud(t), Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 				calls++
 				if calls == test.failCall {
 					return test.result, test.runnerErr
@@ -225,7 +234,7 @@ func TestDeployArchiveInspectionFailures(t *testing.T) {
 }
 
 func TestDeployHelpAndGrammarPrecedeExternalAccess(t *testing.T) {
-	// R-O48O-O06U R-O5GL-1RXJ R-O6OH-FJO8 R-O7WD-TBEX R-5SVE-BZS9
+	// R-O48O-O06U R-VR8I-7RRJ R-VSGE-LJI8 R-VTOA-ZB8X R-VUW7-D2ZM
 	for _, args := range [][]string{{"--help"}, {"-h"}, {"sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "--help"}} {
 		var stdout bytes.Buffer
 		calls := 0
@@ -236,7 +245,7 @@ func TestDeployHelpAndGrammarPrecedeExternalAccess(t *testing.T) {
 			calls++
 			return seam.Result{}, errors.New("called")
 		}}
-		if err := deploy.Run(context.Background(), args, &stdout, deps); err != nil || stdout.String() != deployHelp || calls != 0 {
+		if err := deploy.Run(context.Background(), args, "test-version", &stdout, deps); err != nil || stdout.String() != deployHelp || calls != 0 {
 			t.Fatalf("help %q = stdout %q err %v calls %d", args, stdout.String(), err, calls)
 		}
 	}
@@ -244,12 +253,12 @@ func TestDeployHelpAndGrammarPrecedeExternalAccess(t *testing.T) {
 		args    []string
 		message string
 	}{
-		{nil, "deploy needs <space> and <file>"},
-		{[]string{"sbx1"}, "deploy needs <space> and <file>"},
-		{[]string{"sbx1", "a", "extra"}, "deploy takes only <space> and <file>"},
+		{nil, "deploy needs <space> and <sha|tag> or <file>"},
+		{[]string{"sbx1"}, "deploy needs <space> and <sha|tag> or <file>"},
+		{[]string{"sbx1", "a", "extra"}, "deploy takes only <space> and one <sha|tag> or <file>"},
 		{[]string{"sbx1", "--bad"}, "unknown option '--bad'"},
 	} {
-		err := deploy.Run(context.Background(), test.args, io.Discard, seam.Deps{Dir: t.TempDir(), Exec: failRunner(t), Cloud: failCloud(t)})
+		err := deploy.Run(context.Background(), test.args, "test-version", io.Discard, seam.Deps{Dir: t.TempDir(), Exec: failRunner(t), Cloud: failCloud(t)})
 		var usage *deploy.UsageError
 		if !errors.As(err, &usage) || usage.Message != test.message || usage.Help != "devctl deploy --help" {
 			t.Fatalf("Run(%q) = %#v", test.args, err)
@@ -258,7 +267,7 @@ func TestDeployHelpAndGrammarPrecedeExternalAccess(t *testing.T) {
 }
 
 func TestDeployFileValidationAndArchiveContract(t *testing.T) {
-	// R-08GB-YDTQ R-5U3A-PRIY R-Z9EM-IAM2 R-ZAMI-W2CR R-ZEA8-1DKU R-5RNH-Y81K R-5VB7-3J9N
+	// R-08GB-YDTQ R-WEEL-HEUQ R-Z9EM-IAM2 R-ZAMI-W2CR R-ZEA8-1DKU R-5RNH-Y81K R-VXC0-4MH0
 	dir := t.TempDir()
 	for _, test := range []struct{ operand, want string }{{"missing-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "no such file"}, {"notes.tar.xz", "name is not <app>-<sha>.tar.xz"}} {
 		if test.operand == "notes.tar.xz" {
@@ -266,14 +275,14 @@ func TestDeployFileValidationAndArchiveContract(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		err := deploy.Run(context.Background(), []string{"sbx1", test.operand}, io.Discard, seam.Deps{Dir: dir, Exec: failRunner(t), Cloud: failCloud(t)})
+		err := deploy.Run(context.Background(), []string{"sbx1", test.operand}, "test-version", io.Discard, seam.Deps{Dir: dir, Exec: failRunner(t), Cloud: failCloud(t)})
 		if err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Fatalf("%s: %v", test.operand, err)
 		}
 	}
 	h := newHarness(t, "crm-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz", "app = \"crm\"\n")
 	var stdout bytes.Buffer
-	if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps()); err != nil {
+	if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps()); err != nil {
 		t.Fatal(err)
 	}
 	if len(h.commands) != 4 || h.commands[0].Path != "tar" || h.commands[1].Path != "tar" || h.commands[2].Path != "git" || h.commands[3].Path != "ssh" {
@@ -284,7 +293,7 @@ func TestDeployFileValidationAndArchiveContract(t *testing.T) {
 	}
 
 	h = newHarness(t, "crm-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz", "app = \"wrong\"\n")
-	err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, io.Discard, h.deps())
+	err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", io.Discard, h.deps())
 	var fileErr *deploy.FileError
 	if !errors.As(err, &fileErr) || fileErr.Reason != "manifest app does not match file name" || len(h.commands) != 2 {
 		t.Fatalf("mismatch = %#v commands %d", err, len(h.commands))
@@ -292,11 +301,11 @@ func TestDeployFileValidationAndArchiveContract(t *testing.T) {
 }
 
 func TestDeployUsesRootSessionSpaceSecretsUploadAndHost(t *testing.T) {
-	// R-5WJ3-HB0C R-5XQZ-V2R1 R-5YYW-8UHQ R-0HFK-QF61 R-606S-MM8F R-62ML-E5PT R-FAHM-ZZOH R-FHT1-AM4N
+	// R-5WJ3-HB0C R-W27L-NPFS R-W3FI-1H6H R-W4NE-F8X6 R-606S-MM8F R-W737-6SEK R-W0ZP-9XP3 R-FHT1-AM4N
 	h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\nsecrets = [\"B\", \"A\", \"C\"]\n")
 	h.secretNames = []string{"A", "B", "C", "EXTRA"}
 	var stdout bytes.Buffer
-	if err := deploy.Run(context.Background(), []string{"sbx1.ikigenba.dev", h.operand}, &stdout, h.deps()); err != nil {
+	if err := deploy.Run(context.Background(), []string{"sbx1.ikigenba.dev", h.operand}, "test-version", &stdout, h.deps()); err != nil {
 		t.Fatal(err)
 	}
 	want := "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\nsecrets: ok (3 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)\ninstall: ok (opsctl installed crm)\n"
@@ -315,7 +324,7 @@ func TestDeployUsesRootSessionSpaceSecretsUploadAndHost(t *testing.T) {
 	}
 
 	h = newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\nsecrets = [\"Z\", \"A\"]\n")
-	err := deploy.Run(context.Background(), []string{"sbx1.ikigenba.dev", h.operand}, io.Discard, h.deps())
+	err := deploy.Run(context.Background(), []string{"sbx1.ikigenba.dev", h.operand}, "test-version", io.Discard, h.deps())
 	var missing *deploy.MissingSecretsError
 	if !errors.As(err, &missing) || !reflect.DeepEqual(missing.Names, []string{"A", "Z"}) || missing.Space != "sbx1" || h.putCalls != 0 {
 		t.Fatalf("missing = %#v uploads %d", err, h.putCalls)
@@ -323,7 +332,7 @@ func TestDeployUsesRootSessionSpaceSecretsUploadAndHost(t *testing.T) {
 
 	h = newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
 	h.state = cloud.StateStopped
-	err = deploy.Run(context.Background(), []string{"sbx1", h.operand}, io.Discard, h.deps())
+	err = deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", io.Discard, h.deps())
 	var stopped *space.NotRunningError
 	if !errors.As(err, &stopped) || stopped.Domain != "sbx1.ikigenba.dev" || h.putCalls != 0 {
 		t.Fatalf("stopped = %#v", err)
@@ -331,7 +340,7 @@ func TestDeployUsesRootSessionSpaceSecretsUploadAndHost(t *testing.T) {
 
 	h = newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
 	h.sshStatus, h.sshStderr = 7, "first\nsecond\n"
-	err = deploy.Run(context.Background(), []string{"sbx1", h.operand}, io.Discard, h.deps())
+	err = deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", io.Discard, h.deps())
 	var commandErr *host.CommandError
 	if !errors.As(err, &commandErr) || commandErr.Step != "install" || commandErr.Status != 7 || commandErr.Detail() != "> first\n> second" {
 		t.Fatalf("host error = %#v", err)
@@ -355,7 +364,7 @@ func TestDeployInstallHostUsesFoundAddressAndDeps(t *testing.T) {
 		}
 		return baseExec(ctx, cmd)
 	}
-	err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, io.Discard, deps)
+	err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", io.Discard, deps)
 	if !errors.Is(err, installErr) || installCalls != 1 {
 		t.Fatalf("install error = %v, calls = %d", err, installCalls)
 	}
@@ -365,7 +374,7 @@ func TestDeployInstallHostUsesFoundAddressAndDeps(t *testing.T) {
 }
 
 func TestDeployCountsDistinctRequiredSecrets(t *testing.T) {
-	// R-0HFK-QF61
+	// R-W4NE-F8X6
 	for _, test := range []struct {
 		name, manifest, wantLine string
 	}{
@@ -376,7 +385,7 @@ func TestDeployCountsDistinctRequiredSecrets(t *testing.T) {
 			h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", test.manifest)
 			h.secretNames = []string{"A", "B", "C", "EXTRA"}
 			var stdout bytes.Buffer
-			if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps()); err != nil {
+			if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps()); err != nil {
 				t.Fatal(err)
 			}
 			if h.ssmCalls != 1 || !strings.Contains(stdout.String(), test.wantLine) {
@@ -387,12 +396,12 @@ func TestDeployCountsDistinctRequiredSecrets(t *testing.T) {
 }
 
 func TestDeployLifecycleFailuresStopInOrderAndKeepUpload(t *testing.T) {
-	// R-FAHM-ZZOH
+	// R-W0ZP-9XP3
 	t.Run("secrets", func(t *testing.T) {
 		h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
 		h.secretErr = errors.New("secrets failed")
 		var stdout bytes.Buffer
-		err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps())
+		err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps())
 		if !errors.Is(err, h.secretErr) || stdout.String() != "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n" || h.putCalls != 0 || sshCommandCount(h.commands) != 0 {
 			t.Fatalf("error %#v stdout %q put %d commands %#v", err, stdout.String(), h.putCalls, h.commands)
 		}
@@ -402,7 +411,7 @@ func TestDeployLifecycleFailuresStopInOrderAndKeepUpload(t *testing.T) {
 		h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
 		h.putErr = errors.New("upload failed")
 		var stdout bytes.Buffer
-		err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps())
+		err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps())
 		if !errors.Is(err, h.putErr) || stdout.String() != "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\nsecrets: ok (0 keys)\n" || h.putCalls != 1 || sshCommandCount(h.commands) != 0 {
 			t.Fatalf("error %#v stdout %q put %d commands %#v", err, stdout.String(), h.putCalls, h.commands)
 		}
@@ -420,7 +429,7 @@ func TestDeployLifecycleFailuresStopInOrderAndKeepUpload(t *testing.T) {
 			h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
 			h.sshStatus, h.sshErr = test.status, test.runnerErr
 			var stdout bytes.Buffer
-			err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps())
+			err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps())
 			if err == nil || h.putCalls != 1 || h.deleteCalls != 0 || sshCommandCount(h.commands) != 1 || !strings.HasSuffix(stdout.String(), "upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)\n") || strings.Contains(stdout.String(), "install: ok") {
 				t.Fatalf("error %#v stdout %q put/delete %d/%d commands %#v", err, stdout.String(), h.putCalls, h.deleteCalls, h.commands)
 			}
@@ -428,7 +437,7 @@ func TestDeployLifecycleFailuresStopInOrderAndKeepUpload(t *testing.T) {
 	}
 
 	h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
-	if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, io.Discard, h.deps()); err != nil {
+	if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", io.Discard, h.deps()); err != nil {
 		t.Fatal(err)
 	}
 	wantOrder := []string{"tar-list", "tar-manifest", "root", "connect", "identity", "lookup", "secrets", "upload", "install"}
@@ -445,7 +454,7 @@ func TestDeployReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) {
 			t.Fatal(err)
 		}
 		var stdout bytes.Buffer
-		err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps())
+		err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps())
 		var rootErr *checkout.RootFileError
 		if !errors.As(err, &rootErr) || reflect.ValueOf(err).Pointer() != reflect.ValueOf(rootErr).Pointer() || rootErr.Detail != "missing 'region'" || stdout.String() != "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n" || h.s3Calls != 0 || sshCommandCount(h.commands) != 0 {
 			t.Fatalf("error %#v stdout %q calls %#v", err, stdout.String(), h.commands)
@@ -454,7 +463,7 @@ func TestDeployReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) {
 
 	t.Run("parse", func(t *testing.T) {
 		h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
-		err := deploy.Run(context.Background(), []string{"Bad", h.operand}, io.Discard, h.deps())
+		err := deploy.Run(context.Background(), []string{"Bad", h.operand}, "test-version", io.Discard, h.deps())
 		var parseErr *spaceref.InvalidLabelError
 		if !errors.As(err, &parseErr) || reflect.ValueOf(err).Pointer() != reflect.ValueOf(parseErr).Pointer() || parseErr.Operand != "Bad" || h.cloudCalls != 0 || h.s3Calls != 0 || sshCommandCount(h.commands) != 0 {
 			t.Fatalf("error %#v cloud %d S3 %d commands %#v", err, h.cloudCalls, h.s3Calls, h.commands)
@@ -474,7 +483,7 @@ func TestDeployReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) {
 			want := errors.New(test.name + " failed")
 			test.set(h, want)
 			var stdout bytes.Buffer
-			err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps())
+			err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps())
 			if reflect.ValueOf(err).Pointer() != reflect.ValueOf(want).Pointer() || stdout.String() != "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n" || h.s3Calls != 0 || sshCommandCount(h.commands) != 0 {
 				t.Fatalf("error %#v want identity %#v stdout %q S3 %d commands %#v", err, want, stdout.String(), h.s3Calls, h.commands)
 			}
@@ -483,7 +492,7 @@ func TestDeployReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) {
 }
 
 func TestDeployPromotesSameFileAcrossSpacesWithoutIdentityRestriction(t *testing.T) {
-	// R-5YYW-8UHQ
+	// R-W3FI-1H6H
 	h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
 	h.accountID = "account-identity-is-not-a-deploy-policy"
 	h.instances = []cloud.Instance{
@@ -498,7 +507,7 @@ func TestDeployPromotesSameFileAcrossSpacesWithoutIdentityRestriction(t *testing
 		{space: "staging", label: "staging", address: "18.118.7.43"},
 	} {
 		var stdout bytes.Buffer
-		if err := deploy.Run(context.Background(), []string{test.space, h.operand}, &stdout, h.deps()); err != nil {
+		if err := deploy.Run(context.Background(), []string{test.space, h.operand}, "test-version", &stdout, h.deps()); err != nil {
 			t.Fatalf("deploy to %s: %v", test.space, err)
 		}
 		want := "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\nsecrets: ok (0 keys)\nupload: ok (-> ikigenba.dev/" + test.label + "/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)\ninstall: ok (opsctl installed crm)\n"
@@ -547,7 +556,7 @@ func TestDeploySpaceFailuresStopBeforeSecretsUploadAndHost(t *testing.T) {
 			h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\n")
 			h.instances = test.instances
 			var stdout bytes.Buffer
-			err := deploy.Run(context.Background(), []string{test.operand, h.operand}, &stdout, h.deps())
+			err := deploy.Run(context.Background(), []string{test.operand, h.operand}, "test-version", &stdout, h.deps())
 			test.check(t, err)
 			wantCommands := []string{"tar", "tar", "git"}
 			if stdout.String() != "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n" || h.ssmCalls != 0 || h.s3Calls != 0 || !reflect.DeepEqual(commandPaths(h.commands), wantCommands) {
@@ -563,7 +572,7 @@ func TestDeployMissingSecretsForAbbreviatedAndFQDNSpace(t *testing.T) {
 		t.Run(operand, func(t *testing.T) {
 			h := newHarness(t, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "app = \"crm\"\nsecrets = [\"CRM_WEBHOOK_SECRET\", \"CRM_ORG\"]\n")
 			var stdout bytes.Buffer
-			err := deploy.Run(context.Background(), []string{operand, h.operand}, &stdout, h.deps())
+			err := deploy.Run(context.Background(), []string{operand, h.operand}, "test-version", &stdout, h.deps())
 			var missing *deploy.MissingSecretsError
 			if !errors.As(err, &missing) || missing.App != "crm" || missing.Space != "sbx1" || !reflect.DeepEqual(missing.Names, []string{"CRM_ORG", "CRM_WEBHOOK_SECRET"}) {
 				t.Fatalf("error = %#v", err)
@@ -763,7 +772,7 @@ func failCloud(t *testing.T) cloud.Opener {
 func (f *fakeS3) CopyObject(context.Context, string, string, string) error { return nil }
 
 func TestDeployFileLinePrecedesRootAndCloudForSHAArtifacts(t *testing.T) {
-	// R-5RNH-Y81K R-5VB7-3J9N R-5XQZ-V2R1
+	// R-5RNH-Y81K R-VXC0-4MH0 R-W27L-NPFS
 	for _, test := range []struct{ app, sha string }{
 		{app: "crm", sha: "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"},
 		{app: "gmail", sha: "c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9"},
@@ -792,7 +801,7 @@ func TestDeployFileLinePrecedesRootAndCloudForSHAArtifacts(t *testing.T) {
 				}
 				return baseCloud(ctx, profile, region)
 			}
-			if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, deps); err != nil {
+			if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, deps); err != nil {
 				t.Fatal(err)
 			}
 			if !strings.HasPrefix(stdout.String(), wantLine) || !reflect.DeepEqual(commandPaths(h.commands), []string{"tar", "tar", "git", "ssh"}) {
@@ -809,7 +818,7 @@ func TestDeploySameInstalledArtifactUploadsAndInstallsAgain(t *testing.T) {
 	var firstOutput string
 	for run := range 2 {
 		var stdout bytes.Buffer
-		if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, &stdout, h.deps()); err != nil {
+		if err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, "test-version", &stdout, h.deps()); err != nil {
 			t.Fatal(err)
 		}
 		if run == 0 {
@@ -820,5 +829,113 @@ func TestDeploySameInstalledArtifactUploadsAndInstallsAgain(t *testing.T) {
 		if h.putCalls != run+1 || sshCommandCount(h.commands) != run+1 || !bytes.Equal(h.body, h.artifact) {
 			t.Fatalf("deploy %d: upload calls %d install calls %d body %q", run, h.putCalls, sshCommandCount(h.commands), h.body)
 		}
+	}
+}
+
+func TestReleaseFileErrorContract(t *testing.T) {
+	// R-VYJW-IE7P
+	_ = deploy.ReleaseFileError(struct {
+		Path  string
+		Space string
+		SHA   string
+	}{})
+	e := &deploy.ReleaseFileError{Path: "dist/archive.tar.xz", Space: "space.as.typed", SHA: "commit"}
+	if e.Error() != "'dist/archive.tar.xz' is a release, not an app file" || e.Detail() != "run 'devctl deploy space.as.typed commit'" || e.ExitCode() != 2 {
+		t.Fatalf("contract %#v", e)
+	}
+}
+
+func TestReleaseEarlyFailuresReturnUnchangedAndStop(t *testing.T) {
+	// R-W8B3-KK59
+	for _, stage := range []string{"open", "root", "parse", "cloud", "identity", "lookup", "stopped"} {
+		t.Run(stage, func(t *testing.T) {
+			h := newHarness(t, "unused.tar.xz", "")
+			sentinel := errors.New(stage + " failure")
+			if stage == "root" {
+				if err := os.WriteFile(filepath.Join(h.root, "infra/terraform.tfvars.json"), []byte(`{"domain":"ikigenba.dev"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			deps := h.deps()
+			baseCloud := deps.Cloud
+			commands := 0
+			deps.Exec = func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+				commands++
+				if c.Path != "git" || c.Args[0] != "rev-parse" {
+					t.Fatalf("unexpected subsequent process %#v", c)
+				}
+				if c.Args[1] == "--show-toplevel" {
+					if stage == "open" {
+						return seam.Result{ExitCode: 1}, nil
+					}
+					return seam.Result{Stdout: []byte(h.root + "\n")}, nil
+				}
+				return seam.Result{Stdout: []byte("4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a\n")}, nil
+			}
+			deps.Stream = func(context.Context, seam.Cmd, io.Writer) (seam.Result, error) {
+				t.Fatal("unexpected stream")
+				return seam.Result{}, nil
+			}
+			deps.Cloud = func(ctx context.Context, profile, region string) (cloud.Clients, error) {
+				if stage == "open" || stage == "root" || stage == "parse" {
+					t.Fatal("unexpected cloud")
+				}
+				if stage == "cloud" {
+					return cloud.Clients{}, sentinel
+				}
+				return baseCloud(ctx, profile, region)
+			}
+			if stage == "identity" {
+				h.stsErr = sentinel
+			}
+			if stage == "lookup" {
+				h.ec2Err = sentinel
+			}
+			if stage == "stopped" {
+				h.state = cloud.StateStopped
+			}
+			operand := "sbx1"
+			if stage == "parse" {
+				operand = "Bad"
+			}
+			var stdout bytes.Buffer
+			err := deploy.Run(context.Background(), []string{operand, "r1"}, "test-version", &stdout, deps)
+			if err == nil || stdout.Len() != 0 || h.ssmCalls != 0 || h.s3Calls != 0 {
+				t.Fatalf("error %#v output %q SSM %d S3 %d", err, stdout.String(), h.ssmCalls, h.s3Calls)
+			}
+			switch stage {
+			case "cloud", "identity", "lookup":
+				if reflect.ValueOf(err).Pointer() != reflect.ValueOf(sentinel).Pointer() {
+					t.Fatalf("error %#v want unchanged %#v", err, sentinel)
+				}
+			case "open":
+				var e *checkout.NotInCheckoutError
+				if !errors.As(err, &e) {
+					t.Fatalf("error %#v", err)
+				}
+			case "root":
+				var e *checkout.RootFileError
+				if !errors.As(err, &e) {
+					t.Fatalf("error %#v", err)
+				}
+			case "parse":
+				var e *spaceref.InvalidLabelError
+				if !errors.As(err, &e) {
+					t.Fatalf("error %#v", err)
+				}
+			case "stopped":
+				var e *space.NotRunningError
+				if !errors.As(err, &e) || e.Domain != "sbx1.ikigenba.dev" || e.State != cloud.StateStopped {
+					t.Fatalf("error %#v", err)
+				}
+			}
+			wantCommands := 2
+			if stage == "open" {
+				wantCommands = 1
+			}
+			if commands != wantCommands {
+				t.Fatalf("process count %d want %d", commands, wantCommands)
+			}
+		})
 	}
 }

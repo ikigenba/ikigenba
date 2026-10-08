@@ -10,12 +10,21 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-const expectedDeployUsage = `Usage: devctl deploy <space> <file>
+const expectedDeployUsage = `Usage: devctl deploy <space> <sha|tag>
+       devctl deploy <space> <file>
+
+Build the suite at <sha|tag> as build does, check that the space holds every
+secret the release's manifests declare, copy dist/<sha>.tar.xz to the space's
+host, unpack it into /opt/ikigenba/releases/<sha>/, and have that release's
+opsctl activate it. A tag is the release's label, exactly as typed; a sha
+gives none.
 
 Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
 from there. The app and commit sha (40 lowercase hex digits) are read from the
 file name.
+
+An argument that ends in .tar.xz is a <file>; any other is a <sha|tag>.
 `
 
 const expectedRestoreUsage = `Usage: devctl restore <space> <app> [--at <timestamp>]
@@ -47,7 +56,7 @@ Run 'devctl apex <subcommand> --help' for details.
 `
 
 func TestEveryCommandHelpIsExact(t *testing.T) {
-	// R-S1J1-1MHG
+	// R-UGWB-OHL5
 	tests := []struct {
 		command string
 		want    string
@@ -56,6 +65,7 @@ func TestEveryCommandHelpIsExact(t *testing.T) {
 		{command: "secrets", want: expectedD05Usage},
 		{command: "build", want: expectedBuildUsage},
 		{command: "deploy", want: expectedDeployUsage},
+		{command: "rollback", want: expectedRollbackUsage},
 		{command: "restore", want: expectedRestoreUsage},
 		{command: "remove", want: wantRemoveUsage},
 		{command: "apex", want: expectedApexUsage},

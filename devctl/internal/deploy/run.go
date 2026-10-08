@@ -22,12 +22,21 @@ import (
 
 const (
 	helpCommand = "devctl deploy --help"
-	helpText    = `Usage: devctl deploy <space> <file>
+	helpText    = `Usage: devctl deploy <space> <sha|tag>
+       devctl deploy <space> <file>
+
+Build the suite at <sha|tag> as build does, check that the space holds every
+secret the release's manifests declare, copy dist/<sha>.tar.xz to the space's
+host, unpack it into /opt/ikigenba/releases/<sha>/, and have that release's
+opsctl activate it. A tag is the release's label, exactly as typed; a sha
+gives none.
 
 Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
 from there. The app and commit sha (40 lowercase hex digits) are read from the
 file name.
+
+An argument that ends in .tar.xz is a <file>; any other is a <sha|tag>.
 `
 )
 
@@ -40,7 +49,7 @@ type invocation struct {
 }
 
 // Run executes a deploy command.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
+func Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error {
 	invocation, help, err := parseInvocation(args)
 	if err != nil {
 		return err
@@ -48,6 +57,9 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	if help {
 		_, _ = fmt.Fprint(stdout, helpText)
 		return nil
+	}
+	if !strings.HasSuffix(invocation.file, ".tar.xz") {
+		return runRelease(ctx, invocation, version, stdout, deps)
 	}
 	invocation, err = validateFile(invocation, deps.Dir)
 	if err != nil {
@@ -140,10 +152,10 @@ func parseInvocation(args []string) (invocation, bool, error) {
 		}
 	}
 	if len(args) < 2 {
-		return invocation{}, false, usage("deploy needs <space> and <file>")
+		return invocation{}, false, usage("deploy needs <space> and <sha|tag> or <file>")
 	}
 	if len(args) > 2 {
-		return invocation{}, false, usage("deploy takes only <space> and <file>")
+		return invocation{}, false, usage("deploy takes only <space> and one <sha|tag> or <file>")
 	}
 	return invocation{space: args[0], file: args[1]}, false, nil
 }
@@ -158,6 +170,11 @@ func validateFile(value invocation, dir string) (invocation, error) {
 		return invocation{}, &NoFileError{Path: value.file}
 	}
 
+	basename := filepath.Base(value.file)
+	shaName := strings.TrimSuffix(basename, ".tar.xz")
+	if len(shaName) == 40 && strings.Trim(shaName, "0123456789abcdef") == "" {
+		return invocation{}, &ReleaseFileError{Path: value.file, Space: value.space, SHA: shaName}
+	}
 	app, sha, err := appref.ParseFile(filepath.Base(value.file))
 	if err != nil {
 		return invocation{}, &FileError{

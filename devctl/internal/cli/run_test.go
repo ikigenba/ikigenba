@@ -36,7 +36,8 @@ Commands:
   space     list, create, destroy, stop, start, initialise, and inspect spaces
   secrets   push and list an app's secrets for a space
   build     build the suite or one app into a deployable file
-  deploy    put a built app file on a space
+  deploy    put a release or a built app file on a space
+  rollback  put a space back on the release it ran before
   remove    take an app off a space
   restore   put a space's app back from its backups
   golden    capture a space's data as a named golden set
@@ -108,12 +109,12 @@ The cloud's tags are the only registry.
 
 Subcommands:
   list                       one line per space
-  create <space> [options]   create the space
+  create <space> [options]   create the space and deploy a release to it
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
   init <space> [options]     set the host's keys again and run opsctl init
-  status <space>             one line per app: version, service state, socket state, database journal mode
+  status <space>             one line per app: commit, label, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
   disable <space> <app>      stop one app and keep it from starting until enabled
   enable <space> <app>       let a disabled app start again, and start it
@@ -121,6 +122,7 @@ Subcommands:
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
+  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -177,8 +179,8 @@ then run certbot renew. Records are unchanged; the last line is domain and addre
 
 const expectedD06StatusUsage = `Usage: devctl space status <space>
 
-Relay opsctl status from the running host: app, version, service state, socket
-state and database journal mode. A host with no apps prints nothing.
+Relay opsctl status from the running host: app, commit, label, service state,
+socket state and database journal mode. A host with no apps prints nothing.
 `
 
 func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
@@ -232,7 +234,7 @@ func TestUnknownTopLevelOption(t *testing.T) {
 }
 
 func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
-	// R-S2QX-FE85 R-N1LD-IX1I
+	// R-UI48-29BU R-N1LD-IX1I
 	tests := []struct {
 		name    string
 		args    []string
@@ -243,6 +245,7 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 		{name: "deploy", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
 		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
 		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
+		{name: "rollback", args: []string{"rollback", "sbx1"}},
 		{name: "apex", args: []string{"apex", "show"}},
 		{name: "golden", args: []string{"golden", "capture", "sbx1", "demo"}},
 		{name: "seed", args: []string{"seed", "sbx2", "demo"}},
@@ -448,6 +451,7 @@ func TestCloudErrorsAreSingleLineOperationFailures(t *testing.T) {
 			}}, &cliRoute53{}),
 			wantStdout: "account: ok (ikigenba.dev, us-east-2, 123456789012)\n" +
 				"domain: ok (zone ikigenba.dev ZROOT)\n" +
+				"build: ok (r2, dist/" + createSHA + ".tar.xz)\n" +
 				"secrets: ok (0 apps)\n" +
 				"role: ok (sbx1.ikigenba.dev)\n",
 			wantStderr: "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n",
@@ -555,6 +559,7 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"secrets", "--help"},
 		{"build", "--help"},
 		{"deploy", "--help"},
+		{"rollback", "--help"},
 		{"restore", "--help"},
 		{"remove", "--help"},
 		{"apex", "--help"},
@@ -564,6 +569,7 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"secrets", "list", "sbx1"},
 		{"build", "crm"},
 		{"deploy", "sbx1", "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"},
+		{"rollback", "sbx1"},
 		{"restore", "sbx1", "crm"},
 		{"remove", "sbx1", "crm"},
 		{"apex", "show"},
@@ -633,13 +639,13 @@ func TestVersionRejectsArguments(t *testing.T) {
 }
 
 func TestTopLevelCommandSet(t *testing.T) {
-	// R-S0B4-NUQR
+	// R-UFOF-APUG
 	got := make([]string, 0, len(commandSet))
 	for command := range commandSet {
 		got = append(got, command)
 	}
 	sort.Strings(got)
-	want := []string{"apex", "build", "deploy", "golden", "remove", "restore", "secrets", "seed", "space", "version"}
+	want := []string{"apex", "build", "deploy", "golden", "remove", "restore", "rollback", "secrets", "seed", "space", "version"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("top-level commands = %q, want %q", got, want)
 	}
@@ -651,7 +657,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-EVVW-Z1XZ
+	// R-UJC4-G12J
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}
@@ -680,7 +686,7 @@ func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 		command []string
 		want    string
 	}{
-		// R-JBGS-JDPU
+		// R-UO7P-Z41B
 		{name: "space", command: []string{"space"}, want: expectedD06Usage},
 		// R-UPD6-TD4G
 		{name: "list", command: []string{"space", "list"}, want: expectedD06ListUsage},
@@ -690,7 +696,7 @@ func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 		{name: "stop", command: []string{"space", "stop"}, want: expectedD06StopUsage},
 		// R-UT0V-YOCJ
 		{name: "start", command: []string{"space", "start"}, want: expectedD06StartUsage},
-		// R-JCOO-X5GJ
+		// R-UPFM-CVS0
 		{name: "status", command: []string{"space", "status"}, want: expectedD06StatusUsage},
 	}
 	for _, test := range tests {
@@ -1166,7 +1172,7 @@ func checkoutDeps(t *testing.T, rootFile string) seam.Deps {
 }
 
 func checkoutDepsAt(root string) seam.Deps {
-	return seam.Deps{
+	return withCreateRelease(seam.Deps{
 		EUID: 1,
 		Dir:  filepath.Join(root, "work"),
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
@@ -1175,7 +1181,7 @@ func checkoutDepsAt(root string) seam.Deps {
 			}
 			return seam.Result{Stdout: []byte(root + "\n")}, nil
 		},
-	}
+	})
 }
 
 func prepareCLIApp(t *testing.T, deps seam.Deps) seam.Deps {
@@ -1208,7 +1214,19 @@ func prepareCLIArchive(t *testing.T, deps seam.Deps) seam.Deps {
 
 func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner {
 	t.Helper()
+	root := ""
 	return func(ctx context.Context, command seam.Cmd) (seam.Result, error) {
+		if command.Path == "git" && reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}) {
+			result, err := checkoutExec(ctx, command)
+			root = strings.TrimSpace(string(result.Stdout))
+			return result, err
+		}
+		if command.Path == "go" || command.Path == "git" && len(command.Args) > 0 && command.Args[0] == "worktree" || command.Path == "tar" && len(command.Args) > 0 && command.Args[0] == "-cJf" || len(command.Args) == 1 && command.Args[0] == "manifest" {
+			result, handled, err := fakeCreateBuild(t, root, command)
+			if handled {
+				return result, err
+			}
+		}
 		switch command.Path {
 		case "git":
 			return checkoutExec(ctx, command)
@@ -1227,7 +1245,7 @@ func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner 
 }
 
 func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
-	// R-JDWL-AX78
+	// R-UQNI-QNIP
 	type target func(context.Context, []string, io.Writer, seam.Deps) error
 	tests := []struct {
 		name   string
@@ -1235,7 +1253,9 @@ func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
 		run    target
 		direct []string
 	}{
-		{name: "create", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"}, run: spacecreate.Run, direct: []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}},
+		{name: "create", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
+			return spacecreate.Run(ctx, args, version, out, deps)
+		}, direct: []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}},
 		{name: "init", args: []string{"space", "init", "sbx1"}, run: spaceinit.Run, direct: []string{"sbx1"}},
 		{name: "restart", args: []string{"space", "restart", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"restart", "sbx1", "crm"}},
 		{name: "disable", args: []string{"space", "disable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"disable", "sbx1", "crm"}},
@@ -1297,7 +1317,9 @@ func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
 		run    target
 		direct []string
 	}{
-		{args: []string{"space", "create", "sbx1"}, run: spacecreate.Run, direct: []string{"sbx1"}},
+		{args: []string{"space", "create", "sbx1"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
+			return spacecreate.Run(ctx, args, version, out, deps)
+		}, direct: []string{"sbx1"}},
 		{args: []string{"space", "init", "sbx1", "extra"}, run: spaceinit.Run, direct: []string{"sbx1", "extra"}},
 		{args: []string{"space", "restart", "sbx1"}, run: spaceapps.Run, direct: []string{"restart", "sbx1"}},
 		{args: []string{"space", "logs", "sbx1"}, run: spaceapps.Run, direct: []string{"logs", "sbx1"}},

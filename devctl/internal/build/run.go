@@ -48,7 +48,7 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 		if opened.HasApp(args[0]) {
 			return run(ctx, args[0], opened, stdout, deps)
 		}
-		return runSuite(ctx, opened, args[0], version, stdout, deps)
+		return runSuite(ctx, opened, args[0], version, stdout)
 	default:
 		return usage("build takes one <sha|tag> or <app>")
 	}

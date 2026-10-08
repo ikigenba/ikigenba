@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,13 +14,13 @@ import (
 )
 
 func TestSpaceCreateAddressStep(t *testing.T) {
-	// R-PX9J-BIQU
+	// R-V8Y0-H7N4
 	t.Run("associate lag then success", func(t *testing.T) {
 		fake := &addressStepFake{associateErrs: []error{&cloud.Error{Code: "InvalidAllocationID.NotFound"}}}
 		result := invokeWithDeps(addressStepDeps(t, fake), "space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev")
 		lines := strings.Split(strings.TrimRight(result.stdout, "\n"), "\n")
 		const want = "address: ok (elastic ip 18.118.7.42 associated)"
-		if len(lines) < 6 || lines[5] != want {
+		if len(lines) < 7 || lines[6] != want {
 			t.Fatalf("stdout = %q", result.stdout)
 		}
 		if fake.allocateCount != 1 || fake.allocateDomain != "ikigenba.dev" || fake.allocateSpace != "sbx1.ikigenba.dev" {
@@ -51,6 +52,16 @@ func TestSpaceCreateAddressStep(t *testing.T) {
 func addressStepDeps(t *testing.T, fake *addressStepFake) seam.Deps {
 	t.Helper()
 	deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+	baseExec := deps.Exec
+	deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+		if c.Path == "git" && len(c.Args) > 1 && c.Args[1] == "--show-toplevel" {
+			return baseExec(ctx, c)
+		}
+		if result, handled, err := fakeCreateBuild(t, filepath.Dir(deps.Dir), c); handled {
+			return result, err
+		}
+		return baseExec(ctx, c)
+	}
 	deps.After = func(time.Duration) <-chan time.Time {
 		ready := make(chan time.Time, 1)
 		ready <- time.Time{}

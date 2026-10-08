@@ -8,20 +8,24 @@ import (
 
 const (
 	helpCommand = "devctl space --help"
-	usageText   = `Usage: devctl space create <space> --acme-email <address>
+	usageText   = `Usage: devctl space create <space> --acme-email <address> [--release <sha|tag>]
 
-Create the space: push its secrets, make its role, launch its instance with an
-Elastic IP, write its records, install the newest published opsctl, set its
-ten host keys, restore its own host backup when the bucket holds one, and run
-opsctl init. Completed steps remain on failure; use space destroy to clean up.
+Create the space and deploy a release to it: build the release, push its
+apps' secrets, make the role, launch the instance with an Elastic IP, write
+its records, copy and unpack the release on the host, have the release's
+opsctl set the ten host keys, restore the space's own backups when the bucket
+holds a host backup, run init, and activate the release. Completed steps
+remain on failure; use space destroy to clean up.
 
 Options:
   --acme-email <address>  where the CA sends the space's expiry warnings; required
+  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
 `
 )
 
 type invocation struct {
 	operand   string
+	release   string
 	acmeEmail string
 	help      bool
 }
@@ -30,6 +34,7 @@ func parseInvocation(args []string) (invocation, error) {
 	result := invocation{}
 	operands := make([]string, 0, len(args))
 	missingACMEEmailValue := false
+	missingReleaseValue := false
 
 	for index := 0; index < len(args); index++ {
 		argument := args[index]
@@ -48,6 +53,18 @@ func parseInvocation(args []string) (invocation, error) {
 		case strings.HasPrefix(argument, "--acme-email="):
 			result.acmeEmail = strings.TrimPrefix(argument, "--acme-email=")
 			missingACMEEmailValue = result.acmeEmail == ""
+		case argument == "--release":
+			value, ok := following(args[index:])
+			if !ok || value == "" {
+				missingReleaseValue = true
+				continue
+			}
+			index++
+			result.release = value
+			missingReleaseValue = false
+		case strings.HasPrefix(argument, "--release="):
+			result.release = strings.TrimPrefix(argument, "--release=")
+			missingReleaseValue = result.release == ""
 		case strings.HasPrefix(argument, "-"):
 			return invocation{}, usage("unknown option '" + argument + "'")
 		default:
@@ -63,6 +80,9 @@ func parseInvocation(args []string) (invocation, error) {
 	}
 	if len(operands) > 1 {
 		return invocation{}, usage("space create takes only <space>")
+	}
+	if missingReleaseValue {
+		return invocation{}, usage("option '--release' requires a value")
 	}
 	if missingACMEEmailValue {
 		return invocation{}, usage("option '--acme-email' requires a value")

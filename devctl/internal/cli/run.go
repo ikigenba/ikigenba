@@ -17,6 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
 	"github.com/ikigenba/ikigenba/devctl/internal/remove"
 	"github.com/ikigenba/ikigenba/devctl/internal/restore"
+	"github.com/ikigenba/ikigenba/devctl/internal/rollback"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 	"github.com/ikigenba/ikigenba/devctl/internal/seed"
@@ -37,7 +38,8 @@ Commands:
   space     list, create, destroy, stop, start, initialise, and inspect spaces
   secrets   push and list an app's secrets for a space
   build     build the suite or one app into a deployable file
-  deploy    put a built app file on a space
+  deploy    put a release or a built app file on a space
+  rollback  put a space back on the release it ran before
   remove    take an app off a space
   restore   put a space's app back from its backups
   golden    capture a space's data as a named golden set
@@ -63,16 +65,17 @@ Print the version.
 `
 
 var commandSet = map[string]struct{}{
-	"version": {},
-	"space":   {},
-	"secrets": {},
-	"build":   {},
-	"deploy":  {},
-	"restore": {},
-	"remove":  {},
-	"apex":    {},
-	"golden":  {},
-	"seed":    {},
+	"version":  {},
+	"space":    {},
+	"secrets":  {},
+	"build":    {},
+	"deploy":   {},
+	"restore":  {},
+	"rollback": {},
+	"remove":   {},
+	"apex":     {},
+	"golden":   {},
+	"seed":     {},
 }
 
 type topLevel struct {
@@ -132,7 +135,10 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 		return usageError(stderr, message, helpCommand)
 	}
 	if invocation.command == "deploy" {
-		return operationError(stderr, deploy.Run(ctx, invocation.arguments, stdout, deps))
+		return operationError(stderr, deploy.Run(ctx, invocation.arguments, version, stdout, deps))
+	}
+	if invocation.command == "rollback" {
+		return operationError(stderr, rollback.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "restore" {
 		return operationError(stderr, restore.Run(ctx, invocation.arguments, stdout, deps))
@@ -202,7 +208,7 @@ func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.De
 	if len(args) != 0 {
 		switch args[0] {
 		case "create":
-			return spacecreate.Run(ctx, args[1:], stdout, deps)
+			return spacecreate.Run(ctx, args[1:], version, stdout, deps)
 		case "init":
 			return spaceinit.Run(ctx, args[1:], stdout, deps)
 		case "restart":

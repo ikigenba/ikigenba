@@ -127,7 +127,7 @@ func noCallDeps(t *testing.T, called *bool) seam.Deps {
 }
 
 func TestResolutionAndOutputOrder(t *testing.T) {
-	// R-SEXX-93N3 R-SG5T-MVDS
+	// R-G780-Z9B4 R-PR7Q-8H7I
 	f := newFixture(t)
 	f.sshResults = []seam.Result{{Stdout: []byte("arbitrary version output\n")}}
 	stdout, err := f.run("sbx1")
@@ -148,7 +148,7 @@ func TestResolutionAndOutputOrder(t *testing.T) {
 }
 
 func TestResolutionFailuresStopBeforeOutputAndSSH(t *testing.T) {
-	// R-SEXX-93N3 R-ZIF9-2HC7
+	// R-G780-Z9B4 R-ZIF9-2HC7
 	t.Run("root file", func(t *testing.T) {
 		f := newFixture(t)
 		if err := os.Remove(filepath.Join(f.root, checkout.RootFilePath)); err != nil {

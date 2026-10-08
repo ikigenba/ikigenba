@@ -63,7 +63,7 @@ func TestSpaceInitHelpThroughCLIOutsideCheckout(t *testing.T) {
 }
 
 func TestSpaceInitLookupRefusalsThroughCLI(t *testing.T) {
-	// R-SEXX-93N3
+	// R-G780-Z9B4
 	t.Run("absent", func(t *testing.T) {
 		h := newD11Harness(t)
 		h.instances = nil
@@ -83,7 +83,7 @@ func TestSpaceInitLookupRefusalsThroughCLI(t *testing.T) {
 }
 
 func TestSpaceInitFailureRelaysHostDiagnosticThroughCLI(t *testing.T) {
-	// R-SG5T-MVDS R-OW56-4O4X
+	// R-PR7Q-8H7I R-OW56-4O4X
 	h := newD11Harness(t)
 	h.sshResults = make([]seam.Result, 7)
 	h.sshResults[0].Stdout = []byte("v3.2.1\n")
@@ -185,7 +185,7 @@ func (*d11Harness) Zone(context.Context, string) (cloud.Zone, error) {
 }
 
 func TestInitReportsResolvedValuesBeforeFirstSSH(t *testing.T) {
-	// R-SG5T-MVDS R-SEXX-93N3
+	// R-PR7Q-8H7I R-G780-Z9B4
 	h := newD11Harness(t)
 	deps := h.deps()
 	var stdout, stderr bytes.Buffer

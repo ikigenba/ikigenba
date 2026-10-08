@@ -134,7 +134,7 @@ func TestGoldenAndSeedDispatchMatchesSuccessfulPackageRun(t *testing.T) {
 }
 
 func TestCommandsOutsideRootFileSetIgnoreInvalidRootFile(t *testing.T) {
-	// R-S2QX-FE85
+	// R-UI48-29BU
 	fixture := newCLIBuildFixture(t)
 	if err := os.MkdirAll(filepath.Join(fixture.root, "infra"), 0o700); err != nil {
 		t.Fatal(err)

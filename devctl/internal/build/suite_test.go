@@ -651,3 +651,49 @@ func TestSuiteDoesNotUseRootConfiguration(t *testing.T) {
 		previous = f.members
 	}
 }
+
+func TestSuitePublicAPI(t *testing.T) {
+	// R-VL50-AX22 R-VNKT-2GJG
+	_ = build.Release(struct {
+		SHA       string
+		File      string
+		Manifests []checkout.Manifest
+	}{})
+	f := newSuite(t)
+	f.apps = []string{"auth", "dummy"}
+	auth := suiteManifest("auth") + "secrets = [\"GOOGLE_CLIENT_ID\", \"GOOGLE_CLIENT_SECRET\"]\n"
+	f.files["auth/etc/manifest.toml"] = suiteMember{Bytes: auth, Mode: 0o644}
+	original := f.deps.Exec
+	f.deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+		if filepath.Base(c.Path) == "auth" && reflect.DeepEqual(c.Args, []string{"manifest"}) {
+			f.commands = append(f.commands, c)
+			return seam.Result{Stdout: []byte(auth)}, nil
+		}
+		return original(ctx, c)
+	}
+	c := &checkout.Checkout{Root: f.root, Deps: f.deps}
+	r, err := build.Suite(context.Background(), c, suiteSHA, "test-version")
+	want := []checkout.Manifest{{App: "auth", Secrets: []string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"}}, {App: "dummy", Secrets: []string{}}}
+	if err != nil || r.SHA != suiteSHA || r.File != build.ReleaseFile(suiteSHA) || !reflect.DeepEqual(r.Manifests, want) {
+		t.Fatalf("release %#v error %v", r, err)
+	}
+	for _, cmd := range f.commands {
+		if cmd.Path == "git" && cmd.Args[0] == "rev-parse" {
+			t.Fatal("resolved/opened checkout")
+		}
+	}
+	first := f.members
+	f.commands = nil
+	_, err = f.run(context.Background(), suiteSHA)
+	if err != nil || !reflect.DeepEqual(first, f.members) {
+		t.Fatalf("CLI differs %v", err)
+	}
+	f = newSuite(t)
+	f.apps = []string{"dashboard"}
+	f.fail = "compile dashboard"
+	_, err = build.Suite(context.Background(), &checkout.Checkout{Root: f.root, Deps: f.deps}, suiteSHA, "test-version")
+	var process *build.ProcessError
+	if !errors.As(err, &process) || process.Label != "build dashboard" {
+		t.Fatalf("error %v", err)
+	}
+}

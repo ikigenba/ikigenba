@@ -29,12 +29,12 @@ The cloud's tags are the only registry.
 
 Subcommands:
   list                       one line per space
-  create <space> [options]   create the space
+  create <space> [options]   create the space and deploy a release to it
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
   init <space> [options]     set the host's keys again and run opsctl init
-  status <space>             one line per app: version, service state, socket state, database journal mode
+  status <space>             one line per app: commit, label, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
   disable <space> <app>      stop one app and keep it from starting until enabled
   enable <space> <app>       let a disabled app start again, and start it
@@ -42,6 +42,7 @@ Subcommands:
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
+  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -86,8 +87,8 @@ then run certbot renew. Records are unchanged; the last line is domain and addre
 
 const statusUsage = `Usage: devctl space status <space>
 
-Relay opsctl status from the running host: app, version, service state, socket
-state and database journal mode. A host with no apps prints nothing.
+Relay opsctl status from the running host: app, commit, label, service state,
+socket state and database journal mode. A host with no apps prints nothing.
 `
 
 const spaceHelp = "devctl space --help"

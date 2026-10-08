@@ -80,7 +80,7 @@ func TestMissingManifestSecretHasContextualCLIDiagnostic(t *testing.T) {
 		h.addAppWithSecrets("crm", "CRM_API_KEY")
 		assertResult(t, invokeWithDeps(h.deps(),
 			"space", "create", testDomain,
-			"--acme-email", "admin@example.com"), 2, "", want)
+			"--acme-email", "admin@example.com"), 2, "account: ok (ikigenba.dev, us-east-2, 123)\n"+"domain: ok (zone ikigenba.dev Z)\n"+"build: ok (r2, dist/"+createSHA+".tar.xz)\n", want)
 	})
 }
 

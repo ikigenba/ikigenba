@@ -14,16 +14,25 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-const wantDeployUsage = `Usage: devctl deploy <space> <file>
+const wantDeployUsage = `Usage: devctl deploy <space> <sha|tag>
+       devctl deploy <space> <file>
+
+Build the suite at <sha|tag> as build does, check that the space holds every
+secret the release's manifests declare, copy dist/<sha>.tar.xz to the space's
+host, unpack it into /opt/ikigenba/releases/<sha>/, and have that release's
+opsctl activate it. A tag is the release's label, exactly as typed; a sha
+gives none.
 
 Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
 from there. The app and commit sha (40 lowercase hex digits) are read from the
 file name.
+
+An argument that ends in .tar.xz is a <file>; any other is a <sha|tag>.
 `
 
 func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
-	// R-O6OH-FJO8 R-O7WD-TBEX
+	// R-VSGE-LJI8 R-VTOA-ZB8X
 	tests := []struct {
 		name    string
 		args    []string
@@ -32,17 +41,17 @@ func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
 		{
 			name:    "no operands",
 			args:    []string{"deploy"},
-			message: "deploy needs <space> and <file>",
+			message: "deploy needs <space> and <sha|tag> or <file>",
 		},
 		{
 			name:    "one operand",
 			args:    []string{"deploy", "sbx1"},
-			message: "deploy needs <space> and <file>",
+			message: "deploy needs <space> and <sha|tag> or <file>",
 		},
 		{
 			name:    "extra operand",
 			args:    []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "extra"},
-			message: "deploy takes only <space> and <file>",
+			message: "deploy takes only <space> and one <sha|tag> or <file>",
 		},
 		{
 			name:    "unknown option first",
@@ -70,7 +79,7 @@ func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployHelpAtCommandBoundary(t *testing.T) {
-	// R-O48O-O06U R-5SVE-BZS9
+	// R-O48O-O06U R-VUW7-D2ZM
 	for _, args := range [][]string{
 		{"deploy", "--help"},
 		{"deploy", "-h"},
@@ -90,7 +99,7 @@ func TestDeployHelpAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployMissingArtifactAtCommandBoundary(t *testing.T) {
-	// R-08GB-YDTQ R-5VB7-3J9N
+	// R-08GB-YDTQ R-VXC0-4MH0
 	code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundary(t,
 		"deploy", "sbx1", "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz",
 	)
@@ -104,7 +113,7 @@ func TestDeployMissingArtifactAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployInvalidArtifactNameAtCommandBoundary(t *testing.T) {
-	// R-63UH-RXGI R-5VB7-3J9N
+	// R-VW43-QUQB R-VXC0-4MH0
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "notes.tar.xz"), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
@@ -112,7 +121,7 @@ func TestDeployInvalidArtifactNameAtCommandBoundary(t *testing.T) {
 	code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundaryAt(t, dir,
 		"deploy", "sbx1", "notes.tar.xz",
 	)
-	const wantStderr = "devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<sha>.tar.xz\n"
+	const wantStderr = "devctl: 'notes.tar.xz' is not an app file build wrote: name is not <app>-<sha>.tar.xz\n"
 	if code != 2 || stdout != "" || stderr != wantStderr {
 		t.Fatalf("result = code %d, stdout %q, stderr %q; want 2, empty, %q", code, stdout, stderr, wantStderr)
 	}
@@ -144,4 +153,31 @@ func invokeDeployBoundaryAt(t *testing.T, dir string, args ...string) (int, stri
 	}
 	code := cli.Run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, deps)
 	return code, stdout.String(), stderr.String(), cloudCalls, execCalls
+}
+
+func TestDeployReleaseArchiveRedirectAtBoundary(t *testing.T) {
+	// R-VYJW-IE7P R-VZRS-W5YE
+	sha := "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "dist"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	operand := "dist/" + sha + ".tar.xz"
+	for _, space := range []string{"sbx1", "sbx1.ikigenba.dev"} {
+		code, out, diagnostic, cloud, exec := invokeDeployBoundaryAt(t, dir, "deploy", space, operand)
+		if code != 2 || out != "" || diagnostic != "devctl: no such file '"+operand+"'\n" || cloud != 0 || exec != 0 {
+			t.Fatalf("missing result %d %q %q %d %d", code, out, diagnostic, cloud, exec)
+		}
+		if err := os.WriteFile(filepath.Join(dir, operand), []byte("archive"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		code, out, diagnostic, cloud, exec = invokeDeployBoundaryAt(t, dir, "deploy", space, operand)
+		want := "devctl: '" + operand + "' is a release, not an app file\n\nrun 'devctl deploy " + space + " " + sha + "'\n"
+		if code != 2 || out != "" || diagnostic != want || cloud != 0 || exec != 0 {
+			t.Fatalf("redirect result %d %q %q %d %d", code, out, diagnostic, cloud, exec)
+		}
+		if err := os.Remove(filepath.Join(dir, operand)); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

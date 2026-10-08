@@ -84,8 +84,28 @@ type FileError struct {
 
 // Error returns the artifact validation diagnostic.
 func (e *FileError) Error() string {
-	return fmt.Sprintf("'%s' is not a file build wrote: %s", e.Path, e.Reason)
+	return fmt.Sprintf("'%s' is not an app file build wrote: %s", e.Path, e.Reason)
 }
 
 // ExitCode returns the command-line usage status.
 func (e *FileError) ExitCode() int { return 2 }
+
+// ReleaseFileError redirects a suite archive to the release form.
+type ReleaseFileError struct {
+	Path  string
+	Space string
+	SHA   string
+}
+
+// Error returns the release archive diagnostic.
+func (e *ReleaseFileError) Error() string {
+	return fmt.Sprintf("'%s' is a release, not an app file", e.Path)
+}
+
+// Detail returns the command that deploys the release.
+func (e *ReleaseFileError) Detail() string {
+	return fmt.Sprintf("run 'devctl deploy %s %s'", e.Space, e.SHA)
+}
+
+// ExitCode returns the command-line usage status.
+func (e *ReleaseFileError) ExitCode() int { return 2 }
