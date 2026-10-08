@@ -167,8 +167,13 @@ app's 503. That holds for a plain block on a host with no authenticator, a
 wired block, one that serves guests, `auth`'s own block, a disabled app's
 block, and the apex wherever it is a name on an app's block. It holds for no
 other block: the port-80 redirect, the handshake-rejecting default, and the
-404 block answer as before. The file declares what these headers are built
-from once, after the log format, on every host, a bare one included, so the
+404 block answer as before. An app refuses a call whose `Origin` names
+another host, so when nginx passes a request on to an app, or to `auth`'s
+`/check` on its behalf, it leaves out an `Origin` that is exactly the allowed
+origin and passes any other `Origin` on unchanged, for the app to judge.
+`auth`'s own block passes even the allowed origin on, because `auth` checks it
+to let any app on the space, `sites` included, sign its user out. The file
+declares what these headers and that `Origin` are built from once, after the log format, on every host, a bare one included, so the
 frame is the same whether or not any app is routed.
 
 One host in the account also answers at the root domain's apex,
@@ -261,7 +266,7 @@ rather than being answered with someone else's certificate, and the host's own
 name and its wildcard answer 404 under the host's certificate. The
 `ikigenba` log format comes first, and every block that answers a request
 logs in it; the handshake-rejecting block answers none. The maps that decide
-the cross-origin headers follow it, built around the allowed origin
+the cross-origin headers, and the `Origin` an app is passed, follow it, built around the allowed origin
 `https://sites.sbx.ikigenba.dev`; no block here serves an app, so none uses
 them yet.
 
@@ -309,6 +314,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     default        "";
     "OPTIONS true" "";
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
 }
 
 server {
@@ -408,6 +418,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
 }
 
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
@@ -458,6 +473,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
     }
 }
 
@@ -488,6 +504,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
     }
 }
 ```
@@ -562,6 +579,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
     }
 }
 ```
@@ -697,6 +715,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
 }
 
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
@@ -823,6 +846,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
 }
 
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
@@ -915,6 +943,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location @auth_redirect {
@@ -974,6 +1003,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -991,6 +1021,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1007,6 +1038,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1023,6 +1055,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1039,6 +1072,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1055,6 +1089,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1091,6 +1126,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location @auth_redirect {
@@ -1150,6 +1186,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1167,6 +1204,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1183,6 +1221,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1199,6 +1238,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1215,6 +1255,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1231,6 +1272,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1335,6 +1377,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
 }
 
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
@@ -1427,6 +1474,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location = /_ikigenba/check/open {
@@ -1440,6 +1488,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location @auth_redirect {
@@ -1499,6 +1548,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1516,6 +1566,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1532,6 +1583,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1548,6 +1600,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1564,6 +1617,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1579,6 +1633,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -2190,7 +2245,9 @@ Preconditions:
 Postconditions:
 
 - `crm` received the `POST /mcp` with `X-User-Id` and `X-User-Email` set from
-  `auth`'s answer, as any admitted request under `/mcp` does.
+  `auth`'s answer, as any admitted request under `/mcp` does, and with no
+  `Origin` header, so it takes the call as it takes one from its own pages.
+  `auth`'s `/check` received no `Origin` header either.
 - A call to `/api`, `/api/...`, or any other path on `crm`'s names carries
   the same headers on `crm`'s answer.
 
@@ -2237,6 +2294,42 @@ Postconditions:
   app without a credential` story, the `invalid_token` 401 under `/mcp`, the
   Basic challenge at a git path, the `302` to sign in at `/`, and `auth`'s 403
   outside `/mcp`.
+
+## A page on the sites origin signs its user out
+
+The banner on `sites`' own pages signs the user out with a form that POSTs to
+`auth`'s `/logout`, as every app's banner does. `auth` lets any app on the
+space sign its user out and decides that from the request's `Origin`, so
+`auth`'s own block passes the allowed origin on to `auth` unchanged.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: https://sites.sbx.ikigenba.dev' -b 'ikigenba_session=<session>' https://auth.sbx.ikigenba.dev/logout
+```
+
+Response:
+
+```
+HTTP/1.1 <status>
+Access-Control-Allow-Origin: https://sites.sbx.ikigenba.dev
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
+Vary: Origin
+```
+
+Status is whatever `auth` answers, and the body is `auth`'s.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` is active.
+
+Postconditions:
+
+- `auth` received the `POST /logout` with the request's
+  `Origin: https://sites.sbx.ikigenba.dev` unchanged, as it receives any
+  request's `Origin` at any path of its own block.
 
 ## A page on another origin calls an app
 
@@ -2290,8 +2383,9 @@ Postconditions:
   `/run/ikigenba/crm.sock`.
 - Any other request with such an `Origin`, or none, is answered as it would
   be without the cross-origin grant, plus `Vary: Origin`, and with no
-  `Access-Control-` header: a request with a valid session reaches `crm`, and
-  one without gets the challenge or redirect its path calls for.
+  `Access-Control-` header: a request with a valid session reaches `crm`, with
+  its `Origin` header unchanged, or none, for `crm` to judge, and one without
+  gets the challenge or redirect its path calls for.
 
 ## A page on the sites origin calls an app on a host with no authenticator
 
@@ -2326,7 +2420,7 @@ Preconditions:
 Postconditions:
 
 - `crm` received the `POST /mcp` with no identity headers set by nginx, as
-  any request on a fail-open host does.
+  any request on a fail-open host does, and with no `Origin` header.
 - A preflight to `crm`'s names, `sbx.ikigenba.dev` included, is answered
   exactly as in the `page on the sites origin preflights a call to a wired
   app` story, and never reaches `crm`.
