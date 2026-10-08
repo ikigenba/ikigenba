@@ -19,7 +19,7 @@ here. devctl does the copying with the developer's own credentials, which
 reach the whole bucket: into a golden set for a capture, and into the target
 space's own `seed/` prefix for a seed, from which that host restores. No
 secret is ever in a snapshot or a golden set. A seeded app's `etc/env` is
-written from the target space's own secrets, as an install writes it, and a
+written from the target space's own secrets, as activate writes it, and a
 database's rows, token hashes among them, travel as data. Nothing here knows
 about tokens: on a seeded space the developer signs in, as on any new space,
 and mints a token there.

@@ -2082,7 +2082,7 @@ Postconditions:
 The journal is read from the host with `journalctl` and copied to the
 developer's terminal byte for byte, the way `status` copies opsctl's report.
 No opsctl command is involved: reading a journal changes nothing on the host,
-and the unit's name, `ikigenba-<app>.service`, is what install wrote and
+and the unit's name, `ikigenba-<app>.service`, is what activate wrote and
 promised. Without options the last 100 lines are printed.
 
 Command:
@@ -2168,8 +2168,8 @@ Output:
 devctl: no app 'gmail' on 'sbx1.ikigenba.dev'
 ```
 
-Exits 1. The line is on stderr; stdout is empty. An app that was removed is
-refused the same way: its unit went with it.
+Exits 1. The line is on stderr; stdout is empty. An app a later release dropped
+is refused the same way: its unit went with it.
 
 Preconditions:
 
