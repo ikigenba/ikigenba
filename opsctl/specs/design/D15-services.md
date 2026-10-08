@@ -8,7 +8,8 @@ configuration (D06), the file is a pure function of what is on disk under
 (D10's `Disabled`), so it is generated, never edited, and never backed up: a
 restored host regenerates it. opsctl owns its format as it owns
 `manifest.toml`; apps read it through the variable `IKIGENBA_SERVICES`, which
-every app's `etc/env` carries (D05, D09).
+every app's environment file, `/etc/opt/ikigenba/<app>/env`, carries (D05,
+D08, D09).
 
 A service is *listed* — has an entry in the file — when it is routed (its
 manifest names its app, D06) and installed (`bin/<name>` is a regular file).
