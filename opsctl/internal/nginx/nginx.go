@@ -343,6 +343,9 @@ func writeUpstreamLocation(output *strings.Builder, name string) {
 	output.WriteString("        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;\n")
 	output.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
 	output.WriteString("        proxy_set_header X-Request-Id      $request_id;\n")
+	if name != authenticatorServiceName {
+		output.WriteString("        proxy_set_header Origin            $ikigenba_upstream_origin;\n")
+	}
 	output.WriteString("    }\n")
 }
 
@@ -368,6 +371,7 @@ func writeAuthCheck(output *strings.Builder, open bool) {
 	output.WriteString("        proxy_set_header        X-Original-Method $request_method;\n")
 	output.WriteString("        proxy_set_header        X-Original-Host   $host;\n")
 	output.WriteString("        proxy_set_header        X-Original-URI    $request_uri;\n")
+	output.WriteString("        proxy_set_header        Origin            $ikigenba_upstream_origin;\n")
 	output.WriteString("    }\n\n")
 }
 
@@ -440,6 +444,7 @@ func writeAuthenticatedLocation(output *strings.Builder, name, location, unautho
 	output.WriteString("        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;\n")
 	output.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
 	output.WriteString("        proxy_set_header X-Request-Id      $request_id;\n")
+	output.WriteString("        proxy_set_header Origin            $ikigenba_upstream_origin;\n")
 	output.WriteString("        proxy_set_header X-User-Id         $auth_user_id;\n")
 	output.WriteString("        proxy_set_header X-User-Email      $auth_user_email;\n")
 	output.WriteString("    }\n")
@@ -492,6 +497,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     default        "";
     "OPTIONS true" "";
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
 }
 
 `)

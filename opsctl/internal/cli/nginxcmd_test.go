@@ -91,6 +91,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
 }
 
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
@@ -141,6 +146,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
     }
 }
 `

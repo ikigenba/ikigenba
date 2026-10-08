@@ -55,7 +55,7 @@ func TestRenderAPIReservationsAndChallengeInBothWiredForms(t *testing.T) {
 	}
 }
 
-// R-IXBS-K7L7 R-J0ZH-PITA
+// R-RXUX-ZEX6 R-S1IN-4Q59
 func TestRenderCORSAtEveryServiceBlockAndChallenge(t *testing.T) {
 	for _, authenticated := range []bool{false, true} {
 		root := t.TempDir()
@@ -110,7 +110,7 @@ func TestRenderCORSAtEveryServiceBlockAndChallenge(t *testing.T) {
 	}
 }
 
-// R-IYJO-XZBW R-IZRL-BR2L
+// R-RZ2U-D6NV R-S0AQ-QYEK
 func TestRenderCORSMapsGrantOnlySitesOriginAndSelectMethodHeaders(t *testing.T) {
 	for _, hostName := range []string{"sbx.ikigenba.dev", "other-2.example.test"} {
 		for _, sitesState := range []string{"absent", "unrouted", "enabled", "disabled"} {
@@ -137,8 +137,8 @@ func TestRenderCORSMapsGrantOnlySitesOriginAndSelectMethodHeaders(t *testing.T) 
 					t.Fatal(err)
 				}
 				config := string(candidate)
-				if strings.Count(config, "\nmap ") != 6 || !strings.Contains(config, expectedCORSMaps(hostName)) {
-					t.Fatal("host must declare the six exact maps once")
+				if strings.Count(config, "\nmap ") != 7 || !strings.Contains(config, expectedCORSMaps(hostName)) {
+					t.Fatal("host must declare the seven exact maps once")
 				}
 				allowed := "https://sites." + hostName
 				origins := []string{allowed, "", "https://elsewhere.example", allowed + ".elsewhere.example", "http://sites." + hostName, strings.ToUpper(allowed), allowed + "/", "prefix" + allowed, strings.Replace(allowed, ".", "X", 1)}
@@ -226,4 +226,71 @@ func mappedValue(t *testing.T, config, variable, input string, values map[string
 		}
 	}
 	return fallback
+}
+
+// R-S2QJ-IHVY
+func TestRenderUpstreamOriginInEveryGeneratedProxyLocation(t *testing.T) {
+	const hostName = "space.example.test"
+	allowed := "https://sites." + hostName
+	for _, form := range []string{"plain", "strict", "guests"} {
+		t.Run(form, func(t *testing.T) {
+			root := t.TempDir()
+			manifest := "app = 'notes'\ndefault = true\n"
+			if form == "guests" {
+				manifest += "guests = true\n"
+			}
+			writeManifest(t, root, "notes", manifest)
+			if form != "plain" {
+				writeManifest(t, root, "auth", "app = 'auth'\n")
+			}
+			candidate, err := nginx.Render(context.Background(), enabledEnv(root), hostName, "notes")
+			if err != nil {
+				t.Fatal(err)
+			}
+			config := string(candidate)
+			block := serverBlockFor(t, config, "notes."+hostName)
+			if !strings.Contains(block, "server_name         notes."+hostName+" "+hostName+" example.test;") {
+				t.Fatal("proxy policy must share the service, default and apex names")
+			}
+			locations := []string{"/"}
+			if form != "plain" {
+				locations = append(locations, "= /_ikigenba/check", "= /mcp", "^~ /mcp/", "= /api", "^~ /api/", "~ /(info/refs|git-upload-pack|git-receive-pack)$")
+			}
+			if form == "guests" {
+				locations = append(locations, "= /_ikigenba/check/open")
+			}
+			if strings.Count(block, "proxy_pass ") != len(locations) {
+				t.Fatal("not every generated proxy location is covered")
+			}
+			for _, location := range locations {
+				section := locationFor(t, block, location)
+				originDirective := regexp.MustCompile(`(?m)^\s*proxy_set_header\s+Origin\s+\$ikigenba_upstream_origin;$`)
+				if len(originDirective.FindAllString(section, -1)) != 1 || len(regexp.MustCompile(`(?m)^\s*proxy_set_header\s+Origin\s+`).FindAllString(section, -1)) != 1 {
+					t.Fatalf("%s does not uniquely set mapped Origin: %s", location, section)
+				}
+			}
+			for _, origin := range []string{allowed, "", "https://elsewhere.example", allowed + ".elsewhere.example", "http://sites." + hostName, strings.ToUpper(allowed), allowed + "/", "prefix" + allowed, strings.Replace(allowed, ".", "X", 1), allowed + ", " + allowed} {
+				grant := mappedValue(t, config, "$ikigenba_cors_origin", origin, map[string]string{"$http_origin": origin})
+				want := origin
+				if origin == allowed {
+					want = ""
+				}
+				if got := mappedValue(t, config, "$ikigenba_upstream_origin", grant, map[string]string{"$http_origin": origin}); got != want {
+					t.Fatalf("Origin %q becomes %q, want %q", origin, got, want)
+				}
+			}
+			if form != "plain" {
+				auth := serverBlockFor(t, config, "auth."+hostName)
+				proxy := locationFor(t, auth, "/")
+				for _, forbidden := range []string{"proxy_set_header Origin", "$ikigenba_upstream_origin", "proxy_pass_request_headers off"} {
+					if strings.Contains(proxy, forbidden) {
+						t.Fatalf("auth's own proxy alters incoming Origin with %q", forbidden)
+					}
+				}
+				if strings.Count(auth, "proxy_pass ") != 1 {
+					t.Fatal("auth proxy coverage incomplete")
+				}
+			}
+		})
+	}
 }

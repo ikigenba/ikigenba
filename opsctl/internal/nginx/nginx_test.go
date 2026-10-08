@@ -60,7 +60,7 @@ func TestRenderHasExportedContract(t *testing.T) {
 	assertRenderSignature(t, nginx.Render)
 }
 
-// R-ICLI-23ZE
+// R-RKG1-RXRJ
 func TestRenderExactBaseConfigurationWithoutDefault(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -89,7 +89,7 @@ func TestRenderExactBaseConfigurationWithoutDefault(t *testing.T) {
 	}
 }
 
-// R-ICLI-23ZE
+// R-RKG1-RXRJ
 func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -111,9 +111,9 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 }
 
 // R-78QR-PFQ3
-// R-ICLI-23ZE
-// R-IJWW-CQFK
-// R-IF1A-TNGS
+// R-RKG1-RXRJ
+// R-RQJJ-OSH0
+// R-RMVU-JH8X
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -153,8 +153,8 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-IJWW-CQFK
-// R-IF1A-TNGS
+// R-RQJJ-OSH0
+// R-RMVU-JH8X
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -230,9 +230,9 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-IJWW-CQFK
+// R-RQJJ-OSH0
 // R-IG97-7F7H
-// R-IHH3-L6Y6
+// R-RO3Q-X8ZM
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -339,7 +339,7 @@ func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	}
 }
 
-// R-IL4S-QI69
+// R-RRRG-2K7P
 func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
 	for _, name := range []string{"beta", "notes", "web"} {
@@ -377,7 +377,7 @@ func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
 	}
 }
 
-// R-IMCP-49WY
+// R-RU78-U3P3
 func TestRenderOriginalRequestHeadersOnlyInAuthenticatorSubrequest(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1203,7 +1203,7 @@ func openPublishedConfiguration(directory string) (*os.File, error) {
 }
 
 func serviceBlock(name string, _ int, defaultService bool, hostName, apexName string) string {
-	return serverBlockPrefix(name, defaultService, hostName, apexName) + proxyLocation(name) + "}\n"
+	return serverBlockPrefix(name, defaultService, hostName, apexName) + strings.Replace(proxyLocation(name), "    }\n", "        proxy_set_header Origin            $ikigenba_upstream_origin;\n    }\n", 1) + "}\n"
 }
 
 func unwiredServiceBlock(defaultService bool, hostName, apexName string) string {
@@ -1226,6 +1226,7 @@ func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexNa
 		"        proxy_set_header        X-Original-Method $request_method;\n" +
 		"        proxy_set_header        X-Original-Host   $host;\n" +
 		"        proxy_set_header        X-Original-URI    $request_uri;\n" +
+		"        proxy_set_header        Origin            $ikigenba_upstream_origin;\n" +
 		"    }\n\n" +
 		"    location @auth_redirect {\n" +
 		"        return 302 https://auth." + hostName + "/?return=$scheme://$host$request_uri;\n" +
@@ -1274,6 +1275,7 @@ func wiredProxyLocation(name, location, unauthorized string) string {
 		"        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;\n" +
 		"        proxy_set_header X-Forwarded-Proto $scheme;\n" +
 		"        proxy_set_header X-Request-Id      $request_id;\n" +
+		"        proxy_set_header Origin            $ikigenba_upstream_origin;\n" +
 		"        proxy_set_header X-User-Id         $auth_user_id;\n" +
 		"        proxy_set_header X-User-Email      $auth_user_email;\n" +
 		"    }\n"
@@ -1458,7 +1460,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-IDTE-FVQ3 R-IJWW-CQFK R-78QR-PFQ3
+// R-RLNY-5PI8 R-RQJJ-OSH0 R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")
@@ -1647,7 +1649,7 @@ func TestUpdateRejectsInvalidApexBeforeHostWork(t *testing.T) {
 	}
 }
 
-// R-IQ0E-9L51
+// R-RVF5-7VFS
 func TestRenderMCPAndGitReservationsIgnoreManifestMCP(t *testing.T) {
 	for _, guests := range []bool{false, true} {
 		for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
@@ -1706,7 +1708,7 @@ func TestRenderMCPStatusMappingAndPathBoundaries(t *testing.T) {
 				t.Fatalf("MCP status mapping: %s", section)
 			}
 		}
-		// R-IHH3-L6Y6: the complete wired shape adds the two git locations.
+		// R-RO3Q-X8ZM: the complete wired shape adds the two git locations.
 		if strings.Count(block, "    location ") != 12 {
 			t.Fatalf("unexpected location overrides: %s", block)
 		}
@@ -1785,7 +1787,7 @@ func TestRenderGitLocationBoundariesAndCredentialRelay(t *testing.T) {
 		if include < 0 || include > strings.Index(block, "    location "+location) {
 			t.Fatal("app fragment must precede generated regular expressions")
 		}
-		// R-IHH3-L6Y6: these generated locations have this exact order.
+		// R-RO3Q-X8ZM: these generated locations have this exact order.
 		mcpExact := strings.Index(block, "    location = /mcp {\n")
 		mcpPrefix := strings.Index(block, "    location ^~ /mcp/ {\n")
 		git := strings.Index(block, "    location "+location+" {\n")
@@ -1963,6 +1965,11 @@ map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
     default        "";
     "OPTIONS true" "";
     "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
 }
 
 `)
