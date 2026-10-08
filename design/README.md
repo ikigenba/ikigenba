@@ -90,7 +90,7 @@ systems. The product name is **Ikigenba**. The example space is
 
 **launcher.html** — the service launcher, shown from dummy.
 - Banner and footer as in app.html, with the launcher's grid button opening
-  the row in place of the mark's black square; the panel open on load,
+  the row in place of the mark's ik glyph; the panel open on load,
   hanging from the banner's left edge.
 - The panel: a `Find a service` search field over a 4-column grid of 30
   services, A to Z, each a Tabler icon over its name, linking to
@@ -203,6 +203,9 @@ error; a key/value list; a card/panel; an empty state.
   outline icons' weight, ink on light; it flips to near-white under
   `prefers-color-scheme: dark`. One icon for the whole suite; every page links
   it with `<link rel="icon" type="image/svg+xml">`.
+- Wordmark: the product mark opens with the favicon's *ik* glyph, drawn as a
+  CSS mask filled with `--accent` so it follows the page theme, not the OS
+  scheme; 14px, 22px on the sign-in card.
 - Motion is feedback only, and brief. Every button scales to .96 while held
   and, on click, springs back just past full size (`.pulse`, .96 → 1.04 → 1
   over .28s). The press stays under reduced motion: it is small and follows

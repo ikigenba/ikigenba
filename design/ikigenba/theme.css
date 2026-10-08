@@ -121,7 +121,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 
 /* ---------------------------------------------------------------- banner */
 /* The banner every app emits: product mark, service, profile, sign out.
-   The mark's black square opens the row unless the launcher's grid button
+   The mark's ik glyph opens the row unless the launcher's grid button
    does, in its place. The profile is a user-circle icon button linking to the user's auth
    profile, titled with their email; it sits right, muted like the launcher. */
 body > header {
@@ -136,7 +136,8 @@ body > header > strong, .mark {
   font-weight: 650; font-size: 15px; letter-spacing: -0.015em; color: var(--fg);
 }
 body > header > strong::before, .mark::before {
-  content: ""; width: 14px; height: 14px; border-radius: 4px; background: var(--accent);
+  content: ""; width: 14px; height: 14px; background: var(--accent);
+  -webkit-mask: url("favicon.svg") center / contain no-repeat; mask: url("favicon.svg") center / contain no-repeat;
 }
 body > header > .launcher + .mark::before { display: none; }
 .mark[data-service]::after {
@@ -435,6 +436,7 @@ main > nav.crumbs + h1 { margin-top: var(--s3); }
 .auth-page { display: grid; place-items: center; min-height: 100vh; padding: var(--s6) var(--s4); }
 .auth-page > .card { width: 100%; max-width: 400px; padding: var(--s6); box-shadow: var(--shadow); }
 .auth-page > .card > .mark { margin-bottom: var(--s5); }
+.auth-page > .card > .mark::before { width: 22px; height: 22px; }
 .auth-page > .card > footer { margin-top: var(--s5); padding-top: var(--s4); border-top: 1px solid var(--line-soft); color: var(--muted); font-size: var(--text-sm); }
 .auth-page .button, .auth-page button { width: 100%; }
 .google::before {
