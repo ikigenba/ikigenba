@@ -76,7 +76,7 @@ Status 204. The body is empty.
 
 Preconditions:
 
-- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`, and events holds its declaration, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}` (`S06`). The log holds no event `evt_f93076e37ecfe1df`, and its last event has `seq` 4182.
+- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`, and events holds its declaration, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]}],"accepts":[]}` (`S06`). The log holds no event `evt_f93076e37ecfe1df`, and its last event has `seq` 4182.
 
 Postconditions:
 
@@ -348,7 +348,7 @@ Status 422. The body is empty.
 
 Preconditions:
 
-- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`; events holds its declaration, and `cron` answers `GET /declarations` with the same, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}` (`S06`).
+- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`; events holds its declaration, and `cron` answers `GET /declarations` with the same, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]}],"accepts":[]}` (`S06`).
 
 Postconditions:
 

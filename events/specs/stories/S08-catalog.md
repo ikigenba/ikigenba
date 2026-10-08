@@ -354,7 +354,7 @@ Postconditions:
 
 ## An agent reads the catalog of a service that declares a pattern
 
-`cron` emits an event each time one of its triggers is created, paused, resumed, deleted, or fires, the event's name holding the trigger's slug, and declares them all with five patterns, `cron.*.created`, `cron.*.paused`, `cron.*.resumed`, `cron.*.deleted`, and `cron.*.fired`. Each pattern has its own entry, listing who declares and who accepts that pattern; it carries no event, so its count is 0. Each name a pattern matches that the log holds an event of has an entry too, emitted by `cron` with the attributes that pattern declares: here `cron.hourly.fired`, which `cron.*.fired` matches. `scripts`, which accepts every event, is listed under all six. The patterns sort first, `*` before any letter.
+`cron` emits an event each time one of its triggers is created, paused, resumed, deleted, or fires, the event's name holding the trigger's slug, and declares them all with five patterns, `cron.*.created`, `cron.*.deleted`, `cron.*.fired`, `cron.*.paused`, and `cron.*.resumed`. Each pattern has its own entry, listing who declares and who accepts that pattern; it carries no event, so its count is 0. Each name a pattern matches that the log holds an event of has an entry too, emitted by `cron` with the attributes that pattern declares: here `cron.hourly.fired`, which `cron.*.fired` matches. `scripts`, which accepts every event, is listed under all six. The patterns sort first, `*` before any letter.
 
 Request:
 
@@ -397,7 +397,7 @@ Preconditions:
 - The preamble's, except that it is `2026-10-05T11:02:00Z`, and that the services file also enables `cron`, a service the stories suppose, whose declaration events holds is:
 
   ```
-  {"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}
+  {"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]}],"accepts":[]}
   ```
 
 - events' log also holds, after `S09`'s eight events, two `cron.hourly.fired` events `cron` emitted, `seq` 4183 and 4184:
@@ -449,7 +449,7 @@ and a `content` array of one text block whose text is exactly that line. With `{
 
 Preconditions:
 
-- The preamble's, except as in `An agent reads the catalog of a service that declares a pattern`: it is `2026-10-05T11:02:00Z`, the services file also enables `cron`, whose declaration events holds is `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}`, and events' log also holds `seq` 4183 and 4184, the two `cron.hourly.fired` events, after `S09`'s eight.
+- The preamble's, except as in `An agent reads the catalog of a service that declares a pattern`: it is `2026-10-05T11:02:00Z`, the services file also enables `cron`, whose declaration events holds is `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]}],"accepts":[]}`, and events' log also holds `seq` 4183 and 4184, the two `cron.hourly.fired` events, after `S09`'s eight.
 
 Postconditions:
 
@@ -497,7 +497,7 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's, except as in `An agent reads the catalog of a service that declares a pattern`: it is `2026-10-05T11:02:00Z`, the services file also enables `cron`, whose declaration events holds is `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.hourly.fired","attrs":["trigger","when","scheduled","late"]}],"accepts":[]}`, and events' log also holds `seq` 4183 and 4184, the two `cron.hourly.fired` events, after `S09`'s eight.
+- The preamble's, except as in `An agent reads the catalog of a service that declares a pattern`: it is `2026-10-05T11:02:00Z`, the services file also enables `cron`, whose declaration events holds is `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.hourly.fired","attrs":["trigger","when","scheduled","late"]}],"accepts":[]}`, and events' log also holds `seq` 4183 and 4184, the two `cron.hourly.fired` events, after `S09`'s eight.
 
 Postconditions:
 
@@ -542,7 +542,7 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's, except as in `An agent reads the catalog of a service that declares a pattern`: it is `2026-10-05T11:02:00Z`, the services file also enables `cron`, whose declaration events holds is `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}`, and events' log also holds `seq` 4183 and 4184, the two `cron.hourly.fired` events, after `S09`'s eight.
+- The preamble's, except as in `An agent reads the catalog of a service that declares a pattern`: it is `2026-10-05T11:02:00Z`, the services file also enables `cron`, whose declaration events holds is `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]}],"accepts":[]}`, and events' log also holds `seq` 4183 and 4184, the two `cron.hourly.fired` events, after `S09`'s eight.
 - `sites` declares `{"emits":[{"event":"site.published","attrs":["repo","sha"]}],"accepts":["repo.pushed","cron.*.fired"]}`, and events has asked it since (`S06`).
 
 Postconditions:

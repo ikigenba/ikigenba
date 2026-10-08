@@ -54,7 +54,7 @@ Postconditions:
 
 ## events holds a declaration whose names are patterns
 
-`cron`, a service the story supposes, emits an event each time one of its triggers is created, paused, resumed, deleted, or fires, the event's name holding the trigger's slug, `cron.hourly.fired` when the trigger `hourly` fires, and cannot list in advance every trigger a user will make. It declares the names it emits as five patterns, `cron.*.created`, `cron.*.paused`, `cron.*.resumed`, `cron.*.deleted`, and `cron.*.fired`, and events holds the patterns as it holds any declaration.
+`cron`, a service the story supposes, emits an event each time one of its triggers is created, paused, resumed, deleted, or fires, the event's name holding the trigger's slug, `cron.hourly.fired` when the trigger `hourly` fires, and cannot list in advance every trigger a user will make. It declares the names it emits as five patterns, `cron.*.created`, `cron.*.deleted`, `cron.*.fired`, `cron.*.paused`, and `cron.*.resumed`, and events holds the patterns as it holds any declaration.
 
 Request:
 
@@ -69,7 +69,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is `cron`'s declaration, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}`.
+Status 200. The body is `cron`'s declaration, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]}],"accepts":[]}`.
 
 Preconditions:
 
