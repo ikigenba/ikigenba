@@ -132,16 +132,17 @@ Sequence:
                ikigenba-apps.slice, sized from the host's memory, and the
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
-  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
+               installed app whose manifest is no longer valid, or whose
+               state/ is still under /opt/APP/, stops init here, before
+               this step or any after it writes anything
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
                disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them;
-               a manifest that is no longer valid stops init before
-               any app is rewritten
+               an app's manifest declares are kept as install wrote them
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -502,6 +503,71 @@ Postconditions:
   end. A `memory_max` of `2G`, more than the apps slice's
   1024M on a t3.small, is not `init`'s to refuse, but that install refuses
   it.
+
+## An agent initialises a host holding an app whose data has not moved
+
+An app installed while a service's `state/` still lived under `/opt/<name>/`
+keeps it there, and its unit still runs it from there, until an install moves
+the data and rewrites the unit. Only `install` does both. Everything `init`
+generates from the installed apps would otherwise name data that is not where
+it says, so the check runs where the manifest check does, at the `nginx.conf`
+step, the first that reads the installed apps, and stops `init` before
+anything they generate is rewritten. The `slices` step, which reads no app,
+has already run. The line names the fix. Each installed app whose `state/` is
+still under `/opt/<name>/` gets one such line, in name order. A `cache/` left
+under `/opt/<name>/` with no `state/` beside it is no reason to refuse.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output:
+
+```
+nginx: ok (/usr/sbin/nginx)
+certbot: ok (/usr/bin/certbot)
+systemctl: ok (/usr/bin/systemctl)
+litestream: ok (/usr/bin/litestream)
+git: ok (/usr/bin/git)
+dns.provider: ok (route53)
+dns.zones: ok (ikigenba.dev)
+host.name: ok (sbx.ikigenba.dev)
+timeouts: ok (drain 5s, stop 10s)
+zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
+host sbx.ikigenba.dev: ok (zone ikigenba.dev)
+wildcard sbx.ikigenba.dev: ok (77.112.106.79)
+opsctl: crm: /opt/crm/state has not moved; install crm first
+exit 1
+```
+
+Exits 1. The `ok` lines are on stdout; the `opsctl:` line is on stderr.
+
+Preconditions:
+
+- Every preflight check passes, and the host's certificate is not due for
+  renewal.
+- `crm` and `dashboard` are installed, each with a valid manifest, and their
+  sockets are listening.
+- `/opt/crm/` holds `bin/`, `etc/`, `share/`, and `state/`, and
+  `/var/opt/ikigenba/crm/` does not exist. `dashboard`'s `state/` is under
+  `/var/opt/ikigenba/dashboard/`.
+
+Postconditions:
+
+- The `certificate` step found nothing to renew and changed nothing. The
+  `slices` step ran as on any host.
+- Nothing from `nginx.conf` on ran: `/etc/nginx/conf.d/ikigenba.conf`,
+  `/var/lib/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
+  are as they were, and nginx was not reloaded.
+- No app changed: every installed app's unit and `etc/env` are as they were,
+  `dashboard`'s included, and none was restarted. `crm` is still running as
+  it was.
+- Nothing under `/opt/crm/` was moved or removed, and
+  `/var/opt/ikigenba/crm/` was not created.
+- Running `init` again before `opsctl install crm` stops at the same place
+  with the same output. After it, `init` runs to the end.
 
 ## An operator sets a stop timeout no longer than the drain deadline
 
