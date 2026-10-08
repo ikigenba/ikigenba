@@ -22,7 +22,7 @@ func guestsServiceBlock(name string, defaultService bool, hostName, apexName str
 	return strict[:browserStart] + browser
 }
 
-// R-W6L5-TDPO R-X7R6-367W R-EPD0-PHUT R-WBGR-CGOG
+// R-IIOZ-YYOV R-IJWW-CQFK R-IG97-7F7H R-IQ0E-9L51
 func TestRenderGuestsExactShapeAndBlockSelection(t *testing.T) {
 	for _, authState := range []string{"absent", "unrouted", "enabled", "disabled"} {
 		for _, guests := range []string{"", "guests = false\n", "guests = true\n"} {
@@ -71,7 +71,7 @@ func TestRenderGuestsExactShapeAndBlockSelection(t *testing.T) {
 	}
 }
 
-// R-WCON-Q8F5 R-W90Y-KX72 R-WA8U-YOXR R-F57P-OIHU R-EO54-BQ44
+// R-IR8A-NCVQ R-IL4S-QI69 R-IMCP-49WY R-INKL-I1NN R-EO54-BQ44
 func TestRenderGuestsIdentityAndRequestDirectives(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = 'auth'\n")
@@ -97,7 +97,7 @@ func TestRenderGuestsIdentityAndRequestDirectives(t *testing.T) {
 			}
 		}
 	}
-	for _, location := range []string{"/", "= /mcp", "^~ /mcp/", "~ /(info/refs|git-upload-pack|git-receive-pack)$"} {
+	for _, location := range []string{"/", "= /mcp", "^~ /mcp/", "= /api", "^~ /api/", "~ /(info/refs|git-upload-pack|git-receive-pack)$"} {
 		section := locationFor(t, block, location)
 		check := "/_ikigenba/check"
 		if location == "/" {
