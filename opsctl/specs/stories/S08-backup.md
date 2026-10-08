@@ -176,10 +176,17 @@ here keeps that layout's rules: any `/opt/<name>/` holding an `etc/` is a
 service too, a manifest is `/opt/<name>/etc/manifest.toml`, a restore takes
 an installed app and writes its environment file as `opsctl install` does,
 and the services file is `/var/lib/ikigenba/services.json`. A `state/` left
-under `/opt/<name>/` by itself is never a service.
+under `/opt/<name>/` by itself is never a service. A per-app host keeps
+these rules whichever opsctl runs the command. A fresh host, with no
+`current` and no app installed under `/opt/<name>/`, is different: there a
+restore run by the opsctl inside a release,
+`/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`, restores against that
+release, as `devctl space create` does between `init` and the first
+`activate`, and a restore by an opsctl outside any release is refused.
 
 A service **declares a database** when its manifest in the current release,
-`/opt/ikigenba/current/<name>/etc/manifest.toml`, holds a
+`/opt/ikigenba/current/<name>/etc/manifest.toml`, or, for a restore before
+the first activate, in the release it runs from, holds a
 `[database]` table naming the `engine` and the `path`, relative to the
 service's working directory `/var/opt/ikigenba/<name>/`, of the database that
 engine owns:
@@ -206,7 +213,8 @@ is a timer on the host, so it is written where the timers are, but it has no
 period key and is always enabled.
 
 `init` is not the only writer of `/etc/litestream.yml`. The file is a pure
-function of the manifests in the current release and the two periods; a
+function of the manifests of the current release, or, for a restore before
+the first activate, of the release it runs from, and the two periods; a
 data-only service has no manifest and gets no entry. It names each declared
 database by its path under `/var/opt/ikigenba/<service>/` and replicates it to
 `<backup.s3_uri><service>/`. Whatever changes a manifest or a database
@@ -1223,14 +1231,21 @@ SERVICE must be an app in the current release: its
 /opt/ikigenba/current/SERVICE/etc/manifest.toml says what it declares, and
 nothing under /opt/ikigenba/ is touched. An etc/ that an older backup or
 snapshot holds is ignored. A SERVICE that is not in the current release is
-refused. On a host with no /opt/ikigenba/current, SERVICE must be installed
-under /opt/SERVICE/ instead, and one that is not, or whose state/ or
-environment file is still under /opt/SERVICE/, is refused: install it first.
+refused.
+
+On a host laid out per app, with no /opt/ikigenba/current, SERVICE must be
+installed under /opt/SERVICE/ instead, whichever opsctl runs the restore, and
+one that is not, or whose state/ or environment file is still under
+/opt/SERVICE/, is refused: install it first. On a fresh host, with neither
+/opt/ikigenba/current nor any app under /opt/, the opsctl inside a release,
+/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl, restores against that
+release: SERVICE must be one of its apps, and its manifest there says what it
+declares. Any other opsctl refuses to run there at all.
 
 The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
 restore writes it as 'opsctl activate' does, from the parameter
-/<host.name>/SERVICE, the manifest, and the current release's commit and
-label, reading the parameter before anything is stopped.
+/<host.name>/SERVICE, the manifest, and the commit and label of the release
+it restores against, reading the parameter before anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -1242,7 +1257,8 @@ app stays disabled: neither of its units is enabled or started. A failed
 restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
-the current release's manifests, as 'opsctl activate' does.
+the manifests of the release the restore runs against, as 'opsctl activate'
+does.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
@@ -1751,6 +1767,140 @@ Postconditions:
 - After an `activate` of a release that holds `crm`, the same restore runs as
   the ordinary restore does.
 
+## An agent restores a service before the first activate
+
+`devctl space create` gives a new space its data before any app runs there:
+after `init` and before the first `activate`, it runs the restore with the
+opsctl inside the release it is about to activate, by absolute path. There is
+no `current`, so that opsctl restores against its own release, found from its
+own location: `crm`'s manifest is
+`/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/crm/etc/manifest.toml`,
+and the environment file is written as `activate` writes it for that release.
+The release has no `label` file yet, since `activate` writes it, so the
+environment file carries no `IKIGENBA_RELEASE`.
+Otherwise it is the ordinary restore, with one difference: it starts nothing
+that was not already running. `crm` has no units yet, so there is none to stop
+or start, and the `stop` and `start` lines name only `litestream.service`,
+which `init` left running. `/etc/litestream.yml` now names `crm`'s database,
+so the `litestream` line names it.
+
+Command:
+
+```
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl restore crm
+```
+
+Output:
+
+```
+source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+secrets: ok (3 keys)
+stop: ok (litestream.service)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 12 files)
+db: ok (/var/opt/ikigenba/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
+litestream: ok (state/crm.db)
+start: ok (litestream.service)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is fresh and `init` has run: there is no `/opt/ikigenba/current`,
+  no app is installed under `/opt/<name>/`, no app has units, and
+  `litestream.service` is running.
+- The release is unpacked at
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/`, with
+  no `label` file, and its `crm/etc/manifest.toml` declares a
+  `[database]` at `state/crm.db` and three secrets.
+- `aws.region`, `backup.s3_uri`, and `host.name` are set; `<backup.s3_uri>crm/`
+  holds a tarball and litestream's objects for `crm`; `/sbx.ikigenba.dev/crm`
+  holds every name the manifest's `secrets` lists.
+
+Postconditions:
+
+- `/var/opt/ikigenba/crm/state/` is what the newest tarball holds, and
+  `/var/opt/ikigenba/crm/state/crm.db` is what litestream restored.
+- `/etc/opt/ikigenba/crm/env` is written as `activate` writes it for that
+  release with no label: mode `0600`, every secret the manifest names, its
+  `[env]`, `DRAIN_SECONDS`, `IKIGENBA_SERVICES=/run/ikigenba/services.json`,
+  and `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and no
+  `IKIGENBA_RELEASE` line. An `activate` of the release with a label writes
+  the file again with one.
+- `/etc/litestream.yml` is generated from that release's manifests, and
+  `litestream.service` is running again, replicating `crm.db`.
+- No app unit was written, started, or enabled; `/opt/ikigenba/current` and
+  `/opt/ikigenba/previous` do not exist, and nothing under `/opt/ikigenba/`
+  was written. The first `activate` of that release starts `crm` on the
+  restored data.
+
+## An agent restores a service that is not in the release it runs from
+
+The release the restore runs against is the only source of what the service
+declares, so an app that release does not hold is refused at the `source`
+step, before a backup is read or anything is stopped.
+
+Command:
+
+```
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl restore crm
+```
+
+Output:
+
+```
+source: failed: crm is not in release c604e32
+opsctl: restore crm failed at source
+```
+
+Exits 1. The failed step is on stdout; the diagnostic is on stderr.
+
+Preconditions:
+
+- The host is fresh: there is no `/opt/ikigenba/current` and no app
+  installed under `/opt/<name>/`.
+- The release at
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` holds no
+  `crm/`.
+
+Postconditions:
+
+- Nothing has changed. No unit was stopped, `litestream.service` was not
+  touched, and nothing under `/etc/opt/ikigenba/crm/` or
+  `/var/opt/ikigenba/crm/` was created or written.
+- No object under `<backup.s3_uri>` was read, written, or deleted.
+
+## An operator restores on a fresh host with an opsctl outside any release
+
+A fresh host has no `current` and no app installed one by one, so an opsctl
+that belongs to no release — one `make deploy` put at `/usr/local/bin/opsctl`,
+say — has nothing to restore against. It refuses before any step and names
+the opsctl that can: the one inside the release, with `<sha>` written as is.
+
+Command:
+
+```
+$ sudo opsctl restore crm
+```
+
+Output:
+
+```
+opsctl: restore needs a release; run /opt/ikigenba/releases/<sha>/opsctl/bin/opsctl restore crm
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- There is no `/opt/ikigenba/current` and no app installed under
+  `/opt/<name>/`.
+- The running opsctl is not inside `/opt/ikigenba/releases/`.
+
+Postconditions:
+
+- Nothing has changed. No object under `<backup.s3_uri>` was read.
+
 ## An operator restores a service that is not installed
 
 On a host still laid out per app, the restore takes what the service declares
@@ -1781,7 +1931,8 @@ Exits 1. The failed step is on stdout; the diagnostic is on stderr.
 Preconditions:
 
 - The host is laid out per app: there is no `/opt/ikigenba/current`, and
-  other apps are installed under `/opt/<name>/`.
+  other apps are installed under `/opt/<name>/`. Which opsctl runs the
+  restore makes no difference: one inside a release refuses the same way.
 - `crm` is not installed: there is no `/opt/crm/`, or it holds no
   `etc/manifest.toml` naming `crm` or no `bin/crm`.
   `/var/opt/ikigenba/crm/` may or may not exist.

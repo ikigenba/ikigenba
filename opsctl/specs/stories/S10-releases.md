@@ -23,7 +23,7 @@ The steps, in order, and what each reports on success:
 | `label` | `r142`, or `none` | writes `releases/<sha>/label`, or removes it |
 | `env` | `8 apps` | writes `/etc/opt/ikigenba/<app>/env` for every app in the release |
 | `units` | `8 apps` | creates `/var/opt/ikigenba/<app>/`, owned `ikigenba:ikigenba` with mode `0750`, for an app that has none, as install's `data` step does; writes both units of every app and `ikigenba-services.service`; stops and removes an app the release lacks |
-| `links` | `current c604e32, previous 1a2b3c4` | moves `previous` then `current`, and makes `/usr/local/bin/opsctl` the link |
+| `links` | `current c604e32, previous 1a2b3c4` | moves `previous` then `current`, then re-creates `/usr/local/bin/opsctl` as a link to `/opt/ikigenba/current/opsctl/bin/opsctl` every time, replacing a file or a link to anything else |
 | `systemd` | `daemon-reload` | reloads systemd |
 | `nginx` | `8 apps` | regenerates `/etc/nginx/conf.d/ikigenba.conf` from current and reloads nginx |
 | `services` | `8 services` | writes `/run/ikigenba/services.json` from current |
@@ -54,9 +54,10 @@ Usage: opsctl activate SHA [LABEL]
 
 Make the release unpacked at /opt/ikigenba/releases/SHA/ the one this host
 runs. SHA is the full 40-character commit sha. LABEL, one token of letters,
-digits, '.', '_' and '-', is written to releases/SHA/label and given to every
-app as IKIGENBA_RELEASE; without LABEL the label file is removed. Must be run
-by the opsctl inside that release, /opt/ikigenba/releases/SHA/opsctl/bin/opsctl.
+digits, '.', '_', '/' and '-', is written to releases/SHA/label and given to
+every app as IKIGENBA_RELEASE; without LABEL the label file is removed.
+Must be run by the opsctl inside that release,
+/opt/ikigenba/releases/SHA/opsctl/bin/opsctl.
 
 Every check runs before anything outside the release changes: the release
 tree, the host's layout, every app's manifest, its secrets in
@@ -72,7 +73,8 @@ neither current nor previous names is removed.
 
 On a host whose apps were installed one by one, every service is snapshotted
 and the apps' units and /opt/APP/ removed before the release's are written.
-Activating the release current already names redoes everything but the links.
+Activating the release current already names redoes everything but moving
+current and previous.
 
 Configuration keys:
   aws.region          the region this host's parameters live in
@@ -142,13 +144,13 @@ Preconditions:
 Postconditions:
 
 - `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` and everything in it is owned by root and writable by neither group nor other, and holds `label` with the text `r142`.
-- `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `/opt/ikigenba/previous` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`. `previous` was moved before `current`. `/usr/local/bin/opsctl` is a symlink to `/opt/ikigenba/current/opsctl/bin/opsctl`, so `opsctl version` prints `r142 (c604e32)`.
+- `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `/opt/ikigenba/previous` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`. `previous` was moved before `current`. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`, so `opsctl version` prints `r142 (c604e32)`.
 - `releases/9f8e7d6c5b4a39281706f5e4d3c2b1a098765432/` is gone; `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d/` is untouched.
 - Every app's `/etc/opt/ikigenba/<app>/env` was written whole, owned `root:root` with mode `0600`, and holds what install writes, `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `IKIGENBA_RELEASE=r142`.
 - Every app's two units are as the group describes and are enabled; `ikigenba-services.service` is written and enabled. systemd was reloaded.
 - `/etc/nginx/conf.d/ikigenba.conf` was regenerated from current, including each `/opt/ikigenba/current/<app>/etc/nginx.conf*`, and nginx reloaded. `/run/ikigenba/services.json` lists the eight apps, read from current, owned `root:ikigenba` with mode `0640`.
 - `/etc/litestream.yml` is byte for byte as it was, and `litestream.service` was not restarted.
-- Every app's service was restarted once, in the order the lines show, each `active` before the next was restarted; no socket was stopped, so a request that arrived during an app's restart waited and was answered by the new process. `status` shows `auth c604e32 active active wal`, and the same for every app with a database.
+- Every app's service was restarted once, in the order the lines show, each `active` before the next was restarted; no socket was stopped, so a request that arrived during an app's restart waited and was answered by the new process. `status` shows `auth c604e32 r142 active active wal`, and the same for every app with a database.
 - `/var/opt/ikigenba/<app>/` is untouched for every app.
 
 ## An agent activates a release without a label
@@ -196,7 +198,7 @@ Preconditions:
 
 Postconditions:
 
-- Everything the previous story's postconditions say, except: `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` holds no `label`, no app's environment file holds an `IKIGENBA_RELEASE` line, `opsctl version` prints `c604e32`, and no release was removed.
+- Everything the previous story's postconditions say, except: `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` holds no `label`, no app's environment file holds an `IKIGENBA_RELEASE` line, `opsctl version` prints `c604e32`, `status` shows `auth c604e32 - active active wal`, and no release was removed.
 
 ## An agent moves a host from per-app installs to releases
 
@@ -251,7 +253,7 @@ Postconditions:
 
 - `<backup.s3_uri>snapshots/<service>/<timestamp>.tar.zst` was written for each of the eight services, all with one timestamp, as `opsctl snapshot` writes them, before anything on the host was removed.
 - No `/opt/<app>/` exists for any of the eight apps, `/var/lib/ikigenba/services.json` is gone, and no unit or nginx configuration names a path under `/opt/<app>/`.
-- `/usr/local/bin/opsctl` is a symlink to `/opt/ikigenba/current/opsctl/bin/opsctl`. `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and there is no `/opt/ikigenba/previous`.
+- The regular file `/usr/local/bin/opsctl` was replaced by a link to `/opt/ikigenba/current/opsctl/bin/opsctl`. `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and there is no `/opt/ikigenba/previous`.
 - Every app's environment file, units, nginx block, services entry and the rest are as "An agent activates a release on a host that runs releases" leaves them.
 - `dummy`'s units are written and still disabled and inactive; it was not started, its names answer `503`, and its entry in `/run/ikigenba/services.json` is `"enabled": false`.
 - `/var/opt/ikigenba/<app>/` is untouched for every app, and `/etc/litestream.yml` is byte for byte as it was, so replication was never interrupted.
@@ -304,14 +306,14 @@ Preconditions:
 
 Postconditions:
 
-- `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, there is no `previous`, and `/usr/local/bin/opsctl` is a symlink to `/opt/ikigenba/current/opsctl/bin/opsctl`.
+- `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, there is no `previous`, and `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`, replacing `init`'s link to the release's opsctl by its own path.
 - `/var/opt/ikigenba/<app>/` exists for every app, owned `ikigenba:ikigenba` with mode `0750`, holding only what the app created when it started; every app started with an empty database.
 - `/etc/litestream.yml` names the seven declared databases and `litestream.service` was restarted.
 - Everything else is as "An agent activates a release on a host that runs releases" leaves it, and `https://auth.sbx.ikigenba.dev` and every other app's name answer.
 
 ## An agent activates the release the host already runs, with a label
 
-Activating the sha `current` already names is how a release is relabelled, and how a host whose environment or units have drifted is put right. Everything is redone except the links: `previous` never ends up naming the same release as `current`. Because `/usr/local/bin/opsctl` resolves to current's opsctl, which is the one inside this release, plain `opsctl` may run it.
+Activating the sha `current` already names is how a release is relabelled, and how a host whose environment or units have drifted is put right. Everything is redone except moving `current` and `previous`: `previous` never ends up naming the same release as `current`. Because `/usr/local/bin/opsctl` resolves to current's opsctl, which is the one inside this release, plain `opsctl` may run it.
 
 Command:
 
@@ -355,7 +357,7 @@ Preconditions:
 
 Postconditions:
 
-- Both links are as they were; neither was rewritten.
+- `current` and `previous` are as they were; neither was rewritten. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl` all the same, so a file or a link to anything else left there was replaced.
 - `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/label` holds `r142`, every app's environment file holds `IKIGENBA_RELEASE=r142`, and `opsctl version` prints `r142 (c604e32)`.
 - Every environment file and unit was written whole again, nginx, `/run/ikigenba/services.json` and `/etc/litestream.yml` were regenerated, and every app was restarted once, as on any activate.
 
@@ -404,7 +406,7 @@ Preconditions:
 
 Postconditions:
 
-- Both links are as they were.
+- `current` and `previous` are as they were, and `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`.
 - `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/label` does not exist, no app's environment file holds an `IKIGENBA_RELEASE` line, and `opsctl version` prints `c604e32`.
 - Everything else was redone as in the previous story.
 
@@ -453,7 +455,7 @@ Preconditions:
 
 Postconditions:
 
-- `/opt/ikigenba/current` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`. Both folders are still there.
+- `/opt/ikigenba/current` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`. Both folders are still there. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`, so `opsctl version` prints `r141 (1a2b3c4)`.
 - `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d/label` holds `r141`, every app's environment file holds `IKIGENBA_COMMIT=1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `IKIGENBA_RELEASE=r141`, and every app runs `1a2b3c4`.
 
 ## An agent activates a release beside folders neither link names
@@ -555,7 +557,7 @@ Postconditions:
 - `ikigenba-gmail.socket` and `ikigenba-gmail.service` were stopped and disabled, and their unit files and `/etc/opt/ikigenba/gmail/` are gone.
 - `/var/opt/ikigenba/gmail/` is byte for byte as it was.
 - nginx has no block for `gmail`, `/run/ikigenba/services.json` does not list it, and `/etc/litestream.yml` no longer names `gmail.db`; `litestream.service` was restarted.
-- `status` shows `gmail - - - -`.
+- `status` shows `gmail - - - - -`.
 - Every other app is as "An agent activates a release on a host that runs releases" leaves it.
 
 ## An agent activates a release over a disabled app
@@ -655,7 +657,7 @@ Preconditions:
 
 Postconditions:
 
-- `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `/opt/ikigenba/previous` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`.
+- `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `/opt/ikigenba/previous` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`.
 - No retention ran: `releases/9f8e7d6c5b4a39281706f5e4d3c2b1a098765432/` is still there.
 - `auth`, `telemetry`, `dummy` and `events` run `c604e32`. `mcp`'s service is `failed`. `repos`, `scripts` and `sites` were not restarted: each still runs the process it ran before the command, from `1a2b3c4`.
 - Every app's environment file and units, nginx, `/run/ikigenba/services.json` and `/etc/litestream.yml` are as a successful activate of `c604e32` leaves them.
@@ -681,7 +683,7 @@ Exits 2. The text is on stderr; stdout is empty. The other argument errors give 
 
 - More than two arguments: `opsctl: activate takes SHA and an optional LABEL`.
 - A first argument that is not 40 lowercase hexadecimal characters, such as `c604e32`: `opsctl: activate takes a full commit sha, not 'c604e32'`.
-- A label that is not one or more of letters, digits, `.`, `_` and `-`, such as `r 142`: `opsctl: label 'r 142' may hold only letters, digits, '.', '_' and '-'`.
+- A label that is not one or more of letters, digits, `.`, `_`, `/` and `-`, such as `r 142`: `opsctl: label 'r 142' may hold only letters, digits, '.', '_', '/' and '-'`.
 
 Preconditions:
 
@@ -1035,7 +1037,7 @@ Preconditions:
 
 Postconditions:
 
-- `/opt/ikigenba/current` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` does not exist. `/usr/local/bin/opsctl` is the same link, so `opsctl version` now prints `r141 (1a2b3c4)`.
+- `/opt/ikigenba/current` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` does not exist. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`, replacing a file or a link to anything else, so `opsctl version` now prints `r141 (1a2b3c4)`.
 - `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` is gone. `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d/label` is untouched.
 - Every app's environment file holds `IKIGENBA_COMMIT=1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `IKIGENBA_RELEASE=r141`; units, nginx, `/run/ikigenba/services.json` and `/etc/litestream.yml` are as an activate of `1a2b3c4` leaves them, and every app was restarted once, core apps first, onto `1a2b3c4`.
 - `/var/opt/ikigenba/<app>/` is untouched for every app: a rollback changes code, not data.
@@ -1167,6 +1169,6 @@ Preconditions:
 
 Postconditions:
 
-- `/opt/ikigenba/current` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` does not exist.
+- `/opt/ikigenba/current` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` does not exist. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`.
 - No retention ran: `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` is still there, so activating it again by its own opsctl goes forward.
 - `auth`, `telemetry`, `dummy` and `events` run `1a2b3c4`; `mcp`'s service is `failed`; `repos`, `scripts` and `sites` were not restarted and still run their `c604e32` processes.

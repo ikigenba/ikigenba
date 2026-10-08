@@ -26,12 +26,14 @@ units, no nginx block, and no entry in the services file. Every app in the
 release reports the release's short sha, the first 7 characters of the commit
 it was built from, where a per-app host reports the version its binary
 answers: `c604e32` for the release
-`c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`. Each app's units are the ones
+`c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`. `status` also shows the
+release's label, the one the last activate of it gave (`r142`), or `-` when
+it has none. Each app's units are the ones
 activate writes: the service runs `/opt/ikigenba/current/<app>/bin/<app>`,
 and the services file is `/run/ikigenba/services.json`. On a per-app host
 these four commands keep that host's behaviour: a service is found under
-`/opt/` as below, the version is what the app's binary answers, and the
-services file is `/var/lib/ikigenba/services.json`. Their refusals there
+`/opt/` as below, the version is what the app's binary answers, the label
+in `status` is always `-`, and the services file is `/var/lib/ikigenba/services.json`. Their refusals there
 keep their old text: `restart`, `disable`, and `enable` of an app with no
 `/opt/gmail/` fail with `<step>: failed: gmail is not installed`.
 
@@ -520,7 +522,7 @@ Postconditions:
   `/var/opt/ikigenba/crm/state/` and `/var/opt/ikigenba/crm/cache/` are byte
   for byte as they were, nothing was moved, the `data` step did not stop the
   app, the service was restarted rather than started,
-  and `status` now shows `crm v0.2.0 active active wal`.
+  and `status` now shows `crm v0.2.0 - active active wal`.
 - The socket was not stopped or restarted: it listened throughout, so a
   request that arrived while `v0.1.0` drained and `v0.2.0` started waited on
   it and was answered by `v0.2.0`. No request was refused.
@@ -668,7 +670,7 @@ Postconditions:
   `/opt/crm/state/crm.db`. Because the file changed, `litestream.service` was
   restarted; it is running.
 - The running app uses the moved data: every row it held before the install
-  is there, and `status` shows `crm v0.2.0 active active wal`.
+  is there, and `status` shows `crm v0.2.0 - active active wal`.
 - Installing the same file again prints `data: ok (/var/opt/ikigenba/crm)`,
   moves nothing, and stops neither the socket nor the service.
 - No other app on the host has changed.
@@ -785,7 +787,7 @@ Postconditions:
   step restarted it, as in a deploy over a running app.
 - `/opt/crm/` holds `bin/`, `etc/`, and `share/`, which are the new file's,
   and nothing else. The service runs `v0.2.0`, and `status` shows
-  `crm v0.2.0 active active wal`.
+  `crm v0.2.0 - active active wal`.
 
 ## An agent installs an app whose state is in both places
 
@@ -1920,7 +1922,7 @@ Postconditions:
   `0750`, the app is unpacked, both units are written and enabled, the socket
   is listening, and nginx routes its name. The service is `failed`. Nothing was
   rolled back: the host is left in the state an operator can inspect and fix,
-  and `status` shows `gmail v0.1.0 failed active -`.
+  and `status` shows `gmail v0.1.0 - failed active -`.
 - `/var/lib/ikigenba/services.json` has been rewritten and lists `gmail` as
   enabled, with no icon: the entry is written before the service starts, and
   a failed service does not undo it any more than it undoes nginx.
@@ -2124,7 +2126,7 @@ Postconditions:
   held: the replica under `<backup.s3_uri>crm/` holds `crm.db` as of the last
   committed transaction. Every other declared database paused for the restart
   and is replicating again.
-- `status` shows `crm - - - -`: a service with a
+- `status` shows `crm - - - - -`: a service with a
   `/var/opt/ikigenba/crm/state/` and no manifest.
 - Had `crm` been disabled, uninstalling it would work the same way, with the
   `stop` line naming both units `already inactive`. Removing the units ends
@@ -2232,7 +2234,7 @@ Postconditions:
 - The units, nginx, and `/var/lib/ikigenba/services.json` are as "An agent
   uninstalls an app" leaves them. `/etc/litestream.yml` names neither
   `/opt/crm/state/crm.db` nor `/var/opt/ikigenba/crm/state/crm.db`, and
-  `status` shows `crm - - - -`.
+  `status` shows `crm - - - - -`.
 - Installing `crm` again lands over `/var/opt/ikigenba/crm/state/`, with
   nothing left to move.
 
@@ -2486,7 +2488,7 @@ Preconditions:
 
 Postconditions:
 
-- The service is `failed`, and `status` shows `crm c604e32 failed active wal`.
+- The service is `failed`, and `status` shows `crm c604e32 r142 failed active wal`.
   The socket is still listening. Nothing
   on disk changed and nothing was rolled back: the host is left where an
   operator can look at it.
@@ -2675,7 +2677,7 @@ Postconditions:
   enabled.
 - Both unit files and everything under `/opt/ikigenba/` and
   `/var/opt/ikigenba/crm/` are as they were.
-  `status` shows `crm c604e32 inactive disabled wal`.
+  `status` shows `crm c604e32 r142 inactive disabled wal`.
 - The next activate leaves `crm` disabled and does not start it
   (`S10-releases.md`).
 - No other app on the host has changed.
@@ -2901,8 +2903,9 @@ Output:
 Usage: opsctl status
 
 Print one line per service on this host, in name order: its name, the short
-commit of the release it runs, the state of its service unit, the state of
-its socket unit, and the journal mode of the database its manifest declares.
+commit of the release it runs, that release's label or '-' when it has none,
+the state of its service unit, the state of its socket unit, and the journal
+mode of the database its manifest declares.
 A service is an app the current release (/opt/ikigenba/current) holds, or any
 /var/opt/ikigenba/<name>/ with a state/ directory. A service with only its
 kept state is data only, and every field after its name is '-'. '-' means
@@ -2910,7 +2913,8 @@ opsctl could not ask, or there was nothing to ask.
 
 On a host not yet running releases, a service is any /opt/<name>/ with an
 etc/ directory or any /var/opt/ikigenba/<name>/ with a state/ directory, and
-the second field is the version its own binary reports.
+the second field is the version its own binary reports and the third is
+always '-'.
 
 A service that is inactive behind an active socket is idle, not down: its
 socket starts it again when the next request arrives. The socket's field reads
@@ -2939,16 +2943,18 @@ Postconditions:
 
 The answer comes from the host and nowhere else: the apps in the release
 `/opt/ikigenba/current` names and the kept state under `/var/opt/ikigenba`,
-each app shown with that release's short sha, each app's service and socket
-units asked their states, and each declared database asked its journal mode.
-Every app in the release shows the same sha: they were built and activated
-together. Each state is the unit's own systemd state: `active`, `inactive`,
+each app shown with that release's short sha and its label, each app's
+service and socket units asked their states, and each declared database asked its journal mode.
+Every app in the release shows the same sha and label: they were built and
+activated together. The label is the one the last activate of the release
+gave, read from its `label` file; a release activated without one shows `-`
+in that field. Each state is the unit's own systemd state: `active`, `inactive`,
 or `failed` — except that the socket's field is `disabled` when systemd
 reports the socket unit disabled, whatever its state. One line per service,
 in name order. `devctl space status` runs exactly this over ssh and copies
 the output to the developer's terminal byte for byte.
 
-The fifth field is `-` for a service that declares no database, because there
+The sixth field is `-` for a service that declares no database, because there
 was nothing to ask — the same `-` the other fields use.
 
 Command:
@@ -2960,9 +2966,9 @@ $ sudo opsctl status
 Output:
 
 ```
-crm c604e32 active active wal
-dashboard c604e32 active active -
-gmail c604e32 failed active -
+crm c604e32 r142 active active wal
+dashboard c604e32 r142 active active -
+gmail c604e32 r142 failed active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -2972,7 +2978,8 @@ Preconditions:
 - `/opt/ikigenba/current` points at
   `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, whose
   release holds `crm`, `dashboard`, and `gmail`, and no other service is on
-  the host.
+  the host. The release was last activated with the label `r142`, so its
+  folder holds a `label` file reading `r142`.
 - Every socket is listening. `gmail`'s service is `failed`.
 - `crm`'s manifest declares a `[database]` and that database is in WAL mode.
   Neither of the others declares one.
@@ -2984,6 +2991,41 @@ Postconditions:
 A failed unit is a fact about the host, which is what `status` was asked to
 look at, so it is part of the report and not a failure of the command: the
 exit code is 0 whatever the report says.
+
+## A developer asks about a host whose release has no label
+
+The last activate of the release `current` names gave no label, so the
+release has none to report and the third field is `-` on every app's line.
+The field is still there, so every line has the same six fields.
+
+Command:
+
+```
+$ sudo opsctl status
+```
+
+Output:
+
+```
+crm c604e32 - active active wal
+dashboard c604e32 - active active -
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `/opt/ikigenba/current` points at
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, whose
+  release holds `crm` and `dashboard`, and no other service is on the host.
+- The release was last activated without a label, so its folder holds no
+  `label` file.
+- Both apps are enabled and their services are `active`. `crm`'s manifest
+  declares a `[database]` in WAL mode; `dashboard`'s declares none.
+
+Postconditions:
+
+- Nothing has changed.
 
 ## A developer asks about a host with a disabled app
 
@@ -2999,8 +3041,8 @@ $ sudo opsctl status
 Output:
 
 ```
-crm c604e32 inactive disabled wal
-dashboard c604e32 active active -
+crm c604e32 r142 inactive disabled wal
+dashboard c604e32 r142 active active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -3008,7 +3050,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - The release `current` names, `c604e32`, holds `crm` and `dashboard`, and
-  no other service is on the host.
+  no other service is on the host. Its label is `r142`.
 - `crm` is disabled: both its units are disabled and inactive. Its manifest
   declares a `[database]` in WAL mode.
 - `dashboard` is enabled, and its service is `active`.
@@ -3062,15 +3104,16 @@ $ sudo opsctl status
 Output:
 
 ```
-crm c604e32 active active wal
-gmail - - - -
+crm c604e32 r142 active active wal
+gmail - - - - -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- The release `current` names, `c604e32`, holds `crm` and no `gmail`.
+- The release `current` names, `c604e32`, holds `crm` and no `gmail`. Its
+  label is `r142`.
 - `/var/opt/ikigenba/gmail/` holds a `state/`, and there is no
   `ikigenba-gmail.socket` or `ikigenba-gmail.service`.
 
@@ -3100,15 +3143,16 @@ $ sudo opsctl status
 Output:
 
 ```
-crm c604e32 active active delete
-dashboard c604e32 active active -
+crm c604e32 r142 active active delete
+dashboard c604e32 r142 active active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- The release `current` names, `c604e32`, holds `crm` and `dashboard`.
+- The release `current` names, `c604e32`, holds `crm` and `dashboard`. Its
+  label is `r142`.
 - `crm`'s manifest declares a `[database]` and that database's journal mode is
   `delete`.
 

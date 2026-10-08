@@ -8,9 +8,9 @@ of the release `/opt/ikigenba/current` names, of the configuration store's
 `host.name`, and of which apps systemd reports disabled, so it is generated
 rather than edited, and it is never backed up — a restored host regenerates it.
 It is written to a temporary file in the same directory and renamed into place,
-so a reader never sees a half-written file, and it is rewritten wherever nginx's
-configuration is regenerated: `activate`, `rollback`, `enable`, `disable`,
-`restore`, `init`, and `nginx apply`. The two files therefore never disagree
+so a reader never sees a half-written file, and on a released host it is
+rewritten wherever nginx's configuration is regenerated: `activate`,
+`rollback`, `enable`, `disable`, `restore`, `init`, and `nginx apply`. The two files therefore never disagree
 about which apps are disabled. It is written only after nginx's configuration
 has succeeded: a command that fails before or at its nginx step leaves the file
 as it was. `opsctl services apply` writes the file alone, from the same inputs,

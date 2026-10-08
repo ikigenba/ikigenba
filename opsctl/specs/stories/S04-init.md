@@ -319,8 +319,10 @@ release, so `/usr/local/bin/opsctl` does not exist yet and the agent runs the
 release's own opsctl by its full path. `init` does the host's own work and no
 app's. It makes `/usr/local/bin/opsctl` a link to the opsctl that is running
 before it asks certbot for the certificate, so the hooks certbot records find
-`opsctl` on the PATH. The next command is that release's `activate`
-(`S10-releases.md`), which makes the link point through `current`.
+`opsctl` on the PATH. After it, the same opsctl may restore services from
+their backups (`S08-backup.md`), and then that release's `activate`
+(`S10-releases.md`) makes the link point through `current`, as every
+`activate` does.
 
 Command:
 
