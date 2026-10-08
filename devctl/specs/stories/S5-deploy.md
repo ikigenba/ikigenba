@@ -571,8 +571,8 @@ Postconditions:
   the new binary. `crm`'s `state/` directory is untouched. What install does on
   the host is opsctl's; devctl runs it and reports its exit.
 - No other app on the space has changed.
-- `space status sbx1` lists `crm`. The version it shows is whatever the new
-  binary reports, which deploy neither sets nor checks.
+- `space status sbx1` lists `crm`. The commit and label it shows are
+  whatever opsctl reports, which deploy neither sets nor checks.
 
 ## A developer promotes a tested app file
 
@@ -617,8 +617,8 @@ Postconditions:
   has exited 0, so `crm.staging.ikigenba.dev` answers from the new binary.
   `crm`'s `state/` is untouched. If `staging` holds the apex and `crm` is its
   apex app, `ikigenba.dev` answers from it too (see `S7-apex.md`).
-- `space status staging` lists `crm`, showing whatever version the binary
-  reports, the same as on the sandbox space.
+- `space status staging` lists `crm`, showing whatever commit and label
+  opsctl reports, the same as on the sandbox space.
 
 ## A developer deploys to a space where the app is disabled
 
@@ -969,7 +969,7 @@ Postconditions:
 - `/sbx1.ikigenba.dev/crm` and every object under the space's prefix in the
   bucket are untouched,
   `deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` included.
-- `space status sbx1` shows `crm - - - -`. Deploying
+- `space status sbx1` shows `crm - - - - -`. Deploying
   `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` again puts
   `crm` back over its data.
 - No other app on the space has changed.

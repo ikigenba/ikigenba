@@ -54,7 +54,7 @@ Subcommands:
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
   init <space> [options]     set the host's keys again and run opsctl init
-  status <space>             one line per app: version, service state, socket state, database journal mode
+  status <space>             one line per app: commit, label, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
   disable <space> <app>      stop one app and keep it from starting until enabled
   enable <space> <app>       let a disabled app start again, and start it
@@ -261,11 +261,13 @@ has seen the instance's first boot finish, the tarball is copied to the host
 and unpacked into `/opt/ikigenba/releases/<sha>/`, as `deploy` does (see
 `S5-deploy.md`), and everything create then asks of the host is asked of that
 release's own opsctl, `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`: it
-sets the ten keys, restores the host backup if there is one, runs `init`, and
+sets the ten keys, restores the host backup if there is one, runs `init`, puts
+each app's data back when a host backup was found (see the rebuild story), and
 last activates the release, with the tag as its label. The host's opsctl is
-from then on the one in the release it runs, and every later deploy brings
-its own; `space init --opsctl`, while it remains, installs a published
-opsctl over it.
+from then on the one in the release it runs: activate points
+`/usr/local/bin/opsctl` at it, and every later activation points it at the new
+release's own. `space init --opsctl` is never used on a host that runs a
+release.
 
 Backups are kept when a space is destroyed unless the developer says
 otherwise, so a space may have lived before, and its certificate and store
@@ -480,6 +482,37 @@ Postconditions:
 
 - Nothing has changed. Nothing was built and no AWS call was made.
 
+## A developer creates a space when the checkout has no release tag
+
+Without `--release`, create deploys the newest `r<N>` tag, and when the local
+repository holds none there is nothing to deploy. Release candidates such as
+`r1-rc1` are not counted. The refusal comes before any AWS call, and names
+the option that would let the create go ahead.
+
+Command:
+
+```
+$ devctl space create sbx1 --acme-email ops@ikigenba.dev
+```
+
+Output:
+
+```
+devctl: no r<N> release tag in this checkout; name one with --release <sha|tag>
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout.
+- The local repository holds no tag named exactly `r<N>`; it may hold
+  release candidates such as `r1-rc1` and tags such as `auth/v0.18.2`.
+
+Postconditions:
+
+- Nothing has changed. Nothing was built and no AWS call was made.
+
 ## A developer creates a space with a release that does not build
 
 The build comes before anything is created, so a failed build leaves the
@@ -522,39 +555,36 @@ Postconditions:
 
 Backups are kept by default, and a rebuild is how they earn their keep: the
 host is gone, by choice or by accident, and a new one is to hold everything
-the old one held. Every step is a command that already exists; what this
-story adds is the order, and why it is that order.
+the old one held. It takes two commands.
 
 1. `space destroy`, so the old host takes its final backup with `retire`
    before it goes. When the host is already lost the backup cannot be taken,
    and `space destroy --no-backup` clears what remains: the records, the
    address, and the role. What the timers had not copied is lost with it.
-2. `space create`. Its `restore` step finds the host backup and runs
-   `sudo opsctl host restore`, which puts `/etc/letsencrypt/` and
+2. `space create`. Its `restore` step finds the host backup and has the
+   release's opsctl run `host restore`, which puts `/etc/letsencrypt/` and
    `/etc/ikigenba/` back; create then sets its ten keys again, so what it
    was told wins over the backup's copy of the store and any key an operator
    set by hand survives. `init` finds the certificate current and asks the
-   CA for nothing.
-3. `restore <space> <app>` for each app. The host has never run the app,
-   so the restore lands its `etc/` and `state/` and its database with no
-   binary and no unit, and litestream replicates the database from that
-   moment.
-4. `deploy <space> <file>` for each app, over the restored data. install
-   replaces `bin/`, `etc/`, and `share/` and leaves `state/` alone, so the
-   app starts over its own data.
+   CA for nothing. Because a host backup was found, create then puts each
+   app's data back before any app runs: for each app in the release, in name
+   order, whose prefix `<label>/<app>/` in the bucket holds a backup, the
+   release's opsctl runs `restore <app>`, one `restore` line each, as `devctl
+   restore` reports it (see `S6-restore.md`); an app with no backup there is
+   skipped with a line that says so. Only then does it activate the release.
 
-Restore comes before deploy, not after. A deploy onto empty state starts the
-app, and an app that finds no database makes one, migrates it, and seeds it
-(see opsctl's `S7-apps.md`); a restore after that has to stop the app and
-replace what it made. A restore first has nothing to stop, and the deploy
-that follows is an ordinary deploy: the app finds its database, migrates it
-forward, and seeds nothing.
+The data goes back before activate, not after. Activate starts every app, and
+an app that finds no database makes one, migrates it, and seeds it (see
+opsctl's `S7-apps.md`), and its replication would begin from that empty
+database. Restoring first means each app starts over its own data: it finds
+its database, migrates it forward, and seeds nothing. When no host backup is
+found the space is new, and no app's data is looked for.
 
 A rebuilt space brings every app back enabled, including one that was
 disabled on the old host. Whether an app is disabled lives only in the
 host's own units, which no backup holds, just as a `remove` ends the
 disabled state. An app that should stay offline is disabled again with
-`space disable` after its deploy.
+`space disable` after the create.
 
 If the space held the apex, the destroy removed the root's record, and the
 new host answers only at its own names until `apex set` points the root at
@@ -569,15 +599,12 @@ Command:
 ```
 $ devctl space destroy staging
 $ devctl space create staging --acme-email ops@ikigenba.dev
-$ devctl restore staging crm
-$ devctl restore staging dashboard
-$ devctl deploy staging crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
-$ devctl deploy staging dashboard/dist/dashboard-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
 $ devctl space status staging
 ```
 
-Output, with the create's lines before `opsctl` and the deploys' lines
-before `install` as in their own stories:
+Output, with the create's lines before `opsctl` and activate's lines between
+`preflight` and `activate` as in the create story above, and opsctl's lines
+from `preflight` on shown for illustration:
 
 ```
 retire: ok (opsctl retire)
@@ -588,21 +615,30 @@ secrets: ok (kept)
 backups: ok (kept)
 role: ok (staging.ikigenba.dev deleted)
 ...
-opsctl: ok (v0.3.0 installed, 10 keys set)
+opsctl: ok (10 keys set)
 restore: ok (host/2026-09-12T14:22:51Z.tar.zst, 10 keys set again)
 init: ok
+restore: ok (opsctl restore auth)
+restore: ok (opsctl restore dummy)
+restore: ok (opsctl restore events)
+restore: ok (opsctl restore mcp)
+restore: ok (opsctl restore repos)
+restore: ok (opsctl restore scripts)
+restore: ok (no backup of sites)
+restore: ok (opsctl restore telemetry)
+preflight: ok (8 apps)
+...
+activate: ok (r2 (4b22285))
 staging.ikigenba.dev 18.117.42.9
-restore: ok (opsctl restore crm)
-restore: ok (opsctl restore dashboard)
-...
-install: ok (opsctl installed crm)
-...
-install: ok (opsctl installed dashboard)
-crm <version> active active wal
-dashboard <version> active active -
+auth 4b22285 r2 active active wal
+dummy 4b22285 r2 active active -
+events 4b22285 r2 active active wal
+mcp 4b22285 r2 active active -
+repos 4b22285 r2 active active wal
+scripts 4b22285 r2 active active wal
+sites 4b22285 r2 active active wal
+telemetry 4b22285 r2 active active wal
 ```
-
-Each `<version>` is whatever opsctl reports for that app's new binary.
 
 Each command exits 0. The lines are on stdout; stderr is empty.
 
@@ -610,30 +646,33 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and `crm` and `dashboard` are
-  deployed on it; `crm` declares a database. It does not hold the apex.
+- The space exists, its instance is `running`, and it runs a release of
+  seven apps, all of `r2`'s but `sites`, which it has never run. It does not
+  hold the apex.
+- The local repository's newest `r<N>` tag is `r2`, at
+  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds and holds
+  the eight apps.
 - The developer's ssh configuration can reach the old instance and the new
   one as `ec2-user`.
-- `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` and
-  `dashboard/dist/dashboard-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`
-  exist, written by `build` at one commit.
 
 Postconditions:
 
-- After the destroy, `staging/host/`, `staging/crm/`, and
-  `staging/dashboard/` in the bucket each hold an object from the retire,
-  and the secrets under `/staging.ikigenba.dev/` are untouched.
+- After the destroy, `staging/host/` and `staging/<app>/` for each of the
+  seven apps the old host ran each hold an object from the retire, and the
+  secrets under `/staging.ikigenba.dev/` are untouched.
 - After the create, the new host holds the old certificate: `opsctl host
-  restore` was run over ssh and exited 0 before the ten keys were set
-  again, and `init`'s certificate step found it current and asked the CA
-  for nothing. The store holds the ten keys as create derived them, plus
-  any other key the backup carried except `host.apex`, which create removed
-  after the restore whether or not the backup had it.
-- After the restores, `/opt/crm/` and `/opt/dashboard/` hold the backups'
-  `etc/` and `state/`, `crm`'s database is rebuilt to its last committed
-  transaction and replicating, and neither has a binary or a unit.
-- After the deploys, both apps answer from their binaries over the restored
-  data, and `space status` shows them as above.
+  restore` was run by the release's opsctl over ssh and exited 0 before the
+  ten keys were set again, and `init`'s certificate step found it current and
+  asked the CA for nothing. The store holds the ten keys as create derived
+  them, plus any other key the backup carried except `host.apex`, which
+  create removed after the restore whether or not the backup had it.
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl restore <app>`
+  was run and exited 0 for each of the seven apps, after `init` and before
+  activate, so each of them started over the backup's `state/` and database;
+  what restore does on the host is opsctl's. `sites` had no backup, so no
+  restore was run for it and it started over empty state.
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r2`
+  then exited 0, and `space status` shows every app as above.
 - The new instance has a new id and may have a new address; the records
   point at it. Nothing about the old instance remains in the account.
 
@@ -1054,7 +1093,8 @@ Postconditions:
 
 `--opsctl` names a release, and that release's installer is fetched onto the
 host and run with that version as its operand before the keys are set and
-`init` runs.
+`init` runs. It is for a host that does not yet run a release of the suite;
+on one that does, opsctl comes with each deploy and `--opsctl` is not used.
 Installing the binary changes nothing on the host by itself: what a new
 version changes is `init`'s to do, which is why the two are one command.
 
@@ -1722,12 +1762,14 @@ Postconditions:
 ## A developer asks what a space is running
 
 The answer comes from the host, never from a record kept elsewhere: over ssh,
-`opsctl status` lists the installed apps, asks each app's binary its version,
+`opsctl status` lists the installed apps, says which release each runs,
 reads the state of each app's service unit and of its socket unit, and reads
 the journal mode of the database each app declares. `space status` copies that
-output byte for byte. One line per app, in name order: the app, the version,
-the service state, the socket state, and the database journal mode (`-` for an
-app that declares no database). A service that is `inactive` behind an
+output byte for byte. One line per app, in name order: the app, the short sha
+of the commit it runs, the release's label or `-` when it has none, the
+service state, the socket state, and the database journal mode (`-` for an app
+that declares no database). What the commit and label columns hold is
+opsctl's. A service that is `inactive` behind an
 `active` socket is idle, not down: the next request starts it. A mode other
 than `wal` means that database is no longer reaching S3.
 
@@ -1740,9 +1782,9 @@ $ devctl space status sbx1
 Output:
 
 ```
-crm v0.1.0 active active wal
-dashboard v0.0.9 active active -
-gmail v0.1.0 failed active -
+crm 4b22285 r1 active active wal
+dashboard 4b22285 r1 active active -
+gmail 4b22285 r1 failed active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -1753,7 +1795,9 @@ Preconditions:
   the profile `ikigenba.dev`.
 - The space's instance exists and is `running`; `opsctl` is installed on it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- Three apps are installed on the host, and every socket is listening.
+- Three apps are installed on the host, and every socket is listening. The
+  host runs the release `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, labelled
+  `r1`; deployed by its sha, the third column would be `-`.
 
 Postconditions:
 
@@ -1775,8 +1819,8 @@ $ devctl space status sbx1
 Output:
 
 ```
-crm v0.1.0 inactive disabled wal
-dashboard v0.0.9 active active -
+crm 4b22285 r1 inactive disabled wal
+dashboard 4b22285 r1 active active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -2007,7 +2051,7 @@ Postconditions:
 - `sudo opsctl restart crm` has been run on the host over ssh and exited 0.
   Nothing has changed: neither of `crm`'s units was started or enabled, its
   names still answer `503`, and `space status` still shows
-  `crm v0.1.0 inactive disabled wal`.
+  `crm 4b22285 r1 inactive disabled wal`.
 
 ## A developer's restart fails on the host
 
@@ -2050,7 +2094,7 @@ Preconditions:
 Postconditions:
 
 - `crm` on the host is whatever `opsctl` left; `space status` reports it,
-  here `crm v0.1.0 failed active wal`.
+  here `crm 4b22285 r1 failed active wal`.
 - No other app on the space has changed.
 
 ## A developer takes an app on a space offline
@@ -2096,7 +2140,7 @@ Postconditions:
 - `sudo opsctl disable crm` has been run on the host over ssh and exited 0.
   What disable does on the host is opsctl's: `crm`'s socket and service are
   stopped and disabled, and `https://crm.sbx1.ikigenba.dev` answers `503`.
-- `space status sbx1` shows `crm v0.1.0 inactive disabled wal`.
+- `space status sbx1` shows `crm 4b22285 r1 inactive disabled wal`.
 - Nothing under `/opt/crm/` changed, and no other app on the space has
   changed.
 
@@ -2135,7 +2179,7 @@ Postconditions:
 - `sudo opsctl enable crm` has been run on the host over ssh and exited 0.
   What enable does on the host is opsctl's: both of `crm`'s units are enabled
   and started, and `https://crm.sbx1.ikigenba.dev` reaches `crm` again.
-- `space status sbx1` shows `crm v0.1.0 active active wal`.
+- `space status sbx1` shows `crm 4b22285 r1 active active wal`.
 - Nothing under `/opt/crm/` changed, and no other app on the space has
   changed.
 
@@ -2178,7 +2222,7 @@ Postconditions:
 
 - `crm` is enabled: both its units are enabled, its socket is listening, and
   nginx routes its names to it. Its service is `failed`, and `space status`
-  shows `crm v0.1.0 failed active wal`. Nothing was rolled back.
+  shows `crm 4b22285 r1 failed active wal`. Nothing was rolled back.
 - No other app on the space has changed.
 
 ## A developer disables an app that is already disabled, or enables one that is already enabled
