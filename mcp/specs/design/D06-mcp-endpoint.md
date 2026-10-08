@@ -22,7 +22,7 @@ The exact member order is observable through a raw `tools/list` on an earlier re
 
 ## Name, version and instructions
 
-The server reports the name `mcp` (`gateway.ServiceName`) and the version `NewServer` was given, which in the binary is `cli.Version`. It records each tool call through the telemetry writer `NewServer` was given, which in the binary is the run's one writer; served without the identity gate it answers appkit's missing-caller 500 and records nothing, as appkit's server does.
+The server reports the name `mcp` (`gateway.ServiceName`) and the version `NewServer` was given, which in the binary is the display string `main` reads (`D01-layout-and-run-seam`). It records each tool call through the telemetry writer `NewServer` was given, which in the binary is the run's one writer; served without the identity gate it answers appkit's missing-caller 500 and records nothing, as appkit's server does.
 
 The instructions are the gateway's, made for each request from its reached services: two lines joined by LF and no LF after the second. The first names the reached services in name order joined by `, `, unavailable ones included, or says there are none; the second tells the model how to go on. They are therefore never empty, so `initialize` and `server/discover` always carry them. appkit's client speaks neither method, so a test reads them over raw HTTP.
 
