@@ -29,7 +29,7 @@ The steps, in order, and what each reports on success:
 | `services` | `8 services` | writes `/run/ikigenba/services.json` from current |
 | `litestream` | `updated`, or `unchanged` | regenerates `/etc/litestream.yml` from current's manifests, restarting `litestream.service` only when it changed |
 | `service` | `auth c604e32 active`, one line per app | restarts the app, or starts it if inactive, and waits for it to be `active`; a disabled app is not started and reads `disabled` |
-| `retention` | `removed 1 release`, or `nothing removed` | removes every folder in `releases/` named by a full sha that neither link names; leaves any other entry |
+| `retention` | `removed 1 release`, or `nothing removed` | removes every folder in `releases/` named by a full sha that neither link names; ignores every entry whose name begins with `.`, such as devctl's `.unpack.XXXXXXXXXX`, and leaves any other entry |
 
 The `release`, `layout`, `manifests`, `secrets` and `resources` steps write nothing on the host but the release folder's own ownership and modes. The `service` lines run core apps (manifest `slice = "core"`) first, then the rest, in name order within each. On a released host each app's units are `/etc/systemd/system/ikigenba-<app>.socket`, listening at `/run/ikigenba/<app>.sock` as install writes it, and `/etc/systemd/system/ikigenba-<app>.service`, running `/opt/ikigenba/current/<app>/bin/<app>` with working directory `/var/opt/ikigenba/<app>`, environment file `/etc/opt/ikigenba/<app>/env`, a runtime directory `/run/ikigenba/<app>/` and a private `/tmp`, and everything else (slice, resources, stop timeout, user) as install writes it. Its environment file holds what install writes (each secret, the manifest's `[env]`, `DRAIN_SECONDS`) with `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=<full sha>`, and `IKIGENBA_RELEASE=<label>` only when current's release has a label. `ikigenba-services.service` is a oneshot that runs `/usr/local/bin/opsctl services apply` at boot, ordered before every app's service (`S09-services.md`). Since the units name `current` rather than a release, moving the link is what changes the binary each app runs; the restart is what makes it run.
 
@@ -460,7 +460,7 @@ Postconditions:
 
 ## An agent activates a release beside folders neither link names
 
-Retention keeps the two releases a host can go back and forth between and nothing more. It only judges folders named by a full sha: devctl may be unpacking into a folder of its own beside them, and anything else in `releases/` is left alone.
+Retention keeps the two releases a host can go back and forth between and nothing more. It only judges folders named by a full sha: devctl unpacks into a folder of its own beside them, `releases/.unpack.XXXXXXXXXX`, and an entry whose name begins with `.` is ignored by everything that lists `releases/`; anything else there is left alone too.
 
 Command:
 
@@ -500,11 +500,11 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - `/opt/ikigenba/current` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` names `releases/9f8e7d6c5b4a39281706f5e4d3c2b1a098765432`.
-- `releases/` also holds `5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2/`, an older release, and `tmp.8Qw2Lr/`, a folder devctl is unpacking into.
+- `releases/` also holds `5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2/`, an older release, and `.unpack.8Qw2Lr0aZx/`, the folder devctl is unpacking into.
 
 Postconditions:
 
-- `releases/` holds `c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/`, `1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d/` and `tmp.8Qw2Lr/`, the last untouched. `9f8e7d6c5b4a39281706f5e4d3c2b1a098765432/` and `5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2/` are gone.
+- `releases/` holds `c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/`, `1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d/` and `.unpack.8Qw2Lr0aZx/`, the last untouched. `9f8e7d6c5b4a39281706f5e4d3c2b1a098765432/` and `5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2/` are gone.
 - Everything else is as "An agent activates a release on a host that runs releases" leaves it.
 
 ## An agent activates a release that drops an app
