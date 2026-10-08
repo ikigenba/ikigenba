@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
@@ -130,7 +131,25 @@ func (f *transitionFixture) execute(_ context.Context, c host.Command) (host.Res
 	case "getent":
 		return host.Result{Stdout: []byte("owner:x:" + c.Args[1] + ":1001::/tmp:/bin/false\n")}, nil
 	case "zstd":
-		return host.Result{Stdout: []byte{0x28, 0xb5, 0x2f, 0xfd, 1}}, nil
+		if !reflect.DeepEqual(c.Args, []string{"--quiet", "--stdout"}) || c.Stdin == nil {
+			f.t.Fatalf("invalid snapshot compressor command %+v", c)
+		}
+		data, err := io.ReadAll(c.Stdin)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		reader := tar.NewReader(bytes.NewReader(data))
+		for {
+			_, err := reader.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				f.t.Fatalf("snapshot compressor input: %v", err)
+			}
+		}
+		// A reversible process-fixture frame keeps the archive observable.
+		return host.Result{Stdout: append([]byte{0x28, 0xb5, 0x2f, 0xfd}, data...)}, nil
 	}
 	return host.Result{}, nil
 }
@@ -179,6 +198,9 @@ func (c *transitionCloud) PutObject(_ context.Context, key string, r io.Reader) 
 	}
 	if c.objects == nil {
 		c.objects = map[string][]byte{}
+	}
+	if _, exists := c.objects[key]; exists {
+		return cloud.ErrAlreadyExists
 	}
 	c.objects[key] = data
 	return e
