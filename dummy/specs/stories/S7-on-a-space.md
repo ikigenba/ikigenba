@@ -1,7 +1,8 @@
 # Stories — on a space
 
-The panel reached through a space: the file `S6-package.md` describes,
-deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at
+The panel reached through a space: the tree `S6-package.md` describes,
+deployed in the suite release with `devctl deploy`, activated by `opsctl`, and
+answered by nginx at
 `dummy.<space>` over TLS. A space is one label under the root domain and an
 app is `<app>.<space>`, so dummy on the space `sbx.ikigenba.dev` answers at
 `dummy.sbx.ikigenba.dev`. nginx on the space proxies to dummy's socket,
@@ -56,10 +57,9 @@ Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance
   is `running`, and `opsctl` is installed on it.
-- `devctl build dummy`, run in a clean tree at the commit `<sha>`, wrote
-  `dummy/dist/dummy-<sha>.tar.xz` (`S6-package.md`). No tag is needed.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev dummy/dist/dummy-<sha>.tar.xz`
-  exited 0.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev <sha>` exited 0,
+  making the suite release at the commit `<sha>` active (`S6-package.md`).
+  No tag is needed.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
   dummy's service and socket `active`, in the layout devctl's and opsctl's
   stories own.
@@ -111,7 +111,7 @@ Preconditions:
 - Everything the story above requires holds: dummy is deployed
   and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate
   accepts.
-- `dummy/dist/dummy-<sha>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
+- The release's `<sha>/dummy/` holds `share/icon.svg` (`S6-package.md`).
 - The host sets `IKIGENBA_SERVICES` in dummy's environment to the path of
   its services file, and that file lists dummy with its icon.
 

@@ -103,12 +103,4 @@ The `Requirements:` trailer lists the phase's ids so history stays greppable by 
 
 ## Deploy
 
-Deploy machinery, `devctl build` and `devctl deploy`, is hand-maintained and outside the spec system: the build run never reads, edits or tests it.
-
-dummy is an app, not a self-installing CLI: `devctl` builds it into a tarball named by the commit and pushes it to a space's host, where `opsctl install` installs it. There is no version to set, no tag to mint and no `--version` check. Until devctl is next released, use the `devctl` the worktree builds: run `make build` in `devctl/`, then run the commands below from the repository root.
-
-1. Commit the change on the branch you are on (push only when asked); the working tree must be clean.
-2. `devctl/bin/devctl build dummy` writes `dummy/dist/dummy-<sha>.tar.xz`, `<sha>` being the 40 lowercase hex digits of `HEAD`. It holds `bin/dummy`, `etc/` and `share/icon.svg`; it refuses a dirty tree and a binary whose `manifest` disagrees with the committed `etc/manifest.toml`.
-3. `devctl/bin/devctl deploy <space> dummy/dist/dummy-<sha>.tar.xz` uploads it to the space's `deploy/` prefix and runs `opsctl install` over ssh. The host writes `etc/env` (with the space's `DRAIN_SECONDS`), replaces the release, publishes `ikigenba-dummy.socket` (`/run/ikigenba/dummy.sock`) and the `Type=notify` `ikigenba-dummy.service`, regenerates nginx, and restarts the service alone; the socket stays up, so requests queue on it across the restart.
-
-`dummy --version` prints the host's display string for the code it runs, built by appkit's `version.Display()` from `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`. The host does not yet set either variable, so a deployed dummy prints an empty line until it does.
+dummy ships in the suite release (`devctl build <sha|tag>`, `devctl deploy <space> <sha|tag>`); it has no build, version or tag of its own.

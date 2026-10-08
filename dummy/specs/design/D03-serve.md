@@ -44,11 +44,11 @@ says how many it cut off, and exits 1. It closes its own copy of the socket
 and never removes the socket's path. `DRAIN_SECONDS` and the service unit's
 `TimeoutStopSec` are space-wide integer-second settings owned by opsctl
 (defaults 5 and 10): opsctl writes `DRAIN_SECONDS` into every app's
-`etc/env`, and no manifest sets either. An app reads `DRAIN_SECONDS` as a
+env file, and no manifest sets either. An app reads `DRAIN_SECONDS` as a
 positive whole number, 5 when it is unset or empty, and sets no upper limit
 of its own. The environment opsctl gives an app also carries
 `IKIGENBA_SERVICES`, the path of the host's services file, normally
-`/var/lib/ikigenba/services.json`; on a laptop it is normally unset. An app reads
+`/run/ikigenba/services.json`; on a laptop it is normally unset. An app reads
 it once, at start, through appkit's `page.New` and `mcp.NewServer`, and never
 fails to start over it: unset, empty, or naming a file that is missing or
 unreadable, the app starts, serves, and says nothing about it; its pages then

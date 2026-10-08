@@ -7,22 +7,22 @@ activation passes it — `LISTEN_PID` names dummy's own process, `LISTEN_FDS` is
 variables from its environment once it has taken it. On a host, opsctl
 publishes `ikigenba-dummy.socket`, which holds the Unix socket
 `/run/ikigenba/dummy.sock`, beside `ikigenba-dummy.service`, which runs
-`/opt/dummy/bin/dummy` with no arguments as the `ikigenba` user, with
-`/opt/dummy` as its working directory and `/opt/dummy/etc/env` as its
-environment file; nginx proxies to `http://unix:/run/ikigenba/dummy.sock:`.
+`/opt/ikigenba/current/dummy/bin/dummy` with no arguments as the `ikigenba`
+user, with `/var/opt/ikigenba/dummy` as its working directory and
+`/etc/opt/ikigenba/dummy/env` as its environment file; nginx proxies to `http://unix:/run/ikigenba/dummy.sock:`.
 The service is `Type=notify`: dummy tells systemd it is ready, by sending
 `READY=1` to `$NOTIFY_SOCKET`, once it is serving. When stopped, dummy drains
 for at most `DRAIN_SECONDS`, a positive whole number of seconds read from its
 environment, and 5 when that is unset or empty. On a host, opsctl owns this
 value and the service unit's stop timeout: both are space-wide settings in
-opsctl's configuration, opsctl writes the drain into every app's `etc/env` and
+opsctl's configuration, opsctl writes the drain into every app's env file and
 the stop timeout (10 seconds by default, always longer than the drain) into
 every service unit, and an app's manifest never sets either. dummy's
 environment also carries `IKIGENBA_SERVICES`, the path of the host's services
 file, which lists the platform's services for the launcher in every page's
 banner (`S3`) and holds the description dummy's MCP endpoint gives its clients
 as instructions (`S9-mcp.md`). On a host, opsctl sets it in the environment
-the host gives dummy, normally `/var/lib/ikigenba/services.json`; on a
+the host gives dummy, normally `/run/ikigenba/services.json`; on a
 developer's laptop it is normally unset, and dummy's pages then carry no
 launcher and its MCP endpoint no instructions. dummy reads the variable once,
 when it starts, and never fails to start over it: unset, empty, or naming a
@@ -147,12 +147,13 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl install` has installed dummy: `/opt/dummy/bin/dummy` exists, and
-  `ikigenba-dummy.socket` and `ikigenba-dummy.service` are published.
+- `opsctl activate` has activated a release holding dummy:
+  `/opt/ikigenba/current/dummy/bin/dummy` exists, and `ikigenba-dummy.socket`
+  and `ikigenba-dummy.service` are published.
 - `ikigenba-dummy.socket` is active, so `/run/ikigenba/dummy.sock` exists and
   accepts connections.
 - `ikigenba-dummy.service` is not running.
-- `/opt/dummy/state/dummy.db` exists, from an earlier start, and records no
+- `/var/opt/ikigenba/dummy/state/dummy.db` exists, from an earlier start, and records no
   migration this dummy does not carry.
 - The host's services file lists the telemetry service, which takes every
   event.
@@ -163,7 +164,7 @@ Postconditions:
   `/run/ikigenba/dummy.sock`: a connection there, and every connection queued
   before dummy started, is answered by dummy.
 - dummy listens on no other socket and no port.
-- `/opt/dummy/state/dummy.db` is the database it opened, now up to date, and
+- `/var/opt/ikigenba/dummy/state/dummy.db` is the database it opened, now up to date, and
   every widget it held is still there.
 - telemetry has received one event from dummy, with no request id and no
   user, whose `version` is `<display>`, the string `dummy --version` prints
@@ -516,8 +517,9 @@ Postconditions:
 
 ## The host restarts dummy during a deploy
 
-A deploy replaces dummy's binary and restarts `ikigenba-dummy.service` alone;
-`ikigenba-dummy.socket` stays up throughout. Between the old dummy exiting
+A deploy activates a new release, which switches dummy's binary and restarts
+`ikigenba-dummy.service`, one app at a time; `ikigenba-dummy.socket` stays up
+throughout. Between the old dummy exiting
 and the new one being ready, connections wait in the socket's queue instead
 of being refused, so a client never sees dummy missing. That holds because
 dummy finishes what it accepted before it exits and leaves the socket where
@@ -542,7 +544,7 @@ stdout or stderr.
 Preconditions:
 
 - dummy is serving on `/run/ikigenba/dummy.sock` under
-  `ikigenba-dummy.service`, over `/opt/dummy/state/dummy.db`.
+  `ikigenba-dummy.service`, over `/var/opt/ikigenba/dummy/state/dummy.db`.
 - The database holds widgets, among them ones created through the old dummy.
 - A client is sending requests to `/run/ikigenba/dummy.sock` throughout the
   restart, and every request the old dummy accepted finishes at least a
@@ -591,10 +593,10 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl install` has installed dummy, and `ikigenba-dummy.socket` is
-  active, as in `The host starts dummy`.
+- `opsctl activate` has activated a release holding dummy, and
+  `ikigenba-dummy.socket` is active, as in `The host starts dummy`.
 - `ikigenba-dummy.service` is not running.
-- `/opt/dummy/state/dummy.db` exists and records no migration this dummy
+- `/var/opt/ikigenba/dummy/state/dummy.db` exists and records no migration this dummy
   does not carry, or can be created as in `The host starts dummy for the
   first time`.
 - The host's services file lists no `telemetry` entry, or nothing accepts

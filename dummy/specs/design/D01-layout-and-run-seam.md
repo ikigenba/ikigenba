@@ -132,7 +132,7 @@ and passes `v` itself as `Process.Version`.
 
 It leaves `Process.Rand` nil, so the widget ids come from `crypto/rand`;
 `Process.Dir` empty, so the database is `state/dummy.db` under the process's
-working directory, which is `/opt/dummy` on a host; and `Process.Now` nil,
+working directory, which is `/var/opt/ikigenba/dummy` on a host; and `Process.Now` nil,
 so the migrations it applies are stamped with the real time. The exec test
 sees the second as `state/dummy.db` appearing under the working directory it
 started the child in. On
@@ -339,7 +339,7 @@ that every name `internal/cli` exports is declared in one place; its value
 belongs to `D02-cli`, because the help output is that design's subject, and it
 is fixed there byte for byte.
 
-The package story lists exactly three members in the release file —
+The package story lists exactly three members in dummy's tree in the suite release —
 `bin/dummy`, `etc/manifest.toml` and `share/icon.svg`. `share/icon.svg` is
 dummy's icon, an SVG image a human draws, and its presence in the package is
 what lists dummy in the platform's launcher on a space. It is a human-authored

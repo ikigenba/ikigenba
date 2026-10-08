@@ -3,8 +3,9 @@
 Running dummy at all: help, version, the manifest, the state of its database,
 exit codes. dummy is an app of the platform: one Go binary that serves a
 control panel, and offers the same widgets to MCP clients at `/mcp`
-(`S9-mcp.md`). On a host it runs as `/opt/dummy/bin/dummy` with `/opt/dummy`
-as its working directory and its environment read from `/opt/dummy/etc/env`; a
+(`S9-mcp.md`). On a host it runs as `/opt/ikigenba/current/dummy/bin/dummy`
+with `/var/opt/ikigenba/dummy` as its working directory and its environment
+read from `/etc/opt/ikigenba/dummy/env`; a
 developer runs the same binary from the checkout. With no command it serves
 (`S2-serve.md`); the commands here are what the build, and an operator, ask of
 it. dummy keeps its widgets in its database, the SQLite file `state/dummy.db`
@@ -236,7 +237,8 @@ Preconditions:
 - The working directory holds `state/dummy.db`, which a dummy carrying the same
   migrations created or brought up to date, applying version `0001` at
   `2026-10-05T14:03:07.123456Z`. On a host the working directory is
-  `/opt/dummy` and the operator is a user who can read the database.
+  `/var/opt/ikigenba/dummy` and the operator is a user who can read the
+  database.
 
 Postconditions:
 
