@@ -192,7 +192,7 @@ func routingHeaders(t *testing.T, loc nginxNode, id, email string) {
 
 func TestRoutingRuntimeAndContexts(t *testing.T) {
 	// R-SWXP-LN7R R-4O92-QDQB R-XKZH-R9GD R-SY5L-ZEYG
-	// R-ZPLW-WYHN R-YRNZ-58EO R-4QOV-HX7P R-4T4O-9GP3
+	// R-C2Q5-AOTH R-YRNZ-58EO R-4QOV-HX7P R-4T4O-9GP3
 	// R-4UCK-N8FS R-4VKH-106H R-4WSD-ERX6
 	data := "/tmp/a b%c$d/ikigenba/sandbox/wip"
 	config := string(renderNginxConfig(data, "/checkout", "wip", 7001, 1234, []appInfo{{Name: "auth"}, {Name: "dummy"}}))
@@ -204,7 +204,7 @@ func TestRoutingRuntimeAndContexts(t *testing.T) {
 		t.Fatal("events is not empty")
 	}
 	http := routingFind(t, nodes, "http")
-	routingKeys(t, http.children, "access_log", "client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path", "server_names_hash_bucket_size", "map", "map", "map", "map", "map", "map", "upstream", "upstream", "server", "server", "server", "server")
+	routingKeys(t, http.children, "access_log", "client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path", "server_names_hash_bucket_size", "map", "map", "map", "map", "map", "map", "map", "upstream", "upstream", "server", "server", "server", "server")
 	routingFind(t, http.children, "access_log", "off")
 	routingFind(t, http.children, "server_names_hash_bucket_size", "256")
 	for _, pair := range [][2]string{{"client_body_temp_path", "client_body"}, {"proxy_temp_path", "proxy"}, {"fastcgi_temp_path", "fastcgi"}, {"uwsgi_temp_path", "uwsgi"}, {"scgi_temp_path", "scgi"}} {
@@ -242,7 +242,7 @@ func TestRoutingRuntimeAndContexts(t *testing.T) {
 func TestRoutingServersAndUngated(t *testing.T) {
 	// R-4Y09-SJNV R-T0LE-QYFU R-T1TB-4Q6J R-RN6J-D5LA
 	// R-ROEF-QXBZ R-52VV-BMMN R-T5H0-A1EM R-RLYM-ZDUL
-	// R-56JK-GXUQ R-T94P-FCMP R-TACL-T4DE R-ZQTT-AQ8C R-5A79-M92T R-GPR8-TLS0
+	// R-56JK-GXUQ R-T94P-FCMP R-C55Y-28AV R-ZQTT-AQ8C R-5A79-M92T R-GPR8-TLS0
 	for _, auth := range []bool{false, true} {
 		for _, defaultApp := range []bool{false, true} {
 			for _, guests := range []bool{false, true} {
@@ -351,7 +351,12 @@ func TestRoutingServersAndUngated(t *testing.T) {
 					}
 					routingKeys(t, ungated.children, keys...)
 					loc := routingFind(t, ungated.children, "location", "/")
-					routingKeys(t, loc.children, "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
+					locationKeys := []string{"proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
+					if !auth {
+						locationKeys = append(locationKeys, "proxy_set_header")
+						routingFind(t, loc.children, "proxy_set_header", "Origin", "$sandbox_upstream_origin")
+					}
+					routingKeys(t, loc.children, locationKeys...)
 					appName := "dummy"
 					if auth {
 						appName = "auth"
@@ -399,7 +404,7 @@ func TestRoutingFragmentEscaping(t *testing.T) {
 }
 
 func TestRoutingGatedLocations(t *testing.T) {
-	// R-EBCD-K7ZY R-ZS1P-OHZ1 R-ZT9M-29PQ R-ZUHI-G1GF R-WL7Y-EMM0 R-GQZ5-7DIP R-GKVN-AIT8 R-GH7Y-57L5
+	// R-C6DU-G01K R-ZS1P-OHZ1 R-C7LQ-TRS9 R-ZUHI-G1GF R-WL7Y-EMM0 R-C8TN-7JIY R-GKVN-AIT8 R-GH7Y-57L5
 	// R-8JN0-I3HC R-8KUW-VV81 R-ZY57-LCOI R-07WE-NIM2 R-094B-1ACR R-0AC7-F23G
 	// R-5GAR-J3SA R-TF87-C7C6 R-ZVPE-TT74 R-ZWXB-7KXT R-56JK-GXUQ R-T94P-FCMP
 	for _, setting := range []struct {
@@ -438,7 +443,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 			}
 			for _, pair := range checks {
 				check := routingFind(t, server.children, "location", "=", pair[0])
-				routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
+				routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
 				routingFind(t, check.children, "internal")
 				routingFind(t, check.children, "proxy_pass", "http://app_auth"+pair[1])
 				routingFind(t, check.children, "proxy_pass_request_body", "off")
@@ -447,6 +452,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 				routingFind(t, check.children, "proxy_set_header", "X-Original-Host", "$host")
 				routingFind(t, check.children, "proxy_set_header", "X-Original-URI", "$request_uri")
 				routingHeaders(t, check, "", "")
+				routingFind(t, check.children, "proxy_set_header", "Origin", "$sandbox_upstream_origin")
 			}
 			for _, spec := range []struct {
 				args    []string
@@ -454,7 +460,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 			}{{[]string{"location", "/"}, "signin"}, {[]string{"location", "=", "/mcp"}, "bearer"}, {[]string{"location", "^~", "/mcp/"}, "bearer"}, {[]string{"location", "=", "/api"}, "api"}, {[]string{"location", "^~", "/api/"}, "api"}, {[]string{"location", "~", "/(info/refs|git-upload-pack|git-receive-pack)$"}, "git"}} {
 				loc := routingFind(t, server.children, spec.args...)
 				open := setting.guests && spec.handler == "signin"
-				keys := []string{"auth_request", "auth_request_set", "auth_request_set", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
+				keys := []string{"auth_request", "auth_request_set", "auth_request_set", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
 				checkPath := "/_sandbox/auth"
 				if open {
 					checkPath = "/_sandbox/auth_open"
@@ -476,6 +482,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 				}
 				routingFind(t, loc.children, "proxy_pass", "http://app_dummy")
 				routingHeaders(t, loc, "$sandbox_user_id", "$sandbox_user_email")
+				routingFind(t, loc.children, "proxy_set_header", "Origin", "$sandbox_upstream_origin")
 			}
 			for _, handler := range []string{"signin", "bearer", "git", "api"} {
 				loc := routingFind(t, server.children, "location", "@sandbox_"+handler)
@@ -634,6 +641,32 @@ func TestRoutingCrossOriginMaps(t *testing.T) {
 			routingFind(t, expose.children, "OPTIONS true", "")
 			routingFind(t, expose.children, "~ true$", "Mcp-Session-Id, WWW-Authenticate")
 		})
+	}
+}
+
+func TestRoutingUpstreamOriginMap(t *testing.T) {
+	// R-C3Y1-OGK6
+	for _, apps := range [][]appInfo{
+		{{Name: "auth"}, {Name: "dummy"}},
+		{{Name: "dummy"}},
+		{{Name: "auth"}, {Name: "dummy", Default: true, Guests: true}, {Name: "sites"}},
+	} {
+		nodes := parseRoutingConfig(t, string(renderNginxConfig("/data", "/tree", "wip", 7400, 100, apps)))
+		http := routingFind(t, nodes, "http")
+		mapping := routingFind(t, http.children, "map", "$sandbox_cors_origin", "$sandbox_upstream_origin")
+		routingKeys(t, mapping.children, "", "default")
+		routingFind(t, mapping.children, "", "$http_origin")
+		routingFind(t, mapping.children, "default", "")
+		var inspect func([]nginxNode)
+		inspect = func(nodes []nginxNode) {
+			for _, node := range nodes {
+				if len(node.words) > 1 && node.words[0] == "proxy_set_header" && node.words[1] == "Origin" && !reflect.DeepEqual(node.words, []string{"proxy_set_header", "Origin", "$sandbox_upstream_origin"}) {
+					t.Fatalf("unexpected origin header: %v", node.words)
+				}
+				inspect(node.children)
+			}
+		}
+		inspect(nodes)
 	}
 }
 

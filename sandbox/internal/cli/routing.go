@@ -36,6 +36,9 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 	b.WriteString("  }\n  map $sandbox_cors_origin $sandbox_cors_credentials {\n")
 	directive("    ", nginxWord(""), nginxWord(""))
 	directive("    ", "default", "true")
+	b.WriteString("  }\n  map $sandbox_cors_origin $sandbox_upstream_origin {\n")
+	directive("    ", nginxWord(""), "$http_origin")
+	directive("    ", "default", nginxWord(""))
 	b.WriteString("  }\n")
 	for _, header := range [][2]string{
 		{"methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"},
@@ -101,6 +104,11 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 		}
 	}
 	for _, app := range apps {
+		originHeader := func() {
+			if app.Name != "auth" {
+				directive("      ", "proxy_set_header", "Origin", "$sandbox_upstream_origin")
+			}
+		}
 		b.WriteString("  server {\n")
 		directive("    ", "listen", listen)
 		names := []string{app.Name + "." + name + ".localhost"}
@@ -116,6 +124,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			b.WriteString("    location / {\n")
 			directive("      ", "proxy_pass", "http://app_"+app.Name)
 			forward(`""`, `""`)
+			originHeader()
 			b.WriteString("    }\n")
 			if app.Name == "auth" {
 				b.WriteString("    location = /check {\n      return 404;\n    }\n    location = /check/open {\n      return 404;\n    }\n")
@@ -134,6 +143,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 				directive("      ", "proxy_set_header", "X-Original-Host", "$host")
 				directive("      ", "proxy_set_header", "X-Original-URI", "$request_uri")
 				forward(`""`, `""`)
+				originHeader()
 				b.WriteString("    }\n")
 			}
 			for _, location := range []struct{ path, handler string }{
@@ -158,6 +168,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 				}
 				directive("      ", "proxy_pass", "http://app_"+app.Name)
 				forward("$sandbox_user_id", "$sandbox_user_email")
+				originHeader()
 				b.WriteString("    }\n")
 			}
 			for _, handler := range []string{"signin", "bearer", "git", "api"} {
