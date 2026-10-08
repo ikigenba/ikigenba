@@ -59,10 +59,10 @@ Postconditions:
 `devctl space create` has just brought a host up and unpacked the suite
 release it will run, and drives one `config set` per key over ssh. Nothing
 yet links `/usr/local/bin/opsctl` (`init` does, `S04-init.md`), so it runs the
-release's own opsctl by its full path. `devctl space init` drives the same
-sets again on a live host, through `opsctl` on the PATH, whenever what a key
-came from has changed. Nothing is printed: the answer to "did it work" is the
-exit code.
+release's own opsctl by its full path. On a live host an agent runs the same
+sets again on the host, through `opsctl` on the PATH, whenever what a key came
+from has changed, or the space is recreated with `devctl space create`.
+Nothing is printed: the answer to "did it work" is the exit code.
 
 These ten are what `init` needs to bring the host to the state the store
 describes, and a host that has them all and nothing else is a configured host.

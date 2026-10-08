@@ -34,10 +34,10 @@ does: a host whose installed manifests the running opsctl refuses still gets its
 slices, which `activate` needs to judge a fixed release. Every
 setup command is idempotent, so `init` is too, and a step's inputs are read from
 the store every run — which is why changing a period or a zone is `config set`
-followed by `init`, and never an edit to something `init` generated. From the
-developer's machine that pair is `devctl space init`, which sets the keys
-`create` set and runs `init` again; `create` runs it once and `space init` runs
-it on any later day. Two of the generated files also answer to the apps on the
+followed by `init`, and never an edit to something `init` generated.
+`devctl space create` runs that pair once, setting its ten keys and running
+`init`; on any later day an agent runs it on the host, or the space is
+recreated. Two of the generated files also answer to the apps on the
 host — `/etc/litestream.yml` to what is under `/var/opt/ikigenba` too — and the
 nginx file to which apps are disabled as well. So does the services file
 (`S09-services.md`), which `init` rewrites every run without printing a line for
@@ -187,8 +187,8 @@ Postconditions:
 
 ## An agent initialises a host that is ready
 
-`devctl space init` asks a host that runs releases to check itself and redo
-its own setup, through `opsctl` on the PATH. Every line is `ok`, so the
+An agent on a host that runs releases asks it to check itself and redo its
+own setup, through `opsctl` on the PATH. Every line is `ok`, so the
 sequence ran and the exit code is 0. The apps it writes are the ones the
 release `current` names; nothing under `/opt/<app>/` is read or written.
 
