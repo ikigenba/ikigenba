@@ -1,6 +1,6 @@
 # Stories — disk
 
-What scripts reads and writes on disk. scripts is one of the consumers repos' `S15-disk.md` serves: it reads repos' repositories straight from their directories with the host's own `git`, running as the same `ikigenba` user, and never reaches repos over HTTP or through anything else of repos', so repos receives no request on scripts' account and records no event for it. repos keeps one bare repository per repository at `<REPOS_DIR>/<rep id>.git`, named by the repository's id (`rep_` and 16 lowercase hexadecimal digits), never its name, whose `HEAD` names `refs/heads/main` and whose own git config holds `ikigenba.id`, `ikigenba.name`, `ikigenba.owner`, and `ikigenba.created` (repos' `S15-disk.md`). `REPOS_DIR` is a setting read once, at start, from scripts' environment; unset or empty it is the manifest's `../repos/state/repos` (`S01`), and a relative value is resolved against scripts' working directory, so on a host, where scripts runs in `/opt/scripts` and repos in `/opt/repos`, it is `/opt/scripts/../repos/state/repos`, which is `/opt/repos/state/repos`, and in a sandbox `<data>/apps/scripts/../repos/state/repos` (`S25`). scripts does not check it at start, since repos may be installed later (`S02`, `S21`). scripts reads a repository four ways and no other: reading `ikigenba.owner`, reading `ikigenba.name`, resolving a ref to a commit, and unpacking a commit's tree with `git archive`; it never writes under `REPOS_DIR` — no ref, no object, no config, no lock left behind — so a repository's directory is byte for byte what it was before scripts read it. A script names its repository by id, so a script keeps running across a rename in repos, and a repository deleted in repos is gone for scripts too. The name is read afresh from the directory each time a page shows it, and a page shows the id, muted, when the directory is gone or the name cannot be read (`S03`, `S12`); the catalog keeps no name. What scripts writes is under its own working directory: its catalog `state/scripts.db`, which the host replicates (`S01`, `S21`), and one folder per run, `state/runs/<script id>/<run id>/`, holding `tree/`, the files of the run's commit exactly as `git archive` emits them — the same paths, the same bytes, symbolic links as links, and no `.git` — and beside it `out/`, where the script writes, `input.json`, `stdout`, and `stderr` (`S08`, `S15`), with the run's metadata as design chooses. Write permission is removed from everything under `tree/` once it is unpacked (`S15`). The run folder is the product, not a cache: it lives under `state/`, never `cache/`, nothing replicates it, and nothing rebuilds it. A run's row in the catalog survives its folder going missing, and a run whose files are gone is shown as such, never as an error. Pruning (`S19`) and deletion (`S10`) remove run folders. The actor is a model working through an MCP client, or an operator on the host; scripts runs on the host in `/opt/scripts` with `REPOS_DIR` unset unless a story sets it, with `RUN_MAX_ACTIVE` 4, so that a run a story starts beside the shared catalog's two running runs starts at once (`S08`), and with the suite's services file (`S05`); telemetry takes every event; and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `nightly-report`, `scr_6d1f4a9b2e8c7035`, over `rep_9c2e4b7a1d3f8e05` at `main`, and `backfill`, `scr_e8f2a6c0d4b19357`, over `rep_0f6a2d9e8c4b7153`, never run. `/opt/repos/state/repos/` holds `rep_9c2e4b7a1d3f8e05.git` (repos' `nightly-report`), its `main` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` and its tag `v1` at `b07d2e3f5a8c1964e0d7b3a2f9c6e5d48a1b0c37`, `rep_41d8f0a6b2c97e13.git` (repos' `crm-sync`), and `rep_7b3e9a0c5d1f2846.git` (repos' `ops-tools`), all with `ikigenba.owner` `u_7f3a9c21`, and `rep_d41c7a9e05b28f63.git` (repos' `journal`), with `ikigenba.owner` `u_2b8e1d04`; there is no `rep_0f6a2d9e8c4b7153.git`.
+What scripts reads and writes on disk. scripts is one of the consumers repos' `S15-disk.md` serves: it reads repos' repositories straight from their directories with the host's own `git`, running as the same `ikigenba` user, and never reaches repos over HTTP or through anything else of repos', so repos receives no request on scripts' account and records no event for it. repos keeps one bare repository per repository at `<REPOS_DIR>/<rep id>.git`, named by the repository's id (`rep_` and 16 lowercase hexadecimal digits), never its name, whose `HEAD` names `refs/heads/main` and whose own git config holds `ikigenba.id`, `ikigenba.name`, `ikigenba.owner`, and `ikigenba.created` (repos' `S15-disk.md`). `REPOS_DIR` is a setting read once, at start, from scripts' environment; unset or empty it is the manifest's `../repos/state/repos` (`S01`), and a relative value is resolved against scripts' working directory, so on a host, where scripts runs in `/var/opt/ikigenba/scripts` and repos in `/var/opt/ikigenba/repos`, it is `/var/opt/ikigenba/scripts/../repos/state/repos`, which is `/var/opt/ikigenba/repos/state/repos`, and in a sandbox `<data>/apps/scripts/../repos/state/repos` (`S25`). scripts does not check it at start, since repos may be installed later (`S02`, `S21`). scripts reads a repository four ways and no other: reading `ikigenba.owner`, reading `ikigenba.name`, resolving a ref to a commit, and unpacking a commit's tree with `git archive`; it never writes under `REPOS_DIR` — no ref, no object, no config, no lock left behind — so a repository's directory is byte for byte what it was before scripts read it. A script names its repository by id, so a script keeps running across a rename in repos, and a repository deleted in repos is gone for scripts too. The name is read afresh from the directory each time a page shows it, and a page shows the id, muted, when the directory is gone or the name cannot be read (`S03`, `S12`); the catalog keeps no name. What scripts writes is under its own working directory: its catalog `state/scripts.db`, which the host replicates (`S01`, `S21`), and one folder per run, `state/runs/<script id>/<run id>/`, holding `tree/`, the files of the run's commit exactly as `git archive` emits them — the same paths, the same bytes, symbolic links as links, and no `.git` — and beside it `out/`, where the script writes, `input.json`, `stdout`, and `stderr` (`S08`, `S15`), with the run's metadata as design chooses. Write permission is removed from everything under `tree/` once it is unpacked (`S15`). The run folder is the product, not a cache: it lives under `state/`, never `cache/`, nothing replicates it, and nothing rebuilds it. A run's row in the catalog survives its folder going missing, and a run whose files are gone is shown as such, never as an error. Pruning (`S19`) and deletion (`S10`) remove run folders. The actor is a model working through an MCP client, or an operator on the host; scripts runs on the host in `/var/opt/ikigenba/scripts` with `REPOS_DIR` unset unless a story sets it, with `RUN_MAX_ACTIVE` 4, so that a run a story starts beside the shared catalog's two running runs starts at once (`S08`), and with the suite's services file (`S05`); telemetry takes every event; and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `nightly-report`, `scr_6d1f4a9b2e8c7035`, over `rep_9c2e4b7a1d3f8e05` at `main`, and `backfill`, `scr_e8f2a6c0d4b19357`, over `rep_0f6a2d9e8c4b7153`, never run. `/var/opt/ikigenba/repos/state/repos/` holds `rep_9c2e4b7a1d3f8e05.git` (repos' `nightly-report`), its `main` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` and its tag `v1` at `b07d2e3f5a8c1964e0d7b3a2f9c6e5d48a1b0c37`, `rep_41d8f0a6b2c97e13.git` (repos' `crm-sync`), and `rep_7b3e9a0c5d1f2846.git` (repos' `ops-tools`), all with `ikigenba.owner` `u_7f3a9c21`, and `rep_d41c7a9e05b28f63.git` (repos' `journal`), with `ikigenba.owner` `u_2b8e1d04`; there is no `rep_0f6a2d9e8c4b7153.git`.
 
 ## A model creates a script over a repository in repos' directory
 
@@ -38,12 +38,12 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's: `REPOS_DIR` is unset, and `/opt/repos/state/repos/rep_41d8f0a6b2c97e13.git` is a bare repository whose `ikigenba.owner` is `u_7f3a9c21`. No script is named `crm-weekly`.
+- The preamble's: `REPOS_DIR` is unset, and `/var/opt/ikigenba/repos/state/repos/rep_41d8f0a6b2c97e13.git` is a bare repository whose `ikigenba.owner` is `u_7f3a9c21`. No script is named `crm-weekly`.
 
 Postconditions:
 
 - The catalog holds `crm-weekly`, never run, over `rep_41d8f0a6b2c97e13` (`S06`). No run was made and nothing was unpacked.
-- `/opt/repos/state/repos/rep_41d8f0a6b2c97e13.git` is as it was. repos received no request.
+- `/var/opt/ikigenba/repos/state/repos/rep_41d8f0a6b2c97e13.git` is as it was. repos received no request.
 - The request recorded `script.created` with `script` `<id>` (`S16`).
 
 ## An operator points scripts at another repositories directory
@@ -82,15 +82,15 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's, except that the operator has set `REPOS_DIR=/srv/ikigenba/repos` in `/opt/scripts/etc/env` and restarted scripts.
-- `/srv/ikigenba/repos/rep_9c2e4b7a1d3f8e05.git` is a bare repository whose `main` is at `<sha>` and holds a `main.py`. `/opt/repos/state/repos/rep_9c2e4b7a1d3f8e05.git` still exists, its `main` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`.
+- The preamble's, except that the operator has set `REPOS_DIR=/srv/ikigenba/repos` in `/etc/opt/ikigenba/scripts/env` and restarted scripts.
+- `/srv/ikigenba/repos/rep_9c2e4b7a1d3f8e05.git` is a bare repository whose `main` is at `<sha>` and holds a `main.py`. `/var/opt/ikigenba/repos/state/repos/rep_9c2e4b7a1d3f8e05.git` still exists, its `main` at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`.
 
 Postconditions:
 
-- The run `<id>` of `nightly-report` is at `<sha>`, unpacked from `/srv/ikigenba/repos/rep_9c2e4b7a1d3f8e05.git` into `/opt/scripts/state/runs/scr_6d1f4a9b2e8c7035/<id>/tree/` (`S08`).
+- The run `<id>` of `nightly-report` is at `<sha>`, unpacked from `/srv/ikigenba/repos/rep_9c2e4b7a1d3f8e05.git` into `/var/opt/ikigenba/scripts/state/runs/scr_6d1f4a9b2e8c7035/<id>/tree/` (`S08`).
 - Neither repository changed.
 - The request recorded `run.started` with `run` `<id>`, `script` `scr_6d1f4a9b2e8c7035`, `sha` `<sha>`, and `trigger` `manual` (`S16`).
-- With `REPOS_DIR=../repos-b/state/repos` instead, scripts would have read `/opt/repos-b/state/repos/rep_9c2e4b7a1d3f8e05.git`, the relative value resolved against `/opt/scripts`.
+- With `REPOS_DIR=../repos-b/state/repos` instead, scripts would have read `/var/opt/ikigenba/repos-b/state/repos/rep_9c2e4b7a1d3f8e05.git`, the relative value resolved against `/var/opt/ikigenba/scripts`.
 
 ## A model creates a script over a repository another user owns
 
@@ -126,7 +126,7 @@ no repository 'rep_d41c7a9e05b28f63'
 
 Preconditions:
 
-- The preamble's: `git config --file /opt/repos/state/repos/rep_d41c7a9e05b28f63.git/config ikigenba.owner` prints `u_2b8e1d04`. No script is named `crm-weekly`.
+- The preamble's: `git config --file /var/opt/ikigenba/repos/state/repos/rep_d41c7a9e05b28f63.git/config ikigenba.owner` prints `u_2b8e1d04`. No script is named `crm-weekly`.
 
 Postconditions:
 
@@ -167,7 +167,7 @@ no repository 'rep_5e6f7a8b9c0d1e2f'
 
 Preconditions:
 
-- The preamble's, and `/opt/repos/state/repos/rep_5e6f7a8b9c0d1e2f.git` is a bare repository with commits on `main` whose config holds no `ikigenba.` key. No script is named `crm-weekly`.
+- The preamble's, and `/var/opt/ikigenba/repos/state/repos/rep_5e6f7a8b9c0d1e2f.git` is a bare repository with commits on `main` whose config holds no `ikigenba.` key. No script is named `crm-weekly`.
 
 Postconditions:
 
@@ -210,7 +210,7 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's; the owner then renamed `nightly-report` to `daily-report` in repos, so `git config --file /opt/repos/state/repos/rep_9c2e4b7a1d3f8e05.git/config ikigenba.name` prints `daily-report`. Its `main` is still at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`.
+- The preamble's; the owner then renamed `nightly-report` to `daily-report` in repos, so `git config --file /var/opt/ikigenba/repos/state/repos/rep_9c2e4b7a1d3f8e05.git/config ikigenba.name` prints `daily-report`. Its `main` is still at `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`.
 
 Postconditions:
 
@@ -254,12 +254,12 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's: `backfill` is over `rep_0f6a2d9e8c4b7153`, and `/opt/repos/state/repos/rep_0f6a2d9e8c4b7153.git` does not exist.
+- The preamble's: `backfill` is over `rep_0f6a2d9e8c4b7153`, and `/var/opt/ikigenba/repos/state/repos/rep_0f6a2d9e8c4b7153.git` does not exist.
 
 Postconditions:
 
 - The catalog records the run `<id>` of `backfill`, `failed` with `reason` `repository_missing` and no `sha`; nothing was unpacked and no script started (`S08`). `backfill` is otherwise unchanged.
-- scripts created nothing under `/opt/repos/state/repos/`.
+- scripts created nothing under `/var/opt/ikigenba/repos/state/repos/`.
 - `GET /backfill/` shows the repository as its id, `rep_0f6a2d9e8c4b7153`, muted, since there is no directory to read a name from (`S12`).
 - The request recorded the run's `run.finished` with `status` `failed` and no `run.started` (`S16`); its `tool.called` has `kind` `additive` and `outcome` `ok`.
 
@@ -300,12 +300,12 @@ and a `content` array of one text block whose text is that object encoded compac
 Preconditions:
 
 - The preamble's: the tag `v1` of `rep_9c2e4b7a1d3f8e05` is at `b07d2e3f5a8c1964e0d7b3a2f9c6e5d48a1b0c37`.
-- Before the call, the operator recorded every path under `/opt/repos/state/repos/rep_9c2e4b7a1d3f8e05.git` with its size, its modification time, and a checksum of its bytes.
+- Before the call, the operator recorded every path under `/var/opt/ikigenba/repos/state/repos/rep_9c2e4b7a1d3f8e05.git` with its size, its modification time, and a checksum of its bytes.
 
 Postconditions:
 
-- `/opt/scripts/state/runs/scr_6d1f4a9b2e8c7035/<id>/tree/` holds the files of `b07d2e3f5a8c1964e0d7b3a2f9c6e5d48a1b0c37`; `nightly-report`'s ref is still `main`.
-- Recorded again once the run has ended, every path under `/opt/repos/state/repos/rep_9c2e4b7a1d3f8e05.git` has the size, modification time, and checksum it had; no path was added or removed. Its `main` and `v1` are where they were.
+- `/var/opt/ikigenba/scripts/state/runs/scr_6d1f4a9b2e8c7035/<id>/tree/` holds the files of `b07d2e3f5a8c1964e0d7b3a2f9c6e5d48a1b0c37`; `nightly-report`'s ref is still `main`.
+- Recorded again once the run has ended, every path under `/var/opt/ikigenba/repos/state/repos/rep_9c2e4b7a1d3f8e05.git` has the size, modification time, and checksum it had; no path was added or removed. Its `main` and `v1` are where they were.
 - repos received no request and recorded no event.
 
 ## An operator lists the files of a run's folder
@@ -315,7 +315,7 @@ An operator looking at a run on disk finds it in a folder named by the script's 
 Command:
 
 ```
-$ cd /opt/scripts/state/runs/scr_6d1f4a9b2e8c7035/run_3f9a1c2e8b7d4a60 && find input.json stdout stderr out tree | LC_ALL=C sort
+$ cd /var/opt/ikigenba/scripts/state/runs/scr_6d1f4a9b2e8c7035/run_3f9a1c2e8b7d4a60 && find input.json stdout stderr out tree | LC_ALL=C sort
 ```
 
 Output:
@@ -348,7 +348,7 @@ Postconditions:
 
 - Nothing has changed.
 - `input.json` holds the run's input, as `S06` gives it, `stdout` its 1229 bytes of standard output, and `stderr` is empty; `out/charts/sales.svg`, `out/report.csv`, and `out/report.html` are 12034, 7904, and 48211 bytes.
-- Each file under `tree/` has the bytes `git --git-dir=/opt/repos/state/repos/rep_9c2e4b7a1d3f8e05.git archive --format=tar e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` emits for it, and no file or directory under `tree/` is writable (`S15`). There is no `tree/.git`.
+- Each file under `tree/` has the bytes `git --git-dir=/var/opt/ikigenba/repos/state/repos/rep_9c2e4b7a1d3f8e05.git archive --format=tar e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` emits for it, and no file or directory under `tree/` is writable (`S15`). There is no `tree/.git`.
 
 ## An operator removes a run's folder while scripts runs
 
@@ -357,7 +357,7 @@ A run folder is not a cache: nothing rebuilds it, and once it is gone the run's 
 Command:
 
 ```
-$ chmod -R u+w /opt/scripts/state/runs/scr_6d1f4a9b2e8c7035/run_3f9a1c2e8b7d4a60 && rm -rf /opt/scripts/state/runs/scr_6d1f4a9b2e8c7035/run_3f9a1c2e8b7d4a60
+$ chmod -R u+w /var/opt/ikigenba/scripts/state/runs/scr_6d1f4a9b2e8c7035/run_3f9a1c2e8b7d4a60 && rm -rf /var/opt/ikigenba/scripts/state/runs/scr_6d1f4a9b2e8c7035/run_3f9a1c2e8b7d4a60
 ```
 
 Output: none.

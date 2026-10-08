@@ -261,8 +261,8 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl install` has installed scripts, and `ikigenba-scripts.socket` is active, as in `S02`'s `The host starts scripts`; `ikigenba-scripts.service` is not running.
-- The scripts that last ran died without stopping — it was killed with `SIGKILL` — while `run_8a2c6e1f9b3d5074`'s and `run_6b2d8f4a0c9e1735`'s scripts were running, and systemd ended what was left of the service, so no process of either run is running. `/opt/scripts/state/scripts.db` holds `S06`'s shared catalog, in which both runs are still recorded `running`, and their folders under `/opt/scripts/state/runs/` hold the output their scripts had written.
+- The host runs a release that holds scripts, and `ikigenba-scripts.socket` is active, as in `S02`'s `The host starts scripts`; `ikigenba-scripts.service` is not running.
+- The scripts that last ran died without stopping — it was killed with `SIGKILL` — while `run_8a2c6e1f9b3d5074`'s and `run_6b2d8f4a0c9e1735`'s scripts were running, and systemd ended what was left of the service, so no process of either run is running. `/var/opt/ikigenba/scripts/state/scripts.db` holds `S06`'s shared catalog, in which both runs are still recorded `running`, and their folders under `/var/opt/ikigenba/scripts/state/runs/` hold the output their scripts had written.
 - The host's services file lists the telemetry service, which takes every event.
 
 Postconditions:
@@ -298,8 +298,8 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl install` has installed scripts, and `ikigenba-scripts.socket` is active, as in `S02`'s `The host starts scripts`; `ikigenba-scripts.service` is not running.
-- The scripts that last ran died without stopping — it was killed with `SIGKILL` — while `run_8a2c6e1f9b3d5074`'s and `run_6b2d8f4a0c9e1735`'s scripts were running and `run_c4a8e2f6b0d93157`, of `u_7f3a9c21`'s `nightly-report`, asked for by a `run` call carrying `X-Request-Id: 5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5`, was queued behind them. systemd ended what was left of the service, so no process of any run is running. `/opt/scripts/state/scripts.db` holds `S06`'s shared catalog, in which the two running runs are still recorded `running` and `run_c4a8e2f6b0d93157` is still recorded `queued`; its folder under `/opt/scripts/state/runs/scr_6d1f4a9b2e8c7035/` holds its `input.json`, its `tree/` and an empty `out/`.
+- The host runs a release that holds scripts, and `ikigenba-scripts.socket` is active, as in `S02`'s `The host starts scripts`; `ikigenba-scripts.service` is not running.
+- The scripts that last ran died without stopping — it was killed with `SIGKILL` — while `run_8a2c6e1f9b3d5074`'s and `run_6b2d8f4a0c9e1735`'s scripts were running and `run_c4a8e2f6b0d93157`, of `u_7f3a9c21`'s `nightly-report`, asked for by a `run` call carrying `X-Request-Id: 5e8b2d4f7a1c3096e4b7d0a3c6f9e2b5`, was queued behind them. systemd ended what was left of the service, so no process of any run is running. `/var/opt/ikigenba/scripts/state/scripts.db` holds `S06`'s shared catalog, in which the two running runs are still recorded `running` and `run_c4a8e2f6b0d93157` is still recorded `queued`; its folder under `/var/opt/ikigenba/scripts/state/runs/scr_6d1f4a9b2e8c7035/` holds its `input.json`, its `tree/` and an empty `out/`.
 - The host's services file lists the telemetry service, which takes every event.
 
 Postconditions:
@@ -334,7 +334,7 @@ Exits 0, once the new scripts has reported that it is ready. Nothing is on stdou
 
 Preconditions:
 
-- scripts is serving on `/run/ikigenba/scripts.sock` under `ikigenba-scripts.service`, over `S06`'s shared catalog; `/opt/scripts/bin/scripts` has been replaced by a new release.
+- scripts is serving on `/run/ikigenba/scripts.sock` under `ikigenba-scripts.service`, over `S06`'s shared catalog; `/opt/ikigenba/current` has since been pointed at a new release, whose `scripts/bin/scripts` replaces it.
 - `run_8a2c6e1f9b3d5074`'s script and `run_6b2d8f4a0c9e1735`'s are running when the old scripts receives `SIGTERM`, and both would run on for minutes.
 - No request the old scripts accepted is still running 5 seconds after its signal.
 - The host's services file lists the telemetry service, which takes every event.

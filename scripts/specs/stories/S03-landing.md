@@ -1,6 +1,6 @@
 # Stories — landing
 
-The catalog, the about screen, and the frame scripts' pages are drawn in: what a running scripts answers at `/` and `/about`, and the rules every route of scripts shares. The catalog, at `/`, tells a signed-in user what scripts is, lists their own scripts with each one's repository, ref and last run, and names the eleven tools an agent manages and runs scripts with; the about screen, at `/about`, shows scripts' name, its version, and its description. Both are server-rendered HTML drawn from scripts' templates `landing` and `about`, and the whole of each page's content arrives in the response body, the launcher's list included; neither page carries a script of its own, and no script adds content a user sees: the launcher's, `/_appkit/launcher.js`, which a page loads only with the launcher, only filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. Every page of scripts is for a signed-in user, and scripts serves nothing to guests: its manifest declares no `guests` (`S01`), so on a host with an authenticator nginx sends a visitor with no credential to auth's sign-in before the request reaches scripts. nginx sets `X-User-Id` and `X-User-Email` on every request it passes upstream, the caller auth authenticated, with the request's id in `X-Request-Id`, and scripts trusts those headers (`S02`). So a request that arrives without `X-User-Id`, or with it empty, means nginx or a sibling is misconfigured — a server fault, not a bad request — and every route of scripts answers it the same way, before it looks at the path or the method (below). The requests go to a running scripts (`S02`), each shown as the HTTP request scripts receives, with the headers the story depends on; a developer stands in for nginx by passing those headers by hand. scripts is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
+The catalog, the about screen, and the frame scripts' pages are drawn in: what a running scripts answers at `/` and `/about`, and the rules every route of scripts shares. The catalog, at `/`, tells a signed-in user what scripts is, lists their own scripts with each one's repository, ref and last run, and names the eleven tools an agent manages and runs scripts with; the about screen, at `/about`, shows scripts' name, its version, and its description. Both are server-rendered HTML drawn from scripts' templates `landing` and `about`, and the whole of each page's content arrives in the response body, the launcher's list included; neither page carries a script of its own, and no script adds content a user sees: the launcher's, `/_appkit/launcher.js`, which a page loads only with the launcher, only filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. Every page of scripts is for a signed-in user, and scripts serves nothing to guests: its manifest declares no `guests` (`S01`), so on a host with an authenticator nginx sends a visitor with no credential to auth's sign-in before the request reaches scripts. nginx sets `X-User-Id` and `X-User-Email` on every request it passes upstream, the caller auth authenticated, with the request's id in `X-Request-Id`, and scripts trusts those headers (`S02`). So a request that arrives without `X-User-Id`, or with it empty, means nginx or a sibling is misconfigured — a server fault, not a bad request — and every route of scripts answers it the same way, before it looks at the path or the method (below). The requests go to a running scripts (`S02`), each shown as the HTTP request scripts receives, with the headers the story depends on; a developer stands in for nginx by passing those headers by hand. scripts is started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
 
 ```
 {
@@ -74,8 +74,8 @@ The page has no `div#no-scripts`. Below that is the section headed `MCP tools`, 
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file and is readable by scripts, and telemetry takes every event.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file and is readable by scripts, and telemetry takes every event.
 - The catalog holds `S06`'s shared catalog, and the repositories it names are as summarised above: `rep_0f6a2d9e8c4b7153.git` is not in `REPOS_DIR`, and each of the others is there with its `ikigenba.name`.
 
 Postconditions:
@@ -116,7 +116,7 @@ Status 200. The body is the catalog of `A user opens the catalog`, but for its b
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file holds the suite's services file.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -149,7 +149,7 @@ Status 200. The body is the catalog of `A user opens the catalog`, but the secti
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file holds the suite's services file.
 - The catalog holds one script, `u_2b8e1d04`'s `digest`, and its run; `u_7f3a9c21` owns no script.
 
 Postconditions:
@@ -182,8 +182,8 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -216,7 +216,7 @@ Status 200. The body is the catalog of `A user opens the catalog`, except that t
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file holds the suite's services file.
 - scripts was started while the catalog held `S06`'s shared catalog and `rep_41d8f0a6b2c97e13.git` was named `crm-sync`, and it has not been restarted since.
 - `rep_41d8f0a6b2c97e13.git`'s config now holds the name `crm-pipeline`.
 
@@ -249,8 +249,8 @@ Status 200. The body is an HTML document titled `About scripts`, with the same s
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file, and telemetry takes every event.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file, and telemetry takes every event.
 
 Postconditions:
 
@@ -297,7 +297,7 @@ Postconditions:
 
 ## A user on a host with services opens the launcher
 
-On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from scripts to any of them without typing an address. Here `/var/lib/ikigenba/services.json` is the suite's services file with an `icon` on each of its seven entries, `auth`, `dummy`, `mcp`, `repos`, `scripts`, `sites`, and `telemetry`, each holding the SVG text of that service's icon; scripts' own is the one its package ships, `share/icon.svg` (`S23`). The launcher lists every service that carries an icon, whether or not it is an MCP service.
+On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from scripts to any of them without typing an address. Here `/run/ikigenba/services.json` is the suite's services file with an `icon` on each of its seven entries, `auth`, `dummy`, `mcp`, `repos`, `scripts`, `sites`, and `telemetry`, each holding the SVG text of that service's icon; scripts' own is the one its package ships, `share/icon.svg` (`S23`). The launcher lists every service that carries an icon, whether or not it is an MCP service.
 
 In a browser, the list is closed when the page loads, and pressing the launcher button opens it. Typing in the search field keeps only the entries whose name contains the typed text, ignoring case and any spaces around it; clearing the field shows them all again. When the text matches no entry, the no-match line appears, reading `No service matches “<text>”.` with the typed text in quotation marks. Pressing Enter in the search field opens the first entry still shown that is a working link, and does nothing when there is none. That filtering is the whole of what `/_appkit/launcher.js` does: every entry, and the no-match line, arrived with the page.
 
@@ -322,8 +322,8 @@ Status 200. The body is the catalog of `A user opens the catalog`, with the same
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -355,8 +355,8 @@ Status 200. The body is the catalog of `A user opens the catalog`: the profile l
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` does not exist.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` does not exist.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -366,7 +366,7 @@ Postconditions:
 
 ## A user sees the launcher follow a change to the services file
 
-The host rewrites the services file when a service is installed or switched on or off, and scripts reads the file afresh for every page, so the next page a user loads shows the new list without scripts being restarted. Here the host has switched `dummy` off since scripts started: `/var/lib/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
+The host rewrites the services file when a service is installed or switched on or off, and scripts reads the file afresh for every page, so the next page a user loads shows the new list without scripts being restarted. Here the host has switched `dummy` off since scripts started: `/run/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
 
 Request:
 
@@ -389,8 +389,8 @@ Status 200. The body is the catalog with the launcher, as in `A user on a host w
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment while `/var/lib/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
-- `/var/lib/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment while `/run/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
+- `/run/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -399,7 +399,7 @@ Postconditions:
 
 ## A user on a host whose services file names no auth still gets auth's links
 
-The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one scripts build serves whichever space it is installed on. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry.
+The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one scripts build serves whichever space it is installed on. Here `/run/ikigenba/services.json` is the suite's services file without the `auth` entry.
 
 Request:
 
@@ -445,8 +445,8 @@ Status 200. The body is the catalog of `A user opens the catalog`, and for every
 
 Preconditions:
 
-- scripts is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
+- scripts is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:

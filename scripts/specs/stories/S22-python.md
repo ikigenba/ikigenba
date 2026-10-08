@@ -145,39 +145,36 @@ Postconditions:
 - `sandbox logs scripts` shows the line `scripts: python3.12 not found on PATH`.
 - scripts created no database and no runs directory under its app directory.
 
-## An agent installs scripts on a space launched before first boot installed python3.12
+## An agent deploys scripts to a space launched before first boot installed python3.12
 
-The space's host was launched before its first-boot script named `python3.12`, so the host has `git` but no `python3.12`. opsctl installs scripts as it installs any app, and its last step starts the service, which refuses to start; opsctl reports that as it reports any service that will not come up, with the journal quoted (opsctl's `S7-apps.md`). `devctl deploy` runs this install over ssh and relays the same report.
+The space's host was launched before its first-boot script named `python3.12`, so the host has `git` but no `python3.12`. devctl deploys the suite release to it as to any space, and the release's own opsctl activates it: activate restarts every app one at a time, and scripts' service refuses to start. opsctl reports that as it reports any service that will not come up, with the journal quoted (opsctl's `S10-releases.md`), and `devctl deploy` relays the same report (devctl's `S5-deploy.md`).
 
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/scripts-<sha>.tar.xz
+$ devctl deploy sbx.ikigenba.dev <sha>
 ```
 
-Output: install's step lines for scripts, as for any app, ending:
+Output: deploy's and activate's step lines, as for any release, which devctl's and opsctl's stories own, up to the step that starts scripts' service, which fails with `scripts: service failed to start`; then devctl's error line and, quoted from opsctl, `opsctl: activate failed` and the journal, whose quoted lines include:
 
 ```
-service: failed: scripts: service failed to start
-opsctl: install failed
-
-> ikigenba-scripts.service: Main process exited, code=exited, status=1/FAILURE
-> scripts: python3.12 not found on PATH
+ikigenba-scripts.service: Main process exited, code=exited, status=1/FAILURE
+scripts: python3.12 not found on PATH
 ```
 
-Exits 1. The step outcome lines are on stdout; the command diagnostic and quoted journal are on stderr.
+Exits 1. The step outcome lines are on stdout; the diagnostics and quoted journal are on stderr.
 
 Preconditions:
 
-- The host of `sbx.ikigenba.dev` was launched before its first-boot script installed `python3.12`; opsctl has initialised it, and `git` is on the `PATH`.
+- The host of `sbx.ikigenba.dev` was launched before its first-boot script installed `python3.12`, and `git` is on the `PATH`.
 - No directory on the `PATH` scripts' service runs with holds an executable named `python3.12`.
-- scripts has never been installed on this host, and `scripts-<sha>.tar.xz` is the file `devctl build scripts` wrote at the commit `<sha>` (`S23`).
+- No release the host has activated held scripts, and the release at the commit `<sha>` holds it (`S23`).
 
 Postconditions:
 
-- scripts is unpacked under `/opt/scripts`, both its units are written and enabled, its socket is listening, and nginx routes `scripts.sbx.ikigenba.dev`; `ikigenba-scripts.service` is `failed`. Nothing was rolled back.
-- `/var/lib/ikigenba/services.json` has been rewritten and lists `scripts` as enabled: the entry is written before the service starts, and a failed service does not undo it.
-- scripts created no `/opt/scripts/state/scripts.db` and no `/opt/scripts/state/runs/`, and sent telemetry nothing.
+- `/opt/ikigenba/current` names `/opt/ikigenba/releases/<sha>/`, scripts' units are written and enabled, its socket is listening, and nginx routes `scripts.sbx.ikigenba.dev`; `ikigenba-scripts.service` is `failed`. Nothing was rolled back.
+- `/run/ikigenba/services.json` has been rewritten and lists `scripts` as enabled: the entry is written before the service starts, and a failed service does not undo it.
+- scripts created no `/var/opt/ikigenba/scripts/state/scripts.db` and no `/var/opt/ikigenba/scripts/state/runs/`, and sent telemetry nothing.
 
 ## An operator installs python3.12 on a space launched before first boot installed it
 
@@ -203,6 +200,6 @@ Preconditions:
 Postconditions:
 
 - `python3.12` is installed on the host, on the `PATH` scripts' service runs with.
-- `ikigenba-scripts.service` is `active`: scripts started for the first time, creating `/opt/scripts/state/scripts.db` and `/opt/scripts/state/runs/` (`S02`), and is serving on `/run/ikigenba/scripts.sock`.
+- `ikigenba-scripts.service` is `active`: scripts started for the first time, creating `/var/opt/ikigenba/scripts/state/scripts.db` and `/var/opt/ikigenba/scripts/state/runs/` (`S02`), and is serving on `/run/ikigenba/scripts.sock`.
 - telemetry has received scripts' `service.started`, whose `version` is `<display>`, the display string of the environment the host gives scripts (`S02`).
 - Every run of a script on this host runs with that `python3.12`.

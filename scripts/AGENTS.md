@@ -19,9 +19,10 @@ the MCP gateway: `list`, `show`, `create`, `update`, `delete`, `run`, `runs`,
 `result` and `cancel`. At `/` it serves a catalog of the user's scripts and
 their last runs, with a page for each script at `/<name>/` and for each run
 at `/<name>/runs/<run id>/`, and links to an about screen. On a host it runs
-as `/opt/scripts/bin/scripts` with `/opt/scripts` as its working directory
-and its environment from `/opt/scripts/etc/env`; a developer runs the same
-binary from the checkout. The module path is
+as `/opt/ikigenba/current/scripts/bin/scripts` with
+`/var/opt/ikigenba/scripts` as its working directory and its environment from
+`/etc/opt/ikigenba/scripts/env`; a developer runs the same binary from the
+checkout. The module path is
 `github.com/ikigenba/ikigenba/scripts`. It requires appkit
 (`github.com/ikigenba/ikigenba/appkit`), runs the host's `git` and
 `python3.12` (see Toolchain), and uses appkit's packages `page` (the banner,
@@ -198,9 +199,9 @@ Tests may create filesystem fixtures inside that temporary tree (an absent
 parent, a regular file named `state`, a file at `state/scripts.db` that is not
 a database, a catalog a test's own `db.Open` made and then changed through
 `DB.Write`, a bare repository with a commit the test made, a run directory the
-test removed or made unwritable); nothing touches `/opt/scripts`,
-`/opt/repos`, the checkout's `state/` or a shared file. A catalog failure is
-provoked with `SetFailing(true)` on the handle the store the test handed the
+test removed or made unwritable); nothing touches
+`/var/opt/ikigenba/scripts`, `/var/opt/ikigenba/repos`, the checkout's
+`state/` or a shared file. A catalog failure is provoked with `SetFailing(true)` on the handle the store the test handed the
 server was built over, before a call or from a hook design names, never by
 corrupting the file, removing permissions or closing the store. The one
 exception is the test of a failed `Recover` through `Run`, where the store is
@@ -402,36 +403,5 @@ temporary directory.
 
 ## Deploy
 
-Deploy machinery, `devctl build` and `devctl deploy`, is hand-maintained
-infrastructure outside the spec system: the build run never reads, edits, or
-tests it.
-
-scripts is an app, not a self-installing CLI: `devctl` builds it into a tarball
-named by the commit and pushes it to a space's host, where `opsctl install`
-installs it. There is no version to set, no tag to mint and no `--version`
-check. Until devctl is next released, use the `devctl` the worktree builds: run
-`make build` in `devctl/`, then run the commands below from the repository
-root. The host must provide `git` and `python3.12`, which its first-boot script
-installs (on a space launched before `python3.12` joined that script's install
-line, an operator installs it once by hand), and must run repos, whose
-repositories scripts reads.
-
-1. Commit the change on the branch you are on (push only when asked); the
-   working tree must be clean.
-2. `devctl/bin/devctl build scripts` writes `scripts/dist/scripts-<sha>.tar.xz`,
-   `<sha>` being the 40 lowercase hex digits of `HEAD`. It holds `bin/scripts`,
-   `etc/`, and `share/icon.svg`; it refuses a dirty tree and a binary whose
-   `manifest` disagrees with the committed `etc/manifest.toml`.
-3. `devctl/bin/devctl deploy <space> scripts/dist/scripts-<sha>.tar.xz` uploads
-   the tarball to the space's `deploy/` prefix and runs `opsctl install` over
-   ssh; the host fetches it, writes `etc/env` (the manifest's `[env]` defaults
-   and the space's `DRAIN_SECONDS`), replaces the release, publishes
-   `ikigenba-scripts.socket` (the Unix socket `/run/ikigenba/scripts.sock`)
-   and the `Type=notify` `ikigenba-scripts.service`, bounded by the manifest's
-   `[resources]`, regenerates the host's nginx and litestream configuration,
-   and restarts the service alone. The database is kept across releases.
-
-`scripts --version` prints the host's display string for the code it runs,
-built by appkit's `version.Display()` from `IKIGENBA_COMMIT` and
-`IKIGENBA_RELEASE`. The host does not yet set either variable, so a deployed
-scripts prints an empty line until it does.
+scripts ships in the suite release: `devctl build <sha|tag>` builds it with
+every other app, and `devctl deploy <space> <sha|tag>` deploys that release.
