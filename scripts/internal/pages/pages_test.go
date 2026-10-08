@@ -867,6 +867,64 @@ func appkitMarkup(t *testing.T, name string, b page.Banner) string {
 	}
 	return out.String()
 }
+
+// R-XRQY-CTD2: inspect the shared banner in the page's actual response.
+func bannerHooks(t *testing.T, body string, b page.Banner) {
+	t.Helper()
+	headers := elements(body, "header")
+	if len(headers) == 0 {
+		t.Fatal("absent banner header")
+	}
+	header := content(t, headers[0])
+	mark := one(t, header, "strong")
+	if !class(mark, "mark") {
+		t.Fatal("banner mark hook")
+	}
+	attr(t, mark, "data-service", b.Service)
+	favicon := one(t, mark.body, "img")
+	attr(t, favicon, "src", "/_appkit/favicon.svg")
+	attr(t, favicon, "alt", "")
+	service := one(t, mark.body, "span")
+	if !class(service, "service") {
+		t.Fatal("banner service hook")
+	}
+	requireEqual(t, strings.TrimSpace(mark.body[:favicon.start]), "")
+	requireEqual(t, normalise(mark.body[favicon.end:service.start]), "Ikigenba")
+	serviceContent := strings.TrimSpace(service.body)
+	if !strings.HasPrefix(serviceContent, string(b.Icon)) {
+		t.Fatal("banner service icon differs from returned icon")
+	}
+	requireEqual(t, strings.TrimSpace(serviceContent[len(b.Icon):]), template.HTMLEscapeString(b.Service))
+	requireEqual(t, strings.TrimSpace(mark.body[service.closeEnd:]), "")
+	requireEqual(t, strings.TrimSpace(header[:mark.start]), "")
+	next := mark.closeEnd
+	launchers := ofClass(header, "button", "launcher")
+	if len(b.Services) > 0 {
+		requireEqual(t, len(launchers), 1)
+		requireEqual(t, strings.TrimSpace(header[next:launchers[0].start]), "")
+		next = launchers[0].closeEnd
+	} else {
+		requireEqual(t, len(launchers), 0)
+	}
+	profile := one(t, header, "a")
+	if !class(profile, "profile") {
+		t.Fatal("banner profile hook")
+	}
+	attr(t, profile, "title", b.Email)
+	requireEqual(t, strings.TrimSpace(header[next:profile.start]), "")
+	form := one(t, header, "form")
+	requireEqual(t, strings.TrimSpace(header[profile.closeEnd:form.start]), "")
+	signout := one(t, form.body, "button")
+	if !class(signout, "signout") {
+		t.Fatal("banner sign-out hook")
+	}
+	for name, value := range map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"} {
+		attr(t, signout, name, value)
+	}
+	requireEqual(t, normalise(signout.body), "")
+	one(t, signout.body, "svg")
+}
+
 func written(t *testing.T, body string, b page.Banner) string {
 	t.Helper()
 	banner := appkitMarkup(t, "banner", b)
@@ -1793,12 +1851,15 @@ func TestAllPageCommonHooks(t *testing.T) {
 	sc := f.create(t, "owner", "plain-script")
 	u := f.add(t, sc, 501, store.StatusRunning, "", 0, 0)
 	for _, base := range []page.Banner{fixedBanner, {Service: "runner-Blue.7", Version: "build+candidate.8"}, {Service: "runner <Blue>&", Version: "build candidate"}} {
-		for _, services := range [][]page.Service{nil, {{Name: "scripts", URL: "https://scripts.example", Enabled: true, Current: true}, {Name: "other", URL: "https://other.example", Enabled: true, Icon: "plain-icon"}}} {
+		for _, services := range [][]page.Service{nil, {{Name: "scripts", URL: "https://scripts.example", Enabled: true, Current: true}, {Name: "other", URL: "https://other.example", Enabled: true, Icon: "plain-icon"}}, {{Name: "scripts", URL: "https://scripts.example", Enabled: true, Current: true, Icon: template.HTML(`<svg><path d="M1 1h2v2H1z"/></svg>`)}}} {
 			if base.Service == "runner <Blue>&" && len(services) == 0 {
 				continue
 			}
 			b := base
 			b.Services = services
+			if len(services) > 0 {
+				b.Icon = services[0].Icon
+			}
 			f.cfg.Banner = func(user page.User) page.Banner {
 				answer := b
 				answer.Email, answer.ProfileURL, answer.LogoutURL = user.Email, user.ProfileURL, user.LogoutURL
@@ -1825,6 +1886,7 @@ func TestAllPageCommonHooks(t *testing.T) {
 					requireEqual(t, w.Code, 200)
 					whole := w.Body.String()
 					banner := f.cfg.Banner(page.User{Email: "person@example.com", ProfileURL: "https://auth.sbx.example/", LogoutURL: "https://auth.sbx.example/logout"})
+					bannerHooks(t, whole, banner)
 					body := written(t, whole, banner)
 					if len(services) > 0 {
 						requireEqual(t, len(ofClass(whole, "button", "launcher")), 1)

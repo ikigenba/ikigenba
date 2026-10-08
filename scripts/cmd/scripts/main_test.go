@@ -37,6 +37,8 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
+const binaryScriptsIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
+
 func binaryMust(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
@@ -385,11 +387,16 @@ func TestBinary(t *testing.T) {
 	}
 	serviceEntries := []map[string]any{}
 	for _, name := range []string{"auth", "dummy", "scripts"} {
-		serviceEntries = append(serviceEntries, map[string]any{"name": name, "url": "https://" + name + ".different.example", "socket": filepath.Join(short, name), "enabled": true, "mcp": name == "scripts", "description": name, "icon": "<svg></svg>"})
+		icon := "<svg></svg>"
+		if name == pages.ServiceName {
+			icon = binaryScriptsIcon
+		}
+		serviceEntries = append(serviceEntries, map[string]any{"name": name, "url": "https://" + name + ".different.example", "socket": filepath.Join(short, name), "enabled": true, "mcp": name == "scripts", "description": name, "icon": icon})
 	}
 	writeServices(serviceEntries)
 	c, out, errOut = start(servicePath)
 	_, body = request("/", http.MethodGet, "")
+	assertBinaryBanner(t, body)
 	assertBinaryTag(t, body, "a", map[string]string{"class": "profile"})
 	assertBinaryTag(t, body, "a", map[string]string{"class": "profile", "title": "mg@example.com", "href": "https://auth.different.example/"})
 	assertBinaryTag(t, body, "form", nil)
@@ -403,6 +410,7 @@ func TestBinary(t *testing.T) {
 	serviceEntries[1]["enabled"] = false
 	writeServices(serviceEntries)
 	_, body = request("/", http.MethodGet, "")
+	assertBinaryBanner(t, body)
 	assertBinaryAttribute(t, body, "aria-disabled", "a", map[string]string{"title": "dummy is unavailable"})
 	stop(c, syscall.SIGTERM, out, errOut, false)
 
@@ -571,6 +579,63 @@ func TestBinary(t *testing.T) {
 	}
 	trace.close()
 
+}
+
+// R-XW4F-83YL: observe the services-file kit through the binary's banner.
+func assertBinaryBanner(t *testing.T, body string) {
+	t.Helper()
+	part := func(body, tag string, attrs map[string]string) (string, string) {
+		t.Helper()
+		assertBinaryTag(t, body, tag, attrs)
+		for _, start := range binaryTags(body, tag) {
+			if !binaryMatches(start, attrs) {
+				continue
+			}
+			offset := strings.Index(body, start) + len(start)
+			end := strings.Index(body[offset:], "</"+tag+">")
+			if end < 0 {
+				t.Fatalf("unclosed banner %s", tag)
+			}
+			return start + body[offset:offset+end] + "</" + tag + ">", body[offset : offset+end]
+		}
+		t.Fatalf("absent banner %s", tag)
+		return "", ""
+	}
+	visible := func(s string) string {
+		return strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(s, ""))), " ")
+	}
+	headerMarkup := regexp.MustCompile(`(?s)<header\b[^>]*>.*?</header>`).FindString(body)
+	_, header := part(headerMarkup, "header", nil)
+	mark, markContent := part(header, "strong", map[string]string{"class": "mark", "data-service": pages.ServiceName})
+	assertBinaryTag(t, markContent, "img", map[string]string{"src": "/_appkit/favicon.svg", "alt": ""})
+	favicon := binaryTags(markContent, "img")[0]
+	service, serviceContent := part(markContent, "span", map[string]string{"class": "service"})
+	serviceContent = strings.TrimSpace(serviceContent)
+	if !strings.HasPrefix(strings.TrimSpace(markContent), favicon) || visible(strings.SplitN(markContent, service, 2)[0]) != "Ikigenba" || !strings.HasPrefix(serviceContent, binaryScriptsIcon) {
+		t.Fatalf("banner favicon, product, icon and service: %q", markContent)
+	}
+	if strings.TrimSpace(serviceContent[len(binaryScriptsIcon):]) != pages.ServiceName {
+		t.Fatalf("banner service name: %q", serviceContent)
+	}
+	launcher, _ := part(header, "button", map[string]string{"class": "launcher"})
+	profile, _ := part(header, "a", map[string]string{"class": "profile", "title": "mg@example.com"})
+	form, formContent := part(header, "form", nil)
+	rest := header
+	for _, child := range []string{mark, launcher, profile, form} {
+		rest = strings.TrimSpace(rest)
+		if !strings.HasPrefix(rest, child) {
+			t.Fatal("banner order: want mark, launcher, profile, sign-out form")
+		}
+		rest = rest[len(child):]
+	}
+	if strings.TrimSpace(rest) != "" {
+		t.Fatal("extra banner content")
+	}
+	_, signout := part(formContent, "button", map[string]string{"class": "signout", "type": "submit", "aria-label": "Sign out", "title": "Sign out"})
+	assertBinaryTag(t, signout, "svg", nil)
+	if visible(signout) != "" {
+		t.Fatalf("sign-out has visible text: %q", visible(signout))
+	}
 }
 
 func binaryTags(body, tag string) []string {
