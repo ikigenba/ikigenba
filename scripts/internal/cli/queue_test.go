@@ -41,7 +41,7 @@ func assertQueuedFinished(t *testing.T, es []telemetry.Event, run any, origin, s
 }
 
 func TestQueueAdmissionPromotionAndFrozenBounds(t *testing.T) {
-	// R-LGBN-X90K R-RP1N-0JSO R-TODC-EF3T R-TPL8-S6UI
+	// R-HL58-PW1H R-HNL1-HFIV R-TODC-EF3T R-TPL8-S6UI
 	h := newHarness(t)
 	h.repository(waitingMain)
 	h.set("RUN_MAX_ACTIVE", "1")
@@ -198,7 +198,7 @@ func TestQueuedCancelAndDeleteTrail(t *testing.T) {
 }
 
 func TestDrainAbandonsQueueBeforeRunningProcessEnds(t *testing.T) {
-	// R-LIRG-OSHY R-TS11-JQBW
+	// R-HMD5-3NS6 R-TS11-JQBW
 	h := newHarness(t)
 	h.repository(waitingMain)
 	h.set("RUN_MAX_ACTIVE", "1")

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -19,17 +18,6 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
 	"github.com/ikigenba/ikigenba/scripts/internal/settings"
 )
-
-// R-J9LV-A4MF R-JC1O-1O3T
-func TestVersion(t *testing.T) {
-	version := &cli.Version
-	const numeric = `(0|[1-9][0-9]*)`
-	const identifier = `(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`
-	expression := `^v` + numeric + `\.` + numeric + `\.` + numeric + `(-` + identifier + `(\.` + identifier + `)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`
-	if !regexp.MustCompile(expression).MatchString(*version) {
-		t.Fatalf("invalid release version %q", *version)
-	}
-}
 
 // R-1XBL-2MBE R-L6KG-V330 R-TD2X-I87E R-TFIQ-9ROS R-L7SD-8UTP
 func TestCommandConstants(t *testing.T) {
@@ -62,13 +50,13 @@ func TestCommandConstants(t *testing.T) {
 	}
 }
 
-// R-TJ6F-F2WV R-TKEB-SUNK R-TLM8-6ME9 R-1YJH-GE23 R-1ZRD-U5SS R-TP9X-BXMC R-A3YX-3RPC R-TEAT-VZY3
+// R-GZ71-U0OZ R-TKEB-SUNK R-TLM8-6ME9 R-1YJH-GE23 R-1ZRD-U5SS R-TP9X-BXMC R-A3YX-3RPC R-TEAT-VZY3
 func TestCommandRun(t *testing.T) {
 	tests := []struct {
 		args           []string
 		out, offending string
 	}{
-		{[]string{"--version"}, cli.Version + "\n", ""},
+		{[]string{"--version"}, testVersion + "\n", ""},
 		{[]string{"manifest"}, cli.Manifest, ""},
 		{[]string{"--help"}, cli.Usage, ""},
 		{[]string{"bogus"}, "", "bogus"},
@@ -96,7 +84,7 @@ func TestCommandRun(t *testing.T) {
 			var stdout bytes.Buffer
 			var stderr writeCounter
 			dir := t.TempDir()
-			code := cli.Run(context.Background(), cli.Process{Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir})
+			code := cli.Run(context.Background(), cli.Process{Version: testVersion, Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir})
 			wantCode := cli.ExitSuccess
 			wantErr := ""
 			if tc.out == "" {
@@ -125,6 +113,17 @@ func TestCommandRun(t *testing.T) {
 				t.Fatalf("command changed directory: %v %v", entries, err)
 			}
 		})
+	}
+}
+
+// R-GZ71-U0OZ
+func TestVersionUsesProcessDisplay(t *testing.T) {
+	for _, display := range []string{"", "r142 (c604e32)", "arbitrary display"} {
+		var out, errOut bytes.Buffer
+		code := cli.Run(context.Background(), cli.Process{Version: display, Args: []string{"--version"}, Stdout: &out, Stderr: &errOut, Dir: t.TempDir()})
+		if code != cli.ExitSuccess || out.String() != display+"\n" || errOut.Len() != 0 {
+			t.Fatalf("version %d %q %q", code, out.String(), errOut.String())
+		}
 	}
 }
 
@@ -157,7 +156,8 @@ func TestCommandsLeaveProcessUntouched(t *testing.T) {
 			dir := t.TempDir()
 			capture := &forbiddenSink{t}
 			p := cli.Process{
-				Args: args, Stdout: io.Discard, Stderr: io.Discard, Dir: dir,
+				Version: testVersion,
+				Args:    args, Stdout: io.Discard, Stderr: io.Discard, Dir: dir,
 				LookupEnv:   func(string) (string, bool) { forbidden(); return "", false },
 				Environ:     func() []string { forbidden(); return nil },
 				Unsetenv:    func(string) error { forbidden(); return nil },
