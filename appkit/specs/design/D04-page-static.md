@@ -36,7 +36,7 @@ Not fixed by this design, so the implementation may send or honour them or not a
 
 None of that is a requirement, for the reason D03 gives for `launcher.js`: no gate runs a browser. The build's part is limited to serving the script's bytes unaltered.
 
-`favicon.svg` is likewise a human-drawn copy, of the repository's `design/ikigenba/favicon.svg`: the suite's one favicon. Pages link it in their own head with `<link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg">`; the banner does not (D03). Its switch to a light stroke under `prefers-color-scheme: dark` lives inside the SVG and is a browser's to honour, so it is no requirement either; the build serves the bytes unaltered.
+`favicon.svg` is likewise a human-drawn copy, of the repository's `design/ikigenba/favicon.svg`: the suite's one favicon. Pages link it in their own head with `<link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg">`; the banner does not link it, though its mark shows the same file as an image (D03). Its switch to a light stroke under `prefers-color-scheme: dark` lives inside the SVG and is a browser's to honour, so it is no requirement either; the build serves the bytes unaltered.
 
 What the preload, the long cache and `font-display` do in a browser — fetching upright Inter early, reusing a font without asking, and showing the fallback face only for a moment — is likewise a browser's to honour and no requirement. The build's part is the URLs, headers, and markup the requirements state.
 
