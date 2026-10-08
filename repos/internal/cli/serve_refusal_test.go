@@ -139,7 +139,7 @@ func TestServeTakesExactlyDescriptorThreeBeforeGit(t *testing.T) {
 	}
 }
 
-// R-YB4H-4PUF
+// R-KQ4P-PD9A
 func TestServeStoreFailureBeforeOtherEffects(t *testing.T) {
 	for _, kind := range []string{"database", "root"} {
 		t.Run(kind, func(t *testing.T) {
@@ -212,7 +212,7 @@ func TestServeStoreFailureBeforeOtherEffects(t *testing.T) {
 	}
 }
 
-// R-YCCD-IHL4
+// R-KW87-M7YR
 func TestServeCancelledBeforeStoreIsSilent(t *testing.T) {
 	f := newServeFixture(t)
 	f.notification(t)

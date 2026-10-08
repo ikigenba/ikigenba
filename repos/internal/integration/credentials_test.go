@@ -481,7 +481,7 @@ func TestRunDoesNotExportCredentials(t *testing.T) {
 			finished := make(chan int, 1)
 			returned := false
 			go func() {
-				finished <- cli.Run(ctx, cli.Process{
+				finished <- cli.Run(ctx, cli.Process{Version: "fixture-display",
 					LookupEnv: func(key string) (string, bool) {
 						keysMu.Lock()
 						keys = append(keys, key)
@@ -493,9 +493,9 @@ func TestRunDoesNotExportCredentials(t *testing.T) {
 					Stdout: io.Discard, Stderr: &stderr, Inherit: func(uintptr) (net.Listener, error) { return ln, nil },
 					Now: now, After: credentialAfter, Sleep: sleep,
 					Rand: &deterministicBytes{}, Dir: dir, Sink: sink, EventSink: busSink,
-					Banner: page.New(web.ServiceName, cli.Version).Banner,
+					Banner: page.New(web.ServiceName, "fixture-display").Banner,
 					MCP: func(w *telemetry.Writer) *mcp.Server {
-						return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w})
+						return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "fixture-display", Telemetry: w})
 					},
 				})
 			}()
@@ -683,12 +683,12 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 		}
 	}()
 	sink := &eventSink{}
-	w := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: cli.Version, Sink: sink, Stderr: io.Discard, Now: credentialClock, Rand: &deterministicBytes{}})
+	w := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: "fixture-display", Sink: sink, Stderr: io.Discard, Now: credentialClock, Rand: &deterministicBytes{}})
 	w.Ready()
 	defer w.Shutdown(context.Background(), "test complete")
 	l := limits.New(settings.Defaults(), limits.Clock{Now: credentialClock, After: credentialAfter})
 	bus := credentialEmitter(t, w)
-	handler := web.Handler(web.Config{Banner: page.New(web.ServiceName, cli.Version).Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w}), ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus})
+	handler := web.Handler(web.Config{Banner: page.New(web.ServiceName, "fixture-display").Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "fixture-display", Telemetry: w}), ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus})
 	server := httptest.NewServer(a.wrap(handler))
 	defer server.Close()
 	exerciseCredentials(t, server.URL, cs, a)
@@ -807,8 +807,8 @@ func credentialLimitRefusals(t *testing.T, cs []credential, a *inspection, s *st
 		l := limits.New(cfg, limits.Clock{Now: credentialClock, After: after})
 		bus := credentialEmitter(t, w)
 		server := httptest.NewServer(a.wrap(web.Handler(web.Config{
-			Banner:       page.New(web.ServiceName, cli.Version).Banner,
-			MCP:          mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w}),
+			Banner:       page.New(web.ServiceName, "fixture-display").Banner,
+			MCP:          mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "fixture-display", Telemetry: w}),
 			ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus,
 		})))
 		func() {

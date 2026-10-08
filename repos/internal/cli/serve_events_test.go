@@ -90,7 +90,7 @@ func assertBusLoss(t *testing.T, f *serveFixture, bus events.Event, lost bool) {
 	}
 }
 
-// R-9UIL-8JM0 R-9VQH-MBCP R-3L4Q-ADYE
+// R-9UIL-8JM0 R-9VQH-MBCP R-KV0B-8G82
 func TestServeBusCaptureEnvelope(t *testing.T) {
 	f := newServeFixture(t)
 	capture := &events.Capture{}

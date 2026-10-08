@@ -42,7 +42,7 @@ func untouchedProcess(args []string, out, diagnostic io.Writer, dir string) cli.
 			panic("command unset environment")
 		},
 		Pid:    123,
-		Stdout: out, Stderr: diagnostic,
+		Stdout: out, Stderr: diagnostic, Version: "fixture-display",
 		Inherit: func(uintptr) (net.Listener, error) {
 			panic("command inherited a descriptor")
 		},
@@ -63,7 +63,7 @@ func untouchedProcess(args []string, out, diagnostic io.Writer, dir string) cli.
 	}
 }
 
-// R-D2AA-CMX9 R-DC1H-ESUT
+// R-KL94-6AAI R-DC1H-ESUT
 func TestProcessContractAndUntouchedCommandSeams(t *testing.T) {
 	api := struct {
 		Run func(context.Context, cli.Process) int
