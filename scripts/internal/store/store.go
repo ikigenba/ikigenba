@@ -67,7 +67,7 @@ type Script struct {
 	Last                       *Run
 }
 
-// Subscription records a subscribed event name and creation time.
+// Subscription records a subscribed event pattern and creation time.
 type Subscription struct {
 	Event   string
 	Created time.Time
@@ -171,9 +171,9 @@ func ValidName(s string) bool {
 	return true
 }
 
-var eventPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*\.[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
+var eventPattern = regexp.MustCompile(`^([a-z][a-z0-9]*(_[a-z0-9]+)*|\*)(\.([a-z][a-z0-9]*(_[a-z0-9]+)*|\*))+$`)
 
-// ValidEvent reports whether s is a canonical event name.
+// ValidEvent reports whether s is a canonical event subscription pattern.
 func ValidEvent(s string) bool { return eventPattern.MatchString(s) }
 
 func normalize(t time.Time) time.Time {

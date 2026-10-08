@@ -100,7 +100,7 @@ func TestConcurrentQueueStart(t *testing.T) {
 }
 
 func TestQueueRecordAndEndingRules(t *testing.T) {
-	// R-90R8-PFCQ R-99AJ-DTJL R-9BQC-5D0Z
+	// R-90R8-PFCQ R-99AJ-DTJL R-G9YJ-7JM1
 	s := open(t, "")
 	sc := create(t, s, "alice", "alpha")
 	for i, mutate := range []func(*store.Run){func(r *store.Run) { r.SHA = "" }, func(r *store.Run) { r.Finished = stamp }, func(r *store.Run) { r.StdoutBytes = 1 }, func(r *store.Run) { r.StderrBytes = 1 }, func(r *store.Run) { r.Truncated = true }, func(r *store.Run) { r.Reason = store.ReasonStartFailed }, func(r *store.Run) { r.ExitCode = 1 }} {

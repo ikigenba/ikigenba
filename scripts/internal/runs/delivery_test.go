@@ -162,8 +162,6 @@ func TestDeliveryFullQueueRefusesBeforeAnyPreparation(t *testing.T) {
 }
 
 // R-SBN1-0EEO R-T4WM-6W7C R-2LTM-RXL8 R-SHQI-X945 R-SIYF-B0UU R-2O9F-JH2M
-//
-//	R-T18X-1KZ9 R-T2GT-FCPY
 func TestDeliveryCanonicalRunsAndTrail(t *testing.T) {
 	script := `import os,json
 with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
@@ -174,9 +172,11 @@ with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
 	must(t, e)
 	failed, e := h.st.Create(context.Background(), store.Draft{Owner: "third", Name: "failed-job", Repo: h.sc.Repo, Ref: "missing"})
 	must(t, e)
-	for _, sc := range []store.Script{h.sc, other, failed} {
+	for _, sc := range []store.Script{h.sc, other} {
 		subscribe(t, h, sc)
 	}
+	_, e = h.st.Subscribe(context.Background(), failed.ID, "repo.*")
+	must(t, e)
 	ev := deliveredEvent()
 	b, e := ev.MarshalJSON()
 	must(t, e)
@@ -716,5 +716,43 @@ func TestDeliveredAtAdmissionCleansStartedProcess(t *testing.T) {
 	}
 	if got := h.sink.capture.Events(); len(got) != 0 {
 		t.Fatal(got)
+	}
+}
+
+// R-GX4M-H6P8
+func TestDeliveryOverlappingPatternsMakeOneCanonicalRun(t *testing.T) {
+	h := fixture(t, waitScript)
+	other, err := h.st.Create(context.Background(), store.Draft{Owner: "other", Name: "unmatched", Repo: h.sc.Repo, Ref: "main"})
+	must(t, err)
+	subscribe(t, h, other)
+	for _, pattern := range []string{"cron.*.fired", "cron.hourly.fired"} {
+		_, err = h.st.Subscribe(context.Background(), h.sc.ID, pattern)
+		must(t, err)
+	}
+	ev := deliveredEvent()
+	ev.Name = "cron.hourly.fired"
+	if got := h.core.Deliver(context.Background(), events.Delivery{Event: ev, Attempt: 1}); got != events.OK() {
+		t.Fatal(got)
+	}
+	records := runList(t, h, h.sc)
+	if len(records) != 1 || records[0].Script != h.sc.ID || records[0].Event != ev.ID || len(runList(t, h, other)) != 0 {
+		t.Fatal(records, runList(t, h, other))
+	}
+	canonical, err := ev.MarshalJSON()
+	must(t, err)
+	if got := read(t, filepath.Join(h.core.Folder(records[0]), runs.InputFile)); string(got) != string(canonical) {
+		t.Fatalf("input %s; want %s", got, canonical)
+	}
+	h.release(records[0])
+	h.finished(records[0].ID)
+	for i, name := range []string{"cron.fired", "cron.a.b.fired"} {
+		ev.Name = name
+		ev.ID = fmt.Sprintf("evt_%016x", i+1)
+		if got := h.core.Deliver(context.Background(), events.Delivery{Event: ev, Attempt: 1}); got != events.Skip() {
+			t.Fatal(name, got)
+		}
+		if got := runList(t, h, h.sc); len(got) != 1 || got[0].ID != records[0].ID || len(runList(t, h, other)) != 0 {
+			t.Fatal(name, got)
+		}
 	}
 }

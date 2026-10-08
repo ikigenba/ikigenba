@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"sort"
+
+	"github.com/ikigenba/ikigenba/appkit/events"
 )
 
 // Subscribe adds an event subscription, preserving an existing creation time.
@@ -58,13 +60,13 @@ func (s *Store) subscription(ctx context.Context, id, event string, add bool) (S
 	return out, nil
 }
 
-// Subscribers returns all scripts subscribed to an exact event name.
+// Subscribers returns each script with a pattern matching the event name.
 func (s *Store) Subscribers(ctx context.Context, event string) ([]Script, error) {
 	out := []Script{}
 	err := s.transaction(ctx, false, func(c *catalog) error {
 		for id, subs := range c.subscriptions {
 			for _, sub := range subs {
-				if sub.Event == event {
+				if events.Match(sub.Event, event) {
 					if sc, ok := c.data.Scripts[id]; ok {
 						out = append(out, c.script(sc))
 					}

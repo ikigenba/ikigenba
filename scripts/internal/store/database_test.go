@@ -153,7 +153,7 @@ func TestAdoptEarlierGobCatalog(t *testing.T) {
 	}
 }
 
-// R-95MU-8IBI R-96UQ-MA27
+// R-95MU-8IBI R-G6AU-28DY
 func TestUpgradeBaselineCatalog(t *testing.T) {
 	for _, baseline := range []bool{false, true} {
 		for _, records := range []bool{false, true} {
@@ -167,7 +167,7 @@ func TestUpgradeBaselineCatalog(t *testing.T) {
 				}
 				legacy, err := db.Open(ctx, db.Config{Path: path, Migrations: migrations, Now: func() time.Time { return stamp }})
 				must(t, err)
-				sc := store.Script{ID: "scr_0000000000000001", Name: "alpha", Owner: "alice", Repo: "repo", Ref: "main", Created: stamp.UTC().Truncate(time.Second), Subscriptions: []store.Subscription{{Event: "fake.subscription", Created: stamp.UTC().Truncate(time.Second)}}}
+				sc := store.Script{ID: "scr_0000000000000001", Name: "alpha", Owner: "alice", Repo: "repo", Ref: "main", Created: stamp.UTC().Truncate(time.Second), Subscriptions: []store.Subscription{{Event: "cron.*.fired", Created: stamp.UTC().Truncate(time.Second)}}}
 				r := run(sc, 1)
 				r.Started = r.Started.UTC().Truncate(time.Second)
 				must(t, legacy.Write(ctx, func(tx *sql.Tx) error {
@@ -225,7 +225,7 @@ func TestUpgradeBaselineCatalog(t *testing.T) {
 				delivered, err := s.Delivered(ctx, sc.ID, "event")
 				must(t, err)
 				equal(t, delivered, false)
-				actual, err = s.Subscribe(ctx, sc.ID, "repo.pushed")
+				actual, err = s.Subscribe(ctx, sc.ID, "cron.*.fired")
 				must(t, err)
 				must(t, closeStore(s))
 				s = open(t, path)

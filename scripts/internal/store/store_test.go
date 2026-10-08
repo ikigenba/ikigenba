@@ -274,7 +274,7 @@ func TestScriptsAndPersistence(t *testing.T) {
 	create(t, s, "bob", "alpha")
 }
 func TestCreateFailuresAndCollisions(t *testing.T) {
-	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-9BQC-5D0Z
+	// R-8QLS-QL4D R-L8C1-GTMP R-L9JX-ULDE R-LARU-8D43 R-G9YJ-7JM1
 	random := bytes.NewReader(bytes.Repeat([]byte{1, 2, 3, 4, 5, 6, 7, 8}, 9))
 	s := configured(t, "", store.Config{Rand: random, Now: func() time.Time { return stamp }})
 	defer func() { must(t, closeStore(s)) }()
@@ -654,7 +654,7 @@ func TestConcurrentWrites(t *testing.T) {
 	equal(t, rr, []store.Run{})
 }
 func TestClosedAndCancelled(t *testing.T) {
-	// R-Y6VA-SVWW R-Y837-6NNL R-9BQC-5D0Z
+	// R-Y6VA-SVWW R-Y837-6NNL R-G9YJ-7JM1
 	path := filepath.Join(t.TempDir(), "scripts.db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")

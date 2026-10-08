@@ -1259,7 +1259,7 @@ func breadcrumbs(t *testing.T, body string, wants []pages.ScriptLink) {
 	}
 }
 
-// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-SYRG-D8J8 R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
+// R-XQJ1-Z1MD R-XRQY-CTD2 R-XSYU-QL3R R-XU6R-4CUG R-XVEN-I4L5 R-XQ0X-B994 R-XR8T-P0ZT R-XXUG-9O2J R-XSGQ-2SQI R-Y0A9-17JX R-Y2Q1-SR1B R-Y3XY-6IS0 R-Y55U-KAIP R-Y6DQ-Y29E R-Y7LN-BU03 R-Y8TJ-PLQS R-YA1G-3DHH R-YB9C-H586 R-GS90-Y3QG R-YDP5-8OPK R-YEX1-MGG9 R-YG4Y-086Y R-YHCU-DZXN R-YJSN-5JF1 R-YL0J-JB5Q R-YM8F-X2WF R-YOO8-OMDT
 func TestCatalogScriptAboutHooks(t *testing.T) {
 	f := setup(t)
 	b := fixedBanner
@@ -1308,7 +1308,7 @@ func TestCatalogScriptAboutHooks(t *testing.T) {
 	dts := elements(tools.body, "dt")
 	dds := elements(tools.body, "dd")
 	names := []string{"list", "show", "create", "update", "delete", "subscribe", "unsubscribe", "run", "runs", "result", "cancel"}
-	desc := []string{"The scripts you own, by name.", "One of your scripts, with its repository, its ref and its last run.", "Create a script from one of your repositories and a ref.", "Change the ref one of your scripts runs from.", "Delete one of your scripts and every run it has.", "Run one of your scripts each time an event of a given name is delivered.", "Stop running one of your scripts on an event it is subscribed to.", "Start a run of one of your scripts and return its id, status and commit.", "The runs of one of your scripts, newest first.", "One run whole: its details, its output so far, and the files it wrote.", "End one of your runs that is still queued or running."}
+	desc := []string{"The scripts you own, by name.", "One of your scripts, with its repository, its ref and its last run.", "Create a script from one of your repositories and a ref.", "Change the ref one of your scripts runs from.", "Delete one of your scripts and every run it has.", "Run one of your scripts each time an event matching a pattern is delivered.", "Stop running one of your scripts on an event it is subscribed to.", "Start a run of one of your scripts and return its id, status and commit.", "The runs of one of your scripts, newest first.", "One run whole: its details, its output so far, and the files it wrote.", "End one of your runs that is still queued or running."}
 	requireEqual(t, len(dts), 11)
 	requireEqual(t, len(dds), 11)
 	for i, n := range names {

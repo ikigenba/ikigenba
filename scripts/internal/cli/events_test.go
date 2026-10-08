@@ -56,7 +56,7 @@ func postDelivery(t *testing.T, h *runHarness, id string, body []byte, outcome s
 	}
 }
 
-// R-SXL7-W9R6 R-TKPN-93VQ
+// R-SXL7-W9R6 R-TKPN-93VQ R-GVWQ-3EYJ
 func TestDeliveryTrailOrigins(t *testing.T) {
 	h := newHarness(t)
 	h.repository("pass\n")
@@ -99,16 +99,18 @@ func TestDeliveryTrailOrigins(t *testing.T) {
 	if starts != 1 || ends != 1 {
 		t.Fatalf("run events %d %d", starts, ends)
 	}
-	for _, id := range []string{"delivery-repeat", "delivery-irrelevant"} {
-		for _, e := range trailWindow(t, es, id) {
-			if e.RequestID == id && domain(e) {
+	for _, id := range []string{"delivery-origin", "delivery-repeat", "delivery-irrelevant"} {
+		trailWindow(t, es, id)
+		for _, e := range es {
+			if e.RequestID == id && (e.Name == "tool.called" || (id != "delivery-origin" && domain(e))) {
 				t.Fatal(e)
 			}
 		}
 	}
+
 }
 
-// R-TLXJ-MVMF R-TN5G-0ND4
+// R-TLXJ-MVMF R-GTGX-BVH5 R-GUOT-PN7U
 func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) {
 	for _, mode := range []string{"immediate", "queued", "cancel", "queued-cancel", "drain", "queued-drain", "missing"} {
 		t.Run(mode, func(t *testing.T) {
@@ -119,7 +121,9 @@ func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) 
 			h.p.Sink = &h.sink.capture
 			h.start()
 			sc := h.create("subscriber")
-			h.call("subscribe", map[string]any{"name": "subscriber", "event": "repo.pushed"})
+			for _, pattern := range []string{"cron.*.fired", "cron.hourly.fired"} {
+				h.call("subscribe", map[string]any{"name": "subscriber", "event": pattern})
+			}
 			var active map[string]any
 			queued := mode == "queued" || mode == "queued-cancel" || mode == "queued-drain"
 			if queued {
@@ -128,7 +132,7 @@ func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) 
 			if mode == "missing" {
 				h.call("update", map[string]any{"name": "subscriber", "ref": "missing"})
 			}
-			postDelivery(t, h, "delivery-catalog-origin", deliveryBody(t, h, "repo.pushed", "evt_0123456789abcdef"), "ok")
+			postDelivery(t, h, "delivery-catalog-origin", deliveryBody(t, h, "cron.hourly.fired", "evt_0123456789abcdef"), "ok")
 			handle, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 			mustCLI(t, e)
 			defer func() { mustCLI(t, handle.Close()) }()
@@ -143,7 +147,7 @@ func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) 
 					eventRuns[record.ID] = true
 				}
 			}
-			if r.ID == "" || r.RequestID != "delivery-catalog-origin" || r.User != "owner" || r.Trigger != store.TriggerEvent {
+			if len(eventRuns) != 1 || r.ID == "" || r.RequestID != "delivery-catalog-origin" || r.User != "owner" || r.Trigger != store.TriggerEvent {
 				t.Fatal(r)
 			}
 			if queued && r.Status != store.StatusQueued {
@@ -216,6 +220,12 @@ func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) 
 			if starts != wantStarts {
 				t.Fatal("start count", starts, wantStarts)
 			}
+			if mode == "missing" {
+				failed := trailEvent(t, trailWindow(t, es, r.RequestID), "run.finished", r.ID)
+				if r.Status != store.StatusFailed || r.Reason != store.ReasonCommitMissing || failed.Attrs["status"] != r.Status || failed.Attrs["reason"] != r.Reason {
+					t.Fatal(failed, r)
+				}
+			}
 			if wantStarts == 1 && !queued {
 				trailEvent(t, trailWindow(t, es, r.RequestID), "run.started", r.ID)
 			}
@@ -278,5 +288,41 @@ func TestEventFinishingBodyDuringDrainIsRefused(t *testing.T) {
 	mustCLI(t, os.WriteFile(filepath.Join(folder, run["id"].(string), "out", "release"), nil, 0600))
 	if code := h.finish(); code != cli.ExitSuccess {
 		t.Fatalf("stop %d %s", code, h.stderr.String())
+	}
+}
+
+// R-GVWQ-3EYJ
+func TestRefusedDeliveryHasNoDomainTrail(t *testing.T) {
+	h := newHarness(t)
+	h.repository("pass\n")
+	h.p.Cgroup = ""
+	h.p.Sink = &h.sink.capture
+	h.start()
+	h.create("subscriber")
+	h.call("subscribe", map[string]any{"name": "subscriber", "event": "cron.*.fired"})
+	req, err := http.NewRequest(http.MethodPost, "http://"+h.listener.Addr().String()+events.EventsPath, bytes.NewReader(deliveryBody(t, h, "cron.hourly.fired", "evt_0123456789abcdef")))
+	mustCLI(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-Id", "delivery-refused")
+	res, err := h.http.Do(req)
+	mustCLI(t, err)
+	body, err := io.ReadAll(res.Body)
+	mustCLI(t, err)
+	mustCLI(t, res.Body.Close())
+	var got map[string]string
+	mustCLI(t, json.Unmarshal(body, &got))
+	if res.StatusCode != 500 || got["outcome"] != "error" || !strings.HasPrefix(got["error"], "runs are unavailable: ") {
+		t.Fatal(res.StatusCode, got)
+	}
+	if history := h.call("runs", map[string]any{"name": "subscriber"})["runs"].([]any); len(history) != 0 {
+		t.Fatal(history)
+	}
+	h.stop()
+	es := h.sink.capture.Events()
+	trailWindow(t, es, "delivery-refused")
+	for _, e := range es {
+		if e.RequestID == "delivery-refused" && (e.Name == "tool.called" || domain(e)) {
+			t.Fatal(e)
+		}
 	}
 }

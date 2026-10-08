@@ -33,13 +33,13 @@ type DeleteArgs struct {
 // SubscribeArgs is an MCP argument.
 type SubscribeArgs struct {
 	Name  string `json:"name" mcp:"required" description:"The script's name."`
-	Event string `json:"event" mcp:"required" description:"The exact event name, such as repo.pushed."`
+	Event string `json:"event" mcp:"required" description:"The event pattern, such as repo.pushed or cron.*.fired."`
 }
 
 // UnsubscribeArgs is an MCP argument.
 type UnsubscribeArgs struct {
 	Name  string `json:"name" mcp:"required" description:"The script's name."`
-	Event string `json:"event" mcp:"required" description:"The exact event name the script is subscribed to."`
+	Event string `json:"event" mcp:"required" description:"The event pattern exactly as the script is subscribed to it."`
 }
 
 // RunArgs is an MCP argument.

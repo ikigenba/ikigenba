@@ -17,12 +17,12 @@ import (
 )
 
 func TestSubscriptionTypes(t *testing.T) {
-	// R-7A7W-XGL5 R-7BFT-B8BU R-7DVM-2RT8
+	// R-GIHT-VXSW R-GJPQ-9PJL R-7DVM-2RT8
 	for _, tt := range []struct {
 		value any
 		want  string
 	}{
-		{tools.SubscribeArgs{Name: "nightly-report", Event: "repo.pushed"}, `{"name":"nightly-report","event":"repo.pushed"}`},
+		{tools.SubscribeArgs{Name: "nightly-report", Event: "cron.*.fired"}, `{"name":"nightly-report","event":"cron.*.fired"}`},
 		{tools.UnsubscribeArgs{Name: "sync-crm", Event: "repo.pushed"}, `{"name":"sync-crm","event":"repo.pushed"}`},
 		{tools.Subscription{Event: "repo.pushed", Created: "2025-01-02T02:04:05Z"}, `{"event":"repo.pushed","created":"2025-01-02T02:04:05Z"}`},
 	} {
@@ -34,11 +34,11 @@ func TestSubscriptionTypes(t *testing.T) {
 	}
 	assertShape(t, tools.SubscribeArgs{}, struct {
 		Name  string `json:"name" mcp:"required" description:"The script's name."`
-		Event string `json:"event" mcp:"required" description:"The exact event name, such as repo.pushed."`
+		Event string `json:"event" mcp:"required" description:"The event pattern, such as repo.pushed or cron.*.fired."`
 	}{}, true)
 	assertShape(t, tools.UnsubscribeArgs{}, struct {
 		Name  string `json:"name" mcp:"required" description:"The script's name."`
-		Event string `json:"event" mcp:"required" description:"The exact event name the script is subscribed to."`
+		Event string `json:"event" mcp:"required" description:"The event pattern exactly as the script is subscribed to it."`
 	}{}, true)
 	assertShape(t, tools.Subscription{}, struct {
 		Event   string `json:"event" mcp:"required"`
@@ -72,7 +72,7 @@ func subscriptionTrail(t *testing.T, h *fixture, id, tool, outcome string) {
 }
 
 func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
-	// R-8JC7-2Z0U R-8LRZ-UII8 R-8O7S-M1ZM R-T3OP-T4GN R-8FOH-XNSR R-7NMT-4XQS
+	// R-GKXM-NHAA R-GM5J-190Z R-8O7S-M1ZM R-T3OP-T4GN R-8FOH-XNSR R-GNDF-F0RO
 	h, sc, _, conn := paused(t)
 	ctx := context.Background()
 	foreign, e := h.st.Create(ctx, store.Draft{Owner: "bob", Name: "foreign", Repo: sc.Repo, Ref: "main"})
@@ -97,7 +97,7 @@ func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
 		for _, name := range []string{"foreign", "absent", sc.ID, "Nightly Report"} {
 			check(tool, name, "Repo.Pushed", "no script named '"+name+"'")
 		}
-		for _, event := range []string{"Repo.Pushed", "pushed", "repo.git.pushed", "repo.*", " repo.pushed", ""} {
+		for _, event := range []string{"Repo.Pushed", "pushed", "*", "repo..pushed", "repo.pushed.", "re*po.pushed", "repo.push*", "repo.**", "repo-x.pushed", " repo.pushed", ""} {
 			check(tool, sc.Name, event, "invalid event '"+event+"'")
 		}
 	}
@@ -105,13 +105,21 @@ func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
 	_, e = h.st.Subscribe(ctx, sc.ID, "repo.pushed")
 	must(t, e)
 	check("unsubscribe", sc.Name, "crm.contact_added", "'"+sc.Name+"' is not subscribed to 'crm.contact_added'")
+	_, e = h.st.Subscribe(ctx, sc.ID, "cron.*.fired")
+	must(t, e)
+	check("unsubscribe", sc.Name, "cron.hourly.fired", "'"+sc.Name+"' is not subscribed to 'cron.hourly.fired'")
+	_, e = h.st.Unsubscribe(ctx, sc.ID, "cron.*.fired")
+	must(t, e)
+	_, e = h.st.Subscribe(ctx, sc.ID, "cron.hourly.fired")
+	must(t, e)
+	check("unsubscribe", sc.Name, "cron.*.fired", "'"+sc.Name+"' is not subscribed to 'cron.*.fired'")
 	for _, name := range []string{"events", "declarations"} {
 		refusal(t, h.call("create", tools.CreateArgs{Name: name, Repo: sc.Repo}), "invalid name '"+name+"'")
 	}
 }
 
 func TestSubscriptionMutationsPreserveEventRun(t *testing.T) {
-	// R-7HRM-C18L R-7K7F-3KPZ R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603
+	// R-GPT8-6K92 R-GR14-KBZR R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603
 	h, sc, r, conn := pausedCause(t, events.Cause{ID: "evt_1122334455667788", Depth: 2})
 	ctx := context.Background()
 	other, e := h.st.Create(ctx, store.Draft{Owner: "bob", Name: "another", Repo: sc.Repo, Ref: "main"})
@@ -173,6 +181,34 @@ func TestSubscriptionMutationsPreserveEventRun(t *testing.T) {
 	readded := call("subscribe", "repo.pushed")
 	if len(readded.Subscriptions) != 1 || readded.Subscriptions[0].Created != later.Format("2006-01-02T15:04:05Z") {
 		t.Fatal(readded)
+	}
+	call("unsubscribe", "repo.pushed")
+	pattern := call("subscribe", "cron.*.fired")
+	h.now = h.now.Add(time.Hour)
+	if duplicate := call("subscribe", "cron.*.fired"); !reflect.DeepEqual(pattern, duplicate) {
+		t.Fatal("repeat changed pattern subscription", pattern, duplicate)
+	}
+	overlap := call("subscribe", "cron.hourly.fired")
+	if len(overlap.Subscriptions) != 2 || overlap.Subscriptions[0].Event != "cron.*.fired" || overlap.Subscriptions[1].Event != "cron.hourly.fired" {
+		t.Fatal(overlap)
+	}
+	literal := call("unsubscribe", "cron.*.fired")
+	if len(literal.Subscriptions) != 1 || literal.Subscriptions[0] != overlap.Subscriptions[1] {
+		t.Fatal("removing pattern changed literal subscription", literal)
+	}
+	newPattern := call("subscribe", "cron.*.fired")
+	if newPattern.Subscriptions[0].Created != h.now.Format("2006-01-02T15:04:05Z") || newPattern.Subscriptions[0].Created == pattern.Subscriptions[0].Created {
+		t.Fatal("readded pattern did not use later time", newPattern)
+	}
+	for _, event := range []string{"repo.git.pushed", "repo.*", "*.*"} {
+		got := call("subscribe", event)
+		found := false
+		for _, sub := range got.Subscriptions {
+			found = found || sub.Event == event
+		}
+		if !found {
+			t.Fatal("accepted pattern not stored", event, got)
+		}
 	}
 	ended := h.call("cancel", tools.CancelArgs{Run: r.ID})
 	rr, e := h.st.RunByID(ctx, r.ID)
