@@ -18,7 +18,7 @@ favicon it serves at `/_appkit/` need no file beside it (`S08-assets.md`), and
 the migrations it applies to its database are in the binary too —
 so it keeps nothing under `etc/` but the manifest and nothing under `share/`
 but the icon, and no other member exists. No `assets/` directory and no font
-file ships beside the binary. The database is not in the file: auth creates
+file ships beside the binary. The database is not in the release: auth creates
 `state/auth.db` under its working directory on first start (`S02-serve.md`),
 and the manifest's `[database]` table declares it so that the host replicates
 it. The commit is in the release's name only. No version and no commit is
@@ -53,7 +53,7 @@ Postconditions:
 
 - Nothing has changed.
 
-## A developer checks the binary the file holds
+## A developer checks the binary the release holds
 
 The binary inside the release is what a host will run, so it is asked the two
 things a host asks it. Asked with neither `IKIGENBA_COMMIT` nor
