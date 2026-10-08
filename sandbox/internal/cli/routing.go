@@ -29,6 +29,47 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 		directive("  ", temp.key, nginxWord(filepath.Join(nginxDir, temp.dir)))
 	}
 	directive("  ", "server_names_hash_bucket_size", "256")
+	sitesOrigin := fmt.Sprintf("http://sites.%s.localhost:%d", name, port)
+	b.WriteString("  map $http_origin $sandbox_cors_origin {\n")
+	directive("    ", "default", nginxWord(""))
+	directive("    ", "~^"+strings.ReplaceAll(sitesOrigin, ".", `\.`)+"$", "$http_origin")
+	b.WriteString("  }\n  map $sandbox_cors_origin $sandbox_cors_credentials {\n")
+	directive("    ", nginxWord(""), nginxWord(""))
+	directive("    ", "default", "true")
+	b.WriteString("  }\n")
+	for _, header := range [][2]string{
+		{"methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"},
+		{"headers", "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID"},
+		{"max_age", "600"},
+		{"expose", ""},
+	} {
+		fmt.Fprintf(&b, "  map %s $sandbox_cors_%s {\n", nginxWord("$request_method $sandbox_cors_credentials"), header[0])
+		directive("    ", "default", nginxWord(""))
+		directive("    ", nginxWord("OPTIONS true"), nginxWord(header[1]))
+		if header[0] == "expose" {
+			directive("    ", nginxWord("~ true$"), nginxWord("Mcp-Session-Id, WWW-Authenticate"))
+		}
+		b.WriteString("  }\n")
+	}
+	corsHeaders := func(indent string, preflight bool) {
+		for _, header := range [][2]string{
+			{"Access-Control-Allow-Origin", "$sandbox_cors_origin"},
+			{"Access-Control-Allow-Credentials", "$sandbox_cors_credentials"},
+		} {
+			directive(indent, "add_header", header[0], header[1], "always")
+		}
+		if preflight {
+			for _, header := range [][2]string{
+				{"Access-Control-Allow-Methods", "$sandbox_cors_methods"},
+				{"Access-Control-Allow-Headers", "$sandbox_cors_headers"},
+				{"Access-Control-Max-Age", "$sandbox_cors_max_age"},
+			} {
+				directive(indent, "add_header", header[0], header[1], "always")
+			}
+		}
+		directive(indent, "add_header", "Access-Control-Expose-Headers", "$sandbox_cors_expose", "always")
+		directive(indent, "add_header", "Vary", "Origin", "always")
+	}
 	hasAuth := false
 	for _, app := range apps {
 		hasAuth = hasAuth || app.Name == "auth"
@@ -67,6 +108,8 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			names = append(names, name+".localhost")
 		}
 		directive("    ", "server_name", names...)
+		corsHeaders("    ", true)
+		b.WriteString("    if ($request_method = OPTIONS) {\n      return 204;\n    }\n")
 		escapedTree := strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`, "[", `\[`).Replace(worktree)
 		directive("    ", "include", nginxWord(filepath.Join(escapedTree, app.Name, "etc", "nginx.conf*")))
 		if !hasAuth || app.Name == "auth" {
@@ -95,6 +138,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			}
 			for _, location := range []struct{ path, handler string }{
 				{"/", "signin"}, {"= /mcp", "bearer"}, {"^~ /mcp/", "bearer"},
+				{"= /api", "api"}, {"^~ /api/", "api"},
 				{"~ /(info/refs|git-upload-pack|git-receive-pack)$", "git"},
 			} {
 				fmt.Fprintf(&b, "    location %s {\n", location.path)
@@ -116,7 +160,7 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 				forward("$sandbox_user_id", "$sandbox_user_email")
 				b.WriteString("    }\n")
 			}
-			for _, handler := range []string{"signin", "bearer", "git"} {
+			for _, handler := range []string{"signin", "bearer", "git", "api"} {
 				fmt.Fprintf(&b, "    location @sandbox_%s {\n", handler)
 				directive("      ", "satisfy", "any")
 				directive("      ", "allow", "all")
@@ -128,15 +172,23 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 			b.WriteString("    }\n    location @sandbox_bearer_reply {\n")
 			directive("      ", "default_type", "text/plain")
 			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Bearer realm="ikigenba", resource_metadata="`+mcpMetadata+`"`), "always")
+			corsHeaders("      ", false)
 			directive("      ", "return", "401", `"authentication required: send Authorization: Bearer <token>\n"`)
 			b.WriteString("    }\n    location @sandbox_invalid_token {\n")
 			directive("      ", "default_type", "text/plain")
 			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Bearer error="invalid_token", resource_metadata="`+mcpMetadata+`"`), "always")
+			corsHeaders("      ", false)
 			directive("      ", "return", "401", `"authentication required: send Authorization: Bearer <token>\n"`)
 			b.WriteString("    }\n    location @sandbox_git_reply {\n")
 			directive("      ", "default_type", "text/plain")
 			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Basic realm="ikigenba"`), "always")
+			corsHeaders("      ", false)
 			directive("      ", "return", "401", `"authentication required: send your token as the password\n"`)
+			b.WriteString("    }\n    location @sandbox_api_reply {\n")
+			directive("      ", "default_type", "text/plain")
+			directive("      ", "add_header", "WWW-Authenticate", nginxWord(`Bearer realm="ikigenba"`), "always")
+			corsHeaders("      ", false)
+			directive("      ", "return", "401", `"authentication required: sign in or send Authorization: Bearer <token>\n"`)
 			b.WriteString("    }\n")
 		}
 		b.WriteString("  }\n")

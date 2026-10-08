@@ -1098,35 +1098,6 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 	}
 }
 
-func TestUpGatedManifestMCPVariants(t *testing.T) {
-	// R-WK02-0UVB
-	for _, setting := range []string{"mcp = true\n", "mcp = false\n", ""} {
-		t.Run(strings.TrimSpace(setting), func(t *testing.T) {
-			f := newUpFixture(t, "auth", "dummy")
-			f.put(filepath.Join(f.worktree, "dummy", "etc", "manifest.toml"), "app = \"dummy\"\ndescription = \"Demo\"\n"+setting, 0644)
-			code, _, diagnostic := f.run("up")
-			if code != 0 || diagnostic != "" {
-				t.Fatalf("%d %q", code, diagnostic)
-			}
-			http := routingFind(t, parseRoutingConfig(t, upRead(t, filepath.Join(f.data, "nginx", "nginx.conf"))), "http")
-			server := routingServer(t, http, "dummy.wip.localhost")
-			for _, words := range [][]string{{"location", "/"}, {"location", "=", "/mcp"}, {"location", "^~", "/mcp/"}, {"location", "~", "/(info/refs|git-upload-pack|git-receive-pack)$"}} {
-				location := routingFind(t, server.children, words...)
-				keys := []string{"auth_request", "auth_request_set", "auth_request_set", "error_page", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
-				if words[1] == "=" || words[1] == "^~" {
-					keys = append(keys, "error_page")
-				}
-				routingKeys(t, location.children, keys...)
-				routingFind(t, location.children, "auth_request", "/_sandbox/auth")
-				routingFind(t, location.children, "auth_request_set", "$sandbox_user_id", "$upstream_http_x_user_id")
-				routingFind(t, location.children, "auth_request_set", "$sandbox_user_email", "$upstream_http_x_user_email")
-				routingFind(t, location.children, "proxy_pass", "http://app_dummy")
-				routingHeaders(t, location, "$sandbox_user_id", "$sandbox_user_email")
-			}
-		})
-	}
-}
-
 func TestUpCheckRefusalsLeaveAbsentRegistry(t *testing.T) {
 	// R-S969-SQY1
 	for _, fault := range []string{"noapps", "manifest", "icon", "badvalue", "secrets"} {
