@@ -51,6 +51,7 @@ These outcomes are space-level checks: no test of sites can make them, and they 
 - The apex host reaches sites at all: the root domain's record, the certificate and the server block are devctl's and opsctl's (`devctl apex set`).
 - The gateway offers sites' seven tools, runs `create` and `publish` through `mutate`, and relays sites' results under its own `serverInfo` (mcp's `S09-mutate.md` and `S11-on-a-space.md`).
 - In a sandbox, repos makes the repository an agent pushes to, at `<data>/apps/repos/state/repos/<rep>.git`, and records `repo.created` and `repo.pushed` (repos, the sandbox).
+- The banner's mark shows the favicon, `Ikigenba`, and sites' icon before its name, the launcher button follows it, and the sign-out icon button shows `Sign out` as its tooltip (appkit's banner).
 - The launcher a browser opens lists sites with its icon, marked as the current page, an enabled button visibly reacts as it is pressed, and the page's style and button-feedback script are fetched from sites' own host and from no other origin (appkit's scripts; no test runs them).
 - The `PATH` the sandbox gives sites holds the developer's own `git` (the sandbox).
 
@@ -103,7 +104,7 @@ Every outcome the story inventory lists, by its row label, with the design docum
 | S03-1, S03-9 | pages from templates, stylesheet, font preload, favicon, feedback script, viewport, no script of their own, footer | `D06-pages` R-D1EE-N7PE, R-D2MB-0ZG3, R-DX3S-L8ZG, R-DZJL-CSGU, R-85TU-KI56, R-889N-C1MK, R-JS3L-K12R, R-5Y7K-QBIS, R-60ND-HV06, R-61V9-VMQV; what the feedback script does in a browser: space-level check (appkit's script; no test runs it); `D01-layout-and-run-seam` R-28RY-26BD |
 | S03-2 | who is a guest | `D03-serve` R-WPX4-Q95Y; `D06-pages` R-XWC7-R027; `D07-site-serving` R-EH52-T4AD |
 | S03-3, S03-20 | services file read per request; a broken one is none | `D06-pages` R-CD0E-ZSVI, R-CE8B-DKM7; `D03-serve` R-XO04-AF0R |
-| S03-4, S03-5, S03-22 | banner, profile and sign-out addresses | `D06-pages` R-D7HW-K2EV, R-DJOW-DRTT, R-DX3S-L8ZG, R-CBSI-M14T, R-CHW0-IVUA, R-CJ3W-WNKZ, R-E1ZE-4BY8 |
+| S03-4, S03-5, S03-22 | banner, profile and sign-out addresses | `D06-pages` R-D7HW-K2EV, R-DJOW-DRTT, R-DX3S-L8ZG, R-CBSI-M14T, R-CHW0-IVUA, R-CJ3W-WNKZ, R-E1ZE-4BY8, R-66QV-EPPN; the mark (favicon, `Ikigenba`, sites' icon when listed with one, its name), the launcher after it, and the sign-out icon button labelled and titled `Sign out`: appkit's banner and kit (appkit's D02, D03) |
 | S03-6, S03-23 | the sites address and site URLs | `D06-pages` R-CE8B-DKM7, R-CFG7-RCCW, R-E6UZ-NEX0 |
 | S03-7, S03-14, S03-15 | the landing table, its rows and badges, the empty state | `D06-pages` R-XXK4-4RSW, R-E82W-16NP, R-E9AS-EYEE, R-EAIO-SQ53, R-EBQL-6HVS, R-EE6D-Y1D6, R-EJ1Z-H4BY; `D04-store` R-1WW5-7CYA |
 | S03-8, S03-19, S03-21 | the launcher | `D06-pages` R-6336-9EHK, R-66QV-EPPN; what the script does in a browser: space-level check (appkit's script; no test runs it) |
