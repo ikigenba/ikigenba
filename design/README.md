@@ -17,6 +17,8 @@ design/
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: banner, widgets table, add form, states
+    banner.html     the banner proposal: product, service, launcher, profile,
+                    sign out, in variants and at 375px
     launcher.html   the banner's service launcher, open, filtered, empty, disabled
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
@@ -87,6 +89,16 @@ systems. The product name is **Ikigenba**. The example space is
   count cannot be negative", Status `active` accepted.
 - A states section: the table with no widgets; the message page
   ("Widget created." + `Back to widgets`).
+
+**banner.html** — the new banner, not yet adopted by the other pages: the
+favicon itself (an `img` of `favicon.svg`, 18px, inside the mark in place
+of the glyph), **Ikigenba** capitalised, a hairline, the service as
+`span.service` holding its own icon (`share/icon.svg`, 16px) and its name; then on
+the right three icon buttons, the service launcher's grid (`button.launcher`,
+as launcher.html has it, moved right), the profile (`a.profile`) and sign out as a
+`logout` icon (`button.signout`, labelled and titled `Sign out`). Shown also with a `|` glyph as the separator
+(`data-sep="bar"` on the mark), the open question, and in a 375px frame. The
+lab frames a banner in `.frame`, which shares `body > header`'s rules.
 
 **launcher.html** — the service launcher, shown from dummy.
 - Banner and footer as in app.html, with the launcher's grid button opening
