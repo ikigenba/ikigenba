@@ -7,7 +7,7 @@ opsctl is the operator's CLI on a host; it bootstraps and manages that one deplo
 - `specs/` is the contract: `stories/` and `design/`.
 - `cmd/opsctl` is the binary. `internal/` is everything else, one package per concern.
 - `bootstrap.md` tells an agent how to bring a fresh host to the point where a release can be unpacked on it; `setup.md` picks up from there: with the release unpacked, it sets the config keys, runs `init`, and activates the release, all by the absolute path of the release's own opsctl.
-- The build run writes the Go source, the tests, `go.mod` and `go.sum`. `Makefile`, `.golangci.yml`, `install.sh`, `.goreleaser.yaml`, the two documents above and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
+- The build run writes the Go source, the tests, `go.mod` and `go.sum`. `Makefile`, `.golangci.yml`, the two documents above and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Toolchain
 
@@ -72,6 +72,4 @@ The `Requirements:` trailer lists the phase's ids so history stays greppable by 
 
 ## Releasing
 
-opsctl has no version of its own and no release of its own: it ships inside the suite release, built with `devctl build <sha|tag>` and put on a host with `devctl deploy <space> <sha|tag>`, and `opsctl version` prints its release's display string (label and short sha, or the short sha). There is no version literal to set. Building and unpacking a release are devctl's, and the build run neither reads nor tests that machinery.
-
-The interim GitHub path, `opsctl/vX.Y.Z` tags, `.goreleaser.yaml`, `install.sh` and `.github/workflows/release-opsctl.yml`, is retired and not used after the cutover. Those files remain only until their removal.
+opsctl has no version of its own and no release of its own: it ships inside the suite release, built with `devctl build <sha|tag>` and put on a host with `devctl deploy <space> <sha|tag>`, and `opsctl version` prints its release's display string (label and short sha, or the short sha). There is no version literal to set, and nothing is injected at build time. Building and unpacking a release are devctl's, and the build run neither reads nor tests that machinery.

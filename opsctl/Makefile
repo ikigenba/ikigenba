@@ -22,7 +22,7 @@ fmt:
 	gofmt -w .
 
 clean:
-	rm -rf bin dist
+	rm -rf bin
 
 install:
 	go install ./cmd/opsctl
