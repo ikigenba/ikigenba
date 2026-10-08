@@ -42,7 +42,7 @@ Postconditions:
 
 ## A guest's browser fetches the stylesheet of the page it was shown
 
-A guest who asks for a site that does not exist is shown sites' not-found page (`S11`), and one who asks for a site whose commit cannot be served is shown the unavailable page (`S16`); both link `/_appkit/theme.css`. nginx lets the guest's browser through with no identity, as it does for every path of sites but `/mcp` (opsctl's `S5-nginx.md`), and sites serves the stylesheet as it would to a signed-in user, rather than sending the guest to sign in for a file that holds nothing of anyone's.
+A guest who asks for a site that does not exist is shown sites' not-found page (`S11`), and one who asks for a site whose commit cannot be served is shown the unavailable page (`S16`); both link `/_appkit/theme.css`. nginx lets the guest's browser through with no identity, as it does for every path of sites but `/mcp` and `/api` (opsctl's `S5-nginx.md`), and sites serves the stylesheet as it would to a signed-in user, rather than sending the guest to sign in for a file that holds nothing of anyone's.
 
 Request:
 
