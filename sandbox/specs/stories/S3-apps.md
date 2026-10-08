@@ -93,6 +93,7 @@ Preconditions:
 Postconditions:
 
 - `sandbox-wip-dummy.service` runs a `dummy` built from the files as they are on disk, the uncommitted edits and the untracked file included.
+- Every app's `IKIGENBA_COMMIT` is the sha `git rev-parse HEAD` prints in the worktree followed by `-dirty`.
 - Nothing in the checkout or in git changed: nothing was committed, stashed, tagged, or reset.
 
 ## A developer brings the sandbox up again and the apps keep their data
@@ -128,7 +129,7 @@ Postconditions:
 
 ## An app reads the environment the sandbox gives it
 
-An app learns everything it knows about the sandbox from its environment: the sandbox's name, its own public origin, the bare-localhost origin, whose every request is sent on to auth when the checkout holds `auth` (for an app that needs an OAuth redirect Google accepts), where the services file is, and how long it has to drain. These names are the same in every sandbox, and no app needs to know which apps are in the checkout to read them. The app has no `PORT`: it is handed its socket by systemd, as on a host. dummy declares no secrets and no `[env]`, so it gets the sandbox's variables alone.
+An app learns everything it knows about the sandbox from its environment: the sandbox's name, which commit of the worktree it runs, its own public origin, the bare-localhost origin, whose every request is sent on to auth when the checkout holds `auth` (for an app that needs an OAuth redirect Google accepts), where the services file is, and how long it has to drain. These names are the same in every sandbox, and no app needs to know which apps are in the checkout to read them. The app has no `PORT`: it is handed its socket by systemd, as on a host. dummy declares no secrets and no `[env]`, so it gets the sandbox's variables alone.
 
 Command:
 
@@ -136,11 +137,12 @@ Command:
 $ tr '\0' '\n' < /proc/"$(systemctl --user show -p MainPID --value sandbox-wip-dummy.service)"/environ | sort
 ```
 
-Output: among the lines systemd itself sets, which are not fixed (`LISTEN_FDS`, `LISTEN_FDNAMES`, `LISTEN_PID`, and the user manager's own environment), exactly these lines, where `<services file>` is the absolute path of `wip`'s services file under `/home/me/.local/state/ikigenba/sandbox/wip/`:
+Output: among the lines systemd itself sets, which are not fixed (`LISTEN_FDS`, `LISTEN_FDNAMES`, `LISTEN_PID`, and the user manager's own environment), exactly these lines, where `<commit>` is the worktree's commit as the next story tells it and `<services file>` is the absolute path of `wip`'s services file under `/home/me/.local/state/ikigenba/sandbox/wip/`:
 
 ```
 DRAIN_SECONDS=5
 IKIGENBA_CALLBACK_URL=http://localhost:7400
+IKIGENBA_COMMIT=<commit>
 IKIGENBA_PUBLIC_URL=http://dummy.wip.localhost:7400
 IKIGENBA_SANDBOX=wip
 IKIGENBA_SERVICES=<services file>
@@ -155,9 +157,38 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy's environment holds no `PORT`, and none of auth's secrets or auth's `[env]` entries.
+- dummy's environment holds no `PORT`, no `IKIGENBA_RELEASE`, and none of auth's secrets or auth's `[env]` entries.
 - dummy's working directory is `/home/me/.local/state/ikigenba/sandbox/wip/apps/dummy/`.
 - systemd gives `sandbox-wip-dummy.service` 10 seconds to stop before it kills it, longer than the 5 seconds `DRAIN_SECONDS` gives the app to drain.
+
+## An app reads which commit it runs
+
+The developer's point is seeing which code a sandbox runs. Every app is told the worktree's commit in `IKIGENBA_COMMIT`: the full sha `git rev-parse HEAD` prints in the worktree, followed by `-dirty` when `git status --porcelain` prints anything there, untracked files included. sandbox reads it afresh on every `up`, so a new commit, or a tree that has become dirty or clean, reaches every app at the next `up`; until then the apps keep the value of the `up` that started them. Every app of the sandbox gets the same value. A sandbox has no release, so no app is given `IKIGENBA_RELEASE`. sandbox passes the full sha; shortening it for display is the app's business.
+
+Command:
+
+```
+$ tr '\0' '\n' < /proc/"$(systemctl --user show -p MainPID --value sandbox-wip-dummy.service)"/environ | grep '^IKIGENBA_COMMIT='
+```
+
+Output:
+
+```
+IKIGENBA_COMMIT=c604e32a9f1b7d58e03c6b2f4a19d8e7b5c30f61
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `wip` is up, with `auth` and `dummy`, and `sandbox-wip-dummy.service` is active.
+- When the `up` that brought it up ran, `git rev-parse HEAD` in `/home/me/src/ikigenba/wip` printed `c604e32a9f1b7d58e03c6b2f4a19d8e7b5c30f61` and `git status --porcelain` there printed nothing.
+
+Postconditions:
+
+- Nothing has changed.
+- auth's `IKIGENBA_COMMIT` holds the same value.
+- Had `git status --porcelain` printed anything at that `up`, an untracked file alone included, every app's `IKIGENBA_COMMIT` would be `c604e32a9f1b7d58e03c6b2f4a19d8e7b5c30f61-dirty`.
 
 ## auth reads its secrets and its own settings
 
@@ -169,13 +200,14 @@ Command:
 $ tr '\0' '\n' < /proc/"$(systemctl --user show -p MainPID --value sandbox-wip-auth.service)"/environ | sort
 ```
 
-Output: among the lines systemd itself sets, which are not fixed, exactly these lines, where `<services file>` is the same path dummy is given:
+Output: among the lines systemd itself sets, which are not fixed, exactly these lines, where `<commit>` and `<services file>` are the same values dummy is given:
 
 ```
 DRAIN_SECONDS=5
 GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-example
 IKIGENBA_CALLBACK_URL=http://localhost:7400
+IKIGENBA_COMMIT=<commit>
 IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400
 IKIGENBA_SANDBOX=wip
 IKIGENBA_SERVICES=<services file>
