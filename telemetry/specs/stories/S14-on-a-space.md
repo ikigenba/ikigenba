@@ -19,15 +19,15 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the landing page (`S03-landing.md`): an HTML page whose title is `telemetry`, whose banner's profile link is titled with the email address of the caller the gate authenticated, whose visible text carries the heading `telemetry`, the heading `MCP tools`, and the four tool names `catalog`, `search`, `count`, and `trace`, and a link `About telemetry` to `/about`, and whose footer reads `telemetry v<semver>`, the version the deployed binary's `telemetry --version` prints (`S01-bootstrap.md`), the same one `space status` reports for telemetry. Its stylesheet is `https://telemetry.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that stylesheet loads are under the same `https://telemetry.sbx.ikigenba.dev/_appkit/` (`S04-assets.md`): a browser showing the page requests its style from telemetry's own host and from no other origin. Its button feedback script is `https://telemetry.sbx.ikigenba.dev/_appkit/feedback.js`, and its icon, the suite's favicon a browser shows on the page's tab, is `https://telemetry.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host. In the banner, the profile link leads to `https://auth.sbx.ikigenba.dev/`, and the `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout` (`S03-landing.md`); submitting it signs the visitor out of the space, as auth's stories tell.
+Status 200. The body is the landing page (`S03-landing.md`): an HTML page whose title is `telemetry`, whose banner's profile link is titled with the email address of the caller the gate authenticated, whose visible text carries the heading `telemetry`, the heading `MCP tools`, and the four tool names `catalog`, `search`, `count`, and `trace`, and a link `About telemetry` to `/about`, and whose footer reads `telemetry <display>`, where `<display>` is whatever display string the host's environment gives telemetry: the string the deployed binary's `telemetry --version` prints under that same environment (`S01-bootstrap.md`), and empty when the host sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`. Its stylesheet is `https://telemetry.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that stylesheet loads are under the same `https://telemetry.sbx.ikigenba.dev/_appkit/` (`S04-assets.md`): a browser showing the page requests its style from telemetry's own host and from no other origin. Its button feedback script is `https://telemetry.sbx.ikigenba.dev/_appkit/feedback.js`, and its icon, the suite's favicon a browser shows on the page's tab, is `https://telemetry.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host. In the banner, the profile link leads to `https://auth.sbx.ikigenba.dev/`, and the `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout` (`S03-landing.md`); submitting it signs the visitor out of the space, as auth's stories tell.
 
 Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`, and `opsctl` is installed on it.
-- A tag `telemetry/v<semver>` points at the commit `devctl build telemetry` was run at, and it wrote `telemetry/dist/telemetry-v<semver>.tar.xz`.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev telemetry/dist/telemetry-v<semver>.tar.xz` exited 0.
-- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows `telemetry v<semver> active active -`.
-- `/opt/telemetry/state/telemetry.db` is the database telemetry opened, created on its first start on this space or kept from an earlier release.
+- `devctl build telemetry`, run in a clean tree at the commit `<sha>`, wrote `telemetry/dist/telemetry-<sha>.tar.xz` (`S13-package.md`). No tag is needed.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev telemetry/dist/telemetry-<sha>.tar.xz` exited 0.
+- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows telemetry's service and socket `active`, in the layout devctl's and opsctl's stories own.
+- `/opt/telemetry/state/telemetry.db` is the database telemetry opened, created on its first start on this space or kept from an earlier deploy.
 - The space routes `telemetry.sbx.ikigenba.dev` through its authenticating gate: the gate admits the request and sets `X-User-Id` and `X-User-Email` on what it passes to telemetry, and refuses a request it cannot authenticate before telemetry sees it.
 - The caller holds a credential the gate accepts, and the email that credential names is the one the page's profile link is titled with.
 
@@ -56,8 +56,8 @@ Status 200. The body is the landing page of the story above, and its banner carr
 
 Preconditions:
 
-- Everything the story above requires holds: telemetry `v<semver>` is deployed and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate accepts.
-- `telemetry/dist/telemetry-v<semver>.tar.xz` holds `share/icon.svg` (`S13-package.md`).
+- Everything the story above requires holds: telemetry is deployed and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate accepts.
+- `telemetry/dist/telemetry-<sha>.tar.xz` holds `share/icon.svg` (`S13-package.md`).
 - The host sets `IKIGENBA_SERVICES` in telemetry's environment to the path of its services file, and that file lists telemetry with its icon.
 
 Postconditions:
@@ -71,7 +71,7 @@ Postconditions:
 Request:
 
 ```
-$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -d '{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v0.3.0"}}' https://telemetry.sbx.ikigenba.dev/ingest
+$ curl -si -X POST -H 'Authorization: Bearer ikp_<token>' -H 'Content-Type: application/json' -d '{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"c604e32"}}' https://telemetry.sbx.ikigenba.dev/ingest
 ```
 
 ```
@@ -88,7 +88,7 @@ Status 404. The body is not fixed. A request to the same path with no credential
 
 Preconditions:
 
-- telemetry `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches telemetry's landing page on a space`, so the host's nginx includes `/opt/telemetry/etc/nginx.conf` in telemetry's server.
+- telemetry is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches telemetry's landing page on a space`, so the host's nginx includes `/opt/telemetry/etc/nginx.conf` in telemetry's server.
 - The agent holds a valid token `ikp_<token>` (auth's `S5-tokens.md`) the gate accepts.
 
 Postconditions:
@@ -113,11 +113,11 @@ HTTP/2 200
 content-type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is telemetry's answer to `search` (`S09-search.md`), relayed: it has no `isError` member, its `structuredContent` is an object whose members are `records`, an array of the two newest `request.finished` records from `dummy`, newest first, each the event as dummy posted it (`S06-ingest.md`), and, when more than two match, `cursor`, an opaque string; and its `content` is one text block holding that same object encoded compactly. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"v<semver>"}`, not telemetry's.
+Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is telemetry's answer to `search` (`S09-search.md`), relayed: it has no `isError` member, its `structuredContent` is an object whose members are `records`, an array of the two newest `request.finished` records from `dummy`, newest first, each the event as dummy posted it (`S06-ingest.md`), and, when more than two match, `cursor`, an opaque string; and its `content` is one text block holding that same object encoded compactly. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"<mcp-display>"}`, where `<mcp-display>` is the gateway's own display string, as mcp's stories tell, not telemetry's.
 
 Preconditions:
 
-- telemetry `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches telemetry's landing page on a space`, and the host's services file lists `telemetry` enabled, marked for MCP, with the socket `/run/ikigenba/telemetry.sock`.
+- telemetry is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches telemetry's landing page on a space`, and the host's services file lists `telemetry` enabled, marked for MCP, with the socket `/run/ikigenba/telemetry.sock`.
 - mcp is deployed and active on the space through its own `S11` chain, serving `https://mcp.sbx.ikigenba.dev/mcp`.
 - dummy is deployed and active on the space, and has answered at least two requests since the start of the retention window, each of which it recorded as a `request.finished` posted to telemetry's socket.
 - The agent holds a valid token `ikp_<token>` (auth's `S5-tokens.md`) the gate accepts, whose owner is the user `<user-id>`.
