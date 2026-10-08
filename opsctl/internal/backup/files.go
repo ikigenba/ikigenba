@@ -336,7 +336,7 @@ func archiveTreeExcluding(ctx context.Context, filesystem *os.Root, writer *tar.
 			return err
 		}
 		member := strings.TrimPrefix(name, servicePath+"/")
-		if archiveExcluded(member, exclusions) {
+		if (entry.IsDir() && entry.Name() == "cache") || archiveExcluded(member, exclusions) {
 			if entry.IsDir() {
 				return fs.SkipDir
 			}

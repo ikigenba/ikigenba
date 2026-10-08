@@ -69,8 +69,8 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 		"id --user ikigenba",
 		"id --group --name ikigenba",
 		"getent passwd ikigenba",
-		"litestream ltx -level all -json s3://bucket/host/notes/",
-		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/",
+		"litestream ltx -level all -json s3://bucket/host/notes/?region=us-east-2",
+		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/?region=us-east-2",
 		"systemctl start litestream.service",
 		"systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service",
 	}

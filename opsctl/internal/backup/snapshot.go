@@ -55,7 +55,7 @@ func Snapshot(ctx context.Context, env host.Env, cloudEnv cloud.Env, store confi
 		case selected.ManifestError != nil:
 			result.Err = snapshotReadError(env.Root, selected.ManifestError)
 		default:
-			compressed, archiveErr := snapshotArchive(ctx, env, plan.prefix, selected)
+			compressed, archiveErr := snapshotArchive(ctx, env, plan.prefix, region, selected)
 			result.Err = archiveErr
 			if archiveErr == nil {
 				if err := ctx.Err(); err != nil {
@@ -81,7 +81,7 @@ func Snapshot(ctx context.Context, env host.Env, cloudEnv cloud.Env, store confi
 	return results, nil
 }
 
-func snapshotArchive(ctx context.Context, env host.Env, prefix string, service apps.Service) ([]byte, error) {
+func snapshotArchive(ctx context.Context, env host.Env, prefix, region string, service apps.Service) ([]byte, error) {
 	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func snapshotArchive(ctx context.Context, env host.Env, prefix string, service a
 	var databaseHeader *tar.Header
 	var databaseData []byte
 	if service.Manifest != nil && service.Manifest.Database != nil {
-		databaseHeader, databaseData, err = snapshotDatabase(ctx, env, filesystem, &resolver, prefix, service)
+		databaseHeader, databaseData, err = snapshotDatabase(ctx, env, filesystem, &resolver, prefix, region, service)
 		if err != nil {
 			return nil, snapshotReadError(env.Root, err)
 		}
@@ -122,11 +122,11 @@ func snapshotArchive(ctx context.Context, env host.Env, prefix string, service a
 	return compressArchive(ctx, env.Execute, service.Name, archive.Bytes())
 }
 
-func snapshotDatabase(ctx context.Context, env host.Env, filesystem *os.Root, resolver *identityResolver, prefix string, service apps.Service) (headerResult *tar.Header, dataResult []byte, returnedErr error) {
+func snapshotDatabase(ctx context.Context, env host.Env, filesystem *os.Root, resolver *identityResolver, prefix, region string, service apps.Service) (headerResult *tar.Header, dataResult []byte, returnedErr error) {
 	if env.Execute == nil {
 		return nil, nil, errors.New("snapshot database: host execution is not configured")
 	}
-	replica := strings.TrimSuffix(prefix, "/") + "/" + service.Name + "/"
+	replica := strings.TrimSuffix(prefix, "/") + "/" + service.Name + "/?region=" + region
 	result, err := env.Execute(ctx, host.Command{Name: "litestream", Args: []string{"ltx", "-level", "all", "-json", replica}})
 	if err != nil || result.ExitCode != 0 {
 		return nil, nil, snapshotCommandError("list Litestream snapshot replica", result, err)

@@ -83,7 +83,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 			if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/value")); got != test.wantValue {
 				t.Fatalf("restored archive value = %q, want %q", got, test.wantValue)
 			}
-			restoreCommand := "litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + test.wantArg + " s3://bucket/host/notes/"
+			restoreCommand := "litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + test.wantArg + " s3://bucket/host/notes/?region=us-east-2"
 			if !containsString(executor.events, restoreCommand) {
 				t.Fatalf("events = %v, want %q", executor.events, restoreCommand)
 			}
@@ -603,8 +603,8 @@ func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
 		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"id --user ikigenba", "id --group --name ikigenba", "getent passwd ikigenba",
-		"litestream ltx -level all -json s3://bucket/host/notes/",
-		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/",
+		"litestream ltx -level all -json s3://bucket/host/notes/?region=us-east-2",
+		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/?region=us-east-2",
 		"nginx",
 		"systemctl start litestream.service",
 	}
@@ -793,8 +793,8 @@ func TestRestoreDatabaseDoesNotTouchOtherServiceOrCloud(t *testing.T) {
 		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"id --user ikigenba", "id --group --name ikigenba", "getent passwd ikigenba",
-		"litestream ltx -level all -json s3://bucket/host/notes/",
-		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/",
+		"litestream ltx -level all -json s3://bucket/host/notes/?region=us-east-2",
+		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/?region=us-east-2",
 		"nginx",
 		"systemctl start litestream.service",
 	}

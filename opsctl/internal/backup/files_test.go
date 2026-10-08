@@ -942,7 +942,7 @@ func TestFilesCanonicalReadFailure(t *testing.T) {
 }
 
 func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
-	// R-FHFA-8850 R-FPYK-WMBV
+	// R-FHFA-8850 R-LZI2-5ZA3
 	for _, location := range []struct{ parent, marker, alternate, alternateMarker string }{
 		{"opt", "etc", "var/opt/ikigenba", "state"},
 		{"var/opt/ikigenba", "state", "opt", "etc"},
@@ -997,7 +997,7 @@ func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
 }
 
 func TestReleasedBackupSelectionIgnoresPerAppEntries(t *testing.T) {
-	// R-FHFA-8850 R-L8E4-FXJO R-FPYK-WMBV R-FG7D-UGEB R-FOQO-IUL6
+	// R-FHFA-8850 R-L8E4-FXJO R-LZI2-5ZA3 R-FG7D-UGEB R-LYA5-S7JE
 	for _, snapshot := range []bool{false, true} {
 		t.Run(fmt.Sprintf("snapshot=%t", snapshot), func(t *testing.T) {
 			root := t.TempDir()
@@ -1043,7 +1043,7 @@ func TestReleasedBackupSelectionIgnoresPerAppEntries(t *testing.T) {
 }
 
 func TestExplicitBackupIgnoresIkigenbaPackageDirectory(t *testing.T) {
-	// R-FHFA-8850 R-FPYK-WMBV
+	// R-FHFA-8850 R-LZI2-5ZA3
 	for _, snapshot := range []bool{false, true} {
 		for _, state := range []bool{false, true} {
 			t.Run(fmt.Sprintf("snapshot=%t/state=%t", snapshot, state), func(t *testing.T) {

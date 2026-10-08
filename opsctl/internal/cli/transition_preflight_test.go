@@ -115,10 +115,10 @@ func allowedPreflightCommand(root string, c host.Command, snapshot bool) bool {
 	case "zstd":
 		return reflect.DeepEqual(c.Args, []string{"--quiet", "--stdout"}) && c.Stdin != nil
 	case "litestream":
-		if reflect.DeepEqual(c.Args, []string{"ltx", "-level", "all", "-json", "s3://bucket/host/dummy/"}) {
+		if reflect.DeepEqual(c.Args, []string{"ltx", "-level", "all", "-json", "s3://bucket/host/dummy/?region=region"}) {
 			return c.Stdin == nil
 		}
-		if len(c.Args) != 4 || c.Args[0] != "restore" || c.Args[1] != "-o" || c.Args[3] != "s3://bucket/host/dummy/" || c.Stdin != nil {
+		if len(c.Args) != 4 || c.Args[0] != "restore" || c.Args[1] != "-o" || c.Args[3] != "s3://bucket/host/dummy/?region=region" || c.Stdin != nil {
 			return false
 		}
 		rel, err := filepath.Rel(root, c.Args[2])

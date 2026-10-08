@@ -19,8 +19,40 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
+func TestRestoreDatabaseRequiresRegionBeforeHostOrCloudAccess(t *testing.T) {
+	// R-M0PY-JR0S R-1YID-WH7A
+	for _, name := range []string{"unset", "empty"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			store := restoreConfiguredStore(t, root)
+			var err error
+			if name == "unset" {
+				err = store.Del("aws.region")
+			} else {
+				err = store.Set("aws.region", "")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+				t.Fatal("executed command before rejecting missing region")
+				return host.Result{}, nil
+			}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
+				t.Fatal("opened cloud client before rejecting missing region")
+				return nil, nil
+			}}, store, "notes", nil, "", nil, func(context.Context) error {
+				t.Fatal("regenerated nginx before rejecting missing region")
+				return nil
+			})
+			if err == nil || err.Error() != "aws.region not set" || len(report.Steps) != 0 {
+				t.Fatalf("Restore() = %+v, %v", report, err)
+			}
+		})
+	}
+}
+
 func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testing.T) {
-	// R-G25K-QBQT R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-GA1P-RPGK R-FYHV-L0IQ
+	// R-M0PY-JR0S R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-GA1P-RPGK R-FYHV-L0IQ
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)
@@ -28,6 +60,9 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 		t.Fatal(err)
 	}
 	store := restoreConfiguredStore(t, root)
+	if err := store.Set("aws.region", "eu-west-1"); err != nil {
+		t.Fatal(err)
+	}
 	uid, gid := os.Getuid(), restoreAlternateGID(t)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/archive-only.db\"\n"), uname: "ikigenba", gname: "ikigenba"},
@@ -38,10 +73,16 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 	executor := &databaseRestoreExecutor{
 		t: t, root: root, installed: true, active: true, uid: uid, gid: gid,
 		ltx:      `[{"timestamp":"2026-09-16T10:00:00Z"},{"timestamp":"2026-09-16T11:00:00Z"}]`,
-		sidecars: true,
+		sidecars: true, region: "eu-west-1",
 	}
 	nginxCalls := 0
-	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error {
+	client := restoreClientFor(t, body)
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: func(_ context.Context, region string) (cloud.Client, error) {
+		if region != "eu-west-1" {
+			t.Fatalf("cloud region = %q", region)
+		}
+		return client, nil
+	}}, store, "notes", nil, "", nil, func(context.Context) error {
 		nginxCalls++
 		configuration, readErr := readRootedRestoreFile(root, "etc/litestream.yml")
 		if readErr != nil || !strings.Contains(string(configuration), "/var/opt/ikigenba/notes/state/nested/app.db") {
@@ -66,7 +107,7 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 	if !reflect.DeepEqual(report.Steps, want) || nginxCalls != 1 {
 		t.Fatalf("Restore() = %+v, %v; nginx calls %d", report, err, nginxCalls)
 	}
-	replica := "s3://bucket/host/notes/"
+	replica := "s3://bucket/host/notes/?region=eu-west-1"
 	destination := filepath.Join(root, "var/opt/ikigenba/notes/state/nested/app.db")
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
@@ -90,7 +131,7 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 }
 
 func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
-	// R-G25K-QBQT
+	// R-M0PY-JR0S
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -105,14 +146,14 @@ func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(root, "var/opt/ikigenba/notes/state/app.db")
-	wantRestore := "litestream restore -o " + destination + " -timestamp 2026-09-16T10:30:00.123Z s3://bucket/host/notes/"
+	wantRestore := "litestream restore -o " + destination + " -timestamp 2026-09-16T10:30:00.123Z s3://bucket/host/notes/?region=us-east-2"
 	if report.Steps[4].Detail != "/var/opt/ikigenba/notes/state/app.db, at 2026-09-16T10:30:00.123Z" || !containsString(executor.events, wantRestore) {
 		t.Fatalf("report = %+v, events = %v", report, executor.events)
 	}
 }
 
 func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
-	// R-G25K-QBQT
+	// R-M0PY-JR0S
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -143,7 +184,7 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"id --user ikigenba", "id --group --name ikigenba", "getent passwd ikigenba",
-		"litestream ltx -level all -json s3://bucket/host/notes/",
+		"litestream ltx -level all -json s3://bucket/host/notes/?region=us-east-2",
 	}
 	if !reflect.DeepEqual(executor.events, wantEvents) {
 		t.Fatalf("events = %v, want %v", executor.events, wantEvents)
@@ -177,8 +218,8 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 		"id --user ikigenba",
 		"id --group --name ikigenba",
 		"getent passwd ikigenba",
-		"litestream ltx -level all -json s3://bucket/host/notes/",
-		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/",
+		"litestream ltx -level all -json s3://bucket/host/notes/?region=us-east-2",
+		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/?region=us-east-2",
 		"nginx",
 		"systemctl start litestream.service",
 	}
@@ -191,7 +232,7 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 }
 
 func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
-	// R-G25K-QBQT
+	// R-M0PY-JR0S
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -320,6 +361,7 @@ type databaseRestoreExecutor struct {
 	uid                   int
 	gid                   int
 	ltx                   string
+	region                string
 	sidecars              bool
 	invalidDatabase       bool
 	invalidSidecar        bool
@@ -384,6 +426,23 @@ func (executor *databaseRestoreExecutor) execute(_ context.Context, command host
 			return host.Result{Stdout: []byte("ikigenba\n")}, nil
 		}
 	case "litestream":
+		region := executor.region
+		if region == "" {
+			region = "us-east-2"
+		}
+		replica := "s3://bucket/host/notes/?region=" + region
+		urls := 0
+		for _, arg := range command.Args {
+			if strings.HasPrefix(arg, "s3://") {
+				urls++
+				if arg != replica {
+					executor.t.Fatalf("Litestream replica = %q, want %q", arg, replica)
+				}
+			}
+		}
+		if urls != 1 {
+			executor.t.Fatalf("Litestream command must name exactly one replica: %v", command.Args)
+		}
 		if len(command.Args) == 5 && command.Args[0] == "ltx" {
 			return host.Result{Stdout: []byte(executor.ltx)}, nil
 		}

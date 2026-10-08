@@ -278,7 +278,7 @@ func TestActivateConfigurationInert(t *testing.T) {
 	}
 }
 func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
-	// R-SLGV-2CH7 R-SJ12-ASZT R-B3X7-XNXZ R-BDOE-ZTVJ R-BIK0-IWUB R-BKZT-AGBP R-SU05-QQO2 R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-BYEP-HXHC
+	// R-SJ12-ASZT R-B3X7-XNXZ R-BDOE-ZTVJ R-BIK0-IWUB R-BKZT-AGBP R-SU05-QQO2 R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-BYEP-HXHC
 	f := newTransitionFixture(t)
 	f.addRelease(transitionOld, "dropped")
 	f.link("current", transitionOld)
@@ -461,33 +461,6 @@ func TestActivateCoreFirstDisabledAndServiceFailure(t *testing.T) {
 		if c.Name == "systemctl" && (c.Args[0] == "enable" || c.Args[0] == "start" || c.Args[0] == "restart") && strings.Contains(strings.Join(c.Args, " "), "ikigenba-dummy") {
 			t.Fatalf("disabled app action %+v", c)
 		}
-	}
-}
-func TestActivateChownAndModesNoSymlinkFollowing(t *testing.T) {
-	// R-SLGV-2CH7
-	f := newTransitionFixture(t)
-	f.write("outside", "outside", 0o666)
-	link := filepath.Join(f.root, "opt/ikigenba/releases", transitionSHA, "dummy/etc/linked")
-	if e := os.Symlink(filepath.Join(f.root, "outside"), link); e != nil {
-		t.Fatal(e)
-	}
-	code, out, err := f.run("activate", transitionSHA)
-	if code != 0 {
-		t.Fatalf("%d %s %s", code, out, err)
-	}
-	c := f.commands[0]
-	if c.Name != "chown" || !reflect.DeepEqual(c.Args, []string{"--recursive", "--no-dereference", "root:root", filepath.Join(f.root, "opt/ikigenba/releases", transitionSHA)}) {
-		t.Fatalf("chown %+v", c)
-	}
-	for _, p := range []string{"dummy/bin/dummy", "dummy/etc/manifest.toml"} {
-		info, e := os.Lstat(filepath.Join(f.root, "opt/ikigenba/releases", transitionSHA, p))
-		if e != nil || info.Mode().Perm()&0o022 != 0 {
-			t.Fatalf("mode %s %v %v", p, info, e)
-		}
-	}
-	info, e := os.Lstat(filepath.Join(f.root, "outside"))
-	if e != nil || info.Mode().Perm() != 0o666 {
-		t.Fatalf("outside %v %v", info, e)
 	}
 }
 func TestActivateCutoverAndSnapshotFailure(t *testing.T) {
@@ -706,37 +679,162 @@ func TestActivateGeneratedConfigurationsAndReloads(t *testing.T) {
 	}
 }
 
-func TestActivateReleaseModesPreserveUnrelatedBits(t *testing.T) {
-	// R-SLGV-2CH7
-	f := newTransitionFixture(t)
-	base := "opt/ikigenba/releases/" + transitionSHA
-	cases := []struct {
-		name          string
-		before, after os.FileMode
-	}{{base + "/dummy/bin/dummy", 0o777, 0o755}, {base + "/dummy/etc/manifest.toml", 0o666, 0o644}, {base + "/dummy/libexec/helper", 0o751, 0o751}, {base + "/dummy/share/data", 0o464, 0o444}}
-	for _, tc := range cases {
-		if strings.HasSuffix(tc.name, "/manifest.toml") {
-			f.write(tc.name, "app='dummy'", tc.before)
-		} else {
-			f.write(tc.name, "file", tc.before)
+func TestReleaseNormalizesModesWithoutFollowingSymlinks(t *testing.T) {
+	// R-VCMW-NLOB
+	for _, command := range []string{"activate", "rollback"} {
+		for _, label := range []string{"", "kept-label"} {
+			t.Run(command+"/"+label, func(t *testing.T) {
+				f := newTransitionFixture(t)
+				sha := transitionSHA
+				args := []string{"activate", sha}
+				if command == "rollback" {
+					sha = transitionOld
+					f.addRelease(sha, "dummy")
+					f.link("current", transitionSHA)
+					f.link("previous", sha)
+					f.deps.Executable = func() (string, error) {
+						return filepath.Join(f.root, "opt/ikigenba/releases", sha, "opsctl/bin/opsctl"), nil
+					}
+					args = []string{"rollback"}
+				} else if label != "" {
+					args = append(args, label)
+				}
+				base := "opt/ikigenba/releases/" + sha
+				if command == "rollback" && label != "" {
+					f.write(base+"/label", label+"\n", 0o600)
+				}
+				cases := []struct {
+					name          string
+					before, after os.FileMode
+				}{
+					{"dummy/bin/dummy", 0o600, 0o755},
+					{"opsctl/bin/opsctl", 0o600, 0o755},
+					{"opsctl/bin/nested/helper", 0o640, 0o755},
+					{"dummy/libexec/owner", 0o100, 0o755},
+					{"dummy/libexec/group", 0o010, 0o755},
+					{"dummy/libexec/nested/other", 0o001, 0o755},
+					{"dummy/libexec/data", 0o600, 0o644},
+					{"dummy/share/data", 0o464, 0o644},
+					{"dummy/etc/executable", os.ModeSetuid | os.ModeSetgid | 0o777, 0o644},
+					{"dummy/lib/library", 0o700, 0o644},
+					{"opsctl/libexec/helper", 0o700, 0o644},
+					{"top-level", 0o777, 0o644},
+				}
+				for _, tc := range cases {
+					f.write(base+"/"+tc.name, "file", tc.before)
+				}
+				f.write(base+"/dummy/etc/manifest.toml", "app='dummy'\n", 0o600)
+				f.write("outside/file", "outside", 0o666)
+				f.write("outside/directory/keep", "outside directory", 0o777)
+				links := map[string]string{
+					"dummy/etc/file-link":        filepath.Join(f.root, "outside/file"),
+					"dummy/share/directory-link": filepath.Join(f.root, "outside/directory"),
+					"dummy/libexec/inside-link":  "../share/data",
+					"top-link":                   filepath.Join(f.root, "outside/directory"),
+				}
+				for name, target := range links {
+					if err := os.Symlink(target, filepath.Join(f.root, base, name)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				fixtureRoot, err := os.OpenRoot(f.root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = fixtureRoot.Close() }()
+				// Unpack can leave the root and every nested directory private.
+				if err := filepath.WalkDir(filepath.Join(f.root, base), func(p string, d os.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if d.IsDir() {
+						info, err := d.Info()
+						if err != nil {
+							return err
+						}
+						// Keep the fixture owner's access while removing everyone else's.
+						privateMode := info.Mode().Perm() & 0o700
+						if privateMode != 0o700 {
+							return fmt.Errorf("fixture directory %s lacks owner access: %v", p, privateMode)
+						}
+						rel, err := filepath.Rel(f.root, p)
+						if err != nil {
+							return err
+						}
+						return fixtureRoot.Chmod(rel, privateMode)
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				code, out, stderr := f.run(args...)
+				detail := sha[:7]
+				if label != "" {
+					detail += ", " + label
+				}
+				if code != 0 || stderr != "" || !strings.HasPrefix(out, "release: ok ("+detail+")\n") {
+					t.Fatalf("%d %s %s", code, out, stderr)
+				}
+				chowns := 0
+				for _, c := range f.commands {
+					if c.Name == "chown" && len(c.Args) > 2 && c.Args[2] == "root:root" {
+						chowns++
+						if !reflect.DeepEqual(c.Args, []string{"--recursive", "--no-dereference", "root:root", filepath.Join(f.root, base)}) {
+							t.Fatalf("release ownership command %+v", c)
+						}
+					}
+				}
+				if chowns != 1 {
+					t.Fatalf("release chown count %d", chowns)
+				}
+				assertMode := func(p string, want os.FileMode) {
+					t.Helper()
+					info, err := os.Lstat(filepath.Join(f.root, p))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got := info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky); got != want {
+						t.Fatalf("%s mode %v want %v", p, got, want)
+					}
+				}
+				if err := filepath.WalkDir(filepath.Join(f.root, base), func(p string, d os.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if d.IsDir() {
+						rel, err := filepath.Rel(f.root, p)
+						if err != nil {
+							return err
+						}
+						assertMode(rel, 0o755)
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				for _, tc := range cases {
+					assertMode(base+"/"+tc.name, tc.after)
+				}
+				assertMode(base+"/release.json", 0o644)
+				assertMode(base+"/dummy/etc/manifest.toml", 0o644)
+				assertMode("outside", 0o700)
+				assertMode("outside/file", 0o666)
+				assertMode("outside/directory", 0o700)
+				assertMode("outside/directory/keep", 0o777)
+				if f.read("outside/file") != "outside" || f.read("outside/directory/keep") != "outside directory" {
+					t.Fatal("symlink target contents changed")
+				}
+				for name, target := range links {
+					info, err := os.Lstat(filepath.Join(f.root, base, name))
+					if err != nil || info.Mode()&os.ModeSymlink == 0 {
+						t.Fatalf("symlink %s changed: %v %v", name, info, err)
+					}
+					if got, err := os.Readlink(filepath.Join(f.root, base, name)); err != nil || got != target {
+						t.Fatalf("symlink %s target %q: %v, want %q", name, got, err, target)
+					}
+				}
+			})
 		}
-	}
-	if err := os.Chmod(filepath.Join(f.root, base), 0o777|os.ModeSticky); err != nil {
-		t.Fatal(err)
-	}
-	code, out, err := f.run("activate", transitionSHA)
-	if code != 0 {
-		t.Fatalf("%d %s %s", code, out, err)
-	}
-	for _, tc := range cases {
-		info, e := os.Lstat(filepath.Join(f.root, tc.name))
-		if e != nil || info.Mode().Perm() != tc.after {
-			t.Fatalf("mode %s got %v %v want %v", tc.name, info, e, tc.after)
-		}
-	}
-	info, e := os.Lstat(filepath.Join(f.root, base))
-	if e != nil || info.Mode().Perm() != 0o755 || info.Mode()&os.ModeSticky == 0 {
-		t.Fatalf("folder unrelated bits %v %v", info, e)
 	}
 }
 

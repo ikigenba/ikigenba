@@ -313,7 +313,29 @@ func (t *transition) releaseStep() (string, error) {
 		if e != nil {
 			return e
 		}
-		return t.files.Chmod(p, info.Mode()&^0o022)
+		if info.IsDir() {
+			return t.files.Chmod(p, 0o755)
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		mode := os.FileMode(0o644)
+		rel := strings.TrimPrefix(p, t.folder+"/")
+		parts := strings.SplitN(rel, "/", 3)
+		if len(parts) == 3 {
+			isApp := false
+			for _, app := range t.trees {
+				if parts[0] == app {
+					isApp = true
+					break
+				}
+			}
+			if parts[1] == "bin" && (isApp || parts[0] == "opsctl") ||
+				parts[1] == "libexec" && isApp && info.Mode().Perm()&0o111 != 0 {
+				mode = 0o755
+			}
+		}
+		return t.files.Chmod(p, mode)
 	}); err != nil {
 		return "", err
 	}

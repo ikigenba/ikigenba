@@ -261,7 +261,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		var recovered string
 		var restoreErr error
 		if from == "" {
-			recovered, restoreErr = restoreServiceDatabase(ctx, env, prefix, service, database, at)
+			recovered, restoreErr = restoreServiceDatabase(ctx, env, prefix, region, service, database, at)
 		}
 		if restoreErr != nil {
 			return failRestoreStep(report, service, "db", "litestream restore", restoreErr, stopped)
@@ -343,11 +343,11 @@ type restoreLTXFile struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-func restoreServiceDatabase(ctx context.Context, env host.Env, prefix, service string, database apps.Database, at *time.Time) (string, error) {
+func restoreServiceDatabase(ctx context.Context, env host.Env, prefix, region, service string, database apps.Database, at *time.Time) (string, error) {
 	if err := prepareRestoredDatabasePath(env.Root, service, database.Path); err != nil {
 		return "", err
 	}
-	replica := strings.TrimSuffix(prefix, "/") + "/" + service + "/"
+	replica := strings.TrimSuffix(prefix, "/") + "/" + service + "/?region=" + region
 	result, err := env.Execute(ctx, host.Command{Name: "litestream", Args: []string{"ltx", "-level", "all", "-json", replica}})
 	if err != nil || result.ExitCode != 0 {
 		return "", restoreCommandError("list Litestream restore points", result, err)
