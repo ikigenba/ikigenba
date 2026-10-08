@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -32,17 +31,14 @@ import (
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 )
 
-// R-V6AK-SXDV R-V7IH-6P4K
+// R-MO8V-98SE R-MKL6-3XKB
 func TestVersion(t *testing.T) {
-	value := &cli.Version
-	if !regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`).MatchString(*value) {
-		t.Fatalf("invalid version %q", *value)
-	}
-	for _, part := range strings.SplitN(strings.SplitN(strings.TrimPrefix(*value, "v"), "+", 2)[0], "-", 2)[1:] {
-		for _, id := range strings.Split(part, ".") {
-			if len(id) > 1 && id[0] == '0' && strings.Trim(id, "0123456789") == "" {
-				t.Fatal("numeric prerelease leading zero")
-			}
+	for _, v := range []string{"", "injected identity", "\tidentity\n"} {
+		var out, stderr bytes.Buffer
+		p := cli.Process{Args: []string{"--version"}, Version: v, Stdout: &out, Stderr: &stderr,
+			Inherit: func(uintptr) (net.Listener, error) { t.Fatal("unexpected inheritance"); return nil, nil }}
+		if code := cli.Run(context.Background(), p); code != cli.ExitSuccess || out.String() != v+"\n" || stderr.Len() != 0 {
+			t.Fatalf("version %q: code %d stdout %q stderr %q", v, code, out.String(), stderr.String())
 		}
 	}
 }
@@ -71,7 +67,7 @@ func (w *writes) Write(p []byte) (int, error) {
 }
 func (w *writes) String() string { return string(bytes.Join(w.calls, nil)) }
 
-// R-1ESK-Z5EA R-TGFS-0R50 R-X3SU-LUNG R-X68N-DE4U R-X7GJ-R5VJ
+// R-MKL6-3XKB R-TGFS-0R50 R-X68N-DE4U R-X7GJ-R5VJ
 // R-X8OG-4XM8 R-X9WC-IPCX R-XB48-WH3M R-XCC5-A8UB R-XDK1-O0L0 R-VDLZ-3JU1
 func TestCommands(t *testing.T) {
 	for _, tc := range []struct {
@@ -79,7 +75,7 @@ func TestCommands(t *testing.T) {
 		out, arg string
 		code     int
 	}{
-		{[]string{"--version"}, cli.Version + "\n", "", 0}, {[]string{"manifest"}, cli.Manifest, "", 0}, {[]string{"--help"}, cli.Usage, "", 0},
+		{[]string{"--version"}, "injected build identity" + "\n", "", 0}, {[]string{"manifest"}, cli.Manifest, "", 0}, {[]string{"--help"}, cli.Usage, "", 0},
 		{[]string{"bogus"}, "", "bogus", 2}, {[]string{"-bad"}, "", "-bad", 2}, {[]string{"bogus", "--help"}, "", "bogus", 2},
 		{[]string{"--version", "extra"}, "", "extra", 2}, {[]string{"manifest", "--version"}, "", "--version", 2}, {[]string{"--help", ""}, "", "", 2},
 	} {
@@ -87,7 +83,7 @@ func TestCommands(t *testing.T) {
 			var out bytes.Buffer
 			var errout writes
 			forbidden := func() { t.Fatal("command touched process environment/socket") }
-			p := cli.Process{Args: tc.args, LookupEnv: func(string) (string, bool) { forbidden(); return "", false }, Unsetenv: func(string) error { forbidden(); return nil }, Pid: 42, Stdout: &out, Stderr: &errout, Inherit: func(uintptr) (net.Listener, error) { forbidden(); return nil, nil }, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(*telemetry.Writer) *appkitmcp.Server { forbidden(); return nil }, Sink: sinkFunc(func(context.Context, telemetry.Event) error { forbidden(); return nil })}
+			p := cli.Process{Args: tc.args, Version: "injected build identity", LookupEnv: func(string) (string, bool) { forbidden(); return "", false }, Unsetenv: func(string) error { forbidden(); return nil }, Pid: 42, Stdout: &out, Stderr: &errout, Inherit: func(uintptr) (net.Listener, error) { forbidden(); return nil, nil }, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(*telemetry.Writer) *appkitmcp.Server { forbidden(); return nil }, Sink: sinkFunc(func(context.Context, telemetry.Event) error { forbidden(); return nil })}
 			run := cli.Run
 			code := run(context.Background(), p)
 			if code != tc.code || out.String() != tc.out {
@@ -203,16 +199,19 @@ func setup(t *testing.T) *harness {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	h := &harness{env: map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": filepath.Join(dir, "notify")}, ln: ln, notify: notify, ctx: ctx, cancel: cancel, done: make(chan int, 1), dir: dir}
-	h.p = cli.Process{Pid: 42, Stdout: &h.out, Stderr: &h.errout, LookupEnv: func(k string) (string, bool) { v, ok := h.env[k]; return v, ok }, Inherit: func(fd uintptr) (net.Listener, error) {
+	h.p = cli.Process{Pid: 42, Version: "injected build identity", Stdout: &h.out, Stderr: &h.errout, LookupEnv: func(k string) (string, bool) { v, ok := h.env[k]; return v, ok }, Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			t.Errorf("fd=%d", fd)
 		}
 		return h.ln, nil
-	}, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *appkitmcp.Server { return gateway.NewServer(cli.Version, w) }, Sink: &telemetry.Capture{}}
+	}, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *appkitmcp.Server { return gateway.NewServer("injected build identity", w) }, Sink: &telemetry.Capture{}}
 
 	h.capture = &telemetry.Capture{}
 	h.p.Sink = h.capture
-	h.p.MCP = func(w *telemetry.Writer) *appkitmcp.Server { h.writer = w; return gateway.NewServer(cli.Version, w) }
+	h.p.MCP = func(w *telemetry.Writer) *appkitmcp.Server {
+		h.writer = w
+		return gateway.NewServer("injected build identity", w)
+	}
 	return h
 }
 func (h *harness) start(t *testing.T) {
@@ -455,7 +454,7 @@ func TestGatewayConfiguration(t *testing.T) {
 	referenceWriter := telemetry.New(telemetry.Config{Service: gateway.ServiceName, Sink: &telemetry.Capture{}})
 	defer referenceWriter.Shutdown(context.Background(), "test")
 	for _, path := range []string{"/", "/missing", "/mcp/bad,", "/_appkit/no-file"} {
-		cfg := gateway.Config{Banner: h.p.Banner, MCP: gateway.NewServer(cli.Version, referenceWriter), ServicesPath: first, Telemetry: referenceWriter}
+		cfg := gateway.Config{Banner: h.p.Banner, MCP: gateway.NewServer("injected build identity", referenceWriter), ServicesPath: first, Telemetry: referenceWriter}
 		reference := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("X-User-Id", "person")
@@ -488,7 +487,7 @@ func TestGatewayConfiguration(t *testing.T) {
 	ref := httptest.NewRecorder()
 	missing := httptest.NewRequest(http.MethodGet, "/missing", nil)
 	missing.Host = h.ln.Addr().String()
-	gateway.Handler(gateway.Config{Banner: h.p.Banner, MCP: gateway.NewServer(cli.Version, referenceWriter), ServicesPath: first, Telemetry: referenceWriter}).ServeHTTP(ref, missing)
+	gateway.Handler(gateway.Config{Banner: h.p.Banner, MCP: gateway.NewServer("injected build identity", referenceWriter), ServicesPath: first, Telemetry: referenceWriter}).ServeHTTP(ref, missing)
 	actualMissing := h.get(t, "/missing", false)
 	if actualMissing.StatusCode != ref.Code || readBody(t, actualMissing) != ref.Body.String() {
 		t.Fatal("missing identity differs")
@@ -738,7 +737,7 @@ func (rejectSink) Deliver(context.Context, telemetry.Event) error {
 	return fmt.Errorf("refused: %w", telemetry.ErrRejected)
 }
 
-// R-1X32-PPIP R-1ZIV-H903 R-G38H-J4TX
+// R-1X32-PPIP R-MPGR-N0J3 R-G38H-J4TX
 func TestRunWriterLifecycle(t *testing.T) {
 	h := setup(t)
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -750,7 +749,7 @@ func TestRunWriterLifecycle(t *testing.T) {
 		if w == nil {
 			t.Error("nil writer")
 		}
-		return gateway.NewServer(cli.Version, w)
+		return gateway.NewServer("injected build identity", w)
 	}
 	h.start(t)
 	readBody(t, h.get(t, "/", true))
@@ -771,8 +770,58 @@ func TestRunWriterLifecycle(t *testing.T) {
 			t.Fatal(events[i])
 		}
 	}
-	if !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"version": cli.Version}) || !reflect.DeepEqual(events[3].Attrs, telemetry.Attrs{"reason": "SIGINT"}) {
+	if !reflect.DeepEqual(events[0].Attrs, telemetry.Attrs{"version": "injected build identity"}) || !reflect.DeepEqual(events[3].Attrs, telemetry.Attrs{"reason": "SIGINT"}) {
 		t.Fatal(events)
+	}
+}
+
+type observedAcceptListener struct {
+	net.Listener
+	before func()
+}
+
+func (l observedAcceptListener) Accept() (net.Conn, error) {
+	l.before()
+	return l.Listener.Accept()
+}
+
+// R-MPGR-N0J3 R-MKL6-3XKB
+func TestStartedBeforeAccept(t *testing.T) {
+	for _, v := range []string{"", "another supplied identity"} {
+		t.Run(v, func(t *testing.T) {
+			h := setup(t)
+			h.p.Version = v
+			var accepted atomic.Bool
+			var startedBeforeAccept atomic.Bool
+			var started atomic.Int32
+			h.p.Sink = sinkFunc(func(_ context.Context, e telemetry.Event) error {
+				if e.Name == "service.started" {
+					started.Add(1)
+					startedBeforeAccept.Store(!accepted.Load())
+					if e.RequestID != "" || e.User != "" || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"version": v}) {
+						t.Errorf("started: %#v", e)
+					}
+				}
+				return fmt.Errorf("refused: %w", telemetry.ErrRejected)
+			})
+			var first sync.Once
+			h.ln = observedAcceptListener{Listener: h.ln, before: func() {
+				first.Do(func() {
+					// Deliver all events already recorded before the first Accept.
+					if err := h.writer.Flush(context.Background()); err != nil {
+						t.Error(err)
+					}
+					accepted.Store(true)
+				})
+			}}
+			h.start(t)
+			readBody(t, h.get(t, "/", true))
+			h.cancel()
+			h.finish(t, cli.ExitSuccess)
+			if started.Load() != 1 || !startedBeforeAccept.Load() {
+				t.Fatalf("started count %d, before Accept %v", started.Load(), startedBeforeAccept.Load())
+			}
+		})
 	}
 }
 
