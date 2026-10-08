@@ -213,10 +213,11 @@ Postconditions:
   non-zero, and the certificate renewal pair with its timer enabled.
 - `/var/lib/ikigenba/services.json` has been rewritten from the store, what
   is under `/opt`, and which apps are disabled. No line reports it.
-- Every installed app's `etc/env` holds `DRAIN_SECONDS=5` and
-  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit a
-  stop timeout of `10` seconds and the resource settings its installed
-  manifest declares, or their defaults (`S7-apps.md`). An app that already
+- Every installed app's environment file, `/etc/opt/ikigenba/<app>/env`,
+  holds `DRAIN_SECONDS=5` and
+  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit
+  names that file, a stop timeout of `10` seconds, and the resource settings
+  its installed manifest declares, or their defaults (`S7-apps.md`). An app that already
   held those values was not restarted.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
@@ -418,11 +419,11 @@ Preconditions:
 
 Postconditions:
 
-- `/opt/crm/etc/env`, `/opt/dashboard/etc/env`, and `/opt/notes/etc/env`
-  hold `DRAIN_SECONDS=20`; every other line in them is as it was. All three
-  service units stop with a timeout of `30` seconds, and each still carries
-  the resources its app's manifest declares, as install wrote them. systemd
-  has been reloaded.
+- `/etc/opt/ikigenba/crm/env`, `/etc/opt/ikigenba/dashboard/env`, and
+  `/etc/opt/ikigenba/notes/env` hold `DRAIN_SECONDS=20`; every other line
+  in them is as it was. All three service units stop with a timeout of
+  `30` seconds, and each still carries the resources its app's manifest
+  declares, as install wrote them. systemd has been reloaded.
 - `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted,
   so each now runs with the new values. Their sockets were not restarted.
 - `notes` was not started, restarted, or enabled: both its units are still
@@ -496,7 +497,7 @@ Postconditions:
 - Running `init` again before the fix stops at the same place with the same
   output; the slice units and drop-in are present and unchanged, so systemd
   is not reloaded for them and nginx is neither reloaded nor restarted.
-- No app changed: every installed app's unit and `etc/env` are as they
+- No app changed: every installed app's unit and environment file are as they
   were, and none was restarted, `repos` included.
 - The fix is to install a `repos` release whose manifest is valid, which
   `install` can judge now that the slices are there; `init` then runs to the
@@ -515,7 +516,8 @@ step, the first that reads the installed apps, and stops `init` before
 anything they generate is rewritten. The `slices` step, which reads no app,
 has already run. The line names the fix. When several installed apps' `state/` is
 still under `/opt/<name>/`, only the first in name order is reported, as the
-manifest check reports one fault. A `cache/` left
+manifest check reports one fault. The same check covers an app whose
+environment file has not moved (the next story). A `cache/` left
 under `/opt/<name>/` with no `state/` beside it is no reason to refuse.
 
 Command:
@@ -552,8 +554,11 @@ Preconditions:
 - `crm` and `dashboard` are installed, each with a valid manifest, and their
   sockets are listening.
 - `/opt/crm/` holds `bin/`, `etc/`, `share/`, and `state/`, and
-  `/var/opt/ikigenba/crm/` does not exist. `dashboard`'s `state/` is under
-  `/var/opt/ikigenba/dashboard/`.
+  `/var/opt/ikigenba/crm/` does not exist. `crm`'s environment file has not
+  moved either: it is `/opt/crm/etc/env`, and `/etc/opt/ikigenba/crm/` does
+  not exist.
+- `dashboard`'s `state/` is under `/var/opt/ikigenba/dashboard/`, and its
+  environment file is `/etc/opt/ikigenba/dashboard/env`.
 
 Postconditions:
 
@@ -562,11 +567,79 @@ Postconditions:
 - Nothing from `nginx.conf` on ran: `/etc/nginx/conf.d/ikigenba.conf`,
   `/var/lib/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
   are as they were, and nginx was not reloaded.
-- No app changed: every installed app's unit and `etc/env` are as they were,
-  `dashboard`'s included, and none was restarted. `crm` is still running as
+- No app changed: every installed app's unit and environment file are as
+  they were, `dashboard`'s included, and none was restarted. `crm` is still running as
   it was.
 - Nothing under `/opt/crm/` was moved or removed, and
   `/var/opt/ikigenba/crm/` was not created.
+- Running `init` again before `opsctl install crm` stops at the same place
+  with the same output. After it, `init` runs to the end.
+
+## An agent initialises a host holding an app whose environment file has not moved
+
+An app installed before environment files lived under `/etc/opt/ikigenba/`
+keeps its file at `/opt/<name>/etc/env`, and its unit still names it there,
+until an install writes the new file and rewrites the unit. The `apps` step
+rewrites every installed app's unit to name `/etc/opt/ikigenba/<name>/env`
+and writes the store's values into that file, but it reads no parameter, so
+it cannot write the secrets a missing file needs; a unit naming a file that is
+not there would not start. So an installed app with no
+`/etc/opt/ikigenba/<name>/env` stops `init` the way an app whose data has not
+moved does: at the `nginx.conf` step, before anything generated from the
+installed apps is rewritten, with a line that names the fix. It is the same
+check as the one for data. Of the installed apps whose `state/` or environment
+file has not moved, only the first in name order is reported, and an app
+whose `state/` has not moved either is reported for its `state/`.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output:
+
+```
+nginx: ok (/usr/sbin/nginx)
+certbot: ok (/usr/bin/certbot)
+systemctl: ok (/usr/bin/systemctl)
+litestream: ok (/usr/bin/litestream)
+git: ok (/usr/bin/git)
+dns.provider: ok (route53)
+dns.zones: ok (ikigenba.dev)
+host.name: ok (sbx.ikigenba.dev)
+timeouts: ok (drain 5s, stop 10s)
+zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
+host sbx.ikigenba.dev: ok (zone ikigenba.dev)
+wildcard sbx.ikigenba.dev: ok (77.112.106.79)
+opsctl: crm: /opt/crm/etc/env has not moved; install crm first
+exit 1
+```
+
+Exits 1. The `ok` lines are on stdout; the `opsctl:` line is on stderr.
+
+Preconditions:
+
+- Every preflight check passes, and the host's certificate is not due for
+  renewal.
+- `crm` and `dashboard` are installed, each with a valid manifest, and their
+  sockets are listening. Both have their `state/` under
+  `/var/opt/ikigenba/<name>/`.
+- `crm`'s unit names `/opt/crm/etc/env`, which exists, and
+  `/etc/opt/ikigenba/crm/` does not exist. `dashboard`'s environment file is
+  `/etc/opt/ikigenba/dashboard/env`.
+
+Postconditions:
+
+- The `certificate` step found nothing to renew and changed nothing. The
+  `slices` step ran as on any host.
+- Nothing from `nginx.conf` on ran: `/etc/nginx/conf.d/ikigenba.conf`,
+  `/var/lib/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
+  are as they were, and nginx was not reloaded.
+- No app changed: every installed app's unit and environment file are as
+  they were, `dashboard`'s included, and none was restarted. `crm` is still
+  running as it was, from `/opt/crm/etc/env`.
+- `/etc/opt/ikigenba/crm/` was not created.
 - Running `init` again before `opsctl install crm` stops at the same place
   with the same output. After it, `init` runs to the end.
 
@@ -603,8 +676,8 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No setup command ran, no app's `etc/env` or unit was
-  rewritten, `/var/lib/ikigenba/services.json` was not rewritten, and no app
+- Nothing has changed. No setup command ran, no app's environment file or
+  unit was rewritten, `/var/lib/ikigenba/services.json` was not rewritten, and no app
   was restarted.
 
 ## An operator gives init an argument

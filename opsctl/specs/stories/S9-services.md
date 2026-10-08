@@ -17,7 +17,7 @@ has succeeded: a command that fails before or at its nginx step — as every
 regeneration does while a service's manifest cannot be read — leaves the file
 as it was. The file is always written, even when it lists nothing, so on a host
 where opsctl has run `init` or `install` it never goes missing. An app finds it
-through its environment: every app's `/opt/<app>/etc/env` holds the line
+through its environment: every app's `/etc/opt/ikigenba/<app>/env` holds the line
 `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` (`S7-apps.md`).
 
 A service is in the file if and only if it is an installed, routed app —
