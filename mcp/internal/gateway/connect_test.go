@@ -206,6 +206,74 @@ func renderAppkit(t *testing.T, name string, b page.Banner) string {
 	return out.String()
 }
 
+// R-S953-OHOS: inspect the shared banner in the actual response.
+func assertBannerHooks(t *testing.T, body string, b page.Banner) {
+	t.Helper()
+	part := func(s, name, class string) (string, string, markupTag) {
+		t.Helper()
+		tags := readTags(s, name, false)
+		if class != "" {
+			tags = ofName(attributed(s, "class", class), name)
+		}
+		tag := oneTag(t, tags)
+		ends := readTags(s[tag.end:], name, true)
+		if len(ends) == 0 {
+			t.Fatalf("unclosed banner %s", name)
+		}
+		return s[tag.start : tag.end+ends[0].end], s[tag.end : tag.end+ends[0].start], tag
+	}
+	_, header, _ := part(body, "header", "")
+	mark, markContent, markTag := part(header, "strong", "mark")
+	if !slices.Equal(markTag.attrs["data-service"], []string{gateway.ServiceName}) {
+		t.Fatal("banner service hook")
+	}
+	favicon := oneTag(t, readTags(markContent, "img", false))
+	if !slices.Equal(favicon.attrs["src"], []string{"/_appkit/favicon.svg"}) || !slices.Equal(favicon.attrs["alt"], []string{""}) {
+		t.Fatal("banner favicon hooks")
+	}
+	service, serviceContent, serviceTag := part(markContent, "span", "service")
+	if strings.TrimSpace(markContent[:favicon.start]) != "" || strings.TrimSpace(markContent[favicon.end:serviceTag.start]) != "Ikigenba" || strings.TrimSpace(markContent[serviceTag.start+len(service):]) != "" {
+		t.Fatal("banner favicon, product and service order")
+	}
+	serviceContent = strings.TrimSpace(serviceContent)
+	if !strings.HasPrefix(serviceContent, string(b.Icon)) || strings.TrimSpace(serviceContent[len(b.Icon):]) != gateway.ServiceName {
+		t.Fatalf("banner service icon and name: %q", serviceContent)
+	}
+	children := []string{mark}
+	if len(b.Services) > 0 {
+		launcher, _, _ := part(header, "button", "launcher")
+		children = append(children, launcher)
+	}
+	profile, profileContent, profileTag := part(header, "a", "profile")
+	if !slices.Equal(profileTag.attrs["title"], []string{b.Email}) || !slices.Equal(profileTag.attrs["aria-label"], []string{"Profile"}) || normalise(profileContent) != "" {
+		t.Fatal("banner profile labels and visible text")
+	}
+	oneTag(t, readTags(profileContent, "svg", false))
+	form, formContent, _ := part(header, "form", "")
+	_, signout, signoutTag := part(formContent, "button", "signout")
+	for name, value := range map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"} {
+		if !slices.Equal(signoutTag.attrs[name], []string{value}) {
+			t.Fatalf("banner sign-out %s", name)
+		}
+	}
+	oneTag(t, readTags(signout, "svg", false))
+	if normalise(signout) != "" {
+		t.Fatal("sign-out button has visible text")
+	}
+	children = append(children, profile, form)
+	rest := header
+	for _, child := range children {
+		rest = strings.TrimSpace(rest)
+		if !strings.HasPrefix(rest, child) {
+			t.Fatal("banner order: want only mark, optional launcher, profile and sign-out form")
+		}
+		rest = rest[len(child):]
+	}
+	if strings.TrimSpace(rest) != "" {
+		t.Fatal("extra banner header content")
+	}
+}
+
 func feedbackScripts(s string) []markupTag {
 	var selected []markupTag
 	for _, tag := range readTags(s, "script", false) {
@@ -276,20 +344,32 @@ func TestMarkupBareAttributeOccurrences(t *testing.T) {
 // R-UDJA-V6WH R-RLCU-FECE R-ROH2-5F5O R-RQWU-WYN2 R-RSO8-Q0SK
 // R-RNSN-6XTS R-RJLG-MC6W R-T4UH-MIYU R-TC5V-X5F0
 func TestPlainPageMarkupHooksAndText(t *testing.T) {
-	for _, installed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "empty", true: "services"}[installed], func(t *testing.T) {
+	for _, variant := range []string{"empty", "launcher", "icon"} {
+		t.Run(variant, func(t *testing.T) {
+			installed := variant != "empty"
 			entries := []map[string]any{}
 			if installed {
 				entries = append(entries, service("zeta", "Disabled <service> &amp;", false, true), service("alpha", "Enabled & ready", true, true), service("other", "not MCP", true, false), service("mcp", "gateway", true, true))
 			}
-			cfg := pageConfig(t, servicesFile(t, entries), basicBanner)
+			bannerFor := func(u page.User) page.Banner {
+				b := basicBanner(u)
+				if installed {
+					if variant == "icon" {
+						b.Icon = `<svg viewBox="0 0 24 24"><path d="M1 1h2v2H1z"/></svg>`
+					}
+					b.Services = []page.Service{{Name: gateway.ServiceName, URL: "https://mcp.space.test", Enabled: true, Current: true, Icon: b.Icon}}
+				}
+				return b
+			}
+			cfg := pageConfig(t, servicesFile(t, entries), bannerFor)
 			r := pageRequest("GET", "/")
 			w := answer(gateway.Handler(cfg), r)
 			if w.Code != 200 {
 				t.Fatalf("status %d", w.Code)
 			}
 			body := w.Body.String()
-			b := basicBanner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"})
+			b := bannerFor(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"})
+			assertBannerHooks(t, body, b)
 			banner, footer := renderAppkit(t, "banner", b), renderAppkit(t, "footer", b)
 			bodyStart := firstTag(t, readTags(body, "body", false))
 			bodyEnds := readTags(body, "body", true)
@@ -528,6 +608,7 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 					if !slices.Contains(users, u) {
 						t.Fatalf("banner calls: %#v want %#v", users, u)
 					}
+					assertBannerHooks(t, w.Body.String(), basicBanner(u))
 					endpoint := scheme + "://" + host + "/mcp"
 					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "Server": map[string]string{"mcp.space.test:8443": "space-test", "mcp.space.test:": "space-test", "mcp.": "mcp-", "space.test:word": "space-test-word", "mcp.mcp.space.test": "mcp-space-test", "mcp.space<&>.test:8443": "space----test"}[host]}
 					set, err := page.Templates().ParseFS(assets.Assets(), "*.html")
