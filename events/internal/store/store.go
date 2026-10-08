@@ -91,7 +91,7 @@ func known(tx *sql.Tx, e events.Event) (bool, bool, error) {
 	}
 	if ok {
 		for _, em := range d.Emits {
-			if em.Event == e.Name {
+			if events.Match(em.Event, e.Name) {
 				return false, true, nil
 			}
 		}

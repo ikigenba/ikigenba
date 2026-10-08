@@ -84,7 +84,7 @@ func TestSweepAgeAndSubscriberBound(t *testing.T) {
 }
 
 func TestSweepBatchesReturningSubscriber(t *testing.T) {
-	// R-2F3L-1GVD R-2DVO-NP4O R-DMS6-SEMQ
+	// R-2F3L-1GVD R-Z65Z-WC0N R-YRJ7-B34B
 	var s *store.Store
 	calls := []int{}
 	returning := false

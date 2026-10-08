@@ -15,7 +15,7 @@ import (
 )
 
 func TestCatalog(t *testing.T) {
-	// R-7HW2-YLGD R-E6AK-WQHU
+	// R-YLFP-E8EU R-YMNL-S05J
 	now := instant
 	s, _, _ := openStore(t, store.Config{Now: func() time.Time { return now }})
 	must(t, s.Declare(ctx, "z", store.Declaration{Emits: []event.Emission{{Event: "item.created", Attrs: []string{"b", "a"}}, {Event: "item.created", Attrs: []string{"ignored"}}, {Event: "item.never"}}, Accepts: []string{"item.created", "item.created"}}))

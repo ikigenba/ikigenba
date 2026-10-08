@@ -215,7 +215,7 @@ func TestAskContract(t *testing.T) {
 	}
 }
 
-// R-10PN-A88C
+// R-YV6W-GECE
 func TestDeclarationAnswers(t *testing.T) {
 	cases := []struct {
 		body   string
@@ -223,12 +223,36 @@ func TestDeclarationAnswers(t *testing.T) {
 		valid  bool
 	}{
 		{answer, 200, true}, {` {"emits":[],"accepts":[],"extra":true} `, 200, true}, {`{"emits":[{"event":"a_b.c_d","attrs":["x_y","x_y"],"extra":1},{"event":"a_b.c_d","attrs":[]}],"accepts":["*","a_b.c_d","a_b.c_d"]}`, 200, true},
+		{`{"emits":[{"event":"cron.*.fired","attrs":["schedule","schedule"]},{"event":"cron.hourly.fired","attrs":[]},{"event":"a.b.c.d","attrs":[]},{"event":"*.*","attrs":[]},{"event":"cron.*.fired","attrs":["later"]}],"accepts":["cron.*.fired","cron.hourly.fired","a.b.c.d","*.*","*","cron.*.fired"]}`, 200, true},
 		{answer, 404, false}, {answer, 500, false}, {`no`, 200, false}, {`[]`, 200, false}, {`null`, 200, false}, {`{"emits":"repo.pushed","accepts":[]}`, 200, false}, {`{"emits":[],"accepts":null}`, 200, false}, {`{"emits":[]}`, 200, false}, {`{"emits":[{"event":"Repo.Pushed","attrs":[]}],"accepts":[]}`, 200, false}, {`{"emits":[{"event":"repo.pushed","attrs":["Bad"]}],"accepts":[]}`, 200, false}, {`{"emits":[{"event":"repo.pushed"}],"accepts":[]}`, 200, false}, {`{"emits":[],"accepts":["bad"]}`, 200, false}, {answer + ` {}`, 200, false}, {answer + strings.Repeat(" ", contract.MaxEventBytes), 200, false}, {answer + strings.Repeat(" ", contract.MaxEventBytes-len(answer)), 200, true},
+		{`{"emits":null,"accepts":[]}`, 200, false}, {`{"accepts":[]}`, 200, false}, {`{"emits":[null],"accepts":[]}`, 200, false}, {`{"emits":["repo.pushed"],"accepts":[]}`, 200, false}, {`{"emits":[{"attrs":[]}],"accepts":[]}`, 200, false}, {`{"emits":[{"event":17,"attrs":[]}],"accepts":[]}`, 200, false}, {`{"emits":[{"event":"repo.pushed","attrs":null}],"accepts":[]}`, 200, false}, {`{"emits":[{"event":"repo.pushed","attrs":[17]}],"accepts":[]}`, 200, false}, {`{"emits":[{"event":"repo.pushed","attrs":[null]}],"accepts":[]}`, 200, false}, {`{"emits":[],"accepts":"*"}`, 200, false}, {`{"emits":[],"accepts":[17]}`, 200, false}, {`{"emits":[],"accepts":[null]}`, 200, false},
+	}
+	for _, event := range []string{"pushed", "*", "cron.h*.fired", "repo.", "", "a..b", ".repo.pushed", "repo.pushed.", "cron.**.fired"} {
+		cases = append(cases, struct {
+			body   string
+			status int
+			valid  bool
+		}{fmt.Sprintf(`{"emits":[{"event":%q,"attrs":[]}],"accepts":[]}`, event), 200, false})
+	}
+	for _, event := range []string{"Repo.Pushed", "pushed", "cron.h*.fired", "repo.", "", "a..b", "cron.**.fired"} {
+		cases = append(cases, struct {
+			body   string
+			status int
+			valid  bool
+		}{fmt.Sprintf(`{"emits":[],"accepts":[%q]}`, event), 200, false})
+	}
+	for _, attr := range []string{"", "_branch", "branch_", "branch__name", "branch.name", "2branch", "branch-name"} {
+		cases = append(cases, struct {
+			body   string
+			status int
+			valid  bool
+		}{fmt.Sprintf(`{"emits":[{"event":"repo.pushed","attrs":[%q]}],"accepts":[]}`, attr), 200, false})
 	}
 	for index, tc := range cases {
 		t.Run(string(rune('a'+index)), func(t *testing.T) {
 			h := setup(t)
 			socket := h.server(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
 				w.WriteHeader(tc.status)
 				_, _ = io.WriteString(w, tc.body)
 			})
@@ -249,6 +273,15 @@ func TestDeclarationAnswers(t *testing.T) {
 			}
 		})
 	}
+	t.Run("no response", func(t *testing.T) {
+		h := setup(t)
+		h.list(h.service("repos", true, filepath.Join(h.dir, "absent")))
+		h.declare("repos", old)
+		h.manager(noTimer, nil).Ask(context.Background(), "repos")
+		if got := h.held()["repos"]; !reflect.DeepEqual(got, old) {
+			t.Fatalf("absent response replaced held: %#v", got)
+		}
+	})
 }
 
 // R-TJY5-OU12 R-32PH-Z719

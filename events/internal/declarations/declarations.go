@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -172,8 +173,11 @@ func (t bodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
-var eventName = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*\.[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 var attrName = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
+
+func nameOrPattern(s string) bool {
+	return events.Match(s, strings.ReplaceAll(s, "*", "a"))
+}
 
 func parse(body []byte) (store.Declaration, bool) {
 	var result store.Declaration
@@ -192,7 +196,7 @@ func parse(body []byte) (store.Declaration, bool) {
 	for _, raw := range emissions {
 		var fields map[string]json.RawMessage
 		var emission events.Emission
-		if json.Unmarshal(raw, &fields) != nil || fields == nil || json.Unmarshal(fields["event"], &emission.Event) != nil || !eventName.MatchString(emission.Event) || !array(fields["attrs"], &emission.Attrs) {
+		if json.Unmarshal(raw, &fields) != nil || fields == nil || json.Unmarshal(fields["event"], &emission.Event) != nil || !nameOrPattern(emission.Event) || !array(fields["attrs"], &emission.Attrs) {
 			return store.Declaration{}, false
 		}
 		for _, attr := range emission.Attrs {
@@ -203,7 +207,7 @@ func parse(body []byte) (store.Declaration, bool) {
 		result.Emits = append(result.Emits, emission)
 	}
 	for _, name := range result.Accepts {
-		if name != "*" && !eventName.MatchString(name) {
+		if name != "*" && !nameOrPattern(name) {
 			return store.Declaration{}, false
 		}
 	}

@@ -102,7 +102,7 @@ func (s *Store) Declare(ctx context.Context, service string, d Declaration) erro
 		if err != nil {
 			return err
 		}
-		if len(d.Accepts) == 0 {
+		if !subscribes(d) {
 			if ok && sub.Status != StatusGone {
 				changed = true
 				return setGone(tx, service, now)
@@ -168,6 +168,15 @@ func (s *Store) Forget(ctx context.Context, service string) error {
 func accepts(d Declaration, name string) bool {
 	for _, a := range d.Accepts {
 		if a == name || a == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+func subscribes(d Declaration) bool {
+	for _, a := range d.Accepts {
+		if a == "*" || events.Match(a, a) {
 			return true
 		}
 	}

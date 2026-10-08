@@ -136,11 +136,8 @@ func (l *Loop) scan(ctx context.Context) {
 	}
 	subs, err := l.cfg.Store.Subscribers(context.Background())
 	if err != nil {
-		if l.inflight > 0 {
-			return
-		}
 		for _, pending := range l.states {
-			if pending.wait != nil {
+			if pending.recheck && pending.wait != nil {
 				return
 			}
 		}

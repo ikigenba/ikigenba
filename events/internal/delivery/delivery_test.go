@@ -224,7 +224,7 @@ func (f *fixture) start() (*delivery.Loop, context.CancelFunc, <-chan struct{}) 
 }
 
 // R-GQE8-ODLW R-Q6UW-O1MD R-GU1X-TOTZ R-BTKQ-IRMN
-// R-7J3E-DAJE R-GV9U-7GKO R-G1LB-MGO7 R-H68X-NE8X R-H8OQ-EXQB
+// R-Z8LS-NVI1 R-ZH53-C9OW R-G1LB-MGO7 R-H68X-NE8X R-ZM0O-VCNO
 func TestOrderedDeliveryAndRecords(t *testing.T) {
 	f := newFixture(t)
 	calls := make(chan events.Delivery, 10)
@@ -275,7 +275,7 @@ func TestOrderedDeliveryAndRecords(t *testing.T) {
 	absent(t, calls)
 }
 
-// R-QAIL-TCUG R-G2T8-08EW R-FWPQ-3DPF R-GHUX-ZZF1 R-GJ2U-DR5Q R-GKAQ-RIWF
+// R-QAIL-TCUG R-G2T8-08EW R-FWPQ-3DPF R-ZDHE-6YGT R-ZEPA-KQ7I R-ZFX6-YHY7
 func TestOutcomes(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -331,7 +331,7 @@ func TestOutcomes(t *testing.T) {
 	}
 }
 
-// R-QCYE-KWBU R-GCZC-GWG9 R-GE78-UO6Y R-H9WM-SPH0 R-BTKQ-IRMN R-H8OQ-EXQB
+// R-QCYE-KWBU R-GCZC-GWG9 R-GE78-UO6Y R-H9WM-SPH0 R-BTKQ-IRMN R-ZM0O-VCNO
 func TestRetriesAndUnchangedDeclaration(t *testing.T) {
 	f := newFixture(t)
 	f.cfg.Settings.DeliveryAttempts = 100
@@ -477,7 +477,7 @@ func TestUnreachableSocket(t *testing.T) {
 	}
 }
 
-// R-GFF5-8FXN R-GGN1-M7OC R-HES8-BSFS R-GRM5-25CL
+// R-GFF5-8FXN R-ZC9H-T6Q4 R-ZPOE-0NVR R-GRM5-25CL
 func TestInflightCapAndIndependence(t *testing.T) {
 	for _, cap := range []int64{1, 2} {
 		t.Run(fmt.Sprint(cap), func(t *testing.T) {
@@ -520,7 +520,7 @@ func TestInflightCapAndIndependence(t *testing.T) {
 	}
 }
 
-// R-GGN1-M7OC R-HES8-BSFS
+// R-ZC9H-T6Q4 R-ZPOE-0NVR
 func TestBackoffAndMissingTargetDoNotHoldSlot(t *testing.T) {
 	f := newFixture(t)
 	f.cfg.Settings.InflightMax = 1
@@ -543,8 +543,8 @@ func TestBackoffAndMissingTargetDoNotHoldSlot(t *testing.T) {
 	absent(t, failed)
 }
 
-// R-GWHQ-L8BD R-HB4J-6H7P R-HCCF-K8YE R-HDKB-Y0P3
-// R-GXPM-Z022 R-GYXJ-CRSR
+// R-GWHQ-L8BD R-HB4J-6H7P R-ZN8L-94ED R-ZOGH-MW52
+// R-ZICZ-Q1FL R-GYXJ-CRSR
 func TestStopPreservesActiveAnswer(t *testing.T) {
 	f := newFixture(t)
 	calls := make(chan events.Delivery, 10)
@@ -573,8 +573,8 @@ func TestStopPreservesActiveAnswer(t *testing.T) {
 	absent(t, calls)
 }
 
-// R-H511-9MI8 R-H05F-QJJG R-H1DC-4BA5 R-H2L8-I30U R-H3T4-VURJ
-// R-H68X-NE8X R-HDKB-Y0P3
+// R-ZKSS-HKWZ R-H05F-QJJG R-ZJKW-3T6A R-H2L8-I30U R-H3T4-VURJ
+// R-H68X-NE8X R-ZOGH-MW52
 func TestDrainAbandonsUnansweredAndPartialBody(t *testing.T) {
 	for _, partial := range []bool{false, true} {
 		t.Run(fmt.Sprint(partial), func(t *testing.T) {
@@ -641,7 +641,7 @@ func TestDrainAbandonsUnansweredAndPartialBody(t *testing.T) {
 	}
 }
 
-// R-GXPM-Z022 R-GYXJ-CRSR
+// R-ZICZ-Q1FL R-GYXJ-CRSR
 func TestStopDuringRetryWait(t *testing.T) {
 	f := newFixture(t)
 	calls := make(chan events.Delivery, 10)
@@ -661,7 +661,7 @@ func TestStopDuringRetryWait(t *testing.T) {
 	absent(t, f.backoff)
 }
 
-// R-7GNL-LR20 R-7MR3-ILRH
+// R-Z7DW-A3RC R-ZB1L-FEZF
 func TestMissingTargetRecoversAndSocketMoves(t *testing.T) {
 	f := newFixture(t)
 	f.declare("consumer", store.Declaration{Accepts: []string{"item.changed"}})
@@ -701,7 +701,7 @@ func TestMissingTargetRecoversAndSocketMoves(t *testing.T) {
 	absent(t, calls)
 }
 
-// R-7GNL-LR20 R-7MR3-ILRH R-GV9U-7GKO
+// R-Z7DW-A3RC R-ZB1L-FEZF R-ZH53-C9OW
 func TestNoTargetCases(t *testing.T) {
 	for _, mode := range []string{"empty", "unreadable", "disabled", "empty_socket", "self"} {
 		t.Run(mode, func(t *testing.T) {
@@ -760,7 +760,7 @@ func TestNoTargetCases(t *testing.T) {
 	}
 }
 
-// R-QK9S-VIS0 R-7J3E-DAJE
+// R-QK9S-VIS0 R-Z8LS-NVI1
 func TestUnacceptedEventsPassWithoutAttempt(t *testing.T) {
 	f := newFixture(t)
 	f.declare("consumer", store.Declaration{Accepts: []string{"other.changed"}})
@@ -789,7 +789,7 @@ func TestUnacceptedEventsPassWithoutAttempt(t *testing.T) {
 	}
 }
 
-// R-7MR3-ILRH R-G1LB-MGO7 R-GJ2U-DR5Q
+// R-ZB1L-FEZF R-G1LB-MGO7 R-ZEPA-KQ7I
 func TestStoreOutcomeFailureRechecks(t *testing.T) {
 	for _, success := range []bool{true, false} {
 		t.Run(fmt.Sprint(success), func(t *testing.T) {
@@ -843,7 +843,7 @@ func TestStoreOutcomeFailureRechecks(t *testing.T) {
 	}
 }
 
-// R-GLIN-5AN4 R-GMQJ-J2DT R-GP6C-ALV7 R-QCYE-KWBU R-GV9U-7GKO
+// R-GLIN-5AN4 R-GMQJ-J2DT R-GP6C-ALV7 R-QCYE-KWBU R-ZH53-C9OW
 func TestResumeAndSkipResetAttempts(t *testing.T) {
 	f := newFixture(t)
 	f.cfg.Settings.DeliveryAttempts = 2
@@ -877,7 +877,7 @@ func TestResumeAndSkipResetAttempts(t *testing.T) {
 	checkPair(second)
 }
 
-// R-QCYE-KWBU R-7J3E-DAJE R-GV9U-7GKO R-G1LB-MGO7 R-GJ2U-DR5Q
+// R-QCYE-KWBU R-Z8LS-NVI1 R-ZH53-C9OW R-G1LB-MGO7 R-ZEPA-KQ7I
 func TestGoneInFlightAndReturn(t *testing.T) {
 	for _, ok := range []bool{true, false} {
 		t.Run(fmt.Sprint(ok), func(t *testing.T) {
@@ -951,7 +951,7 @@ func TestConnectionLostBeforeAnswer(t *testing.T) {
 	}
 }
 
-// R-7MR3-ILRH R-QCYE-KWBU
+// R-ZB1L-FEZF R-QCYE-KWBU
 func TestStoreFailureBeforeAttempt(t *testing.T) {
 	f := newFixture(t)
 	calls := make(chan events.Delivery, 1)
@@ -974,7 +974,7 @@ func TestStoreFailureBeforeAttempt(t *testing.T) {
 	f.record("event.delivered")
 }
 
-// R-G2T8-08EW R-7MR3-ILRH
+// R-G2T8-08EW R-ZB1L-FEZF
 func TestSkippedStoreFailureReattempts(t *testing.T) {
 	f := newFixture(t)
 	calls := make(chan events.Delivery, 10)
@@ -1011,4 +1011,256 @@ func TestSkippedStoreFailureReattempts(t *testing.T) {
 	if err != nil || len(page.Records) != 1 || page.Records[0].ID != e.ID {
 		t.Fatal(page, err)
 	}
+}
+
+// R-Z8LS-NVI1 R-ZH53-C9OW
+func TestDeclarationAfterAnswerChoosesNextAcceptedEvent(t *testing.T) {
+	f := newFixture(t)
+	calls := make(chan events.Delivery, 10)
+	release := make(chan struct{})
+	var count atomic.Int64
+	f.serve("consumer", events.DeliveryHandler(events.Handlers{"item.changed": func(_ context.Context, d events.Delivery) events.Outcome {
+		calls <- d
+		if count.Add(1) == 1 {
+			<-release
+		}
+		return events.OK()
+	}}))
+	first := f.event(1)
+	second := f.event(2)
+	l, cancel, done := f.start()
+	if got := receive(t, calls); got.Event.ID != first.ID {
+		t.Fatal(got)
+	}
+	// A literal pattern no longer accepts item.changed, even though the
+	// other exact name keeps the service subscribed.
+	f.declare("consumer", store.Declaration{Accepts: []string{"item.*", "other.changed"}})
+	absent(t, calls)
+	close(release)
+	f.record("event.delivered")
+	limit := time.After(3 * time.Second)
+	for f.subscriber("consumer").Cursor != second.Seq {
+		select {
+		case <-limit:
+			t.Fatal("nonaccepted event not passed")
+		default:
+			runtime.Gosched()
+		}
+	}
+	cancel()
+	receive(t, done)
+	l.Drain(context.Background())
+	absent(t, calls)
+	if err := f.writer.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.sink.Events()) != 2 {
+		t.Fatal(f.sink.Events())
+	}
+}
+
+// R-Z7DW-A3RC
+func TestFirstEnabledTargetWins(t *testing.T) {
+	f := newFixture(t)
+	calls := make(chan events.Delivery, 1)
+	other := make(chan events.Delivery, 1)
+	f.serve("consumer", events.DeliveryHandler(events.Handlers{"item.changed": func(_ context.Context, d events.Delivery) events.Outcome { calls <- d; return events.OK() }}))
+	f.serve("second", events.DeliveryHandler(events.Handlers{"item.changed": func(_ context.Context, d events.Delivery) events.Outcome { other <- d; return events.OK() }}))
+	if err := f.store.Forget(context.Background(), "second"); err != nil {
+		t.Fatal(err)
+	}
+	first := f.entries[0]
+	second := f.entries[1]
+	second["name"] = "consumer"
+	disabled := map[string]any{"name": "consumer", "url": "", "description": "", "socket": filepath.Join(f.dir, "disabled.sock"), "enabled": false, "mcp": false}
+	f.entries = []map[string]any{disabled, first, second}
+	f.writeServices()
+	e := f.event(1)
+	l, cancel, done := f.start()
+	if got := receive(t, calls); got.Event.ID != e.ID {
+		t.Fatal(got)
+	}
+	f.record("event.delivered")
+	cancel()
+	receive(t, done)
+	l.Drain(context.Background())
+	absent(t, other)
+}
+
+// R-ZB1L-FEZF R-ZICZ-Q1FL
+func TestMissingTargetWaitEndsOnStoreChangeOrStop(t *testing.T) {
+	for _, stop := range []bool{false, true} {
+		t.Run(fmt.Sprint(stop), func(t *testing.T) {
+			f := newFixture(t)
+			f.declare("consumer", store.Declaration{Accepts: []string{"item.changed"}})
+			e := f.event(1)
+			l, cancel, done := f.start()
+			tm := receive(t, f.backoff)
+			if tm.duration != time.Second || f.subscriber("consumer").Cursor != 0 {
+				t.Fatal("targetless wait")
+			}
+			if stop {
+				cancel()
+				receive(t, done)
+			}
+			calls := make(chan events.Delivery, 1)
+			f.serve("consumer", events.DeliveryHandler(events.Handlers{"item.changed": func(_ context.Context, d events.Delivery) events.Outcome { calls <- d; return events.OK() }}))
+			if stop {
+				tm.fire <- time.Time{}
+				l.Drain(context.Background())
+				absent(t, calls)
+				absent(t, f.timeout)
+				if len(f.sink.Events()) != 0 {
+					t.Fatal(f.sink.Events())
+				}
+				return
+			}
+			// A new subscriber closes Changed; the backoff stays unfired.
+			f.declare("wake", store.Declaration{Accepts: []string{"other.changed"}})
+			if got := receive(t, calls); got.Attempt != 1 || got.Event.ID != e.ID {
+				t.Fatal(got)
+			}
+			f.record("event.delivered")
+		})
+	}
+}
+
+// R-ZC9H-T6Q4 R-ZPOE-0NVR
+func TestStalledFailingAndTargetlessPeersDoNotDelayHealthy(t *testing.T) {
+	f := newFixture(t)
+	f.cfg.Settings.InflightMax = 2
+	started := make(chan struct{}, 1)
+	closed := make(chan struct{}, 1)
+	f.serve("alpha", http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		started <- struct{}{}
+		<-r.Context().Done()
+		closed <- struct{}{}
+	}))
+	failures := make(chan struct{}, 1)
+	f.serve("beta", events.DeliveryHandler(events.Handlers{"item.changed": func(context.Context, events.Delivery) events.Outcome {
+		failures <- struct{}{}
+		return events.Fail("failed")
+	}}))
+	f.declare("gamma", store.Declaration{Accepts: []string{"item.changed"}})
+	healthy := make(chan events.Delivery, 2)
+	f.serve("omega", events.DeliveryHandler(events.Handlers{"item.changed": func(_ context.Context, d events.Delivery) events.Outcome { healthy <- d; return events.OK() }}))
+	first := f.event(1)
+	second := f.event(2)
+	l, cancel, done := f.start()
+	receive(t, started)
+	receive(t, failures)
+	for _, e := range []events.Event{first, second} {
+		if got := receive(t, healthy); got.Event.ID != e.ID {
+			t.Fatal(got)
+		}
+		f.record("event.delivered")
+	}
+	if f.subscriber("omega").Cursor != second.Seq {
+		t.Fatal("healthy cursor")
+	}
+	absent(t, failures)
+	cancel()
+	receive(t, done)
+	ctx, abort := context.WithCancel(context.Background())
+	abort()
+	l.Drain(ctx)
+	receive(t, closed)
+}
+
+// R-ZN8L-94ED R-ZOGH-MW52 R-ZEPA-KQ7I R-ZFX6-YHY7
+func TestDrainHandlesSkipAndFailureAfterStop(t *testing.T) {
+	for _, outcome := range []string{"skip", "retry", "pause"} {
+		t.Run(outcome, func(t *testing.T) {
+			f := newFixture(t)
+			if outcome == "pause" {
+				f.cfg.Settings.DeliveryAttempts = 1
+			}
+			calls := make(chan struct{}, 1)
+			release := make(chan struct{})
+			f.serve("consumer", events.DeliveryHandler(events.Handlers{"item.changed": func(context.Context, events.Delivery) events.Outcome {
+				calls <- struct{}{}
+				<-release
+				if outcome == "skip" {
+					return events.Skip()
+				}
+				return events.Fail("failed")
+			}}))
+			e := f.event(1)
+			before := f.subscriber("consumer")
+			l, cancel, done := f.start()
+			receive(t, calls)
+			receive(t, f.timeout)
+			cancel()
+			receive(t, done)
+			close(release)
+			l.Drain(context.Background())
+			if err := f.writer.Flush(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			s := f.subscriber("consumer")
+			records := f.sink.Events()
+			if len(records) == 0 || records[0].Name != "sibling.called" {
+				t.Fatal(records)
+			}
+			switch outcome {
+			case "skip":
+				if s.Cursor != e.Seq || len(records) != 2 || records[1].Name != "event.skipped" {
+					t.Fatal(s, records)
+				}
+			case "pause":
+				if s.Status != store.StatusPaused || s.Cursor != 0 || s.Reason == nil || s.Reason.Error != "failed" || len(records) != 2 || records[1].Name != "subscriber.paused" {
+					t.Fatal(s, records)
+				}
+			case "retry":
+				if !reflect.DeepEqual(s, before) || len(records) != 1 {
+					t.Fatal(s, records)
+				}
+			}
+			absent(t, f.timeout)
+			absent(t, f.backoff)
+			absent(t, calls)
+		})
+	}
+}
+
+// R-ZB1L-FEZF
+func TestStoreReadFailureRechecksWithAnotherAttemptActive(t *testing.T) {
+	f := newFixture(t)
+	f.cfg.Settings.InflightMax = 2
+	started := make(chan struct{}, 1)
+	closed := make(chan struct{}, 1)
+	f.serve("alpha", http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		started <- struct{}{}
+		<-r.Context().Done()
+		closed <- struct{}{}
+	}))
+	calls := make(chan events.Delivery, 2)
+	f.serve("beta", events.DeliveryHandler(events.Handlers{"item.changed": func(_ context.Context, d events.Delivery) events.Outcome { calls <- d; return events.Fail("failed") }}))
+	f.event(1)
+	l, cancel, done := f.start()
+	receive(t, started)
+	if got := receive(t, calls); got.Attempt != 1 {
+		t.Fatal(got)
+	}
+	retry := receive(t, f.backoff)
+	f.db.SetFailing(true)
+	retry.fire <- time.Time{}
+	recheck := receive(t, f.backoff)
+	if recheck.duration != time.Second {
+		t.Fatal(recheck.duration)
+	}
+	absent(t, calls)
+	f.db.SetFailing(false)
+	recheck.fire <- time.Time{}
+	if got := receive(t, calls); got.Attempt != 2 {
+		t.Fatal(got)
+	}
+	cancel()
+	receive(t, done)
+	ctx, abort := context.WithCancel(context.Background())
+	abort()
+	l.Drain(ctx)
+	receive(t, closed)
 }

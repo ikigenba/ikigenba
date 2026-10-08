@@ -70,12 +70,8 @@ func (s *Store) Catalog(ctx context.Context, service, event string) ([]CatalogEn
 		}
 		sort.Strings(services)
 		for _, svc := range services {
-			seen := map[string]bool{}
 			for _, em := range ds[svc].Emits {
-				if !seen[em.Event] {
-					entry(em.Event).Emits = append(entry(em.Event).Emits, Producer{Service: svc, Attrs: append([]string{}, em.Attrs...)})
-					seen[em.Event] = true
-				}
+				entry(em.Event)
 			}
 		}
 		rows, err := tx.Query("SELECT event,COUNT(*),MAX(received) FROM events GROUP BY event")
@@ -109,6 +105,20 @@ func (s *Store) Catalog(ctx context.Context, service, event string) ([]CatalogEn
 		for _, name := range names {
 			e := entries[name]
 			for _, svc := range services {
+				var selected *events.Emission
+				for i := range ds[svc].Emits {
+					em := &ds[svc].Emits[i]
+					if em.Event == name {
+						selected = em
+						break
+					}
+					if selected == nil && events.Match(em.Event, name) {
+						selected = em
+					}
+				}
+				if selected != nil {
+					e.Emits = append(e.Emits, Producer{Service: svc, Attrs: append([]string{}, selected.Attrs...)})
+				}
 				if accepts(ds[svc], name) {
 					e.Accepts = append(e.Accepts, svc)
 				}
@@ -120,7 +130,7 @@ func (s *Store) Catalog(ctx context.Context, service, event string) ([]CatalogEn
 				d, ok := ds[service]
 				keep := ok && accepts(d, name)
 				for _, em := range d.Emits {
-					keep = keep || em.Event == name
+					keep = keep || em.Event == name || events.Match(em.Event, name)
 				}
 				if !keep {
 					continue

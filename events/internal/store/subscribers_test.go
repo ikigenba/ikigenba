@@ -13,7 +13,7 @@ import (
 )
 
 func TestDeclarationReplacementAndRows(t *testing.T) {
-	// R-79CS-A79I R-D21W-AB0X R-D39S-O2RM R-D4HP-1UIB R-7AKO-NZ07
+	// R-YWES-U633 R-D21W-AB0X R-D39S-O2RM R-D4HP-1UIB R-YGK3-V5G2
 	now := instant
 	s, d, _ := openStore(t, store.Config{Now: func() time.Time { return now }})
 	declare(t, s, "other")
@@ -99,7 +99,7 @@ func equalDecl(a, b store.Declaration) bool {
 }
 
 func TestSubscriberLifecycle(t *testing.T) {
-	// R-3H0B-7EOQ R-2SYA-X13P R-DKCE-0V5C R-DLKA-EMW1 R-DO03-66DF R-DP7Z-JY44 R-2VE3-OKL3 R-DVBH-GSTL R-DWJD-UKKA R-DXRA-8CAZ R-DYZ6-M41O R-E072-ZVSD R-DSVO-P9C7 R-E1EZ-DNJ2
+	// R-YNVI-5RW8 R-2SYA-X13P R-DKCE-0V5C R-YQBA-XBDM R-YSR3-OUV0 R-YTZ0-2MLP R-2VE3-OKL3 R-DVBH-GSTL R-DWJD-UKKA R-DXRA-8CAZ R-DYZ6-M41O R-E072-ZVSD R-DSVO-P9C7 R-E1EZ-DNJ2
 	now := instant
 	s, _, _ := openStore(t, store.Config{Now: func() time.Time { return now }})
 	declare(t, s, "producer")
@@ -299,7 +299,7 @@ func TestNextSnapshotAndPassingUnaccepted(t *testing.T) {
 }
 
 func TestReturningSubscriberRetainsOrResetsCursor(t *testing.T) {
-	// R-DMS6-SEMQ R-2DVO-NP4O
+	// R-YRJ7-B34B R-Z65Z-WC0N
 	now := instant
 	s, _, _ := openStore(t, store.Config{Now: func() time.Time { return now }})
 	declare(t, s, "producer")
@@ -324,7 +324,7 @@ func TestReturningSubscriberRetainsOrResetsCursor(t *testing.T) {
 }
 
 func TestReturningSubscriberCursorBeyondHead(t *testing.T) {
-	// R-DMS6-SEMQ
+	// R-YRJ7-B34B
 	s, _, _ := openStore(t, store.Config{})
 	declare(t, s, "reader", "*")
 	must(t, s.Advance(ctx, "reader", 7))
@@ -337,7 +337,7 @@ func TestReturningSubscriberCursorBeyondHead(t *testing.T) {
 }
 
 func TestNotificationsPausedGoneAndRefusalZeros(t *testing.T) {
-	// R-E1EZ-DNJ2 R-DP7Z-JY44 R-E072-ZVSD
+	// R-E1EZ-DNJ2 R-YTZ0-2MLP R-E072-ZVSD
 	now := instant
 	s, _, _ := openStore(t, store.Config{Now: func() time.Time { return now }})
 	declare(t, s, "producer")

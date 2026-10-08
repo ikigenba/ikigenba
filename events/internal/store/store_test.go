@@ -128,7 +128,7 @@ func TestPublicContract(t *testing.T) {
 }
 
 func TestErrorsAndEmptyReads(t *testing.T) {
-	// R-CJRE-JQWI R-D21W-AB0X R-DKCE-0V5C R-7HW2-YLGD R-E8QD-O9Z8 R-E072-ZVSD R-DSVO-P9C7
+	// R-CJRE-JQWI R-D21W-AB0X R-DKCE-0V5C R-YLFP-E8EU R-E8QD-O9Z8 R-E072-ZVSD R-DSVO-P9C7
 	s, _, _ := openStore(t, store.Config{})
 	sentinels := []error{store.ErrUndeclared, store.ErrTooDeep, store.ErrNoSubscriber, store.ErrNotPaused, store.ErrCursor}
 	for i, a := range sentinels {
@@ -182,7 +182,7 @@ func TestErrorsAndEmptyReads(t *testing.T) {
 }
 
 func TestIngestStoredFormAndSchemaRows(t *testing.T) {
-	// R-7BSL-1QQW R-3794-58R6 R-39OW-WS8K R-3617-RH0H R-6E6I-RU1F R-PNJD-XS7X
+	// R-YXMP-7XTS R-3794-58R6 R-39OW-WS8K R-3617-RH0H R-6E6I-RU1F R-PNJD-XS7X
 	s, d, _ := openStore(t, store.Config{DepthMax: 10})
 	declare(t, s, "producer")
 	declare(t, s, "consumer", "*")
@@ -254,7 +254,7 @@ func TestIngestStoredFormAndSchemaRows(t *testing.T) {
 }
 
 func TestIngestChecksAndAsk(t *testing.T) {
-	// R-2J73-UV65 R-2KF0-8MWU R-7D0H-FIHL R-DD0Z-Q8P6 R-LR8H-603R R-E1EZ-DNJ2
+	// R-2J73-UV65 R-2KF0-8MWU R-YYUL-LPKH R-DD0Z-Q8P6 R-Z02H-ZHB6 R-E1EZ-DNJ2
 	asks := 0
 	var s *store.Store
 	s, d, _ := openStore(t, store.Config{DepthMax: 1, Ask: func(_ context.Context, service string) {
@@ -313,18 +313,29 @@ func TestIngestChecksAndAsk(t *testing.T) {
 	if h != 1 {
 		t.Fatal(h)
 	}
+	beforeFailure := all(t, s)
+	assertUnchanged := func() {
+		t.Helper()
+		head, readErr := s.Head(ctx)
+		must(t, readErr)
+		if head != h || !reflect.DeepEqual(all(t, s), beforeFailure) {
+			t.Fatal("failed delivery changed head or log", head)
+		}
+	}
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	err = s.Deliver(cancelled, emit(3))
 	if err == nil || errors.Is(err, event.ErrRejected) {
 		t.Fatal(err)
 	}
+	assertUnchanged()
 	d.SetFailing(true)
 	err = s.Deliver(ctx, emit(3))
 	if err == nil || errors.Is(err, event.ErrRejected) {
 		t.Fatal(err)
 	}
 	d.SetFailing(false)
+	assertUnchanged()
 	must(t, s.Deliver(ctx, emit(3)))
 	h, err = s.Head(ctx)
 	must(t, err)
@@ -347,7 +358,7 @@ func writer(t *testing.T, now func() time.Time) (*telemetry.Writer, *telemetry.C
 	return w, capture
 }
 func TestTelemetryBeforeVisibility(t *testing.T) {
-	// R-69AX-8R2N R-6BQQ-0AK1 R-RJAX-A1WF
+	// R-69AX-8R2N R-6BQQ-0AK1 R-Z4Y3-IK9Y R-Z02H-ZHB6
 	var s *store.Store
 	var second *store.Store
 	inside := false
@@ -403,6 +414,11 @@ func TestTelemetryBeforeVisibility(t *testing.T) {
 	if s.Deliver(ctx, deep) == nil {
 		t.Fatal("depth accepted")
 	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := s.Deliver(cancelled, emit(2)); err == nil || errors.Is(err, event.ErrRejected) {
+		t.Fatal("cancellation accepted", err)
+	}
 	d.SetFailing(true)
 	if s.Deliver(ctx, emit(2)) == nil {
 		t.Fatal("failure accepted")
@@ -424,10 +440,11 @@ func TestTelemetryBeforeVisibility(t *testing.T) {
 }
 
 func TestRestartAndRestore(t *testing.T) {
-	// R-LOSO-EGMD R-PNJD-XS7X R-7AKO-NZ07 R-3H0B-7EOQ
+	// R-LOSO-EGMD R-PNJD-XS7X R-YGK3-V5G2 R-YNVI-5RW8
 	s, d, path := openStore(t, store.Config{DepthMax: 5})
-	declare(t, s, "producer")
-	declare(t, s, "reader", "*")
+	must(t, s.Declare(ctx, "producer", store.Declaration{Emits: []event.Emission{{Event: "item.*", Attrs: []string{"count", "flag", "text"}}}}))
+	declare(t, s, "reader", "*", "item.*")
+	must(t, s.Declare(ctx, "patterns", store.Declaration{Accepts: []string{"item.*"}}))
 	must(t, s.Deliver(ctx, emit(1)))
 	must(t, s.Pause(ctx, "reader", 1, "broken"))
 	declare(t, s, "forgotten", "*")
@@ -487,7 +504,7 @@ func TestRestartAndRestore(t *testing.T) {
 }
 
 func TestConcurrentIngest(t *testing.T) {
-	// R-6GMB-JDIT R-6HU7-X59I R-6J24-AX07 R-RJAX-A1WF
+	// R-Z1AE-D91V R-Z2IA-R0SK R-Z3Q7-4SJ9 R-Z4Y3-IK9Y
 	w, capture := writer(t, func() time.Time { return instant })
 	s, _, _ := openStore(t, store.Config{Telemetry: w})
 	declare(t, s, "producer")
