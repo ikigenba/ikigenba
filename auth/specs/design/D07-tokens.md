@@ -222,9 +222,9 @@ secret by that class, no tag in the page's written markup but the secret
 div's mentions `secret` in any letter case, and no tag there holds a
 character reference that could spell it; the banner above it is appkit's
 markup, whose own classes are fixed by appkit's design, and whose launcher
-icons are written only by opsctl, which validates each (appkit's D02 and
-D05). So the script's selector finds the Copy button and the secret and
-nothing else.
+icons and the service's own icon in its mark are written only by opsctl,
+which validates each (appkit's D02 and D05). So the script's selector
+finds the Copy button and the secret and nothing else.
 
 ## REQUIREMENTS
 

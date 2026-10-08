@@ -94,7 +94,10 @@ holds one entry per service, each carrying `name`, `url`, `description` and
 `socket` (strings), `enabled` and `mcp` (booleans), and optionally `icon`. An
 entry missing one of those six members, holding one of the wrong type, or with
 an empty `name` is skipped, and the launcher shows only the entries that carry
-an icon. `Banner` returns no services when the path is
+an icon. The kit marks the entry named for its service current and puts that
+entry's icon in the banner's mark, none when there is none, so a services
+file listing auth with an icon shows auth's icon in the mark (appkit's D02).
+`Banner` returns no services when the path is
 empty or not already clean (`services.Read` refuses a path `filepath.Clean`
 would change), or the file is missing, unreadable or malformed; it never
 writes anything or returns an error. A test that writes a services file — the
