@@ -1,6 +1,6 @@
 # Stories — routing
 
-Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, neither is the default app, and neither manifest sets `guests = true`. When `auth` is present, every request for an app other than `auth`, except an `OPTIONS` request, is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` (or, on the general paths of an app that welcomes guests, `/check/open`) answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect and a 403 from `/check` there draws an `invalid_token` bearer challenge in its place, each naming the MCP gateway's protected-resource metadata at the sandbox's own `mcp` name, as on a host; a 401 from `/check` under `/api`, the path reserved across the suite for programs calling an app, draws a bearer challenge naming no metadata in place of the sign-in redirect, and a 403 there reaches the client unchanged; and a 401 on a path of git's smart HTTP protocol, one ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, draws a Basic challenge in its place. On the server of an app whose manifest sets `guests = true`, every other path puts the same subrequest to auth's `/check/open` instead, which answers as `/check` does except that where `/check` would answer 401 it answers 200 with no `X-User-Id` and no `X-User-Email`, so no 401 arises there and no browser is sent to sign in; `/mcp`, `/api`, every path under either, and git's three paths keep `/check` and their challenges. In a sandbox without `auth`, `/api` is passed to the app as `/mcp` is. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does. nginx also answers for cross-origin calls, the same way on every name that serves an app: each app's own name, auth's included, the sandbox's bare name when an app is the default, and in a sandbox without `auth` as well; the bare name when no app is the default, bare `localhost:7400` and a host the sandbox does not serve serve no app, so they carry no `Access-Control-` header and no `Vary: Origin`, and an `OPTIONS` request there is answered as any other request is. It answers every `OPTIONS` request there `204` itself, before any `/check` subrequest, so no app ever receives one. The one origin it allows is the one the sandbox serves `sites` at, `http://sites.<sandbox>.localhost:<port>`, here `http://sites.wip.localhost:7400`, whether or not the checkout holds `sites`. When a request's `Origin` is exactly that origin, the response carries `Access-Control-Allow-Origin` naming it, never `*`, and `Access-Control-Allow-Credentials: true`; an answer to `OPTIONS` adds `Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`, `Access-Control-Allow-Headers: Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID` and `Access-Control-Max-Age: 600`, and every other response adds `Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate`. They are on every response from such a name, whoever made it: the app's own, nginx's challenges, the sign-in redirect, and a 403 from auth passed through. Any other `Origin`, or none, draws no `Access-Control-` header at all. Every response from such a name carries `Vary: Origin`.
+Every request to a sandbox arrives at its own nginx, `sandbox-wip-nginx.service`, a user unit run as the developer that `up` starts and configures, listening on `127.0.0.1:7400` in plain HTTP and proxying to each app's socket. It routes as the platform's nginx does on a host, except that it drops client-supplied identity headers on every host, so an app behaves the same in the sandbox as deployed: by host name, one name per app, with `auth`, when the checkout holds it, standing between every other app and the outside. Browsers and curl resolve every name under `localhost` to the loopback address, so the names below need no DNS. The stories share one setting unless they say otherwise: the sandbox `wip` is up on port `7400` from the worktree `/home/me/src/ikigenba/wip`, its apps are `auth` and `dummy`, neither is the default app, and neither manifest sets `guests = true`. When `auth` is present, every request for an app other than `auth`, except an `OPTIONS` request, is first put to auth's `/check` as an internal subrequest carrying the request's `Cookie` and `Authorization` headers and no body, and naming the request it decides in three headers of nginx's own making, never the client's: `X-Original-Method`, its method; `X-Original-Host`, its host name, lowercased and without the port; and `X-Original-URI`, its path and query exactly as the client sent them. What `/check` (or, on the general paths of an app that welcomes guests, `/check/open`) answers decides the request. On every such app's server, whatever its manifest's `mcp` holds, a 401 from `/check` under `/mcp` draws a bearer challenge in place of the sign-in redirect and a 403 from `/check` there draws an `invalid_token` bearer challenge in its place, each naming the MCP gateway's protected-resource metadata at the sandbox's own `mcp` name, as on a host; a 401 from `/check` under `/api`, the path reserved across the suite for programs calling an app, draws a bearer challenge naming no metadata in place of the sign-in redirect, and a 403 there reaches the client unchanged; and a 401 on a path of git's smart HTTP protocol, one ending `/info/refs`, `/git-upload-pack`, or `/git-receive-pack`, draws a Basic challenge in its place. On the server of an app whose manifest sets `guests = true`, every other path puts the same subrequest to auth's `/check/open` instead, which answers as `/check` does except that where `/check` would answer 401 it answers 200 with no `X-User-Id` and no `X-User-Email`, so no 401 arises there and no browser is sent to sign in; `/mcp`, `/api`, every path under either, and git's three paths keep `/check` and their challenges. In a sandbox without `auth`, `/api` is passed to the app as `/mcp` is. Every request nginx passes to an app carries `Host` as the client sent it, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto: http`, and an `X-Request-Id` nginx made for that request, never the client's own; the `X-User-Id` and `X-User-Email` an app receives are only ever the ones auth gave, never the client's. nginx drops a client's own `X-User-Id` and `X-User-Email` on every host it serves, auth's own name included, and in a sandbox without `auth` as well, where an app is given no user at all. Each app's server also carries the app's own nginx configuration, when the app ships one, as a host's does. nginx also answers for cross-origin calls, the same way on every name that serves an app: each app's own name, auth's included, the sandbox's bare name when an app is the default, and in a sandbox without `auth` as well; the bare name when no app is the default, bare `localhost:7400` and a host the sandbox does not serve serve no app, so they carry no `Access-Control-` header and no `Vary: Origin`, and an `OPTIONS` request there is answered as any other request is. It answers every `OPTIONS` request there `204` itself, before any `/check` subrequest, so no app ever receives one. The one origin it allows is the one the sandbox serves `sites` at, `http://sites.<sandbox>.localhost:<port>`, here `http://sites.wip.localhost:7400`, whether or not the checkout holds `sites`. When a request's `Origin` is exactly that origin, the response carries `Access-Control-Allow-Origin` naming it, never `*`, and `Access-Control-Allow-Credentials: true`; an answer to `OPTIONS` adds `Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`, `Access-Control-Allow-Headers: Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID` and `Access-Control-Max-Age: 600`, and every other response adds `Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate`. They are on every response from such a name, whoever made it: the app's own, nginx's challenges, the sign-in redirect, and a 403 from auth passed through. Any other `Origin`, or none, draws no `Access-Control-` header at all. Every response from such a name carries `Vary: Origin`. An app refuses a call whose `Origin` names another host, so when nginx passes a request on to an app other than `auth`, or to auth's `/check` on its behalf, it leaves out an `Origin` that is exactly that origin and passes any other `Origin` on unchanged, for the app to judge. auth's own server passes even that origin on, because auth checks it to let any app in the sandbox, `sites` included, sign its user out.
 
 ## A browser reaches an app at its own name
 
@@ -917,7 +917,7 @@ Postconditions:
 
 - Nothing has changed.
 - auth's `/check` received the request's `Cookie` header and no body, with `X-Original-Method: POST`, `X-Original-Host: dummy.wip.localhost` and `X-Original-URI: /mcp`.
-- dummy received `POST /mcp` with the request's body, `X-User-Id: 7` and `X-User-Email: me@michaelgreenly.dev`.
+- dummy received `POST /mcp` with the request's body, `X-User-Id: 7`, `X-User-Email: me@michaelgreenly.dev` and no `Origin` header, so it takes the call as it takes one from its own pages; auth's `/check` received no `Origin` header either.
 
 ## A page on the sites origin calls an app without a session
 
@@ -1023,6 +1023,37 @@ Postconditions:
 
 - Nothing has changed. Nothing reached dummy's socket.
 
+## A page on the sites origin signs its user out
+
+The banner on `sites`' own pages signs the user out with a form that POSTs to auth's `/logout`, as every app's banner does. auth lets any app in the sandbox sign its user out and decides that from the request's `Origin`, so auth's own server passes the sites origin on to auth unchanged.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: http://sites.wip.localhost:7400' -H 'Cookie: ikigenba_session=<session>' http://auth.wip.localhost:7400/logout
+```
+
+Response:
+
+```
+HTTP/1.1 <status>
+Access-Control-Allow-Origin: http://sites.wip.localhost:7400
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
+Vary: Origin
+```
+
+The status and body are auth's own answer.
+
+Preconditions:
+
+- `wip` is up with `auth` and `dummy`, and both services are active.
+
+Postconditions:
+
+- No `/check` subrequest was made.
+- auth received `POST /logout` with `Origin: http://sites.wip.localhost:7400` unchanged, as it receives any request's `Origin` on its own server.
+
 ## A page on another origin asks before calling an app
 
 Only the sites origin is allowed, matched exactly, letter case included. A page served from any other origin, another app's own name included, and a request naming no origin at all, still get nginx's `204`, but it allows nothing, so a browser does not make the call.
@@ -1099,7 +1130,7 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- dummy received `POST /mcp` with the request's body, as it does from the sites origin.
+- dummy received `POST /mcp` with the request's body, as it does from the sites origin, but with the request's `Origin` header unchanged, or none for the third request, for dummy to judge.
 
 ## A browser reaches an app in a sandbox without auth
 
@@ -1222,7 +1253,7 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No `/check` subrequest was made, and no challenge or redirect to sign in was sent.
-- dummy received `GET /api/widgets` with no `X-User-Id` and no `X-User-Email` header.
+- dummy received `GET /api/widgets` with no `X-User-Id`, no `X-User-Email` and no `Origin` header.
 
 ## A browser sends an app more than the app's own nginx configuration allows
 
