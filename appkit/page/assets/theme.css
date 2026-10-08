@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit 60ee37d. The design lab's
+   Copied from design/ikigenba/theme.css at commit 1a01448. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -142,52 +142,77 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 .eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
 /* ---------------------------------------------------------------- banner */
-/* The banner every app emits: product mark, service, profile, sign out.
-   The mark's ik glyph opens the row unless the launcher's grid button
-   does, in its place. The profile is a user-circle icon button linking to the user's auth
-   profile, titled with their email; it sits right, muted like the launcher. */
-body > header {
+/* The banner every app emits: the mark (the favicon as an image, Ikigenba,
+   a hairline, the service's own icon and name), then at the right edge three
+   quiet 36px icon buttons: the service launcher's grid (only when there are
+   services), the profile (a user-circle linking to the user's auth profile,
+   titled with their email) and sign out (a logout icon). Below 640px the
+   product name hides and the favicon stays. The lab frames a banner in .frame. */
+:is(body, .frame) > header {
   display: flex; align-items: center; gap: var(--s4);
   padding: 0 max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
   height: 56px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-body > header > strong, .mark {
+:is(body, .frame) > header > strong, .mark {
   display: inline-flex; align-items: center; gap: var(--s2);
-  font-weight: 650; font-size: 15px; letter-spacing: -0.015em; color: var(--fg);
+  font-weight: 650; font-size: 15px; letter-spacing: -0.015em; color: var(--fg); white-space: nowrap;
 }
-body > header > strong::before, .mark::before {
+:is(body, .frame) > header > strong::before, .mark::before {
   content: ""; width: 14px; height: 14px; background: var(--accent);
   -webkit-mask: url("favicon.svg") center / contain no-repeat; mask: url("favicon.svg") center / contain no-repeat;
 }
-body > header > .launcher + .mark::before { display: none; }
-.mark[data-service]::after {
+/* The favicon itself, as an image inside the mark; the glyph stays for a mark
+   without one (the sign-in card). */
+.mark > img { width: 18px; height: 18px; }
+.mark:has(> img)::before { display: none; }
+/* A mark with no service element shows its data-service as text (the landing
+   page's product shot). */
+.mark[data-service]:not(:has(> .service))::after {
   content: attr(data-service); font-weight: 450; color: var(--muted); margin-left: 4px;
   padding-left: var(--s3); border-left: 1px solid var(--line);
 }
-body > header > :is(span, a:not([class])) { margin-left: auto; color: var(--muted); font-size: var(--text-sm); }
-body > header > a:not([class]):hover { color: var(--fg); }
-body > header nav { display: flex; gap: var(--s1); margin-left: var(--s4); }
-body > header nav a {
+/* The service as an element, so its own icon can lead its name. The icon is
+   the app's share/icon.svg, inserted verbatim, so it carries no class. */
+.mark > .service {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 450; color: var(--muted); margin-left: 4px;
+  padding-left: var(--s3); border-left: 1px solid var(--line);
+}
+.mark > .service > svg { width: 16px; height: 16px; flex: none; }
+:is(body, .frame) > header > :is(span, a:not([class])) { margin-left: auto; color: var(--muted); font-size: var(--text-sm); }
+:is(body, .frame) > header > a:not([class]):hover { color: var(--fg); }
+:is(body, .frame) > header nav { display: flex; gap: var(--s1); margin-left: var(--s4); }
+:is(body, .frame) > header nav a {
   color: var(--muted); font-size: var(--text-sm); font-weight: 500; padding: 6px 10px; border-radius: var(--r-sm);
 }
-body > header nav a:hover { color: var(--fg); background: var(--subtle); text-decoration: none; }
-body > header nav a[aria-current] { color: var(--fg); background: var(--line-soft); }
-body > header > .profile { margin-left: auto; }
+:is(body, .frame) > header nav a:hover { color: var(--fg); background: var(--subtle); text-decoration: none; }
+:is(body, .frame) > header nav a[aria-current] { color: var(--fg); background: var(--line-soft); }
+:is(body, .frame) > header > .profile { margin-left: auto; }
 a.profile {
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px; border-radius: var(--r); color: var(--muted);
 }
 a.profile:hover { background: var(--line-soft); color: var(--fg); text-decoration: none; }
 a.profile svg.ico { width: 20px; height: 20px; }
+/* The launcher sits right, first of the icon buttons. */
+:is(body, .frame) > header > .mark ~ .launcher { margin-left: auto; margin-right: 0; }
+:is(body, .frame) > header > .launcher ~ .profile { margin-left: 0; }
+/* Sign out as an icon button, the same quiet 36px square as the others. */
+button.signout {
+  width: 36px; height: 36px; padding: 0; margin: 0;
+  background: transparent; color: var(--muted); box-shadow: none;
+}
+button.signout:hover { background: var(--line-soft); color: var(--fg); }
+button.signout svg.ico { width: 20px; height: 20px; }
 
 /* -------------------------------------------------------------- launcher */
-/* The service launcher: a grid button opening the banner, before the mark,
-   opens a panel of every service on the space — an icon over its name, A to Z, the
+/* The service launcher: a grid button at the banner's right edge, before the
+   profile, opens a panel of every service on the space — an icon over its name, A to Z, the
    current one marked in black, a disabled one faint. The panel is a popover,
    so it opens, closes on Escape or an outside click, and returns focus on its
-   own. It hangs under the banner, its left edge on the banner's; the tile
+   own. It hangs under its button, its right edge on the banner's; the tile
    grid scrolls under the search field. */
 button.launcher {
   width: 36px; height: 36px; padding: 0; margin-left: calc(-1 * var(--s2)); margin-right: calc(-1 * var(--s2));
@@ -203,7 +228,7 @@ nav.services {
 }
 nav.services[popover] {
   position: fixed; inset: auto; margin: 0;
-  top: calc(56px + var(--s2)); left: max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
+  top: calc(56px + var(--s2)); right: max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
   max-width: calc(100% - 2 * var(--s4));
 }
 nav.services[popover]:not(:popover-open) { display: none; }
@@ -512,9 +537,13 @@ main > nav.crumbs + h1 { margin-top: var(--s3); }
 /* ------------------------------------------------------------ responsive */
 @media (max-width: 640px) {
   :root { --h1: 26px; --h2: 21px; }
-  body > header { gap: var(--s3); }
-  body > header > :is(span, a:not([class])) { display: none; }
-  body > header nav { display: none; }
+  :is(body, .frame) > header { gap: var(--s3); }
+  :is(body, .frame) > header > :is(span, a:not([class])) { display: none; }
+  :is(body, .frame) > header nav { display: none; }
+  /* The product name hides, the favicon stays: the mark's own text shrinks
+     to nothing and the service restores its size. */
+  :is(body, .frame) > header > .mark:has(> .service) { font-size: 0; gap: 0; }
+  :is(body, .frame) > header > .mark > .service { font-size: 15px; margin-left: calc(var(--s2) + 4px); }
   main { padding-top: var(--s5); }
   .hero { padding: var(--s7) 0 var(--s6); }
   .hero > p:not(.eyebrow) { font-size: 17px; }
@@ -580,6 +609,14 @@ main > section > .section-head h2 { font-size: var(--h3); }
 @media (max-width: 640px) {
   .type-scale > div { grid-template-columns: 1fr; gap: var(--s1); padding: var(--s3) var(--s4); }
 }
+/* banner lab: each variant in its own frame, the banner alone */
+.frame { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
+.frame > header { border-bottom: 0; }
+.frame.narrow { width: 375px; max-width: 100%; }
+/* A narrow frame on a wide screen takes the banner's below-640px rules. */
+.frame.narrow > header { gap: var(--s3); }
+.frame.narrow > header > .mark:has(> .service) { font-size: 0; gap: 0; }
+.frame.narrow > header > .mark > .service { font-size: 15px; margin-left: calc(var(--s2) + 4px); }
 /* specimen: icon set */
 .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
@@ -592,7 +629,8 @@ main > section > .section-head h2 { font-size: var(--h3); }
 button.small, .button.small { padding: 3px 10px; font-size: var(--text-sm); line-height: 20px; }
 form.inline { display: inline-flex; gap: var(--s2); max-width: none; margin: 0; }
 form.inline > button { margin-top: 0; }
-body > header > form { margin: 0; }
+:is(body, .frame) > header > form { margin: 0; }
+:is(body, .frame) > header button { white-space: nowrap; }
 a.mark:hover { text-decoration: none; }
 
 /* Auth cards: a smaller title, the lab's state labels, room for two states. */
@@ -681,8 +719,8 @@ main > section.card { margin-top: var(--s5); }
 .row strong { display: block; color: var(--fg); font-weight: 600; }
 
 @media (max-width: 640px) {
-  body > header > form.inline { margin-left: auto; }
-  body > header > .profile ~ form.inline { margin-left: 0; }
+  :is(body, .frame) > header > form.inline { margin-left: auto; }
+  :is(body, .frame) > header > :is(.launcher, .profile) ~ form.inline { margin-left: 0; }
   nav.services[popover] {
     top: 56px; right: 0; left: 0; width: auto; max-width: none;
     border-width: 0 0 1px; border-radius: 0 0 var(--r-lg) var(--r-lg);
