@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -32,13 +33,35 @@ type Event struct {
 
 const eventTimeLayout = "2006-01-02T15:04:05.000000Z"
 
-var eventNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*\.[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
+var eventNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*(\.[a-z][a-z0-9]*(_[a-z0-9]+)*)+$`)
+var eventPatternPattern = regexp.MustCompile(`^([a-z][a-z0-9]*(_[a-z0-9]+)*|\*)(\.([a-z][a-z0-9]*(_[a-z0-9]+)*|\*))+$`)
 var attributeKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 var eventIDPattern = regexp.MustCompile(`^evt_[0-9a-f]{16}$`)
 
 func validEventName(s string) bool    { return eventNamePattern.MatchString(s) }
+func validEventPattern(s string) bool { return eventPatternPattern.MatchString(s) }
 func validAttributeKey(s string) bool { return attributeKeyPattern.MatchString(s) }
 func validEventID(s string) bool      { return eventIDPattern.MatchString(s) }
+
+// Match reports whether a valid pattern matches a valid concrete event name.
+// Each star matches exactly one word; the bare star is not a valid pattern.
+func Match(pattern, name string) bool {
+	if !validEventPattern(pattern) || !validEventName(name) {
+		return false
+	}
+	patternWords := strings.Split(pattern, ".")
+	nameWords := strings.Split(name, ".")
+	if len(patternWords) != len(nameWords) {
+		return false
+	}
+	for i, word := range patternWords {
+		if word != "*" && word != nameWords[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func basicAttribute(value any) (any, error) {
 	if value != nil {
 		v := reflect.ValueOf(value)

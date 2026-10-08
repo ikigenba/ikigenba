@@ -22,8 +22,10 @@ type Service struct {
 
 // Banner is the data rendered by the banner, launcher, and footer templates.
 type Banner struct {
-	Service, Version, Email, ProfileURL, LogoutURL string
-	Services                                       []Service
+	Service                               string
+	Icon                                  template.HTML
+	Version, Email, ProfileURL, LogoutURL string
+	Services                              []Service
 }
 
 // Kit holds the app identity and the services path captured at construction.
@@ -52,6 +54,12 @@ func (k *Kit) Banner(u User) Banner {
 				Name: entry.Name, URL: entry.URL, Icon: entry.Icon,
 				Enabled: entry.Enabled, Current: entry.Name == k.service,
 			})
+		}
+	}
+	for _, service := range banner.Services {
+		if service.Current {
+			banner.Icon = service.Icon
+			break
 		}
 	}
 	return banner

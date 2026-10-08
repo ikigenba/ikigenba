@@ -13,16 +13,17 @@ import (
 
 // templateElement records hooks and content without depending on layout.
 type templateElement struct {
-	tag         string
-	attrs       map[string]string
-	rawAttrs    map[string]string
-	children    []*templateElement
-	content     string
-	text        string
-	rawText     string
-	textStart   int
-	markupStart int
-	markupEnd   int
+	tag          string
+	attrs        map[string]string
+	rawAttrs     map[string]string
+	children     []*templateElement
+	content      string
+	text         string
+	rawText      string
+	textStart    int
+	contentStart int
+	markupStart  int
+	markupEnd    int
 }
 
 var templateAttribute = regexp.MustCompile(`([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+)))?`)
@@ -80,7 +81,7 @@ func templateDocument(t *testing.T, markup string) *templateElement {
 			if nameEnd < 0 {
 				nameEnd = len(token)
 			}
-			node := &templateElement{tag: token[:nameEnd], attrs: map[string]string{}, rawAttrs: map[string]string{}, textStart: len(root.text), markupStart: pos, markupEnd: end + 1}
+			node := &templateElement{tag: token[:nameEnd], attrs: map[string]string{}, rawAttrs: map[string]string{}, textStart: len(root.text), contentStart: end + 1, markupStart: pos, markupEnd: end + 1}
 			for _, attr := range templateAttribute.FindAllStringSubmatch(strings.TrimSpace(strings.TrimSuffix(token[nameEnd:], "/")), -1) {
 				value := attr[2] + attr[3] + attr[4]
 				node.attrs[attr[1]] = html.UnescapeString(value)
@@ -161,6 +162,13 @@ func templateAttr(t *testing.T, node *templateElement, name, want string) {
 	}
 }
 
+func templateClass(t *testing.T, node *templateElement, class string) {
+	t.Helper()
+	if !slices.Contains(strings.Fields(node.attrs["class"]), class) {
+		t.Fatalf("%s missing class %s", node.tag, class)
+	}
+}
+
 func templatePresentAttr(t *testing.T, node *templateElement, name string) {
 	t.Helper()
 	if _, present := node.attrs[name]; !present {
@@ -197,8 +205,15 @@ func templateOutputWithoutIcons(t *testing.T, name string, data Banner) string {
 	if name == "footer" {
 		return output
 	}
+	icons := []template.HTML{}
+	if name == "banner" {
+		icons = append(icons, data.Icon)
+	}
 	for _, service := range data.Services {
-		icon := string(service.Icon)
+		icons = append(icons, service.Icon)
+	}
+	for _, value := range icons {
+		icon := string(value)
 		if icon == "" {
 			continue
 		}
@@ -212,7 +227,7 @@ func templateOutputWithoutIcons(t *testing.T, name string, data Banner) string {
 }
 
 func templateFixture() Banner {
-	return Banner{Service: "notes", Email: "member@example.test", ProfileURL: "/profile", LogoutURL: "/logout", Services: []Service{
+	return Banner{Service: "notes", Icon: template.HTML(`<svg data-icon="banner"></svg>`), Email: "member@example.test", ProfileURL: "/profile", LogoutURL: "/logout", Services: []Service{
 		{Name: "notes", URL: "/notes", Icon: template.HTML(`<svg data-icon="notes"></svg>`), Enabled: true, Current: true},
 		{Name: "calendar", URL: "/calendar", Icon: template.HTML(`<svg data-icon="calendar"></svg>`), Enabled: false},
 	}}
@@ -319,33 +334,88 @@ func TestTemplatesConsumerParse(t *testing.T) {
 
 func templateSignOut(t *testing.T, root *templateElement, logout string) {
 	t.Helper()
-	for _, form := range templateFind(root, "form") {
-		if form.attrs["method"] != "post" || form.attrs["action"] != logout {
-			continue
-		}
-		for _, button := range templateFind(form, "button") {
-			if button.attrs["type"] == "submit" && button.text == "Sign out" {
-				return
-			}
+	form := templateOne(t, root, "form")
+	templateClass(t, form, "inline")
+	templateAttr(t, form, "method", "post")
+	url := templateOne(t, templateDocument(t, templateEscape(t, `<form action="{{.}}"></form>`, logout)), "form").attrs["action"]
+	templateAttr(t, form, "action", url)
+	button := templateOne(t, form, "button")
+	for name, value := range map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"} {
+		templateAttr(t, button, name, value)
+	}
+	templateClass(t, button, "signout")
+	if strings.TrimSpace(button.text) != "" {
+		t.Fatalf("signout contains text %q", button.text)
+	}
+}
+
+func templateCheckBannerMark(t *testing.T, root *templateElement, data Banner) {
+	t.Helper()
+	var marks []*templateElement
+	for _, node := range templateFind(root, "strong") {
+		if slices.Contains(strings.Fields(node.attrs["class"]), "mark") {
+			marks = append(marks, node)
 		}
 	}
-	t.Fatal("missing sign-out form and submit button")
+	if len(marks) != 1 {
+		t.Fatalf("mark count %d, want one", len(marks))
+	}
+	mark := marks[0]
+	escaped := templateEscape(t, "{{.}}", data.Service)
+	templateAttr(t, mark, "data-service", html.UnescapeString(escaped))
+	if len(mark.children) != 2 || mark.children[0].tag != "img" || mark.children[1].tag != "span" {
+		t.Fatal("mark must contain img then span")
+	}
+	image, service := mark.children[0], mark.children[1]
+	templateAttr(t, image, "src", "/_appkit/favicon.svg")
+	templateAttr(t, image, "alt", "")
+	templateClass(t, service, "service")
+	before := mark.content[:image.markupStart-mark.contentStart]
+	between := mark.content[image.markupEnd-mark.contentStart : service.markupStart-mark.contentStart]
+	after := mark.content[service.markupEnd-mark.contentStart:]
+	if strings.TrimSpace(before) != "" || strings.TrimSpace(between) != "Ikigenba" || strings.TrimSpace(after) != "" {
+		t.Fatalf("unexpected mark content %q", mark.content)
+	}
+}
+
+func templateCheckBannerService(t *testing.T, root *templateElement, data Banner) {
+	t.Helper()
+	service := templateHook(t, root, "span", map[string]string{"class": "service"}, "")
+	if strings.TrimSpace(service.content) != templateEscape(t, "{{.}}", data.Service) {
+		t.Fatalf("service content %q", service.content)
+	}
 }
 
 func templateCheckBannerIdentity(t *testing.T, root *templateElement, data Banner) {
 	t.Helper()
-	templateHook(t, root, "strong", map[string]string{"class": "mark", "data-service": data.Service}, "ikigenba")
+	templateCheckBannerMark(t, root, data)
+	templateCheckBannerService(t, root, data)
 	templateCheckProfile(t, root, data)
 	templateSignOut(t, root, data.LogoutURL)
 }
 
 func TestBannerMark(t *testing.T) {
-	// R-IF3I-SA1E
-	data := templateFixture()
-	mark := templateHook(t, templateRender(t, "banner", data), "strong", map[string]string{"class": "mark", "data-service": data.Service}, "ikigenba")
-	templateAttr(t, mark, "data-service", data.Service)
-	if mark.text != "ikigenba" {
-		t.Fatalf("mark text %q", mark.text)
+	// R-SIQG-8A9I
+	for _, name := range []string{"notes", "<app>&\"'", ""} {
+		data := templateFixture()
+		data.Service = name
+		templateCheckBannerMark(t, templateRender(t, "banner", data), data)
+	}
+}
+
+func TestBannerServiceIcon(t *testing.T) {
+	// R-SJYC-M207
+	for _, icon := range []template.HTML{"", `
+<svg data-icon="a&b"><title> A &amp; B </title><path d="M0 1"/></svg>`} {
+		for _, name := range []string{"notes", "<app>&\"'", ""} {
+			data := Banner{Service: name, Icon: icon}
+			root := templateDocument(t, templateExecute(t, Templates(), "banner", data))
+			service := templateHook(t, root, "span", map[string]string{"class": "service"}, "")
+			before, after, found := strings.Cut(service.content, string(icon))
+			if !found || strings.TrimSpace(before) != "" || strings.TrimSpace(after) != templateEscape(t, "{{.}}", name) {
+				t.Fatalf("service icon or name changed: %q", service.content)
+			}
+		}
 	}
 }
 
@@ -381,7 +451,7 @@ func TestBannerProfile(t *testing.T) {
 }
 
 func TestBannerSignOut(t *testing.T) {
-	// R-IHJB-JTIS
+	// R-SL68-ZTQW
 	data := templateFixture()
 	templateSignOut(t, templateRender(t, "banner", data), data.LogoutURL)
 }
@@ -403,26 +473,26 @@ func TestBannerLauncherButton(t *testing.T) {
 	}
 }
 
-func TestBannerLauncherImmediatelyPrecedesMark(t *testing.T) {
-	// R-P85C-FHTU
-	for _, test := range []struct {
-		name  string
-		count int
-	}{{"one service", 1}, {"multiple services", 2}} {
-		t.Run(test.name, func(t *testing.T) {
-			data := templateFixture()
-			data.Services = data.Services[:test.count]
-			root := templateRender(t, "banner", data)
-			button := templateHook(t, root, "button", map[string]string{"class": "launcher"}, "")
-			mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "")
-			for _, header := range templateFind(root, "header") {
-				index := slices.Index(header.children, mark)
-				if index > 0 && header.children[index-1] == button {
-					return
-				}
+func TestBannerHeaderOrder(t *testing.T) {
+	// R-SME5-DLHL
+	for _, services := range [][]Service{nil, {}, templateFixture().Services[:1], templateFixture().Services} {
+		data := templateFixture()
+		data.Services = services
+		header := templateOne(t, templateRender(t, "banner", data), "header")
+		tags, classes := []string{"strong", "a", "form"}, []string{"mark", "profile", "inline"}
+		if len(services) > 0 {
+			tags = []string{"strong", "button", "a", "form"}
+			classes = []string{"mark", "launcher", "profile", "inline"}
+		}
+		if len(header.children) != len(tags) {
+			t.Fatalf("header children %d, want %d", len(header.children), len(tags))
+		}
+		for index, child := range header.children {
+			if child.tag != tags[index] {
+				t.Fatalf("header child %d = %s, want %s", index, child.tag, tags[index])
 			}
-			t.Fatal("launcher button must immediately precede the mark as direct children of the same header")
-		})
+			templateClass(t, child, classes[index])
+		}
 	}
 }
 
@@ -448,7 +518,7 @@ func TestBannerScript(t *testing.T) {
 }
 
 func TestBannerEmptyServices(t *testing.T) {
-	// R-INMT-GO89
+	// R-SNM1-RD8A
 	for _, services := range [][]Service{nil, {}} {
 		data := templateFixture()
 		data.Services = services
@@ -627,8 +697,12 @@ func TestTemplatesAutoescaping(t *testing.T) {
 		root := templateRender(t, "banner", data)
 		referenceAttr := templateOne(t, templateDocument(t, templateEscape(t, `<span title="{{.}}"></span>`, special)), "span").rawAttrs["title"]
 		referenceURL := templateOne(t, templateDocument(t, templateEscape(t, `<a href="{{.}}"></a>`, url)), "a").rawAttrs["href"]
-		mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "ikigenba")
+		mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "")
 		templateRawAttr(t, mark, "data-service", referenceAttr)
+		serviceText := templateHook(t, mark, "span", map[string]string{"class": "service"}, "")
+		if serviceText.rawText != templateEscape(t, "{{.}}", data.Service) {
+			t.Fatalf("banner service escaping %q", serviceText.rawText)
+		}
 		profile := templateHook(t, root, "a", map[string]string{"class": "profile"}, "")
 		email := templateOne(t, templateDocument(t, templateEscape(t, `<span title="{{.}}"></span>`, data.Email)), "span").rawAttrs["title"]
 		templateRawAttr(t, profile, "title", email)
@@ -693,6 +767,7 @@ func TestTemplatesIconOutputScope(t *testing.T) {
 		`<!--fixture-icon-start-->No service matches <!--fixture-icon-end-->`,
 	} {
 		data := templateFixture()
+		data.Icon = icon
 		// Repeated identical icons are distinct insertions; bytes such as <nav
 		// and the no-match text also occur outside those insertions.
 		for index := range data.Services {
@@ -707,11 +782,11 @@ func TestTemplatesIconOutputScope(t *testing.T) {
 				templateCheckBannerIdentity(t, root, data)
 				templateOne(t, root, "script")
 				button := templateHook(t, root, "button", map[string]string{"class": "launcher"}, "")
-				mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "ikigenba")
+				mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "")
 				var adjacent bool
 				for _, header := range templateFind(root, "header") {
 					index := slices.Index(header.children, mark)
-					adjacent = adjacent || index > 0 && header.children[index-1] == button
+					adjacent = adjacent || index >= 0 && index+1 < len(header.children) && header.children[index+1] == button
 				}
 				if !adjacent {
 					t.Fatal("Icon changed launcher/mark placement")

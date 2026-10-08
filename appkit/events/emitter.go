@@ -81,7 +81,7 @@ func New(cfg Config) *Emitter {
 	}
 	seen := make(map[string]bool)
 	for _, emission := range cfg.Emits {
-		if !validEventName(emission.Event) || seen[emission.Event] {
+		if !validEventPattern(emission.Event) || seen[emission.Event] {
 			panic("invalid or duplicate emission name")
 		}
 		seen[emission.Event] = true
@@ -178,20 +178,31 @@ func (e *Emitter) form(ctx context.Context, name string, attrs Attrs) (Event, bo
 		event.Attrs[key] = basic
 	}
 	valid = valid && validEmitted(event)
-	declared := false
-	for _, emission := range e.cfg.Emits {
-		if emission.Event != name {
-			continue
-		}
-		declared = len(emission.Attrs) == len(attrs)
-		for _, key := range emission.Attrs {
+	governing := e.governing(name)
+	declared := governing != nil && len(governing.Attrs) == len(attrs)
+	if governing != nil {
+		for _, key := range governing.Attrs {
 			if _, ok := attrs[key]; !ok {
 				declared = false
 			}
 		}
-		break
 	}
 	return event, valid && declared
+}
+
+// governing gives literal declarations precedence over overlapping patterns.
+func (e *Emitter) governing(name string) *Emission {
+	for i := range e.cfg.Emits {
+		if e.cfg.Emits[i].Event == name {
+			return &e.cfg.Emits[i]
+		}
+	}
+	for i := range e.cfg.Emits {
+		if Match(e.cfg.Emits[i].Event, name) {
+			return &e.cfg.Emits[i]
+		}
+	}
+	return nil
 }
 
 // Emit copies the caller's attributes and returns without awaiting delivery.

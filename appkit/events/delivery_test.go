@@ -77,13 +77,13 @@ func TestOutcomeValues(t *testing.T) {
 	}
 }
 
-// R-FPED-HVAV R-FQM9-VN1K R-FEFA-1XMM R-FFN6-FPDB
+// R-LCQU-BBGT R-FQM9-VN1K R-FEFA-1XMM R-FFN6-FPDB
 func TestHandlerRegistration(t *testing.T) {
 	for _, makeHandler := range []func(Handlers) http.Handler{DeliveryHandler, func(h Handlers) http.Handler { return DeclarationsHandler(nil, h) }} {
-		for _, h := range []Handlers{nil, {}, {"*": func(context.Context, Delivery) Outcome { return OK() }}} {
+		for _, h := range []Handlers{nil, {}, {"*": func(context.Context, Delivery) Outcome { return OK() }}, {"cron.*.fired": func(context.Context, Delivery) Outcome { return OK() }}, {"*.*": func(context.Context, Delivery) Outcome { return OK() }}} {
 			makeHandler(h)
 		}
-		for _, key := range []string{"bad\"name", "repo.pushed"} {
+		for _, key := range []string{"bad\"name", "cron.a*.fired", "cron.**.fired", "cron..fired", "cron", "*.Fired", "repo.pushed", "cron.*.fired", "*"} {
 			func() {
 				defer func() {
 					p := recover()
@@ -92,7 +92,7 @@ func TestHandlerRegistration(t *testing.T) {
 					}
 				}()
 				handler := Handler(nil)
-				if key != "repo.pushed" {
+				if key != "repo.pushed" && key != "cron.*.fired" && key != "*" {
 					handler = func(context.Context, Delivery) Outcome { return OK() }
 				}
 				makeHandler(Handlers{key: handler})
@@ -116,7 +116,63 @@ func TestHandlerRegistration(t *testing.T) {
 	}
 }
 
-// R-FRU6-9ES9 R-FT22-N6IY R-FU9Z-0Y9N R-FVHV-EQ0C R-FWPR-SHR1 R-FXXO-69HQ
+// R-LDYQ-P37I R-LF6N-2UY7
+func TestDeliveryPatternSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name, event, want string
+		keys              []string
+	}{
+		{"exact", "cron.nightly_backup.fired", "cron.nightly_backup.fired", []string{"*", "*.*.*", "cron.*.fired", "cron.nightly_backup.fired"}},
+		{"fewest stars", "cron.nightly_backup.fired", "cron.*.fired", []string{"*", "*.*.*", "*.nightly_backup.*", "cron.*.fired"}},
+		{"lexical tie", "cron.nightly_backup.fired", "*.nightly_backup.fired", []string{"*", "cron.nightly_backup.*", "cron.*.fired", "*.nightly_backup.fired"}},
+		{"all words wildcard", "cron.nightly_backup.fired", "*.*.*", []string{"*", "*.*.*"}},
+		{"fallback", "repo.pushed", "*", []string{"*", "cron.*.fired", "repo.*.*"}},
+		{"different word counts", "cron.nightly_backup.fired", "", []string{"cron.*", "cron.*.*.*", "repo.*.fired"}},
+		{"different concrete word", "cron.nightly_backup.stopped", "", []string{"cron.*.fired"}},
+		{"empty handlers", "repo.pushed", "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := deliveredFixture()
+			e.Name = tc.event
+			e.RequestID, e.User = "request", "user"
+			e.Attrs = Attrs{"count": int64(2), "message": "delivered"}
+			e.Cause, e.Depth = "evt_00000000000000aa", 3
+			text, err := e.MarshalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var expected Event
+			if err := expected.UnmarshalJSON(text); err != nil {
+				t.Fatal(err)
+			}
+			body := strings.TrimSuffix(string(text), "}") + `,"attempt":7}`
+			calls := make(map[string]int)
+			h := make(Handlers)
+			for _, key := range tc.keys {
+				h[key] = func(_ context.Context, d Delivery) Outcome {
+					calls[key]++
+					if d.Attempt != 7 || !reflect.DeepEqual(d.Event, expected) {
+						t.Errorf("delivery = %#v, want event %#v and attempt 7", d, expected)
+					}
+					return OK()
+				}
+			}
+			for range 20 {
+				clear(calls)
+				w := deliveryRequest(DeliveryHandler(h), "POST", "application/json", body)
+				if tc.want == "" {
+					if w.Code != 404 || w.Body.Len() != 0 || len(calls) != 0 {
+						t.Fatalf("unmatched delivery: status %d, body %q, calls %v", w.Code, w.Body.String(), calls)
+					}
+				} else if len(calls) != 1 || calls[tc.want] != 1 {
+					t.Fatalf("calls = %v, want only %q once", calls, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// R-FRU6-9ES9 R-FT22-N6IY R-FU9Z-0Y9N R-FVHV-EQ0C R-FWPR-SHR1
 func TestDeliveryValidation(t *testing.T) {
 	calls := 0
 	h := DeliveryHandler(Handlers{"repo.pushed": func(context.Context, Delivery) Outcome { calls++; return OK() }})
@@ -157,7 +213,7 @@ func TestDeliveryValidation(t *testing.T) {
 	}
 }
 
-// R-EYKL-2WZL R-EZSH-GOQA R-F28A-887O R-FZ5K-K18F R-G0DG-XSZ4 R-G1LD-BKPT R-TLCA-5EFJ R-TMK6-J668
+// R-EYKL-2WZL R-EZSH-GOQA R-F28A-887O R-G0DG-XSZ4 R-G1LD-BKPT R-TLCA-5EFJ R-TMK6-J668
 func TestDeliveryInvocationAndOutcomes(t *testing.T) {
 	type key struct{}
 	ctx, cancel := context.WithDeadline(context.WithValue(context.Background(), key{}, "value"), time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
