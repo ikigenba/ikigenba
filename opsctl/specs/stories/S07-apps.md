@@ -375,7 +375,7 @@ Postconditions:
 `devctl deploy` has uploaded the file and now runs one command over ssh. Each
 line of output is one attempted step and reports its success or failure. The
 last successful step reports the app, version and state; `status` independently
-adds the socket's state and the database journal mode in its five-column
+adds the socket's state and the database journal mode in its six-column
 report. The `fetch` step is the host reading the object with its own role:
 the file never travels over the ssh connection. The `data` step makes
 `/var/opt/ikigenba/crm/` ready as the app's working directory; on a host that

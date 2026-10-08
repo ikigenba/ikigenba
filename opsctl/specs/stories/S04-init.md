@@ -170,6 +170,7 @@ sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
 otherwise to the running opsctl, so certbot's hooks find opsctl on PATH.
 
 Configuration keys:
+  aws.region          the region this host's parameters live in
   host.name           the fully-qualified name this host answers at, at or under a configured zone
   apps.drain_seconds  how long an app may drain when stopped (default 5)
   apps.stop_seconds   how long systemd waits for an app to stop (default 10)
