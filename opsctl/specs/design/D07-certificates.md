@@ -33,7 +33,13 @@ executable on PATH, refusing the whole invocation otherwise (observed against
 certbot on the live host). So the auth and cleanup hooks are
 `opsctl dns acme-auth` and `opsctl dns acme-cleanup`, and the deploy hook is
 `systemctl try-reload-or-restart nginx`, which reloads a running nginx, does
-nothing for a stopped one, and fails when the reload fails.
+nothing for a stopped one, and fails when the reload fails. certbot finds that
+`opsctl` at `/usr/local/bin/opsctl`, which on a released host is a link
+through `current` (D16), so a renewal after an `activate` or a `rollback` runs
+the hooks of the release the host then runs, and no hook names a release.
+`init` makes the link when it is missing, before its `certificate` step
+(D05), so a fresh host's first `obtain` already records hooks certbot can
+find.
 
 ## REQUIREMENTS
 

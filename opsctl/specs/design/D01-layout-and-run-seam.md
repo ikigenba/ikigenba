@@ -1,8 +1,10 @@
 # D01-layout-and-run-seam
 
-The CLI composes small domain packages. Host execution, time, DNS and cloud
-access have injected boundaries so callers can exercise commands against a
-temporary host tree without changing the machine running the tests.
+The CLI composes small domain packages. Host execution, time, DNS, cloud
+access, and the path of opsctl's own executable have injected boundaries so callers can exercise commands against a
+temporary host tree without changing the machine running the tests. The
+executable's path is how an opsctl finds the release it belongs to (D16): a
+test hands it a path inside its temporary release folder.
 
 The production cloud adapter is `internal/cloud/aws`. It uses the approved AWS
 SDK v2 S3 and SSM modules behind the same injected boundary used by tests; no
@@ -24,8 +26,8 @@ output.
 ## REQUIREMENTS
 
 - R-MUPN-JCBU: Package `internal/cli` MUST export `Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int`, and calling it MUST return an exit code in-process without terminating the calling program.
-- R-Y46O-68HV: Package `internal/cli` MUST export `Deps` with the fields `Root string`, `EUID int`, `Getenv func(key string) string`, `DNS dns.Env`, `LookPath func(file string) (string, error)`, `LookupHost func(ctx context.Context, host string) ([]string, error)`, `Execute func(context.Context, host.Command) (host.Result, error)`, `Now func() time.Time`, and `Cloud cloud.Env`.
-- R-5E43-77RM: `Run` MUST normalize nil `Deps.Getenv` to an empty environment, nil `Deps.LookPath` to `exec.LookPath`, nil `Deps.LookupHost` to `net.DefaultResolver.LookupHost`, and nil `Deps.Now` to `time.Now`; it MUST pass the corresponding normalized environmental values to domain operations without replacing a supplied dependency.
+- R-8KGR-8VBW: Package `internal/cli` MUST export `Deps` with the fields `Root string`, `EUID int`, `Getenv func(key string) string`, `DNS dns.Env`, `LookPath func(file string) (string, error)`, `LookupHost func(ctx context.Context, host string) ([]string, error)`, `Execute func(context.Context, host.Command) (host.Result, error)`, `Now func() time.Time`, `Cloud cloud.Env`, `Executable func() (string, error)`, returning the path of the running opsctl's executable as `os.Executable` does, and `Exec func(argv0 string, argv []string, envv []string) error`, replacing the running process with the program at `argv0` as `syscall.Exec` does, so it returns only on failure.
+- R-8LON-MN2L: `Run` MUST normalize nil `Deps.Getenv` to an empty environment, nil `Deps.LookPath` to `exec.LookPath`, nil `Deps.LookupHost` to `net.DefaultResolver.LookupHost`, nil `Deps.Now` to `time.Now`, nil `Deps.Executable` to `os.Executable`, and nil `Deps.Exec` to `syscall.Exec`, so a test that supplies `Exec` records the call without the test process being replaced; it MUST pass the corresponding normalized environmental values to domain operations without replacing a supplied dependency.
 - R-GU6L-Z0L7: Every host path a command invoked through `cli.Run` reads or writes MUST be resolved under `Deps.Root`, verified by invoking commands with a temporary directory as `Root` and observing their filesystem effects only under that directory; domain functions receiving a root or `host.Env` MUST preserve that boundary.
 - R-Y5EK-K08K: Package `internal/host` MUST export `Env` with the fields `Root string`, `Getenv func(string) string`, `Execute func(context.Context, Command) (Result, error)`, and `Now func() time.Time`.
 - R-Y6MG-XRZ9: Package `internal/host` MUST export `Command` with the fields `Name string`, `Args []string`, `Dir string`, `Env []string`, and `Stdin io.Reader`.
@@ -47,7 +49,7 @@ output.
 - R-DV6I-S8J9: Provider responses, parameter JSON source text, and decoded secret values MUST NOT appear in `internal/cloud/aws` errors or diagnostics; the adapter MAY identify the caller-supplied parameter name, and callers retain D09's obligation to identify a missing requested manifest secret without exposing its value.
 - R-AOUN-W2JU: Package `internal/cloud` MUST export sentinel `ErrAlreadyExists error`.
 - R-AQ2K-9UAJ: `internal/cloud/aws` MUST implement `Client.PutObject` with one direct S3 `PutObject` call using the parsed bucket and key, the supplied body, and `IfNoneMatch` exactly `*`; it MUST report success only after that call accepts the complete body. It MUST map only the exact conditional errors `PreconditionFailed` with HTTP status 412 and `ConditionalRequestConflict` with HTTP status 409 to errors matching `cloud.ErrAlreadyExists`, preserving the provider error as a cause; it MUST NOT retry the conditional conflict or map unrelated 409 or 412 responses. Therefore an existing object remains unchanged, and when concurrent writers target the same initially absent URI at most one may succeed while every colliding writer receives `ErrAlreadyExists` through `errors.Is`.
-- R-F8UL-1VTD: The binary built from `./cmd/opsctl` MUST pass its command-line arguments and standard streams to `cli.Run` and exit with the code it returns: run with the single argument `nosuchcommand` it MUST write D02's unknown-command diagnostic for that name to stderr, nothing to stdout, and exit 2, and run with the single argument `version` it MUST print D02's version line to stdout, nothing to stderr, and exit 0.
+- R-T4Z9-6OCB: The binary built from `./cmd/opsctl` MUST pass its command-line arguments and standard streams to `cli.Run`, with `os.Executable` as `Deps.Executable`, and exit with the code it returns: run with the single argument `nosuchcommand` it MUST write D02's unknown-command diagnostic for that name to stderr, nothing to stdout, and exit 2, and run with the single argument `version` from a path inside no release folder, as a test binary is, it MUST print one empty line to stdout, nothing to stderr, and exit 0.
 - R-N0T5-G71B: The binary built from `./cmd/opsctl`, run with the single argument `--help`, MUST print the usage text of D2 to stdout, write nothing to stderr, and exit 0.
 
 - R-YBI2-GUY1: Package `internal/host` MUST export `CommandError` with the fields `Label string`, `Result Result`, and `Err error`; domain operations MUST use this error type to preserve the concise command label and captured result when reporting an external process failure to the CLI.

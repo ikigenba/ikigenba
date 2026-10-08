@@ -11,18 +11,28 @@ The topology is one root domain shared by every space, a host per space named
 one label under that root, and at most one of those hosts holding the apex:
 the app it names answers at the root as well as under the host's own name.
 
-The designs cover command conventions and configuration, DNS and preflight,
-nginx and certificates, app lifecycle, service and host backups, and restore
-and retirement. Every app runs behind a systemd socket unit that holds its
-Unix socket, which nginx proxies to, so no app listens on a TCP port and an
-upgrade refuses no request; an operator can disable an app, which then stays
-disabled through every operation until it is enabled. Release publication and the installer that puts the binary on
-a host are maintained outside these designs. Setup composes certificate,
-nginx, replication and timer operations. Generated files are reconstructed from
-configuration and service declarations; application state outlives installation.
-One of them, the services file, lists the host's installed services for the
-launcher in every app's banner and for the suite's MCP catalog; it is
-rewritten wherever the nginx configuration is and is never backed up (D15).
+The suite reaches a host as one release, a folder under
+`/opt/ikigenba/releases/` named by the commit sha it was built from, and
+`activate` makes it the one the host runs; `current` and `previous` links are
+the only record of what runs, and `rollback` goes one step back (D16 to D18).
+opsctl belongs to the release it was unpacked with and reports that release as
+its version. A host that has activated a release is a released host; one whose
+apps were installed one by one, which the first activate cuts over, is a
+per-app host; one with neither is fresh (D08). The designs cover command
+conventions and configuration, DNS and preflight, nginx and certificates, the
+release layout, activate and rollback, app lifecycle, service and host
+backups, and restore and retirement. Every app runs behind a systemd socket
+unit that holds its Unix socket, which nginx proxies to, so no app listens on
+a TCP port and a restart refuses no request; an operator can disable an app,
+which then stays disabled through every operation until it is enabled.
+Building and unpacking a release are devctl's. Setup composes certificate,
+nginx, replication and timer operations. Generated files, an app's
+environment file and units among them, are reconstructed from configuration,
+the current release and service declarations; application state outlives
+every release. One generated file, the services file, lists the host's
+services for the launcher in every app's banner and for the suite's MCP
+catalog; it is rewritten wherever the nginx configuration is and is never
+backed up (D15).
 
 External programs and cloud access cross explicit dependency seams. The
 requirements state the supported public boundary; facts about external tools

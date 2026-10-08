@@ -1,6 +1,6 @@
 # D03-config-store
 
-Package `internal/config` owns the host configuration store, a flat map of string keys to string values at `/etc/ikigenba/config.json`; `internal/cli` exposes the `config` command. Empty values differ from absent keys. The generic store preserves keys owned by every command group and by operators.
+Package `internal/config` owns the host configuration store, a flat map of string keys to string values at `/etc/ikigenba/config.json`; `internal/cli` exposes the `config` command. Empty values differ from absent keys. The generic store preserves keys owned by every command group and by operators. A key no group declares is kept, listed and returned like any other, and no command refuses the store for holding one, so an older opsctl, such as the one a rollback runs, works on a store a newer one wrote and leaves the newer keys as they are. The store needs nothing else on the host, so a fresh host's first `config set` runs before anything links `/usr/local/bin/opsctl`, from the release's own opsctl by its full path.
 
 ## REQUIREMENTS
 
@@ -43,3 +43,4 @@ Package `internal/config` owns the host configuration store, a flat map of strin
 - R-2BT9-PV5V: `Get`, `Set`, `Del`, and `List` MUST return filesystem access failures as errors; a `config` action encountering such an error MUST print nothing to stdout, write an opsctl diagnostic naming the failed operation and resolved config path to stderr, and exit 1.
 
 - R-WHD3-JVVI: The `config` command MUST reject invalid subcommand names, argument counts, and invalid `set` key/value arguments before reading the store; `Store.Set` MUST validate its key and value before reading the store, so invalid input retains its specified usage or validation error even when the store is corrupt or inaccessible.
+- R-VHJD-YDWI: A key that `ValidKey` accepts but that no design declares MUST be stored by `Set`, returned by `Get`, listed by `List`, and kept by every `Set` and `Del` of another key, like any other key; no `opsctl` command MUST refuse, fail, or change its output, exit code, or effects because the store holds such a key, apart from `config list` listing it, `config get`, `config set`, and `config del` acting on it when it is named, and a copy of `config.json` whole, as a host backup takes, carrying it; so an older opsctl works on a store a newer one wrote and leaves the newer keys as they were.

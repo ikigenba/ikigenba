@@ -6,6 +6,10 @@ provider. Additive mutations support certbot's overlapping DNS-01 tokens.
 The configured zone is the shared root domain, and record names are never
 scoped to `host.name`: which names inside the zone this host may write is
 its role's business, so zone selection reads only `dns.zones` and the name.
+certbot runs the challenge hooks as the plain command `opsctl dns acme-auth`
+(D07), found on its PATH at `/usr/local/bin/opsctl`, the link D05 and D18
+keep pointing at the opsctl of the release the host runs; nothing here
+depends on which release that is.
 
 ## REQUIREMENTS
 
