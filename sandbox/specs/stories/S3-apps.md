@@ -493,7 +493,7 @@ Postconditions:
 
 ## A developer brings up an app that welcomes guests
 
-An app that serves guests, visitors who bring no credential, says so with a top-level `guests = true` in its manifest. A request with no credential to such an app's paths other than `/mcp`, those under `/mcp/`, and git's smart-HTTP paths then reaches the app with no `X-User-Id` and no `X-User-Email`, instead of being sent to sign in. An app whose manifest does not set `guests` is treated as `guests = false`. The setting changes nothing `up` prints and nothing in the services file.
+An app that serves guests, visitors who bring no credential, says so with a top-level `guests = true` in its manifest. A request with no credential to such an app's paths other than `/mcp`, `/api`, those under either, and git's smart-HTTP paths then reaches the app with no `X-User-Id` and no `X-User-Email`, instead of being sent to sign in; an `OPTIONS` request is answered by nginx itself on every app's server. An app whose manifest does not set `guests` is treated as `guests = false`. The setting changes nothing `up` prints and nothing in the services file.
 
 Command:
 
@@ -519,7 +519,7 @@ Preconditions:
 Postconditions:
 
 - `wip` is up with `auth` and `dummy`, both services active.
-- A request with no credential to a path of `http://dummy.wip.localhost:7400` other than `/mcp`, those under `/mcp/`, and git's smart-HTTP paths reaches dummy with no `X-User-Id` and no `X-User-Email` and is not redirected to sign in.
+- A request with no credential and a method other than `OPTIONS` to a path of `http://dummy.wip.localhost:7400` other than `/mcp`, `/api`, those under either, and git's smart-HTTP paths reaches dummy with no `X-User-Id` and no `X-User-Email` and is not redirected to sign in.
 - The services file is what it is for this checkout without `guests`; no service carries a `guests` member.
 
 ## A developer brings up an app whose manifest names a port
