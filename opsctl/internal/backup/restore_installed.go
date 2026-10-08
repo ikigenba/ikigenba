@@ -12,7 +12,7 @@ import (
 
 // installedRestoreManifest performs source preflight without invoking host tools.
 func installedRestoreManifest(rootName, service string) (apps.Manifest, error) {
-	notInstalled := fmt.Errorf("%s is not installed; install %s first", service, service)
+	notInstalled := fmt.Errorf("%s is not installed", service)
 	if apps.ValidateName(service) != nil {
 		return apps.Manifest{}, notInstalled
 	}
@@ -46,14 +46,14 @@ func installedRestoreManifest(rootName, service string) (apps.Manifest, error) {
 	}
 	_, err = root.Lstat(path.Join("opt", service, "state"))
 	if err == nil {
-		return apps.Manifest{}, fmt.Errorf("/opt/%s/state has not moved; install %s first", service, service)
+		return apps.Manifest{}, fmt.Errorf("/opt/%s/state has not moved", service)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return apps.Manifest{}, err
 	}
 	_, err = root.Lstat(path.Join(strings.TrimPrefix(apps.EnvRoot, "/"), service, "env"))
 	if errors.Is(err, os.ErrNotExist) {
-		return apps.Manifest{}, fmt.Errorf("/opt/%s/etc/env has not moved; install %s first", service, service)
+		return apps.Manifest{}, fmt.Errorf("/opt/%s/etc/env has not moved", service)
 	}
 	if err != nil {
 		return apps.Manifest{}, err

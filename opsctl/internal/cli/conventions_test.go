@@ -28,7 +28,6 @@ Commands:
   enable    let a disabled app start again, and start it
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
-  install   install an app from a built file
   nginx     generate the platform's nginx configuration
   restart   restart an installed app's service
   restore   restore a service from its backups
@@ -37,7 +36,6 @@ Commands:
   services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
   status    print every service, its release and its state
-  uninstall take an app off the host, keeping its data
   version   print the release this opsctl belongs to
 
 Options:
@@ -197,10 +195,10 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-8MWK-0ETA
+	// R-SV17-N1A7
 	user := depsAt(t, 1)
 
-	wantCommands := []string{"activate", "backup", "cert", "config", "disable", "dns", "enable", "host", "init", "install", "nginx", "restart", "restore", "retire", "rollback", "services", "snapshot", "status", "uninstall", "version"}
+	wantCommands := []string{"activate", "backup", "cert", "config", "disable", "dns", "enable", "host", "init", "nginx", "restart", "restore", "retire", "rollback", "services", "snapshot", "status", "version"}
 	for _, name := range wantCommands {
 		_, stderr, _ := invoke([]string{name}, user)
 		if strings.Contains(stderr, "unknown command") {
@@ -234,7 +232,7 @@ func TestCommandSet(t *testing.T) {
 		t.Errorf("init: exit %d stdout %q stderr %q, want init usage", code, stdout, stderr)
 	}
 
-	for _, name := range []string{"other", "config-backup", "VERSION"} {
+	for _, name := range []string{"other", "config-backup", "VERSION", "install", "uninstall"} {
 		stdout, stderr, code = invoke([]string{name}, user)
 		wantErr := "opsctl: unknown command '" + name + "'\n\nsee 'opsctl --help' for usage\n"
 		if code != 2 || stdout != "" || stderr != wantErr {
@@ -244,7 +242,7 @@ func TestCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-8O4G-E6JZ
+	// R-SW94-0T0W
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)

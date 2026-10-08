@@ -9,37 +9,6 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-const wantUninstallUsage = `Usage: opsctl uninstall APP
-
-Take APP off the host: stop ikigenba-APP.socket and ikigenba-APP.service,
-socket first so no request starts the service again, disable both, remove
-both units (which ends a disabled APP's disabled state: a later install is a
-first install and comes up enabled), then remove /opt/APP/,
-/etc/opt/ikigenba/APP/ with its environment file, and
-/var/opt/ikigenba/APP/cache/. /var/opt/ikigenba/APP/state/ is kept untouched,
-so APP is still a service the host backs up, and a later install lands over
-its data, which every install leaves untouched. Removing state/ is a decision
-made by hand, never here.
-
-A state/ or cache/ still under /opt/APP/ is first moved to
-/var/opt/ikigenba/APP/, once APP is stopped, as 'opsctl install' moves it; a
-state/ in both places fails the uninstall with nothing removed.
-
-The nginx configuration, /var/lib/ikigenba/services.json, and
-/etc/litestream.yml are regenerated from every app left on the host, so APP's
-name stops answering, APP leaves the service launcher, and a database APP
-declared stops being replicated once litestream has shipped what it holds.
-
-The parameter /<host.name>/APP is not touched: it is devctl's.
-
-On a host that runs releases, one where /opt/ikigenba/current exists,
-uninstall refuses and changes nothing: an app leaves such a host when
-'opsctl activate' puts a release without it in place.
-
-Configuration keys:
-  host.name  the fully-qualified name this host answers at
-`
-
 const wantRestartUsage = `Usage: opsctl restart APP
 
 Restart ikigenba-APP.service and report the service as 'opsctl activate'
@@ -113,11 +82,6 @@ Configuration keys:
   host.apex  the app that answers at the parent of host.name; unset means none
 `
 
-func TestUninstallHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-EQLH-T9TQ
-	assertLifecycleHelp(t, "uninstall", wantUninstallUsage)
-}
-
 func TestRestartHelpIsExactAndHostIndependent(t *testing.T) {
 	// R-ERTE-71KF
 	assertLifecycleHelp(t, "restart", wantRestartUsage)
@@ -153,13 +117,11 @@ func assertLifecycleHelp(t *testing.T, command, want string) {
 }
 
 func TestLifecycleArityPrecedesHostAccess(t *testing.T) {
-	// R-VFKQ-1FOH
+	// R-TAVW-M1X8
 	tests := []struct {
 		args []string
 		want string
 	}{
-		{[]string{"uninstall"}, "opsctl: uninstall needs APP\n\nsee 'opsctl uninstall --help' for usage\n"},
-		{[]string{"uninstall", "one", "two"}, "opsctl: uninstall takes one APP\n\nsee 'opsctl uninstall --help' for usage\n"},
 		{[]string{"restart"}, "opsctl: restart needs APP\n\nsee 'opsctl restart --help' for usage\n"},
 		{[]string{"restart", "one", "two"}, "opsctl: restart takes one APP\n\nsee 'opsctl restart --help' for usage\n"},
 		{[]string{"disable"}, "opsctl: disable needs APP\n\nsee 'opsctl disable --help' for usage\n"},

@@ -263,7 +263,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 }
 
 func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
-	// R-FQJB-NDLG R-FYHV-L0IQ R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-FQJB-NDLG R-D97F-184Q R-G7FZ-2AO2 R-FMVM-I2DD
 	tests := []struct {
 		name       string
 		members    []restoreMember

@@ -16,30 +16,18 @@ import (
 )
 
 func TestLifecycleAPITypes(t *testing.T) {
-	// R-YV0G-L6T5
 	var reported []string
 	var configured []string
-	report := func(step, detail string, success bool) error {
+	report := func(step, detail string, _ bool) error {
 		reported = append(reported, step+":"+detail)
-		if !success {
-			return errors.New("unexpected failure report")
-		}
 		return nil
 	}
 	configure := func(_ context.Context, manifest apps.Manifest) error {
 		configured = append(configured, manifest.App)
 		return nil
 	}
-	var (
-		reportHook    func(string, string, bool) error
-		configureHook func(context.Context, apps.Manifest) error
-	)
-	uninstallHooks := apps.UninstallHooks{Report: report, Configure: configure}
-	reportHook, configureHook = uninstallHooks.Report, uninstallHooks.Configure
-	if reportHook("stop", "uninstall", true) != nil || configureHook(context.Background(), apps.Manifest{App: "uninstall"}) != nil {
-		t.Fatal("UninstallHooks did not carry its hooks")
-	}
-
+	var reportHook func(string, string, bool) error
+	var configureHook func(context.Context, apps.Manifest) error
 	// R-EWOZ-Q4J7
 	row := apps.StatusRow{Name: "notes", Version: "v1", Label: "label", State: "active", Socket: "enabled", JournalMode: "wal"}
 	var rowName, rowVersion, rowState, rowSocket, rowJournal string
@@ -62,7 +50,7 @@ func TestLifecycleAPITypes(t *testing.T) {
 	if reportHook("enable", "lifecycle", true) != nil || configureHook(context.Background(), apps.Manifest{App: "lifecycle"}) != nil {
 		t.Fatal("LifecycleHooks did not carry its hooks")
 	}
-	if !slices.Equal(reported, []string{"stop:uninstall", "enable:lifecycle"}) || !slices.Equal(configured, []string{"uninstall", "lifecycle"}) {
+	if !slices.Equal(reported, []string{"enable:lifecycle"}) || !slices.Equal(configured, []string{"lifecycle"}) {
 		t.Fatalf("hooks observed reports %q and configures %q", reported, configured)
 	}
 
@@ -280,7 +268,7 @@ func sqliteDatabase(mode byte) []byte {
 }
 
 func TestStatusUsesOnlyRootedDataDirectoryForDatabase(t *testing.T) {
-	// R-T1BK-1D48
+	// R-CVSI-TQZ3
 	root := t.TempDir()
 	writeStatusService(t, root, "notes", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 2)
 	writeFixturePath(t, root, "opt/notes/state/app.db", string(sqliteDatabase(1)))

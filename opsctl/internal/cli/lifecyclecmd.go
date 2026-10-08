@@ -8,11 +8,8 @@ import (
 	"strings"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
-	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
-	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
-	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
 const restartUsage = `Usage: opsctl restart APP
@@ -28,40 +25,9 @@ its socket if it was stopped. A disabled app is not started: it stays
 disabled until 'opsctl enable'.
 `
 
-const uninstallUsage = `Usage: opsctl uninstall APP
-
-Take APP off the host: stop ikigenba-APP.socket and ikigenba-APP.service,
-socket first so no request starts the service again, disable both, remove
-both units (which ends a disabled APP's disabled state: a later install is a
-first install and comes up enabled), then remove /opt/APP/,
-/etc/opt/ikigenba/APP/ with its environment file, and
-/var/opt/ikigenba/APP/cache/. /var/opt/ikigenba/APP/state/ is kept untouched,
-so APP is still a service the host backs up, and a later install lands over
-its data, which every install leaves untouched. Removing state/ is a decision
-made by hand, never here.
-
-A state/ or cache/ still under /opt/APP/ is first moved to
-/var/opt/ikigenba/APP/, once APP is stopped, as 'opsctl install' moves it; a
-state/ in both places fails the uninstall with nothing removed.
-
-The nginx configuration, /var/lib/ikigenba/services.json, and
-/etc/litestream.yml are regenerated from every app left on the host, so APP's
-name stops answering, APP leaves the service launcher, and a database APP
-declared stops being replicated once litestream has shipped what it holds.
-
-The parameter /<host.name>/APP is not touched: it is devctl's.
-
-On a host that runs releases, one where /opt/ikigenba/current exists,
-uninstall refuses and changes nothing: an app leaves such a host when
-'opsctl activate' puts a release without it in place.
-
-Configuration keys:
-  host.name  the fully-qualified name this host answers at
-`
-
 func runLifecycleAction(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if isCommandHelp(args) {
-		usage := map[string]string{"restart": restartUsage, "uninstall": uninstallUsage,
+		usage := map[string]string{"restart": restartUsage,
 			"disable": disableUsage, "enable": enableUsage}[name]
 		return writeOut(stdout, usage)
 	}
@@ -77,126 +43,7 @@ func runLifecycleAction(name string, args []string, stdout, stderr io.Writer, de
 	if name == "restart" {
 		return runRestart(args[0], stdout, stderr, deps)
 	}
-	if name == "uninstall" {
-		if code := requirePerAppLayout(deps, stderr); code != exitOK {
-			return code
-		}
-		return runUninstall(args[0], stdout, stderr, deps)
-	}
 	return runEnablement(name, args[0], stdout, stderr, deps)
-}
-
-func runUninstall(app string, stdout, stderr io.Writer, deps Deps) exitCode {
-	if err := apps.ValidateName(app); err != nil {
-		failure := &apps.LifecycleError{
-			Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", diagnosticArg(app)), Cause: err,
-		}
-		writeDiagnostic(stderr, failure)
-		return exitUsage
-	}
-
-	store, hostName, apexApp, code := lifecycleHostConfig(deps, stderr)
-	if code != exitOK {
-		return code
-	}
-
-	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
-	reported := false
-	report := func(step, detail string, success bool) error {
-		reported = true
-		return writeInstallReport(stdout, step, detail, success)
-	}
-	err := apps.Uninstall(context.Background(), env, app, apps.UninstallHooks{
-		Report: report,
-		Configure: func(ctx context.Context, manifest apps.Manifest) error {
-			return configureUninstalledApp(ctx, env, store, hostName, apexApp, manifest, report)
-		},
-	})
-	if err == nil {
-		return exitOK
-	}
-
-	var failure *apps.LifecycleError
-	if !errors.As(err, &failure) {
-		writeDiagnostic(stderr, err)
-		return exitFail
-	}
-	if !reported {
-		writeDiagnostic(stderr, failure)
-		return exitCode(failure.Code)
-	}
-	writeDiagnostic(stderr, &apps.LifecycleError{Code: 1, Message: "uninstall failed", Cause: failure.Cause})
-	return exitFail
-}
-
-func configureUninstalledApp(
-	ctx context.Context,
-	env host.Env,
-	store config.Store,
-	hostName string,
-	apexApp string,
-	manifest apps.Manifest,
-	report func(string, string, bool) error,
-) error {
-	names := manifest.App + "." + hostName
-	if manifest.Default {
-		names += ", " + hostName
-	}
-	if manifest.App == apexApp {
-		apexName, err := host.Apex(hostName)
-		if err != nil {
-			return reportLifecycleConfigurationFailure(report, "nginx", err)
-		}
-		names += ", " + apexName
-	}
-	if err := nginx.Apply(ctx, env, hostName, apexApp); err != nil {
-		return reportLifecycleConfigurationFailure(report, "nginx", err)
-	}
-	if err := report("nginx", names+" removed", true); err != nil {
-		return err
-	}
-	changes, err := services.Write(ctx, env, hostName)
-	if err != nil {
-		return reportLifecycleConfigurationFailure(report, "services", err)
-	}
-	serviceDetail := "unchanged"
-	if change := changes.For(manifest.App); change != services.Unchanged {
-		serviceDetail = manifest.App + " " + string(change)
-	}
-	if err := report("services", serviceDetail, true); err != nil {
-		return err
-	}
-
-	changed, err := backup.Regenerate(ctx, env, store)
-	if err != nil {
-		return reportLifecycleConfigurationFailure(report, "litestream", err)
-	}
-	detail := "unchanged"
-	if changed {
-		detail = "updated"
-		if manifest.Database != nil {
-			detail = manifest.Database.Path + " removed"
-		}
-		if err := restartUninstallLitestream(ctx, env); err != nil {
-			return reportLifecycleConfigurationFailure(report, "litestream", err)
-		}
-	}
-	return report("litestream", detail, true)
-}
-
-func restartUninstallLitestream(ctx context.Context, env host.Env) error {
-	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"restart", "litestream.service"}})
-	if err != nil {
-		var commandErr *host.CommandError
-		if errors.As(err, &commandErr) {
-			return err
-		}
-		return &host.CommandError{Label: "restart litestream.service", Result: result, Err: err}
-	}
-	if result.ExitCode != 0 {
-		return &host.CommandError{Label: "restart litestream.service", Result: result}
-	}
-	return nil
 }
 
 func reportLifecycleConfigurationFailure(report func(string, string, bool) error, step string, cause error) error {
@@ -269,17 +116,4 @@ func lifecycleHostConfig(deps Deps, stderr io.Writer) (config.Store, string, str
 func writeLifecycleUsageError(stderr io.Writer, command, message string) exitCode {
 	_, _ = io.WriteString(stderr, "opsctl: "+message+"\n\nsee 'opsctl "+command+" --help' for usage\n")
 	return exitUsage
-}
-
-func requirePerAppLayout(deps Deps, stderr io.Writer) exitCode {
-	layout, err := apps.ReadLayout(deps.Root)
-	if err != nil {
-		writeDiagnostic(stderr, err)
-		return exitFail
-	}
-	if layout == apps.Released {
-		writeDiagnostic(stderr, errors.New("this host runs releases; deploy with 'opsctl activate'"))
-		return exitFail
-	}
-	return exitOK
 }

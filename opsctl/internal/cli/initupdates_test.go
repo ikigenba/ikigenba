@@ -140,7 +140,7 @@ type initReportWriter struct {
 func (w initReportWriter) Write(data []byte) (int, error) { return w.write(data) }
 
 func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
-	// R-V6KA-IG89
+	// R-SZWT-648Z
 	deps := initDeps(t, map[string]string{
 		dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZONE", "host.name": "HOST.Example.Com.",
 		"acme.email": "operator@example.com", "aws.region": "us-east-2", "backup.s3_uri": "s3://bucket/host/",

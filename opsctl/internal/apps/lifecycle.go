@@ -13,12 +13,6 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
-// UninstallHooks connects app removal to CLI-owned reporting and configuration.
-type UninstallHooks struct {
-	Report    func(step, detail string, success bool) error
-	Configure func(context.Context, Manifest) error
-}
-
 // StatusRow contains the observable host state of one service.
 type StatusRow struct {
 	Name        string
@@ -53,44 +47,7 @@ func (failure *LifecycleError) Error() string { return failure.Message }
 
 func (failure *LifecycleError) Unwrap() error { return failure.Cause }
 
-// Uninstall removes an installed app's executable configuration while keeping
-// its state for backup and a later installation.
-func Uninstall(ctx context.Context, env host.Env, app string, hooks UninstallHooks) error {
-	workflow, err := prepareUninstall(env, app, hooks)
-	if err != nil {
-		return err
-	}
-	return workflow.run(ctx)
-}
-
-type uninstallWorkflow struct {
-	env                host.Env
-	app                string
-	service            string
-	socket             string
-	hooks              UninstallHooks
-	manifest           Manifest
-	environmentPresent bool
-}
-
-func prepareUninstall(env host.Env, app string, hooks UninstallHooks) (*uninstallWorkflow, error) {
-	if err := ValidateName(app); err != nil {
-		return nil, &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
-	}
-	if hooks.Report == nil {
-		return nil, &LifecycleError{Code: 1, Message: "uninstall report hook not set", Cause: errors.New("callback is nil")}
-	}
-	if hooks.Configure == nil {
-		return nil, &LifecycleError{Code: 1, Message: "uninstall configure hook not set", Cause: errors.New("callback is nil")}
-	}
-	if env.Execute == nil {
-		return nil, &LifecycleError{Code: 1, Message: "uninstall failed", Cause: errors.New("host execution is not configured")}
-	}
-
-	return &uninstallWorkflow{env: env, app: app, hooks: hooks}, nil
-}
-
-func uninstallFiles(root, app string) (Manifest, error) {
+func lifecyclePrerequisites(root, app string) (Manifest, error) {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
 		return Manifest{}, &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
@@ -115,7 +72,7 @@ func uninstallFiles(root, app string) (Manifest, error) {
 	}
 	if !info.IsDir() {
 		err = errors.New("installed manifest parent is not a directory")
-		return Manifest{}, &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "service prerequisites failed", Cause: err}
 	}
 	info, err = filesystem.Lstat(path.Join(appPath, "etc", "manifest.toml"))
 	if err != nil {
@@ -123,7 +80,7 @@ func uninstallFiles(root, app string) (Manifest, error) {
 	}
 	if !info.Mode().IsRegular() {
 		err = errors.New("installed manifest is not a regular file")
-		return Manifest{}, &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "service prerequisites failed", Cause: err}
 	}
 	manifestData, err := filesystem.ReadFile(path.Join(appPath, "etc", "manifest.toml"))
 	if err != nil {
@@ -135,7 +92,7 @@ func uninstallFiles(root, app string) (Manifest, error) {
 	}
 	if manifest.App != app {
 		err = fmt.Errorf("manifest app %q does not match service directory %q", manifest.App, app)
-		return Manifest{}, &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "service prerequisites failed", Cause: err}
 	}
 	for _, unit := range []string{socketUnitName(app), appUnitName(app)} {
 		if _, err := filesystem.Lstat(path.Join("etc", "systemd", "system", unit)); err != nil {
@@ -149,176 +106,6 @@ func uninstallFiles(root, app string) (Manifest, error) {
 }
 
 func socketUnitName(app string) string { return "ikigenba-" + app + ".socket" }
-
-func uninstallUnitActive(ctx context.Context, env host.Env, unit string) (bool, error) {
-	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", unit}})
-	if err != nil {
-		cause := commandTransportError(fmt.Sprintf("%s state", safeDiagnosticToken(unit)), err)
-		return false, &LifecycleError{Code: 1, Message: "inspect service failed", Cause: cause}
-	}
-	switch result.ExitCode {
-	case 0:
-		return true, nil
-	case 3, 4:
-		return false, nil
-	default:
-		cause := &host.CommandError{Label: fmt.Sprintf("%s state", safeDiagnosticToken(unit)), Result: result}
-		return false, &LifecycleError{Code: 1, Message: "inspect service failed", Cause: cause}
-	}
-}
-
-func (workflow *uninstallWorkflow) run(ctx context.Context) error {
-	if err := workflow.stop(ctx); err != nil {
-		return err
-	}
-	if err := workflow.data(ctx); err != nil {
-		return err
-	}
-	if err := workflow.removeUnit(ctx); err != nil {
-		return err
-	}
-	if err := workflow.removeFiles(); err != nil {
-		return err
-	}
-	if err := workflow.hooks.Configure(ctx, workflow.manifest); err != nil {
-		return &LifecycleError{Code: 1, Message: "uninstall failed", Cause: err}
-	}
-	return nil
-}
-
-func (workflow *uninstallWorkflow) stop(ctx context.Context) error {
-	manifest, err := uninstallFiles(workflow.env.Root, workflow.app)
-	if err != nil {
-		return workflow.failPrerequisite(err)
-	}
-	workflow.manifest = manifest
-	filesystem, err := os.OpenRoot(workflow.env.Root)
-	if err != nil {
-		return workflow.fail("stop", err)
-	}
-	_, envErr := filesystem.Lstat(path.Join(strings.TrimPrefix(EnvRoot, "/"), workflow.app))
-	closeErr := filesystem.Close()
-	if envErr != nil && !errors.Is(envErr, os.ErrNotExist) {
-		return workflow.fail("stop", envErr)
-	}
-	if closeErr != nil {
-		return workflow.fail("stop", closeErr)
-	}
-	workflow.environmentPresent = envErr == nil
-	workflow.service, workflow.socket = appUnitName(workflow.app), socketUnitName(workflow.app)
-	socketActive, err := uninstallUnitActive(ctx, workflow.env, workflow.socket)
-	if err != nil {
-		return workflow.fail("stop", err)
-	}
-	serviceActive, err := uninstallUnitActive(ctx, workflow.env, workflow.service)
-	if err != nil {
-		return workflow.fail("stop", err)
-	}
-	for _, unit := range []string{workflow.socket, workflow.service} {
-		if err := executeInstallCommand(ctx, workflow.env, "stop "+safeDiagnosticToken(unit), host.Command{Name: "systemctl", Args: []string{"stop", unit}}); err != nil {
-			return workflow.fail("stop", err)
-		}
-	}
-	if err := executeInstallCommand(ctx, workflow.env, "disable app units", host.Command{
-		Name: "systemctl", Args: []string{"disable", workflow.socket, workflow.service},
-	}); err != nil {
-		return workflow.fail("stop", err)
-	}
-	detail := safeDiagnosticToken(workflow.socket) + ", " + safeDiagnosticToken(workflow.service) + " already inactive, disabled"
-	if socketActive || serviceActive {
-		detail = safeDiagnosticToken(workflow.socket) + ", " + safeDiagnosticToken(workflow.service) + " stopped, disabled"
-	}
-	return workflow.report("stop", detail)
-}
-
-func (workflow *uninstallWorkflow) failPrerequisite(err error) error {
-	var failure *LifecycleError
-	message := err.Error()
-	if errors.As(err, &failure) {
-		message = failure.Message
-	}
-	if reportErr := workflow.hooks.Report("stop", message, false); reportErr != nil {
-		return &LifecycleError{Code: 1, Message: message, Cause: errors.Join(err, reportErr)}
-	}
-	return err
-}
-
-func (workflow *uninstallWorkflow) removeUnit(ctx context.Context) error {
-	filesystem, err := os.OpenRoot(workflow.env.Root)
-	if err == nil {
-		for _, unit := range []string{workflow.socket, workflow.service} {
-			if err = filesystem.Remove(path.Join("etc", "systemd", "system", unit)); err != nil {
-				break
-			}
-		}
-		err = errors.Join(err, filesystem.Close())
-	}
-	if err != nil {
-		return workflow.fail("unit", err)
-	}
-	if err := executeInstallCommand(ctx, workflow.env, "reload systemd units", host.Command{
-		Name: "systemctl", Args: []string{"daemon-reload"},
-	}); err != nil {
-		return workflow.fail("unit", err)
-	}
-	return workflow.report("unit", "removed "+safeDiagnosticToken(workflow.socket)+", "+safeDiagnosticToken(workflow.service))
-}
-
-func (workflow *uninstallWorkflow) data(ctx context.Context) error {
-	plan, err := InspectData(workflow.env.Root, workflow.app)
-	if err != nil {
-		return workflow.fail("data", err)
-	}
-	if !plan.Changes() {
-		return nil
-	}
-	if plan.Moves() {
-		if err := EnsureDataDirectory(ctx, workflow.env, workflow.app); err != nil {
-			return workflow.fail("data", err)
-		}
-	}
-	if err := ApplyData(workflow.env.Root, workflow.app, plan); err != nil {
-		return workflow.fail("data", err)
-	}
-	return workflow.report("data", plan.Detail(workflow.app))
-}
-
-func (workflow *uninstallWorkflow) removeFiles() error {
-	filesystem, err := os.OpenRoot(workflow.env.Root)
-	if err == nil {
-		for _, directory := range []string{path.Join("opt", workflow.app), path.Join(strings.TrimPrefix(EnvRoot, "/"), workflow.app), path.Join(strings.TrimPrefix(DataRoot, "/"), workflow.app, "cache")} {
-			if removeErr := filesystem.RemoveAll(directory); removeErr != nil {
-				err = removeErr
-				break
-			}
-		}
-		err = errors.Join(err, filesystem.Close())
-	}
-	if err != nil {
-		return workflow.fail("files", err)
-	}
-	app := safeDiagnosticToken(workflow.app)
-	removed := "/opt/" + app
-	if workflow.environmentPresent {
-		removed = "/opt/" + app + ", " + EnvRoot + "/" + app
-	}
-	return workflow.report("files", fmt.Sprintf("removed %s, /var/opt/ikigenba/%s/cache; kept /var/opt/ikigenba/%s/state", removed, app, app))
-}
-
-func (workflow *uninstallWorkflow) report(step, detail string) error {
-	if err := workflow.hooks.Report(step, detail, true); err != nil {
-		return &LifecycleError{Code: 1, Message: "uninstall failed", Cause: err}
-	}
-	return nil
-}
-
-func (workflow *uninstallWorkflow) fail(step string, cause error) error {
-	reportErr := workflow.hooks.Report(step, cause.Error(), false)
-	if reportErr != nil {
-		cause = errors.Join(cause, reportErr)
-	}
-	return &LifecycleError{Code: 1, Message: "uninstall failed", Cause: cause}
-}
 
 func unitProperties(ctx context.Context, env host.Env, unit string, names ...string) (map[string]string, error) {
 	args := []string{"show"}
@@ -358,8 +145,6 @@ func Disabled(ctx context.Context, env host.Env, app string) (bool, error) {
 	return properties["LoadState"] == "loaded" && properties["UnitFileState"] == "disabled", nil
 }
 
-func lifecyclePrerequisites(root, app string) (Manifest, error) { return uninstallFiles(root, app) }
-
 func lifecycleHookError(action string) error {
 	return &LifecycleError{Code: 1, Message: action + " hooks not set", Cause: errors.New("callback is nil")}
 }
@@ -397,7 +182,7 @@ func lifecycleUnitStates(ctx context.Context, env host.Env, app string) ([2]map[
 }
 
 func lifecycleCommand(ctx context.Context, env host.Env, args ...string) error {
-	return executeInstallCommand(ctx, env, strings.Join(args, " "), host.Command{Name: "systemctl", Args: args})
+	return executeAppCommand(ctx, env, strings.Join(args, " "), host.Command{Name: "systemctl", Args: args})
 }
 
 // Disable stops and disables both units before routing is reconfigured.
@@ -540,7 +325,7 @@ func Restart(ctx context.Context, env host.Env, app string) (ServiceReport, erro
 
 func restartInstalledUnit(ctx context.Context, env host.Env, app string) error {
 	unit := appUnitName(app)
-	if err := executeInstallCommand(ctx, env, fmt.Sprintf("restart %s", safeDiagnosticToken(unit)), host.Command{
+	if err := executeAppCommand(ctx, env, fmt.Sprintf("restart %s", safeDiagnosticToken(unit)), host.Command{
 		Name: "systemctl", Args: []string{"restart", unit},
 	}); err != nil {
 		return restartStartFailure(ctx, env, app, unit, err)

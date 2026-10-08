@@ -60,7 +60,7 @@ func runEnablement(action, app string, stdout, stderr io.Writer, deps Deps) exit
 	reported := false
 	report := func(step, detail string, success bool) error {
 		reported = true
-		return writeInstallReport(stdout, step, detail, success)
+		return writeStepReport(stdout, step, detail, success)
 	}
 	hooks := apps.LifecycleHooks{
 		Report: report,

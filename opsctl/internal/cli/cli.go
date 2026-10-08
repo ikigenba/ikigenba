@@ -43,7 +43,6 @@ Commands:
   enable    let a disabled app start again, and start it
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
-  install   install an app from a built file
   nginx     generate the platform's nginx configuration
   restart   restart an installed app's service
   restore   restore a service from its backups
@@ -52,7 +51,6 @@ Commands:
   services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
   status    print every service, its release and its state
-  uninstall take an app off the host, keeping its data
   version   print the release this opsctl belongs to
 
 Options:
@@ -249,11 +247,9 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 		return runDNS(args, stdout, stderr, deps)
 	case "init":
 		return runInit(args, stdout, stderr, deps)
-	case "install":
-		return runInstall(args, stdout, stderr, deps)
 	case "nginx":
 		return runNginx(args, stdout, stderr, deps)
-	case "restart", "uninstall", "disable", "enable":
+	case "restart", "disable", "enable":
 		return runLifecycleAction(name, args, stdout, stderr, deps)
 	case "status":
 		return runStatus(args, stdout, stderr, deps)

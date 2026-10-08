@@ -36,7 +36,7 @@ func releaseLifecycleRoot(t *testing.T, label string) (string, string) {
 }
 
 func TestReleasedLifecycleUsesReleaseIdentityAndPreservesFiles(t *testing.T) {
-	// R-GO3R-M73B R-GPBN-ZYU0 R-F58A-EIQ2 R-EXWW-3W9W R-F40E-0QZD
+	// R-GO3R-M73B R-GPBN-ZYU0 R-F58A-EIQ2 R-TGZE-IWMP R-TI7A-WODE
 	for _, action := range []string{"restart", "disable", "enable", "disabled restart"} {
 		t.Run(action, func(t *testing.T) {
 			root, sha := releaseLifecycleRoot(t, "candidate")
@@ -92,7 +92,7 @@ func TestReleasedLifecycleUsesReleaseIdentityAndPreservesFiles(t *testing.T) {
 }
 
 func TestReleasedLifecycleDataOnlyAndLayoutErrorsBeforeCommands(t *testing.T) {
-	// R-EMXS-NYLN R-F40E-0QZD
+	// R-TDBP-DLEM R-TI7A-WODE
 	for _, action := range []string{"restart", "disable", "enable"} {
 		for _, condition := range []string{"data only", "not service", "broken current", "missing binary", "missing manifest", "missing unit"} {
 			t.Run(action+" "+condition, func(t *testing.T) {

@@ -278,7 +278,7 @@ func TestActivateConfigurationInert(t *testing.T) {
 	}
 }
 func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
-	// R-SJ12-ASZT R-B3X7-XNXZ R-BDOE-ZTVJ R-BIK0-IWUB R-BKZT-AGBP R-SU05-QQO2 R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-BYEP-HXHC
+	// R-SJ12-ASZT R-B3X7-XNXZ R-BDOE-ZTVJ R-BIK0-IWUB R-BKZT-AGBP R-TWU3-HX9Q R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-BYEP-HXHC
 	f := newTransitionFixture(t)
 	f.addRelease(transitionOld, "dropped")
 	f.link("current", transitionOld)
@@ -353,7 +353,7 @@ func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
 }
 
 func TestActivatePrewriteStepsLeaveHostUntouched(t *testing.T) {
-	// R-SK8Y-OKQI R-BB8M-8AE5 R-BCGI-M24U R-SQCG-LFFZ R-BX6T-45QN
+	// R-SK8Y-OKQI R-CUKM-FZ8E R-BCGI-M24U R-TVM7-45J1 R-BX6T-45QN
 	for _, tc := range []struct {
 		name, step, reason string
 		setup              func(*transitionFixture)
@@ -464,7 +464,7 @@ func TestActivateCoreFirstDisabledAndServiceFailure(t *testing.T) {
 	}
 }
 func TestActivateCutoverAndSnapshotFailure(t *testing.T) {
-	// R-SRKC-Z76O R-BHC4-553M R-B3X7-XNXZ R-BB8M-8AE5
+	// R-SRKC-Z76O R-BHC4-553M R-B3X7-XNXZ R-CUKM-FZ8E
 	for _, failSnapshot := range []bool{false, true} {
 		t.Run(fmt.Sprint(failSnapshot), func(t *testing.T) {
 			f := newTransitionFixture(t)
@@ -504,7 +504,7 @@ func TestActivateCutoverAndSnapshotFailure(t *testing.T) {
 }
 
 func TestActivateNewDataModesAndDroppedFailure(t *testing.T) {
-	// R-SU05-QQO2 R-SJ12-ASZT R-BX6T-45QN R-BYEP-HXHC
+	// R-TWU3-HX9Q R-SJ12-ASZT R-BX6T-45QN R-BYEP-HXHC
 	f := newTransitionFixture(t)
 	f.addRelease(transitionOld, "dropped")
 	f.link("current", transitionOld)
@@ -537,7 +537,7 @@ func TestActivateNewDataModesAndDroppedFailure(t *testing.T) {
 	}
 }
 func TestActivateLayoutGuardsAndDefaultOrder(t *testing.T) {
-	// R-BB8M-8AE5 R-BCGI-M24U
+	// R-CUKM-FZ8E R-BCGI-M24U
 	for _, fault := range []string{"invalid current", "unmoved state", "unmoved env", "duplicate default"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newTransitionFixture(t)
@@ -550,9 +550,9 @@ func TestActivateLayoutGuardsAndDefaultOrder(t *testing.T) {
 				f.write("opt/legacy/etc/manifest.toml", "app='legacy'", 0o644)
 				if fault == "unmoved state" {
 					f.write("opt/legacy/state/file", "x", 0o600)
-					want = "layout: failed: legacy: /opt/legacy/state has not moved; install legacy first\n"
+					want = "layout: failed: legacy: /opt/legacy/state has not moved\n"
 				} else {
-					want = "layout: failed: legacy: /opt/legacy/etc/env has not moved; install legacy first\n"
+					want = "layout: failed: legacy: /opt/legacy/etc/env has not moved\n"
 				}
 			case "duplicate default":
 				f.addRelease(transitionSHA, "alpha")

@@ -20,7 +20,7 @@ import (
 )
 
 func TestRestoreInstalledIdentityAndFaultPrecedeMigrationAndCloud(t *testing.T) {
-	// R-FUU6-FPAN R-FMVM-I2DD
+	// R-COH4-J4IX R-FMVM-I2DD
 	for _, tc := range []struct {
 		name, manifest       string
 		binary, manifestFile bool
@@ -59,7 +59,7 @@ func TestRestoreInstalledIdentityAndFaultPrecedeMigrationAndCloud(t *testing.T) 
 					used = true
 					return nil, errors.New("unexpected cloud")
 				}}, store, "notes", nil, from, nil, func(context.Context) error { used = true; return nil })
-				want := "notes is not installed; install notes first"
+				want := "notes is not installed"
 				if tc.fault {
 					_, fault := apps.ParseManifest([]byte(tc.manifest))
 					if fault == nil {
@@ -77,7 +77,7 @@ func TestRestoreInstalledIdentityAndFaultPrecedeMigrationAndCloud(t *testing.T) 
 }
 
 func TestRestoreMissingMigratedEnvironmentEntryIsInert(t *testing.T) {
-	// R-FX9Z-78S1
+	// R-CQWX-AO0B
 	for _, legacyEnv := range []bool{false, true} {
 		for _, from := range []string{"", "s3://elsewhere/snapshot"} {
 			t.Run(from+map[bool]string{false: "absent old env", true: "old env"}[legacyEnv], func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestRestoreMissingMigratedEnvironmentEntryIsInert(t *testing.T) {
 				used := false
 				report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) { used = true; return host.Result{}, nil }}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { used = true; return nil, nil }}, store, "notes", nil, from, nil, func(context.Context) error { used = true; return nil })
 				var failure *backup.RestoreError
-				if !errors.As(err, &failure) || failure.Stage != "source" || len(failure.Stopped) != 0 || len(report.Steps) != 1 || report.Steps[0].Err == nil || report.Steps[0].Err.Error() != "/opt/notes/etc/env has not moved; install notes first" || used || !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
+				if !errors.As(err, &failure) || failure.Stage != "source" || len(failure.Stopped) != 0 || len(report.Steps) != 1 || report.Steps[0].Err == nil || report.Steps[0].Err.Error() != "/opt/notes/etc/env has not moved" || used || !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
 					t.Fatalf("environment preflight: %+v %v used=%v", report, err, used)
 				}
 			})
@@ -101,7 +101,7 @@ func TestRestoreMissingMigratedEnvironmentEntryIsInert(t *testing.T) {
 }
 
 func TestRestoreMigratedEnvSymlinkAndOldCacheAreAcceptedWithoutFollowing(t *testing.T) {
-	// R-FX9Z-78S1 R-FUU6-FPAN R-FQJB-NDLG
+	// R-CQWX-AO0B R-COH4-J4IX R-FQJB-NDLG
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -144,7 +144,7 @@ func TestRestoreMigratedEnvSymlinkAndOldCacheAreAcceptedWithoutFollowing(t *test
 }
 
 func TestRestoreEnvironmentPublicationReplacesOnlySelectedFileWithoutChown(t *testing.T) {
-	// R-G9GZ-0Y6Z R-G9GZ-0Y6Z R-G892-N6GA R-G892-N6GA
+	// R-TPIP-7ATK R-TPIP-7ATK R-TOAS-TJ2V R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)

@@ -16,7 +16,7 @@ import (
 )
 
 func TestEnablementConfigurationPrecedesHostEffects(t *testing.T) {
-	// R-W3YP-OUID
+	// R-W3YP-OUID R-TFRI-54W0
 	for _, action := range []string{"disable", "enable"} {
 		t.Run(action+" missing host", func(t *testing.T) {
 			root := t.TempDir()
@@ -225,7 +225,7 @@ func TestEnablementReportWriteFailureOccursOnce(t *testing.T) {
 }
 
 func TestEnablementServicesFailureStopsBeforeService(t *testing.T) {
-	// R-YW0G-MOM3 R-YYG9-E83H
+	// R-TJF7-AG43 R-YYG9-E83H
 	root := enablementFailureRoot(t)
 	var commands []host.Command
 	stdout, stderr, code := invoke([]string{"enable", "notes"}, cli.Deps{Root: root, EUID: 0,
@@ -278,7 +278,7 @@ func enablementFailureRoot(t *testing.T) string {
 }
 
 func TestEnablementStagesAndIdempotence(t *testing.T) {
-	// R-YW0G-MOM3 R-YYG9-E83H R-F6G6-SAGR
+	// R-TJF7-AG43 R-YYG9-E83H R-TKN3-O7US
 	root := t.TempDir()
 	store := config.Store{Root: root}
 	for key, value := range map[string]string{"host.name": "SBX.Example.Test.", "host.apex": "notes"} {
@@ -451,7 +451,7 @@ func TestEnablementStagesAndIdempotence(t *testing.T) {
 }
 
 func TestDisableAuthRefusalPrecedesConfiguration(t *testing.T) {
-	// R-W3YP-OUID R-VRRP-V53F
+	// R-W3YP-OUID R-TEJL-RD5B
 	root := t.TempDir()
 	configPath := filepath.Join(root, "etc/ikigenba/config.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o750); err != nil {
@@ -482,7 +482,7 @@ func TestEnablementRejectsInvalidNameBeforeConfiguration(t *testing.T) {
 }
 
 func TestReleasedEnablementPreservesReleaseAndPublishesRuntimeServices(t *testing.T) {
-	// R-GPBN-ZYU0 R-F6G6-SAGR
+	// R-GPBN-ZYU0 R-TKN3-O7US
 	root, sha := cliReleasedRoot(t, "candidate")
 	if err := (config.Store{Root: root}).Set("host.name", "sbx.example.test"); err != nil {
 		t.Fatal(err)

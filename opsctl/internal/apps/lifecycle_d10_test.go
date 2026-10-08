@@ -112,7 +112,7 @@ func (model *lifecycleModel) hooks() apps.LifecycleHooks {
 }
 
 func TestLifecycleDomainAPIsAndNameValidation(t *testing.T) {
-	// R-V71F-D1HM R-EMXS-NYLN
+	// R-V71F-D1HM R-TDBP-DLEM
 	for _, operation := range []func(context.Context, host.Env, string, apps.LifecycleHooks) error{apps.Disable, apps.Enable} {
 		called := false
 		err := operation(context.Background(), host.Env{Root: "/missing", Execute: func(context.Context, host.Command) (host.Result, error) { called = true; return host.Result{}, nil }}, "../bad", apps.LifecycleHooks{})
@@ -157,7 +157,7 @@ func TestDisabledReadsOnlySocketEnablement(t *testing.T) {
 }
 
 func TestDisableAuthRefusalPrecedesHostAccess(t *testing.T) {
-	// R-F40E-0QZD
+	// R-TI7A-WODE
 	called := false
 	var reports []uninstallReport
 	err := apps.Disable(context.Background(), host.Env{Root: "/missing", Execute: func(context.Context, host.Command) (host.Result, error) { called = true; return host.Result{}, nil }}, "auth", apps.LifecycleHooks{
@@ -256,44 +256,13 @@ func TestStatusSocketFieldRetainsDisabledAndIndependentFacts(t *testing.T) {
 	}
 }
 
-func TestUninstallRetainsStateOnlyDiscoveryWithoutCreatingState(t *testing.T) {
-	// R-EO5P-1QCC
-	for _, state := range []bool{false, true} {
-		fixture := newUninstallFixture(t, "inactive")
-		if state {
-			writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/state/data.db", "preserved")
-		}
-		if err := fixture.uninstall(); err != nil {
-			t.Fatal(err)
-		}
-		rows, err := apps.Status(context.Background(), host.Env{Root: fixture.root})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if state {
-			if !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "-", Label: "-", State: "-", Socket: "-", JournalMode: "-"}}) {
-				t.Fatalf("state-only rows=%#v", rows)
-			}
-			data, readErr := os.ReadFile(filepath.Join(fixture.root, "var/opt/ikigenba/notes/state/data.db"))
-			if readErr != nil || string(data) != "preserved" {
-				t.Fatalf("state changed %q,%v", data, readErr)
-			}
-		} else if len(rows) != 0 {
-			t.Fatalf("uninstall created discovered service: %#v", rows)
-		}
-	}
-}
-
 func TestAllLifecycleActionsRejectMissingAndUninstalledWithoutExecution(t *testing.T) {
-	// R-EMXS-NYLN
+	// R-TDBP-DLEM
 	type action struct {
 		name string
 		run  func(context.Context, host.Env, string) error
 	}
 	actions := []action{
-		{"uninstall", func(ctx context.Context, env host.Env, app string) error {
-			return apps.Uninstall(ctx, env, app, apps.UninstallHooks{Report: func(string, string, bool) error { return nil }, Configure: func(context.Context, apps.Manifest) error { return nil }})
-		}},
 		{"restart", func(ctx context.Context, env host.Env, app string) error {
 			_, err := apps.Restart(ctx, env, app)
 			return err
@@ -364,7 +333,7 @@ func TestEnableFailureReportsJournalAndLeavesEnabledUnits(t *testing.T) {
 }
 
 func TestDisableAndEnableFailAtFirstStageForMissingUnit(t *testing.T) {
-	// R-F40E-0QZD
+	// R-TI7A-WODE
 	for _, operation := range []struct {
 		name, step string
 		run        func(context.Context, host.Env, string, apps.LifecycleHooks) error
@@ -387,7 +356,7 @@ func TestDisableAndEnableFailAtFirstStageForMissingUnit(t *testing.T) {
 }
 
 func TestRestartDisabledKeepsBothUnitsDownAndReadsInstalledVersion(t *testing.T) {
-	// R-EXWW-3W9W
+	// R-TGZE-IWMP
 	root := lifecycleRoot(t)
 	model := &lifecycleModel{version: "v7.4", socketEnabled: false, serviceEnabled: false}
 	before := readRestartTree(t, root)
@@ -407,208 +376,10 @@ func TestRestartDisabledKeepsBothUnitsDownAndReadsInstalledVersion(t *testing.T)
 	}
 }
 
-func TestUninstallDataMovesBetweenStopAndUnitRemoval(t *testing.T) {
-	// R-F7O3-627G R-FBBS-BDFJ
-	for _, tc := range []struct {
-		name                   string
-		state, cache, newCache bool
-		want                   string
-	}{
-		{"both", true, true, false, "/var/opt/ikigenba/notes; moved /opt/notes/state, /opt/notes/cache"},
-		{"state", true, false, false, "/var/opt/ikigenba/notes; moved /opt/notes/state"},
-		{"cache", false, true, false, "/var/opt/ikigenba/notes; moved /opt/notes/cache"},
-		{"drop", false, true, true, "/var/opt/ikigenba/notes; dropped /opt/notes/cache"},
-		{"state-drop", true, true, true, "/var/opt/ikigenba/notes; moved /opt/notes/state; dropped /opt/notes/cache"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			fixture := newUninstallFixture(t, "active")
-			removeFixturePath(t, fixture.root, "var")
-			if tc.state {
-				writeFixturePath(t, fixture.root, "opt/notes/state/item", "saved")
-			}
-			if tc.cache {
-				writeFixturePath(t, fixture.root, "opt/notes/cache/item", "old cache")
-			}
-			if tc.newCache {
-				writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/cache/item", "new cache")
-			}
-			oldInfo, _ := os.Stat(filepath.Join(fixture.root, "opt/notes/state/item"))
-			fixture.observe = func(command host.Command) {
-				if len(fixture.reports) == 1 && fixture.reports[0].step == "stop" && command.Name == "systemctl" {
-					t.Fatalf("systemctl executed in data stage: %#v", command)
-				}
-			}
-			fixture.report = func(step, detail string, success bool) error {
-				fixture.reports = append(fixture.reports, uninstallReport{step, detail, success})
-				if step == "data" {
-					for _, name := range []string{"opt/notes/bin/notes", "etc/systemd/system/ikigenba-notes.socket", "etc/systemd/system/ikigenba-notes.service"} {
-						if _, err := os.Lstat(filepath.Join(fixture.root, name)); err != nil {
-							t.Fatalf("removed before data completed: %s: %v", name, err)
-						}
-					}
-					if tc.state {
-						newInfo, err := os.Stat(filepath.Join(fixture.root, "var/opt/ikigenba/notes/state/item"))
-						if err != nil || !os.SameFile(oldInfo, newInfo) {
-							t.Fatalf("state was not renamed whole: %v", err)
-						}
-					}
-				}
-				return nil
-			}
-			if err := fixture.uninstall(); err != nil {
-				t.Fatal(err)
-			}
-			if len(fixture.reports) != 4 || fixture.reports[1] != (uninstallReport{"data", tc.want, true}) || fixture.reports[2].step != "unit" || fixture.reports[3].step != "files" {
-				t.Fatalf("reports = %#v", fixture.reports)
-			}
-			if tc.state {
-				data, err := os.ReadFile(filepath.Join(fixture.root, "var/opt/ikigenba/notes/state/item"))
-				if err != nil || string(data) != "saved" {
-					t.Fatalf("retained state %q: %v", data, err)
-				}
-			}
-			if _, err := os.Lstat(filepath.Join(fixture.root, "opt/notes")); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("opt tree remains: %v", err)
-			}
-			if _, err := os.Lstat(filepath.Join(fixture.root, "var/opt/ikigenba/notes/cache")); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("cache remains: %v", err)
-			}
-			for _, command := range fixture.commands {
-				if command.Name == "chown" && !reflect.DeepEqual(command.Args, []string{"ikigenba:ikigenba", filepath.Join(fixture.root, apps.DataRoot, "notes")}) {
-					t.Fatalf("unrooted data owner command: %#v", command)
-				}
-			}
-		})
-	}
-}
-
-func TestUninstallDataConflictRetainsStoppedAppAndBothTrees(t *testing.T) {
-	// R-F7O3-627G R-FCJO-P568
-	fixture := newUninstallFixture(t, "active")
-	writeFixturePath(t, fixture.root, "opt/notes/state/item", "old")
-	writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/state/item", "new")
-	writeFixturePath(t, fixture.root, "opt/notes/cache/item", "old cache")
-	before := snapshotUninstallTree(t, fixture.root)
-	err := fixture.uninstall()
-	var failure *apps.LifecycleError
-	want := []uninstallReport{
-		{"stop", "ikigenba-notes.socket, ikigenba-notes.service stopped, disabled", true},
-		{"data", "/opt/notes/state and /var/opt/ikigenba/notes/state both exist", false},
-	}
-	if !errors.As(err, &failure) || failure.Code != 1 || !reflect.DeepEqual(fixture.reports, want) || fixture.configureCalls != 0 {
-		t.Fatalf("error %v, reports %#v", err, fixture.reports)
-	}
-	if after := snapshotUninstallTree(t, fixture.root); !reflect.DeepEqual(after, before) {
-		t.Fatalf("refusal changed files: %#v", after)
-	}
-	if len(fixture.commands) != 5 {
-		t.Fatalf("commands past stop: %#v", fixture.commands)
-	}
-	fixture.state = "inactive"
-	fixture.reports, fixture.commands = nil, nil
-	if err := fixture.uninstall(); err == nil || fixture.reports[0].detail != "ikigenba-notes.socket, ikigenba-notes.service already inactive, disabled" {
-		t.Fatalf("retry = %v reports %#v", err, fixture.reports)
-	}
-}
-
-func TestUninstallEmptyDataDoesNotCreateDataRoot(t *testing.T) {
-	// R-F7O3-627G
-	fixture := newUninstallFixture(t, "inactive")
-	removeFixturePath(t, fixture.root, "var")
-	if err := fixture.uninstall(); err != nil {
-		t.Fatal(err)
-	}
-	if len(fixture.reports) != 3 || fixture.reports[1].step != "unit" {
-		t.Fatalf("unexpected data outcome: %#v", fixture.reports)
-	}
-	if _, err := os.Lstat(filepath.Join(fixture.root, apps.DataRoot)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("data root created: %v", err)
-	}
-}
-
-func TestUninstallDataReportFailureStopsBeforeRemovingUnit(t *testing.T) {
-	// R-FBBS-BDFJ R-FCJO-P568
-	fixture := newUninstallFixture(t, "active")
-	writeFixturePath(t, fixture.root, "opt/notes/state/item", "saved")
-	failure := errors.New("data report unavailable")
-	fixture.report = func(step, detail string, success bool) error {
-		fixture.reports = append(fixture.reports, uninstallReport{step, detail, success})
-		if step == "data" {
-			return failure
-		}
-		return nil
-	}
-	if err := fixture.uninstall(); !errors.Is(err, failure) {
-		t.Fatalf("error = %v", err)
-	}
-	if len(fixture.reports) != 2 || fixture.configureCalls != 0 {
-		t.Fatalf("reports retried: %#v", fixture.reports)
-	}
-	for _, name := range []string{"opt/notes/bin/notes", "etc/systemd/system/ikigenba-notes.socket", "etc/systemd/system/ikigenba-notes.service", "var/opt/ikigenba/notes/state/item"} {
-		if _, err := os.Lstat(filepath.Join(fixture.root, name)); err != nil {
-			t.Fatalf("completed move or later unit lost: %s: %v", name, err)
-		}
-	}
-}
-
-func TestUninstallMigrationPreparesExistingDataDirectoryOnlyWhenMoving(t *testing.T) {
-	// R-F7O3-627G
-	for _, mode := range []string{"move", "drop", "unchanged"} {
-		t.Run(mode, func(t *testing.T) {
-			fixture := newUninstallFixture(t, "inactive")
-			directory := filepath.Join(fixture.root, apps.DataRoot, "notes")
-			removeFixturePath(t, fixture.root, "var/opt/ikigenba/notes")
-			if err := os.Mkdir(directory, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/cache/item", "new cache")
-			var original os.FileInfo
-			if mode == "move" {
-				writeFixturePath(t, fixture.root, "opt/notes/state/item", "preserved")
-				if err := os.Chmod(filepath.Join(fixture.root, "opt/notes/state/item"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				var err error
-				original, err = os.Stat(filepath.Join(fixture.root, "opt/notes/state/item"))
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			if mode == "drop" {
-				writeFixturePath(t, fixture.root, "opt/notes/cache/item", "old cache")
-			}
-			if err := fixture.uninstall(); err != nil {
-				t.Fatal(err)
-			}
-			info, err := os.Lstat(directory)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var chowns []host.Command
-			for _, command := range fixture.commands {
-				if command.Name == "chown" {
-					chowns = append(chowns, command)
-				}
-			}
-			if mode == "move" {
-				if info.Mode().Perm() != 0o700 || len(chowns) != 0 {
-					t.Fatalf("data mode=%o chowns=%#v", info.Mode().Perm(), chowns)
-				}
-				moved, err := os.Stat(filepath.Join(directory, "state/item"))
-				if err != nil || !os.SameFile(original, moved) || moved.Mode() != original.Mode() || !moved.ModTime().Equal(original.ModTime()) {
-					t.Fatalf("moved metadata changed: %v", err)
-				}
-			} else if info.Mode().Perm() != 0o700 || len(chowns) != 0 {
-				t.Fatalf("no move normalized data directory: mode=%o chowns=%#v", info.Mode().Perm(), chowns)
-			}
-		})
-	}
-}
-
 func TestLifecycleRejectsSymlinkServiceParentsBeforeExecution(t *testing.T) {
-	// R-EMXS-NYLN
+	// R-TDBP-DLEM
 	for _, parent := range []string{"opt", "var/opt/ikigenba"} {
-		for _, action := range []string{"uninstall", "restart", "disable", "enable"} {
+		for _, action := range []string{"restart", "disable", "enable"} {
 			t.Run(parent+"/"+action, func(t *testing.T) {
 				root := t.TempDir()
 				writeFixturePath(t, root, "opt/actual/bin/notes", "binary")
@@ -628,8 +399,6 @@ func TestLifecycleRejectsSymlinkServiceParentsBeforeExecution(t *testing.T) {
 				switch action {
 				case "restart":
 					_, err = apps.Restart(context.Background(), env, "notes")
-				case "uninstall":
-					err = apps.Uninstall(context.Background(), env, "notes", apps.UninstallHooks(hooks))
 				case "disable":
 					err = apps.Disable(context.Background(), env, "notes", hooks)
 				case "enable":
@@ -651,7 +420,7 @@ func TestLifecycleRejectsSymlinkServiceParentsBeforeExecution(t *testing.T) {
 }
 
 func TestLifecycleServiceCriterionAcceptsAlternateRealParent(t *testing.T) {
-	// R-EMXS-NYLN
+	// R-TDBP-DLEM
 	for _, symlinkParent := range []string{"opt", "var/opt/ikigenba"} {
 		root := t.TempDir()
 		writeFixturePath(t, root, "actual/marker", "untouched")
@@ -675,6 +444,41 @@ func TestLifecycleServiceCriterionAcceptsAlternateRealParent(t *testing.T) {
 		var failure *apps.LifecycleError
 		if !errors.As(err, &failure) || failure.Message != "notes is not installed" || called {
 			t.Fatalf("alternate real service = %v, executed=%t", err, called)
+		}
+	}
+}
+
+// R-TFRI-54W0
+func TestLifecyclePreliminaryAndReportedActionFailures(t *testing.T) {
+	actionErr, reportErr := errors.New("action failed"), errors.New("report failed")
+	for _, action := range []string{"disable", "enable"} {
+		root := lifecycleRoot(t)
+		reports := 0
+		commands := 0
+		hooks := apps.LifecycleHooks{Report: func(_, _ string, success bool) error {
+			reports++
+			if success {
+				t.Fatal("action failure reported success")
+			}
+			return reportErr
+		}, Configure: func(context.Context, apps.Manifest) error { t.Fatal("configuration after action failure"); return nil }}
+		env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) { commands++; return host.Result{}, actionErr }}
+		run := apps.Disable
+		if action == "enable" {
+			run = apps.Enable
+		}
+		err := run(t.Context(), env, "bad/name", hooks)
+		if err == nil || reports != 0 || commands != 0 {
+			t.Fatalf("preliminary failure %v reports %d commands %d", err, reports, commands)
+		}
+		err = run(t.Context(), env, "notes", apps.LifecycleHooks{})
+		if err == nil || reports != 0 || commands != 0 {
+			t.Fatalf("missing hooks %v reports %d commands %d", err, reports, commands)
+		}
+		err = run(t.Context(), env, "notes", hooks)
+		var failure *apps.LifecycleError
+		if !errors.As(err, &failure) || !errors.Is(failure.Cause, actionErr) || !errors.Is(failure.Cause, reportErr) || reports != 1 || commands != 1 {
+			t.Fatalf("action failure %v reports %d commands %d", err, reports, commands)
 		}
 	}
 }

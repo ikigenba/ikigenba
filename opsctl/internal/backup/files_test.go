@@ -103,7 +103,7 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 }
 
 func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
-	// R-FHFA-8850 R-FG7D-UGEB R-DE0V-MEV8 R-Z9DH-5EZK
+	// R-FHFA-8850 R-D1W0-QLOK R-DE0V-MEV8 R-Z9DH-5EZK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o640)
@@ -859,7 +859,7 @@ func fileTreeSnapshot(t *testing.T, root string) []string {
 }
 
 func TestBackupRejectsUnmovedStateBeforeReadsAndContinues(t *testing.T) {
-	// R-L8E4-FXJO
+	// R-CN98-5CS8
 	for _, kind := range []string{"directory", "file", "symlink"} {
 		for _, snapshot := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/snapshot=%t", kind, snapshot), func(t *testing.T) {
@@ -885,7 +885,7 @@ func TestBackupRejectsUnmovedStateBeforeReadsAndContinues(t *testing.T) {
 				executor := &fileExecutor{unmapped: true}
 				client := newFileCloud()
 				env := fileHostEnv(root, executor.execute)
-				want := "/opt/alpha/state has not moved; install alpha first"
+				want := "/opt/alpha/state has not moved"
 				if snapshot {
 					got, err := backup.Snapshot(context.Background(), env, cloud.Env{Open: client.open}, store, "")
 					if err != nil || len(got) != 2 || got[0].Err == nil || got[0].Err.Error() != want || got[1].Err != nil {
@@ -942,7 +942,7 @@ func TestFilesCanonicalReadFailure(t *testing.T) {
 }
 
 func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
-	// R-FHFA-8850 R-LZI2-5ZA3
+	// R-FHFA-8850 R-DGIT-BUKW
 	for _, location := range []struct{ parent, marker, alternate, alternateMarker string }{
 		{"opt", "etc", "var/opt/ikigenba", "state"},
 		{"var/opt/ikigenba", "state", "opt", "etc"},
@@ -997,7 +997,7 @@ func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
 }
 
 func TestReleasedBackupSelectionIgnoresPerAppEntries(t *testing.T) {
-	// R-FHFA-8850 R-L8E4-FXJO R-LZI2-5ZA3 R-FG7D-UGEB R-LYA5-S7JE
+	// R-FHFA-8850 R-CN98-5CS8 R-DGIT-BUKW R-D1W0-QLOK R-D33X-4DF9
 	for _, snapshot := range []bool{false, true} {
 		t.Run(fmt.Sprintf("snapshot=%t", snapshot), func(t *testing.T) {
 			root := t.TempDir()
@@ -1043,7 +1043,7 @@ func TestReleasedBackupSelectionIgnoresPerAppEntries(t *testing.T) {
 }
 
 func TestExplicitBackupIgnoresIkigenbaPackageDirectory(t *testing.T) {
-	// R-FHFA-8850 R-LZI2-5ZA3
+	// R-FHFA-8850 R-DGIT-BUKW
 	for _, snapshot := range []bool{false, true} {
 		for _, state := range []bool{false, true} {
 			t.Run(fmt.Sprintf("snapshot=%t/state=%t", snapshot, state), func(t *testing.T) {

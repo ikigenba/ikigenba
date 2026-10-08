@@ -24,64 +24,8 @@ func expectedResourceService(root string, stop int64, resourceLines string) stri
 		"[Install]\nWantedBy=multi-user.target\n"
 }
 
-func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
-	// R-DR8E-PXBL R-EKHZ-WF49
-	for _, test := range []struct{ name, table, lines string }{
-		{"absent", "", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
-		{"empty", "[resources]\n", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
-		{"memory", "[resources]\nmemory_max = '512M'\n", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=536870912\nEnvironment=GOMEMLIMIT=402653184\n"},
-		{"cpu", "[resources]\ncpu_weight = 1\n", "Slice=ikigenba-apps.slice\nCPUWeight=1\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
-		{"core", "[resources]\nslice = 'core'\nmemory_max = '256M'\n", "Slice=ikigenba-core.slice\nCPUWeight=100\nMemoryMax=268435456\nMemoryLow=32M\nEnvironment=GOMEMLIMIT=201326592\n"},
-		{"all", "[resources]\nslice = 'core'\nmemory_max = '512M'\ngo_memory_limit = '400M'\ncpu_weight = 200\ndelegate = true\noom_policy = 'continue'\n", "Slice=ikigenba-core.slice\nCPUWeight=200\nMemoryMax=536870912\nMemoryLow=32M\nEnvironment=GOMEMLIMIT=419430400\nDelegate=yes\nOOMPolicy=continue\n"},
-	} {
-		for _, mode := range []string{"fresh", "installed", "disabled"} {
-			t.Run(test.name+"/"+mode, func(t *testing.T) {
-				root := t.TempDir()
-				fixture := newCompletedInstallFixture(t, root, mode == "installed")
-				fixture.disabled = mode == "disabled"
-				fixture.archive = validInstallTar(t, "app = 'notes'\n"+test.table)
-				installStoreAt(t, root, map[string]string{"apps.drain_seconds": "0007", "apps.stop_seconds": "00019"})
-				servicePath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
-				socketPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket")
-				if mode != "fresh" {
-					writeFixture(t, servicePath, []byte("stale service\nCPUWeight=999\nKillMode=process\n"), 0o644)
-					writeFixture(t, socketPath, []byte("stale socket\nMemoryMax=1\n"), 0o644)
-					writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "manifest.toml"), []byte("app = 'notes'\n"), 0o640)
-					writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "notes"), []byte("binary"), 0o750)
-				}
-				if err := fixture.run(); err != nil {
-					t.Fatal(err)
-				}
-				wantSocket := "[Unit]\nDescription=Ikigenba notes socket\n\n[Socket]\nListenStream=" + filepath.Join(root, "run", "ikigenba", "notes.sock") +
-					"\nSocketUser=ikigenba\nSocketGroup=nginx\nSocketMode=0660\nRemoveOnStop=yes\nBacklog=4096\n\n[Install]\nWantedBy=sockets.target\n"
-				assertFile(t, socketPath, wantSocket)
-				assertFile(t, servicePath, expectedResourceService(root, 19, test.lines))
-				// Allowlisting every published directive also rejects resource controls
-				// outside the three optional limits and cgroup default overrides.
-				for _, unit := range []struct {
-					path    string
-					allowed map[string]bool
-				}{
-					{servicePath, map[string]bool{"Description": true, "Requires": true, "After": true, "Type": true, "ExecStart": true, "WorkingDirectory": true, "EnvironmentFile": true, "User": true, "Restart": true, "TimeoutStopSec": true, "CPUWeight": true, "MemoryMax": true, "Slice": true, "MemoryLow": true, "Environment": true, "Delegate": true, "OOMPolicy": true, "WantedBy": true}},
-					{socketPath, map[string]bool{"Description": true, "ListenStream": true, "SocketUser": true, "SocketGroup": true, "SocketMode": true, "RemoveOnStop": true, "Backlog": true, "WantedBy": true}},
-				} {
-					data, err := os.ReadFile(unit.path)
-					if err != nil {
-						t.Fatal(err)
-					}
-					for line := range strings.SplitSeq(string(data), "\n") {
-						if key, _, directive := strings.Cut(line, "="); directive && !unit.allowed[key] {
-							t.Errorf("unit contains forbidden directive %q", key)
-						}
-					}
-				}
-			})
-		}
-	}
-}
-
 func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
-	// R-DSGB-3P2A
+	// R-CM1B-RL1J R-CZG7-Z276
 	for _, manifest := range []string{
 		"app = 'notes'\n[resources]\ncpu_weight = 100\nmemory_max = '512M'\nslice = 'core'\ndelegate = true\noom_policy = 'continue'\n",
 		"app = 'notes'\n[resources]\nmemory_max = '512M'\n",
@@ -152,7 +96,7 @@ func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 }
 
 func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T) {
-	// R-DSGB-3P2A
+	// R-CM1B-RL1J
 	for _, manifest := range []string{"invalid = [", "app = 'other'", "app = 'zeta'\n[resources]\nio_weight = 50", "app = 'zeta'\n[resources]\nmemory_max = '512MB'"} {
 		root := t.TempDir()
 		store := installStoreAt(t, root, nil)
@@ -181,7 +125,7 @@ func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T
 }
 
 func TestSetupTimeoutsRejectsUnreadableEnvironment(t *testing.T) {
-	// R-DSGB-3P2A
+	// R-CM1B-RL1J
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "notes"), []byte("binary"), 0o750)

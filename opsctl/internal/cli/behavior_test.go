@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-var allCommands = []string{"backup", "cert", "config", "dns", "host", "init", "install", "nginx", "restart", "restore", "retire", "status", "uninstall", "version"}
+var allCommands = []string{"backup", "cert", "config", "dns", "host", "init", "nginx", "restart", "restore", "retire", "status", "version"}
 
 func inertDeps(t *testing.T, euid int) (cli.Deps, func()) {
 	t.Helper()
@@ -72,7 +72,7 @@ func TestNonVersionCommandsRefuseWithoutHostAccess(t *testing.T) {
 					args = append(args, "backup")
 				case "install":
 					args = append(args, "s3://bucket/key")
-				case "restart", "restore", "uninstall":
+				case "restart", "restore":
 					args = append(args, "app")
 				}
 				stdout, stderr, code := invoke(args, deps)

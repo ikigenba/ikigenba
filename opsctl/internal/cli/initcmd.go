@@ -60,7 +60,7 @@ Sequence:
                given the environment and units activate writes, and
                ikigenba-services.service is written and enabled. The
                resources an app's manifest declares are kept as activate
-               or install wrote them
+               wrote them
 
 When /usr/local/bin/opsctl does not exist, init makes it a link before the
 sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
@@ -447,14 +447,14 @@ func checkInitStateMoved(root string) error {
 		}
 		_, err = filesystem.Lstat(filepath.Join("opt", service.Name, "state"))
 		if err == nil {
-			return fmt.Errorf("%s: /opt/%s/state has not moved; install %s first", service.Name, service.Name, service.Name)
+			return fmt.Errorf("%s: /opt/%s/state has not moved", service.Name, service.Name)
 		}
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		_, err = filesystem.Lstat(filepath.Join(strings.TrimPrefix(apps.EnvRoot, "/"), service.Name, "env"))
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("%s: /opt/%s/etc/env has not moved; install %s first", service.Name, service.Name, service.Name)
+			return fmt.Errorf("%s: /opt/%s/etc/env has not moved", service.Name, service.Name)
 		}
 		if err != nil {
 			return err

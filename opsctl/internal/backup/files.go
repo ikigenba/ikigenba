@@ -519,5 +519,5 @@ func legacyStateError(root, service string) error {
 type legacyStateFailure struct{ service string }
 
 func (failure *legacyStateFailure) Error() string {
-	return fmt.Sprintf("/opt/%s/state has not moved; install %s first", failure.service, failure.service)
+	return fmt.Sprintf("/opt/%s/state has not moved", failure.service)
 }

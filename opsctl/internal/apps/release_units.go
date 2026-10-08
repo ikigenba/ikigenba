@@ -73,7 +73,7 @@ func writeReleaseUnitFiles(env host.Env, files []releaseUnitFile) error {
 
 // CheckReleaseResources validates slice ceilings against exactly these manifests.
 func CheckReleaseResources(root string, manifests []Manifest) (string, error) {
-	suite, err := readInstallSlice(root, "ikigenba.slice", true)
+	suite, err := readSlice(root, "ikigenba.slice", true)
 	if err != nil {
 		return "", err
 	}
@@ -85,7 +85,7 @@ func CheckReleaseResources(root string, manifests []Manifest) (string, error) {
 			resources = defaultResources()
 		}
 		unit := "ikigenba-" + resources.Slice + ".slice"
-		ceiling, err := readInstallSlice(root, unit, resources.Slice == "apps")
+		ceiling, err := readSlice(root, unit, resources.Slice == "apps")
 		if err != nil {
 			return "", err
 		}

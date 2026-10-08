@@ -56,7 +56,7 @@ Sequence:
                given the environment and units activate writes, and
                ikigenba-services.service is written and enabled. The
                resources an app's manifest declares are kept as activate
-               or install wrote them
+               wrote them
 
 When /usr/local/bin/opsctl does not exist, init makes it a link before the
 sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
@@ -70,7 +70,7 @@ Configuration keys:
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-NFC1-CZ2U
+	// R-SXH0-EKRL
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -345,13 +345,13 @@ func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
 }
 
 func TestInitHealthyPreflight(t *testing.T) {
-	// R-FEZH-GONM
+	// R-TLV0-1ZLH
 	// R-X4JP-5YR7
 	// R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-ZIB1-SI40
 	// R-8LON-MN2L
-	// R-V44H-QWQV
+	// R-SYOW-SCIA
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -1426,7 +1426,7 @@ func treeState(t *testing.T, root string) map[string]treeEntry {
 	return state
 }
 
-// R-V7S6-W7YY
+// R-CKTF-DTAU
 func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) {
 	for _, stateKind := range []string{"directory", "file", "dangling symlink"} {
 		t.Run(stateKind, func(t *testing.T) {
@@ -1476,7 +1476,7 @@ func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) 
 				return host.Result{}, nil
 			}
 			stdout, stderr, code := invoke([]string{"init"}, deps)
-			if code != 1 || stderr != "opsctl: alpha: /opt/alpha/state has not moved; install alpha first\n" || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") || strings.Count(stdout, "\n") != 12 {
+			if code != 1 || stderr != "opsctl: alpha: /opt/alpha/state has not moved\n" || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") || strings.Count(stdout, "\n") != 12 {
 				t.Fatalf("init = %d, stdout %q, stderr %q", code, stdout, stderr)
 			}
 			if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
@@ -1489,7 +1489,7 @@ func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) 
 	}
 }
 
-// R-V7S6-W7YY
+// R-CKTF-DTAU
 func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	for _, kind := range []string{"cache only", "no binary", "directory binary", "invalid name", "not discovered"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1534,7 +1534,7 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	}
 }
 
-// R-V7S6-W7YY
+// R-CKTF-DTAU
 func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	writeCLIInstallFile(t, filepath.Join(deps.Root, "usr/local/bin/opsctl"), "already installed")
@@ -1588,7 +1588,7 @@ func makeStateGuardApp(t *testing.T, root, name string, binary bool) {
 	}
 }
 
-// R-V7S6-W7YY
+// R-CKTF-DTAU
 func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(t *testing.T) {
 	for _, earlierState := range []bool{false, true} {
 		t.Run(map[bool]string{false: "environment first", true: "state wins"}[earlierState], func(t *testing.T) {
@@ -1624,7 +1624,7 @@ func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(
 			if earlierState {
 				unmoved = "state"
 			}
-			want := "opsctl: alpha: /opt/alpha/" + unmoved + " has not moved; install alpha first\n"
+			want := "opsctl: alpha: /opt/alpha/" + unmoved + " has not moved\n"
 			if code != 1 || stderr != want || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") || strings.Count(stdout, "\n") != 12 {
 				t.Fatalf("init = %d, %q, %q; want %q", code, stdout, stderr, want)
 			}
@@ -1638,7 +1638,7 @@ func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(
 	}
 }
 
-// R-V7S6-W7YY
+// R-CKTF-DTAU
 func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	for _, kind := range []string{"regular", "dangling symlink", "directory"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1688,7 +1688,7 @@ func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	}
 }
 
-// R-V7S6-W7YY
+// R-CKTF-DTAU
 func TestInitEnvironmentGuardPropagatesFilesystemFailureAfterSlices(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	makeStateGuardApp(t, deps.Root, "notes", true)
@@ -1713,7 +1713,7 @@ func TestInitEnvironmentGuardPropagatesFilesystemFailureAfterSlices(t *testing.T
 }
 
 func TestInitServicesPublicationFollowsNginxAndStopsOnFailure(t *testing.T) {
-	// R-XTC1-NPBI R-FEZH-GONM
+	// R-XTC1-NPBI R-TLV0-1ZLH
 	for _, stage := range []string{"success", "nginx", "services"} {
 		t.Run(stage, func(t *testing.T) {
 			deps := readyStateGuardDeps(t)

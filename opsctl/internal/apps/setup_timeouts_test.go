@@ -106,7 +106,7 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 }
 
 func TestSetupTimeoutsUpdatesOnlyInstalledAppsInNameOrder(t *testing.T) {
-	// R-DSGB-3P2A
+	// R-CM1B-RL1J
 	//  R-Y1GZ-HRRY
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{"apps.drain_seconds": "8", "apps.stop_seconds": "20"})
@@ -202,7 +202,7 @@ func TestSetupTimeoutsStopsAfterReloadFailure(t *testing.T) {
 }
 
 func TestSetupTimeoutsReturnsMissingEnvWithoutWritingUnit(t *testing.T) {
-	// R-DSGB-3P2A
+	// R-CM1B-RL1J
 	//
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
@@ -279,10 +279,10 @@ func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			fixture := newCompletedInstallFixture(t, root, false)
-			if err := fixture.run(); err != nil {
-				t.Fatal(err)
-			}
+			writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "notes"), []byte("binary"), 0o755)
+			writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "manifest.toml"), []byte("app='notes'\n"), 0o644)
+			writeFixture(t, filepath.Join(root, apps.EnvRoot, "notes", "env"), []byte("DRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n"), 0o600)
+			writeFixture(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service"), []byte(expectedResourceService(root, 10, "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n")), 0o644)
 			envPath := filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env")
 			writeFixture(t, envPath, []byte(test.before), 0o600)
 			unitPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
@@ -327,10 +327,10 @@ func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T
 func TestSetupTimeoutsRejectsTimingBeforeWritingAndNonAppsStayUntouched(t *testing.T) {
 	//
 	root := t.TempDir()
-	fixture := newCompletedInstallFixture(t, root, false)
-	if err := fixture.run(); err != nil {
-		t.Fatal(err)
-	}
+	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "notes"), []byte("binary"), 0o755)
+	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "manifest.toml"), []byte("app='notes'\n"), 0o644)
+	writeFixture(t, filepath.Join(root, apps.EnvRoot, "notes", "env"), []byte("DRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n"), 0o600)
+	writeFixture(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service"), []byte(expectedResourceService(root, 10, "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n")), 0o644)
 	envPath := filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env")
 	setTimeoutFileTimes(t, envPath)
 	before, err := os.Stat(envPath)

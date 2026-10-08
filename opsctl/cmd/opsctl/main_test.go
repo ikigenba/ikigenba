@@ -13,7 +13,7 @@ import (
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
-	// R-8O4G-E6JZ
+	// R-SW94-0T0W
 	stdout, stderr, code := runBinary(t, buildOpsctl(t), exec.Command("./opsctl", "--help"))
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
@@ -35,7 +35,6 @@ Commands:
   enable    let a disabled app start again, and start it
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
-  install   install an app from a built file
   nginx     generate the platform's nginx configuration
   restart   restart an installed app's service
   restore   restore a service from its backups
@@ -44,7 +43,6 @@ Commands:
   services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
   status    print every service, its release and its state
-  uninstall take an app off the host, keeping its data
   version   print the release this opsctl belongs to
 
 Options:

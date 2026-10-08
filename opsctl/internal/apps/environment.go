@@ -21,9 +21,9 @@ func PrepareEnvironment(ctx context.Context, client cloud.Client, store config.S
 		return nil, err
 	}
 	manifest.App = service
-	values, failure := obtainSecrets(ctx, client, hostName, manifest)
-	if failure != nil {
-		return nil, failure.cause
+	values, err := obtainSecrets(ctx, client, hostName, manifest)
+	if err != nil {
+		return nil, err
 	}
 	return renderEnvironment(manifest, values, timeouts.DrainSeconds), nil
 }

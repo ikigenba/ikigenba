@@ -45,7 +45,7 @@ func restoreReleaseFixture(t *testing.T, root string, released, database bool) r
 }
 
 func TestRestoreReleaseEnvironmentAndFreshUnitLifecycle(t *testing.T) {
-	// R-GSZD-5A23 R-GU79-J1SS R-G892-N6GA R-G9GZ-0Y6Z R-FZPR-YS9F R-G4LD-HV87 R-G5T9-VMYW R-G3DH-43HI R-GAOV-EPXO R-LC1T-L8RR R-FEZH-GONM
+	// R-GSZD-5A23 R-D7ZI-NGE1 R-TOAS-TJ2V R-TPIP-7ATK R-FZPR-YS9F R-G4LD-HV87 R-G5T9-VMYW R-G3DH-43HI R-GAOV-EPXO R-LC1T-L8RR R-TLV0-1ZLH
 	for _, released := range []bool{false, true} {
 		for _, database := range []bool{false, true} {
 			t.Run(map[bool]string{false: "fresh", true: "released"}[released]+map[bool]string{false: "opaque", true: "database"}[database], func(t *testing.T) {
@@ -188,7 +188,7 @@ func TestRestoreFreshWithoutReleaseAndBrokenCurrentAreInert(t *testing.T) {
 }
 
 func TestRestoreReleaseMembershipAndManifestFaultsAreInert(t *testing.T) {
-	// R-GU79-J1SS R-GI09-PCDU
+	// R-D7ZI-NGE1 R-DFAW-Y2U7
 	for _, released := range []bool{false, true} {
 		for _, kind := range []string{"data only", "missing binary", "symlink app", "manifest directory", "dangling manifest", "disowned manifest", "faulted manifest", "reserved"} {
 			t.Run(map[bool]string{false: "fresh", true: "released"}[released]+kind, func(t *testing.T) {
@@ -254,7 +254,7 @@ func TestRestoreReleaseMembershipAndManifestFaultsAreInert(t *testing.T) {
 }
 
 func TestRestoreReleaseSecretsValidationPrecedesUnits(t *testing.T) {
-	// R-G892-N6GA R-G9GZ-0Y6Z
+	// R-TOAS-TJ2V R-TPIP-7ATK
 	for _, failure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "values", true: "missing"}[failure], func(t *testing.T) {
 			root := t.TempDir()
@@ -299,7 +299,7 @@ func TestRestoreReleaseSecretsValidationPrecedesUnits(t *testing.T) {
 }
 
 func TestRestoreFreshSnapshotIncludesDatabaseWithoutReplica(t *testing.T) {
-	// R-FTMA-1XJY R-G3DH-43HI R-GGSD-BKN5 R-G4LD-HV87 R-FEZH-GONM
+	// R-FTMA-1XJY R-G3DH-43HI R-GGSD-BKN5 R-G4LD-HV87 R-TLV0-1ZLH
 	for _, validDB := range []bool{true, false} {
 		t.Run(map[bool]string{true: "database", false: "invalid database"}[validDB], func(t *testing.T) {
 			root := t.TempDir()

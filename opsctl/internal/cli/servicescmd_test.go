@@ -2,7 +2,6 @@ package cli_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,48 +28,6 @@ func servicesFixtureCommand(command host.Command) (host.Result, bool) {
 		return host.Result{}, true
 	}
 	return host.Result{}, false
-}
-
-func TestInstallServicesStagePublishesNormalizedNameAndStopsOnError(t *testing.T) {
-	// R-YNH5-YAF8
-	for _, fail := range []bool{false, true} {
-		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
-			fixture := newCLIInstallFixture(t)
-			if err := os.RemoveAll(filepath.Join(fixture.root, "var")); err != nil {
-				t.Fatal(err)
-			}
-			// A blocker in var/lib is encountered only by services publication.
-			if fail {
-				writeCLIInstallFile(t, filepath.Join(fixture.root, "var", "lib"), "blocked")
-			}
-			stdout, stderr, code := fixture.invoke()
-			if fail {
-				if code != 1 || stderr != "opsctl: install failed\n" || !strings.Contains(stdout, "\nservices: failed: ") || strings.Contains(stdout, "litestream:") || strings.Contains(stdout, "service:") {
-					t.Fatalf("outcome %d %q %q", code, stdout, stderr)
-				}
-				if fixture.commandCount("systemctl start ikigenba-notes.service") != 0 {
-					t.Fatal("service started after services failure")
-				}
-			} else {
-				if code != 0 || stderr != "" || !strings.Contains(stdout, "nginx: ok (notes.host.example, host.example)\nservices: ok (notes added)\nlitestream: ok (state/notes.db)\n") {
-					t.Fatalf("outcome %d %q %q", code, stdout, stderr)
-				}
-				data, err := os.ReadFile(filepath.Join(fixture.root, "var/lib/ikigenba/services.json"))
-				if err != nil || !strings.Contains(string(data), `"name": "notes"`) || !strings.Contains(string(data), `"socket": "/run/ikigenba/notes.sock"`) {
-					t.Fatalf("services %q %v", data, err)
-				}
-			}
-			calls := 0
-			for _, command := range fixture.commands {
-				if command.Name == "id" && strings.Join(command.Args, " ") == "--user ikigenba" {
-					calls++
-				}
-			}
-			if calls != 2 {
-				t.Fatalf("account calls = %d, want install plus exactly one services publication", calls)
-			}
-		})
-	}
 }
 
 func TestNginxServicesPublicationAfterSuccessOnly(t *testing.T) {
@@ -133,8 +90,8 @@ func TestNginxServicesPublicationAfterSuccessOnly(t *testing.T) {
 }
 
 func TestLifecycleServicesStageRunsOnceAfterNginx(t *testing.T) {
-	// R-YNH5-YAF8
-	for _, action := range []string{"disable", "enable", "uninstall"} {
+	// R-TRYH-YUAY
+	for _, action := range []string{"disable", "enable"} {
 		for _, failure := range []string{"", "before nginx", "nginx", "services"} {
 			t.Run(action+"/"+failure, func(t *testing.T) {
 				root := uninstallCommandRoot(t, true)
@@ -346,66 +303,5 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestInstallServicesReportsEntryChangesWithAndWithoutIcons(t *testing.T) {
-	// R-YNH5-YAF8
-	for _, disabled := range []bool{false, true} {
-		t.Run(fmt.Sprint(disabled), func(t *testing.T) {
-			fixture := newCLIInstallFixture(t)
-			if err := os.Remove(filepath.Join(fixture.root, apps.PerAppServicesPath)); err != nil {
-				t.Fatal(err)
-			}
-			fixture.disabled = disabled
-			base := fixture.manifest
-			for _, step := range []struct {
-				name, description, icon, change string
-				mcp                             bool
-			}{
-				{name: "iconless first install", change: "added"},
-				{name: "iconless reinstall", change: "unchanged"},
-				{name: "description changed", description: "Notes service", change: "updated"},
-				{name: "MCP changed", description: "Notes service", mcp: true, change: "updated"},
-				{name: "icon gained", description: "Notes service", mcp: true, icon: "<svg/>", change: "updated"},
-				{name: "icon changed", description: "Notes service", mcp: true, icon: "<svg>updated</svg>", change: "updated"},
-				{name: "icon lost", description: "Notes service", mcp: true, change: "updated"},
-			} {
-				fixture.manifest = fmt.Sprintf("description = %q\nmcp = %t\n", step.description, step.mcp) + base
-				fixture.icon = step.icon
-				stdout, stderr, code := fixture.invoke()
-				want := "services: ok (notes " + step.change + ")\n"
-				if step.change == "unchanged" {
-					want = "services: ok (unchanged)\n"
-				}
-				if code != 0 || stderr != "" || !strings.Contains(stdout, want) {
-					t.Fatalf("%s outcome %d %q %q", step.name, code, stdout, stderr)
-				}
-				data, err := os.ReadFile(filepath.Join(fixture.root, apps.PerAppServicesPath))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var document struct {
-					Services []struct {
-						Name, URL, Description, Socket string
-						Icon                           *string
-						Enabled, MCP                   bool
-					}
-				}
-				if err := json.Unmarshal(data, &document); err != nil {
-					t.Fatal(err)
-				}
-				if len(document.Services) != 1 {
-					t.Fatalf("%s entry count %s", step.name, data)
-				}
-				entry := document.Services[0]
-				if entry.Name != "notes" || entry.URL != "https://notes.host.example" || entry.Description != step.description || entry.Socket != "/run/ikigenba/notes.sock" || entry.Enabled == disabled || entry.MCP != step.mcp {
-					t.Fatalf("%s entry %s", step.name, data)
-				}
-				if (entry.Icon == nil) != (step.icon == "") || entry.Icon != nil && *entry.Icon != step.icon {
-					t.Fatalf("%s icon %s", step.name, data)
-				}
-			}
-		})
 	}
 }

@@ -423,7 +423,7 @@ resources = { cpu_weight = 100, memory_max = "512M", slice = "core", go_memory_l
 	}
 }
 
-// R-RIRK-TT3B R-ZATO-AEFN R-XSFU-AXFW R-YBA6-4L0A
+// R-RIRK-TT3B R-ZATO-AEFN R-XSFU-AXFW R-T3KI-BFH2
 func TestParseManifestValidatesRecognizedFieldsAndIgnoresOthers(t *testing.T) {
 	valid := []byte(`title = """unrelated
 title"""
@@ -527,7 +527,7 @@ MODE = "production"
 	}
 }
 
-// R-YBA6-4L0A
+// R-T3KI-BFH2
 func TestParseManifestRejectsTopLevelPortRegardlessOfType(t *testing.T) {
 	const want = "'port' is not allowed; the host gives the app its socket"
 	for _, data := range []string{
@@ -639,7 +639,7 @@ func TestParseManifestPortErrorTakesPrecedence(t *testing.T) {
 }
 
 func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
-	// R-T2JG-F4UX
+	// R-CX0F-7IPS
 	valid := []string{
 		"[database]\nengine = \"sqlite\"\npath = \"state/app.db\"",
 		"[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"",

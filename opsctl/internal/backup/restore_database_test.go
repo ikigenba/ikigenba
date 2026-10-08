@@ -20,7 +20,7 @@ import (
 )
 
 func TestRestoreDatabaseRequiresRegionBeforeHostOrCloudAccess(t *testing.T) {
-	// R-M0PY-JR0S R-1YID-WH7A
+	// R-DE30-KB3I R-1YID-WH7A
 	for _, name := range []string{"unset", "empty"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
@@ -52,7 +52,7 @@ func TestRestoreDatabaseRequiresRegionBeforeHostOrCloudAccess(t *testing.T) {
 }
 
 func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testing.T) {
-	// R-M0PY-JR0S R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-GA1P-RPGK R-FYHV-L0IQ
+	// R-DE30-KB3I R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-GA1P-RPGK R-D97F-184Q
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)
@@ -131,7 +131,7 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 }
 
 func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
-	// R-M0PY-JR0S
+	// R-DE30-KB3I
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -153,7 +153,7 @@ func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
 }
 
 func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
-	// R-M0PY-JR0S
+	// R-DE30-KB3I
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -232,7 +232,7 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 }
 
 func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
-	// R-M0PY-JR0S
+	// R-DE30-KB3I
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {

@@ -346,7 +346,7 @@ func TestNginxApplyUsesHostEnvironmentAndSuppressesSuccessOutput(t *testing.T) {
 }
 
 func TestNginxApplyRepeatsEvenWhenConfigurationIsUnchanged(t *testing.T) {
-	// R-WW0E-HKKC: standalone apply keeps Apply's unconditional test and reload.
+	// R-T2CL-XNQD: standalone apply keeps Apply's unconditional test and reload.
 	root := configuredNginxRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "etc", "nginx", "conf.d"), 0o750); err != nil {
 		t.Fatal(err)
@@ -377,7 +377,7 @@ func TestNginxApplyRepeatsEvenWhenConfigurationIsUnchanged(t *testing.T) {
 }
 
 func TestEnablementUpdatesNginxOnlyWhenRenderedBytesChange(t *testing.T) {
-	// R-WW0E-HKKC: both lifecycle commands use Update, including its unchanged path.
+	// R-T2CL-XNQD: both lifecycle commands use Update, including its unchanged path.
 	for _, test := range []struct {
 		command   string
 		unitState string

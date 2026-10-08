@@ -10,6 +10,18 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 )
 
+// IconPath is the launcher icon path beneath an app package directory.
+const IconPath = "share/icon.svg"
+
+// ServicesPath is the services document on a released host.
+const ServicesPath = "/run/ikigenba/services.json"
+
+// PerAppServicesPath is the services document on a per-app host.
+const PerAppServicesPath = "/var/lib/ikigenba/services.json"
+
+// ServicesEnv is the environment key naming the services document.
+const ServicesEnv = "IKIGENBA_SERVICES"
+
 // DataRoot is the host directory containing service data directories.
 const DataRoot = "/var/opt/ikigenba"
 

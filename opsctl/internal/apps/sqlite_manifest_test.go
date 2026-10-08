@@ -7,7 +7,7 @@ import (
 )
 
 func TestSQLiteEngineExactErrorAndPrecedence(t *testing.T) {
-	// R-T3RC-SWLM
+	// R-CY8B-LAGH
 	//
 	const engineError = "'database.engine' must be \"sqlite\""
 	for _, database := range []string{

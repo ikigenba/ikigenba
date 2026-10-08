@@ -36,7 +36,7 @@ refused.
 On a host laid out per app, with no /opt/ikigenba/current, SERVICE must be
 installed under /opt/SERVICE/ instead, whichever opsctl runs the restore, and
 one that is not, or whose state/ or environment file is still under
-/opt/SERVICE/, is refused: install it first. On a fresh host, with neither
+/opt/SERVICE/, is refused. On a fresh host, with neither
 /opt/ikigenba/current nor any app under /opt/, the opsctl inside a release,
 /opt/ikigenba/releases/<sha>/opsctl/bin/opsctl, restores against that
 release: SERVICE must be one of its apps, and its manifest there says what it
@@ -83,7 +83,7 @@ Configuration keys:
 `
 
 func TestRestoreHelpIsExactAndInert(t *testing.T) {
-	// R-G716-9EPL
+	// R-CTCQ-27HP
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "host-state")
@@ -848,7 +848,7 @@ func (client *restoreFromCLICloud) ReadSecrets(_ context.Context, parameter stri
 }
 
 func TestRestoreCommandRefusesUnmovedStateAtSource(t *testing.T) {
-	// R-FUU6-FPAN
+	// R-COH4-J4IX
 	root := configuredBackupRoot(t)
 	installRestoreCLI(t, root, "app = \"notes\"\n")
 	store := config.Store{Root: root}
@@ -872,7 +872,7 @@ func TestRestoreCommandRefusesUnmovedStateAtSource(t *testing.T) {
 		return executeZstd(ctx, command)
 	}
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, hostCLIDeps(root, client, execute))
-	if code != 1 || stdout != "source: failed: /opt/notes/state has not moved; install notes first\n" || stderr != "opsctl: restore notes failed at source\n" || len(commands) != 0 {
+	if code != 1 || stdout != "source: failed: /opt/notes/state has not moved\n" || stderr != "opsctl: restore notes failed at source\n" || len(commands) != 0 {
 		t.Fatalf("restore = %d %q %q commands %v", code, stdout, stderr, commands)
 	}
 	if _, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes")); !errors.Is(err, os.ErrNotExist) {

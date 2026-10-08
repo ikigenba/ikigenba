@@ -41,7 +41,7 @@ func snapshotRestoreExecute(t *testing.T, root string, events *[]string) func(co
 	}
 }
 func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing.T) {
-	// R-FTMA-1XJY R-FMVM-I2DD R-FYHV-L0IQ R-G9GZ-0Y6Z R-GCHI-J8XY R-G892-N6GA R-G9GZ-0Y6Z R-GHD4-2BWQ R-G892-N6GA
+	// R-FTMA-1XJY R-FMVM-I2DD R-D97F-184Q R-TPIP-7ATK R-GCHI-J8XY R-TOAS-TJ2V R-TPIP-7ATK R-GHD4-2BWQ R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -173,7 +173,7 @@ func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
 }
 
 func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
-	// R-G892-N6GA R-FMVM-I2DD R-G892-N6GA
+	// R-TOAS-TJ2V R-FMVM-I2DD R-TOAS-TJ2V
 	for _, tc := range []struct {
 		name, manifest string
 		values         map[string]string
@@ -232,7 +232,7 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 }
 
 func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
-	// R-G9GZ-0Y6Z R-G9GZ-0Y6Z R-G892-N6GA
+	// R-TPIP-7ATK R-TPIP-7ATK R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -260,7 +260,7 @@ func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
 }
 
 func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing.T) {
-	// R-G9GZ-0Y6Z R-G892-N6GA R-G892-N6GA
+	// R-TPIP-7ATK R-TOAS-TJ2V R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -285,7 +285,7 @@ func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing
 }
 
 func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
-	// R-G9GZ-0Y6Z R-FMVM-I2DD R-G892-N6GA
+	// R-TPIP-7ATK R-FMVM-I2DD R-TOAS-TJ2V
 	for _, tc := range []struct{ name, failCommand, stage string }{
 		{name: "account", failCommand: "id --user ikigenba", stage: "ownership"},
 		{name: "publication", stage: "environment"},

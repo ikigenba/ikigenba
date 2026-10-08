@@ -19,7 +19,7 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-G0XO-CK04 R-G9GZ-0Y6Z R-G8TT-DXPV
+	// R-DAFB-EZVF R-TPIP-7ATK R-G8TT-DXPV
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -108,7 +108,7 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 }
 
 func TestRestoreAppGuardAndStopDetails(t *testing.T) {
-	// R-FZPR-YS9F R-GI09-PCDU
+	// R-FZPR-YS9F R-DFAW-Y2U7
 	for _, test := range []struct {
 		name      string
 		service   string
@@ -138,7 +138,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 			executor := &restoreStageExecutor{t: t, root: root, installed: test.installed, active: test.active}
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, test.service, nil, "", nil, func(context.Context) error { return nil })
 			if test.service != "notes" {
-				if err == nil || len(report.Steps) != 1 || report.Steps[0].Err.Error() != test.service+" is not installed; install "+test.service+" first" || len(executor.commands) != 0 || len(client.opened) != 0 {
+				if err == nil || len(report.Steps) != 1 || report.Steps[0].Err.Error() != test.service+" is not installed" || len(executor.commands) != 0 || len(client.opened) != 0 {
 					t.Fatalf("guarded name: %+v %v %v", report, err, executor.commands)
 				}
 				return
@@ -161,7 +161,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 	// R-YBI2-GUY1
-	// R-G0XO-CK04 R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-DAFB-EZVF R-G7FZ-2AO2 R-FMVM-I2DD
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {
 		name         string
@@ -326,7 +326,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-G8TT-DXPV R-G9GZ-0Y6Z R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-G8TT-DXPV R-TPIP-7ATK R-G7FZ-2AO2 R-FMVM-I2DD
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {

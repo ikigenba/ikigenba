@@ -152,7 +152,7 @@ func runReleaseTransition(command string, r release.Release, stdout, stderr io.W
 	report := func(name string, fn func() (string, error)) bool {
 		detail, err := fn()
 		if err != nil {
-			_ = writeInstallReport(stdout, name, err.Error(), false)
+			_ = writeStepReport(stdout, name, err.Error(), false)
 			writeDiagnostic(stderr, &transitionError{message: command + " failed", cause: err})
 			if t.journalErr != nil {
 				_, _ = fmt.Fprintf(stderr, "\ncould not read the journal: %s\n", t.journalErr)
@@ -162,7 +162,7 @@ func runReleaseTransition(command string, r release.Release, stdout, stderr io.W
 			}
 			return false
 		}
-		return writeInstallReport(stdout, name, detail, true) == nil
+		return writeStepReport(stdout, name, detail, true) == nil
 	}
 	for _, step := range steps {
 		if !report(step.name, step.run) {
@@ -391,12 +391,12 @@ func (t *transition) layoutStep() (string, error) {
 			}
 			n++
 			if _, e := t.files.Lstat("opt/" + s.Name + "/state"); e == nil {
-				return "", fmt.Errorf("%s: /opt/%s/state has not moved; install %s first", s.Name, s.Name, s.Name)
+				return "", fmt.Errorf("%s: /opt/%s/state has not moved", s.Name, s.Name)
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return "", e
 			}
 			if _, e := t.files.Lstat("etc/opt/ikigenba/" + s.Name + "/env"); errors.Is(e, os.ErrNotExist) {
-				return "", fmt.Errorf("%s: /opt/%s/etc/env has not moved; install %s first", s.Name, s.Name, s.Name)
+				return "", fmt.Errorf("%s: /opt/%s/etc/env has not moved", s.Name, s.Name)
 			} else if e != nil {
 				return "", e
 			}

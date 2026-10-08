@@ -10,73 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
-
-func TestInstallConfigureServicesActionAndReportFailuresPreserveBothCauses(t *testing.T) {
-	//
-	for _, failedStep := range []string{"nginx", "services", "litestream"} {
-		t.Run(failedStep, func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.MkdirAll(filepath.Join(root, "etc/nginx/conf.d"), 0o750); err != nil {
-				t.Fatal(err)
-			}
-			actionErr := errors.New("action failure")
-			reportErr := errors.New("report failure")
-			var reports []string
-			env := host.Env{Root: root, Execute: func(_ context.Context, c host.Command) (host.Result, error) {
-				if failedStep == "nginx" && c.Name == "nginx" {
-					return host.Result{}, actionErr
-				}
-				if failedStep == "services" && c.Name == "id" {
-					return host.Result{}, actionErr
-				}
-				if c.Name == "id" && c.Args[0] == "--user" {
-					return host.Result{Stdout: []byte("998\n")}, nil
-				}
-				if c.Name == "id" {
-					return host.Result{Stdout: []byte("ikigenba\n")}, nil
-				}
-				if c.Name == "systemctl" && c.Args[0] == "show" {
-					return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
-				}
-				return host.Result{}, nil
-			}}
-			store := config.Store{Root: root}
-			// A store error at replication supplies the litestream action failure.
-			if failedStep == "litestream" {
-				if err := os.MkdirAll(filepath.Join(root, "etc/ikigenba/config.json"), 0o750); err != nil {
-					t.Fatal(err)
-				}
-			}
-			err := configureInstalledApp(context.Background(), env, store, "host.example", "", apps.Manifest{App: "notes"}, func(step, detail string, success bool) error {
-				reports = append(reports, step)
-				if step == failedStep {
-					if success || detail == "" {
-						t.Fatalf("failed report %s %q %v", step, detail, success)
-					}
-					return reportErr
-				}
-				return nil
-			})
-			if !errors.Is(err, reportErr) || (failedStep != "litestream" && !errors.Is(err, actionErr)) {
-				t.Fatalf("causes lost: %v", err)
-			}
-			want := map[string]string{"nginx": "nginx", "services": "nginx,services", "litestream": "nginx,services,litestream"}[failedStep]
-			if strings.Join(reports, ",") != want {
-				t.Fatalf("reports %v want %s", reports, want)
-			}
-			if failedStep == "litestream" {
-				var pathErr *os.PathError
-				if !errors.As(err, &pathErr) {
-					t.Fatalf("litestream cause lost: %v", err)
-				}
-			}
-		})
-	}
-}
 
 func TestRestoreServicesPublicationIsSilentAndRunsOnlyAfterNginx(t *testing.T) {
 	// R-XTC1-NPBI
