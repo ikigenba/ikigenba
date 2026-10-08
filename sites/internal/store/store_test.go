@@ -157,13 +157,13 @@ func TestDeclarationsAndValidation(t *testing.T) {
 			t.Fatal(v)
 		}
 	}
-	// R-1C5U-P9CH
-	for _, v := range []string{"a", "0", "a-", "about-us", "mcp-notes", strings.Repeat("a", 64)} {
+	// R-KIFY-Q2A6
+	for _, v := range []string{"a", "0", "a-", "about-us", "mcp-notes", "api-docs", strings.Repeat("a", 64)} {
 		if !store.ValidName(v) {
 			t.Fatal(v)
 		}
 	}
-	for _, v := range []string{"", "about", "mcp", "Docs", " docs", "-docs", strings.Repeat("a", 65), "é", "a/b", "a_b", "a\x00"} {
+	for _, v := range []string{"", "about", "mcp", "api", "Docs", " docs", "-docs", strings.Repeat("a", 65), "é", "a/b", "a_b", "a\x00"} {
 		if store.ValidName(v) {
 			t.Fatal(v)
 		}
@@ -172,6 +172,7 @@ func TestDeclarationsAndValidation(t *testing.T) {
 		name := "x" + string([]byte{byte(b)})
 		want := b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-'
 		equal(t, store.ValidName(name), want)
+		equal(t, store.ValidName(string([]byte{byte(b)})), want && b != '-')
 		id := "sit_000000000000000" + string([]byte{byte(b)})
 		equal(t, store.ValidID(id), b >= '0' && b <= '9' || b >= 'a' && b <= 'f')
 	}
@@ -279,7 +280,7 @@ func TestRandomCandidates(t *testing.T) {
 		equal(t, snapshot(t, s), before)
 		equal(t, stream.calls, 2)
 	}
-	invalid := []store.Draft{draft("about"), draft("docs"), draft("docs"), draft("draft")}
+	invalid := []store.Draft{draft("about"), draft("docs"), draft("docs"), draft("draft"), draft("api")}
 	invalid[1].Owner = ""
 	invalid[2].Ref = ""
 	invalid[3].Visibility = "other"

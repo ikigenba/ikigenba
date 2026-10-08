@@ -117,6 +117,7 @@ func TestCreateRulesAndTakenNames(t *testing.T) {
 	h.add(t, "bob", "taken", true)
 	cases := []struct{ args, want string }{
 		{`{"name":"Bad","repo":"bad","ref":"..bad","visibility":"secret"}`, "invalid name 'Bad'"},
+		{`{"name":"api","repo":"bad","ref":"..bad","visibility":"secret"}`, "invalid name 'api'"},
 		{`{"name":"taken","repo":"bad","ref":"..bad","visibility":"secret"}`, "a site named 'taken' already exists"},
 		{`{"name":"owned","repo":"bad"}`, "a site named 'owned' already exists"},
 		{fmt.Sprintf(`{"name":%q,"repo":"bad"}`, own.Slug), fmt.Sprintf("a site named '%s' already exists", own.Slug)},
@@ -233,6 +234,7 @@ func TestUpdateRuleOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ args, want string }{
+		{`{"name":"api","visibility":"secret","ref":"..bad"}`, "no site named 'api'"},
 		{`{"name":"other","visibility":"secret","ref":"..bad"}`, "no site named 'other'"},
 		{`{"name":"blog"}`, "update needs at least one of visibility, listed, ref"},
 		{`{"name":"blog","visibility":"secret","ref":"..bad"}`, "visibility must be public or private"},

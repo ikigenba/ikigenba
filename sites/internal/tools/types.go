@@ -31,7 +31,7 @@ type DeleteArgs struct {
 
 // CreateArgs supplies a new site's configuration.
 type CreateArgs struct {
-	Name       string  `json:"name" mcp:"required" description:"The new site's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about or mcp, and not already a site's name in the space."`
+	Name       string  `json:"name" mcp:"required" description:"The new site's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about, mcp, or api, and not already a site's name in the space."`
 	Repo       string  `json:"repo" mcp:"required" description:"The id of one of your repositories in repos (rep_ and 16 hexadecimal digits)."`
 	Ref        *string `json:"ref" description:"The branch, tag, or commit the site tracks; main unless given."`
 	Visibility *string `json:"visibility" description:"public or private; public unless given."`

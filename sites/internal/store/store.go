@@ -80,7 +80,7 @@ func validHex(s string, n int) bool {
 
 // ValidName reports whether s is an allowed site name.
 func ValidName(s string) bool {
-	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "mcp" {
+	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "mcp" || s == "api" {
 		return false
 	}
 	for i := range len(s) {
