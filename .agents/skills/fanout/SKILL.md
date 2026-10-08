@@ -49,6 +49,16 @@ Spawn fresh agents without inherited conversation. Keep assignments, reading, co
 
 On capacity refusal, wait only for sub-agents that can progress without spawning. Otherwise, return evidence and pending work upward and exit. Exiting must release capacity. Coordinators reduce concurrency or delegation depth before retrying.
 
+## Waiting
+
+Ending a turn is not waiting. The harness resumes an agent that ended its turn only when a sub-agent it spawned finishes. An agent that ends its turn with no sub-agent running is finished, and nothing resumes it except a message from its coordinator.
+
+Wait for work outside the harness, such as a dispatched build, in the foreground: run the blocking command, and run it again each time it returns at the tool's time limit. Never start it in the background and end the turn. The harness then reports the agent to its coordinator as stopped with an interim result, and if the coordinator ends its turn too, the agent's final report is routed to the root while the coordinator is never resumed. The root, as the main conversation, may instead wait in the background; the harness resumes it when the command exits. A coordinator states this rule in any assignment that waits on work outside the harness.
+
+A coordinator ends its turn only while a sub-agent it spawned is running, or to report its own result. On an interim notification, it resumes that child with the instruction to wait in the foreground, and only then ends its turn. A report says "waiting" only while a sub-agent is running.
+
+A report from an agent the receiver did not spawn means the coordinator between them has stopped. The root resumes that coordinator with the report rather than acting on it.
+
 ## Failure
 
 Delegate repairs for confirmed defects or unfinished work as clearly scoped tasks. Preserve unaffected verified work. Recheck affected criteria and decomposition.
