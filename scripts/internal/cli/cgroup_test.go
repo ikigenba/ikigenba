@@ -22,7 +22,7 @@ import (
 )
 
 func TestCgroupPreparedBeforeReady(t *testing.T) {
-	// R-LA86-0EB3
+	// R-HBE1-NQ3X
 	for _, cpu := range []string{"", "250", strconv.FormatInt(math.MaxInt64, 10)} {
 		t.Run(cpu, func(t *testing.T) {
 			h := newHarness(t)
@@ -53,7 +53,7 @@ func TestCgroupPreparedBeforeReady(t *testing.T) {
 }
 
 func TestUnavailableRunsLeaveStateUntouched(t *testing.T) {
-	// R-LCNY-RXSH R-LDVV-5PJ6
+	// R-HCLY-1HUM R-HIPF-YCK3
 	for _, kind := range []string{"empty", "shared", "unicode-space", "missing-procs", "write-failure"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
@@ -138,7 +138,7 @@ func TestCommandCgroupUntouched(t *testing.T) {
 }
 
 func TestEarlyRefusalsLeaveCgroupUntouched(t *testing.T) {
-	// R-LF3R-JH9V
+	// R-HA65-9YD8
 	for _, kind := range []string{"setting", "activation", "sockets", "inherit", "git", "python", "db", "runs"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)

@@ -51,7 +51,7 @@ Request:
 POST /ingest HTTP/1.1
 Content-Type: application/json
 
-{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v0.3.0"}}
+{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"c604e32"}}
 ```
 
 Response:
@@ -86,7 +86,7 @@ GET /ingest HTTP/1.1
 PUT /ingest HTTP/1.1
 Content-Type: application/json
 
-{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v0.3.0"}}
+{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"c604e32"}}
 ```
 
 Response:
@@ -117,13 +117,13 @@ Request:
 POST /ingest HTTP/1.1
 Content-Type: text/plain
 
-{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v0.3.0"}}
+{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"c604e32"}}
 ```
 
 ```
 POST /ingest HTTP/1.1
 
-{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v0.3.0"}}
+{"time":"2026-10-02T14:03:07.123456Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"c604e32"}}
 ```
 
 Response:

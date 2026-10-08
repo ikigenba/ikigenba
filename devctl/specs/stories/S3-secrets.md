@@ -242,16 +242,16 @@ Command:
 
 ```
 $ devctl secrets push sbx1 crm
-$ devctl deploy sbx1 crm/dist/crm-v0.1.0.tar.xz
+$ devctl deploy sbx1 crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
 ```
 
 Output:
 
 ```
 crm: ok (3 keys)
-file: ok (crm v0.1.0)
+file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 secrets: ok (3 keys)
-upload: ok (-> ikigenba.dev/sbx1/deploy/crm-v0.1.0.tar.xz)
+upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -261,11 +261,12 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and `crm` at `v0.1.0` is
-  deployed on it and not disabled.
+- The space exists, its instance is `running`, and `crm`, from the file
+  below, is deployed on it and not disabled.
 - The keyring or the environment holds the new value for `CRM_API_KEY`, and
   values for every other name in `crm`'s `secrets` array.
-- `crm/dist/crm-v0.1.0.tar.xz` exists, written by `build`.
+- `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` exists, written
+  by `build`.
 
 Postconditions:
 
@@ -274,8 +275,8 @@ Postconditions:
 - `/opt/crm/etc/env` on the host holds the new value, and
   `ikigenba-crm.service` has been restarted under it. The old value is nowhere
   on the host.
-- `space status` shows `crm` at `v0.1.0`, as before: the deploy changed a
-  value, not a version.
+- The host runs the same `crm` binary as before: the deploy changed a value,
+  not the file.
 - Between the two commands the parameter and the host disagreed, and the app
   ran on the old value. A rotation that cannot tolerate that window deploys
   first and revokes the old value at the provider afterwards.

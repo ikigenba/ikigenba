@@ -4,22 +4,21 @@ import (
 	"bytes"
 	"context"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
-	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	root "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
-	"github.com/ikigenba/ikigenba/telemetry/internal/store"
+	"github.com/ikigenba/ikigenba/telemetry/internal/web"
 )
 
-// R-QYKV-ANA7 R-QZSR-OF0W R-R10O-26RL R-R28K-FYIA R-R8C2-CT7R R-S41G-AUHT
+// R-QYKV-ANA7 R-QZSR-OF0W R-TILA-DUFZ R-TJT6-RM6O R-R28K-FYIA R-R8C2-CT7R R-TX82-Z3CB
 func TestDatabaseStatus(t *testing.T) {
 	for _, fixture := range []string{"absent", "applied", "unknown", "invalid"} {
 		t.Run(fixture, func(t *testing.T) {
@@ -117,72 +116,101 @@ func TestRunCreatesDeclaredDatabase(t *testing.T) {
 	}
 }
 
-// R-RI39-EZ5B R-S41G-AUHT
+// R-TM8Z-J5O2 R-TX82-Z3CB
 func TestRunRefusesInvalidDatabase(t *testing.T) {
-	for _, fixture := range []string{"invalid", "unknown"} {
-		t.Run(fixture, func(t *testing.T) {
-			r := runtimeFor(t, nil)
-			path := databasePath(r.p.Dir)
-			var fixtureHandle *db.DB
-			var before store.Page
-			if fixture == "invalid" {
-				if err := os.Mkdir(filepath.Dir(path), 0700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, []byte("invalid database"), 0600); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				baseline, err := fs.ReadFile(root.Migrations(), "0001_trail.sql")
-				if err != nil {
-					t.Fatal(err)
-				}
-				migrations := fstest.MapFS{"0001_trail.sql": {Data: baseline}, "0002_extra.sql": {Data: []byte("CREATE TABLE extra(id INTEGER);")}}
-				h, err := db.Open(context.Background(), db.Config{Path: path, Migrations: migrations, Now: r.p.Now})
-				if err != nil {
-					t.Fatal(err)
-				}
-				fixtureHandle = h
-				defer func() { _ = h.Close() }()
-				fixtureStore := store.New(h)
-				for _, when := range []time.Time{r.p.Now().Add(-30 * 24 * time.Hour), r.p.Now()} {
-					if err := fixtureStore.Deliver(context.Background(), telemetry.Event{Time: when, Service: "sibling", Name: "fixture.event", Attrs: telemetry.Attrs{}}); err != nil {
-						t.Fatal(err)
-					}
-				}
-				before, err = fixtureStore.Search(context.Background(), store.Filter{}, 500, "")
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			_, openErr := db.Open(context.Background(), db.Config{Path: path, Migrations: root.Migrations(), Now: r.p.Now})
-			if openErr == nil {
-				t.Fatal("fixture accepted")
-			}
-			r.p.MCP = nil
-			r.p.Banner = nil
-			r.start()
-			r.finish(t, cli.ExitServerFailed)
-			lines := r.output.lines()
-			want := "telemetry: cannot open database state/telemetry.db: " + strings.ReplaceAll(openErr.Error(), "\n", " ") + "\n"
-			if len(lines) != 1 || lines[0] != want {
-				t.Fatalf("diagnostic %q want %q", lines, want)
-			}
-			if fixtureHandle != nil {
-				after, err := store.New(fixtureHandle).Search(context.Background(), store.Filter{}, 500, "")
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !reflect.DeepEqual(before, after) {
-					t.Fatalf("refused start changed records: before %+v after %+v", before, after)
-				}
-			}
-
-		})
+	r := runtimeFor(t, nil)
+	path := databasePath(r.p.Dir)
+	if err := os.Mkdir(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("invalid database"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, openErr := db.Open(context.Background(), db.Config{Path: path, Migrations: root.Migrations(), Now: r.p.Now})
+	if openErr == nil {
+		t.Fatal("fixture accepted")
+	}
+	r.p.MCP = nil
+	r.p.Banner = nil
+	r.start()
+	r.finish(t, cli.ExitServerFailed)
+	want := "telemetry: cannot open database state/telemetry.db: " + strings.ReplaceAll(openErr.Error(), "\n", " ") + "\n"
+	if lines := r.output.lines(); len(lines) != 1 || lines[0] != want {
+		t.Fatalf("diagnostic %q want %q", lines, want)
 	}
 }
 
-// R-QQ1K-M93C R-RARV-4CP5
+// R-TNGV-WXER R-TOOS-AP5G
+func TestRunWarnsAndServesUpgradedDatabase(t *testing.T) {
+	r := runtimeFor(t, nil)
+	warningChecked := make(chan struct{}, 1)
+	r.p.Stderr = notificationCheckedOutput{output: r.output, socket: r.notify, t: t, checked: warningChecked}
+	path := databasePath(r.p.Dir)
+	baseline, err := fs.ReadFile(root.Migrations(), "0001_trail.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrations := fstest.MapFS{"0001_trail.sql": {Data: baseline}, "0002_extra.sql": {Data: []byte("CREATE TABLE extra(id INTEGER);")}}
+	h, err := db.Open(context.Background(), db.Config{Path: path, Migrations: migrations, Now: r.p.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = h.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := db.Config{Path: path, Migrations: root.Migrations(), Now: r.p.Now, Service: web.ServiceName}
+	var before bytes.Buffer
+	if err = db.Status(context.Background(), cfg, &before); err != nil {
+		t.Fatal(err)
+	}
+	var warning writes
+	cfg.Stderr = &warning
+	h, err = db.Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = h.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(warning.calls) != 1 || !strings.HasPrefix(warning.text(), web.ServiceName+": ") {
+		t.Fatalf("reference warning %q", warning.calls)
+	}
+	r.start()
+	select {
+	case <-warningChecked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("startup observation did not arrive")
+	}
+	r.ready(t)
+	if lines := r.output.lines(); len(lines) != 1 || lines[0] != warning.text() {
+		t.Fatalf("warning before readiness: %q want %q", lines, warning.text())
+	}
+	w := <-r.writer
+	flush(t, w)
+	trail := records(t, path)
+	if len(trail) != 1 || trail[0].Event != "service.started" {
+		t.Fatalf("startup trail %+v", trail)
+	}
+	status, _ := r.request(t, "/", "ahead-request")
+	if status != http.StatusOK {
+		t.Fatalf("ahead server status %d", status)
+	}
+	flush(t, w)
+	r.cancel(context.Canceled)
+	r.finish(t, cli.ExitSuccess)
+	if lines := r.output.lines(); len(lines) != 1 || lines[0] != warning.text() {
+		t.Fatalf("final warnings %q", lines)
+	}
+	var after bytes.Buffer
+	if err = db.Status(context.Background(), cfg, &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.String() != before.String() {
+		t.Fatalf("schema changed: %q want %q", after.String(), before.String())
+	}
+}
+
+// R-TG5H-MAYL R-RARV-4CP5
 func TestRunDirectorySelectsTrail(t *testing.T) {
 	shared := t.TempDir()
 	for i, dir := range []string{shared, shared, t.TempDir()} {

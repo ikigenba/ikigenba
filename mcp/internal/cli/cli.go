@@ -19,9 +19,6 @@ import (
 	"github.com/ikigenba/ikigenba/mcp/internal/server"
 )
 
-// Version is the release identity shared by every gateway surface.
-var Version = "v0.7.3"
-
 // Manifest is the platform application declaration.
 const Manifest = "app = \"mcp\"\ndescription = \"Connect AI assistants to your services\"\ndefault = false\nmcp = false\nguests = true\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n"
 
@@ -36,6 +33,7 @@ type Process struct {
 	Pid       int
 	Stdout    io.Writer
 	Stderr    io.Writer
+	Version   string
 	Inherit   func(fd uintptr) (net.Listener, error)
 	Banner    func(u page.User) page.Banner
 	MCP       func(*telemetry.Writer) *appkitmcp.Server
@@ -75,7 +73,7 @@ func Run(ctx context.Context, p Process) int {
 		product := ""
 		switch arg {
 		case "--version":
-			product = Version + "\n"
+			product = p.Version + "\n"
 		case "manifest":
 			product = Manifest
 		case "--help":
@@ -148,7 +146,7 @@ func Run(ctx context.Context, p Process) int {
 		sink = telemetry.NewSocketSink()
 	}
 	gate := &drainSink{sink: sink}
-	writer := telemetry.New(telemetry.Config{Service: gateway.ServiceName, Version: Version, Sink: gate, Stderr: stderr})
+	writer := telemetry.New(telemetry.Config{Service: gateway.ServiceName, Version: p.Version, Sink: gate, Stderr: stderr})
 	handler := gateway.Handler(gateway.Config{Banner: p.Banner, MCP: p.MCP(writer), ServicesPath: servicesPath, Telemetry: writer})
 	writer.Ready()
 	serving, cancel := context.WithCancelCause(context.Background())

@@ -4,6 +4,12 @@ Services in the suite tell each other what happened through an internal event bu
 
 The bus is not the telemetry trail. Telemetry (D11 to D14) records what a service did, for an agent to read later; an event on the bus is a fact other services act on. The two share their vocabulary on purpose, so an agent who knows one already reads the other: event names, attribute keys, attribute values, and the time layout are telemetry's.
 
+## Names and patterns
+
+An event name is two or more words joined by single dots, under the same rule as telemetry's (D11): `repo.pushed`, `cron.nightly_backup.fired`. A pattern is a name in which any word may be exactly `*`, standing for any one word: `cron.*.fired` matches `cron.nightly_backup.fired` and `cron.hourly.fired`, but neither `cron.fired` nor `cron.a.b.fired`, since a `*` is one word and the word counts must agree. A `*` is a whole word or nothing, so `cron.a*.fired` is not a pattern, and neither is `*` alone, which has one word. Every name is also a pattern, matching only itself.
+
+Patterns are for declarations: a producer may declare `cron.*.fired` in its emitter (D18), and a consumer may register a handler under one (D20). An event always has a concrete name, so an `Emit` whose name holds a `*` is a malformed event, and neither the wire nor the trail ever carries one. `events.Match` says whether a pattern matches a name, and is false whenever either is not valid, so `Match("*", name)` is false for every name: the bare `*` of a `Handlers` map is D20's, not a pattern.
+
 ## The record
 
 An event is an envelope: a producer-assigned id, the time, the service that emitted it, the event's name, the request id and user of the request that caused it, the attributes, the id of the event that caused it, and its depth in that chain. The broker adds two more when it records an event: its sequence number, the event's place in the broker's log counting from 1, and the time the broker received it. `events.Event` is that envelope in Go and `events.Attrs` its attributes.
@@ -58,7 +64,10 @@ A service's test checks what it emitted. It builds its emitter over a capturing 
 - R-G9EH-3DFB: Package `events` MUST export `type Cause struct { ID string; Depth int }`, with exactly these fields in this order.
 - R-GAMD-H560: Package `events` MUST export `func NewContext(ctx context.Context, c Cause) context.Context`, where `context` is the standard library's `context`.
 - R-GBU9-UWWP: Package `events` MUST export `func FromContext(ctx context.Context) (Cause, bool)`.
-- R-GD26-8ONE: In package `events`, a valid event name MUST be exactly a string that matches the Go `regexp` pattern `^[a-z][a-z0-9]*(_[a-z0-9]+)*\.[a-z][a-z0-9]*(_[a-z0-9]+)*$`.
+- R-KI9C-R1XG: Package `events` MUST export `func Match(pattern, name string) bool`.
+- R-KFTJ-ZIG2: In package `events`, a valid event name MUST be exactly a string that matches the Go `regexp` pattern `^[a-z][a-z0-9]*(_[a-z0-9]+)*(\.[a-z][a-z0-9]*(_[a-z0-9]+)*)+$`.
+- R-KH1G-DA6R: In package `events`, a valid event pattern MUST be exactly a string that matches the Go `regexp` pattern `^([a-z][a-z0-9]*(_[a-z0-9]+)*|\*)(\.([a-z][a-z0-9]*(_[a-z0-9]+)*|\*))+$`, so every valid event name is a valid event pattern and the string `*` is not one.
+- R-KJH9-4TO5: `events.Match(pattern, name)` MUST return true exactly when `pattern` is a valid event pattern, `name` is a valid event name, the slices that `strings.Split(pattern, ".")` and `strings.Split(name, ".")` (the standard library's `strings`) return have the same length, and each element of the first is `*` or equal to the element at the same index of the second; it MUST return false otherwise, whatever `pattern` and `name` hold.
 - R-GEA2-MGE3: In package `events`, a valid attribute key MUST be exactly a string that matches the Go `regexp` pattern `^[a-z][a-z0-9]*(_[a-z0-9]+)*$`.
 - R-GGPV-DZVH: In package `events`, a valid attribute value and its basic form MUST be exactly the valid attribute value and basic form R-V0UN-UWNK defines.
 - R-GHXR-RRM6: A well-formed event id MUST be exactly a string that matches the Go `regexp` pattern `^evt_[0-9a-f]{16}$`.

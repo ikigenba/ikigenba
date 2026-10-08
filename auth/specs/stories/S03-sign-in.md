@@ -89,9 +89,12 @@ its tooltip, so hovering it shows who is signed in. It shows the `user-circle`
 icon and no text; the email is not part of the page's visible text there. The
 banner is followed by one `<main>` element holding the page's content, and the
 page ends with the page footer, a `<footer>` that is the last thing in the
-body, reading `auth <version>`: the service's name, one space, and auth's
-version exactly as `auth --version` prints it (`S01-bootstrap.md`). The
-version is data; no story fixes its value.
+body, reading `auth <display>`: the service's name, one space, and
+`<display>`, the string `auth --version` prints under the environment auth
+was started with (`S01-bootstrap.md`), exactly as it prints it, so a user can
+tell which code is serving the page. No story fixes its value. When that
+environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`,
+`<display>` is empty and the footer's text is `auth` and the one space.
 
 The sign-out button signs the user out of the whole space in one click. It
 follows the profile icon in the banner, and it is a form, not a link:
@@ -767,7 +770,8 @@ form POSTs to `/tokens` with fields `name` and `expires` (`S05-tokens.md`);
 and the `MCP clients` card with its explanation and the MCP clients the user
 has approved (`S05-tokens.md`). In a browser, the `Create token` button, like
 `Sign out`, visibly reacts as the user presses it. After the `<main>`, the
-page ends with the page footer reading `auth <version>`, where `<version>` is what `auth --version` prints.
+page ends with the page footer reading `auth <display>`, where `<display>` is
+what `auth --version` prints under the same environment.
 Both forms return the same page; the `?return=<url>` is ignored.
 
 Preconditions:

@@ -26,7 +26,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the landing page (`S03-landing.md`): an HTML page whose title is `repos`, whose visible text carries the heading `repos`, the heading `MCP tools` and the six tool names `list`, `show`, `status`, `create`, `rename`, and `delete`, the heading `Clone with git` and under it the credential guidance naming `credential.http://*.wip.localhost:7400.helper`, and the link `About repos` to `/about`, whose banner's profile link is titled with the email of the token's owner and leads to `http://auth.wip.localhost:7400/`, and whose footer reads `repos v<semver>`. Its banner carries the launcher button `Services`, since the sandbox's services file lists repos with its icon.
+Status 200. The body is the landing page (`S03-landing.md`): an HTML page whose title is `repos`, whose visible text carries the heading `repos`, the heading `MCP tools` and the six tool names `list`, `show`, `status`, `create`, `rename`, and `delete`, the heading `Clone with git` and under it the credential guidance naming `credential.http://*.wip.localhost:7400.helper`, and the link `About repos` to `/about`, whose banner's profile link is titled with the email of the token's owner and leads to `http://auth.wip.localhost:7400/`, and whose footer reads `repos <display>`, where `<display>` is the short commit of the worktree the sandbox was brought up from, with `-dirty` after it when that tree had changes, since the sandbox tells repos the worktree's commit and no release label (`S01-bootstrap.md`). Its banner carries the launcher button `Services`, since the sandbox's services file lists repos with its icon.
 
 Preconditions:
 

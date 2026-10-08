@@ -22,13 +22,3 @@ func TestExportedExitConstants(t *testing.T) {
 			externalExitSuccess, externalExitServerFailed, externalExitUsage)
 	}
 }
-
-// R-JWQT-BFRO
-func TestExportedVersionVariable(t *testing.T) {
-	t.Parallel()
-
-	// Taking its address as a *string proves Version is a variable of type string.
-	_ = readString(&cli.Version)
-}
-
-func readString(p *string) string { return *p }

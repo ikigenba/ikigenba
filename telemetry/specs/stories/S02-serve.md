@@ -4,11 +4,13 @@ The bare binary serves, and it serves only on a listening socket it inherits: te
 
 telemetry's environment also carries `RETENTION_DAYS`, how long a record stays in the trail: a positive whole number of days, and 15 when it is unset or empty. Its default is the manifest's (`S01`), which the host writes into `etc/env`, and an operator changes it there. Records older than the window are swept out, once as telemetry starts and then every hour (`S07`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives telemetry. The file lists the platform's services: it feeds the launcher in the banner of telemetry's pages (`S03`), and it holds the description telemetry's MCP endpoint gives its clients as instructions (`S05`). telemetry reads the variable once, when it starts, and reads the file it names afresh on every request, so a rewritten file shows on the next request without a restart. telemetry never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, telemetry starts and serves all the same, treats the file as listing no services, and says nothing about it. Unlike every other app, telemetry does not need the file to find the telemetry service: it is the telemetry service, and its own events go straight into its own store (below), so a missing services file or a file with no `telemetry` entry costs it only the launcher and the instructions.
 
-telemetry checks its environment first — `DRAIN_SECONDS`, then `RETENTION_DAYS` — then looks for its socket, and only then opens its SQLite database at `state/telemetry.db`, relative to its working directory. So a start refused as a usage error has touched nothing, not even the database. It creates `state/` if it is absent and `state/telemetry.db` if it is absent, brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and only then sweeps, serves and tells systemd it is ready. A database an older telemetry created, before telemetry carried migrations, is brought up to date the same way: version `0001` is the schema such a database already has, so applying it keeps every record the database holds, and afterwards `telemetry db status` shows `0001` applied. A database it cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `telemetry: cannot open database state/telemetry.db: <reason>`, and exit status 1. telemetry is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S14`).
+telemetry's environment may also carry `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`, from which it builds `<display>`, the display string `telemetry --version` prints under the same environment (`S01`). telemetry reads them once, when it starts, and shows that string as its version wherever it shows one: in its own `service.started` event (below), its pages' footer and about screen (`S03`), and its MCP `serverInfo` (`S05`). With neither set the string is empty, and telemetry starts and serves all the same.
+
+telemetry checks its environment first — `DRAIN_SECONDS`, then `RETENTION_DAYS` — then looks for its socket, and only then opens its SQLite database at `state/telemetry.db`, relative to its working directory. So a start refused as a usage error has touched nothing, not even the database. It creates `state/` if it is absent and `state/telemetry.db` if it is absent, brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and only then sweeps, serves and tells systemd it is ready. A database an older telemetry created, before telemetry carried migrations, is brought up to date the same way: version `0001` is the schema such a database already has, so applying it keeps every record the database holds, and afterwards `telemetry db status` shows `0001` applied. A database it cannot open is a start it refuses, with one line on stderr, `telemetry: cannot open database state/telemetry.db: <reason>`, and exit status 1. A database that records a migration it does not carry is one a newer telemetry has upgraded; telemetry applies nothing to it, warns on stderr that it is ahead, and serves it as usual (below). telemetry is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S14`).
 
 telemetry records what it does as a trail of events, exactly as every app of the platform does, and its events are records in the same trail the other services' events land in: the same store its tools search (`S08` to `S11`). They do not go through its socket. Every other app posts each event to the telemetry service's socket; telemetry writes each of its own straight into its store, so no event of its own loops back through `/ingest`, and no services file is needed to find the way. An event is one record: the time, in UTC to the microsecond; the service, always `telemetry`; the event's name; the request id, the `X-Request-Id` of the request the event belongs to; the user, that request's `X-User-Id`, empty when it had none; and its attributes, flat names with string, number, or boolean values. The request id and the user are empty for an event that belongs to no request. Attributes carry what happened and the names of the things it happened to, never what a request or an answer held: no tool arguments, no results, no error text, no query string. Storing its own trail never holds up a request. telemetry records these events and no others (`S12`):
 
-- `service.started`, once telemetry is serving and has told systemd it is ready, with `version`, the version `telemetry --version` prints (`S01`);
+- `service.started`, once telemetry is serving and has told systemd it is ready, with `version`, `<display>`: a new value there is how a deploy shows in the trail;
 - `service.stopping`, when telemetry is told to stop and has finished the requests it accepted, with `reason`, the name of the signal that stopped it, `SIGTERM` or `SIGINT`; it is the last event telemetry records;
 - `request.started`, as each request arrives, with `method` and `path`, the request's URL path without its query, for every request but one to `/ingest`;
 - `request.finished`, once that request's answer is complete, with `status`, the status of telemetry's answer as appkit's request middleware records it for every app of the platform, `duration_us`, how long telemetry took to answer, in whole microseconds, `request_bytes`, how many bytes of the request's body telemetry read, and `response_bytes`, how many bytes of body its answer carried, for every request but one to `/ingest`;
@@ -16,13 +18,13 @@ telemetry records what it does as a trail of events, exactly as every app of the
 
 Any request to `/ingest`, whatever its method, is a sibling's event arriving or a refusal of one, and it adds at most the record the sibling sent and nothing of telemetry's own (`S06`): the trail is of what the suite did, not of telemetry's bookkeeping, and one request per sibling event would double it. A story shows the events a request added to the trail as a block, one event to a line, in the order telemetry recorded them: the event's name, then each attribute as `<key>=<value>`, with `duration_us`, `request_bytes`, and `response_bytes` left out because they vary; the request id and the user every line of the block carries are stated beside it. A story's `Nothing has changed.` speaks of everything but the trail, which every request but an ingest adds to.
 
-telemetry's stderr holds only trouble, and trouble is exactly two things: a condition telemetry cannot continue from — a start it refuses, a database it cannot open, a stop that cut requests off, each with its own diagnostic below — and an event of its own trail that it could not store. Everything else telemetry does it records in its trail and writes nothing about, a request it answers with a 5xx included: a handled failure is a fact of the trail, recorded with its status, not a line in the journal. A sibling's event that telemetry cannot take, because its store will not take it, is answered 500 and is the sibling's trouble to report (`S06`): the sibling writes its own `undelivered event` line, and telemetry writes nothing. A sweep writes nothing (`S07`). So under systemd the journal holds only trouble, and a healthy telemetry writes nothing at all. Every line telemetry writes to stderr begins `telemetry: `. An event of its own that it cannot store is not lost without trace: telemetry writes it to stderr as one line, `telemetry: undelivered event: ` followed by the event as a JSON object whose members are, in this order, `time`, `service`, `event`, `request_id`, `user`, and `attrs`, with `time` in the form `2026-10-02T14:03:07.123456Z`, and goes on serving. That is the only way an event of telemetry's own reaches stderr. Storing an event of its own is off the request's path: telemetry queues it and writes it into the store in order, shortly after, so a tool answers from what is in the store when it runs (`S12`). While its database takes writes, no event of its own reaches stderr but at a stop whose drain deadline cuts the storing short, when every event still queued is written there instead (`The host stops telemetry while a request outlasts the drain`).
+telemetry's stderr holds only trouble, and trouble is exactly two things: a condition telemetry cannot continue from — a start it refuses, a database it cannot open, a stop that cut requests off, each with its own diagnostic below — and an event of its own trail that it could not store. One warning joins them: a database ahead of the binary, which telemetry names on stderr as it starts and then serves (below). Everything else telemetry does it records in its trail and writes nothing about, a request it answers with a 5xx included: a handled failure is a fact of the trail, recorded with its status, not a line in the journal. A sibling's event that telemetry cannot take, because its store will not take it, is answered 500 and is the sibling's trouble to report (`S06`): the sibling writes its own `undelivered event` line, and telemetry writes nothing. A sweep writes nothing (`S07`). So under systemd the journal holds only trouble, and a healthy telemetry writes nothing at all. Every line telemetry writes to stderr begins `telemetry: `. An event of its own that it cannot store is not lost without trace: telemetry writes it to stderr as one line, `telemetry: undelivered event: ` followed by the event as a JSON object whose members are, in this order, `time`, `service`, `event`, `request_id`, `user`, and `attrs`, with `time` in the form `2026-10-02T14:03:07.123456Z`, and goes on serving. That is the only way an event of telemetry's own reaches stderr. Storing an event of its own is off the request's path: telemetry queues it and writes it into the store in order, shortly after, so a tool answers from what is in the store when it runs (`S12`). While its database takes writes, no event of its own reaches stderr but at a stop whose drain deadline cuts the storing short, when every event still queued is written there instead (`The host stops telemetry while a request outlasts the drain`).
 
 These are the terms every app of the platform serves on, the same as dummy's. The socket is the app's only way in. Every app runs as the one `ikigenba` user, so any app can reach any sibling's socket, and nginx reaches them all; nothing else on the host can. The suite is a closed system that only we deploy services into, and an app trusts the suite: it trusts the headers nginx sets — `X-User-Id` and `X-User-Email`, the caller auth authenticated, and `X-Request-Id`, 32 lowercase hexadecimal characters nginx sets on every request and overwrites whatever a client sent — and it trusts a sibling that calls it to have forwarded them. The mcp gateway calls telemetry that way, at its socket, forwarding the caller's three headers (`S05`). A post to `/ingest` is the one call that carries no identity: a sibling's writer, not a caller, makes it, and the event it carries names its own request id and user (`S06`). Every other request telemetry serves has a request id: a request that arrives with no `X-Request-Id`, or an empty one — a developer's request with no nginx in front, say — is given one in nginx's shape, 32 lowercase hexadecimal characters telemetry makes up, before anything else in telemetry sees the request, and from then on that id is the request's id in telemetry's trail. telemetry calls no sibling.
 
 ## The host starts telemetry
 
-The socket keeps out every process that is not part of the suite or nginx, which a port on loopback would not: any process on the host can connect to a loopback port, and only the `ikigenba` user and nginx can connect to `/run/ikigenba/telemetry.sock`. systemd owns the socket, so it exists, and accepts connections into its queue, before telemetry starts and while it is stopped; telemetry's part is to serve what arrives on it, the events siblings posted while it was down included. `systemctl start` returns once telemetry has reported that it is ready. At that moment telemetry records `service.started`, the first event of its own trail, with the version it is running: a new version in a start event is how a deploy shows in the trail.
+The socket keeps out every process that is not part of the suite or nginx, which a port on loopback would not: any process on the host can connect to a loopback port, and only the `ikigenba` user and nginx can connect to `/run/ikigenba/telemetry.sock`. systemd owns the socket, so it exists, and accepts connections into its queue, before telemetry starts and while it is stopped; telemetry's part is to serve what arrives on it, the events siblings posted while it was down included. `systemctl start` returns once telemetry has reported that it is ready. At that moment telemetry records `service.started`, the first event of its own trail, with `<display>` as its `version`: a new value there is how a deploy shows in the trail.
 
 Command:
 
@@ -51,10 +53,10 @@ Postconditions:
 - telemetry listens on no other socket and no port.
 - `/opt/telemetry/state/telemetry.db` is the database it opened, now up to date; it existed already, and every record it held that is inside the retention window is still there. Records older than the window have been swept out (`S07`).
 - telemetry has written nothing to the journal.
-- The trail holds one event from this start, the first this telemetry records, before the `request.started` of any request it answers, with an empty request id and an empty user, `v<semver>` being the version `telemetry --version` prints; `search` with `services` `["telemetry"]` finds it (`S09`, `S12`):
+- The trail holds one event from this start, the first this telemetry records, before the `request.started` of any request it answers, with an empty request id and an empty user, whose `version` is `<display>`, the string `telemetry --version` prints under the environment the host gives telemetry (`S01`), the empty string when that environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`; `search` with `services` `["telemetry"]` finds it (`S09`, `S12`):
 
   ```
-  service.started version=v<semver>
+  service.started version=<display>
   ```
 
 - It keeps running until it is signalled.
@@ -90,7 +92,7 @@ Postconditions:
 - `state/` exists, created by telemetry if it was absent.
 - `state/telemetry.db` now exists, created by this start, and is up to date: `telemetry db status` prints `0001 applied <time>`, `<time>` being the moment this start applied it (`S01`).
 - telemetry is serving on the socket it was passed, and on no other.
-- The trail holds exactly one record, telemetry's own `service.started` with `version=v<semver>`, the version `telemetry --version` prints, under an empty request id and an empty user.
+- The trail holds exactly one record, telemetry's own `service.started` with `version=<display>`, under an empty request id and an empty user.
 - It keeps running until it is signalled.
 
 ## The host starts telemetry with no services file
@@ -120,7 +122,7 @@ Preconditions:
 Postconditions:
 
 - telemetry is serving on the socket it was passed, and answers every request as it would with a services file: its pages have no launcher, and its MCP endpoint gives no instructions when the file names no `telemetry` entry.
-- The trail holds telemetry's own `service.started` with `version=v<semver>`, under an empty request id and an empty user, and every event it records from now on.
+- The trail holds telemetry's own `service.started` with `version=<display>`, under an empty request id and an empty user, and every event it records from now on.
 - Nothing reached stderr.
 
 ## The host starts telemetry where its state directory cannot be created
@@ -184,7 +186,7 @@ Postconditions:
 
 ## The host starts telemetry with a database a newer telemetry has upgraded
 
-A deploy rolled back to an older binary leaves it over a database a newer telemetry has upgraded: the database records a migration this telemetry does not carry, so its schema is one this telemetry does not understand. Rather than read it, telemetry refuses to start, naming the version it does not know, and the rollback fails loudly instead of storing into or answering from a trail it cannot read. There is no way back down a migration; restoring the database from before the upgrade is the rollback. `telemetry db status` shows the version as `unknown` (`S01`). Under systemd the start fails, and the socket stays up, as for a database it cannot open.
+A deploy rolled back to an older binary leaves it over a database a newer telemetry has upgraded: the database records a migration this telemetry does not carry. Data never rolls back, so older code must run on newer data, and this telemetry serves the database as it stands. It applies nothing, not even a migration it carries that the database lacks, and writes one line to stderr naming the lowest version it does not carry, zero-padded to four digits as `telemetry db status` prints it; on a host that line goes to the journal. Then it sweeps, serves and tells systemd it is ready, as in any start. The warning is a line on stderr only, not an event in the trail. `telemetry db status` lists every version the database records, the unknown ones as `unknown` (`S01`).
 
 Command:
 
@@ -195,21 +197,24 @@ $ telemetry
 Output:
 
 ```
-telemetry: cannot open database state/telemetry.db: <reason>
+telemetry: unknown migration version 0002: database is ahead of this binary
 ```
 
-Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this telemetry does not carry, zero-padded to four digits: `0002`.
+Does not exit. The line is on stderr, written before telemetry serves; stdout is empty.
 
 Preconditions:
 
 - `bin/telemetry` exists and is on the `PATH` as `telemetry`, carrying only migration `0001`.
 - `LISTEN_PID` is telemetry's process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `DRAIN_SECONDS` and `RETENTION_DAYS` are each unset, or a positive whole number.
-- `state/telemetry.db` exists and records versions `0001` and `0002` as applied.
+- `state/telemetry.db` exists and records versions `0001` and `0002` as applied, and holds records inside the retention window.
 
 Postconditions:
 
-- Nothing has changed: the database still records `0001` and `0002` and holds the records it held, none swept. telemetry served nothing, told systemd nothing, and recorded no event.
+- The database still records `0001` and `0002`, and no other version; this start applied nothing.
+- telemetry is serving on the socket it was passed, over that `state/telemetry.db`, and every record it held that is inside the retention window is still there; records older than the window have been swept out (`S07`).
+- The trail holds telemetry's own `service.started` from this start, whose `version` is `<display>`, and no event about the warning.
+- It keeps running until it is signalled.
 
 ## The host stops telemetry
 
@@ -303,7 +308,7 @@ Postconditions:
 
 - Every request sent was answered, by the old telemetry or the new one; none was refused and none was cut off. Every event a sibling posted is in the store, taken by whichever telemetry answered it.
 - A new telemetry process is serving on `/run/ikigenba/telemetry.sock`, over the same `state/telemetry.db`.
-- The trail holds the old telemetry's `service.stopping`, with `reason` `SIGTERM`, and after it the new telemetry's `service.started`, whose `version` is the version the new binary's `telemetry --version` prints, so the trail shows the deploy as a new version in a start event. Every request the old telemetry answered is recorded before its `service.stopping`, and every request the new one answered after its `service.started`.
+- The trail holds the old telemetry's `service.stopping`, with `reason` `SIGTERM`, and after it the new telemetry's `service.started`, whose `version` is the `<display>` of the new telemetry's environment, so the trail shows the deploy as a new value in a start event. Every request the old telemetry answered is recorded before its `service.stopping`, and every request the new one answered after its `service.started`.
 
 ## The host starts telemetry without a socket
 

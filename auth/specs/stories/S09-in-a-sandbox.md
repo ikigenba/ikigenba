@@ -8,8 +8,11 @@ both active, with auth at `http://auth.wip.localhost:7400` and dummy at
 `http://dummy.wip.localhost:7400`. Browsers and curl resolve every name under
 `localhost` to the loopback address. The sandbox gives auth the environment of
 a host — its Google settings, `WORKSPACE_DOMAIN=michaelgreenly.dev`,
-`DRAIN_SECONDS`, and `IKIGENBA_SERVICES` (`S02-serve.md`) — and variables a
-host never sets, of which auth reads two:
+`DRAIN_SECONDS`, and `IKIGENBA_SERVICES` (`S02-serve.md`), with
+`IKIGENBA_COMMIT` set to the worktree's commit, `-dirty` appended when the
+worktree has changes, and no `IKIGENBA_RELEASE`, so `<display>` is the short
+commit, `-dirty` included when it was appended (`S01-bootstrap.md`) — and variables a host never sets, of which auth
+reads two:
 `IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400`, auth's own public origin,
 and `IKIGENBA_CALLBACK_URL=http://localhost:7400`, the origin Google sends a
 browser back to (it does not read `IKIGENBA_SANDBOX`). Google accepts a sign-in redirect to

@@ -55,7 +55,7 @@ launcher (S3), whose button comes first, immediately before the mark; then
 the mark, the profile icon titled with the user's email as a link to `/`, and
 the `Sign out` button
 POSTing to `/logout` — its content sits in the page's one `<main>`, and it ends
-with the page footer reading `auth <version>` (S3). A card is a
+with the page footer reading `auth <display>` (S3). A card is a
 `<section class="card">` whose `<header>` holds an `<h2>` naming it. An icon
 is an inline `<svg class="ico" aria-hidden="true">` drawn before a button's
 text, so the button's accessible text is the word alone.

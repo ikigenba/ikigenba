@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/appref"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
@@ -16,8 +15,8 @@ import (
 )
 
 type preparedBuild struct {
-	app     checkout.App
-	version string
+	app checkout.App
+	sha string
 }
 
 type stagedBuild struct {
@@ -63,20 +62,7 @@ func prepareBuild(ctx context.Context, name string, deps seam.Deps) (preparedBui
 	if err != nil {
 		return preparedBuild{}, err
 	}
-	tags, err := opened.TagsAtHead(ctx)
-	if err != nil {
-		return preparedBuild{}, err
-	}
-	sort.Strings(tags)
-	for _, tag := range tags {
-		if version, ok := appref.VersionForTag(name, tag); ok {
-			return preparedBuild{app: app, version: version}, nil
-		}
-	}
-
-	return preparedBuild{}, &UsageError{
-		Message: fmt.Sprintf("no tag %s/v<semver> points at HEAD (%s)", name, head),
-	}
+	return preparedBuild{app: app, sha: head}, nil
 }
 
 func runPrepared(ctx context.Context, prepared preparedBuild, stdout io.Writer, deps seam.Deps) error {
@@ -93,23 +79,6 @@ func stagePrepared(ctx context.Context, prepared preparedBuild, deps seam.Deps) 
 	emptyCleanup := func() {}
 	if err != nil {
 		return stagedBuild{}, emptyCleanup, err
-	}
-
-	version, err := executeStaged(ctx, deps, stagedBinary, prepared.app.Dir, prepared.app.Name+" --version", "--version")
-	if err != nil {
-		cleanup()
-		return stagedBuild{}, emptyCleanup, err
-	}
-	reported := strings.TrimRight(string(version), "\n")
-	if reported != prepared.version {
-		cleanup()
-		return stagedBuild{}, emptyCleanup, &UsageError{Message: fmt.Sprintf(
-			"%s: tagged %s/%s but the binary reports %s",
-			prepared.app.Name,
-			prepared.app.Name,
-			prepared.version,
-			reported,
-		)}
 	}
 
 	manifest, err := executeStaged(ctx, deps, stagedBinary, prepared.app.Dir, prepared.app.Name+" manifest", "manifest")
@@ -252,7 +221,7 @@ func archivePrepared(ctx context.Context, staged stagedBuild, stdout io.Writer, 
 		return err
 	}
 
-	finalRelative := File(app.Name, staged.prepared.version)
+	finalRelative := File(app.Name, staged.prepared.sha)
 	finalPath := filepath.Join(app.Dir, "dist", filepath.Base(finalRelative))
 	if err := os.Rename(temporaryPath, finalPath); err != nil {
 		return err

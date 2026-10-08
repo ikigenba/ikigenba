@@ -32,7 +32,6 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
-	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 const wantUsage = `Usage: auth [command]
@@ -72,7 +71,7 @@ memory_max = "128M"
 const wantSocketHint = "\n\nrun it under systemd, with a listening socket passed in\n"
 
 func TestSurface(t *testing.T) {
-	// R-7ALZ-I7QX
+	// R-8DU8-RJTD
 	// An unkeyed literal fixes the field set, order, and types at compile time;
 	// reading each field back into a variable of its declared type fixes them exactly.
 	var (
@@ -82,6 +81,7 @@ func TestSurface(t *testing.T) {
 		pid       int
 		stdout    io.Writer
 		stderr    io.Writer
+		display   string
 		inherit   func(uintptr) (net.Listener, error)
 		now       func() time.Time
 		rnd       io.Reader
@@ -90,15 +90,17 @@ func TestSurface(t *testing.T) {
 		banner    func(page.User) page.Banner
 		sink      telemetry.Sink
 	)
-	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dir, banner, sink}
+	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, display, inherit, now, rnd, issuer, dir, banner, sink}
 	args, lookupEnv, unsetenv, pid = p.Args, p.LookupEnv, p.Unsetenv, p.Pid
-	stdout, stderr, inherit, now = p.Stdout, p.Stderr, p.Inherit, p.Now
+	stdout, stderr, display, inherit, now = p.Stdout, p.Stderr, p.Version, p.Inherit, p.Now
 	rnd, issuer, dir, banner = p.Rand, p.OIDCIssuer, p.Dir, p.Banner
 	sink = p.Sink
-	_, _, _, _, _, _, _, _, _, _, _, _, _ = args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dir, banner, sink
+	_, _, _, _, _, _, _, _, _, _, _, _, _, _ = args, lookupEnv, unsetenv, pid, stdout, stderr, display, inherit, now, rnd, issuer, dir, banner, sink
 	// R-LUR4-A3IV R-7D1S-9R8B
 	runFn := Run
-	if code := runFn(t.Context(), Process{Args: []string{"--version"}, Stdout: io.Discard, Stderr: io.Discard}); code != 0 {
+	p = baseProcess(goodEnv(), t.TempDir(), nil)
+	p.Args = []string{"--version"}
+	if code := runFn(t.Context(), p); code != 0 {
 		t.Fatal(code)
 	}
 }
@@ -109,7 +111,7 @@ func TestCommands(t *testing.T) {
 		out, diag string
 		code      int
 	}{
-		{[]string{"--version"}, version.Version + "\n", "", 0},                                          // R-P02O-R3KF
+		{[]string{"--version"}, "test display\n", "", 0},                                                // R-8JXQ-OEIU
 		{[]string{"--help"}, wantUsage, "", 0},                                                          // R-P1AL-4VB4 R-7J5A-6LXS
 		{[]string{"manifest"}, wantManifest, "", 0},                                                     // R-P2IH-IN1T R-QB6N-JUCJ
 		{[]string{"bogus"}, "", "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", 2},    // R-7KD6-KDOH R-P8LZ-FHRA
@@ -122,7 +124,11 @@ func TestCommands(t *testing.T) {
 			out := new(bytes.Buffer)
 			errOut := &countWriter{}
 			called := false
-			p := Process{Args: tt.args, LookupEnv: func(string) (string, bool) { called = true; return "", false }, Unsetenv: func(string) error { called = true; return nil }, Inherit: func(uintptr) (net.Listener, error) { called = true; return nil, errors.New("unexpected") }, Stdout: out, Stderr: errOut, Dir: t.TempDir()}
+			p := baseProcess(goodEnv(), t.TempDir(), nil)
+			p.Args, p.Stdout, p.Stderr = tt.args, out, errOut
+			p.LookupEnv = func(string) (string, bool) { called = true; return "", false }
+			p.Unsetenv = func(string) error { called = true; return nil }
+			p.Inherit = func(uintptr) (net.Listener, error) { called = true; return nil, errors.New("unexpected") }
 			code := Run(t.Context(), p)
 			if code != tt.code || out.String() != tt.out || errOut.String() != tt.diag || called {
 				t.Fatalf("code=%d out=%q diag=%q called=%v", code, out, errOut.String(), called)
@@ -143,7 +149,7 @@ type countWriter struct {
 func (w *countWriter) Write(b []byte) (int, error) { w.calls++; return w.Buffer.Write(b) }
 
 func baseProcess(env map[string]string, source string, ln net.Listener) Process {
-	return Process{Sink: &telemetry.Capture{}, LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 42, Stdout: new(bytes.Buffer), Stderr: new(countWriter), Inherit: func(fd uintptr) (net.Listener, error) {
+	return Process{Version: "test display", Unsetenv: func(string) error { return nil }, Sink: &telemetry.Capture{}, LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 42, Stdout: new(bytes.Buffer), Stderr: new(countWriter), Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			return nil, fmt.Errorf("fd %d", fd)
 		}
@@ -839,7 +845,7 @@ func TestRunUsesConfiguredDrainDeadline(t *testing.T) {
 				t.Fatalf("callback response byte count=%d, want nonnegative count", callbackResponseBytes)
 			}
 			wantEvents := []telemetry.Event{
-				{Time: p.Now(), Service: "auth", Name: "service.started", Attrs: telemetry.Attrs{"version": version.Version}},
+				{Time: p.Now(), Service: "auth", Name: "service.started", Attrs: telemetry.Attrs{"version": p.Version}},
 				{Time: p.Now(), Service: "auth", Name: "request.started", RequestID: "drain-login", Attrs: telemetry.Attrs{"method": "GET", "path": "/login/google"}},
 				{Time: p.Now(), Service: "auth", Name: "request.finished", RequestID: "drain-login", Attrs: telemetry.Attrs{"status": 302, "duration_us": 0, "request_bytes": 0, "response_bytes": loginResponseBytes}},
 				{Time: p.Now(), Service: "auth", Name: "request.started", RequestID: "drain-callback", Attrs: telemetry.Attrs{"method": "GET", "path": "/login/google/callback"}},
@@ -1196,7 +1202,7 @@ func TestOverrunWriterRejectsEventsAfterShutdown(t *testing.T) {
 	sink := &overrunSink{entered: make(chan struct{})}
 	var output bytes.Buffer
 	now := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
-	writer := telemetry.New(telemetry.Config{Service: "auth", Version: version.Version, Sink: sink, Stderr: &output, Now: now, Rand: zeroRand{}})
+	writer := telemetry.New(telemetry.Config{Service: "auth", Version: "test display", Sink: sink, Stderr: &output, Now: now, Rand: zeroRand{}})
 	writer.Ready()
 	<-sink.entered
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1205,7 +1211,7 @@ func TestOverrunWriterRejectsEventsAfterShutdown(t *testing.T) {
 	writer.Emit(t.Context(), "sign_in.refused", telemetry.Attrs{"reason": "provider_failed"})
 	writer.Emit(t.Context(), "request.finished", telemetry.Attrs{"status": 502, "duration_us": 0})
 	expected := []telemetry.Event{
-		{Time: now(), Service: "auth", Name: "service.started", Attrs: telemetry.Attrs{"version": version.Version}},
+		{Time: now(), Service: "auth", Name: "service.started", Attrs: telemetry.Attrs{"version": "test display"}},
 		{Time: now(), Service: "auth", Name: "service.stopping", Attrs: telemetry.Attrs{"reason": "overrun"}},
 		{Time: now(), Service: "auth", Name: "sign_in.refused", Attrs: telemetry.Attrs{"reason": "provider_failed"}},
 		{Time: now(), Service: "auth", Name: "request.finished", Attrs: telemetry.Attrs{"status": 502, "duration_us": 0}},

@@ -21,7 +21,6 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
-	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 // Process carries the invocation and its external inputs.
@@ -32,6 +31,7 @@ type Process struct {
 	Pid        int
 	Stdout     io.Writer
 	Stderr     io.Writer
+	Version    string
 	Inherit    func(fd uintptr) (net.Listener, error)
 	Now        func() time.Time
 	Rand       io.Reader
@@ -108,7 +108,7 @@ func Run(ctx context.Context, p Process) int {
 			if len(args) == 1 {
 				switch args[0] {
 				case "--version":
-					_, _ = fmt.Fprintln(p.Stdout, version.Version)
+					_, _ = fmt.Fprintln(p.Stdout, p.Version)
 				case "--help":
 					_, _ = io.WriteString(p.Stdout, usageText)
 				case "manifest":
@@ -206,7 +206,7 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 			return 1
 		}
 	}
-	trail := telemetry.New(telemetry.Config{Service: "auth", Version: version.Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Rand: p.Rand})
+	trail := telemetry.New(telemetry.Config{Service: "auth", Version: p.Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Rand: p.Rand})
 	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Telemetry: trail, WorkspaceDomain: values[2], PublicURL: origins[0], CallbackURL: origins[1], Banner: p.Banner})
 	trail.Ready()
 	stopped := make(chan time.Time, 1)

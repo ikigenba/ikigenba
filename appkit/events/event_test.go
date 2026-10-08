@@ -54,14 +54,14 @@ func TestEventCanonicalForms(t *testing.T) {
 	}
 }
 
-// R-GD26-8ONE R-GEA2-MGE3 R-GHXR-RRM6 R-GJ5O-5JCV R-SW2V-L459 R-GO19-OMBN
+// R-GEA2-MGE3 R-GHXR-RRM6 R-GJ5O-5JCV R-SW2V-L459 R-GO19-OMBN
 func TestEventValidity(t *testing.T) {
 	cases := []struct {
 		name   string
 		mutate func(*events.Event)
 	}{
 		{"id", func(e *events.Event) { e.ID = "evt_0123456789abcdeF" }}, {"short id", func(e *events.Event) { e.ID = "evt_0" }}, {"service", func(e *events.Event) { e.Service = "" }},
-		{"name caps", func(e *events.Event) { e.Name = "Repo.pushed" }}, {"name extra dot", func(e *events.Event) { e.Name = "a.b.c" }}, {"name underscore", func(e *events.Event) { e.Name = "a_.b" }}, {"name digit", func(e *events.Event) { e.Name = "1a.b" }},
+		{"name caps", func(e *events.Event) { e.Name = "Repo.pushed" }}, {"name extra dot", func(e *events.Event) { e.Name = "a..b.c" }}, {"name underscore", func(e *events.Event) { e.Name = "a_.b" }}, {"name digit", func(e *events.Event) { e.Name = "1a.b" }},
 		{"key", func(e *events.Event) { e.Attrs = events.Attrs{"a__b": 1} }}, {"year negative", func(e *events.Event) { e.Time = time.Date(-1, 1, 1, 0, 0, 0, 0, time.UTC) }}, {"year large", func(e *events.Event) { e.Time = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC) }},
 		{"cause depth", func(e *events.Event) { e.Depth = 1 }}, {"cause no depth", func(e *events.Event) { e.Cause = e.ID }}, {"bad cause", func(e *events.Event) { e.Cause = "bad"; e.Depth = 1 }}, {"negative depth", func(e *events.Event) { e.Depth = -1 }},
 		{"seq no received", func(e *events.Event) { e.Seq = 1 }}, {"received no seq", func(e *events.Event) { e.Received = e.Time }}, {"negative seq", func(e *events.Event) { e.Seq = -1; e.Received = e.Time }},
@@ -91,6 +91,100 @@ func TestEventValidity(t *testing.T) {
 		e.Received = e.Time
 		if _, err := e.MarshalJSON(); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// R-KFTJ-ZIG2
+func TestEventNameGrammar(t *testing.T) {
+	valid := []string{"a.b", "api_key.minted", "a0_1.b2_3", "noun9.verb_0", "a.b.c", "auth.token.minted", "cron.nightly_backup.fired", "a0_1.b2_3.c4_5.d6_7"}
+	invalid := []string{"", "minted", "a", "a_b", "Token.Minted", "1a.b", "a.1b", "_a.b", "a._b", "a_.b", "a.b_", "a__x.b", "a.b__x", "é.b", "a.é", "a-b.c", "a.b-c", "a/b.c", " a.b", "a.b ", "a.b\n", "a.b\x00", ".a.b", "a.b.", "a..b", "a.1b.c", "a.B.c", "a.b_.c", "a.b__x.c", "a.b.é", "cron.*.fired", "*.fired", "a.*"}
+	for _, names := range []struct {
+		values []string
+		valid  bool
+	}{{valid, true}, {invalid, false}} {
+		for _, name := range names.values {
+			e := record()
+			e.Name = name
+			data, err := e.MarshalJSON()
+			if (err == nil) != names.valid {
+				t.Fatalf("MarshalJSON name %q: %v, valid=%v", name, err, names.valid)
+			}
+			// Exercise the decoder independently of the encoder's validation.
+			base, err := record().MarshalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			encodedName, err := json.Marshal(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := bytes.Replace(base, []byte(`"repo.pushed"`), encodedName, 1)
+			var decoded events.Event
+			if err = decoded.UnmarshalJSON(text); (err == nil) != names.valid {
+				t.Fatalf("UnmarshalJSON name %q: %v, valid=%v", name, err, names.valid)
+			}
+			if names.valid && (!bytes.Contains(data, encodedName) || decoded.Name != name) {
+				t.Fatalf("name %q was not preserved", name)
+			}
+		}
+	}
+}
+
+// R-KI9C-R1XG R-KH1G-DA6R R-KJH9-4TO5
+func TestMatch(t *testing.T) {
+	match := events.Match
+	cases := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"repo.pushed", "repo.pushed", true},
+		{"a0_1.b2_3.c4_5", "a0_1.b2_3.c4_5", true},
+		{"cron.*.fired", "cron.nightly_backup.fired", true},
+		{"cron.*.fired", "cron.hourly.fired", true},
+		{"*.pushed", "repo.pushed", true},
+		{"repo.*", "repo.pushed", true},
+		{"*.*", "repo.pushed", true},
+		{"*.*.*", "cron.nightly_backup.fired", true},
+		{"*.a0_1.*.*", "repo.a0_1.b2_3.c4_5", true},
+		{"repo.pushed", "repo.deleted", false},
+		{"cron.*.fired", "cron.fired", false},
+		{"cron.*.fired", "cron.a.b.fired", false},
+		{"cron.*.fired", "cron.hourly.stopped", false},
+		{"cron.*.fired", "other.hourly.fired", false},
+		{"repo.*", "repo.pushed.again", false},
+		{"*", "repo.pushed", false},
+		{"*", "repo", false},
+		{"repo", "repo", false},
+		{"", "repo.pushed", false},
+		{"repo.pushed", "", false},
+		{"cron.a*.fired", "cron.ab.fired", false},
+		{"cron.*a.fired", "cron.ba.fired", false},
+		{"cron.**.fired", "cron.hourly.fired", false},
+		{"Cron.*", "cron.fired", false},
+		{"1cron.*", "cron.fired", false},
+		{"cron_.*", "cron.fired", false},
+		{"cron__x.*", "cron_x.fired", false},
+		{"cron.*.", "cron.hourly.fired", false},
+		{".cron.*", "cron.hourly.fired", false},
+		{"cron..*", "cron.hourly.fired", false},
+		{"cron.*\n", "cron.fired", false},
+		{"cron.*\x00", "cron.fired", false},
+		{"cron.é.*", "cron.e.fired", false},
+		{"cron.*.fired", "cron.*.fired", false},
+		{"*.*", "Repo.pushed", false},
+		{"*.*", "1repo.pushed", false},
+		{"*.*", "repo.pushed_", false},
+		{"*.*", "repo.pushed\n", false},
+		{"*.*", "repo.é", false},
+		{"*.*", "repo.*", false},
+		{"*.*", "repo..pushed", false},
+		{"*.*", "repo/pushed", false},
+		{"repo.pushed\n", "repo.pushed\n", false},
+	}
+	for _, tc := range cases {
+		if got := match(tc.pattern, tc.name); got != tc.want {
+			t.Errorf("Match(%q, %q) = %v, want %v", tc.pattern, tc.name, got, tc.want)
 		}
 	}
 }

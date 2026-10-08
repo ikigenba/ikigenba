@@ -16,9 +16,10 @@ import (
 
 const wantDeployUsage = `Usage: devctl deploy <space> <file>
 
-Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
+Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
-from there. The app and tag (v<semver>) are read from the file name.
+from there. The app and commit sha (40 lowercase hex digits) are read from the
+file name.
 `
 
 func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
@@ -40,12 +41,12 @@ func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
 		},
 		{
 			name:    "extra operand",
-			args:    []string{"deploy", "sbx1", "crm-v0.1.0.tar.xz", "extra"},
+			args:    []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "extra"},
 			message: "deploy takes only <space> and <file>",
 		},
 		{
 			name:    "unknown option first",
-			args:    []string{"deploy", "--unknown", "sbx1", "crm-v0.1.0.tar.xz"},
+			args:    []string{"deploy", "--unknown", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"},
 			message: "unknown option '--unknown'",
 		},
 		{
@@ -69,12 +70,12 @@ func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployHelpAtCommandBoundary(t *testing.T) {
-	// R-O48O-O06U R-OAC6-KUWB
+	// R-O48O-O06U R-5SVE-BZS9
 	for _, args := range [][]string{
 		{"deploy", "--help"},
 		{"deploy", "-h"},
-		{"deploy", "sbx1", "crm-v0.1.0.tar.xz", "--help"},
-		{"deploy", "sbx1", "crm-v0.1.0.tar.xz", "-h"},
+		{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "--help"},
+		{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "-h"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundary(t, args...)
@@ -89,11 +90,11 @@ func TestDeployHelpAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployMissingArtifactAtCommandBoundary(t *testing.T) {
-	// R-08GB-YDTQ R-OBK2-YMN0
+	// R-08GB-YDTQ R-5VB7-3J9N
 	code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundary(t,
-		"deploy", "sbx1", "crm/dist/crm-v0.2.0.tar.xz",
+		"deploy", "sbx1", "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz",
 	)
-	const wantStderr = "devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'\n"
+	const wantStderr = "devctl: no such file 'crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz'\n"
 	if code != 2 || stdout != "" || stderr != wantStderr {
 		t.Fatalf("result = code %d, stdout %q, stderr %q; want 2, empty, %q", code, stdout, stderr, wantStderr)
 	}
@@ -103,7 +104,7 @@ func TestDeployMissingArtifactAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployInvalidArtifactNameAtCommandBoundary(t *testing.T) {
-	// R-FBPJ-DRF6 R-OBK2-YMN0
+	// R-63UH-RXGI R-5VB7-3J9N
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "notes.tar.xz"), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
@@ -111,7 +112,7 @@ func TestDeployInvalidArtifactNameAtCommandBoundary(t *testing.T) {
 	code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundaryAt(t, dir,
 		"deploy", "sbx1", "notes.tar.xz",
 	)
-	const wantStderr = "devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-v<semver>.tar.xz\n"
+	const wantStderr = "devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<sha>.tar.xz\n"
 	if code != 2 || stdout != "" || stderr != wantStderr {
 		t.Fatalf("result = code %d, stdout %q, stderr %q; want 2, empty, %q", code, stdout, stderr, wantStderr)
 	}

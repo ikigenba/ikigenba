@@ -252,7 +252,7 @@ Preconditions:
 
 Postconditions:
 
-- `sandbox-wip-auth.service` and `sandbox-wip-dummy.service` run the new builds. `sandbox-wip-auth.socket` and `sandbox-wip-dummy.socket` stayed active throughout, and nginx was reloaded, not stopped.
+- `sandbox-wip-auth.service` and `sandbox-wip-dummy.service` run the new builds, each told the worktree's commit as it is at this `up` in `IKIGENBA_COMMIT`, so a commit made or a tree made dirty or clean since the last `up` shows in it now. `sandbox-wip-auth.socket` and `sandbox-wip-dummy.socket` stayed active throughout, and nginx was reloaded, not stopped.
 - The client's request was answered, not refused.
 - The registry entry, the port and each app's `apps/<app>/` directory, its `state/` included, are as they were.
 

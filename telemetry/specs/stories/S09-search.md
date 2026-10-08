@@ -298,8 +298,8 @@ Status 200, three times. The first body is a JSON-RPC response with `id` 7 whose
   {"time":"2026-09-30T09:12:44.503500Z","service":"auth","event":"request.finished","request_id":"c7d1e3f5a9b2c4d6e8f0a1b3c5d7e9f2","user":"","attrs":{"duration_us":3500,"status":200}},
   {"time":"2026-09-30T09:12:44.503000Z","service":"auth","event":"check.allowed","request_id":"c7d1e3f5a9b2c4d6e8f0a1b3c5d7e9f2","user":"u_1e9b4d07","attrs":{"credential":"session","host":"dummy.sbx.ikigenba.dev","method":"GET","outcome":"allowed","path":"/widgets"}},
   {"time":"2026-09-30T09:12:44.500000Z","service":"auth","event":"request.started","request_id":"c7d1e3f5a9b2c4d6e8f0a1b3c5d7e9f2","user":"","attrs":{"method":"GET","path":"/check"}},
-  {"time":"2026-09-30T08:00:02.000000Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}},
-  {"time":"2026-09-30T08:00:00.000000Z","service":"telemetry","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}]}
+  {"time":"2026-09-30T08:00:02.000000Z","service":"dummy","event":"service.started","request_id":"","user":"","attrs":{"version":"c604e32"}},
+  {"time":"2026-09-30T08:00:00.000000Z","service":"telemetry","event":"service.started","request_id":"","user":"","attrs":{"version":"c604e32"}}]}
 ```
 
 Each `content` array is one text block whose text is its object encoded compactly. No record is on two pages and none is skipped: the three pages together are the fixture, newest first.

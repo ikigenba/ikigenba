@@ -4,7 +4,9 @@ The bare binary serves, and it serves only on a listening socket it inherits: sc
 
 scripts' environment also carries its thirteen settings, each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `etc/env`, and an operator changes them there. `REPOS_DIR`, `../repos/state/repos`, is the directory holding repos' bare repositories, each as `<repository id>.git`; a relative value is resolved against scripts' working directory, so on a host it is `/opt/scripts/../repos/state/repos`, which is `/opt/repos/state/repos`, and an absolute one is used as it is (`S20`). scripts only reads there, with git, and never writes there. `TREE_MAX_BYTES`, 268435456, a positive whole number of bytes, is the largest a run's unpacked tree may be, counted as the sum of its files' sizes (`S17`). `OUTPUT_MAX_BYTES`, 1048576, a positive whole number of bytes, is how much of a run's standard output, and separately of its standard error, is kept (`S17`). `OPERATION_SECONDS`, 600, a positive whole number of seconds, is the longest one git run may take before scripts kills it (`S17`). `SCRIPT_SECONDS`, 600, a positive whole number of seconds, is the longest a script may run before scripts kills it (`S17`). `RUN_MEMORY_MAX_BYTES`, 268435456, a positive whole number of bytes, is the most memory one run may hold, every process of it together, and `RUNS_MEMORY_MAX_BYTES`, 536870912, a positive whole number of bytes, is the most every run may hold together (`S17`). `RUNS_CPU_PERCENT`, 100, a positive whole number, is how much CPU every run may use together, as a percentage of one CPU (`S17`). `RUN_PIDS_MAX`, 64, a positive whole number of processes, is the most processes one run may have at once (`S17`). `RUN_MAX_ACTIVE`, 2, a positive whole number of runs, is how many runs may run at once, and `RUN_MAX_QUEUED`, 10, a positive whole number of runs, is how many more may wait for one of those to end (`S08`, `S17`). `RUN_KEEP_DAYS`, 15, a positive whole number of days, is how long a run is kept, and `RUN_KEEP_COUNT`, 10, a positive whole number of runs, is how many of each script's newest runs are kept whatever their age (`S19`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives scripts. The file lists the platform's services: it feeds the launcher in the banner of scripts' pages (`S03`), it holds the description scripts' MCP endpoint gives its clients as instructions (`S05`), its entry named `telemetry` is where scripts sends its trail (below), and its path is handed, as it is, to every script scripts runs, which finds its siblings there (`S15`). scripts reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. scripts never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, scripts starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
 
-scripts runs the host's own `git` for every read of a repository — reading a repository's owner and name, resolving a ref, unpacking a commit's tree with `git archive` — and has no git of its own, and it runs every script with the host's own `python3.12` (`S15`, `S22`); both are dependencies of the host. scripts checks its environment first — `DRAIN_SECONDS`, then `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, in that order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, then that one named `python3.12` is (`S22`), and only then opens its SQLite database, the catalog of scripts and the record of every run, at `state/scripts.db`, relative to its working directory, creating `state/` and the database on its first start, and brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the run folders, `state/runs/`, creating it when it is absent. Then it prepares its control group, in which it runs every script (below). It then marks every run its catalog still records as `running` as `killed`, and finishes every run it still records as `queued` as `failed`, with reason `queue_abandoned` (`S18`), and prunes the runs past keeping (`S19`). Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after scripts, and a repository is looked for only when a tool, a run or a page needs it (`S21`). So a start refused as a usage error, or for want of git or `python3.12`, has touched nothing, not even the database. A database scripts cannot open, or one that records a migration it does not carry, is a start it refuses, with one line on stderr, `scripts: cannot open database state/scripts.db: <reason>`, and exit status 1. scripts is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); the run folders under `state/runs/` are not replicated (`S20`).
+scripts runs the host's own `git` for every read of a repository — reading a repository's owner and name, resolving a ref, unpacking a commit's tree with `git archive` — and has no git of its own, and it runs every script with the host's own `python3.12` (`S15`, `S22`); both are dependencies of the host. scripts checks its environment first — `DRAIN_SECONDS`, then `TREE_MAX_BYTES`, `OUTPUT_MAX_BYTES`, `OPERATION_SECONDS`, `SCRIPT_SECONDS`, `RUN_MEMORY_MAX_BYTES`, `RUNS_MEMORY_MAX_BYTES`, `RUNS_CPU_PERCENT`, `RUN_PIDS_MAX`, `RUN_MAX_ACTIVE`, `RUN_MAX_QUEUED`, `RUN_KEEP_DAYS` and `RUN_KEEP_COUNT`, in that order — then looks for its socket, then checks that an executable named `git` is on its `PATH`, then that one named `python3.12` is (`S22`), and only then opens its SQLite database, the catalog of scripts and the record of every run, at `state/scripts.db`, relative to its working directory, creating `state/` and the database on its first start, and brings the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the run folders, `state/runs/`, creating it when it is absent. Then it prepares its control group, in which it runs every script (below). It then marks every run its catalog still records as `running` as `killed`, and finishes every run it still records as `queued` as `failed`, with reason `queue_abandoned` (`S18`), and prunes the runs past keeping (`S19`). Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after scripts, and a repository is looked for only when a tool, a run or a page needs it (`S21`). So a start refused as a usage error, or for want of git or `python3.12`, has touched nothing, not even the database. A database scripts cannot open is a start it refuses, with one line on stderr, `scripts: cannot open database state/scripts.db: <reason>`, and exit status 1. A database that records a migration it does not carry is one a newer scripts has upgraded; scripts applies nothing to it, warns on stderr that it is ahead, and goes on with its start as usual (below). scripts is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); the run folders under `state/runs/` are not replicated (`S20`).
+
+scripts' environment may also carry `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`, from which it builds `<display>`, the display string `scripts --version` prints under the same environment (`S01`). scripts reads them once, when it starts, and shows that string as its version wherever it shows one: in its `service.started` event (below), its pages' footer and its about screen (`S03`), and its MCP `serverInfo` (`S05`). With neither set the string is empty, and scripts starts and serves all the same. They are not among the variables a run is given (`S15`).
 
 On a host, `ikigenba-scripts.service` delegates its control group to scripts, as the manifest's `delegate` asks (`S01`): the group `systemctl show --property ControlGroup --value ikigenba-scripts.service` names, under `/sys/fs/cgroup`, is scripts' own to arrange. Once its runs directory is ready, and before it settles what a previous process left, scripts prepares that group: it moves its own process into a child group `main/`, enables the `cpu`, `memory` and `pids` controllers for the group's children, makes a second child group `runs/`, whose `memory.max` is `RUNS_MEMORY_MAX_BYTES` and whose `cpu.max` allows `RUNS_CPU_PERCENT` percent of one CPU, so that every run together is held to both, and enables the `memory` and `pids` controllers under `runs/`. Each run runs in a group of its own under `runs/`, named for the run's id, bounded by `RUN_MEMORY_MAX_BYTES` and `RUN_PIDS_MAX`, and removed, with whatever is still in it killed, when the run ends (`S15`, `S17`). When scripts cannot find such a group, or cannot prepare it — run bare at a developer's terminal, where its process is in a group nothing delegated to it, or under a unit that does not delegate — it does not refuse to start, and it has no other way to run a script: it writes one line, `scripts: runs are unavailable: <reason>`, to stderr, `<reason>` saying why, then settles, reports ready and serves as on any start, and refuses every `run` with `runs are unavailable: <reason>`, the same reason (`S08`). Every page and every other tool is answered as usual. A start refused earlier, for its settings, its socket, git, `python3.12`, its database or its runs directory, has touched no control group.
 
@@ -18,7 +20,7 @@ scripts keeps a trail: it records what it does as events it sends to the platfor
 
 scripts records these events and no others:
 
-- `service.started`, once scripts is serving and has told systemd it is ready, with `version`, the version `scripts --version` prints (`S01`);
+- `service.started`, once scripts is serving and has told systemd it is ready, with `version`, `<display>`, the string `scripts --version` prints under the environment scripts was started with (`S01`);
 - `service.stopping`, when scripts is told to stop and has finished the requests it accepted, with `reason`, the name of the signal that stopped it, `SIGTERM` or `SIGINT`; it is the last event scripts records;
 - `request.started`, as each request arrives, with `method` and `path`, the request's URL path without its query;
 - `request.finished`, once that request's answer is complete, with `status`, the status of scripts' answer; `duration_us`, how long scripts took to answer, in whole microseconds; `request_bytes`, how many bytes of the request's body scripts read; and `response_bytes`, how many bytes of the response's body scripts wrote; the three vary from request to request, and a story's event JSON shows `duration_us` as `<n>` and the two byte counts as `<bytes>` unless it fixes them;
@@ -29,13 +31,13 @@ scripts records these events and no others:
 
 The events of a request carry its request id and its caller, and come in this order: `request.started`, then the request's domain events, then `tool.called` for a tool call, then `request.finished`. A run's `run.finished` carries the request id and user of the run, whichever request or moment ends it (`S16`).
 
-stderr holds only trouble: a condition scripts cannot go on from — the start-up refusals below, the runs a start without its control group cannot make, and the requests lost to a drain cut short — and an event scripts could not deliver. A failure scripts handles is not trouble: a tool call refused, a run that could not start, a script that exits non-zero, runs too long or is cancelled, a path answered `404`, a request answered 500, like a request answered any other way, is recorded in the trail, the run or the tool's result and earns no line on stderr. So while telemetry takes every event and its control group is ready, a running scripts writes nothing to stdout or stderr, and under systemd the journal holds only trouble. Every line scripts writes to stderr begins `scripts: `. What git itself writes to its stderr while scripts runs it for a run goes into that run's `stderr` (`S08`), or nowhere, and what a script writes goes into its run's `stdout` and `stderr` (`S15`); neither ever reaches scripts' own stderr.
+stderr holds only trouble: a condition scripts cannot go on from — the start-up refusals below, the runs a start without its control group cannot make, and the requests lost to a drain cut short — an event scripts could not deliver, and a database ahead of the binary, which scripts warns of once as it starts and serves all the same (below). A failure scripts handles is not trouble: a tool call refused, a run that could not start, a script that exits non-zero, runs too long or is cancelled, a path answered `404`, a request answered 500, like a request answered any other way, is recorded in the trail, the run or the tool's result and earns no line on stderr. So while telemetry takes every event, its control group is ready and its database is not ahead of it, a running scripts writes nothing to stdout or stderr, and under systemd the journal holds only trouble. Every line scripts writes to stderr begins `scripts: `. What git itself writes to its stderr while scripts runs it for a run goes into that run's `stderr` (`S08`), or nowhere, and what a script writes goes into its run's `stdout` and `stderr` (`S15`); neither ever reaches scripts' own stderr.
 
 These are the terms every app of the platform serves on, the same as sites'. The socket is the app's only way in. Every app runs as the one `ikigenba` user, so any app can reach any sibling's socket, and nginx reaches them all; nothing else on the host can. The suite is a closed system that only we deploy services into, and an app trusts the suite: it trusts the headers nginx sets — `X-User-Id` and `X-User-Email`, the caller auth authenticated, and `X-Request-Id`, 32 lowercase hexadecimal characters nginx sets on every request and overwrites whatever a client sent — and it trusts a sibling that calls it to have forwarded them. scripts' manifest declares no `guests` (`S01`), so on a host with an authenticator nginx passes scripts no request from a visitor with no credential: it sends one to sign in at a page (`S03`) and challenges one at `/mcp` (`S05`). The mcp gateway calls scripts at its socket (`S05`). A request that reaches scripts with no `X-Request-Id`, or an empty one, as a developer's request does, is given an id of the same shape by scripts, a new one for each such request, so every event about a request names it. scripts calls no sibling while serving a request, and reaches repos only through its bare repositories on disk; a script it runs reaches siblings on its own, as the run's user and under the run's request id (`S15`).
 
 ## The host starts scripts
 
-The socket keeps out every process that is not part of the suite or nginx, which a port on loopback would not: any process on the host can connect to a loopback port, and only the `ikigenba` user and nginx can connect to `/run/ikigenba/scripts.sock`. systemd owns the socket, so it exists, and accepts connections into its queue, before scripts starts and while it is stopped; scripts' part is to serve what arrives on it. `systemctl start` returns once scripts has opened its catalog and its runs directory, prepared its control group, settled what a previous process left (`S18`, `S19`), and reported that it is ready. At that moment scripts records `service.started`, with the version it is running: a new version in a start event is how a deploy shows in the trail.
+The socket keeps out every process that is not part of the suite or nginx, which a port on loopback would not: any process on the host can connect to a loopback port, and only the `ikigenba` user and nginx can connect to `/run/ikigenba/scripts.sock`. systemd owns the socket, so it exists, and accepts connections into its queue, before scripts starts and while it is stopped; scripts' part is to serve what arrives on it. `systemctl start` returns once scripts has opened its catalog and its runs directory, prepared its control group, settled what a previous process left (`S18`, `S19`), and reported that it is ready. At that moment scripts records `service.started`, with `<display>` as its `version`: a new value there is how a deploy shows in the trail.
 
 Command:
 
@@ -67,10 +69,10 @@ Postconditions:
 - scripts listens on no other socket and no port.
 - `/opt/scripts/state/scripts.db` is the database it opened, now up to date, and every script and run it held is still there, unchanged by the start; every run folder under `/opt/scripts/state/runs/` is as it was. No git and no script ran.
 - scripts has prepared its control group, the one `systemctl show --property ControlGroup --value ikigenba-scripts.service` names under `/sys/fs/cgroup`: scripts' process is in its child group `main/`, and no process is in the group itself; its `cgroup.subtree_control` names `cpu`, `memory` and `pids`; and its child group `runs/` has a `memory.max` of `RUNS_MEMORY_MAX_BYTES`, a `cpu.max` whose quota is `RUNS_CPU_PERCENT` percent of its period, and a `cgroup.subtree_control` naming `memory` and `pids`.
-- telemetry has received one event from scripts, with no request id and no user, whose `version` is the version `scripts --version` prints (`S01`):
+- telemetry has received one event from scripts, with no request id and no user, whose `version` is `<display>`, the string `scripts --version` prints under the environment the host gives scripts (`S01`), the empty string when that environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`:
 
   ```
-  {"time":"<time>","service":"scripts","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+  {"time":"<time>","service":"scripts","event":"service.started","request_id":"","user":"","attrs":{"version":"<display>"}}
   ```
 
 - scripts has written nothing to the journal.
@@ -110,7 +112,7 @@ Postconditions:
 - `state/scripts.db` now exists, created by this start, and is up to date: `scripts db status` prints `0001 applied <time>` and `0002 applied <time>`, each `<time>` being the moment this start applied that version (`S01`). It names no script and no run: `list` answers `{"scripts":[]}` for every caller (`S07`).
 - `state/runs/` now exists, empty, created by this start.
 - scripts is serving on the socket it was passed, and on no other.
-- telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
+- telemetry has received exactly one event from scripts, its `service.started` with `version` `<display>`, under an empty request id and an empty user.
 - It keeps running until it is signalled.
 
 ## The host starts scripts over a catalog kept before its migrations
@@ -144,7 +146,7 @@ Postconditions:
 
 - scripts is serving on the socket it was passed, over the same `state/scripts.db`, now up to date: `scripts db status` prints `0001 applied <time>` and `0002 applied <time>`, each `<time>` being the moment this start applied that version (`S01`).
 - Every script and run the database held is still there, unchanged: `list`, `show`, `runs` and `result` answer each as they did before the start (`S07`, `S11`), and every run folder under `state/runs/` is as it was.
-- telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
+- telemetry has received exactly one event from scripts, its `service.started` with `version` `<display>`, under an empty request id and an empty user.
 - It keeps running until it is signalled.
 
 ## The host starts scripts with no services file
@@ -160,7 +162,7 @@ $ scripts
 Output:
 
 ```
-scripts: undelivered event: {"time":"<time>","service":"scripts","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+scripts: undelivered event: {"time":"<time>","service":"scripts","event":"service.started","request_id":"","user":"","attrs":{"version":"<display>"}}
 ```
 
 Does not exit. The line is on stderr, written once scripts is serving; stdout is empty. Every event scripts records from then on is written the same way, one line each.
@@ -240,7 +242,7 @@ Postconditions:
 
 ## The host starts scripts with a database a newer scripts has upgraded
 
-A deploy rolled back to an older binary leaves it over a database a newer scripts has upgraded: the database records a migration this scripts does not carry, so its schema is one this scripts does not understand. Rather than read it, scripts refuses to start, naming the version it does not know, and the rollback fails loudly instead of serving wrong answers. There is no way back down a migration; restoring the database from before the upgrade is the rollback. `scripts db status` shows the version as `unknown` (`S01`).
+A deploy rolled back to an older binary leaves it over a database a newer scripts has upgraded: the database records a migration this scripts does not carry. Data never rolls back, so older code must run on newer data, and this scripts serves the database as it stands. It applies nothing, not even a migration it carries that the database lacks, and writes one line to stderr naming the lowest version it does not carry, zero-padded to four digits as `scripts db status` prints it; on a host that line goes to the journal. Then it goes on with its start as any start does — its runs directory, its control group, settling what a previous process left (`S18`, `S19`) — serves, and tells systemd it is ready. The warning is a line on stderr only, not an event in the trail. `scripts db status` lists every version the database records, the unknown ones as `unknown` (`S01`).
 
 Command:
 
@@ -251,21 +253,27 @@ $ scripts
 Output:
 
 ```
-scripts: cannot open database state/scripts.db: <reason>
+scripts: unknown migration version 0003: database is ahead of this binary
 ```
 
-Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version this scripts does not carry, zero-padded to four digits: `0003`.
+Does not exit. The line is on stderr, written before scripts serves; stdout is empty.
 
 Preconditions:
 
 - `bin/scripts` exists and is on the `PATH` as `scripts`, carrying only migrations `0001` and `0002`, and so do `git` and `python3.12`.
 - `LISTEN_PID` is scripts' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `DRAIN_SECONDS` and each of the thirteen settings are unset, or valid.
-- `state/scripts.db` exists and records versions `0001`, `0002` and `0003` as applied.
+- `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
+- scripts' process is in a control group delegated to it, which it prepares as in `The host starts scripts`.
+- `state/scripts.db` exists and records versions `0001`, `0002` and `0003` as applied, and holds no script; `state/runs/` exists and is empty.
 
 Postconditions:
 
-- Nothing has changed: the database still records `0001`, `0002` and `0003` and holds the scripts and runs it held, none marked `killed` and none pruned, and `state/runs/` is as it was, or still absent. scripts served nothing, ran no git and no script, told systemd nothing, and sent telemetry nothing.
+- The database still records `0001`, `0002` and `0003`, and no other version; this start applied nothing.
+- scripts is serving on the socket it was passed, over that `state/scripts.db`: `list` answers `{"scripts":[]}` for every caller (`S07`).
+- telemetry has received exactly one event from scripts, its `service.started` with `version` `<display>`, under an empty request id and an empty user, and no event about the warning.
+- The line above is the only one scripts has written to stderr.
+- It keeps running until it is signalled.
 
 ## The host starts scripts where its runs directory cannot be created
 
@@ -330,7 +338,7 @@ Postconditions:
 - scripts is serving on the socket it was passed, and answers every page and every tool call but `run` as it would with its control group ready.
 - Every `run` is refused with `runs are unavailable: <reason>`, the same `<reason>` (`S08`), and makes no run.
 - scripts settled what a previous process left as any start does (`S18`, `S19`).
-- telemetry has received exactly one event from scripts, its `service.started` with `version` `v<semver>`, the version `scripts --version` prints, under an empty request id and an empty user.
+- telemetry has received exactly one event from scripts, its `service.started` with `version` `<display>`, under an empty request id and an empty user.
 - The line above is the only one scripts has written to stderr.
 - It keeps running until it is signalled.
 
@@ -501,7 +509,7 @@ Postconditions:
 
 - Every request sent was answered, by the old scripts or the new one; none was refused and none was cut off.
 - A new scripts process is serving on `/run/ikigenba/scripts.sock`, over the same `state/scripts.db` and the same `state/runs/`; every run and run folder is as the old scripts left it.
-- telemetry has received the old scripts' `service.stopping`, with `reason` `SIGTERM`, and after it the new scripts' `service.started`, whose `version` is the version the new binary's `scripts --version` prints. Every request the old scripts answered is recorded before its `service.stopping`, and every request the new one answered after its `service.started`.
+- telemetry has received the old scripts' `service.stopping`, with `reason` `SIGTERM`, and after it the new scripts' `service.started`, whose `version` is the `<display>` of the new scripts' environment. Every request the old scripts answered is recorded before its `service.stopping`, and every request the new one answered after its `service.started`.
 
 ## The host starts scripts where telemetry cannot be reached
 
@@ -532,7 +540,7 @@ Postconditions:
 - The journal holds one line from scripts, written after it reported that it was ready:
 
   ```
-  scripts: undelivered event: {"time":"<time>","service":"scripts","event":"service.started","request_id":"","user":"","attrs":{"version":"v<semver>"}}
+  scripts: undelivered event: {"time":"<time>","service":"scripts","event":"service.started","request_id":"","user":"","attrs":{"version":"<display>"}}
   ```
 
 - Every event scripts records while telemetry cannot be reached — every `run.started` and `run.finished` among them — is written to the journal the same way, one line each, and every request is answered, and every run started and ended, as it would be with telemetry taking events.

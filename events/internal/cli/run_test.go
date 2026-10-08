@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,7 +88,7 @@ func startRun(t *testing.T, dir string, env map[string]string, customize ...func
 			return make(chan time.Time)
 		}
 	}
-	f.p = cli.Process{Dir: dir, Pid: 12, Stdout: &f.out, Stderr: &f.errw, Sink: &f.capture, Now: func() time.Time { return f.fixed }, Rand: repeatByte(0x5a), LookupEnv: func(k string) (string, bool) {
+	f.p = cli.Process{Version: "seam-display", Dir: dir, Pid: 12, Stdout: &f.out, Stderr: &f.errw, Sink: &f.capture, Now: func() time.Time { return f.fixed }, Rand: repeatByte(0x5a), LookupEnv: func(k string) (string, bool) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.reads = append(f.reads, k)
@@ -182,10 +184,10 @@ func call(t *testing.T, f *runFixture, name string, args any, id string) mcp.Res
 	return result
 }
 
-// R-PZQY-TQDD R-ZX69-H5FK R-09D9-AUUI R-BTC4-YV4Y R-BY7Q-HY3Q R-BZFM-VPUF
-// R-IH24-NGU5 R-96IT-4P0M R-97QP-IGRB R-C6R1-6CAL R-98YL-W8I0 R-ZTTZ-Z2G4
-// R-ZW9S-QLXI R-CBMM-PF9D R-ZXHP-4DO7 R-CAEQ-BNIO R-9HHW-KMOV R-9IPS-YEFK
-// R-CK5X-DTG8 R-9JXP-C669 R-9NLE-HHEC R-E0E3-6NDU
+// R-9LB6-UL7G R-ZX69-H5FK R-09D9-AUUI R-BTC4-YV4Y R-BY7Q-HY3Q R-BZFM-VPUF
+// R-IH24-NGU5 R-96IT-4P0M R-97QP-IGRB R-C6R1-6CAL R-9XI6-OAME R-ZTTZ-Z2G4
+// R-ZW9S-QLXI R-CBMM-PF9D R-ZXHP-4DO7 R-CAEQ-BNIO R-9YQ3-22D3 R-9ZXZ-FU3S
+// R-CK5X-DTG8 R-A15V-TLUH R-A2DS-7DL6 R-E0E3-6NDU
 func TestRunWiring(t *testing.T) {
 	for _, servicePath := range []string{"", "missing", "broken", "valid"} {
 		t.Run(servicePath, func(t *testing.T) {
@@ -200,19 +202,21 @@ func TestRunWiring(t *testing.T) {
 				}
 			}
 			if servicePath == "valid" {
-				writeServices(t, path, "first instruction", nil)
+				writeServices(t, path, "first instruction", []map[string]any{{"name": "launcher-sibling", "url": "https://launcher-sibling.test", "socket": "unused", "description": "Launcher fixture", "mcp": false, "enabled": false, "icon": "<svg></svg>"}})
 			}
 			f := startRun(t, dir, map[string]string{"IKIGENBA_SERVICES": path, "DRAIN_SECONDS": "1"})
 			resp := f.request(t, "GET", "/about", "", "")
-			if resp.StatusCode != 200 || !strings.Contains(body(t, resp), cli.Version) {
-				t.Fatal("about version")
+			about := body(t, resp)
+			match := regexp.MustCompile(`<dd id="about-version">(.*?)</dd>`).FindStringSubmatch(about)
+			if resp.StatusCode != 200 || len(match) != 2 || match[1] != f.p.Version {
+				t.Fatal("about version", about)
 			}
 			resp = f.request(t, "GET", "/", "", "landing")
 			if resp.StatusCode != 200 {
 				t.Fatal(body(t, resp))
 			}
 			landing := body(t, resp)
-			if servicePath == "valid" && !strings.Contains(landing, "events") {
+			if servicePath == "valid" && !strings.Contains(landing, `title="launcher-sibling is unavailable"><svg></svg>launcher-sibling</a>`) {
 				t.Fatal(landing)
 			}
 			tools, err := f.mcp().ListTools(context.Background(), identity.Caller{UserID: "user", RequestID: "list"})
@@ -231,9 +235,7 @@ func TestRunWiring(t *testing.T) {
 				return body(t, r)
 			}
 			first := discover()
-			if !strings.Contains(first, cli.Version) || !strings.Contains(first, `"name":"events"`) {
-				t.Fatal(first)
-			}
+			checkServerInfo(t, first, f.p.Version)
 			if servicePath == "valid" {
 				if !strings.Contains(first, "first instruction") {
 					t.Fatal(first)
@@ -294,7 +296,7 @@ func TestRunWiring(t *testing.T) {
 				if e.Service != "events" || !e.Time.Equal(f.fixed.UTC().Truncate(time.Microsecond)) {
 					t.Fatal(e)
 				}
-				if e.Name == "service.started" && e.Attrs["version"] != cli.Version {
+				if e.Name == "service.started" && e.Attrs["version"] != f.p.Version {
 					t.Fatal(e)
 				}
 				if e.Name == "request.started" && e.RequestID == strings.Repeat("5a", 16) {
@@ -480,5 +482,47 @@ func TestRunEventTrail(t *testing.T) {
 	}
 	if f.out.Len() != 0 || f.errw.Len() != 0 {
 		t.Fatal(f.out.String(), f.errw.String())
+	}
+}
+
+// R-9YQ3-22D3 R-9ZXZ-FU3S R-9XI6-OAME R-A15V-TLUH R-A2DS-7DL6
+func TestEmptyRunVersion(t *testing.T) {
+	f := startRun(t, t.TempDir(), map[string]string{}, func(f *runFixture) { f.p.Version = "" })
+	about := body(t, f.request(t, "GET", "/about", "", "empty-about"))
+	if !strings.Contains(about, `<dd id="about-version"></dd>`) {
+		t.Fatal(about)
+	}
+	r := f.request(t, "POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`, "empty-discover")
+	checkServerInfo(t, body(t, r), "")
+	f.stop(t)
+	started := 0
+	for _, record := range f.capture.Events() {
+		if record.Name == "service.started" {
+			started++
+			if !reflect.DeepEqual(record.Attrs, telemetry.Attrs{"version": ""}) {
+				t.Fatal(record)
+			}
+		}
+	}
+	if started != 1 || f.out.Len() != 0 || f.errw.Len() != 0 {
+		t.Fatal(started, f.out.String(), f.errw.String())
+	}
+}
+func checkServerInfo(t *testing.T, body, display string) {
+	t.Helper()
+	var response struct {
+		Result struct {
+			Meta map[string]json.RawMessage `json:"_meta"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatal(err)
+	}
+	var info map[string]string
+	if err := json.Unmarshal(response.Result.Meta["io.modelcontextprotocol/serverInfo"], &info); err != nil {
+		t.Fatal(err, body)
+	}
+	if !reflect.DeepEqual(info, map[string]string{"name": "events", "version": display}) {
+		t.Fatal(info)
 	}
 }

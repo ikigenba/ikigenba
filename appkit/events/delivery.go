@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -62,13 +63,35 @@ func (o Outcome) Message() string { return o.message }
 func copyHandlers(h Handlers) Handlers {
 	c := make(Handlers, len(h))
 	for k, v := range h {
-		if (k != "*" && !validEventName(k)) || v == nil {
+		if (k != "*" && !validEventPattern(k)) || v == nil {
 			panic(fmt.Sprintf("events: invalid handler for %s", strconv.Quote(k)))
 		}
 		c[k] = v
 	}
 	return c
 }
+
+func selectHandler(handlers Handlers, name string) Handler {
+	if h, ok := handlers[name]; ok {
+		return h
+	}
+	best := ""
+	stars := 0
+	for key := range handlers {
+		if !Match(key, name) {
+			continue
+		}
+		n := strings.Count(key, "*")
+		if best == "" || n < stars || n == stars && key < best {
+			best, stars = key, n
+		}
+	}
+	if best != "" {
+		return handlers[best]
+	}
+	return handlers["*"]
+}
+
 func decodeDelivery(body []byte) (Delivery, error) {
 	m, err := decodeObject(body)
 	if err != nil {
@@ -155,11 +178,8 @@ func DeliveryHandler(h Handlers) http.Handler {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		handler, ok := handlers[d.Event.Name]
-		if !ok {
-			handler, ok = handlers["*"]
-		}
-		if !ok {
+		handler := selectHandler(handlers, d.Event.Name)
+		if handler == nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

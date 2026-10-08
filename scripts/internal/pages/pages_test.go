@@ -2370,3 +2370,26 @@ func TestQueuedPage(t *testing.T) {
 		some(t, body, "span", func(e element) bool { return hasAttr(e, "data-kind", "info") && normalise(e.body) == "queued" })
 	}
 }
+
+// R-IAR4-R2M2
+func TestAboutShowsDisplayStringIncludingEmpty(t *testing.T) {
+	f := setup(t)
+	for _, display := range []string{"", "r142 (c604e32)", "Build+A.7-beta (commit42)"} {
+		f.cfg.Banner = func(page.User) page.Banner { return page.Banner{Service: pages.ServiceName, Version: display} }
+		request := httptest.NewRequest("GET", "/about", nil)
+		request.Header.Set("X-User-Id", "owner")
+		answer := httptest.NewRecorder()
+		identity.Require(pages.Handler(f.cfg)).ServeHTTP(answer, request)
+		requireEqual(t, answer.Code, 200)
+		dl := typedID(t, answer.Body.String(), "dl", "about")
+		dts := elements(dl.body, "dt")
+		requireEqual(t, len(dts), 3)
+		requireEqual(t, normalise(content(t, dts[1])), "Version")
+		value := typedID(t, dl.body, "dd", "about-version")
+		second, third, position := dts[1].start, dts[2].start, value.start
+		if position <= second || position >= third {
+			t.Fatal("version value is not between second and third labels")
+		}
+		requireEqual(t, normalise(content(t, value)), display)
+	}
+}

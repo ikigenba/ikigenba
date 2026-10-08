@@ -4,6 +4,7 @@ The serve path: what happens between `cli.Run` being called with no
 arguments and the process being gone. `D01-layout-and-run-seam` declares the
 names this design behaves through: `cli.Process` with its `Pid`, `Unsetenv`,
 `Inherit`, `Banner`, `MCP`, `Telemetry`, `Gate`, `Rand`, `Dir` and `Now`,
+and the display string `main` reads,
 `dummy.Migrations`, `cli.Gate`,
 `cli.Run`, the exit codes, `server.Serve` and `server.DrainError`. `D02-cli` decides that an empty `Args`
 means serve and that nothing else touches the environment; `D04-panel`
@@ -14,7 +15,8 @@ its database, tells systemd it is ready, serves and stops, and how `Serve`
 treats the listener it is handed, in the shapes the serve stories show: a
 first start and a start over an existing database, a stop that drains, a
 stop whose drain runs out, the three ways a start is refused as a usage
-error, and the start refused because the database cannot be opened.
+error, the start refused because the database cannot be opened, and the start
+over a database a newer dummy upgraded, which warns and serves.
 
 ## The terms every app serves on
 
@@ -52,7 +54,13 @@ fails to start over it: unset, empty, or naming a file that is missing or
 unreadable, the app starts, serves, and says nothing about it; its pages then
 carry no launcher and its MCP endpoint gives no instructions
 (`D01-layout-and-run-seam` explains why that read happens in `main` and cannot
-fail). The telemetry writer's socket sink reads the variable again for every
+fail). The same environment may carry `IKIGENBA_COMMIT` and
+`IKIGENBA_RELEASE`, the code the host is running; an app reads them once, at
+start, through appkit's `version.Display` in `main`, and shows the display
+string it returns as its version in its `service.started`, its pages' footer
+and its MCP `serverInfo`. Neither is ever a reason not to start: with neither
+set the string is empty and the app serves all the same. The telemetry
+writer's socket sink reads the variable again for every
 event it sends, to find the services-file entry named `telemetry`; a
 process's environment does not change, so it names the same file, and a file
 without that entry, or none at all, only sends the event to standard error
@@ -123,11 +131,12 @@ appkit's `db.Open` (its D15 and D16): the path is `state/dummy.db` resolved
 against `Process.Dir`, which `Run` passes as `filepath.Join(Dir, "state",
 "dummy.db")`, so with an empty `Dir` it is the relative path appkit resolves
 against the process's working directory; the migrations are
-`dummy.Migrations()`; and the clock is `Process.Now`. appkit creates the
-missing directories and the file, applies the migrations the database has
-not had and stamps them with that clock, and refuses a database it cannot
-open or one that records a migration dummy does not carry; how it does each
-is appkit's contract, and dummy's tests do not re-prove it. They prove the
+`dummy.Migrations()`; the clock is `Process.Now`; the service is
+`panel.ServiceName`; and the writer for appkit's warning is `Process.Stderr`.
+appkit creates the missing directories and the file, applies the migrations
+the database has not had and stamps them with that clock, and refuses a
+database it cannot open; how it does each is appkit's contract, and dummy's
+tests do not re-prove it. They prove the
 wiring instead: after a start in an empty `Dir` with a fixed clock, appkit's
 `db.Status` reports `Dir`'s `state/dummy.db` exactly as it reports a
 database the test made itself with `db.Open`, `dummy.Migrations()` and that
@@ -142,11 +151,24 @@ replaced by a space, the way scripts flattens its store's errors, so the
 line is one line whatever appkit's error holds. Such a start sends no
 `READY=1`, accepts no connection, calls neither the banner source nor any
 method of the writer, and so records no event; under systemd the start fails
-and the socket keeps queueing for a dummy that can serve. The three refusals
+and the socket keeps queueing for a dummy that can serve. The two refusals
 the serve stories show are a regular file named `state` where the directory
-belongs, a `state/dummy.db` dummy cannot open (not a SQLite database, or not
-writable), and a database a newer dummy has upgraded, whose error names the
-version this dummy does not carry, `0002`.
+belongs and a `state/dummy.db` dummy cannot open (not a SQLite database, or
+not writable).
+
+A database a newer dummy has upgraded, as after a deploy rolled back, records
+a migration this dummy does not carry. It is not refused: data never rolls
+back, so older code runs on newer data. appkit's `db.Open` applies nothing to
+it and writes one warning line, beginning with the service name it was given
+and naming the lowest version this dummy does not carry, to the writer it was
+given, which is `Process.Stderr`; under systemd that line reaches the
+journal. It is written before `READY=1`, it is the whole warning, and the
+trail records nothing about it. Then the start goes on exactly as over any
+database: `Run` serves the widgets the database holds and records
+`service.started`. dummy states nothing about the line's wording: a test
+compares what `Run` wrote with what its own `db.Open` call, given the same
+service name and a buffer, writes over the same database, and that the line
+begins `dummy: ` is what shows `Run` handed appkit dummy's name.
 
 With the database open `Run` builds its widget store over the handle with
 `Process.Rand` as the id source (`D05-widgets`), builds the handler over the
@@ -303,7 +325,9 @@ serialised log the test's stderr writer writes to.
 
 A healthy run is silent from start to finish on `Process.Stderr` and
 `Process.Stdout`: no startup message, no request log, nothing when it stops.
-The lines `Run` itself writes there are the overrun line and the
+The one line a start that serves may write is appkit's warning over a
+database a newer dummy upgraded, written before `READY=1`. The lines `Run`
+itself writes there are the overrun line and the
 `Accept`-failure line, each one write from one goroutine, so `Run` never has
 two writes to `Stderr` in progress. The writer's lines go to its own
 `Stderr`, which `main` points at the same standard error.
@@ -336,22 +360,24 @@ could cut a response short inside the drain.
 - R-DPQ2-9T5Q: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener: when `Inherit` is not nil, by calling `Inherit(3)` exactly once and serving on the listener it returns, and when `Inherit` is nil, by serving on the listening socket that is the process's file descriptor 3.
 - R-3OW4-PGT8: When taking file descriptor 3 as a listener fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, send nothing to a notification socket, and return `ExitServerFailed`.
 - R-3DEU-LIZD: When `Args` is empty and `Run` returns having refused a start as R-1XHC-TE94, R-JI4Z-UR8P, R-JJCW-8IZE or R-3OW4-PGT8 states, it MUST have created, removed or changed nothing under `p.Dir`, so that a `p.Dir` that names an empty directory is still empty when `Run` returns.
-- R-3FUN-D2GR: When `Run` has taken file descriptor 3 as a listener and, while `ctx` is not done, `db.Open` returns a non-nil error `err` for a `db.Config` whose `Path` is `filepath.Join(p.Dir, "state", "dummy.db")`, whose `Migrations` is `dummy.Migrations()` and whose `Now` is `p.Now`, `Run` MUST write exactly `"dummy: cannot open database state/dummy.db: " + r + "\n"` to `Stderr`, where `r` is `err.Error()` with every newline character replaced by one space, whatever `p.Dir` holds, write nothing else to `Stderr` and nothing to `Stdout`, send nothing to a notification socket, accept no connection on the listener it took, make no call to `p.Banner` and none to any method of `p.Telemetry`, and return `ExitServerFailed`; so that a `p.Dir` holding a regular file named `state` is refused with that line, so is a `p.Dir` whose `state/dummy.db` is a regular file that is not a SQLite database, and so is a `p.Dir` whose `state/dummy.db` records the version `0002` as applied, with a line that contains `0002`.
+- R-J73I-DJVK: When `Run` has taken file descriptor 3 as a listener and, while `ctx` is not done, `db.Open` returns a non-nil error `err` for a `db.Config` whose `Path` is `filepath.Join(p.Dir, "state", "dummy.db")`, whose `Migrations` is `dummy.Migrations()` and whose `Now` is `p.Now`, `Run` MUST write exactly `"dummy: cannot open database state/dummy.db: " + r + "\n"` to `Stderr`, where `r` is `err.Error()` with every newline character replaced by one space, whatever `p.Dir` holds, write nothing else to `Stderr` and nothing to `Stdout`, send nothing to a notification socket, accept no connection on the listener it took, make no call to `p.Banner` and none to any method of `p.Telemetry`, and return `ExitServerFailed`; so that a `p.Dir` holding a regular file named `state` is refused with that line, and so is a `p.Dir` whose `state/dummy.db` is a regular file that is not a SQLite database.
+- R-J8BE-RBM9: When `Run` has taken file descriptor 3 as a listener and `p.Dir`'s `state/dummy.db` is a SQLite database that an earlier `db.Open` call created, whose handle was closed, the process can write it and write and search its directory, and its `schema_migrations` holds, besides the version of every migration `dummy.Migrations()` holds, a version that `dummy.Migrations()` does not hold, `Run` MUST write to `Stderr`, in a single `Write` call and before it sends anything to a notification socket, exactly the bytes that a `db.Open` call with a `db.Config` whose `Path` names that database, whose `Migrations` is `dummy.Migrations()` and whose `Service` is `panel.ServiceName` (`D04-panel`) writes to that `Config`'s `Stderr` over that same database, and MUST write those bytes to `Stderr` only once; so that a dummy started over a database a newer dummy upgraded warns, under its own name, before it is ready.
+- R-J9JB-53CY: When `Run` starts over a `p.Dir` as R-J8BE-RBM9 describes and has not failed to send `READY=1`, it MUST serve as R-JAR7-IV3N states; every `tools/call` of `list_widgets` it answers at `/mcp` on the listener it took before it has accepted any widget MUST return a result whose `widgets` holds exactly the widget objects of the widgets that database held when `Run` was called, in their order; the events `p.Telemetry` records before the first event of any request that arrived on that listener MUST be exactly one `service.started` event, so that the warning is no event of the trail; and once `Run` has returned, appkit's `db.Status` for that database, with `dummy.Migrations()`, MUST write exactly the bytes it wrote for it before `Run` was called, so that `Run` applied nothing.
 - R-3EMQ-ZAQ2: When `Run` sends `READY=1` with a `p.Dir` that holds no entry named `state`, or holds an empty directory named `state`, and a `p.Now` that returns the same time on every call, `p.Dir` MUST by then hold a regular file `state/dummy.db` for which appkit's `db.Status`, called with a `db.Config` whose `Path` is that file's path and whose `Migrations` is `dummy.Migrations()`, writes exactly the bytes it writes, with those same `Migrations`, for a database that a `db.Open` call with a `db.Config` whose `Path` names a file in another empty directory, whose `Migrations` is `dummy.Migrations()` and whose `Now` is `p.Now` has created and whose handle has been closed; so that the database `Run` serves is `state/dummy.db` resolved against `p.Dir`, brought up to date with `dummy.Migrations()` and stamped with `p.Now`.
-- R-3PLU-F8EB: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-3FUN-D2GR states, and has not failed to send `READY=1`, it MUST answer every request that arrives on that listener while `ctx` is not done, MUST NOT return while `ctx` is not done unless a call to that listener's `Accept` has returned an error that `Run` does not retry (R-ERVL-5OIC), and, when no request that arrived on that listener is still being handled once the drain deadline of R-PE6U-PF31 has elapsed since `ctx` was done, MUST return `ExitSuccess` less than one second after that deadline has elapsed, whatever `p.Telemetry`'s sink does, and before that deadline has elapsed when the handling of every request that arrived on that listener ended at least one second before that deadline and that sink answers every `Deliver` call with a nil error at once.
+- R-JAR7-IV3N: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-J73I-DJVK states, and has not failed to send `READY=1`, it MUST answer every request that arrives on that listener while `ctx` is not done, MUST NOT return while `ctx` is not done unless a call to that listener's `Accept` has returned an error that `Run` does not retry (R-ERVL-5OIC), and, when no request that arrived on that listener is still being handled once the drain deadline of R-PE6U-PF31 has elapsed since `ctx` was done, MUST return `ExitSuccess` less than one second after that deadline has elapsed, whatever `p.Telemetry`'s sink does, and before that deadline has elapsed when the handling of every request that arrived on that listener ended at least one second before that deadline and that sink answers every `Deliver` call with a nil error at once.
 - R-3IAG-4LY5: Every `tools/call` of `list_widgets` that a `Run` given a `p.Dir` that held no entry named `state` answers at `/mcp` on the listener it took, before that `Run` has accepted any widget through its form (`D07-form`) or through `create_widget`, MUST return a result whose `widgets` is an empty array, whatever widgets earlier calls to `Run` in the same process, given other directories, accepted.
 - R-PAJ5-K3UY: After a `tools/call` of `create_widget` that `Run` answers at `/mcp` on the listener it took returns a result with no `isError` member, the next `GET /widgets/table` carrying a non-empty `X-User-Id` header and no `If-None-Match` header that `Run` answers on that listener MUST show the created widget as the last row of the widgets table, as `D06-table` renders a widget's row, and the next `tools/call` of `list_widgets` that `Run` answers there MUST hold the widget object of the created widget as the last element of `widgets`.
 - R-PBR1-XVLN: After `Run` accepts a widget submitted through the form (`D07-form`) in a `POST /widgets` that arrived on the listener it took, the next `tools/call` of `list_widgets` that `Run` answers at `/mcp` on that listener MUST hold the widget object of that widget as the last element of `widgets`.
 - R-3JIC-IDOU: When a `Run` given a `p.Dir` `d` that held no entry named `state` has accepted widgets through its form (`D07-form`) or through `create_widget` and has returned, every `tools/call` of `list_widgets` that a later `Run` given the same `d` answers at `/mcp` on the listener it took, before that later `Run` has accepted any widget, MUST return a result whose `widgets` holds exactly the widget objects of those widgets, with the ids, names, counts and statuses the earlier `Run` gave them, in the order the earlier `Run` accepted them; and a `Run` given another `p.Dir` that held no entry named `state` MUST list none of them.
 - R-QFU0-CZZ9: When no request arrives on the listener `Run` took, `Run` MUST return having made no call to `p.Banner`, whatever it returns.
-- R-3N61-NOWX: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-3FUN-D2GR states, and `LookupEnv("NOTIFY_SOCKET")` returns `true` with a non-empty value `a`, `Run` MUST, after taking the listener and before accepting any connection on it, send exactly one datagram, whose content is exactly `READY=1`, to the Unix datagram socket whose address is `a`, an `a` beginning with `@` naming a socket in the abstract namespace; `Run` MUST send nothing to a notification socket on any other occasion.
+- R-JBZ3-WMUC: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-J73I-DJVK states, and `LookupEnv("NOTIFY_SOCKET")` returns `true` with a non-empty value `a`, `Run` MUST, after taking the listener and before accepting any connection on it, send exactly one datagram, whose content is exactly `READY=1`, to the Unix datagram socket whose address is `a`, an `a` beginning with `@` naming a socket in the abstract namespace; `Run` MUST send nothing to a notification socket on any other occasion.
 - R-EQYT-T2RY: When sending `READY=1` fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, accept no connection on the listener it took, and return `ExitServerFailed`.
-- R-3ODY-1GNM: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-3FUN-D2GR states, and has not failed to send `READY=1`, it MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than the line R-PFER-36TQ states and the line R-ERVL-5OIC states.
+- R-JD70-AEL1: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-J73I-DJVK states, and has not failed to send `READY=1`, it MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than the bytes R-J8BE-RBM9 states, the line R-PFER-36TQ states and the line R-ERVL-5OIC states.
 - R-DOI5-W1F1: `Run` MUST write nothing to the `log` package's default logger, whatever happens while it serves, so that a test which points the `log` package's output at a buffer, serves with a banner source that panics when called and a listener whose first `Accept` returns an error `Run` retries, requests a page, and cancels `ctx` finds the buffer empty when `Run` returns.
 - R-ERVL-5OIC: When `Run` has taken file descriptor 3 as a listener, has not failed to send `READY=1`, and a call to that listener's `Accept` returns, while `ctx` is not done, an error that `Run` does not retry, `Run` MUST write to `Stderr` exactly one line, beginning `dummy: ` and ending in a newline, MUST write nothing to `Stdout`, and MUST return `ExitServerFailed`; an error that is not a `net.Error` MUST be among the errors `Run` does not retry.
 - R-5ZTA-PV8G: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.
-- R-3QTQ-T050: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-3FUN-D2GR states, and has not failed to send `READY=1`, the first event `p.Telemetry` records after `Run` is called MUST be one `service.started` event, the event `Writer.Ready` records, recorded before any event of any request that arrived on that listener.
-- R-0QW9-B16C: When `Run` returns without having taken a listener — `Args` not empty, or a start R-1XHC-TE94, R-JI4Z-UR8P, R-JJCW-8IZE or R-3OW4-PGT8 refuses — or after refusing to start as R-3FUN-D2GR states, or after failing to send `READY=1` (R-EQYT-T2RY), it MUST NOT have called any method of `p.Telemetry`, so that `Run` does not panic when `p.Telemetry` is nil, a writer passed as `p.Telemetry` has recorded no event from that call, and that writer's `Ready` called afterwards records `service.started`.
+- R-JEEW-O6BQ: When `Run` has taken file descriptor 3 as a listener, has not refused to start as R-J73I-DJVK states, and has not failed to send `READY=1`, the first event `p.Telemetry` records after `Run` is called MUST be one `service.started` event, the event `Writer.Ready` records, recorded before any event of any request that arrived on that listener.
+- R-JFMT-1Y2F: When `Run` returns without having taken a listener — `Args` not empty, or a start R-1XHC-TE94, R-JI4Z-UR8P, R-JJCW-8IZE or R-3OW4-PGT8 refuses — or after refusing to start as R-J73I-DJVK states, or after failing to send `READY=1` (R-EQYT-T2RY), it MUST NOT have called any method of `p.Telemetry`, so that `Run` does not panic when `p.Telemetry` is nil, a writer passed as `p.Telemetry` has recorded no event from that call, and that writer's `Ready` called afterwards records `service.started`.
 - R-E80Y-6RJM: When `Run` returns `ExitSuccess` after `ctx` was done, the handling of every request that arrived on the listener `Run` took having ended at least one second before the drain deadline of R-PE6U-PF31 elapsed since `ctx` was done, and `p.Telemetry`'s sink answers every `Deliver` call with a nil error at once, the events that sink has received when `Run` returns MUST end with exactly one `service.stopping` event, whose `reason` attribute is the string `context.Cause(ctx).Error()` returns, received after the `request.finished` event of every request that arrived on the listener `Run` took.
 - R-HUGI-VVDH: When `Run` cuts off requests as R-PFER-36TQ states and `p.Telemetry` is a writer `telemetry.New` made with `p.Gate` as its `Sink`, the next sink of `p.Gate` (`D01-layout-and-run-seam` R-HS0Q-4BW3) MUST receive no `Deliver` call for a `service.stopping` event, whatever it answers to other calls; `p.Telemetry` MUST write to its `Stderr` the `undelivered event` line (appkit's telemetry writer) of a `service.stopping` event whose `reason` attribute is the string `context.Cause(ctx).Error()` returns, and MUST have written it before any connection of a cut-off request is closed, so that a cut-off request's `request.finished`, recorded only after its connection closes, is recorded after `Shutdown` began and reaches neither `p.Gate` nor its next sink; and `Run` MUST write the line R-PFER-36TQ states to `Stderr` only after that `service.stopping` line has been written and after the line of every other event recorded before the drain deadline elapsed that the next sink did not answer nil for.
 - R-IWRG-RPL0: When `ctx` is done while `Run` is serving with a non-nil `p.Gate`, every `Deliver` call on `p.Gate` that begins once the drain deadline of R-PE6U-PF31 has elapsed since `ctx` was done MUST return a non-nil error without calling the `Deliver` method of its next sink (`D01-layout-and-run-seam` R-HS0Q-4BW3), whether `Run` has returned or not, so that such a call made while `p.Telemetry` is writing the `service.stopping` line R-HUGI-VVDH states, or after `Run` has returned, is refused.

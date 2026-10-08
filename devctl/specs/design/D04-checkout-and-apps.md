@@ -8,9 +8,12 @@ where it is decoded. `build` therefore refuses it before compiling anything,
 and every command that reads the checkout's apps refuses the same way, as it
 already does for any other broken manifest.
 An app's `main` package sits at `cmd/<name>/` under its directory, like every
-other binary in the repository. The shared appref package defines the same usable-name and version grammar for
-build and deploy. A checkout tag belongs to one app, independently of branch
-ancestry.
+other binary in the repository. The shared appref package defines the usable-name
+grammar build and deploy share, and the grammar of the file build writes and
+deploy takes: a usable app, `-`, the full commit sha in 40 lowercase hex
+digits, and `.tar.xz`. Build reads no tag; the checkout offers `HEAD`'s sha
+and whether the tree is clean, and nothing about tags. appref also keeps the
+`v<semver>` version grammar, which only opsctl's release tags use (D10).
 
 The checkout is also where the platform is stated. devctl has no
 configuration of its own: the root domain and its region live in the root
@@ -89,8 +92,6 @@ looked up.
 
 - R-W8NJ-7NX3: `(*Checkout).Clean` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `status` and `--porcelain`, and whose `Dir` is `Root`, and when that process exits 0 MUST return true if and only if its standard output is empty, so that an untracked file reported as a change makes the result false.
 
-- R-W9VF-LFNS: `(*Checkout).TagsAtHead` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `tag`, `--points-at` and `HEAD`, and whose `Dir` is `Root`, and when that process exits 0 MUST return one element for each non-empty line of its standard output, in the order the lines appear, and a result with no element when it has none.
-
 - R-WDJ4-QQVV: `keyring.Lookup` MUST return the value of `deps.Getenv(name)` with its trailing newlines removed, and MUST pass no `seam.Cmd` to `deps.Exec`, when that value is not empty after that removal.
 
 - R-WER1-4IMK: When `deps.Getenv(name)` is empty after its trailing newlines are removed, `keyring.Lookup` MUST pass exactly one `seam.Cmd` to `deps.Exec`, whose `Path` is `secret-tool`, whose `Args` are exactly `lookup`, `name` and `name`'s value, and whose `Dir` is `deps.Dir`; MUST return that process's standard output with its trailing newlines removed when it exits 0 and that output is not empty after the removal; MUST return an empty string and a `*NoValueError` for `name` when it exits non-zero or that output is empty after the removal; and MUST return an empty string and an error whose message contains `secret-tool` when `deps.Exec` returns a non-nil error.
@@ -101,11 +102,11 @@ looked up.
 
 - R-WKUJ-1DC1: When a command fails because `keyring.Lookup` of a name that an app's `Manifest.Secrets` lists returned a `*NoValueError`, `cli.Run` MUST write the single line `devctl: <app>: no value for '<name>' in the keyring or the environment` to stderr, where `<app>` is that app's `Name`, write nothing further to stdout, and return 2, verified at least for `secrets push` and `space create` each reproducing `devctl: crm: no value for 'CRM_API_KEY' in the keyring or the environment`.
 
-- R-CIHV-MSVJ: Package `internal/checkout` MUST export the methods `Head(ctx context.Context) (string, error)`, `Clean(ctx context.Context) (bool, error)`, `TagsAtHead(ctx context.Context) ([]string, error)` on `*Checkout`.
+- R-5AKW-LFNU: Package `internal/checkout` MUST export the methods `Head(ctx context.Context) (string, error)` and `Clean(ctx context.Context) (bool, error)` on `*Checkout`.
 
 - R-CJPS-0KM8: Package `internal/checkout` MUST export `ManifestFile = "etc/manifest.toml"`.
 
-- R-CKXO-ECCX: `Head`, `Clean`, and `TagsAtHead` MUST return a `*GitError` carrying the command arguments, exit status and stderr for any non-zero process exit, and a non-`GitError` wrapping the runner error when `Deps.Exec` cannot run the process.
+- R-5BSS-Z7EJ: `Head` and `Clean` MUST return a `*GitError` carrying the command arguments, exit status and stderr for any non-zero process exit, and a non-`GitError` wrapping the runner error when `Deps.Exec` cannot run the process.
 
 - R-CM5K-S43M: Package `internal/checkout` MUST export `Manifest` with exactly `App string` and `Secrets []string`, decoded from the TOML keys `app` and `secrets`.
 
@@ -121,17 +122,13 @@ looked up.
 
 - R-CS92-OYT3: `appref.ValidVersion` MUST accept a literal `v` followed by three dot-separated nonnegative decimal integers without leading zeroes, optionally followed by a hyphen and nonempty dot-separated ASCII alphanumeric/hyphen prerelease identifiers (numeric identifiers have no leading zeroes), optionally followed by `+` and nonempty dot-separated ASCII alphanumeric/hyphen metadata identifiers; all other forms MUST be rejected.
 
-- R-CTGZ-2QJS: `appref.VersionForTag` MUST succeed only for a usable `app` and a tag consisting exactly of that app, `/`, and a valid version, returning the version byte for byte; unrelated, bare-version and malformed tags MUST not match.
-
-- R-CUOV-GIAH: `appref.ParseFile` MUST accept only a basename consisting of a usable app, `-`, a valid version, and `.tar.xz`, returning both components verbatim; names with path separators or no unique valid split MUST fail. Hyphenated app names, prereleases and build metadata MUST retain their complete spelling.
+- R-5D0P-CZ58: `appref.ParseFile` MUST succeed only for a basename that is a name `ValidName` accepts, then `-`, then exactly 40 bytes each an ASCII digit or a lowercase letter `a` to `f`, then `.tar.xz`, returning that name as `app` and those 40 bytes as `sha`, each verbatim, and a nil error; it MUST return a non-nil error for every other input; verified at least by accepting `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` as `crm` and `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` and `my-app-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` as `my-app`, and by rejecting `notes.tar.xz`, `crm-latest.tar.xz`, `crm-v0.1.0.tar.xz`, `crm-4b22285.tar.xz`, `crm-4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz`, the 41-digit `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a0.tar.xz`, `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6g.tar.xz`, `-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, `host-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, `crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.gz`, and `dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`.
 
 - R-CVWR-UA16: Package `internal/appref` MUST export `ValidName(name string) bool`.
 
 - R-CX4O-81RV: Package `internal/appref` MUST export `ValidVersion(version string) bool`.
 
-- R-CZKG-ZL99: Package `internal/appref` MUST export `VersionForTag(app, tag string) (string, bool)`.
-
-- R-D0SD-DCZY: Package `internal/appref` MUST export `ParseFile(name string) (app, version string, err error)`.
+- R-5E8L-QQVX: Package `internal/appref` MUST export `ParseFile(name string) (app, sha string, err error)`.
 
 - R-Q2QY-ECMR: Package `internal/checkout` MUST export `RootFilePath = "infra/terraform.tfvars.json"`.
 

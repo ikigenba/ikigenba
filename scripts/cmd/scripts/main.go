@@ -14,11 +14,13 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
 )
 
 func main() {
+	display := version.Display()
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
@@ -34,11 +36,11 @@ func main() {
 		}
 	}()
 	code := cli.Run(ctx, cli.Process{
-		Cgroup: controlGroup(), Args: os.Args[1:], LookupEnv: os.LookupEnv, Environ: os.Environ,
+		Version: display, Cgroup: controlGroup(), Args: os.Args[1:], LookupEnv: os.LookupEnv, Environ: os.Environ,
 		Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
-		Banner: page.New(pages.ServiceName, cli.Version).Banner,
+		Banner: page.New(pages.ServiceName, display).Banner,
 		MCP: func(w *telemetry.Writer) *mcp.Server {
-			return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: cli.Version, Telemetry: w})
+			return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: display, Telemetry: w})
 		}, After: time.After, ScriptAfter: time.After,
 	})
 	signal.Stop(signals)

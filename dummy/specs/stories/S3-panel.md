@@ -56,12 +56,14 @@ where there is no identity to draw with, and the answer dummy gives when it
 cannot reach the widgets (below).
 
 Every page with the banner also ends with the footer, the last thing on the
-page, whose text is `dummy v<semver>`: the service's name, one space, and the
-version `dummy --version` prints (`S1`), exactly as it prints it, so a user
-can tell which release is serving the page. The version is data, and no
-story fixes its value. The missing-header 500 and the 503 dummy answers
-when it cannot reach the widgets, being bare text, have no footer, and
-neither does the table fragment (`S4`).
+page, whose text is `dummy <display>`: the service's name, one space, and
+`<display>`, the string `dummy --version` prints under the environment dummy
+was started with (`S1`), exactly as it prints it, so a user can tell which
+code is serving the page. No story fixes its value. When that environment sets
+neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`, `<display>` is empty and the
+footer's text is `dummy` and the one space. The missing-header 500 and the 503
+dummy answers when it cannot reach the widgets, being bare text, have no
+footer, and neither does the table fragment (`S4`).
 
 The profile link in the banner has no text of its own: it is labelled
 `Profile` for assistive technology and titled with the caller's
@@ -219,26 +221,27 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is an HTML document titled `dummy` that links
 `/_appkit/theme.css` as its stylesheet, links `/_appkit/favicon.svg` as its
-icon, loads `/_appkit/feedback.js`, and declares the phone-width viewport. Its banner holds the mark, whose text is
-`ikigenba` and which names the service `dummy`; the profile link, labelled
-`Profile` and titled `mg@example.com`, leading to `http://localhost:3001/`;
-and the sign-out button reading `Sign out` in a form that POSTs to
-`http://localhost:3001/logout`. Beneath the banner is the heading `Widgets`
-with the subtitle `3 widgets · refreshes every 5 seconds`, and beneath it a
-table whose header cells read `Name`, `Count`, and `Status` and whose rows are
-the three widgets in the order they were created, with their counts and their
-statuses as words: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12
-`retired`. The `Count` header cell and each count cell are marked numeric, and
-each status word is inside a status marker naming that status. Beside the
-table is the card headed `Add widget` holding the form that creates a widget,
-with a field for each of a widget's three fields and a button reading
-`Add widget` behind its hidden `plus` icon; in a browser, that button, like
-`Sign out`, visibly reacts as the user presses it. The banner holds no
-launcher button, and the page loads no `/_appkit/launcher.js`, since dummy has
-no services file. Last on the page is the footer reading `dummy v<semver>`,
-where `v<semver>` is what `dummy --version` prints. Outside the banner, the
-address `mg@example.com` is not in the page's visible text. Outside the banner
-and the footer, the text `Dummy` appears nowhere.
+icon, loads `/_appkit/feedback.js`, and declares the phone-width viewport. Its
+banner holds the mark, whose text is `ikigenba` and which names the service
+`dummy`; the profile link, labelled `Profile` and titled `mg@example.com`,
+leading to `http://localhost:3001/`; and the sign-out button reading `Sign
+out` in a form that POSTs to `http://localhost:3001/logout`. Beneath the
+banner is the heading `Widgets` with the subtitle `3 widgets · refreshes every
+5 seconds`, and beneath it a table whose header cells read `Name`, `Count`,
+and `Status` and whose rows are the three widgets in the order they were
+created, with their counts and their statuses as words: `alpha` 3 `active`,
+`beta` 0 `paused`, `gamma` 12 `retired`. The `Count` header cell and each
+count cell are marked numeric, and each status word is inside a status marker
+naming that status. Beside the table is the card headed `Add widget` holding
+the form that creates a widget, with a field for each of a widget's three
+fields and a button reading `Add widget` behind its hidden `plus` icon; in a
+browser, that button, like `Sign out`, visibly reacts as the user presses it.
+The banner holds no launcher button, and the page loads no
+`/_appkit/launcher.js`, since dummy has no services file. Last on the page is
+the footer reading `dummy <display>`, where `<display>` is what
+`dummy --version` prints under the same environment. Outside the banner, the address
+`mg@example.com` is not in the page's visible text. Outside the banner and the
+footer, the text `Dummy` appears nowhere.
 
 Preconditions:
 

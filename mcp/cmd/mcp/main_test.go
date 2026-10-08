@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -22,14 +23,22 @@ import (
 	appkitmcp "github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/mcp/internal/cli"
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 )
 
 // The sole process test proves main's process, constructor and signal wiring.
-// R-UU3K-Z7YX R-UVBH-CZPM R-UWJD-QRGB R-TIVK-SAME
-// R-UYZ6-IAXP R-V072-W2OE R-H8WC-Q7J9 R-1JO6-I8D2 R-WSTR-5WZ7
+// R-MD9R-TB45 R-MEHO-72UU R-UVBH-CZPM R-UWJD-QRGB R-G9Z3-NU0G
+// R-MGXG-YMC8 R-MI5D-CE2X R-MJD9-Q5TM R-MLT2-HPB0 R-MN0Y-VH1P R-WSTR-5WZ7
 func TestBinary(t *testing.T) {
+	commit, release := "0123456789abcdef0123456789abcdef01234567", "workgroup"
+	t.Setenv(version.CommitVariable, commit)
+	t.Setenv(version.ReleaseVariable, release)
+	display := version.Display()
+	if display == "" || len(display) > 64 || strings.Trim(display, " \t\n\r\f\v") != display {
+		t.Fatalf("invalid display fixture %q", display)
+	}
 	binaryDirectory := t.TempDir()
 	binaryRoot, err := os.OpenRoot(binaryDirectory)
 	if err != nil {
@@ -61,19 +70,27 @@ func TestBinary(t *testing.T) {
 	if modeErr != nil {
 		t.Fatal(modeErr)
 	}
-	for _, command := range []*exec.Cmd{
+	for index, command := range []*exec.Cmd{
+		exec.Command("./mcp", "--version"),
 		exec.Command("./mcp", "--version"),
 		exec.Command("./mcp", "bogus"),
 		exec.Command("./mcp"),
 	} {
 		args := command.Args[1:]
 		var wantOut, wantErr bytes.Buffer
-		wantCode := cli.Run(context.Background(), cli.Process{Args: args, LookupEnv: func(string) (string, bool) { return "", false }, Pid: 123, Stdout: &wantOut, Stderr: &wantErr, Inherit: func(uintptr) (net.Listener, error) {
+		expectedVersion := ""
+		if index == 1 {
+			expectedVersion = display
+		}
+		wantCode := cli.Run(context.Background(), cli.Process{Args: args, Version: expectedVersion, LookupEnv: func(string) (string, bool) { return "", false }, Pid: 123, Stdout: &wantOut, Stderr: &wantErr, Inherit: func(uintptr) (net.Listener, error) {
 			t.Fatal("unexpected inheritance")
 			return nil, errors.New("unexpected")
 		}})
 		command.Dir = binaryDirectory
 		command.Env = []string{}
+		if index == 1 {
+			command.Env = []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
+		}
 		var out, stderr bytes.Buffer
 		command.Stdout, command.Stderr = &out, &stderr
 		err := command.Run()
@@ -111,7 +128,21 @@ func TestBinary(t *testing.T) {
 	appkitmcp.AddTool(backend, appkitmcp.Tool[input, output]{Name: "read", Description: "Read a value.", Effect: appkitmcp.Read, Handler: func(context.Context, identity.Caller, input) (output, error) {
 		return output{Value: "backend answer"}, nil
 	}})
-	backendHTTP := &http.Server{Handler: identity.Require(backend), ReadHeaderTimeout: time.Second}
+	var requestMu sync.Mutex
+	var backendRequests [][]byte
+	backendHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		requestMu.Lock()
+		backendRequests = append(backendRequests, bytes.Clone(body))
+		requestMu.Unlock()
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		identity.Require(backend).ServeHTTP(w, r)
+	})
+	backendHTTP := &http.Server{Handler: backendHandler, ReadHeaderTimeout: time.Second}
 	go func() { _ = backendHTTP.Serve(backendListener) }()
 	t.Cleanup(func() { _ = backendHTTP.Close() })
 	file := filepath.Join(directory, "services.json")
@@ -173,7 +204,7 @@ func TestBinary(t *testing.T) {
 		t.Cleanup(func() { _ = notify.Close() })
 		child := exec.Command("/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"`, "./mcp")
 		child.Dir = binaryDirectory
-		child.Env = []string{"NOTIFY_SOCKET=" + notifyPath}
+		child.Env = []string{"NOTIFY_SOCKET=" + notifyPath, version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 		if run == 0 {
 			child.Env = append(child.Env, services.Variable+"="+file)
 		}
@@ -242,7 +273,7 @@ func TestBinary(t *testing.T) {
 				}
 				start := footers[0][0] + strings.IndexByte(lower[footers[0][0]:], '>') + 1
 				end := strings.Index(lower[start:], "</footer>")
-				if end < 0 || strings.Trim(string(body[start:start+end]), " \t\n\r\f\v") != gateway.ServiceName+" "+cli.Version {
+				if end < 0 || strings.Trim(string(body[start:start+end]), " \t\n\r\f\v") != gateway.ServiceName+" "+display {
 					t.Fatalf("footer: %s", body)
 				}
 			}
@@ -253,7 +284,7 @@ func TestBinary(t *testing.T) {
 			}
 			value := binaryResult(t, result)
 			meta, ok := value["_meta"].(map[string]any)
-			if !ok || !reflect.DeepEqual(meta["io.modelcontextprotocol/serverInfo"], map[string]any{"name": gateway.ServiceName, "version": cli.Version}) {
+			if !ok || !reflect.DeepEqual(meta["io.modelcontextprotocol/serverInfo"], map[string]any{"name": gateway.ServiceName, "version": display}) {
 				t.Fatalf("serverInfo: %v", value)
 			}
 			if run == 0 {
@@ -268,6 +299,33 @@ func TestBinary(t *testing.T) {
 				service, ok := list[0].(map[string]any)
 				if !ok || service["name"] != "alpha" || service["available"] != true {
 					t.Fatalf("service: %v", list)
+				}
+				requestMu.Lock()
+				backendRequests = nil
+				requestMu.Unlock()
+				_, err = client.CallTool(context.Background(), caller, "describe", json.RawMessage(`{"service":"alpha"}`))
+				if err != nil {
+					t.Fatal(err)
+				}
+				requestMu.Lock()
+				requests := backendRequests
+				backendRequests = nil
+				requestMu.Unlock()
+				if len(requests) == 0 {
+					t.Fatal("describe sent no backend request")
+				}
+				for _, raw := range requests {
+					var request struct {
+						Params struct {
+							Meta map[string]any `json:"_meta"`
+						} `json:"params"`
+					}
+					if err := json.Unmarshal(raw, &request); err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(request.Params.Meta["io.modelcontextprotocol/clientInfo"], map[string]any{"name": gateway.ServiceName, "version": display}) {
+						t.Fatalf("backend clientInfo: %s", raw)
+					}
 				}
 				result, err = client.CallTool(context.Background(), caller, "call", json.RawMessage(`{"service":"alpha","tool":"read"}`))
 				if err != nil || result.IsError() {
@@ -312,7 +370,7 @@ func TestBinary(t *testing.T) {
 				events = events[len(events)-2:]
 			}
 			first, last := events[0], events[len(events)-1]
-			if first.Name != "service.started" || first.Service != gateway.ServiceName || first.RequestID != "" || first.User != "" || !reflect.DeepEqual(first.Attrs, telemetry.Attrs{"version": cli.Version}) {
+			if first.Name != "service.started" || first.Service != gateway.ServiceName || first.RequestID != "" || first.User != "" || !reflect.DeepEqual(first.Attrs, telemetry.Attrs{"version": display}) {
 				t.Fatalf("started: %#v", first)
 			}
 			reason := "SIGTERM"

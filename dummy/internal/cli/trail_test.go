@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-3QTQ-T050 R-E80Y-6RJM R-3ODY-1GNM R-IXZD-5HBP
+// R-JEEW-O6BQ R-E80Y-6RJM R-JD70-AEL1 R-IXZD-5HBP
 func TestRunTrailStartsBeforeRequestsAndStopsAfterFinishes(t *testing.T) {
 	trail := testMCP(t)
 	run := startRun(t, trail)
@@ -80,7 +80,7 @@ func TestRunUsesInjectedWidgetIDBytes(t *testing.T) {
 	}
 }
 
-// R-0QW9-B16C R-IXZD-5HBP
+// R-JFMT-1Y2F R-IXZD-5HBP
 func TestRunRefusedStartsAndCommandsLeaveTelemetryUntouched(t *testing.T) {
 	cases := []Process{
 		{Args: []string{"--version"}}, {Args: []string{"manifest"}}, {Args: []string{"--help"}}, {Args: []string{"bad"}},
@@ -93,7 +93,7 @@ func TestRunRefusedStartsAndCommandsLeaveTelemetryUntouched(t *testing.T) {
 	for i, p := range cases {
 		t.Run(string(rune('a'+i)), func(t *testing.T) {
 			for _, withWriter := range []bool{false, true} {
-				p.Dir, p.Now = t.TempDir(), testNow
+				p.Dir, p.Now, p.Version = t.TempDir(), testNow, testVersion
 				p.Stdout, p.Stderr = io.Discard, io.Discard
 				if !withWriter {
 					p.Telemetry = nil
@@ -138,14 +138,14 @@ func (s *deadlineSink) Deliver(ctx context.Context, e telemetry.Event) error {
 	return s.capture.Deliver(ctx, e)
 }
 
-// R-3PLU-F8EB
+// R-JAR7-IV3N
 func TestRunShutdownWithBlockedSinkRespectsDrain(t *testing.T) {
 	sink := &deadlineSink{block: true}
 	gate := NewGate(sink)
 	trail := testMCP(t)
 	trail.writer.Shutdown(context.Background(), "replace fixture writer")
-	trail.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: Version, Sink: gate, Stderr: &trail.stderr, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}})
-	trail.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: Version, Telemetry: trail.writer})
+	trail.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: testVersion, Sink: gate, Stderr: &trail.stderr, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}})
+	trail.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: testVersion, Telemetry: trail.writer})
 	run := startConfiguredRun(t, trail, func(p *Process) {
 		p.Gate = gate
 		old := p.LookupEnv

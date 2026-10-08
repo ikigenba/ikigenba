@@ -24,12 +24,18 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-2YS2-0A31 R-K1I1-7X3J R-K2PX-LOU8 R-K3XT-ZGKX R-K55Q-D8BM R-K7LJ-4RT0 R-317U-RTKF
+// R-M1JO-5KOP R-M2RK-JCFE R-K1I1-7X3J R-M6F9-ONNH R-M7N6-2FE6 R-M8V2-G74V R-K7LJ-4RT0 R-MA2Y-TYVK
 func TestMainWiring(t *testing.T) {
+	commit, release := "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "test-release"
+	t.Setenv(version.CommitVariable, commit)
+	t.Setenv(version.ReleaseVariable, release)
+	display := version.Display()
+	env := []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")
 	build := exec.Command("go")
@@ -45,13 +51,15 @@ func TestMainWiring(t *testing.T) {
 		exit   int
 		stdout string
 		stderr string
+		env    []string
 	}{
-		{name: "version", args: []string{"--version"}, exit: cli.ExitSuccess, stdout: cli.Version + "\n"},
+		{name: "version", args: []string{"--version"}, exit: cli.ExitSuccess, stdout: display + "\n", env: env},
+		{name: "version without identity", args: []string{"--version"}, exit: cli.ExitSuccess, stdout: "\n"},
 		{name: "invalid command", args: []string{"bogus"}, exit: cli.ExitUsage, stderr: "dummy: unknown command 'bogus'\n\nsee 'dummy --help' for usage\n"},
 		{name: "bare without socket", exit: cli.ExitUsage, stderr: "dummy: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			stdout, stderr, exit := runBinary(t, binary, test.args)
+			stdout, stderr, exit := runBinary(t, binary, test.args, test.env)
 			if exit != test.exit || stdout != test.stdout || stderr != test.stderr {
 				t.Errorf("exit=%d stdout=%q stderr=%q; want exit=%d stdout=%q stderr=%q", exit, stdout, stderr, test.exit, test.stdout, test.stderr)
 			}
@@ -60,7 +68,7 @@ func TestMainWiring(t *testing.T) {
 
 	for _, sig := range []os.Signal{syscall.SIGTERM, os.Interrupt} {
 		t.Run(sig.String(), func(t *testing.T) {
-			serveAndSignal(t, binary, sig)
+			serveAndSignal(t, binary, sig, env, display)
 		})
 	}
 }
@@ -74,11 +82,11 @@ func mainProjectRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
 }
 
-func runBinary(t *testing.T, binary string, args []string) (string, string, int) {
+func runBinary(t *testing.T, binary string, args, env []string) (string, string, int) {
 	t.Helper()
 	commandArgs := append([]string{binary}, args...)
 	command := &exec.Cmd{Path: binary, Args: commandArgs}
-	command.Env = []string{}
+	command.Env = append([]string{}, env...)
 	command.Dir = t.TempDir()
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
@@ -95,7 +103,7 @@ func runBinary(t *testing.T, binary string, args []string) (string, string, int)
 }
 
 // R-DPQ2-9T5Q R-5ZTA-PV8G
-func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
+func serveAndSignal(t *testing.T, binary string, sig os.Signal, env []string, display string) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "dummy-exec-")
 	if err != nil {
@@ -160,7 +168,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	command.Dir = t.TempDir()
 	command.Args = []string{"/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"`, binary}
 	servicesPath := filepath.Join(directory, "services.json")
-	command.Env = []string{"NOTIFY_SOCKET=" + notifyPath}
+	command.Env = append(append([]string{}, env...), "NOTIFY_SOCKET="+notifyPath)
 	if sig == syscall.SIGTERM {
 		writeServices(t, servicesPath, "First description", ingestSocket)
 		command.Env = append(command.Env, "IKIGENBA_SERVICES="+servicesPath)
@@ -216,8 +224,8 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 			servicesValue = servicesPath
 		}
 		t.Setenv(services.Variable, servicesValue)
-		assertAppkitFrame(t, string(body), page.New(panel.ServiceName, cli.Version).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")}))
-		assertMCPWiring(t, client)
+		assertAppkitFrame(t, string(body), page.New(panel.ServiceName, display).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")}))
+		assertMCPWiring(t, client, display)
 		if sig == syscall.SIGTERM {
 			assertDiscovery(t, client, "First description", true)
 			writeServices(t, servicesPath, "Second description", ingestSocket)
@@ -259,7 +267,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 			t.Fatalf("events=%v", events)
 		}
 		first, last := events[0], events[len(events)-1]
-		if first.Name != "service.started" || first.Service != panel.ServiceName || first.RequestID != "" || first.User != "" || !reflect.DeepEqual(first.Attrs, telemetry.Attrs{"version": cli.Version}) {
+		if first.Name != "service.started" || first.Service != panel.ServiceName || first.RequestID != "" || first.User != "" || !reflect.DeepEqual(first.Attrs, telemetry.Attrs{"version": display}) {
 			t.Errorf("first event=%+v", first)
 		}
 		if last.Name != "service.stopping" || last.Attrs["reason"] != reason {
@@ -315,7 +323,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	}
 }
 
-// R-HVOF-9N46
+// R-M3ZG-X463
 func assertAppkitFrame(t *testing.T, body string, banner page.Banner) {
 	t.Helper()
 	starts := regexp.MustCompile(`(?i)<body(?:[^a-z0-9>][^>]*|)>`).FindStringIndex(body)
@@ -354,8 +362,8 @@ func writeServices(t *testing.T, path, description, telemetrySocket string) {
 	}
 }
 
-// R-E051-E4GO
-func assertMCPWiring(t *testing.T, httpClient *http.Client) {
+// R-M57D-AVWS
+func assertMCPWiring(t *testing.T, httpClient *http.Client, display string) {
 	t.Helper()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://dummy/mcp", HTTPClient: httpClient, Name: "test", Version: "test"})
 	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "test-user", RequestID: "binary-tool-request"}, "list_widgets", nil)
@@ -381,7 +389,7 @@ func assertMCPWiring(t *testing.T, httpClient *http.Client) {
 	if err := json.Unmarshal(meta["io.modelcontextprotocol/serverInfo"], &info); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(info, map[string]string{"name": panel.ServiceName, "version": cli.Version}) {
+	if !reflect.DeepEqual(info, map[string]string{"name": panel.ServiceName, "version": display}) {
 		t.Errorf("serverInfo=%v", info)
 	}
 	var resultBody struct {

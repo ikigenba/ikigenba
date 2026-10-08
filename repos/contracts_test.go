@@ -170,7 +170,7 @@ func newContractFixture(t *testing.T) *contractFixture {
 		t.Fatal(err)
 	}
 	f.limits = limits.New(settings.Defaults(), limits.Clock{Now: contractNow, After: contractAfter})
-	f.writer = telemetry.New(telemetry.Config{Service: web.ServiceName, Version: cli.Version, Sink: f.capture,
+	f.writer = telemetry.New(telemetry.Config{Service: web.ServiceName, Version: "fixture-display", Sink: f.capture,
 		Stderr: io.Discard, Now: contractNow, Rand: &contractRandom{}, Sleep: func(context.Context, time.Duration) {}})
 	f.bus = events.New(events.Config{Service: web.ServiceName, Sink: &events.Capture{}, Stderr: io.Discard, Now: contractNow, Rand: &contractRandom{}, Telemetry: f.writer, Emits: smarthttp.Emits()})
 	t.Cleanup(func() {
@@ -460,8 +460,10 @@ func TestHandlerPublicContracts(t *testing.T) {
 		t.Fatal("service metadata changed")
 	}
 	f := newContractFixture(t)
-	mcpServer := mcp.NewServer(mcp.ServerConfig{Name: name, Version: cli.Version, Telemetry: f.writer})
-	h := web.Handler(web.Config{Banner: func(u page.User) page.Banner { return page.Banner{Service: name, Version: cli.Version, Email: u.Email} }, MCP: mcpServer, ServicesPath: filepath.Join(f.dir, "services.json"), Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer, Events: f.bus})
+	mcpServer := mcp.NewServer(mcp.ServerConfig{Name: name, Version: "fixture-display", Telemetry: f.writer})
+	h := web.Handler(web.Config{Banner: func(u page.User) page.Banner {
+		return page.Banner{Service: name, Version: "fixture-display", Email: u.Email}
+	}, MCP: mcpServer, ServicesPath: filepath.Join(f.dir, "services.json"), Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer, Events: f.bus})
 	r := httptest.NewRequest(http.MethodGet, "http://fixture.test/", nil)
 	r.Header.Set("X-User-Id", "owner")
 	rec := httptest.NewRecorder()
@@ -475,7 +477,7 @@ func TestHandlerPublicContracts(t *testing.T) {
 	if rec.Code == http.StatusOK {
 		t.Fatal("missing git repository succeeded")
 	}
-	direct := mcp.NewServer(mcp.ServerConfig{Name: name, Version: cli.Version, Telemetry: f.writer})
+	direct := mcp.NewServer(mcp.ServerConfig{Name: name, Version: "fixture-display", Telemetry: f.writer})
 	tools.Register(direct, tools.Config{Store: f.store, Limits: f.limits, Telemetry: f.writer})
 	server := httptest.NewServer(identity.Require(direct))
 	defer server.Close()

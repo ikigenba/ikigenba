@@ -7,15 +7,15 @@ import (
 )
 
 func TestArtifactPaths(t *testing.T) {
-	// R-F1YC-BLHM
-	// R-F368-PD8B
+	// R-5MRW-F52S
+	// R-5NZS-SWTH
 	if got := build.DistDir("crm"); got != "crm/dist" {
 		t.Fatalf("DistDir() = %q, want %q", got, "crm/dist")
 	}
-	for _, version := range []string{"v0.1.0", "v1.2.3-rc.1+build.7"} {
-		want := "crm/dist/crm-" + version + ".tar.xz"
-		if got := build.File("crm", version); got != want {
-			t.Fatalf("File(%q) = %q, want %q", version, got, want)
+	for _, sha := range []string{"4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a", "verbatim-SHA"} {
+		want := "crm/dist/crm-" + sha + ".tar.xz"
+		if got := build.File("crm", sha); got != want {
+			t.Fatalf("File(%q) = %q, want %q", sha, got, want)
 		}
 	}
 }

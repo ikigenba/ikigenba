@@ -19,14 +19,14 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the landing page (`S03`): an HTML page whose title is `events`, whose banner's profile link is titled `mg@example.com`, the email of the token's owner, and leads to `https://auth.sbx.ikigenba.dev/`, whose banner's `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`, whose banner carries the launcher button `Services`, since the host's services file lists events with its icon, from `share/icon.svg` (`S16`), and whose visible text carries the heading `events`; the heading `Subscribers`; the heading `MCP tools` and the five tool names `catalog`, `search`, `subscribers`, `skip`, and `resume`; and a link `About events` to `/about`; and whose footer reads `events v<semver>`, the version the deployed binary's `events --version` prints (`S01`), the same one `space status` reports for events. Its stylesheet is `https://events.sbx.ikigenba.dev/_appkit/theme.css` (`S04`): a browser showing the page requests its style from events' own host and from no other origin. Its button feedback script is `https://events.sbx.ikigenba.dev/_appkit/feedback.js` and its icon `https://events.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host.
+Status 200. The body is the landing page (`S03`): an HTML page whose title is `events`, whose banner's profile link is titled `mg@example.com`, the email of the token's owner, and leads to `https://auth.sbx.ikigenba.dev/`, whose banner's `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout`, whose banner carries the launcher button `Services`, since the host's services file lists events with its icon, from `share/icon.svg` (`S16`), and whose visible text carries the heading `events`; the heading `Subscribers`; the heading `MCP tools` and the five tool names `catalog`, `search`, `subscribers`, `skip`, and `resume`; and a link `About events` to `/about`; and whose footer reads `events <display>`, where `<display>` is whatever display string the host's environment gives events: the string the deployed binary's `events --version` prints under that same environment (`S01`), and empty when the host sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`. Its stylesheet is `https://events.sbx.ikigenba.dev/_appkit/theme.css` (`S04`): a browser showing the page requests its style from events' own host and from no other origin. Its button feedback script is `https://events.sbx.ikigenba.dev/_appkit/feedback.js` and its icon `https://events.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host.
 
 Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`, and `opsctl` is installed on it.
-- A tag `events/v<semver>` points at the commit `devctl build events` was run at, and it wrote `events/dist/events-v<semver>.tar.xz`.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev events/dist/events-v<semver>.tar.xz` exited 0.
-- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows `events v<semver> active active -`.
+- `devctl build events`, run in a clean tree at the commit `<sha>`, wrote `events/dist/events-<sha>.tar.xz` (`S16`). No tag is needed.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev events/dist/events-<sha>.tar.xz` exited 0.
+- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows events' service and socket `active`, in the layout devctl's and opsctl's stories own.
 - auth, telemetry, repos, and scripts are deployed and active on the space through their own chains.
 - `ikp_<token>` is a token auth honors, owned by `u_7f3a9c21`, `mg@example.com`.
 
@@ -56,7 +56,7 @@ Status 302. The body is not fixed, and the response carries no `www-authenticate
 
 Preconditions:
 
-- events `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`.
+- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`.
 - The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
 
 Postconditions:
@@ -85,7 +85,7 @@ Status 401. The body is the host's nginx's one line `authentication required: se
 
 Preconditions:
 
-- events `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`.
+- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`.
 - The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
 
 Postconditions:
@@ -116,7 +116,7 @@ Status 404. The body is not fixed. A request to the same path with no credential
 
 Preconditions:
 
-- events `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, so the host's nginx includes `/opt/events/etc/nginx.conf` in events' server.
+- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, so the host's nginx includes `/opt/events/etc/nginx.conf` in events' server.
 - The agent holds `ikp_<token>`, a token auth honors, owned by `u_7f3a9c21`.
 - events holds no event `evt_1d6f3a8c5e2b9047`.
 
@@ -146,7 +146,7 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is events
 
 Preconditions:
 
-- events `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, and the host's services file lists `events` enabled, with the socket `/run/ikigenba/events.sock`.
+- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, and the host's services file lists `events` enabled, with the socket `/run/ikigenba/events.sock`.
 - mcp is deployed and active on the space, serving `https://mcp.sbx.ikigenba.dev/mcp`.
 - `u_7f3a9c21` owns, in repos, the repository `notes`, `<rep>`, and pushed to it with git a commit `<new>` that moved `refs/heads/main` from `<old>`, the push's request carrying the id `<push-request>` nginx gave it; that is the newest push on the space.
 - The agent holds `ikp_<token>`.
@@ -212,7 +212,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- events `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, and the host has replicated `/opt/events/state/events.db`.
+- events is deployed and active on `sbx.ikigenba.dev`, as in `A user on a space reaches events' landing page`, and the host has replicated `/opt/events/state/events.db`.
 - `aws.region` and `backup.s3_uri` are set in opsctl's configuration, and the host's role can read under that prefix.
 - `<backup.s3_uri>events/` holds at least one files backup of events, of `/opt/events/etc/` and `/opt/events/state/`.
 - The newest point the replica holds has the log through `seq` 1040, and scripts `ok` with its cursor at 1032.

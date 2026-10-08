@@ -435,9 +435,9 @@ func checkSecrets(getenv func(string) string, apps []appInfo) error {
 	}
 	return nil
 }
-func renderAppEnv(data, name string, port int, a appInfo) []byte {
+func renderAppEnv(data, name, commit string, port int, a appInfo) []byte {
 	entry := registryEntry{Name: name, Port: port}
-	env := map[string]string{"DRAIN_SECONDS": "5", "IKIGENBA_CALLBACK_URL": callbackOrigin(entry), "IKIGENBA_PUBLIC_URL": appOrigin(entry, a.Name), "IKIGENBA_SANDBOX": name, "IKIGENBA_SERVICES": filepath.Join(data, "services.json")}
+	env := map[string]string{"DRAIN_SECONDS": "5", "IKIGENBA_CALLBACK_URL": callbackOrigin(entry), "IKIGENBA_COMMIT": commit, "IKIGENBA_PUBLIC_URL": appOrigin(entry, a.Name), "IKIGENBA_SANDBOX": name, "IKIGENBA_SERVICES": filepath.Join(data, "services.json")}
 	for k, v := range a.Env {
 		env[k] = v
 	}

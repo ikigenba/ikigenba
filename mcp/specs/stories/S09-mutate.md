@@ -36,7 +36,7 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is dummy'
 {"id":"<delta-id>","name":"delta","count":7,"status":"active"}
 ```
 
-and a `content` array of one text block whose text is exactly that line. `<delta-id>` is the id dummy gave the new widget, as dummy's `S9` tells: `wgt_` and 16 lowercase hexadecimal digits, different from every other widget's. Its `_meta` names the gateway, `{"name":"mcp","version":"v<semver>"}`, not dummy.
+and a `content` array of one text block whose text is exactly that line. `<delta-id>` is the id dummy gave the new widget, as dummy's `S9` tells: `wgt_` and 16 lowercase hexadecimal digits, different from every other widget's. Its `_meta` names the gateway, `{"name":"mcp","version":"<display>"}`, not dummy.
 
 Preconditions:
 

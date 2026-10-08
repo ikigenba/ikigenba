@@ -72,7 +72,7 @@ func (f *appFixture) run() (int, string, string) {
 		f.commands = append(f.commands, c)
 		switch c.Path {
 		case "git":
-			return seam.Result{Stdout: []byte(f.work + "\n")}, nil
+			return fixtureGitResult(c, f.work), nil
 		case "go":
 			if err := os.WriteFile(c.Args[2], []byte("fixture executable"), 0600); err != nil {
 				return seam.Result{}, err
@@ -793,7 +793,7 @@ func TestAppSecretEnvironment(t *testing.T) {
 	}
 }
 
-// R-VESI-D57U R-O2UQ-1WEJ R-VUN7-C5UV R-B43S-E58Y R-S6QH-17GN R-W0QP-90KC R-O5AI-TFVX
+// R-VESI-D57U R-O2UQ-1WEJ R-R23U-IUXG R-B43S-E58Y R-R3BQ-WMO5 R-W0QP-90KC R-O5AI-TFVX
 func TestAppDeploymentFiles(t *testing.T) {
 	for _, def := range []bool{false, true} {
 		f := newAppFixture(t)
@@ -801,11 +801,11 @@ func TestAppDeploymentFiles(t *testing.T) {
 		f.manifest("dummy", appManifest("dummy")+fmt.Sprintf("default=%t\nmcp=true\ndescription=\"Demo widgets to list and create\"\n", def))
 		icon := "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n"
 		f.write("dummy/share/icon.svg", icon)
-		f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_ID": "1234-abc.apps.googleusercontent.com", "GOOGLE_LOCALHOST_CLIENT_SECRET": "local-secret", "GOOGLE_CLIENT_ID": "9999-web.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "production-secret", "SIGNING_KEY": "ignored", "STRIPE_KEY": "ignored"}
+		f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_ID": "1234-abc.apps.googleusercontent.com", "GOOGLE_LOCALHOST_CLIENT_SECRET": "local-secret", "GOOGLE_CLIENT_ID": "9999-web.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "production-secret", "SIGNING_KEY": "ignored", "STRIPE_KEY": "ignored", "IKIGENBA_RELEASE": "ignored"}
 		f.success()
 		servicesPath := filepath.Join(f.state, "ikigenba/sandbox/wip/services.json")
 		base := func(app string) string {
-			return "IKIGENBA_CALLBACK_URL=\"http://localhost:7400\"\nIKIGENBA_PUBLIC_URL=\"http://" + app + ".wip.localhost:7400\"\nIKIGENBA_SANDBOX=\"wip\"\nIKIGENBA_SERVICES=\"" + servicesPath + "\"\n"
+			return "IKIGENBA_CALLBACK_URL=\"http://localhost:7400\"\nIKIGENBA_COMMIT=\"" + fixtureCommit + "\"\nIKIGENBA_PUBLIC_URL=\"http://" + app + ".wip.localhost:7400\"\nIKIGENBA_SANDBOX=\"wip\"\nIKIGENBA_SERVICES=\"" + servicesPath + "\"\n"
 		}
 		authEnv := "DRAIN_SECONDS=\"5\"\nGOOGLE_CLIENT_ID=\"1234-abc.apps.googleusercontent.com\"\nGOOGLE_CLIENT_SECRET=\"local-secret\"\n" + base("auth") + "WORKSPACE_DOMAIN=\"michaelgreenly.dev\"\n"
 		if got := f.read("env/auth.env"); got != authEnv {

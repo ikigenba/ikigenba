@@ -4,7 +4,7 @@ Running mcp at all: help, version, the manifest, exit codes. mcp is an app of th
 
 ## A developer asks which version they have
 
-The version is a `var` in the source, never injected at build time, so a developer's build and a deployed binary report the same string. Its shape is `v<semver>`: a `v`, then a semantic version, prerelease and build metadata included. Its value is data and is not fixed here. It is the same version the connect page's footer shows (`S03`) and mcp's `service.started` event carries in the trail (`S02`).
+mcp carries no version of its own: nothing in its source or its build names one. The environment tells it which code it is running, through two variables: `IKIGENBA_COMMIT`, the commit it was built from, and `IKIGENBA_RELEASE`, the label of the release, when there is one. From them mcp builds its display string, `<display>`, which every later story uses with this meaning. With both set it is the label, one space, and the short commit in parentheses, `<label> (<short sha>)`; with only the commit it is the short commit alone; with only the label it is the label alone. The short commit is the first seven characters of `IKIGENBA_COMMIT`, or all of it when it is shorter; a value ending in `-dirty`, as a developer's sandbox marks a modified tree, is shortened without the suffix and keeps it after, as in `<short sha>-dirty`. Nothing else about either value is checked or changed. mcp reads the two variables each time it is run with `--version`; an mcp that serves reads them once, when it starts (`S02`), and shows the same string in the connect page's footer (`S03`), in its `service.started` event in the trail (`S02`), in its MCP `serverInfo` (`S05`), and in the `clientInfo` it names itself with to a backend (`S08`).
 
 Command:
 
@@ -15,7 +15,7 @@ $ mcp --version
 Output:
 
 ```
-v<semver>
+<display>
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -23,6 +23,34 @@ Exits 0. The line is on stdout; stderr is empty.
 Preconditions:
 
 - `bin/mcp` exists, built from the checkout with `make`.
+- `IKIGENBA_COMMIT` holds a commit, and `IKIGENBA_RELEASE` holds a label or is unset; `<display>` is the string they make.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer asks which version they have with no identity set
+
+With neither variable set, or both empty, mcp has no identity to show, and `<display>` is the empty string. It still answers, with an empty line, and still succeeds: a missing identity is not a failure.
+
+Command:
+
+```
+$ mcp --version
+```
+
+Output:
+
+```
+
+```
+
+Exits 0. stdout holds one empty line, a single newline and nothing else; stderr is empty.
+
+Preconditions:
+
+- `bin/mcp` exists.
+- `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` are both unset or empty.
 
 Postconditions:
 

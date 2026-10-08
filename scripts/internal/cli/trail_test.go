@@ -592,7 +592,7 @@ func TestTrailDrainDeadlineUndeliveredIdentity(t *testing.T) {
 	trailEvent(t, events, "service.stopping", nil)
 }
 func TestTrailClientCancellationCutsOffGit(t *testing.T) {
-	// R-2I6Y-P4OL
+	// R-I4NM-U7WL
 	h := newHarness(t)
 	h.repository("pass\n")
 	h.p.Sink = &h.sink.capture
@@ -617,17 +617,18 @@ func TestTrailClientCancellationCutsOffGit(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("git did not start")
 	}
+	deadlineAt := time.Now().Add(time.Second)
+	deadline := time.NewTimer(time.Until(deadlineAt))
+	defer deadline.Stop()
 	cancel()
 	select {
 	case e := <-done:
 		if e == nil {
 			t.Fatal("cancelled call answered")
 		}
-	case <-time.After(time.Second):
+	case <-deadline.C:
 		t.Fatal("cancelled call did not return")
 	}
-	deadline := time.NewTimer(time.Second)
-	defer deadline.Stop()
 	finished := false
 	for !finished {
 		for _, e := range h.sink.capture.Events() {
@@ -642,6 +643,9 @@ func TestTrailClientCancellationCutsOffGit(t *testing.T) {
 		}
 	}
 	assertNoProcess(t, "GIT_TRACE="+fifo)
+	if !time.Now().Before(deadlineAt) {
+		t.Fatal("cancelled request and git did not both finish within one second")
+	}
 	// A completed independent request establishes that serving continues after cancellation.
 	_, _ = c.ok("list", map[string]any{})
 	h.cancel(context.Canceled)

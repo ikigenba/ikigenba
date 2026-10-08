@@ -24,16 +24,20 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 )
 
-// R-XVBI-L1GX R-YX1P-GMHL R-YY9L-UE8A R-YZHI-85YZ R-Z0PE-LXPO
-// R-Z1XA-ZPGD R-Z357-DH72 R-R02K-R24N R-Z4D3-R8XR R-W7MM-ZP1J
+// R-W4OI-ROHH R-W74B-J7YV R-YX1P-GMHL R-YY9L-UE8A R-28RY-26BD R-W9K4-ARG9
+// R-WAS0-OJ6Y R-Z357-DH72 R-R02K-R24N R-WBZX-2AXN R-W7MM-ZP1J
 // R-WILQ-FMPS R-66QV-EPPN
 func TestBinary(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
+	t.Setenv(version.CommitVariable, "abcdef0123456789-dirty")
+	t.Setenv(version.ReleaseVariable, "release fixture")
+	v := version.Display()
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +50,7 @@ func TestBinary(t *testing.T) {
 	if output, e := build.CombinedOutput(); e != nil {
 		t.Fatalf("build: %v\n%s", e, output)
 	}
-	env := []string{"PATH=" + filepath.Dir(git), "HOME=" + root, "XDG_CONFIG_HOME=" + root, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=", "TMPDIR=" + root}
+	env := []string{version.CommitVariable + "=abcdef0123456789-dirty", version.ReleaseVariable + "=release fixture", "PATH=" + filepath.Dir(git), "HOME=" + root, "XDG_CONFIG_HOME=" + root, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=", "TMPDIR=" + root}
 	var pending bytes.Buffer
 	if err := db.Status(context.Background(), db.Config{Path: filepath.Join(root, "state", "sites.db"), Migrations: sites.Migrations()}, &pending); err != nil {
 		t.Fatal(err)
@@ -56,7 +60,7 @@ func TestBinary(t *testing.T) {
 		code        int
 		out, stderr string
 	}{
-		{[]string{"--version"}, 0, cli.Version + "\n", ""},
+		{[]string{"--version"}, 0, v + "\n", ""},
 		{[]string{"manifest"}, 0, cli.Manifest, ""},
 		{[]string{"--help"}, 0, cli.Usage, ""},
 		{[]string{"db", "status"}, 0, pending.String(), ""},
@@ -84,6 +88,18 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("args %v: exit %d stdout %q stderr %q", c.args, code, out.String(), stderr.String())
 		}
 	}
+	// No code identity in the child means one empty output line.
+	emptyEnv := append([]string{}, env[2:]...)
+	cmd := exec.CommandContext(ctx, binary, "--version")
+	cmd.Dir = root
+	cmd.Env = emptyEnv
+	var emptyOut, emptyErr bytes.Buffer
+	cmd.Stdout = &emptyOut
+	cmd.Stderr = &emptyErr
+	if err := cmd.Run(); err != nil || emptyOut.String() != "\n" || emptyErr.Len() != 0 {
+		t.Fatal(err, emptyOut.String(), emptyErr.String())
+	}
+
 	work := filepath.Join(root, "sites")
 	if err = os.Mkdir(work, 0700); err != nil {
 		t.Fatal(err)
@@ -126,23 +142,41 @@ func TestBinary(t *testing.T) {
 		}
 		list := f.call(t, "list", "")
 		meta := list["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"]
-		if !reflect.DeepEqual(meta, map[string]any{"name": pages.ServiceName, "version": cli.Version}) {
+		if !reflect.DeepEqual(meta, map[string]any{"name": pages.ServiceName, "version": v}) {
 			t.Fatalf("server info: %v", meta)
 		}
 		landing := f.get(t, "/")
 		footers := regexp.MustCompile(`(?is)<footer(?:\s[^>]*)?>(.*?)</footer>`).FindAllStringSubmatch(landing, -1)
-		if len(footers) != 1 || html.UnescapeString(strings.Trim(footers[0][1], " \t\r\n\f")) != pages.ServiceName+" "+cli.Version {
+		if len(regexp.MustCompile(`(?i)<footer(?:>|[ \t\r\n\f])`).FindAllString(landing, -1)) != 1 || len(footers) != 1 || html.UnescapeString(strings.Trim(footers[0][1], " \t\r\n\f")) != pages.ServiceName+" "+v {
 			t.Fatalf("footer: %v", footers)
 		}
 		about := f.get(t, "/about")
 		version := regexp.MustCompile(`(?is)<dd\b[^>]*\bid="about-version"[^>]*>(.*?)</dd>`).FindStringSubmatch(about)
-		if len(version) != 2 || html.UnescapeString(strings.Trim(version[1], " \t\r\n\f")) != cli.Version {
+		if len(version) != 2 || html.UnescapeString(strings.Trim(version[1], " \t\r\n\f")) != v {
 			t.Fatalf("about: %s", about)
 		}
 		f.instructions(t, false, "")
 		f.stop(t, sig)
-		assertUndelivered(t, f.stderr.String(), sig)
+		assertUndelivered(t, f.stderr.String(), sig, v)
 	}
+	fEmpty := startBinary(t, binary, work, emptyEnv)
+	emptyLanding := fEmpty.get(t, "/")
+	footer := regexp.MustCompile(`(?is)<footer(?:\s[^>]*)?>(.*?)</footer>`).FindAllStringSubmatch(emptyLanding, -1)
+	if len(regexp.MustCompile(`(?i)<footer(?:>|[ \t\r\n\f])`).FindAllString(emptyLanding, -1)) != 1 || len(footer) != 1 || html.UnescapeString(strings.Trim(footer[0][1], " \t\r\n\f")) != pages.ServiceName {
+		t.Fatal(footer)
+	}
+	emptyAbout := fEmpty.get(t, "/about")
+	aboutVersion := regexp.MustCompile(`(?is)<dd\b[^>]*\bid="about-version"[^>]*>(.*?)</dd>`).FindStringSubmatch(emptyAbout)
+	if len(aboutVersion) != 2 || html.UnescapeString(strings.Trim(aboutVersion[1], " \t\r\n\f")) != "" {
+		t.Fatal(emptyAbout)
+	}
+	emptyList := fEmpty.call(t, "list", "")
+	if !reflect.DeepEqual(emptyList["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"], map[string]any{"name": pages.ServiceName, "version": ""}) {
+		t.Fatal(emptyList)
+	}
+	fEmpty.stop(t, syscall.SIGTERM)
+	assertUndelivered(t, fEmpty.stderr.String(), syscall.SIGTERM, "")
+
 	services := filepath.Join(root, "services.json")
 	writeServices := func(disabled bool, description string) {
 		t.Helper()
@@ -216,7 +250,7 @@ func TestBinary(t *testing.T) {
 		mu.Lock()
 		saved := append([]map[string]any{}, events...)
 		mu.Unlock()
-		assertLifecycle(t, saved, sig)
+		assertLifecycle(t, saved, sig, v)
 	}
 }
 
@@ -397,7 +431,7 @@ func (f *binaryFixture) instructions(t *testing.T, present bool, want string) {
 		}
 	}
 }
-func assertUndelivered(t *testing.T, text string, sig syscall.Signal) {
+func assertUndelivered(t *testing.T, text string, sig syscall.Signal, v string) {
 	t.Helper()
 	var events []map[string]any
 	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
@@ -414,9 +448,9 @@ func assertUndelivered(t *testing.T, text string, sig syscall.Signal) {
 	if !strings.HasSuffix(text, "\n") {
 		t.Fatal("missing event newline")
 	}
-	assertLifecycle(t, events, sig)
+	assertLifecycle(t, events, sig, v)
 }
-func assertLifecycle(t *testing.T, events []map[string]any, sig syscall.Signal) {
+func assertLifecycle(t *testing.T, events []map[string]any, sig syscall.Signal, v string) {
 	t.Helper()
 	if len(events) < 2 {
 		t.Fatalf("events: %v", events)
@@ -429,7 +463,7 @@ func assertLifecycle(t *testing.T, events []map[string]any, sig syscall.Signal) 
 	if first["event"] != "service.started" || last["event"] != "service.stopping" || !reflect.DeepEqual(last["attrs"], map[string]any{"reason": reason}) {
 		t.Fatalf("lifecycle: %v", events)
 	}
-	if !reflect.DeepEqual(first["attrs"], map[string]any{"version": cli.Version}) {
+	if !reflect.DeepEqual(first["attrs"], map[string]any{"version": v}) {
 		t.Fatalf("started version: %v", first)
 	}
 	for _, event := range []map[string]any{first, last} {

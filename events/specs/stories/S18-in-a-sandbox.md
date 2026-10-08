@@ -26,7 +26,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the landing page (`S03`): an HTML page whose title is `events`, whose visible text carries the heading `events`, the heading `Subscribers`, the heading `MCP tools` and the five tool names `catalog`, `search`, `subscribers`, `skip`, and `resume`, and the link `About events` to `/about`, whose banner's profile link is titled with the email of the token's owner and leads to `http://auth.wip.localhost:7400/`, and whose footer reads `events v<semver>`. Its banner carries the launcher button `Services`, since the sandbox's services file lists events with its icon.
+Status 200. The body is the landing page (`S03`): an HTML page whose title is `events`, whose visible text carries the heading `events`, the heading `Subscribers`, the heading `MCP tools` and the five tool names `catalog`, `search`, `subscribers`, `skip`, and `resume`, and the link `About events` to `/about`, whose banner's profile link is titled with the email of the token's owner and leads to `http://auth.wip.localhost:7400/`, and whose footer reads `events <display>`, where `<display>` is the first seven characters of the worktree's commit, followed by `-dirty` when the worktree has uncommitted changes, since the sandbox gives events that commit as `IKIGENBA_COMMIT` and sets no `IKIGENBA_RELEASE` (`S01`). Its banner carries the launcher button `Services`, since the sandbox's services file lists events with its icon.
 
 Preconditions:
 

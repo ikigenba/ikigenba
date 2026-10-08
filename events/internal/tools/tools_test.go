@@ -850,7 +850,7 @@ func TestEveryCallerSeesSameBus(t *testing.T) {
 }
 
 func TestLandingToolDescriptions(t *testing.T) {
-	// R-MYEW-GG0E
+	// R-A4TK-YX2K
 	h := newHarness(t, false)
 	listed, err := h.client.ListTools(context.Background(), caller)
 	if err != nil {

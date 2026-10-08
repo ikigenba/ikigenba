@@ -1,6 +1,6 @@
 # Stories — event runs
 
-What happens when the events app delivers an event to scripts. scripts accepts every event the events app delivers; how the events app reaches it, in what order, and how it retries are the events app's, and no story here fixes the wire of that delivery. An event is a record of eleven members: `id`, which begins `evt_`; `time`; `service`, the service that emitted it; `event`, its lowercase dotted name, `repo.pushed` say; `request_id` and `user`, the request and the user that caused it; `attrs`, a flat object of strings, numbers and booleans; `cause`, the id of the event that caused it, or empty; `depth`; `seq`, its place in the events app's log; and `received`. For every subscription (`S26`) whose `event` is exactly the event's `event`, scripts starts a run of the subscribed script as `run` does without a `ref` (`S08`): the same steps, the same folder `state/runs/<script id>/<run id>/`, the same git and the same process, with the environment `S15` fixes, bounded by the limits `S17` fixes, and pruned as `S19` tells. Such a run differs from one `run` starts in these ways only. Its `user` is the script's owner, whoever the event's `user` is. Its `ref` is the script's ref at delivery, so a later `update` (`S09`) does not move it. Its `input.json` holds the event record, a JSON object of exactly those eleven members, byte for byte as the events app sent it in the delivery. Its `trigger` is `event`, and its run object, as `result`, `runs` and `cancel` answer it (`S11`), has the member `event`, the event's id, right after `trigger`. Its `request_id`, which `result` answers and `IKIGENBA_REQUEST_ID` gives the script (`S15`), is the id of the request by which the events app delivered the event to scripts, the stories' `<delivery request id>`; the event's own `request_id`, that of the request that caused the event, is not carried forward, and the event's `id`, as the run's `event` and as `IKIGENBA_EVENT_ID` (`S15`), is the link back to it. Its `IKIGENBA_EVENT_ID` and `IKIGENBA_EVENT_DEPTH` are the event's `id` and `depth` (`S15`). scripts looks at the event's `event` and `id` only: neither its `attrs`, nor its `service`, nor its `user` decides whether a run starts, so a script subscribed to `repo.pushed` runs for a push to any repository by any user, and a script that cares which reads its input and decides for itself. One subscribed script gets at most one run from one event: scripts knows a run by its script's id and the event's id, so the same event delivered again, which the events app may do, starts no second run of that script, whether its first run is still running, has ended, or has since been pruned (`S19`). A script deleted and created again under the same name is a new script, with a new id, and has had no run from any event. A subscription applies to the events delivered while it exists: an event delivered before the script was subscribed to its name, or after it was unsubscribed (`S26`), starts nothing for that script. An event no subscription names starts nothing and is accepted all the same. Runs an event starts share with the runs `run` starts the `RUN_MAX_ACTIVE` places and the one queue (`S08`): a run a delivery makes while every place is taken is `queued`, and waits its turn with the rest, first in first out, and its `run.started` is recorded when its process starts (`S16`). While scripts is stopping (`S18`), while it cannot reach its catalog, while runs are unavailable (`S02`), or while the places free to run and the places left in the queue together are fewer than the subscribed scripts that have no run yet from the event, a delivery is refused and starts no run for any subscription, so the events app delivers it again later; once a delivery is accepted, every subscribed script has its run. A run that cannot start is a `failed` run with its `reason`, exactly as for `run` (`S08`), and its delivery counts as accepted. Several subscribed scripts each get their own run, with ids and folders of their own, from the one delivery; the order in which they start is not fixed, and no run waits for another but as the queue makes it wait.
+What happens when the events app delivers an event to scripts. scripts accepts every event the events app delivers; how the events app reaches it, in what order, and how it retries are the events app's, and no story here fixes the wire of that delivery. An event is a record of eleven members: `id`, which begins `evt_`; `time`; `service`, the service that emitted it; `event`, its lowercase dotted name, `repo.pushed` say; `request_id` and `user`, the request and the user that caused it; `attrs`, a flat object of strings, numbers and booleans; `cause`, the id of the event that caused it, or empty; `depth`; `seq`, its place in the events app's log; and `received`. For every script holding at least one subscription (`S26`) whose pattern matches the event's `event`, as `S26` tells, word for word with each `*` standing for exactly one word, scripts starts a run of that script, here called a subscribed script, as `run` does without a `ref` (`S08`): the same steps, the same folder `state/runs/<script id>/<run id>/`, the same git and the same process, with the environment `S15` fixes, bounded by the limits `S17` fixes, and pruned as `S19` tells. Such a run differs from one `run` starts in these ways only. Its `user` is the script's owner, whoever the event's `user` is. Its `ref` is the script's ref at delivery, so a later `update` (`S09`) does not move it. Its `input.json` holds the event record, a JSON object of exactly those eleven members, byte for byte as the events app sent it in the delivery. Its `trigger` is `event`, and its run object, as `result`, `runs` and `cancel` answer it (`S11`), has the member `event`, the event's id, right after `trigger`. Its `request_id`, which `result` answers and `IKIGENBA_REQUEST_ID` gives the script (`S15`), is the id of the request by which the events app delivered the event to scripts, the stories' `<delivery request id>`; the event's own `request_id`, that of the request that caused the event, is not carried forward, and the event's `id`, as the run's `event` and as `IKIGENBA_EVENT_ID` (`S15`), is the link back to it. Its `IKIGENBA_EVENT_ID` and `IKIGENBA_EVENT_DEPTH` are the event's `id` and `depth` (`S15`). scripts looks at the event's `event` and `id` only: neither its `attrs`, nor its `service`, nor its `user` decides whether a run starts, so a script subscribed to `repo.pushed` runs for a push to any repository by any user, and a script that cares which reads its input and decides for itself. One subscribed script gets at most one run from one event: scripts knows a run by its script's id and the event's id, so a script several of whose subscriptions match the event, `cron.*.fired` and `cron.hourly.fired` for a `cron.hourly.fired` event say, gets one run, not one per subscription, and the same event delivered again, which the events app may do, starts no second run of that script, whether its first run is still running, has ended, or has since been pruned (`S19`). A script deleted and created again under the same name is a new script, with a new id, and has had no run from any event. A subscription applies to the events delivered while it exists: an event delivered before the script was subscribed to a pattern matching it, or after that subscription was removed (`S26`), starts nothing for that script. An event no subscription matches starts nothing and is accepted all the same. Runs an event starts share with the runs `run` starts the `RUN_MAX_ACTIVE` places and the one queue (`S08`): a run a delivery makes while every place is taken is `queued`, and waits its turn with the rest, first in first out, and its `run.started` is recorded when its process starts (`S16`). While scripts is stopping (`S18`), while it cannot reach its catalog, while runs are unavailable (`S02`), or while the places free to run and the places left in the queue together are fewer than the subscribed scripts that have no run yet from the event, a delivery is refused and starts no run for any subscription, so the events app delivers it again later; once a delivery is accepted, every subscribed script has its run. A run that cannot start is a `failed` run with its `reason`, exactly as for `run` (`S08`), and its delivery counts as accepted. Several subscribed scripts each get their own run, with ids and folders of their own, from the one delivery; the order in which they start is not fixed, and no run waits for another but as the queue makes it wait.
 
 The actor is the events app delivering an event, and a model working through an MCP client that follows what it started with `runs` and `result` (`S11`), as the subscribed script's owner, with the request shape and result envelope `S05` fixes and on revision `2026-07-28`. scripts is serving on the host (`S02`) with every setting at its default but `RUN_MAX_ACTIVE`, which is 4, so a run a delivery makes starts at once beside the two running unless a story says otherwise, telemetry takes every event, and it is now `2026-10-05T09:32:00Z`. The catalog holds `S06`'s shared catalog: the caller `u_7f3a9c21` (`mg@example.com`) owns `nightly-report` (`scr_6d1f4a9b2e8c7035`, over `rep_9c2e4b7a1d3f8e05` at `main`, which is `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`), whose seven runs `S11` lists, the newest `run_8a2c6e1f9b3d5074`, `running` since `2026-10-05T09:31:40Z`; `sync-crm` (`scr_a2e7c4f9b1d03856`, over `rep_41d8f0a6b2c97e13` at `main`, which is `3c8e1f5a9d2b7064e1a3c5f7b9d0e2a4c6f8b1d3`), whose one run `run_6b2d8f4a0c9e1735` is `running`; `rotate-keys` (`scr_5c9b1e3a7f2d4068`, over `rep_7b3e9a0c5d1f2846` at `release`, a branch that repository does not have), whose one run is `run_1e9c3a7f5b0d2864`; and `backfill`; and `u_2b8e1d04` (`ann@example.com`) owns `digest` (`scr_3b7f9d1c5e0a2846`, over `rep_d41c7a9e05b28f63` at `main`, which is `e4d2b6f80a1c3e5d7f9b2a4c6e8d0f1a3b5c7e92`), whose one run is `run_0c4e8a2f6b1d9375`. Besides, `nightly-report` is subscribed to `repo.pushed`, since `2026-10-05T08:00:00Z`, and no other script is subscribed to anything unless a story says so. The caller has just pushed a commit to `main` of `rep_7b3e9a0c5d1f2846`, repos' `ops-tools`, moving it from `7d5b3f1e9c0a2846b8d4f6e1a3c5b7d9e0f2a4c6` to `5e2a8c4f1b9d7036e2a4c8f0b6d3e1a5c7f9b2d4`, and repos emitted the event that push made, which the stories call the push event, `evt_8c3f1a6e2d9b4075`:
 
@@ -194,7 +194,7 @@ Postconditions:
 
 ## The events app delivers an event no script is subscribed to
 
-An event is delivered to scripts whatever its name, and most names no script reacts to. An event no subscription names starts nothing: no run, no folder, no git. It is accepted all the same, since there is nothing for the events app to retry. Here repos' push event carries a name nothing is subscribed to, `repo.created` say, with the push event's other members.
+An event is delivered to scripts whatever its name, and most names no script reacts to. An event no subscription matches starts nothing: no run, no folder, no git. It is accepted all the same, since there is nothing for the events app to retry. Here repos' push event carries a name nothing is subscribed to, `repo.created` say, with the push event's other members.
 
 Request:
 
@@ -221,16 +221,145 @@ Status 200. The body is a JSON-RPC response with `id` 5 carrying the answer `S11
 
 Preconditions:
 
-- The preamble's, except that the event the events app delivered at `2026-10-05T09:32:00Z` is `evt_2d7f0b4c9e1a6538`, whose `event` is `repo.created`. No subscription names `repo.created`; `nightly-report`'s names `repo.pushed`, and a subscription matches an event's name exactly, never as a prefix or a pattern.
+- The preamble's, except that the event the events app delivered at `2026-10-05T09:32:00Z` is `evt_2d7f0b4c9e1a6538`, whose `event` is `repo.created`. No subscription matches `repo.created`: `nightly-report`'s is `repo.pushed`, a pattern with no `*`, which matches only `repo.pushed` itself, never a name that merely shares a word with it.
 
 Postconditions:
 
 - Nothing has changed: no script of any user has a new run, and nothing was added under `state/runs/`. No git ran and no script started.
 - The delivery recorded no `run.*` event.
 
+## The events app delivers an event a script's pattern matches
+
+A script subscribed to a pattern runs for every event the pattern matches. Here an agent wired `nightly-report` to every schedule cron fires with `cron.*.fired`, and the hourly schedule fired: the events app delivers an event named `cron.hourly.fired`, and scripts starts a run of `nightly-report` exactly as it does for an event named in a subscription. The run carries the event, not the pattern: its `event` is the event's id, and its `input.json` holds the event's record, whose `event` is `cron.hourly.fired`. Which subscription matched is recorded nowhere.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: runs
+
+{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"runs","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 15 whose `result` has no `isError` member, a `structuredContent` of `{"runs":[...]}` whose first entry is
+
+```
+{"id":"<id>","sha":"e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d","ref":"main","trigger":"event","event":"evt_4b9e2c7a1f5d3068","status":"running","started":"<started>","truncated":false}
+```
+
+followed by the seven entries `S11` shows for `nightly-report`, as they were, each with `trigger` `manual` and no `event`; and a `content` array of one text block whose text is that object encoded compactly.
+
+Preconditions:
+
+- The preamble's, and `nightly-report` is subscribed to `cron.*.fired` too. The event the events app delivered at `2026-10-05T09:32:00Z` is cron's fire of `u_7f3a9c21`'s hourly trigger for the `09:00` slot:
+
+  ```
+  {"id":"evt_4b9e2c7a1f5d3068","time":"2026-10-05T09:00:00.041736Z","service":"cron","event":"cron.hourly.fired","request_id":"9d4b7e2a6f1c3058b8e2d6a4f0c9b731","user":"u_7f3a9c21","attrs":{"scheduled":"2026-10-05T09:00:00Z","trigger":"crn_3a8f2d6c9e1b4705","when":"0 * * * *"},"cause":"","depth":0,"seq":4096,"received":"2026-10-05T09:00:00.046218Z"}
+  ```
+
+  `nightly-report`'s `repo.pushed` does not match it, and its `cron.*.fired` does. The events app delivered it once, and scripts accepted it. This call comes after.
+
+Postconditions:
+
+- The catalog has a new run `<id>` of `nightly-report`: script `scr_6d1f4a9b2e8c7035`, sha `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`, ref `main`, user `u_7f3a9c21`, request id `<delivery request id>`, trigger `event`, event `evt_4b9e2c7a1f5d3068`, status `running`, started `<started>`. `nightly-report` and its subscriptions are as they were.
+- `state/runs/scr_6d1f4a9b2e8c7035/<id>/` holds `input.json`, the delivered event's record, a JSON object of its eleven members, its `id` `evt_4b9e2c7a1f5d3068` and its `event` `cron.hourly.fired`, never `cron.*.fired`; `tree/`, the tree of `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d`, read-only; `out/`; and `stdout` and `stderr`. `python3.12 main.py` is running in that `tree/`, in a process group of its own, as `u_7f3a9c21`'s run.
+- `run_8a2c6e1f9b3d5074` runs on, untouched. No other script has a new run.
+- When the run started, telemetry received its `run.started`, as in `The events app delivers an event a script is subscribed to`, with `run` `<id>`, `script` `scr_6d1f4a9b2e8c7035`, `sha` `e4f1c9a7d2b85306f41c0e9a3d7b2c8e5f16a04d` and `trigger` `event`. Neither the event's name nor the pattern is in any event scripts recorded.
+
+## The events app delivers an event a script's pattern does not match
+
+A `*` stands for exactly one word, so a pattern matches only names of as many words as it has. `cron.*.fired` does not match `cron.fired`, which has no word for the `*`, nor `cron.a.b.fired`, which has two; such an event starts nothing for the script, and is accepted as any event no subscription matches is.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: runs
+
+{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"runs","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 16 carrying the answer `S11`'s `A model lists a script's runs` shows: the seven runs `nightly-report` had, and none started by an event.
+
+Preconditions:
+
+- The preamble's, and `nightly-report` is subscribed to `cron.*.fired` too. The event the events app delivered at `2026-10-05T09:32:00Z` is
+
+  ```
+  {"id":"evt_7e1a5c9f3b0d2846","time":"2026-10-05T09:00:00.052907Z","service":"cron","event":"cron.fired","request_id":"2f7c1a9e5b3d8064c6a0e4b8d2f7a915","user":"u_7f3a9c21","attrs":{"scheduled":"2026-10-05T09:00:00Z","trigger":"crn_6e0b4d8a2c7f1953","when":"0 * * * *"},"cause":"","depth":0,"seq":4097,"received":"2026-10-05T09:00:00.057341Z"}
+  ```
+
+  No subscription matches `cron.fired`. An event named `cron.a.b.fired` in its place, with the same other members, gets the same answer.
+
+Postconditions:
+
+- Nothing has changed: no script of any user has a new run, and nothing was added under `state/runs/`. No git ran and no script started.
+- The delivery recorded no `run.*` event.
+
+## The events app delivers an event several of one script's subscriptions match
+
+A script may hold subscriptions whose patterns overlap, `cron.*.fired` and `cron.hourly.fired` say, and an event named `cron.hourly.fired` matches both. The script still gets one run from the event, not one per subscription: scripts knows a run by its script's id and the event's id, as it does for an event delivered twice.
+
+Request:
+
+```
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: runs
+
+{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"runs","arguments":{"name":"nightly-report"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Status 200. The body is a JSON-RPC response with `id` 17 carrying the answer of `The events app delivers an event a script's pattern matches`: eight entries, the first `<id>` with `event` `evt_4b9e2c7a1f5d3068`, and no other entry with that `event`.
+
+Preconditions:
+
+- The preamble's, and `nightly-report` is subscribed to `cron.*.fired` and to `cron.hourly.fired` too. The events app delivered `evt_4b9e2c7a1f5d3068`, whose `event` is `cron.hourly.fired`, as in `The events app delivers an event a script's pattern matches`, once, and scripts accepted it. This call comes after.
+
+Postconditions:
+
+- The catalog has one new run, `<id>` of `nightly-report`, as in `The events app delivers an event a script's pattern matches`, and no other run from `evt_4b9e2c7a1f5d3068`. `nightly-report`'s three subscriptions are as they were.
+- `state/runs/scr_6d1f4a9b2e8c7035/` has one new folder, `<id>/`, and one script is running for the event.
+- telemetry has received one `run.started` for the event, with `run` `<id>` and `script` `scr_6d1f4a9b2e8c7035`, and no other.
+
 ## The events app delivers an event several scripts are subscribed to
 
-Any number of scripts may be subscribed to one event name, and each gets its own run from one delivery: one event, one run per subscribed script. Each run is its own script's, from that script's own repository and ref, with its own id and folder, and each holds the same event as its input. Here the caller has subscribed `sync-crm` to `repo.pushed` too.
+Any number of scripts may hold subscriptions matching one event, and each gets its own run from one delivery: one event, one run per subscribed script. Each run is its own script's, from that script's own repository and ref, with its own id and folder, and each holds the same event as its input. Here the caller has subscribed `sync-crm` to `repo.pushed` too.
 
 Request:
 

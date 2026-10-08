@@ -181,7 +181,7 @@ func newServeFixture(t *testing.T, knownGit ...string) *serveFixture {
 	}
 	f.env["PATH"] = filepath.Dir(f.gitPath)
 	f.gitEnv = []string{"PATH=" + filepath.Dir(f.gitPath), "HOME=" + f.dir, "XDG_CONFIG_HOME=" + f.dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=", "GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.test", "GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.test", "GIT_AUTHOR_DATE=2001-02-03T04:05:06Z", "GIT_COMMITTER_DATE=2001-02-03T04:05:06Z"}
-	f.p = cli.Process{Pid: 71, Dir: f.dir, Stdout: f.stdout, Stderr: f.stderr, Sink: f.capture, EventSink: &events.Capture{}, Rand: f.random,
+	f.p = cli.Process{Pid: 71, Version: "fixture-display", Dir: f.dir, Stdout: f.stdout, Stderr: f.stderr, Sink: f.capture, EventSink: &events.Capture{}, Rand: f.random,
 		LookupEnv: func(key string) (string, bool) {
 			f.envMu.Lock()
 			defer f.envMu.Unlock()
@@ -199,12 +199,12 @@ func newServeFixture(t *testing.T, knownGit ...string) *serveFixture {
 		},
 		Banner: func(u page.User) page.Banner {
 			f.bannerCalls.Add(1)
-			return page.Banner{Service: web.ServiceName, Version: cli.Version, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+			return page.Banner{Service: web.ServiceName, Version: f.p.Version, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 		},
 		MCP: func(w *telemetry.Writer) *mcp.Server {
 			f.mcpCalls.Add(1)
 			f.writer.Store(w)
-			return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w, Instructions: func(context.Context) string { return "" }})
+			return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: f.p.Version, Telemetry: w, Instructions: func(context.Context) string { return "" }})
 		},
 	}
 	return f

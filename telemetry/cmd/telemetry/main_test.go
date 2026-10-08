@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	assets "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
 	"github.com/ikigenba/ikigenba/telemetry/internal/web"
@@ -30,7 +31,11 @@ import (
 
 // TestBinary is the one process test: all command and host wiring is exercised here.
 func TestBinary(t *testing.T) {
-	// R-QOTO-8HCN
+	// R-T7M6-XWRQ R-T8U3-BOIF
+	t.Setenv(version.CommitVariable, strings.Repeat("a", 40))
+	t.Setenv(version.ReleaseVariable, "host release label")
+	display := version.Display()
+	displayEnv := []string{version.CommitVariable + "=" + strings.Repeat("a", 40), version.ReleaseVariable + "=host release label"}
 	processContext, cancelProcesses := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancelProcesses()
 	runProcess := func(cmd *exec.Cmd) error {
@@ -83,7 +88,7 @@ func TestBinary(t *testing.T) {
 		code           int
 		stdout, stderr string
 	}{
-		{[]string{"--version"}, cli.ExitSuccess, cli.Version + "\n", ""},
+		{[]string{"--version"}, cli.ExitSuccess, display + "\n", ""},
 		{[]string{"manifest"}, cli.ExitSuccess, cli.Manifest, ""},
 		{[]string{"--help"}, cli.ExitSuccess, cli.Usage, ""},
 		{[]string{"db", "status"}, cli.ExitSuccess, pendingStatus.String(), ""},
@@ -92,7 +97,7 @@ func TestBinary(t *testing.T) {
 	} {
 		cmd := &exec.Cmd{Path: binary, Args: append([]string{binary}, tc.args...)}
 		cmd.Dir = workingDir
-		cmd.Env = []string{}
+		cmd.Env = displayEnv
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		runErr := runProcess(cmd)
@@ -108,6 +113,13 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("args %q: code %d stdout %q stderr %q", tc.args, code, stdout.String(), stderr.String())
 		}
 	}
+	emptyVersion := &exec.Cmd{Path: binary, Args: []string{binary, "--version"}, Dir: workingDir, Env: []string{}}
+	var emptyOut, emptyErr bytes.Buffer
+	emptyVersion.Stdout, emptyVersion.Stderr = &emptyOut, &emptyErr
+	if err := runProcess(emptyVersion); err != nil || emptyOut.String() != "\n" || emptyErr.Len() != 0 {
+		t.Fatalf("unset version: %v %q %q", err, emptyOut.String(), emptyErr.String())
+	}
+
 	// R-TOVX-1KTG
 	if _, err = os.Stat(filepath.Join(workingDir, "state")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("commands created state: %v", err)
@@ -157,7 +169,7 @@ func TestBinary(t *testing.T) {
 		cmd := &exec.Cmd{Path: "/bin/sh", Args: []string{"/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"`, binary}}
 		cmd.ExtraFiles = []*os.File{fd}
 		cmd.Dir = workingDir
-		cmd.Env = []string{"NOTIFY_SOCKET=" + notifyPath}
+		cmd.Env = append([]string{"NOTIFY_SOCKET=" + notifyPath}, displayEnv...)
 		if services {
 			cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+servicesFile)
 		}
@@ -196,7 +208,7 @@ func TestBinary(t *testing.T) {
 		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 		t.Cleanup(transport.CloseIdleConnections)
 		stop := func(sig syscall.Signal) {
-			// R-TNO0-NT2R R-TXF7-PZ0B
+			// R-TNO0-NT2R R-TDPO-URH7
 			transport.CloseIdleConnections()
 			if signalErr := cmd.Process.Signal(sig); signalErr != nil {
 				t.Fatal(signalErr)
@@ -234,7 +246,7 @@ func TestBinary(t *testing.T) {
 	}
 
 	first, stopFirst := launch("first", false)
-	// R-22RS-2SKH
+	// R-XUXA-RACO
 	landing := binaryRequest(t, first, http.MethodGet, "/", nil, nil, http.StatusOK)
 	footerRE := regexp.MustCompile(`(?i)<footer[>\t\n\f\r ]`)
 	footers := footerRE.FindAllIndex(landing, -1)
@@ -251,29 +263,29 @@ func TestBinary(t *testing.T) {
 	if closeTag == nil {
 		t.Fatalf("footer has no end tag: %s", landing)
 	}
-	if html.UnescapeString(strings.Trim(string(content[:closeTag[0]]), " \t\n\f\r")) != web.ServiceName+" "+cli.Version {
+	if html.UnescapeString(strings.Trim(string(content[:closeTag[0]]), " \t\n\f\r")) != web.ServiceName+" "+display {
 		t.Fatalf("footer: %s", landing)
 	}
-	// R-TSJM-6W1J
+	// R-TB9W-37ZT
 	catalog := binaryCall(t, first, "catalog", nil)
 	meta := catalog["_meta"].(map[string]any)
-	if !reflect.DeepEqual(meta["io.modelcontextprotocol/serverInfo"], map[string]any{"name": web.ServiceName, "version": cli.Version}) {
+	if !reflect.DeepEqual(meta["io.modelcontextprotocol/serverInfo"], map[string]any{"name": web.ServiceName, "version": display}) {
 		t.Fatalf("catalog serverInfo: %v", meta)
 	}
 	// R-TUZE-YFIX
 	if _, present := binaryDiscover(t, first)["instructions"]; present {
 		t.Fatal("instructions returned with services unset")
 	}
-	// R-TW7B-C79M
+	// R-TCHS-GZQI
 	started := binaryRecords(t, binaryCall(t, first, "search", json.RawMessage(`{"services":["telemetry"],"limit":500}`)))
 	if len(started) == 0 {
 		t.Fatal("missing service.started")
 	}
 	last := started[len(started)-1]
-	if last["service"] != web.ServiceName || last["event"] != "service.started" || last["request_id"] != "" || last["user"] != "" || !reflect.DeepEqual(last["attrs"], map[string]any{"version": cli.Version}) {
+	if last["service"] != web.ServiceName || last["event"] != "service.started" || last["request_id"] != "" || last["user"] != "" || !reflect.DeepEqual(last["attrs"], map[string]any{"version": display}) {
 		t.Fatalf("start record: %v", last)
 	}
-	// R-TYN4-3QR0
+	// R-TEXL-8J7W
 	event := telemetry.Event{Time: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC), Service: "sibling", Name: "sample.recorded", RequestID: "binary-ingest", User: "alice", Attrs: telemetry.Attrs{"value": "one"}}
 	eventBytes, err := event.MarshalJSON()
 	if err != nil {

@@ -125,7 +125,7 @@ func serve(ctx context.Context, p Process) int {
 		source = rand.Reader
 	}
 	random := &randomSource{source: source}
-	d, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "repos.db"), Migrations: repos.Migrations(), Now: p.Now})
+	d, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "repos.db"), Migrations: repos.Migrations(), Now: p.Now, Service: web.ServiceName, Stderr: diagnostic})
 	if err != nil {
 		if ctx.Err() != nil {
 			return ExitSuccess
@@ -146,7 +146,7 @@ func serve(ctx context.Context, p Process) int {
 		}
 		return ExitServerFailed
 	}
-	w := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: Version, Sink: p.Sink, Stderr: diagnostic, Now: p.Now, Sleep: p.Sleep, Rand: random})
+	w := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: p.Version, Sink: p.Sink, Stderr: diagnostic, Now: p.Now, Sleep: p.Sleep, Rand: random})
 	err = s.Verify(ctx, w)
 	if ctx.Err() != nil {
 		flushStart(w)

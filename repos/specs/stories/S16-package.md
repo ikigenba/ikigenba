@@ -1,13 +1,13 @@
 # Stories — package
 
-The file that carries repos to a space. `devctl build repos` writes it from a commit that a `repos/v<semver>` tag points at, and `opsctl install` unpacks it into `/opt/repos/`. Its contents are the whole of what repos ships: the static `linux/amd64` binary, the manifest, the nginx fragment, and `share/icon.svg`, nothing else. `etc/nginx.conf` is repos' own nginx configuration, which the host includes in the server that answers at repos' public name, as it does for any app that ships one; its effects are that nginx sets no limit on the size of a request body, so a push is refused only by repos' own `PUSH_MAX_BYTES` (`S12-limits.md`), that nginx passes a request body to repos as it arrives rather than spooling it first, so a push streams through, that nginx keeps its connection to repos open while repos works, giving up only after an hour in which nothing has passed either way, longer than a git operation waits for its slot and runs under the default `QUEUE_SECONDS` and `OPERATION_SECONDS`, and that nginx still buffers repos' answers, so a slow client does not hold a git process open, and that nginx answers `/events` and `/declarations` 404 to the public for every method, so they stay on repos' socket (`S17-on-a-space.md`); no story fixes its text beyond those effects. The challenge git needs before it sends its credential is not the fragment's: the host's nginx gives it on every app's server (opsctl's `S5-nginx.md`). `share/icon.svg` is repos' icon, an SVG image a human draws; its presence is what lists repos in the platform's service launcher on a space (`S17-on-a-space.md`), and no story fixes its content beyond its being an SVG. repos keeps nothing under `etc/` but the manifest and the fragment and nothing under `share/` but the icon, so no other member exists. The files that give the pages their style, their launcher, their button feedback, and their favicon — the stylesheet, the fonts, their licences, the launcher's script, the button feedback script, and the favicon — are inside the binary (`S04-assets.md`), so no `assets/` directory and no font file ships beside it. Neither the database nor any repository is in the file: repos creates `state/repos.db` and `state/repos/` under its working directory on first start (`S02-serve.md`), and the manifest's `[database]` table declares the database so that the host keeps it across releases. The manifest's `[resources]` table is read by the host, which bounds repos and every `git` it runs with it (opsctl's `S7-apps.md`). The version is in the file's name and in the binary, never in a member's path.
+The file that carries repos to a space. `devctl build repos` writes it from the commit checked out, in a tree with no uncommitted changes; it reads no tag. The file is `repos/dist/repos-<sha>.tar.xz`, where `<sha>` is that commit's full 40-character hexadecimal sha, and `opsctl install` unpacks it into `/opt/repos/`. Its contents are the whole of what repos ships: the static `linux/amd64` binary, the manifest, the nginx fragment, and `share/icon.svg`, nothing else. `etc/nginx.conf` is repos' own nginx configuration, which the host includes in the server that answers at repos' public name, as it does for any app that ships one; its effects are that nginx sets no limit on the size of a request body, so a push is refused only by repos' own `PUSH_MAX_BYTES` (`S12-limits.md`), that nginx passes a request body to repos as it arrives rather than spooling it first, so a push streams through, that nginx keeps its connection to repos open while repos works, giving up only after an hour in which nothing has passed either way, longer than a git operation waits for its slot and runs under the default `QUEUE_SECONDS` and `OPERATION_SECONDS`, and that nginx still buffers repos' answers, so a slow client does not hold a git process open, and that nginx answers `/events` and `/declarations` 404 to the public for every method, so they stay on repos' socket (`S17-on-a-space.md`); no story fixes its text beyond those effects. The challenge git needs before it sends its credential is not the fragment's: the host's nginx gives it on every app's server (opsctl's `S5-nginx.md`). `share/icon.svg` is repos' icon, an SVG image a human draws; its presence is what lists repos in the platform's service launcher on a space (`S17-on-a-space.md`), and no story fixes its content beyond its being an SVG. repos keeps nothing under `etc/` but the manifest and the fragment and nothing under `share/` but the icon, so no other member exists. The files that give the pages their style, their launcher, their button feedback, and their favicon — the stylesheet, the fonts, their licences, the launcher's script, the button feedback script, and the favicon — are inside the binary (`S04-assets.md`), so no `assets/` directory and no font file ships beside it. Neither the database nor any repository is in the file: repos creates `state/repos.db` and `state/repos/` under its working directory on first start (`S02-serve.md`), and the manifest's `[database]` table declares the database so that the host keeps it across releases. The manifest's `[resources]` table is read by the host, which bounds repos and every `git` it runs with it (opsctl's `S7-apps.md`). The commit is in the file's name only. No version and no commit is recorded in the binary or in any member, or in a member's path: repos learns which code it is running from its environment when it runs (`S01-bootstrap.md`).
 
 ## A developer lists what the file holds
 
 Command:
 
 ```
-$ tar -tJf repos/dist/repos-v<semver>.tar.xz | sort
+$ tar -tJf repos/dist/repos-<sha>.tar.xz | sort
 ```
 
 Output:
@@ -23,7 +23,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `devctl build repos` wrote `repos/dist/repos-v<semver>.tar.xz`.
+- `devctl build repos`, run in a clean tree at the commit `<sha>`, wrote `repos/dist/repos-<sha>.tar.xz`.
 
 Postconditions:
 
@@ -31,12 +31,12 @@ Postconditions:
 
 ## A developer checks the binary the file holds
 
-The binary inside the file is what a host will run, so it is asked the two things a host asks it.
+The binary inside the file is what a host will run, so it is asked the two things a host asks it. Asked with neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE` set, it prints an empty line for its version: the binary carries no identity of its own, and the commit in the file's name is nowhere inside it.
 
 Command:
 
 ```
-$ tar -xJf repos/dist/repos-v<semver>.tar.xz -O bin/repos > /tmp/repos && chmod +x /tmp/repos
+$ tar -xJf repos/dist/repos-<sha>.tar.xz -O bin/repos > /tmp/repos && chmod +x /tmp/repos
 $ /tmp/repos --version
 $ /tmp/repos manifest
 ```
@@ -44,7 +44,7 @@ $ /tmp/repos manifest
 Output:
 
 ```
-v<semver>
+
 app = "repos"
 description = "Git repositories for the suite's content"
 default = false
@@ -71,12 +71,13 @@ go_memory_limit = "128M"
 oom_policy = "continue"
 ```
 
-Each command exits 0. The text is on stdout; stderr is empty. The version is the one in the file's name, and the manifest is byte for byte the file's `etc/manifest.toml`.
+Each command exits 0. The text is on stdout; stderr is empty. `--version` prints one empty line, a single newline, and the manifest is byte for byte the file's `etc/manifest.toml`.
 
 Preconditions:
 
-- `devctl build repos` wrote `repos/dist/repos-v<semver>.tar.xz`.
+- `devctl build repos`, run in a clean tree at the commit `<sha>`, wrote `repos/dist/repos-<sha>.tar.xz`.
 - The developer's machine is `linux/amd64`, or can run such a binary.
+- `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` are both unset or empty in the developer's environment.
 
 Postconditions:
 

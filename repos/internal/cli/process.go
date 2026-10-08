@@ -22,6 +22,7 @@ type Process struct {
 	Pid       int
 	Stdout    io.Writer
 	Stderr    io.Writer
+	Version   string
 	Inherit   func(fd uintptr) (net.Listener, error)
 	Now       func() time.Time
 	Sleep     func(ctx context.Context, d time.Duration)

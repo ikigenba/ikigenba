@@ -3,8 +3,9 @@
 The serve path: what happens between `cli.Run` being called with no arguments
 and the process being gone, and the run-time skeleton around the HTTP
 handlers. `D01-layout-and-run-seam` declares the names this design behaves
-through: `cli.Process` with its `LookupEnv`, `Pid`, `Unsetenv`, `Inherit`,
-`Now`, `Rand`, `OIDCIssuer`, `Dir`, `Banner` and `Sink`, `cli.Run`, the
+through: `cli.Process` with its `LookupEnv`, `Pid`, `Unsetenv`, `Stderr`,
+`Version`, `Inherit`, `Now`, `Rand`, `OIDCIssuer`, `Dir`, `Banner` and `Sink`,
+`cli.Run`, the
 database path, `auth.Migrations`, `server.Serve`, `server.DrainError`, and
 `*server.Server` as a handler; appkit's `db` package (its D15 and D16) owns
 the database handle and the migrations, and D04 owns the store over it. `D02-cli` decides that
@@ -152,13 +153,13 @@ appkit's `db.Open` (its D15 and D16): the path is the database path,
 `state/auth.db` resolved against `Process.Dir`, which `Run` passes as
 `filepath.Join(Dir, "state", "auth.db")`, so with an empty `Dir` it is the
 relative path appkit resolves against the process's working directory; the
-migrations are `auth.Migrations()`; the clock is `Process.Now`; the service
-is `auth`; and the writer for appkit's warning is `Process.Stderr`. So a start
+migrations are `auth.Migrations()`; the clock is `Process.Now`; the service is
+`auth`; and the writer for appkit's warning is `Process.Stderr`. So a start
 refused as a usage error has touched nothing, not even the database. appkit
 creates the missing directories and the file, applies the migrations the
 database has not had and stamps them with that clock, and refuses a database
-it cannot open; how it does each is appkit's contract, and auth's tests do not
-re-prove it. They
+it cannot open; how it does each is appkit's contract, and auth's tests do
+not re-prove it. They
 prove the wiring instead: after a start with a fixed clock, appkit's
 `db.Status` reports `Dir`'s `state/auth.db` exactly as it reports a database
 the test made itself with `db.Open`, `auth.Migrations()` and that clock. That
@@ -178,22 +179,24 @@ declares, whatever `Dir` is, so an operator reads the same line on every host;
 the error's text names the absolute path where appkit's does. A newline in that
 text is replaced by a space, so the line is one line whatever appkit's error
 holds. Under systemd the start fails, and the socket keeps queueing for an
-auth that can serve. A missing database is not this error; it is the first
-start.
+auth that can serve. The refusals the serve stories show are a regular file
+named `state` where the directory belongs and a `state/auth.db` auth cannot
+open (not a SQLite database, or not writable). A missing database is not this
+error; it is the first start.
 
-A database a newer auth has migrated is not this error either. A rollback
-deploy runs the older binary over the newer schema, and each release's
-migrations only expand the schema the release before it uses, so the older
-auth runs on it. appkit's `db.Open` accepts a database that records a
-version auth does not carry: it applies nothing, not even a migration auth
-carries that the database lacks, and returns the handle, having written one
-warning line to the `Stderr` auth gave it, beginning with the service name
-auth gave it, `auth: `, and naming the lowest version it does not know. That
-line is appkit's, and auth states nothing about its text: a test compares
-`Stderr` with what its own `db.Open` call, with the service `auth`, writes for
-the same database. auth adds nothing to it and otherwise starts and serves as
-it always does, telling systemd it is ready and answering requests over that
-database.
+A database a newer auth has upgraded, as after a deploy rolled back, records
+a migration this auth does not carry. It is not refused: data never rolls
+back, so older code runs on newer data. appkit's `db.Open` applies nothing to
+it and writes one warning line, beginning with the service name it was given
+and naming the lowest version this auth does not carry, to the writer it was
+given, which is `Process.Stderr`; under systemd that line reaches the
+journal. It is written before `READY=1`, it is the whole warning, and the
+trail records nothing about it. Then the start goes on exactly as over any
+database: `Run` serves the users, sessions and tokens the database holds and
+records `service.started`. auth states nothing about the line's wording: a
+test compares what `Run` wrote with what its own `db.Open` call, given the
+same service name and a buffer, writes over the same database, and that the
+line begins `auth: ` is what shows `Run` handed appkit auth's name.
 
 `Run` then builds the Google client and the server. The client is built
 without contacting Google — discovery is deferred to the first sign-in (D05) —
@@ -228,7 +231,8 @@ otherwise wait out its start timeout — so it is `auth: ` and the error, exit
 does, by binding a datagram socket, naming it in `NOTIFY_SOCKET`, and waiting
 for `READY=1`.
 
-Once ready, `Run` records `service.started`, with auth's version, as the
+Once ready, `Run` records `service.started`, with `Process.Version`, the
+display string `main` read, as its `version`, as the
 first event of the trail; it is the `Ready` of the one `telemetry.Writer`
 `Run` builds (`D01-layout-and-run-seam`, "The trail"), whose sink is
 `Process.Sink`. A start that is refused, or that fails before `Serve` is
@@ -358,9 +362,11 @@ service is missing from the services file or not accepting, it rejected the
 event, the queue was full, or the drain window closed first — which appkit's
 writer writes as one line, `auth: undelivered event: ` and the event's JSON
 (and, for an event auth formed wrongly, a bug, `auth: malformed event: `).
-Nothing else reaches `Stderr` but appkit's one warning when the database is
-ahead of the binary (above): no startup message, no request log, nothing
-when auth stops cleanly. Telemetry being unreachable is never a reason to
+Nothing else reaches `Stderr`: no startup message, no request log, nothing
+when auth stops cleanly. The one line a start that serves may write besides
+is appkit's warning over a database a newer auth upgraded, written before
+`READY=1`; it is a state worth the journal, not a condition auth cannot
+continue from. Telemetry being unreachable is never a reason to
 stop: auth answers every request the same, and exits as it otherwise would.
 
 A request auth answers is not trouble, whatever its status. auth's own 5xx
@@ -434,7 +440,7 @@ test's `Stderr` is a `bytes.Buffer` that the race detector watches.
 - R-BEG2-DPNX: When `Run` serves, every event it records MUST be handed to `p.Sink`'s `Deliver`, unless it is written to `Stderr` as an undelivered event, as an `Event` whose `Service` is `auth` and whose `Time` is a value `p.Now` returned while the event was recorded, converted to UTC and truncated to a whole microsecond.
 - R-2MRR-GNCF: When `Run` serves and `p.Sink`'s `Deliver` returns, for every event, an error for which `errors.Is(err, telemetry.ErrRejected)` is true, `Run` MUST write to `Stderr`, for each event it records, exactly one line, in a single call to `Stderr.Write`: `auth: undelivered event: `, the bytes the event's `MarshalJSON` returns, and a newline, those lines coming in the order the events were recorded, except that where the line of an event appkit's writer does not queue — one recorded while its queue is full or after `Writer.Shutdown` began (appkit D12, R-W9YY-0F39 and R-WDMN-5QBC) — falls among them is not fixed; and `Run` MUST otherwise answer every request and return exactly as it does when every delivery succeeds.
 - R-BGVV-595B: When `Run` serves with a `p.Rand` that yields only zero bytes, every event `Run` records for a request that carries no `X-Request-Id` header MUST carry the request id `00000000000000000000000000000000`, 32 `0`s.
-- R-T4QM-Q6II: When `Run` calls `server.Serve`, the first event it records MUST be one named `service.started`, with an empty request id, an empty user, and attributes exactly `version`, whose value is the value of `Version` from `internal/version`, recorded only after `Run` has sent the `READY=1` datagram R-T3IQ-CERT requires, when it requires one, and before `Run` records any event for a request.
+- R-3JD6-XOUE: When `Run` calls `server.Serve`, the first event it records MUST be one named `service.started`, with an empty request id, an empty user, and attributes exactly `version`, whose value is `p.Version`, recorded only after `Run` has sent the `READY=1` datagram R-T3IQ-CERT requires, when it requires one, and before `Run` records any event for a request.
 - R-8B6Y-ZBZR: When `Run` returns without having called `server.Serve` — whatever `Args` holds, and whether it returns after a command, a usage error, a failure to take file descriptor 3, a failure of `db.Open`, or a failure to send `READY=1` — it MUST NOT have called `p.Sink`'s `Deliver`, and MUST NOT have written to `Stderr` any line beginning `auth: undelivered event: ` or `auth: malformed event: `.
 - R-BKJK-AKDE: When `ctx` is done and `server.Serve` returns nil to `Run`, `Run` MUST record an event named `service.stopping`, with an empty request id, an empty user, and attributes exactly `reason`, whose value is the `Error()` text of `context.Cause(ctx)`, after every other event it records, the `request.finished` of every request served included; and `Run` MUST NOT return before every event it recorded has been handed to `p.Sink`'s `Deliver` and that call has returned, or the event has been written to `Stderr` as an undelivered event.
 - R-2P7K-86TT: Once `ctx` is done and `server.Serve` has returned nil, `Run` MUST NOT wait for a `Deliver` call to return, or for an event to be delivered, beyond the moment `drain` (R-MP8L-UD28) has elapsed since `ctx` was done: given a `p.Sink` whose `Deliver` returns only once its context is done, `Run` MUST return `0` once that moment has passed, having written to `Stderr`, in the form R-2MRR-GNCF states, the line of every event it recorded and did not deliver, `service.stopping` included.

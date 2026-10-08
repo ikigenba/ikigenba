@@ -27,9 +27,6 @@ import (
 	"github.com/ikigenba/ikigenba/events/internal/web"
 )
 
-// Version is the release version shared by every interface.
-var Version = "v0.2.2"
-
 // Command constants define products and exit statuses.
 const (
 	ExitSuccess = 0
@@ -48,6 +45,7 @@ type Process struct {
 	Pid          int
 	Stdout       io.Writer
 	Stderr       io.Writer
+	Version      string
 	Inherit      func(fd uintptr) (net.Listener, error)
 	Now          func() time.Time
 	Sleep        func(ctx context.Context, d time.Duration)
@@ -97,7 +95,7 @@ func Run(ctx context.Context, p Process) int {
 		return ExitFailure
 	}
 	defer func() { _ = listener.Close() }()
-	d, err := db.Open(ctx, db.Config{Path: databasePath(p), Migrations: events.Migrations(), Now: p.Now})
+	d, err := db.Open(ctx, db.Config{Path: databasePath(p), Migrations: events.Migrations(), Now: p.Now, Service: appEvents.ServiceName, Stderr: p.Stderr})
 	if err != nil {
 		diagnostic(p.Stderr, "cannot open database state/events.db: "+strings.ReplaceAll(err.Error(), "\n", " "))
 		return ExitFailure
@@ -107,13 +105,13 @@ func Run(ctx context.Context, p Process) int {
 	if !haveServices {
 		servicePath = ""
 	}
-	writer := telemetry.New(telemetry.Config{Service: appEvents.ServiceName, Version: Version, Sink: p.Sink, Stderr: p.Stderr, Now: p.Now, Sleep: p.Sleep, Rand: p.Rand})
+	writer := telemetry.New(telemetry.Config{Service: appEvents.ServiceName, Version: p.Version, Sink: p.Sink, Stderr: p.Stderr, Now: p.Now, Sleep: p.Sleep, Rand: p.Rand})
 	var decl *declarations.Declarations
 	st := store.New(d, store.Config{Now: p.Now, DepthMax: s.DepthMax, Ask: func(ctx context.Context, service string) { decl.Ask(ctx, service) }, Telemetry: writer})
 	decl = declarations.New(declarations.Config{Store: st, Services: servicePath, Telemetry: writer, AskAfter: p.AskAfter})
-	srv := mcp.NewServer(mcp.ServerConfig{Name: appEvents.ServiceName, Version: Version, Telemetry: writer, Instructions: func(context.Context) string { return instructions(servicePath) }})
+	srv := mcp.NewServer(mcp.ServerConfig{Name: appEvents.ServiceName, Version: p.Version, Telemetry: writer, Instructions: func(context.Context) string { return instructions(servicePath) }})
 	tools.Register(srv, tools.Config{Store: st, Telemetry: writer})
-	pg := pages.New(pages.Config{ServicesPath: servicePath, Store: st, Version: Version})
+	pg := pages.New(pages.Config{ServicesPath: servicePath, Store: st, Version: p.Version})
 	handler := web.Handler(web.Config{Pages: pg, MCP: srv, Sink: st, Telemetry: writer})
 	loop := delivery.New(delivery.Config{Store: st, Services: servicePath, Telemetry: writer, Settings: s, TimeoutAfter: p.TimeoutAfter, BackoffAfter: p.BackoffAfter})
 	notify, haveNotify := p.LookupEnv("NOTIFY_SOCKET")
@@ -170,7 +168,7 @@ func command(ctx context.Context, p Process) int {
 		var value string
 		switch p.Args[0] {
 		case "--version":
-			value = Version + "\n"
+			value = p.Version + "\n"
 		case "manifest":
 			value = Manifest
 		case "--help":

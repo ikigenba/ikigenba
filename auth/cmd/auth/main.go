@@ -12,12 +12,13 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/auth/internal/cli"
-	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 func main() {
-	kit := page.New("auth", version.Version)
+	display := version.Display()
+	kit := page.New("auth", display)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
@@ -36,6 +37,7 @@ func main() {
 		Pid:        os.Getpid(),
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
+		Version:    display,
 		Now:        time.Now,
 		Rand:       rand.Reader,
 		OIDCIssuer: "https://accounts.google.com",

@@ -10,7 +10,7 @@ What sites' trail holds, and what it never holds. sites records what it does as 
 
 sites records these events and no others:
 
-- `service.started`, once sites is serving, with `version`; and `service.stopping`, its last event, with `reason`, `SIGTERM` or `SIGINT` (`S02`);
+- `service.started`, once sites is serving, with `version`, `<display>`; and `service.stopping`, its last event, with `reason`, `SIGTERM` or `SIGINT` (`S02`);
 - `request.started`, as each request arrives, with `method` and `path`; and `request.finished`, once its answer is complete, with `status`, `duration_us`, `request_bytes`, and `response_bytes`, shown as `<n>` and `<bytes>` unless a story fixes them (`S02`);
 - `tool.called`, for each call of one of its seven tools answered with a result, with `tool`, `kind`, `outcome`, and `duration_us` (`S05`);
 - `site.viewed`, for each answer to a known site's path from the trailing-slash redirect on — `301`, `200`, `304`, `404`, and `503` alike — with `site`; `visitor`, the visitor's id, the one just minted when the request carried none (`S14`); `path`; `status`, a number; `referrer_host`, the host of the request's `Referer` as the URL gives it, port kept, and empty when there is no `Referer`, it has no host, or it cannot be parsed; and `commit`, the site's published sha, empty only for a site never published (`S11`, `S12`);

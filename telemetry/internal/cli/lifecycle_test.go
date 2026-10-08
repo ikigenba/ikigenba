@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -114,7 +115,7 @@ func runtimeFor(t *testing.T, env map[string]string) *runtimeTest {
 	fixed := time.Date(2025, 6, 20, 12, 30, 1, 123456789, time.FixedZone("test", 7200))
 	r := &runtimeTest{ctx: ctx, cancel: cancel, done: make(chan int, 1), ln: ln, notify: notification, output: output, writer: writers, client: &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 3 * time.Second}}
 	t.Cleanup(func() { r.client.CloseIdleConnections() })
-	r.p = cli.Process{Pid: 42, LookupEnv: func(k string) (string, bool) { v, ok := envCopy[k]; return v, ok }, Inherit: func(fd uintptr) (net.Listener, error) {
+	r.p = cli.Process{Pid: 42, Version: "runtime display", LookupEnv: func(k string) (string, bool) { v, ok := envCopy[k]; return v, ok }, Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			t.Errorf("descriptor %d", fd)
 		}
@@ -125,7 +126,7 @@ func runtimeFor(t *testing.T, env map[string]string) *runtimeTest {
 		}
 	}, Rand: bytes.NewReader(bytes.Repeat([]byte{0x3b}, 4096)), Dir: t.TempDir(), Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *mcp.Server {
 		writers <- w
-		return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: cli.Version, Telemetry: w})
+		return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: r.p.Version, Telemetry: w})
 	}}
 	return r
 }
@@ -142,6 +143,50 @@ func (r *runtimeTest) ready(t *testing.T) {
 		t.Fatalf("readiness %q %v", b[:n], err)
 	}
 }
+func assertNoNotification(t *testing.T, socket *net.UnixConn) {
+	t.Helper()
+	raw, err := socket.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receiveErr error
+	if err = raw.Control(func(fd uintptr) {
+		_, _, receiveErr = syscall.Recvfrom(int(fd), make([]byte, 100), syscall.MSG_PEEK|syscall.MSG_DONTWAIT)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(receiveErr, syscall.EAGAIN) && !errors.Is(receiveErr, syscall.EWOULDBLOCK) {
+		t.Errorf("unexpected notification pending: %v", receiveErr)
+	}
+}
+
+type observedContext struct {
+	context.Context
+	observe func()
+}
+
+func (c observedContext) Err() error {
+	c.observe()
+	return c.Context.Err()
+}
+
+type notificationCheckedOutput struct {
+	output  *checkedOutput
+	socket  *net.UnixConn
+	t       *testing.T
+	checked chan struct{}
+}
+
+func (w notificationCheckedOutput) Write(b []byte) (int, error) {
+	assertNoNotification(w.t, w.socket)
+	n, err := w.output.Write(b)
+	select {
+	case w.checked <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
 func (r *runtimeTest) finish(t *testing.T, want int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
@@ -151,6 +196,7 @@ func (r *runtimeTest) finish(t *testing.T, want int) {
 		if code != want {
 			t.Fatalf("exit %d output %q", code, r.output.lines())
 		}
+		assertNoNotification(t, r.notify)
 		r.output.end()
 		if r.p.Stdout.(*bytes.Buffer).Len() != 0 {
 			t.Fatal("serve wrote to stdout")
@@ -200,7 +246,7 @@ func flush(t *testing.T, w *telemetry.Writer) {
 	}
 }
 
-// R-QQ1K-M93C R-RARV-4CP5 R-RQMK-3DC6 R-Q68U-O4E4 R-RRUG-H52V R-RO6R-BTUS R-S0DR-5J9Q R-RT2C-UWTK R-RVI5-MGAY R-RCXC-23CF
+// R-TG5H-MAYL R-RARV-4CP5 R-RQMK-3DC6 R-Q68U-O4E4 R-RRUG-H52V R-TTKD-TS48 R-TUSA-7JUX R-TW06-LBLM R-RCXC-23CF
 func TestHealthyRun(t *testing.T) {
 	for _, services := range []string{"", "missing", "malformed"} {
 		t.Run(services, func(t *testing.T) {
@@ -245,7 +291,7 @@ func TestHealthyRun(t *testing.T) {
 			}
 			oldest := trail[len(trail)-1]
 			latest := trail[0]
-			if oldest.Event != "service.started" || string(oldest.Attrs) != "{\"version\":\""+cli.Version+"\"}" || oldest.RequestID != "" || oldest.User != "" {
+			if oldest.Event != "service.started" || string(oldest.Attrs) != "{\"version\":\""+r.p.Version+"\"}" || oldest.RequestID != "" || oldest.User != "" {
 				t.Fatalf("started %+v", oldest)
 			}
 			if latest.Event != "service.stopping" || string(latest.Attrs) != "{\"reason\":\"stop-cause\"}" || latest.RequestID != "" || latest.User != "" {
@@ -268,7 +314,7 @@ func TestHealthyRun(t *testing.T) {
 	}
 }
 
-// R-RI39-EZ5B R-RPEN-PLLH R-R9JY-QKYG
+// R-TM8Z-J5O2 R-RPEN-PLLH R-R9JY-QKYG
 func TestStartupRuntimeFailures(t *testing.T) {
 	t.Run("database", func(t *testing.T) {
 		r := runtimeFor(t, nil)
@@ -309,14 +355,30 @@ func TestStartupRuntimeFailures(t *testing.T) {
 	})
 }
 
-// R-PHUV-0PK8 R-RKJ2-6IMP R-RLQY-KADE R-RKJ2-6IMP
+// R-PHUV-0PK8 R-TSCH-G0DJ R-TPWO-OGW5 R-TR4L-28MU
 func TestRetentionSweeps(t *testing.T) {
 	for _, days := range []string{"", "1", "999999999999999999999999999999999999999999999999999999999999999999999999999"} {
 		t.Run(days, func(t *testing.T) {
 			r := runtimeFor(t, map[string]string{"RETENTION_DAYS": days})
 			now := r.p.Now().Truncate(time.Microsecond)
 			var clockMu sync.Mutex
-			r.p.Now = func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return now }
+			var clockReads atomic.Int32
+			var awaitingSweep atomic.Bool
+			initialSweep := make(chan struct{})
+			r.ctx = observedContext{Context: r.ctx, observe: func() {
+				if awaitingSweep.CompareAndSwap(true, false) {
+					assertNoNotification(t, r.notify)
+					close(initialSweep)
+				}
+			}}
+			r.p.Now = func() time.Time {
+				if clockReads.Add(1) == 1 {
+					awaitingSweep.Store(true)
+				}
+				clockMu.Lock()
+				defer clockMu.Unlock()
+				return now
+			}
 			entered := make(chan struct{})
 			advance := make(chan struct{})
 			r.p.Sleep = func(ctx context.Context, d time.Duration) {
@@ -353,6 +415,11 @@ func TestRetentionSweeps(t *testing.T) {
 				t.Fatal(err)
 			}
 			r.start()
+			select {
+			case <-initialSweep:
+			case <-time.After(3 * time.Second):
+				t.Fatal("startup observation did not arrive")
+			}
 			r.ready(t)
 			<-entered
 			w := <-r.writer
@@ -387,7 +454,7 @@ func TestRetentionSweeps(t *testing.T) {
 	}
 }
 
-// R-S2TJ-X2R4 R-Q7GR-1W4T R-Q1D9-51FC R-RUA9-8OK9 R-RZ5U-RRJ1 R-S1LN-JB0F R-RVI5-MGAY
+// R-S2TJ-X2R4 R-Q7GR-1W4T R-Q1D9-51FC R-RUA9-8OK9 R-RZ5U-RRJ1 R-S1LN-JB0F R-TUSA-7JUX
 func TestDrain(t *testing.T) {
 	for _, cutoff := range []bool{false, true} {
 		t.Run(map[bool]string{false: "completed", true: "cutoff"}[cutoff], func(t *testing.T) {
@@ -625,7 +692,7 @@ func decodeEvent(t *testing.T, line string) telemetry.Event {
 	return telemetry.Event{Time: wire.Time, Service: wire.Service, Name: wire.Name, RequestID: wire.RequestID, User: wire.User, Attrs: wire.Attrs}
 }
 
-// R-RARV-4CP5 R-QQ1K-M93C R-PAJG-Q342
+// R-RARV-4CP5 R-TG5H-MAYL R-PAJG-Q342
 func TestRunConstructorInputsAndFrozenServicesPath(t *testing.T) {
 	r := runtimeFor(t, map[string]string{"DRAIN_SECONDS": "99999999999999999999999999999999999999999999999999999999999999999999999"})
 	servicesPath := filepath.Join(t.TempDir(), "services.json")
@@ -658,7 +725,7 @@ func TestRunConstructorInputsAndFrozenServicesPath(t *testing.T) {
 		usersMu.Lock()
 		users = append(users, u)
 		usersMu.Unlock()
-		return page.Banner{Service: "injected-banner", Version: cli.Version, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		return page.Banner{Service: "injected-banner", Version: r.p.Version, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
 	r.start()
 	r.ready(t)
@@ -768,7 +835,7 @@ func TestDefaultDrainCutsOffMultipleRequests(t *testing.T) {
 	}
 }
 
-// R-RKJ2-6IMP
+// R-TSCH-G0DJ
 func TestAbstractReadinessSocket(t *testing.T) {
 	r := runtimeFor(t, nil)
 	address := "@" + filepath.Base(filepath.Dir(r.notify.LocalAddr().String())) + "-abstract"

@@ -25,6 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
 	"github.com/ikigenba/ikigenba/repos/internal/web"
 )
@@ -33,6 +34,9 @@ import (
 // the explicitly composed environment below. The build tool uses its normal
 // installed toolchain/cache environment without reading it in the test.
 func TestBinary(t *testing.T) {
+	// R-KDXP-VNUC: expected display is computed through the published API.
+	t.Setenv(version.CommitVariable, "0123456789abcdef0123456789abcdef01234567")
+	t.Setenv(version.ReleaseVariable, "release fixture")
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +45,7 @@ func TestBinary(t *testing.T) {
 	env := []string{"PATH=" + filepath.Dir(git), "HOME=" + work, "XDG_CONFIG_HOME=" + work,
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=",
+		version.CommitVariable + "=0123456789abcdef0123456789abcdef01234567", version.ReleaseVariable + "=release fixture",
 		"GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.test",
 		"GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.test",
 		"GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z"}
@@ -52,10 +57,10 @@ func TestBinary(t *testing.T) {
 		t.Fatalf("build: %v\n%s", err, output)
 	}
 
-	// R-D12D-YV6K: command output and exits agree with the public run seam.
+	// R-KF5M-9FL1: command output and exits agree with the public run seam.
 	for _, args := range [][]string{{"--version"}, {"manifest"}, {"bogus"}, nil} {
 		var wantOut, wantErr bytes.Buffer
-		wantCode := cli.Run(context.Background(), cli.Process{Args: args, LookupEnv: func(string) (string, bool) { return "", false }, Stdout: &wantOut, Stderr: &wantErr})
+		wantCode := cli.Run(context.Background(), cli.Process{Args: args, LookupEnv: func(string) (string, bool) { return "", false }, Stdout: &wantOut, Stderr: &wantErr, Version: version.Display()})
 		ctx, done := context.WithTimeout(context.Background(), 10*time.Second)
 		cmd := exec.CommandContext(ctx, binary, args...)
 		cmd.Dir, cmd.Env = work, env
@@ -75,7 +80,19 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("%v: code=%d stdout=%q stderr=%q; want %d %q %q", args, code, out.String(), diagnostic.String(), wantCode, wantOut.String(), wantErr.String())
 		}
 	}
-	// R-QTBY-EFA7: a notification that cannot be sent never starts the
+	// R-KF5M-9FL1: absent display variables produce exactly one empty line.
+	bareEnv := []string{}
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, version.CommitVariable+"=") && !strings.HasPrefix(entry, version.ReleaseVariable+"=") {
+			bareEnv = append(bareEnv, entry)
+		}
+	}
+	noDisplay := exec.CommandContext(t.Context(), binary, "--version")
+	noDisplay.Dir, noDisplay.Env = work, bareEnv
+	if output, err := noDisplay.CombinedOutput(); err != nil || string(output) != "\n" {
+		t.Fatalf("unset display: %q %v", output, err)
+	}
+	// A notification that cannot be sent never starts the
 	// lifecycle. Starting it before notification would flush a fallback here.
 	t.Run("notification-failure-before-started", func(t *testing.T) {
 		binaryNotifyFailure(t, binary, env)
@@ -107,10 +124,10 @@ func TestBinary(t *testing.T) {
 	if response.StatusCode != 200 || response.Header.Get("Content-Type") != "application/x-git-upload-pack-advertisement" {
 		t.Fatalf("advertisement: %d %v", response.StatusCode, response.Header)
 	}
-	// R-RZDQ-Q8P5: exact plain footer text derives its version from cli.Version.
+	// R-KHLF-0Z2F: exact plain footer text carries the display string.
 	_, page := first.request(t, http.MethodGet, "/", nil)
 	footerCount, footerText := binaryFooter(page)
-	if footerCount != 1 || footerText != web.ServiceName+" "+cli.Version {
+	if footerCount != 1 || footerText != web.ServiceName+" "+version.Display() {
 		t.Fatalf("footer: count=%d text=%q", footerCount, footerText)
 	}
 	// R-S1TJ-HS6J: absent services produce no discovery instructions.
@@ -131,7 +148,7 @@ func TestBinary(t *testing.T) {
 	if len(structured.Repos) != 1 || structured.Repos[0].Name != "alpha" {
 		t.Fatalf("persisted repos: %s", result["structuredContent"])
 	}
-	// R-S0LN-40FU: MCP identity metadata is exact, with no extra keys.
+	// R-KITB-EQT4: MCP identity metadata is exact, with no extra keys.
 	var meta map[string]json.RawMessage
 	if err := json.Unmarshal(result["_meta"], &meta); err != nil {
 		t.Fatal(err)
@@ -140,7 +157,7 @@ func TestBinary(t *testing.T) {
 	if err := json.Unmarshal(meta["io.modelcontextprotocol/serverInfo"], &info); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(info, map[string]string{"name": web.ServiceName, "version": cli.Version}) {
+	if !reflect.DeepEqual(info, map[string]string{"name": web.ServiceName, "version": version.Display()}) {
 		t.Fatalf("serverInfo: %v", info)
 	}
 	second.stop(t, syscall.SIGINT, false)
@@ -186,7 +203,7 @@ func TestBinary(t *testing.T) {
 	}
 	launcher.stop(t, syscall.SIGTERM, false)
 
-	// R-S31F-VJX8: first/last delivered lifecycle events and silent clean exit.
+	// R-KK17-SIJT: first/last delivered lifecycle events and silent clean exit.
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		t.Run(sig.String(), func(t *testing.T) {
 			root := t.TempDir()
@@ -262,7 +279,7 @@ func TestBinary(t *testing.T) {
 			if len(busEvents) != 1 || busEvents[0].Name != "repo.pushed" || busEvents[0].Service != web.ServiceName || busEvents[0].User != "u" {
 				t.Fatalf("binary socket bus events: %+v", busEvents)
 			}
-			assertLifecycle(t, events[0], "service.started", map[string]any{"version": cli.Version})
+			assertLifecycle(t, events[0], "service.started", map[string]any{"version": version.Display()})
 			assertLifecycle(t, events[len(events)-1], "service.stopping", map[string]any{"reason": binarySignalName(sig)})
 		})
 	}
@@ -444,7 +461,7 @@ func (c *binaryChild) request(t *testing.T, method, path string, body io.Reader)
 
 func (c *binaryChild) call(t *testing.T, name string, args json.RawMessage) map[string]json.RawMessage {
 	t.Helper()
-	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://repos.example.test/mcp", HTTPClient: c.client, Name: "binary-test", Version: cli.Version})
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://repos.example.test/mcp", HTTPClient: c.client, Name: "binary-test", Version: version.Display()})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	result, err := client.CallTool(ctx, identity.Caller{UserID: "u"}, name, args)
@@ -519,7 +536,7 @@ func (c *binaryChild) stop(t *testing.T, sig syscall.Signal, silent bool) {
 			t.Fatalf("serving stderr: %q", c.diagnostic.String())
 		}
 	} else {
-		// R-QTBY-EFA7: no configured sink emits only JSON fallback lines.
+		// R-O3YP-CK5K: no configured sink emits only JSON fallback lines.
 		var events []binaryEvent
 		for _, line := range strings.Split(strings.TrimSuffix(c.diagnostic.String(), "\n"), "\n") {
 			const prefix = "repos: undelivered event: "
@@ -539,7 +556,7 @@ func (c *binaryChild) stop(t *testing.T, sig syscall.Signal, silent bool) {
 		if !strings.HasSuffix(c.diagnostic.String(), "\n") || len(events) < 2 {
 			t.Fatalf("fallback: %q", c.diagnostic.String())
 		}
-		assertLifecycle(t, events[0], "service.started", map[string]any{"version": cli.Version})
+		assertLifecycle(t, events[0], "service.started", map[string]any{"version": version.Display()})
 		assertLifecycle(t, events[len(events)-1], "service.stopping", map[string]any{"reason": binarySignalName(sig)})
 	}
 	// R-QH4Y-KPV9: the parent's retained socket still queues connections.

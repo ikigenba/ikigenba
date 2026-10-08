@@ -4,7 +4,7 @@ Running events at all: help, version, the manifest, the state of its database, e
 
 ## A developer asks which version they have
 
-The version is a `var` in the source, never injected at build time, so a developer's build and a deployed binary report the same string. Its shape is `v<semver>`: a `v`, then a semantic version, prerelease and build metadata included. Its value is data and is not fixed here. It is the same version the landing page's footer and the about screen show (`S03`), the MCP endpoint gives as its `serverInfo` (`S05`), and events' own `service.started` event carries in the trail (`S02`).
+events carries no version of its own: nothing in its source or its build names one. The environment tells it which code it is running, through two variables: `IKIGENBA_COMMIT`, the commit it was built from, and `IKIGENBA_RELEASE`, the label of the release, when there is one. From them events builds its display string, `<display>`, which every later story uses with this meaning. With both set it is the label, one space, and the short commit in parentheses, `<label> (<short sha>)`; with only the commit it is the short commit alone; with only the label it is the label alone. The short commit is the first seven characters of `IKIGENBA_COMMIT`, or all of it when it is shorter; a value ending in `-dirty`, as a developer's sandbox marks a modified tree, is shortened without the suffix and keeps it after, as in `<short sha>-dirty`. Nothing else about either value is checked or changed. events reads the two variables each time it is run with `--version`; an events that serves reads them once, when it starts (`S02`), and shows that string wherever it shows a version: the landing page's footer and the about screen (`S03`), the MCP endpoint's `serverInfo` (`S05`), and its own `service.started` event in the trail (`S02`).
 
 Command:
 
@@ -15,7 +15,7 @@ $ events --version
 Output:
 
 ```
-v<semver>
+<display>
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -23,6 +23,34 @@ Exits 0. The line is on stdout; stderr is empty.
 Preconditions:
 
 - `bin/events` exists, built from the checkout with `make`.
+- `IKIGENBA_COMMIT` holds a commit, and `IKIGENBA_RELEASE` holds a label or is unset; `<display>` is the string they make.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer asks which version they have with no identity set
+
+With neither variable set, or both empty, events has no identity to show, and `<display>` is the empty string. It still answers, with an empty line, and still succeeds: a missing identity is not a failure.
+
+Command:
+
+```
+$ events --version
+```
+
+Output:
+
+```
+
+```
+
+Exits 0. stdout holds one empty line, a single newline and nothing else; stderr is empty.
+
+Preconditions:
+
+- `bin/events` exists.
+- `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` are both unset or empty.
 
 Postconditions:
 
@@ -167,7 +195,7 @@ Postconditions:
 
 ## An operator checks a database that is up to date
 
-After a deploy, or before one, an operator wants to see the schema the binary expects beside what the database holds: which of the binary's migrations the database has had applied, and when. `events db status` prints one line for each version, in ascending order: `<version> applied <applied-at>` for a migration the database has had applied, where `<applied-at>` is when it was applied, in UTC to the microsecond; `<version> pending` for one the binary carries that the database has not had applied; and `<version> unknown <applied-at>` for one the database records that the binary does not carry. It reads `state/events.db` relative to its working directory and only looks: it applies nothing and changes nothing. Like `--version`, it needs no socket and reads no environment.
+After a deploy, or before one, an operator wants to see the schema the binary expects beside what the database holds: which of the binary's migrations the database has had applied, and when. `events db status` prints one line for each version, in ascending order: `<version> applied <applied-at>` for a migration the database has had applied, where `<applied-at>` is when it was applied, in UTC to the microsecond; `<version> pending` for one the binary carries that the database has not had applied; and `<version> unknown <applied-at>` for one the database records that the binary does not carry. It reads `state/events.db` relative to its working directory and only looks: it applies nothing and changes nothing. Like `manifest`, it needs no socket and reads no environment.
 
 Command:
 
@@ -186,7 +214,7 @@ Exits 0. The line is on stdout; stderr is empty. The time is the one the databas
 Preconditions:
 
 - `bin/events` exists.
-- The working directory holds `state/events.db`, which an events of this version created or brought up to date, applying version `0001` at `2026-10-05T14:03:07.123456Z`. On a host the working directory is `/opt/events` and the operator is a user who can read the database.
+- The working directory holds `state/events.db`, which an events carrying the same migrations created or brought up to date, applying version `0001` at `2026-10-05T14:03:07.123456Z`. On a host the working directory is `/opt/events` and the operator is a user who can read the database.
 
 Postconditions:
 
@@ -221,7 +249,7 @@ Postconditions:
 
 ## An operator checks a database a newer events has upgraded
 
-A newer events has applied a migration this binary does not carry, as when a deploy is rolled back to an older binary over a database the newer one upgraded. This events cannot serve such a database (`S02`), and `events db status` shows why: it prints every line as usual, the version it does not know among them as `unknown`, then says so on stderr and fails.
+A newer events has applied a migration this binary does not carry, as when a deploy is rolled back to an older binary over a database the newer one upgraded. Older code runs on newer data: this events still serves such a database, applying nothing to it and warning that it is ahead (`S02`). `events db status` shows what the database holds: it prints every line as usual, the version it does not know among them as `unknown`, and succeeds. A database ahead of the binary is a state to report, not a failure.
 
 Command:
 
@@ -234,10 +262,9 @@ Output:
 ```
 0001 applied 2026-10-05T14:03:07.123456Z
 0002 unknown 2026-10-06T09:12:44.000017Z
-events: <reason>
 ```
 
-Exits 1. The `0001` and `0002` lines are on stdout; the last line is on stderr. `<reason>` names the unknown version, `0002`.
+Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 

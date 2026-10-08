@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,12 +12,15 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
+	"github.com/ikigenba/ikigenba/scripts/internal/pages"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
-// R-23F2-ZH0V R-24MZ-D8RK R-25UV-R0I9 R-272S-4S8Y R-A2R0-PZYN R-A3YX-3RPC
+// R-23F2-ZH0V R-24MZ-D8RK R-25UV-R0I9 R-H0EY-7SFO R-I73F-LRDZ R-A2R0-PZYN R-A3YX-3RPC
 func TestDatabaseStatusUsesEmbeddedMigrations(t *testing.T) {
 	for _, kind := range []string{"absent", "applied", "legacy", "unknown", "invalid"} {
 		t.Run(kind, func(t *testing.T) {
@@ -45,7 +49,7 @@ func TestDatabaseStatusUsesEmbeddedMigrations(t *testing.T) {
 			// The oracle is appkit's public operation; no report format is restated.
 			oracleErr := db.Status(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations()}, &before)
 			var stderr writeCounter
-			code := cli.Run(context.Background(), cli.Process{Args: []string{"db", "status"}, Dir: dir, Stdout: &stdout, Stderr: &stderr})
+			code := cli.Run(context.Background(), cli.Process{Version: testVersion, Args: []string{"db", "status"}, Dir: dir, Stdout: &stdout, Stderr: &stderr})
 			wantCode, wantErr, wantWrites := cli.ExitSuccess, "", 0
 			if oracleErr != nil {
 				wantCode = cli.ExitServerFailed
@@ -76,7 +80,7 @@ func TestDatabaseStatusResolvesEmptyDirAgainstWorkingDirectory(t *testing.T) {
 	t.Chdir(dir)
 	var want, out, errOut bytes.Buffer
 	mustCLI(t, db.Status(context.Background(), db.Config{Path: filepath.Join(dir, "state", "scripts.db"), Migrations: scripts.Migrations()}, &want))
-	if code := cli.Run(context.Background(), cli.Process{Args: []string{"db", "status"}, Stdout: &out, Stderr: &errOut}); code != cli.ExitSuccess || out.String() != want.String() || errOut.Len() != 0 {
+	if code := cli.Run(context.Background(), cli.Process{Version: testVersion, Args: []string{"db", "status"}, Stdout: &out, Stderr: &errOut}); code != cli.ExitSuccess || out.String() != want.String() || errOut.Len() != 0 {
 		t.Fatalf("status %d %q %q", code, out.String(), errOut.String())
 	}
 	entries, err := os.ReadDir(dir)
@@ -86,7 +90,7 @@ func TestDatabaseStatusResolvesEmptyDirAgainstWorkingDirectory(t *testing.T) {
 	}
 }
 
-// R-3MMB-1HNE R-ZV2S-V0UF R-LJZD-2K8N
+// R-3MMB-1HNE R-ZV2S-V0UF R-HJXC-C4AS
 func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 	for _, kind := range []string{"absent", "empty-state", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
@@ -156,33 +160,94 @@ func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 	}
 }
 
-// R-ZRF3-PPMC
-func TestStartupRefusesUnknownCatalogMigration(t *testing.T) {
+type observingSink func(context.Context, telemetry.Event) error
+
+func (s observingSink) Deliver(ctx context.Context, event telemetry.Event) error {
+	return s(ctx, event)
+}
+
+// R-I8BB-ZJ4O R-I9J8-DAVD
+func TestStartupServesNewerCatalogAndWarnsOnce(t *testing.T) {
 	h := newHarness(t)
-	cfg := db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now}
+	h.set("RUN_KEEP_DAYS", "1")
+	h.set("RUN_KEEP_COUNT", "2")
+	script, records := seedCatalog(t, h)
+	cfg := db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now, Service: pages.ServiceName}
 	handle, err := db.Open(context.Background(), cfg)
+	mustCLI(t, err)
+	queuedID := "run_aabbccddeeff0011"
+	catalog := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+	_, err = catalog.AddRun(context.Background(), store.Run{ID: queuedID, Script: script.ID, SHA: strings.Repeat("a", 40), Ref: "main", Trigger: store.TriggerManual, Status: store.StatusQueued, User: "owner", Started: h.now})
 	mustCLI(t, err)
 	mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
 		_, err := tx.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (9999, '2025-02-03T04:05:06Z')")
 		return err
 	}))
 	mustCLI(t, handle.Close())
-	_, oracleErr := db.Open(context.Background(), cfg)
-	if oracleErr == nil {
-		t.Fatal("fixture is not a newer catalog")
+	var warning, before, after bytes.Buffer
+	cfg.Stderr = &warning
+	handle, err = db.Open(context.Background(), cfg)
+	mustCLI(t, err)
+	mustCLI(t, handle.Close())
+	if !strings.HasPrefix(warning.String(), pages.ServiceName+": ") {
+		t.Fatal("newer catalog did not warn")
 	}
-	h.p.Sink = forbiddenSink{t}
-	code := cli.Run(context.Background(), h.p)
-	want := "scripts: cannot open database state/scripts.db: " + strings.ReplaceAll(oracleErr.Error(), "\n", " ") + "\n"
-	if code != cli.ExitServerFailed || h.stderr.String() != want || h.stdout.String() != "" || len(h.stderr.snapshot()) != 1 {
-		t.Fatalf("newer catalog %d %q; want %q", code, h.stderr.String(), want)
+	mustCLI(t, db.Status(context.Background(), cfg, &before))
+	h.p.Sink = observingSink(func(ctx context.Context, event telemetry.Event) error {
+		if h.stderr.String() != warning.String() || len(h.stderr.snapshot()) != 1 {
+			t.Error("warning was not written before recovery event delivery")
+		}
+		return h.sink.Deliver(ctx, event)
+	})
+	h.p.Now = func() time.Time {
+		if _, err := os.Stat(filepath.Join(h.p.Dir, "state", "runs")); err == nil && h.stderr.String() != warning.String() {
+			t.Error("warning was not written before recovery measured time")
+		}
+		return h.now
 	}
-	if _, err := os.Stat(filepath.Join(h.p.Dir, "state", "runs")); !os.IsNotExist(err) {
-		t.Fatalf("runs created: %v", err)
+	originalMCP := h.p.MCP
+	h.p.MCP = func(w *telemetry.Writer) *mcp.Server {
+		if h.stderr.String() != warning.String() || len(h.stderr.snapshot()) != 1 {
+			t.Error("warning was not written before handler construction")
+		}
+		return originalMCP(w)
+	}
+	h.start()
+	listed := h.call("list", nil)["scripts"].([]any)
+	if len(listed) != 1 || listed[0].(map[string]any)["name"] != script.Name {
+		t.Fatalf("newer catalog list %v", listed)
+	}
+	result := h.call("result", map[string]any{"run": records[1].ID})
+	if result["status"] != "killed" || result["exit_code"] != nil {
+		t.Fatalf("newer recovery %v", result)
+	}
+	result = h.call("result", map[string]any{"run": queuedID})
+	if result["status"] != "failed" || result["reason"] != "queue_abandoned" || result["exit_code"] != nil {
+		t.Fatalf("newer queued recovery %v", result)
+	}
+	if _, err := os.Stat(filepath.Join(h.p.Dir, "state", "runs", script.ID, records[0].ID)); !os.IsNotExist(err) {
+		t.Fatalf("old run folder retained: %v", err)
+	}
+	events := h.sink.capture.Events()
+	if len(events) < 4 || events[0].Name != "run.finished" || events[1].Name != "run.finished" || events[2].Name != "service.started" || events[3].Name != "request.started" {
+		t.Fatalf("newer startup trail %v", events)
+	}
+	h.stop()
+	cfg.Stderr = nil
+	handle, err = db.Open(context.Background(), cfg)
+	mustCLI(t, err)
+	catalog = store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
+	if _, err = catalog.RunByID(context.Background(), records[0].ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("pruned record retained: %v", err)
+	}
+	mustCLI(t, handle.Close())
+	mustCLI(t, db.Status(context.Background(), cfg, &after))
+	if before.String() != after.String() || h.stderr.String() != warning.String() || len(h.stderr.snapshot()) != 1 || h.stdout.String() != "" {
+		t.Fatalf("newer status/warning changed %q -> %q; %q", before.String(), after.String(), h.stderr.String())
 	}
 }
 
-// R-016A-RVJW R-03M3-JF1A
+// R-016A-RVJW R-H2UQ-ZBX2
 func TestEarlyStartupFailuresLeaveRunRecordsUnchanged(t *testing.T) {
 	for _, kind := range []string{"python", "runs-file"} {
 		t.Run(kind, func(t *testing.T) {
@@ -233,7 +298,7 @@ func TestEarlyStartupFailuresLeaveRunRecordsUnchanged(t *testing.T) {
 	}
 }
 
-// R-LMF5-U3Q1 R-LNN2-7VGQ R-LOUY-LN7F
+// R-HDTU-F9LB R-H5AJ-QVEG R-HG9N-6T2P
 func TestCancellationAfterCatalogOpenSettlesAndFlushesRecovery(t *testing.T) {
 	h := newHarness(t)
 	path := filepath.Join(h.p.Dir, "state", "scripts.db")

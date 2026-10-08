@@ -16,9 +16,6 @@ import (
 	root "github.com/ikigenba/ikigenba/telemetry"
 )
 
-// Version is the deployed release identifier.
-var Version = "v0.4.2"
-
 // Manifest describes the application's host configuration.
 const Manifest = "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n"
 
@@ -43,6 +40,7 @@ type Process struct {
 	Pid       int
 	Stdout    io.Writer
 	Stderr    io.Writer
+	Version   string
 	Inherit   func(uintptr) (net.Listener, error)
 	Now       func() time.Time
 	Sleep     func(context.Context, time.Duration)
@@ -75,7 +73,7 @@ func Run(ctx context.Context, p Process) int {
 		product := Usage
 		switch arg {
 		case "--version":
-			product = Version + "\n"
+			product = p.Version + "\n"
 		case "manifest":
 			product = Manifest
 		}

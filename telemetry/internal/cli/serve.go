@@ -146,7 +146,7 @@ func serve(ctx context.Context, p Process) int {
 	if now == nil {
 		now = time.Now
 	}
-	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "telemetry.db"), Migrations: root.Migrations(), Now: now})
+	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "telemetry.db"), Migrations: root.Migrations(), Now: now, Service: web.ServiceName, Stderr: out})
 	if err != nil {
 		diagnostic(out, "cannot open database state/telemetry.db: "+strings.ReplaceAll(err.Error(), "\n", " ")+"\n")
 		return ExitServerFailed
@@ -162,7 +162,7 @@ func serve(ctx context.Context, p Process) int {
 		diagnostic(out, err.Error()+"\n")
 		return ExitServerFailed
 	}
-	writer := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: Version, Sink: trail, Stderr: out, Now: now, Sleep: sleep, Rand: p.Rand})
+	writer := telemetry.New(telemetry.Config{Service: web.ServiceName, Version: p.Version, Sink: trail, Stderr: out, Now: now, Sleep: sleep, Rand: p.Rand})
 	writer.Ready()
 	_ = writer.Flush(ctx)
 	srv := p.MCP(writer)

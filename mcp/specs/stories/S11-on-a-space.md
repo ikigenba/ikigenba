@@ -19,14 +19,14 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the connect page (`S03`): an HTML page whose banner's profile link is titled with the email address of the caller the gate authenticated, whose visible text carries the heading `Connect MCP Client`; under `Claude Code`, the command that adds the gateway to Claude Code under the server name `sbx-ikigenba-dev` at the endpoint `https://mcp.sbx.ikigenba.dev/mcp`; under `Codex`, the command that adds it to Codex under the same server name at the same endpoint; and under `Other clients`, the endpoint `https://mcp.sbx.ikigenba.dev/mcp`; each with its `Copy` button. The footer reads `mcp v<semver>`, the version the deployed binary's `mcp --version` prints (`S01`), the same one `space status` reports for mcp. Its stylesheet is `https://mcp.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that stylesheet loads are under the same `https://mcp.sbx.ikigenba.dev/_appkit/` (`S04`): a browser showing the page requests its style from mcp's own host and from no other origin. Its button feedback script is `https://mcp.sbx.ikigenba.dev/_appkit/feedback.js` and its icon `https://mcp.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host. In the banner, the profile link leads to `https://auth.sbx.ikigenba.dev/`, and the `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout` (`S03`); submitting it signs the visitor out of the space, as auth's stories tell.
+Status 200. The body is the connect page (`S03`): an HTML page whose banner's profile link is titled with the email address of the caller the gate authenticated, whose visible text carries the heading `Connect MCP Client`; under `Claude Code`, the command that adds the gateway to Claude Code under the server name `sbx-ikigenba-dev` at the endpoint `https://mcp.sbx.ikigenba.dev/mcp`; under `Codex`, the command that adds it to Codex under the same server name at the same endpoint; and under `Other clients`, the endpoint `https://mcp.sbx.ikigenba.dev/mcp`; each with its `Copy` button. The footer reads `mcp <display>`, where `<display>` is whatever display string the host's environment gives mcp: the string the deployed binary's `mcp --version` prints under that same environment (`S01`), and empty when the host sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`. Its stylesheet is `https://mcp.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that stylesheet loads are under the same `https://mcp.sbx.ikigenba.dev/_appkit/` (`S04`): a browser showing the page requests its style from mcp's own host and from no other origin. Its button feedback script is `https://mcp.sbx.ikigenba.dev/_appkit/feedback.js` and its icon `https://mcp.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host. In the banner, the profile link leads to `https://auth.sbx.ikigenba.dev/`, and the `Sign out` button is in a form that POSTs to `https://auth.sbx.ikigenba.dev/logout` (`S03`); submitting it signs the visitor out of the space, as auth's stories tell.
 
 Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`, and `opsctl` is installed on it.
-- A tag `mcp/v<semver>` points at the commit `devctl build mcp` was run at, and it wrote `mcp/dist/mcp-v<semver>.tar.xz`.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev mcp/dist/mcp-v<semver>.tar.xz` exited 0.
-- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows `mcp v<semver> active active -`.
+- `devctl build mcp`, run in a clean tree at the commit `<sha>`, wrote `mcp/dist/mcp-<sha>.tar.xz` (`S10`). No tag is needed.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev mcp/dist/mcp-<sha>.tar.xz` exited 0.
+- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows mcp's service and socket `active`, in the layout devctl's and opsctl's stories own.
 - auth and dummy are deployed and active on the space, and dummy's manifest has `mcp = true`, so the host's services file lists `auth`, and lists `dummy` enabled and marked for MCP.
 - The space routes `mcp.sbx.ikigenba.dev` through its authenticating gate: the gate admits the request and sets `X-User-Id` and `X-User-Email` on what it passes to mcp.
 - The caller holds a credential the gate accepts, and the email that credential names is the one the page's profile link is titled with.
@@ -56,8 +56,8 @@ Status 200. The body is the connect page of the story above, and its banner carr
 
 Preconditions:
 
-- Everything the story above requires holds: mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate accepts.
-- `mcp/dist/mcp-v<semver>.tar.xz` holds `share/icon.svg` (`S10`).
+- Everything the story above requires holds: mcp is deployed and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate accepts.
+- `mcp/dist/mcp-<sha>.tar.xz` holds `share/icon.svg` (`S10`).
 - The host's services file lists mcp with its icon.
 
 Postconditions:
@@ -85,7 +85,7 @@ Status 302. No story fixes the body.
 
 Preconditions:
 
-- mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
+- mcp is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
 - The request carries no credential.
 
 Postconditions:
@@ -121,7 +121,7 @@ Status 200. The body is the document `S12` describes, naming the resource `https
 
 Preconditions:
 
-- mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
+- mcp is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
 - The request carries no credential.
 
 Postconditions:
@@ -149,11 +149,11 @@ HTTP/2 200
 content-type: application/json
 ```
 
-Status 200. The body is the answer of `An MCP client lists the gateway's tools` (`S05`): the same four tools, `services`, `describe`, `call`, and `mutate`, in that order, member for member, with the result's `io.modelcontextprotocol/serverInfo` `{"name":"mcp","version":"v<semver>"}`, where `v<semver>` is the version the deployed binary's `mcp --version` prints.
+Status 200. The body is the answer of `An MCP client lists the gateway's tools` (`S05`): the same four tools, `services`, `describe`, `call`, and `mutate`, in that order, member for member, with the result's `io.modelcontextprotocol/serverInfo` `{"name":"mcp","version":"<display>"}`, where `<display>` is the string the deployed binary's `mcp --version` prints under the environment the host gives mcp.
 
 Preconditions:
 
-- mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
+- mcp is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
 - `<token>` is a bearer token, or `<session>` a session, that the space's gate accepts.
 
 Postconditions:
@@ -185,7 +185,7 @@ Status 401. The body is one line of plain text from the gate; this story does no
 
 Preconditions:
 
-- mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
+- mcp is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
 - The request carries no credential.
 
 Postconditions:
@@ -209,11 +209,11 @@ HTTP/2 200
 content-type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 2 whose `result` is dummy's answer to `list_widgets`, relayed: it has no `isError` member, its `structuredContent` is an object whose one member, `widgets`, is an array of every widget dummy holds, oldest first, each with its `id`, `name`, `count`, and `status`, and its `content` is one text block holding that same object encoded compactly, as dummy's own stories tell. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"v<semver>"}`, not dummy's.
+Status 200. The body is a JSON-RPC response with `id` 2 whose `result` is dummy's answer to `list_widgets`, relayed: it has no `isError` member, its `structuredContent` is an object whose one member, `widgets`, is an array of every widget dummy holds, oldest first, each with its `id`, `name`, `count`, and `status`, and its `content` is one text block holding that same object encoded compactly, as dummy's own stories tell. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"<display>"}`, not dummy's, `<display>` being the string the deployed binary's `mcp --version` prints under the environment the host gives mcp.
 
 Preconditions:
 
-- mcp `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
+- mcp is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches the connect page on a space`.
 - dummy is deployed and active on the space, serving on `/run/ikigenba/dummy.sock`, and its manifest has `mcp = true`, so the host's services file lists `dummy` enabled, marked for MCP, with that socket.
 - `<token>` is a bearer token that the space's gate accepts.
 - The telemetry service is deployed and active on the space, and the host's services file lists it as `telemetry`.

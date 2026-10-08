@@ -654,7 +654,7 @@ Content-Type: text/html; charset=utf-8
 Cache-Control: no-cache
 ```
 
-Status 404. The body is sites' not-found page (`S11`): titled `Not found`, its heading `Not found` and its text `There is nothing at this address.`, with the footer `sites v<semver>` and no banner. There is no `Set-Cookie`. A `POST` is answered the same way, never `405`.
+Status 404. The body is sites' not-found page (`S11`): titled `Not found`, its heading `Not found` and its text `There is nothing at this address.`, with the footer `sites <display>` and no banner. There is no `Set-Cookie`. A `POST` is answered the same way, never `405`.
 
 Preconditions:
 

@@ -1,18 +1,18 @@
 # Stories — deploy
 
 Deploy puts one built file on one space. The file is what `build` wrote,
-`<app>/dist/<app>-<tag>.tar.xz`, where the tag is `v` followed by a semver
-version; devctl uploads it to the space's own `deploy/` prefix in the bucket
-and has `opsctl` install it from there. The bucket is the one named after the
-root, `ikigenba.dev`, and the space's prefix is its label: the file lands at
-`s3://ikigenba.dev/sbx1/deploy/<file>`. The bucket's name has dots in it, so
-devctl addresses it path-style, as opsctl on the host does. The file never
-travels over the ssh connection — the host fetches it with its own role,
-which can reach that prefix and no other space's. Promotion is deploying the
-same file to a different space. Any file build wrote can go to any space: a
-prerelease built on a branch deploys the same way as a release, and no space
-restricts what it accepts. What each space is running is read from the host
-with `space status`, never recorded anywhere else. `<space>` is the space's
+`<app>/dist/<app>-<sha>.tar.xz`, where the sha is the full commit sha build ran
+at, 40 lowercase hex digits; devctl uploads it to the space's own `deploy/`
+prefix in the bucket and has `opsctl` install it from there. The bucket is the
+one named after the root, `ikigenba.dev`, and the space's prefix is its label:
+the file lands at `s3://ikigenba.dev/sbx1/deploy/<file>`. The bucket's name has
+dots in it, so devctl addresses it path-style, as opsctl on the host does. The
+file never travels over the ssh connection — the host fetches it with its own
+role, which can reach that prefix and no other space's. Promotion is deploying
+the same file to a different space. Any file build wrote can go to any space: a
+file built at a commit on a branch deploys the same way as any other, and no
+space restricts what it accepts. What each space is running is read from the
+host with `space status`, never recorded anywhere else. `<space>` is the space's
 label or its full domain, as everywhere (see `S2-space-lifecycle.md`).
 
 `remove` is deploy's inverse: it has `opsctl` take one app off one space,
@@ -36,9 +36,10 @@ Output:
 ```
 Usage: devctl deploy <space> <file>
 
-Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
+Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
-from there. The app and tag (v<semver>) are read from the file name.
+from there. The app and commit sha (40 lowercase hex digits) are read from the
+file name.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -53,24 +54,24 @@ Postconditions:
 
 ## A developer deploys an app they just built
 
-The app and tag come from the file name: the tag is the `v<semver>` the name
-ends in before `.tar.xz`, and the app is everything before the `-` that
-precedes it. Before anything is uploaded, the `secrets` array in the
+The app and sha come from the file name: the sha is the 40 lowercase hex
+digits the name ends in before `.tar.xz`, and the app is everything before the
+`-` that precedes them. Before anything is uploaded, the `secrets` array in the
 `etc/manifest.toml` inside the file is compared with the space's secrets
 object for that app. Each line of output is one step.
 
 Command:
 
 ```
-$ devctl deploy sbx1 crm/dist/crm-v0.1.0.tar.xz
+$ devctl deploy sbx1 crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (crm v0.1.0)
+file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 secrets: ok (3 keys)
-upload: ok (-> ikigenba.dev/sbx1/deploy/crm-v0.1.0.tar.xz)
+upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -83,38 +84,41 @@ Preconditions:
 - The space exists and its instance is `running`; `opsctl` is installed on
   it (`space create` did that).
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `crm/dist/crm-v0.1.0.tar.xz` exists, written by `build`.
+- `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` exists, written
+  by `build`.
 - `/sbx1.ikigenba.dev/crm` holds every name the file's manifest lists in
   `secrets`.
 - `crm` is not disabled on the space.
 
 Postconditions:
 
-- `ikigenba.dev/sbx1/deploy/crm-v0.1.0.tar.xz` holds the file, and
-  `sudo opsctl install s3://ikigenba.dev/sbx1/deploy/crm-v0.1.0.tar.xz`
-  has been run over ssh and exited 0, so `crm.sbx1.ikigenba.dev` answers
-  from the new binary. `crm`'s `state/` directory is untouched. What install
-  does on the host is opsctl's; devctl runs it and reports its exit.
+- `ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`
+  holds the file, and `sudo opsctl install
+  s3://ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`
+  has been run over ssh and exited 0, so `crm.sbx1.ikigenba.dev` answers from
+  the new binary. `crm`'s `state/` directory is untouched. What install does on
+  the host is opsctl's; devctl runs it and reports its exit.
 - No other app on the space has changed.
-- `space status sbx1` shows `crm` at `v0.1.0`.
+- `space status sbx1` lists `crm`. The version it shows is whatever the new
+  binary reports, which deploy neither sets nor checks.
 
 ## A developer promotes a tested release
 
-The same file, built once at the tagged commit and already deployed to a
+The same file, built once at one commit and already deployed to a
 sandbox space, against the space they are promoting to.
 
 Command:
 
 ```
-$ devctl deploy staging crm/dist/crm-v0.1.0.tar.xz
+$ devctl deploy staging crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (crm v0.1.0)
+file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 secrets: ok (3 keys)
-upload: ok (-> ikigenba.dev/staging/deploy/crm-v0.1.0.tar.xz)
+upload: ok (-> ikigenba.dev/staging/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -127,62 +131,22 @@ Preconditions:
 - The space `staging.ikigenba.dev` exists, its instance is `running`, and
   `opsctl` is installed on it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `crm/dist/crm-v0.1.0.tar.xz` exists, written by `build` at the commit tagged
-  `v0.1.0`.
+- `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` exists, written
+  by `build` at the commit `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`.
 - `/staging.ikigenba.dev/crm` holds every name the file's manifest lists in
   `secrets`.
 - `crm` is not disabled on the space.
 
 Postconditions:
 
-- `ikigenba.dev/staging/deploy/crm-v0.1.0.tar.xz` holds the file and
-  `sudo opsctl install s3://ikigenba.dev/staging/deploy/crm-v0.1.0.tar.xz`
+- `ikigenba.dev/staging/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`
+  holds the file and `sudo opsctl install
+  s3://ikigenba.dev/staging/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`
   has exited 0, so `crm.staging.ikigenba.dev` answers from the new binary.
-  `crm`'s `state/` is untouched. If `staging` holds the apex and `crm` is
-  its apex app, `ikigenba.dev` answers from it too (see `S7-apex.md`).
-- `space status staging` shows `crm` at `v0.1.0`.
-
-## A developer deploys a prerelease to a sandbox
-
-A file built at a prerelease tag on a branch. The tag is carried verbatim
-through the file name, the object key, and the version the host reports.
-
-Command:
-
-```
-$ devctl deploy sbx1 crm/dist/crm-v0.2.0-rc.1.tar.xz
-```
-
-Output:
-
-```
-file: ok (crm v0.2.0-rc.1)
-secrets: ok (3 keys)
-upload: ok (-> ikigenba.dev/sbx1/deploy/crm-v0.2.0-rc.1.tar.xz)
-install: ok (opsctl installed crm)
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- The working directory is inside the checkout, and a live SSO session for
-  the profile `ikigenba.dev`.
-- The space exists and its instance is `running`; `opsctl` is installed on
-  it.
-- The developer's ssh configuration can reach the instance as `ec2-user`.
-- `crm/dist/crm-v0.2.0-rc.1.tar.xz` exists, written by `build` at the commit
-  tagged `v0.2.0-rc.1`.
-- `/sbx1.ikigenba.dev/crm` holds every name the file's manifest lists in
-  `secrets`.
-- `crm` is not disabled on the space.
-
-Postconditions:
-
-- `ikigenba.dev/sbx1/deploy/crm-v0.2.0-rc.1.tar.xz` holds the file and
-  `opsctl install` of it has exited 0, so `crm.sbx1.ikigenba.dev` answers
-  from the new binary. `crm`'s `state/` is untouched.
-- `space status sbx1` shows `crm` at `v0.2.0-rc.1`.
+  `crm`'s `state/` is untouched. If `staging` holds the apex and `crm` is its
+  apex app, `ikigenba.dev` answers from it too (see `S7-apex.md`).
+- `space status staging` lists `crm`, showing whatever version the binary
+  reports, the same as on the sandbox space.
 
 ## A developer deploys to a space where the app is disabled
 
@@ -194,15 +158,15 @@ the install step reports opsctl's exit, and opsctl succeeded.
 Command:
 
 ```
-$ devctl deploy sbx1 crm/dist/crm-v0.2.0-rc.1.tar.xz
+$ devctl deploy sbx1 crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (crm v0.2.0-rc.1)
+file: ok (crm 9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
 secrets: ok (3 keys)
-upload: ok (-> ikigenba.dev/sbx1/deploy/crm-v0.2.0-rc.1.tar.xz)
+upload: ok (-> ikigenba.dev/sbx1/deploy/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -216,16 +180,18 @@ Preconditions:
   it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
 - `crm` is installed on the space and disabled.
-- `crm/dist/crm-v0.2.0-rc.1.tar.xz` exists, written by `build`, and
-  `/sbx1.ikigenba.dev/crm` holds every name its manifest lists in `secrets`.
+- `crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz` exists, written
+  by `build`, and `/sbx1.ikigenba.dev/crm` holds every name its manifest lists
+  in `secrets`.
 
 Postconditions:
 
-- `ikigenba.dev/sbx1/deploy/crm-v0.2.0-rc.1.tar.xz` holds the file and
-  `opsctl install` of it has exited 0. `crm`'s `state/` is untouched.
+- `ikigenba.dev/sbx1/deploy/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz`
+  holds the file and `opsctl install` of it has exited 0. `crm`'s `state/` is
+  untouched.
 - `crm` is still disabled: nothing of it was started, its names still answer
-  `503`, and `space status sbx1` shows `crm v0.2.0-rc.1 inactive disabled
-  wal`. Whether the release starts is known once `space enable sbx1 crm`
+  `503`, and `space status sbx1` shows `crm`'s service `inactive` and its socket
+  `disabled`. Whether the release starts is known once `space enable sbx1 crm`
   starts it.
 
 ## A developer deploys while the space lacks a secret the app declares
@@ -236,13 +202,13 @@ alone; only missing keys refuse the deploy.
 Command:
 
 ```
-$ devctl deploy sbx1 crm/dist/crm-v0.1.0.tar.xz
+$ devctl deploy sbx1 crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (crm v0.1.0)
+file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 devctl: crm: secrets missing CRM_ORG,CRM_WEBHOOK_SECRET
 
 run 'devctl secrets push sbx1 crm'
@@ -267,20 +233,20 @@ Postconditions:
 Command:
 
 ```
-$ devctl deploy sbx1 crm/dist/crm-v0.2.0.tar.xz
+$ devctl deploy sbx1 crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz
 ```
 
 Output:
 
 ```
-devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'
+devctl: no such file 'crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz'
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- No file at `crm/dist/crm-v0.2.0.tar.xz`.
+- No file at `crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz`.
 
 Postconditions:
 
@@ -288,9 +254,10 @@ Postconditions:
 
 ## A developer deploys a file that build did not write
 
-The file name must be `<app>-v<semver>.tar.xz` and the file must hold
-`bin/<app>` and `etc/manifest.toml`. A name whose tag is not a semver
-version, `crm-latest.tar.xz` say, fails the same way.
+The file name must be `<app>-<sha>.tar.xz`, the sha 40 lowercase hex digits,
+and the file must hold `bin/<app>` and `etc/manifest.toml`. A name that ends
+in anything else before `.tar.xz` fails the same way: `crm-latest.tar.xz`, a
+semver name such as `crm-v0.1.0.tar.xz`, a short sha, or a sha in uppercase.
 
 Command:
 
@@ -301,7 +268,7 @@ $ devctl deploy sbx1 notes.tar.xz
 Output:
 
 ```
-devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-v<semver>.tar.xz
+devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<sha>.tar.xz
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -345,13 +312,13 @@ Postconditions:
 Command:
 
 ```
-$ devctl deploy gone crm/dist/crm-v0.1.0.tar.xz
+$ devctl deploy gone crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (crm v0.1.0)
+file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 devctl: no space at 'gone.ikigenba.dev'
 ```
 
@@ -361,7 +328,7 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- `crm/dist/crm-v0.1.0.tar.xz` exists.
+- `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` exists.
 - No instance is tagged `Space=gone.ikigenba.dev`.
 
 Postconditions:
@@ -377,18 +344,18 @@ other program's and not devctl's.
 Command:
 
 ```
-$ devctl deploy sbx1 gmail/dist/gmail-v0.1.0.tar.xz
+$ devctl deploy sbx1 gmail/dist/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (gmail v0.1.0)
+file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)
 secrets: ok (2 keys)
-upload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)
-devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1
+upload: ok (-> ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz)
+devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz: exit status 1
 
-> fetch: ok (gmail-v0.1.0.tar.xz, 6.1 MiB)
+> fetch: ok (gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz, 6.1 MiB)
 > file: ok (gmail)
 > secrets: ok (2 keys)
 > unpack: ok (/opt/gmail)
@@ -411,8 +378,8 @@ Preconditions:
 - The space exists and its instance is `running`; `opsctl` is installed on
   it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `gmail/dist/gmail-v0.1.0.tar.xz` exists and `/sbx1.ikigenba.dev/gmail`
-  holds every name its manifest lists in `secrets`.
+- `gmail/dist/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz` exists and
+  `/sbx1.ikigenba.dev/gmail` holds every name its manifest lists in `secrets`.
 - `opsctl install` of the file on the host exits non-zero.
 
 Postconditions:
@@ -493,9 +460,11 @@ Postconditions:
   space's apex app, the root answers 404 from this host too until `crm` is
   deployed again; the apex itself is not moved (see `S7-apex.md`).
 - `/sbx1.ikigenba.dev/crm` and every object under the space's prefix in the
-  bucket are untouched, `deploy/crm-v0.1.0.tar.xz` included.
+  bucket are untouched,
+  `deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` included.
 - `space status sbx1` shows `crm - - - -`. Deploying
-  `crm/dist/crm-v0.1.0.tar.xz` again puts `crm` back over its data.
+  `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` again puts
+  `crm` back over its data.
 - No other app on the space has changed.
 
 ## A developer removes an app that is not on the space
