@@ -30,6 +30,8 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 )
 
+const binarySitesIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
+
 // R-W4OI-ROHH R-W74B-J7YV R-YX1P-GMHL R-YY9L-UE8A R-28RY-26BD R-W9K4-ARG9
 // R-WAS0-OJ6Y R-Z357-DH72 R-R02K-R24N R-WBZX-2AXN R-W7MM-ZP1J
 // R-WILQ-FMPS R-66QV-EPPN
@@ -180,14 +182,16 @@ func TestBinary(t *testing.T) {
 	services := filepath.Join(root, "services.json")
 	writeServices := func(disabled bool, description string) {
 		t.Helper()
-		data := fmt.Sprintf(`{"services":[{"name":"auth","url":"https://account.example.test","description":"Auth","socket":"/unused","enabled":true,"mcp":false,"icon":"<svg></svg>"},{"name":"dummy","url":"https://dummy.example.test","description":"Dummy","socket":"/unused","enabled":%t,"mcp":false,"icon":"<svg></svg>"},{"name":"sites","url":"https://sites.example.test","description":%q,"socket":"/unused","enabled":true,"mcp":true,"icon":"<svg></svg>"}]}`, !disabled, description)
+		data := fmt.Sprintf(`{"services":[{"name":"auth","url":"https://account.example.test","description":"Auth","socket":"/unused","enabled":true,"mcp":false,"icon":"<svg></svg>"},{"name":"dummy","url":"https://dummy.example.test","description":"Dummy","socket":"/unused","enabled":%t,"mcp":false,"icon":"<svg></svg>"},{"name":"sites","url":"https://sites.example.test","description":%q,"socket":"/unused","enabled":true,"mcp":true,"icon":%q}]}`, !disabled, description, binarySitesIcon)
 		if e := os.WriteFile(services, []byte(data), 0600); e != nil {
 			t.Fatal(e)
 		}
 	}
 	writeServices(false, "First description")
 	f := startBinary(t, binary, work, append(append([]string{}, env...), "IKIGENBA_SERVICES="+services))
-	before := binaryTags(f.get(t, "/"))
+	beforeBody := f.get(t, "/")
+	assertBinaryBanner(t, beforeBody)
+	before := binaryTags(beforeBody)
 	assertTagCount(t, before, "form", "", 1)
 	assertTagCount(t, before, "", "aria-current", 1)
 	assertTagCount(t, before, "", "aria-disabled", 0)
@@ -198,7 +202,9 @@ func TestBinary(t *testing.T) {
 	assertTag(t, before, "a", "aria-current", "page", map[string]string{"href": "https://sites.example.test"})
 	f.instructions(t, true, "First description")
 	writeServices(true, "Changed description")
-	after := binaryTags(f.get(t, "/"))
+	afterBody := f.get(t, "/")
+	assertBinaryBanner(t, afterBody)
+	after := binaryTags(afterBody)
 	assertTagCount(t, after, "", "aria-disabled", 1)
 	assertTag(t, after, "a", "aria-disabled", "true", map[string]string{"title": "dummy is unavailable"})
 	f.instructions(t, true, "Changed description")
@@ -469,6 +475,60 @@ func assertLifecycle(t *testing.T, events []map[string]any, sig syscall.Signal, 
 	for _, event := range []map[string]any{first, last} {
 		if event["service"] != pages.ServiceName || event["request_id"] != "" || event["user"] != "" {
 			t.Fatalf("lifecycle identity: %v", event)
+		}
+	}
+}
+
+// R-66QV-EPPN: observe the kit's banner in the binary's response.
+func assertBinaryBanner(t *testing.T, body string) {
+	t.Helper()
+	headers := regexp.MustCompile(`(?is)<header\b[^>]*>(.*?)</header>`).FindAllStringSubmatch(body, -1)
+	if len(headers) == 0 {
+		t.Fatalf("banner headers: %d", len(headers))
+	}
+	header := headers[0][1]
+	assertTag(t, binaryTags(header), "strong", "class", "mark", map[string]string{"data-service": pages.ServiceName})
+	marks := regexp.MustCompile(`(?is)<strong\b[^>]*>(.*?)</strong>`).FindAllStringSubmatch(header, -1)
+	if len(marks) != 1 {
+		t.Fatalf("banner marks: %d", len(marks))
+	}
+	mark := marks[0][1]
+	assertTag(t, binaryTags(mark), "img", "src", "/_appkit/favicon.svg", map[string]string{"alt": ""})
+	assertTagCount(t, binaryTags(mark), "img", "", 1)
+	favicon := regexp.MustCompile(`(?is)<img\b[^>]*>`).FindString(mark)
+	if !strings.HasPrefix(strings.TrimLeft(mark, " \t\r\n\f"), favicon) {
+		t.Fatal("banner mark does not begin with favicon")
+	}
+	assertTag(t, binaryTags(mark), "span", "class", "service", nil)
+	services := regexp.MustCompile(`(?is)<span\b[^>]*>(.*?)</span>`).FindAllStringSubmatch(mark, -1)
+	if len(services) != 1 || strings.TrimSpace(services[0][1]) != binarySitesIcon+pages.ServiceName {
+		t.Fatalf("banner service icon and name: %v", services)
+	}
+	visible := func(s string) string {
+		return strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(s, ""))), " ")
+	}
+	product := strings.SplitN(mark, services[0][0], 2)[0]
+	if visible(product) != "Ikigenba" {
+		t.Fatalf("banner product text: %q", visible(product))
+	}
+	if !strings.HasPrefix(strings.TrimLeft(header, " \t\r\n\f"), marks[0][0]) {
+		t.Fatal("banner does not begin with mark")
+	}
+	afterMark := strings.TrimLeft(strings.SplitN(header, marks[0][0], 2)[1], " \t\r\n\f")
+	buttons := regexp.MustCompile(`(?is)<button\b[^>]*>`).FindAllString(afterMark, -1)
+	if len(buttons) == 0 || !strings.HasPrefix(afterMark, buttons[0]) {
+		t.Fatal("launcher does not immediately follow mark")
+	}
+	assertTag(t, binaryTags(buttons[0]), "button", "class", "launcher", nil)
+	assertTag(t, binaryTags(header), "button", "class", "signout", map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"})
+	for _, button := range regexp.MustCompile(`(?is)<button\b[^>]*>(.*?)</button>`).FindAllStringSubmatch(header, -1) {
+		for _, tag := range binaryTags(button[0]) {
+			if tag.name == "button" && strings.Contains(" "+tag.attrs["class"]+" ", " signout ") {
+				assertTagCount(t, binaryTags(button[1]), "svg", "", 1)
+				if visible(button[1]) != "" {
+					t.Fatalf("sign-out button has visible text: %q", visible(button[1]))
+				}
+			}
 		}
 	}
 }
