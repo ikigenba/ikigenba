@@ -7,6 +7,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `specs/` is the contract: `design/`.
 - `page` is the chrome every app shows a signed-in user: the banner, launcher and footer templates, and the shared stylesheet, fonts, launcher script, button feedback script and favicon served from one fixed path prefix. `page/assets/` is its markup and static files (see Assets).
 - `services` is the one reader of the host's services file (`IKIGENBA_SERVICES`, owned by opsctl).
+- `version` is the identity the host gives an app in its environment (`IKIGENBA_COMMIT`, `IKIGENBA_RELEASE`) and the display string built from it.
 - `identity` is the caller nginx authenticated (`X-User-Id`, `X-User-Email`, `X-Request-Id`): the middleware that requires it, and forwarding it on a call to a sibling service.
 - `mcp` is the Model Context Protocol: the server a service mounts at `/mcp` with its tools, and the client the gateway and service tests use.
 - `telemetry` is the suite's event trail: the event contract, the writer that queues and delivers a service's events, its sinks, the wire to the telemetry service, and the request middleware and sibling client that record every request and sibling call.
