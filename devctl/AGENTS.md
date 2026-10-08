@@ -17,7 +17,7 @@ devctl is the developer's CLI; it creates and destroys spaces on the substrate. 
 
 Prefer the standard library, then a widely used public module; adding one needs approval, the user's or a delivery's.
 
-The gates fake every external process. Running the built `devctl` also needs on `PATH`: `git` (finds the checkout), `ssh` (reaches a space's host as `ec2-user`), `tar` with `xz` support (`build` writes and `deploy` reads `.tar.xz` archives with `tar -J`), `secret-tool` (libsecret, the developer's keyring) and `curl` (fetches opsctl's published releases).
+The gates fake every external process. Running the built `devctl` also needs on `PATH`: `git` (finds the checkout), `ssh` and `scp` (reach a space's host as `ec2-user`; `deploy` copies a release with `scp`), `tar` with `xz` support (`build` writes and `deploy` reads `.tar.xz` archives with `tar -J`), and `secret-tool` (libsecret, the developer's keyring).
 
 ## Operator setup
 
