@@ -27,7 +27,8 @@ error. D03 leans on that split: a start the caller got wrong (a missing
 Google setting, a drain deadline that is not a number of seconds, no socket,
 several sockets) exits 2, while trouble on the host once auth has its socket —
 a database it cannot open, a drain that runs out — exits 1, and so does a
-`db status` whose database cannot be read or is newer than the binary.
+`db status` whose database cannot be read. A database newer than the binary
+is not a failure: auth serves it (D03), and `db status` reports it and exits 0.
 
 `db status` is an operator's look at the database: which of the migrations the
 binary carries the database at `state/auth.db` has had applied, and when,
@@ -47,10 +48,12 @@ directory as it was. When it returns an error, auth says so on one line,
 by a space, so the diagnostic is one line whatever appkit's error holds.
 Whatever `db.Status` had already written to `Stdout` stays there: findings are
 product, and the repository's command-line conventions send a report to
-stdout whole, bad news included. That is the one case in which a failure
-leaves anything on `Stdout`: a database that records a migration this auth
-does not carry is reported line by line, the unknown version among them, and
-then refused, while a database that cannot be read yields no lines at all.
+stdout whole, bad news included. A database that records a migration this
+auth does not carry, one a newer auth has migrated, is not a failure:
+`db.Status` lists the version it does not know as `unknown` among the other
+lines and returns nil, so auth writes nothing to `Stderr` and exits 0, since
+this auth serves that database (D03). A database that cannot be read yields
+no lines at all, and the one line on `Stderr`.
 `db status` reads no environment and takes no socket, so it needs none of the
 Google settings.
 
@@ -136,8 +139,8 @@ a literal here.
 - R-7LL2-Y5F6: When `Args` is not empty, `Run` MUST return without calling `LookupEnv`, `Unsetenv`, or `Inherit`, without taking file descriptor 3, and without sending anything to a notification socket, so that the outcome of a command or a usage error is the same whatever the environment holds.
 - R-7MSZ-BX5V: Whenever `Run` returns a value other than `0` it MUST have written nothing to `Stdout` other than, when `Args` is exactly `["db", "status"]`, the bytes R-7P8S-3GN9 states, and every diagnostic `Run` writes MUST be delivered as a single call to `Stderr.Write` whose first line begins `auth: `.
 - R-7P8S-3GN9: When `Args` is exactly `["db", "status"]`, `Run` MUST write to `Stdout` exactly the bytes, and nothing else, that appkit's `db.Status` (package `github.com/ikigenba/ikigenba/appkit/db`) writes to its writer when called with a context that is not done and a `db.Config` whose `Path` is the database path (R-7GPH-F2GE) and whose `Migrations` is the root package's `auth.Migrations()`, over the database as it is when `Run` is called; so that `Run` reports the migrations of `state/auth.db` under `p.Dir`, or under the process working directory when `p.Dir` is empty.
-- R-7QGO-H8DY: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-7P8S-3GN9 describes returns nil, `Run` MUST write nothing to `Stderr` and return `0`.
-- R-7ROK-V04N: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-7P8S-3GN9 describes returns a non-nil error `err`, `Run` MUST write exactly `"auth: " + r + "\n"` to `Stderr`, where `r` is `err.Error()` with every newline character replaced by one space, and return `1`, having written to `Stdout` what R-7P8S-3GN9 states; so that a `p.Dir` whose `state/auth.db` records a version that `auth.Migrations()` does not hold gets on `Stdout` every line `db.Status` writes, the unknown version's among them, and that one line on `Stderr`, and a `p.Dir` whose `state/auth.db` is a regular file that is not a SQLite database gets nothing on `Stdout` and that one line on `Stderr`.
+- R-TAU4-N17Z: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-7P8S-3GN9 describes returns nil, `Run` MUST write nothing to `Stderr` and return `0`; so that a `p.Dir` whose `state/auth.db` records a version that `auth.Migrations()` does not hold gets on `Stdout` every line `db.Status` writes, the unknown version's among them, nothing on `Stderr`, and `0`.
+- R-TC21-0SYO: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-7P8S-3GN9 describes returns a non-nil error `err`, `Run` MUST write exactly `"auth: " + r + "\n"` to `Stderr`, where `r` is `err.Error()` with every newline character replaced by one space, and return `1`, having written to `Stdout` what R-7P8S-3GN9 states; so that a `p.Dir` whose `state/auth.db` is a regular file that is not a SQLite database gets nothing on `Stdout` and that one line on `Stderr`.
 - R-7SWH-8RVC: When `Args` is exactly `["db", "status"]` and `p.Dir` names an empty directory, that directory MUST still be empty when `Run` returns.
 - R-7U4D-MJM1: When `Args` is not empty and is not exactly `["db", "status"]`, `Run` MUST create, remove or change nothing under `p.Dir`, so that when `p.Dir` names an empty directory it is still empty when `Run` returns.
 - R-7VCA-0BCQ: When `Args[0]` is `db` and `Args` is not exactly `["db", "status"]`, `Run` MUST treat `Args` as a usage error whose offending argument `arg` is `Args[0]` when `Args` is exactly `["db"]`, `Args[1]` when `Args[1]` is not `status`, and `Args[2]` otherwise; it MUST write to `Stderr` exactly `"auth: unknown option '" + arg + "'\n\nsee 'auth --help' for usage\n"` when `arg` begins with `--` and exactly `"auth: unknown command '" + arg + "'\n\nsee 'auth --help' for usage\n"` otherwise, write nothing to `Stdout`, and return `2`.
@@ -202,9 +205,8 @@ $ auth db status          # a newer auth has applied 0004
 0002 applied 2026-10-05T14:03:07.125003Z
 0003 applied 2026-10-05T14:03:07.126518Z
 0004 unknown 2026-10-06T09:12:44.000017Z
-auth: <appkit's error, naming 0004>
 $ echo $?
-1
+0
 
 $ auth db bogus
 auth: unknown command 'bogus'

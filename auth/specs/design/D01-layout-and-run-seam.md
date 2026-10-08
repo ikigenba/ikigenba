@@ -34,8 +34,9 @@ event is about (D05, D06, D07). The fourth is
 `github.com/ikigenba/ikigenba/appkit/db`, the suite's one way to keep a SQLite
 database: `db.Open` opens or creates the database at a path, creating its
 missing directories, applies the migrations it is given that the database has
-not had, and refuses a database it cannot open or one that records a
-migration it was not given (`db.ErrUnknownVersion`); `DB.Read` and `DB.Write`
+not had, and refuses a database it cannot open; a database that records a
+migration it was not given, one a newer binary has migrated, it accepts
+unchanged, warning once on the `Stderr` it is given; `DB.Read` and `DB.Write`
 run the store's transactions, `Write` on the one writer; `DB.Close` closes the
 handle; `DB.SetFailing` makes a handle fail every transaction, which is how
 auth's tests make its store fail; and `db.Status` writes, changing nothing,
