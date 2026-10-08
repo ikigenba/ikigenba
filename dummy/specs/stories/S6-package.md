@@ -13,15 +13,14 @@ dummy keeps nothing under `etc/` but the manifest and nothing under `share/`
 but the icon, so no other member exists. The files that give the panel its
 style, its launcher, its button feedback, and its icon — the stylesheet, the
 fonts, their licences, the launcher's script, the button feedback script, and
-the favicon — are
-inside the binary (`S8-assets.md`), so no `assets/`
-directory and no font file ships beside it.
-The database is not in the file: dummy creates `state/dummy.db` under its
-working directory on first start (`S2-serve.md`), and the manifest's
-`[database]` table declares it so that the host replicates it.
-The commit is in the file's name only. No version and no commit is recorded
-in the binary or in any member, or in a member's path: dummy learns which code
-it is running from its environment when it runs (`S1`).
+the favicon — are inside the binary (`S8-assets.md`), so no `assets/`
+directory and no font file ships beside it. The database is not in the file:
+dummy creates `state/dummy.db` under its working directory on first start
+(`S2-serve.md`), and the manifest's `[database]` table declares it so that the
+host replicates it. The commit is in the file's name only. No version and no
+commit is recorded in the binary or in any member, or in a member's path:
+dummy learns which code it is running from its environment when it runs
+(`S1`).
 
 ## A developer lists what the file holds
 

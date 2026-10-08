@@ -36,12 +36,11 @@ content-type: text/html; charset=utf-8
 
 Status 200. The body is an HTML page whose banner's profile link is titled
 with the email address of the caller the gate authenticated, whose visible
-text carries a table of the widgets that exist, and whose footer reads `dummy
-<display>`, where `<display>` is whatever display string the host's
+text carries a table of the widgets that exist, and whose footer reads
+`dummy <display>`, where `<display>` is whatever display string the host's
 environment gives dummy: the string the deployed binary's `dummy --version`
 prints under that same environment (`S1`), and empty when the host sets
-neither `IKIGENBA_COMMIT` nor
-`IKIGENBA_RELEASE`. Its stylesheet is
+neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`. Its stylesheet is
 `https://dummy.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that
 stylesheet loads are under the same `https://dummy.sbx.ikigenba.dev/_appkit/`
 (`S8-assets.md`): a browser showing the panel requests its style from dummy's
@@ -62,8 +61,8 @@ Preconditions:
 - `devctl --account 602773793009 deploy sbx.ikigenba.dev dummy/dist/dummy-<sha>.tar.xz`
   exited 0.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
-  dummy's service and socket `active`; its version column is whatever opsctl
-  reports for dummy, a layout devctl's and opsctl's stories own.
+  dummy's service and socket `active`, in the layout devctl's and opsctl's
+  stories own.
 - The space routes `dummy.sbx.ikigenba.dev` through its authenticating gate:
   the gate admits the request and sets `X-User-Id` and `X-User-Email` on what
   it passes to dummy, and refuses a request it cannot authenticate before
