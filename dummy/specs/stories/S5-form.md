@@ -149,7 +149,7 @@ Status 422. The body is the panel page with the same banner and footer as a
 `http://localhost:3001/`, and the sign-out button POSTing to
 `http://localhost:3001/logout` — with the `Widgets` heading, and beneath it
 the table holding `alpha`, `beta`, and `gamma` in creation order and the form in
-its card headed `Add widget`, and last the footer reading `dummy v<semver>`.
+its card headed `Add widget`, and last the footer reading `dummy <display>`.
 The form carries the values the caller submitted: the name field empty, the
 count field 7, the status field `active`. An error message sits beside the name field saying a
 name is required. No error sits beside the count or the status field.

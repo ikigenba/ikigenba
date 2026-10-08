@@ -47,18 +47,19 @@ the headers `Content-Type: application/json`, `MCP-Protocol-Version:
 that revision is status 200, and its `result`, besides what each story fixes,
 carries `resultType` `"complete"` and `_meta` whose
 `io.modelcontextprotocol/serverInfo` is
-`{"name":"dummy","version":"v<semver>"}`, where `v<semver>` is the version
-`dummy --version` prints (`S1`); a `tools/list` or `server/discover` result
-also carries `ttlMs` `0` and `cacheScope` `"private"`. Those members are not
-repeated below. A client speaking an earlier revision, `2025-11-25` or
-`2025-06-18`, opens with `initialize` and is served the same tools, and its
-calls get the same tool results, `isError` refusals included, without those
-members; a protocol error, such as an unknown tool, carries the same `code`
-and `message` but is answered with status 200 on the earlier revisions. How
-the transport answers a request that is not well-formed MCP — a wrong
-`Content-Type`, a body over 1 MiB, a foreign `Origin`, mismatched headers, an
-unknown method — is the platform's, the same for every app, and this group
-does not restate it.
+`{"name":"dummy","version":"<display>"}`, where `<display>` is the string
+`dummy --version` prints under the environment dummy was started with (`S1`),
+the empty string when that environment sets neither `IKIGENBA_COMMIT` nor
+`IKIGENBA_RELEASE`; a `tools/list` or `server/discover` result also carries
+`ttlMs` `0` and `cacheScope` `"private"`. Those members are not repeated
+below. A client speaking an earlier revision, `2025-11-25` or `2025-06-18`,
+opens with `initialize` and is served the same tools, and its calls get the
+same tool results, `isError` refusals included, without those members; a
+protocol error, such as an unknown tool, carries the same `code` and `message`
+but is answered with status 200 on the earlier revisions. How the transport
+answers a request that is not well-formed MCP — a wrong `Content-Type`, a body
+over 1 MiB, a foreign `Origin`, mismatched headers, an unknown method — is the
+platform's, the same for every app, and this group does not restate it.
 
 A tool's successful result carries the answer twice: as `structuredContent`,
 a JSON object, and as one text content block whose text is that same object
@@ -1411,7 +1412,7 @@ exactly these members:
 {
   "protocolVersion": "2025-11-25",
   "capabilities": {"tools": {}},
-  "serverInfo": {"name": "dummy", "version": "v<semver>"},
+  "serverInfo": {"name": "dummy", "version": "<display>"},
   "instructions": "Demo widgets to list and create"
 }
 ```
@@ -1508,12 +1509,13 @@ content-type: application/json
 ```
 
 Status 200. The body is the answer of `An MCP client lists dummy's tools`:
-the same two tools, in the same order, member for member, with `v<semver>`
-the version the deployed binary's `dummy --version` prints.
+the same two tools, in the same order, member for member, with `<display>`
+the string the deployed binary's `dummy --version` prints under the
+environment the host gives dummy (`S7`).
 
 Preconditions:
 
-- dummy `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `S7`.
+- dummy is deployed and active on `sbx.ikigenba.dev`, as in `S7`.
 - `<token>` is a bearer token, or `<session>` a session, that the space's gate
   accepts.
 
@@ -1546,7 +1548,7 @@ does not fix it.
 
 Preconditions:
 
-- dummy `v<semver>` is deployed and active on `sbx.ikigenba.dev`, as in `S7`.
+- dummy is deployed and active on `sbx.ikigenba.dev`, as in `S7`.
 - The request carries no credential.
 
 Postconditions:
@@ -1597,7 +1599,7 @@ holding the same object encoded compactly, as in `A model lists the widgets`.
 
 Preconditions:
 
-- dummy `v<semver>` is deployed and active on the host, serving on
+- dummy is deployed and active on the host, serving on
   `/run/ikigenba/dummy.sock`.
 - The host's services file lists dummy with `"mcp": true` and the socket
   `/run/ikigenba/dummy.sock`, and lists the telemetry service, which takes

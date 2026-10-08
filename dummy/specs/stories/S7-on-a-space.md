@@ -36,31 +36,33 @@ content-type: text/html; charset=utf-8
 
 Status 200. The body is an HTML page whose banner's profile link is titled
 with the email address of the caller the gate authenticated, whose visible
-text carries a table of the widgets that exist, and whose footer reads
-`dummy v<semver>`, the version the deployed binary's `dummy --version`
-prints (`S1`), the same one `space status` reports for dummy. Its stylesheet is `https://dummy.sbx.ikigenba.dev/_appkit/theme.css`,
-and the fonts that stylesheet loads are under the same
-`https://dummy.sbx.ikigenba.dev/_appkit/` (`S8-assets.md`): a browser showing
-the panel requests its style from dummy's own host and from no other origin,
-Google Fonts included. Its button feedback script is
-`https://dummy.sbx.ikigenba.dev/_appkit/feedback.js` and its icon
-`https://dummy.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host. In
-the banner, the profile link leads to
-`https://auth.sbx.ikigenba.dev/`, their profile in auth on the same space, and
-the `Sign out` button is in a form that POSTs to
-`https://auth.sbx.ikigenba.dev/logout` (`S3`); submitting it signs the visitor
-out of the space, as auth's stories tell.
+text carries a table of the widgets that exist, and whose footer reads `dummy
+<display>`, where `<display>` is whatever display string the host's
+environment gives dummy: the string the deployed binary's `dummy --version`
+prints under that same environment (`S1`), the same one `space status` reports
+for dummy, and empty when the host sets neither `IKIGENBA_COMMIT` nor
+`IKIGENBA_RELEASE`. Its stylesheet is
+`https://dummy.sbx.ikigenba.dev/_appkit/theme.css`, and the fonts that
+stylesheet loads are under the same `https://dummy.sbx.ikigenba.dev/_appkit/`
+(`S8-assets.md`): a browser showing the panel requests its style from dummy's
+own host and from no other origin, Google Fonts included. Its button feedback
+script is `https://dummy.sbx.ikigenba.dev/_appkit/feedback.js` and its icon
+`https://dummy.sbx.ikigenba.dev/_appkit/favicon.svg`, both from the same host.
+In the banner, the profile link leads to `https://auth.sbx.ikigenba.dev/`,
+their profile in auth on the same space, and the `Sign out` button is in a
+form that POSTs to `https://auth.sbx.ikigenba.dev/logout` (`S3`); submitting
+it signs the visitor out of the space, as auth's stories tell.
 
 Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance
   is `running`, and `opsctl` is installed on it.
-- A tag `dummy/v<semver>` points at the commit `devctl build dummy` was run
-  at, and it wrote `dummy/dist/dummy-v<semver>.tar.xz`.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev dummy/dist/dummy-v<semver>.tar.xz`
+- `devctl build dummy`, run in a clean tree at the commit `<sha>`, wrote
+  `dummy/dist/dummy-<sha>.tar.xz` (`S6-package.md`). No tag is needed.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev dummy/dist/dummy-<sha>.tar.xz`
   exited 0.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
-  `dummy v<semver> active active -`.
+  `dummy <display> active active -`, `<display>` being the string above.
 - The space routes `dummy.sbx.ikigenba.dev` through its authenticating gate:
   the gate admits the request and sets `X-User-Id` and `X-User-Email` on what
   it passes to dummy, and refuses a request it cannot authenticate before
@@ -106,10 +108,10 @@ launcher, like the style, needs nothing from any other origin.
 
 Preconditions:
 
-- Everything the story above requires holds: dummy `v<semver>` is deployed
+- Everything the story above requires holds: dummy is deployed
   and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate
   accepts.
-- `dummy/dist/dummy-v<semver>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
+- `dummy/dist/dummy-<sha>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
 - The host sets `IKIGENBA_SERVICES` in dummy's environment to the path of
   its services file, and that file lists dummy with its icon.
 
