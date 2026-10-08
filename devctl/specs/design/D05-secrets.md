@@ -17,10 +17,13 @@ operand, then connects and confirms the space exists with `cloud.LookupSpace`
 before any value is looked up or written; it gathers every required value
 before writing any object. List reads the root file and connects, but never
 opens the app list and never looks the instance up, so retained objects can be
-listed after a space is destroyed. Rotation is a push followed by a deploy of
-the artifact the space already runs; the deploy's own step lines, including its
-`upload` line, are D09's. The secrets commands print no step line of their
-own: only the lines the stories show.
+listed after a space is destroyed. Rotation is a push followed by a deploy:
+of the release the space runs, which activates it again and so writes every
+app's environment afresh, or, while the per-app form remains, of the app file
+it runs. The deploy's own step lines are D09's. `space create` pushes through
+the same `Push`, for the apps of the release it deploys rather than the apps
+of the developer's working tree (D07). The secrets commands print no step
+line of their own: only the lines the stories show.
 
 ## REQUIREMENTS
 

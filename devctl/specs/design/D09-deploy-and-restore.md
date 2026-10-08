@@ -1,6 +1,29 @@
 # D09-deploy-and-restore
 
-Deploy puts one file that the per-app build wrote on one space. It validates the file
+Deploy takes one of two forms, which coexist until the per-app form goes
+away, told apart by the shape of the argument after `<space>`: one that ends
+in `.tar.xz` is a file and the per-app form; any other is a commit, a full
+sha, a shorter sha or a tag, and the release form. Tags such as
+`auth/v0.18.2` carry a slash, so a slash decides nothing. Both forms share
+the grammar, the help and the usage errors; everything else differs.
+
+The release form puts one release of the whole suite on one space, in a fixed
+order: resolve, find the space, build, check secrets, copy, unpack, activate.
+It resolves the argument in the local repository with `release.Resolve`
+(D16), before anything else is looked up, so a branch, `HEAD` or an unknown
+tag is refused without a cloud call. It then reads the root file, parses the
+space and finds it running, so a deploy that could not reach a host builds
+nothing. It builds the release with `build.Suite` (D08), the same build `devctl
+build <sha>` runs, into `dist/<sha>.tar.xz`. It checks the space's secrets
+object of every app the release holds against the names its manifest declares,
+in name order, before anything reaches the host. Then `release.Put` copies
+the tarball to the host over ssh and unpacks it into
+`/opt/ikigenba/releases/<sha>/`, and `release.Activate` has that release's
+own opsctl activate it, with the tag as typed as the label and none for a sha;
+opsctl's stdout is copied as it is written. Nothing is uploaded to the
+bucket, and no store of built releases exists.
+
+The per-app form puts one file that the per-app build wrote on one space. It validates the file
 locally first (the name is `<app>-<sha>.tar.xz`, the sha the full commit sha
 build ran at in 40 lowercase hex digits, and the archive holds
 `bin/<app>` and `etc/manifest.toml`), reads the root file to learn the root
@@ -14,9 +37,11 @@ so the S3 adapter addresses it path-style; that is D03's obligation
 a different space: any file the per-app build wrote goes to any space, whatever commit or
 branch it was built at, and nothing about the target or the session restricts
 what is accepted. Deploy neither sets nor checks the version the app's binary
-reports; `space status` relays whatever opsctl says.
+reports; `space status` relays whatever opsctl says. A file whose name is a
+bare 40-digit sha is the suite build's release, not an app file, and is
+refused with the command that deploys it.
 
-The checkout is used for one thing: the root file. Deploy never looks the app
+The per-app form uses the checkout for one thing: the root file. It never looks the app
 up in the checkout, never reads a manifest from it, and never inspects a git
 ref beyond the one `checkout.ReadRootFile` needs to find the checkout root;
 the file operand resolves against the working directory, not the checkout
@@ -46,8 +71,6 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 ## REQUIREMENTS
 
-- R-O0KZ-IOYR: Package `internal/deploy` MUST export `Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error`, and `Run` MUST take no writer other than `stdout`.
-
 - R-YR44-RQHN: Package `internal/deploy` MUST export a `UsageError` struct whose fields are exactly `Message string` and `Help string`, with the methods `Error() string`, returning `Message`, `Detail() string`, returning `see '<Help>' for usage` when `Help` is not empty and the empty string when `Help` is empty, and `ExitCode() int`, returning 2.
 
 - R-YSC1-5I8C: Package `internal/deploy` MUST export a `NoFileError` struct whose only field is `Path string`, with the methods `Error() string`, returning `no such file '<Path>'`, and `ExitCode() int`, returning 2.
@@ -55,14 +78,6 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 - R-O1SV-WGPG: Package `internal/deploy` MUST export a `MissingSecretsError` struct whose fields are exactly `App string`, `Space string`, and `Names []string`, with the methods `Error() string`, returning `<App>: secrets missing ` followed by the elements of `Names` joined by `,` with no space, `Detail() string`, returning `run 'devctl secrets push <Space> <App>'`, and `ExitCode() int`, returning 2.
 
 - R-O48O-O06U: When `--help` or `-h` appears anywhere among the arguments `deploy.Run` is given, `deploy.Run` MUST write the `deploy` usage text to `stdout`, return a nil error, call `deps.Cloud` not at all, and pass no `seam.Cmd` to `deps.Exec`, so that it neither finds a checkout nor reads the root file, verified at least by `devctl deploy --help` and `devctl deploy sbx1 crm/dist/crm-v0.1.0.tar.xz --help` each printing that text to stdout with empty stderr and exit 0 with `Deps.Dir` set to a directory that is not inside a git checkout.
-
-- R-O5GL-1RXJ: `deploy` MUST take exactly two operands, `<space>` then `<file>`, in that order, and MUST accept no option other than `--help` and `-h`.
-
-- R-O6OH-FJO8: `deploy` invoked with fewer than two operands MUST write exactly the three lines `devctl: deploy needs <space> and <file>`, an empty line, and `see 'devctl deploy --help' for usage` to stderr, write nothing to stdout, call `deps.Cloud` not at all, pass no `seam.Cmd` to `deps.Exec`, and exit 2, by returning a `*UsageError` whose `Message` is that first line without its `devctl: ` prefix and whose `Help` is `devctl deploy --help`, verified at least by `devctl deploy sbx1` and `devctl deploy`.
-
-- R-O7WD-TBEX: `deploy` invoked with more than two operands MUST write `devctl: deploy takes only <space> and <file>`, and `deploy` invoked with an argument that begins with `-` and is neither `--help` nor `-h` MUST write `devctl: unknown option '<option>'`, as the first of exactly three lines followed by an empty line and `see 'devctl deploy --help' for usage` on stderr, write nothing to stdout, pass no `seam.Cmd` to `deps.Exec`, and exit 2, each by returning a `*UsageError` whose `Message` is that first line without its `devctl: ` prefix and whose `Help` is `devctl deploy --help`.
-
-- R-O94A-735M: `cli.Run` MUST dispatch the command `deploy` to `deploy.Run`, passing the arguments that follow `deploy`, the `stdout` writer `cli.Run` was given, and `deps`, and MUST return 0 when `deploy.Run` returns a nil error.
 
 - R-08GB-YDTQ: `deploy` MUST resolve the `<file>` operand under `Deps.Dir` when it is a relative path and use it unchanged when it is absolute, MUST return a `*NoFileError` whose `Path` is the operand exactly as given when no regular file exists there, and MUST call `deps.Cloud` not at all whenever the `file` step fails; verified at least by reproducing the single stderr line `devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'` with empty stdout, exit 2, and no call to a recording fake `Deps.Cloud`.
 
@@ -76,36 +91,11 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 - R-F81U-8G73: Package `internal/deploy` MUST export a `ProcessError` struct whose fields are exactly `Label string`, `Status int`, and `Stderr string`, with the methods `Error() string`, returning `<Label>: exit status <Status>`, `Detail() string`, returning `seam.QuoteOutput(Stderr)`, and `ExitCode() int`, returning 1.
 
-- R-5SVE-BZS9: `devctl deploy --help` and `devctl deploy -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
-
-  ```
-  Usage: devctl deploy <space> <file>
-
-  Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
-  space's deploy/ prefix in the bucket and have opsctl on the space install it
-  from there. The app and commit sha (40 lowercase hex digits) are read from the
-  file name.
-  ```
-
-- R-FAHM-ZZOH: Deploy MUST perform and report exactly `file`, `secrets`, `upload`, and `install` in that order, stop on the first failure, and leave completed uploads in place on install failure.
-
-- R-5U3A-PRIY: Deploy MUST validate existence of a regular file before parsing its basename with `appref.ParseFile`; a name `ParseFile` refuses MUST yield a `FileError` with reason `name is not <app>-<sha>.tar.xz`, empty stdout, no archive process or cloud call, and exit 2, verified at least for `notes.tar.xz`, `crm-latest.tar.xz`, `crm-v0.1.0.tar.xz`, `crm-4b22285.tar.xz`, and `crm-4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz`, each an existing file.
-
-- R-5VB7-3J9N: The app and sha deployed MUST come from the file's basename; the archive MUST contain `bin/<app>` and a manifest whose app matches that app, a mismatch producing a `*FileError` whose `Reason` is `manifest app does not match file name`; and every check of the `file` step MUST complete, and its line be written, before `deploy` calls `checkout.ReadRootFile` or `deps.Cloud`, verified at least by `devctl deploy sbx1 crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz` with no such file and `Deps.Dir` set to a directory that is not inside a git checkout writing the single stderr line `devctl: no such file 'crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz'`, exiting 2, and passing no `seam.Cmd` to `deps.Exec`, and by `devctl deploy sbx1 notes.tar.xz` under the same `Deps.Dir` writing the single stderr line `devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<sha>.tar.xz`, exiting 2, and passing no `seam.Cmd` to `deps.Exec`.
-
 - R-5WJ3-HB0C: After the `file` step's line is written and before the `secrets` step, `deploy` MUST call `checkout.ReadRootFile(ctx, deps)` and return its error unchanged, MUST then obtain the space by `spaceref.Parse` as R-ST4K-APZN requires, MUST then call `cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)` with the `Domain` and `Region` of the `RootFile` it read and return its error unchanged, MUST then call `cloud.LookupSpace` with the `EC2` of the session's `Clients`, `root.Domain`, and the space's `Domain` and return its error unchanged, and MUST return a `*space.NotRunningError` whose `Domain` is the space's `Domain` and whose `State` is the found `cloud.Space`'s `State` when that state is not `cloud.StateRunning`; in each failing case it MUST pass no further `seam.Cmd` to `deps.Exec` and call no S3 method; verified at least by reproducing the stdout line `file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)` with the single stderr line `devctl: no space at 'gone.ikigenba.dev'` and exit 1 for the operand `gone`, and with the single stderr line `devctl: 'sbx2.ikigenba.dev' is stopped` and exit 1 for the operand `sbx2` whose instance is `stopped`, each in a temporary checkout whose root file holds `{"domain": "ikigenba.dev", "region": "us-east-2"}`.
-
-- R-5XQZ-V2R1: `deploy` MUST obtain nothing from the checkout but the root file: it MUST NOT call `(*Checkout).Apps` or `(*Checkout).App`, MUST NOT read any file under the checkout root other than the root file, and MUST pass to `deps.Exec` no `seam.Cmd` beyond the two `tar` commands of R-Z9EM-IAM2, those `checkout.ReadRootFile` passes, and the one `(host.Host).Sudo` call of the `install` step; verified at least by a successful `devctl deploy sbx1 crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` in a temporary checkout that holds a root file and no `crm` directory.
-
-- R-5YYW-8UHQ: `deploy` MUST inspect no git ref other than the one `checkout.ReadRootFile` needs to find the checkout root, and MUST enforce no restriction based on the target space, the file's sha, or the session's `AccountID`, so that the same file deploys to any space; and the sha MUST be carried byte for byte in the `file` step's line, the object key, and the `s3://` URI, verified at least by `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` deployed to `sbx1` and then to `staging` from the same working directory reproducing `file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)` both times, `upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` with the remote argument `s3://ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, and then `upload: ok (-> ikigenba.dev/staging/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` with the remote argument `s3://ikigenba.dev/staging/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`.
-
-- R-0HFK-QF61: `deploy` MUST call `secrets.Names` exactly once, with the `SSM` of the session's `Clients`, the space's `Domain`, and the app, and when every name of the decoded `Manifest.Secrets` is among the names it returned MUST write the `secrets` step with the decimal count of the distinct names of `Manifest.Secrets` followed by ` keys` as its detail, ignoring every name `Names` returned that `Manifest.Secrets` does not hold; verified at least by reproducing `secrets: ok (3 keys)` for a manifest of three names against an object holding those three and a fourth, and `secrets: ok (2 keys)` for a manifest of two.
 
 - R-606S-MM8F: When a name of the decoded `Manifest.Secrets` is not among the names `secrets.Names` returned, `deploy` MUST return a `*MissingSecretsError` whose `App` is the app, whose `Space` is the space's `Label`, and whose `Names` are those absent names sorted ascending, and MUST write no `secrets` step line and perform no upload or host operation; verified at least by reproducing the stdout line `file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)`, the stderr lines `devctl: crm: secrets missing CRM_ORG,CRM_WEBHOOK_SECRET`, an empty line, and `run 'devctl secrets push sbx1 crm'`, and exit 2, both for the operand `sbx1` and for the operand `sbx1.ikigenba.dev`.
 
 - R-OIVH-9936: Package `internal/deploy` MUST export `ObjectKey(label, filename string) string`, returning `<label>/deploy/<filename>`, verified at least by `ObjectKey("sbx1", "crm-v0.1.0.tar.xz")` being `sbx1/deploy/crm-v0.1.0.tar.xz`.
-
-- R-62ML-E5PT: After the `secrets` step, `deploy` MUST upload the file's complete bytes through the `PutObject` of the session's `Clients.S3` exactly once, with the root file's `Domain` as the bucket, `ObjectKey` of the space's `Label` and the file's basename as the key, and the file's byte length as the size, and MUST then write the `upload` step with `-> <bucket>/<key>` as its detail; no byte of the file MUST travel over ssh; verified at least by reproducing `upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` with a fake `S3` that records the bucket `ikigenba.dev`, the key `sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, and a body equal to the file.
 
 - R-FHT1-AM4N: After upload, deploy MUST invoke `Host.Sudo` with step `install` and arguments `opsctl`, `install`, and `s3://<bucket>/<key>`; success MUST report `install: ok (opsctl installed <app>)`, discard successful remote output, and exit 0; failure MUST return the host error unchanged.
 
@@ -148,4 +138,62 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 - R-OWAD-GQ8T: The `restore` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, and its line MUST be written with `space.Step`; verified at least by `devctl restore sbx1 crm` reproducing the single stdout line `restore: ok (opsctl restore crm)` with a fake `ssh` process that exits 0, and by `devctl restore sbx1 crm --at 2026-09-11T18:00:00Z` reproducing `restore: ok (opsctl restore crm --at 2026-09-11T18:00:00Z)` with a recorded remote argument vector of exactly `sudo`, `opsctl`, `restore`, `crm`, `--at`, and `2026-09-11T18:00:00Z`, each with empty stderr and exit 0.
 
-- R-63UH-RXGI: Package `internal/deploy` MUST export a `FileError` struct whose fields are exactly `Path string` and `Reason string`, with the methods `Error() string`, returning `'<Path>' is not a file build wrote: <Reason>`, and `ExitCode() int`, returning 2, verified at least by reproducing `'notes.tar.xz' is not a file build wrote: name is not <app>-<sha>.tar.xz`.
+- R-VOSP-G8A5: Package `internal/deploy` MUST export `Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error`, and `Run` MUST take no writer other than `stdout`.
+
+- R-VQ0L-U00U: `cli.Run` MUST dispatch the command `deploy` to `deploy.Run`, passing the arguments that follow `deploy`, as `version` the version string that `devctl --version` prints without its newline, the `stdout` writer `cli.Run` was given, and `deps`, and MUST return 0 when `deploy.Run` returns a nil error.
+
+- R-VR8I-7RRJ: `deploy` MUST take exactly two operands, `<space>` and then either `<sha|tag>` or `<file>`, and MUST accept no option other than `--help` and `-h`; a second operand that ends in `.tar.xz` MUST be a `<file>` and select the per-app form, and any other second operand MUST be a `<sha|tag>` and select the release form, whether or not it holds a `/`; verified at least by `devctl deploy sbx1 auth/v0.18.2` and `devctl deploy sbx1 4b22285` taking the release form and `devctl deploy sbx1 notes.tar.xz` the per-app form.
+
+- R-VSGE-LJI8: `deploy` invoked with fewer than two operands MUST write exactly the three lines `devctl: deploy needs <space> and <sha|tag> or <file>`, an empty line, and `see 'devctl deploy --help' for usage` to stderr, write nothing to stdout, call `deps.Cloud` not at all, pass no `seam.Cmd` to `deps.Exec`, and exit 2, by returning a `*UsageError` whose `Message` is that first line without its `devctl: ` prefix and whose `Help` is `devctl deploy --help`, verified at least by `devctl deploy sbx1` and `devctl deploy`.
+
+- R-VTOA-ZB8X: `deploy` invoked with more than two operands MUST write `devctl: deploy takes only <space> and one <sha|tag> or <file>`, and `deploy` invoked with an argument that begins with `-` and is neither `--help` nor `-h` MUST write `devctl: unknown option '<option>'`, as the first of exactly three lines followed by an empty line and `see 'devctl deploy --help' for usage` on stderr, write nothing to stdout, pass no `seam.Cmd` to `deps.Exec`, and exit 2, each by returning a `*UsageError` whose `Message` is that first line without its `devctl: ` prefix and whose `Help` is `devctl deploy --help`.
+
+- R-VUW7-D2ZM: `devctl deploy --help` and `devctl deploy -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+
+  ```
+  Usage: devctl deploy <space> <sha|tag>
+         devctl deploy <space> <file>
+
+  Build the suite at <sha|tag> as build does, check that the space holds every
+  secret the release's manifests declare, copy dist/<sha>.tar.xz to the space's
+  host, unpack it into /opt/ikigenba/releases/<sha>/, and have that release's
+  opsctl activate it. A tag is the release's label, exactly as typed; a sha
+  gives none.
+
+  Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
+  space's deploy/ prefix in the bucket and have opsctl on the space install it
+  from there. The app and commit sha (40 lowercase hex digits) are read from the
+  file name.
+
+  An argument that ends in .tar.xz is a <file>; any other is a <sha|tag>.
+  ```
+
+- R-VW43-QUQB: Package `internal/deploy` MUST export a `FileError` struct whose fields are exactly `Path string` and `Reason string`, with the methods `Error() string`, returning `'<Path>' is not an app file build wrote: <Reason>`, and `ExitCode() int`, returning 2, verified at least by reproducing `'notes.tar.xz' is not an app file build wrote: name is not <app>-<sha>.tar.xz`.
+
+- R-VXC0-4MH0: The app and sha the per-app form deploys MUST come from the file's basename; the archive MUST contain `bin/<app>` and a manifest whose app matches that app, a mismatch producing a `*FileError` whose `Reason` is `manifest app does not match file name`; and every check of the `file` step MUST complete, and its line be written, before `deploy` calls `checkout.ReadRootFile` or `deps.Cloud`, verified at least by `devctl deploy sbx1 crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz` with no such file and `Deps.Dir` set to a directory that is not inside a git checkout writing the single stderr line `devctl: no such file 'crm/dist/crm-9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz'`, exiting 2, and passing no `seam.Cmd` to `deps.Exec`, and by `devctl deploy sbx1 notes.tar.xz` under the same `Deps.Dir` writing the single stderr line `devctl: 'notes.tar.xz' is not an app file build wrote: name is not <app>-<sha>.tar.xz`, exiting 2, and passing no `seam.Cmd` to `deps.Exec`.
+
+- R-VYJW-IE7P: Package `internal/deploy` MUST export a `ReleaseFileError` struct whose fields are exactly `Path string`, `Space string`, and `SHA string`, with the methods `Error() string`, returning `'<Path>' is a release, not an app file`, `Detail() string`, returning `run 'devctl deploy <Space> <SHA>'`, and `ExitCode() int`, returning 2.
+
+- R-VZRS-W5YE: When a regular file exists at the per-app form's `<file>` operand and that operand's basename is exactly 40 bytes each an ASCII digit or a lowercase letter `a` to `f` followed by `.tar.xz`, `deploy` MUST return a `*ReleaseFileError` whose `Path` is the operand as given, whose `Space` is the `<space>` operand as typed, and whose `SHA` is those 40 bytes, before `appref.ParseFile` judges the name, passing no `seam.Cmd` to `deps.Exec` and calling `deps.Cloud` not at all; verified at least through `cli.Run`, with `Deps.Dir` set to a directory that is not inside a git checkout and holds that file, by `devctl deploy sbx1 dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` writing to stderr exactly `devctl: 'dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz' is a release, not an app file`, an empty line, and `run 'devctl deploy sbx1 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a'`, with empty stdout and exit 2, and by the same with the operand `sbx1.ikigenba.dev` naming the space as typed; and by the same operand with no such file giving the `*NoFileError` line instead.
+
+- R-W0ZP-9XP3: The per-app form of `deploy` MUST perform and report exactly `file`, `secrets`, `upload`, and `install` in that order, stop on the first failure, and leave completed uploads in place on install failure.
+
+- R-W27L-NPFS: The per-app form of `deploy` MUST obtain nothing from the checkout but the root file: it MUST NOT call `(*Checkout).Apps` or `(*Checkout).App`, MUST NOT read any file under the checkout root other than the root file, and MUST pass to `deps.Exec` no `seam.Cmd` beyond the two `tar` commands of R-Z9EM-IAM2, those `checkout.ReadRootFile` passes, and the one `(host.Host).Sudo` call of the `install` step; verified at least by a successful `devctl deploy sbx1 crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` in a temporary checkout that holds a root file and no `crm` directory.
+
+- R-W3FI-1H6H: The per-app form of `deploy` MUST inspect no git ref other than the one `checkout.ReadRootFile` needs to find the checkout root, and MUST enforce no restriction based on the target space, the file's sha, or the session's `AccountID`, so that the same file deploys to any space; and the sha MUST be carried byte for byte in the `file` step's line, the object key, and the `s3://` URI, verified at least by `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` deployed to `sbx1` and then to `staging` from the same working directory reproducing `file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)` both times, `upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` with the remote argument `s3://ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, and then `upload: ok (-> ikigenba.dev/staging/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` with the remote argument `s3://ikigenba.dev/staging/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`.
+
+- R-W4NE-F8X6: The per-app form of `deploy` MUST call `secrets.Names` exactly once, with the `SSM` of the session's `Clients`, the space's `Domain`, and the app, and when every name of the decoded `Manifest.Secrets` is among the names it returned MUST write the `secrets` step with the decimal count of the distinct names of `Manifest.Secrets` followed by ` keys` as its detail, ignoring every name `Names` returned that `Manifest.Secrets` does not hold; verified at least by reproducing `secrets: ok (3 keys)` for a manifest of three names against an object holding those three and a fourth, and `secrets: ok (2 keys)` for a manifest of two.
+
+- R-W737-6SEK: After the `secrets` step, the per-app form of `deploy` MUST upload the file's complete bytes through the `PutObject` of the session's `Clients.S3` exactly once, with the root file's `Domain` as the bucket, `ObjectKey` of the space's `Label` and the file's basename as the key, and the file's byte length as the size, and MUST then write the `upload` step with `-> <bucket>/<key>` as its detail; no byte of the file MUST travel over ssh; verified at least by reproducing `upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` with a fake `S3` that records the bucket `ikigenba.dev`, the key `sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, and a body equal to the file.
+
+- R-W8B3-KK59: After its arguments are accepted, the release form of `deploy` MUST call `checkout.Open(ctx, deps)` and return its error unchanged; MUST then call `release.Resolve` with that checkout and the second operand as typed and return its error unchanged; MUST then call `(*Checkout).ReadRootFile` on that checkout and return its error unchanged; MUST then obtain the space by `spaceref.Parse` as R-ST4K-APZN requires, call `cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)` with the `Domain` and `Region` of the `RootFile` it read, call `cloud.LookupSpace` with the `EC2` of the session's `Clients`, `root.Domain`, and the space's `Domain`, returning each one's error unchanged, and return a `*space.NotRunningError` whose `Domain` is the space's `Domain` and whose `State` is the found `cloud.Space`'s `State` when that state is not `cloud.StateRunning`; when any of these fails it MUST write nothing to stdout, call `build.Suite` not at all, call no method of the session's `SSM` or `S3`, and pass no further `seam.Cmd` to `deps.Exec` or `deps.Stream`, and when `release.Resolve` fails it MUST call `deps.Cloud` not at all; verified at least through `cli.Run`, in a temporary checkout whose root file holds `{"domain": "ikigenba.dev", "region": "us-east-2"}`, by `devctl deploy sbx1 r9` with a fake `git` holding no tag `r9` and `devctl deploy sbx1 main` with one that resolves `main` as a branch writing the single stderr lines `devctl: 'r9' is not a commit` and `devctl: 'main' is not a commit` with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call; and by `devctl deploy gone r1` writing `devctl: no space at 'gone.ikigenba.dev'` and `devctl deploy sbx2 r1`, whose instance is `stopped`, writing `devctl: 'sbx2.ikigenba.dev' is stopped`, each with empty stdout, exit 1, no `git worktree add`, no `go` and no `ssh` or `scp` `seam.Cmd`.
+
+- R-W9IZ-YBVY: Once the space is found running, the release form of `deploy` MUST call `build.Suite(ctx, c, sha, version)` exactly once, with that checkout, the sha `release.Resolve` returned, and the `version` `Run` was given; when it returns an error `deploy` MUST return that error unchanged, write nothing to stdout, call no method of the session's `SSM`, and pass no `ssh` or `scp` `seam.Cmd`; on success it MUST write, through `space.Step`, `build: ok (<label>, <File>)` when the label `release.Resolve` returned is not empty and `build: ok (<File>)` when it is, `<File>` being the returned `Release`'s `File`; verified at least by reproducing `build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` for `devctl deploy sbx1 r1` and `build: ok (dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` for `devctl deploy sbx1 4b22285`, and through `cli.Run` by an app `dashboard` whose fake compile exits 1 with the two stderr lines `# github.com/ikigenba/ikigenba/dashboard/cmd/dashboard` and `cmd/dashboard/main.go:41:2: undefined: render` writing nothing to stdout and to stderr exactly `devctl: build dashboard: exit status 1`, an empty line, and those two lines each prefixed `> `, with exit 1.
+
+- R-WAQW-C3MN: After the `build` line, the release form of `deploy` MUST check the space's secrets against the returned `Release`'s `Manifests`, in the order given: for each manifest whose `Secrets` hold at least one name, exactly one call to `secrets.Names` with the `SSM` of the session's `Clients`, the space's `Domain`, and that manifest's `App`, and no call for a manifest with none; at the first manifest one of whose names `Names` did not return, it MUST return a `*MissingSecretsError` whose `App` is that manifest's `App`, whose `Space` is the space's `Label`, and whose `Names` are its absent names sorted ascending, making no later `Names` call, writing no `secrets` line, and passing no `ssh` or `scp` `seam.Cmd`; when every name is present it MUST write, through `space.Step`, `secrets: ok (<n> apps, <k> keys)`, `<n>` being the decimal count of the manifests and `<k>` the sum over them of the counts of their distinct names, ignoring every name an object holds that no manifest declares; verified at least by reproducing `secrets: ok (8 apps, 2 keys)` for eight apps of which only `auth` declares `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` against an object holding those and a third, with exactly one `Names` call; and through `cli.Run` by `/sbx1.ikigenba.dev/auth` holding only `GOOGLE_CLIENT_ID` giving the stdout line `build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)` and the stderr lines `devctl: auth: secrets missing GOOGLE_CLIENT_SECRET`, an empty line, and `run 'devctl secrets push sbx1 auth'`, with exit 2; and by two apps each missing a name reporting the first in name order.
+
+- R-WBYS-PVDC: After the `secrets` line, the release form of `deploy` MUST call `release.Put(ctx, h, stdout, file, sha)` exactly once, where `h` is a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps` and `file` is the checkout's `Path` of the returned `Release`'s `File`, and then, only when `Put` returned nil, `release.Activate(ctx, h, stdout, sha, label)` exactly once with the label `release.Resolve` returned; it MUST return either call's error unchanged and write nothing to stdout of its own after the `secrets` line; verified at least through `cli.Run` by `devctl deploy sbx1 r1` reproducing the lines `build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)`, `secrets: ok (8 apps, 2 keys)`, `copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)`, and `unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)` followed by exactly the arbitrary standard output of the fake `activate` process, with empty stderr and exit 0, and by `devctl deploy sbx1 4b22285` running `activate` with the sha alone.
+
+- R-WD6P-3N41: The release form of `deploy` MUST call no method of the session's `S3`, MUST call no method of the session's `SSM` other than the `GetParameter` calls `secrets.Names` makes, MUST change nothing in the account, and MUST pass to `deps.Exec` and `deps.Stream` no `seam.Cmd` other than those of `checkout.Open`, `release.Resolve`, `build.Suite`, `release.Put` and `release.Activate`, so that no file is uploaded to the bucket and no tag, branch, `HEAD` or working-tree file of the checkout outside `dist/` changes; verified at least by a successful `devctl deploy sbx1 r1` with a fake `S3` that fails on every method.
+
+- R-WEEL-HEUQ: The per-app form of `deploy` MUST validate existence of a regular file before judging its basename; a name that is not the suite build's release name of R-VZRS-W5YE and that `appref.ParseFile` refuses MUST yield a `FileError` with reason `name is not <app>-<sha>.tar.xz`, empty stdout, no archive process or cloud call, and exit 2, verified at least for `notes.tar.xz`, `crm-latest.tar.xz`, `crm-v0.1.0.tar.xz`, `crm-4b22285.tar.xz`, `crm-4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz`, the uppercase `4B22285F0C1D9E2A7B6C5D4E3F2A1B0C9D8E7F6A.tar.xz` and the 39-digit `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6.tar.xz`, each an existing file.

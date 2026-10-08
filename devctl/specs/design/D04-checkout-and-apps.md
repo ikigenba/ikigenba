@@ -31,6 +31,13 @@ worktree at a given directory. A `Checkout` whose `Root` is such a worktree
 is an ordinary checkout of that commit, and `Apps` on it discovers the apps
 the commit holds.
 
+For a space created without a named release (D07) the checkout offers one
+more: `NewestRelease` lists the local repository's tags, fetching nothing,
+and picks the newest release tag, a tag named exactly `r<N>` with the highest
+`N`, so `r10` is newer than `r9` and a release candidate such as `r3-rc1`, or
+any tag that is not exactly `r<N>`, is never chosen. Finding none is a
+negative answer, not an error.
+
 The checkout is also where the platform is stated. devctl has no
 configuration of its own: the root domain and its region live in the root
 file, `infra/terraform.tfvars.json` at the checkout root, the same file
@@ -205,3 +212,7 @@ looked up.
 - R-F4F7-NG4U: `(*Checkout).AddWorktree` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `worktree`, `add`, `--detach`, `dir`, and `sha`, and whose `Dir` is `Root`; `(*Checkout).RemoveWorktree` MUST pass exactly one, whose `Path` is `git`, whose `Args` are exactly `worktree`, `remove`, `--force`, and `dir`, and whose `Dir` is `Root`; each MUST return nil when its process exits 0.
 
 - R-F5N4-17VJ: `AddWorktree` and `RemoveWorktree` MUST return a `*GitError` carrying the command arguments, exit status and stderr for any non-zero process exit, and an error that `errors.As` does not match to a `*GitError`, whose message contains `git worktree`, and that wraps the runner error when `Deps.Exec` cannot run the process.
+
+- R-ULRX-7KJX: Package `internal/checkout` MUST export the method `NewestRelease(ctx context.Context) (tag string, ok bool, err error)` on `*Checkout`.
+
+- R-UMZT-LCAM: `(*Checkout).NewestRelease` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `tag`, `--list`, and `--no-column`, and whose `Dir` is `Root`; among the lines of its standard output it MUST consider only those that are exactly `r` followed by one or more ASCII digits whose first digit is not `0` unless it is the only digit, and when that process exits 0 MUST return the one whose digits denote the greatest number, compared as a number of any length without conversion to a fixed-size integer, true, and a nil error, and the empty string, false, and a nil error when no line qualifies; it MUST return a `*GitError` carrying the command arguments, exit status and stderr for a non-zero exit, and an error that `errors.As` does not match to a `*GitError`, whose message contains `git tag` and that wraps the runner error, when `Deps.Exec` cannot run the process; it MUST fetch nothing and change no ref; verified at least by output lines `auth/v0.18.2`, `r1`, `r10`, `r2`, `r3-rc1`, `r9x`, `R11`, `r01`, `rr5` and `v1.0.0` giving `r10`, by `r9` and `r100000000000000000000` giving the latter, by `r0` alone giving `r0`, and by `r1-rc1` and `auth/v0.18.2` alone, and by empty output, each giving false.

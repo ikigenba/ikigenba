@@ -45,6 +45,14 @@ rest of `etc/` and any `share/`, `libexec/` and `lib/`, and `opsctl/bin/opsctl`.
 As in the per-app build, an earlier file of the same name survives any
 failure.
 
+`deploy` of a release (D09) and `space create` (D07) build the release the
+same way, without re-running the CLI: `Suite` is the suite build for an
+already resolved sha, called as a function on the caller's checkout. It
+prints nothing, so each caller writes its own `build` step line, and it
+returns what the callers need next: the sha, the file, and the manifests of
+the apps it built, which are what the release's secrets are checked or pushed
+against.
+
 ## REQUIREMENTS
 
 - R-F6V0-EZM8: Package `internal/build` MUST export `Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error`, and `Run` MUST take no writer other than `stdout` and no profile name.
@@ -155,3 +163,7 @@ failure.
 - R-GB3P-1F35: When the suite build's `tar` `seam.Cmd` exits non-zero, the suite build MUST return a `*ProcessError` carrying that exit status and stderr, write nothing to `stdout`, still call `(*Checkout).RemoveWorktree`, and leave an earlier file at `ReleaseFile(<sha>)` byte-identical, so that `cli.Run` exits 1.
 
 - R-FS1R-KWJT: When the suite build's `(*Checkout).ResolveCommit` returns a non-nil error, `build` MUST return that error unchanged and pass no further `seam.Cmd` to `deps.Exec`, so that `cli.Run` writes it as a single stderr line, writes nothing to stdout, and exits 1, as R-70T2-JC34 does for a runner error.
+
+- R-VL50-AX22: Package `internal/build` MUST export a `Release` struct whose fields are exactly `SHA string`, `File string`, and `Manifests []checkout.Manifest`, and `Suite(ctx context.Context, c *checkout.Checkout, sha, version string) (Release, error)`.
+
+- R-VNKT-2GJG: `build.Suite` MUST perform the suite build of the full commit sha `sha` in the checkout `c`, with `c.Deps` as `deps` and `version` as the `version` that `release.json` records, so that every requirement of this design about the suite build holds for it as it holds for `devctl build <sha>`, except that `Suite` passes no `seam.Cmd` of `checkout.Open` or `(*Checkout).ResolveCommit`, writes to no stdout, and returns its failures to its caller instead of through `cli.Run`; on success it MUST return a `Release` whose `SHA` is `sha`, whose `File` is `ReleaseFile(sha)`, relative to the checkout root, and whose `Manifests` hold, in ascending app order, one `checkout.Manifest` per app of the release, the one `checkout.DecodeManifest` gives for the bytes of that app's `<sha>/<app>/etc/manifest.toml` member; verified at least by `Suite` over a fake worktree holding the apps `auth`, whose manifest lists `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `secrets`, and `dummy`, which lists none, returning `SHA` `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, `File` `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, and those two manifests in that order, and leaving at that `File` a release with the same member paths, member bytes and `release.json` as `devctl build 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` given the same fakes and `Now`; and by a failed `dashboard` compile returning the same `*ProcessError` labeled `build dashboard`.

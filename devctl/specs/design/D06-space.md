@@ -59,8 +59,13 @@ it wrote to stderr, each line prefixed `> `. A command's product is on its
 stdout and its diagnostic on its stderr (the repository's command-line
 convention), so a failing opsctl's report comes first and its reason after it;
 neither is dropped because the other is present. devctl never asserts what
-those bytes say. D07, D09, D10, D11, D12, D13,
-and D14 issue every host command through this one shape.
+those bytes say. D07, D09, D10, D11, D12, D13, D14, D16 and D17 issue every
+host command through this one shape. `Copy` is the one way a file reaches a
+host from the developer's machine: `scp` with the same options and target as
+`ssh`, failing with the same `*CommandError`, so a failed copy is reported
+the way a failed remote command is. `space status` relays `opsctl status`
+whole, so its columns, the short sha of the commit each app runs and the
+release's label among them, are opsctl's and never parsed here.
 
 ## REQUIREMENTS
 
@@ -146,48 +151,6 @@ and D14 issue every host command through this one shape.
 
 - R-SVKD-29H1: A command MUST write no step line for a step that did not complete, verified at least through `cli.Run` by one command whose fake fails a step leaving stdout without a line naming that step.
 
-- R-JBGS-JDPU: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
-
-  ```
-  Usage: devctl space <subcommand> [arguments]
-
-  List, create, destroy, stop, start, initialise, and inspect spaces, and
-  restart, disable, enable, or read the journal of one app on one. A space is
-  one label under the root domain; <space> is that label or the full domain.
-  The cloud's tags are the only registry.
-
-  Subcommands:
-    list                       one line per space
-    create <space> [options]   create the space
-    destroy <space> [options]  remove the space and everything it owned
-    stop <space>               stop the instance; state is kept
-    start <space>              start the instance; its address is unchanged
-    init <space> [options]     set the host's keys again and run opsctl init
-    status <space>             one line per app: version, service state, socket state, database journal mode
-    restart <space> <app>      restart one app's service on the host
-    disable <space> <app>      stop one app and keep it from starting until enabled
-    enable <space> <app>       let a disabled app start again, and start it
-    logs <space> <app>         print one app's journal from the host
-
-  Options (create):
-    --acme-email <address>  where the CA sends the space's expiry warnings; required
-
-  Options (destroy):
-    --no-backup             skip the final backup the host takes before it goes
-    --delete-secrets        delete the space's secrets; they are kept otherwise
-    --delete-backups        delete the space's backups; they are kept otherwise
-
-  Options (init):
-    --opsctl <version>      move the host to this opsctl release first
-    --acme-email <address>  change where the CA sends the space's expiry warnings
-
-  Options (logs):
-    --follow                keep printing as the app writes, until interrupted
-    --since <when>          start at this moment, as journalctl reads it: -1h, yesterday, 2026-09-11 18:00:00
-
-  Run 'devctl space <subcommand> --help' for details.
-  ```
-
 - R-UPD6-TD4G: `devctl space list --help` and `devctl space list -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
 
   ```
@@ -237,15 +200,6 @@ and D14 issue every host command through this one shape.
   then run certbot renew. Records are unchanged; the last line is domain and address.
   ```
 
-- R-JCOO-X5GJ: `devctl space status --help` and `devctl space status -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
-
-  ```
-  Usage: devctl space status <space>
-
-  Relay opsctl status from the running host: app, version, service state, socket
-  state and database journal mode. A host with no apps prints nothing.
-  ```
-
 - R-UVGO-Q7TX: `devctl space` MUST write exactly the three lines `devctl: space needs <subcommand>`, an empty line, and `see 'devctl space --help' for usage` to stderr, write nothing to stdout, call `Deps.Cloud` not at all, pass no `seam.Cmd` to `Deps.Exec`, and exit 2.
 
 - R-TWMJ-JUA0: `space` invoked with a first argument that is none of its subcommands, `--help`, and `-h` and does not begin with `-` MUST write exactly the three lines `devctl: unknown subcommand '<name>'`, an empty line, and `see 'devctl space --help' for usage` to stderr, write nothing to stdout, and exit 2.
@@ -254,15 +208,13 @@ and D14 issue every host command through this one shape.
 
 - R-UZ4D-VJ20: `space destroy`, `space stop`, `space start`, and `space status` invoked with more than one operand MUST each write `devctl: space <subcommand> takes only <space>`, and `space list` invoked with any operand MUST write `devctl: space list takes no arguments`, as the first of exactly three lines followed by an empty line and `see 'devctl space --help' for usage` on stderr, write nothing to stdout, call `Deps.Cloud` not at all, pass no `seam.Cmd` to `Deps.Exec`, and exit 2.
 
-- R-JDWL-AX78: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space init` to `spaceinit.Run`, `space restart`, `space disable`, `space enable`, and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create and init receive the arguments after their subcommand, spaceapps receives the subcommand and the arguments after it, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
-
 - R-JF4H-OOXX: The `space` subcommands MUST be exactly `list`, `create`, `destroy`, `stop`, `start`, `init`, `status`, `restart`, `disable`, `enable`, and `logs`; `list` takes no operand, `destroy`, `stop`, `start`, and `status` take exactly one `<space>` operand, and `destroy` alone among those five accepts options, exactly `--no-backup`, `--delete-secrets`, and `--delete-backups`, in addition to help; the grammars of `create`, `init`, `restart`, `disable`, `enable`, and `logs` MUST be those their owning packages declare.
 
 - R-JHKA-G8FB: An argument of `space` or of one of its subcommands other than `create`, `init`, `restart`, `disable`, `enable`, and `logs` that begins with `-` and is none of `--help`, `-h`, and — for `destroy` only — `--no-backup`, `--delete-secrets`, and `--delete-backups` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl space --help' for usage` to be written to stderr, nothing to stdout, and exit 2, with `Deps.Cloud` not called and no `seam.Cmd` passed to `Deps.Exec`; verified at least by `devctl space stop sbx1 --no-backup` and `devctl space destroy sbx1 --no-backup=true`.
 
 - R-V3ZZ-EM0S: `space destroy` MUST accept each of `--no-backup`, `--delete-secrets`, and `--delete-backups` on either side of its `<space>` operand and in any order, with repeated occurrences of one option having the same effect as one, and each option MUST govern only its own step — `--no-backup` the `retire` step, `--delete-secrets` the `secrets` step, and `--delete-backups` the `backups` step; a value-bearing form such as `--no-backup=true` or `--delete-secrets=yes` MUST be an unknown option.
 
-- R-SBA8-3SF0: `space list`, `space destroy`, `space stop`, `space start`, and `space status` MUST each, after its usage errors are reported and before any other call, call `checkout.ReadRootFile(ctx, deps)`, then — for the four that take `<space>` — `spaceref.Parse` with the operand as typed and the `RootFile`'s `Domain` (D04 R-ST4K-APZN), then `cloud.Connect(ctx, deps.Cloud, RootFile.Domain, RootFile.Region)` (D02 R-S2QX-FE85), returning each call's error unchanged and making no later call when one fails; in the requirements below, `root` is that `Domain`, `space` is the `spaceref.Space` `Parse` returned, `clients` is the `Clients` of the `Session` `Connect` returned, and `zone` is what `clients.Route53.Zone(ctx, root)` returned; verified at least through `cli.Run` by `devctl space stop sbx1` in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving a recording fake `Deps.Cloud` with exactly one call whose profile is `example.test` and whose region is `eu-west-1`, and by `devctl space status crm.sbx1` leaving it with no call.
+- R-XBBV-T7VH: `space list`, `space destroy`, `space stop`, `space start`, and `space status` MUST each, after its usage errors are reported and before any other call, call `checkout.ReadRootFile(ctx, deps)`, then — for the four that take `<space>` — `spaceref.Parse` with the operand as typed and the `RootFile`'s `Domain` (D04 R-ST4K-APZN), then `cloud.Connect(ctx, deps.Cloud, RootFile.Domain, RootFile.Region)` (D02 R-UI48-29BU), returning each call's error unchanged and making no later call when one fails; in the requirements below, `root` is that `Domain`, `space` is the `spaceref.Space` `Parse` returned, `clients` is the `Clients` of the `Session` `Connect` returned, and `zone` is what `clients.Route53.Zone(ctx, root)` returned; verified at least through `cli.Run` by `devctl space stop sbx1` in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving a recording fake `Deps.Cloud` with exactly one call whose profile is `example.test` and whose region is `eu-west-1`, and by `devctl space status crm.sbx1` leaving it with no call.
 
 - R-V6FS-65I6: `space list` and `space stop` MUST pass no `seam.Cmd` to `deps.Exec` other than the single one `checkout.ReadRootFile` passes, and none to `deps.Stream`.
 
@@ -313,3 +265,61 @@ and D14 issue every host command through this one shape.
 - R-VR62-O93Z: The `role` step of `space destroy` MUST call `DeleteRole(ctx, clients.IAM, space.Domain)` and report `RoleName(space.Domain)` followed by ` deleted` when it returned true and `already gone` when it returned false; verified at least by reproducing `role: ok (staging.ikigenba.dev deleted)` and `role: ok (already gone)`.
 
 - R-8YVJ-0IZI: `space list` and `space status` MUST perform no cloud mutation and MUST leave local checkout files unchanged; status MUST execute no host command other than its single `sudo opsctl status` invocation. Tests MUST use cloud fakes that fail on mutation and verify the host command count for both populated and empty results.
+
+- R-UO7P-Z41B: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+
+  ```
+  Usage: devctl space <subcommand> [arguments]
+
+  List, create, destroy, stop, start, initialise, and inspect spaces, and
+  restart, disable, enable, or read the journal of one app on one. A space is
+  one label under the root domain; <space> is that label or the full domain.
+  The cloud's tags are the only registry.
+
+  Subcommands:
+    list                       one line per space
+    create <space> [options]   create the space and deploy a release to it
+    destroy <space> [options]  remove the space and everything it owned
+    stop <space>               stop the instance; state is kept
+    start <space>              start the instance; its address is unchanged
+    init <space> [options]     set the host's keys again and run opsctl init
+    status <space>             one line per app: commit, label, service state, socket state, database journal mode
+    restart <space> <app>      restart one app's service on the host
+    disable <space> <app>      stop one app and keep it from starting until enabled
+    enable <space> <app>       let a disabled app start again, and start it
+    logs <space> <app>         print one app's journal from the host
+
+  Options (create):
+    --acme-email <address>  where the CA sends the space's expiry warnings; required
+    --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
+
+  Options (destroy):
+    --no-backup             skip the final backup the host takes before it goes
+    --delete-secrets        delete the space's secrets; they are kept otherwise
+    --delete-backups        delete the space's backups; they are kept otherwise
+
+  Options (init):
+    --opsctl <version>      move the host to this opsctl release first
+    --acme-email <address>  change where the CA sends the space's expiry warnings
+
+  Options (logs):
+    --follow                keep printing as the app writes, until interrupted
+    --since <when>          start at this moment, as journalctl reads it: -1h, yesterday, 2026-09-11 18:00:00
+
+  Run 'devctl space <subcommand> --help' for details.
+  ```
+
+- R-UPFM-CVS0: `devctl space status --help` and `devctl space status -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+
+  ```
+  Usage: devctl space status <space>
+
+  Relay opsctl status from the running host: app, commit, label, service state,
+  socket state and database journal mode. A host with no apps prints nothing.
+  ```
+
+- R-UQNI-QNIP: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space init` to `spaceinit.Run`, `space restart`, `space disable`, `space enable`, and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create and init receive the arguments after their subcommand, spaceapps receives the subcommand and the arguments after it, create alone also receives as `version` the version string that `devctl --version` prints without its newline, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
+
+- R-URVF-4F9E: Package `internal/host` MUST export the method `Copy(ctx context.Context, step, local, remote string) error` on `Host`.
+
+- R-UT3B-I703: `(host.Host).Copy` MUST pass to `Deps.Exec` exactly one `seam.Cmd`, whose `Path` is `scp`, whose `Dir` is `Deps.Dir`, and whose `Args` are exactly `-o`, `BatchMode=yes`, `-o`, `ConnectTimeout=10`, `-o`, `StrictHostKeyChecking=accept-new`, `local`, and `Target()` followed by `:` and `remote`, so that the file at `local` on the developer's machine is copied to `remote` on the host as `User`; it MUST return nil when that process exits 0; on a non-zero exit it MUST return a `*CommandError` whose `Step` is `step`, whose `Command` is exactly `scp`, `local`, and `Target()` followed by `:` and `remote`, omitting the transport options, and which carries the exit status and both unmodified streams; and when `Deps.Exec` returns a non-nil error it MUST return an error that wraps it, whose message contains `scp`, and that `errors.As` does not match to a `*CommandError`; verified at least by a `Host` whose `Address` is `18.118.7.42` copying `/w/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` to `/tmp/tmp.Ab12Cd34Ef` with the step `copy` and a fake `scp` exiting 1 with the standard error `No space left on device`, giving an `Error()` of `copy: scp /w/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz ec2-user@18.118.7.42:/tmp/tmp.Ab12Cd34Ef: exit status 1` and a `Detail()` of `> No space left on device`.

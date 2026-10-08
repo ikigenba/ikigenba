@@ -5,7 +5,8 @@ no configuration and no top-level option beyond help and version: the platform
 is one root domain in one account, and every command that touches the cloud
 learns the root and its region from the checkout's root file (D04,
 `internal/checkout`), never from an option, the environment, or the developer's
-machine. The command set now includes `apex`, `golden`, and `seed`.
+machine. The command set now includes `apex`, `golden`, `seed`, and
+`rollback`.
 
 The superuser refusal — the check that devctl is not running with effective
 uid 0 — precedes every argument, help and version included. Older requirement
@@ -62,17 +63,27 @@ including nested quotes and empty lines.
 
 - R-DMPO-ZF3Q: The first line of every diagnostic `devctl` writes to stderr MUST begin with `devctl: `, the usage text MUST never be written to stderr, and on success a command MUST write nothing to stderr.
 
-- R-S0B4-NUQR: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, `golden`, `seed`, and `apex`.
-
-- R-S1J1-1MHG: For each of `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, `golden`, `seed`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
-
-- R-S2QX-FE85: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `restore`, `remove`, `golden`, `seed`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the eight in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
-
 - R-OP8E-VRKZ: `devctl --help`, `devctl -h`, `devctl --version`, `devctl -V`, `devctl version`, and every invocation that fails with a top-level usage error — no command, an unknown command, or an unknown top-level option — MUST call `Deps.Cloud` not at all and MUST pass no `seam.Cmd` to `Deps.Exec` or `Deps.Stream`, so that none of them finds a checkout or reads the root file, verified with recording fakes left with no call and `Deps.Dir` set to a directory that is not inside a git checkout.
 
 - R-R3TS-W0MS: When a command fails, `cli.Run` MUST write to `stderr` only the diagnostic for the error the command returned, verified at least by `devctl space list` with `Deps.Dir` outside any git checkout, in a temporary checkout that has no root file, and in one whose root file holds `{"domain": "ikigenba.dev"}` each writing exactly one line to stderr and nothing to stdout.
 
-- R-EVVW-Z1XZ: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
+- R-C52Z-FBPW: A diagnostic with detail MUST separate its first line from that detail by exactly one empty line; each line originating from another program MUST carry one additional `> ` prefix, including blank lines and lines already quoted, while devctl-authored advice MUST remain unprefixed. No diagnostic MUST duplicate a report already delivered to stdout.
+
+- R-C6AV-T3GL: Package `internal/seam` MUST export `QuoteOutput(text string) string`, returning an empty string for empty input and otherwise prefixing each line with `> ` after removing trailing newline characters; internal blank lines and all other bytes MUST be preserved.
+
+- R-1MN4-VC6Y: Command help MUST take precedence over command-local argument validation when `--help` or `-h` appears among that command’s arguments, subject to the root refusal; it MUST invoke neither cloud nor process runners, including the streaming runner.
+
+- R-C8QO-KMXZ: Missing or empty option values for create, init and restore MUST be diagnosed before external access; a following argument beginning with `-` MUST not be consumed as such a value. Logs’ `--since` exception MUST follow its own declared grammar.
+
+- R-SRWN-WY8Y: The binary built from `./cmd/devctl` by `go build` with no flags, run with the single argument `--version` as a non-root user, MUST print to stdout exactly what `cli.Run` prints to stdout for `--version`, write nothing to stderr, and exit 0.
+
+- R-UFOF-APUG: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `rollback`, `restore`, `remove`, `golden`, `seed`, and `apex`.
+
+- R-UGWB-OHL5: For each of `space`, `secrets`, `build`, `deploy`, `rollback`, `restore`, `remove`, `golden`, `seed`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
+
+- R-UI48-29BU: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `rollback`, `restore`, `remove`, `golden`, `seed`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the nine in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
+
+- R-UJC4-G12J: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
 
   ```
   Usage: devctl [options] <command> [arguments]
@@ -84,7 +95,8 @@ including nested quotes and empty lines.
     space     list, create, destroy, stop, start, initialise, and inspect spaces
     secrets   push and list an app's secrets for a space
     build     build the suite or one app into a deployable file
-    deploy    put a built app file on a space
+    deploy    put a release or a built app file on a space
+    rollback  put a space back on the release it ran before
     remove    take an app off a space
     restore   put a space's app back from its backups
     golden    capture a space's data as a named golden set
@@ -103,13 +115,3 @@ including nested quotes and empty lines.
 
   Run 'devctl <command> --help' for details on a command.
   ```
-
-- R-C52Z-FBPW: A diagnostic with detail MUST separate its first line from that detail by exactly one empty line; each line originating from another program MUST carry one additional `> ` prefix, including blank lines and lines already quoted, while devctl-authored advice MUST remain unprefixed. No diagnostic MUST duplicate a report already delivered to stdout.
-
-- R-C6AV-T3GL: Package `internal/seam` MUST export `QuoteOutput(text string) string`, returning an empty string for empty input and otherwise prefixing each line with `> ` after removing trailing newline characters; internal blank lines and all other bytes MUST be preserved.
-
-- R-1MN4-VC6Y: Command help MUST take precedence over command-local argument validation when `--help` or `-h` appears among that command’s arguments, subject to the root refusal; it MUST invoke neither cloud nor process runners, including the streaming runner.
-
-- R-C8QO-KMXZ: Missing or empty option values for create, init and restore MUST be diagnosed before external access; a following argument beginning with `-` MUST not be consumed as such a value. Logs’ `--since` exception MUST follow its own declared grammar.
-
-- R-SRWN-WY8Y: The binary built from `./cmd/devctl` by `go build` with no flags, run with the single argument `--version` as a non-root user, MUST print to stdout exactly what `cli.Run` prints to stdout for `--version`, write nothing to stderr, and exit 0.
