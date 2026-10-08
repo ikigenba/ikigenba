@@ -1,0 +1,13 @@
+app = "cron"
+description = "Triggers that emit events on a schedule"
+default = false
+mcp = true
+guests = false
+secrets = []
+
+[database]
+engine = "sqlite"
+path = "state/cron.db"
+
+[resources]
+memory_max = "128M"
