@@ -1,6 +1,6 @@
 # Stories — on a space
 
-The gateway reached through a space: the file `S10` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `mcp.<space>` over TLS. A space is one label under the root domain and an app is `<app>.<space>`, so mcp on the space `sbx.ikigenba.dev` answers at `mcp.sbx.ikigenba.dev`. nginx on the space proxies to mcp's socket, `/run/ikigenba/mcp.sock` (`S02`). The space authenticates every request that carries a credential and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`. mcp serves guests (`S01`), so a request outside `/mcp` with no credential reaches mcp with no caller, and mcp answers it: the protected-resource metadata is served (`S12`) and the connect page sends the visitor to sign in (`S03`). A request to `/mcp` without a credential is the gate's to answer, as for every app. The host's services file is `/var/lib/ikigenba/services.json`, which opsctl writes and names in mcp's environment (`S02`). The gateway reaches each MCP service directly on the socket its entry names, never through nginx, forwarding the caller's `X-User-Id`, `X-User-Email`, and `X-Request-Id` (`S08`). The stories prove the whole path from checkout to client and nothing about mcp that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The MCP requests below are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision (`S05`) are not repeated.
+The gateway reached through a space: the tree `S10` describes, deployed in the suite release with `devctl deploy`, activated by `opsctl`, and answered by nginx at `mcp.<space>` over TLS. A space is one label under the root domain and an app is `<app>.<space>`, so mcp on the space `sbx.ikigenba.dev` answers at `mcp.sbx.ikigenba.dev`. nginx on the space proxies to mcp's socket, `/run/ikigenba/mcp.sock` (`S02`). The space authenticates every request that carries a credential and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`. mcp serves guests (`S01`), so a request outside `/mcp` with no credential reaches mcp with no caller, and mcp answers it: the protected-resource metadata is served (`S12`) and the connect page sends the visitor to sign in (`S03`). A request to `/mcp` without a credential is the gate's to answer, as for every app. The host's services file is `/run/ikigenba/services.json`, which opsctl writes and names in mcp's environment (`S02`). The gateway reaches each MCP service directly on the socket its entry names, never through nginx, forwarding the caller's `X-User-Id`, `X-User-Email`, and `X-Request-Id` (`S08`). The stories prove the whole path from checkout to client and nothing about mcp that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The MCP requests below are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision (`S05`) are not repeated.
 
 ## A visitor reaches the connect page on a space
 
@@ -24,8 +24,7 @@ Status 200. The body is the connect page (`S03`): an HTML page whose banner's pr
 Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`, and `opsctl` is installed on it.
-- `devctl build mcp`, run in a clean tree at the commit `<sha>`, wrote `mcp/dist/mcp-<sha>.tar.xz` (`S10`). No tag is needed.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev mcp/dist/mcp-<sha>.tar.xz` exited 0.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev <sha>` exited 0, making the suite release at the commit `<sha>` active (`S10`). No tag is needed.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows mcp's service and socket `active`, in the layout devctl's and opsctl's stories own.
 - auth and dummy are deployed and active on the space, and dummy's manifest has `mcp = true`, so the host's services file lists `auth`, and lists `dummy` enabled and marked for MCP.
 - The space routes `mcp.sbx.ikigenba.dev` through its authenticating gate: the gate admits the request and sets `X-User-Id` and `X-User-Email` on what it passes to mcp.
@@ -57,7 +56,7 @@ Status 200. The body is the connect page of the story above, and its banner carr
 Preconditions:
 
 - Everything the story above requires holds: mcp is deployed and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate accepts.
-- `mcp/dist/mcp-<sha>.tar.xz` holds `share/icon.svg` (`S10`).
+- The release's `<sha>/mcp/` holds `share/icon.svg` (`S10`).
 - The host's services file lists mcp with its icon.
 
 Postconditions:

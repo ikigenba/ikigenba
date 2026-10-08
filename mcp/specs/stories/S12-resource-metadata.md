@@ -1,6 +1,6 @@
 # Stories — resource metadata
 
-The gateway's protected-resource metadata: the document an MCP client reads to learn which authorization server issues the tokens `/mcp` accepts. A client that is refused at `/mcp` without a token is pointed at `<scheme>://<host>/.well-known/oauth-protected-resource` by the gate's challenge (opsctl's `S5-nginx.md`), or probes that path itself, or the path-specific form for the endpoint it was given, `/.well-known/oauth-protected-resource/mcp`; so mcp serves one document at `/.well-known/oauth-protected-resource` and at every path beneath it, the same document at each, whatever follows. A path is beneath it when it continues with `/`; `/.well-known/oauth-protected-resourcex` is not, and is answered 404 (`S03`). The document is for anyone: a client asks for it before it has a token, so a guest and a signed-in user get the same answer, byte for byte, and no guest is sent to sign in. It is a JSON object with exactly three members: `resource`, the endpoint `<scheme>://<host>/mcp`, built from the request's `Host` and `X-Forwarded-Proto` exactly as the connect page builds its endpoint (`S03`), whatever path beneath the document was asked for, since every scoped endpoint lies beneath it; `authorization_servers`, an array holding one string, auth's address; and `bearer_methods_supported`, the array `["header"]`. It advertises no scopes. Auth's address is the origin of the `url` of the services file's entry named `auth`: its scheme, `://` and its host with any port, with no path, query, fragment or trailing slash, so `https://auth.sbx.ikigenba.dev/` and `https://auth.sbx.ikigenba.dev/x?y=1` both give `https://auth.sbx.ikigenba.dev`. When the file has no such entry, or its `url` is empty or lacks a scheme or a host, auth's address is `<scheme>://auth.<space>`, the space and the scheme read from the request as the connect page reads them for its links to auth (`S03`). mcp takes the services file's path from `IKIGENBA_SERVICES` and reads the file afresh for every request, under the rules `S03` gives; a broken services file never breaks the document. The requests go to a running mcp (`S02`), shown as the HTTP request mcp receives, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, that file holding the suite's services file of `S03` unless a story says otherwise. Every request adds exactly two events to mcp's trail, `request.started` and `request.finished`, as for every answer of `S03`, and serving the document contacts no backend.
+The gateway's protected-resource metadata: the document an MCP client reads to learn which authorization server issues the tokens `/mcp` accepts. A client that is refused at `/mcp` without a token is pointed at `<scheme>://<host>/.well-known/oauth-protected-resource` by the gate's challenge (opsctl's `S5-nginx.md`), or probes that path itself, or the path-specific form for the endpoint it was given, `/.well-known/oauth-protected-resource/mcp`; so mcp serves one document at `/.well-known/oauth-protected-resource` and at every path beneath it, the same document at each, whatever follows. A path is beneath it when it continues with `/`; `/.well-known/oauth-protected-resourcex` is not, and is answered 404 (`S03`). The document is for anyone: a client asks for it before it has a token, so a guest and a signed-in user get the same answer, byte for byte, and no guest is sent to sign in. It is a JSON object with exactly three members: `resource`, the endpoint `<scheme>://<host>/mcp`, built from the request's `Host` and `X-Forwarded-Proto` exactly as the connect page builds its endpoint (`S03`), whatever path beneath the document was asked for, since every scoped endpoint lies beneath it; `authorization_servers`, an array holding one string, auth's address; and `bearer_methods_supported`, the array `["header"]`. It advertises no scopes. Auth's address is the origin of the `url` of the services file's entry named `auth`: its scheme, `://` and its host with any port, with no path, query, fragment or trailing slash, so `https://auth.sbx.ikigenba.dev/` and `https://auth.sbx.ikigenba.dev/x?y=1` both give `https://auth.sbx.ikigenba.dev`. When the file has no such entry, or its `url` is empty or lacks a scheme or a host, auth's address is `<scheme>://auth.<space>`, the space and the scheme read from the request as the connect page reads them for its links to auth (`S03`). mcp takes the services file's path from `IKIGENBA_SERVICES` and reads the file afresh for every request, under the rules `S03` gives; a broken services file never breaks the document. The requests go to a running mcp (`S02`), shown as the HTTP request mcp receives, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, that file holding the suite's services file of `S03` unless a story says otherwise. Every request adds exactly two events to mcp's trail, `request.started` and `request.finished`, as for every answer of `S03`, and serving the document contacts no backend.
 
 ## An MCP client reads the gateway's protected-resource metadata
 
@@ -32,8 +32,8 @@ The response sets no cookie.
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file, whose `auth` entry has the `url` `https://auth.sbx.ikigenba.dev`.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file, whose `auth` entry has the `url` `https://auth.sbx.ikigenba.dev`.
 - The request carries no `X-User-Id` and no `X-User-Email`, as nginx forwards a guest's request, and the `X-Request-Id` nginx gave it.
 
 Postconditions:
@@ -91,8 +91,8 @@ Status 200. For every form the body is the document of `An MCP client reads the 
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 - The request carries no `X-User-Id` and no `X-User-Email`.
 
 Postconditions:
@@ -102,7 +102,7 @@ Postconditions:
 
 ## An MCP client reads the metadata on a host whose services file names no auth
 
-The document names the resource by the `Host` the request arrived with and auth by the services file's `auth` entry, so one mcp build serves whichever space it is installed on. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry, so auth's address is read from the request: a trailing port is dropped from the `Host`, then a single leading `mcp.` label, and what remains is the space.
+The document names the resource by the `Host` the request arrived with and auth by the services file's `auth` entry, so one mcp build serves whichever space it is installed on. Here `/run/ikigenba/services.json` is the suite's services file without the `auth` entry, so auth's address is read from the request: a trailing port is dropped from the `Host`, then a single leading `mcp.` label, and what remains is the space.
 
 Request:
 
@@ -140,8 +140,8 @@ Status 200. The body is a JSON object with exactly the three members of `An MCP 
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
 
 Postconditions:
 
@@ -177,8 +177,8 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 

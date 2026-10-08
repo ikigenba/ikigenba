@@ -1,6 +1,6 @@
 # Stories — bootstrap
 
-Running mcp at all: help, version, the manifest, exit codes. mcp is an app of the platform, the suite's MCP gateway: one Go binary that offers MCP clients four tools over the suite's MCP services at `/mcp` (`S05`), and a connect page at `/` that tells a person how to point a client at it (`S03`). On a host it runs as `/opt/mcp/bin/mcp` with `/opt/mcp` as its working directory and its environment read from `/opt/mcp/etc/env`. With no command it serves (`S02`); the commands here are what the build asks of it.
+Running mcp at all: help, version, the manifest, exit codes. mcp is an app of the platform, the suite's MCP gateway: one Go binary that offers MCP clients four tools over the suite's MCP services at `/mcp` (`S05`), and a connect page at `/` that tells a person how to point a client at it (`S03`). On a host it runs as `/opt/ikigenba/current/mcp/bin/mcp` with `/var/opt/ikigenba/mcp` as its working directory and its environment read from `/etc/opt/ikigenba/mcp/env`. With no command it serves (`S02`); the commands here are what the build asks of it.
 
 ## A developer asks which version they have
 

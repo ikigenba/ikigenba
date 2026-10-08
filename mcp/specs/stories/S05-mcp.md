@@ -4,7 +4,7 @@ The gateway's MCP interface: `/mcp`, where an MCP client reaches every one of th
 
 `/mcp` reaches every MCP service. `/mcp/<a>,<b>` reaches exactly the services named, in whatever order the path gives them; they are listed in name order. A scope is one or more names separated by commas, each name 1 to 63 ASCII letters, digits, and hyphens, beginning and ending with a letter or digit, and no name twice. A name is matched against the file exactly, letter case counting. A scoped name that is not in the file, whose entry has `mcp` `false`, or that is `mcp` itself is listed all the same, as unavailable for the reason `not installed`. A path beneath `/mcp` that is not a well-formed scope does not exist and is answered 404, as any path the gateway does not serve is (`S03`).
 
-The actor is a model working through an MCP client, or the client itself. Each request is shown as the HTTP request the client sends to a running gateway (`S02`), started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, the host's services file, which holds the suite's services file below unless a story says otherwise. mcp serves guests its other paths (`S03`), but not `/mcp` or any path beneath it: nginx keeps its strict check there (opsctl's `S5-nginx.md`), so a request reaches them only with the caller nginx authenticated in `X-User-Id` and `X-User-Email`, and a request without `X-User-Id` is answered 500 before anything else, the method or the scope, is looked at. The requests below carry both headers by hand, and only the missing-header story carries neither.
+The actor is a model working through an MCP client, or the client itself. Each request is shown as the HTTP request the client sends to a running gateway (`S02`), started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, the host's services file, which holds the suite's services file below unless a story says otherwise. mcp serves guests its other paths (`S03`), but not `/mcp` or any path beneath it: nginx keeps its strict check there (opsctl's `S5-nginx.md`), so a request reaches them only with the caller nginx authenticated in `X-User-Id` and `X-User-Email`, and a request without `X-User-Id` is answered 500 before anything else, the method or the scope, is looked at. The requests below carry both headers by hand, and only the missing-header story carries neither.
 
 The suite's services file:
 
@@ -206,7 +206,7 @@ Status 200. The body is a JSON-RPC response with `id` 3 whose `result` has exact
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 
@@ -246,7 +246,7 @@ Status 200. The body is the answer of `A client asks the gateway what it reaches
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file, which has no entry named `ghost`.
+- `/run/ikigenba/services.json` holds the suite's services file, which has no entry named `ghost`.
 
 Postconditions:
 
@@ -335,7 +335,7 @@ The response carries no `Mcp-Session-Id` header.
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 
@@ -611,7 +611,7 @@ Status 400. The body is a JSON-RPC response with `id` 8 and no `result`, whose `
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 

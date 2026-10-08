@@ -1,6 +1,6 @@
 # Stories — connect
 
-The connect page and the gateway's routing outside MCP: what a running mcp answers at every path but `/mcp` and `/mcp/<scope>`, and the frame its one page is drawn in. The connect page, at `/`, tells a person how to connect an MCP client to the gateway: the command that adds the gateway to Claude Code, the command that adds it to Codex, and, for any other client, the endpoint alone, since a client that speaks MCP's authorization flow learns the rest from the gateway's protected-resource metadata (`S12`) and signs its user in through auth. It is server-rendered HTML, and the whole of its content arrives in the response body, the launcher's list included. No script adds content a user sees; the page's scripts only act on what the server sent. The page carries no script of its own: it loads the platform's button feedback script, `/_appkit/feedback.js`, which makes an enabled button visibly react when the user presses it and makes each `Copy` button put the text beside it on the clipboard; and, when the page carries the launcher, the launcher's script, `/_appkit/launcher.js`, which only filters the launcher's list as the user types. The host's nginx lets guests through to every path of mcp but `/mcp`, the paths beneath it, and git's smart HTTP paths (its manifest sets `guests = true`, `S01`; opsctl's `S5-nginx.md`): a request from a signed-in user carries `X-User-Id` and `X-User-Email`, which the gate sets from auth's answer, and a guest's carries neither, while every request nginx forwards carries the request's id in `X-Request-Id`. A request whose `X-User-Id` is absent or empty is a guest's, whatever `X-User-Email` it carries. mcp trusts those headers absolutely. The connect page is for signed-in users only, and a guest who asks for it is sent to auth's sign-in with the page's URL to come back to, so mcp draws no signed-out banner; the shared files (`S04`) and the protected-resource metadata (`S12`) are served to guests and users alike, and no guest is sent to sign in from either, and a path that does not exist is answered the same for both. The requests go to a running mcp (`S02`), each shown as the HTTP request mcp receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. mcp is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
+The connect page and the gateway's routing outside MCP: what a running mcp answers at every path but `/mcp` and `/mcp/<scope>`, and the frame its one page is drawn in. The connect page, at `/`, tells a person how to connect an MCP client to the gateway: the command that adds the gateway to Claude Code, the command that adds it to Codex, and, for any other client, the endpoint alone, since a client that speaks MCP's authorization flow learns the rest from the gateway's protected-resource metadata (`S12`) and signs its user in through auth. It is server-rendered HTML, and the whole of its content arrives in the response body, the launcher's list included. No script adds content a user sees; the page's scripts only act on what the server sent. The page carries no script of its own: it loads the platform's button feedback script, `/_appkit/feedback.js`, which makes an enabled button visibly react when the user presses it and makes each `Copy` button put the text beside it on the clipboard; and, when the page carries the launcher, the launcher's script, `/_appkit/launcher.js`, which only filters the launcher's list as the user types. The host's nginx lets guests through to every path of mcp but `/mcp`, the paths beneath it, and git's smart HTTP paths (its manifest sets `guests = true`, `S01`; opsctl's `S5-nginx.md`): a request from a signed-in user carries `X-User-Id` and `X-User-Email`, which the gate sets from auth's answer, and a guest's carries neither, while every request nginx forwards carries the request's id in `X-Request-Id`. A request whose `X-User-Id` is absent or empty is a guest's, whatever `X-User-Email` it carries. mcp trusts those headers absolutely. The connect page is for signed-in users only, and a guest who asks for it is sent to auth's sign-in with the page's URL to come back to, so mcp draws no signed-out banner; the shared files (`S04`) and the protected-resource metadata (`S12`) are served to guests and users alike, and no guest is sent to sign in from either, and a path that does not exist is answered the same for both. The requests go to a running mcp (`S02`), each shown as the HTTP request mcp receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. mcp is started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
 
 ```
 {
@@ -58,8 +58,8 @@ Status 200. The body is an HTML document titled `mcp` that links `/_appkit/theme
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file and is readable by mcp.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file and is readable by mcp.
 
 Postconditions:
 
@@ -97,8 +97,8 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 
@@ -129,8 +129,8 @@ Status 200. The body is the connect page of `A user opens the connect page`: the
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` does not exist.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` does not exist.
 
 Postconditions:
 
@@ -144,7 +144,7 @@ Postconditions:
 
 ## A user on a host whose services file names no auth still gets auth's links
 
-The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one mcp build serves whichever space it is installed on. The endpoint and the server name the page shows are built from the same headers. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry.
+The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one mcp build serves whichever space it is installed on. The endpoint and the server name the page shows are built from the same headers. Here `/run/ikigenba/services.json` is the suite's services file without the `auth` entry.
 
 Request:
 
@@ -190,8 +190,8 @@ Status 200. The body is the connect page of `A user opens the connect page`, and
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
 
 Postconditions:
 
@@ -200,7 +200,7 @@ Postconditions:
 
 ## A user on a host with services opens the launcher
 
-On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from mcp to any of them without typing an address. Here `/var/lib/ikigenba/services.json` is the suite's services file with an `icon` on each of its four entries, `auth`, `dummy`, `mcp`, and `notes`, each holding the SVG text of that service's icon. The launcher lists every service that carries an icon, not only the MCP services, so `auth` and mcp itself are in it.
+On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from mcp to any of them without typing an address. Here `/run/ikigenba/services.json` is the suite's services file with an `icon` on each of its four entries, `auth`, `dummy`, `mcp`, and `notes`, each holding the SVG text of that service's icon. The launcher lists every service that carries an icon, not only the MCP services, so `auth` and mcp itself are in it.
 
 In a browser, the list is closed when the page loads, and pressing the launcher button opens it. Typing in the search field keeps only the entries whose name contains the typed text, ignoring case and any spaces around it; clearing the field shows them all again. When the text matches no entry, the no-match line appears, reading `No service matches “<text>”.` with the typed text in quotation marks. Pressing Enter in the search field opens the first entry still shown that is a working link, and does nothing when there is none. That filtering is the whole of what `/_appkit/launcher.js` does: every entry, and the no-match line, arrived with the page.
 
@@ -225,8 +225,8 @@ Status 200. The body is the connect page of `A user opens the connect page`, wit
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
 
 Postconditions:
 
@@ -263,8 +263,8 @@ Status 302. No story fixes the body. The response sets no cookie. `GET /?from=la
 
 Preconditions:
 
-- mcp is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- mcp is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 - The request carries no `X-User-Id` and no `X-User-Email`, as nginx forwards a guest's request, and the `X-Request-Id` nginx gave it.
 
 Postconditions:

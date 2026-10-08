@@ -38,7 +38,7 @@ and a `content` array of one text block, `{"type":"text","text":<text>}`, whose 
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file (`S05`).
+- `/run/ikigenba/services.json` holds the suite's services file (`S05`).
 
 Postconditions:
 
@@ -89,7 +89,7 @@ and a `content` array of one text block whose text is exactly that line.
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file (`S05`), which has no entry named `ghost`.
+- `/run/ikigenba/services.json` holds the suite's services file (`S05`), which has no entry named `ghost`.
 
 Postconditions:
 
@@ -153,7 +153,7 @@ Postconditions:
 
 ## A model never sees the gateway listed
 
-The gateway is not one of its own services: listing itself would let a model call the gateway through the gateway. An entry named `mcp` is never an MCP service, even when the file marks it `true`, so the list is the one the suite's services file gives. Here `/var/lib/ikigenba/services.json` is the suite's services file with the `mcp` entry's `mcp` now `true`.
+The gateway is not one of its own services: listing itself would let a model call the gateway through the gateway. An entry named `mcp` is never an MCP service, even when the file marks it `true`, so the list is the one the suite's services file gives. Here `/run/ikigenba/services.json` is the suite's services file with the `mcp` entry's `mcp` now `true`.
 
 Request:
 
@@ -181,7 +181,7 @@ Status 200. The body is the answer of `A model lists the services`, with `id` 4:
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file (`S05`) with the entry named `mcp` marked `"mcp": true`.
+- `/run/ikigenba/services.json` holds the suite's services file (`S05`) with the entry named `mcp` marked `"mcp": true`.
 
 Postconditions:
 
@@ -197,7 +197,7 @@ Postconditions:
 
 ## A model sees the list follow a change to the services file
 
-The host rewrites the services file when a service is installed or switched on or off, and the gateway reads the file afresh for every call, so the next `services` call shows the change without the gateway being restarted. Here the host has switched `notes` on since the gateway started: `/var/lib/ikigenba/services.json` is the suite's services file with `notes`'s `enabled` now `true`.
+The host rewrites the services file when a service is installed or switched on or off, and the gateway reads the file afresh for every call, so the next `services` call shows the change without the gateway being restarted. Here the host has switched `notes` on since the gateway started: `/run/ikigenba/services.json` is the suite's services file with `notes`'s `enabled` now `true`.
 
 Request:
 
@@ -230,8 +230,8 @@ and a `content` array of one text block whose text is exactly that line.
 
 Preconditions:
 
-- The gateway is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment while `/var/lib/ikigenba/services.json` held the suite's services file with `notes` switched off, and it has not been restarted since.
-- `/var/lib/ikigenba/services.json` now lists `notes` with `enabled` `true`.
+- The gateway is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment while `/run/ikigenba/services.json` held the suite's services file with `notes` switched off, and it has not been restarted since.
+- `/run/ikigenba/services.json` now lists `notes` with `enabled` `true`.
 
 Postconditions:
 
@@ -273,7 +273,7 @@ bogus: unknown field
 Preconditions:
 
 - The gateway is serving.
-- `/var/lib/ikigenba/services.json` holds the suite's services file (`S05`).
+- `/run/ikigenba/services.json` holds the suite's services file (`S05`).
 
 Postconditions:
 
