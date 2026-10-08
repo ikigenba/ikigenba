@@ -1,8 +1,8 @@
 # Stories — serve
 
-The bare binary serves, and it serves only on a listening socket it inherits: sites never opens one of its own, and there is no port or address it falls back to. It takes the socket the way systemd socket activation passes it — `LISTEN_PID` names sites' own process, `LISTEN_FDS` is `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*` variables from its environment once it has taken it. On a host, opsctl publishes `ikigenba-sites.socket`, which holds the Unix socket `/run/ikigenba/sites.sock`, beside `ikigenba-sites.service`, which runs `/opt/sites/bin/sites` with no arguments as the `ikigenba` user, with `/opt/sites` as its working directory and `/opt/sites/etc/env` as its environment file; nginx proxies sites' public name, `sites.<space>`, and the apex host when it is routed to sites (`S13`), to `http://unix:/run/ikigenba/sites.sock:`. The service is `Type=notify`: sites tells systemd it is ready, by sending `READY=1` to `$NOTIFY_SOCKET`, once it is serving. When stopped, sites drains for at most `DRAIN_SECONDS`, a positive whole number of seconds read from its environment, and 5 when that is unset or empty. On a host, opsctl owns this value and the service unit's stop timeout: both are space-wide settings in opsctl's configuration, opsctl writes the drain into every app's `etc/env` and the stop timeout (10 seconds by default, always longer than the drain) into every service unit, and an app's manifest never sets either. The actor in these stories is the host, whether that is systemd or a developer at a terminal standing in for it.
+The bare binary serves, and it serves only on a listening socket it inherits: sites never opens one of its own, and there is no port or address it falls back to. It takes the socket the way systemd socket activation passes it — `LISTEN_PID` names sites' own process, `LISTEN_FDS` is `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*` variables from its environment once it has taken it. On a host, opsctl publishes `ikigenba-sites.socket`, which holds the Unix socket `/run/ikigenba/sites.sock`, beside `ikigenba-sites.service`, which runs `/opt/ikigenba/current/sites/bin/sites` with no arguments as the `ikigenba` user, with `/var/opt/ikigenba/sites` as its working directory and `/etc/opt/ikigenba/sites/env` as its environment file; nginx proxies sites' public name, `sites.<space>`, and the apex host when it is routed to sites (`S13`), to `http://unix:/run/ikigenba/sites.sock:`. The service is `Type=notify`: sites tells systemd it is ready, by sending `READY=1` to `$NOTIFY_SOCKET`, once it is serving. When stopped, sites drains for at most `DRAIN_SECONDS`, a positive whole number of seconds read from its environment, and 5 when that is unset or empty. On a host, opsctl owns this value and the service unit's stop timeout: both are space-wide settings in opsctl's configuration, opsctl writes the drain into every app's environment file, `/etc/opt/ikigenba/<app>/env`, and the stop timeout (10 seconds by default, always longer than the drain) into every service unit, and an app's manifest never sets either. The actor in these stories is the host, whether that is systemd or a developer at a terminal standing in for it.
 
-sites' environment also carries its three settings, each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `etc/env`, and an operator changes them there. `REPOS_DIR`, `../repos/state/repos`, is the directory holding repos' bare repositories, each as `<repository id>.git`; a relative value is resolved against sites' working directory, so on a host it is `/opt/sites/../repos/state/repos`, which is `/opt/repos/state/repos`, and an absolute one is used as it is (`S18`). sites only reads there, with git, and never writes there. `SITE_MAX_BYTES`, 268435456, a positive whole number of bytes, is the largest a site's tree may be, counted as the sum of its files' sizes (`S17`). `OPERATION_SECONDS`, 600, a positive whole number of seconds, is the longest one git run may take before sites kills it (`S17`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/var/lib/ikigenba/services.json`, which opsctl sets in the environment the host gives sites. The file lists the platform's services: it feeds the launcher in the banner of sites' landing and about pages (`S03`), it holds the description sites' MCP endpoint gives its clients as instructions (`S05`), its entry named `sites` gives the public address sites puts in every site's `url` and on its landing page (`S03`, `S07`), and its entry named `telemetry` is where sites sends its trail (below). sites reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. sites never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, sites starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
+sites' environment also carries its three settings, each the manifest's default (`S01`) when it is unset or empty; the host writes the defaults into `/etc/opt/ikigenba/sites/env` on every activate, and an operator changes them there. `REPOS_DIR`, `../repos/state/repos`, is the directory holding repos' bare repositories, each as `<repository id>.git`; a relative value is resolved against sites' working directory, so on a host it is `/var/opt/ikigenba/sites/../repos/state/repos`, which is `/var/opt/ikigenba/repos/state/repos`, and an absolute one is used as it is (`S18`). sites only reads there, with git, and never writes there. `SITE_MAX_BYTES`, 268435456, a positive whole number of bytes, is the largest a site's tree may be, counted as the sum of its files' sizes (`S17`). `OPERATION_SECONDS`, 600, a positive whole number of seconds, is the longest one git run may take before sites kills it (`S17`). And it carries `IKIGENBA_SERVICES`, the path of the host's services file, normally `/run/ikigenba/services.json`, which opsctl sets in the environment the host gives sites. The file lists the platform's services: it feeds the launcher in the banner of sites' landing and about pages (`S03`), it holds the description sites' MCP endpoint gives its clients as instructions (`S05`), its entry named `sites` gives the public address sites puts in every site's `url` and on its landing page (`S03`, `S07`), and its entry named `telemetry` is where sites sends its trail (below). sites reads the variable once, when it starts, and reads the file it names afresh whenever it needs it, so a rewritten file shows without a restart. sites never fails to start over it: unset, empty, or naming a file that is missing, unreadable, or malformed, sites starts and serves all the same, treats the file as listing no services, and says nothing about the file itself.
 
 sites runs the host's own `git` for every read of a repository — resolving a ref, reading a repository's owner, unpacking a commit's tree with `git archive` — and has no git of its own; `git` is a dependency of the host that opsctl provisions. sites checks its environment first — `DRAIN_SECONDS`, then `SITE_MAX_BYTES`, then `OPERATION_SECONDS` — then looks for its socket, then checks that an executable named `git` is on its `PATH`, and only then opens its SQLite database, the catalog of sites and the apex setting, at `state/sites.db`, relative to its working directory, creating `state/` and the database on its first start and bringing the database up to date by applying, in order, every migration it carries that the database has not had (`S01`), and then the directory that holds the unpacked trees, `cache/sites/`, creating `cache/` and `cache/sites/` when they are absent. Then it is ready. `REPOS_DIR` is not checked at start: repos may be installed after sites, and a repository is looked for only when a tool or a site request needs it (`S19`). No tree is unpacked at start: a published site whose tree is missing from `cache/` is rebuilt by the first request that needs it (`S16`). A database it cannot open is a start it refuses, with one line on stderr, `sites: cannot open database state/sites.db: <reason>`, and exit status 1. A database that records a migration it does not carry is one a newer sites has upgraded; sites applies nothing to it, warns on stderr that it is ahead, and serves it as usual (below). So a start refused as a usage error, or for want of git, has touched nothing, not even the database. sites is the database's only writer, and the host replicates it as the manifest declares (`S01`, `S21`); `cache/` is never backed up.
 
@@ -56,11 +56,11 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl install` has installed sites: `/opt/sites/bin/sites` exists, and `ikigenba-sites.socket` and `ikigenba-sites.service` are published.
-- `/opt/sites/etc/env` sets `DRAIN_SECONDS` and each of the three settings to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
+- `opsctl activate` has activated a release holding sites: `/opt/ikigenba/current/sites/bin/sites` exists, and `ikigenba-sites.socket` and `ikigenba-sites.service` are published.
+- `/etc/opt/ikigenba/sites/env` sets `DRAIN_SECONDS` and each of the three settings to a valid value, and `IKIGENBA_SERVICES` to the host's services file.
 - `git` is installed on the host, on the `PATH` the service runs with.
 - `ikigenba-sites.socket` is active, so `/run/ikigenba/sites.sock` exists and accepts connections.
-- `/opt/sites/state/sites.db` exists, from an earlier start, records no migration this sites does not carry, and holds the sites `blog`, `handbook`, `scratch`, and `recipes`; `/opt/sites/cache/sites/` exists.
+- `/var/opt/ikigenba/sites/state/sites.db` exists, from an earlier start, records no migration this sites does not carry, and holds the sites `blog`, `handbook`, `scratch`, and `recipes`; `/var/opt/ikigenba/sites/cache/sites/` exists.
 - `ikigenba-sites.service` is not running.
 - The host's services file lists the telemetry service, which takes every event.
 
@@ -68,7 +68,7 @@ Postconditions:
 
 - `ikigenba-sites.service` is `active`, and sites is serving on `/run/ikigenba/sites.sock`: a connection there, and every connection queued before sites started, is answered by sites.
 - sites listens on no other socket and no port.
-- `/opt/sites/state/sites.db` is the database it opened, now up to date, and holds the same sites and apex as before the start, each site unchanged; every tree under `/opt/sites/cache/sites/` is as it was, and none was unpacked by the start (`S19`).
+- `/var/opt/ikigenba/sites/state/sites.db` is the database it opened, now up to date, and holds the same sites and apex as before the start, each site unchanged; every tree under `/var/opt/ikigenba/sites/cache/sites/` is as it was, and none was unpacked by the start (`S19`).
 - telemetry has received one event from sites, with no request id and no user, whose `version` is `<display>`, the string `sites --version` prints under the environment the host gives sites (`S01`), the empty string when that environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`:
 
   ```
@@ -257,8 +257,8 @@ Exits 0, once the new sites has reported that it is ready. Nothing is on stdout 
 
 Preconditions:
 
-- `opsctl install` has installed a sites that carries migration `0001` over one that recorded no migrations.
-- `/opt/sites/state/sites.db` is the catalog the earlier sites kept: it holds `S06`'s shared catalog, with `blog` as the apex site, and records no migration (`sites db status` prints `0001 pending`, `S01`).
+- `opsctl activate` has activated a release whose sites carries migration `0001` over one whose sites recorded no migrations.
+- `/var/opt/ikigenba/sites/state/sites.db` is the catalog the earlier sites kept: it holds `S06`'s shared catalog, with `blog` as the apex site, and records no migration (`sites db status` prints `0001 pending`, `S01`).
 - `git` is installed on the host, on the `PATH` the service runs with.
 - The host's services file lists the telemetry service, which takes every event.
 
@@ -331,7 +331,7 @@ Postconditions:
 
 ## The host starts sites with REPOS_DIR unset
 
-`REPOS_DIR` unset or empty means the manifest's default, `../repos/state/repos`, the same as writing that value, so the two forms below, `REPOS_DIR` unset and `REPOS_DIR` empty, behave identically: on a host, where repos runs from `/opt/repos`, that is where repos keeps its bare repositories. sites does not look in the directory at start, so the start is the same whether repos is installed or not (`S19`); the directory is first read when a tool or a site request needs a repository.
+`REPOS_DIR` unset or empty means the manifest's default, `../repos/state/repos`, the same as writing that value, so the two forms below, `REPOS_DIR` unset and `REPOS_DIR` empty, behave identically: on a host, where repos' working directory is `/var/opt/ikigenba/repos`, that is where repos keeps its bare repositories. sites does not look in the directory at start, so the start is the same whether repos is installed or not (`S19`); the directory is first read when a tool or a site request needs a repository.
 
 Command:
 
@@ -356,13 +356,13 @@ Preconditions:
 - `LISTEN_PID` is sites' process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
 - `DRAIN_SECONDS`, `SITE_MAX_BYTES`, and `OPERATION_SECONDS` are unset, or valid.
 - `IKIGENBA_SERVICES` names a services file whose `telemetry` entry names a socket a listener holds that takes every event.
-- sites' working directory is `/opt/sites`, and `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git` is repos' bare repository `site`, owned by `u_7f3a9c21`.
+- sites' working directory is `/var/opt/ikigenba/sites`, and `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git` is repos' bare repository `site`, owned by `u_7f3a9c21`.
 
 Postconditions:
 
 - sites is serving, and telemetry has received its `service.started`.
-- `create` by `u_7f3a9c21` with `repo` `rep_8c21d4e0f7a3b915` finds that repository at `../repos/state/repos/rep_8c21d4e0f7a3b915.git`, relative to `/opt/sites`, and makes the site (`S06`); a site that names it is unpacked from there (`S08`, `S16`).
-- Nothing under `/opt/repos/state/repos/` has changed; sites read nothing there at start.
+- `create` by `u_7f3a9c21` with `repo` `rep_8c21d4e0f7a3b915` finds that repository at `../repos/state/repos/rep_8c21d4e0f7a3b915.git`, relative to `/var/opt/ikigenba/sites`, and makes the site (`S06`); a site that names it is unpacked from there (`S08`, `S16`).
+- Nothing under `/var/opt/ikigenba/repos/state/repos/` has changed; sites read nothing there at start.
 
 ## The host stops sites
 
@@ -506,7 +506,7 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl install` has installed sites, and `ikigenba-sites.socket` is active, as in `The host starts sites`.
+- `opsctl activate` has activated a release holding sites, and `ikigenba-sites.socket` is active, as in `The host starts sites`.
 - `ikigenba-sites.service` is not running.
 - The host's services file lists no `telemetry` entry, or nothing accepts connections on the socket that entry names.
 

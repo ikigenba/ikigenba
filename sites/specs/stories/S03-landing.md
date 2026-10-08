@@ -1,6 +1,6 @@
 # Stories — landing
 
-The landing page, the about screen, and the frame they are drawn in: what a running sites answers at `/` and `/about`. The landing page, at `/`, tells a signed-in user what sites is, lists the space's sites they may see, names the seven tools an agent manages sites with, and says at what address every site answers; the about screen, at `/about`, shows sites' name, its version, and its description. Both are server-rendered HTML drawn from sites' templates `landing` and `about`, and the whole of each page's content arrives in the response body, the launcher's list included; neither page carries a script of its own, and no script adds content a user sees: the launcher's, `/_appkit/launcher.js`, which a page loads only with the launcher, filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. The host's nginx lets guests through to sites' pages (its manifest sets `guests = true`; opsctl's `S5-nginx.md`, sandbox's `S4-routing.md`): a request from a signed-in user carries `X-User-Id` and `X-User-Email`, and a guest's carries neither, while every request nginx forwards carries the request's id in `X-Request-Id`. A request whose `X-User-Id` is absent or empty is a guest's, whatever `X-User-Email` it carries. The two pages are for signed-in users only, and a guest who asks for either is sent to auth's sign-in, with the page's URL to come back to. The requests go to a running sites (`S02`), each shown as the HTTP request sites receives, with the headers the story depends on; a developer stands in for nginx by passing those headers by hand. sites is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
+The landing page, the about screen, and the frame they are drawn in: what a running sites answers at `/` and `/about`. The landing page, at `/`, tells a signed-in user what sites is, lists the space's sites they may see, names the seven tools an agent manages sites with, and says at what address every site answers; the about screen, at `/about`, shows sites' name, its version, and its description. Both are server-rendered HTML drawn from sites' templates `landing` and `about`, and the whole of each page's content arrives in the response body, the launcher's list included; neither page carries a script of its own, and no script adds content a user sees: the launcher's, `/_appkit/launcher.js`, which a page loads only with the launcher, filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. The host's nginx lets guests through to sites' pages (its manifest sets `guests = true`; opsctl's `S5-nginx.md`, sandbox's `S4-routing.md`): a request from a signed-in user carries `X-User-Id` and `X-User-Email`, and a guest's carries neither, while every request nginx forwards carries the request's id in `X-Request-Id`. A request whose `X-User-Id` is absent or empty is a guest's, whatever `X-User-Email` it carries. The two pages are for signed-in users only, and a guest who asks for either is sent to auth's sign-in, with the page's URL to come back to. The requests go to a running sites (`S02`), each shown as the HTTP request sites receives, with the headers the story depends on; a developer stands in for nginx by passing those headers by hand. sites is started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
 
 ```
 {
@@ -70,8 +70,8 @@ The page has no `p#no-sites`. Below that is the section headed `MCP tools`, read
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file and is readable by sites, and telemetry takes every event.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file and is readable by sites, and telemetry takes every event.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -112,7 +112,7 @@ Status 200. The body is the landing page of `A user opens the landing page`, but
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file holds the suite's services file.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -145,7 +145,7 @@ Status 200. The body is the landing page of `A user opens the landing page`, but
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file holds the suite's services file.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file holds the suite's services file.
 - The catalog holds no site.
 
 Postconditions:
@@ -178,8 +178,8 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 
@@ -211,8 +211,8 @@ Status 200. The body is an HTML document titled `About sites`, with the same sty
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file, and telemetry takes every event.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file, and telemetry takes every event.
 
 Postconditions:
 
@@ -273,7 +273,7 @@ Postconditions:
 
 ## A user on a host with services opens the launcher
 
-On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from sites to any of them without typing an address. Here `/var/lib/ikigenba/services.json` is the suite's services file with an `icon` on each of its six entries, `auth`, `dummy`, `mcp`, `repos`, `sites`, and `telemetry`, each holding the SVG text of that service's icon; sites' own is the one its package ships, `share/icon.svg` (`S20`). The launcher lists every service that carries an icon, whether or not it is an MCP service. In a browser the list, its search field, and its no-match line behave exactly as repos' launcher does (repos' `S03-landing.md`).
+On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from sites to any of them without typing an address. Here `/run/ikigenba/services.json` is the suite's services file with an `icon` on each of its six entries, `auth`, `dummy`, `mcp`, `repos`, `sites`, and `telemetry`, each holding the SVG text of that service's icon; sites' own is the one its package ships, `share/icon.svg` (`S20`). The launcher lists every service that carries an icon, whether or not it is an MCP service. In a browser the list, its search field, and its no-match line behave exactly as repos' launcher does (repos' `S03-landing.md`).
 
 Request:
 
@@ -296,8 +296,8 @@ Status 200. The body is the landing page of `A user opens the landing page`, wit
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -329,8 +329,8 @@ Status 200. The body is the landing page of `A user opens the landing page`: the
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` does not exist.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` does not exist.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -340,7 +340,7 @@ Postconditions:
 
 ## A user sees the launcher follow a change to the services file
 
-The host rewrites the services file when a service is installed or switched on or off, and sites reads the file afresh for every page, so the next page a user loads shows the new list without sites being restarted. Here the host has switched `dummy` off since sites started: `/var/lib/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
+The host rewrites the services file when a service is installed or switched on or off, and sites reads the file afresh for every page, so the next page a user loads shows the new list without sites being restarted. Here the host has switched `dummy` off since sites started: `/run/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
 
 Request:
 
@@ -363,8 +363,8 @@ Status 200. The body is the landing page with the launcher, as in `A user on a h
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment while `/var/lib/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
-- `/var/lib/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment while `/run/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
+- `/run/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
 
 Postconditions:
 
@@ -372,7 +372,7 @@ Postconditions:
 
 ## A user on a host whose services file names no auth still gets auth's links
 
-The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one sites build serves whichever space it is installed on. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry.
+The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one sites build serves whichever space it is installed on. Here `/run/ikigenba/services.json` is the suite's services file without the `auth` entry.
 
 Request:
 
@@ -410,8 +410,8 @@ Status 200. The body is the landing page of `A user opens the landing page`, and
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:
@@ -421,7 +421,7 @@ Postconditions:
 
 ## A user on a host whose services file names no sites reads the sites' address from the request
 
-Each site's address comes from the services file's `sites` entry when there is one, since that is the address the host publishes for sites. Without it, sites names the address the request itself reached it at, so a user is never shown an address their own browser did not just use. The `Host` is kept whole, port and all: it is sites' own address, not a sibling's. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `sites` entry.
+Each site's address comes from the services file's `sites` entry when there is one, since that is the address the host publishes for sites. Without it, sites names the address the request itself reached it at, so a user is never shown an address their own browser did not just use. The `Host` is kept whole, port and all: it is sites' own address, not a sibling's. Here `/run/ikigenba/services.json` is the suite's services file without the `sites` entry.
 
 Request:
 
@@ -465,8 +465,8 @@ Every other site's link follows the same address. The file still has its `auth` 
 
 Preconditions:
 
-- sites is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file without the entry named `sites`.
+- sites is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file without the entry named `sites`.
 - The catalog holds `S06`'s shared catalog.
 
 Postconditions:

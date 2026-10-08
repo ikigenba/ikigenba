@@ -21,9 +21,9 @@ event. A request at the space's apex host redirects to the apex site. At
 `list`, `show`, `create`, `publish`, `update`, `delete` and `apex`. At `/` it
 serves a landing page, for a signed-in user, that lists the space's sites and
 says how to make one, and links to an about screen. On a host it runs as
-`/opt/sites/bin/sites` with `/opt/sites` as its working directory and its
-environment from `/opt/sites/etc/env`; a developer runs the same binary from
-the checkout. The module path is `github.com/ikigenba/ikigenba/sites`. It
+`/opt/ikigenba/current/sites/bin/sites` with `/var/opt/ikigenba/sites` as
+its working directory and its environment from `/etc/opt/ikigenba/sites/env`;
+a developer runs the same binary from the checkout. The module path is `github.com/ikigenba/ikigenba/sites`. It
 requires appkit (`github.com/ikigenba/ikigenba/appkit`), runs the host's
 `git` (see Toolchain), and uses appkit's
 packages `page` (the banner, launcher and footer, and the shared static files
@@ -94,7 +94,7 @@ run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit at `v0.16.0` (see Adopting appkit below). It and the modules it
+  - appkit at `v0.16.1` (see Adopting appkit below). It and the modules it
     pulls in are sites' only dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
@@ -111,10 +111,10 @@ among them — needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.16.0`, fetched
+appkit is required only at a published release, here `v0.16.1`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@v0.16.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.16.1`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
@@ -183,8 +183,8 @@ filesystem fixtures inside that temporary tree (a regular file named `state`,
 a file at `state/sites.db` that is not a database, a catalog a test's own
 `db.Open` made and then changed through `DB.Write`, a bare repository with a
 commit the test made, a cache tree the test removed or made unwritable);
-nothing touches `/opt/sites`, `/opt/repos`, the checkout's `state/` or a
-shared file. A catalog failure is provoked with `SetFailing(true)` on the
+nothing touches `/var/opt/ikigenba/sites`, `/var/opt/ikigenba/repos`, the
+checkout's `state/` or a shared file. A catalog failure is provoked with `SetFailing(true)` on the
 handle the store the test handed the server was built over, before a call or
 from a hook design names, never by corrupting the file, removing permissions
 or closing the store. Tests prove sites' use of the catalog, its schema, its
@@ -362,35 +362,6 @@ temporary directory.
 
 Deploy machinery — `devctl build` and `devctl deploy` — is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
-tests it.
-
-sites is an app, not a self-installing CLI: `devctl` builds it into a tarball
-named by the commit and pushes it to a space's host, where `opsctl install`
-installs it. There is no version to set, no tag to mint and no `--version`
-check. Until devctl is next released, use the `devctl` the worktree builds: run
-`make build` in `devctl/`, then run the commands below from the repository
-root. The host must provide `git`, which opsctl provisions, and must run repos,
-whose repositories sites reads.
-
-1. Commit the change on the branch you are on (push only when asked); the
-   working tree must be clean.
-2. `devctl/bin/devctl build sites` writes `sites/dist/sites-<sha>.tar.xz`,
-   `<sha>` being the 40 lowercase hex digits of `HEAD`. It holds `bin/sites`,
-   `etc/`, and `share/icon.svg`; it refuses a dirty tree and a binary whose
-   `manifest` disagrees with the committed `etc/manifest.toml`.
-3. `devctl/bin/devctl deploy <space> sites/dist/sites-<sha>.tar.xz` uploads the
-   tarball to the space's `deploy/` prefix and runs `opsctl install` over ssh;
-   the host fetches it, writes `etc/env` (the manifest's `[env]` defaults and the
-   space's `DRAIN_SECONDS`), replaces the release, publishes
-   `ikigenba-sites.socket` (the Unix socket `/run/ikigenba/sites.sock`) and
-   the `Type=notify` `ikigenba-sites.service`, bounded by the manifest's
-   `[resources]`, regenerates the host's nginx (an open gate for the site
-   paths, because the manifest declares `guests = true`) and litestream
-   configuration, and restarts the service alone. The database is kept
-   across releases; `cache/` may be emptied at any time and is rebuilt on
-   demand.
-
-`sites --version` prints the host's display string for the code it runs, built
-by appkit's `version.Display()` from `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`.
-The host does not yet set either variable, so a deployed sites prints an empty
-line until it does.
+tests it. sites ships in the suite release (`devctl build <sha|tag>`,
+`devctl deploy <space> <sha|tag>`); it has no tarball, tag or version of its
+own.

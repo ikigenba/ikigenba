@@ -1,6 +1,6 @@
 # Stories — disk
 
-What sites reads and writes on disk. sites is one of the consumers repos' `S15-disk.md` serves: it reads repos' repositories straight from their directories with the host's own `git`, running as the same `ikigenba` user, and never reaches repos over HTTP or through anything else of repos', so repos receives no request on sites' account and records no event for it. repos keeps one bare repository per repository at `<REPOS_DIR>/<rep id>.git`, named by the repository's id (`rep_` and 16 lowercase hexadecimal digits), never its name, whose `HEAD` names `refs/heads/main` and whose own git config holds `ikigenba.id`, `ikigenba.name`, `ikigenba.owner`, and `ikigenba.created` (repos' `S15-disk.md`). `REPOS_DIR` is a setting read once, at start, from sites' environment; unset or empty it is the manifest's `../repos/state/repos` (`S01`), and a relative value is resolved against sites' working directory, so on a host, where sites runs in `/opt/sites` and repos in `/opt/repos`, it is `/opt/sites/../repos/state/repos`, which is `/opt/repos/state/repos`, and in a sandbox `<data>/apps/sites/../repos/state/repos` (`S22`). sites does not check it at start, since repos may be installed later (`S02`). sites reads a repository three ways and no other: resolving a ref to a commit, reading `ikigenba.owner`, and unpacking a commit's tree with `git archive`; it never writes under `REPOS_DIR` — no ref, no object, no config, no lock left behind — so a repository's directory is byte for byte what it was before sites read it. A site names its repository by id, so a site keeps working across a rename in repos, and a repository deleted in repos is gone for sites too. What sites writes is under its own working directory: its catalog `state/sites.db`, which opsctl backs up, and `cache/sites/<site id>/<sha>/`, the files of a published commit exactly as `git archive` emits them — the same paths, the same bytes, symbolic links as links — which nothing backs up: `cache/` may be emptied at any time, and a tree missing from it is rebuilt on demand (`S16`). A site's directory holds the tree of its published commit and no other once a publish has finished (`S08`); deleting a site removes its directory (`S10`). The actor is a model working through an MCP client, an operator on the host, or a visitor; sites runs on the host in `/opt/sites` with `REPOS_DIR` unset unless a story sets it, and with the suite's services file (`S05`); telemetry takes every event; and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `blog`, `sit_4e7a1c9b0d2f8635`, public and listed, over `rep_8c21d4e0f7a3b915` at `main`, published at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` as of `2026-10-01T10:00:00Z`, its tree in the cache. `/opt/repos/state/repos/` holds `rep_8c21d4e0f7a3b915.git` (repos' `site`) and `rep_3f9a0c1d2e4b5a69.git` (repos' `notes`), both with `ikigenba.owner` `u_7f3a9c21`, and `rep_d41c7a9e05b28f63.git` (repos' `journal`), with `ikigenba.owner` `u_2b8e1d04`.
+What sites reads and writes on disk. sites is one of the consumers repos' `S15-disk.md` serves: it reads repos' repositories straight from their directories with the host's own `git`, running as the same `ikigenba` user, and never reaches repos over HTTP or through anything else of repos', so repos receives no request on sites' account and records no event for it. repos keeps one bare repository per repository at `<REPOS_DIR>/<rep id>.git`, named by the repository's id (`rep_` and 16 lowercase hexadecimal digits), never its name, whose `HEAD` names `refs/heads/main` and whose own git config holds `ikigenba.id`, `ikigenba.name`, `ikigenba.owner`, and `ikigenba.created` (repos' `S15-disk.md`). `REPOS_DIR` is a setting read once, at start, from sites' environment; unset or empty it is the manifest's `../repos/state/repos` (`S01`), and a relative value is resolved against sites' working directory, so on a host, where sites runs in `/var/opt/ikigenba/sites` and repos in `/var/opt/ikigenba/repos`, it is `/var/opt/ikigenba/sites/../repos/state/repos`, which is `/var/opt/ikigenba/repos/state/repos`, and in a sandbox `<data>/apps/sites/../repos/state/repos` (`S22`). sites does not check it at start, since repos may be installed later (`S02`). sites reads a repository three ways and no other: resolving a ref to a commit, reading `ikigenba.owner`, and unpacking a commit's tree with `git archive`; it never writes under `REPOS_DIR` — no ref, no object, no config, no lock left behind — so a repository's directory is byte for byte what it was before sites read it. A site names its repository by id, so a site keeps working across a rename in repos, and a repository deleted in repos is gone for sites too. What sites writes is under its own working directory: its catalog `state/sites.db`, which opsctl backs up, and `cache/sites/<site id>/<sha>/`, the files of a published commit exactly as `git archive` emits them — the same paths, the same bytes, symbolic links as links — which nothing backs up: `cache/` may be emptied at any time, and a tree missing from it is rebuilt on demand (`S16`). A site's directory holds the tree of its published commit and no other once a publish has finished (`S08`); deleting a site removes its directory (`S10`). The actor is a model working through an MCP client, an operator on the host, or a visitor; sites runs on the host in `/var/opt/ikigenba/sites` with `REPOS_DIR` unset unless a story sets it, and with the suite's services file (`S05`); telemetry takes every event; and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `blog`, `sit_4e7a1c9b0d2f8635`, public and listed, over `rep_8c21d4e0f7a3b915` at `main`, published at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` as of `2026-10-01T10:00:00Z`, its tree in the cache. `/var/opt/ikigenba/repos/state/repos/` holds `rep_8c21d4e0f7a3b915.git` (repos' `site`) and `rep_3f9a0c1d2e4b5a69.git` (repos' `notes`), both with `ikigenba.owner` `u_7f3a9c21`, and `rep_d41c7a9e05b28f63.git` (repos' `journal`), with `ikigenba.owner` `u_2b8e1d04`.
 
 ## A model creates a site over a repository in repos' directory
 
@@ -38,12 +38,12 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's: `REPOS_DIR` is unset, and `/opt/repos/state/repos/rep_3f9a0c1d2e4b5a69.git` is a bare repository whose `ikigenba.owner` is `u_7f3a9c21`. No site is named `docs`.
+- The preamble's: `REPOS_DIR` is unset, and `/var/opt/ikigenba/repos/state/repos/rep_3f9a0c1d2e4b5a69.git` is a bare repository whose `ikigenba.owner` is `u_7f3a9c21`. No site is named `docs`.
 
 Postconditions:
 
 - The catalog holds `docs`, unpublished, over `rep_3f9a0c1d2e4b5a69` (`S06`). Nothing was unpacked: `cache/sites/<id>/` holds no tree.
-- `/opt/repos/state/repos/rep_3f9a0c1d2e4b5a69.git` is as it was. repos received no request.
+- `/var/opt/ikigenba/repos/state/repos/rep_3f9a0c1d2e4b5a69.git` is as it was. repos received no request.
 - The request recorded `site.created` with `repo` `rep_3f9a0c1d2e4b5a69` and `site` `<id>` (`S15`).
 
 ## An operator points sites at another repositories directory
@@ -82,15 +82,15 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's, except that the operator has set `REPOS_DIR=/srv/ikigenba/repos` in `/opt/sites/etc/env` and restarted sites.
-- `/srv/ikigenba/repos/rep_8c21d4e0f7a3b915.git` is a bare repository whose `main` is at `<sha>`. `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git` still exists, its `main` at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02`.
+- The preamble's, except that the operator has set `REPOS_DIR=/srv/ikigenba/repos` in `/etc/opt/ikigenba/sites/env` and restarted sites.
+- `/srv/ikigenba/repos/rep_8c21d4e0f7a3b915.git` is a bare repository whose `main` is at `<sha>`. `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git` still exists, its `main` at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02`.
 
 Postconditions:
 
 - `blog` is published at `<sha>`, unpacked from `/srv/ikigenba/repos/rep_8c21d4e0f7a3b915.git`; `cache/sites/sit_4e7a1c9b0d2f8635/` holds one tree, `<sha>/`.
 - Neither repository changed.
 - The request recorded `site.published` with `commit` `<sha>`, `ref` `main`, and `site` `sit_4e7a1c9b0d2f8635`.
-- With `REPOS_DIR=../repos-b/state/repos` instead, sites would have read `/opt/repos-b/state/repos/rep_8c21d4e0f7a3b915.git`, the relative value resolved against `/opt/sites`.
+- With `REPOS_DIR=../repos-b/state/repos` instead, sites would have read `/var/opt/ikigenba/repos-b/state/repos/rep_8c21d4e0f7a3b915.git`, the relative value resolved against `/var/opt/ikigenba/sites`.
 
 ## A model creates a site over a repository another user owns
 
@@ -126,7 +126,7 @@ no repository 'rep_d41c7a9e05b28f63'
 
 Preconditions:
 
-- The preamble's: `git config --file /opt/repos/state/repos/rep_d41c7a9e05b28f63.git/config ikigenba.owner` prints `u_2b8e1d04`. No site is named `docs`.
+- The preamble's: `git config --file /var/opt/ikigenba/repos/state/repos/rep_d41c7a9e05b28f63.git/config ikigenba.owner` prints `u_2b8e1d04`. No site is named `docs`.
 
 Postconditions:
 
@@ -167,7 +167,7 @@ no repository 'rep_5e6f7a8b9c0d1e2f'
 
 Preconditions:
 
-- The preamble's, and `/opt/repos/state/repos/rep_5e6f7a8b9c0d1e2f.git` is a bare repository with commits on `main` whose config holds no `ikigenba.` key. No site is named `docs`.
+- The preamble's, and `/var/opt/ikigenba/repos/state/repos/rep_5e6f7a8b9c0d1e2f.git` is a bare repository with commits on `main` whose config holds no `ikigenba.` key. No site is named `docs`.
 
 Postconditions:
 
@@ -210,7 +210,7 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's; the owner then renamed `site` to `www` in repos, so `git config --file /opt/repos/state/repos/rep_8c21d4e0f7a3b915.git/config ikigenba.name` prints `www`. Its `main` is still at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02`.
+- The preamble's; the owner then renamed `site` to `www` in repos, so `git config --file /var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git/config ikigenba.name` prints `www`. Its `main` is still at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02`.
 
 Postconditions:
 
@@ -251,12 +251,12 @@ repository 'rep_8c21d4e0f7a3b915' is unavailable
 
 Preconditions:
 
-- The preamble's, except that `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git` does not exist.
+- The preamble's, except that `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git` does not exist.
 
 Postconditions:
 
 - `blog` is unchanged: published at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` as of `2026-10-01T10:00:00Z`, its tree in the cache as it was.
-- sites created nothing under `/opt/repos/state/repos/`.
+- sites created nothing under `/var/opt/ikigenba/repos/state/repos/`.
 - The request recorded no `site.published`; its `tool.called` has `kind` `additive` and `outcome` `error`.
 
 ## A visitor reads a site whose repository was deleted in repos
@@ -286,7 +286,7 @@ Status 200. The body is exactly the bytes of `style.css` at `5b9e2d7a1c3f4e6b8a0
 
 Preconditions:
 
-- The preamble's, except that `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git` does not exist; `blog`'s tree is still in `cache/sites/sit_4e7a1c9b0d2f8635/5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02/`. The request is a guest's.
+- The preamble's, except that `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git` does not exist; `blog`'s tree is still in `cache/sites/sit_4e7a1c9b0d2f8635/5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02/`. The request is a guest's.
 
 Postconditions:
 
@@ -330,12 +330,12 @@ and a `content` array of one text block whose text is that object encoded compac
 Preconditions:
 
 - The preamble's: the branch `preview` of `rep_8c21d4e0f7a3b915` is at `9d0c8b7a6f5e4d3c2b1a09f8e7d6c5b4a3928170`.
-- Before the call, the operator recorded every path under `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git` with its size, its modification time, and a checksum of its bytes.
+- Before the call, the operator recorded every path under `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git` with its size, its modification time, and a checksum of its bytes.
 
 Postconditions:
 
 - `blog` is published at `9d0c8b7a6f5e4d3c2b1a09f8e7d6c5b4a3928170`, and `cache/sites/sit_4e7a1c9b0d2f8635/` holds one tree, `9d0c8b7a6f5e4d3c2b1a09f8e7d6c5b4a3928170/`.
-- Recorded again, every path under `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git` has the size, modification time, and checksum it had; no path was added or removed. Its `preview` and `main` are where they were.
+- Recorded again, every path under `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git` has the size, modification time, and checksum it had; no path was added or removed. Its `preview` and `main` are where they were.
 - repos received no request and recorded no event.
 
 ## An operator lists the files of a site in the cache
@@ -345,7 +345,7 @@ An operator looking at a site's tree on disk finds the files of the published co
 Command:
 
 ```
-$ cd /opt/sites/cache/sites/sit_4e7a1c9b0d2f8635 && find . -mindepth 1 | LC_ALL=C sort
+$ cd /var/opt/ikigenba/sites/cache/sites/sit_4e7a1c9b0d2f8635 && find . -mindepth 1 | LC_ALL=C sort
 ```
 
 Output:
@@ -374,7 +374,7 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- Each file's bytes are the bytes `git --git-dir=/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git archive --format=tar 5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` emits for it; `link.html` is a symbolic link whose target is `index.html`, as the commit holds it.
+- Each file's bytes are the bytes `git --git-dir=/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git archive --format=tar 5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` emits for it; `link.html` is a symbolic link whose target is `index.html`, as the commit holds it.
 
 ## An operator empties a site's cache while sites runs
 
@@ -383,7 +383,7 @@ The cache is sites' to rebuild, so an operator reclaiming disk may remove any of
 Command:
 
 ```
-$ rm -rf /opt/sites/cache/sites/sit_4e7a1c9b0d2f8635
+$ rm -rf /var/opt/ikigenba/sites/cache/sites/sit_4e7a1c9b0d2f8635
 ```
 
 Output: none.

@@ -1,6 +1,6 @@
 # Stories — limits
 
-What bounds the work sites does with git, so that no repository can fill its disk or hold it up. Two settings, each a positive whole number read once, at start, from sites' environment, whose default is the manifest's `[env]` (`S01`), which the host writes into `/opt/sites/etc/env`; an operator changes one there and restarts sites, and a developer sets it on the command line. Unset or empty, a setting is its default; a value that is not a positive whole number keeps sites from starting (`S02`). `SITE_MAX_BYTES`, 268435456 (256 MiB), is the most a site's tree may hold: the sum of the sizes of the files of the commit, as `git archive` emits them, neither the repository's size on disk nor the archive's. A tree whose files sum to exactly `SITE_MAX_BYTES` is unpacked; one byte more, and it is not. sites stops unpacking as soon as the sum passes the limit, and an unpack that stops leaves nothing of itself behind: a tree is servable only once it is whole. `OPERATION_SECONDS`, 600, is the longest one git run may take — resolving a ref, reading a repository's config, or unpacking a tree, each timed on its own; a git still running at the deadline is killed, and its run has failed. Both bound every unpack, a publish's and a rebuild's alike. A publish they stop is refused with a tool error, `site exceeds <n> bytes` or `git took longer than <n> seconds`, `<n>` being the setting, and changes nothing: the site goes on being served at the commit it had, by the requests that came during the publish too, and its cache holds what it held. A rebuild they stop leaves the site unavailable, with `reason` `too_large` or `timed_out` (`S16`). A tree already in the cache is not measured again: a lower limit applies to the next unpack, not to what is served now. The ordinary refusal of a publish over the default limit is `S08`'s; the stories here are the limits' edges and their settings. The actor is a model publishing through an MCP client, as `S08` sends `publish`, or a visitor reading the site meanwhile; sites runs on the host with the suite's services file (`S05`), telemetry takes every event, and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `blog`, `sit_4e7a1c9b0d2f8635`, public and listed, over `rep_8c21d4e0f7a3b915` at `main`, published at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` as of `2026-10-01T10:00:00Z`, whose tree is in `cache/sites/sit_4e7a1c9b0d2f8635/5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02/` and holds no file `big.bin`. The owner has since pushed one commit to the repository's `main`, `<sha>`, which adds `big.bin`. Every setting is unset unless a story sets it. Nothing in this group earns a line on stderr.
+What bounds the work sites does with git, so that no repository can fill its disk or hold it up. Two settings, each a positive whole number read once, at start, from sites' environment, whose default is the manifest's `[env]` (`S01`), which the host writes into `/etc/opt/ikigenba/sites/env`; an operator changes one there and restarts sites, and a developer sets it on the command line. Unset or empty, a setting is its default; a value that is not a positive whole number keeps sites from starting (`S02`). `SITE_MAX_BYTES`, 268435456 (256 MiB), is the most a site's tree may hold: the sum of the sizes of the files of the commit, as `git archive` emits them, neither the repository's size on disk nor the archive's. A tree whose files sum to exactly `SITE_MAX_BYTES` is unpacked; one byte more, and it is not. sites stops unpacking as soon as the sum passes the limit, and an unpack that stops leaves nothing of itself behind: a tree is servable only once it is whole. `OPERATION_SECONDS`, 600, is the longest one git run may take — resolving a ref, reading a repository's config, or unpacking a tree, each timed on its own; a git still running at the deadline is killed, and its run has failed. Both bound every unpack, a publish's and a rebuild's alike. A publish they stop is refused with a tool error, `site exceeds <n> bytes` or `git took longer than <n> seconds`, `<n>` being the setting, and changes nothing: the site goes on being served at the commit it had, by the requests that came during the publish too, and its cache holds what it held. A rebuild they stop leaves the site unavailable, with `reason` `too_large` or `timed_out` (`S16`). A tree already in the cache is not measured again: a lower limit applies to the next unpack, not to what is served now. The ordinary refusal of a publish over the default limit is `S08`'s; the stories here are the limits' edges and their settings. The actor is a model publishing through an MCP client, as `S08` sends `publish`, or a visitor reading the site meanwhile; sites runs on the host with the suite's services file (`S05`), telemetry takes every event, and the catalog holds `S06`'s shared catalog, among them the caller `u_7f3a9c21`'s `blog`, `sit_4e7a1c9b0d2f8635`, public and listed, over `rep_8c21d4e0f7a3b915` at `main`, published at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` as of `2026-10-01T10:00:00Z`, whose tree is in `cache/sites/sit_4e7a1c9b0d2f8635/5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02/` and holds no file `big.bin`. The owner has since pushed one commit to the repository's `main`, `<sha>`, which adds `big.bin`. Every setting is unset unless a story sets it. Nothing in this group earns a line on stderr.
 
 ## A model publishes a site exactly at the size limit
 
@@ -38,7 +38,7 @@ and a `content` array of one text block whose text is that object encoded compac
 
 Preconditions:
 
-- The preamble's, with `SITE_MAX_BYTES=1048576` set in `/opt/sites/etc/env` and sites restarted since.
+- The preamble's, with `SITE_MAX_BYTES=1048576` set in `/etc/opt/ikigenba/sites/env` and sites restarted since.
 - The files of the tree at `<sha>` sum to exactly 1048576 bytes.
 
 Postconditions:
@@ -86,7 +86,7 @@ site exceeds 1048576 bytes
 
 Preconditions:
 
-- The preamble's, with `SITE_MAX_BYTES=1048576` set in `/opt/sites/etc/env` and sites restarted since.
+- The preamble's, with `SITE_MAX_BYTES=1048576` set in `/etc/opt/ikigenba/sites/env` and sites restarted since.
 - The files of the tree at `<sha>` sum to 1048577 bytes.
 
 Postconditions:
@@ -130,7 +130,7 @@ Status 200, answered at once, without waiting for the publish. The body is exact
 
 Preconditions:
 
-- The preamble's, with `SITE_MAX_BYTES=1048576` set in `/opt/sites/etc/env` and sites restarted since; the files of the tree at `<sha>` sum to 1048577 bytes.
+- The preamble's, with `SITE_MAX_BYTES=1048576` set in `/etc/opt/ikigenba/sites/env` and sites restarted since; the files of the tree at `<sha>` sum to 1048577 bytes.
 - The model's `publish` of `blog`, as in `A model publishes a site one byte over the size limit`, is unpacking `<sha>` when this request arrives. The request is a guest's.
 
 Postconditions:
@@ -170,7 +170,7 @@ Preconditions:
 
 - The preamble's; the files of the tree at `<sha>` sum to 1048577 bytes.
 - With `SITE_MAX_BYTES=1048576`, a `publish` of `blog` was refused with `site exceeds 1048576 bytes`.
-- The operator has since set `SITE_MAX_BYTES=2097152` in `/opt/sites/etc/env` and restarted sites.
+- The operator has since set `SITE_MAX_BYTES=2097152` in `/etc/opt/ikigenba/sites/env` and restarted sites.
 
 Postconditions:
 
@@ -205,7 +205,7 @@ Status 200. The body is exactly the bytes of `about/index.html` at `5b9e2d7a1c3f
 Preconditions:
 
 - The preamble's: `blog`'s tree at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02` is in the cache. Its files sum to more than 1024 bytes.
-- The operator has set `SITE_MAX_BYTES=1024` in `/opt/sites/etc/env` and restarted sites. The request is a guest's.
+- The operator has set `SITE_MAX_BYTES=1024` in `/etc/opt/ikigenba/sites/env` and restarted sites. The request is a guest's.
 
 Postconditions:
 
@@ -248,8 +248,8 @@ With `OPERATION_SECONDS` unset, the text is `git took longer than 600 seconds`.
 
 Preconditions:
 
-- The preamble's, with `OPERATION_SECONDS=60` set in `/opt/sites/etc/env` and sites restarted since.
-- git, reading `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git`, would take longer than 60 seconds to unpack `<sha>`.
+- The preamble's, with `OPERATION_SECONDS=60` set in `/etc/opt/ikigenba/sites/env` and sites restarted since.
+- git, reading `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git`, would take longer than 60 seconds to unpack `<sha>`.
 
 Postconditions:
 

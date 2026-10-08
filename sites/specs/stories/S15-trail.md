@@ -669,7 +669,7 @@ Status 503. The body is sites' unavailable page, as `S16` fixes it.
 
 Preconditions:
 
-- The preamble's, except that `cache/sites/sit_4e7a1c9b0d2f8635/` holds no tree for `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02`, and `/opt/repos/state/repos/rep_8c21d4e0f7a3b915.git` does not exist. The request is a guest's.
+- The preamble's, except that `cache/sites/sit_4e7a1c9b0d2f8635/` holds no tree for `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02`, and `/var/opt/ikigenba/repos/state/repos/rep_8c21d4e0f7a3b915.git` does not exist. The request is a guest's.
 
 Postconditions:
 
