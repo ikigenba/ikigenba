@@ -13,8 +13,13 @@ addresses it path-style.
 Two different things are kept, so there are two pairs of commands for keeping
 them; a snapshot, below, is a third artifact. A **service** is what lives
 under `/opt/<name>/` and `/var/opt/ikigenba/<name>/`; the **host** is the
-machine's own configuration and its certificate. A service backup never
-touches `/etc/`, and a host restore never touches `/opt/` or `/var/opt/`.
+machine's own configuration and its certificate. What is kept of a service is
+its data and nothing else: its `state/` and its database. What the deploy
+brought under `/opt/<name>/` comes back by a deploy, and its environment file,
+`/etc/opt/ikigenba/<name>/env`, is generated, so a host writes it again
+rather than carrying a stale copy forward. A service backup never reads
+`/etc/`; a service restore writes there only the service's environment file;
+and a host restore never touches `/opt/`, `/etc/opt/`, or `/var/opt/`.
 
 A host about to be discarded has one more thing to do: `opsctl retire`
 stops everything, lets litestream ship what it holds, and takes the service
@@ -22,9 +27,8 @@ and host backups one last time, so a destroy loses nothing the timers had not
 yet copied.
 
 A **snapshot** is the one artifact that carries a service's data whole:
-`opsctl snapshot` writes a service's `etc/` but for `etc/env`, which holds its
-secrets, and its `state/`, together with a consistent copy of its database,
-and `opsctl restore --from` puts one back.
+`opsctl snapshot` writes a service's `state/` together with a consistent copy
+of its database, and `opsctl restore --from` puts one back.
 It is how a space is given data it never made — a golden set, or another
 space's data — and nothing on the host takes one on a timer.
 
@@ -51,9 +55,8 @@ Configuration keys:
 
 ## Two mechanisms, and where the line between them falls
 
-A service's files are copied on a timer: `opsctl backup` tars its `etc/`
-from `/opt/<name>/` and its `state/` from `/var/opt/ikigenba/<name>/` and
-writes one object. That is a walk of the filesystem, and it is
+A service's files are copied on a timer: `opsctl backup` tars its `state/`
+from `/var/opt/ikigenba/<name>/` and writes one object. That is a walk of the filesystem, and it is
 honest about being one — it holds whatever was on disk while it ran.
 
 A SQLite database cannot be backed up that way. Copying the file while a
@@ -131,15 +134,19 @@ snapshot and the committed changes after it, and nothing else.
 
 - `/etc/ikigenba/` and `/etc/letsencrypt/` — the host's own configuration and
   its certificate — by `opsctl host backup`, under `host/`.
-- Every service's `etc/`, from `/opt/<service>/etc/`, and `state/`, from
-  `/var/opt/ikigenba/<service>/state/`, under the service's own name, by
-  `opsctl backup`. In the tarball they are `etc/...` and `state/...`, named
-  relative to the service, whichever directory each came from.
+- Every service's `state/`, from `/var/opt/ikigenba/<service>/state/`, under
+  the service's own name, by `opsctl backup`. In the tarball it is
+  `state/...`, named relative to the service.
 - Every declared database, under the service's own name, by `litestream`.
-- A snapshot of a service — its `etc/` but for `etc/env`, its `state/`, and a
-  copy of its database — under `snapshots/<service>/`, by `opsctl snapshot`, only when
+- A snapshot of a service — its `state/` and a copy of its database — under `snapshots/<service>/`, by `opsctl snapshot`, only when
   someone runs it.
 - Never `cache/`, wherever it is: it is, by the name, reconstructible.
+- Never a service's `etc/`: what is under `/opt/<service>/` is the deploy's,
+  and comes back by deploying it again. An older tarball or snapshot that
+  holds an `etc/` still restores; its `etc/` is ignored.
+- Never `/etc/opt/ikigenba/`: each service's environment file is generated
+  from its manifest, its parameter, and the configuration store, and the
+  command that puts the service in place writes it again.
 - Never `/etc/nginx/` and never a unit file: both are generated from the
   configuration store and what is under `/opt`, so a restored host writes
   them again rather than carrying stale copies forward.
@@ -181,8 +188,8 @@ period key and is always enabled.
 function of the manifests under `/opt`, the services discovered under `/opt`
 and `/var/opt/ikigenba`, and the two periods. It names each declared database
 by its path under `/var/opt/ikigenba/<service>/` and replicates it to
-`<backup.s3_uri><service>/`. Whatever changes a manifest regenerates it:
-`opsctl install` does, in its own
+`<backup.s3_uri><service>/`. Whatever changes a manifest or a database
+regenerates it: `opsctl install` does, in its own
 `litestream` step (see `S7-apps.md`), and `opsctl restore` does before it starts
 litestream again. Both leave `litestream.service` alone when the regenerated
 file is byte for byte the old one. `init` alone enables the unit; the others
@@ -218,14 +225,16 @@ Output:
 ```
 Usage: opsctl backup [SERVICE]
 
-Copy every service's etc/ and state/ to the prefix in backup.s3_uri, under the
-service's own name, or just SERVICE when one is named. A service's etc/ is
-/opt/SERVICE/etc/ and its state/ is /var/opt/ikigenba/SERVICE/state/.
+Copy every service's state/, /var/opt/ikigenba/SERVICE/state/, to the prefix
+in backup.s3_uri, under the service's own name, or just SERVICE when one is
+named.
 
-Never copied: cache/, anything opsctl generates, and -- for a service that
+Never copied: /opt/SERVICE/, which a deploy brings; cache/; anything opsctl
+generates, the service's environment file among them; and -- for a service that
 declares a [database] -- the database file, its -wal and -shm, and its
 litestream metadata directory. Those are replicated continuously by
-litestream.service. The host's own /etc/ is 'opsctl host backup'.
+litestream.service. The host's own /etc/ikigenba/ and /etc/letsencrypt/ are
+'opsctl host backup'.
 
 A service declares its database with a [database] table in etc/manifest.toml
 naming its engine and its path. 'opsctl init' writes the timer that runs this
@@ -278,7 +287,8 @@ Preconditions:
 Postconditions:
 
 - `<backup.s3_uri><service>/2026-09-12T03:00:04Z.tar.zst` holds that
-  service's `etc/` and `state/`, for each service.
+  service's `state/` and nothing else, for each service: no `etc/`, and
+  nothing from `/etc/opt/ikigenba/`.
 - `crm`'s object holds no `state/crm.db`, no `state/crm.db-wal`, no
   `state/crm.db-shm`, and nothing under `state/.crm.db-litestream/`.
   `dashboard`'s object holds all of its `state/`.
@@ -468,8 +478,9 @@ Output:
 Usage: opsctl host <subcommand>
 
 Back up and restore the host's own configuration: /etc/ikigenba/ and
-/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt or
-/var/opt is touched either way -- that is 'opsctl backup' and 'opsctl restore'.
+/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt,
+/etc/opt, or /var/opt is touched either way -- that is 'opsctl backup' and
+'opsctl restore'.
 
 Subcommands:
   backup    write /etc/ikigenba/ and /etc/letsencrypt/ to S3
@@ -524,8 +535,9 @@ Postconditions:
 
 - `<backup.s3_uri>host/2026-09-12T03:00:04Z.tar.zst` holds `/etc/ikigenba/`
   and `/etc/letsencrypt/`, with their modes.
-- Nothing under `/opt/` or `/var/opt/` was read. No earlier object was
-  deleted or overwritten.
+- Nothing under `/opt/`, `/etc/opt/`, or `/var/opt/` was read: no
+  environment file is in the backup. No earlier object was deleted or
+  overwritten.
 
 ## An operator gives a rebuilt host its certificate back
 
@@ -560,8 +572,8 @@ Postconditions:
 - `/etc/ikigenba/` and `/etc/letsencrypt/` are exactly what the newest backup
   holds, with their modes. Anything that was there and is not in the backup
   is gone.
-- Nothing under `/opt/` or `/var/opt/` was touched, no unit was started or
-  stopped, and nginx was not reloaded. `opsctl init` is what makes the host
+- Nothing under `/opt/`, `/etc/opt/`, or `/var/opt/` was touched, no unit
+  was started or stopped, and nginx was not reloaded. `opsctl init` is what makes the host
   act on what was just restored.
 - No object under `<backup.s3_uri>` was written or deleted.
 
@@ -812,9 +824,10 @@ A backup cannot stand a service up somewhere else on its own: its tarball
 leaves the database out, because litestream owns it. A snapshot is the
 service's data in one object, database included, so it can be put back on any
 space. It is taken while the service runs: nothing is stopped. It carries no
-credential: `etc/env` holds the service's secret values and is left out, so a
-snapshot can be copied anywhere without taking a space's secrets with it. A
-database's own rows, token hashes among them, are data and travel.
+credential: the service's secret values are in its environment file, which is
+never copied, so a snapshot can be copied anywhere without taking a space's
+secrets with it. A database's own rows, token hashes among them, are data and
+travel.
 
 Command:
 
@@ -831,16 +844,16 @@ Output:
 ```
 Usage: opsctl snapshot [SERVICE]
 
-Copy every service's etc/ and state/, and the database of a service that
-declares a [database], to snapshots/<service>/ under the prefix in
-backup.s3_uri, or just SERVICE when one is named. A service's etc/ is
-/opt/SERVICE/etc/ and its state/ is /var/opt/ikigenba/SERVICE/state/. Every
+Copy every service's state/, /var/opt/ikigenba/SERVICE/state/, and the
+database of a service that declares a [database], to snapshots/<service>/
+under the prefix in backup.s3_uri, or just SERVICE when one is named. Every
 snapshot of one run carries the same timestamp.
 
 The database copy is rebuilt from the replica litestream.service keeps, so
 nothing is stopped; it may trail the live database by the changes litestream
-has not yet shipped. Never copied: cache/; etc/env, which holds the service's
-secrets; anything opsctl generates; and the database's -wal and -shm and its
+has not yet shipped. Never copied: /opt/SERVICE/, which a deploy brings;
+cache/; anything opsctl generates, the environment file that holds the
+service's secrets among them; and the database's -wal and -shm and its
 litestream metadata directory.
 
 'opsctl restore SERVICE --from URI' puts a snapshot back.
@@ -896,13 +909,13 @@ Preconditions:
 Postconditions:
 
 - `<backup.s3_uri>snapshots/crm/2026-09-12T14:22:51Z.tar.zst` holds `crm`'s
-  `etc/` but for `etc/env`, and its `state/`; and `state/crm.db` in it is a whole, consistent
+  `state/` and nothing else, and `state/crm.db` in it is a whole, consistent
   database: what the replica held when the run read it, which may trail the
   live database by the changes litestream had not yet shipped. It holds no
   `state/crm.db-wal`, no `state/crm.db-shm`, and nothing under
   `state/.crm.db-litestream/`.
 - `<backup.s3_uri>snapshots/dashboard/2026-09-12T14:22:51Z.tar.zst` holds
-  `dashboard`'s `etc/` but for `etc/env`, and all of its `state/`: with no
+  all of `dashboard`'s `state/` and nothing else: with no
   database declared there is no replica to read and no copy to make.
 - No unit was stopped or started, and `crm`'s live database, its `-wal`, and
   its replica are as litestream left them. Nothing on the host has changed.
@@ -1051,12 +1064,20 @@ Output:
 ```
 Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
-Replace /opt/SERVICE/etc/ and /var/opt/ikigenba/SERVICE/state/ with a backup,
-and, when SERVICE declares a [database], replace that database with what
-litestream holds. Without --at or --from both halves are the newest there is.
-With --from, everything comes from the one snapshot at that URI instead,
-database included. Nothing under bin/ or share/ is touched. A SERVICE whose
-state/ is still under /opt/SERVICE/ is refused: install it first.
+Replace /var/opt/ikigenba/SERVICE/state/ with a backup, and, when SERVICE
+declares a [database], replace that database with what litestream holds.
+Without --at or --from both halves are the newest there is. With --from,
+everything comes from the one snapshot at that URI instead, database included.
+SERVICE must be installed: its installed etc/manifest.toml says what it
+declares, and nothing under /opt/SERVICE/ is touched. An etc/ that an older
+backup or snapshot holds is ignored. A SERVICE that is not installed, or whose
+state/ or environment file is still under /opt/SERVICE/, is refused: install
+it first.
+
+The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
+restore writes it as 'opsctl install' does, from the parameter
+/<host.name>/SERVICE and the installed manifest, reading the parameter before
+anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -1068,8 +1089,7 @@ app stays disabled: neither of its units is enabled or started. A failed
 restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
-the manifest the restore put in place, so a database restored into a host that
-never ran SERVICE is replicated from the start line on.
+the installed manifests, as 'opsctl install' does.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
@@ -1080,11 +1100,9 @@ before that moment, and the database is rebuilt to the moment itself. The two
 are not the same instant, because the tarball is written on a timer and the
 database is replicated continuously.
 
---from takes etc/, state/, and the database from a snapshot 'opsctl snapshot'
-wrote, and reads neither the backups nor litestream's replica. A snapshot holds
-no etc/env, so --from writes it as 'opsctl install' does, from the parameter
-/<host.name>/SERVICE and the manifest the snapshot holds. It cannot be
-combined with --at.
+--from takes state/ and the database from a snapshot 'opsctl snapshot' wrote,
+and reads neither the backups nor litestream's replica. It cannot be combined
+with --at.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -1111,12 +1129,15 @@ The app is running, so the restore stops its socket and its service, and
 litestream with them, before the files land; all three come back once the
 database is in place. The service is started explicitly, as `install` starts
 it, so an app the restored data breaks shows here rather than at its first
-request. The `db` line is
+request. The `secrets` step reads this host's parameter for `crm` before
+anything is stopped, and the `files` step writes the environment file from it
+and the installed manifest, as `opsctl install` would; the tarball holds no
+environment file. The `db` line is
 the database's own newest point, which is later than the tarball's: the tarball
 is written on a timer and the database is replicated continuously. The
-`litestream` line is `/etc/litestream.yml` regenerated from the manifest the
-`files` step just wrote; here it names the same database as before, so the
-file is unchanged and the line says so.
+`litestream` line is `/etc/litestream.yml` regenerated from the installed
+manifests; a restore changes no manifest, so here the file is unchanged and
+the line says so.
 
 Command:
 
@@ -1128,8 +1149,9 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+secrets: ok (3 keys)
 stop: ok (ikigenba-crm.socket, ikigenba-crm.service, litestream.service)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 12 files)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 12 files)
 db: ok (/var/opt/ikigenba/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
 litestream: ok (unchanged)
 start: ok (litestream.service, ikigenba-crm.socket, ikigenba-crm.service)
@@ -1143,22 +1165,30 @@ Preconditions:
   under that prefix.
 - `<backup.s3_uri>crm/` holds at least one tarball and litestream has
   replicated `crm`'s database there.
+- `crm` is installed: `/opt/crm/etc/manifest.toml` is the one `S7-apps.md`
+  shows, `/opt/crm/bin/crm` exists, and its unit names
+  `/etc/opt/ikigenba/crm/env`. `/sbx.ikigenba.dev/crm` holds every name the
+  manifest's `secrets` lists.
 - `ikigenba-crm.socket` is listening.
 
 Postconditions:
 
-- `/opt/crm/etc/` and `/var/opt/ikigenba/crm/state/` are what the newest
-  tarball holds, and then `/var/opt/ikigenba/crm/state/crm.db` is what
-  litestream restored. Anything that was there and is in neither is gone.
-- `/opt/crm/bin/` and `/opt/crm/share/` are untouched: the code on the host is
-  the deploy's business, not the restore's.
+- `/var/opt/ikigenba/crm/state/` is what the newest tarball holds, and then
+  `/var/opt/ikigenba/crm/state/crm.db` is what litestream restored. Anything
+  that was there and is in neither is gone. Had the tarball been an older one
+  holding an `etc/`, that `etc/` would have been ignored.
+- `/etc/opt/ikigenba/crm/env` is what `opsctl install` would write from this
+  host's parameter and the installed manifest: mode `0600`, every secret the
+  manifest names, its `[env]`, `DRAIN_SECONDS`, and `IKIGENBA_SERVICES`. The
+  values are never printed.
+- Nothing under `/opt/crm/` was written: the code and the manifest on the host
+  are the deploy's business, not the restore's.
 - `ikigenba-crm.socket` is listening, `ikigenba-crm.service` is active, and
   `litestream.service` is running, replicating the restored database to
   `<backup.s3_uri>crm/` as before. The app was down for the length of the
   restore and for no longer; a request that arrived meanwhile found no socket
   and was answered by nginx with an error.
-- `/etc/litestream.yml` is byte for byte as it was: the restored manifest
-  declares the database the installed one did.
+- `/etc/litestream.yml` is byte for byte as it was: no manifest changed.
 - `/var/lib/ikigenba/services.json` has been rewritten from the store, what
   is now under `/opt`, and which apps are disabled. No line reports it.
 - No unit was enabled or disabled, and nginx was not reloaded.
@@ -1183,8 +1213,9 @@ Output:
 
 ```
 source: ok (crm/2026-09-11T03:00:02Z.tar.zst, 1.2 MiB)
+secrets: ok (3 keys)
 stop: ok (ikigenba-crm.socket, ikigenba-crm.service, litestream.service)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 12 files)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 12 files)
 db: ok (/var/opt/ikigenba/crm/state/crm.db, at 2026-09-11T18:00:00Z)
 litestream: ok (unchanged)
 start: ok (litestream.service, ikigenba-crm.socket, ikigenba-crm.service)
@@ -1203,8 +1234,7 @@ Preconditions:
 Postconditions:
 
 - Everything the ordinary restore's postconditions say, except that
-  `/opt/crm/etc/` and `/var/opt/ikigenba/crm/state/` are the
-  `2026-09-11T03:00:02Z` tarball's and `/var/opt/ikigenba/crm/state/crm.db`
+  `/var/opt/ikigenba/crm/state/` is the `2026-09-11T03:00:02Z` tarball's and `/var/opt/ikigenba/crm/state/crm.db`
   is the database as it stood at `2026-09-11T18:00:00Z`.
 - Backups written after that moment were read past and not deleted. The
   restore is a read: `<backup.s3_uri>crm/` holds what it held before.
@@ -1241,8 +1271,8 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No unit was stopped and nothing under `/opt/crm/` or
-  `/var/opt/ikigenba/crm/` was read or written.
+- Nothing has changed. No unit was stopped and nothing under `/opt/crm/`,
+  `/etc/opt/ikigenba/crm/`, or `/var/opt/ikigenba/crm/` was written.
 
 ## An operator puts back a service that keeps no database
 
@@ -1264,8 +1294,9 @@ Output:
 
 ```
 source: ok (dashboard/2026-09-12T03:00:04Z.tar.zst, 1.1 MiB)
+secrets: ok (0 keys)
 stop: ok (ikigenba-dashboard.socket, ikigenba-dashboard.service)
-files: ok (/opt/dashboard/etc, /var/opt/ikigenba/dashboard/state, 40 files)
+files: ok (/etc/opt/ikigenba/dashboard/env, /var/opt/ikigenba/dashboard/state, 40 files)
 start: ok (ikigenba-dashboard.socket, ikigenba-dashboard.service)
 ```
 
@@ -1273,13 +1304,16 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `/opt/dashboard/etc/manifest.toml` declares no `[database]`.
+- `dashboard` is installed, and `/opt/dashboard/etc/manifest.toml` declares
+  no `[database]` and no secrets.
 - `ikigenba-dashboard.socket` is listening.
 
 Postconditions:
 
 - `/var/opt/ikigenba/dashboard/state/` is exactly what the tarball holds, and
-  is the whole of it. No litestream call was made, `/etc/litestream.yml` was
+  is the whole of it. `/etc/opt/ikigenba/dashboard/env` is what `opsctl
+  install` would write: no secrets, the manifest's `[env]`, `DRAIN_SECONDS`,
+  and `IKIGENBA_SERVICES`. No litestream call was made, `/etc/litestream.yml` was
   not regenerated, and `litestream.service` was left running throughout, still
   replicating every other service's database.
 - `ikigenba-dashboard.socket` is listening and `ikigenba-dashboard.service`
@@ -1305,8 +1339,9 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+secrets: ok (3 keys)
 stop: ok (litestream.service; ikigenba-crm.socket, ikigenba-crm.service already inactive)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 12 files)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 12 files)
 db: ok (/var/opt/ikigenba/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
 litestream: ok (unchanged)
 start: ok (litestream.service; ikigenba-crm.socket, ikigenba-crm.service left inactive)
@@ -1345,8 +1380,9 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+secrets: ok (3 keys)
 stop: ok (litestream.service; ikigenba-crm.socket, ikigenba-crm.service already inactive, disabled)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 12 files)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 12 files)
 db: ok (/var/opt/ikigenba/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
 litestream: ok (unchanged)
 start: ok (litestream.service; ikigenba-crm.socket, ikigenba-crm.service left disabled)
@@ -1361,7 +1397,7 @@ Preconditions:
 Postconditions:
 
 - Everything the ordinary restore's postconditions say about `/opt/crm/`,
-  `/var/opt/ikigenba/crm/`, and litestream.
+  `/etc/opt/ikigenba/crm/env`, `/var/opt/ikigenba/crm/`, and litestream.
 - Both of `crm`'s units are still disabled and inactive; neither was enabled
   or started, `/run/ikigenba/crm.sock` does not exist, and nginx was not
   reloaded, so `crm`'s names still answer `503`.
@@ -1393,8 +1429,9 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+secrets: ok (3 keys)
 stop: ok (litestream.service; ikigenba-crm.socket, ikigenba-crm.service already inactive)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 12 files)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 12 files)
 db: ok (/var/opt/ikigenba/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
 litestream: ok (unchanged)
 start: ok (litestream.service, ikigenba-crm.socket, ikigenba-crm.service)
@@ -1442,12 +1479,12 @@ Exits 1. The failed step is on stdout; the diagnostic is on stderr.
 
 Preconditions:
 
-- `<backup.s3_uri>gmail/` holds no object.
+- `gmail` is installed, and `<backup.s3_uri>gmail/` holds no object.
 
 Postconditions:
 
-- Nothing has changed. Neither `/opt/gmail/` nor `/var/opt/ikigenba/gmail/`
-  was created or touched.
+- Nothing has changed. No unit was stopped, and nothing under `/opt/gmail/`,
+  `/etc/opt/ikigenba/gmail/`, or `/var/opt/ikigenba/gmail/` was written.
 
 ## A restore finds files but no database
 
@@ -1476,8 +1513,9 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+secrets: ok (3 keys)
 stop: ok (ikigenba-crm.socket, ikigenba-crm.service, litestream.service)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 12 files)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 12 files)
 db: failed: no snapshot under the prefix
 opsctl: restore crm failed at db
 
@@ -1491,13 +1529,14 @@ Preconditions:
 
 - `<backup.s3_uri>crm/` holds a tarball, and litestream has replicated
   nothing for `crm`.
-- `/opt/crm/etc/manifest.toml` in that tarball declares a `[database]`.
+- `crm` is installed, and its installed `/opt/crm/etc/manifest.toml`
+  declares a `[database]`.
 - `ikigenba-crm.socket` is listening.
 
 Postconditions:
 
-- `/opt/crm/etc/` and `/var/opt/ikigenba/crm/state/` are the tarball's, and
-  there is no database at `/var/opt/ikigenba/crm/state/crm.db`: the tarball
+- `/var/opt/ikigenba/crm/state/` is the tarball's, `/etc/opt/ikigenba/crm/env`
+  is written as in the ordinary restore, and there is no database at `/var/opt/ikigenba/crm/state/crm.db`: the tarball
   never held one.
 - `ikigenba-crm.socket`, `ikigenba-crm.service`, and `litestream.service` are
   all stopped, and none was enabled or disabled. No database on this host is being
@@ -1507,14 +1546,18 @@ Postconditions:
   and re-running the restore once the database objects are in place finishes
   the job and starts both.
 
-## An operator restores into a host that has never run the service
+## An operator restores a service that is not installed
 
-A restore is how a fresh host is given another host's data, so the service
-need not be installed first. What comes back is data and only data: the host
-has an `etc/` and a `state/` for a service with no binary until a deploy brings
-one. The database is replicated from the moment litestream comes back: the
-`litestream` step read the manifest the `files` step wrote and put the
-database into `/etc/litestream.yml`, which had not named it before.
+A restore puts a service's data back under the app that is already there. It
+takes what the service declares, its database and its secrets, from the
+installed manifest, because a backup holds no `etc/`, and it writes the
+environment file the installed unit reads. A service that is not installed has
+neither, so the restore refuses at the `source` step, before it reads a backup
+or stops anything, and names the fix: install the app, then restore. That is
+true of a host that has never run `crm` and of one where `crm` was uninstalled
+and only `/var/opt/ikigenba/crm/state/` is left. A service is installed when
+`/opt/<name>/etc/manifest.toml` names its `app` and `/opt/<name>/bin/<name>`
+exists. `--at` and `--from` are refused the same way.
 
 Command:
 
@@ -1525,41 +1568,26 @@ $ sudo opsctl restore crm
 Output:
 
 ```
-source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
-stop: ok (litestream.service, no ikigenba-crm.socket)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 12 files)
-db: ok (/var/opt/ikigenba/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
-litestream: ok (state/crm.db)
-start: ok (litestream.service)
+source: failed: crm is not installed; install crm first
+opsctl: restore crm failed at source
 ```
 
-Exits 0. The lines are on stdout; stderr is empty.
+Exits 1. The failed step is on stdout; the diagnostic is on stderr.
 
 Preconditions:
 
-- Neither `/opt/crm/` nor `/var/opt/ikigenba/crm/` exists, and neither
-  `ikigenba-crm.socket` nor `ikigenba-crm.service` is installed.
+- `crm` is not installed: there is no `/opt/crm/`, or it holds no
+  `etc/manifest.toml` naming `crm` or no `bin/crm`.
+  `/var/opt/ikigenba/crm/` may or may not exist.
 
 Postconditions:
 
-- `/opt/crm/etc/` and `/var/opt/ikigenba/crm/state/` hold the backup's data.
-  `/opt/crm/` was created with mode `0755` and holds `etc/` and nothing else.
-  `/var/opt/ikigenba/crm/` was created owned `ikigenba:ikigenba` with mode
-  `0750` and holds `state/` and nothing else; `/var/opt/ikigenba/`, had it
-  not existed, was created owned `root:root` with mode `0755`.
-- The manifest the restore just wrote is what said the service declares a
-  database, so the `db` line is there even though nothing was installed.
-- There is no unit to stop and none was written: a restore installs data, not
-  a service. `litestream.service` was stopped and started all the same,
-  because `state/` was replaced underneath it.
-- `/etc/litestream.yml` names `/var/opt/ikigenba/crm/state/crm.db`,
-  replicating to `<backup.s3_uri>crm/`, and `litestream.service` is running
-  under it. The restored database is being backed up from the `start` line
-  on; no `opsctl init` is needed to make that so. The deploy that later
-  brings the binary regenerates the file again and finds it unchanged.
-- `opsctl status` shows `crm - - - wal` until an app is deployed over it: no
-  binary to ask a version of and no units to ask states of, but a restored
-  database whose journal mode it can read.
+- Nothing has changed. No unit was stopped, `litestream.service` was not
+  touched, and nothing under `/opt/crm/`, `/etc/opt/ikigenba/crm/`, or
+  `/var/opt/ikigenba/crm/` was created or written.
+- No object under `<backup.s3_uri>` was read, written, or deleted.
+- After `opsctl install` of `crm`, the same restore runs as the ordinary
+  restore does.
 
 ## An operator restores a service whose state has not moved yet
 
@@ -1590,6 +1618,8 @@ Exits 1. The failed step is on stdout; the diagnostic is on stderr.
 Preconditions:
 
 - `crm` is installed, and `/opt/crm/` holds `bin/`, `etc/`, `share/`, and
+  `state/`. Its environment file is still `/opt/crm/etc/env`; an app whose
+  `state/` and environment file have both not moved is refused for its
   `state/`.
 - `ikigenba-crm.socket` is listening.
 - `/var/opt/ikigenba/crm/` does not exist.
@@ -1602,6 +1632,48 @@ Postconditions:
   `/var/opt/ikigenba/crm/` was not created.
 - No object under `<backup.s3_uri>` was written or deleted.
 
+## An operator restores a service whose environment file has not moved yet
+
+`crm` was installed after its data moved under `/var/opt/ikigenba/` but before
+its environment file left `/opt/crm/etc/`, so its unit still names
+`/opt/crm/etc/env`. A restore writes the environment file only to
+`/etc/opt/ikigenba/crm/env` and does not rewrite units, so the app would come
+back on a file the restore did not write. The restore refuses at the `source`
+step, before it stops anything, as it refuses an app whose `state/` has not
+moved; `opsctl install crm` writes the new file and rewrites the unit, and the
+restore can then run.
+
+Command:
+
+```
+$ sudo opsctl restore crm
+```
+
+Output:
+
+```
+source: failed: /opt/crm/etc/env has not moved; install crm first
+opsctl: restore crm failed at source
+```
+
+Exits 1. The failed step is on stdout; the diagnostic is on stderr.
+
+Preconditions:
+
+- `crm` is installed, its `state/` is under `/var/opt/ikigenba/crm/`, and
+  `/opt/crm/` holds no `state/`.
+- `crm`'s unit names `/opt/crm/etc/env`, which exists, and
+  `/etc/opt/ikigenba/crm/` does not exist.
+- `ikigenba-crm.socket` is listening.
+
+Postconditions:
+
+- Nothing has changed. No unit was stopped, and `crm` is still running as it
+  was, from `/opt/crm/etc/env`.
+- Nothing under `/opt/crm/` or `/var/opt/ikigenba/crm/` was written or
+  removed, and `/etc/opt/ikigenba/crm/` was not created.
+- No object under `<backup.s3_uri>` was written or deleted.
+
 ## An agent restores a service from a snapshot
 
 `devctl seed` runs this over ssh to give a space data it never made. It has
@@ -1610,11 +1682,12 @@ this space's own prefix, at `seed/<service>/`, because the host can read
 nothing outside it. Everything comes from that one object: the files and the
 database are one moment, the moment the snapshot was taken, and neither this
 space's backups nor its replica are read. Otherwise the restore is the
-ordinary one, step for step, but for one more: the snapshot carries no
-`etc/env`, so the `secrets` step reads this host's own parameter for the
-service, as `opsctl install` does, before anything is stopped, and the `files`
-step writes `etc/env` from it. The source space's secrets never reach this
-one. The snapshot may come from an older release; the app brings its schema
+ordinary one, step for step: `crm` is installed here, the installed manifest
+says what it declares, and the `secrets` step reads this host's own parameter
+for it before anything is stopped, so the `files` step writes the environment
+file from this host's values. The source space's secrets never reach this
+one. An older snapshot that holds an `etc/` restores the same way, its `etc/`
+ignored. The snapshot may come from an older release; the app brings its schema
 forward itself when it starts, as after any restore.
 
 Command:
@@ -1629,7 +1702,7 @@ Output:
 source: ok (s3://ikigenba.dev/sbx/seed/crm/2026-09-12T14:22:51Z.tar.zst, 1.3 MiB)
 secrets: ok (3 keys)
 stop: ok (ikigenba-crm.socket, ikigenba-crm.service, litestream.service)
-files: ok (/opt/crm/etc, /var/opt/ikigenba/crm/state, 13 files)
+files: ok (/etc/opt/ikigenba/crm/env, /var/opt/ikigenba/crm/state, 13 files)
 db: ok (/var/opt/ikigenba/crm/state/crm.db, from snapshot)
 litestream: ok (unchanged)
 start: ok (litestream.service, ikigenba-crm.socket, ikigenba-crm.service)
@@ -1642,21 +1715,20 @@ Preconditions:
 - `aws.region` and `backup.s3_uri` are set, `backup.s3_uri` is
   `s3://ikigenba.dev/sbx/`, and the host's role can read under that prefix.
 - The object at the URI is a snapshot of `crm` that `opsctl snapshot` wrote.
+- `crm` is installed, and its unit names `/etc/opt/ikigenba/crm/env`.
 - `host.name` is `sbx.ikigenba.dev`, and `/sbx.ikigenba.dev/crm` holds every
-  name the snapshot's manifest lists in `secrets`.
+  name the installed manifest lists in `secrets`.
 - `ikigenba-crm.socket` is listening.
 
 Postconditions:
 
-- `/opt/crm/etc/` and `/var/opt/ikigenba/crm/state/` are exactly what the
-  snapshot holds, `/var/opt/ikigenba/crm/state/crm.db` included, and
-  `/opt/crm/etc/env` is what `opsctl install` would write from this host's
-  parameter and the snapshot's manifest: mode `0600`, every secret the
-  manifest names, its `[env]`, `DRAIN_SECONDS`, and `IKIGENBA_SERVICES`. The
-  values are never printed.
-  Anything else that was there and is not in the snapshot is gone.
-- Everything else the ordinary restore's postconditions say: `bin/` and
-  `share/` untouched, the units back as they were, `/etc/litestream.yml`
+- `/var/opt/ikigenba/crm/state/` is exactly what the snapshot holds,
+  `/var/opt/ikigenba/crm/state/crm.db` included. Anything else that was there
+  and is not in the snapshot is gone.
+- `/etc/opt/ikigenba/crm/env` is what `opsctl install` would write from this
+  host's parameter and the installed manifest, as in the ordinary restore.
+- Everything else the ordinary restore's postconditions say: nothing under
+  `/opt/crm/` written, the units back as they were, `/etc/litestream.yml`
   regenerated, `/var/lib/ikigenba/services.json` rewritten, no unit enabled
   or disabled, nginx not reloaded.
 - litestream replicates the restored database to `<backup.s3_uri>crm/` from
@@ -1664,8 +1736,8 @@ Postconditions:
   replaced is litestream's to reconcile, and the restore does not remove it.
 - The restore wrote and deleted no object under `<backup.s3_uri>`; the
   snapshot is still where it was.
-- The stop, start, disabled, retry, and fresh-host cases behave as the
-  ordinary restore's stories show, with the `source` and `db` lines above. A
+- The stop, start, disabled, retry, not-installed, and not-moved cases
+  behave as the ordinary restore's stories show, with the `source` and `db` lines above. A
   snapshot of a service that declares no `[database]` restores as the
   no-database story shows: no `db` line, and litestream is not touched.
 
@@ -1698,13 +1770,15 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No unit was stopped and nothing under `/opt/crm/` or
-  `/var/opt/ikigenba/crm/` was read or written.
+- Nothing has changed. No unit was stopped and nothing under `/opt/crm/`,
+  `/etc/opt/ikigenba/crm/`, or `/var/opt/ikigenba/crm/` was written.
 
 ## An agent restores from a snapshot whose secret has never been pushed
 
 The secrets are read before anything is stopped, so a space that lacks one of
 the service's secrets refuses the restore, as it would refuse the install.
+Every restore writes the environment file, so a restore without `--from`
+fails at the same step in the same words, after its own `source` line.
 
 Command:
 
@@ -1724,13 +1798,14 @@ Exits 1. The step lines are on stdout; the diagnostic is on stderr.
 
 Preconditions:
 
-- The snapshot's manifest names `CRM_API_KEY` and `/sbx.ikigenba.dev/crm`
-  does not hold it, or the parameter does not exist at all.
+- `crm` is installed, its installed manifest names `CRM_API_KEY`, and
+  `/sbx.ikigenba.dev/crm` does not hold it, or the parameter does not exist
+  at all.
 
 Postconditions:
 
-- Nothing has changed. No unit was stopped and nothing under `/opt/crm/` or
-  `/var/opt/ikigenba/crm/` was written.
+- Nothing has changed. No unit was stopped and nothing under `/opt/crm/`,
+  `/etc/opt/ikigenba/crm/`, or `/var/opt/ikigenba/crm/` was written.
 
 ## An operator runs restore with no service, or more than one
 

@@ -254,7 +254,7 @@ the app creates the database its manifest declares if none is there, runs its
 migrations forward. A migration carries schema and never rows, so a database
 the app creates starts empty; no app seeds itself. opsctl never runs a
 migration. What the host promises is the order: a restore lands `state/`
-and the database before the app's unit ever starts, and an install
+and the database before the app's unit starts again, and an install
 over a running app leaves `state/` alone, so an app that is restored or
 upgraded migrates forward over real data. Data reaches a fresh space only by a
 restore. A space that backs nothing up holds only what has been typed into
@@ -1919,7 +1919,7 @@ first install and comes up enabled), then remove /opt/APP/,
 /etc/opt/ikigenba/APP/ with its environment file, and
 /var/opt/ikigenba/APP/cache/. /var/opt/ikigenba/APP/state/ is kept untouched,
 so APP is still a service the host backs up, and a later install lands over
-its data the way an install over a restore does. Removing state/ is a decision
+its data, which every install leaves untouched. Removing state/ is a decision
 made by hand, never here.
 
 A state/ or cache/ still under /opt/APP/ is first moved to
@@ -2034,7 +2034,8 @@ Postconditions:
   of `state/`, the quiet database included, because no manifest declares it.
 - `/<host.name>/crm` and the object under `<backup.s3_uri>deploy/`
   are untouched. Installing `crm` again lands over
-  `/var/opt/ikigenba/crm/state/` exactly as a deploy over a restore does.
+  `/var/opt/ikigenba/crm/state/`, which it leaves alone, as every install
+  does.
 - No other app on the host has changed.
 
 ## An operator uninstalls the host's default app

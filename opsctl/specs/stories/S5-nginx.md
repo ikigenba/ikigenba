@@ -24,9 +24,8 @@ A routed app is *disabled* when systemd reports its socket unit,
 does. A disabled app keeps its block and every name it answers at, but the
 block answers `503` to every request and neither includes the app's own
 `etc/nginx.conf` nor proxies anywhere, so a disabled app reads as unavailable
-rather than as missing. A routed service with no units at all — a restore
-that brought a manifest and no binary — is not disabled; it is routed as any
-other.
+rather than as missing. A routed service with no units at all is not
+disabled; it is routed as any other.
 
 A service's block carries the TLS frame, the app's own `etc/nginx.conf` if it
 ships one, and a `location /` that proxies to the app's Unix socket,
@@ -142,7 +141,7 @@ with fewer than three labels has no parent to answer at, and a `host.apex`
 set on one is refused by everything that reads it. The apex app is chosen
 independently of the manifest's `default`: one app may answer at the space's
 name and another at the apex, or the same app at both. When the named app is
-not routed — not installed, or restored with no manifest — the apex answers
+not routed — not installed, or only its data left on the host — the apex answers
 404 under the host's certificate until it is, so the name never falls to the
 handshake-rejecting default block once the certificate carries it.
 
@@ -483,7 +482,7 @@ Postconditions:
 ## An operator reads the configuration when the apex app is not routed
 
 `host.apex` names an app that is not installed — not yet deployed, or taken
-off with `uninstall`, or restored from backup with no binary. The apex still
+off with `uninstall`. The apex still
 belongs to this host, so its name goes on the 404 block beside the space's
 name and wildcard, and answers 404 under the host's certificate rather than
 having its handshake rejected. The next `install` of that app moves the name
