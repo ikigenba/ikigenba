@@ -17,6 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
 var transitionSHA = strings.Repeat("a", 40)
@@ -284,6 +285,9 @@ func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
 	f.addRelease(transitionUnused, "unused")
 	f.write("opt/ikigenba/releases/.unpack.abc/keep", "keep", 0o644)
 	f.write("opt/ikigenba/releases/other/keep", "keep", 0o644)
+	f.write("etc/systemd/system/ikigenba-dropped.service", "old service", 0o644)
+	f.write("etc/systemd/system/ikigenba-dropped.socket", "old socket", 0o644)
+	f.write("etc/opt/ikigenba/dropped/env", "old env", 0o640)
 	f.write("var/opt/ikigenba/dropped/state/keep", "state", 0o600)
 	f.write("var/opt/ikigenba/dummy/state/keep", "dummy state", 0o600)
 	f.write("opt/ikigenba/releases/"+transitionSHA+"/dummy/etc/manifest.toml", "app='dummy'\nsecrets=['TOKEN','OTHER','TOKEN']\n", 0o666)
@@ -322,7 +326,7 @@ func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
 	if f.read("etc/ikigenba/config.json") != configBefore || f.read("var/opt/ikigenba/dropped/state/keep") != "state" || f.read("var/opt/ikigenba/dummy/state/keep") != "dummy state" {
 		t.Fatal("state/config changed")
 	}
-	for _, p := range []string{"opt/ikigenba/releases/" + transitionUnused, "etc/opt/ikigenba/dropped", "etc/systemd/system/ikigenba-dropped.service"} {
+	for _, p := range []string{"opt/ikigenba/releases/" + transitionUnused, "etc/opt/ikigenba/dropped", "etc/systemd/system/ikigenba-dropped.service", "etc/systemd/system/ikigenba-dropped.socket"} {
 		f.missing(p)
 	}
 	if f.read("opt/ikigenba/releases/.unpack.abc/keep") != "keep" || f.read("opt/ikigenba/releases/other/keep") != "keep" {
@@ -825,5 +829,86 @@ func TestActivateSuccessfulStartStillRequiresActiveFinalState(t *testing.T) {
 	want := []string{"systemctl show --property=ActiveState ikigenba-alpha.service", "systemctl start ikigenba-alpha.service", "systemctl show --property=ActiveState ikigenba-alpha.service", "journalctl --unit ikigenba-alpha.service --no-pager --lines 50"}
 	if !reflect.DeepEqual(sequence, want) {
 		t.Fatalf("readiness failure sequence %v want %v", sequence, want)
+	}
+}
+
+func (f *transitionFixture) seedOpsctlLink(kind string) {
+	f.t.Helper()
+	switch kind {
+	case "missing":
+		f.missing("usr/local/bin/opsctl")
+	case "file":
+		f.write("usr/local/bin/opsctl", "stale binary", 0o755)
+	case "wrong symlink":
+		f.write("usr/local/bin/stale", "stale binary", 0o755)
+		if err := os.Symlink("stale", filepath.Join(f.root, "usr/local/bin/opsctl")); err != nil {
+			f.t.Fatal(err)
+		}
+	default:
+		f.t.Fatalf("unknown opsctl link fixture %q", kind)
+	}
+}
+
+func (f *transitionFixture) requireReleaseLink(name, target string) os.FileInfo {
+	f.t.Helper()
+	p := filepath.Join(f.root, name)
+	info, err := os.Lstat(p)
+	if err != nil {
+		f.t.Fatalf("%s: %v", name, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		f.t.Fatalf("%s: expected symbolic link, got %v", name, info.Mode())
+	}
+	got, err := os.Readlink(p)
+	if err != nil || got != target {
+		f.t.Fatalf("%s: target %q, error %v, want %q", name, got, err, target)
+	}
+	return info
+}
+
+func TestActivateRepairsOpsctlLink(t *testing.T) {
+	// R-SSS9-CYXD
+	for _, state := range []string{"fresh", "transition", "reactivation"} {
+		for _, kind := range []string{"missing", "file", "wrong symlink"} {
+			t.Run(state+"/"+kind, func(t *testing.T) {
+				f := newTransitionFixture(t)
+				f.addRelease(transitionOld, "dummy")
+				var currentBefore, previousBefore os.FileInfo
+				switch state {
+				case "fresh":
+					f.link("previous", transitionOld)
+				case "transition":
+					f.link("current", transitionOld)
+				case "reactivation":
+					f.link("current", transitionSHA)
+					f.link("previous", transitionOld)
+					currentBefore = f.requireReleaseLink("opt/ikigenba/current", "releases/"+transitionSHA)
+					previousBefore = f.requireReleaseLink("opt/ikigenba/previous", "releases/"+transitionOld)
+				}
+				f.seedOpsctlLink(kind)
+				code, out, stderr := f.run("activate", transitionSHA)
+				if code != 0 || stderr != "" {
+					t.Fatalf("activate: %d\n%s\n%s", code, out, stderr)
+				}
+				f.requireReleaseLink("usr/local/bin/opsctl", release.CurrentOpsctl)
+				currentAfter := f.requireReleaseLink("opt/ikigenba/current", "releases/"+transitionSHA)
+				previousDetail := "none"
+				if state == "fresh" {
+					f.missing("opt/ikigenba/previous")
+				} else {
+					previousAfter := f.requireReleaseLink("opt/ikigenba/previous", "releases/"+transitionOld)
+					previousDetail = "bbbbbbb"
+					if state == "reactivation" {
+						previousDetail += " kept"
+						if !os.SameFile(currentBefore, currentAfter) || !os.SameFile(previousBefore, previousAfter) {
+							t.Fatal("reactivation rewrote current or previous")
+						}
+					}
+				}
+				if !strings.Contains(out, "links: ok (current aaaaaaa, previous "+previousDetail+")\n") {
+					t.Fatal(out)
+				}
+			})
+		}
 	}
 }

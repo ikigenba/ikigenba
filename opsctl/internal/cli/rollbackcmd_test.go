@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
 
 func TestRollbackPrehandoffAndMetadata(t *testing.T) {
@@ -124,5 +126,28 @@ func TestReleaseCommandHelpIsInert(t *testing.T) {
 				t.Fatalf("%d %q %q", code, out, err)
 			}
 		}
+	}
+}
+
+func TestRollbackRepairsOpsctlLink(t *testing.T) {
+	// R-BONI-FRJS
+	for _, kind := range []string{"missing", "file", "wrong symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newTransitionFixture(t)
+			f.addRelease(transitionOld, "dummy")
+			f.link("current", transitionSHA)
+			f.link("previous", transitionOld)
+			f.deps.Executable = func() (string, error) {
+				return filepath.Join(f.root, "opt/ikigenba/releases", transitionOld, "opsctl/bin/opsctl"), nil
+			}
+			f.seedOpsctlLink(kind)
+			code, out, stderr := f.run("rollback")
+			if code != 0 || stderr != "" || !strings.Contains(out, "links: ok (current bbbbbbb, previous none)\n") {
+				t.Fatalf("rollback: %d\n%s\n%s", code, out, stderr)
+			}
+			f.requireReleaseLink("usr/local/bin/opsctl", release.CurrentOpsctl)
+			f.requireReleaseLink("opt/ikigenba/current", "releases/"+transitionOld)
+			f.missing("opt/ikigenba/previous")
+		})
 	}
 }
