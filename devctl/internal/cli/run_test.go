@@ -35,7 +35,7 @@ Commands:
   version   print the version
   space     list, create, destroy, stop, start, initialise, and inspect spaces
   secrets   push and list an app's secrets for a space
-  build     build one app into its deployable file
+  build     build the suite or one app into a deployable file
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
@@ -651,7 +651,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-S56Q-6XPJ
+	// R-EVVW-Z1XZ
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}

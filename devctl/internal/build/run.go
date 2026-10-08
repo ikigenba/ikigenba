@@ -5,12 +5,18 @@ import (
 	"io"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
 const (
 	helpCommand = "devctl build --help"
-	usageText   = `Usage: devctl build <app>
+	usageText   = `Usage: devctl build <sha|tag>
+       devctl build <app>
+
+Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
+release holding every app and opsctl. <sha> is the full commit sha the argument
+resolves to; the working tree is not read.
 
 Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
 deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
@@ -19,7 +25,7 @@ the working tree must have no uncommitted changes.
 )
 
 // Run builds the app named by args.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
+func Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error {
 	if containsHelp(args) {
 		_, err := io.WriteString(stdout, usageText)
 		return err
@@ -33,11 +39,18 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 
 	switch len(args) {
 	case 0:
-		return usage("build needs <app>")
+		return usage("build needs <sha|tag> or <app>")
 	case 1:
-		return run(ctx, args[0], stdout, deps)
+		opened, err := checkout.Open(ctx, deps)
+		if err != nil {
+			return err
+		}
+		if opened.HasApp(args[0]) {
+			return run(ctx, args[0], opened, stdout, deps)
+		}
+		return runSuite(ctx, opened, args[0], version, stdout, deps)
 	default:
-		return usage("build takes one <app>")
+		return usage("build takes one <sha|tag> or <app>")
 	}
 }
 

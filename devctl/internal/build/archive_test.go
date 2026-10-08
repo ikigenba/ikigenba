@@ -19,10 +19,10 @@ import (
 
 func TestArchivePreparedPublishesExactValidatedPayload(t *testing.T) {
 	// R-5LK0-1DC3
-	// R-EZIJ-K208
+	// R-FHU3-UXAH
 	// R-5LK0-1DC3
 	// R-5P7P-6OK6
-	// R-F6TX-UOGE
+	// R-FJ20-8P16
 	staged := archiveFixture(t)
 	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
 	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
@@ -79,7 +79,7 @@ func TestArchivePreparedRejectsStaleManifestBeforeTar(t *testing.T) {
 	// R-6UPK-MHDN
 	// R-5LK0-1DC3
 	// R-5LK0-1DC3
-	// R-F6TX-UOGE
+	// R-FJ20-8P16
 	staged := archiveFixture(t)
 	writeTestFile(t, filepath.Join(staged.prepared.app.Dir, checkout.ManifestFile), []byte("app = \"crm\"\n# committed\n"), 0o644)
 	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
@@ -107,9 +107,9 @@ func TestArchivePreparedRejectsStaleManifestBeforeTar(t *testing.T) {
 
 func TestArchivePreparedTarFailurePreservesPriorArtifact(t *testing.T) {
 	// R-5LK0-1DC3
-	// R-EZIJ-K208
+	// R-FHU3-UXAH
 	// R-5LK0-1DC3
-	// R-F6TX-UOGE
+	// R-FJ20-8P16
 	staged := archiveFixture(t)
 	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
 	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)

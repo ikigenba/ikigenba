@@ -13,7 +13,12 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-const expectedBuildUsage = `Usage: devctl build <app>
+const expectedBuildUsage = `Usage: devctl build <sha|tag>
+       devctl build <app>
+
+Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
+release holding every app and opsctl. <sha> is the full commit sha the argument
+resolves to; the working tree is not read.
 
 Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
 deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
@@ -21,29 +26,36 @@ the working tree must have no uncommitted changes.
 `
 
 func TestBuildUsageDiagnosticsThroughCLI(t *testing.T) {
-	// R-6G2S-18HB
-	// R-6HAO-F080
+	// R-F9AT-6J3M
+	// R-FAIP-KAUB
 	// R-6IIK-SRYP
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{name: "missing", args: []string{"build"}, want: "devctl: build needs <app>\n\nsee 'devctl build --help' for usage\n"},
-		{name: "extra", args: []string{"build", "crm", "api"}, want: "devctl: build takes one <app>\n\nsee 'devctl build --help' for usage\n"},
+		{name: "missing", args: []string{"build"}, want: "devctl: build needs <sha|tag> or <app>\n\nsee 'devctl build --help' for usage\n"},
+		{name: "extra", args: []string{"build", "crm", "api"}, want: "devctl: build takes one <sha|tag> or <app>\n\nsee 'devctl build --help' for usage\n"},
 		{name: "unknown before app", args: []string{"build", "--force", "crm"}, want: "devctl: unknown option '--force'\n\nsee 'devctl build --help' for usage\n"},
 		{name: "unknown after app", args: []string{"build", "crm", "-v"}, want: "devctl: unknown option '-v'\n\nsee 'devctl build --help' for usage\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assertResult(t, invoke(test.args...), 2, "", test.want)
+			calls := 0
+			deps := seam.Deps{EUID: 1, Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+				calls++
+				return seam.Result{}, errors.New("unexpected process")
+			}}
+			assertResult(t, invokeWithDeps(deps, test.args...), 2, "", test.want)
+			if calls != 0 {
+				t.Fatalf("Exec calls = %d, want zero", calls)
+			}
 		})
 	}
 }
 
 func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
-	// R-5GOE-IADB
 	for _, args := range [][]string{
 		{"build", "--help"},
 		{"build", "-h"},
@@ -72,7 +84,7 @@ func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 }
 
 func TestBuildDispatchesArgumentsStdoutAndDeps(t *testing.T) {
-	// R-R7Z4-R65Q R-5FGI-4IMM R-5KC3-NLLE R-5QFL-KGAV
+	// R-FBQL-Y2L0
 	fixture := newCLIBuildFixture(t)
 	result := invokeWithDeps(fixture.deps(), "build", "crm")
 	assertResult(t, result, 0, "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz\n", "")
@@ -200,7 +212,7 @@ func (fixture *cliBuildFixture) deps() seam.Deps {
 	}
 }
 
-func (fixture *cliBuildFixture) exec(ctx context.Context, command seam.Cmd) (seam.Result, error) {
+func (fixture *cliBuildFixture) exec(_ context.Context, command seam.Cmd) (seam.Result, error) {
 	switch command.Path {
 	case "git":
 		return fixture.git(command)
@@ -216,7 +228,10 @@ func (fixture *cliBuildFixture) exec(ctx context.Context, command seam.Cmd) (sea
 		if fixture.failPath == "tar" {
 			return seam.Result{}, errors.New("could not start tar")
 		}
-		return seam.Exec(ctx, command)
+		if len(command.Args) < 2 || command.Args[0] != "-cJf" {
+			fixture.t.Fatalf("unexpected tar args: %q", command.Args)
+		}
+		return seam.Result{}, os.WriteFile(command.Args[1], []byte("fake archive"), 0o600)
 	default:
 		fixture.binaryArgs = append(fixture.binaryArgs, append([]string(nil), command.Args...))
 		if fixture.failPath == "binary" {
@@ -245,6 +260,8 @@ func (fixture *cliBuildFixture) git(command seam.Cmd) (seam.Result, error) {
 			fixture.t.Fatalf("git status Dir = %q, want checkout root %q", command.Dir, fixture.root)
 		}
 		return seam.Result{}, nil
+	case reflect.DeepEqual(command.Args, []string{"rev-parse", "--verify", "--quiet", "--end-of-options", "refs/tags/crm^{commit}"}):
+		return seam.Result{Stdout: []byte(cliSuiteSHA + "\n")}, nil
 	case reflect.DeepEqual(command.Args, []string{"rev-parse", "HEAD"}):
 		if command.Dir != fixture.root {
 			fixture.t.Fatalf("git rev-parse HEAD Dir = %q, want checkout root %q", command.Dir, fixture.root)

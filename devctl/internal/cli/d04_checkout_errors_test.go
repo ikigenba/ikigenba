@@ -15,14 +15,13 @@ import (
 )
 
 func TestCheckoutErrorsThroughCLI(t *testing.T) {
-	// R-QEXY-821P
+	// R-EX3T-CTOO
 	t.Run("no app", func(t *testing.T) {
 		root := writeD04CLIApp(t)
 		deps := d04CheckoutDeps(t, root)
 		want := "devctl: no app 'bogus' in the checkout\n"
 
 		for _, args := range [][]string{
-			{"build", "bogus"},
 			{"secrets", "push", "sbx1", "bogus"},
 		} {
 			t.Run(strings.Join(args, "_"), func(t *testing.T) {

@@ -36,7 +36,7 @@ Commands:
   version   print the version
   space     list, create, destroy, stop, start, initialise, and inspect spaces
   secrets   push and list an app's secrets for a space
-  build     build one app into its deployable file
+  build     build the suite or one app into a deployable file
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
@@ -121,15 +121,15 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	if invocation.command == "apex" {
 		return operationError(stderr, apex.Run(ctx, invocation.arguments, stdout, deps))
 	}
+	if invocation.command == "build" {
+		return operationError(stderr, build.Run(ctx, invocation.arguments, version, stdout, deps))
+	}
 	if hasHelp(invocation.arguments) {
 		if invocation.command != "space" {
 			invocation.arguments = helpArguments(invocation.command, invocation.arguments)
 		}
 	} else if message, helpCommand := missingCommandOptionValue(invocation.command, invocation.arguments); message != "" {
 		return usageError(stderr, message, helpCommand)
-	}
-	if invocation.command == "build" {
-		return operationError(stderr, build.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "deploy" {
 		return operationError(stderr, deploy.Run(ctx, invocation.arguments, stdout, deps))

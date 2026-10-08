@@ -13,9 +13,10 @@ import (
 )
 
 func TestRunBuildNamesArtifactByHeadAndOnlyRunsManifest(t *testing.T) {
-	// R-5FGI-4IMM
-	// R-5KC3-NLLE
-	// R-5QFL-KGAV
+	// R-FGM7-H5JS
+	// R-FCYI-BUBP
+	// R-FLHT-08IK
+	// R-FJ20-8P16
 	// R-5P7P-6OK6
 	// R-5LK0-1DC3
 	fixture := newPrerequisiteFixture(t, "")
@@ -24,16 +25,24 @@ func TestRunBuildNamesArtifactByHeadAndOnlyRunsManifest(t *testing.T) {
 	writeTestFile(t, filepath.Join(appDir, "share", "nested", "data"), []byte("share bytes"), 0o600)
 	finalPath := filepath.Join(fixture.root, File("crm", prerequisiteHead))
 	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
+	before := snapshotTree(t, fixture.root)
 	var commands []seam.Cmd
 	deps := fullBuildDeps(t, fixture, &commands, "")
 	var stdout bytes.Buffer
-	if err := Run(context.Background(), []string{"crm"}, &stdout, deps); err != nil {
+	if err := Run(context.Background(), []string{"crm"}, "test-version", &stdout, deps); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := stdout.String(), "crm/dist/crm-"+prerequisiteHead+".tar.xz\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 	fixture.assertAllPrerequisiteCommands(t)
+	after := snapshotTree(t, fixture.root)
+	artifactRelative := filepath.FromSlash(File("crm", prerequisiteHead))
+	delete(before, artifactRelative)
+	delete(after, artifactRelative)
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("paths outside published artifact changed: before %#v after %#v", before, after)
+	}
 	if len(commands) != 6 {
 		t.Fatalf("commands = %#v, want open, clean, head, compile, manifest, archive", commands)
 	}
@@ -51,10 +60,10 @@ func TestRunBuildNamesArtifactByHeadAndOnlyRunsManifest(t *testing.T) {
 }
 
 func TestRunFailuresPreserveAllEarlierDistPathsAndProduceNoOutput(t *testing.T) {
-	// R-5FGI-4IMM
-	// R-5J47-9TUP
+	// R-FGM7-H5JS
+	// R-FPLY-TD2F
 	// R-5LK0-1DC3
-	// R-F6TX-UOGE
+	// R-FJ20-8P16
 	for _, fail := range []string{"open", "clean", "head", "go", "manifest", "stale", "tar", "publish"} {
 		t.Run(fail, func(t *testing.T) {
 			fixture := newPrerequisiteFixture(t, "")
@@ -72,7 +81,7 @@ func TestRunFailuresPreserveAllEarlierDistPathsAndProduceNoOutput(t *testing.T) 
 			before := snapshotTree(t, appDir)
 			var commands []seam.Cmd
 			var stdout bytes.Buffer
-			err := Run(context.Background(), []string{"crm"}, &stdout, fullBuildDeps(t, fixture, &commands, fail))
+			err := Run(context.Background(), []string{"crm"}, "test-version", &stdout, fullBuildDeps(t, fixture, &commands, fail))
 			if err == nil {
 				t.Fatal("build succeeded unexpectedly")
 			}

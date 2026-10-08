@@ -25,25 +25,21 @@ type stagedBuild struct {
 	manifest []byte
 }
 
-func run(ctx context.Context, name string, stdout io.Writer, deps seam.Deps) error {
-	prepared, err := prepareBuild(ctx, name, deps)
+func run(ctx context.Context, name string, opened *checkout.Checkout, stdout io.Writer, deps seam.Deps) error {
+	prepared, err := prepareBuild(ctx, name, opened)
 	if err != nil {
 		return err
 	}
 	return runPrepared(ctx, prepared, stdout, deps)
 }
 
-func prepareBuild(ctx context.Context, name string, deps seam.Deps) (preparedBuild, error) {
+func prepareBuild(ctx context.Context, name string, opened *checkout.Checkout) (preparedBuild, error) {
 	if !appref.ValidName(name) {
 		return preparedBuild{}, &UsageError{
 			Message: fmt.Sprintf("'%s' is not a usable app name", name),
 		}
 	}
 
-	opened, err := checkout.Open(ctx, deps)
-	if err != nil {
-		return preparedBuild{}, err
-	}
 	app, err := opened.App(name)
 	if err != nil {
 		return preparedBuild{}, err
@@ -236,7 +232,7 @@ func archivePrepared(ctx context.Context, staged stagedBuild, stdout io.Writer, 
 func copyArchiveDirectory(appDir, archiveRoot, directory string) ([]string, error) {
 	sourceRoot := filepath.Join(appDir, directory)
 	if _, err := os.Stat(sourceRoot); err != nil {
-		if os.IsNotExist(err) && directory == "share" {
+		if os.IsNotExist(err) && directory != "etc" {
 			return nil, nil
 		}
 		return nil, err

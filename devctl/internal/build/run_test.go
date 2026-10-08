@@ -8,11 +8,15 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
-	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-const wantUsage = `Usage: devctl build <app>
+const wantUsage = `Usage: devctl build <sha|tag>
+       devctl build <app>
+
+Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
+release holding every app and opsctl. <sha> is the full commit sha the argument
+resolves to; the working tree is not read.
 
 Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
 deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
@@ -20,13 +24,13 @@ the working tree must have no uncommitted changes.
 `
 
 func TestRunPublicSignature(_ *testing.T) {
-	// R-63VS-7J2D
-	_ = []func(context.Context, []string, io.Writer, seam.Deps) error{build.Run}
+	// R-F6V0-EZM8
+	_ = []func(context.Context, []string, string, io.Writer, seam.Deps) error{build.Run}
 }
 
 func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
-	// R-5GOE-IADB
+	// R-FE6E-PM2E
 	for _, args := range [][]string{
 		{"--help"},
 		{"-h"},
@@ -40,7 +44,7 @@ func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {
 				return seam.Result{}, errors.New("unexpected execution")
 			}}
 			var stdout bytes.Buffer
-			if err := build.Run(context.Background(), args, &stdout, deps); err != nil {
+			if err := build.Run(context.Background(), args, "test-version", &stdout, deps); err != nil {
 				t.Fatalf("Run(%q) error = %v", args, err)
 			}
 			if got := stdout.String(); got != wantUsage {
@@ -54,21 +58,21 @@ func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {
 }
 
 func TestRunArgumentParsing(t *testing.T) {
-	// R-6EUV-NGQM
+	// R-F82W-SRCX
 	tests := []struct {
 		name    string
 		args    []string
 		message string
 	}{
-		{name: "missing", message: "build needs <app>"},
-		{name: "extra", args: []string{"crm", "api"}, message: "build takes one <app>"},
+		{name: "missing", message: "build needs <sha|tag> or <app>"},
+		{name: "extra", args: []string{"crm", "api"}, message: "build takes one <sha|tag> or <app>"},
 		{name: "long option", args: []string{"--force", "crm"}, message: "unknown option '--force'"},
 		{name: "short option", args: []string{"crm", "-v"}, message: "unknown option '-v'"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var stdout bytes.Buffer
-			err := build.Run(context.Background(), test.args, &stdout, seam.Deps{})
+			err := build.Run(context.Background(), test.args, "test-version", &stdout, seam.Deps{})
 			var usageError *build.UsageError
 			if !errors.As(err, &usageError) {
 				t.Fatalf("Run(%q) error = %T %v, want *UsageError", test.args, err, err)
@@ -82,17 +86,6 @@ func TestRunArgumentParsing(t *testing.T) {
 		})
 	}
 
-	root := t.TempDir()
-	err := build.Run(context.Background(), []string{"crm"}, io.Discard, seam.Deps{
-		Dir: root,
-		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
-			return seam.Result{Stdout: []byte(root + "\n")}, nil
-		},
-	})
-	var noAppError *checkout.NoAppError
-	if !errors.As(err, &noAppError) {
-		t.Fatalf("Run with one operand error = %T %v, want *checkout.NoAppError", err, err)
-	}
 }
 
 func stringsForName(args []string) string {

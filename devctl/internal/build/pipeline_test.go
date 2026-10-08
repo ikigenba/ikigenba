@@ -15,8 +15,8 @@ import (
 )
 
 func TestStagePreparedCompilesOnceAndRunsBinary(t *testing.T) {
-	// R-J7ER-X23Q
-	// R-F4E5-34Z0
+	// R-FTJ7-VZFC
+	// R-FK9W-MGRV
 	prepared := pipelinePrepared(t)
 	manifest := []byte("app = \"crm\"\n")
 	var commands []seam.Cmd
@@ -81,7 +81,7 @@ func TestStagePreparedCompilesOnceAndRunsBinary(t *testing.T) {
 }
 
 func TestStagePreparedMapsCompilerNonzero(t *testing.T) {
-	// R-J7ER-X23Q
+	// R-FTJ7-VZFC
 	prepared := pipelinePrepared(t)
 	var commands []seam.Cmd
 	deps := pipelineDeps(t, &commands, seam.Result{ExitCode: 17, Stderr: []byte("compile failed\n")})
@@ -102,7 +102,7 @@ func TestStagePreparedMapsCompilerNonzero(t *testing.T) {
 }
 
 func TestStagePreparedMapsManifestNonzero(t *testing.T) {
-	// R-F4E5-34Z0
+	// R-FK9W-MGRV
 	prepared := pipelinePrepared(t)
 	var commands []seam.Cmd
 	deps := pipelineDeps(t, &commands,

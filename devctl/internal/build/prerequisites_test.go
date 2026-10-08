@@ -9,39 +9,50 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
 const prerequisiteHead = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
 
-func TestBuildRejectsInvalidAppBeforeCheckout(t *testing.T) {
-	// R-EUMY-0Z1G
-	// R-5J47-9TUP
-	root := t.TempDir()
+func TestBuildRejectsInvalidAppAfterOnlyCheckout(t *testing.T) {
+	// R-FOE2-FLBQ
+	// R-FPLY-TD2F
+	fixture := newPrerequisiteFixture(t, " M host/main.go\n")
+	root := fixture.root
+	if err := os.Rename(filepath.Join(root, "crm"), filepath.Join(root, "host")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(root, "host", "cmd", "crm"), filepath.Join(root, "host", "cmd", "host")); err != nil {
+		t.Fatal(err)
+	}
 	seedAdversarialTree(t, filepath.Join(root, "crm", "dist"))
 	before := snapshotTree(t, root)
 	execCalls := 0
 	cloudCalls := 0
 	var stdout bytes.Buffer
-	err := Run(context.Background(), []string{"Bad/App"}, &stdout, seam.Deps{
+	err := Run(context.Background(), []string{"host"}, "test-version", &stdout, seam.Deps{
 		Dir: root,
 		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
 			cloudCalls++
 			return cloud.Clients{}, errors.New("unexpected Cloud call")
 		},
-		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			execCalls++
-			return seam.Result{}, errors.New("unexpected execution")
+			if command.Path != "git" || !reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}) {
+				t.Fatalf("unexpected command: %#v", command)
+			}
+			return seam.Result{Stdout: []byte(root + "\n")}, nil
 		},
 	})
 
-	assertUsageError(t, err, "'Bad/App' is not a usable app name")
+	assertUsageError(t, err, "'host' is not a usable app name")
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if execCalls != 0 {
-		t.Fatalf("Exec calls = %d, want 0", execCalls)
+	if execCalls != 1 {
+		t.Fatalf("Exec calls = %d, want 1", execCalls)
 	}
 	if cloudCalls != 0 {
 		t.Fatalf("Cloud calls = %d, want 0", cloudCalls)
@@ -53,12 +64,12 @@ func TestBuildRejectsInvalidAppBeforeCheckout(t *testing.T) {
 
 func TestBuildRefusesDirtyCheckoutBeforeHead(t *testing.T) {
 	// R-6M69-Y36S
-	// R-5J47-9TUP
+	// R-FPLY-TD2F
 	fixture := newPrerequisiteFixture(t, " M crm/main.go\n")
 	before := fixture.seedAndSnapshotDist(t)
 	var stdout bytes.Buffer
 
-	err := Run(context.Background(), []string{"crm"}, &stdout, fixture.deps())
+	err := Run(context.Background(), []string{"crm"}, "test-version", &stdout, fixture.deps())
 
 	assertUsageError(t, err, "the working tree has uncommitted changes; commit them first")
 	if stdout.Len() != 0 {
@@ -77,9 +88,13 @@ func TestBuildRefusesDirtyCheckoutBeforeHead(t *testing.T) {
 }
 
 func TestPrepareBuildResolvesHeadWithoutTags(t *testing.T) {
-	// R-5J47-9TUP
+	// R-FPLY-TD2F
 	fixture := newPrerequisiteFixture(t, "")
-	prepared, err := prepareBuild(context.Background(), "crm", fixture.deps())
+	opened, err := checkout.Open(context.Background(), fixture.deps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := prepareBuild(context.Background(), "crm", opened)
 	if err != nil {
 		t.Fatal(err)
 	}
