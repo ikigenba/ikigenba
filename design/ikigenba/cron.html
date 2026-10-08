@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cron</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+  <a class="mark" data-service="cron" href="cron.html">ikigenba</a>
+  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>Sign out</button></form>
+</header>
+
+<main>
+  <h1>cron</h1>
+  <p id="summary" class="lede">Triggers that emit events on the suite's event bus on a schedule.</p>
+
+  <section id="triggers" class="card flush" aria-labelledby="triggers-title">
+    <header><h2 id="triggers-title">Triggers</h2></header>
+    <div class="table-scroll">
+      <table id="trigger-list">
+        <thead><tr><th>ID</th><th>Slug</th><th>When</th><th>Owner</th><th>Status</th><th>Last fired</th><th>Next</th></tr></thead>
+        <tbody>
+          <tr data-trigger="month_end">
+            <td class="trigger-id">crn_1a4f8c6e9b3d7025</td>
+            <td class="trigger-slug">month_end</td>
+            <td class="trigger-when">@monthly</td>
+            <td class="trigger-owner">grace@acme.dev</td>
+            <td class="trigger-status"><span class="status" data-status="active">active</span></td>
+            <td class="trigger-last"></td>
+            <td class="trigger-next"><time datetime="2026-11-01T00:00:00Z">2026-11-01 00:00</time></td>
+          </tr>
+          <tr data-trigger="weekly_digest">
+            <td class="trigger-id">crn_5c7b9e2f4a6d1038</td>
+            <td class="trigger-slug">weekly_digest</td>
+            <td class="trigger-when">0 8 * * 1</td>
+            <td class="trigger-owner">ada@acme.dev <span class="badge" data-kind="mine">yours</span></td>
+            <td class="trigger-status"><span class="status" data-status="paused">paused</span></td>
+            <td class="trigger-last"><time datetime="2026-09-28T08:00:00Z">2026-09-28 08:00</time></td>
+            <td class="trigger-next"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="tools-title">
+    <header><h2 id="tools-title">MCP tools</h2><p>Agents manage triggers with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
+    <dl id="tools" class="kv">
+      <dt data-tool="list"><code>list</code></dt><dd>Every trigger in the space, by slug.</dd>
+      <dt data-tool="show"><code>show</code></dt><dd>One trigger, with its schedule, its owner, and when it last fired and fires next.</dd>
+      <dt data-tool="create"><code>create</code></dt><dd>Create a trigger that emits an event on a schedule.</dd>
+      <dt data-tool="update"><code>update</code></dt><dd>Change the schedule of a trigger you own.</dd>
+      <dt data-tool="pause"><code>pause</code></dt><dd>Stop a trigger you own from firing.</dd>
+      <dt data-tool="resume"><code>resume</code></dt><dd>Start a paused trigger you own firing again, from its next slot.</dd>
+      <dt data-tool="delete"><code>delete</code></dt><dd>Delete a trigger you own.</dd>
+    </dl>
+  </section>
+
+  <p><a id="about-link" href="/about">About cron</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shape this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No triggers</h3>
+      <div id="no-triggers" class="empty">
+        <h3 class="text-md">No triggers yet</h3>
+        <p>A trigger an agent creates with the <code>create</code> tool shows up here.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>cron v0.1.0</footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

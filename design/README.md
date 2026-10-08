@@ -28,6 +28,7 @@ design/
     scripts-run.html
                     one run: details, input, output, files, other states
     events.html     events' landing: its subscribers and its MCP tools
+    cron.html       cron's landing: the space's triggers and its MCP tools
     icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
@@ -177,6 +178,21 @@ event bus. Banner and footer as in app.html, the service `events`,
 - Subscriber status reads as a `.status` word carrying two attributes:
   `data-status` is the real status (`ok`, `paused` or `gone`) and `data-kind`
   is the theme kind it shows as: ok is ok, paused is warn, gone is info.
+
+**cron.html** — cron at `cron.acme.ikigenba.com`, triggers that emit events
+on the suite's event bus on a schedule. Banner and footer as in app.html, the
+service `cron`, `cron v0.1.0`.
+- `h1` cron, a lede, every trigger in the space, whoever owns it, sorted by
+  slug, as a table of ID / Slug / When / Owner / Status / Last fired / Next:
+  `month_end` (`@monthly`, `grace@acme.dev`, active, never fired, next
+  `2026-11-01 00:00`), `weekly_digest` (`0 8 * * 1`, the user's own, marked
+  with the `yours` badge, paused, last fired `2026-09-28 08:00`, no next). An
+  MCP tools list naming `list`, `show`, `create`, `update`, `pause`,
+  `resume`, `delete`, and a link to the about screen. State: no triggers
+  (`div#no-triggers.empty`).
+- Trigger status reads as a `.status` word whose `data-status` is the status:
+  active is ok, paused is warn. Times are UTC to the minute in a `time`
+  carrying the RFC 3339 moment; a cell with no time is empty.
 
 **login.html** — auth at `auth.acme.ikigenba.com`.
 - Sign-in: product mark, "Sign in to acme", note that access is limited to
