@@ -877,7 +877,7 @@ manifests: failed: dummy: etc/manifest.toml: 'port' is not allowed; the host giv
 opsctl: activate failed
 ```
 
-Exits 1. The step outcome lines are on stdout; the last line is on stderr. The message is install's (`S07-apps.md`) with the app's name in place of the file's, so every other manifest refusal reads the same way after `manifests: failed: <app>: `.
+Exits 1. The step outcome lines are on stdout; the last line is on stderr. The message is install's (`S07-apps.md`) with the app's name in place of the file's, so every other manifest refusal reads the same way after `manifests: failed: <app>: `. An app whose name is one of the names `S07-apps.md` reserves, `services` and `opsctl` among them, is refused the same way: a release holding `services/`, whose manifest names `app = "services"`, gives `manifests: failed: services: 'services' is not a usable app name`, exit 1, with nothing changed beyond the release folder's ownership and modes.
 
 Preconditions:
 

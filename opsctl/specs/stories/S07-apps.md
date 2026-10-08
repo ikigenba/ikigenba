@@ -39,10 +39,13 @@ keep their old text: `restart`, `disable`, and `enable` of an app with no
 
 The name the manifest declares is checked before anything is written: it is a
 DNS label that is not `host`, `deploy`, `snapshots`, `seed`, `backup-host`,
-`backup-services`, or `renew-certificate`, the prefixes and unit names the
-host already uses. `snapshots` and `seed` are prefixes under the space's own
-(see `S08-backup.md`), where an app of that name would keep its backups and
-replica beside them. devctl's build checks a name too, but a file can come
+`backup-services`, `renew-certificate`, `services`, or `opsctl`, the prefixes,
+unit names, and folders the host already uses. `snapshots` and `seed` are
+prefixes under the space's own (see `S08-backup.md`), where an app of that
+name would keep its backups and replica beside them. `services` would collide
+with `ikigenba-services.service`, the unit that writes the services file at
+boot on a released host, and `opsctl` with `opsctl/`, opsctl's own folder in
+every release (`S10-releases.md`). devctl's build checks a name too, but a file can come
 from anywhere, so install does not trust that build checked.
 
 The top-level usage gains six lines under `Commands:`:
@@ -1860,8 +1863,9 @@ file: failed: 'host' is not a usable app name
 opsctl: install failed
 ```
 
-Exits 2. The fetch and file outcome lines are on stdout; the last line is on stderr. A name that
-is not a DNS label fails the same way.
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on stderr. Every other
+reserved name, `services` and `opsctl` among them, and a name that is not a
+DNS label fail the same way.
 
 Preconditions:
 
