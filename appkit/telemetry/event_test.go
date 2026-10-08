@@ -42,10 +42,10 @@ func TestEventPublicContract(t *testing.T) {
 	}
 }
 
-// R-UX6Y-PLFH
+// R-KKP5-ILEU
 func TestEventNameGrammar(t *testing.T) {
-	valid := []string{"a.b", "api_key.minted", "a0_1.b2_3", "token.minted", "noun9.verb_0"}
-	invalid := []string{"", "Token.Minted", "minted", "auth.token.minted", "token..minted", "a.b\n", "1a.b", "a.1b", "_a.b", "a._b", "a_.b", "a.b_", "a__x.b", "a.b__x", "é.b", "a.é", "a-b.c", "a.b-c", "a/b.c", " a.b", "a.b ", "a.b\x00"}
+	valid := []string{"a.b", "api_key.minted", "a0_1.b2_3", "token.minted", "noun9.verb_0", "auth.token.minted", "cron.nightly_backup.fired", "a.b.c.d", "a0_1.b2_3.c4_5"}
+	invalid := []string{"", "Token.Minted", "minted", "token..minted", "a.b\n", "1a.b", "a.1b", "_a.b", "a._b", "a_.b", "a.b_", "a__x.b", "a.b__x", "é.b", "a.é", "a-b.c", "a.b-c", "a/b.c", " a.b", "a.b ", "a.b\x00", "a.1b.c", "a.B.c", "a.b_.c", "a.b__x.c", ".a.b", "a.b.", "cron.*.fired", "*.fired"}
 	for _, name := range valid {
 		t.Run("valid/"+name, func(t *testing.T) {
 			e := contractEvent()

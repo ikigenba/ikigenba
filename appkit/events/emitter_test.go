@@ -83,7 +83,7 @@ func TestEmitterAPI(t *testing.T) {
 	shutdown(context.Background())
 }
 
-// R-FCI8-I2DE R-FDQ4-VU43
+// R-KN4Y-A4W8 R-KPKR-1ODM
 func TestEmitterDeclarationPanics(t *testing.T) {
 	cases := []events.Config{{}, {Service: "unit", Emits: []events.Emission{{Event: "bad"}}}, {Service: "unit", Emits: []events.Emission{{Event: "thing.changed"}, {Event: "thing.changed"}}}, {Service: "unit", Emits: []events.Emission{{Event: "thing.changed", Attrs: []string{"Bad"}}}}, {Service: "unit", Emits: []events.Emission{{Event: "thing.changed", Attrs: []string{"key", "key"}}}}}
 	for i, cfg := range cases {
@@ -105,25 +105,30 @@ func TestEmitterDeclarationPanics(t *testing.T) {
 	}
 }
 
-// R-JZ1A-9Z5H
+// R-KQSN-FG4B
 func TestEmitterDeclarationCopies(t *testing.T) {
 	c := &events.Capture{}
 	cfg := emitterConfig(c)
-	cfg.Emits = append(cfg.Emits, events.Emission{Event: "thing.empty"})
+	cfg.Emits = append(cfg.Emits, events.Emission{Event: "thing.empty"}, events.Emission{Event: "cron.*.fired", Attrs: []string{"job"}})
 	e := emitterNew(t, cfg)
 	cfg.Emits[0].Event = "other.changed"
 	cfg.Emits[0].Attrs[0] = "other"
 	first := e.Emits()
 	first[0].Event = "different.changed"
 	first[0].Attrs[0] = "different"
+	cfg.Emits[2].Event = "cron.other.fired"
+	cfg.Emits[2].Attrs[0] = "other"
+	first[2].Event = "other.*.fired"
+	first[2].Attrs[0] = "different"
 	got := e.Emits()
-	if !reflect.DeepEqual(got, []events.Emission{{Event: "thing.changed", Attrs: []string{"value"}}, {Event: "thing.empty", Attrs: []string{}}}) || got[1].Attrs == nil {
+	if !reflect.DeepEqual(got, []events.Emission{{Event: "thing.changed", Attrs: []string{"value"}}, {Event: "thing.empty", Attrs: []string{}}, {Event: "cron.*.fired", Attrs: []string{"job"}}}) || got[1].Attrs == nil {
 		t.Fatal(got)
 	}
 	emitterEmit(e, true)
 	e.Emit(context.Background(), "thing.empty", nil)
+	e.Emit(context.Background(), "cron.nightly_backup.fired", events.Attrs{"job": true})
 	emitterFlush(t, e)
-	if len(c.Events()) != 2 {
+	if len(c.Events()) != 3 {
 		t.Fatal(c.Events())
 	}
 	cfg.Emits = nil
@@ -133,7 +138,7 @@ func TestEmitterDeclarationCopies(t *testing.T) {
 	}
 }
 
-// R-K096-NQW6 R-K2OZ-FADK R-K54S-6TUY R-FR51-3B9Q
+// R-KS0J-T7V0 R-KT8G-6ZLP R-KVO8-YJ33 R-FR51-3B9Q
 func TestEmitterStampAndCopy(t *testing.T) {
 	c := &events.Capture{}
 	e := emitterNew(t, emitterConfig(c))
@@ -185,7 +190,7 @@ func (r *emitterReader) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// R-FHDU-15C6 R-K3WV-T249 R-K2OZ-FADK
+// R-FHDU-15C6 R-KUGC-KRCE R-KT8G-6ZLP
 func TestEmitterRandom(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		r := &emitterReader{fail: fail}
@@ -226,7 +231,7 @@ func TestEmitterRandom(t *testing.T) {
 	}
 }
 
-// R-K6CO-KLLN R-FUSQ-8MHT R-KKZH-5UHZ
+// R-KWW5-CATS R-FUSQ-8MHT R-LBIX-XJQ4
 func TestEmitterMalformed(t *testing.T) {
 	c := &events.Capture{}
 	var stderr bytes.Buffer
@@ -326,7 +331,7 @@ func TestEmitterDefaultClock(t *testing.T) {
 	}
 }
 
-// R-FSCX-H30F R-FW0M-ME8I R-K7KK-YDCC R-G6ZQ-2BWR R-G9FI-TVE5
+// R-FSCX-H30F R-FW0M-ME8I R-KY41-Q2KH R-G6ZQ-2BWR R-G9FI-TVE5
 func TestEmitterBlockedOrderAndFlush(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -366,7 +371,7 @@ func TestEmitterBlockedOrderAndFlush(t *testing.T) {
 	}
 }
 
-// R-K8SH-C531 R-KA0D-PWTQ R-FILQ-EX2V R-KDO2-V81T R-KEVZ-8ZSI
+// R-KZBY-3UB6 R-L0JU-HM1V R-FILQ-EX2V R-L47J-MX9Y R-L5FG-0P0N
 func TestEmitterRetryCurveAndLoss(t *testing.T) {
 	for _, window := range []time.Duration{0, 350 * time.Millisecond} {
 		t.Run(window.String(), func(t *testing.T) {
@@ -438,12 +443,15 @@ func TestEmitterRetryCurveAndLoss(t *testing.T) {
 	}
 }
 
-// R-KB8A-3OKF R-K7KK-YDCC
+// R-L1RQ-VDSK R-KY41-Q2KH
 func TestEmitterRejectAndRetrySuccess(t *testing.T) {
 	for _, reject := range []bool{true, false} {
 		calls := 0
 		sleeps := 0
 		var stderr bytes.Buffer
+		tc := &telemetry.Capture{}
+		tw := telemetry.New(telemetry.Config{Service: "unit", Sink: tc, Now: func() time.Time { return emitterTime }})
+		t.Cleanup(func() { tw.Shutdown(context.Background(), "test") })
 		cfg := emitterConfig(emitterSink(func(context.Context, events.Event) error {
 			calls++
 			if reject {
@@ -455,21 +463,25 @@ func TestEmitterRejectAndRetrySuccess(t *testing.T) {
 			return nil
 		}))
 		cfg.Stderr = &stderr
+		cfg.Telemetry = tw
 		cfg.Sleep = func(context.Context, time.Duration) { sleeps++ }
 		e := emitterNew(t, cfg)
 		emitterEmit(e, true)
 		emitterFlush(t, e)
+		if err := tw.Flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 		if reject {
-			if calls != 1 || sleeps != 0 || !strings.HasPrefix(stderr.String(), "unit: lost event: ") {
+			if calls != 1 || sleeps != 0 || len(tc.Events()) != 1 || !strings.HasPrefix(stderr.String(), "unit: lost event: ") {
 				t.Fatal(calls, sleeps, stderr.String())
 			}
-		} else if calls != 2 || sleeps != 1 || stderr.Len() != 0 {
+		} else if calls != 2 || sleeps != 1 || stderr.Len() != 0 || len(tc.Events()) != 0 {
 			t.Fatal(calls, sleeps, stderr.String())
 		}
 	}
 }
 
-// R-3YDQ-WT3M R-KG3V-MRJ7 R-KHBS-0J9W R-KIJO-EB0L R-GEB4-CYCX
+// R-3YDQ-WT3M R-L7V8-S8I1 R-L935-608Q R-LAB1-JRZF R-GEB4-CYCX
 func TestEmitterShutdownBlockedDelivery(t *testing.T) {
 	entered := make(chan context.Context, 1)
 	release := make(chan struct{})
@@ -539,7 +551,7 @@ func (c *emitterDrainContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
-// R-GEB4-CYCX R-KG3V-MRJ7
+// R-GEB4-CYCX R-L7V8-S8I1
 func TestEmitterRepeatShutdownContext(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -566,7 +578,7 @@ func TestEmitterRepeatShutdownContext(t *testing.T) {
 	e.Shutdown(context.Background())
 }
 
-// R-KCG6-HGB4 R-FILQ-EX2V
+// R-L2ZN-95J9 R-FILQ-EX2V
 func TestEmitterQueueCapacity(t *testing.T) {
 	for _, capacity := range []int{1, 0, -1} {
 		t.Run(fmt.Sprint(capacity), func(t *testing.T) {
@@ -604,7 +616,7 @@ func TestEmitterQueueCapacity(t *testing.T) {
 	}
 }
 
-// R-KCG6-HGB4
+// R-L2ZN-95J9
 func TestEmitterCapacityBeforeFirstDelivery(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -772,7 +784,7 @@ func TestEmitterDefaultPauseDuration(t *testing.T) {
 	}
 }
 
-// R-KA0D-PWTQ R-FW0M-ME8I
+// R-L0JU-HM1V R-FW0M-ME8I
 func TestEmitterRetryClockReadsAndOrder(t *testing.T) {
 	var mu sync.Mutex
 	var trace []string
@@ -812,7 +824,7 @@ func TestEmitterRetryClockReadsAndOrder(t *testing.T) {
 	}
 }
 
-// R-3YDQ-WT3M R-KG3V-MRJ7 R-KHBS-0J9W
+// R-3YDQ-WT3M R-L7V8-S8I1 R-L935-608Q
 func TestEmitterShutdownBlockedPause(t *testing.T) {
 	entered := make(chan context.Context, 1)
 	release := make(chan struct{})
@@ -854,7 +866,7 @@ func TestEmitterShutdownBlockedPause(t *testing.T) {
 	}
 }
 
-// R-KEVZ-8ZSI R-KCG6-HGB4 R-KIJO-EB0L
+// R-L5FG-0P0N R-L2ZN-95J9 R-LAB1-JRZF
 func TestEmitterSynchronousLossTelemetry(t *testing.T) {
 	tc := &telemetry.Capture{}
 	tw := telemetry.New(telemetry.Config{Service: "unit", Sink: tc, Now: func() time.Time { return emitterTime }})
@@ -919,4 +931,99 @@ func emitterFactory(f func(events.Config) *events.Emitter) func(events.Config) *
 	return f
 }
 func emitterMethodShapes(func(context.Context, string, events.Attrs), func(), func(context.Context) error, func(context.Context), func() []events.Emission) {
+}
+
+// R-KLX1-WD5J R-KWW5-CATS: literal declarations win; otherwise the first matching pattern governs.
+func TestEmitterPatternGovernance(t *testing.T) {
+	capture := &events.Capture{}
+	var stderr bytes.Buffer
+	cfg := emitterConfig(capture)
+	cfg.Stderr = &stderr
+	cfg.Emits = []events.Emission{
+		{Event: "cron.*.fired", Attrs: []string{"first"}},
+		{Event: "*.nightly_backup.fired", Attrs: []string{"second"}},
+		{Event: "cron.nightly_backup.fired", Attrs: []string{"literal"}},
+	}
+	e := emitterNew(t, cfg)
+	for _, call := range []struct {
+		name string
+		key  string
+	}{
+		{"cron.hourly.fired", "first"},
+		{"cron.nightly_backup.fired", "literal"},
+		{"other.nightly_backup.fired", "second"},
+	} {
+		e.Emit(context.Background(), call.name, events.Attrs{call.key: true})
+	}
+	emitterFlush(t, e)
+	if got := capture.Events(); len(got) != 3 || got[0].Name != "cron.hourly.fired" || got[1].Name != "cron.nightly_backup.fired" || got[2].Name != "other.nightly_backup.fired" || stderr.Len() != 0 {
+		t.Fatal(got, stderr.String())
+	}
+	for _, call := range []struct {
+		name string
+		key  string
+	}{
+		{"cron.nightly_backup.fired", "first"},
+		{"cron.hourly.fired", "second"},
+		{"cron.*.fired", "first"},
+		{"cron.fired", "first"},
+		{"cron.a.b.fired", "first"},
+		{"other.hourly.fired", "first"},
+	} {
+		before := stderr.String()
+		e.Emit(context.Background(), call.name, events.Attrs{call.key: true})
+		line := strings.TrimPrefix(stderr.String(), before)
+		if !strings.HasPrefix(line, "unit: malformed event: ") || strings.Count(line, "\n") != 1 || !strings.Contains(line, `"event":"`+call.name+`"`) {
+			t.Fatal(line)
+		}
+	}
+	emitterFlush(t, e)
+	if len(capture.Events()) != 3 {
+		t.Fatal(capture.Events())
+	}
+	// Neither pattern is literal here: the first of two matches must supply the keys.
+	cfg.Emits = cfg.Emits[:2]
+	cfg.Stderr = &stderr
+	e = emitterNew(t, cfg)
+	e.Emit(context.Background(), "cron.nightly_backup.fired", events.Attrs{"first": true})
+	emitterFlush(t, e)
+	if got := capture.Events(); len(got) != 4 || got[3].Attrs["first"] != true {
+		t.Fatal(got)
+	}
+	e.Emit(context.Background(), "cron.nightly_backup.fired", events.Attrs{"second": true})
+	emitterFlush(t, e)
+	if len(capture.Events()) != 4 {
+		t.Fatal(capture.Events())
+	}
+}
+
+// R-KPKR-1ODM: patterns are accepted but malformed and duplicate declarations panic.
+func TestEmitterPatternDeclarations(t *testing.T) {
+	for _, pattern := range []string{"cron.*.fired", "*.*", "a_b.*.c_d", "cron.nightly_backup.fired"} {
+		cfg := emitterConfig(&events.Capture{})
+		cfg.Emits = []events.Emission{{Event: pattern}}
+		if emitterNew(t, cfg) == nil {
+			t.Fatal(pattern)
+		}
+	}
+	for _, declarations := range [][]events.Emission{
+		{{Event: "*"}},
+		{{Event: "cron.a*.fired"}},
+		{{Event: "cron..fired"}},
+		{{Event: "cron.a__b.fired"}},
+		{{Event: "cron.*.fired"}, {Event: "cron.*.fired"}},
+		{{Event: "cron.*.fired", Attrs: []string{"bad__key"}}},
+		{{Event: "cron.*.fired", Attrs: []string{"key", "key"}}},
+	} {
+		t.Run(fmt.Sprint(declarations), func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("invalid declarations accepted")
+				}
+			}()
+			cfg := emitterConfig(&events.Capture{})
+			cfg.Emits = declarations
+			events.New(cfg)
+		})
+	}
 }

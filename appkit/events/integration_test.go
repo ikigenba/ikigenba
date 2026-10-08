@@ -33,7 +33,7 @@ func integrationEmitter(t *testing.T, service string, sink events.Sink) *events.
 	return e
 }
 
-// R-K54S-6TUY: delivery and sibling contexts both stamp follow-up causes.
+// R-KVO8-YJ33: delivery and sibling contexts both stamp follow-up causes.
 func TestIntegrationDeliveredCauseThroughSibling(t *testing.T) {
 	localCapture, siblingCapture := &events.Capture{}, &events.Capture{}
 	local := integrationEmitter(t, "scripts", localCapture)
