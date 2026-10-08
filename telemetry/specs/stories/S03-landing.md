@@ -1,6 +1,6 @@
 # Stories — landing
 
-The landing page, the about screen, and telemetry's routing outside MCP and ingest: what a running telemetry answers at every path but `/mcp` and `/ingest`, and the frame its two pages are drawn in. The landing page, at `/`, tells a person what telemetry is and names the four tools an agent reaches it with; the about screen, at `/about`, shows its name, its version, and its description. Both are server-rendered HTML, and the whole of each page's content arrives in the response body, the launcher's list included; no script adds content a user sees. A page's scripts are the platform's and only act on what the server sent: the launcher's, `/_appkit/launcher.js`, filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. An nginx gate in front of telemetry authenticates every request and sets `X-User-Id` and `X-User-Email` on the request it passes upstream, with the request's id in `X-Request-Id`. telemetry trusts those headers absolutely and has no unauthenticated case, so there is no sign-in page and no signed-out banner. Only nginx and the suite's own apps can reach telemetry's socket, so a request that arrives without `X-User-Id`, or with it empty, means the gate or a sibling is misconfigured — a server fault, not a bad request. The requests go to a running telemetry (`S02`), each shown as the HTTP request telemetry receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. telemetry is started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
+The landing page, the about screen, and telemetry's routing outside MCP and ingest: what a running telemetry answers at every path but `/mcp` and `/ingest`, and the frame its two pages are drawn in. The landing page, at `/`, tells a person what telemetry is and names the four tools an agent reaches it with; the about screen, at `/about`, shows its name, its version, and its description. Both are server-rendered HTML, and the whole of each page's content arrives in the response body, the launcher's list included; no script adds content a user sees. A page's scripts are the platform's and only act on what the server sent: the launcher's, `/_appkit/launcher.js`, filters the launcher's list as the user types; and the platform's button feedback script, `/_appkit/feedback.js`, which every page loads with or without a launcher, makes an enabled button visibly react when the user presses it. An nginx gate in front of telemetry authenticates every request and sets `X-User-Id` and `X-User-Email` on the request it passes upstream, with the request's id in `X-Request-Id`. telemetry trusts those headers absolutely and has no unauthenticated case, so there is no sign-in page and no signed-out banner. Only nginx and the suite's own apps can reach telemetry's socket, so a request that arrives without `X-User-Id`, or with it empty, means the gate or a sibling is misconfigured — a server fault, not a bad request. The requests go to a running telemetry (`S02`), each shown as the HTTP request telemetry receives, with the headers the story depends on. A developer stands in for the gate by passing those headers by hand. telemetry is started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment, and that file, the host's services file, holds the suite's services file unless a story says otherwise:
 
 ```
 {
@@ -52,8 +52,8 @@ Status 200. The body is an HTML document titled `telemetry` that links `/_appkit
 
 Preconditions:
 
-- telemetry is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file and is readable by telemetry.
+- telemetry is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file and is readable by telemetry.
 
 Postconditions:
 
@@ -91,8 +91,8 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- telemetry is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- telemetry is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 
@@ -123,8 +123,8 @@ Status 200. The body is an HTML document titled `About telemetry`, with the same
 
 Preconditions:
 
-- telemetry is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file.
+- telemetry is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file.
 
 Postconditions:
 
@@ -139,7 +139,7 @@ Postconditions:
 
 ## A user on a host with services opens the launcher
 
-On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from telemetry to any of them without typing an address. Here `/var/lib/ikigenba/services.json` is the suite's services file with an `icon` on each of its four entries, `auth`, `dummy`, `mcp`, and `telemetry`, each holding the SVG text of that service's icon; telemetry's own is the one its package ships, `share/icon.svg` (`S13`). The launcher lists every service that carries an icon, whether or not it is an MCP service.
+On a host, the services file carries the icon of every service whose package ships one, and the launcher is how a user gets from telemetry to any of them without typing an address. Here `/run/ikigenba/services.json` is the suite's services file with an `icon` on each of its four entries, `auth`, `dummy`, `mcp`, and `telemetry`, each holding the SVG text of that service's icon; telemetry's own is the one its package ships, `share/icon.svg` (`S13`). The launcher lists every service that carries an icon, whether or not it is an MCP service.
 
 In a browser, the list is closed when the page loads, and pressing the launcher button opens it; like `Sign out`, the button visibly reacts as the user presses it. Typing in the search field keeps only the entries whose name contains the typed text, ignoring case and any spaces around it; clearing the field shows them all again. When the text matches no entry, the no-match line appears, reading `No service matches “<text>”.` with the typed text in quotation marks. Pressing Enter in the search field opens the first entry still shown that is a working link, and does nothing when there is none. That filtering is the whole of what `/_appkit/launcher.js` does: every entry, and the no-match line, arrived with the page.
 
@@ -164,8 +164,8 @@ Status 200. The body is the landing page of `A user opens the landing page`, wit
 
 Preconditions:
 
-- telemetry is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
+- telemetry is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file with an `icon` string on each entry.
 
 Postconditions:
 
@@ -196,8 +196,8 @@ Status 200. The body is the landing page of `A user opens the landing page`: the
 
 Preconditions:
 
-- telemetry is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` does not exist.
+- telemetry is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` does not exist.
 
 Postconditions:
 
@@ -206,7 +206,7 @@ Postconditions:
 
 ## A user sees the launcher follow a change to the services file
 
-The host rewrites the services file when a service is installed or switched on or off, and telemetry reads the file afresh for every page, so the next page a user loads shows the new list without telemetry being restarted. Here the host has switched `dummy` off since telemetry started: `/var/lib/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
+The host rewrites the services file when a service is installed or switched on or off, and telemetry reads the file afresh for every page, so the next page a user loads shows the new list without telemetry being restarted. Here the host has switched `dummy` off since telemetry started: `/run/ikigenba/services.json` is the file of `A user on a host with services opens the launcher` with `dummy`'s `enabled` now `false`.
 
 Request:
 
@@ -229,8 +229,8 @@ Status 200. The body is the landing page with the launcher, as in `A user on a h
 
 Preconditions:
 
-- telemetry is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment while `/var/lib/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
-- `/var/lib/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
+- telemetry is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment while `/run/ikigenba/services.json` held the file of `A user on a host with services opens the launcher`, with `dummy` switched on, and it has not been restarted since.
+- `/run/ikigenba/services.json` now lists `dummy` with `enabled` `false`.
 
 Postconditions:
 
@@ -238,7 +238,7 @@ Postconditions:
 
 ## A user on a host whose services file names no auth still gets auth's links
 
-The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one telemetry build serves whichever space it is installed on. Here `/var/lib/ikigenba/services.json` is the suite's services file without the `auth` entry.
+The banner's profile link and sign-out form address auth on the space the request names in its `Host` when the services file has no `auth` entry to take them from, so one telemetry build serves whichever space it is installed on. Here `/run/ikigenba/services.json` is the suite's services file without the `auth` entry.
 
 Request:
 
@@ -284,8 +284,8 @@ Status 200. The body is the landing page of `A user opens the landing page`, and
 
 Preconditions:
 
-- telemetry is serving, started with `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` in its environment.
-- `/var/lib/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
+- telemetry is serving, started with `IKIGENBA_SERVICES=/run/ikigenba/services.json` in its environment.
+- `/run/ikigenba/services.json` holds the suite's services file without the entry named `auth`.
 
 Postconditions:
 

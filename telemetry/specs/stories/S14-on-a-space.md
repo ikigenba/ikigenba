@@ -1,6 +1,6 @@
 # Stories — on a space
 
-telemetry reached through a space: the file `S13-package.md` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `telemetry.<space>` over TLS. A space is one label under the root domain and an app is `<app>.<space>`, so telemetry on the space `sbx.ikigenba.dev` answers at `telemetry.sbx.ikigenba.dev`. nginx on the space proxies to telemetry's socket, `/run/ikigenba/telemetry.sock` (`S02-serve.md`), and includes telemetry's own `etc/nginx.conf` in that server, so `/ingest` at the public name answers 404 while the same path on the socket takes every sibling's events (`S06-ingest.md`). The space authenticates every request before it reaches telemetry and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`; telemetry's pages and `/mcp` have no unauthenticated case, so a request that arrives at all is one of a known caller. The host's services file is `/var/lib/ikigenba/services.json`, which opsctl writes and names in every app's environment; it lists telemetry, marked for MCP since its manifest has `mcp = true`, with that socket, so every sibling finds it and posts its events there, and the MCP gateway offers telemetry's four tools through `https://mcp.<space>/mcp` (mcp's `S11`). telemetry runs as `/opt/telemetry/bin/telemetry` with `/opt/telemetry` as its working directory, so its database is `/opt/telemetry/state/telemetry.db`, the one the manifest's `[database]` table declares (`S01-bootstrap.md`); the host keeps and replicates a declared database as it does auth's, which is opsctl's doing and is named here only by its effect. `/opt/telemetry/etc/env` carries `RETENTION_DAYS` from the manifest's `[env]` (`S07-retention.md`) beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`. The stories prove the whole path from checkout to browser and agent and nothing about telemetry that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The MCP requests below are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05-mcp.md` fixes; the members every result carries on that revision are not repeated.
+telemetry reached through a space: the tree `S13-package.md` describes, deployed in the suite release with `devctl deploy`, activated by `opsctl`, and answered by nginx at `telemetry.<space>` over TLS. A space is one label under the root domain and an app is `<app>.<space>`, so telemetry on the space `sbx.ikigenba.dev` answers at `telemetry.sbx.ikigenba.dev`. nginx on the space proxies to telemetry's socket, `/run/ikigenba/telemetry.sock` (`S02-serve.md`), and includes telemetry's own `etc/nginx.conf` in that server, so `/ingest` at the public name answers 404 while the same path on the socket takes every sibling's events (`S06-ingest.md`). The space authenticates every request before it reaches telemetry and passes the caller on in `X-User-Id` and `X-User-Email`, with the request's id in `X-Request-Id`; telemetry's pages and `/mcp` have no unauthenticated case, so a request that arrives at all is one of a known caller. The host's services file is `/run/ikigenba/services.json`, which opsctl writes and names in every app's environment; it lists telemetry, marked for MCP since its manifest has `mcp = true`, with that socket, so every sibling finds it and posts its events there, and the MCP gateway offers telemetry's four tools through `https://mcp.<space>/mcp` (mcp's `S11`). telemetry runs as `/opt/ikigenba/current/telemetry/bin/telemetry` with `/var/opt/ikigenba/telemetry` as its working directory, so its database is `/var/opt/ikigenba/telemetry/state/telemetry.db`, the one the manifest's `[database]` table declares (`S01-bootstrap.md`); the host keeps and replicates a declared database as it does auth's, which is opsctl's doing and is named here only by its effect. `/etc/opt/ikigenba/telemetry/env` carries `RETENTION_DAYS` from the manifest's `[env]` (`S07-retention.md`) beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`. The stories prove the whole path from checkout to browser and agent and nothing about telemetry that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The MCP requests below are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05-mcp.md` fixes; the members every result carries on that revision are not repeated.
 
 ## A visitor reaches telemetry's landing page on a space
 
@@ -24,10 +24,9 @@ Status 200. The body is the landing page (`S03-landing.md`): an HTML page whose 
 Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its instance is `running`, and `opsctl` is installed on it.
-- `devctl build telemetry`, run in a clean tree at the commit `<sha>`, wrote `telemetry/dist/telemetry-<sha>.tar.xz` (`S13-package.md`). No tag is needed.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev telemetry/dist/telemetry-<sha>.tar.xz` exited 0.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev <sha>` exited 0, making the suite release at the commit `<sha>` active (`S13-package.md`). No tag is needed.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows telemetry's service and socket `active`, in the layout devctl's and opsctl's stories own.
-- `/opt/telemetry/state/telemetry.db` is the database telemetry opened, created on its first start on this space or kept from an earlier deploy.
+- `/var/opt/ikigenba/telemetry/state/telemetry.db` is the database telemetry opened, created on its first start on this space or kept from an earlier deploy.
 - The space routes `telemetry.sbx.ikigenba.dev` through its authenticating gate: the gate admits the request and sets `X-User-Id` and `X-User-Email` on what it passes to telemetry, and refuses a request it cannot authenticate before telemetry sees it.
 - The caller holds a credential the gate accepts, and the email that credential names is the one the page's profile link is titled with.
 
@@ -57,7 +56,7 @@ Status 200. The body is the landing page of the story above, and its banner carr
 Preconditions:
 
 - Everything the story above requires holds: telemetry is deployed and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate accepts.
-- `telemetry/dist/telemetry-<sha>.tar.xz` holds `share/icon.svg` (`S13-package.md`).
+- The release's `<sha>/telemetry/` holds `share/icon.svg` (`S13-package.md`).
 - The host sets `IKIGENBA_SERVICES` in telemetry's environment to the path of its services file, and that file lists telemetry with its icon.
 
 Postconditions:
@@ -88,7 +87,7 @@ Status 404. The body is not fixed. A request to the same path with no credential
 
 Preconditions:
 
-- telemetry is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches telemetry's landing page on a space`, so the host's nginx includes `/opt/telemetry/etc/nginx.conf` in telemetry's server.
+- telemetry is deployed and active on `sbx.ikigenba.dev`, as in `A visitor reaches telemetry's landing page on a space`, so the host's nginx includes `/opt/ikigenba/current/telemetry/etc/nginx.conf` in telemetry's server.
 - The agent holds a valid token `ikp_<token>` (auth's `S5-tokens.md`) the gate accepts.
 
 Postconditions:
