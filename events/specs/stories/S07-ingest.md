@@ -55,7 +55,7 @@ Postconditions:
 
 ## cron emits an event a pattern it declares matches
 
-`cron` declares that it emits `cron.*.fired` (`S06`), and here its schedule `hourly` fires and it emits `cron.hourly.fired`. No `emits` element of its declaration equals the name, but the pattern matches it, so the name is declared, and events stores the event without asking `cron` again.
+`cron` declares the names it emits as five patterns, `cron.*.fired` among them (`S06`), and here its trigger `hourly` fires and it emits `cron.hourly.fired`. No `emits` element of its declaration equals the name, but the pattern `cron.*.fired` matches it, so the name is declared, and events stores the event without asking `cron` again.
 
 Request:
 
@@ -63,7 +63,7 @@ Request:
 POST /emit HTTP/1.1
 Content-Type: application/json
 
-{"id":"evt_f93076e37ecfe1df","time":"2026-10-05T09:40:00.004218Z","service":"cron","event":"cron.hourly.fired","request_id":"","user":"","attrs":{"schedule":"hourly"},"cause":"","depth":0}
+{"id":"evt_f93076e37ecfe1df","time":"2026-10-05T10:00:00.004218Z","service":"cron","event":"cron.hourly.fired","request_id":"5c1e8a3f7b2d9064a6e0c4f8b2d7a193","user":"u_7f3a9c21","attrs":{"scheduled":"2026-10-05T10:00:00Z","trigger":"crn_3a8f2d6c9e1b4705","when":"0 * * * *"},"cause":"","depth":0}
 ```
 
 Response:
@@ -76,7 +76,7 @@ Status 204. The body is empty.
 
 Preconditions:
 
-- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`, and events holds its declaration, `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}` (`S06`). The log holds no event `evt_f93076e37ecfe1df`, and its last event has `seq` 4182.
+- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`, and events holds its declaration, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}` (`S06`). The log holds no event `evt_f93076e37ecfe1df`, and its last event has `seq` 4182.
 
 Postconditions:
 
@@ -84,11 +84,11 @@ Postconditions:
 - events' log holds the event, with `seq` 4183. A `search` (`S09`) with `{"limit":1}` answers it first, as the newest event of the log:
 
   ```
-  {"records":[{"id":"evt_f93076e37ecfe1df","time":"2026-10-05T09:40:00.004218Z","service":"cron","event":"cron.hourly.fired","request_id":"","user":"","attrs":{"schedule":"hourly"},"cause":"","depth":0,"seq":4183,"received":"<received>"}],"cursor":"<cursor>"}
+  {"records":[{"id":"evt_f93076e37ecfe1df","time":"2026-10-05T10:00:00.004218Z","service":"cron","event":"cron.hourly.fired","request_id":"5c1e8a3f7b2d9064a6e0c4f8b2d7a193","user":"u_7f3a9c21","attrs":{"scheduled":"2026-10-05T10:00:00Z","trigger":"crn_3a8f2d6c9e1b4705","when":"0 * * * *"},"cause":"","depth":0,"seq":4183,"received":"<received>"}],"cursor":"<cursor>"}
   ```
 
   where every member but `seq` and `received` is as posted, and `<received>` is the moment events accepted the event, in the layout of `time`.
-- `catalog` (`S08`) counts one `cron.hourly.fired`, emitted by `cron` with the attribute name `schedule`.
+- `catalog` (`S08`) counts one `cron.hourly.fired`, emitted by `cron` with the attribute names `trigger`, `when`, and `scheduled`, which the pattern `cron.*.fired` declares.
 - telemetry has received, from events, one `event.accepted` (`S14`):
 
   ```
@@ -327,7 +327,7 @@ Postconditions:
 
 ## cron emits a name its pattern does not match
 
-`cron` declares that it emits `cron.*.fired` and nothing else, and here emits `cron.hourly.daily.fired`, one word longer than the pattern: a `*` word matches exactly one word, so the pattern does not match it. The declaration events holds does not declare the name, so events asks `cron` again first (`S06`); `cron` still declares only the pattern, and the event is refused. `cron.fired`, one word shorter, is refused the same way.
+`cron` declares the names it emits as its five patterns and nothing else, and here emits `cron.hourly.daily.fired`, one word longer than `cron.*.fired`: a `*` word matches exactly one word, so that pattern does not match it, and none of the other four does. The declaration events holds does not declare the name, so events asks `cron` again first (`S06`); `cron` still declares only its five patterns, and the event is refused. `cron.fired`, one word shorter, is refused the same way.
 
 Request:
 
@@ -335,7 +335,7 @@ Request:
 POST /emit HTTP/1.1
 Content-Type: application/json
 
-{"id":"evt_2ebe3bd7cfdbd28c","time":"2026-10-05T09:41:00.003127Z","service":"cron","event":"cron.hourly.daily.fired","request_id":"","user":"","attrs":{"schedule":"hourly"},"cause":"","depth":0}
+{"id":"evt_2ebe3bd7cfdbd28c","time":"2026-10-05T10:00:00.003127Z","service":"cron","event":"cron.hourly.daily.fired","request_id":"8a4d2f6c0e9b3157d3f7a1c5e9b2d460","user":"u_7f3a9c21","attrs":{"scheduled":"2026-10-05T10:00:00Z","trigger":"crn_3a8f2d6c9e1b4705","when":"0 * * * *"},"cause":"","depth":0}
 ```
 
 Response:
@@ -348,7 +348,7 @@ Status 422. The body is empty.
 
 Preconditions:
 
-- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`; events holds its declaration, and `cron` answers `GET /declarations` with the same, `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}` (`S06`).
+- The preamble's, and the services file also enables `cron`, on `/run/ikigenba/cron.sock`; events holds its declaration, and `cron` answers `GET /declarations` with the same, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}` (`S06`).
 
 Postconditions:
 

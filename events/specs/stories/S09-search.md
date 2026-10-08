@@ -535,7 +535,7 @@ and a `content` array of one text block whose text is exactly that line. With `{
 
 Preconditions:
 
-- The preamble's, except that it is `2026-10-05T11:02:00Z`, that the services file also enables `cron`, a service the stories suppose, whose declaration is `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}` (`S06`), and that events' log also holds, after the eight above, two `cron.hourly.fired` events `cron` emitted, `seq` 4183 and 4184, as `S08`'s `An agent reads the catalog of a service that declares a pattern` shows them. No event has been accepted since 4184.
+- The preamble's, except that it is `2026-10-05T11:02:00Z`, that the services file also enables `cron`, a service the stories suppose, whose declaration is `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}` (`S06`), and that events' log also holds, after the eight above, two `cron.hourly.fired` events `cron` emitted, `seq` 4183 and 4184, as `S08`'s `An agent reads the catalog of a service that declares a pattern` shows them. No event has been accepted since 4184.
 
 Postconditions:
 

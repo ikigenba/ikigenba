@@ -54,7 +54,7 @@ Postconditions:
 
 ## events holds a declaration whose names are patterns
 
-`cron`, a service the story supposes, emits one event per schedule each time the schedule fires, `cron.hourly.fired` for a schedule named `hourly`, and cannot list in advance every schedule a user will make. It declares the name it emits as the pattern `cron.*.fired`, and events holds the pattern as it holds any declaration.
+`cron`, a service the story supposes, emits an event each time one of its triggers is created, paused, resumed, deleted, or fires, the event's name holding the trigger's slug, `cron.hourly.fired` when the trigger `hourly` fires, and cannot list in advance every trigger a user will make. It declares the names it emits as five patterns, `cron.*.created`, `cron.*.paused`, `cron.*.resumed`, `cron.*.deleted`, and `cron.*.fired`, and events holds the patterns as it holds any declaration.
 
 Request:
 
@@ -69,7 +69,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ```
 
-Status 200. The body is `cron`'s declaration, `{"emits":[{"event":"cron.*.fired","attrs":["schedule"]}],"accepts":[]}`.
+Status 200. The body is `cron`'s declaration, `{"emits":[{"event":"cron.*.created","attrs":["trigger","when"]},{"event":"cron.*.paused","attrs":["trigger","when"]},{"event":"cron.*.resumed","attrs":["trigger","when"]},{"event":"cron.*.deleted","attrs":["trigger","when"]},{"event":"cron.*.fired","attrs":["trigger","when","scheduled"]}],"accepts":[]}`.
 
 Preconditions:
 
@@ -77,7 +77,18 @@ Preconditions:
 
 Postconditions:
 
-- events holds `cron`'s declaration: a `catalog` call (`S08`) with `{"service":"cron"}` answers `{"events":[{"event":"cron.*.fired","emits":[{"service":"cron","attrs":["schedule"]}],"accepts":["scripts"],"count":0}]}`, `scripts`, which accepts every event, listed under the pattern, and an event `cron` emits named `cron.hourly.fired` is accepted (`S07`).
+- events holds `cron`'s declaration: a `catalog` call (`S08`) with `{"service":"cron"}` answers
+
+  ```
+  {"events":[
+    {"event":"cron.*.created","emits":[{"service":"cron","attrs":["trigger","when"]}],"accepts":["scripts"],"count":0},
+    {"event":"cron.*.deleted","emits":[{"service":"cron","attrs":["trigger","when"]}],"accepts":["scripts"],"count":0},
+    {"event":"cron.*.fired","emits":[{"service":"cron","attrs":["trigger","when","scheduled"]}],"accepts":["scripts"],"count":0},
+    {"event":"cron.*.paused","emits":[{"service":"cron","attrs":["trigger","when"]}],"accepts":["scripts"],"count":0},
+    {"event":"cron.*.resumed","emits":[{"service":"cron","attrs":["trigger","when"]}],"accepts":["scripts"],"count":0}]}
+  ```
+
+  one entry per pattern, in byte order, `scripts`, which accepts every event, listed under each; and an event `cron` emits named `cron.hourly.fired` is accepted (`S07`).
 - Nothing has changed in events' log.
 
 ## events learns a changed declaration at its next refresh
