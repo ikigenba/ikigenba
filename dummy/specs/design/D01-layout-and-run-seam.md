@@ -217,7 +217,9 @@ that display string over the same services file returns, which the test
 computes by making such a kit itself after setting `IKIGENBA_SERVICES` as
 dummy's `AGENTS.md` allows, so the comparison rests only on what appkit
 promises for `page.New`, `Kit.Banner` and the two templates, never on how
-appkit's markup is written; an
+appkit's markup is written. Over a services file that lists dummy with an
+icon, that kit marks dummy's entry current and puts its icon in the mark, so
+the same comparison shows the icon the services file gives dummy; an
 `mcp.Client` call to `list_widgets` over the socket succeeds and names the
 name and that display string in its `serverInfo`; and a `server/discover` request answers
 with dummy's description from the services file, read when the request is
