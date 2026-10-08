@@ -575,8 +575,7 @@ found the space is new, and no app's data is looked for.
 
 A rebuilt space brings every app back enabled, including one that was
 disabled on the old host. Whether an app is disabled lives only in the
-host's own units, which no backup holds, just as a `remove` ends the
-disabled state. An app that should stay offline is disabled again with
+host's own units, which no backup holds. An app that should stay offline is disabled again with
 `space disable` after the create.
 
 If the space held the apex, the destroy removed the root's record, and the
@@ -1823,8 +1822,8 @@ relays opsctl's report byte for byte, as `space restart` does: the `stop`
 line names the units it stopped and the `nginx` line every name the app
 answers at.
 
-The app stays disabled through `deploy`, `restore`, and `space restart`; only `space enable` brings it back. `remove` takes it off the
-space altogether, and a later deploy installs it enabled.
+The app stays disabled through `deploy`, `restore`, and `space restart`;
+only `space enable` brings it back.
 
 Command:
 
@@ -2024,8 +2023,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `auth` answers as it did, and every other app is still
-  checked against it. `remove` remains the only way to take the
-  authenticator off the space.
+  checked against it. Deploying a release that does not hold `auth` remains
+  the only way to take the authenticator off the space.
 
 ## A developer disables or enables an app that is not on the space
 
