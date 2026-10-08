@@ -513,8 +513,9 @@ generates from the installed apps would otherwise name data that is not where
 it says, so the check runs where the manifest check does, at the `nginx.conf`
 step, the first that reads the installed apps, and stops `init` before
 anything they generate is rewritten. The `slices` step, which reads no app,
-has already run. The line names the fix. Each installed app whose `state/` is
-still under `/opt/<name>/` gets one such line, in name order. A `cache/` left
+has already run. The line names the fix. When several installed apps' `state/` is
+still under `/opt/<name>/`, only the first in name order is reported, as the
+manifest check reports one fault. A `cache/` left
 under `/opt/<name>/` with no `state/` beside it is no reason to refuse.
 
 Command:
