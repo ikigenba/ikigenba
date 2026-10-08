@@ -44,9 +44,12 @@ do not show it.
 Every page dummy serves is drawn in one common frame, the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
 mark, a profile icon linking to the caller's profile in auth, and a sign-out
-button; on a host with a services file it also holds the launcher button
-(below). The mark's text is `ikigenba`, and
-it names the service it fronts, `dummy`; the service's name is lowercase `dummy` everywhere it
+icon button; on a host with a services file it also holds the launcher button
+(below). The mark shows the platform's favicon, then the product name
+`Ikigenba`, then the service it fronts, `dummy`: dummy's own icon and then its
+name when the services file (below) lists `dummy` with an icon, and the name
+alone otherwise. The favicon in the mark is decoration and has no text of its
+own. The service's name is lowercase `dummy` everywhere it
 appears, and every page's title, the one a browser shows on its tab, is
 `dummy`. Because the caller's identity
 is what the banner is drawn from, a failure on a page that dummy can name to
@@ -77,8 +80,10 @@ the request as `<auth-logout>` is (below), so following it leaves dummy for
 auth; what auth shows there is auth's behaviour, told in auth's own stories.
 
 The sign-out button signs the caller out of the whole space in one click. It
-is in a form, not a link: pressing it POSTs to `<auth-logout>`. The button
-reads `Sign out`. `<auth-logout>` is auth's `/logout` on the same space, an
+is in a form, not a link: pressing it POSTs to `<auth-logout>`. Like the
+profile link, the button has no text of its own: it is labelled `Sign out` for
+assistive technology and titled `Sign out`, which a browser shows as its
+tooltip. `<auth-logout>` is auth's `/logout` on the same space, an
 absolute URL, so submitting the form leaves dummy: the browser POSTs to auth,
 carrying the space-wide `ikigenba_session` cookie, and what that POST does —
 ending the session and sending the browser to auth's sign-in page — is auth's
@@ -222,10 +227,11 @@ Content-Type: text/html; charset=utf-8
 Status 200. The body is an HTML document titled `dummy` that links
 `/_appkit/theme.css` as its stylesheet, links `/_appkit/favicon.svg` as its
 icon, loads `/_appkit/feedback.js`, and declares the phone-width viewport. Its
-banner holds the mark, whose text is `ikigenba` and which names the service
-`dummy`; the profile link, labelled `Profile` and titled `mg@example.com`,
-leading to `http://localhost:3001/`; and the sign-out button reading `Sign
-out` in a form that POSTs to `http://localhost:3001/logout`. Beneath the
+banner holds the mark, showing the platform's favicon, the text `Ikigenba`,
+and the service's name `dummy` with no icon, since dummy has no services file;
+the profile link, labelled `Profile` and titled `mg@example.com`, leading to
+`http://localhost:3001/`; and the sign-out button, labelled and titled `Sign
+out`, in a form that POSTs to `http://localhost:3001/logout`. Beneath the
 banner is the heading `Widgets` with the subtitle `3 widgets · refreshes every
 5 seconds`, and beneath it a table whose header cells read `Name`, `Count`,
 and `Status` and whose rows are the three widgets in the order they were
@@ -394,7 +400,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the panel page, and its banner's sign-out button
-reading `Sign out` is in a form whose method is `post` and whose action is
+labelled `Sign out` is in a form whose method is `post` and whose action is
 `https://auth.sbx.ikigenba.dev/logout`, and the banner's profile link, titled
 `mg@example.com`, leads to `https://auth.sbx.ikigenba.dev/`. With
 `X-Forwarded-Proto: http` and the same `Host`, the action is
@@ -782,8 +788,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the panel page of `A user opens the panel`, with the
-same banner, and the banner also holds the launcher button labelled
-`Services`. The page carries the list of services labelled `Services`,
+same banner, except that its mark shows dummy's icon before the name `dummy`,
+and the banner also holds the launcher button labelled `Services`. The page
+carries the list of services labelled `Services`,
 holding the search field labelled `Find a service` with the placeholder
 `Find a service` and three entries in the file's order: `auth`, showing its
 icon and then its name, a link to `https://auth.sbx.ikigenba.dev/`; `dummy`,
