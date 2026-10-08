@@ -21,11 +21,11 @@ errors come first and the read precedes the operand parse and the first cloud
 call — that ordering is D04's rule (R-N1LD-IX1I, and R-ST4K-APZN for the
 operand) and is not restated here. What `cli.Run` prints for a returned error
 is likewise stated once: the checkout and root-file errors map to a single
-`devctl: <message>` line and exit 2 under D04 R-QEXY-821P, and every error
+`devctl: <message>` line and exit 2 under D04 R-EX3T-CTOO, and every error
 carrying `ExitCode()` (and optionally `Detail()`) under D05 R-D4G2-IO81. D02
 states which commands read the file, that help, version and top-level usage
 errors touch nothing, and that `cli.Run` alone speaks on stderr. `build` does
-not read the root file; that is D08's rule (R-RBMT-WHDT).
+not read the root file; that is D08's rule (R-RBMT-WHDT, and R-G9VS-NNCG for the suite build).
 
 Command products stay on stdout; external diagnostic detail is visibly quoted,
 including nested quotes and empty lines.
@@ -72,7 +72,7 @@ including nested quotes and empty lines.
 
 - R-R3TS-W0MS: When a command fails, `cli.Run` MUST write to `stderr` only the diagnostic for the error the command returned, verified at least by `devctl space list` with `Deps.Dir` outside any git checkout, in a temporary checkout that has no root file, and in one whose root file holds `{"domain": "ikigenba.dev"}` each writing exactly one line to stderr and nothing to stdout.
 
-- R-S56Q-6XPJ: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
+- R-EVVW-Z1XZ: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
 
   ```
   Usage: devctl [options] <command> [arguments]
@@ -83,7 +83,7 @@ including nested quotes and empty lines.
     version   print the version
     space     list, create, destroy, stop, start, initialise, and inspect spaces
     secrets   push and list an app's secrets for a space
-    build     build one app into its deployable file
+    build     build the suite or one app into a deployable file
     deploy    put a built app file on a space
     remove    take an app off a space
     restore   put a space's app back from its backups

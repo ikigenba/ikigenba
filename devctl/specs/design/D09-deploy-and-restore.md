@@ -1,6 +1,6 @@
 # D09-deploy-and-restore
 
-Deploy puts one file that `build` wrote on one space. It validates the file
+Deploy puts one file that the per-app build wrote on one space. It validates the file
 locally first (the name is `<app>-<sha>.tar.xz`, the sha the full commit sha
 build ran at in 40 lowercase hex digits, and the archive holds
 `bin/<app>` and `etc/manifest.toml`), reads the root file to learn the root
@@ -11,7 +11,7 @@ the manifest's `secrets` with the space's secrets object, uploads the file to
 has `opsctl install` fetch it from there over ssh. The bucket's name has dots,
 so the S3 adapter addresses it path-style; that is D03's obligation
 (R-QIQ0-MU5V) and is not restated here. Promotion is the same command against
-a different space: any file build wrote goes to any space, whatever commit or
+a different space: any file the per-app build wrote goes to any space, whatever commit or
 branch it was built at, and nothing about the target or the session restricts
 what is accepted. Deploy neither sets nor checks the version the app's binary
 reports; `space status` relays whatever opsctl says.
@@ -41,7 +41,7 @@ first, then the root file, then the operand, then the first cloud call, all
 through the one parser — are D04's (R-N1LD-IX1I, R-ST4K-APZN) and are only
 referenced here. The cli mapping of a `*cloud.NoSpaceError` to
 `devctl: no space at '<domain>'`, exit 1, is D03's (R-R10I-DEAA); of the
-checkout and root-file errors to exit 2, D04's (R-QEXY-821P); of every error
+checkout and root-file errors to exit 2, D04's (R-EX3T-CTOO); of every error
 carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 ## REQUIREMENTS

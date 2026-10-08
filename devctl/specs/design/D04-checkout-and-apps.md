@@ -11,9 +11,25 @@ An app's `main` package sits at `cmd/<name>/` under its directory, like every
 other binary in the repository. The shared appref package defines the usable-name
 grammar build and deploy share, and the grammar of the file build writes and
 deploy takes: a usable app, `-`, the full commit sha in 40 lowercase hex
-digits, and `.tar.xz`. Build reads no tag; the checkout offers `HEAD`'s sha
-and whether the tree is clean, and nothing about tags. appref also keeps the
+digits, and `.tar.xz`. The per-app build reads no tag; for it the checkout
+offers `HEAD`'s sha and whether the tree is clean. appref also keeps the
 `v<semver>` version grammar, which only opsctl's release tags use (D10).
+
+For the suite build (D08) the checkout offers four more things. `HasApp`
+says whether one entry of the root qualifies as an app by the same criteria
+`Apps` uses, without decoding any manifest, so that a broken manifest
+elsewhere in the developer's tree cannot decide how an operand is read.
+`ResolveCommit` accepts exactly two forms and turns either into the full
+commit sha with `git rev-parse --verify --quiet`, fetching nothing: a
+lowercase hex string of 4 to 40 characters, resolved as an object name and
+accepted only when the sha begins with it, and anything else, resolved only
+as the tag `refs/tags/<name>` and peeled to its commit. A hex string is never
+looked up as a tag, and a branch, `HEAD` or any other revision expression
+resolves to nothing; a name that resolves to no commit is a negative answer,
+not an error. `AddWorktree` and `RemoveWorktree` create and remove a detached linked
+worktree at a given directory. A `Checkout` whose `Root` is such a worktree
+is an ordinary checkout of that commit, and `Apps` on it discovers the apps
+the commit holds.
 
 The checkout is also where the platform is stated. devctl has no
 configuration of its own: the root domain and its region live in the root
@@ -98,7 +114,7 @@ looked up.
 
 - R-WFYX-IAD9: A value `keyring.Lookup` returns MUST NOT appear in the `Path`, `Args`, `Dir`, or `Env` of any `seam.Cmd` passed to `Deps.Exec`, and MUST NOT appear in anything any command writes to stdout or stderr, verified by running `secrets push` and `space create` through `cli.Run` with a sentinel value reachable through `Deps.Getenv` and asserting that the sentinel appears in neither stream nor in any recorded `seam.Cmd`.
 
-- R-QEXY-821P: When a command fails because `checkout.Open`, `checkout.ReadRootFile`, `(*Checkout).ReadRootFile`, `(*Checkout).Apps`, or `(*Checkout).App` returned an error that `errors.As` matches to a `*NotInCheckoutError`, a `*NoRootFileError`, a `*RootFileError`, a `*NoAppError`, or a `*ManifestError`, `cli.Run` MUST write `devctl: ` followed by that error's message as the only line on stderr, write nothing further to stdout, and return 2, verified at least by `devctl build bogus` and `devctl secrets push sbx1 bogus` each writing the single line `devctl: no app 'bogus' in the checkout`, and by `devctl space list` writing the single line `devctl: '<Deps.Dir>' is not inside a git checkout` when the fake `git` process exits non-zero, `devctl: no infra/terraform.tfvars.json in the checkout` in a temporary checkout that has no root file, and `devctl: infra/terraform.tfvars.json: missing 'region'` in one whose root file holds `{"domain": "ikigenba.dev"}`.
+- R-EX3T-CTOO: When a command fails because `checkout.Open`, `checkout.ReadRootFile`, `(*Checkout).ReadRootFile`, `(*Checkout).Apps`, or `(*Checkout).App` returned an error that `errors.As` matches to a `*NotInCheckoutError`, a `*NoRootFileError`, a `*RootFileError`, a `*NoAppError`, or a `*ManifestError`, `cli.Run` MUST write `devctl: ` followed by that error's message as the only line on stderr, write nothing further to stdout, and return 2, verified at least by `devctl secrets push sbx1 bogus` writing the single line `devctl: no app 'bogus' in the checkout`, and by `devctl space list` writing the single line `devctl: '<Deps.Dir>' is not inside a git checkout` when the fake `git` process exits non-zero, `devctl: no infra/terraform.tfvars.json in the checkout` in a temporary checkout that has no root file, and `devctl: infra/terraform.tfvars.json: missing 'region'` in one whose root file holds `{"domain": "ikigenba.dev"}`.
 
 - R-WKUJ-1DC1: When a command fails because `keyring.Lookup` of a name that an app's `Manifest.Secrets` lists returned a `*NoValueError`, `cli.Run` MUST write the single line `devctl: <app>: no value for '<name>' in the keyring or the environment` to stderr, where `<app>` is that app's `Name`, write nothing further to stdout, and return 2, verified at least for `secrets push` and `space create` each reproducing `devctl: crm: no value for 'CRM_API_KEY' in the keyring or the environment`.
 
@@ -177,3 +193,15 @@ looked up.
 - R-S8UF-C8XM: When `spaceref.Parse` would otherwise succeed with a `Label` equal to `ReservedLabel`, it MUST instead return a zero `Space` and a `*ReservedLabelError` whose `Label` is that `Label`; verified at least by `golden` and `golden.ikigenba.dev` with root `ikigenba.dev` each giving `'golden' is not a usable space label: golden/ holds the golden sets`, by `goldens` and `golden-1` being accepted, and through `cli.Run`, in a temporary checkout whose root file names `ikigenba.dev`, by `devctl space create golden --acme-email ops@ikigenba.dev` and `devctl space status golden.ikigenba.dev` each writing that single line to stderr with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.
 
 - R-SA2B-Q0OB: When `spaceref.ParseApp` would otherwise succeed with a `Space.Label` equal to `ReservedLabel`, it MUST instead return a zero `App` and a `*ReservedLabelError` whose `Label` is that `Label`, after every refusal R-QTKQ-TAY1 states; verified at least by `crm.golden` and `crm.golden.ikigenba.dev` with root `ikigenba.dev` each giving `'golden' is not a usable space label: golden/ holds the golden sets`, and by `host.golden` giving `'host' is not a usable app name`.
+
+- R-EYBP-QLFD: Package `internal/checkout` MUST export the method `HasApp(name string) bool` on `*Checkout`.
+
+- R-EZJM-4D62: `(*Checkout).HasApp` MUST return true if and only if `name` is the name of an entry of `Root` that is a directory, holds a regular file at `ManifestFile`, and holds at least one file directly in its `cmd/<name>` directory whose name ends in `.go` but not in `_test.go` and whose package clause is `main`, whatever that entry's or any other entry's manifest holds; it MUST return false for a `name` that is empty, is `.` or `..`, or holds a `/`, and MUST pass no `seam.Cmd` to `Deps.Exec`; verified at least by true for an entry `crm` whose manifest is not valid TOML, for one whose manifest names a `port`, for `crm` while another entry's manifest is not valid TOML, and for an entry `Crm`, and by false for `bogus`, for an entry without a manifest, for an entry whose only `main` file sits directly in it, for `crm/cmd`, and for `devctl/v1.2.0`.
+
+- R-F0RI-I4WR: Package `internal/checkout` MUST export the methods `ResolveCommit(ctx context.Context, rev string) (sha string, ok bool, err error)`, `AddWorktree(ctx context.Context, dir, sha string) error`, and `RemoveWorktree(ctx context.Context, dir string) error` on `*Checkout`.
+
+- R-FKQD-AA3N: `(*Checkout).ResolveCommit` MUST classify `rev` as the hex form when it is 4 to 40 bytes each an ASCII digit or a lowercase letter `a` to `f`, and as the tag form otherwise, so that a hex `rev` is never looked up as a tag; in the tag form, when `refs/tags/` followed by `rev` breaks a rule of git-check-ref-format(1), that is, when it has a `/`-separated component beginning with `.` or ending in `.lock`, contains `..`, a byte below 0x20 or equal to 0x7f, a space, `~`, `^`, `:`, `?`, `*`, `[`, `\`, `//` or `@{`, or ends in `/` or `.`, it MUST return the empty string, false, and a nil error and pass no `seam.Cmd` to `Deps.Exec`; otherwise it MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Dir` is `Root`, and whose `Args` are exactly `rev-parse`, `--verify`, `--quiet`, `--end-of-options`, and a last argument that is `rev` followed by `^{commit}` in the hex form and `refs/tags/` followed by `rev` and `^{commit}` in the tag form; it MUST return that process's standard output with its trailing newlines removed, true, and a nil error when the process exits 0 and, in the hex form, that output begins with `rev`; it MUST return the empty string, false, and a nil error when the process exits non-zero or, in the hex form, its output does not begin with `rev`; and when `Deps.Exec` returns a non-nil error it MUST return the empty string, false, and an error whose message contains `git rev-parse` and that `errors.As` does not match to a `*GitError`; verified at least by `4b22`, `4b22285` and `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` taking the hex form; by `r1`, `devctl/v1.2.0`, `main`, `HEAD`, the uppercase `4B22285`, the 3-byte `abc` and the 41-byte `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a0` taking the tag form; by `r1~1`, `r1^`, `r1^2`, `r1@{0}`, `HEAD~1`, `r1:x`, `a..b`, `r1.lock`, `.r1`, `r1.` and `r1/` each giving false with no `seam.Cmd`; and by a fake process that exits 0 printing `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c` for `4b22285` giving false.
+
+- R-F4F7-NG4U: `(*Checkout).AddWorktree` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `worktree`, `add`, `--detach`, `dir`, and `sha`, and whose `Dir` is `Root`; `(*Checkout).RemoveWorktree` MUST pass exactly one, whose `Path` is `git`, whose `Args` are exactly `worktree`, `remove`, `--force`, and `dir`, and whose `Dir` is `Root`; each MUST return nil when its process exits 0.
+
+- R-F5N4-17VJ: `AddWorktree` and `RemoveWorktree` MUST return a `*GitError` carrying the command arguments, exit status and stderr for any non-zero process exit, and an error that `errors.As` does not match to a `*GitError`, whose message contains `git worktree`, and that wraps the runner error when `Deps.Exec` cannot run the process.

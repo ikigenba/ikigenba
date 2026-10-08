@@ -63,7 +63,7 @@ call (D04 R-N1LD-IX1I and R-ST4K-APZN); `cloud.Connect` with the root as the
 profile and the root file's region (D02 R-S2QX-FE85); a `*cloud.NoSpaceError`
 to `devctl: no space at '<domain>'`, exit 1 (D03 R-R10I-DEAA); a `*cloud.Error`
 or `*cloud.NotFoundError` to one line and exit 1 (D03 R-QZSL-ZMJL); the
-checkout and root-file errors to exit 2 (D04 R-QEXY-821P); every error carrying
+checkout and root-file errors to exit 2 (D04 R-EX3T-CTOO); every error carrying
 `ExitCode()` and `Detail()` (D05 R-D4G2-IO81); the fallback that turns a
 `*space.NotRunningError` into `devctl: '<domain>' is stopped`, exit 1 (D05
 R-0D99-FN33); and every step line written through `space.Step` (D06

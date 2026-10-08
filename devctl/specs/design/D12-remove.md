@@ -37,7 +37,7 @@ Ordering is the shared rule and is not restated here: usage errors first, then
 the root file, then the operand, then the first cloud call (D04 R-N1LD-IX1I and
 R-ST4K-APZN). The cli mapping of a `*cloud.NoSpaceError` to
 `devctl: no space at '<domain>'`, exit 1, is D03's (R-R10I-DEAA); of the
-checkout and root-file errors to exit 2, D04's (R-QEXY-821P); of every error
+checkout and root-file errors to exit 2, D04's (R-EX3T-CTOO); of every error
 carrying `ExitCode()` and `Detail()`, D05's (R-D4G2-IO81); of everything else,
 D05's fallback (R-0D99-FN33), which is how a `*space.NotRunningError` becomes
 `devctl: '<domain>' is stopped`, exit 1. The host runner is D06's
