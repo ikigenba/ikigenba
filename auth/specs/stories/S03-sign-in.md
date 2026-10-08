@@ -313,9 +313,10 @@ Location: https://accounts.google.com/o/oauth2/v2/auth?...
 
 Status 302. The `Location` is Google's OAuth 2.0 authorization endpoint; its
 query carries the OAuth client id from `GOOGLE_CLIENT_ID`, `hd=michaelgreenly.dev`
-as the Workspace hint, a `redirect_uri`, a `state` parameter, and a PKCE
-`code_challenge` with `code_challenge_method=S256`. The rest of the query is not
-fixed here. The `redirect_uri` is
+as the Workspace hint, `prompt=select_account` so Google shows its account
+chooser on every sign-in, a `redirect_uri`, a `state` parameter, and a PKCE
+`code_challenge` with `code_challenge_method=S256`. No other `prompt` value is
+sent, and the rest of the query is not fixed here. The `redirect_uri` is
 `https://auth.<space>/login/google/callback`, here
 `https://auth.sbx.ikigenba.dev/login/google/callback`.
 

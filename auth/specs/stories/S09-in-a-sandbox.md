@@ -105,8 +105,8 @@ Location: https://accounts.google.com/o/oauth2/v2/auth?...
 
 Status 302. The `Location` is Google's authorization endpoint with the query
 `S03-sign-in.md` fixes — the client id from `GOOGLE_CLIENT_ID`,
-`hd=michaelgreenly.dev`, a `state`, and a PKCE `code_challenge` with
-`code_challenge_method=S256` — except that its `redirect_uri` is
+`hd=michaelgreenly.dev`, `prompt=select_account`, a `state`, and a PKCE
+`code_challenge` with `code_challenge_method=S256` — except that its `redirect_uri` is
 `http://localhost:7400/login/google/callback`, `IKIGENBA_CALLBACK_URL`
 followed by `/login/google/callback`. It is the same whatever `Host` the
 request names.
