@@ -32,8 +32,7 @@ under `Commands:`.
 These stories are written for a released host, one where `/opt/ikigenba/current`
 exists. A host still laid out per app (`S07-apps.md`) keeps that layout's file,
 `/var/lib/ikigenba/services.json`, with its own rule — every installed, routed
-app under `/opt/<name>/` — rewritten by `install` and `uninstall` as well, and
-named by its apps' `IKIGENBA_SERVICES`.
+app under `/opt/<name>/` — and named by its apps' `IKIGENBA_SERVICES`.
 
 A service is in the file if and only if it is an app the release `current`
 names: a directory `/opt/ikigenba/current/<name>/` holding `bin/<name>` and an
@@ -310,8 +309,8 @@ A service is in the file only when the current release holds its app. `gmail`
 was an app of an earlier release; the current one does not hold it, and its
 kept `state/` makes it a data-only service, so it is left out, though the
 host still backs its data up. `wiki` is left behind under `/opt/wiki/` with a
-manifest naming its app and an icon, from the time apps were installed one by
-one; on a released host an `/opt/<name>/` makes no service, so it is left out
+manifest naming its app and an icon, from the time the host was laid out per
+app; on a released host an `/opt/<name>/` makes no service, so it is left out
 too. `crm` is as in the first story.
 
 Command:

@@ -31,7 +31,7 @@ one to it, and each group that does says so; `S06-certificates.md` adds
 `S08-backup.md` adds `litestream` and `timers`, and `S07-apps.md` adds `apps`,
 in that order. `slices` reads no manifest, so it comes before every step that
 does: a host whose installed manifests the running opsctl refuses still gets its
-slices, which `activate` and `install` need to judge a fixed release. Every
+slices, which `activate` needs to judge a fixed release. Every
 setup command is idempotent, so `init` is too, and a step's inputs are read from
 the store every run — which is why changing a period or a zone is `config set`
 followed by `init`, and never an edit to something `init` generated. From the
@@ -42,9 +42,8 @@ host — `/etc/litestream.yml` to what is under `/var/opt/ikigenba` too — and 
 nginx file to which apps are disabled as well. So does the services file
 (`S09-services.md`), which `init` rewrites every run without printing a line for
 it; `activate`, `rollback`, `restore`, `disable`, and `enable` regenerate those
-themselves when they change what they answer to, and so do `install` and
-`uninstall` on a per-app host (see `S07-apps.md`, `S08-backup.md`, and
-`S10-releases.md`); `init` remains the only command that enables the units
+themselves when they change what they answer to (see `S07-apps.md`,
+`S08-backup.md`, and `S10-releases.md`); `init` remains the only command that enables the units
 behind them.
 
 `init` runs on three kinds of host. A *released host* is one where
@@ -52,9 +51,9 @@ behind them.
 release `current` names, the `apps` step writes each one's environment file and
 units exactly as `activate` does, together with the boot unit
 `ikigenba-services.service` (`S09-services.md`), and the services file is
-`/run/ikigenba/services.json`. A *per-app host* has no `current` and holds apps
-`install` put under `/opt/<app>/` (`S07-apps.md`): there `init` keeps that
-layout's behaviour, its apps are the installed ones, and the services file is
+`/run/ikigenba/services.json`. A *per-app host* has no `current` and is laid out the
+legacy way, each app under `/opt/<app>/` (`S07-apps.md`): there `init` keeps
+that layout's behaviour, its apps are the ones under `/opt/<app>/`, and the services file is
 `/var/lib/ikigenba/services.json`; a story written for that layout says so in
 its preconditions. A *fresh host* has neither: `init` does the host's own work —
 the certificate, the slices, an nginx file with no apps, an empty
@@ -91,8 +90,8 @@ theirs. Each file is the same bytes on every run with the same memory. systemd
 is reloaded only when one of the four files changed, and nginx is restarted,
 not just reloaded, only when its drop-in changed, because a running service
 moves to another slice only when it starts. Where each app goes, and how much
-it may hold, is `S07-apps.md`'s; `activate` and `install` check an app against
-the slice unit this step wrote, never against the host's memory.
+it may hold, is `S07-apps.md`'s; `activate` checks an app against the slice
+unit this step wrote, never against the host's memory.
 
 The host's programs — `nginx`, `certbot`, `systemctl`, `litestream`, and
 `git` — are installed by the space's first boot, not by opsctl. `init` only
@@ -163,7 +162,7 @@ Sequence:
                given the environment and units activate writes, and
                ikigenba-services.service is written and enabled. The
                resources an app's manifest declares are kept as activate
-               or install wrote them
+               wrote them
 
 When /usr/local/bin/opsctl does not exist, init makes it a link before the
 sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
@@ -273,7 +272,7 @@ lookups agree is the check.
 
 ## An agent initialises a per-app host that is ready
 
-A host whose apps `install` put under `/opt/<app>/`, and which has not yet
+A host laid out per app, with its apps under `/opt/<app>/`, which has not yet
 had its first `activate`, keeps that layout's behaviour: `init` writes the
 installed apps' settings where their units already look. The output is the
 ready host's.
@@ -294,7 +293,7 @@ Preconditions:
   are unset.
 - The host is a per-app host: `/opt/ikigenba/current` does not exist, and
   each installed app's `bin/`, `etc/`, and `share/` are under `/opt/<app>/`,
-  as `install` left them.
+  as the per-app layout keeps them.
 
 Postconditions:
 
@@ -467,9 +466,8 @@ Postconditions:
 
 ## An agent's first init puts the suite in its slices
 
-The first `init` on a fresh host writes the slices before any app is activated
-or installed, so every app `activate` or `install` later places has a slice to
-go into and a ceiling to be checked against. The step prints no line of its own;
+The first `init` on a fresh host writes the slices before any app is
+activated, so every app `activate` later places has a slice to go into and a ceiling to be checked against. The step prints no line of its own;
 the run's output is the ready host's.
 
 Command:
@@ -514,7 +512,7 @@ Postconditions:
 The slices are sized from the memory the host had when `init` last ran, not
 the memory it has now, so a host stopped and started as a bigger instance
 runs with the old ceilings until the operator runs `init`. Nothing else
-recomputes them: `activate` and `install` read the slice units as they are.
+recomputes them: `activate` reads the slice units as they are.
 
 Command:
 
@@ -604,8 +602,9 @@ Postconditions:
 On a released host the `apps` step writes each app's whole environment file,
 its secrets included, from the parameter `/<host.name>/<app>`, as `activate`
 does. A secret the manifest names that the parameter does not hold stops
-`init` at that step, in `install`'s words after `opsctl: <app>: `. Like
-`install`, it writes no app until every app's secrets are in hand, so no app
+`init` at that step, in the words of `activate`'s `secrets` step after
+`opsctl: `. Like
+`activate`, it writes no app until every app's secrets are in hand, so no app
 is left with an environment file missing a value. The steps before `apps` have
 run.
 
@@ -662,11 +661,12 @@ all generated from every installed app's manifest, so a manifest the running
 opsctl refuses stops `init` at its `nginx.conf` step, the first that reads
 them, before anything they generate is rewritten. This is the host just
 upgraded from an opsctl that wrote no slices: the release it holds was
-installed under the older opsctl and carries `io_weight`, a key this one does
-not know. The `slices` step, which reads no manifest, has already run, so
-the host has the slices that installing a fixed release needs. `init` judges the
-manifest's form only. It does not check an app's `memory_max` against its
-slice or warn about a slice that is oversubscribed; those are `install`'s.
+put in place under the older opsctl and carries `io_weight`, a key this one
+does not know. The `slices` step, which reads no manifest, has already run,
+so the host has the slices that activating a fixed release needs. `init`
+judges the manifest's form only. It does not check an app's `memory_max`
+against its slice or warn about a slice that is oversubscribed; those are
+`activate`'s.
 
 Command:
 
@@ -694,8 +694,8 @@ exit 1
 ```
 
 Exits 1. The `ok` lines are on stdout; the `opsctl:` line is on stderr. Any
-other fault `install` would refuse in the manifest is reported the same way,
-in `install`'s words, after `opsctl: <app>: etc/manifest.toml: `.
+other manifest fault `S07-apps.md` names is reported the same way, in its
+words, after `opsctl: <app>: etc/manifest.toml: `.
 
 Preconditions:
 
@@ -721,22 +721,20 @@ Postconditions:
   is not reloaded for them and nginx is neither reloaded nor restarted.
 - No app changed: every installed app's unit and environment file are as they
   were, and none was restarted, `repos` included.
-- The fix is to install a `repos` release whose manifest is valid, which
-  `install` can judge now that the slices are there; `init` then runs to the
-  end. A `memory_max` of `2G`, more than the apps slice's
-  1024M on a t3.small, is not `init`'s to refuse, but that install refuses
+- Once `/opt/repos/etc/manifest.toml` is valid, `init` runs to the end. A
+  `memory_max` of `2G`, more than the apps slice's 1024M on a t3.small, is
+  not `init`'s to refuse, though `activate` refuses a release that asks for
   it.
 
 ## An agent initialises a host holding an app whose data has not moved
 
-An app installed while a service's `state/` still lived under `/opt/<name>/`
-keeps it there, and its unit still runs it from there, until an install moves
-the data and rewrites the unit. Only `install` does both. Everything `init`
-generates from the installed apps would otherwise name data that is not where
+An app laid out per app while a service's `state/` still lived under
+`/opt/<name>/` keeps it there, and its unit still runs it from there; no
+command moves the data or rewrites that unit. Everything `init` generates from the installed apps would otherwise name data that is not where
 it says, so the check runs where the manifest check does, at the `nginx.conf`
 step, the first that reads the installed apps, and stops `init` before
 anything they generate is rewritten. The `slices` step, which reads no app,
-has already run. The line names the fix. When several installed apps' `state/` is
+has already run. The line names the app. When several installed apps' `state/` is
 still under `/opt/<name>/`, only the first in name order is reported, as the
 manifest check reports one fault. The same check covers an app whose
 environment file has not moved (the next story). A `cache/` left
@@ -795,14 +793,16 @@ Postconditions:
   it was.
 - Nothing under `/opt/crm/` was moved or removed, and
   `/var/opt/ikigenba/crm/` was not created.
-- Running `init` again before `opsctl install crm` stops at the same place
-  with the same output. After it, `init` runs to the end.
+- Running `init` again while `/opt/crm/state` exists stops at the same place
+  with the same output. Once `crm`'s `state/` is under
+  `/var/opt/ikigenba/crm/` and its environment file is
+  `/etc/opt/ikigenba/crm/env`, `init` runs to the end.
 
 ## An agent initialises a host holding an app whose environment file has not moved
 
-An app installed before environment files lived under `/etc/opt/ikigenba/`
-keeps its file at `/opt/<name>/etc/env`, and its unit still names it there,
-until an install writes the new file and rewrites the unit. On a per-app
+An app laid out per app before environment files lived under
+`/etc/opt/ikigenba/` keeps its file at `/opt/<name>/etc/env`, and its unit
+still names it there; no command writes the new file for it. On a per-app
 host the `apps` step rewrites every installed app's unit to name
 `/etc/opt/ikigenba/<name>/env` and writes the store's values into that file,
 but it reads no parameter, so it cannot write the secrets a missing file
@@ -810,7 +810,7 @@ needs; a unit naming a file that is
 not there would not start. So an installed app with no
 `/etc/opt/ikigenba/<name>/env` stops `init` the way an app whose data has not
 moved does: at the `nginx.conf` step, before anything generated from the
-installed apps is rewritten, with a line that names the fix. It is the same
+installed apps is rewritten, with a line that names the app. It is the same
 check as the one for data. Of the installed apps whose `state/` or environment
 file has not moved, only the first in name order is reported, and an app
 whose `state/` has not moved either is reported for its `state/`.
@@ -865,8 +865,9 @@ Postconditions:
   they were, `dashboard`'s included, and none was restarted. `crm` is still
   running as it was, from `/opt/crm/etc/env`.
 - `/etc/opt/ikigenba/crm/` was not created.
-- Running `init` again before `opsctl install crm` stops at the same place
-  with the same output. After it, `init` runs to the end.
+- Running `init` again while `/etc/opt/ikigenba/crm/env` does not exist
+  stops at the same place with the same output. Once it exists, `init` runs
+  to the end.
 
 ## An operator sets a stop timeout no longer than the drain deadline
 

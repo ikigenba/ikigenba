@@ -1,6 +1,6 @@
 # Stories — releases
 
-A suite release reaches a host as one folder, `/opt/ikigenba/releases/<sha>/`, named by the full 40-character lowercase commit sha it was built from: `release.json` (`{"sha":...,"built":...,"devctl":...}`), `opsctl/bin/opsctl`, and for each app `<app>/` holding only `bin/`, `libexec/`, `lib/`, `share/` and `etc/`, with `bin/` holding exactly `bin/<app>` and `etc/` the app's `manifest.toml` and its `nginx.conf*`. Unpacking the folder is devctl's; `opsctl activate <sha> [label]`, run by the opsctl inside that folder, makes it the release the host runs, and `opsctl rollback` goes back to the one before. Two symlinks beside `releases/` are the only record of what the host runs: `/opt/ikigenba/current` names the running release's folder and `/opt/ikigenba/previous` the one before it, and nothing else on the host or anywhere else says which release is running. `/usr/local/bin/opsctl` is a symlink to `/opt/ikigenba/current/opsctl/bin/opsctl`, so plain `opsctl` is always current's. A release's label lives in `releases/<sha>/label`, present only when the last activate of that sha gave one; a release is shown as `r142 (c604e32)` with a label and `c604e32` without, the short sha being the first 7 characters. Both commands report in install's step-line form: one `<step>: ok (<detail>)` line on stdout per step that succeeded, or `<step>: failed: <reason>` for the one that did not, after which nothing more runs, `opsctl: activate failed` (or `rollback failed`) is on stderr, with the journal quoted `> ` after an empty line when a service failed, and the exit is 1. Every activate checks before it changes anything: the release tree, the host's layout, every manifest, every app's secrets and the slices' room for the release; then it writes the label, every app's environment file and units, points `previous` at what `current` named and `current` at the new folder, reloads systemd, regenerates nginx, `/run/ikigenba/services.json` and `/etc/litestream.yml`, restarts every app one at a time, core apps first and each `active` before the next is touched, and, only when all of that succeeded, removes the releases neither link names.
+A suite release reaches a host as one folder, `/opt/ikigenba/releases/<sha>/`, named by the full 40-character lowercase commit sha it was built from: `release.json` (`{"sha":...,"built":...,"devctl":...}`), `opsctl/bin/opsctl`, and for each app `<app>/` holding only `bin/`, `libexec/`, `lib/`, `share/` and `etc/`, with `bin/` holding exactly `bin/<app>` and `etc/` the app's `manifest.toml` and its `nginx.conf*`. Unpacking the folder is devctl's; `opsctl activate <sha> [label]`, run by the opsctl inside that folder, makes it the release the host runs, and `opsctl rollback` goes back to the one before. Two symlinks beside `releases/` are the only record of what the host runs: `/opt/ikigenba/current` names the running release's folder and `/opt/ikigenba/previous` the one before it, and nothing else on the host or anywhere else says which release is running. `/usr/local/bin/opsctl` is a symlink to `/opt/ikigenba/current/opsctl/bin/opsctl`, so plain `opsctl` is always current's. A release's label lives in `releases/<sha>/label`, present only when the last activate of that sha gave one; a release is shown as `r142 (c604e32)` with a label and `c604e32` without, the short sha being the first 7 characters. Both commands report in step lines: one `<step>: ok (<detail>)` line on stdout per step that succeeded, or `<step>: failed: <reason>` for the one that did not, after which nothing more runs, `opsctl: activate failed` (or `rollback failed`) is on stderr, with the journal quoted `> ` after an empty line when a service failed, and the exit is 1. Every activate checks before it changes anything: the release tree, the host's layout, every manifest, every app's secrets and the slices' room for the release; then it writes the label, every app's environment file and units, points `previous` at what `current` named and `current` at the new folder, reloads systemd, regenerates nginx, `/run/ikigenba/services.json` and `/etc/litestream.yml`, restarts every app one at a time, core apps first and each `active` before the next is touched, and, only when all of that succeeded, removes the releases neither link names.
 
 The top-level usage gains two lines under `Commands:`:
 
@@ -15,14 +15,14 @@ The steps, in order, and what each reports on success:
 |---|---|---|
 | `release` | `c604e32, r142`, or `c604e32` with no label | checks the release tree, then makes the folder owned by root and not writable by group or other |
 | `layout` | `releases`, `per app; cutover of 8 apps`, or `fresh host` | says which kind of host this is, and refuses one that cannot take a release |
-| `manifests` | `8 apps` | every app's manifest is valid by install's rules |
+| `manifests` | `8 apps` | every app's manifest is valid by the rules of `S07-apps.md` |
 | `secrets` | `2 keys` | every name every manifest lists is in `/<host.name>/<app>`; the count is across all apps |
-| `resources` | `8 apps` | install's slice and memory checks for the whole release, with install's `; warning: ...` clauses |
+| `resources` | `8 apps` | the slice and memory checks of `S07-apps.md` for the whole release, with their `; warning: ...` clauses |
 | `snapshot` | `8 services` | cutover only: snapshots every service, as `opsctl snapshot` does |
 | `cutover` | `removed 8 apps from /opt` | cutover only: removes the per-app units, `/opt/<app>/` and `/var/lib/ikigenba/services.json` |
 | `label` | `r142`, or `none` | writes `releases/<sha>/label`, or removes it |
 | `env` | `8 apps` | writes `/etc/opt/ikigenba/<app>/env` for every app in the release |
-| `units` | `8 apps` | creates `/var/opt/ikigenba/<app>/`, owned `ikigenba:ikigenba` with mode `0750`, for an app that has none, as install's `data` step does; writes both units of every app and `ikigenba-services.service`; stops and removes an app the release lacks |
+| `units` | `8 apps` | creates `/var/opt/ikigenba/<app>/`, owned `ikigenba:ikigenba` with mode `0750`, for an app that has none; writes both units of every app and `ikigenba-services.service`; stops and removes an app the release lacks |
 | `links` | `current c604e32, previous 1a2b3c4` | moves `previous` then `current`, then re-creates `/usr/local/bin/opsctl` as a link to `/opt/ikigenba/current/opsctl/bin/opsctl` every time, replacing a file or a link to anything else |
 | `systemd` | `daemon-reload` | reloads systemd |
 | `nginx` | `8 apps` | regenerates `/etc/nginx/conf.d/ikigenba.conf` from current and reloads nginx |
@@ -31,7 +31,7 @@ The steps, in order, and what each reports on success:
 | `service` | `auth c604e32 active`, one line per app | restarts the app, or starts it if inactive, and waits for it to be `active`; a disabled app is not started and reads `disabled` |
 | `retention` | `removed 1 release`, or `nothing removed` | removes every folder in `releases/` named by a full sha that neither link names; ignores every entry whose name begins with `.`, such as devctl's `.unpack.XXXXXXXXXX`, and leaves any other entry |
 
-The `release`, `layout`, `manifests`, `secrets` and `resources` steps write nothing on the host but the release folder's own ownership and modes. The `service` lines run core apps (manifest `slice = "core"`) first, then the rest, in name order within each. On a released host each app's units are `/etc/systemd/system/ikigenba-<app>.socket`, listening at `/run/ikigenba/<app>.sock` as install writes it, and `/etc/systemd/system/ikigenba-<app>.service`, running `/opt/ikigenba/current/<app>/bin/<app>` with working directory `/var/opt/ikigenba/<app>`, environment file `/etc/opt/ikigenba/<app>/env`, a runtime directory `/run/ikigenba/<app>/` and a private `/tmp`, and everything else (slice, resources, stop timeout, user) as install writes it. Its environment file holds what install writes (each secret, the manifest's `[env]`, `DRAIN_SECONDS`) with `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=<full sha>`, and `IKIGENBA_RELEASE=<label>` only when current's release has a label. `ikigenba-services.service` is a oneshot that runs `/usr/local/bin/opsctl services apply` at boot, ordered before every app's service (`S09-services.md`). Since the units name `current` rather than a release, moving the link is what changes the binary each app runs; the restart is what makes it run.
+The `release`, `layout`, `manifests`, `secrets` and `resources` steps write nothing on the host but the release folder's own ownership and modes. The `service` lines run core apps (manifest `slice = "core"`) first, then the rest, in name order within each. On a released host each app's units are `/etc/systemd/system/ikigenba-<app>.socket`, listening at `/run/ikigenba/<app>.sock` as `S07-apps.md` describes it, and `/etc/systemd/system/ikigenba-<app>.service`, running `/opt/ikigenba/current/<app>/bin/<app>` with working directory `/var/opt/ikigenba/<app>`, environment file `/etc/opt/ikigenba/<app>/env`, a runtime directory `/run/ikigenba/<app>/` and a private `/tmp`, and everything else (slice, resources, stop timeout, user) as `S07-apps.md` describes it. Its environment file holds each secret, the manifest's `[env]` and `DRAIN_SECONDS`, with `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=<full sha>`, and `IKIGENBA_RELEASE=<label>` only when current's release has a label. `ikigenba-services.service` is a oneshot that runs `/usr/local/bin/opsctl services apply` at boot, ordered before every app's service (`S09-services.md`). Since the units name `current` rather than a release, moving the link is what changes the binary each app runs; the restart is what makes it run.
 
 The stories use the example host `sbx.ikigenba.dev` and three releases: `c604e32` (`c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, label `r142`), `1a2b3c4` (`1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`, label `r141`) and `9f8e7d6` (`9f8e7d6c5b4a39281706f5e4d3c2b1a098765432`). Each release holds the suite's eight apps, `auth`, `telemetry`, `mcp`, `repos`, `sites`, `scripts`, `events` and `dummy`, with the manifests the suite ships: `auth` and `telemetry` are core apps; `auth` lists two secrets and no other app lists any; every app but `mcp` declares a database. Unless a story says otherwise, every app is enabled, `/<host.name>/auth` holds both of `auth`'s secrets, and `host.name`, `aws.region` and `backup.s3_uri` are set.
 
@@ -146,7 +146,7 @@ Postconditions:
 - `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` and everything in it is owned by root and writable by neither group nor other, and holds `label` with the text `r142`.
 - `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `/opt/ikigenba/previous` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`. `previous` was moved before `current`. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`, so `opsctl version` prints `r142 (c604e32)`.
 - `releases/9f8e7d6c5b4a39281706f5e4d3c2b1a098765432/` is gone; `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d/` is untouched.
-- Every app's `/etc/opt/ikigenba/<app>/env` was written whole, owned `root:root` with mode `0600`, and holds what install writes, `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `IKIGENBA_RELEASE=r142`.
+- Every app's `/etc/opt/ikigenba/<app>/env` was written whole, owned `root:root` with mode `0600`, and holds each secret, the manifest's `[env]` and `DRAIN_SECONDS`, `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `IKIGENBA_RELEASE=r142`.
 - Every app's two units are as the group describes and are enabled; `ikigenba-services.service` is written and enabled. systemd was reloaded.
 - `/etc/nginx/conf.d/ikigenba.conf` was regenerated from current, including each `/opt/ikigenba/current/<app>/etc/nginx.conf*`, and nginx reloaded. `/run/ikigenba/services.json` lists the eight apps, read from current, owned `root:ikigenba` with mode `0640`.
 - `/etc/litestream.yml` is byte for byte as it was, and `litestream.service` was not restarted.
@@ -200,9 +200,9 @@ Postconditions:
 
 - Everything the previous story's postconditions say, except: `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` holds no `label`, no app's environment file holds an `IKIGENBA_RELEASE` line, `opsctl version` prints `c604e32`, `status` shows `auth c604e32 - active active wal`, and no release was removed.
 
-## An agent moves a host from per-app installs to releases
+## An agent moves a host from the per-app layout to releases
 
-The first activate on a host whose apps were installed one by one is the cutover. Each app's data is already at `/var/opt/ikigenba/<app>/` and its environment file at `/etc/opt/ikigenba/<app>/env`, where a release expects them, so nothing has to move: what goes is what each install brought, `/opt/<app>/` and the units that run it. Before anything goes, every service is snapshotted, so the host's data is in one set of objects that `opsctl restore --from` can put back whatever happens next. The cutover step notes which apps are disabled and stops nothing; each app keeps serving from its old process until the rolling restart replaces it. `/usr/local/bin/opsctl` is a file the per-app host installed, and the `links` step replaces it with the link.
+The first activate on a host laid out per app is the cutover. Each app's data is already at `/var/opt/ikigenba/<app>/` and its environment file at `/etc/opt/ikigenba/<app>/env`, where a release expects them, so nothing has to move: what goes is the per-app layout, each `/opt/<app>/` and the units that run it. Before anything goes, every service is snapshotted, so the host's data is in one set of objects that `opsctl restore --from` can put back whatever happens next. The cutover step notes which apps are disabled and stops nothing; each app keeps serving from its old process until the rolling restart replaces it. `/usr/local/bin/opsctl` is a regular file on a per-app host, and the `links` step replaces it with the link.
 
 Command:
 
@@ -243,7 +243,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- The host is a per-app host: there is no `/opt/ikigenba/current`; each of the eight apps was installed by `opsctl install`, so `/opt/<app>/` holds `bin/`, `etc/` and `share/`, and its units run `/opt/<app>/bin/<app>`. `/usr/local/bin/opsctl` is a regular file. `host.apex` is set.
+- The host is a per-app host: there is no `/opt/ikigenba/current`; each of the eight apps is laid out per app: `/opt/<app>/` holds `bin/`, `etc/` and `share/`, and its units run `/opt/<app>/bin/<app>`. `/usr/local/bin/opsctl` is a regular file. `host.apex` is set.
 - Every app's `state/` is under `/var/opt/ikigenba/<app>/` and its environment file is `/etc/opt/ikigenba/<app>/env`; no `/opt/<app>/` holds `state/` or `etc/env`.
 - `dummy` is disabled; every other app is `active`.
 - litestream has replicated every declared database under `<backup.s3_uri><app>/`, and the host's role can write under `<backup.s3_uri>snapshots/`.
@@ -261,7 +261,7 @@ Postconditions:
 
 ## An agent activates the first release on a fresh host
 
-A fresh host has neither a release nor per-app installs. Bringing it up is three commands, all by the absolute path of the release's own opsctl, because `/usr/local/bin/opsctl` does not exist until `init` makes it: `opsctl config set` for each key the space needs (`S02-config.md`), `opsctl init` for the host's own setup (`S04-init.md`), and then this activate. `init` made `/usr/local/bin/opsctl` a link to the opsctl that ran it, so certbot's hooks could reach `opsctl dns`; `activate` replaces it with the link to current's.
+A fresh host has neither a release nor apps laid out per app. Bringing it up is three commands, all by the absolute path of the release's own opsctl, because `/usr/local/bin/opsctl` does not exist until `init` makes it: `opsctl config set` for each key the space needs (`S02-config.md`), `opsctl init` for the host's own setup (`S04-init.md`), and then this activate. `init` made `/usr/local/bin/opsctl` a link to the opsctl that ran it, so certbot's hooks could reach `opsctl dns`; `activate` replaces it with the link to current's.
 
 Command:
 
@@ -562,7 +562,7 @@ Postconditions:
 
 ## An agent activates a release over a disabled app
 
-Disabling is the operator's decision and an activate does not undo it, any more than an install does: the app's environment file and units are rewritten for the new release, neither unit is enabled or started, and its `service` line says so in its turn.
+Disabling is the operator's decision and an activate does not undo it: the app's environment file and units are rewritten for the new release, neither unit is enabled or started, and its `service` line says so in its turn.
 
 Command:
 
@@ -803,7 +803,7 @@ Postconditions:
 
 ## An agent activates a release on a per-app host whose data has not moved
 
-A per-app host with an app whose `state/` is still under `/opt/<app>/` predates the move to `/var/opt/ikigenba/`, and the cutover would remove `/opt/<app>/` with the data in it. The remedy is the per-app host's own: install the app once more, which moves its data, then activate.
+A per-app host with an app whose `state/` is still under `/opt/<app>/` predates the move to `/var/opt/ikigenba/`, and the cutover would remove `/opt/<app>/` with the data in it. The run refuses before anything changes, naming the first such app.
 
 Command:
 
@@ -860,7 +860,7 @@ Postconditions:
 
 ## An agent activates a release whose manifest is not valid
 
-Every manifest in the release is judged by install's rules before anything is written, and the first invalid one stops the run with install's message, prefixed by the app.
+Every manifest in the release is judged by the rules of `S07-apps.md` before anything is written, and the first invalid one stops the run with that rule's words, prefixed by the app.
 
 Command:
 
@@ -877,7 +877,7 @@ manifests: failed: dummy: etc/manifest.toml: 'port' is not allowed; the host giv
 opsctl: activate failed
 ```
 
-Exits 1. The step outcome lines are on stdout; the last line is on stderr. The message is install's (`S07-apps.md`) with the app's name in place of the file's, so every other manifest refusal reads the same way after `manifests: failed: <app>: `. An app whose name is one of the names `S07-apps.md` reserves, `services` and `opsctl` among them, is refused the same way: a release holding `services/`, whose manifest names `app = "services"`, gives `manifests: failed: services: 'services' is not a usable app name`, exit 1, with nothing changed beyond the release folder's ownership and modes.
+Exits 1. The step outcome lines are on stdout; the last line is on stderr. The words are the ones `S07-apps.md` gives each manifest rule, so every other manifest refusal reads the same way after `manifests: failed: <app>: etc/manifest.toml: `. An app whose name is one of the names `S07-apps.md` reserves, `services` and `opsctl` among them, is refused the same way: a release holding `services/`, whose manifest names `app = "services"`, gives `manifests: failed: services: 'services' is not a usable app name`, exit 1, with nothing changed beyond the release folder's ownership and modes.
 
 Preconditions:
 
@@ -941,7 +941,7 @@ Exits 1. The step outcome lines are on stdout; the last line is on stderr. Any r
 
 Preconditions:
 
-- As for "An agent moves a host from per-app installs to releases", except that `<backup.s3_uri>repos/` holds nothing litestream wrote.
+- As for "An agent moves a host from the per-app layout to releases", except that `<backup.s3_uri>repos/` holds nothing litestream wrote.
 
 Postconditions:
 
@@ -1044,7 +1044,7 @@ Postconditions:
 
 ## An operator rolls back with no previous release
 
-A host that has activated only one release, or has just rolled back, or still runs per-app installs or nothing at all, has nowhere to go back to.
+A host that has activated only one release, or has just rolled back, or is still laid out per app or runs nothing at all, has nowhere to go back to.
 
 Command:
 

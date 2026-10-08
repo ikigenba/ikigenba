@@ -174,11 +174,11 @@ no units and no manifest, and backup, snapshot, and retire archive its
 host still laid out per app (`S07-apps.md`), with no `current`, every command
 here keeps that layout's rules: any `/opt/<name>/` holding an `etc/` is a
 service too, a manifest is `/opt/<name>/etc/manifest.toml`, a restore takes
-an installed app and writes its environment file as `opsctl install` does,
-and the services file is `/var/lib/ikigenba/services.json`. A `state/` left
+an installed app and writes its environment file as that layout's apps have
+it, and the services file is `/var/lib/ikigenba/services.json`. A `state/` left
 under `/opt/<name>/` by itself is never a service. A per-app host keeps
 these rules whichever opsctl runs the command. A fresh host, with no
-`current` and no app installed under `/opt/<name>/`, is different: there a
+`current` and no app laid out under `/opt/<name>/`, is different: there a
 restore run by the opsctl inside a release,
 `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`, restores against that
 release, as `devctl space create` does between `init` and the first
@@ -438,11 +438,11 @@ Postconditions:
 
 ## The host backs up a service whose state has not moved yet
 
-On a host still laid out per app, `crm` was installed while a service's
-`state/` still lived under `/opt/<name>/`, and no install has run for it
-since. Its `state/` is not where a backup reads one, and a backup of
+On a host still laid out per app, `crm` was laid out while a service's
+`state/` still lived under `/opt/<name>/`, and its `state/` is still there.
+It is not where a backup reads one, and a backup of
 `/opt/crm/state/` would be a backup of the old layout, so the run fails `crm` rather than reading the old path or
-leaving it out without a word. The failure names the fix. As with any other
+leaving it out without a word. The failure names the app. As with any other
 service's failure, the run still backs up everything else, and the exit code
 says the report holds a failure. A `cache/` left under `/opt/<name>/` with no
 `state/` beside it does not make a service fail: `cache/` is never backed up.
@@ -1907,9 +1907,8 @@ On a host still laid out per app, the restore takes what the service declares
 from the installed manifest and writes the environment file the installed
 unit reads. A service that is not installed has neither, so the restore
 refuses at the `source` step, before it reads a backup or stops anything, and
-names the fix: install the app, then restore. That is true of a host that has
-never run `crm` and of one where `crm` was uninstalled and only
-`/var/opt/ikigenba/crm/state/` is left. A service is installed when
+names the app. That is true of a host that has never run `crm` and of one
+where `crm` is gone and only `/var/opt/ikigenba/crm/state/` is left. A service is installed when
 `/opt/<name>/etc/manifest.toml` names its `app` and `/opt/<name>/bin/<name>`
 exists. `--at` and `--from` are refused the same way.
 
@@ -1943,18 +1942,17 @@ Postconditions:
   touched, and nothing under `/opt/crm/`, `/etc/opt/ikigenba/crm/`, or
   `/var/opt/ikigenba/crm/` was created or written.
 - No object under `<backup.s3_uri>` was read, written, or deleted.
-- After `opsctl install` of `crm`, the same restore runs as the ordinary
-  restore does.
+- Once `/opt/crm/bin/crm` exists and `/opt/crm/etc/manifest.toml` names
+  `crm`, the same restore runs as the ordinary restore does.
 
 ## An operator restores a service whose state has not moved yet
 
-On a host still laid out per app, `crm` was installed while a service's
-`state/` still lived under `/opt/<name>/`, and no install has run for it
-since, so its unit still runs it from there. A restore writes `state/` only to `/var/opt/ikigenba/crm/state/`
+On a host still laid out per app, `crm` was laid out while a service's
+`state/` still lived under `/opt/<name>/`, and its `state/` is still there,
+so its unit still runs it from there. A restore writes `state/` only to `/var/opt/ikigenba/crm/state/`
 and does not rewrite units, so restoring now would put the data where the
 running app does not look. The restore refuses at the `source` step, before it
-stops anything; `opsctl install crm` moves the state and rewrites the unit,
-and the restore can then run. A `cache/` left under `/opt/crm/` with no
+stops anything, naming the app. A `cache/` left under `/opt/crm/` with no
 `state/` beside it is no reason to refuse, and the restore leaves it alone. On
 a released host an `/opt/<name>/` makes no service, so this cannot arise
 there.
@@ -1994,15 +1992,14 @@ Postconditions:
 
 ## An operator restores a service whose environment file has not moved yet
 
-On a host still laid out per app, `crm` was installed after its data moved
+On a host still laid out per app, `crm` was laid out after its data moved
 under `/var/opt/ikigenba/` but before its environment file left
 `/opt/crm/etc/`, so its unit still names
 `/opt/crm/etc/env`. A restore writes the environment file only to
 `/etc/opt/ikigenba/crm/env` and does not rewrite units, so the app would come
 back on a file the restore did not write. The restore refuses at the `source`
 step, before it stops anything, as it refuses an app whose `state/` has not
-moved; `opsctl install crm` writes the new file and rewrites the unit, and the
-restore can then run. On a released host every unit is `activate`'s and names
+moved. On a released host every unit is `activate`'s and names
 `/etc/opt/ikigenba/<name>/env`, so this cannot arise there.
 
 Command:
