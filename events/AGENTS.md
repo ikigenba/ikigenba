@@ -78,9 +78,9 @@ and `etc/`.
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.14.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.14.0`: a release that
-    exports the `db` and `events` packages. It and the modules it pulls in
+  - appkit `v0.16.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.16.0`: a release that
+    exports the `db`, `events` and `version` packages. It and the modules it pulls in
     are events' only dependencies. See Adopting appkit below.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
@@ -96,9 +96,11 @@ external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, `appkit/<version>`
-on origin (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@<version>`.
+appkit is required only at a published release, here `v0.16.0`, fetched
+through the ordinary module proxy and checked against the checksum database
+(see the root `AGENTS.md`); the build run sets it with
+`go get github.com/ikigenba/ikigenba/appkit@v0.16.0`. No `replace` directive,
+no `go.work`, no local module cache stands in for it.
 
 ## Test files
 
@@ -139,9 +141,9 @@ These rules govern the unit tests: everything `go test ./...` runs.
 on the listener it is passed. Arguments, environment lookup and removal, the
 pid, the inherited listener, the output streams, the clock, the sleep, the
 random source and the working directory come in through the run seam design
-declares, and tests inject them. A `Run`-level test sets `Dir` to a temporary
-directory of its own, so the log lands there and never in the checkout. A
-test never reads or changes the real environment, clock, or randomness, and
+declares, and tests inject them. A `Run`-level test sets the version string to
+one of its own and `Dir` to a temporary directory of its own, so the log lands
+there and never in the checkout. A test never reads or changes the real environment, clock, or randomness, and
 never leaves the inherited-listener step unset, since that would take the
 test process's real descriptor 3. The one exception is the working
 directory: a test that proves what an empty `Dir` or the root package's
@@ -199,14 +201,18 @@ services file whose `telemetry` entry names a Unix socket the test holds, as
 design names. Every test builds its own log and subscribers; no test depends
 on state another test made or on the order the tests run in.
 
-**One environment variable, set by the test.** appkit's constructors read
+**Environment variables, set by the test.** appkit's constructors read
 `IKIGENBA_SERVICES` (`services.Variable`) from the process environment; it is
 the one environment read events cannot route through the run seam, and in
 the binary only `main` makes it. A test that reaches such a read, directly or
 through an events constructor, first sets that variable with
 `testing.T.Setenv` to a services file it wrote or to the empty string, so the
-developer's environment never decides a result. Such a test does not call
-`t.Parallel`.
+developer's environment never decides a result. It is the only variable an
+in-process test sets for events's own code. The exec'ing test also sets
+`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with `testing.T.Setenv`, only to
+compute the expected display string by calling appkit's `version.Display()`
+under the same two values it composes into the child's environment. Any test
+that sets a variable with `testing.T.Setenv` does not call `t.Parallel`.
 
 **Identity comes from headers the test sets.** appkit's `identity.Require`
 wraps every route nginx serves, so a request reaches such a path only with an
@@ -249,9 +255,15 @@ through `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
 `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. The
 child runs in a test-owned temporary working directory, where it creates
 `state/events.db`. Its environment is one the test composes, never the
-developer's. The test waits for `READY=1`, makes the requests design names
+developer's, and carries non-empty `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`;
+the test computes the display string it expects with `version.Display()` after
+setting the same two values with `t.Setenv`, so no test spells a version.
+Separately it runs `--version` with neither variable in the child's
+environment and expects exactly one empty line. The test waits for `READY=1`, makes the requests design names
 for the binary, over the socket, then stops the child with `SIGTERM`, and in
-a second run with `SIGINT`, asserting what design states. Any other test that
+a second run with `SIGINT`, asserting what design states. The binary's
+`--version` output, the pages' banner and footer, the MCP `serverInfo` and
+`service.started` all carry that display string. Any other test that
 builds, execs, waits on, or signals a process is a bug.
 
 ## Live tests
@@ -315,30 +327,33 @@ temporary directory.
 
 ## Deploy
 
-Deploy machinery — the version bump, tags, and the `devctl build`/`devctl
-deploy` steps — is hand-maintained infrastructure outside the spec system: the
-build run never reads, edits, or tests it.
+Deploy machinery, `devctl build` and `devctl deploy`, is hand-maintained
+infrastructure outside the spec system: the build run never reads, edits, or
+tests it.
 
-events is an app, not a self-installing CLI: `devctl` builds it into a release
-tarball and pushes it to a space's host, where `opsctl install` installs it.
+events is an app, not a self-installing CLI: `devctl` builds it into a tarball
+named by the commit and pushes it to a space's host, where `opsctl install`
+installs it. There is no version to set, no tag to mint and no `--version`
+check. Until devctl is next released, use the `devctl` the worktree builds: run
+`make build` in `devctl/`, then run the commands below from the repository
+root.
 
-1. Set the version literal design declares to `vX.Y.Z`. The binary reports it
-   verbatim, and the deploy refuses a tag that does not match it.
-2. Commit that on `main` and push `main`.
-3. Tag that commit `events/vX.Y.Z` and push the tag.
-4. `devctl build events` at that tag writes
-   `events/dist/events-vX.Y.Z.tar.xz`, holding `bin/events`, `etc/`, and
-   `share/icon.svg`; the version is in the file's name and in the binary,
-   never in a member's path. It refuses a binary whose `manifest` disagrees
-   with the committed `etc/manifest.toml`.
-5. `devctl deploy <space> events/dist/events-vX.Y.Z.tar.xz` uploads the
-   tarball to the space's `deploy/` prefix and runs `opsctl install` over ssh;
-   the host fetches it, writes `etc/env` (the manifest's `[env]` defaults and
-   the space's `DRAIN_SECONDS`), replaces the release, publishes
+1. Commit the change on the branch you are on (push only when asked); the
+   working tree must be clean.
+2. `devctl/bin/devctl build events` writes `events/dist/events-<sha>.tar.xz`,
+   `<sha>` being the 40 lowercase hex digits of `HEAD`. It holds `bin/events`,
+   `etc/`, and `share/icon.svg`; it refuses a dirty tree and a binary whose
+   `manifest` disagrees with the committed `etc/manifest.toml`.
+3. `devctl/bin/devctl deploy <space> events/dist/events-<sha>.tar.xz` uploads
+   the tarball to the space's `deploy/` prefix and runs `opsctl install` over
+   ssh; the host fetches it, writes `etc/env` (the manifest's `[env]` defaults
+   and the space's `DRAIN_SECONDS`), replaces the release, publishes
    `ikigenba-events.socket` (the Unix socket `/run/ikigenba/events.sock`)
-   and the `Type=notify` `ikigenba-events.service`, regenerates the host's nginx and litestream
-   configuration,
-   and restarts the service alone. The database is kept across releases.
+   and the `Type=notify` `ikigenba-events.service`, regenerates the host's
+   nginx and litestream configuration, and restarts the service alone. The
+   database is kept across releases.
 
-`events --version` then prints `vX.Y.Z`, and `devctl space status <space>`
-reports it.
+`events --version` prints the host's display string for the code it runs,
+built by appkit's `version.Display()` from `IKIGENBA_COMMIT` and
+`IKIGENBA_RELEASE`. The host does not yet set either variable, so a deployed
+events prints an empty line until it does.
