@@ -17,8 +17,8 @@ design/
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: banner, widgets table, add form, states
-    banner.html     the banner proposal: product, service, launcher, profile,
-                    sign out, in variants and at 375px
+    banner.html     the banner: product, service, launcher, profile, sign out,
+                    with and without the launcher, and at 375px
     launcher.html   the banner's service launcher, open, filtered, empty, disabled
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
@@ -74,11 +74,9 @@ systems. The product name is **Ikigenba**. The example space is
 `ada@acme.dev`.
 
 **app.html** — dummy's control panel.
-- Banner: product mark, service name `dummy`, a Tabler `user-circle` icon
-  button linking to the user's auth profile
-  (`https://auth.acme.ikigenba.com/`), labelled `Profile` and titled with the
-  email `ada@acme.dev`, the `Sign out` button (a form posting to
-  `https://auth.acme.ikigenba.com/logout`).
+- Banner: as banner.html has it, the service `dummy`, without the launcher;
+  the profile links to `https://auth.acme.ikigenba.com/`, sign out posts to
+  `https://auth.acme.ikigenba.com/logout`.
 - Footer: the service name and its version, `dummy v0.8.0`, muted and small.
   Banner and footer appear only on signed-in pages.
 - `h1` Widgets; a table of Name / Count / Status: `alpha` 3 active, `beta` 0
@@ -90,20 +88,35 @@ systems. The product name is **Ikigenba**. The example space is
 - A states section: the table with no widgets; the message page
   ("Widget created." + `Back to widgets`).
 
-**banner.html** — the new banner, not yet adopted by the other pages: the
-favicon itself (an `img` of `favicon.svg`, 18px, inside the mark in place
-of the glyph), **Ikigenba** capitalised, a hairline, the service as
-`span.service` holding its own icon (`share/icon.svg`, 16px) and its name; then on
-the right three icon buttons, the service launcher's grid (`button.launcher`,
-as launcher.html has it, moved right), the profile (`a.profile`) and sign out as a
-`logout` icon (`button.signout`, labelled and titled `Sign out`). Shown also with a `|` glyph as the separator
-(`data-sep="bar"` on the mark), the open question, and in a 375px frame. The
-lab frames a banner in `.frame`, which shares `body > header`'s rules.
+**banner.html** — the banner every app page carries, in this order:
+- `strong.mark[data-service=<service>]`: the favicon as an image (`img` of
+  `favicon.svg`, `alt=""`, 18px; the glyph is hidden when the mark holds
+  one), the text **Ikigenba**, capitalised, then after a hairline
+  `span.service` holding the app's own icon and its name. The icon is the
+  app's `share/icon.svg` inserted verbatim, no class, 16px, styled as
+  `.mark > .service > svg`. `data-service` stays as a hook; the visible name
+  is the span's.
+- At the right edge three quiet 36px icon buttons: the service launcher's
+  grid (`button.launcher[popovertarget=services]`, labelled and titled
+  `Services`, only when there are services), the profile (`a.profile`, a
+  `user-circle`, labelled `Profile`, titled with the email) and sign out
+  (`button.signout`, the `logout` icon, labelled and titled `Sign out`, in
+  `form.inline` posting to the logout URL). With no launcher the other two
+  keep their places.
+- Below 640px the product name hides and the favicon stays, so a long
+  service name (`telemetry`) fits beside three icons at 375px. The text stays
+  bare in the mark: the rule sets the mark's `font-size` to 0 and the
+  service restores it.
+- The separator is the hairline; a `|` glyph was drawn and dropped.
+- Shown with the launcher (its popover opens from the page's banner),
+  without it, with `telemetry`, and in 375px frames. The lab frames a banner
+  in `.frame`, which shares `body > header`'s rules (`:is(body, .frame) >
+  header`); `.frame.narrow` takes the below-640px rules.
 
 **launcher.html** — the service launcher, shown from dummy.
-- Banner and footer as in app.html, with the launcher's grid button opening
-  the row in place of the mark's ik glyph; the panel open on load,
-  hanging from the banner's left edge.
+- Banner and footer as in app.html, with the launcher's grid button first of
+  the icons at the right edge; the panel open on load, hanging under it, its
+  right edge on the banner's.
 - The panel: a `Find a service` search field over a 4-column grid of 30
   services, A to Z, each a Tabler icon over its name, linking to
   `https://<name>.acme.ikigenba.com/`; `dummy` marked current. The services
@@ -215,9 +228,11 @@ error; a key/value list; a card/panel; an empty state.
   outline icons' weight, ink on light; it flips to near-white under
   `prefers-color-scheme: dark`. One icon for the whole suite; every page links
   it with `<link rel="icon" type="image/svg+xml">`.
-- Wordmark: the product mark opens with the favicon's *ik* glyph, drawn as a
-  CSS mask filled with `--accent` so it follows the page theme, not the OS
-  scheme; 14px, 22px on the sign-in card.
+- Wordmark: in the banner the product mark opens with the favicon itself, an
+  18px `img`, then **Ikigenba**. Elsewhere (the sign-in card, the landing and
+  prose pages) it opens with the favicon's *ik* glyph, drawn as a CSS mask
+  filled with `--accent` so it follows the page theme, not the OS scheme;
+  14px, 22px on the sign-in card.
 - Motion is feedback only, and brief. Every button scales to .96 while held
   and, on click, springs back just past full size (`.pulse`, .96 → 1.04 → 1
   over .28s). The press stays under reduced motion: it is small and follows
