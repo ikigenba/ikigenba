@@ -115,7 +115,7 @@ func parseRoutingConfig(t *testing.T, text string) []nginxNode {
 	checkSyntax = func(nodes []nginxNode) {
 		for _, node := range nodes {
 			key := node.words[0]
-			wantBlock := key == "events" || key == "http" || key == "upstream" || key == "location" || (key == "server" && len(node.words) == 1)
+			wantBlock := key == "map" || key == "if" || key == "events" || key == "http" || key == "upstream" || key == "location" || (key == "server" && len(node.words) == 1)
 			if node.block != wantBlock {
 				t.Fatalf("%q: block syntax %t, want %t", node.words, node.block, wantBlock)
 			}
@@ -192,7 +192,7 @@ func routingHeaders(t *testing.T, loc nginxNode, id, email string) {
 
 func TestRoutingRuntimeAndContexts(t *testing.T) {
 	// R-SWXP-LN7R R-4O92-QDQB R-XKZH-R9GD R-SY5L-ZEYG
-	// R-RPMC-4P2O R-YRNZ-58EO R-4QOV-HX7P R-4T4O-9GP3
+	// R-C2Q5-AOTH R-YRNZ-58EO R-4QOV-HX7P R-4T4O-9GP3
 	// R-4UCK-N8FS R-4VKH-106H R-4WSD-ERX6
 	data := "/tmp/a b%c$d/ikigenba/sandbox/wip"
 	config := string(renderNginxConfig(data, "/checkout", "wip", 7001, 1234, []appInfo{{Name: "auth"}, {Name: "dummy"}}))
@@ -204,7 +204,7 @@ func TestRoutingRuntimeAndContexts(t *testing.T) {
 		t.Fatal("events is not empty")
 	}
 	http := routingFind(t, nodes, "http")
-	routingKeys(t, http.children, "access_log", "client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path", "server_names_hash_bucket_size", "upstream", "upstream", "server", "server", "server", "server")
+	routingKeys(t, http.children, "access_log", "client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path", "server_names_hash_bucket_size", "map", "map", "map", "map", "map", "map", "map", "upstream", "upstream", "server", "server", "server", "server")
 	routingFind(t, http.children, "access_log", "off")
 	routingFind(t, http.children, "server_names_hash_bucket_size", "256")
 	for _, pair := range [][2]string{{"client_body_temp_path", "client_body"}, {"proxy_temp_path", "proxy"}, {"fastcgi_temp_path", "fastcgi"}, {"uwsgi_temp_path", "uwsgi"}, {"scgi_temp_path", "scgi"}} {
@@ -242,7 +242,7 @@ func TestRoutingRuntimeAndContexts(t *testing.T) {
 func TestRoutingServersAndUngated(t *testing.T) {
 	// R-4Y09-SJNV R-T0LE-QYFU R-T1TB-4Q6J R-RN6J-D5LA
 	// R-ROEF-QXBZ R-52VV-BMMN R-T5H0-A1EM R-RLYM-ZDUL
-	// R-56JK-GXUQ R-T94P-FCMP R-TACL-T4DE R-4H5B-RWN4 R-5A79-M92T R-GPR8-TLS0
+	// R-56JK-GXUQ R-T94P-FCMP R-C55Y-28AV R-ZQTT-AQ8C R-5A79-M92T R-GPR8-TLS0
 	for _, auth := range []bool{false, true} {
 		for _, defaultApp := range []bool{false, true} {
 			for _, guests := range []bool{false, true} {
@@ -339,7 +339,7 @@ func TestRoutingServersAndUngated(t *testing.T) {
 					} else {
 						ungated = dummy
 					}
-					keys := []string{"listen", "server_name", "include", "location"}
+					keys := []string{"listen", "server_name", "include", "if", "add_header", "add_header", "add_header", "add_header", "add_header", "add_header", "add_header", "location"}
 					if auth {
 						keys = append(keys, "location", "location")
 						check := routingFind(t, ungated.children, "location", "=", "/check")
@@ -351,7 +351,12 @@ func TestRoutingServersAndUngated(t *testing.T) {
 					}
 					routingKeys(t, ungated.children, keys...)
 					loc := routingFind(t, ungated.children, "location", "/")
-					routingKeys(t, loc.children, "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
+					locationKeys := []string{"proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
+					if !auth {
+						locationKeys = append(locationKeys, "proxy_set_header")
+						routingFind(t, loc.children, "proxy_set_header", "Origin", "$sandbox_upstream_origin")
+					}
+					routingKeys(t, loc.children, locationKeys...)
 					appName := "dummy"
 					if auth {
 						appName = "auth"
@@ -399,9 +404,9 @@ func TestRoutingFragmentEscaping(t *testing.T) {
 }
 
 func TestRoutingGatedLocations(t *testing.T) {
-	// R-EBCD-K7ZY R-WHK9-9BDX R-WK02-0UVB R-GVUQ-QGHH R-WL7Y-EMM0 R-GQZ5-7DIP R-GKVN-AIT8 R-GH7Y-57L5
-	// R-8JN0-I3HC R-8KUW-VV81 R-8M2T-9MYQ
-	// R-5GAR-J3SA R-TF87-C7C6 R-WMFU-SECP R-WNNR-663E R-56JK-GXUQ R-T94P-FCMP
+	// R-C6DU-G01K R-ZS1P-OHZ1 R-C7LQ-TRS9 R-ZUHI-G1GF R-WL7Y-EMM0 R-C8TN-7JIY R-GKVN-AIT8 R-GH7Y-57L5
+	// R-8JN0-I3HC R-8KUW-VV81 R-ZY57-LCOI R-07WE-NIM2 R-094B-1ACR R-0AC7-F23G
+	// R-5GAR-J3SA R-TF87-C7C6 R-ZVPE-TT74 R-ZWXB-7KXT R-56JK-GXUQ R-T94P-FCMP
 	for _, setting := range []struct {
 		name, manifest     string
 		guests, defaultApp bool
@@ -425,7 +430,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 				names = append(names, "wip.localhost")
 			}
 			server := routingServer(t, http, names...)
-			keys := []string{"listen", "server_name", "include", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location"}
+			keys := []string{"listen", "server_name", "include", "if", "add_header", "add_header", "add_header", "add_header", "add_header", "add_header", "add_header", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location", "location"}
 			if setting.guests {
 				keys = append(keys, "location")
 			}
@@ -438,7 +443,7 @@ func TestRoutingGatedLocations(t *testing.T) {
 			}
 			for _, pair := range checks {
 				check := routingFind(t, server.children, "location", "=", pair[0])
-				routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
+				routingKeys(t, check.children, "internal", "proxy_pass", "proxy_pass_request_body", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header")
 				routingFind(t, check.children, "internal")
 				routingFind(t, check.children, "proxy_pass", "http://app_auth"+pair[1])
 				routingFind(t, check.children, "proxy_pass_request_body", "off")
@@ -447,14 +452,15 @@ func TestRoutingGatedLocations(t *testing.T) {
 				routingFind(t, check.children, "proxy_set_header", "X-Original-Host", "$host")
 				routingFind(t, check.children, "proxy_set_header", "X-Original-URI", "$request_uri")
 				routingHeaders(t, check, "", "")
+				routingFind(t, check.children, "proxy_set_header", "Origin", "$sandbox_upstream_origin")
 			}
 			for _, spec := range []struct {
 				args    []string
 				handler string
-			}{{[]string{"location", "/"}, "signin"}, {[]string{"location", "=", "/mcp"}, "bearer"}, {[]string{"location", "^~", "/mcp/"}, "bearer"}, {[]string{"location", "~", "/(info/refs|git-upload-pack|git-receive-pack)$"}, "git"}} {
+			}{{[]string{"location", "/"}, "signin"}, {[]string{"location", "=", "/mcp"}, "bearer"}, {[]string{"location", "^~", "/mcp/"}, "bearer"}, {[]string{"location", "=", "/api"}, "api"}, {[]string{"location", "^~", "/api/"}, "api"}, {[]string{"location", "~", "/(info/refs|git-upload-pack|git-receive-pack)$"}, "git"}} {
 				loc := routingFind(t, server.children, spec.args...)
 				open := setting.guests && spec.handler == "signin"
-				keys := []string{"auth_request", "auth_request_set", "auth_request_set", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
+				keys := []string{"auth_request", "auth_request_set", "auth_request_set", "proxy_pass", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header", "proxy_set_header"}
 				checkPath := "/_sandbox/auth"
 				if open {
 					checkPath = "/_sandbox/auth_open"
@@ -476,8 +482,9 @@ func TestRoutingGatedLocations(t *testing.T) {
 				}
 				routingFind(t, loc.children, "proxy_pass", "http://app_dummy")
 				routingHeaders(t, loc, "$sandbox_user_id", "$sandbox_user_email")
+				routingFind(t, loc.children, "proxy_set_header", "Origin", "$sandbox_upstream_origin")
 			}
-			for _, handler := range []string{"signin", "bearer", "git"} {
+			for _, handler := range []string{"signin", "bearer", "git", "api"} {
 				loc := routingFind(t, server.children, "location", "@sandbox_"+handler)
 				routingKeys(t, loc.children, "satisfy", "allow", "try_files")
 				routingFind(t, loc.children, "satisfy", "any")
@@ -488,26 +495,31 @@ func TestRoutingGatedLocations(t *testing.T) {
 			routingKeys(t, signin.children, "return")
 			routingFind(t, signin.children, "return", "302", "http://auth.wip.localhost:7400/?return=$scheme://$http_host$request_uri")
 			bearer := routingFind(t, server.children, "location", "@sandbox_bearer_reply")
-			routingKeys(t, bearer.children, "default_type", "add_header", "return")
+			routingKeys(t, bearer.children, "default_type", "add_header", "add_header", "add_header", "add_header", "add_header", "return")
 			routingFind(t, bearer.children, "default_type", "text/plain")
 			routingFind(t, bearer.children, "add_header", "WWW-Authenticate", `Bearer realm="ikigenba", resource_metadata="http://mcp.wip.localhost:7400/.well-known/oauth-protected-resource"`, "always")
 			routingFind(t, bearer.children, "return", "401", "authentication required: send Authorization: Bearer <token>\n")
 			invalid := routingFind(t, server.children, "location", "@sandbox_invalid_token")
-			routingKeys(t, invalid.children, "default_type", "add_header", "return")
+			routingKeys(t, invalid.children, "default_type", "add_header", "add_header", "add_header", "add_header", "add_header", "return")
 			routingFind(t, invalid.children, "default_type", "text/plain")
 			routingFind(t, invalid.children, "add_header", "WWW-Authenticate", `Bearer error="invalid_token", resource_metadata="http://mcp.wip.localhost:7400/.well-known/oauth-protected-resource"`, "always")
 			routingFind(t, invalid.children, "return", "401", "authentication required: send Authorization: Bearer <token>\n")
 			git := routingFind(t, server.children, "location", "@sandbox_git_reply")
-			routingKeys(t, git.children, "default_type", "add_header", "return")
+			routingKeys(t, git.children, "default_type", "add_header", "add_header", "add_header", "add_header", "add_header", "return")
 			routingFind(t, git.children, "default_type", "text/plain")
 			routingFind(t, git.children, "add_header", "WWW-Authenticate", `Basic realm="ikigenba"`, "always")
 			routingFind(t, git.children, "return", "401", "authentication required: send your token as the password\n")
+			api := routingFind(t, server.children, "location", "@sandbox_api_reply")
+			routingKeys(t, api.children, "default_type", "add_header", "add_header", "add_header", "add_header", "add_header", "return")
+			routingFind(t, api.children, "default_type", "text/plain")
+			routingFind(t, api.children, "add_header", "WWW-Authenticate", `Bearer realm="ikigenba"`, "always")
+			routingFind(t, api.children, "return", "401", "authentication required: sign in or send Authorization: Bearer <token>\n")
 		})
 	}
 }
 
 func TestRoutingBearerMetadataWithMCPApp(t *testing.T) {
-	// R-WMFU-SECP R-WNNR-663E
+	// R-ZVPE-TT74 R-ZWXB-7KXT
 	apps := []appInfo{{Name: "auth"}, {Name: "dummy"}, {Name: "mcp"}}
 	http := routingFind(t, parseRoutingConfig(t, string(renderNginxConfig("/data", "/worktree", "dev", 7411, 100, apps))), "http")
 	server := routingServer(t, http, "dummy.dev.localhost")
@@ -516,7 +528,7 @@ func TestRoutingBearerMetadataWithMCPApp(t *testing.T) {
 		{"@sandbox_invalid_token", `Bearer error="invalid_token", resource_metadata="http://mcp.dev.localhost:7411/.well-known/oauth-protected-resource"`},
 	} {
 		loc := routingFind(t, server.children, "location", reply.location)
-		routingKeys(t, loc.children, "default_type", "add_header", "return")
+		routingKeys(t, loc.children, "default_type", "add_header", "add_header", "add_header", "add_header", "add_header", "return")
 		routingFind(t, loc.children, "default_type", "text/plain")
 		routingFind(t, loc.children, "add_header", "WWW-Authenticate", reply.challenge, "always")
 		routingFind(t, loc.children, "return", "401", "authentication required: send Authorization: Bearer <token>\n")
@@ -588,5 +600,191 @@ func TestRoutingNginxUnit(t *testing.T) {
 	}
 	if !reflect.DeepEqual(settings["ExecReload"], []string{start + " -t", start + " -s reload"}) {
 		t.Fatalf("reload order/commands: %v", settings["ExecReload"])
+	}
+}
+
+func TestRoutingCrossOriginMaps(t *testing.T) {
+	// R-ZZD3-Z4F7 R-01SW-QNWL R-030T-4FNA R-048P-I7DZ
+	for _, setting := range []struct {
+		name string
+		port int
+		apps []appInfo
+	}{
+		{"wip", 7400, []appInfo{{Name: "auth"}, {Name: "dummy"}}},
+		{"wip", 7400, []appInfo{{Name: "dummy"}}},
+		{"dev", 7411, []appInfo{{Name: "auth"}, {Name: "dummy"}, {Name: "sites"}}},
+	} {
+		t.Run(fmt.Sprintf("%s/%d/%d", setting.name, setting.port, len(setting.apps)), func(t *testing.T) {
+			http := routingFind(t, parseRoutingConfig(t, string(renderNginxConfig("/data", "/tree", setting.name, setting.port, 100, setting.apps))), "http")
+			origin := routingFind(t, http.children, "map", "$http_origin", "$sandbox_cors_origin")
+			pattern := fmt.Sprintf(`~^http://sites\.%s\.localhost:%d$`, setting.name, setting.port)
+			routingKeys(t, origin.children, "default", pattern)
+			routingFind(t, origin.children, "default", "")
+			routingFind(t, origin.children, pattern, "$http_origin")
+			credentials := routingFind(t, http.children, "map", "$sandbox_cors_origin", "$sandbox_cors_credentials")
+			routingKeys(t, credentials.children, "", "default")
+			routingFind(t, credentials.children, "", "")
+			routingFind(t, credentials.children, "default", "true")
+			for _, header := range [][2]string{
+				{"methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"},
+				{"headers", "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID"},
+				{"max_age", "600"},
+			} {
+				mapping := routingFind(t, http.children, "map", "$request_method $sandbox_cors_credentials", "$sandbox_cors_"+header[0])
+				routingKeys(t, mapping.children, "default", "OPTIONS true")
+				routingFind(t, mapping.children, "default", "")
+				routingFind(t, mapping.children, "OPTIONS true", header[1])
+			}
+			expose := routingFind(t, http.children, "map", "$request_method $sandbox_cors_credentials", "$sandbox_cors_expose")
+			routingKeys(t, expose.children, "default", "OPTIONS true", "~ true$")
+			routingFind(t, expose.children, "default", "")
+			routingFind(t, expose.children, "OPTIONS true", "")
+			routingFind(t, expose.children, "~ true$", "Mcp-Session-Id, WWW-Authenticate")
+		})
+	}
+}
+
+func TestRoutingUpstreamOriginMap(t *testing.T) {
+	// R-C3Y1-OGK6
+	for _, apps := range [][]appInfo{
+		{{Name: "auth"}, {Name: "dummy"}},
+		{{Name: "dummy"}},
+		{{Name: "auth"}, {Name: "dummy", Default: true, Guests: true}, {Name: "sites"}},
+	} {
+		nodes := parseRoutingConfig(t, string(renderNginxConfig("/data", "/tree", "wip", 7400, 100, apps)))
+		http := routingFind(t, nodes, "http")
+		mapping := routingFind(t, http.children, "map", "$sandbox_cors_origin", "$sandbox_upstream_origin")
+		routingKeys(t, mapping.children, "", "default")
+		routingFind(t, mapping.children, "", "$http_origin")
+		routingFind(t, mapping.children, "default", "")
+		var inspect func([]nginxNode)
+		inspect = func(nodes []nginxNode) {
+			for _, node := range nodes {
+				if len(node.words) > 1 && node.words[0] == "proxy_set_header" && node.words[1] == "Origin" && !reflect.DeepEqual(node.words, []string{"proxy_set_header", "Origin", "$sandbox_upstream_origin"}) {
+					t.Fatalf("unexpected origin header: %v", node.words)
+				}
+				inspect(node.children)
+			}
+		}
+		inspect(nodes)
+	}
+}
+
+func routingCrossOriginHeaders(t *testing.T, nodes []nginxNode, preflight bool) {
+	t.Helper()
+	headers := [][2]string{
+		{"Access-Control-Allow-Origin", "$sandbox_cors_origin"},
+		{"Access-Control-Allow-Credentials", "$sandbox_cors_credentials"},
+		{"Access-Control-Expose-Headers", "$sandbox_cors_expose"},
+		{"Vary", "Origin"},
+	}
+	if preflight {
+		headers = append(headers, [2]string{"Access-Control-Allow-Methods", "$sandbox_cors_methods"}, [2]string{"Access-Control-Allow-Headers", "$sandbox_cors_headers"}, [2]string{"Access-Control-Max-Age", "$sandbox_cors_max_age"})
+	}
+	var got []nginxNode
+	for _, node := range nodes {
+		if node.words[0] == "add_header" && (len(node.words) < 2 || node.words[1] != "WWW-Authenticate") {
+			got = append(got, node)
+		}
+	}
+	if len(got) != len(headers) {
+		t.Fatalf("cross-origin headers: got %v, want %d", got, len(headers))
+	}
+	for _, header := range headers {
+		routingFind(t, got, "add_header", header[0], header[1], "always")
+	}
+}
+
+func TestRoutingCrossOriginServersAndReplies(t *testing.T) {
+	// R-05GL-VZ4O R-06OI-9QVD R-0BK3-STU5
+	for _, setting := range []struct {
+		name string
+		apps []appInfo
+	}{
+		{"gated", []appInfo{{Name: "auth"}, {Name: "dummy", Default: true}}},
+		{"guests", []appInfo{{Name: "auth", Guests: true}, {Name: "dummy", Default: true, Guests: true}}},
+		{"ungated", []appInfo{{Name: "dummy", Default: true, Guests: true}}},
+	} {
+		t.Run(setting.name, func(t *testing.T) {
+			nodes := parseRoutingConfig(t, string(renderNginxConfig("/data", "/tree", "wip", 7400, 100, setting.apps)))
+			http := routingFind(t, nodes, "http")
+			for _, app := range setting.apps {
+				names := []string{app.Name + ".wip.localhost"}
+				if app.Default {
+					names = append(names, "wip.localhost")
+				}
+				server := routingServer(t, http, names...)
+				// At server level these seven directives also prove exactly one
+				// value for each header, with no challenge header beside them.
+				routingCrossOriginHeaders(t, server.children, true)
+				count := 0
+				for _, node := range server.children {
+					if node.words[0] == "add_header" {
+						count++
+					}
+				}
+				if count != 7 {
+					t.Fatalf("server has %d add_header directives", count)
+				}
+				preflight := routingFind(t, server.children, "if", "($request_method", "=", "OPTIONS)")
+				routingKeys(t, preflight.children, "return")
+				routingFind(t, preflight.children, "return", "204")
+				includeSeen := false
+				for _, node := range server.children {
+					if node.words[0] == "include" {
+						includeSeen = true
+					}
+					if node.words[0] == "if" && includeSeen {
+						t.Fatal("OPTIONS block follows fragment include")
+					}
+				}
+			}
+			ifCount := 0
+			var inspect func([]nginxNode, bool)
+			inspect = func(nodes []nginxNode, appServer bool) {
+				for _, node := range nodes {
+					if node.words[0] == "if" {
+						if !appServer {
+							t.Fatal("if block outside an app server")
+						}
+						ifCount++
+					}
+					if node.words[0] == "location" {
+						reply := len(node.words) == 2 && (node.words[1] == "@sandbox_bearer_reply" || node.words[1] == "@sandbox_invalid_token" || node.words[1] == "@sandbox_git_reply" || node.words[1] == "@sandbox_api_reply")
+						if reply {
+							routingCrossOriginHeaders(t, node.children, false)
+							count := 0
+							for _, directive := range node.children {
+								if directive.words[0] == "add_header" {
+									count++
+								}
+							}
+							if count != 5 {
+								t.Fatalf("reply has %d add_header directives", count)
+							}
+						} else {
+							for _, directive := range node.children {
+								if directive.words[0] == "add_header" {
+									t.Fatalf("unexpected location header: %v", node.words)
+								}
+							}
+						}
+					}
+					childAppServer := false
+					if reflect.DeepEqual(node.words, []string{"server"}) {
+						for _, directive := range node.children {
+							if directive.words[0] == "server_name" && strings.HasSuffix(directive.words[1], ".wip.localhost") {
+								childAppServer = true
+							}
+						}
+					}
+					inspect(node.children, childAppServer)
+				}
+			}
+			inspect(nodes, false)
+			if ifCount != len(setting.apps) {
+				t.Fatalf("OPTIONS blocks: %d, want %d", ifCount, len(setting.apps))
+			}
+		})
 	}
 }

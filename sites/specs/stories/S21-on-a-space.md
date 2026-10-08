@@ -1,6 +1,6 @@
 # Stories — on a space
 
-sites reached through a space: the file `S20` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `sites.<space>` over TLS, so on the space `sbx.ikigenba.dev` sites answers at `sites.sbx.ikigenba.dev`. nginx on the space proxies to sites' socket, `/run/ikigenba/sites.sock` (`S02`); sites ships no `etc/nginx.conf` (`S20`). sites' manifest sets `guests = true` (`S01`), so the space's nginx asks auth's `GET /check/open` rather than `/check` for every path of sites but `/mcp`, the paths under `/mcp/`, and git's paths (opsctl's `S5-nginx.md`, `An operator reads the configuration of a host running an app that serves guests`): a request with no credential is passed to sites with no `X-User-Id` and no `X-User-Email` and never sent to sign in by nginx (auth's `S4-check.md`, `nginx checks an open request with no credential`; opsctl's `S5-nginx.md`, `A guest reaches an app that serves guests`), while a request with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`, and one whose credential auth refuses gets auth's 403 and never reaches sites. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check/open` or `/check` subrequest carried, so auth's check event and sites' records of the request share one request id. Deciding who may see a private site, and sending a guest to sign in for one, is sites' own doing (`S12`), not nginx's. The host's services file is `/var/lib/ikigenba/services.json`, which lists sites with `url` `https://sites.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so every site's URL sites gives is `https://sites.sbx.ikigenba.dev/<slug>/` and the MCP gateway offers sites' seven tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`). sites runs as `/opt/sites/bin/sites` with `/opt/sites` as its working directory, so its catalog is `/opt/sites/state/sites.db`, its unpacked trees are under `/opt/sites/cache/sites/`, and `REPOS_DIR`, at its manifest default `../repos/state/repos`, names `/opt/sites/../repos/state/repos`, the directory where repos keeps its bare repositories, `/opt/repos/state/repos/` (repos' `S15-disk.md`; `S18`). The host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect; `cache/` is not backed up. `/opt/sites/etc/env` carries the three settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`, and the host provides the `git` sites runs (opsctl's `S4-init.md`).
+sites reached through a space: the file `S20` describes, deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at `sites.<space>` over TLS, so on the space `sbx.ikigenba.dev` sites answers at `sites.sbx.ikigenba.dev`. nginx on the space proxies to sites' socket, `/run/ikigenba/sites.sock` (`S02`); sites ships no `etc/nginx.conf` (`S20`). sites' manifest sets `guests = true` (`S01`), so the space's nginx asks auth's `GET /check/open` rather than `/check` for every path of sites but `/mcp`, the paths under `/mcp/`, `/api`, the paths under `/api/`, and git's paths (opsctl's `S5-nginx.md`, `An operator reads the configuration of a host running an app that serves guests`): a request with no credential is passed to sites with no `X-User-Id` and no `X-User-Email` and never sent to sign in by nginx (auth's `S4-check.md`, `nginx checks an open request with no credential`; opsctl's `S5-nginx.md`, `A guest reaches an app that serves guests`), while a request with a session or a token auth honors is passed with the caller's `X-User-Id` and `X-User-Email`, and one whose credential auth refuses gets auth's 403 and never reaches sites. Every request nginx passes carries `X-Forwarded-Proto: https` and the `X-Request-Id` nginx gave it, the same id its `/check/open` or `/check` subrequest carried, so auth's check event and sites' records of the request share one request id. Deciding who may see a private site, and sending a guest to sign in for one, is sites' own doing (`S12`), not nginx's. The host's services file is `/var/lib/ikigenba/services.json`, which lists sites with `url` `https://sites.sbx.ikigenba.dev`, its socket, and marked for MCP since its manifest has `mcp = true`, so every site's URL sites gives is `https://sites.sbx.ikigenba.dev/<slug>/` and the MCP gateway offers sites' seven tools through `https://mcp.sbx.ikigenba.dev/mcp` (mcp's `S11-on-a-space.md`). sites runs as `/opt/sites/bin/sites` with `/opt/sites` as its working directory, so its catalog is `/opt/sites/state/sites.db`, its unpacked trees are under `/opt/sites/cache/sites/`, and `REPOS_DIR`, at its manifest default `../repos/state/repos`, names `/opt/sites/../repos/state/repos`, the directory where repos keeps its bare repositories, `/opt/repos/state/repos/` (repos' `S15-disk.md`; `S18`). The host keeps and replicates the declared database as it does auth's, which is opsctl's doing and is named here only by its effect; `cache/` is not backed up. `/opt/sites/etc/env` carries the three settings of the manifest's `[env]` beside the space's `DRAIN_SECONDS` and `IKIGENBA_SERVICES`, and the host provides the `git` sites runs (opsctl's `S4-init.md`).
 
 The stories prove the whole path from checkout to browser, curl, and agent, and nothing about sites that the earlier groups do not already say. devctl and opsctl are named only by their published commands. The catalog on the space holds `S06`'s shared catalog — `blog` (public, published at `5b9e2d7a1c3f4e6b8a0d2c4e6f8a1b3c5d7e9f02`) and `handbook` (private, published at `a3f1c9e27b4d6058e1c2a9b7d3f5e8016c4b2a9d`), both owned by `u_7f3a9c21`, `mg@example.com`, among them — and repos on the space holds the repositories they are served from: `site`, `rep_8c21d4e0f7a3b915`, whose tree at `main` holds `index.html`, and `notes`, `rep_3f9a0c1d2e4b5a69`, owned by the same user. A guest is curl with no cookie and no `Authorization` header; a signed-in caller sends the token `ikp_<token>` (auth's `S5-tokens.md`), owned by `u_7f3a9c21`, as `Authorization: Bearer ikp_<token>`. The MCP requests are made with the protocol revision `2026-07-28` and carry the headers and `_meta` `S05` fixes; the members every result carries on that revision are not repeated. Trail events are named here by their attributes, as `S15` records them in full. The token's secret is in no record any story below leaves behind: not in the trail and not in nginx's logs on the host.
 
@@ -163,7 +163,7 @@ Postconditions:
 
 ## A visitor at the space's apex is sent to the apex site
 
-The apex host is the root domain, `ikigenba.dev`, the address a person types without any service or space name in it. When the space holds the apex and routes it to sites, and an agent has made `blog` the apex site with `apex` (`S13`), a request there, by anyone, for any path, is sent to the same path under `blog`'s address, its query kept, and the visitor's browser follows it to the site. The address is `blog`'s URL under the services file's `url` for sites, `https://sites.sbx.ikigenba.dev`, since the root domain names no space.
+The apex host is the root domain, `ikigenba.dev`, the address a person types without any service or space name in it. When the space holds the apex and routes it to sites, and an agent has made `blog` the apex site with `apex` (`S13`), a request there, by anyone, for any path but `/mcp`, `/api`, and the paths under them, which nginx keeps behind the strict check at the apex host as at `sites.sbx.ikigenba.dev`, is sent to the same path under `blog`'s address, its query kept, and the visitor's browser follows it to the site. The address is `blog`'s URL under the services file's `url` for sites, `https://sites.sbx.ikigenba.dev`, since the root domain names no space.
 
 Request:
 
@@ -221,6 +221,39 @@ Preconditions:
 
 - sites is deployed and active on `sbx.ikigenba.dev`, as in `A guest reaches a public site on a space`.
 - The request carries no cookie and no `Authorization` header, so auth's `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/sites.sock`, and sites recorded no event; auth recorded `check.refused` with `outcome=unauthenticated` and `credential=none`, and no `/check/open` subrequest was made.
+
+## A client on a space reaches sites' /api without a credential
+
+`/api` is reserved on every app's host across the suite, sites' included even though sites serves guests: nginx keeps the strict `/check` on `/api` and every path under it, so a client with no credential is answered with a bearer challenge, never sent to sign in and never passed on as a guest, and sites never sees the request. A request whose token auth refuses gets auth's 403, unchanged, and never reaches sites either.
+
+Request:
+
+```
+$ curl -si https://sites.sbx.ikigenba.dev/api
+```
+
+```
+$ curl -si https://sites.sbx.ikigenba.dev/api/sites
+```
+
+Response:
+
+```
+HTTP/2 401
+content-type: text/plain
+www-authenticate: Bearer realm="ikigenba"
+```
+
+Status 401. The body is the host's nginx's one line `authentication required: sign in or send Authorization: Bearer <token>`, ending in a newline. The challenge names no `resource_metadata`.
+
+Preconditions:
+
+- sites is deployed and active on `sbx.ikigenba.dev`, as in `A guest reaches a public site on a space`.
+- The requests carry no cookie and no `Authorization` header, so auth's `/check` answers 401.
 
 Postconditions:
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,10 +36,10 @@ func TestMainWiring(t *testing.T) {
 	// R-QB6N-JUCJ
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
-	// R-AUXO-9DST: the serve cases run the binary bare with the Google settings
+	// R-LPHC-TKY0: the serve cases run the binary bare with the Google settings
 	// and a socket on descriptor 3; they prove it opens state/auth.db in its
 	// working directory, draws its banner from IKIGENBA_SERVICES, and stops
-	// silently with exit 0 on SIGTERM and on SIGINT.
+	// with exit 0 on SIGTERM and on SIGINT, allowing only the ahead-database warning.
 	binary := buildBinary(t)
 	// R-8CMC-DS2O: expected identity comes from appkit under the same
 	// environment as the child, rather than from an auth version literal.
@@ -71,9 +72,11 @@ func TestMainWiring(t *testing.T) {
 	}
 
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
-		t.Run(sig.String(), func(t *testing.T) {
-			assertSocketActivated(t, binary, sig, identityEnv, display)
-		})
+		for _, ahead := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ahead=%t", sig, ahead), func(t *testing.T) {
+				assertSocketActivated(t, binary, sig, ahead, identityEnv, display)
+			})
+		}
 	}
 }
 
@@ -139,7 +142,7 @@ func childCode(t *testing.T, err error) int {
 	return exit.ExitCode()
 }
 
-func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, identityEnv []string, display string) {
+func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahead bool, identityEnv []string, display string) {
 	t.Helper()
 	shortDir, err := os.MkdirTemp("", "auth-socket-")
 	if err != nil {
@@ -176,7 +179,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, iden
 	cmd.Dir = work
 	cmd.Env = append(googleEnv(), "NOTIFY_SOCKET="+notifyPath)
 	cmd.Env = append(cmd.Env, identityEnv...)
-	// R-8HHX-WV1G R-B116-68IA: the child's events cross the socket sink,
+	// R-VJSN-K3C3 R-LWSR-47E6: the child's events cross the socket sink,
 	// and a services-file replacement redirects later events without restart.
 	first := new(wiringSink)
 	second := new(wiringSink)
@@ -186,14 +189,15 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, iden
 	writeServices(t, services, firstSocket)
 	cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+services)
 	var sessionID string
-	if sig == syscall.SIGTERM {
+	wantStderr := ""
+	if sig == syscall.SIGTERM || ahead {
 
 		now := time.Now()
 		handle, err := db.Open(t.Context(), db.Config{Path: filepath.Join(work, "state", "auth.db"), Migrations: auth.Migrations(), Now: func() time.Time { return now }})
-		st := store.New(handle, bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)))
 		if err != nil {
 			t.Fatal(err)
 		}
+		st := store.New(handle, bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)))
 		u, _, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject", "user@example.test", now)
 		if err != nil {
 			t.Fatal(err)
@@ -203,13 +207,36 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, iden
 			t.Fatal(err)
 		}
 		sessionID = session.ID
+		if ahead {
+			var unknown int
+			if err := handle.Write(t.Context(), func(tx *sql.Tx) error {
+				if err := tx.QueryRowContext(t.Context(), "SELECT MAX(version) + 1 FROM schema_migrations").Scan(&unknown); err != nil {
+					return err
+				}
+				_, err := tx.ExecContext(t.Context(), "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)", unknown, now.UTC().Format(time.RFC3339Nano))
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if err := handle.Close(); err != nil {
 			t.Fatal(err)
 		}
+		if ahead {
+			var warning bytes.Buffer
+			handle, err := db.Open(t.Context(), db.Config{Path: filepath.Join(work, "state", "auth.db"), Migrations: auth.Migrations(), Now: func() time.Time { return now }, Service: "auth", Stderr: &warning})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := handle.Close(); err != nil {
+				t.Fatal(err)
+			}
+			wantStderr = warning.String()
+		}
 	}
-	// The first run starts with only state/auth.db; the second starts with
-	// an empty state directory. Services and sockets are outside work.
-	assertRuntimeFiles(t, work, sig == syscall.SIGTERM, false)
+	// Seeded cases start with only state/auth.db; the unseeded case starts
+	// with an empty state directory. Services and sockets are outside work.
+	assertRuntimeFiles(t, work, sessionID != "", false)
 	cmd.ExtraFiles = []*os.File{file}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -241,7 +268,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, iden
 		writeServices(t, services, secondSocket)
 		// R-GNC2-6SEM: main leaves Inherit nil; the response comes from
 		// the listening socket supplied as descriptor 3.
-		// R-8GA1-J3AR: the cgo-free executable serves the live session from
+		// R-VL0J-XV2S: the cgo-free executable serves the live session from
 		// a working directory containing only state/auth.db.
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -269,7 +296,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, iden
 		if !bytes.Contains(body, []byte(`popovertarget="services"`)) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
 			t.Fatalf("main banner source has no launcher drawn from IKIGENBA_SERVICES: %s", body)
 		}
-		// R-8F25-5BK2: the real executable's banner page ends its body with
+		// R-VIKR-6BLE: the real executable's banner page ends its body with
 		// the footer carrying appkit's display string for this run.
 		bodyContent := regexp.MustCompile(`(?s)<body\b[^>]*>(.*)</body>`).FindSubmatch(body)
 		if len(bodyContent) != 2 {
@@ -292,7 +319,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, iden
 		t.Fatal(err)
 	}
 	code := childCode(t, cmd.Wait())
-	if code != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
+	if code != 0 || stdout.Len() != 0 || stderr.String() != wantStderr {
 		t.Fatalf("%s code=%d stdout=%q stderr=%q", sig, code, stdout.String(), stderr.String())
 	}
 	firstEvents := first.capture.Events()
@@ -321,7 +348,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, iden
 	if last.Name != "service.stopping" || last.RequestID != "" || last.User != "" || len(last.Attrs) != 1 || last.Attrs["reason"] != reason {
 		t.Fatalf("stop=%+v", last)
 	}
-	// R-AYLD-EP0W: after either signal, only the database and its named
+	// R-LT51-YW63: after either signal, only the database and its named
 	// SQLite auxiliary files remain in the working directory.
 	assertRuntimeFiles(t, work, true, true)
 	// R-NI60-D0O6

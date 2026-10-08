@@ -22,7 +22,8 @@ A routed app is *disabled* when systemd reports its socket unit,
 `ikigenba-<name>.socket`, disabled — the state `opsctl disable` leaves it in
 (`S7-apps.md`). Nothing else records it: nginx asks systemd, the way `status`
 does. A disabled app keeps its block and every name it answers at, but the
-block answers `503` to every request and neither includes the app's own
+block answers `503` to every request but a preflight, which it answers `204`
+as every app's block does (below), and neither includes the app's own
 `etc/nginx.conf` nor proxies anywhere, so a disabled app reads as unavailable
 rather than as missing. A routed service with no units at all is not
 disabled; it is routed as any other.
@@ -91,6 +92,21 @@ under `/mcp/` are reserved — `/mcpx` is an ordinary path and redirects to sign
 in like any other. Plain blocks on a host with no authenticator, `auth`'s own
 block, and a disabled app's block are unchanged.
 
+The paths `/api` and `/api/...` are reserved across the suite the same way,
+for the HTTP interfaces apps offer to programs and to scripts on a page. Every
+wired block answers them with the same subrequest to `/check` and the same
+identity relay as `location /`, so a request `auth` admits, by session cookie
+or by token, reaches the app with the identity `auth` gave. A request `auth`
+answers 401 is not sent to sign in, since neither a program nor a page's
+script can follow the redirect. It is answered `401` with `WWW-Authenticate:
+Bearer realm="ikigenba"`, naming no metadata, and the one line of plain text
+`authentication required: sign in or send Authorization: Bearer <token>`,
+where `<token>` is literal text. A request `auth` answers 403 gets that 403
+unchanged, as everywhere outside `/mcp`. Like `/mcp`, the paths are the
+suite's, carried whatever the manifest says; only `/api` itself and paths
+under `/api/` are reserved, so `/apix` is an ordinary path; and plain blocks,
+`auth`'s own block, and a disabled app's block are unchanged.
+
 git's smart HTTP protocol is reserved the same way. A git client sends no
 credential until the server challenges it, and the challenge must be `401`
 with `WWW-Authenticate: Basic`; a redirect to sign in is something git cannot
@@ -117,14 +133,48 @@ except that where `/check` would answer 401 it answers 200 with no identity.
 And its `location /` asks that check instead and has no `error_page 401`, so
 nothing there is sent to sign in: a guest reaches the app with no `X-User-Id`
 or `X-User-Email` and with nginx's request id, a signed-in visitor reaches it
-with the identity `auth` relays, and a 403 from `auth` still reaches the client
-unchanged. `/mcp`, `/mcp/...`, and the git paths are not part of it: they keep
-the strict `/_ikigenba/check` and their 401 challenges, exactly as on any
-wired block. When the app also holds the apex, the apex is a name on that same
-block and is served the same way. `guests` changes nothing else: on a host
-with no authenticator the app gets the plain block every app gets, a disabled
-app's block answers 503 as any other, and `auth`'s own block is the same with
-or without such an app.
+with the identity `auth` relays, and a 403 from `auth` still reaches the
+client unchanged. `/mcp`, `/mcp/...`, `/api`, `/api/...`, and the git paths
+are not part of it: they keep the strict `/_ikigenba/check` and their 401
+challenges, exactly as on any wired block. When the app also holds the apex,
+the apex is a name on that same block and is served the same way. `guests`
+changes nothing else: on a host with no authenticator the app gets the plain
+block every app gets, a disabled app's block answers 503 as any other, and
+`auth`'s own block is the same with or without such an app.
+
+A page that `sites` publishes is served at `https://sites.<host.name>`, and
+its script calls other apps from the browser, carrying the suite's session
+cookie. So every block that serves an app grants cross-origin access to that
+one origin, the *allowed origin*, and to no other. It is derived from
+`host.name` alone, `https://sites.sbx.ikigenba.dev` on a host named
+`sbx.ikigenba.dev`, whether or not a `sites` app is routed; no configuration
+key changes it. nginx decides it, and an app never sees a preflight: every
+`OPTIONS` request to an app's block is answered `204` by nginx before
+anything else in the block, so with no subrequest to `auth` and nothing
+proxied. When the request's `Origin` is exactly the allowed origin, the
+response carries `Access-Control-Allow-Origin` naming that origin, never `*`,
+and `Access-Control-Allow-Credentials: true`. The `204` also carries
+`Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`,
+`Access-Control-Allow-Headers: Content-Type, Accept, Mcp-Session-Id,
+Mcp-Protocol-Version, Last-Event-ID`, and `Access-Control-Max-Age: 600`;
+every other response carries `Access-Control-Expose-Headers: Mcp-Session-Id,
+WWW-Authenticate` instead. Any other `Origin`, or none, gets no
+`Access-Control-` header at all. Every response from an app's block carries
+`Vary: Origin`. The headers are on every response such a block gives,
+whatever its status: the app's own, nginx's 401 challenges, the 302 to sign
+in, a 403 from `auth`, the 404 of `auth`'s guarded `/check`, and a disabled
+app's 503. That holds for a plain block on a host with no authenticator, a
+wired block, one that serves guests, `auth`'s own block, a disabled app's
+block, and the apex wherever it is a name on an app's block. It holds for no
+other block: the port-80 redirect, the handshake-rejecting default, and the
+404 block answer as before. An app refuses a call whose `Origin` names
+another host, so when nginx passes a request on to an app, or to `auth`'s
+`/check` on its behalf, it leaves out an `Origin` that is exactly the allowed
+origin and passes any other `Origin` on unchanged, for the app to judge.
+`auth`'s own block passes even the allowed origin on, because `auth` checks it
+to let any app on the space, `sites` included, sign its user out. The file
+declares what these headers and that `Origin` are built from once, after the log format, on every host, a bare one included, so the
+frame is the same whether or not any app is routed.
 
 One host in the account also answers at the root domain's apex,
 `ikigenba.dev`. Which host that is, and which app answers there, is a
@@ -189,10 +239,13 @@ every other app's block then requires a valid session, checked against auth's
 /check, while auth's own name is not gated. Under /mcp, a request without a
 valid credential, or with one auth refuses, is answered 401 naming the MCP
 gateway's protected-resource metadata instead of being sent to sign in or
-refused; a git smart HTTP request without a credential is answered 401 too,
-with a Basic challenge so git asks for the token. An app whose manifest sets
-guests admits a request without a credential elsewhere, checked against
-auth's /check/open.
+refused; under /api, a request without a valid credential is answered 401
+with a Bearer challenge; a git smart HTTP request without a credential is
+answered 401 too, with a Basic challenge so git asks for the token. An app
+whose manifest sets guests admits a request without a credential elsewhere,
+checked against auth's /check/open. Every app's block answers an OPTIONS
+request 204 itself, and grants cross-origin access with credentials to
+https://sites.<host.name> alone.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -212,7 +265,10 @@ everything to 443, an unknown name has its TLS handshake rejected outright
 rather than being answered with someone else's certificate, and the host's own
 name and its wildcard answer 404 under the host's certificate. The
 `ikigenba` log format comes first, and every block that answers a request
-logs in it; the handshake-rejecting block answers none.
+logs in it; the handshake-rejecting block answers none. The maps that decide
+the cross-origin headers, and the `Origin` an app is passed, follow it, built around the allowed origin
+`https://sites.sbx.ikigenba.dev`; no block here serves an app, so none uses
+them yet.
 
 Command:
 
@@ -228,6 +284,42 @@ Output:
 log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
                     '$status $body_bytes_sent "$http_referer" '
                     '"$http_user_agent" $request_id';
+
+map $http_origin $ikigenba_cors_origin {
+    default                               "";
+    "~^https://sites\.sbx\.ikigenba\.dev$" $http_origin;
+}
+
+map $ikigenba_cors_origin $ikigenba_cors_credentials {
+    ""      "";
+    default "true";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_methods {
+    default        "";
+    "OPTIONS true" "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_headers {
+    default        "";
+    "OPTIONS true" "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_max_age {
+    default        "";
+    "OPTIONS true" "600";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
+    default        "";
+    "OPTIONS true" "";
+    "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
 
 server {
     listen      80 default_server;
@@ -275,7 +367,10 @@ answers from it and leaves the 404 block holding the wildcard alone. No routed
 app here is named `auth`, so the host has no authenticator: every block is the
 plain proxy, with no `auth_request` and no identity headers set from a
 subrequest. This is the fail-open case, shown for what it is — the honest
-absence of an authenticator, not a per-app security choice.
+absence of an authenticator, not a per-app security choice. Each app's block
+adds the cross-origin headers and `Vary: Origin` to every response, and
+answers an `OPTIONS` request `204` before its include and its location; the
+404 block does neither.
 
 Command:
 
@@ -291,6 +386,42 @@ Output:
 log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
                     '$status $body_bytes_sent "$http_referer" '
                     '"$http_user_agent" $request_id';
+
+map $http_origin $ikigenba_cors_origin {
+    default                               "";
+    "~^https://sites\.sbx\.ikigenba\.dev$" $http_origin;
+}
+
+map $ikigenba_cors_origin $ikigenba_cors_credentials {
+    ""      "";
+    default "true";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_methods {
+    default        "";
+    "OPTIONS true" "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_headers {
+    default        "";
+    "OPTIONS true" "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_max_age {
+    default        "";
+    "OPTIONS true" "600";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
+    default        "";
+    "OPTIONS true" "";
+    "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
 
 server {
     listen      80 default_server;
@@ -321,6 +452,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/crm/etc/nginx.conf*;
 
@@ -331,6 +473,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
     }
 }
 
@@ -340,6 +483,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/dashboard/etc/nginx.conf*;
 
@@ -350,6 +504,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
     }
 }
 ```
@@ -403,6 +558,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/dashboard/etc/nginx.conf*;
 
@@ -413,6 +579,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
     }
 }
 ```
@@ -441,8 +608,9 @@ Postconditions:
 
 `crm` has been disabled with `opsctl disable crm`. Its block keeps both of its
 names, so the space's name and `crm.sbx.ikigenba.dev` answer `503` under the
-host's certificate instead of falling to the 404 block. `dashboard` is
-unaffected.
+host's certificate instead of falling to the 404 block. Its cross-origin
+headers stay, so the `503` carries them, and a preflight is still answered
+`204` before the `503` is reached. `dashboard` is unaffected.
 
 Command:
 
@@ -459,6 +627,18 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
+
     return              503;
 }
 ```
@@ -474,10 +654,11 @@ Postconditions:
 
 - Nothing has changed. `show` asked systemd whether each routed app's socket
   unit is enabled and changed nothing there.
-- Once applied, every request to `crm`'s names is answered `503` by nginx,
-  and nothing reaches `/run/ikigenba/crm.sock`, which does not exist while
-  `crm` is disabled. Had `crm` also held the apex, `ikigenba.dev` would answer
-  `503` from the same block.
+- Once applied, every request to `crm`'s names but a preflight is answered
+  `503` by nginx, and a preflight `204`, as the `page on the sites origin
+  calls a disabled app` story shows; nothing reaches `/run/ikigenba/crm.sock`,
+  which does not exist while `crm` is disabled. Had `crm` also held the apex,
+  `ikigenba.dev` would answer `503` from the same block.
 
 ## An operator reads the configuration when the apex app is not routed
 
@@ -502,6 +683,42 @@ Output:
 log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
                     '$status $body_bytes_sent "$http_referer" '
                     '"$http_user_agent" $request_id';
+
+map $http_origin $ikigenba_cors_origin {
+    default                               "";
+    "~^https://sites\.sbx\.ikigenba\.dev$" $http_origin;
+}
+
+map $ikigenba_cors_origin $ikigenba_cors_credentials {
+    ""      "";
+    default "true";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_methods {
+    default        "";
+    "OPTIONS true" "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_headers {
+    default        "";
+    "OPTIONS true" "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_max_age {
+    default        "";
+    "OPTIONS true" "600";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
+    default        "";
+    "OPTIONS true" "";
+    "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
 
 server {
     listen      80 default_server;
@@ -550,29 +767,38 @@ Postconditions:
 A routed app named `auth` is on the host, so every other app's block is wired
 to it. `auth` is not the default, so it answers only at
 `auth.sbx.ikigenba.dev`; `crm` is still the default and still answers at the
-space's name; `dashboard` answers at its own name.
-The blocks come in ascending name order — `auth`, `crm`, `dashboard` — and
-`auth`'s own is the one left unwired: its `/check` and `/check/open` answer
-404 to any direct request, and `/check` is reached only as the other blocks'
-internal subrequest. In each
-wired block a client cannot forge identity: the subrequest to `/check` carries
-no client `X-User-Id` or `X-User-Email`, and on a valid session nginx sets
-those two headers on the upstream from `auth`'s answer. The subrequest also
-carries the original request's method, host, and request target as
-`X-Original-Method`, `X-Original-Host`, and `X-Original-URI`. A 401 from `auth`
-becomes a 302 redirect to `auth.sbx.ikigenba.dev` carrying the original request
-URL as `return=`; a 403 reaches the client unchanged. Between the redirect and
-`location /`, each wired block carries the MCP locations: `/mcp` exactly and
-everything under `/mcp/` are checked and relayed like `location /`, but a 401
-from `auth` is answered by `@mcp_unauthorized` — the `401` with its
-`WWW-Authenticate` header and one-line body — instead of the redirect, and a
-403 from `auth` by `@mcp_invalid_token`, the `invalid_token` 401 with the same
-body. Both headers name `https://mcp.sbx.ikigenba.dev`, the gateway's origin
-on this host, though no `mcp` app is installed here. After
-them comes the git location: a path ending `/info/refs`, `/git-upload-pack`,
-or `/git-receive-pack` is checked and relayed the same way, and a 401 from
-`auth` is answered by `@git_unauthorized`, a Basic challenge. The `\n` in
-each `return` is the two characters backslash and `n` in the file.
+space's name; `dashboard` answers at its own name. The blocks come in
+ascending name order — `auth`, `crm`, `dashboard` — and `auth`'s own is the
+one left unwired: its `/check` and `/check/open` answer 404 to any direct
+request, and `/check` is reached only as the other blocks' internal
+subrequest. In each wired block a client cannot forge identity: the subrequest
+to `/check` carries no client `X-User-Id` or `X-User-Email`, and on a valid
+session nginx sets those two headers on the upstream from `auth`'s answer. The
+subrequest also carries the original request's method, host, and request
+target as `X-Original-Method`, `X-Original-Host`, and `X-Original-URI`. A 401
+from `auth` becomes a 302 redirect to `auth.sbx.ikigenba.dev` carrying the
+original request URL as `return=`; a 403 reaches the client unchanged. Between
+the redirect and `location /`, each wired block carries the MCP locations:
+`/mcp` exactly and everything under `/mcp/` are checked and relayed like
+`location /`, but a 401 from `auth` is answered by `@mcp_unauthorized` — the
+`401` with its `WWW-Authenticate` header and one-line body — instead of the
+redirect, and a 403 from `auth` by `@mcp_invalid_token`, the `invalid_token`
+401 with the same body. Both headers name `https://mcp.sbx.ikigenba.dev`, the
+gateway's origin on this host, though no `mcp` app is installed here. The API
+locations follow them: `/api` exactly and everything under `/api/` are checked
+and relayed the same way, a 401 from `auth` is answered by
+`@api_unauthorized`, the plain Bearer challenge with its own one-line body,
+and a 403 from `auth` reaches the client unchanged. After them comes the git
+location: a path ending `/info/refs`, `/git-upload-pack`, or
+`/git-receive-pack` is checked and relayed the same way, and a 401 from `auth`
+is answered by `@git_unauthorized`, a Basic challenge. The `\n` in each
+`return` is the two characters backslash and `n` in the file. Every app's
+block, `auth`'s included, adds the cross-origin headers and `Vary: Origin` and
+answers an `OPTIONS` request `204` before anything else in it, so before the
+subrequest. A location that sets a header of its own does not inherit the
+block's, so each of the four named locations that answers a challenge repeats
+the cross-origin headers a non-preflight response carries beside its
+`WWW-Authenticate`.
 
 Command:
 
@@ -588,6 +814,42 @@ Output:
 log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
                     '$status $body_bytes_sent "$http_referer" '
                     '"$http_user_agent" $request_id';
+
+map $http_origin $ikigenba_cors_origin {
+    default                               "";
+    "~^https://sites\.sbx\.ikigenba\.dev$" $http_origin;
+}
+
+map $ikigenba_cors_origin $ikigenba_cors_credentials {
+    ""      "";
+    default "true";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_methods {
+    default        "";
+    "OPTIONS true" "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_headers {
+    default        "";
+    "OPTIONS true" "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_max_age {
+    default        "";
+    "OPTIONS true" "600";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
+    default        "";
+    "OPTIONS true" "";
+    "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
 
 server {
     listen      80 default_server;
@@ -618,6 +880,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/auth/etc/nginx.conf*;
 
@@ -645,6 +918,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/crm/etc/nginx.conf*;
 
@@ -659,6 +943,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location @auth_redirect {
@@ -667,19 +952,41 @@ server {
 
     location @mcp_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   WWW-Authenticate                 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
     location @mcp_invalid_token {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   WWW-Authenticate                 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location @api_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate                 'Bearer realm="ikigenba"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
+        return       401 "authentication required: sign in or send Authorization: Bearer <token>\n";
     }
 
     location @git_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Basic realm="ikigenba"' always;
+        add_header   WWW-Authenticate                 'Basic realm="ikigenba"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send your token as the password\n";
     }
 
@@ -696,6 +1003,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -713,6 +1021,41 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location = /api {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @api_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/crm.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ^~ /api/ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @api_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/crm.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -729,6 +1072,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -745,6 +1089,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -756,6 +1101,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/dashboard/etc/nginx.conf*;
 
@@ -770,6 +1126,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location @auth_redirect {
@@ -778,19 +1135,41 @@ server {
 
     location @mcp_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   WWW-Authenticate                 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
     location @mcp_invalid_token {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   WWW-Authenticate                 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location @api_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate                 'Bearer realm="ikigenba"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
+        return       401 "authentication required: sign in or send Authorization: Bearer <token>\n";
     }
 
     location @git_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Basic realm="ikigenba"' always;
+        add_header   WWW-Authenticate                 'Basic realm="ikigenba"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send your token as the password\n";
     }
 
@@ -807,6 +1186,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -824,6 +1204,41 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location = /api {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @api_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ^~ /api/ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @api_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -840,6 +1255,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -856,6 +1272,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -882,7 +1299,8 @@ Postconditions:
   purely because a routed `auth` is present — there is no per-app opt-in or
   opt-out. Neither manifest sets `guests`, so neither block carries
   `/_ikigenba/check/open`; `auth`'s block guards `/check/open` all the same.
-- `crm` and `dashboard` carry the MCP locations and the git location whether
+- `crm` and `dashboard` carry the MCP locations, the API locations, and the
+  git location whether
   their manifests set `mcp = true`, `mcp = false`, or no `mcp` at all, and
   whether or not either serves git; `auth`'s block carries none.
 - Once applied, the subrequest to `/check` and the request it admits carry the
@@ -906,11 +1324,12 @@ stays on the 404 block with the wildcard. `sites`'s block is the wired block
 of the `host running apps behind the authenticator` story with two
 differences: the internal `/_ikigenba/check/open` location follows
 `/_ikigenba/check`, asking `auth`'s `/check/open`, and `location /` asks it
-with no `error_page 401` line. Its `/mcp` locations and git location are
-unchanged, still asking `/_ikigenba/check` and still answering 401 with their
-challenges, and `@auth_redirect` is still there though `location /` no longer
-uses it. The apex, `ikigenba.dev`, is a name on the same block, so it is
-served the same way. `auth`'s block is the one every wired host gets.
+with no `error_page 401` line. Its `/mcp` locations, `/api` locations, and git
+location are unchanged, still asking `/_ikigenba/check` and still answering
+401 with their challenges, and `@auth_redirect` is still there though
+`location /` no longer uses it. The apex, `ikigenba.dev`, is a name on the
+same block, so it is served the same way. `auth`'s block is the one every
+wired host gets.
 
 Command:
 
@@ -926,6 +1345,42 @@ Output:
 log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
                     '$status $body_bytes_sent "$http_referer" '
                     '"$http_user_agent" $request_id';
+
+map $http_origin $ikigenba_cors_origin {
+    default                               "";
+    "~^https://sites\.sbx\.ikigenba\.dev$" $http_origin;
+}
+
+map $ikigenba_cors_origin $ikigenba_cors_credentials {
+    ""      "";
+    default "true";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_methods {
+    default        "";
+    "OPTIONS true" "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_headers {
+    default        "";
+    "OPTIONS true" "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_max_age {
+    default        "";
+    "OPTIONS true" "600";
+}
+
+map "$request_method $ikigenba_cors_credentials" $ikigenba_cors_expose {
+    default        "";
+    "OPTIONS true" "";
+    "~ true$"      "Mcp-Session-Id, WWW-Authenticate";
+}
+
+map $ikigenba_cors_origin $ikigenba_upstream_origin {
+    ""      $http_origin;
+    default "";
+}
 
 server {
     listen      80 default_server;
@@ -956,6 +1411,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/auth/etc/nginx.conf*;
 
@@ -983,6 +1449,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     access_log          /var/log/nginx/access.log ikigenba;
+    add_header          Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+    add_header          Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+    add_header          Access-Control-Allow-Methods     $ikigenba_cors_methods always;
+    add_header          Access-Control-Allow-Headers     $ikigenba_cors_headers always;
+    add_header          Access-Control-Max-Age           $ikigenba_cors_max_age always;
+    add_header          Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+    add_header          Vary                             Origin always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
 
     include /opt/sites/etc/nginx.conf*;
 
@@ -997,6 +1474,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location = /_ikigenba/check/open {
@@ -1010,6 +1488,7 @@ server {
         proxy_set_header        X-Original-Method $request_method;
         proxy_set_header        X-Original-Host   $host;
         proxy_set_header        X-Original-URI    $request_uri;
+        proxy_set_header        Origin            $ikigenba_upstream_origin;
     }
 
     location @auth_redirect {
@@ -1018,19 +1497,41 @@ server {
 
     location @mcp_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   WWW-Authenticate                 'Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
     }
 
     location @mcp_invalid_token {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   WWW-Authenticate                 'Bearer error="invalid_token", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location @api_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate                 'Bearer realm="ikigenba"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
+        return       401 "authentication required: sign in or send Authorization: Bearer <token>\n";
     }
 
     location @git_unauthorized {
         default_type text/plain;
-        add_header   WWW-Authenticate 'Basic realm="ikigenba"' always;
+        add_header   WWW-Authenticate                 'Basic realm="ikigenba"' always;
+        add_header   Access-Control-Allow-Origin      $ikigenba_cors_origin always;
+        add_header   Access-Control-Allow-Credentials $ikigenba_cors_credentials always;
+        add_header   Access-Control-Expose-Headers    $ikigenba_cors_expose always;
+        add_header   Vary                             Origin always;
         return       401 "authentication required: send your token as the password\n";
     }
 
@@ -1047,6 +1548,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1064,6 +1566,41 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location = /api {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @api_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/sites.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ^~ /api/ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @api_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/sites.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1080,6 +1617,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1095,6 +1633,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header Origin            $ikigenba_upstream_origin;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -1421,8 +1960,9 @@ Postconditions:
   carried and the access-log line for the request ends with. Had the client
   sent its own `X-User-Id` or `X-User-Email`, `sites` would not have received
   it.
-- Any path outside `/mcp`, `/mcp/...`, and the git paths behaves the same:
-  `https://sites.sbx.ikigenba.dev/mcpx` reaches `sites` as a guest too.
+- Any path outside `/mcp`, `/mcp/...`, `/api`, `/api/...`, and the git paths
+  behaves the same: `https://sites.sbx.ikigenba.dev/mcpx` and
+  `https://sites.sbx.ikigenba.dev/apix` reach `sites` as a guest too.
 - A signed-in visitor, whose session `auth` honors, reaches `sites` the same
   way but with `X-User-Id` and `X-User-Email` set from `auth`'s answer, as on
   any wired app.
@@ -1472,6 +2012,453 @@ Postconditions:
   was decided by the `/check` subrequest alone, and `/check/open` was not
   asked.
 - `https://ikigenba.dev/mcp` answers the same.
+
+## A client reaches `/api` on a wired app without a credential
+
+A program, or a page's script, calls an app's HTTP interface. Neither can
+follow a redirect to a sign-in page, so on a wired app a request under `/api`
+that `auth` answers 401 is answered `401` by nginx itself, with a plain Bearer
+challenge and one line saying what to do. Unlike `/mcp`, the challenge names
+no protected-resource metadata: there is no sign-in flow for a program to
+start here, only a session to hold or a token to send. `/api` itself and any
+path under `/api/` behave the same.
+
+Request:
+
+```
+$ curl -si https://crm.sbx.ikigenba.dev/api
+```
+
+```
+$ curl -si https://crm.sbx.ikigenba.dev/api/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: sign in or
+send Authorization: Bearer <token>`, ending in a newline, where `<token>` is
+those seven characters as written, not a value filled in.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`; the request
+  was decided by the `/check` subrequest alone.
+- `https://crm.sbx.ikigenba.dev/apix` is an ordinary path: without a
+  credential it redirects to sign in, as `/mcpx` does in the `browser reaches
+  a wired app outside /mcp` story.
+
+## A client whose token the authenticator refuses reaches `/api` on a wired app
+
+Only `/mcp` turns a refusal into a 401, because only an MCP client starts
+signing in again on one. Under `/api`, a token `auth` will not honor gets
+`auth`'s 403 unchanged, as at `/` and at the git paths.
+
+Request:
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://crm.sbx.ikigenba.dev/api/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+Status 403. The response carries no `WWW-Authenticate` header; the body is not
+fixed.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- `auth`'s `/check` answers 403 for `ikp_<token>`.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
+- `https://crm.sbx.ikigenba.dev/api` answers the same.
+
+## A client with a valid credential reaches `/api` on a wired app
+
+A request `auth` admits, by session cookie or by token, reaches the app under
+`/api` exactly as it would at `/`, with the identity `auth` gave.
+
+Request:
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' 'https://crm.sbx.ikigenba.dev/api/notes?page=2'
+```
+
+```
+$ curl -si -b 'ikigenba_session=<session>' 'https://crm.sbx.ikigenba.dev/api/notes?page=2'
+```
+
+Response: not fixed here; it is `crm`'s answer to the request.
+
+Status is whatever `crm` answers; nginx adds no status of its own.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- `auth`'s `/check` admits `ikp_<token>` and `<session>`.
+
+Postconditions:
+
+- `crm` received `GET /api/notes?page=2` with `X-User-Id` and `X-User-Email`
+  set from `auth`'s answer and `X-Request-Id` set by nginx, whatever the
+  client sent under those names.
+- The subrequest to `/check` carried `X-Original-URI: /api/notes?page=2`.
+
+## A client reaches `/api` on an app that serves guests without a credential
+
+Serving guests opens only `location /`. `/api` and everything under `/api/`
+are checked against the strict `/check` on every wired block, so a client with
+no credential gets the same challenge here as at any wired app.
+
+Request:
+
+```
+$ curl -si https://sites.sbx.ikigenba.dev/api
+```
+
+```
+$ curl -si https://sites.sbx.ikigenba.dev/api/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: sign in or
+send Authorization: Bearer <token>`, ending in a newline.
+
+Preconditions:
+
+- The configuration of the `host running an app that serves guests` story has
+  been applied, and `auth` and `sites` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/sites.sock`, and
+  `/check/open` was not asked.
+- `https://ikigenba.dev/api` answers the same.
+
+## A page on the sites origin preflights a call to a wired app
+
+A page at `https://sites.sbx.ikigenba.dev` is about to call `crm`'s `/mcp`
+with a JSON body and an MCP session. The browser first asks `crm`'s name
+whether it may, with an `OPTIONS` request carrying no cookie. nginx answers it
+`204` itself, with what the page may send, before asking `auth` anything.
+
+Request:
+
+```
+$ curl -si -X OPTIONS -H 'Origin: https://sites.sbx.ikigenba.dev' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type, mcp-session-id' https://crm.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://sites.sbx.ikigenba.dev
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID
+Access-Control-Max-Age: 600
+Vary: Origin
+```
+
+Status 204. There is no body, and no `Access-Control-Expose-Headers` header.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied.
+
+Postconditions:
+
+- Nothing has changed. No subrequest went to `/check` and nothing reached
+  `/run/ikigenba/crm.sock`; the answer is nginx's whether or not `auth` and
+  `crm` are active.
+- The answer is the same at any path on `crm`'s names, whatever
+  `Access-Control-Request-Method` and `Access-Control-Request-Headers` the
+  request names, and with or without a cookie or token.
+- `auth.sbx.ikigenba.dev`, and every name of the `sites` block in the `host
+  running an app that serves guests` story, answer the same preflight the
+  same way.
+- The access-log line for the request records status `204`.
+
+## A page on the sites origin calls a wired app with the visitor's session
+
+Once the preflight allows it, the page's script sends the call with the
+browser's session cookie. `auth` admits it as it would any request carrying
+that session, `crm` answers, and nginx adds the headers that let the script
+read the answer, `Mcp-Session-Id` included.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: https://sites.sbx.ikigenba.dev' -H 'Content-Type: application/json' -b 'ikigenba_session=<session>' -d '<json-rpc request>' https://crm.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/1.1 <status>
+Access-Control-Allow-Origin: https://sites.sbx.ikigenba.dev
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
+Vary: Origin
+```
+
+Status is whatever `crm` answers, and the body is `crm`'s; nginx adds only
+the headers shown. There is no `Access-Control-Allow-Methods`,
+`Access-Control-Allow-Headers`, or `Access-Control-Max-Age` header.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- `auth`'s `/check` admits `<session>`.
+
+Postconditions:
+
+- `crm` received the `POST /mcp` with `X-User-Id` and `X-User-Email` set from
+  `auth`'s answer, as any admitted request under `/mcp` does, and with no
+  `Origin` header, so it takes the call as it takes one from its own pages.
+  `auth`'s `/check` received no `Origin` header either.
+- A call to `/api`, `/api/...`, or any other path on `crm`'s names carries
+  the same headers on `crm`'s answer.
+
+## A page on the sites origin calls a wired app without a session
+
+The visitor's session has lapsed, or they never signed in. The call is
+refused as any such call is, but the refusal carries the cross-origin headers,
+so the page's script can read the status and the `WWW-Authenticate` challenge
+and send its visitor to sign in, rather than seeing an opaque network error.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: https://sites.sbx.ikigenba.dev' https://crm.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer realm="ikigenba", resource_metadata="https://mcp.sbx.ikigenba.dev/.well-known/oauth-protected-resource"
+Access-Control-Allow-Origin: https://sites.sbx.ikigenba.dev
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
+Vary: Origin
+```
+
+Status 401. The body is the one line of the `MCP client reaches a wired app
+without a credential` story.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
+- Every other answer nginx gives in `crm`'s block carries the same four
+  headers beside its own: the `401` of the `client reaches /api on a wired
+  app without a credential` story, the `invalid_token` 401 under `/mcp`, the
+  Basic challenge at a git path, the `302` to sign in at `/`, and `auth`'s 403
+  outside `/mcp`.
+
+## A page on the sites origin signs its user out
+
+The banner on `sites`' own pages signs the user out with a form that POSTs to
+`auth`'s `/logout`, as every app's banner does. `auth` lets any app on the
+space sign its user out and decides that from the request's `Origin`, so
+`auth`'s own block passes the allowed origin on to `auth` unchanged.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: https://sites.sbx.ikigenba.dev' -b 'ikigenba_session=<session>' https://auth.sbx.ikigenba.dev/logout
+```
+
+Response:
+
+```
+HTTP/1.1 <status>
+Access-Control-Allow-Origin: https://sites.sbx.ikigenba.dev
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
+Vary: Origin
+```
+
+Status is whatever `auth` answers, and the body is `auth`'s.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` is active.
+
+Postconditions:
+
+- `auth` received the `POST /logout` with the request's
+  `Origin: https://sites.sbx.ikigenba.dev` unchanged, as it receives any
+  request's `Origin` at any path of its own block.
+
+## A page on another origin calls an app
+
+Only the allowed origin is granted anything. A page anywhere else, including a
+name that merely begins like it, the same name over `http`, or the same name
+in other letter case, gets no `Access-Control-` header at all, so its browser
+refuses to let it send the call or read the answer. The preflight is still
+answered `204` by nginx, and `Vary: Origin` is still on every response, so no
+cache hands one origin's answer to another.
+
+Request:
+
+```
+$ curl -si -X OPTIONS -H 'Origin: https://elsewhere.example' -H 'Access-Control-Request-Method: POST' https://crm.sbx.ikigenba.dev/mcp
+```
+
+```
+$ curl -si -X OPTIONS -H 'Origin: https://sites.sbx.ikigenba.dev.elsewhere.example' -H 'Access-Control-Request-Method: POST' https://crm.sbx.ikigenba.dev/mcp
+```
+
+```
+$ curl -si -X OPTIONS -H 'Origin: http://sites.sbx.ikigenba.dev' -H 'Access-Control-Request-Method: POST' https://crm.sbx.ikigenba.dev/mcp
+```
+
+```
+$ curl -si -X OPTIONS -H 'Origin: HTTPS://SITES.SBX.IKIGENBA.DEV' -H 'Access-Control-Request-Method: POST' https://crm.sbx.ikigenba.dev/mcp
+```
+
+```
+$ curl -si -X OPTIONS https://crm.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/1.1 204 No Content
+Vary: Origin
+```
+
+Status 204. The response carries no `Access-Control-` header; there is no
+body.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied.
+
+Postconditions:
+
+- Nothing has changed. No subrequest went to `/check` and nothing reached
+  `/run/ikigenba/crm.sock`.
+- Any other request with such an `Origin`, or none, is answered as it would
+  be without the cross-origin grant, plus `Vary: Origin`, and with no
+  `Access-Control-` header: a request with a valid session reaches `crm`, with
+  its `Origin` header unchanged, or none, for `crm` to judge, and one without
+  gets the challenge or redirect its path calls for.
+
+## A page on the sites origin calls an app on a host with no authenticator
+
+A host with no routed `auth` is fail-open, and every app's block is the plain
+proxy. The cross-origin grant does not depend on the authenticator: the plain
+block answers the preflight `204` itself and adds the headers to the app's
+answer just as a wired block does.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: https://sites.sbx.ikigenba.dev' https://crm.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/1.1 <status>
+Access-Control-Allow-Origin: https://sites.sbx.ikigenba.dev
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
+Vary: Origin
+```
+
+Status is whatever `crm` answers, and the body is `crm`'s.
+
+Preconditions:
+
+- The configuration of the `host running apps` story has been applied, and
+  `crm` is active. No `sites` app is installed.
+
+Postconditions:
+
+- `crm` received the `POST /mcp` with no identity headers set by nginx, as
+  any request on a fail-open host does, and with no `Origin` header.
+- A preflight to `crm`'s names, `sbx.ikigenba.dev` included, is answered
+  exactly as in the `page on the sites origin preflights a call to a wired
+  app` story, and never reaches `crm`.
+
+## A page on the sites origin calls a disabled app
+
+A disabled app answers `503` to everything but a preflight, and the `503`
+carries the cross-origin headers, so the page's script can tell the app is
+unavailable. The preflight itself is still answered `204`, so the browser
+sends the call and the script sees the `503` rather than a refused preflight.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: https://sites.sbx.ikigenba.dev' https://crm.sbx.ikigenba.dev/mcp
+```
+
+Response:
+
+```
+HTTP/1.1 503 Service Temporarily Unavailable
+Access-Control-Allow-Origin: https://sites.sbx.ikigenba.dev
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
+Vary: Origin
+```
+
+Status 503. The body is not fixed.
+
+Preconditions:
+
+- The configuration of the `app is disabled` story has been applied.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
+- A preflight to `crm`'s names is answered exactly as in the `page on the
+  sites origin preflights a call to a wired app` story.
 
 ## A client asks auth's /check directly
 
@@ -1546,11 +2533,11 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
-- Once applied, `nginx -t` passes, and in `crm`'s block every location —
-  `/`, `/mcp`, `/mcp/`, and the git location — accepts a request body of any
-  size, waits up to an hour between reads from `crm`'s socket, and passes a
-  request body to `crm` as it arrives. A push of several hundred MiB to
-  `crm` is admitted by `/check` and streamed to the app.
+- Once applied, `nginx -t` passes, and in `crm`'s block every location — `/`,
+  `/mcp`, `/mcp/`, `/api`, `/api/`, and the git location — accepts a request
+  body of any size, waits up to an hour between reads from `crm`'s socket, and
+  passes a request body to `crm` as it arrives. A push of several hundred MiB
+  to `crm` is admitted by `/check` and streamed to the app.
 - The subrequest to `/check` carries no body whatever the fragment says, so
   `auth` is unaffected.
 - `dashboard`'s and `auth`'s blocks keep nginx's defaults: a body larger

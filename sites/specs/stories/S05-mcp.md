@@ -72,11 +72,11 @@ Status 200. The body is a JSON-RPC response with `id` 1 whose `result` has no `n
   },
   {
     "name": "create",
-    "description": "Create a site from one of your repositories and return it; publish it to make it live.\n\nname is 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, is neither about nor mcp, and must not already name a site in the space: names are shared by every user, because a listed site answers at its name. repo is the id of one of your repositories in repos. ref is the branch, tag, or commit the site tracks, main unless given. visibility is public, served to anyone, or private, served only to users signed in to the space; public unless given. listed is true unless given: a listed site answers at its name and is on the landing page; an unlisted one answers at its name followed by '-' and 8 random hexadecimal digits, and is on the landing page only for you. The site serves nothing until you publish it. The result is what show returns.",
+    "description": "Create a site from one of your repositories and return it; publish it to make it live.\n\nname is 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, is none of about, mcp, or api, and must not already name a site in the space: names are shared by every user, because a listed site answers at its name. repo is the id of one of your repositories in repos. ref is the branch, tag, or commit the site tracks, main unless given. visibility is public, served to anyone, or private, served only to users signed in to the space; public unless given. listed is true unless given: a listed site answers at its name and is on the landing page; an unlisted one answers at its name followed by '-' and 8 random hexadecimal digits, and is on the landing page only for you. The site serves nothing until you publish it. The result is what show returns.",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "name": {"type": "string", "description": "The new site's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about or mcp, and not already a site's name in the space."},
+        "name": {"type": "string", "description": "The new site's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about, mcp, or api, and not already a site's name in the space."},
         "repo": {"type": "string", "description": "The id of one of your repositories in repos (rep_ and 16 hexadecimal digits)."},
         "ref": {"type": "string", "description": "The branch, tag, or commit the site tracks; main unless given."},
         "visibility": {"type": "string", "description": "public or private; public unless given."},

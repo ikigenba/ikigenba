@@ -40,10 +40,13 @@ every other app's block then requires a valid session, checked against auth's
 /check, while auth's own name is not gated. Under /mcp, a request without a
 valid credential, or with one auth refuses, is answered 401 naming the MCP
 gateway's protected-resource metadata instead of being sent to sign in or
-refused; a git smart HTTP request without a credential is answered 401 too,
-with a Basic challenge so git asks for the token. An app whose manifest sets
-guests admits a request without a credential elsewhere, checked against
-auth's /check/open.
+refused; under /api, a request without a valid credential is answered 401
+with a Bearer challenge; a git smart HTTP request without a credential is
+answered 401 too, with a Basic challenge so git asks for the token. An app
+whose manifest sets guests admits a request without a credential elsewhere,
+checked against auth's /check/open. Every app's block answers an OPTIONS
+request 204 itself, and grants cross-origin access with credentials to
+https://sites.<host.name> alone.
 `
 
 func runNginx(args []string, stdout, stderr io.Writer, deps Deps) exitCode {

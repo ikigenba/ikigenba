@@ -58,7 +58,8 @@ The database is the one the manifest declares, `state/auth.db` on a host, and
 auth is its only writer. Opening it is appkit's: `db.Open` (appkit's D15 and
 D16) creates the missing directories and the file, configures it, refuses a
 database it cannot open or write, applies the migrations the database has not
-had, and refuses one that records a migration it was not given; `DB.Read` and
+had, and accepts unchanged one that records a migration it was not given,
+as after a rollback deploy, warning once; `DB.Read` and
 `DB.Write` run the transactions, `Write` on the one writer. That contract is
 appkit's, and auth's design restates none of it and its tests re-prove none of
 it. `cli.Run` opens the handle (D03) and builds the store over it with

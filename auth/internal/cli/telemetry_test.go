@@ -90,7 +90,7 @@ func startTrailRun(t *testing.T, sink telemetry.Sink, issuer string) (Process, c
 }
 
 func TestRunTrailDelivery(t *testing.T) {
-	// R-BEG2-DPNX R-BGVV-595B R-BKJK-AKDE R-2MRR-GNCF R-8UWU-4C73 R-2J42-BC4C
+	// R-BEG2-DPNX R-BGVV-595B R-BKJK-AKDE R-2MRR-GNCF R-5RXL-FWKQ R-2J42-BC4C
 	for _, reject := range []bool{false, true} {
 		t.Run(fmt.Sprint(reject), func(t *testing.T) {
 			sink := &observedSink{reject: reject}

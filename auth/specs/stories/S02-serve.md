@@ -140,11 +140,13 @@ reaches the trail.
   it exits.
 
 auth's stderr holds only trouble, so under systemd the journal shows nothing
-else. Trouble is of two kinds. One is a condition auth cannot continue
+else. Trouble is of three kinds. One is a condition auth cannot continue
 from: a start it refuses, a database it cannot open, a stop that cut requests
-off; each has its own diagnostic in the stories below. The other is an event
-auth could not deliver: when the telemetry service does not take an event
-after a few quick tries — there is no services file, no entry named
+off; each has its own diagnostic in the stories below. Another is a database
+a newer auth has upgraded, which auth serves but warns of once when it starts
+(`The host starts auth with a database a newer auth has upgraded`). The third
+is an event auth could not deliver: when the telemetry service does not take
+an event after a few quick tries — there is no services file, no entry named
 `telemetry` in it, or nothing accepting on its socket — or when auth's events
 queue up faster than it can deliver them, auth writes the event to stderr as
 one line, `auth: undelivered event: <event>`, where `<event>` is the event as
@@ -463,8 +465,8 @@ Output:
 auth: unknown migration version 0004: database is ahead of this binary
 ```
 
-Does not exit. The line is on stderr, written before auth serves; stdout is
-empty.
+Does not exit. The line is on stderr, written before auth reports ready;
+stdout is empty.
 
 Preconditions:
 
@@ -477,16 +479,18 @@ Preconditions:
 - `IKIGENBA_SERVICES` names a services file with an entry named `telemetry`
   whose socket accepts events.
 - `state/auth.db` exists and records versions `0001`, `0002`, `0003`, and
-  `0004` as applied.
+  `0004` as applied. It holds a member's session, live now.
 
 Postconditions:
 
 - The database still records `0001`, `0002`, `0003`, and `0004`, and no
   other version; this start applied nothing.
-- auth is serving on the socket it was passed, over that `state/auth.db`.
+- auth is serving on the socket it was passed, over that `state/auth.db`:
+  `/check` with that member's session cookie answers 200 (`S04-check.md`).
   Every user, session, and token the database held is still there.
 - auth records `service.started` with `version=<display>`, under no request
   id and no user, and no event about the warning.
+- The line above is all auth has written to stderr.
 - It keeps running until it is signalled.
 
 ## The host stops auth

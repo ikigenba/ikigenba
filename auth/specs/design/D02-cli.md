@@ -27,7 +27,8 @@ error. D03 leans on that split: a start the caller got wrong (a missing
 Google setting, a drain deadline that is not a number of seconds, no socket,
 several sockets) exits 2, while trouble on the host once auth has its socket —
 a database it cannot open, a drain that runs out — exits 1, and so does a
-`db status` whose database cannot be read.
+`db status` whose database cannot be read. A database newer than the binary
+is not a failure: auth serves it (D03), and `db status` reports it and exits 0.
 
 `db status` is an operator's look at the database: which of the migrations the
 binary carries the database at `state/auth.db` has had applied, and when,

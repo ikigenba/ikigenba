@@ -164,8 +164,10 @@ func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
 	cases := []struct{ tool, args, want string }{
 		{"list", `{}`, store.Unreachable}, {"show", `{"name":"bad name"}`, "no site named 'bad name'"}, {"publish", `{"name":"BAD"}`, "no site named 'BAD'"}, {"delete", `{"name":"BAD"}`, "no site named 'BAD'"},
 		{"create", `{"name":"BAD","repo":"x","ref":"..bad","visibility":"secret"}`, "invalid name 'BAD'"},
+		{"create", `{"name":"api","repo":"x","ref":"..bad","visibility":"secret"}`, "invalid name 'api'"},
 		{"create", `{"name":"docs","repo":"x","ref":"..bad","visibility":"secret"}`, "invalid ref '..bad'"},
 		{"create", `{"name":"docs","repo":"x","visibility":"secret"}`, "visibility must be public or private"},
+		{"update", `{"name":"api","visibility":"secret","ref":"..bad"}`, "no site named 'api'"},
 		{"update", `{"name":"BAD"}`, "no site named 'BAD'"}, {"update", `{"name":"blog","listed":null}`, "update needs at least one of visibility, listed, ref"},
 		{"update", `{"name":"blog","visibility":"secret","ref":"..bad"}`, "visibility must be public or private"}, {"update", `{"name":"blog","ref":"..bad"}`, "invalid ref '..bad'"},
 		{"apex", `{"name":"BAD","clear":true}`, "apex takes name or clear, not both"}, {"apex", `{"name":"BAD"}`, "no site named 'BAD'"},
