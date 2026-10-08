@@ -1025,7 +1025,7 @@ Postconditions:
 
 ## A page on another origin asks before calling an app
 
-Only the sites origin is allowed. A page served from any other origin, another app's own name included, and a request naming no origin at all, still get nginx's `204`, but it allows nothing, so a browser does not make the call.
+Only the sites origin is allowed, matched exactly, letter case included. A page served from any other origin, another app's own name included, and a request naming no origin at all, still get nginx's `204`, but it allows nothing, so a browser does not make the call.
 
 Request:
 
@@ -1035,6 +1035,10 @@ $ curl -si -X OPTIONS -H 'Origin: http://dummy.wip.localhost:7400' -H 'Access-Co
 
 ```
 $ curl -si -X OPTIONS -H 'Origin: https://sites.wip.localhost:7400' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type, mcp-protocol-version' http://dummy.wip.localhost:7400/mcp
+```
+
+```
+$ curl -si -X OPTIONS -H 'Origin: HTTP://SITES.WIP.LOCALHOST:7400' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type, mcp-protocol-version' http://dummy.wip.localhost:7400/mcp
 ```
 
 ```
@@ -1067,6 +1071,10 @@ Request:
 
 ```
 $ curl -si -H 'Origin: http://dummy.wip.localhost:7400' -H 'Cookie: ikigenba_session=<session>' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://dummy.wip.localhost:7400/mcp
+```
+
+```
+$ curl -si -H 'Origin: HTTP://SITES.WIP.LOCALHOST:7400' -H 'Cookie: ikigenba_session=<session>' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://dummy.wip.localhost:7400/mcp
 ```
 
 ```
