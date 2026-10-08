@@ -263,7 +263,13 @@ followed by the seven entries `S11` shows for `nightly-report`, as they were, ea
 
 Preconditions:
 
-- The preamble's, and `nightly-report` is subscribed to `cron.*.fired` too. The event the events app delivered at `2026-10-05T09:32:00Z` is `evt_4b9e2c7a1f5d3068`, whose `event` is `cron.hourly.fired`, with the push event's other members; `nightly-report`'s `repo.pushed` does not match it, and its `cron.*.fired` does. The events app delivered it once, and scripts accepted it. This call comes after.
+- The preamble's, and `nightly-report` is subscribed to `cron.*.fired` too. The event the events app delivered at `2026-10-05T09:32:00Z` is cron's fire of `u_7f3a9c21`'s hourly trigger for the `09:00` slot:
+
+  ```
+  {"id":"evt_4b9e2c7a1f5d3068","time":"2026-10-05T09:00:00.041736Z","service":"cron","event":"cron.hourly.fired","request_id":"9d4b7e2a6f1c3058b8e2d6a4f0c9b731","user":"u_7f3a9c21","attrs":{"scheduled":"2026-10-05T09:00:00Z","trigger":"crn_3a8f2d6c9e1b4705","when":"0 * * * *"},"cause":"","depth":0,"seq":4096,"received":"2026-10-05T09:00:00.046218Z"}
+  ```
+
+  `nightly-report`'s `repo.pushed` does not match it, and its `cron.*.fired` does. The events app delivered it once, and scripts accepted it. This call comes after.
 
 Postconditions:
 
@@ -301,7 +307,13 @@ Status 200. The body is a JSON-RPC response with `id` 16 carrying the answer `S1
 
 Preconditions:
 
-- The preamble's, and `nightly-report` is subscribed to `cron.*.fired` too. The event the events app delivered at `2026-10-05T09:32:00Z` is `evt_7e1a5c9f3b0d2846`, whose `event` is `cron.fired`, with the push event's other members. No subscription matches `cron.fired`. An event named `cron.a.b.fired` in its place gets the same answer.
+- The preamble's, and `nightly-report` is subscribed to `cron.*.fired` too. The event the events app delivered at `2026-10-05T09:32:00Z` is
+
+  ```
+  {"id":"evt_7e1a5c9f3b0d2846","time":"2026-10-05T09:00:00.052907Z","service":"cron","event":"cron.fired","request_id":"2f7c1a9e5b3d8064c6a0e4b8d2f7a915","user":"u_7f3a9c21","attrs":{"scheduled":"2026-10-05T09:00:00Z","trigger":"crn_6e0b4d8a2c7f1953","when":"0 * * * *"},"cause":"","depth":0,"seq":4097,"received":"2026-10-05T09:00:00.057341Z"}
+  ```
+
+  No subscription matches `cron.fired`. An event named `cron.a.b.fired` in its place, with the same other members, gets the same answer.
 
 Postconditions:
 
