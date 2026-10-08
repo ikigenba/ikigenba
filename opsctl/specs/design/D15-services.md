@@ -17,7 +17,9 @@ and `mcp` (D08), the socket nginx sends its requests to, whether it is
 enabled, and — only when its package shipped `share/icon.svg` — its icon. The
 icon does not decide whether a service is listed, but it is the whole launcher
 opt-in: a launcher shows only the entries that carry one, and the manifest
-carries no launcher key. Package `internal/services` owns the listing
+carries no launcher key. A service known only by its data directory,
+`/var/opt/ikigenba/<name>/state/` (D08), has no manifest and is never listed;
+an icon under `/opt/<name>/share/` does not change that. Package `internal/services` owns the listing
 criterion, the file's exact bytes, and its publication. Package
 `internal/apps` (D08) owns what the file is built from and what an app is
 given: the icon's service-relative path, the icon check `install` applies in
