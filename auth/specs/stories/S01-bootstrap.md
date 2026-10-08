@@ -279,9 +279,10 @@ Postconditions:
 
 A newer auth has applied a migration this binary does not carry, as when a
 deploy is rolled back to an older binary over a database the newer one
-upgraded. This auth cannot serve such a database (`S02-serve.md`), and
-`auth db status` shows why: it prints every line as usual, the version it does
-not know among them as `unknown`, then says so on stderr and fails.
+upgraded. This auth serves such a database as it finds it (`S02-serve.md`),
+and `auth db status` shows what it holds: every line as usual, the version it
+does not know among them as `unknown`. A database ahead of the binary is not a
+failure, so `auth db status` says nothing on stderr and succeeds.
 
 Command:
 
@@ -296,11 +297,9 @@ Output:
 0002 applied 2026-10-05T14:03:07.125003Z
 0003 applied 2026-10-05T14:03:07.126518Z
 0004 unknown 2026-10-06T09:12:44.000017Z
-auth: <reason>
 ```
 
-Exits 1. The `0001`, `0002`, `0003` and `0004` lines are on stdout; the last
-line is on stderr. `<reason>` names the unknown version, `0004`.
+Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 

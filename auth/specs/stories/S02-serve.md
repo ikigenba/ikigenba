@@ -73,12 +73,14 @@ start refused as a usage error has touched nothing, not even the database.
 Opening it, auth creates `state/` if it is absent and `state/auth.db` if it is
 absent, brings the database up to date by applying, in order, every migration
 it carries that the database has not had (`S01-bootstrap.md`), and only then
-serves and tells systemd it is ready. A database it cannot open, or one that
-records a migration it does not carry, is a start it refuses, with one line on
-stderr, `auth: cannot open database state/auth.db: <reason>`, and exit status
-1. The users, sessions, sign-ins in flight and tokens it keeps there outlive
-every restart and deploy. auth is the database's only writer, and the host
-replicates it as the manifest declares (`S01-bootstrap.md`).
+serves and tells systemd it is ready. A database it cannot open is a start it
+refuses, with one line on stderr, `auth: cannot open database state/auth.db:
+<reason>`, and exit status 1. A database that records a migration it does not
+carry, one a newer auth has upgraded, it serves as it finds it, applying
+nothing and warning once on stderr. The users, sessions, sign-ins in flight
+and tokens it keeps there outlive every restart and deploy. auth is the
+database's only writer, and the host replicates it as the manifest declares
+(`S01-bootstrap.md`).
 Starting touches no network: the Google settings are read and required at
 startup, but Google itself is reached only when a human signs in
 (`S03-sign-in.md`), so auth serves even while Google is unreachable, and
@@ -128,11 +130,13 @@ reaches the trail.
   it exits.
 
 auth's stderr holds only trouble, so under systemd the journal shows nothing
-else. Trouble is of two kinds. One is a condition auth cannot continue
+else. Trouble is of three kinds. One is a condition auth cannot continue
 from: a start it refuses, a database it cannot open, a stop that cut requests
-off; each has its own diagnostic in the stories below. The other is an event
-auth could not deliver: when the telemetry service does not take an event
-after a few quick tries — there is no services file, no entry named
+off; each has its own diagnostic in the stories below. Another is a database
+a newer auth has upgraded, which auth serves but warns of once when it starts
+(`The host starts auth with a database a newer auth has upgraded`). The third
+is an event auth could not deliver: when the telemetry service does not take
+an event after a few quick tries — there is no services file, no entry named
 `telemetry` in it, or nothing accepting on its socket — or when auth's events
 queue up faster than it can deliver them, auth writes the event to stderr as
 one line, `auth: undelivered event: <event>`, where `<event>` is the event as
@@ -426,14 +430,16 @@ Postconditions:
 ## The host starts auth with a database a newer auth has upgraded
 
 A deploy rolled back to an older binary leaves it over a database a newer auth
-has upgraded: the database records a migration this auth does not carry, so
-its schema is one this auth does not understand. Rather than read it, auth
-refuses to start, naming the version it does not know, and the rollback fails
-loudly instead of answering `/check` from a schema it misreads. There is no way
-back down a migration; restoring the database from before the upgrade is the
-rollback. `auth db status` shows the version as `unknown`
-(`S01-bootstrap.md`). Under systemd the start fails, and `systemctl start`
-reports it.
+has upgraded: the database records a migration this auth does not carry. Each
+release's migrations only add to the schema the release before it uses, so
+this auth serves that database as it finds it, and the rollback works. It
+applies nothing, not even a migration it carries that the database lacks, and
+otherwise starts and serves as it always does. It says once, on stderr, that
+the database is ahead of it, naming the lowest version it does not know,
+zero-padded to four digits; that line is no event, and nothing reaches the
+trail for it. `auth db status` lists every version it does not know as
+`unknown` (`S01-bootstrap.md`). Under systemd the start succeeds, and the
+journal holds the line.
 
 Command:
 
@@ -444,11 +450,11 @@ $ auth
 Output:
 
 ```
-auth: cannot open database state/auth.db: <reason>
+auth: unknown migration version 0004: database is ahead of this binary
 ```
 
-Exits 1. The line is on stderr; stdout is empty. `<reason>` names the version
-this auth does not carry, zero-padded to four digits: `0004`.
+Does not exit. The line is on stderr, written before auth reports ready;
+stdout is empty.
 
 Preconditions:
 
@@ -458,14 +464,21 @@ Preconditions:
   `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
   socket is passed in, as file descriptor 3.
+- `IKIGENBA_SERVICES` names a services file with an entry named `telemetry`
+  whose socket accepts events.
 - `state/auth.db` exists and records versions `0001`, `0002`, `0003`, and
-  `0004` as applied.
+  `0004` as applied. It holds a member's session, live now.
 
 Postconditions:
 
-- Nothing has changed: the database still records `0001`, `0002`, `0003`,
-  and `0004` and holds the users, sessions, and tokens it held. auth served
-  nothing, told systemd nothing, and recorded no event.
+- auth is serving on the socket it was passed, over the same `state/auth.db`:
+  `/check` with that member's session cookie answers 200 (`S04-check.md`).
+- Starting changed nothing in the database: it still records `0001`, `0002`,
+  `0003`, and `0004`, and holds the users, sessions, and tokens it held.
+- auth records `service.started` with `version=v<semver>`, the version
+  `auth --version` prints, under no request id and no user.
+- The line above is all auth has written to stderr.
+- It keeps running until it is signalled.
 
 ## The host stops auth
 
