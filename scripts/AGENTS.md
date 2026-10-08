@@ -14,8 +14,8 @@ repository's id, unpacks that commit with `git archive` into
 in its own process group, with a scrubbed environment and bounded output; it
 keeps the run's `input.json`, `stdout`, `stderr` and `out/` beside the tree.
 Every page and `/mcp` is for a signed-in user of the space; nginx lets no
-guest through. At `/mcp` it offers nine MCP tools, which agents reach through
-the MCP gateway: `list`, `show`, `create`, `update`, `delete`, `run`, `runs`,
+guest through. At `/mcp` it offers eleven MCP tools, which agents reach through
+the MCP gateway: `list`, `show`, `create`, `update`, `delete`, `subscribe`, `unsubscribe`, `run`, `runs`,
 `result` and `cancel`. At `/` it serves a catalog of the user's scripts and
 their last runs, with a page for each script at `/<name>/` and for each run
 at `/<name>/runs/<run id>/`, and links to an about screen. On a host it runs
