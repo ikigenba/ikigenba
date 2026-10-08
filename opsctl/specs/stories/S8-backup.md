@@ -350,6 +350,49 @@ Postconditions:
 - `crm`'s database is unaffected: litestream is still replicating it, and a
   file the tarball could not read is not a file litestream reads.
 
+## The host backs up a service whose state has not moved yet
+
+`crm` was installed while a service's `state/` still lived under
+`/opt/<name>/`, and no install has run for it since. Its `state/` is not where
+a backup reads one, and a backup of `/opt/crm/state/` would be a backup of
+the old layout, so the run fails `crm` rather than reading the old path or
+leaving it out without a word. The failure names the fix. As with any other
+service's failure, the run still backs up everything else, and the exit code
+says the report holds a failure. A `cache/` left under `/opt/<name>/` with no
+`state/` beside it does not make a service fail: `cache/` is never backed up.
+
+Command:
+
+```
+$ sudo opsctl backup; echo "exit $?"
+```
+
+Output:
+
+```
+crm: failed: /opt/crm/state has not moved; install crm first
+dashboard: ok (2026-09-12T03:00:04Z.tar.zst, 1.1 MiB)
+exit 1
+```
+
+Exits 1. The lines are on stdout; stderr is empty. `opsctl backup crm` alone
+prints only the `crm` line and exits 1.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, and the host's role can write
+  under that prefix.
+- `/opt/crm/` holds `bin/`, `etc/`, `share/`, and `state/`, and
+  `/var/opt/ikigenba/crm/` does not exist.
+- `dashboard`'s `state/` is under `/var/opt/ikigenba/dashboard/`.
+
+Postconditions:
+
+- `dashboard`'s object was written. No object was written for `crm`, and its
+  earlier backups are untouched.
+- Nothing on the host has changed: nothing under `/opt/crm/` was moved or
+  removed, and `/var/opt/ikigenba/crm/` was not created.
+
 ## An operator backs up a service that is not there
 
 Command:
@@ -720,6 +763,49 @@ Postconditions:
   no object was written for `crm`, and its earlier backups are untouched.
   `crm.db` was shipped in full before the files step ran.
 
+## A host's final backup finds a service whose state has not moved yet
+
+As with a service it cannot read, a `crm` whose `state/` is still under
+`/opt/crm/` fails its own line, the one `opsctl backup` prints for it, and the
+rest of the run proceeds. The units stay stopped, as they do when any service
+fails.
+
+Command:
+
+```
+$ sudo opsctl retire; echo "exit $?"
+```
+
+Output:
+
+```
+services: ok (crm, dashboard stopped)
+litestream: ok (stopped)
+crm: failed: /opt/crm/state has not moved; install crm first
+dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
+exit 1
+```
+
+Exits 1. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, and the host's role can write
+  under that prefix.
+- Two services are installed, their sockets are listening, and their
+  services are active. Neither manifest declares a `[database]`.
+- `/opt/crm/` holds `bin/`, `etc/`, `share/`, and `state/`, and
+  `/var/opt/ikigenba/crm/` does not exist. `dashboard`'s `state/` is under
+  `/var/opt/ikigenba/dashboard/`.
+
+Postconditions:
+
+- Every unit is inactive. `dashboard`'s and the host's objects were written;
+  no object was written for `crm`, and its earlier backups are untouched.
+- Nothing under `/opt/crm/` was moved or removed, and
+  `/var/opt/ikigenba/crm/` was not created.
+
 ## An operator asks what `snapshot` can do
 
 A backup cannot stand a service up somewhere else on its own: its tarball
@@ -886,6 +972,41 @@ Postconditions:
 - `dashboard`'s object was written. Nothing was written under
   `<backup.s3_uri>snapshots/crm/`, and `crm`'s earlier snapshots are untouched.
 - Nothing on the host has changed.
+
+## An operator snapshots a service whose state has not moved yet
+
+A snapshot reads a service's files as `opsctl backup` does, so a `crm` whose
+`state/` is still under `/opt/crm/` fails the same way and with the same line.
+
+Command:
+
+```
+$ sudo opsctl snapshot crm; echo "exit $?"
+```
+
+Output:
+
+```
+crm: failed: /opt/crm/state has not moved; install crm first
+exit 1
+```
+
+Exits 1. The lines are on stdout; stderr is empty. `opsctl snapshot` without
+a service prints this line for `crm` beside the other services' lines, as
+`opsctl backup` does.
+
+Preconditions:
+
+- `/opt/crm/` holds `bin/`, `etc/`, `share/`, and `state/`, and
+  `/var/opt/ikigenba/crm/` does not exist.
+
+Postconditions:
+
+- Nothing was written under `<backup.s3_uri>snapshots/crm/`, and `crm`'s
+  earlier snapshots are untouched.
+- Nothing on the host has changed: no unit was stopped, nothing under
+  `/opt/crm/` was moved or removed, and `/var/opt/ikigenba/crm/` was not
+  created.
 
 ## An operator snapshots a service that is not there
 
