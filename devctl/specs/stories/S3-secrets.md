@@ -2,13 +2,13 @@
 
 An app's secrets are one Parameter Store SecureString per app per space,
 `/<space domain>/<app>`, holding a flat JSON object whose keys are the names
-the app's manifest declares. The developer's machine is the only source
-of the values and devctl is the only writer. The host reads the object through
-its instance role when an app is installed, and writes the values into the
-app's environment file; a value pushed after that reaches the app at its next
-deploy and at no other moment. `<space>` is the space's label or its full
-domain, as everywhere (see `S2-space-lifecycle.md`); the parameter path always
-uses the full domain.
+the app's manifest declares. The developer's machine is the only source of the
+values and devctl is the only writer. The host reads the object through its
+instance role when an app is installed or a release is activated, and writes
+the values into the app's environment file; a value pushed after that reaches
+the app at its next deploy and at no other moment. `<space>` is the space's
+label or its full domain, as everywhere (see `S2-space-lifecycle.md`); the
+parameter path always uses the full domain.
 
 ## A developer asks what `secrets` can do
 

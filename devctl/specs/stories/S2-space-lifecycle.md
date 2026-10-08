@@ -49,7 +49,7 @@ The cloud's tags are the only registry.
 
 Subcommands:
   list                       one line per space
-  create <space> [options]   create the space
+  create <space> [options]   create the space and deploy a release to it
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
@@ -62,6 +62,7 @@ Subcommands:
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
+  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -211,7 +212,7 @@ Postconditions:
 ## A developer creates a space
 
 A developer wants a fresh, complete copy of the platform at a label of their
-choosing, ready for a deploy. Every space is given an Elastic IP, so its
+choosing, running a release. Every space is given an Elastic IP, so its
 address is fixed for the whole of its life: the records are written once,
 here, and every later stop and start leaves them alone. Elastic IPs are an
 account quota, five per region unless the account has asked for more, and
@@ -222,6 +223,16 @@ last line is the domain and the address.
 The `account` step is what devctl established before it touched anything:
 the root and region from the checkout's file, and the account id the profile
 reached, asked of STS. The `domain` step finds the zone named after the root.
+
+Create deploys a release, and without `--release` it is the newest release
+tag in the local repository: of the tags named exactly `r<N>`, `N` a number,
+the one with the highest `N`, so `r10` is newer than `r9`, and a release
+candidate such as `r3-rc1` is never chosen. Nothing is fetched. The tag is
+resolved to its commit and the release is built there, as `devctl build`
+builds it (see `S4-build.md`), before anything is created in the account, so
+a create that cannot build leaves nothing behind. The `build` line names the
+tag it chose and the file it wrote, and the tag is the release's label on the
+host.
 
 The host needs ten configuration keys before `opsctl init` will run, and
 `create` is what sets all ten. Five derive from the root and the zone: the
@@ -238,16 +249,23 @@ supplies it with `--acme-email`. It is required rather than defaulted: a
 wrong address is only discovered when a certificate quietly expires.
 
 The `secrets` step writes the same objects `secrets push` writes, one per app
-in the checkout, and it is the one writer that does not require the space's
-instance to exist, because create is what is about to launch it. The step
-comes before the role and the instance so that a create refused for a
-missing keyring value leaves nothing in the account.
+in the release, the apps whose manifests the built tarball holds, reading
+each value from the developer's keyring as `secrets push` does. It is the one
+writer that does not require the space's instance to exist, because create
+is what is about to launch it. The step comes before the role and the
+instance so that a create refused for a missing keyring value leaves nothing
+in the account.
 
-The opsctl it installs is the newest release opsctl has published. The host
-then stays on that version until someone explicitly moves it: `create` chooses
-the first version, and `space init --opsctl` is the only later devctl command
-that changes it, by fetching that release's installer and running it, just
-as `create` does.
+A new host has no opsctl until the release reaches it. Once the `host` step
+has seen the instance's first boot finish, the tarball is copied to the host
+and unpacked into `/opt/ikigenba/releases/<sha>/`, as `deploy` does (see
+`S5-deploy.md`), and everything create then asks of the host is asked of that
+release's own opsctl, `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`: it
+sets the ten keys, restores the host backup if there is one, runs `init`, and
+last activates the release, with the tag as its label. The host's opsctl is
+from then on the one in the release it runs, and every later deploy brings
+its own; `space init --opsctl`, while it remains, installs a published
+opsctl over it.
 
 Backups are kept when a space is destroyed unless the developer says
 otherwise, so a space may have lived before, and its certificate and store
@@ -257,6 +275,10 @@ certificates for the same names in any seven days, and a space created and
 destroyed that often would reach it without this. This is the first time, so
 there is nothing to bring back and the line says so; the rebuild story below
 shows the other case.
+
+The lines from `preflight` on are opsctl's, copied as it writes them, as a
+deploy's are; they are shown here for illustration, and what they say is
+opsctl's.
 
 Command:
 
@@ -273,15 +295,26 @@ Output:
 ```
 account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-secrets: ok (3 apps)
+build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+secrets: ok (8 apps)
 role: ok (sbx1.ikigenba.dev)
 instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
 address: ok (elastic ip 18.118.7.42 associated)
 records: ok (created sbx1.ikigenba.dev, *.sbx1.ikigenba.dev -> 18.118.7.42, INSYNC)
 host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.3.0 installed, 10 keys set)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
+unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+opsctl: ok (10 keys set)
 restore: ok (no host backup)
 init: ok
+preflight: ok (8 apps)
+label: ok (r2)
+env: ok (8 apps)
+units: ok (8 apps)
+current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+nginx: ok (8 apps)
+restart: ok (8 apps)
+activate: ok (r2 (4b22285))
 sbx1.ikigenba.dev 18.118.7.42
 ```
 
@@ -298,9 +331,13 @@ Preconditions:
 - No instance is tagged `Space=sbx1.ikigenba.dev`, and no role or instance
   profile named `sbx1.ikigenba.dev` exists.
 - The zone holds no `NS` record for `sbx1.ikigenba.dev`.
-- Every app in the checkout has the values its manifest's `secrets` array
+- The local repository holds the tags `r1`, `r2` and `r3-rc1`, and no other
+  tag named `r<N>`; `r2` points at the commit
+  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds as
+  `S4-build.md` says and holds the apps `auth`, `dummy`, `events`, `mcp`,
+  `repos`, `scripts`, `sites` and `telemetry`.
+- Every app in the release has the values its manifest's `secrets` array
   names in the developer's keyring (see `S3-secrets.md`).
-- opsctl has a published release, and the host can reach it over the network.
 - `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the `ikigenba.dev` key pair.
@@ -308,6 +345,9 @@ Preconditions:
 
 Postconditions:
 
+- `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` is in the checkout,
+  as `devctl build r2` writes it; no tag, branch or worktree was created or
+  moved.
 - The role `sbx1.ikigenba.dev` exists with the `ikigenba.dev` permissions
   boundary attached and one inline policy named `space`, which allows the
   host to read parameters under `/sbx1.ikigenba.dev/`, to read, write, and
@@ -324,10 +364,13 @@ Postconditions:
 - The space's records, the Route 53 `A` records `sbx1.ikigenba.dev` and
   `*.sbx1.ikigenba.dev` with TTL 60 in the zone, point at the Elastic IP and
   the change is `INSYNC`.
-- Every app's secrets object is at `/sbx1.ikigenba.dev/<app>` (see
-  `S3-secrets.md`).
-- `opsctl` is installed on the host and on root's PATH, and its configuration
-  store holds exactly the ten keys opsctl declares: `host.name=sbx1.ikigenba.dev`,
+- Every app in the release has its secrets object at
+  `/sbx1.ikigenba.dev/<app>` (see `S3-secrets.md`).
+- `/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/` on the
+  host holds the release as it was built, and no copy of the tarball is left
+  in the host's temporary directory.
+- The configuration store holds exactly the ten keys opsctl declares, set by
+  the release's opsctl: `host.name=sbx1.ikigenba.dev`,
   `dns.provider=route53`, `dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78`,
   `aws.region=us-east-2`, `backup.s3_uri=s3://ikigenba.dev/sbx1/`,
   `acme.email` from `--acme-email`, `backup.host_files_seconds=86400`,
@@ -335,11 +378,145 @@ Postconditions:
   and `backup.service_wal_seconds=300`. `host.apex` is not set.
 - `sbx1/host/` was listed and found empty, so `opsctl host restore` was not
   run and the ten keys were set once.
-- `sudo opsctl init` has exited 0 on the host, so the host holds its
-  certificate, its generated nginx configuration, its litestream configuration
-  and unit, its two backup timers, each enabled whose period is non-zero, and
-  its certificate renewal timer, enabled.
-- No apps are deployed; that is `deploy`.
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl init`
+  has exited 0 on the host, so the host holds its certificate, its generated
+  nginx configuration, its litestream configuration and unit, its two backup
+  timers, each enabled whose period is non-zero, and its certificate renewal
+  timer, enabled.
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r2`
+  has then exited 0, so the space runs the release labelled `r2`, every app
+  in it answers at `<app>.sbx1.ikigenba.dev`, and `opsctl` on root's PATH is
+  the release's. What activate did on the host is opsctl's. The space has no
+  previous release, so `rollback` is refused until the next deploy.
+
+## A developer creates a space running a release they name
+
+`--release` names the release to deploy instead of the newest `r<N>`, in any
+form `deploy` takes: a tag, such as a release candidate `r3-rc1`, which is
+then the label, or a sha, full or short, which gives no label. It is resolved
+in the local repository before any AWS call, with nothing fetched.
+
+Command:
+
+```
+$ devctl space create sbx1 --acme-email ops@ikigenba.dev --release 9e1c7a3
+```
+
+Options (create):
+
+- `--release <sha|tag>` names the release the space runs; without it, the
+  newest `r<N>` tag.
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (dist/9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz)
+secrets: ok (8 apps)
+role: ok (sbx1.ikigenba.dev)
+instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
+address: ok (elastic ip 18.118.7.42 associated)
+records: ok (created sbx1.ikigenba.dev, *.sbx1.ikigenba.dev -> 18.118.7.42, INSYNC)
+host: ok (status checks passed, cloud-init done)
+copy: ok (9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz -> 18.118.7.42)
+unpack: ok (/opt/ikigenba/releases/9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
+opsctl: ok (10 keys set)
+restore: ok (no host backup)
+init: ok
+preflight: ok (8 apps)
+env: ok (8 apps)
+units: ok (8 apps)
+current: ok (9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
+nginx: ok (8 apps)
+restart: ok (8 apps)
+activate: ok (9e1c7a3)
+sbx1.ikigenba.dev 18.118.7.42
+```
+
+Exits 0. The lines are on stdout; stderr is empty. The `build` line names a
+tag only when a tag chose the release. With `--release r3-rc1` it reads
+`build: ok (r3-rc1, dist/<sha>.tar.xz)` and the release is labelled
+`r3-rc1`. The lines from `preflight` on are opsctl's, as above.
+
+Preconditions:
+
+- As for a create without `--release`, with `9e1c7a3` resolving to
+  `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c` in the local repository, where
+  the suite builds. Whether any `r<N>` tag exists does not matter.
+
+Postconditions:
+
+- As for a create without `--release`, for the release
+  `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c`, which was activated with no
+  label: `opsctl activate 9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c`.
+
+## A developer creates a space with a release that is not a commit
+
+The release is resolved before anything else is looked up, and refused as
+`deploy` refuses it (see `S5-deploy.md`).
+
+Command:
+
+```
+$ devctl space create sbx1 --acme-email ops@ikigenba.dev --release main
+```
+
+Output:
+
+```
+devctl: 'main' is not a commit
+```
+
+Exits 2. The line is on stderr; stdout is empty. A tag the local repository
+does not hold, `HEAD`, and a sha no commit has fail the same way.
+
+Preconditions:
+
+- The working directory is inside the checkout; `main` is a branch, not a
+  tag.
+
+Postconditions:
+
+- Nothing has changed. Nothing was built and no AWS call was made.
+
+## A developer creates a space with a release that does not build
+
+The build comes before anything is created, so a failed build leaves the
+account as it was. It fails as `devctl build` fails at that commit (see
+`S4-build.md`).
+
+Command:
+
+```
+$ devctl space create sbx1 --acme-email ops@ikigenba.dev
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+devctl: build dashboard: exit status 1
+
+> # github.com/ikigenba/ikigenba/dashboard/cmd/dashboard
+> cmd/dashboard/main.go:41:2: undefined: render
+```
+
+Exits 1. The `ok` lines are on stdout; the rest is on stderr. A refusal the
+build makes before compiling gives its own line from `S4-build.md` and exits
+2.
+
+Preconditions:
+
+- As for a create that succeeds, except that at the commit the newest `r<N>`
+  names, `dashboard/` is an app that does not compile for `linux/amd64`.
+
+Postconditions:
+
+- Nothing has changed in the account: no secrets object, role, instance,
+  address or record was made. Nothing under `dist/` has changed, and no
+  worktree is left behind.
 
 ## A developer rebuilds a space
 
@@ -550,6 +727,10 @@ Postconditions:
 
 ## A developer creates a space with a secret missing from the keyring
 
+The names come from the manifests in the built release, so the keyring is
+read once the build has succeeded, and every value is found before any
+object is written.
+
 Command:
 
 ```
@@ -559,21 +740,27 @@ $ devctl space create new --acme-email ops@ikigenba.dev
 Output:
 
 ```
-devctl: crm: no value for 'CRM_API_KEY' in the keyring or the environment
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+devctl: auth: no value for 'GOOGLE_CLIENT_ID' in the keyring or the environment
 ```
 
-Exits 2. The line is on stderr; stdout is empty.
+Exits 2. The `ok` lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- `crm/etc/manifest.toml` lists `CRM_API_KEY` in `secrets` and neither the
-  keyring nor the environment has it.
+- The release create chose builds, and its `auth/etc/manifest.toml` lists
+  `GOOGLE_CLIENT_ID` in `secrets`; neither the keyring nor the environment
+  has it.
 
 Postconditions:
 
-- Nothing has changed. No secrets object was written for any app.
+- Nothing has changed in the account. No secrets object was written for any
+  app. `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` is in the
+  checkout.
 
 ## A developer creates a space before Terraform has been applied
 
@@ -659,7 +846,9 @@ see 'devctl space --help' for usage
 ```
 
 Exits 2. The text is on stderr; stdout is empty. A `--acme-email` with no
-value gives `devctl: option '--acme-email' requires a value`, also exit 2.
+value gives `devctl: option '--acme-email' requires a value`, and a
+`--release` with no value `devctl: option '--release' requires a value`,
+each also exit 2.
 
 Preconditions:
 
@@ -684,7 +873,8 @@ Output:
 ```
 account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-secrets: ok (3 apps)
+build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+secrets: ok (8 apps)
 role: ok (sbx1.ikigenba.dev)
 devctl: ec2 RunInstances: InsufficientInstanceCapacity
 ```
@@ -702,6 +892,67 @@ Postconditions:
   No instance was launched.
 - `space destroy sbx1` removes what exists. `space create sbx1` again is
   refused because the role exists.
+
+## A developer's create cannot activate its release
+
+Everything before `activate` held, and the release's opsctl failed to
+activate it. As in a deploy, opsctl's stdout has already been copied up to
+the step that failed, and its stderr follows devctl's error line, each line
+quoted with `> `. The lines from `preflight` on are opsctl's, shown for
+illustration. No last line naming the domain and address is written.
+
+Command:
+
+```
+$ devctl space create sbx1 --acme-email ops@ikigenba.dev
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+secrets: ok (8 apps)
+role: ok (sbx1.ikigenba.dev)
+instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
+address: ok (elastic ip 18.118.7.42 associated)
+records: ok (created sbx1.ikigenba.dev, *.sbx1.ikigenba.dev -> 18.118.7.42, INSYNC)
+host: ok (status checks passed, cloud-init done)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
+unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+opsctl: ok (10 keys set)
+restore: ok (no host backup)
+init: ok
+preflight: ok (8 apps)
+label: ok (r2)
+env: ok (8 apps)
+units: ok (8 apps)
+current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+nginx: ok (8 apps)
+restart: failed: events: service failed to start
+devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r2: exit status 1
+
+> opsctl: activate failed
+> 
+> > ikigenba-events.service: Main process exited, code=exited, status=1/FAILURE
+```
+
+Exits 1. The lines up to the failed step are on stdout; the rest is on
+stderr.
+
+Preconditions:
+
+- As for a create that succeeds, and `events` in the release exits as soon
+  as it starts.
+
+Postconditions:
+
+- Every step that printed `ok` holds: the space exists, its host is set up
+  and holds the release, and the space is whatever activate left it; `space
+  status` reports it.
+- `deploy` of a release that starts puts the space right; `space destroy`
+  removes it.
 
 ## A developer's SSO session has expired
 
