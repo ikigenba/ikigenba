@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/ikigenba/ikigenba/sandbox/internal/seam"
 )
@@ -34,6 +35,10 @@ func (i invocation) runUp() (code int) {
 	if err != nil {
 		return i.report(err)
 	}
+	commit, code := i.upCommit(t.worktree)
+	if code != 0 {
+		return code
+	}
 	p, entry := t.paths, t.entry
 	stage := p.stage(entry.Name)
 	_, dataErr := os.Stat(p.data(entry.Name))
@@ -59,7 +64,7 @@ func (i invocation) runUp() (code int) {
 	}
 	files := map[string][]byte{}
 	for _, app := range apps {
-		files[filepath.Join("env", app.Name+".env")] = renderAppEnv(p.data(entry.Name), entry.Name, entry.Port, app)
+		files[filepath.Join("env", app.Name+".env")] = renderAppEnv(p.data(entry.Name), entry.Name, commit, entry.Port, app)
 		files[filepath.Join("units", socketUnit(entry.Name, app.Name))] = renderAppSocket(entry, app.Name, i.deps.EUID)
 		files[filepath.Join("units", serviceUnit(entry.Name, app.Name))] = renderAppService(p, entry, app)
 	}
@@ -210,6 +215,53 @@ func (i invocation) runUp() (code int) {
 		return i.runnerError("write stdout", err)
 	}
 	return 0
+}
+
+func (i invocation) upCommit(worktree string) (string, int) {
+	const headAction = "git rev-parse HEAD"
+	head, err := i.deps.Exec(i.ctx, seam.Cmd{Path: "git", Args: []string{"rev-parse", "HEAD"}, Dir: worktree})
+	if err != nil {
+		return "", i.runnerError(headAction, err)
+	}
+	if head.ExitCode != 0 {
+		return "", i.externalFailure(headAction, head, "")
+	}
+	commit := strings.TrimSuffix(string(head.Stdout), "\n")
+	valid := len(commit) == 40 || len(commit) == 64
+	for _, c := range []byte(commit) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			valid = false
+			break
+		}
+	}
+	if !valid {
+		if _, err = fmt.Fprintln(i.stderr, "sandbox: git rev-parse HEAD: printed no commit name"); err != nil {
+			return "", 1
+		}
+		if len(head.Output) > 0 {
+			if _, err = fmt.Fprintln(i.stderr); err != nil {
+				return "", 1
+			}
+			for _, line := range strings.Split(strings.TrimSuffix(string(head.Output), "\n"), "\n") {
+				if _, err = fmt.Fprintf(i.stderr, "> %s\n", line); err != nil {
+					return "", 1
+				}
+			}
+		}
+		return "", 1
+	}
+	const statusAction = "git status --porcelain"
+	status, err := i.deps.Exec(i.ctx, seam.Cmd{Path: "git", Args: []string{"--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"}, Dir: worktree})
+	if err != nil {
+		return "", i.runnerError(statusAction, err)
+	}
+	if status.ExitCode != 0 {
+		return "", i.externalFailure(statusAction, status, "")
+	}
+	if len(status.Stdout) != 0 {
+		commit += "-dirty"
+	}
+	return commit, 0
 }
 
 // Allocation checks existing entries without rewriting an unchanged registry.

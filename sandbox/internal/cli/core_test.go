@@ -88,7 +88,7 @@ func newCoreFixture(t testing.TB) *coreFixture {
 	}, Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
 		switch cmd.Path {
 		case "git":
-			return seam.Result{Stdout: []byte(f.worktree + "\n")}, nil
+			return fixtureGitResult(cmd, f.worktree), nil
 		case "systemctl":
 			return seam.Result{Stdout: []byte("inactive\n")}, nil
 		case "go":

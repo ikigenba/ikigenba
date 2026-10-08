@@ -23,6 +23,7 @@ type upFixture struct {
 	root, worktree, state, config, data, units string
 	calls                                      []seam.Cmd
 	active                                     bool
+	commit, treeStatus                         string
 	exec                                       func(seam.Cmd) (seam.Result, error)
 	environment                                map[string]string
 }
@@ -108,7 +109,13 @@ func (f *upFixture) answer(c seam.Cmd) (seam.Result, error) {
 	f.t.Helper()
 	switch c.Path {
 	case "git":
-		return seam.Result{Stdout: []byte(f.worktree + "\n")}, nil
+		if reflect.DeepEqual(c.Args, []string{"rev-parse", "HEAD"}) && f.commit != "" {
+			return seam.Result{Stdout: []byte(f.commit)}, nil
+		}
+		if len(c.Args) > 0 && c.Args[0] == "--no-optional-locks" {
+			return seam.Result{Stdout: []byte(f.treeStatus)}, nil
+		}
+		return fixtureGitResult(c, f.worktree), nil
 	case "go":
 		f.put(c.Args[2], "new:"+filepath.Base(c.Dir), 0755)
 	case "systemctl":
@@ -205,8 +212,8 @@ func upSnapshot(t *testing.T, root string) map[string]string {
 func TestUpSuccessfulDeployment(t *testing.T) {
 	// R-RGOI-M8C3 R-RHWF-002S R-XXC9-Z9PP R-XYK6-D1GE R-Y0ZZ-4KXS
 	// R-Y4NO-9W5V R-U16K-JJPF R-RQFP-OE9N R-RRNM-260C R-ZFIX-V9WF
-	// R-YRTR-JJ92 R-SCTY-Y264 R-YU9K-B2QG R-YVHG-OUH5 R-Z2SU-ZGXB R-IJUW-KM7L
-	// R-Z58N-R0EP R-ZINJ-YHKC R-YGUO-3LKT R-S1ET-4BXW R-RP7T-AMIY
+	// R-YRTR-JJ92 R-R5RJ-O65J R-YU9K-B2QG R-YVHG-OUH5 R-Z2SU-ZGXB R-IJUW-KM7L
+	// R-Z58N-R0EP R-R6ZG-1XW8 R-YGUO-3LKT R-S1ET-4BXW R-RP7T-AMIY
 	f := newUpFixture(t, "dummy", "auth")
 	f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app=\"auth\"\nsecrets=[\"GOOGLE_CLIENT_SECRET\"]\n[env]\nWORKSPACE_DOMAIN=\"example.test\"\n", 0644)
 	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_SECRET": "desktop-secret"}
@@ -243,7 +250,7 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 				if app == "auth" {
 					want += "GOOGLE_CLIENT_SECRET=\"desktop-secret\"\n"
 				}
-				want += "IKIGENBA_CALLBACK_URL=\"http://localhost:7400\"\nIKIGENBA_PUBLIC_URL=\"http://" + app + ".wip.localhost:7400\"\nIKIGENBA_SANDBOX=\"wip\"\nIKIGENBA_SERVICES=\"" + strings.ReplaceAll(filepath.Join(f.data, "services.json"), "$", "\\$") + "\"\n"
+				want += "IKIGENBA_CALLBACK_URL=\"http://localhost:7400\"\nIKIGENBA_COMMIT=\"" + fixtureCommit + "\"\nIKIGENBA_PUBLIC_URL=\"http://" + app + ".wip.localhost:7400\"\nIKIGENBA_SANDBOX=\"wip\"\nIKIGENBA_SERVICES=\"" + strings.ReplaceAll(filepath.Join(f.data, "services.json"), "$", "\\$") + "\"\n"
 				if app == "auth" {
 					want += "WORKSPACE_DOMAIN=\"example.test\"\n"
 				}
@@ -274,7 +281,7 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 	if code != 0 || diagnostic != "" || out != "auth   http://auth.wip.localhost:7400\ndummy  http://dummy.wip.localhost:7400\n" {
 		t.Fatalf("%d %q %q", code, out, diagnostic)
 	}
-	want := []seam.Cmd{{Path: "git", Args: []string{"rev-parse", "--show-toplevel"}, Dir: f.worktree}}
+	want := []seam.Cmd{{Path: "git", Args: []string{"rev-parse", "--show-toplevel"}, Dir: f.worktree}, {Path: "git", Args: []string{"rev-parse", "HEAD"}, Dir: f.worktree}, {Path: "git", Args: []string{"--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"}, Dir: f.worktree}}
 	for _, app := range []string{"auth", "dummy"} {
 		want = append(want, seam.Cmd{Path: "go", Args: []string{"build", "-o", filepath.Join(f.data, "stage", "bin", app), "./cmd/" + app}, Dir: filepath.Join(f.worktree, app)})
 	}
@@ -313,7 +320,7 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 }
 
 func TestUpWithoutAuthAndReload(t *testing.T) {
-	// R-RJ4B-DRTH R-Z6GK-4S5E R-XZS2-QT73 R-YZ55-U5P8 R-Z0D2-7XFX R-RYZ0-CSGI
+	// R-9VP6-LI8K R-Z6GK-4S5E R-XZS2-QT73 R-YZ55-U5P8 R-Z0D2-7XFX R-RYZ0-CSGI
 	f := newUpFixture(t, "dummy")
 	code, out, diagnostic := f.run("up")
 	if code != 0 || diagnostic != "" || out != "dummy  http://dummy.wip.localhost:7400\n" {
@@ -474,7 +481,7 @@ func TestUpBuildFailureIsolation(t *testing.T) {
 				if code != 1 || out != "" || diagnostic != want {
 					t.Fatalf("%d %q %q", code, out, diagnostic)
 				}
-				if len(f.calls) != 3 || builds != 2 {
+				if len(f.calls) != 5 || builds != 2 {
 					t.Fatalf("runs after failure: %+v", f.calls)
 				}
 				upMissing(t, filepath.Join(f.data, "stage"))
@@ -592,7 +599,7 @@ func TestUpConfigurationRefusalIsolation(t *testing.T) {
 				if code != 1 || out != "" || diagnostic != want {
 					t.Fatalf("%d %q %q", code, out, diagnostic)
 				}
-				if len(f.calls) != 4 || f.calls[3].Path != "nginx" {
+				if len(f.calls) != 6 || f.calls[5].Path != "nginx" {
 					t.Fatalf("runs %+v", f.calls)
 				}
 				upMissing(t, filepath.Join(f.data, "stage"))
