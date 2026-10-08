@@ -4,11 +4,10 @@ A space's backups belong to that space. `opsctl` on the host writes them to
 the space's own prefix in the bucket, `s3://ikigenba.dev/<label>/`, and reads
 them back from there, and nothing else ever reads or writes the backups.
 Nor is all else under the prefix a backup: opsctl also writes snapshots
-there, which `golden capture` and `seed` read, `deploy` uploads files there,
-and `seed` copies snapshots in (see `S8-seed.md`).
+there, which `golden capture` and `seed` read, and `seed` copies snapshots
+in (see `S8-seed.md`).
 `devctl restore` drives that from the developer's machine: it runs `opsctl
-restore` on the space over ssh and reports its exit, exactly as `deploy` runs
-`opsctl install`. No object moves, and nothing travels over the ssh
+restore` on the space over ssh and reports its exit. No object moves, and nothing travels over the ssh
 connection. `<space>` is the space's label or its full domain, as everywhere
 (see `S2-space-lifecycle.md`).
 
@@ -57,8 +56,8 @@ Postconditions:
 
 ## A developer puts a space's app back
 
-The one line of output is opsctl's exit, the same shape `deploy` uses for the
-step it runs on the host. What opsctl printed is not relayed: it succeeded.
+The one line of output is opsctl's exit. What opsctl printed is not relayed:
+it succeeded.
 
 Command:
 

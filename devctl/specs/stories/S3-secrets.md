@@ -4,7 +4,7 @@ An app's secrets are one Parameter Store SecureString per app per space,
 `/<space domain>/<app>`, holding a flat JSON object whose keys are the names
 the app's manifest declares. The developer's machine is the only source of the
 values and devctl is the only writer. The host reads the object through its
-instance role when an app is installed or a release is activated, and writes
+instance role when a release is activated, and writes
 the values into the app's environment file; a value pushed after that reaches
 the app at its next deploy and at no other moment. `<space>` is the space's
 label or its full domain, as everywhere (see `S2-space-lifecycle.md`); the
@@ -231,28 +231,40 @@ Postconditions:
 A value has to change: it leaked, it expired, the provider issued a new one.
 The developer puts the new value in their keyring, or the environment, and
 pushes the one app. That changes the parameter and nothing on the host: the
-host read the parameter when the app was installed and wrote what it found
-into `etc/env`, and the running app has that. What carries the new value to
-the host is a deploy of the file the space already runs. `install` reads the
-parameter again, rewrites `etc/env`, and restarts the unit, so the old value
-is gone from the host from that restart on. `space restart` alone would not
-do it: a restart re-reads the environment file, which only an install writes.
+host read the parameter when the release was activated and wrote what it
+found into the app's environment, and the running app has that. What carries
+the new value to the host is a deploy of the release the space already runs.
+Activating it again reads every app's parameter afresh, rewrites each app's
+environment, and restarts the apps, so the old value is gone from the host
+from that restart on. `space restart` alone would not do it: a restart
+re-reads the environment the last activate wrote. The deploy's lines are
+those of any deploy of a release the host already holds (see
+`S5-deploy.md`); the lines from `preflight` on are opsctl's, shown here for
+illustration.
 
 Command:
 
 ```
-$ devctl secrets push sbx1 crm
-$ devctl deploy sbx1 crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
+$ devctl secrets push sbx1 auth
+$ devctl deploy sbx1 r1
 ```
 
 Output:
 
 ```
-crm: ok (3 keys)
-file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
-secrets: ok (3 keys)
-upload: ok (-> ikigenba.dev/sbx1/deploy/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
-install: ok (opsctl installed crm)
+auth: ok (2 keys)
+build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+secrets: ok (8 apps, 2 keys)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
+unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a already present, kept)
+preflight: ok (8 apps)
+label: ok (r1)
+env: ok (8 apps)
+units: ok (8 apps)
+current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+nginx: ok (8 apps)
+restart: ok (8 apps)
+activate: ok (r1 (4b22285))
 ```
 
 Each command exits 0. The lines are on stdout; stderr is empty.
@@ -261,22 +273,21 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and `crm`, from the file
-  below, is deployed on it and not disabled.
-- The keyring or the environment holds the new value for `CRM_API_KEY`, and
-  values for every other name in `crm`'s `secrets` array.
-- `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` exists, written
-  by `build`.
+- The space exists, its instance is `running`, and it runs the release `r1`,
+  the commit `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, whose `auth` manifest
+  lists `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `secrets` and whose
+  other apps list none; `auth` is not disabled.
+- The keyring or the environment holds the new value for
+  `GOOGLE_CLIENT_SECRET`, and a value for `GOOGLE_CLIENT_ID`.
 
 Postconditions:
 
-- `/sbx1.ikigenba.dev/crm` holds the new value under `CRM_API_KEY`; the
-  other keys were written over with themselves.
-- `/opt/crm/etc/env` on the host holds the new value, and
-  `ikigenba-crm.service` has been restarted under it. The old value is nowhere
-  on the host.
-- The host runs the same `crm` binary as before: the deploy changed a value,
-  not the file.
+- `/sbx1.ikigenba.dev/auth` holds the new value under `GOOGLE_CLIENT_SECRET`;
+  the other key was written over with itself.
+- `auth`'s environment on the host holds the new value, and `auth` has been
+  restarted under it. The old value is nowhere on the host.
+- The host runs the same release as before: the deploy changed a value, not
+  the release.
 - Between the two commands the parameter and the host disagreed, and the app
   ran on the old value. A rotation that cannot tolerate that window deploys
   first and revokes the old value at the provider afterwards.

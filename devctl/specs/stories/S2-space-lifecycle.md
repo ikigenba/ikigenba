@@ -6,9 +6,8 @@ under the root domain: `sbx1.ikigenba.dev` is a space, and `crm.sbx1.ikigenba.de
 is an app on it. There is no nesting, no grouping, and no space at the root
 itself; the root is an A record `apex` points at one app on one space (see
 `S7-apex.md`). `space` is the command that lists, creates, destroys, stops,
-and starts spaces, sets one's host up again, asks one what it is running,
-restarts, disables, or enables one of its apps, and reads that app's
-journal. Nothing is kept on the developer's machine; the cloud is the
+and starts spaces, asks one what it is running, restarts, disables, or
+enables one of its apps, and reads that app's journal. Nothing is kept on the developer's machine; the cloud is the
 registry.
 
 Every command here takes `<space>`, which is the space's label or its full
@@ -29,7 +28,7 @@ most one.
 ## A developer asks what `space` can do
 
 The top-level usage gains the line `  space     list, create, destroy, stop,
-start, initialise, and inspect spaces` under `Commands:`.
+start, and inspect spaces` under `Commands:`.
 
 Command:
 
@@ -42,10 +41,10 @@ Output:
 ```
 Usage: devctl space <subcommand> [arguments]
 
-List, create, destroy, stop, start, initialise, and inspect spaces, and
-restart, disable, enable, or read the journal of one app on one. A space is
-one label under the root domain; <space> is that label or the full domain.
-The cloud's tags are the only registry.
+List, create, destroy, stop, start, and inspect spaces, and restart, disable,
+enable, or read the journal of one app on one. A space is one label under the
+root domain; <space> is that label or the full domain. The cloud's tags are
+the only registry.
 
 Subcommands:
   list                       one line per space
@@ -53,7 +52,6 @@ Subcommands:
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
-  init <space> [options]     set the host's keys again and run opsctl init
   status <space>             one line per app: commit, label, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
   disable <space> <app>      stop one app and keep it from starting until enabled
@@ -68,10 +66,6 @@ Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
   --delete-secrets        delete the space's secrets; they are kept otherwise
   --delete-backups        delete the space's backups; they are kept otherwise
-
-Options (init):
-  --opsctl <version>      move the host to this opsctl release first
-  --acme-email <address>  change where the CA sends the space's expiry warnings
 
 Options (logs):
   --follow                keep printing as the app writes, until interrupted
@@ -243,7 +237,7 @@ which create sets to devctl's defaults: the host's own files and every
 service's files daily (`86400`), a declared database snapshotted daily
 (`86400`), and its committed changes shipped every five minutes (`300`). A
 space that wants other periods sets them on the host with `opsctl config
-set` and runs `space init`, which leaves them alone. The tenth, the address
+set`. The tenth, the address
 the CA sends expiry warnings to, derives from nothing, so the developer
 supplies it with `--acme-email`. It is required rather than defaulted: a
 wrong address is only discovered when a certificate quietly expires.
@@ -266,8 +260,7 @@ each app's data back when a host backup was found (see the rebuild story), and
 last activates the release, with the tag as its label. The host's opsctl is
 from then on the one in the release it runs: activate points
 `/usr/local/bin/opsctl` at it, and every later activation points it at the new
-release's own. `space init --opsctl` is never used on a host that runs a
-release.
+release's own.
 
 Backups are kept when a space is destroyed unless the developer says
 otherwise, so a space may have lived before, and its certificate and store
@@ -1024,284 +1017,6 @@ Postconditions:
 
 - Nothing has changed.
 
-## A developer sets a space's host up again
-
-`create`'s `opsctl` and `init` steps, run again on a space that exists.
-Everything the host generates is generated from its configuration store, and
-`opsctl init` is what reads the store and makes the host match it; so when
-something the store came from has changed, the way back to a host that
-matches is to set the keys again and run `init` again. Terraform changed the
-region; an operator ran `opsctl host restore` and the host now holds a store
-that `init` has not acted on; an operator changed a backup period on the host
-and wants its timer to follow; a manifest was restored that `init` has not
-read. Nothing here needs ssh by hand.
-
-The five keys `create` derives are derived the same way, from the root, the
-zone, and the space, and set again; a value that has not changed is written
-over with itself. The other five derive from nothing: `acme.email` is left as
-it is unless `--acme-email` says otherwise, and the four backup periods are
-left as they are, because `create`'s defaults were only defaults and an
-operator may have changed them since. Any key an operator set by hand is
-untouched, `host.apex` included. The `opsctl` line says which version the
-host is on and whether this command put it there. Then `init` runs and its
-report is not relayed: it succeeded.
-
-Command:
-
-```
-$ devctl space init sbx1
-```
-
-Output:
-
-```
-account: ok (ikigenba.dev, us-east-2, 295229566359)
-domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
-opsctl: ok (v0.3.0 kept, 5 keys set)
-init: ok
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- The working directory is inside the checkout, and a live SSO session for
-  the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and `opsctl` is installed on
-  it.
-- The developer's ssh configuration can reach the instance as `ec2-user`.
-
-Postconditions:
-
-- The host's configuration store holds the five derived keys at the values
-  the root, the zone, and the space give now: `host.name`, `dns.provider`,
-  `dns.zones`, `aws.region`, and `backup.s3_uri`. `acme.email`, the four
-  backup periods, `host.apex`, and every other key are as they were.
-- `/usr/local/bin/opsctl` is the version it was; no installer was fetched or
-  run.
-- `sudo opsctl init` has exited 0 on the host, so the host holds its
-  certificate, its generated nginx configuration, its litestream configuration
-  and unit, its two backup timers, each enabled whose period is non-zero, and
-  its certificate renewal timer, enabled, all regenerated from what the store
-  and `/opt` hold now.
-- No app was deployed, restarted, or stopped, and no record or secret was
-  touched. A change to a period reaches its timer; nothing else on the space
-  is different unless the store was.
-
-## A developer moves a space to a newer opsctl
-
-`--opsctl` names a release, and that release's installer is fetched onto the
-host and run with that version as its operand before the keys are set and
-`init` runs. It is for a host that does not yet run a release of the suite;
-on one that does, opsctl comes with each deploy and `--opsctl` is not used.
-Installing the binary changes nothing on the host by itself: what a new
-version changes is `init`'s to do, which is why the two are one command.
-
-Command:
-
-```
-$ devctl space init staging --opsctl v0.3.0
-```
-
-Output:
-
-```
-account: ok (ikigenba.dev, us-east-2, 295229566359)
-domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-instance: ok (i-0f1e2d3c4b5a69788 running, 18.117.42.9)
-opsctl: ok (v0.3.0 installed, 5 keys set)
-init: ok
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- The working directory is inside the checkout, and a live SSO session for
-  the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and `opsctl` is installed on
-  it.
-- The release `opsctl/v0.3.0` exists and the host can reach it.
-- The developer's ssh configuration can reach the instance as `ec2-user`.
-
-Postconditions:
-
-- `/usr/local/bin/opsctl` is `v0.3.0`.
-- Everything the plain re-initialisation's postconditions say. `init` was
-  the new version's, so whatever `v0.3.0` generates differently is on the
-  host.
-- Naming the version that is already installed writes the same bytes and
-  reports `v0.3.0 installed` all the same: the installer ran, and the line
-  says what it did. A version with no release fails at the `opsctl` step,
-  before any key is set, with the installer's diagnostic relayed the way a
-  failed `init` is below.
-
-## A developer changes where the CA writes
-
-The one key `create` could not derive is the one `space init` cannot either,
-so it is the one option that changes it.
-
-Command:
-
-```
-$ devctl space init sbx1 --acme-email alerts@ikigenba.dev
-```
-
-Output:
-
-```
-account: ok (ikigenba.dev, us-east-2, 295229566359)
-domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
-opsctl: ok (v0.3.0 kept, 6 keys set)
-init: ok
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- The working directory is inside the checkout, and a live SSO session for
-  the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and `opsctl` is installed on
-  it.
-- The developer's ssh configuration can reach the instance as `ec2-user`.
-
-Postconditions:
-
-- Everything the plain re-initialisation's postconditions say, and
-  `acme.email` is `alerts@ikigenba.dev`.
-- The certificate the host holds is the one it held: `init`'s certificate
-  step renews when renewal is due, and a changed address is not that. The CA
-  learns the new address at the next renewal.
-
-## A developer's `space init` finds the host not ready
-
-`opsctl init` checks everything before it runs anything, and a failed check is
-on its stdout with exit 2. devctl relays the whole report after its own error
-line, each line quoted with `> `, so the developer sees exactly what the host
-said about itself. The keys were set before `init` ran and stay set; the
-sequence did not run.
-
-Command:
-
-```
-$ devctl space init sbx1
-```
-
-Output:
-
-```
-account: ok (ikigenba.dev, us-east-2, 295229566359)
-domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
-opsctl: ok (v0.3.0 kept, 5 keys set)
-devctl: init: ssh ec2-user@18.118.7.42 sudo opsctl init: exit status 2
-
-> nginx: ok (/usr/sbin/nginx)
-> certbot: failed: not found on PATH
-> systemctl: ok (/usr/bin/systemctl)
-> litestream: ok (/usr/bin/litestream)
-> git: ok (/usr/bin/git)
-> dns.provider: ok (route53)
-> dns.zones: ok (ikigenba.dev)
-> host.name: ok (sbx1.ikigenba.dev)
-> timeouts: ok (drain 5s, stop 10s)
-> zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
-> host sbx1.ikigenba.dev: ok (zone ikigenba.dev)
-> wildcard sbx1.ikigenba.dev: ok (18.118.7.42)
-```
-
-Exits 1. The `ok` lines are on stdout; the rest is on stderr.
-
-Preconditions:
-
-- The working directory is inside the checkout, and a live SSO session for
-  the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and `opsctl` is installed on
-  it.
-- The developer's ssh configuration can reach the instance as `ec2-user`.
-- `certbot` has been removed from the host.
-
-Postconditions:
-
-- The store holds the five keys as set. Nothing `init` generates was
-  written: the host's certificate, nginx configuration, litestream
-  configuration, and timers are as they were.
-- Running `space init` again once the host is fixed finishes the job.
-
-## A developer initialises a stopped space, or one that does not exist
-
-`init` needs a host to talk to. A stopped space is refused the way `status`
-refuses it, and a space that does not exist the way every subcommand refuses
-one.
-
-Command:
-
-```
-$ devctl space init sbx2
-```
-
-Output:
-
-```
-devctl: 'sbx2.ikigenba.dev' is stopped
-```
-
-Command:
-
-```
-$ devctl space init gone
-```
-
-Output:
-
-```
-devctl: no space at 'gone.ikigenba.dev'
-```
-
-Each exits 1. The line is on stderr; stdout is empty.
-
-Preconditions:
-
-- The working directory is inside the checkout, and a live SSO session for
-  the profile `ikigenba.dev`.
-- The instance tagged `Space=sbx2.ikigenba.dev` is `stopped`; no instance
-  is tagged `Space=gone.ikigenba.dev`.
-
-Postconditions:
-
-- Nothing has changed. No ssh connection was opened.
-
-## A developer runs `space init` without a space
-
-Command:
-
-```
-$ devctl space init
-```
-
-Output:
-
-```
-devctl: space init needs <space>
-
-see 'devctl space --help' for usage
-```
-
-Exits 2. The text is on stderr; stdout is empty. An `--opsctl` or
-`--acme-email` with no value gives `devctl: option '--opsctl' requires a
-value` or `devctl: option '--acme-email' requires a value`, also exit 2.
-
-Preconditions:
-
-- `bin/devctl` exists.
-
-Postconditions:
-
-- Nothing has changed. No AWS call was made.
-
 ## A developer destroys a space
 
 A developer wants everything a space owned gone, so nothing lingers and
@@ -1978,13 +1693,13 @@ Postconditions:
 
 ## A developer restarts an app on a space
 
-Over ssh, `opsctl restart` restarts the app's service and reports it the way
-install's last line does. devctl relays that report as opsctl wrote it, byte
+Over ssh, `opsctl restart` restarts the app's service and reports it.
+devctl relays that report as opsctl wrote it, byte
 for byte, the way `space status` relays opsctl's answer: opsctl's own line
 says what state the app is in, which a fixed line of devctl's could not. A
 restart changes nothing on the host's disk. In particular it does not
-carry a pushed secret to the app: that is a deploy of the same file, and
-`S3-secrets.md` says why.
+carry a pushed secret to the app: that is a deploy of the release the space
+runs, and `S3-secrets.md` says why.
 
 Command:
 
@@ -2108,8 +1823,7 @@ relays opsctl's report byte for byte, as `space restart` does: the `stop`
 line names the units it stopped and the `nginx` line every name the app
 answers at.
 
-The app stays disabled through `deploy`, `restore`, `space init`, and
-`space restart`; only `space enable` brings it back. `remove` takes it off the
+The app stays disabled through `deploy`, `restore`, and `space restart`; only `space enable` brings it back. `remove` takes it off the
 space altogether, and a later deploy installs it enabled.
 
 Command:
