@@ -4,9 +4,9 @@ This document is written for an agent, and picks up where `bootstrap.md`
 leaves off: a name resolves to a Linux host you can reach over ssh as a user
 with sudo, with the wildcard under that name resolving to the same host, and
 with credentials in place for DNS and backups. Read it whole before doing
-anything. It takes that host, with a release unpacked on it, through seeding the config
-store, an optional host restore, `init`, optional service restores, and
-`activate`.
+anything. It takes that host, with a release unpacked on it, through seeding
+the config store, an optional host restore, `init`, optional service restores,
+and `activate`.
 
 The order is fixed: `config set` for each key, `host restore` if the old
 host's certificate and config are wanted back, `init`, `restore <app>` for
