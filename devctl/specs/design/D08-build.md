@@ -1,11 +1,16 @@
 # D08-build
 
-Build produces one linux/amd64 artifact from a clean commit named by that app’s
-own version tag. The binary’s reported version and emitted manifest must match
-the tag and committed manifest. Branch ancestry imposes no restriction. Artifact
-publishing preserves an earlier file on failure. A committed manifest that
-still names a `port` is refused when the app is resolved, before anything is
-compiled (D04 R-NM90-RHFN), so no file opsctl would refuse is ever written.
+Build produces one linux/amd64 artifact from a clean commit, named by `HEAD`'s
+full commit sha: `<app>/dist/<app>-<sha>.tar.xz`. It reads no tag, and none is
+needed or made, so whatever tags point at `HEAD`, or none, the file is the
+same; two apps built at one commit carry the same sha. Branch ancestry imposes
+no restriction and nothing about the branch is recorded. The binary's emitted
+manifest must match the committed manifest; the manifest is the only thing
+build asks the binary for, and it never runs the binary's `--version`.
+Artifact publishing preserves an earlier file on failure. A committed manifest
+that still names a `port` is refused when the app is resolved, before
+anything is compiled (D04 R-NM90-RHFN), so no file opsctl would refuse is ever
+written.
 
 ## REQUIREMENTS
 
@@ -33,49 +38,42 @@ compiled (D04 R-NM90-RHFN), so no file opsctl would refuse is ever written.
 
 - R-6UPK-MHDN: `build` MUST compare that process's standard output with the contents of the file at `checkout.ManifestFile` under the app's `Dir` and MUST return a `*StaleManifestError` for the app's `Name` when the two are not byte-identical, verified at least by reproducing the single stderr line `devctl: crm: etc/manifest.toml does not match what the binary emits; run 'crm manifest > crm/etc/manifest.toml' and commit` with empty stdout, exit 2, and no `seam.Cmd` whose `Path` is `tar` passed to `deps.Exec`.
 
-- R-04SM-T2LN: On a successful build `build` MUST write to `stdout` exactly `File(<app>, <tag>)` followed by one newline and nothing else, write nothing to stderr, and exit 0, verified at least by reproducing the single line `crm/dist/crm-v0.1.0.tar.xz` for the app `crm` at the tag `v0.1.0`; and `build` MUST write nothing to `stdout` in every outcome in which it returns a non-nil error.
+- R-5FGI-4IMM: On a successful build `build` MUST write to `stdout` exactly `File(<app>, <sha>)`, where `<sha>` is what `(*Checkout).Head` returned, followed by one newline and nothing else, write nothing to stderr, and exit 0, verified at least by reproducing the single line `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` for the app `crm` when the fake `git rev-parse HEAD` prints `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`; and `build` MUST write nothing to `stdout` in every outcome in which it returns a non-nil error.
 
 - R-70T2-JC34: When `deps.Exec` returns a non-nil error for the `go` `Cmd`, the app binary's `Cmd`, or the `tar` `Cmd`, `build` MUST return an error that `errors.As` does not match to a `*ProcessError` and whose message contains that `seam.Cmd`'s `Path`, so that `cli.Run` reports it as a single stderr line and exit 1.
 
 - R-EM3N-CKUL: Package `internal/build` MUST export a `ProcessError` struct whose fields are exactly `Label string`, `Status int`, and `Stderr string`, with the methods `Error() string`, returning `<Label>: exit status <Status>`, `Detail() string`, returning `seam.QuoteOutput(Stderr)`, and `ExitCode() int`, returning 1.
 
-- R-HGAQ-5Q0J: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work without reading the root file and before any external operation:
+- R-5GOE-IADB: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work without reading the root file and before any external operation:
 
   ```
   Usage: devctl build <app>
 
-  Build <app> for linux/amd64 and write <app>/dist/<app>-<version>.tar.xz, the
-  file deploy copies to a host and opsctl installs. HEAD must be a commit that
-  the app's version tag (<app>/v<semver>) points at, with no uncommitted
-  changes.
+  Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
+  deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
+  the working tree must have no uncommitted changes.
   ```
 
-- R-EOJG-44BZ: Build MUST validate the app name, resolve the checkout and app, require a clean working tree, and resolve HEAD and its app-specific version tags before compilation; a refusal MUST leave dist untouched.
-
-- R-EPRC-HW2O: When no tag at HEAD matches `appref.VersionForTag` for the requested app, build MUST return a `UsageError` with message `no tag <app>/v<semver> points at HEAD (<head>)` and empty help, yielding empty stdout and exit 2.
-
-- R-EQZ8-VNTD: When multiple matching app tags name HEAD, build MUST select the lexicographically first complete tag and use only its version suffix in `File` and stdout; unrelated tags MUST not affect selection.
-
-- R-RAEX-IPN4: Build MUST accept matching release, prerelease and metadata tags on any branch or detached HEAD and MUST NOT test reachability from `origin/main`.
+- R-5J47-9TUP: Build MUST validate the app name, resolve the checkout and app, require a clean working tree, and resolve HEAD with `(*Checkout).Head` before compilation; a refusal MUST leave dist untouched.
 
 - R-EUMY-0Z1G: Build MUST reject an app name for which `appref.ValidName` is false before compiling or writing dist, with a `UsageError` whose message is `'<app>' is not a usable app name` and whose help is empty, yielding exit 2.
 
 - R-J7ER-X23Q: Build MUST compile the selected app exactly once with Go for linux/amd64 with cgo disabled, into temporary output under that app’s dist directory, by passing to `deps.Exec` exactly one `seam.Cmd` whose `Path` is `go`, whose `Dir` is the app’s `Dir` so its own module is used, and whose `Args` name the package path `./cmd/<app>`, where `<app>` is the app’s `Name`, as the package to build; it MUST not inject a version at build time. A compiler nonzero exit MUST become ProcessError labeled `build <app>` with its exit status and stderr.
 
-- R-EX2Q-SIIU: After compilation and before publishing an archive, build MUST execute that same staged binary with `--version` through `Deps.Exec`, remove only trailing newlines from stdout, and compare it byte for byte with the selected version suffix; a mismatch MUST return `UsageError` with message `<app>: tagged <app>/<version> but the binary reports <reported>` and empty help, with no dist artifact changed.
-
-- R-EYAN-6A9J: Failure of the staged binary’s `--version` command MUST use `ProcessError` labeled `<app> --version` for a nonzero exit and an error naming its path for failure to start, with no artifact published.
+- R-5KC3-NLLE: The only `seam.Cmd` values whose `Path` is `git` that `build` passes to `deps.Exec` MUST be those of `checkout.Open`, `(*Checkout).Clean`, and `(*Checkout).Head`, so that no tag or branch is read, created, or moved and the file is named the same whether `HEAD` is tagged or not and on a branch or detached; verified at least by a successful `devctl build crm` with a recording fake `deps.Exec` that writes `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` for a `HEAD` of `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`.
 
 - R-EZIJ-K208: Build MUST create an xz-compressed tar artifact whose relative root members are exactly `bin/<app>`, the emitted `etc/manifest.toml`, the other regular files under the app’s `etc/`, and optional `share/` files with their original relative paths and bytes; no archive member path MUST contain a version directory. Compression failures MUST use `ProcessError` and preserve an earlier artifact unchanged.
 
-- R-F0QF-XTQX: Build MUST replace the final artifact only after all compilation, version, manifest and archive operations succeed; any failure MUST preserve earlier files and remove temporary output. The static linux/amd64 executable MUST remain executable inside the archive.
+- R-5LK0-1DC3: Build MUST replace the final artifact only after all compilation, manifest and archive operations succeed; any failure MUST preserve earlier files and remove temporary output. The static linux/amd64 executable MUST remain executable inside the archive.
 
-- R-F1YC-BLHM: Package `internal/build` MUST export `DistDir(app string) string` and `File(app, version string) string`.
+- R-5MRW-F52S: Package `internal/build` MUST export `DistDir(app string) string` and `File(app, sha string) string`.
 
-- R-F368-PD8B: `build.DistDir` MUST return `<app>/dist`; `build.File` MUST return `<app>/dist/<app>-<version>.tar.xz`, preserving the supplied version verbatim, including prerelease and metadata suffixes.
+- R-5NZS-SWTH: `build.DistDir` MUST return `<app>/dist`; `build.File` MUST return `<app>/dist/<app>-<sha>.tar.xz`, preserving the supplied sha verbatim, verified at least by `File("crm", "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a")` returning `crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`.
 
 - R-F4E5-34Z0: After successful compilation, build MUST execute the staged executable with the single argument `manifest` through Deps.Exec and use that stdout as the emitted manifest; a nonzero exit MUST yield ProcessError labeled `<app> manifest` carrying the exit status and stderr.
 
-- R-F5M1-GWPP: On successful build the artifact MUST contain the same executable used for version and manifest validation, its emitted manifest, and unchanged bytes for all other regular files under the app’s etc directory and optional share directory.
+- R-5P7P-6OK6: On successful build the artifact MUST contain the same executable used for manifest validation, its emitted manifest, and unchanged bytes for all other regular files under the app's etc directory and optional share directory.
 
 - R-F6TX-UOGE: Build MUST write only under the selected app’s dist directory, creating it if needed; on return it MUST leave only the completed artifact and paths that existed before invocation, with temporary paths removed on success and failure.
+
+- R-5QFL-KGAV: `build` MUST pass to `deps.Exec` exactly one `seam.Cmd` whose `Path` is the staged binary, the one whose `Args` are exactly `manifest`, and MUST NOT run the binary with `--version` or any other argument, verified at least by a successful `devctl build crm` with a recording fake `deps.Exec` in which the staged binary's `--version` would exit non-zero.
