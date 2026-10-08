@@ -15,7 +15,8 @@ import (
 )
 
 func TestInstallChecksIconBeforeDiscoveryWithoutMutation(t *testing.T) {
-	// R-GXME-WYVD
+	// R-ZQQL-JSH6
+	//
 	tests := []struct {
 		name    string
 		entries []installTarEntry
@@ -62,7 +63,8 @@ func TestInstallChecksIconBeforeDiscoveryWithoutMutation(t *testing.T) {
 }
 
 func TestInstallPreservesPassingIconAndSetsServicesEnvironment(t *testing.T) {
-	// R-GXME-WYVD R-UQEV-85OK
+	// R-ZUEA-P3P9
+	//
 	icon := append([]byte{0xef, 0xbb, 0xbf}, []byte("<svg><!-- unchanged bytes --></svg>\n")...)
 	for _, data := range [][]byte{nil, icon, []byte("<svg>" + strings.Repeat(" ", 65536-len("<svg></svg>")) + "</svg>")} {
 		fixture := newCompletedInstallFixture(t, t.TempDir(), false)
@@ -77,12 +79,12 @@ func TestInstallPreservesPassingIconAndSetsServicesEnvironment(t *testing.T) {
 		if data != nil {
 			assertFile(t, filepath.Join(fixture.root, "opt", "notes", "share", "icon.svg"), string(data))
 		}
-		assertFile(t, filepath.Join(fixture.root, "opt", "notes", "etc", "env"), "DRAIN_SECONDS=5\n"+apps.ServicesEnv+"="+apps.ServicesPath+"\n")
+		assertFile(t, filepath.Join(fixture.root, "etc", "opt", "ikigenba", "notes", "env"), "DRAIN_SECONDS=5\n"+apps.ServicesEnv+"="+apps.ServicesPath+"\n")
 	}
 }
 
 func TestInstallChecksCompleteArtifactBeforeIcon(t *testing.T) {
-	// R-GXME-WYVD R-GWEI-J74O
+	//
 	for _, entries := range [][]installTarEntry{
 		{regularEntry("bin/notes", nil, 0o755)},
 		{regularEntry("etc/manifest.toml", []byte("app = [\n"), 0o644), regularEntry("bin/notes", nil, 0o755)},
@@ -99,7 +101,8 @@ func TestInstallChecksCompleteArtifactBeforeIcon(t *testing.T) {
 }
 
 func TestInstallPreservesEnsureAccountFailure(t *testing.T) {
-	// R-FW7G-TWP2
+	// R-Z8G3-T8CR
+	//
 	root := t.TempDir()
 	cause := errors.New("account transport unavailable")
 	reports, commands, err := runInstallArchive(t, root, validInstallTar(t, "app = \"notes\"\n"), nil, func(command host.Command) (host.Result, error) {

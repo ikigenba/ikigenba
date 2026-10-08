@@ -98,8 +98,8 @@ func snapshotArchive(ctx context.Context, env host.Env, prefix string, service a
 	}
 	var archive bytes.Buffer
 	writer := tar.NewWriter(&archive)
-	exclusions := append(databaseExclusions(service.Manifest), "etc/env")
-	for _, tree := range []string{"etc", "state"} {
+	exclusions := databaseExclusions(service.Manifest)
+	for _, tree := range []string{"state"} {
 		if err := archiveTreeExcluding(ctx, filesystem, writer, &resolver, service, tree, exclusions); err != nil {
 			_ = writer.Close()
 			return nil, snapshotReadError(env.Root, err)

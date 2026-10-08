@@ -250,7 +250,7 @@ func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
 }
 
 func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
-	// R-XRPS-FLUE R-FZV5-Z7X5
+	// R-XRPS-FLUE R-ZWU3-GN6N
 	for _, test := range []struct {
 		name       string
 		app        string
@@ -491,7 +491,7 @@ func TestUninstallRejectsConfiguredApexWithoutParentBeforeEffects(t *testing.T) 
 }
 
 func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
-	// R-FYN9-LG6G R-VRRP-V53F
+	// R-ZVM7-2VFY R-VRRP-V53F
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -535,7 +535,7 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 }
 
 func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
-	// R-FYN9-LG6G R-VRRP-V53F R-FZV5-Z7X5
+	// R-ZVM7-2VFY R-VRRP-V53F R-ZWU3-GN6N
 	tests := []struct {
 		stage     string
 		wantSteps []string
@@ -598,7 +598,7 @@ func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
 }
 
 func TestUninstallReportWriteFailuresAreNotRetried(t *testing.T) {
-	// R-FYN9-LG6G R-VRRP-V53F R-FZV5-Z7X5
+	// R-ZVM7-2VFY R-VRRP-V53F R-ZWU3-GN6N
 	for _, stage := range []string{"stop", "unit", "files", "nginx", "services", "litestream"} {
 		t.Run(stage, func(t *testing.T) {
 			root := uninstallCommandRoot(t, true)
@@ -814,7 +814,7 @@ func (writer *failStepWriter) Write(data []byte) (int, error) {
 }
 
 func TestUninstallDataRefusalReportsOnlyStopAndData(t *testing.T) {
-	// R-G2AY-QREJ R-FYN9-LG6G
+	// R-ZZ9W-86O1 R-ZVM7-2VFY
 	root := uninstallCommandRoot(t, true)
 	writeUninstallFile(t, root, "opt/notes/state/old", "legacy state")
 	writeUninstallFile(t, root, "opt/notes/cache/old", "legacy cache")
@@ -834,5 +834,28 @@ func TestUninstallDataRefusalReportsOnlyStopAndData(t *testing.T) {
 	}
 	if after := snapshotUninstallPaths(t, root, "opt/notes", "var/opt/ikigenba/notes", "etc/systemd/system", "etc/nginx", "etc/litestream.yml", "var/lib/ikigenba/services.json"); !reflect.DeepEqual(after, before) {
 		t.Fatalf("data refusal changed host files: %#v", after)
+	}
+}
+
+func TestUninstallCommandReportsRemovedExternalEnvironment(t *testing.T) {
+	// R-01PO-ZQ5F R-ZVM7-2VFY
+	root := uninstallCommandRoot(t, false)
+	writeUninstallFile(t, root, "etc/opt/ikigenba/notes/env", "SECRET=value\n")
+	writeUninstallFile(t, root, "etc/opt/ikigenba/tasks/env", "OTHER=value\n")
+	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		return uninstallCommandResult(command), nil
+	}})
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	want := "files: ok (removed /opt/notes, /etc/opt/ikigenba/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state)\n"
+	if strings.Count(stdout, want) != 1 {
+		t.Fatalf("files report=%q", stdout)
+	}
+	if _, err := os.Lstat(filepath.Join(root, apps.EnvRoot, "notes")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("environment remains: %v", err)
+	}
+	if data := readUninstallFile(t, root, "etc/opt/ikigenba/tasks/env"); data != "OTHER=value\n" {
+		t.Fatalf("other environment changed: %q", data)
 	}
 }

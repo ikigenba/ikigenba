@@ -335,11 +335,11 @@ func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
 }
 
 func TestInitHealthyPreflight(t *testing.T) {
-	// R-X4JP-5YR7 R-V0E8-TY5K
+	// R-X4JP-5YR7
 	// R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
-	// R-ZIB1-SI40 R-341K-A2GT
-	// R-YZO5-RZU6 R-5E43-77RM
+	// R-ZIB1-SI40 R-341K-A2GT R-F5T1-59ZN
+	// R-5E43-77RM
 	// R-YYIY-T743
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
@@ -528,7 +528,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 }
 
 func TestInitStopsAtFirstSetupFailure(t *testing.T) {
-	// R-LXGW-8J1R R-YZO5-RZU6
+	// R-LXGW-8J1R
 	wantStdout := "nginx: ok (/bin/nginx)\n" +
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
@@ -1190,7 +1190,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-341K-A2GT R-YZO5-RZU6 R-V0E8-TY5K
+	// R-341K-A2GT R-YV17-LR74
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -1206,14 +1206,14 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 		t.Fatal(err)
 	}
 	appDir := filepath.Join(deps.Root, "opt", "notes")
-	for _, dir := range []string{filepath.Join(appDir, "bin"), filepath.Join(appDir, "etc"), filepath.Join(deps.Root, "etc", "systemd", "system")} {
+	for _, dir := range []string{filepath.Join(appDir, "bin"), filepath.Join(appDir, "etc"), filepath.Join(deps.Root, "etc", "systemd", "system"), filepath.Join(deps.Root, "etc", "opt", "ikigenba", "notes")} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for path, data := range map[string]string{
 		filepath.Join(appDir, "bin", "notes"):                                          "installed binary\n",
-		filepath.Join(appDir, "etc", "env"):                                            "OTHER=keep\nDRAIN_SECONDS=5\n",
+		filepath.Join(deps.Root, "etc", "opt", "ikigenba", "notes", "env"):             "OTHER=keep\nDRAIN_SECONDS=5\n",
 		filepath.Join(deps.Root, "etc", "systemd", "system", "ikigenba-notes.service"): "old service\n",
 	} {
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
@@ -1291,7 +1291,7 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	if !reflect.DeepEqual(afterFirst, afterSecond) {
 		t.Errorf("second setup changed generated state:\nfirst  %#v\nsecond %#v", afterFirst, afterSecond)
 	}
-	appEnv, err := os.ReadFile(filepath.Join(deps.Root, "opt", "notes", "etc", "env"))
+	appEnv, err := os.ReadFile(filepath.Join(deps.Root, "etc", "opt", "ikigenba", "notes", "env"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1404,13 +1404,16 @@ func treeState(t *testing.T, root string) map[string]treeEntry {
 	return state
 }
 
-// R-3J60-CID3
+// R-YTTB-7ZGF
 func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) {
 	for _, stateKind := range []string{"directory", "file", "dangling symlink"} {
 		t.Run(stateKind, func(t *testing.T) {
 			deps := readyStateGuardDeps(t)
 			for _, name := range []string{"zeta", "alpha"} {
 				makeStateGuardApp(t, deps.Root, name, true)
+				if stateKind == "file" {
+					writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/opt/ikigenba", name, "env"), "current preserved\n")
+				}
 				state := filepath.Join(deps.Root, "opt", name, "state")
 				switch stateKind {
 				case "directory":
@@ -1464,7 +1467,7 @@ func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) 
 	}
 }
 
-// R-3J60-CID3
+// R-YTTB-7ZGF
 func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	for _, kind := range []string{"cache only", "no binary", "directory binary", "invalid name", "not discovered"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1483,6 +1486,7 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 			dataKind := "state"
 			if kind == "cache only" {
 				dataKind = "cache"
+				writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/opt/ikigenba", name, "env"), "preserved\n")
 			}
 			if err := os.Mkdir(filepath.Join(appDir, dataKind), 0o700); err != nil {
 				t.Fatal(err)
@@ -1508,7 +1512,7 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	}
 }
 
-// R-3J60-CID3
+// R-YTTB-7ZGF
 func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	if err := os.WriteFile(filepath.Join(deps.Root, "opt"), []byte("not a directory"), 0o600); err != nil {
@@ -1558,5 +1562,129 @@ func makeStateGuardApp(t *testing.T, root, name string, binary bool) {
 		if err := os.WriteFile(filepath.Join(root, "opt", name, "bin", name), []byte("binary"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// R-YTTB-7ZGF
+func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(t *testing.T) {
+	for _, earlierState := range []bool{false, true} {
+		t.Run(map[bool]string{false: "environment first", true: "state wins"}[earlierState], func(t *testing.T) {
+			deps := readyStateGuardDeps(t)
+			for _, name := range []string{"zeta", "alpha"} {
+				makeStateGuardApp(t, deps.Root, name, true)
+				writeCLIInstallFile(t, filepath.Join(deps.Root, "opt", name, "etc", "env"), "SECRET=legacy\n")
+			}
+			if err := os.Mkdir(filepath.Join(deps.Root, "opt/zeta/state"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if earlierState {
+				if err := os.Mkdir(filepath.Join(deps.Root, "opt/alpha/state"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			makeStateGuardApp(t, deps.Root, "aardvark", false)
+			writeCLIInstallFile(t, filepath.Join(deps.Root, "opt/aardvark/etc/manifest.toml"), "invalid = [\n")
+			for _, relative := range []string{"etc/nginx/conf.d/ikigenba.conf", "var/lib/ikigenba/services.json", "etc/litestream.yml", "etc/systemd/system/ikigenba-backup-host.timer", "etc/systemd/system/ikigenba-alpha.service"} {
+				writeCLIInstallFile(t, filepath.Join(deps.Root, relative), "preserved\n")
+			}
+			var afterSlices map[string]treeEntry
+			var commands []string
+			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				commands = append(commands, command.Name+" "+strings.Join(command.Args, " "))
+				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
+					afterSlices = treeState(t, deps.Root)
+				}
+				return host.Result{}, nil
+			}
+			stdout, stderr, code := invoke([]string{"init"}, deps)
+			unmoved := "etc/env"
+			if earlierState {
+				unmoved = "state"
+			}
+			want := "opsctl: alpha: /opt/alpha/" + unmoved + " has not moved; install alpha first\n"
+			if code != 1 || stderr != want || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") || strings.Count(stdout, "\n") != 12 {
+				t.Fatalf("init = %d, %q, %q; want %q", code, stdout, stderr, want)
+			}
+			if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
+				t.Fatal("missing environment refusal changed state after slices")
+			}
+			if len(commands) != 3 || !strings.HasPrefix(commands[0], "certbot certonly ") || commands[1] != "systemctl daemon-reload" || commands[2] != "systemctl restart nginx" {
+				t.Fatalf("setup commands = %v", commands)
+			}
+		})
+	}
+}
+
+// R-YTTB-7ZGF
+func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
+	for _, kind := range []string{"regular", "dangling symlink", "directory"} {
+		t.Run(kind, func(t *testing.T) {
+			deps := readyStateGuardDeps(t)
+			makeStateGuardApp(t, deps.Root, "notes", true)
+			writeCLIInstallFile(t, filepath.Join(deps.Root, "opt/notes/etc/env"), "legacy preserved\n")
+			environment := filepath.Join(deps.Root, "etc/opt/ikigenba/notes/env")
+			if err := os.MkdirAll(filepath.Dir(environment), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "regular":
+				writeCLIInstallFile(t, environment, "current preserved\n")
+			case "dangling symlink":
+				if err := os.Symlink("missing", environment); err != nil {
+					t.Fatal(err)
+				}
+			case "directory":
+				if err := os.Mkdir(environment, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var afterSlices map[string]treeEntry
+			reachedNginx := false
+			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
+					afterSlices = treeState(t, deps.Root)
+				}
+				if command.Name == "nginx" {
+					reachedNginx = true
+					return host.Result{}, errors.New("stop at nginx")
+				}
+				return host.Result{}, nil
+			}
+			_, stderr, code := invoke([]string{"init"}, deps)
+			if code != 1 || !reachedNginx || strings.Contains(stderr, "has not moved") {
+				t.Fatalf("init = %d, %q; nginx reached %v", code, stderr, reachedNginx)
+			}
+			// nginx writes its config before invoking its syntax check; the guard itself leaves both env entries alone.
+			after := treeState(t, deps.Root)
+			for _, relative := range []string{"opt/notes/etc/env", "etc/opt/ikigenba/notes/env"} {
+				if !reflect.DeepEqual(afterSlices[relative], after[relative]) {
+					t.Fatalf("guard changed %s", relative)
+				}
+			}
+		})
+	}
+}
+
+// R-YTTB-7ZGF
+func TestInitEnvironmentGuardPropagatesFilesystemFailureAfterSlices(t *testing.T) {
+	deps := readyStateGuardDeps(t)
+	makeStateGuardApp(t, deps.Root, "notes", true)
+	writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/opt"), "not a directory\n")
+	var afterSlices map[string]treeEntry
+	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
+			afterSlices = treeState(t, deps.Root)
+		}
+		if command.Name == "nginx" {
+			t.Fatal("nginx called after environment filesystem failure")
+		}
+		return host.Result{}, nil
+	}
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 1 || !strings.HasPrefix(stderr, "opsctl: ") || !strings.Contains(stderr, "etc/opt/ikigenba/notes/env") || !strings.Contains(stderr, "not a directory") || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") {
+		t.Fatalf("init = %d, %q, %q", code, stdout, stderr)
+	}
+	if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
+		t.Fatal("filesystem failure changed state after slices")
 	}
 }

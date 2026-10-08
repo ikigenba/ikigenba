@@ -632,7 +632,7 @@ func TestNginxManifestRejectionsUseExactStandaloneDiagnostic(t *testing.T) {
 	}
 }
 
-// R-3J60-CID3
+// R-YTTB-7ZGF
 func TestStandaloneNginxAcceptsUnmovedInstalledState(t *testing.T) {
 	for _, subcommand := range []string{"show", "apply"} {
 		t.Run(subcommand, func(t *testing.T) {

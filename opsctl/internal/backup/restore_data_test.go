@@ -16,13 +16,14 @@ import (
 )
 
 func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
-	// R-DDQQ-Z0P6
+	// R-21VX-S9W1
 	for _, kind := range []string{"directory", "file", "dangling symlink"} {
 		for _, snapshot := range []bool{false, true} {
 			for _, dataExists := range []bool{false, true} {
 				t.Run(kind+map[bool]string{false: " backup", true: " snapshot"}[snapshot]+map[bool]string{false: " no data", true: " data"}[dataExists], func(t *testing.T) {
 					root := t.TempDir()
-					store := configuredFileStore(t, root)
+					restoreInstalled(t, root, false)
+					store := restoreConfiguredStore(t, root)
 					if err := store.Set("host.name", "host.example.test"); err != nil {
 						t.Fatal(err)
 					}
@@ -61,7 +62,7 @@ func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
 					if !errors.As(err, &failure) || failure.Stage != "source" || len(failure.Stopped) != 0 || len(report.Steps) != 1 || report.Steps[0].Name != "source" || report.Steps[0].Detail != "" || report.Steps[0].Err == nil || report.Steps[0].Err.Error() != want {
 						t.Fatalf("Restore = %+v, %v", report, err)
 					}
-					if !reflect.DeepEqual(executor.commands, []string{"zstd --quiet --decompress --stdout"}) || len(client.parameters) != 0 || len(client.got) != 1 || !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
+					if len(executor.commands) != 0 || len(client.parameters) != 0 || len(client.got) != 0 || len(client.opened) != 0 || !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
 						t.Fatalf("legacy refusal changed state: commands %v, cloud %+v", executor.commands, client)
 					}
 				})
@@ -71,11 +72,12 @@ func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
 }
 
 func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T) {
-	// R-S1AR-UPD9 R-S2IO-8H3Y
+	// R-FU70-SOTJ R-FWMT-K8AX
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "new parents", true: "existing parents"}[existing], func(t *testing.T) {
 			root := t.TempDir()
-			store := configuredFileStore(t, root)
+			restoreInstalled(t, root, false)
+			store := restoreConfiguredStore(t, root)
 			if existing {
 				for _, name := range []string{"var", "var/opt", "var/opt/ikigenba", "var/opt/ikigenba/notes"} {
 					if err := os.Mkdir(filepath.Join(root, name), 0700); err != nil {
@@ -91,13 +93,13 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if report.Steps[2].Detail != "/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files" {
+			if report.Steps[3].Detail != "/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 1 files" {
 				t.Fatalf("files %+v", report)
 			}
 			if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/value")); got != "restored" {
 				t.Fatal(got)
 			}
-			for name, want := range map[string]os.FileMode{"var/opt": 0755, "var/opt/ikigenba": 0755, "var/opt/ikigenba/notes": 0750, "opt/notes": 0755} {
+			for name, want := range map[string]os.FileMode{"var/opt": 0755, "var/opt/ikigenba": 0755, "var/opt/ikigenba/notes": 0750} {
 				if existing && strings.HasPrefix(name, "var/") {
 					want = 0700
 				}
@@ -108,7 +110,7 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 			}
 			chowns := []string{}
 			for _, command := range executor.commands {
-				if strings.HasPrefix(command, "chown ") {
+				if strings.HasPrefix(command, "chown ikigenba:ikigenba ") {
 					chowns = append(chowns, command)
 				}
 			}
@@ -123,7 +125,7 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 				if !reflect.DeepEqual(chowns, []string{"chown ikigenba:ikigenba " + filepath.Join(root, "var/opt/ikigenba/notes")}) {
 					t.Fatal(chowns)
 				}
-				for dir, want := range map[string]string{"opt/notes": "etc", "var/opt/ikigenba/notes": "state"} {
+				for dir, want := range map[string]string{"var/opt/ikigenba/notes": "state"} {
 					entries, err := os.ReadDir(filepath.Join(root, dir))
 					if err != nil || len(entries) != 1 || entries[0].Name() != want {
 						t.Fatalf("%s = %v %v", dir, entries, err)
@@ -141,14 +143,15 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 }
 
 func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
-	// R-S2IO-8H3Y
+	// R-FWMT-K8AX
 	root := t.TempDir()
-	store := configuredFileStore(t, root)
+	restoreInstalled(t, root, false)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old", 0600)
 	body := hostRestoreArchive(t, restoreMember{name: "etc/new", data: []byte("new")}, restoreMember{name: "state/value", data: []byte("new")})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "chown ikigenba:ikigenba " + filepath.Join(root, "var/opt/ikigenba/notes"), failErr: errors.New("ownership unavailable")}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { t.Fatal("callback called"); return nil })
-	if err == nil || len(report.Steps) != 3 || report.Steps[2].Name != "files" || report.Steps[2].Err == nil || report.Steps[2].Detail != "" {
+	if err == nil || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 		t.Fatalf("Restore = %+v %v", report, err)
 	}
 	if got := string(readHostRestoreFile(t, root, "opt/notes/etc/old")); got != "old" {
@@ -160,16 +163,17 @@ func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
 }
 
 func TestRestoreNewDataAccountFailureHasOwnershipStage(t *testing.T) {
-	// R-S2IO-8H3Y R-KALQ-MZPK
+	// R-FWMT-K8AX R-G8TT-DXPV
 	root := t.TempDir()
-	store := configuredFileStore(t, root)
+	restoreInstalled(t, root, false)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "unchanged", 0600)
 	body := hostRestoreArchive(t, restoreMember{name: "etc/new", data: []byte("new")}, restoreMember{name: "state/value", data: []byte("new")})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "id --user ikigenba", failErr: errors.New("account unavailable")}
 	before := fileTreeSnapshot(t, root)
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { t.Fatal("callback called"); return nil })
 	var failure *backup.RestoreError
-	if !errors.As(err, &failure) || failure.Stage != "ownership" || len(report.Steps) != 3 || report.Steps[2].Name != "files" || report.Steps[2].Err == nil || report.Steps[2].Detail != "" {
+	if !errors.As(err, &failure) || failure.Stage != "ownership" || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 		t.Fatalf("Restore = %+v %v", report, err)
 	}
 	if !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
@@ -178,10 +182,10 @@ func TestRestoreNewDataAccountFailureHasOwnershipStage(t *testing.T) {
 }
 
 func TestRestoreLegacyInspectionCannotFollowAncestorsOutsideRoot(t *testing.T) {
-	// R-DDQQ-Z0P6 R-GU6L-Z0L7
+	// R-21VX-S9W1 R-GU6L-Z0L7
 	root := t.TempDir()
 	outside := t.TempDir()
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, outside, "notes/state/private", "outside", 0600)
 	if err := os.Symlink(outside, filepath.Join(root, "opt")); err != nil {
 		t.Fatal(err)
@@ -194,7 +198,7 @@ func TestRestoreLegacyInspectionCannotFollowAncestorsOutsideRoot(t *testing.T) {
 	if !errors.As(err, &failure) || failure.Stage != "source" || len(failure.Stopped) != 0 || len(report.Steps) != 1 || report.Steps[0].Err == nil || strings.Contains(err.Error(), "has not moved") {
 		t.Fatalf("Restore traversed outside root = %+v %v", report, err)
 	}
-	if !reflect.DeepEqual(executor.commands, []string{"zstd --quiet --decompress --stdout"}) || !reflect.DeepEqual(before, fileTreeSnapshot(t, outside)) {
+	if len(executor.commands) != 0 || !reflect.DeepEqual(before, fileTreeSnapshot(t, outside)) {
 		t.Fatalf("effects outside root or after source: %v", executor.commands)
 	}
 }

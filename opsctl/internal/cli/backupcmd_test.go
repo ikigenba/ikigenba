@@ -19,14 +19,16 @@ import (
 
 const wantBackupUsage = `Usage: opsctl backup [SERVICE]
 
-Copy every service's etc/ and state/ to the prefix in backup.s3_uri, under the
-service's own name, or just SERVICE when one is named. A service's etc/ is
-/opt/SERVICE/etc/ and its state/ is /var/opt/ikigenba/SERVICE/state/.
+Copy every service's state/, /var/opt/ikigenba/SERVICE/state/, to the prefix
+in backup.s3_uri, under the service's own name, or just SERVICE when one is
+named.
 
-Never copied: cache/, anything opsctl generates, and -- for a service that
+Never copied: /opt/SERVICE/, which a deploy brings; cache/; anything opsctl
+generates, the service's environment file among them; and -- for a service that
 declares a [database] -- the database file, its -wal and -shm, and its
 litestream metadata directory. Those are replicated continuously by
-litestream.service. The host's own /etc/ is 'opsctl host backup'.
+litestream.service. The host's own /etc/ikigenba/ and /etc/letsencrypt/ are
+'opsctl host backup'.
 
 A service declares its database with a [database] table in etc/manifest.toml
 naming its engine and its path. 'opsctl init' writes the timer that runs this
@@ -204,7 +206,7 @@ func TestBackupGrammarRejectsOptionsAndExcessOperandsBeforeHostAccess(t *testing
 }
 
 func TestBackupHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-XF2K-DSO2
+	// R-F9GQ-AL7Q
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "not-a-directory")

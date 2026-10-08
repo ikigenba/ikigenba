@@ -144,19 +144,21 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 }
 
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
-	// R-XOTR-FYLM R-HUTO-NMJ7 R-LZ82-QJF7
+	// R-FKFT-QIVZ R-HUTO-NMJ7 R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
 	writeFile(t, root, "etc/letsencrypt/stale", "remove", 0o600)
 	writeFile(t, root, "opt/app/state/data", "untouched service", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/app/state/data", "untouched new data", 0o600)
+	writeFile(t, root, "etc/opt/ikigenba/app/env", "untouched secret", 0o600)
 	writeFile(t, root, "etc/nginx/nginx.conf", "untouched nginx", 0o600)
 	writeFile(t, root, "etc/systemd/system/ikigenba-app.service", "untouched unit", 0o600)
 	writeFile(t, root, "var/lib/ikigenba/services.json", "generated launcher", 0o640)
 	writeFile(t, root, "var/lib/ikigenba/sentinel", "untouched sibling", 0o600)
 	servicesBefore := fileTreeSnapshot(t, filepath.Join(root, "var/lib/ikigenba"))
 	untouched := map[string]string{
+		"etc/opt/ikigenba/app/env":                "untouched secret",
 		"opt/app/state/data":                      "untouched service",
 		"var/opt/ikigenba/app/state/data":         "untouched new data",
 		"etc/nginx/nginx.conf":                    "untouched nginx",
@@ -175,7 +177,9 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	)
 	uri := "s3://bucket/project/host/2026-09-16T12:00:00Z.tar.zst"
 	client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
+	forbidden := newFileAccessWatch(t, filepath.Join(root, "opt"), filepath.Join(root, "etc/opt"), filepath.Join(root, "var/opt"))
 	result, err := backup.HostRestore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store)
+	forbidden.assertQuiet(t)
 	if err != nil || !result.SourceReady || !result.FilesRestored || result.Files != 3 || result.FailedStep != "" {
 		t.Fatalf("HostRestore() = %+v, %v", result, err)
 	}

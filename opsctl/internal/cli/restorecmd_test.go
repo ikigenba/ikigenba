@@ -22,12 +22,20 @@ import (
 
 const wantRestoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
-Replace /opt/SERVICE/etc/ and /var/opt/ikigenba/SERVICE/state/ with a backup,
-and, when SERVICE declares a [database], replace that database with what
-litestream holds. Without --at or --from both halves are the newest there is.
-With --from, everything comes from the one snapshot at that URI instead,
-database included. Nothing under bin/ or share/ is touched. A SERVICE whose
-state/ is still under /opt/SERVICE/ is refused: install it first.
+Replace /var/opt/ikigenba/SERVICE/state/ with a backup, and, when SERVICE
+declares a [database], replace that database with what litestream holds.
+Without --at or --from both halves are the newest there is. With --from,
+everything comes from the one snapshot at that URI instead, database included.
+SERVICE must be installed: its installed etc/manifest.toml says what it
+declares, and nothing under /opt/SERVICE/ is touched. An etc/ that an older
+backup or snapshot holds is ignored. A SERVICE that is not installed, or whose
+state/ or environment file is still under /opt/SERVICE/, is refused: install
+it first.
+
+The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
+restore writes it as 'opsctl install' does, from the parameter
+/<host.name>/SERVICE and the installed manifest, reading the parameter before
+anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -39,8 +47,7 @@ app stays disabled: neither of its units is enabled or started. A failed
 restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
-the manifest the restore put in place, so a database restored into a host that
-never ran SERVICE is replicated from the start line on.
+the installed manifests, as 'opsctl install' does.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
@@ -51,11 +58,9 @@ before that moment, and the database is rebuilt to the moment itself. The two
 are not the same instant, because the tarball is written on a timer and the
 database is replicated continuously.
 
---from takes etc/, state/, and the database from a snapshot 'opsctl snapshot'
-wrote, and reads neither the backups nor litestream's replica. A snapshot holds
-no etc/env, so --from writes it as 'opsctl install' does, from the parameter
-/<host.name>/SERVICE and the manifest the snapshot holds. It cannot be
-combined with --at.
+--from takes state/ and the database from a snapshot 'opsctl snapshot' wrote,
+and reads neither the backups nor litestream's replica. It cannot be combined
+with --at.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -67,7 +72,7 @@ Configuration keys:
 `
 
 func TestRestoreHelpIsExactAndInert(t *testing.T) {
-	// R-XZSU-VW9V
+	// R-G3Y7-UUR3
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "host-state")
@@ -190,8 +195,9 @@ func TestRestoreInvalidNonRootInvocationReportsGrammarBeforeRefusal(t *testing.T
 }
 
 func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
-	// R-XHYL-DFWU R-K9DU-97YV R-LZ82-QJF7
+	// R-XHYL-DFWU R-LU4V-WM38 R-LZ82-QJF7
 	root := configuredBackupRoot(t)
+	installRestoreCLI(t, root, "app = \"notes\"\n")
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -223,6 +229,9 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	executeZstd := roundTripZstdExecute(nil)
 	execute := func(ctx context.Context, command host.Command) (host.Result, error) {
 		commands = append(commands, strings.Join(append([]string{command.Name}, command.Args...), " "))
+		if command.Name == "systemctl" && len(command.Args) == 2 && command.Args[0] == "stop" {
+			return host.Result{}, nil
+		}
 		if command.Name == "zstd" {
 			return executeZstd(ctx, command)
 		}
@@ -248,9 +257,10 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	}
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "--at", "2026-09-16T10:30:00Z", "notes"}, hostCLIDeps(root, client, execute))
 	want := "source: ok (notes/" + stamp + ".tar.zst, 0.0 MiB)\n" +
-		"stop: ok (no ikigenba-notes.socket)\n" +
-		"files: ok (/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files)\n" +
-		"start: ok (no ikigenba-notes.socket)\n"
+		"secrets: ok (0 keys)\n" +
+		"stop: ok (ikigenba-notes.socket, ikigenba-notes.service already inactive)\n" +
+		"files: ok (/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 1 files)\n" +
+		"start: ok (ikigenba-notes.socket, ikigenba-notes.service left inactive)\n"
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("restore command = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
@@ -267,14 +277,16 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 		"zstd --quiet --decompress --stdout",
 		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"id --user ikigenba", "id --group --name ikigenba", "getent passwd ikigenba",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba", "id --group --name ikigenba",
 	}
 	if len(commands) != len(wantCommands)+1 || !reflect.DeepEqual(commands[:len(wantCommands)], wantCommands) || !strings.HasPrefix(commands[len(wantCommands)], "chown root:ikigenba "+filepath.Join(root, "var/lib/ikigenba")+" "+filepath.Join(root, "var/lib/ikigenba/.services-")) {
 		t.Fatalf("commands = %v; nginx callback must use Write without test/reload", commands)
 	}
-	if got, err := rootFS.ReadFile("var/lib/ikigenba/services.json"); err != nil || string(got) != "{\n  \"services\": []\n}\n" {
+	if got, err := rootFS.ReadFile("var/lib/ikigenba/services.json"); err != nil || string(got) != "{\n  \"services\": [\n    { \"name\": \"notes\", \"url\": \"https://notes.host.example.test\", \"description\": \"\", \"socket\": \"/run/ikigenba/notes.sock\", \"enabled\": true, \"mcp\": false }\n  ]\n}\n" {
 		t.Fatalf("services file = %q, %v", got, err)
 	}
 	if got, err := rootFS.ReadFile("var/lib/ikigenba/sentinel"); err != nil || string(got) != "untouched sibling" {
@@ -286,17 +298,18 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 }
 
 func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
-	// R-K9DU-97YV R-LZ82-QJF7
+	// R-LU4V-WM38 R-LZ82-QJF7
 	for _, test := range []struct {
 		name          string
 		nginxFails    bool
 		wantAccountID int
 	}{
-		{name: "nginx fails", nginxFails: true},
-		{name: "services write fails", wantAccountID: 1},
+		{name: "nginx fails", nginxFails: true, wantAccountID: 1},
+		{name: "services write fails", wantAccountID: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := configuredBackupRoot(t)
+			installRestoreCLI(t, root, "app = \"notes\"\n")
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
@@ -322,6 +335,9 @@ func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
 			accountCalls := 0
 			executeZstd := roundTripZstdExecute(nil)
 			execute := func(ctx context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "systemctl" && len(command.Args) == 2 && command.Args[0] == "stop" {
+					return host.Result{}, nil
+				}
 				if command.Name == "zstd" {
 					return executeZstd(ctx, command)
 				}
@@ -330,7 +346,19 @@ func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
 				}
 				if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
 					accountCalls++
-					return host.Result{}, errors.New("account unavailable")
+					if accountCalls > 1 {
+						return host.Result{}, errors.New("account unavailable")
+					}
+					return host.Result{Stdout: []byte("1234\n")}, nil
+				}
+				if command.Name == "id" {
+					return host.Result{Stdout: []byte("ikigenba\n")}, nil
+				}
+				if command.Name == "getent" {
+					return host.Result{Stdout: []byte("ikigenba:x:1234:1234::/nonexistent:/usr/sbin/nologin\n")}, nil
+				}
+				if command.Name == "chown" {
+					return host.Result{}, nil
 				}
 				return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
 			}
@@ -346,8 +374,9 @@ func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
 }
 
 func TestRestoreSourceFailureLeavesServicesFileUnchanged(t *testing.T) {
-	// R-K9DU-97YV R-LZ82-QJF7
+	// R-LU4V-WM38 R-LZ82-QJF7
 	root := configuredBackupRoot(t)
+	installRestoreCLI(t, root, "app = \"notes\"\n")
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -411,6 +440,7 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := configuredBackupRoot(t)
+			installRestoreCLI(t, root, "app = \"notes\"\n")
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
@@ -429,6 +459,9 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 			}
 			executeZstd := roundTripZstdExecute(nil)
 			execute := func(ctx context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "systemctl" && len(command.Args) == 2 && command.Args[0] == "stop" {
+					return host.Result{}, nil
+				}
 				if command.Name == "zstd" {
 					return executeZstd(ctx, command)
 				}
@@ -443,6 +476,9 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 				}
 				if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}) {
 					return host.Result{Stdout: []byte("ikigenba\n")}, nil
+				}
+				if command.Name == "getent" {
+					return host.Result{Stdout: []byte("ikigenba:x:1234:1234::/nonexistent:/usr/sbin/nologin\n")}, nil
 				}
 				if command.Name == "chown" {
 					return host.Result{}, nil
@@ -474,6 +510,7 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 	// R-XHYL-DFWU
 	root := configuredBackupRoot(t)
+	installRestoreCLI(t, root, "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -516,6 +553,7 @@ func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, hostCLIDeps(root, client, execute))
 	wantOut := "source: ok (notes/" + stamp + ".tar.zst, 0.0 MiB)\n" +
+		"secrets: ok (0 keys)\n" +
 		"stop: failed: stop litestream.service: exit status 1\n"
 	wantErr := "opsctl: restore notes failed at stop\n\n" +
 		"ikigenba-notes.socket and ikigenba-notes.service were left stopped\n" +
@@ -746,6 +784,7 @@ func TestRestoreFromFailuresRenderReportedSteps(t *testing.T) {
 	for _, stage := range []string{"source", "secrets"} {
 		t.Run(stage, func(t *testing.T) {
 			root := configuredBackupRoot(t)
+			installRestoreCLI(t, root, "app = \"notes\"\n")
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
@@ -754,6 +793,7 @@ func TestRestoreFromFailuresRenderReportedSteps(t *testing.T) {
 			}
 			client := &restoreFromCLICloud{hostCLICloud: newHostCLICloud()}
 			if stage == "secrets" {
+				installRestoreCLI(t, root, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
 				client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLIArchive(t, map[string]string{"etc/manifest.toml": "app = \"notes\"\nsecrets = [\"TOKEN\"]\n"})...)
 			}
 			executeZstd := roundTripZstdExecute(nil)
@@ -774,7 +814,12 @@ func TestRestoreFromFailuresRenderReportedSteps(t *testing.T) {
 			if stage == "secrets" && (!strings.HasPrefix(stdout, "source: ok (") || client.parameter != "/host.example.test/notes") {
 				t.Fatalf("secrets output/parameter = %q / %q", stdout, client.parameter)
 			}
-			if _, err := os.Stat(filepath.Join(root, "opt/notes")); !os.IsNotExist(err) {
+			filesystem, err := os.OpenRoot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = filesystem.Close() }()
+			if data, err := filesystem.ReadFile("etc/opt/ikigenba/notes/env"); err != nil || string(data) != "previous environment" {
 				t.Fatalf("failed restore wrote service: %v", err)
 			}
 		})
@@ -792,8 +837,9 @@ func (client *restoreFromCLICloud) ReadSecrets(_ context.Context, parameter stri
 }
 
 func TestRestoreCommandRefusesUnmovedStateAtSource(t *testing.T) {
-	// R-DDQQ-Z0P6
+	// R-21VX-S9W1
 	root := configuredBackupRoot(t)
+	installRestoreCLI(t, root, "app = \"notes\"\n")
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "host.example.test"); err != nil {
 		t.Fatal(err)
@@ -815,10 +861,116 @@ func TestRestoreCommandRefusesUnmovedStateAtSource(t *testing.T) {
 		return executeZstd(ctx, command)
 	}
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, hostCLIDeps(root, client, execute))
-	if code != 1 || stdout != "source: failed: /opt/notes/state has not moved; install notes first\n" || stderr != "opsctl: restore notes failed at source\n" || !reflect.DeepEqual(commands, []string{"zstd"}) {
+	if code != 1 || stdout != "source: failed: /opt/notes/state has not moved; install notes first\n" || stderr != "opsctl: restore notes failed at source\n" || len(commands) != 0 {
 		t.Fatalf("restore = %d %q %q commands %v", code, stdout, stderr, commands)
 	}
 	if _, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("data created: %v", err)
+	}
+}
+
+func installRestoreCLI(t *testing.T, root, manifest string) {
+	t.Helper()
+	for name, content := range map[string]string{
+		"opt/notes/bin/notes":         "binary",
+		"opt/notes/etc/manifest.toml": manifest,
+		"etc/opt/ikigenba/notes/env":  "previous environment",
+	} {
+		file := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRestoreEarlyFailuresDoNotRegenerateServices(t *testing.T) {
+	// R-LU4V-WM38 R-LZ82-QJF7
+	for _, stage := range []string{"source", "stop", "files", "db", "litestream"} {
+		t.Run(stage, func(t *testing.T) {
+			root := configuredBackupRoot(t)
+			installRestoreCLI(t, root, "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")
+			store := config.Store{Root: root}
+			for key, value := range map[string]string{"host.name": "host.example.test", "backup.service_db_seconds": "invalid", "backup.service_wal_seconds": "1"} {
+				if err := store.Set(key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, directory := range []string{"var/opt/ikigenba/notes", "var/lib/ikigenba", "etc/nginx/conf.d"} {
+				if err := os.MkdirAll(filepath.Join(root, directory), 0o750); err != nil {
+					t.Fatal(err)
+				}
+			}
+			previous := "previous services\n"
+			if err := os.WriteFile(filepath.Join(root, "var/lib/ikigenba/services.json"), []byte(previous), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			client := newHostCLICloud()
+			if stage != "source" {
+				client.objects["s3://backups.example/host/notes/2026-09-16T10:00:00Z.tar.zst"] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "restored")...)
+			}
+			zstd := roundTripZstdExecute(nil)
+			execute := func(ctx context.Context, command host.Command) (host.Result, error) {
+				switch command.Name {
+				case "zstd":
+					return zstd(ctx, command)
+				case "systemctl":
+					if command.Args[0] == "show" {
+						return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\n")}, nil
+					}
+					if command.Args[0] != "stop" {
+						t.Fatalf("early failure performed unit operation %v", command.Args)
+					}
+					if stage == "stop" {
+						return host.Result{ExitCode: 1}, nil
+					}
+					return host.Result{}, nil
+				case "id":
+					if stage == "files" {
+						return host.Result{}, errors.New("account unavailable")
+					}
+					if command.Args[0] == "--user" {
+						return host.Result{Stdout: []byte(fmt.Sprintf("%d\n", os.Getuid()))}, nil
+					}
+					return host.Result{Stdout: []byte("ikigenba\n")}, nil
+				case "getent":
+					return host.Result{Stdout: []byte(fmt.Sprintf("ikigenba:x:%d:%d::/nonexistent:/usr/sbin/nologin\n", os.Getuid(), os.Getgid()))}, nil
+				case "chown":
+					if len(command.Args) != 2 || command.Args[1] != filepath.Join(root, "etc/opt/ikigenba/notes/env") {
+						t.Fatalf("early failure called services ownership: %v", command.Args)
+					}
+					return host.Result{}, nil
+				case "litestream":
+					if stage == "db" {
+						return host.Result{ExitCode: 1}, nil
+					}
+					if command.Args[0] == "ltx" {
+						return host.Result{Stdout: []byte(`[{"timestamp":"2026-09-16T10:00:00Z"}]`)}, nil
+					}
+					data := make([]byte, 100)
+					copy(data, "SQLite format 3\x00")
+					data[18], data[19] = 2, 2
+					if err := os.WriteFile(command.Args[2], data, 0o600); err != nil {
+						t.Fatal(err)
+					}
+					return host.Result{}, nil
+				default:
+					t.Fatalf("unexpected command %s %v", command.Name, command.Args)
+					return host.Result{}, nil
+				}
+			}
+			stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, hostCLIDeps(root, client, execute))
+			if code != 1 || !strings.Contains(stdout, stage+": failed:") || !strings.HasPrefix(stderr, "opsctl: restore notes failed at "+stage+"\n") || strings.Contains(stdout, "start:") {
+				t.Fatalf("%s = %d %q %q", stage, code, stdout, stderr)
+			}
+			if got := readRestoreServicesFile(t, root); got != previous {
+				t.Fatalf("services changed: %q", got)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "etc/nginx/conf.d/ikigenba.conf")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("nginx callback ran: %v", err)
+			}
+		})
 	}
 }

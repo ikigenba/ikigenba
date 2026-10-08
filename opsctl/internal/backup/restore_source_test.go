@@ -32,7 +32,7 @@ func TestRestoreSourceContracts(t *testing.T) {
 		t.Fatalf("RestoreStep = %+v", step)
 	}
 
-	// R-1XAH-IPGL
+	// R-FMVM-I2DD
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{step}}
 	steps := append([]backup.RestoreStep(nil), report.Steps...)
 	if len(steps) != 1 || steps[0].Name != "source" {
@@ -59,8 +59,9 @@ func TestRestoreSourceContracts(t *testing.T) {
 func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	// R-1ZQA-A8XZ R-FDQ6-KYS5 R-DK7F-CAV0
 	root := t.TempDir()
-	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"wrong-installed-app\"\n", 0o600)
+	restoreInstalled(t, root, true)
+	store := restoreConfiguredStore(t, root)
+	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/other/state/private", "do not read or report this secret", 0o600)
 
 	olderURI := "s3://bucket/host/notes/2026-09-15T23:00:00Z.tar.zst"
@@ -86,7 +87,7 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	}
 	at := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	nginxCalls := 0
-	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", &at, "", func(context.Context) error {
+	report, err := backup.Restore(context.Background(), restoreServiceHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", &at, "", func(context.Context) error {
 		nginxCalls++
 		return nil
 	})
@@ -96,11 +97,12 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	wantDetail := fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)
 	wantReport := backup.RestoreReport{Steps: []backup.RestoreStep{
 		{Name: "source", Detail: wantDetail},
-		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.socket"},
-		{Name: "files", Detail: "/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files"},
+		{Name: "secrets", Detail: "0 keys"},
+		{Name: "stop", Detail: "litestream.service; ikigenba-notes.socket, ikigenba-notes.service already inactive"},
+		{Name: "files", Detail: "/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 1 files"},
 		{Name: "db", Detail: "/var/opt/ikigenba/notes/state/app.db, at 2026-09-16T12:00:00Z"},
 		{Name: "litestream", Detail: "state/app.db"},
-		{Name: "start", Detail: "litestream.service"},
+		{Name: "start", Detail: "litestream.service; ikigenba-notes.socket, ikigenba-notes.service left inactive"},
 	}}
 	if !reflect.DeepEqual(report, wantReport) {
 		t.Fatalf("Restore() report = %+v, want %+v", report, wantReport)
@@ -123,19 +125,20 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
 	// R-1ZQA-A8XZ
 	root := t.TempDir()
-	store := configuredFileStore(t, root)
+	restoreInstalled(t, root, false)
+	store := restoreConfiguredStore(t, root)
 	oldURI := "s3://bucket/host/notes/2026-09-15T00:00:00Z.tar.zst"
 	newURI := "s3://bucket/host/notes/2026-09-17T00:00:00.25Z.tar.zst"
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: newURI}, {URI: oldURI}}, bodies: map[string][]byte{newURI: body}}
-	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 4 || !strings.HasPrefix(report.Steps[0].Detail, "notes/2026-09-17T00:00:00.25Z.tar.zst, ") || !reflect.DeepEqual(client.got, []string{newURI}) {
+	report, err := backup.Restore(context.Background(), restoreServiceHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
+	if err != nil || len(report.Steps) != 5 || !strings.HasPrefix(report.Steps[0].Detail, "notes/2026-09-17T00:00:00.25Z.tar.zst, ") || !reflect.DeepEqual(client.got, []string{newURI}) {
 		t.Fatalf("Restore() = %+v, %v; got %v", report, err, client.got)
 	}
 }
 
 func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
-	// R-1YID-WH7A R-1XAH-IPGL R-G7FZ-2AO2 R-DK7F-CAV0
+	// R-1YID-WH7A R-FMVM-I2DD R-G7FZ-2AO2 R-DK7F-CAV0
 	tests := []struct {
 		name    string
 		service string
@@ -172,7 +175,8 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			store := configuredFileStore(t, root)
+			restoreInstalled(t, root, false)
+			store := restoreConfiguredStore(t, root)
 			if test.setup != nil {
 				test.setup(t, store)
 			}
@@ -194,7 +198,8 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 
 	t.Run("missing cloud dependency", func(t *testing.T) {
 		root := t.TempDir()
-		store := configuredFileStore(t, root)
+		restoreInstalled(t, root, false)
+		store := restoreConfiguredStore(t, root)
 		writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 		before := fileTreeSnapshot(t, root)
 		executions := 0
@@ -216,7 +221,7 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 }
 
 func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
-	// R-XTPC-Z1KE
+	// R-FO3I-VU42
 	tests := []struct {
 		name    string
 		objects []cloud.Object
@@ -229,11 +234,12 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			store := configuredFileStore(t, root)
+			restoreInstalled(t, root, false)
+			store := restoreConfiguredStore(t, root)
 			writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 			before := fileTreeSnapshot(t, root)
 			client := &restoreCloud{objects: test.objects}
-			env := restoreHostEnv(t, root)
+			env := restoreServiceHostEnv(t, root)
 			executions := 0
 			originalExecute := env.Execute
 			env.Execute = func(ctx context.Context, command host.Command) (host.Result, error) {
@@ -256,7 +262,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 }
 
 func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
-	// R-FWGV-MCZT R-2263-1SFD R-G7FZ-2AO2 R-1XAH-IPGL
+	// R-FQJB-NDLG R-24BQ-JTDF R-G7FZ-2AO2 R-FMVM-I2DD
 	tests := []struct {
 		name       string
 		members    []restoreMember
@@ -270,14 +276,12 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 		{name: "outside", members: []restoreMember{{name: "cache/value", data: []byte("bad")}}, want: "outside service restore trees"},
 		{name: "device", members: []restoreMember{{name: "state/device", typeflag: tar.TypeChar}}, want: "special device"},
 		{name: "symlink traversal", members: []restoreMember{{name: "state/link", typeflag: tar.TypeSymlink, linkname: "../../outside"}, {name: "state/link/value", data: []byte("bad")}}, want: "traverses symlink"},
-		{name: "manifest symlink", members: []restoreMember{{name: "etc/manifest.toml", typeflag: tar.TypeSymlink, linkname: "../state/value"}}, want: "manifest is not a regular file"},
-		{name: "invalid manifest", members: []restoreMember{{name: "etc/manifest.toml", data: []byte("[database]\nengine = \"mysql\"\npath = \"state/db\"\n")}}, want: "database.engine"},
-		{name: "mismatched app", members: []restoreMember{{name: "etc/manifest.toml", data: []byte("app = \"other\"\n")}}, want: "does not match service"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			store := configuredFileStore(t, root)
+			restoreInstalled(t, root, false)
+			store := restoreConfiguredStore(t, root)
 			writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 			before := fileTreeSnapshot(t, root)
 			body := test.compressed
@@ -286,7 +290,7 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 			}
 			uri := "s3://bucket/host/notes/2026-09-16T00:00:00Z.tar.zst"
 			client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
-			env := restoreHostEnv(t, root)
+			env := restoreServiceHostEnv(t, root)
 			if test.name == "corrupt compression" {
 				env.Execute = func(context.Context, host.Command) (host.Result, error) {
 					return host.Result{Stderr: []byte("invalid zstandard frame\n"), ExitCode: 1}, nil
@@ -308,18 +312,43 @@ func restoreTimePointer(value time.Time) *time.Time { return &value }
 func TestRestoreUsesRootForRestoredTarget(t *testing.T) {
 	// R-FDQ6-KYS5
 	root := t.TempDir()
-	store := configuredFileStore(t, root)
+	restoreInstalled(t, root, false)
+	store := restoreConfiguredStore(t, root)
 	uri := "s3://bucket/host/notes/2026-09-16T00:00:00Z.tar.zst"
 	body := hostRestoreArchive(t, restoreMember{name: "etc/env", data: []byte("TOKEN=secret\n")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
-	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 4 {
+	report, err := backup.Restore(context.Background(), restoreServiceHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
+	if err != nil || len(report.Steps) != 5 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
-	if data := readHostRestoreFile(t, root, "opt/notes/etc/env"); string(data) != "TOKEN=secret\n" {
+	if data := readHostRestoreFile(t, root, "etc/opt/ikigenba/notes/env"); strings.Contains(string(data), "TOKEN=secret") || !strings.Contains(string(data), "DRAIN_SECONDS=") {
 		t.Fatalf("rooted restored target = %q", data)
 	}
 	if strings.Contains(fmt.Sprint(report), "TOKEN=secret") || strings.Contains(fmt.Sprint(report), root) {
 		t.Fatalf("source report exposed sensitive or rooted data: %+v", report)
 	}
+}
+
+func restoreInstalled(t *testing.T, root string, database bool) {
+	t.Helper()
+	manifest := "app = \"notes\"\n"
+	if database {
+		manifest += "[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n"
+	}
+	writeFile(t, root, "opt/notes/bin/notes", "installed binary", 0700)
+	writeFile(t, root, "opt/notes/etc/manifest.toml", manifest, 0600)
+	writeFile(t, root, "etc/opt/ikigenba/notes/env", "OLD=value\n", 0600)
+}
+func restoreConfiguredStore(t *testing.T, root string) config.Store {
+	t.Helper()
+	store := configuredFileStore(t, root)
+	if err := store.Set("host.name", "host.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+func restoreServiceHostEnv(t *testing.T, root string) host.Env {
+	t.Helper()
+	executor := &restoreStageExecutor{t: t, root: root}
+	return host.Env{Root: root, Execute: executor.execute, Now: func() time.Time { return time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC) }}
 }

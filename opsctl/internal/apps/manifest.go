@@ -47,6 +47,8 @@ type manifestDecoder struct {
 	result            Manifest
 	portSeen          bool
 	firstError        error
+	syntaxFault       bool
+	identityOnly      bool
 	databasePathError error
 	resources         map[string]tomlValue
 }
@@ -221,7 +223,7 @@ func (decoder *manifestDecoder) decodeTable() error {
 	if err := decoder.finishLine(); err != nil {
 		return err
 	}
-	if len(keys) > 0 {
+	if len(keys) > 0 && !decoder.identityOnly {
 		if isRecognizedScalarRoot(keys[0]) {
 			return decoder.scalarRootTypeError(keys[0])
 		}
@@ -298,20 +300,24 @@ func (decoder *manifestDecoder) decodeAssignment() error {
 	fullPath := append(append([]string{}, decoder.table...), keys...)
 	identity := keyIdentity(fullPath)
 	if _, duplicate := decoder.seen[identity]; duplicate {
+		decoder.syntaxFault = true
 		decoder.rememberError(decoder.errorf("duplicate key %q", strings.Join(fullPath, ".")))
 		return nil
 	}
 	if _, declaredTable := decoder.tables[identity]; declaredTable {
+		decoder.syntaxFault = true
 		decoder.rememberError(decoder.errorf("key %q conflicts with an existing table", strings.Join(fullPath, ".")))
 		return nil
 	}
 	if decoder.pathHasValuePrefix(fullPath) || decoder.pathHasDescendant(fullPath) {
+		decoder.syntaxFault = true
 		decoder.rememberError(decoder.errorf("key %q conflicts with an existing value", strings.Join(fullPath, ".")))
 		return nil
 	}
 	for length := len(decoder.table) + 1; length < len(fullPath); length++ {
 		kind, exists := decoder.tables[keyIdentity(fullPath[:length])]
 		if exists && (kind == tomlTable || kind == tomlArray) {
+			decoder.syntaxFault = true
 			decoder.rememberError(decoder.errorf("dotted key %q extends an explicitly declared table", strings.Join(fullPath[:length], ".")))
 			return nil
 		}

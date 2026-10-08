@@ -25,7 +25,7 @@ func TestDatabaseFiles(t *testing.T) {
 }
 
 func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
-	// R-JKH0-KRY9 R-HLWS-EFZW R-T6GY-9YFX
+	// R-JKH0-KRY9 R-HLWS-EFZW R-F4L4-RI8Y
 	root, store := regenerationFixture(t)
 	for key, value := range map[string]string{
 		"backup.s3_uri":              "s3://backups.example/hosts/example/",
@@ -67,7 +67,7 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 }
 
 func TestRegenerateEmptyDatabaseSequence(t *testing.T) {
-	// R-T6GY-9YFX
+	// R-F4L4-RI8Y
 	root, store := regenerationFixture(t)
 	writeService(t, root, "notes", "app = \"notes\"\n")
 	if _, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store); err != nil {
@@ -179,7 +179,7 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 }
 
 func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
-	// R-T6GY-9YFX R-1A4E-92DE
+	// R-F4L4-RI8Y R-1A4E-92DE
 	root, store := regenerationFixture(t)
 	for _, key := range []string{"backup.service_db_seconds", "backup.service_wal_seconds"} {
 		if err := store.Set(key, "9223372036"); err != nil {

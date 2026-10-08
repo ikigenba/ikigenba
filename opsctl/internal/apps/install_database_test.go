@@ -8,7 +8,7 @@ import (
 )
 
 func TestInstallLeavesDatabaseAndCacheToTheApp(t *testing.T) {
-	// R-GCW4-EV9K
+	//
 	for _, existing := range []bool{false, true} {
 		root := t.TempDir()
 		fixture := newCompletedInstallFixture(t, root, existing)

@@ -22,8 +22,9 @@ import (
 const wantHostUsage = `Usage: opsctl host <subcommand>
 
 Back up and restore the host's own configuration: /etc/ikigenba/ and
-/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt or
-/var/opt is touched either way -- that is 'opsctl backup' and 'opsctl restore'.
+/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt,
+/etc/opt, or /var/opt is touched either way -- that is 'opsctl backup' and
+'opsctl restore'.
 
 Subcommands:
   backup    write /etc/ikigenba/ and /etc/letsencrypt/ to S3
@@ -38,7 +39,7 @@ Configuration keys:
 `
 
 func TestHostHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-XQ1N-TQCB
+	// R-FLNQ-4AMO
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			deps, assertInert := inertHostCommandDeps(t, euid)

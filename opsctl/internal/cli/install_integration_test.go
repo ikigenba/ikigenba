@@ -19,7 +19,8 @@ import (
 )
 
 func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
-	// R-YZO5-RZU6
+	// R-2407-D5NF R-21KE-LM61 R-F5T1-59ZN
+	//
 	fixture := newCLIInstallFixture(t)
 	stdout, stderr, code := fixture.invoke()
 	if code != 0 || stderr != "" {
@@ -64,7 +65,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
-	// R-FTRO-2D7O R-FSJR-OLGZ
+	//
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -108,7 +109,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 }
 
 func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
-	// R-FSJR-OLGZ
+	//
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -140,7 +141,8 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-FTRO-2D7O, R-FSJR-OLGZ, R-FRBV-ATQA, R-YSCR-HDE0, R-EOKC-P8UO
+	// R-2583-QXE4
+	// , , , R-YSCR-HDE0, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
@@ -176,7 +178,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-FTRO-2D7O, R-YSCR-HDE0
+	// , R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -200,7 +202,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-FTRO-2D7O, R-YSCR-HDE0
+	// , R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -222,7 +224,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-FTRO-2D7O, R-YSCR-HDE0
+	// , R-YSCR-HDE0
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -269,7 +271,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	// R-FSJR-OLGZ
+	//
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -304,7 +306,7 @@ func TestInstallCLIRejectsInvalidAppTimeoutsBeforeFetch(t *testing.T) {
 }
 
 func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
-	// R-FTRO-2D7O, R-FSJR-OLGZ, R-YSCR-HDE0
+	// , , R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -775,5 +777,45 @@ func writeCLIInstallFile(t *testing.T, name, contents string) {
 	}
 	if err := os.WriteFile(name, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInstallRegeneratesReplicationAndRestartsOnlyWhenChanged(t *testing.T) {
+	// R-F5T1-59ZN R-2407-D5NF
+	fixture := newCLIInstallFixture(t)
+	stdout, stderr, code := fixture.invoke()
+	if code != 0 || stderr != "" {
+		t.Fatalf("first install %d %q %q", code, stdout, stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(fixture.root, "etc", "litestream.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), filepath.Join(fixture.root, "var", "opt", "ikigenba", "notes", "state", "notes.db")) {
+		t.Fatalf("configuration %s", data)
+	}
+	restart, start := -1, -1
+	for index, cmd := range fixture.commands {
+		command := cmd.Name + " " + strings.Join(cmd.Args, " ")
+		if command == "systemctl restart litestream.service" {
+			restart = index
+		}
+		if command == "systemctl start ikigenba-notes.service" {
+			start = index
+		}
+		if strings.Contains(command, "litestream.service") && (strings.Contains(command, " enable ") || strings.Contains(command, " disable ")) {
+			t.Fatalf("enablement changed: %s", command)
+		}
+	}
+	if restart < 0 || start < restart {
+		t.Fatalf("restart/start positions %d %d", restart, start)
+	}
+	fixture.commands = nil
+	stdout, stderr, code = fixture.invoke()
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "litestream: ok (unchanged)\n") {
+		t.Fatalf("reinstall %d %q %q", code, stdout, stderr)
+	}
+	if fixture.commandCount("systemctl restart litestream.service") != 0 {
+		t.Fatalf("unchanged restart %v", fixture.commands)
 	}
 }

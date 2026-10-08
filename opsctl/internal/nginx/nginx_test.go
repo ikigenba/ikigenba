@@ -64,7 +64,7 @@ func TestRenderHasExportedContract(t *testing.T) {
 func TestRenderExactBaseConfigurationWithoutDefault(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	mkdir(t, filepath.Join(root, "opt", "state-only", "state"))
+	mkdir(t, filepath.Join(root, "var", "opt", "ikigenba", "state-only", "state"))
 	writeManifest(t, root, "disabled", "default = false\n")
 
 	got, err := nginx.Render(context.Background(), enabledEnv(root), "example.test", "")
@@ -121,7 +121,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	writeManifest(t, root, "zeta", "app = \"zeta\"\n")
 	writeManifest(t, root, "alpha", "app = \"alpha\"\ndefault = true\n")
 	writeManifest(t, root, "ignored", "default = false\n")
-	mkdir(t, filepath.Join(root, "opt", "manifestless", "state"))
+	mkdir(t, filepath.Join(root, "var", "opt", "ikigenba", "manifestless", "state"))
 	before := snapshotTree(t, root)
 	executions := 0
 	env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {

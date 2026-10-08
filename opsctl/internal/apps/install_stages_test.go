@@ -225,7 +225,8 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 }
 
 func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
-	// R-FRBV-ATQA
+	// R-2583-QXE4
+	//
 	for _, failAt := range []string{"", "nginx", "services", "litestream"} {
 		name := failAt
 		if name == "" {
@@ -315,7 +316,8 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 }
 
 func TestInstallOwnedStagesStopOnActionAndReportFailures(t *testing.T) {
-	// R-FRBV-ATQA
+	// R-2583-QXE4
+	//
 	stages := []string{"fetch", "file", "secrets", "data", "unpack", "unit", "service"}
 	for index, stage := range stages {
 		for _, actionFails := range []bool{false, true} {

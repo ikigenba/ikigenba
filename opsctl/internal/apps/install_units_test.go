@@ -17,7 +17,8 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-FW7G-TWP2 R-GHRP-XY8C R-GE40-SN09 R-G3IV-4J58
+	// R-ZC3S-YJKU R-ZFRI-3USX
+	//  R-GHRP-XY8C
 	root := t.TempDir()
 	statePath := filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "db")
 	cachePath := filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "item")
@@ -40,7 +41,7 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 		"[Service]\nType=notify\n" +
 		"ExecStart=" + filepath.Join(appRoot, "bin", "notes") + "\n" +
 		"WorkingDirectory=" + filepath.Join(root, "var", "opt", "ikigenba", "notes") + "\n" +
-		"EnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"EnvironmentFile=" + filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=10\nSlice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
 	assertFile(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket"), wantSocket)
@@ -84,7 +85,8 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 }
 
 func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
-	// R-FW7G-TWP2
+	// R-Z8G3-T8CR
+	//
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	if err := fixture.run(); err != nil {
 		t.Fatal(err)
@@ -114,7 +116,7 @@ func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
 }
 
 func TestInstallRejectsRootServiceAccount(t *testing.T) {
-	// R-FW7G-TWP2
+	//
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.accountUID = "0"
 	err := fixture.run()
@@ -184,7 +186,8 @@ func TestInstallCreatesOptWithoutChangingExistingOpt(t *testing.T) {
 }
 
 func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
-	// R-GGJT-K6HN R-GHRP-XY8C
+	// R-ZGZE-HMJM
+	//  R-GHRP-XY8C
 	root := t.TempDir()
 	state := filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "keep")
 	cache := filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "keep")
@@ -215,7 +218,6 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 		filepath.Join("bin", "data"):             0o640,
 		filepath.Join("etc", "manifest.toml"):    0o640,
 		filepath.Join("etc", "config"):           0o750,
-		filepath.Join("etc", "env"):              0o600,
 		filepath.Join("share", "nested", "page"): 0o640,
 	} {
 		assertMode(t, filepath.Join(appRoot, name), mode)
@@ -363,7 +365,7 @@ func assertLastAndOnlyStageReport(t *testing.T, reports []installReport, stage s
 }
 
 func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-GCW4-EV9K
+	//
 	tests := []struct {
 		name       string
 		target     string
@@ -469,7 +471,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 }
 
 func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
-	// R-FTRO-2D7O
+	//
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	configureAt := -1
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
@@ -526,7 +528,8 @@ func TestInstallStartsOrRestartsAndReportsBinaryVersion(t *testing.T) {
 }
 
 func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
-	// R-GE40-SN09 R-G3IV-4J58 R-UNJ1-8PMI
+	// R-ZC3S-YJKU
+	//   R-UNJ1-8PMI
 	root := t.TempDir()
 	servicePath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
 	socketPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket")
@@ -545,7 +548,7 @@ func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
 	wantService := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", "notes") + "\n" +
 		"WorkingDirectory=" + filepath.Join(root, "var", "opt", "ikigenba", "notes") + "\n" +
-		"EnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"EnvironmentFile=" + filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=10\nSlice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
 	assertFile(t, socketPath, wantSocket)

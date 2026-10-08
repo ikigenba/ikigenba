@@ -18,12 +18,20 @@ import (
 
 const restoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
-Replace /opt/SERVICE/etc/ and /var/opt/ikigenba/SERVICE/state/ with a backup,
-and, when SERVICE declares a [database], replace that database with what
-litestream holds. Without --at or --from both halves are the newest there is.
-With --from, everything comes from the one snapshot at that URI instead,
-database included. Nothing under bin/ or share/ is touched. A SERVICE whose
-state/ is still under /opt/SERVICE/ is refused: install it first.
+Replace /var/opt/ikigenba/SERVICE/state/ with a backup, and, when SERVICE
+declares a [database], replace that database with what litestream holds.
+Without --at or --from both halves are the newest there is. With --from,
+everything comes from the one snapshot at that URI instead, database included.
+SERVICE must be installed: its installed etc/manifest.toml says what it
+declares, and nothing under /opt/SERVICE/ is touched. An etc/ that an older
+backup or snapshot holds is ignored. A SERVICE that is not installed, or whose
+state/ or environment file is still under /opt/SERVICE/, is refused: install
+it first.
+
+The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
+restore writes it as 'opsctl install' does, from the parameter
+/<host.name>/SERVICE and the installed manifest, reading the parameter before
+anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -35,8 +43,7 @@ app stays disabled: neither of its units is enabled or started. A failed
 restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
-the manifest the restore put in place, so a database restored into a host that
-never ran SERVICE is replicated from the start line on.
+the installed manifests, as 'opsctl install' does.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
@@ -47,11 +54,9 @@ before that moment, and the database is rebuilt to the moment itself. The two
 are not the same instant, because the tarball is written on a timer and the
 database is replicated continuously.
 
---from takes etc/, state/, and the database from a snapshot 'opsctl snapshot'
-wrote, and reads neither the backups nor litestream's replica. A snapshot holds
-no etc/env, so --from writes it as 'opsctl install' does, from the parameter
-/<host.name>/SERVICE and the manifest the snapshot holds. It cannot be
-combined with --at.
+--from takes state/ and the database from a snapshot 'opsctl snapshot' wrote,
+and reads neither the backups nor litestream's replica. It cannot be combined
+with --at.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in

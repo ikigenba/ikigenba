@@ -270,7 +270,7 @@ func serviceArchive(ctx context.Context, env host.Env, service apps.Service) ([]
 	resolver := identityResolver{ctx: ctx, execute: env.Execute, users: make(map[uint32]string), groups: make(map[uint32]string)}
 	var archive bytes.Buffer
 	tarWriter := tar.NewWriter(&archive)
-	for _, tree := range []string{"etc", "state"} {
+	for _, tree := range []string{"state"} {
 		if err := archiveTree(ctx, filesystem, tarWriter, &resolver, service, tree); err != nil {
 			_ = tarWriter.Close()
 			return nil, snapshotReadError(env.Root, err)
@@ -290,10 +290,7 @@ func archiveTree(ctx context.Context, filesystem *os.Root, writer *tar.Writer, r
 }
 
 func archiveTreeExcluding(ctx context.Context, filesystem *os.Root, writer *tar.Writer, resolver *identityResolver, service apps.Service, tree string, exclusions []string) error {
-	servicePath := path.Join("opt", service.Name)
-	if tree == "state" {
-		servicePath = path.Join(apps.DataRoot[1:], service.Name)
-	}
+	servicePath := path.Join(apps.DataRoot[1:], service.Name)
 	treePath := path.Join(servicePath, tree)
 	if _, err := filesystem.Lstat(treePath); errors.Is(err, os.ErrNotExist) {
 		return nil

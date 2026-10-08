@@ -633,9 +633,6 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 		if _, duplicate := seen[name]; duplicate {
 			return nil, nil, fmt.Errorf("duplicate archive path %s", safeDiagnosticToken(name))
 		}
-		if name == "etc/env" {
-			return nil, nil, errors.New("archive path etc/env is reserved for generated environment")
-		}
 		entry := archiveEntry{name: name, mode: header.FileInfo().Mode(), typeflag: header.Typeflag}
 		switch header.Typeflag {
 		case tar.TypeDir:
@@ -1066,12 +1063,6 @@ func replaceInstalledFiles(ctx context.Context, env host.Env, artifact *inspecte
 			return unpackFailure(err)
 		}
 	}
-	if err := filesystem.WriteFile(path.Join(staging, "etc", "env"), environment, 0o600); err != nil {
-		return unpackFailure(err)
-	}
-	if err := filesystem.Chmod(path.Join(staging, "etc", "env"), 0o600); err != nil {
-		return unpackFailure(err)
-	}
 	for _, directory := range []string{"bin", "etc"} {
 		if err := replaceDirectory(filesystem, staging, appRoot, directory); err != nil {
 			return unpackFailure(err)
@@ -1082,6 +1073,9 @@ func replaceInstalledFiles(ctx context.Context, env host.Env, artifact *inspecte
 			return unpackFailure(err)
 		}
 	} else if err := filesystem.RemoveAll(path.Join(appRoot, "share")); err != nil {
+		return unpackFailure(err)
+	}
+	if err := PublishEnvironment(env.Root, artifact.manifest.App, environment); err != nil {
 		return unpackFailure(err)
 	}
 	if createdOpt {
@@ -1258,9 +1252,6 @@ func applyInstalledPathModes(filesystem *os.Root, name, appRoot string, executab
 	if info.IsDir() || executable[relative] {
 		mode = 0o750
 	}
-	if name == path.Join(appRoot, "etc", "env") {
-		mode = 0o600
-	}
 	if err := filesystem.Chmod(name, mode); err != nil {
 		return err
 	}
@@ -1356,7 +1347,7 @@ func serviceUnitBytes(root, app string, stopSeconds int64, resources Resources) 
 	}
 	return []byte("[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + "\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
-		"WorkingDirectory=" + rootedHostPath(root, DataRoot, app) + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"WorkingDirectory=" + rootedHostPath(root, DataRoot, app) + "\nEnvironmentFile=" + rootedHostPath(root, EnvRoot, app, "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stopSeconds, 10) + "\n" + limits.String() + "\n" +
 		"[Install]\nWantedBy=multi-user.target\n")
 }
@@ -1517,13 +1508,22 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		if service.ManifestError != nil {
-			return fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)
-		}
 		installed = append(installed, service)
 	}
 	for _, service := range installed {
-		envPath := rootedHostPath(env.Root, "opt", service.Name, "etc", "env")
+		if _, err := lstatTimeoutPath(env.Root, rootedHostPath(env.Root, EnvRoot, service.Name, "env")); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%s: /opt/%s/etc/env has not moved; install %s first", service.Name, service.Name, service.Name)
+		} else if err != nil {
+			return fmt.Errorf("%s: inspect environment: %w", service.Name, err)
+		}
+	}
+	for _, service := range installed {
+		if service.ManifestError != nil {
+			return fmt.Errorf("%s: etc/manifest.toml: %w", service.Name, service.ManifestError)
+		}
+	}
+	for _, service := range installed {
+		envPath := rootedHostPath(env.Root, EnvRoot, service.Name, "env")
 		current, readErr := readTimeoutFile(env.Root, envPath)
 		if readErr != nil {
 			return fmt.Errorf("%s: read etc/env: %w", service.Name, readErr)

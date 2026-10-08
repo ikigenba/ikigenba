@@ -408,7 +408,7 @@ func TestRestartDisabledKeepsBothUnitsDownAndReadsInstalledVersion(t *testing.T)
 }
 
 func TestUninstallDataMovesBetweenStopAndUnitRemoval(t *testing.T) {
-	// R-G2AY-QREJ R-FYN9-LG6G
+	// R-ZZ9W-86O1 R-ZVM7-2VFY
 	for _, tc := range []struct {
 		name                   string
 		state, cache, newCache bool
@@ -483,7 +483,7 @@ func TestUninstallDataMovesBetweenStopAndUnitRemoval(t *testing.T) {
 }
 
 func TestUninstallDataConflictRetainsStoppedAppAndBothTrees(t *testing.T) {
-	// R-G2AY-QREJ R-FZV5-Z7X5
+	// R-ZZ9W-86O1 R-ZWU3-GN6N
 	fixture := newUninstallFixture(t, "active")
 	writeFixturePath(t, fixture.root, "opt/notes/state/item", "old")
 	writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/state/item", "new")
@@ -512,7 +512,7 @@ func TestUninstallDataConflictRetainsStoppedAppAndBothTrees(t *testing.T) {
 }
 
 func TestUninstallEmptyDataDoesNotCreateDataRoot(t *testing.T) {
-	// R-G2AY-QREJ
+	// R-ZZ9W-86O1
 	fixture := newUninstallFixture(t, "inactive")
 	removeFixturePath(t, fixture.root, "var")
 	if err := fixture.uninstall(); err != nil {
@@ -527,7 +527,7 @@ func TestUninstallEmptyDataDoesNotCreateDataRoot(t *testing.T) {
 }
 
 func TestUninstallDataReportFailureStopsBeforeRemovingUnit(t *testing.T) {
-	// R-FYN9-LG6G R-FZV5-Z7X5
+	// R-ZVM7-2VFY R-ZWU3-GN6N
 	fixture := newUninstallFixture(t, "active")
 	writeFixturePath(t, fixture.root, "opt/notes/state/item", "saved")
 	failure := errors.New("data report unavailable")
@@ -552,7 +552,7 @@ func TestUninstallDataReportFailureStopsBeforeRemovingUnit(t *testing.T) {
 }
 
 func TestUninstallMigrationPreparesExistingDataDirectoryOnlyWhenMoving(t *testing.T) {
-	// R-G2AY-QREJ
+	// R-ZZ9W-86O1
 	for _, mode := range []string{"move", "drop", "unchanged"} {
 		t.Run(mode, func(t *testing.T) {
 			fixture := newUninstallFixture(t, "inactive")
@@ -591,8 +591,7 @@ func TestUninstallMigrationPreparesExistingDataDirectoryOnlyWhenMoving(t *testin
 				}
 			}
 			if mode == "move" {
-				want := []host.Command{{Name: "chown", Args: []string{"ikigenba:ikigenba", directory}}}
-				if info.Mode().Perm() != 0o750 || !reflect.DeepEqual(chowns, want) {
+				if info.Mode().Perm() != 0o700 || len(chowns) != 0 {
 					t.Fatalf("data mode=%o chowns=%#v", info.Mode().Perm(), chowns)
 				}
 				moved, err := os.Stat(filepath.Join(directory, "state/item"))

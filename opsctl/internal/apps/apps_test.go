@@ -637,8 +637,8 @@ func TestParseManifestPortErrorTakesPrecedence(t *testing.T) {
 	}
 }
 
-// R-G80I-VSAS
 func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
+	// R-YXH0-DAOI
 	valid := []string{
 		"[database]\nengine = \"sqlite\"\npath = \"state/app.db\"",
 		"[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"",
@@ -677,7 +677,7 @@ func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
 			t.Errorf("ParseManifest(%q) succeeded with %#v", data, manifest)
 		}
 	}
-	// R-GAGB-NBS6: nested fields do not supply the required direct engine.
+	// : nested fields do not supply the required direct engine.
 	// R-XSFU-AXFW: decoding errors return no partially usable manifest.
 	for _, data := range []string{
 		"[database.child]",

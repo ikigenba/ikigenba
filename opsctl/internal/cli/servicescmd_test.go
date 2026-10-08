@@ -32,7 +32,7 @@ func servicesFixtureCommand(command host.Command) (host.Result, bool) {
 }
 
 func TestInstallServicesStagePublishesNormalizedNameAndStopsOnError(t *testing.T) {
-	// R-YNH5-YAF8 R-FRBV-ATQA R-FTRO-2D7O R-FSJR-OLGZ
+	// R-YNH5-YAF8
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)
@@ -251,7 +251,7 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 				writeUninstallFile(t, deps.Root, "etc/nginx/conf.d/ikigenba.conf", "previous")
 				writeUninstallFile(t, deps.Root, "var/lib/ikigenba/services.json", "previous services\n")
 				writeUninstallFile(t, deps.Root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n")
-				writeUninstallFile(t, deps.Root, "opt/notes/etc/env", "DRAIN_SECONDS=5\nOTHER=keep\n")
+				writeUninstallFile(t, deps.Root, "etc/opt/ikigenba/notes/env", "DRAIN_SECONDS=5\nOTHER=keep\n")
 				writeUninstallFile(t, deps.Root, "opt/notes/bin/notes", "binary")
 				nginxDone := false
 				servicesDone := false
@@ -329,7 +329,7 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 				if code != 0 || stderr != "" {
 					t.Fatalf("success %d %q", code, stderr)
 				}
-				data, err := os.ReadFile(filepath.Join(deps.Root, "opt/notes/etc/env"))
+				data, err := os.ReadFile(filepath.Join(deps.Root, "etc/opt/ikigenba/notes/env"))
 				if err != nil || string(data) != "DRAIN_SECONDS=7\nOTHER=keep\n"+apps.ServicesEnv+"="+apps.ServicesPath+"\n" {
 					t.Fatalf("env %q %v", data, err)
 				}
@@ -350,7 +350,7 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 }
 
 func TestInstallServicesReportsEntryChangesWithAndWithoutIcons(t *testing.T) {
-	// R-YNH5-YAF8 R-FSJR-OLGZ R-FTRO-2D7O
+	// R-YNH5-YAF8
 	for _, disabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(disabled), func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)

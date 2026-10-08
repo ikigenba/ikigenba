@@ -38,17 +38,24 @@ func PublishEnvironment(root, service string, data []byte) error {
 		return err
 	}
 	defer func() { _ = filesystem.Close() }()
-	appRoot := path.Join("opt", service)
-	if err := rejectDestinationSymlinks(filesystem, appRoot); err != nil {
-		return err
-	}
-	directory := path.Join(appRoot, "etc")
-	info, err := filesystem.Lstat(directory)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("destination %s is not a directory", directory)
+	directory := path.Join(strings.TrimPrefix(EnvRoot, "/"), service)
+	for _, name := range []string{"etc", "etc/opt", strings.TrimPrefix(EnvRoot, "/"), directory} {
+		info, err := filesystem.Lstat(name)
+		if err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("destination %s is not a directory", name)
+			}
+			continue
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := filesystem.Mkdir(name, 0o755); err != nil {
+			return err
+		}
+		if err := filesystem.Chmod(name, 0o755); err != nil {
+			return err
+		}
 	}
 	return publishAtomicFile(filesystem, directory, path.Join(directory, "env"), data, 0o600)
 }

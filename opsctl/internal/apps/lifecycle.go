@@ -62,12 +62,13 @@ func Uninstall(ctx context.Context, env host.Env, app string, hooks UninstallHoo
 }
 
 type uninstallWorkflow struct {
-	env      host.Env
-	app      string
-	service  string
-	socket   string
-	hooks    UninstallHooks
-	manifest Manifest
+	env                host.Env
+	app                string
+	service            string
+	socket             string
+	hooks              UninstallHooks
+	manifest           Manifest
+	environmentPresent bool
 }
 
 func prepareUninstall(env host.Env, app string, hooks UninstallHooks) (*uninstallWorkflow, error) {
@@ -184,6 +185,19 @@ func (workflow *uninstallWorkflow) stop(ctx context.Context) error {
 		return workflow.failPrerequisite(err)
 	}
 	workflow.manifest = manifest
+	filesystem, err := os.OpenRoot(workflow.env.Root)
+	if err != nil {
+		return workflow.fail("stop", err)
+	}
+	_, envErr := filesystem.Lstat(path.Join(strings.TrimPrefix(EnvRoot, "/"), workflow.app))
+	closeErr := filesystem.Close()
+	if envErr != nil && !errors.Is(envErr, os.ErrNotExist) {
+		return workflow.fail("stop", envErr)
+	}
+	if closeErr != nil {
+		return workflow.fail("stop", closeErr)
+	}
+	workflow.environmentPresent = envErr == nil
 	workflow.service, workflow.socket = appUnitName(workflow.app), socketUnitName(workflow.app)
 	socketActive, err := uninstallUnitActive(ctx, workflow.env, workflow.socket)
 	if err != nil {
@@ -252,7 +266,7 @@ func (workflow *uninstallWorkflow) data(ctx context.Context) error {
 		return nil
 	}
 	if plan.Moves() {
-		if err := PrepareDataDirectory(ctx, workflow.env, workflow.app); err != nil {
+		if err := EnsureDataDirectory(ctx, workflow.env, workflow.app); err != nil {
 			return workflow.fail("data", err)
 		}
 	}
@@ -265,7 +279,7 @@ func (workflow *uninstallWorkflow) data(ctx context.Context) error {
 func (workflow *uninstallWorkflow) removeFiles() error {
 	filesystem, err := os.OpenRoot(workflow.env.Root)
 	if err == nil {
-		for _, directory := range []string{path.Join("opt", workflow.app), path.Join(strings.TrimPrefix(DataRoot, "/"), workflow.app, "cache")} {
+		for _, directory := range []string{path.Join("opt", workflow.app), path.Join(strings.TrimPrefix(EnvRoot, "/"), workflow.app), path.Join(strings.TrimPrefix(DataRoot, "/"), workflow.app, "cache")} {
 			if removeErr := filesystem.RemoveAll(directory); removeErr != nil {
 				err = removeErr
 				break
@@ -277,7 +291,11 @@ func (workflow *uninstallWorkflow) removeFiles() error {
 		return workflow.fail("files", err)
 	}
 	app := safeDiagnosticToken(workflow.app)
-	return workflow.report("files", fmt.Sprintf("removed /opt/%s, /var/opt/ikigenba/%s/cache; kept /var/opt/ikigenba/%s/state", app, app, app))
+	removed := "/opt/" + app
+	if workflow.environmentPresent {
+		removed = "/opt/" + app + ", " + EnvRoot + "/" + app
+	}
+	return workflow.report("files", fmt.Sprintf("removed %s, /var/opt/ikigenba/%s/cache; kept /var/opt/ikigenba/%s/state", removed, app, app))
 }
 
 func (workflow *uninstallWorkflow) report(step, detail string) error {

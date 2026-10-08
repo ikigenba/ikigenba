@@ -15,7 +15,8 @@ import (
 )
 
 func TestInstallDataRulesMoveDropAndRefuse(t *testing.T) {
-	// R-FNO6-5II7 R-FUZK-G4YD R-FXFD-7OFR
+	// R-YZWT-4U5W R-Z787-FGM2 R-ZAVW-KRU5
+	//
 	for _, tc := range []struct {
 		name                                   string
 		oldState, newState, oldCache, newCache bool
@@ -161,7 +162,8 @@ func TestInstallDataRulesMoveDropAndRefuse(t *testing.T) {
 }
 
 func TestDataEntriesAreJudgedWithoutFollowingLinks(t *testing.T) {
-	// R-FNO6-5II7
+	// R-YZWT-4U5W
+	//
 	root := t.TempDir()
 	old := filepath.Join(root, "opt", "notes")
 	data := filepath.Join(root, "var", "opt", "ikigenba", "notes")
@@ -195,7 +197,8 @@ func TestDataEntriesAreJudgedWithoutFollowingLinks(t *testing.T) {
 }
 
 func TestDataRenameFailurePreservesAndRetryFinishes(t *testing.T) {
-	// R-FNO6-5II7
+	// R-YZWT-4U5W
+	//
 	root := t.TempDir()
 	old := filepath.Join(root, "opt", "notes")
 	data := filepath.Join(root, "var", "opt", "ikigenba", "notes")
@@ -233,7 +236,8 @@ func TestDataRenameFailurePreservesAndRetryFinishes(t *testing.T) {
 }
 
 func TestInstallDataDirectoryAndAppRootOwnership(t *testing.T) {
-	// R-FQ3Y-X1ZL R-WFP6-33XJ
+	// R-Z2CL-WDNA
+	//  R-WFP6-33XJ
 	root := t.TempDir()
 	fixture := newCompletedInstallFixture(t, root, false)
 	oldMask := syscall.Umask(0o077)
@@ -270,7 +274,8 @@ func TestInstallDataDirectoryAndAppRootOwnership(t *testing.T) {
 }
 
 func TestInstallFailuresBeforeDataDoNotCreateDataTree(t *testing.T) {
-	// R-FOW2-JA8W
+	// R-Z14P-ILWL
+	//
 	for _, stage := range []string{"configuration", "timing", "fetch", "file", "secrets"} {
 		t.Run(stage, func(t *testing.T) {
 			root := t.TempDir()
@@ -315,7 +320,8 @@ func sameFileOwner(before, after os.FileInfo) bool {
 }
 
 func TestInstallDataStopsEachActiveUnitIndependently(t *testing.T) {
-	// R-FXFD-7OFR
+	// R-ZAVW-KRU5
+	//
 	for _, tc := range []struct{ service, socket bool }{{true, false}, {false, true}, {false, false}} {
 		t.Run(fmt.Sprintf("service=%t/socket=%t", tc.service, tc.socket), func(t *testing.T) {
 			root := t.TempDir()
@@ -352,7 +358,8 @@ func TestInstallDataStopsEachActiveUnitIndependently(t *testing.T) {
 }
 
 func TestInstallNormalizesExistingDataDirectoryAndKeepsParents(t *testing.T) {
-	// R-FQ3Y-X1ZL
+	// R-Z2CL-WDNA
+	//
 	root := t.TempDir()
 	data := filepath.Join(root, "var", "opt", "ikigenba", "notes")
 	keep := filepath.Join(data, "state", "keep")

@@ -15,7 +15,7 @@ import (
 )
 
 func TestNginxRegeneratorContractAndPreflight(t *testing.T) {
-	// R-1NHS-71WK R-1OPO-KTN9
+	// R-1NHS-71WK R-G6E0-ME8H
 	var regenerator backup.NginxRegenerator = func(context.Context) error { return nil }
 	var regenerate func(context.Context) error = regenerator
 	if err := regenerate(context.Background()); err != nil {
@@ -23,10 +23,12 @@ func TestNginxRegeneratorContractAndPreflight(t *testing.T) {
 	}
 
 	root := t.TempDir()
+
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	used := false
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 		used = true
@@ -41,7 +43,7 @@ func TestNginxRegeneratorContractAndPreflight(t *testing.T) {
 }
 
 func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
-	// R-1OPO-KTN9
+	// R-G6E0-ME8H
 	for _, test := range []struct {
 		name      string
 		service   string
@@ -49,14 +51,15 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 		active    bool
 	}{
 		{name: "no database app", service: "notes", installed: true, active: true},
-		{name: "data only", service: "backup-host"},
+		{name: "inactive app", service: "notes", installed: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			restoreInstalled(t, root, false)
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
-			store := configuredFileStore(t, root)
+			store := restoreConfiguredStore(t, root)
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba", test.service), 0o750); err != nil {
 				t.Fatal(err)
 			}
@@ -73,7 +76,7 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 				}
 				return nil
 			})
-			if err != nil || calls != 1 || len(report.Steps) != 4 || report.Steps[3].Name != "start" {
+			if err != nil || calls != 1 || len(report.Steps) != 5 || report.Steps[4].Name != "start" {
 				t.Fatalf("Restore() = %+v, %v, nginx calls %d", report, err, calls)
 			}
 		})
@@ -81,12 +84,13 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 }
 
 func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
-	// R-1OPO-KTN9 R-G7FZ-2AO2 R-1XAH-IPGL
+	// R-G6E0-ME8H R-G7FZ-2AO2 R-FMVM-I2DD
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("published"), uid: os.Getuid(), gid: os.Getgid()})
 	executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true}
 	cause := errors.New("nginx publication unavailable")
@@ -95,7 +99,7 @@ func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
 	if err == nil || !errors.Is(err, cause) || !errors.As(err, &failure) || failure.Stage != "nginx regeneration" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service"}) {
 		t.Fatalf("Restore() error = %#v", err)
 	}
-	if len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[1].Name != "stop" || report.Steps[2].Name != "files" {
+	if len(report.Steps) != 4 || report.Steps[0].Name != "source" || report.Steps[2].Name != "stop" || report.Steps[3].Name != "files" {
 		t.Fatalf("report = %+v", report.Steps)
 	}
 	if strings.Contains(strings.Join(executor.commands, "\n"), "systemctl start") {

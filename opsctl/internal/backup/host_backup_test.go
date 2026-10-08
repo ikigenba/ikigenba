@@ -139,12 +139,13 @@ func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
 }
 
 func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
-	// R-XNLV-26UX R-YDWZ-GQQ4 R-9TEE-6UL8 R-YYIY-T743 R-LZ82-QJF7
+	// R-FJ7X-CR5A R-YDWZ-GQQ4 R-9TEE-6UL8 R-YYIY-T743 R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/nested/settings", "host settings\n", 0o640)
 	writeFile(t, root, "etc/letsencrypt/live/cert.pem", "certificate\n", 0o600)
 	writeFile(t, root, "opt/app/state/value", "service data", 0o600)
+	writeFile(t, root, "etc/opt/ikigenba/app/env", "service secret", 0o000)
 	writeFile(t, root, "var/opt/ikigenba/app/state/value", "new service data", 0o600)
 	writeFile(t, root, "etc/nginx/nginx.conf", "nginx data", 0o600)
 	writeFile(t, root, "etc/systemd/system/ikigenba-app.service", "unit data", 0o600)
@@ -156,6 +157,7 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 	forbidden := newFileAccessWatch(t,
 		filepath.Join(root, "opt"),
 		filepath.Join(root, "var/opt"),
+		filepath.Join(root, "etc/opt"),
 		filepath.Join(root, "etc/nginx"),
 		filepath.Join(root, "etc/systemd/system"),
 		filepath.Join(root, "var/lib/ikigenba"),
@@ -239,7 +241,7 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 }
 
 func TestHostBackupPreservesSourceRootSymlinksWithoutDereferencing(t *testing.T) {
-	// R-XNLV-26UX
+	// R-FJ7X-CR5A
 	root := t.TempDir()
 	writeFile(t, root, "opt/ikigenba-private/secret", "service secret", 0o600)
 	writeFile(t, root, "opt/letsencrypt-private/key.pem", "private key", 0o600)

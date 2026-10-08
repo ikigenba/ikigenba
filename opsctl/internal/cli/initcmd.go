@@ -403,7 +403,7 @@ func renderInitAddresses(values []string) (string, error) {
 	return strings.Join(uniqueSorted(canonical), ","), nil
 }
 
-// checkInitStateMoved refuses installed apps whose data still needs installation migration.
+// checkInitStateMoved refuses installed apps whose data or environment needs installation migration.
 func checkInitStateMoved(root string) error {
 	services, err := apps.Discover(root)
 	if err != nil {
@@ -433,6 +433,13 @@ func checkInitStateMoved(root string) error {
 			return fmt.Errorf("%s: /opt/%s/state has not moved; install %s first", service.Name, service.Name, service.Name)
 		}
 		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		_, err = filesystem.Lstat(filepath.Join(strings.TrimPrefix(apps.EnvRoot, "/"), service.Name, "env"))
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%s: /opt/%s/etc/env has not moved; install %s first", service.Name, service.Name, service.Name)
+		}
+		if err != nil {
 			return err
 		}
 	}

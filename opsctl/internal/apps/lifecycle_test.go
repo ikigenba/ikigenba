@@ -280,7 +280,7 @@ func sqliteDatabase(mode byte) []byte {
 }
 
 func TestStatusUsesOnlyRootedDataDirectoryForDatabase(t *testing.T) {
-	// R-G5KQ-48TE
+	// R-YW93-ZIXT
 	root := t.TempDir()
 	writeStatusService(t, root, "notes", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 2)
 	writeFixturePath(t, root, "opt/notes/state/app.db", string(sqliteDatabase(1)))

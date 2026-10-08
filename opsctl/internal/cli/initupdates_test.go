@@ -140,7 +140,7 @@ type initReportWriter struct {
 func (w initReportWriter) Write(data []byte) (int, error) { return w.write(data) }
 
 func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
-	// R-0CMK-5AF6
+	// R-YRDI-GFZ1
 	deps := initDeps(t, map[string]string{
 		dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZONE", "host.name": "HOST.Example.Com.",
 		"acme.email": "operator@example.com", "aws.region": "us-east-2", "backup.s3_uri": "s3://bucket/host/",
@@ -158,13 +158,15 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 		if name == "notes" {
 			env += apps.ServicesEnv + "=old-path\n"
 		}
-		writeCLIInstallFile(t, filepath.Join(appDir, "etc", "env"), env)
+		writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/opt/ikigenba", name, "env"), env)
+		writeCLIInstallFile(t, filepath.Join(appDir, "etc", "env"), "LEGACY=preserved\nDRAIN_SECONDS=1\n")
 		writeCLIInstallFile(t, filepath.Join(appDir, "etc", "manifest.toml"), "app = \""+name+"\"\n[resources]\ncpu_weight = 350\nmemory_max = \"512M\"\nslice = \"core\"\ngo_memory_limit = \"384M\"\ndelegate = true\noom_policy = \"continue\"\n")
 		if name == "todos" {
 			writeCLIInstallFile(t, filepath.Join(appDir, "etc", "manifest.toml"), "app = \"todos\"\n")
 		}
 		writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/systemd/system", "ikigenba-"+name+".service"), "old service\n")
 	}
+	writeCLIInstallFile(t, filepath.Join(deps.Root, "var/opt/ikigenba/orphan/state/kept"), "data only\n")
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {{Name: "example.com", Type: "SOA"}, {Name: "example.com", Type: "NS", Values: []string{"ns1"}}},
 	}}
@@ -212,20 +214,33 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 			t.Fatalf("run %d failed: exit %d stderr %q", run, code, stderr)
 		}
 		for _, name := range []string{"notes", "tasks", "todos"} {
-			env, err := fs.ReadFile(os.DirFS(deps.Root), "opt/"+name+"/etc/env")
+			env, err := fs.ReadFile(os.DirFS(deps.Root), "etc/opt/ikigenba/"+name+"/env")
 			if err != nil {
 				t.Fatal(err)
 			}
 			assertInitSettingLines(t, env, []string{fmt.Sprintf("DRAIN_SECONDS=%d\n", drain), apps.ServicesEnv + "=" + apps.ServicesPath + "\n"})
+			legacy, err := fs.ReadFile(os.DirFS(deps.Root), "opt/"+name+"/etc/env")
+			if err != nil || string(legacy) != "LEGACY=preserved\nDRAIN_SECONDS=1\n" {
+				t.Fatalf("legacy environment changed: %q, %v", legacy, err)
+			}
 			unit, err := fs.ReadFile(os.DirFS(deps.Root), "etc/systemd/system/ikigenba-"+name+".service")
 			if err != nil {
 				t.Fatal(err)
 			}
 			if name == "todos" {
-				assertInitSettingLines(t, unit, []string{fmt.Sprintf("TimeoutStopSec=%d\n", stop), "CPUWeight=100\n", "MemoryMax=134217728\n", "Slice=ikigenba-apps.slice\n", "Environment=GOMEMLIMIT=100663296\n"})
+				assertInitSettingLines(t, unit, []string{fmt.Sprintf("TimeoutStopSec=%d\n", stop), "EnvironmentFile=" + filepath.Join(deps.Root, "etc/opt/ikigenba", name, "env") + "\n", "CPUWeight=100\n", "MemoryMax=134217728\n", "Slice=ikigenba-apps.slice\n", "Environment=GOMEMLIMIT=100663296\n"})
 			} else {
-				assertInitSettingLines(t, unit, []string{fmt.Sprintf("TimeoutStopSec=%d\n", stop), "CPUWeight=350\n", "MemoryMax=536870912\n", "Slice=ikigenba-core.slice\n", "MemoryLow=32M\n", "Environment=GOMEMLIMIT=402653184\n", "Delegate=yes\n", "OOMPolicy=continue\n"})
+				assertInitSettingLines(t, unit, []string{fmt.Sprintf("TimeoutStopSec=%d\n", stop), "EnvironmentFile=" + filepath.Join(deps.Root, "etc/opt/ikigenba", name, "env") + "\n", "CPUWeight=350\n", "MemoryMax=536870912\n", "Slice=ikigenba-core.slice\n", "MemoryLow=32M\n", "Environment=GOMEMLIMIT=402653184\n", "Delegate=yes\n", "OOMPolicy=continue\n"})
 			}
+		}
+		for _, relative := range []string{"opt/orphan", "etc/opt/ikigenba/orphan", "etc/systemd/system/ikigenba-orphan.service"} {
+			if _, err := os.Lstat(filepath.Join(deps.Root, relative)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("data-only service acquired %s: %v", relative, err)
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(deps.Root, "var/opt/ikigenba/orphan/state/kept"))
+		if err != nil || string(data) != "data only\n" {
+			t.Fatalf("data-only service changed: %q, %v", data, err)
 		}
 		wantControls := []string{"restart ikigenba-notes.service"}
 		if run == 1 {
@@ -237,7 +252,7 @@ func TestInitAppsStepUsesCurrentSettingsAndKeepsResources(t *testing.T) {
 	}
 	before := map[string][]byte{}
 	for _, name := range []string{"notes", "tasks", "todos"} {
-		for _, path := range []string{"opt/" + name + "/etc/env", "etc/systemd/system/ikigenba-" + name + ".service"} {
+		for _, path := range []string{"etc/opt/ikigenba/" + name + "/env", "etc/systemd/system/ikigenba-" + name + ".service"} {
 			data, err := fs.ReadFile(os.DirFS(deps.Root), path)
 			if err != nil {
 				t.Fatal(err)

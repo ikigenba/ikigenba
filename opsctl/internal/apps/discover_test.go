@@ -11,7 +11,6 @@ import (
 
 // R-G6SM-I0K3
 // R-G34X-CPC0
-// R-G5KQ-48TE
 func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T) {
 	missingRoot := t.TempDir()
 	services, err := apps.Discover(missingRoot)
@@ -318,4 +317,22 @@ func snapshotTree(t *testing.T, root string) map[string]treeSnapshotEntry {
 		t.Fatalf("snapshot %s: %v", root, err)
 	}
 	return snapshot
+}
+
+func TestEnvironmentDirectoriesDoNotMakeServices(t *testing.T) {
+	// R-045H-R9MT
+	root := t.TempDir()
+	mkdirAll(t, filepath.Join(root, "opt", "package", "etc"))
+	mkdirAll(t, filepath.Join(root, apps.DataRoot, "data", "state"))
+	before, err := apps.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"package", "data", "environment-only"} {
+		writeFile(t, filepath.Join(root, apps.EnvRoot, name, "env"), []byte("SECRET=value\n"))
+	}
+	after, err := apps.Discover(root)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("environment affected discovery: before %#v after %#v: %v", before, after, err)
+	}
 }

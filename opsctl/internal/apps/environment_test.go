@@ -36,7 +36,7 @@ func TestPrepareAndPublishEnvironmentForDataOnlyService(t *testing.T) {
 		if string(data) != want {
 			t.Fatalf("environment %q", data)
 		}
-		destination := filepath.Join(root, "opt", service, "etc", "env")
+		destination := filepath.Join(root, "etc", "opt", "ikigenba", service, "env")
 		writeFixture(t, destination, []byte("archive environment"), 0644)
 		if err := apps.PublishEnvironment(root, service, data); err != nil {
 			t.Fatal(err)

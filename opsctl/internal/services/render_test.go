@@ -135,6 +135,9 @@ func TestRenderSelectsExactlyListedServices(t *testing.T) {
 	renderFixture(t, root, "no-binary", "app = \"no-binary\"\n", false, icon)
 	renderFixture(t, root, "empty-app", "description = \"Not routed\"\n", true, icon)
 	renderFixture(t, root, "no-icon", "app = \"no-icon\"\n", true, nil)
+	if err := os.MkdirAll(filepath.Join(root, "var", "opt", "ikigenba", "data-only", "state"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"directory-binary", "symlink-binary"} {
 		renderFixture(t, root, name, "app = \""+name+"\"\n", false, icon)
 		if err := os.MkdirAll(filepath.Join(root, "opt", name, "bin"), 0o750); err != nil {

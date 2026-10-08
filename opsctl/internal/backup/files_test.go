@@ -103,11 +103,12 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 }
 
 func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
-	// R-T7OU-NQ6M R-T8WR-1HXB R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
+	// R-T7OU-NQ6M R-F70X-J1QC R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o640)
-	writeFile(t, root, "opt/alpha/etc/env", "TOKEN=value\n", 0o640)
+	writeFile(t, root, "opt/alpha/etc/env", "TOKEN=value\n", 0o000)
+	writeFile(t, root, "etc/opt/ikigenba/alpha/env", "NEW_TOKEN=secret\n", 0o000)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/data.txt", "ordinary\n", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "database", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db-wal", "wal", 0o600)
@@ -128,7 +129,6 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	for name, mode := range map[string]fs.FileMode{
 		"opt/alpha/etc":                         0o711,
 		"var/opt/ikigenba/alpha/state":          0o750,
-		"opt/alpha/etc/env":                     0o640,
 		"opt/alpha/etc/manifest.toml":           0o440,
 		"var/opt/ikigenba/alpha/state/data.txt": 0o604,
 	} {
@@ -137,7 +137,7 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 		}
 	}
 	before := fileTreeSnapshot(t, root)
-	servicesWatch := newFileAccessWatch(t, filepath.Join(root, "var/lib/ikigenba"), filepath.Join(root, "var/lib/ikigenba/services.json"))
+	servicesWatch := newFileAccessWatch(t, filepath.Join(root, "var/lib/ikigenba"), filepath.Join(root, "var/lib/ikigenba/services.json"), filepath.Join(root, "etc/opt/ikigenba/alpha"))
 
 	executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), user: "ikigenba", group: "ikigenba"}
 	client := newFileCloud()
@@ -149,7 +149,7 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	if got := resultNames(results); !reflect.DeepEqual(got, []string{"alpha", "plain", "zeta"}) {
 		t.Fatalf("result services = %v", got)
 	}
-	wantSizes := map[string]int64{"alpha": 5648, "plain": 2576, "zeta": 2576}
+	wantSizes := map[string]int64{"alpha": 3088, "plain": 2576, "zeta": 1040}
 	for _, result := range results {
 		if result.Err != nil || result.Object != "2026-09-16T17:34:56.1234Z.tar.zst" || result.Size != wantSizes[result.Service] {
 			t.Fatalf("result = %+v", result)
@@ -161,19 +161,13 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	}
 
 	alpha := readTestArchive(t, client.objects["s3://bucket/host/alpha/2026-09-16T17:34:56.1234Z.tar.zst"])
-	wantAlpha := []string{"etc/", "etc/env", "etc/manifest.toml", "state/", "state/data.txt", "state/outside"}
+	wantAlpha := []string{"state/", "state/data.txt", "state/outside"}
 	if got := sortedHeaderNames(alpha); !reflect.DeepEqual(got, wantAlpha) {
 		t.Fatalf("alpha members = %v, want %v", got, wantAlpha)
 	}
-	if got := string(alpha["etc/env"].data); got != "TOKEN=value\n" {
-		t.Fatalf("etc/env = %q", got)
-	}
 	for name, want := range map[string]int64{
-		"etc/":              0o711,
-		"state/":            0o750,
-		"etc/env":           0o640,
-		"etc/manifest.toml": 0o440,
-		"state/data.txt":    0o604,
+		"state/":         0o750,
+		"state/data.txt": 0o604,
 	} {
 		if got := alpha[name].header.Mode; got != want {
 			t.Fatalf("%s mode = %#o, want %#o", name, got, want)
@@ -931,8 +925,8 @@ func TestFilesLegacyStateAloneIsNotAService(t *testing.T) {
 }
 
 func TestFilesCanonicalReadFailure(t *testing.T) {
-	// R-XMDY-OF48
-	for _, name := range []string{"opt/crm/etc/outbox", "var/opt/ikigenba/crm/state/outbox"} {
+	// R-F88T-WTH1
+	for _, name := range []string{"opt/crm/etc/manifest.toml", "var/opt/ikigenba/crm/state/outbox"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
@@ -948,7 +942,7 @@ func TestFilesCanonicalReadFailure(t *testing.T) {
 }
 
 func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
-	// R-T7OU-NQ6M R-TDSC-KKW3
+	// R-T7OU-NQ6M R-FAOM-OCYF
 	for _, location := range []struct{ parent, marker, alternate, alternateMarker string }{
 		{"opt", "etc", "var/opt/ikigenba", "state"},
 		{"var/opt/ikigenba", "state", "opt", "etc"},

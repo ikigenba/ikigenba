@@ -21,7 +21,9 @@ const installUsage = `Usage: opsctl install URI
 Install the app at URI, an s3:// object holding an <app>-<tag>.tar.xz built by
 devctl. The app name and the secrets it needs are read from
 etc/manifest.toml inside it; the secret values are read from the parameter
-/<host.name>/<app>.
+/<host.name>/<app>. They and the manifest's [env] settings are written to
+/etc/opt/ikigenba/<app>/env, the service's environment file, which every
+install rewrites whole; an old /opt/<app>/etc/env goes with the old etc/.
 
 The app's data lives in its working directory, /var/opt/ikigenba/<app>/, which
 is created if missing; nothing in it is touched, so installing over a running

@@ -37,26 +37,21 @@ func snapshotRestoreExecute(t *testing.T, root string, events *[]string) func(co
 	base := &restoreStageExecutor{t: t, root: root}
 	return func(ctx context.Context, command host.Command) (host.Result, error) {
 		*events = append(*events, strings.Join(append([]string{command.Name}, command.Args...), " "))
-		if command.Name == "chown" && command.Args[0] == "root:ikigenba" {
-			want := []string{"root:ikigenba", filepath.Join(root, "opt", "notes", "etc", "env")}
-			if !reflect.DeepEqual(command.Args, want) {
-				t.Fatalf("chown args %v", command.Args)
-			}
-			return host.Result{}, nil
-		}
 		return base.execute(ctx, command)
 	}
 }
 func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing.T) {
-	// R-1W2L-4XPW R-1XAH-IPGL R-2263-1SFD R-S1AR-UPD9 R-Y10R-9O0K R-Y28N-NFR9 R-2FKZ-99L0 R-XYKY-I4J6 R-Y4OG-EZ8N
+	// R-1W2L-4XPW R-FMVM-I2DD R-24BQ-JTDF R-FU70-SOTJ R-GCHI-J8XY R-GDPE-X0ON R-GG57-OK61 R-GHD4-2BWQ R-GIL0-G3NF
 	root := t.TempDir()
+	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	if err := store.Set("host.name", "Host.Example.COM."); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\nsecrets = [\"TOKEN\", \"TOKEN\"]\n[env]\nPLAIN = \"hello world\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0600)
 	writeFile(t, root, "var/opt/ikigenba/notes/state/stale", "old", 0600)
 	writeFile(t, root, "opt/notes/bin/notes", "binary", 0700)
 	db := make([]byte, 512)
@@ -85,7 +80,7 @@ func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing
 	if !reflect.DeepEqual(names, []string{"source", "secrets", "stop", "files", "db", "litestream", "start"}) {
 		t.Fatalf("steps %v", report.Steps)
 	}
-	if report.Steps[0].Detail != fmt.Sprintf("%s, %.1f MiB", from, float64(len(body))/1048576) || report.Steps[1].Detail != "1 keys" || report.Steps[3].Detail != "/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files" || report.Steps[4].Detail != "/var/opt/ikigenba/notes/state/app.db, from snapshot" {
+	if report.Steps[0].Detail != fmt.Sprintf("%s, %.1f MiB", from, float64(len(body))/1048576) || report.Steps[1].Detail != "1 keys" || report.Steps[3].Detail != "/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 1 files" || report.Steps[4].Detail != "/var/opt/ikigenba/notes/state/app.db, from snapshot" {
 		t.Fatalf("steps %+v", report.Steps)
 	}
 	if !reflect.DeepEqual(client.got, []string{from}) || len(client.listed) != 0 || !reflect.DeepEqual(client.parameters, []string{"/host.example.com/notes"}) || client.puts != 0 {
@@ -96,16 +91,16 @@ func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing
 			t.Fatalf("invoked replica command %s", event)
 		}
 	}
-	envData := string(readHostRestoreFile(t, root, "opt/notes/etc/env"))
+	envData := string(readHostRestoreFile(t, root, "etc/opt/ikigenba/notes/env"))
 	if !strings.Contains(envData, "TOKEN=\"new token\"\n") || !strings.Contains(envData, "PLAIN=\"hello world\"\n") || !strings.Contains(envData, "DRAIN_SECONDS=") || !strings.Contains(envData, "IKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n") || strings.Contains(envData, "IGNORED") || strings.Contains(envData, "archived") {
 		t.Fatalf("environment unexpected %q", envData)
 	}
-	info, err := os.Stat(filepath.Join(root, "opt/notes/etc/env"))
+	info, err := os.Stat(filepath.Join(root, "etc/opt/ikigenba/notes/env"))
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatalf("environment mode %v %v", info, err)
 	}
 	db = readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/app.db")
-	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/app.db", 0640, os.Getuid(), os.Getgid())
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/app.db", 0600, os.Getuid(), os.Getgid())
 	if db[18] != 2 || db[19] != 2 {
 		t.Fatal("snapshot database was not converted to WAL")
 	}
@@ -117,7 +112,7 @@ func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing
 	}
 }
 func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
-	// R-2APD-Q6M8 R-Y10R-9O0K R-1XAH-IPGL
+	// R-GB9M-5H79 R-GCHI-J8XY R-FMVM-I2DD
 	tests := []struct {
 		name, from, hostName string
 		at                   *time.Time
@@ -138,10 +133,11 @@ func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
+			restoreInstalled(t, root, tc.name == "missing database")
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
-			store := configuredFileStore(t, root)
+			store := restoreConfiguredStore(t, root)
 			if err := store.Set("host.name", tc.hostName); err != nil {
 				t.Fatal(err)
 			}
@@ -169,15 +165,15 @@ func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
 					t.Fatalf("host action %s", event)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(root, "opt")); !errors.Is(err, os.ErrNotExist) {
-				t.Fatal("created service root")
+			if data := string(readHostRestoreFile(t, root, "opt/notes/bin/notes")); data != "installed binary" {
+				t.Fatal("changed binary")
 			}
 		})
 	}
 }
 
 func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
-	// R-Y28N-NFR9 R-1XAH-IPGL R-Y4OG-EZ8N
+	// R-GDPE-X0ON R-FMVM-I2DD R-GIL0-G3NF
 	for _, tc := range []struct {
 		name, manifest string
 		values         map[string]string
@@ -192,10 +188,11 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
+			restoreInstalled(t, root, false)
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
-			store := configuredFileStore(t, root)
+			store := restoreConfiguredStore(t, root)
 			if err := store.Set("host.name", "HOST.EXAMPLE."); err != nil {
 				t.Fatal(err)
 			}
@@ -204,7 +201,8 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			body := hostRestoreArchive(t, restoreMember{name: "etc/manifest.toml", data: []byte(tc.manifest)})
+			writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n"+tc.manifest, 0600)
+			body := hostRestoreArchive(t, restoreMember{name: "etc/manifest.toml", data: []byte("app = \"unrelated\"\n")})
 			from := "s3://bucket/snapshot"
 			client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}, secrets: tc.values, secretErr: tc.secretErr}
 			writeFile(t, root, "var/opt/ikigenba/notes/state/sentinel", "unchanged", 0o600)
@@ -224,7 +222,7 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 			if len(events) != 1 || !strings.HasPrefix(events[0], "zstd ") {
 				t.Fatalf("host actions %v", events)
 			}
-			for _, name := range []string{"opt", "run/opsctl/restore"} {
+			for _, name := range []string{"run/opsctl/restore"} {
 				if _, err := os.Stat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("created %s", name)
 				}
@@ -233,39 +231,42 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 	}
 }
 
-func TestRestoreSnapshotEnvironmentReplacesArchivedDirectory(t *testing.T) {
-	// R-2FKZ-99L0 R-S1AR-UPD9 R-Y28N-NFR9
+func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
+	// R-GG57-OK61 R-FU70-SOTJ R-GDPE-X0ON
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	if err := store.Set("host.name", "host"); err != nil {
 		t.Fatal(err)
 	}
-	body := hostRestoreArchive(t, restoreMember{name: "etc/manifest.toml", data: []byte("[env]\nVALUE = \"new\"\n")}, restoreMember{name: "etc/env/old", data: []byte("old")})
+	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[env]\nVALUE = \"new\"\n", 0600)
+	body := hostRestoreArchive(t, restoreMember{name: "etc/manifest.toml", data: []byte("[env]\nVALUE = \"archived\"\n")}, restoreMember{name: "etc/env/old", data: []byte("old")})
 	from := "s3://bucket/snapshot"
 	client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}}
 	var events []string
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 5 || report.Steps[1].Detail != "0 keys" || report.Steps[3].Detail != "/opt/notes/etc, /var/opt/ikigenba/notes/state, 1 files" {
+	if err != nil || len(report.Steps) != 5 || report.Steps[1].Detail != "0 keys" || report.Steps[3].Detail != "/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 0 files" {
 		t.Fatalf("Restore %+v %v", report, err)
 	}
 	if len(client.parameters) != 0 {
 		t.Fatal("read empty secrets")
 	}
-	if data := string(readHostRestoreFile(t, root, "opt/notes/etc/env")); !strings.Contains(data, "VALUE=\"new\"\n") {
+	if data := string(readHostRestoreFile(t, root, "etc/opt/ikigenba/notes/env")); !strings.Contains(data, "VALUE=\"new\"\n") {
 		t.Fatalf("environment %q", data)
 	}
 }
 
-func TestRestoreSnapshotWithoutManifestRetainsEnvironment(t *testing.T) {
-	// R-2FKZ-99L0 R-Y28N-NFR9 R-Y4OG-EZ8N
+func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing.T) {
+	// R-GG57-OK61 R-GDPE-X0ON R-GIL0-G3NF
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	if err := store.Set("host.name", "host"); err != nil {
 		t.Fatal(err)
 	}
@@ -274,31 +275,28 @@ func TestRestoreSnapshotWithoutManifestRetainsEnvironment(t *testing.T) {
 	client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}}
 	var events []string
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 4 || len(client.parameters) != 0 {
+	if err != nil || len(report.Steps) != 5 || len(client.parameters) != 0 {
 		t.Fatalf("Restore %+v %v parameters %v", report, err, client.parameters)
 	}
-	if data := string(readHostRestoreFile(t, root, "opt/notes/etc/env")); data != "archived" {
+	if data := string(readHostRestoreFile(t, root, "etc/opt/ikigenba/notes/env")); strings.Contains(data, "archived") || !strings.Contains(data, "DRAIN_SECONDS=") {
 		t.Fatalf("environment %q", data)
 	}
-	for _, event := range events {
-		if strings.HasPrefix(event, "getent ") || strings.HasPrefix(event, "chown ") {
-			t.Fatalf("account action without manifest %s", event)
-		}
-	}
+
 }
 
 func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
-	// R-2FKZ-99L0 R-1XAH-IPGL R-Y4OG-EZ8N
+	// R-GG57-OK61 R-FMVM-I2DD R-GIL0-G3NF
 	for _, tc := range []struct{ name, failCommand, stage string }{
 		{name: "account", failCommand: "id --user ikigenba", stage: "ownership"},
-		{name: "publication ownership", failCommand: "chown", stage: "environment"},
+		{name: "publication", stage: "environment"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
+			restoreInstalled(t, root, false)
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
-			store := configuredFileStore(t, root)
+			store := restoreConfiguredStore(t, root)
 			if err := store.Set("host.name", "host"); err != nil {
 				t.Fatal(err)
 			}
@@ -310,18 +308,31 @@ func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
 			cause := errors.New("injected failure")
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(ctx context.Context, command host.Command) (host.Result, error) {
 				text := strings.Join(append([]string{command.Name}, command.Args...), " ")
-				if text == tc.failCommand || command.Name == tc.failCommand {
+				if tc.failCommand != "" && (text == tc.failCommand || command.Name == tc.failCommand) {
 					return host.Result{}, cause
 				}
-				return execute(ctx, command)
+				result, err := execute(ctx, command)
+				if tc.stage == "environment" && command.Name == "getent" {
+					rootFS, err := os.OpenRoot(root)
+					if err != nil {
+						t.Fatal(err)
+					}
+					directory := "etc/opt/ikigenba/notes"
+					if err := rootFS.Chmod(directory, 0500); err != nil {
+						_ = rootFS.Close()
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = rootFS.Chmod(directory, 0755); _ = rootFS.Close() })
+				}
+				return result, err
 			}}, cloud.Env{Open: client.open}, store, "notes", nil, from, func(context.Context) error { t.Fatal("callback invoked"); return nil })
 			var failure *backup.RestoreError
-			if !errors.As(err, &failure) || failure.Stage != tc.stage || !errors.Is(err, cause) || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
+			if !errors.As(err, &failure) || failure.Stage != tc.stage || (tc.stage == "ownership" && !errors.Is(err, cause)) || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 				t.Fatalf("Restore %+v error %#v", report, err)
 			}
 			if tc.stage == "ownership" {
-				if _, err := os.Stat(filepath.Join(root, "opt")); !errors.Is(err, os.ErrNotExist) {
-					t.Fatal("account failure mutated target")
+				if data := string(readHostRestoreFile(t, root, "etc/opt/ikigenba/notes/env")); data != "OLD=value\n" {
+					t.Fatal("account failure mutated environment")
 				}
 			}
 		})
@@ -329,12 +340,14 @@ func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
 }
 
 func TestRestoreSnapshotMapsDatabaseOwnership(t *testing.T) {
-	// R-XYKY-I4J6 R-ZBT9-WYGY
+	// R-GHD4-2BWQ R-GA1P-RPGK
 	root := t.TempDir()
+	restoreInstalled(t, root, true)
+	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	if err := store.Set("host.name", "host"); err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,9 @@ import (
 // DataRoot is the host directory containing service data directories.
 const DataRoot = "/var/opt/ikigenba"
 
+// EnvRoot holds service environment directories.
+const EnvRoot = "/etc/opt/ikigenba"
+
 // Database describes an app's database storage.
 type Database struct {
 	Engine string

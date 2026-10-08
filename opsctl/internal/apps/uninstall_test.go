@@ -50,7 +50,7 @@ func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
 }
 
 func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
-	// R-XRPS-FLUE R-FZV5-Z7X5
+	// R-XRPS-FLUE R-ZWU3-GN6N
 	for _, test := range []struct {
 		name   string
 		mutate func(*testing.T, *uninstallFixture)
@@ -119,7 +119,7 @@ func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
 
 func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	// R-YBI2-GUY1
-	// R-FYN9-LG6G R-HB1B-4G10 R-FZV5-Z7X5
+	// R-ZVM7-2VFY R-HB1B-4G10 R-ZWU3-GN6N
 	fixture := newUninstallFixture(t, "active")
 	actionErr := errors.New("stop transport failed")
 	reportErr := errors.New("report write failed")
@@ -147,7 +147,7 @@ func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 }
 
 func TestUninstallConfigureFailurePreservesOwnedOutcomes(t *testing.T) {
-	// R-FZV5-Z7X5
+	// R-ZWU3-GN6N
 	fixture := newUninstallFixture(t, "active")
 	configureErr := errors.New("configuration failed")
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
@@ -211,7 +211,7 @@ func TestUninstallStopsOnlyActiveUnitsAndAlwaysDisables(t *testing.T) {
 }
 
 func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
-	// R-G132-CZNU
+	// R-ZY1Z-UEXC
 	fixture := newUninstallFixture(t, "inactive")
 	unit := filepath.Join(fixture.root, "etc/systemd/system/ikigenba-notes.service")
 	outside := filepath.Join(t.TempDir(), "outside.service")
@@ -247,7 +247,7 @@ func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
 }
 
 func TestUninstallRemovesOnlyAppPayloadWithoutFollowingSymlinks(t *testing.T) {
-	// R-HC97-I7RP
+	// R-01PO-ZQ5F
 	fixture := newUninstallFixture(t, "inactive")
 	stateFile := filepath.Join(fixture.root, "var/opt/ikigenba/notes/state/data.db")
 	writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/state/data.db", "preserved state")
@@ -414,4 +414,71 @@ func snapshotUninstallTree(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	return got
+}
+
+func TestUninstallRemovesEnvironmentTreeAndKeepsParents(t *testing.T) {
+	// R-01PO-ZQ5F R-045H-R9MT
+	for _, mode := range []string{"directory", "symlink", "absent", "parents absent"} {
+		t.Run(mode, func(t *testing.T) {
+			fixture := newUninstallFixture(t, "inactive")
+			environment := filepath.Join(fixture.root, apps.EnvRoot, "notes")
+			outside := t.TempDir()
+			writeFixturePath(t, outside, "sentinel", "preserved")
+			switch mode {
+			case "directory":
+				writeFixturePath(t, fixture.root, "etc/opt/ikigenba/notes/env", "SECRET=value\n")
+				writeFixturePath(t, fixture.root, "etc/opt/ikigenba/notes/nested/item", "payload")
+				if err := os.Symlink(outside, filepath.Join(environment, "escape")); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.MkdirAll(filepath.Dir(environment), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, environment); err != nil {
+					t.Fatal(err)
+				}
+			case "absent":
+				if err := os.MkdirAll(filepath.Dir(environment), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeFixturePath(t, fixture.root, "opt/notes/etc/env", "legacy untouched until removal")
+			var parentInfo os.FileInfo
+			if mode != "parents absent" {
+				var err error
+				parentInfo, err = os.Lstat(filepath.Dir(environment))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := fixture.uninstall(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(environment); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("environment remains: %v", err)
+			}
+			if mode == "parents absent" {
+				if _, err := os.Lstat(filepath.Join(fixture.root, "etc/opt")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("created environment parent: %v", err)
+				}
+			} else {
+				info, err := os.Lstat(filepath.Dir(environment))
+				if err != nil || !os.SameFile(info, parentInfo) || info.Mode() != parentInfo.Mode() {
+					t.Fatalf("environment parent changed: %v", err)
+				}
+			}
+			data, err := readFixturePath(outside, "sentinel")
+			if err != nil || string(data) != "preserved" {
+				t.Fatalf("followed symlink: %q, %v", data, err)
+			}
+			want := "removed /opt/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state"
+			if mode == "directory" || mode == "symlink" {
+				want = "removed /opt/notes, /etc/opt/ikigenba/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state"
+			}
+			if fixture.reports[2] != (uninstallReport{"files", want, true}) {
+				t.Fatalf("reports=%#v", fixture.reports)
+			}
+		})
+	}
 }

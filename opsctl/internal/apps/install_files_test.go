@@ -18,7 +18,8 @@ import (
 )
 
 func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
-	// R-GWEI-J74O
+	// R-ZPIP-60QH
+	//
 	manifest := []byte("app = \"notes\"\n")
 	tests := []struct {
 		name    string
@@ -30,7 +31,6 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 		{"duplicate", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("one"), 0o755), regularEntry("bin/notes", []byte("two"), 0o755)}, "duplicate archive path bin/notes"},
 		{"file ancestor", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o755), regularEntry("share/item", []byte("file"), 0o644), regularEntry("share/item/child", []byte("child"), 0o644)}, "file ancestor"},
 		{"file descendant before ancestor", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o755), regularEntry("share/item/child", []byte("child"), 0o644), regularEntry("share/item", []byte("file"), 0o644)}, "file ancestor"},
-		{"generated environment", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o755), regularEntry("etc/env", []byte("TOKEN=evil"), 0o644)}, "etc/env is reserved"},
 		{"absolute", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("/bin/notes", nil, 0o755)}, "invalid archive path"},
 		{"dot component", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/./notes", nil, 0o755)}, "invalid archive path"},
 		{"dotdot component", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/../notes", nil, 0o755)}, "invalid archive path"},
@@ -56,7 +56,8 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 }
 
 func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
-	// R-GWEI-J74O
+	// R-ZPIP-60QH
+	//
 	root := t.TempDir()
 	archive := tarEntries(t, []installTarEntry{
 		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o644),
@@ -156,7 +157,8 @@ func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
 }
 
 func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
-	// R-UQEV-85OK
+	// R-ZUEA-P3P9
+	//
 	secretValue := "top-secret\nsecond-line"
 	tests := []struct {
 		name     string
@@ -199,11 +201,12 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 }
 
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
-	// R-GWEI-J74O
+	// R-ZEJL-Q328 R-ZUEA-P3P9 R-045H-R9MT R-YW93-ZIXT
+	//
 	// R-ZPGG-VNBZ
 	// R-WY7U-IS2M
-	// R-UQEV-85OK
-	// R-GCW4-EV9K
+	//
+	//
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "stale"), []byte("old"), 0o700)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "stale"), []byte("old"), 0o600)
@@ -268,7 +271,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 			t.Fatalf("stale path %s still exists: %v", stale, statErr)
 		}
 	}
-	envPath := filepath.Join(root, "opt", "notes", "etc", "env")
+	envPath := filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env")
 	assertFile(t, envPath, "TOKEN=\"a value\"\nEMPTY=\"\"\nMODE=\"production\"\nQUOTED=\"a\\\"b\\\\c\"\nDRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n")
 	info, statErr := os.Stat(envPath)
 	if statErr != nil || info.Mode().Perm() != 0o600 {
@@ -277,7 +280,8 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 }
 
 func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-GWEI-J74O
+	// R-ZPIP-60QH
+	//
 	root := t.TempDir()
 	outside := t.TempDir()
 	writeFixture(t, filepath.Join(outside, "marker"), []byte("unchanged"), 0o600)

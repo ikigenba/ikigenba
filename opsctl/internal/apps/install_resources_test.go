@@ -19,13 +19,13 @@ func expectedResourceService(root string, stop int64, resourceLines string) stri
 	appRoot := filepath.Join(root, "opt", app)
 	return "[Unit]\nDescription=Ikigenba " + app + " app\nRequires=ikigenba-" + app + ".socket\nAfter=ikigenba-" + app + ".socket\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
-		"WorkingDirectory=" + filepath.Join(root, "var", "opt", "ikigenba", "notes") + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"WorkingDirectory=" + filepath.Join(root, "var", "opt", "ikigenba", "notes") + "\nEnvironmentFile=" + filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stop, 10) + "\n" + resourceLines + "\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
 }
 
-// R-GE40-SN09 R-GQB0-MCF7
 func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
+	// R-ZFRI-3USX R-ZKN3-MXRP
 	for _, test := range []struct{ name, table, lines string }{
 		{"absent", "", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
 		{"empty", "[resources]\n", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
@@ -80,8 +80,8 @@ func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
 	}
 }
 
-// R-GP34-8KOI
 func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
+	// R-1XWP-GAXY
 	for _, manifest := range []string{
 		"app = 'notes'\n[resources]\ncpu_weight = 100\nmemory_max = '512M'\nslice = 'core'\ndelegate = true\noom_policy = 'continue'\n",
 		"app = 'notes'\n[resources]\nmemory_max = '512M'\n",
@@ -94,7 +94,10 @@ func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 				writeFixture(t, filepath.Join(appRoot, "etc", "manifest.toml"), []byte(manifest), 0o640)
 			}
 			writeFixture(t, filepath.Join(appRoot, "bin", "notes"), []byte("binary"), 0o750)
-			envPath := filepath.Join(appRoot, "etc", "env")
+			if err := os.MkdirAll(filepath.Join(appRoot, "etc"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			envPath := filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env")
 			writeFixture(t, envPath, []byte("# keep\nDRAIN_SECONDS=05\nKEEP='literal'\nIKIGENBA_SERVICES=old\nTAIL=x"), 0o640)
 			unitPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
 			writeFixture(t, unitPath, []byte(expectedResourceService(root, 10, "CPUWeight=999\nIOWeight=300\n")), 0o644)
@@ -148,15 +151,15 @@ func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 	}
 }
 
-// R-GP34-8KOI
 func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T) {
+	// R-1XWP-GAXY
 	for _, manifest := range []string{"invalid = [", "app = 'other'", "app = 'zeta'\n[resources]\nio_weight = 50", "app = 'zeta'\n[resources]\nmemory_max = '512MB'"} {
 		root := t.TempDir()
 		store := installStoreAt(t, root, nil)
 		for _, name := range []string{"alpha", "zeta"} {
 			appRoot := filepath.Join(root, "opt", name)
 			writeFixture(t, filepath.Join(appRoot, "bin", name), []byte("binary"), 0o750)
-			writeFixture(t, filepath.Join(appRoot, "etc", "env"), []byte("DRAIN_SECONDS=1\n"), 0o600)
+			writeFixture(t, filepath.Join(root, "etc", "opt", "ikigenba", name, "env"), []byte("DRAIN_SECONDS=1\n"), 0o600)
 			writeFixture(t, filepath.Join(appRoot, "etc", "manifest.toml"), []byte("app = '"+name+"'"), 0o640)
 		}
 		writeFixture(t, filepath.Join(root, "opt", "zeta", "etc", "manifest.toml"), []byte(manifest), 0o640)
@@ -177,12 +180,15 @@ func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T
 	}
 }
 
-// R-GP34-8KOI
 func TestSetupTimeoutsRejectsUnreadableEnvironment(t *testing.T) {
+	// R-1XWP-GAXY
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "notes"), []byte("binary"), 0o750)
-	if err := os.MkdirAll(filepath.Join(root, "opt", "notes", "etc", "env"), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "opt", "notes", "etc"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "etc", "opt", "ikigenba", "notes", "env"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	err := apps.SetupTimeouts(t.Context(), host.Env{Root: root}, store)

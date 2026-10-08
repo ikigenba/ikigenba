@@ -19,12 +19,13 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-XEAW-84OR R-S1AR-UPD9 R-KALQ-MZPK
+	// R-FSZ4-EX2U R-FU70-SOTJ R-G8TT-DXPV
 	root := t.TempDir()
+	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "opt/notes/etc/stale", "remove", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/notes/state/stale", "remove", 0o600)
 	writeFile(t, root, "opt/notes/bin/app", "keep-bin", 0o700)
@@ -50,8 +51,9 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 	}
 	want := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
+		{Name: "secrets", Detail: "0 keys"},
 		{Name: "stop", Detail: "ikigenba-notes.socket, ikigenba-notes.service, litestream.service"},
-		{Name: "files", Detail: "/opt/notes/etc, /var/opt/ikigenba/notes/state, 4 files"},
+		{Name: "files", Detail: "/etc/opt/ikigenba/notes/env, /var/opt/ikigenba/notes/state, 2 files"},
 		{Name: "db", Detail: "/var/opt/ikigenba/notes/state/app.db, newest 2026-09-16T11:00:00Z"},
 		{Name: "litestream", Detail: "state/app.db"},
 		{Name: "start", Detail: "litestream.service, ikigenba-notes.socket, ikigenba-notes.service"},
@@ -75,13 +77,13 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 	if !reflect.DeepEqual(executor.commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v", executor.commands, wantCommands)
 	}
-	for _, name := range []string{"opt/notes/etc/stale", "var/opt/ikigenba/notes/state/stale"} {
+	for _, name := range []string{"var/opt/ikigenba/notes/state/stale"} {
 		if _, err := os.Lstat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("stale %s remains: %v", name, err)
 		}
 	}
 	for name, wantData := range map[string]string{
-		"opt/notes/etc/env": "TOKEN=restored\n", "var/opt/ikigenba/notes/state/data": "restored",
+		"opt/notes/etc/stale": "remove", "var/opt/ikigenba/notes/state/data": "restored",
 		"opt/notes/bin/app": "keep-bin", "opt/notes/share/asset": "keep-share", "opt/notes/cache/value": "keep-cache",
 	} {
 		data := readHostRestoreFile(t, root, name)
@@ -90,7 +92,7 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 		}
 	}
 	assertRestoreMetadata(t, root, "opt/notes/etc", 0o750, uid, gid)
-	assertRestoreMetadata(t, root, "opt/notes/etc/env", 0o640, uid, accountGID)
+	assertRestoreMetadata(t, root, "etc/opt/ikigenba/notes/env", 0o600, uid, gid)
 	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state", 0o710, uid, gid)
 	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/data", 0o620, uid, gid)
 	linkInfo, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/state/current"))
@@ -106,7 +108,7 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 }
 
 func TestRestoreAppGuardAndStopDetails(t *testing.T) {
-	// R-XEAW-84OR R-1PXK-YLDY
+	// R-FSZ4-EX2U R-25JM-XL44
 	for _, test := range []struct {
 		name      string
 		service   string
@@ -115,7 +117,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 		wantStop  string
 	}{
 		{name: "inactive", service: "notes", installed: true, wantStop: "litestream.service; ikigenba-notes.socket, ikigenba-notes.service already inactive"},
-		{name: "absent", service: "notes", wantStop: "litestream.service, no ikigenba-notes.socket"},
+		{name: "absent", service: "notes", wantStop: "litestream.service; ikigenba-notes.socket, ikigenba-notes.service already inactive"},
 		{name: "reserved data only", service: "backup-host", wantStop: "litestream.service, no app unit"},
 		{name: "reserved service timer", service: "backup-services", wantStop: "litestream.service, no app unit"},
 		{name: "reserved renewal", service: "renew-certificate", wantStop: "litestream.service, no app unit"},
@@ -123,10 +125,11 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			restoreInstalled(t, root, true)
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
-			store := configuredFileStore(t, root)
+			store := restoreConfiguredStore(t, root)
 			body := hostRestoreArchive(t,
 				restoreMember{name: "etc/manifest.toml", data: []byte("[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")},
 				restoreMember{name: "state/value", data: []byte("restored")},
@@ -134,7 +137,13 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 			client := restoreClientForService(t, body, test.service)
 			executor := &restoreStageExecutor{t: t, root: root, installed: test.installed, active: test.active}
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, test.service, nil, "", func(context.Context) error { return nil })
-			if err != nil || len(report.Steps) != 6 || report.Steps[1].Detail != test.wantStop {
+			if test.service != "notes" {
+				if err == nil || len(report.Steps) != 1 || report.Steps[0].Err.Error() != test.service+" is not installed; install "+test.service+" first" || len(executor.commands) != 0 || len(client.opened) != 0 {
+					t.Fatalf("guarded name: %+v %v %v", report, err, executor.commands)
+				}
+				return
+			}
+			if err != nil || len(report.Steps) != 7 || report.Steps[2].Detail != test.wantStop {
 				t.Fatalf("Restore() = %+v, %v, want stop %q", report, err, test.wantStop)
 			}
 			joined := strings.Join(executor.commands, "\n")
@@ -152,7 +161,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 	// R-YBI2-GUY1
-	// R-XEAW-84OR R-G7FZ-2AO2 R-1XAH-IPGL
+	// R-FSZ4-EX2U R-G7FZ-2AO2 R-FMVM-I2DD
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {
 		name         string
@@ -182,10 +191,11 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			restoreInstalled(t, root, true)
 			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 				t.Fatal(err)
 			}
-			store := configuredFileStore(t, root)
+			store := restoreConfiguredStore(t, root)
 			writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
 			writeFile(t, root, "var/opt/ikigenba/notes/state/old", "old state", 0o600)
 			body := hostRestoreArchive(t,
@@ -210,7 +220,7 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 			if restoreErr.Stage != test.wantStage || !reflect.DeepEqual(restoreErr.Stopped, test.wantStopped) {
 				t.Fatalf("RestoreError = %#v, want stage %q stopped %v", restoreErr, test.wantStage, test.wantStopped)
 			}
-			if len(report.Steps) != 2 || report.Steps[0].Name != "source" || report.Steps[1].Name != "stop" || report.Steps[1].Err == nil || report.Steps[1].Detail != "" {
+			if len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[2].Name != "stop" || report.Steps[2].Err == nil || report.Steps[2].Detail != "" {
 				t.Fatalf("report = %+v, want completed source and one failed stop", report)
 			}
 			if !reflect.DeepEqual(executor.commands, test.wantCommands) || downstreamCalls != 0 {
@@ -229,12 +239,13 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 }
 
 func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testing.T) {
-	// R-KALQ-MZPK
+	// R-G8TT-DXPV
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n")},
@@ -244,7 +255,7 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 	executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true, accountLookupErr: errors.New("identity backend unavailable")}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	var restoreErr *backup.RestoreError
-	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "ownership" || len(report.Steps) != 3 || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
+	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "ownership" || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil {
 		t.Fatalf("Restore() = %+v, %#v", report, err)
 	}
 	if data := readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/existing"); string(data) != "unchanged" {
@@ -257,19 +268,20 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 }
 
 func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
-	// R-KALQ-MZPK
+	// R-G8TT-DXPV
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), gname: "ikigenba"})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "id --user ikigenba", failErr: errors.New("account backend unavailable")}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return nil })
 	var failure *backup.RestoreError
 	var commandFailure *host.CommandError
-	if !errors.As(err, &failure) || failure.Stage != "ownership" || !errors.As(err, &commandFailure) || len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[0].Err != nil || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
+	if !errors.As(err, &failure) || failure.Stage != "ownership" || !errors.As(err, &commandFailure) || len(report.Steps) != 4 || report.Steps[0].Name != "source" || report.Steps[0].Err != nil || report.Steps[3].Name != "files" || report.Steps[3].Err == nil {
 		t.Fatalf("Restore() = %+v, %#v", report, err)
 	}
 	if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/existing")); got != "unchanged" {
@@ -281,23 +293,25 @@ func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
 }
 
 func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
-	// R-KALQ-MZPK
+	// R-G8TT-DXPV
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), uname: "ikigenba", gname: "ikigenba"})
 	client := restoreClientFor(t, body)
 	accountGID := restoreAlternateGID(t)
 	executor := &restoreStageExecutor{t: t, root: root, accountMissing: true, accountUID: os.Getuid(), accountGID: accountGID}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 4 {
+	if err != nil || len(report.Steps) != 5 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
 	wantCommands := []string{
 		"zstd --quiet --decompress --stdout",
 		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"id --user ikigenba",
 		"useradd --system --no-create-home --shell /usr/sbin/nologin --user-group ikigenba",
 		"getent passwd ikigenba",
@@ -312,12 +326,13 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-KALQ-MZPK R-S1AR-UPD9 R-G7FZ-2AO2 R-1XAH-IPGL
+	// R-G8TT-DXPV R-FU70-SOTJ R-G7FZ-2AO2 R-FMVM-I2DD
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/notes/state/old", "old state", 0o600)
 	body := hostRestoreArchive(t,
@@ -332,7 +347,7 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 		return nil
 	})
 	var restoreErr *backup.RestoreError
-	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "files" || len(report.Steps) != 3 || report.Steps[2].Name != "files" || report.Steps[2].Err == nil || report.Steps[2].Detail != "" {
+	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "files" || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 		t.Fatalf("Restore() = %+v, %#v; want failed files ownership application", report, err)
 	}
 	if !strings.Contains(err.Error(), "set ownership") || downstreamCalls != 0 {
@@ -351,12 +366,13 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 }
 
 func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
-	// R-KALQ-MZPK
+	// R-G8TT-DXPV
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n"), uid: os.Getuid(), gid: os.Getgid()},
 		restoreMember{name: "state/value", data: []byte("numeric ownership"), uid: os.Getuid(), gid: os.Getgid()},
@@ -364,7 +380,7 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 	client := restoreClientFor(t, body)
 	executor := &restoreStageExecutor{t: t, root: root, accountUID: os.Getuid(), accountGID: os.Getgid()}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 4 {
+	if err != nil || len(report.Steps) != 5 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
 	joined := strings.Join(executor.commands, "\n")
@@ -374,12 +390,13 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 }
 
 func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
-	// R-KALQ-MZPK
+	// R-G8TT-DXPV
 	root := t.TempDir()
+	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	store := configuredFileStore(t, root)
+	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "state/value", data: []byte("new"), gname: "ikigenba"},
@@ -392,7 +409,7 @@ func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
 	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "ownership" {
 		t.Fatalf("Restore() = %+v, %#v, want ownership failure", report, err)
 	}
-	if len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
+	if len(report.Steps) != 4 || report.Steps[0].Name != "source" || report.Steps[3].Name != "files" || report.Steps[3].Err == nil {
 		t.Fatalf("report = %+v, want source retained and failed files step", report)
 	}
 	if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/existing")); got != "unchanged" {
