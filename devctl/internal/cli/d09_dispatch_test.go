@@ -296,7 +296,7 @@ func (s deployNoS3) CopyObject(context.Context, string, string, string) error {
 }
 
 func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
-	// R-VQ0L-U00U R-RALN-3T97 R-W9IZ-YBVY R-WAQW-C3MN R-WBYS-PVDC R-WD6P-3N41
+	// R-VQ0L-U00U R-9WMJ-QLVW R-W9IZ-YBVY R-WAQW-C3MN R-WBYS-PVDC R-WD6P-3N41
 	for _, operand := range []string{"r1", "auth/" + strings.TrimPrefix(version, "v"), "4b22285"} {
 		t.Run(operand, func(t *testing.T) {
 			f := newDeployRelease(t)

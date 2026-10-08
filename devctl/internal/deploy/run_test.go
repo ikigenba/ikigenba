@@ -46,7 +46,7 @@ func TestDeployPublicContract(t *testing.T) {
 	}
 }
 func TestDeployHelpAndGrammarPrecedeExternalAccess(t *testing.T) {
-	// R-R9DQ-Q1II R-RALN-3T97 R-RBTJ-HKZW R-RD1F-VCQL R-RE9C-94HA
+	// R-R9DQ-Q1II R-9WMJ-QLVW R-RBTJ-HKZW R-RD1F-VCQL R-RE9C-94HA
 	for _, args := range [][]string{{"--help"}, {"-h"}, {"sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz", "--help"}} {
 		var stdout bytes.Buffer
 		calls := 0

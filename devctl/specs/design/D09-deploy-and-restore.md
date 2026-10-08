@@ -2,7 +2,7 @@
 
 Deploy puts one release of the whole suite on one space; the requirements
 call this the release form. Its argument after `<space>` is a commit, a full
-sha, a shorter sha or a tag, whatever it holds: a tag such as `auth/v0.18.2`
+sha, a shorter sha or a tag, whatever it holds: a tag such as `feature/x`
 carries a slash, and a path such as `dist/<sha>.tar.xz` is resolved like any
 other argument and refused as no commit. It works in a fixed order: resolve,
 find the space, build, check secrets, copy, unpack, activate. It resolves the
@@ -90,7 +90,7 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 - R-VQ0L-U00U: `cli.Run` MUST dispatch the command `deploy` to `deploy.Run`, passing the arguments that follow `deploy`, as `version` the version string that `devctl --version` prints without its newline, the `stdout` writer `cli.Run` was given, and `deps`, and MUST return 0 when `deploy.Run` returns a nil error.
 
-- R-RALN-3T97: `deploy` MUST take exactly two operands, `<space>` and then `<sha|tag>`, and MUST accept no option other than `--help` and `-h`; the second operand MUST be passed to `release.Resolve` as typed whatever it holds, a `/` or a `.tar.xz` suffix included; verified at least through `cli.Run` by `devctl deploy sbx1 auth/v0.18.2` and `devctl deploy sbx1 4b22285` each resolving its operand as typed, and by `devctl deploy sbx1 dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, with that file present under `Deps.Dir` and a fake `git` holding no such tag, writing the single stderr line `devctl: 'dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz' is not a commit` with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.
+- R-9WMJ-QLVW: `deploy` MUST take exactly two operands, `<space>` and then `<sha|tag>`, and MUST accept no option other than `--help` and `-h`; the second operand MUST be passed to `release.Resolve` as typed whatever it holds, a `/` or a `.tar.xz` suffix included; verified at least through `cli.Run` by `devctl deploy sbx1 feature/x` and `devctl deploy sbx1 4b22285` each resolving its operand as typed, and by `devctl deploy sbx1 dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, with that file present under `Deps.Dir` and a fake `git` holding no such tag, writing the single stderr line `devctl: 'dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz' is not a commit` with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.
 
 - R-RBTJ-HKZW: `deploy` invoked with fewer than two operands MUST write exactly the three lines `devctl: deploy needs <space> and <sha|tag>`, an empty line, and `see 'devctl deploy --help' for usage` to stderr, write nothing to stdout, call `deps.Cloud` not at all, pass no `seam.Cmd` to `deps.Exec`, and exit 2, by returning a `*UsageError` whose `Message` is that first line without its `devctl: ` prefix and whose `Help` is `devctl deploy --help`, verified at least by `devctl deploy sbx1` and `devctl deploy`.
 

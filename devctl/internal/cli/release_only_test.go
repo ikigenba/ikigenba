@@ -58,7 +58,7 @@ func TestDeploySyntaxAndHelpThroughCLI(t *testing.T) {
 }
 
 func TestDeployArchivePathIsACommitOperand(t *testing.T) {
-	// R-RALN-3T97
+	// R-9WMJ-QLVW
 	f := newDeployRelease(t)
 	operand := "dist/" + deploySHA + ".tar.xz"
 	f.put(filepath.Join(f.root, operand), "existing archive")
