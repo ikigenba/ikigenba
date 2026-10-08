@@ -10,12 +10,12 @@ live in memory and are lost when it exits.
 
 ## Installing it
 
-`dummy` runs on an Ikigenba host. From a checkout at a release tag, build it
-and deploy it to a space with [`devctl`](../devctl):
+`dummy` runs on an Ikigenba host. From a checkout, build the release and
+deploy it to a space with [`devctl`](../devctl):
 
 ```sh
-devctl build dummy
-devctl deploy <space> dummy/dist/dummy-vX.Y.Z.tar.xz
+devctl build <sha|tag>
+devctl deploy <space> <sha|tag>
 ```
 
 ## Using it
