@@ -56,8 +56,8 @@ Shared rules are referenced, not restated: usage errors first, then the root
 file, then the operand, then the first cloud call (D04 R-N1LD-IX1I and
 R-ST4K-APZN, which also brings the `golden` label refusal of R-S8UF-C8XM);
 `cloud.Connect` with the root as the profile and the root file's region (D02
-R-UI48-29BU); a `*cloud.NoSpaceError` to `devctl: no space at '<domain>'`,
-exit 1 (D03 R-RLKQ-JQXG); a `*cloud.Error` to one line and exit 1 (D03
+R-YPS2-X32R); a `*cloud.NoSpaceError` to `devctl: no space at '<domain>'`,
+exit 1 (D03 R-YTFS-2EAU); a `*cloud.Error` to one line and exit 1 (D03
 R-QZSL-ZMJL); the checkout and root-file errors to exit 2 (D04 R-EX3T-CTOO);
 every error carrying `ExitCode()` and `Detail()` (D05 R-D4G2-IO81); the
 fallback that turns a `*space.NotRunningError` into

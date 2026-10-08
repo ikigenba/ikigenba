@@ -77,13 +77,13 @@ including nested quotes and empty lines.
 
 - R-SRWN-WY8Y: The binary built from `./cmd/devctl` by `go build` with no flags, run with the single argument `--version` as a non-root user, MUST print to stdout exactly what `cli.Run` prints to stdout for `--version`, write nothing to stderr, and exit 0.
 
-- R-UFOF-APUG: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `rollback`, `restore`, `remove`, `golden`, `seed`, and `apex`.
+- R-YNCA-5JLD: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `rollback`, `restore`, `golden`, `seed`, and `apex`.
 
-- R-UGWB-OHL5: For each of `space`, `secrets`, `build`, `deploy`, `rollback`, `restore`, `remove`, `golden`, `seed`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
+- R-YOK6-JBC2: For each of `space`, `secrets`, `build`, `deploy`, `rollback`, `restore`, `golden`, `seed`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
 
-- R-UI48-29BU: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `rollback`, `restore`, `remove`, `golden`, `seed`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the nine in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
+- R-YPS2-X32R: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `rollback`, `restore`, `golden`, `seed`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the eight in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
 
-- R-RKCU-5Z6R: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
+- R-YS7V-OMK5: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
 
   ```
   Usage: devctl [options] <command> [arguments]
@@ -97,7 +97,6 @@ including nested quotes and empty lines.
     build     build the suite at a commit into a release
     deploy    put a release on a space
     rollback  put a space back on the release it ran before
-    remove    take an app off a space
     restore   put a space's app back from its backups
     golden    capture a space's data as a named golden set
     seed      give a space a golden set's or another space's data

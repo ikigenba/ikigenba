@@ -28,16 +28,16 @@ running check, one `sudo` over ssh. Nothing moves through devctl and no bucket
 object is read or written by it. The backups it puts back are the space's own,
 which only opsctl on the host writes and reads. They are not all that sits
 under the space's prefix: opsctl's snapshots sit there too, which `golden
-capture` and `seed` read, and the snapshots `seed` copies in (D15). Restore reads none of those; `seed` is what puts a
-snapshot back. Both commands report the host's exit the same
-way: success is one `space.Step` line, failure is the host error unchanged,
-which `cli.Run` prints with opsctl's output quoted under it.
+capture` and `seed` read, and the snapshots `seed` copies in (D15). Restore
+reads none of those; `seed` is what puts a snapshot back. Restore reports the
+host's exit as one `space.Step` line on success; a failure is the host error
+unchanged, which `cli.Run` prints with opsctl's output quoted under it.
 
 The ordering rules that every space-taking command shares — usage errors
 first, then the root file, then the operand, then the first cloud call, all
 through the one parser — are D04's (R-N1LD-IX1I, R-ST4K-APZN) and are only
 referenced here. The cli mapping of a `*cloud.NoSpaceError` to
-`devctl: no space at '<domain>'`, exit 1, is D03's (R-RLKQ-JQXG); of the
+`devctl: no space at '<domain>'`, exit 1, is D03's (R-YTFS-2EAU); of the
 checkout and root-file errors to exit 2, D04's (R-EX3T-CTOO); of every error
 carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
