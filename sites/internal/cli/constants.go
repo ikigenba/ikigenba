@@ -13,6 +13,3 @@ const (
 	ExitServerFailed = 1
 	ExitUsage        = 2
 )
-
-// Version is the release version reported by sites.
-var Version = "v0.4.2"

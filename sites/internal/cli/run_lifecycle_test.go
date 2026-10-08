@@ -725,7 +725,7 @@ func TestRunLifecycleAcceptFailure(t *testing.T) {
 	}
 }
 
-// R-XP80-O6RG
+// R-JETU-2OFJ
 func TestRunLifecycleQuietResponses(t *testing.T) {
 	f := newStartFixture(t)
 	root := t.TempDir()

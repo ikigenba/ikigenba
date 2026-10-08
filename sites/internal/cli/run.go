@@ -26,6 +26,7 @@ type Process struct {
 	Pid       int
 	Stdout    io.Writer
 	Stderr    io.Writer
+	Version   string
 	Inherit   func(fd uintptr) (net.Listener, error)
 	Now       func() time.Time
 	Sleep     func(ctx context.Context, d time.Duration)
@@ -53,7 +54,7 @@ func Run(ctx context.Context, p Process) int {
 		if len(p.Args) == 1 && known && first != "db" {
 			product := Usage
 			if first == "--version" {
-				product = Version + "\n"
+				product = p.Version + "\n"
 			}
 			if first == "manifest" {
 				product = Manifest

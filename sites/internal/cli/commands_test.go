@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,19 +19,6 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 	"github.com/ikigenba/ikigenba/sites/internal/settings"
 )
-
-// R-XV8T-LQI2 R-XXOM-D9ZG
-func TestVersion(t *testing.T) {
-	declared := struct{ Version *string }{Version: &cli.Version}
-	version := declared.Version
-	// SemVer 2.0.0 grammar, including numeric prerelease identifiers without leading zeros.
-	number := `(0|[1-9][0-9]*)`
-	prereleaseID := `(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`
-	pattern := `^v` + number + `\.` + number + `\.` + number + `(-` + prereleaseID + `(\.` + prereleaseID + `)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`
-	if !regexp.MustCompile(pattern).MatchString(*version) {
-		t.Fatalf("invalid version: %q", *version)
-	}
-}
 
 // R-SK95-2S11
 func TestExitConstants(t *testing.T) {
@@ -91,14 +77,14 @@ func (s forbiddenSink) Deliver(context.Context, telemetry.Event) error {
 	return nil
 }
 
-// R-SQCM-ZMQI R-SRKJ-DEH7 R-SSSF-R67W R-XBT4-GPLT R-XD10-UHCI R-SXO1-A96O R-XE8X-8937 R-WHBM-WG2G R-WX6B-VGPH
+// R-W5WF-5G86 R-WEFP-TUF1 R-SRKJ-DEH7 R-SSSF-R67W R-XBT4-GPLT R-XD10-UHCI R-SXO1-A96O R-XE8X-8937 R-WHBM-WG2G R-WX6B-VGPH
 func TestCommands(t *testing.T) {
 	tests := []struct {
 		args     []string
 		out, err string
 		exit     int
 	}{
-		{[]string{"--version"}, cli.Version + "\n", "", cli.ExitSuccess},
+		{[]string{"--version"}, "test display" + "\n", "", cli.ExitSuccess},
 		{[]string{"manifest"}, cli.Manifest, "", cli.ExitSuccess},
 		{[]string{"--help"}, cli.Usage, "", cli.ExitSuccess},
 		{[]string{"db"}, "", "sites: unknown command 'db'\n\nsee 'sites --help' for usage\n", cli.ExitUsage},
@@ -134,7 +120,7 @@ func TestCommands(t *testing.T) {
 			var stdout, stderr observedWriter
 			forbidden := func() { t.Fatal("process seam used") }
 			p := cli.Process{
-				Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir, Pid: 42,
+				Version: "test display", Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir, Pid: 42,
 				LookupEnv: func(string) (string, bool) { forbidden(); return "", false },
 				Environ:   func() []string { forbidden(); return nil }, Unsetenv: func(string) error { forbidden(); return nil },
 				Inherit: func(uintptr) (net.Listener, error) { forbidden(); return nil, nil },
@@ -164,9 +150,17 @@ func TestCommands(t *testing.T) {
 			// The four fields alone also suffice, with every optional seam unset.
 			stdout.Reset()
 			stderr.Reset()
-			if exit := run(context.Background(), cli.Process{Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir}); exit != tc.exit || stdout.String() != tc.out || stderr.String() != tc.err {
+			if exit := run(context.Background(), cli.Process{Version: "test display", Args: tc.args, Stdout: &stdout, Stderr: &stderr, Dir: dir}); exit != tc.exit || stdout.String() != tc.out || stderr.String() != tc.err {
 				t.Fatal("minimal process differs")
 			}
 		})
+	}
+}
+
+// R-WEFP-TUF1
+func TestEmptyDisplayVersion(t *testing.T) {
+	var out, stderr bytes.Buffer
+	if cli.Run(context.Background(), cli.Process{Args: []string{"--version"}, Version: "", Dir: t.TempDir(), Stdout: &out, Stderr: &stderr}) != cli.ExitSuccess || out.String() != "\n" || stderr.Len() != 0 {
+		t.Fatal(out.String(), stderr.String())
 	}
 }

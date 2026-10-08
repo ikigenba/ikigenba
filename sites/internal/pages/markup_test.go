@@ -330,47 +330,70 @@ func written(t *testing.T, body string, b page.Banner) string {
 	return body[:start] + body[start+len(bannerText):f] + body[f+len(footerText):]
 }
 
-// R-XZZW-WBAA R-DYBO-Z0Q5 R-DZJL-CSGU R-5Y7K-QBIS R-61V9-VMQV R-E1ZE-4BY8
+// These are banners within the shared plain-page and plain-notice domains.
+// The display string is arbitrary input, not a release version fixture.
+func plainMarkupBanners() []page.Banner {
+	return []page.Banner{
+		{Service: "sites", Version: "test-build+local"},
+		{Service: "sites.dev+preview", Version: "abc123-dirty+local (release.label)"},
+		{Service: "sites.dev+preview", Version: ""},
+	}
+}
+
+// R-WO6W-W0CL R-DYBO-Z0Q5 R-DZJL-CSGU R-5Y7K-QBIS R-61V9-VMQV R-E1ZE-4BY8
+// R-EK9V-UW2N
 func TestPlainPagesCommonMarkup(t *testing.T) {
-	s := catalog(t)
-	cfg := config(t, s)
-	h := identity.Optional(pages.Handler(cfg))
-	for _, path := range []string{"/", "/about"} {
-		r := request("GET", path, "alice", "alice@example.test")
-		w := answer(h, r)
-		b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, ""), LogoutURL: urls.AuthLogout(r, "")})
-		m := written(t, w.Body.String(), b)
-		want := "sites"
-		if path == "/about" {
-			want = "About sites"
+	for _, plain := range plainMarkupBanners() {
+		s := catalog(t)
+		cfg := config(t, s)
+		cfg.Banner = func(u page.User) page.Banner {
+			b := plain
+			b.Email, b.ProfileURL, b.LogoutURL = u.Email, u.ProfileURL, u.LogoutURL
+			return b
 		}
-		title := one(t, tags(m, "title"), "title")
-		end := one(t, tags(m, "/title"), "/title")
-		body := one(t, tags(m, "body"), "body")
-		if title.end > end.start || end.end > body.start {
-			t.Fatal("title not before body")
-		}
-		text(t, m, title, want)
-		text(t, m, one(t, tags(m, "h1"), "h1"), want)
-		commonHead(t, m)
-		feedbackHead(t, m)
-		onlyFeedbackScripts(t, m)
-		if len(tags(m, "style")) != 0 {
-			t.Fatal("page carries style")
-		}
-		for _, x := range allTags(m) {
-			for _, name := range []string{"style", "srcset", "imagesrcset"} {
-				if len(x.values(name)) != 0 {
-					t.Fatalf("forbidden attribute %s", name)
+		h := identity.Optional(pages.Handler(cfg))
+		for _, path := range []string{"/", "/about"} {
+			r := request("GET", path, "alice", "alice@example.test")
+			w := answer(h, r)
+			if w.Code != http.StatusOK {
+				t.Fatalf("page status %d", w.Code)
+			}
+			b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, ""), LogoutURL: urls.AuthLogout(r, "")})
+			m := written(t, w.Body.String(), b)
+			want := "sites"
+			if path == "/about" {
+				want = "About sites"
+				text(t, m, one(t, selected(m, "id", "about-name"), "dd"), b.Service)
+				text(t, m, one(t, selected(m, "id", "about-version"), "dd"), b.Version)
+			}
+			title := one(t, tags(m, "title"), "title")
+			end := one(t, tags(m, "/title"), "/title")
+			body := one(t, tags(m, "body"), "body")
+			if title.end > end.start || end.end > body.start {
+				t.Fatal("title not before body")
+			}
+			text(t, m, title, want)
+			text(t, m, one(t, tags(m, "h1"), "h1"), want)
+			commonHead(t, m)
+			feedbackHead(t, m)
+			onlyFeedbackScripts(t, m)
+			if len(tags(m, "style")) != 0 {
+				t.Fatal("page carries style")
+			}
+			for _, x := range allTags(m) {
+				for _, name := range []string{"style", "srcset", "imagesrcset"} {
+					if len(x.values(name)) != 0 {
+						t.Fatalf("forbidden attribute %s", name)
+					}
+				}
+				if x.name == "meta" && len(x.values("http-equiv")) != 0 {
+					t.Fatal("http-equiv")
 				}
 			}
-			if x.name == "meta" && len(x.values("http-equiv")) != 0 {
-				t.Fatal("http-equiv")
+			localResources(t, m)
+			if strings.Contains(visible(w.Body.String()), "alice@example.test") {
+				t.Fatal("email exposed as visible text")
 			}
-		}
-		localResources(t, m)
-		if strings.Contains(visible(w.Body.String()), "alice@example.test") {
-			t.Fatal("email exposed as visible text")
 		}
 	}
 }
@@ -709,39 +732,40 @@ func TestAboutHooks(t *testing.T) {
 	}
 }
 
-// R-EMPO-MFK1 R-65IZ-0XYY R-5ZFH-439H R-EP5H-DZ1F R-EQDD-RQS4 R-ERLA-5IIT
+// R-WPET-9S3A R-65IZ-0XYY R-5ZFH-439H R-EP5H-DZ1F R-EQDD-RQS4 R-ERLA-5IIT
 func TestNoticeMarkup(t *testing.T) {
 	s := load(t)
-	b := page.Banner{Service: "notice-sites", Version: "test.build+local"}
-	for _, v := range []struct{ name, title, message string }{{"notfound", "Not found", "There is nothing at this address."}, {"unavailable", "Site unavailable", "This site is not available right now. Try again in a moment."}} {
-		w := answer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Write(w, r, 503, v.name, pages.NoticeData{Banner: b}) }), request("GET", "/", "", ""))
-		body := w.Body.String()
-		footer := execute(t, page.Templates(), "footer", b)
-		f := strings.Index(body, footer)
-		ends := tags(body, "/body")
-		if f < 0 || len(ends) == 0 || !whitespaceOnly(body[f+len(footer):ends[len(ends)-1].start]) {
-			t.Fatal("notice footer absent or does not end body")
-		}
-		if len(tags(body, "header")) != 0 || len(tags(body, "form")) != 0 || len(byClass(body, "strong", "mark")) != 0 || len(byClass(body, "a", "profile")) != 0 || len(tags(body, "style")) != 0 {
-			t.Fatal("notice has banner/style")
-		}
-		for _, x := range allTags(body) {
-			if len(x.values("style")) != 0 {
-				t.Fatal("notice inline style")
+	for _, b := range plainMarkupBanners() {
+		for _, v := range []struct{ name, title, message string }{{"notfound", "Not found", "There is nothing at this address."}, {"unavailable", "Site unavailable", "This site is not available right now. Try again in a moment."}} {
+			w := answer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Write(w, r, 503, v.name, pages.NoticeData{Banner: b}) }), request("GET", "/", "", ""))
+			body := w.Body.String()
+			footer := execute(t, page.Templates(), "footer", b)
+			f := strings.Index(body, footer)
+			ends := tags(body, "/body")
+			if f < 0 || len(ends) == 0 || !whitespaceOnly(body[f+len(footer):ends[len(ends)-1].start]) {
+				t.Fatal("notice footer absent or does not end body")
 			}
+			if len(tags(body, "header")) != 0 || len(tags(body, "form")) != 0 || len(byClass(body, "strong", "mark")) != 0 || len(byClass(body, "a", "profile")) != 0 || len(tags(body, "style")) != 0 {
+				t.Fatal("notice has banner/style")
+			}
+			for _, x := range allTags(body) {
+				if len(x.values("style")) != 0 {
+					t.Fatal("notice inline style")
+				}
+			}
+			commonHead(t, body)
+			feedbackHead(t, body)
+			onlyFeedbackScripts(t, body)
+			localResources(t, body)
+			title := one(t, tags(body, "title"), "title")
+			end := one(t, tags(body, "/title"), "/title")
+			bs := one(t, tags(body, "body"), "body")
+			if title.end > end.start || end.end > bs.start {
+				t.Fatal("notice title not before body")
+			}
+			text(t, body, title, v.title)
+			text(t, body, one(t, tags(body, "h1"), "h1"), v.title)
+			text(t, body, one(t, selected(body, "id", v.name), "p"), v.message)
 		}
-		commonHead(t, body)
-		feedbackHead(t, body)
-		onlyFeedbackScripts(t, body)
-		localResources(t, body)
-		title := one(t, tags(body, "title"), "title")
-		end := one(t, tags(body, "/title"), "/title")
-		bs := one(t, tags(body, "body"), "body")
-		if title.end > end.start || end.end > bs.start {
-			t.Fatal("notice title not before body")
-		}
-		text(t, body, title, v.title)
-		text(t, body, one(t, tags(body, "h1"), "h1"), v.title)
-		text(t, body, one(t, selected(body, "id", v.name), "p"), v.message)
 	}
 }
