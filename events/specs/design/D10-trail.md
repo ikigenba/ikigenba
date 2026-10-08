@@ -2,7 +2,7 @@
 
 events' trail as a whole: the telemetry records events makes while it serves, what each says, which request each belongs to, the order a request's records come in, and what no record ever carries. The trail is a different thing from the log. The log (`D04-store`) holds the events services emit, which other services act on; the trail is events' own account of what it did, sent to the platform's telemetry service like every app's.
 
-Every record goes through one writer, the run's writer (R-9XI6-OAME), whose sink `main` makes with appkit's `telemetry.NewSocketSink`, so on a host each record goes to the socket of the services-file entry named `telemetry` (R-9MJ3-8CY5); a record telemetry cannot take is written to standard error as one `events: undelivered event:` line and events carries on (R-9XI6-OAME, R-8T3W-X7UZ). Every record is stamped by the seam's clock, in UTC to the microsecond (R-ZTTZ-Z2G4), and names `events` as its service.
+Every record goes through one writer, the run's writer (R-9XI6-OAME), whose sink `main` makes with appkit's `telemetry.NewSocketSink`, so on a host each record goes to the socket of the services-file entry named `telemetry` (R-G9V5-4WMD); a record telemetry cannot take is written to standard error as one `events: undelivered event:` line and events carries on (R-9XI6-OAME, R-8T3W-X7UZ). Every record is stamped by the seam's clock, in UTC to the microsecond (R-ZTTZ-Z2G4), and names `events` as its service.
 
 ## Who records what
 
@@ -30,7 +30,7 @@ An event's `event.accepted` comes before every record of its delivery: the store
 
 ## Decisions
 
-- **The request records are stated at `web.Handler`**, where `D06-serve` mounts `telemetry.Middleware`, so a web test with a `telemetry.Capture` proves them; the request id and user are stated once there, and `cli.Run` answers as `web.Handler` with the run's writer (R-9YQ3-22D3).
+- **The request records are stated at `web.Handler`**, where `D06-serve` mounts `telemetry.Middleware`, so a web test with a `telemetry.Capture` proves them; the request id and user are stated once there, and `cli.Run` answers as `web.Handler` with the run's writer (R-GCAX-WG3R).
 - **`tool.called` is stated at `cli.Run`**, where the MCP server and the tools share the run's writer: appkit's server, not `internal/tools`, makes the record, and `D09-tools` leaves it to this document (R-YR67-B61N, R-YSE3-OXSC).
 - **`request_bytes` and `response_bytes` count body bytes read and written** (probed: a handler that read 10 bytes of a 37-byte body and wrote 3 is recorded 10 and 3; a `HEAD` the handler writes nothing for is 0). `duration_us` is only a non-negative integer, since the seam's clock may stand still.
 - **Outcomes of `tool.called`**: appkit's server knows five (`ok`, `invalid_arguments`, `error`, `panicked`, `unencodable_output`, in the installed module's `mcp/tools.go`); events' tools, driven as permitted tests drive them, produce the first three (probed): `ok` for a result without `isError`, `invalid_arguments` for appkit's own refusal of the arguments, `error` for a refusal the tool made. The set is not stated as closed, so a panicking handler's `panicked` record is not forbidden. A call of a tool events does not have is a JSON-RPC error and records no `tool.called` (probed), nor does `tools/list`.
@@ -44,7 +44,7 @@ A `cli.Run` test serves with a `telemetry.Capture` as `Sink` and a services file
 
 ## Coverage of S14
 
-- Preamble catalogue: R-8LSI-MLET, R-BM0Q-O8OS (service); R-EYWG-JUFR, R-F04C-XM6G, R-F1C9-BDX5, R-CWCX-7IV6 (request); R-HG04-PK6H, R-HH81-3BX6 (tool); R-355A-QQIN, R-H68X-NE8X, R-HJNT-UVEK (sibling); R-69AX-8R2N, R-RJAX-A1WF, R-2J73-UV65 (accepted); R-G1LB-MGO7, R-G2T8-08EW, R-YTM0-2PJ1 (delivered, skipped); R-GHUX-ZZF1, R-GJ2U-DR5Q (paused); telemetry entry and undelivered line: R-9MJ3-8CY5, R-9XI6-OAME; time: R-ZTTZ-Z2G4; no data: R-F9VJ-ZS40; request order and ids: R-HIFX-H3NV, R-F1C9-BDX5, R-ZW9S-QLXI; no `event.lost`: R-F8NN-M0DB.
+- Preamble catalogue: R-8LSI-MLET, R-BM0Q-O8OS (service); R-EYWG-JUFR, R-F04C-XM6G, R-F1C9-BDX5, R-CWCX-7IV6 (request); R-HG04-PK6H, R-HH81-3BX6 (tool); R-355A-QQIN, R-H68X-NE8X, R-HJNT-UVEK (sibling); R-69AX-8R2N, R-RJAX-A1WF, R-2J73-UV65 (accepted); R-G1LB-MGO7, R-G2T8-08EW, R-YTM0-2PJ1 (delivered, skipped); R-GHUX-ZZF1, R-GJ2U-DR5Q (paused); telemetry entry and undelivered line: R-G9V5-4WMD, R-9XI6-OAME; time: R-ZTTZ-Z2G4; no data: R-F9VJ-ZS40; request order and ids: R-HIFX-H3NV, R-F1C9-BDX5, R-ZW9S-QLXI; no `event.lost`: R-F8NN-M0DB.
 - `A developer standing in for repos emits an event and finds the broker's records of it`: R-69AX-8R2N, R-H68X-NE8X, R-G1LB-MGO7, R-F9VJ-ZS40, R-HKVQ-8N59 (order), R-A2DS-7DL6 (no stderr).
 - `... emits a caused event and finds its cause in the trail`: R-69AX-8R2N (cause), R-9CMB-1JQ3, R-A2DS-7DL6.
 - `... emits an event a subscriber skips`: R-HKVQ-8N59, R-G2T8-08EW, R-H68X-NE8X, R-69AX-8R2N, R-A2DS-7DL6.
