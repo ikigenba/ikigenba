@@ -59,8 +59,9 @@ control character (U+0000–U+001F, U+007F), so no line break. It may also carry
 `guests`, a Boolean that is `false` when absent: `true` means the app serves
 guests, visitors with no credential. On a host with an authenticator, such a
 visitor reaches the app's pages, with no identity, instead of being sent to
-sign in, while `/mcp` and git paths stay challenged (see `S5-nginx.md`). On a
-host without one every app is already open, and `guests` changes nothing.
+sign in, while `/mcp`, `/api`, and git paths stay challenged (see
+`S5-nginx.md`). On a host without one every app is already open, and `guests`
+changes nothing.
 `guests` is not in the services file and no command shows it. The manifest
 names no port: no app listens on one, and a manifest that carries a `port` is
 refused.
@@ -1214,9 +1215,9 @@ Postconditions:
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded,
   so a visitor with no credential who asks for a page at
   `https://sites.sbx.ikigenba.dev` reaches `sites`, with no identity, rather
-  than being sent to sign in. A request to its `/mcp`, or to a git path, is
-  still challenged. Every other app's block is as it was, so its visitors are
-  still sent to sign in.
+  than being sent to sign in. A request to its `/mcp`, its `/api`, or a git
+  path is still challenged. Every other app's block is as it was, so its
+  visitors are still sent to sign in.
 - `/var/lib/ikigenba/services.json` has been rewritten and now lists `sites`,
   with the URL `https://sites.sbx.ikigenba.dev`, the description `""`, the
   socket `/run/ikigenba/sites.sock`, enabled, `mcp` false, and no icon. The
