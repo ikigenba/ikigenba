@@ -15,12 +15,12 @@ straight from its directory. Its home page says what it is and how to clone.
 ## Installing it
 
 `repos` runs on an Ikigenba host, which provides the `git` it runs. From a
-checkout at a release tag, build it and deploy it to a space with
+checkout, build the release and deploy it to a space with
 [`devctl`](../devctl):
 
 ```sh
-devctl build repos
-devctl deploy <space> repos/dist/repos-vX.Y.Z.tar.xz
+devctl build <sha|tag>
+devctl deploy <space> <sha|tag>
 ```
 
 ## Using it
