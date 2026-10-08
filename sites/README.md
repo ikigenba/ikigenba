@@ -15,12 +15,12 @@ space's sites and says how to make one.
 ## Installing it
 
 `sites` runs on an Ikigenba host beside `repos`, whose repositories it reads
-with the `git` the host provides. From a checkout at a release tag, build it
-and deploy it to a space with [`devctl`](../devctl):
+with the `git` the host provides. From a checkout, build the release and
+deploy it to a space with [`devctl`](../devctl):
 
 ```sh
-devctl build sites
-devctl deploy <space> sites/dist/sites-vX.Y.Z.tar.xz
+devctl build <sha|tag>
+devctl deploy <space> <sha|tag>
 ```
 
 ## Using it
