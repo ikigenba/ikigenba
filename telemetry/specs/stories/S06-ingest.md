@@ -212,7 +212,7 @@ A well-formed JSON text that is not exactly an event is refused the same way. Th
 - an object missing one of the six members, or holding one twice, or holding any other member, `"level":"info"` say;
 - a `time` that is not a string, or not in the shape above: `2026-10-02T14:03:07Z` (no fraction), `2026-10-02T14:03:07.123Z` (three digits), `2026-10-02T14:03:07.123456+00:00` (an offset), `2026-10-02 14:03:07.123456Z` (a space);
 - a `service` that is not a string, or is `""`;
-- an `event` that is not a string, or not a name: the shape is two lowercase parts joined by one dot, each starting with a letter, so `started`, `Request.Finished`, `request..finished`, and `request.finished.` are refused;
+- an `event` that is not a string, or not a name: the shape is two or more lowercase words joined by single dots, each starting with a letter, so `cron.tick.fired` is a name, while `started`, `Request.Finished`, `request..finished`, and `request.finished.` are refused;
 - a `request_id` or `user` that is not a string;
 - an `attrs` that is not an object, or holds a nested value, `"widget":{"id":"wgt_1"}` or `"tags":["a"]`, a `null`, a key that is not lowercase-with-underscores, `Widget-Id` or `_id` say, or the same key twice.
 
