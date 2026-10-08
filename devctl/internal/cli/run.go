@@ -25,7 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
 )
 
-var version = "v0.6.0"
+var version = "v0.7.0"
 
 const usage = `Usage: devctl [options] <command> [arguments]
 
