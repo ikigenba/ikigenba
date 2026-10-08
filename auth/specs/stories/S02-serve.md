@@ -7,9 +7,10 @@ activation passes it — `LISTEN_PID` names auth's own process, `LISTEN_FDS` is
 variables from its environment once it has taken it. What kind of socket it is,
 and where it lives, is the host's business: auth serves whatever it is passed
 the same way. On a host, opsctl publishes `ikigenba-auth.socket` beside
-`ikigenba-auth.service`, which runs `/opt/auth/bin/auth` with no arguments as
-the `ikigenba` user, with `/opt/auth` as its working directory and
-`/opt/auth/etc/env` as its environment file; the host's nginx sends auth the
+`ikigenba-auth.service`, which runs `/opt/ikigenba/current/auth/bin/auth` with
+no arguments as the `ikigenba` user, with `/var/opt/ikigenba/auth` as its
+working directory and `/etc/opt/ikigenba/auth/env` as its environment file;
+the host's nginx sends auth the
 requests for auth's own hostname and the identity subrequest, `/check`, for
 every other app, or `/check/open` for an app that serves guests. The service is
 `Type=notify`: auth tells systemd it is ready, by sending `READY=1` to
@@ -24,13 +25,13 @@ The environment auth reads is the two Google secrets `GOOGLE_CLIENT_ID` and
 of seconds, and 5 when it is unset or empty. On a host,
 opsctl owns that value and the service unit's stop timeout: both are space-wide
 settings in opsctl's configuration, opsctl writes the drain into every app's
-`etc/env` and the stop timeout (10 seconds by default, always longer than the
+env file and the stop timeout (10 seconds by default, always longer than the
 drain) into every service unit, and an app's manifest never sets either.
 `IKIGENBA_SERVICES` is the path of the host's services file, which lists the
 platform's services for the launcher in the banner of auth's signed-in pages
 (`S03-sign-in.md`) and names the telemetry service auth delivers its events to
 (below). On a host, opsctl sets it in the environment the host gives auth,
-normally `/var/lib/ikigenba/services.json`; on a host that has no services
+normally `/run/ikigenba/services.json`; on a host that has no services
 file it is unset, and auth's pages then carry no launcher. For the banner auth
 reads the variable once, when it starts, and never fails to start over it:
 unset, empty, a path not in its plain form (`S03-sign-in.md`), or naming a file
@@ -191,15 +192,16 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `opsctl install` has installed auth: `/opt/auth/bin/auth` exists, and
-  `ikigenba-auth.socket` and `ikigenba-auth.service` are published.
-- `/opt/auth/etc/env` sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+- `opsctl activate` has activated a release holding auth:
+  `/opt/ikigenba/current/auth/bin/auth` exists, and `ikigenba-auth.socket` and
+  `ikigenba-auth.service` are published.
+- `/etc/opt/ikigenba/auth/env` sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
   `WORKSPACE_DOMAIN`, and `DRAIN_SECONDS`, each to a valid value.
 - `ikigenba-auth.socket` is active, so the socket it holds accepts
   connections.
-- `/opt/auth/etc/env` sets `IKIGENBA_SERVICES` to the host's services file,
+- `/etc/opt/ikigenba/auth/env` sets `IKIGENBA_SERVICES` to the host's services file,
   which has an entry named `telemetry` whose socket accepts events.
-- `/opt/auth/state/auth.db` exists, from an earlier start, and records no
+- `/var/opt/ikigenba/auth/state/auth.db` exists, from an earlier start, and records no
   migration this auth does not carry.
 - `ikigenba-auth.service` is not running.
 
@@ -209,13 +211,13 @@ Postconditions:
   `ikigenba-auth.socket` passed it: a connection there, and every connection
   queued before auth started, is answered by auth.
 - auth listens on no other socket.
-- `/opt/auth/state/auth.db` is the database it opened; it existed already,
+- `/var/opt/ikigenba/auth/state/auth.db` is the database it opened; it existed already,
   and is now up to date. Every user, session, and token it held is still
   there.
 - No network call to Google was made; the Google settings were read from the
   environment, not checked against Google.
 - auth records `service.started` with `version=<display>`, the string
-  `/opt/auth/bin/auth --version` prints under the environment the host gives
+  `/opt/ikigenba/current/auth/bin/auth --version` prints under the environment the host gives
   auth, under no request id and no user.
 - auth has written nothing to the journal.
 - It keeps running until it is signalled.
@@ -596,8 +598,9 @@ Postconditions:
 
 ## The host restarts auth during a deploy
 
-A deploy replaces auth's binary and restarts `ikigenba-auth.service` alone;
-`ikigenba-auth.socket` stays up throughout. Between the old auth exiting and the
+A deploy activates a new release, which switches auth's binary and restarts
+`ikigenba-auth.service`, one app at a time; `ikigenba-auth.socket` stays up
+throughout. Between the old auth exiting and the
 new one being ready, connections wait in the socket's queue instead of being
 refused — nginx's `/check` and `/check/open` subrequests for every other app
 among them — so neither a visitor to auth nor a visitor to any app auth guards

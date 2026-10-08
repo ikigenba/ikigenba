@@ -1,9 +1,10 @@
 # Stories — on a space
 
-auth reached through a space: the file `S06-package.md` describes, deployed with
-`devctl deploy`, installed by `opsctl`, and answered by nginx at `auth.<space>`
-over TLS, which nginx passes on to auth (`S02-serve.md`). Deployed like any app,
-auth is also the authenticator: once it is installed, the host's nginx routes
+auth reached through a space: the tree `S06-package.md` describes, deployed in
+the suite release with `devctl deploy`, activated by `opsctl`, and answered by
+nginx at `auth.<space>` over TLS, which nginx passes on to auth
+(`S02-serve.md`). Deployed like any app, auth is also the authenticator: once
+its release is active, the host's nginx routes
 every other app through auth's `/check`, or `/check/open` for an app that serves
 guests, an internal subrequest to auth, before serving it. opsctl refuses to
 disable auth, so the authenticator is never switched off on a space. These
@@ -15,7 +16,7 @@ their published commands. The routing of other apps through `/check` and
 nginx generation (a separate sub-project) and is named here only by its
 observable effect, the way dummy's `S7-on-a-space.md` names devctl and opsctl
 only by their published commands. `dummy` is the example protected app, deployed
-on the same space through its own `S7-on-a-space.md` chain. The `telemetry`
+on the same space in the same release (its own `S7-on-a-space.md` chain). The `telemetry`
 service is deployed and active on the same space too, so the host's services
 file has an entry named `telemetry`, and every event auth records reaches the
 trail (`S02-serve.md`). On the `/check` and `/check/open` subrequests the space's
@@ -55,10 +56,9 @@ Preconditions:
 
 - The space `sbx.ikigenba.dev` exists in account `602773793009`, its
   instance is `running`, and `opsctl` is installed on it.
-- `devctl build auth`, run in a clean tree at the commit `<sha>`, wrote
-  `auth/dist/auth-<sha>.tar.xz` (`S06-package.md`). No tag is needed.
-- `devctl --account 602773793009 deploy sbx.ikigenba.dev auth/dist/auth-<sha>.tar.xz`
-  exited 0.
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev <sha>` exited 0,
+  making the suite release at the commit `<sha>` active (`S06-package.md`).
+  No tag is needed.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
   auth's service and socket `active`, in the layout devctl's and opsctl's
   stories own.
@@ -113,10 +113,10 @@ same host.
 Preconditions:
 
 - The auth deploy chain above holds: the space exists in account
-  `602773793009`, its instance is `running`, `opsctl` is installed,
-  `auth/dist/auth-<sha>.tar.xz` exists, the `devctl deploy` of auth exited 0,
-  and `space status` shows auth's service and socket `active`.
-- `auth/dist/auth-<sha>.tar.xz` holds `share/icon.svg` (`S06-package.md`).
+  `602773793009`, its instance is `running`, `opsctl` is installed, the
+  `devctl deploy` of the release `<sha>` exited 0, and `space status` shows
+  auth's service and socket `active`.
+- The release's `<sha>/auth/` holds `share/icon.svg` (`S06-package.md`).
 - The host sets `IKIGENBA_SERVICES` in auth's environment to the path of its
   services file, and that file lists auth with its icon.
 - The request carries an `ikigenba_session` cookie naming a live session on
@@ -155,9 +155,9 @@ Status 302. The visitor is sent to auth's sign-in page with the original URL as
 Preconditions:
 
 - The auth deploy chain above holds: the space exists in account
-  `602773793009`, its instance is `running`, `opsctl` is installed,
-  `auth/dist/auth-<sha>.tar.xz` exists, the `devctl deploy` of auth exited 0,
-  and `space status` shows auth's service and socket `active`.
+  `602773793009`, its instance is `running`, `opsctl` is installed, the
+  `devctl deploy` of the release `<sha>` exited 0, and `space status` shows
+  auth's service and socket `active`.
 - `dummy` is deployed and active on the same space through its own
   `S7-on-a-space.md` chain, so `space status` also shows dummy's service and
   socket `active`.

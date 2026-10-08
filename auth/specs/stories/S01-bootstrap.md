@@ -2,8 +2,9 @@
 
 Running auth at all: help, version, the manifest, the state of its database,
 exit codes. auth is an app of the platform: one Go binary that serves the auth
-service. On a host it runs as `/opt/auth/bin/auth` with `/opt/auth` as its
-working directory and its environment read from `/opt/auth/etc/env`; a
+service. On a host it runs as `/opt/ikigenba/current/auth/bin/auth` with
+`/var/opt/ikigenba/auth` as its working directory and its environment read
+from `/etc/opt/ikigenba/auth/env`; a
 developer runs the same binary from the checkout. With no command it serves
 (`S02-serve.md`); the commands here are what the build, and an operator, ask of
 it. They serve nothing and record no event: the trail of events is what auth
@@ -244,7 +245,8 @@ Preconditions:
   `2026-10-05T14:03:07.123456Z`, version `0002` at
   `2026-10-05T14:03:07.125003Z` and version `0003` at
   `2026-10-05T14:03:07.126518Z`. On a host the working directory is
-  `/opt/auth` and the operator is a user who can read the database.
+  `/var/opt/ikigenba/auth` and the operator is a user who can read the
+  database.
 
 Postconditions:
 

@@ -217,7 +217,7 @@ service `auth` and the warning stream `Process.Stderr`, so the migrations it
 applies are stamped with the injected clock like everything else it records,
 and appkit's warning over a database a newer auth upgraded reaches the same
 stream as auth's own diagnostics (D03). `main` leaves `Dir` empty, so the path is `state/auth.db`
-relative to the working directory, which is `/opt/auth` on a host, and passes
+relative to the working directory, which is `/var/opt/ikigenba/auth` on a host, and passes
 `time.Now` as the clock; a test sets a temporary directory it owns, so two
 `Run`s given the same `Dir` share one database and two given different ones do
 not. There is no field naming another database: appkit's `db` takes only an
