@@ -32,7 +32,7 @@ func servicesFixtureCommand(command host.Command) (host.Result, bool) {
 }
 
 func TestInstallServicesStagePublishesNormalizedNameAndStopsOnError(t *testing.T) {
-	// R-YNH5-YAF8 R-3GF7-5PQ9 R-3IUZ-X97N R-3HN3-JHGY
+	// R-YNH5-YAF8 R-FRBV-ATQA R-FTRO-2D7O R-FSJR-OLGZ
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)
@@ -350,7 +350,7 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 }
 
 func TestInstallServicesReportsEntryChangesWithAndWithoutIcons(t *testing.T) {
-	// R-YNH5-YAF8 R-3HN3-JHGY R-3IUZ-X97N
+	// R-YNH5-YAF8 R-FSJR-OLGZ R-FTRO-2D7O
 	for _, disabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(disabled), func(t *testing.T) {
 			fixture := newCLIInstallFixture(t)

@@ -82,7 +82,7 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 	t.Run("cloud dependency", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/notes/state/value", "unchanged", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/notes/state/value", "unchanged", 0o600)
 		before := fileTreeSnapshot(t, root)
 		executions := 0
 		results, err := backup.Files(context.Background(), host.Env{
@@ -103,33 +103,34 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 }
 
 func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
-	// R-1EZZ-S5C6 R-DCSZ-8N4J R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
+	// R-T7OU-NQ6M R-T8WR-1HXB R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o640)
 	writeFile(t, root, "opt/alpha/etc/env", "TOKEN=value\n", 0o640)
-	writeFile(t, root, "opt/alpha/state/data.txt", "ordinary\n", 0o600)
-	writeFile(t, root, "opt/alpha/state/app.db", "database", 0o600)
-	writeFile(t, root, "opt/alpha/state/app.db-wal", "wal", 0o600)
-	writeFile(t, root, "opt/alpha/state/app.db-shm", "shm", 0o600)
-	writeFile(t, root, "opt/alpha/state/.app.db-litestream/generation", "metadata", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/data.txt", "ordinary\n", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "database", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db-wal", "wal", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db-shm", "shm", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/.app.db-litestream/generation", "metadata", 0o600)
 	writeFile(t, root, "opt/alpha/cache/item", "cache", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/cache/item", "cache", 0o600)
 	writeFile(t, root, "opt/alpha/bin/alpha", "binary", 0o700)
 	writeFile(t, root, "opt/alpha/share/item", "share", 0o600)
-	if err := os.Symlink("/etc/passwd", filepath.Join(root, "opt/alpha/state/outside")); err != nil {
+	if err := os.Symlink("/etc/passwd", filepath.Join(root, "var/opt/ikigenba/alpha/state/outside")); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, root, "opt/plain/state/app.db", "ordinary without manifest", 0o644)
+	writeFile(t, root, "var/opt/ikigenba/plain/state/app.db", "ordinary without manifest", 0o644)
 	writeFile(t, root, "opt/zeta/etc/env", "Z=1\n", 0o600)
 	writeFile(t, root, "opt/ignored/cache/item", "ignored", 0o600)
 	writeFile(t, root, "etc/systemd/system/generated.service", "unit", 0o644)
 	writeFile(t, root, "var/lib/ikigenba/services.json", "launcher secret", 0o640)
 	for name, mode := range map[string]fs.FileMode{
-		"opt/alpha/etc":               0o711,
-		"opt/alpha/state":             0o750,
-		"opt/alpha/etc/env":           0o640,
-		"opt/alpha/etc/manifest.toml": 0o440,
-		"opt/alpha/state/data.txt":    0o604,
+		"opt/alpha/etc":                         0o711,
+		"var/opt/ikigenba/alpha/state":          0o750,
+		"opt/alpha/etc/env":                     0o640,
+		"opt/alpha/etc/manifest.toml":           0o440,
+		"var/opt/ikigenba/alpha/state/data.txt": 0o604,
 	} {
 		if err := os.Chmod(filepath.Join(root, filepath.FromSlash(name)), mode); err != nil {
 			t.Fatal(err)
@@ -203,12 +204,12 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 }
 
 func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
-	// R-1EZZ-S5C6
+	// R-T7OU-NQ6M
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/notes/state/value", "notes", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/notes/state/value", "notes", 0o600)
 	writeFile(t, root, "opt/other/etc/manifest.toml", "[broken\n", 0o600)
-	writeFile(t, root, "opt/host/state/value", "reserved", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/host/state/value", "reserved", 0o600)
 	writeFile(t, root, "opt/neither/cache/value", "not a service", 0o600)
 	executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), unmapped: true}
 	client := newFileCloud()
@@ -297,7 +298,7 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 	// R-I3CZ-C0Q2 R-YBI2-GUY1
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 	writeFile(t, root, "opt/beta/etc/manifest.toml", "[broken\n", 0o600)
 	if err := os.MkdirAll(filepath.Join(root, "opt/delta/etc"), 0o750); err != nil {
 		t.Fatal(err)
@@ -305,8 +306,8 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 	if err := os.Symlink("/etc/passwd", filepath.Join(root, "opt/delta/etc/manifest.toml")); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, root, "opt/gamma/state/unreadable", "gamma", 0o000)
-	writeFile(t, root, "opt/omega/state/value", "omega", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/gamma/state/unreadable", "gamma", 0o000)
+	writeFile(t, root, "var/opt/ikigenba/omega/state/value", "omega", 0o600)
 	executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), unmapped: true}
 	client := newFileCloud()
 	client.fail = func(uri string, _ []byte) error {
@@ -340,8 +341,8 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 	t.Run("compression failure", func(t *testing.T) {
 		cleanRoot := t.TempDir()
 		cleanStore := configuredFileStore(t, cleanRoot)
-		writeFile(t, cleanRoot, "opt/alpha/state/value", "alpha", 0o600)
-		writeFile(t, cleanRoot, "opt/beta/state/value", "beta", 0o600)
+		writeFile(t, cleanRoot, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
+		writeFile(t, cleanRoot, "var/opt/ikigenba/beta/state/value", "beta", 0o600)
 		failingExecutor := &fileExecutor{
 			unmapped: true,
 			compressionResponses: []host.Result{{
@@ -365,7 +366,7 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 		cleanRoot := t.TempDir()
 		cleanStore := configuredFileStore(t, cleanRoot)
 		for _, name := range []string{"alpha", "beta"} {
-			writeFile(t, cleanRoot, "opt/"+name+"/state/value", name, 0o600)
+			writeFile(t, cleanRoot, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 		}
 		executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), unmapped: true}
 		execute := func(ctx context.Context, command host.Command) (host.Result, error) {
@@ -401,7 +402,7 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 		cleanRoot := t.TempDir()
 		cleanStore := configuredFileStore(t, cleanRoot)
 		for _, name := range []string{"alpha", "beta", "gamma"} {
-			writeFile(t, cleanRoot, "opt/"+name+"/state/value", name, 0o600)
+			writeFile(t, cleanRoot, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 		}
 		interruptEnv := env
 		interruptEnv.Root = cleanRoot
@@ -423,8 +424,8 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 		}
 		cleanRoot := t.TempDir()
 		cleanStore := configuredFileStore(t, cleanRoot)
-		writeFile(t, cleanRoot, "opt/alpha/state/value", "alpha", 0o600)
-		writeFile(t, cleanRoot, "opt/beta/state/value", "beta", 0o600)
+		writeFile(t, cleanRoot, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
+		writeFile(t, cleanRoot, "var/opt/ikigenba/beta/state/value", "beta", 0o600)
 		interruptEnv := env
 		interruptEnv.Root = cleanRoot
 		got, runErr := backup.Files(ctx, interruptEnv, cloud.Env{Open: interrupting.open}, cleanStore, "")
@@ -441,8 +442,8 @@ func TestFilesTimestampSetsAndCreateOnlyCollision(t *testing.T) {
 	// R-ZMEX-3VL4 R-AMEV-4J2G
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
-	writeFile(t, root, "opt/zeta/state/value", "zeta", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/zeta/state/value", "zeta", 0o600)
 	executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), unmapped: true}
 	client := newFileCloud()
 	times := []time.Time{time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), time.Date(2026, 1, 2, 3, 4, 6, 7, time.UTC), time.Date(2026, 1, 2, 3, 4, 6, 7, time.UTC)}
@@ -490,7 +491,7 @@ func TestFilesIdentityLookupFailureAndUnmappedOwnership(t *testing.T) {
 	// R-Z9DH-5EZK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/notes/state/value", "notes", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/notes/state/value", "notes", 0o600)
 
 	t.Run("execution failure", func(t *testing.T) {
 		executor := &fileExecutor{identityErr: errors.New("getent unavailable")}
@@ -861,4 +862,142 @@ func fileTreeSnapshot(t *testing.T, root string) []string {
 		t.Fatal(err)
 	}
 	return snapshot
+}
+
+func TestBackupRejectsUnmovedStateBeforeReadsAndContinues(t *testing.T) {
+	// R-JIF3-56FZ
+	for _, kind := range []string{"directory", "file", "symlink"} {
+		for _, snapshot := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/snapshot=%t", kind, snapshot), func(t *testing.T) {
+				root := t.TempDir()
+				store := configuredFileStore(t, root)
+				writeFile(t, root, "opt/alpha/etc/manifest.toml", "[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
+				writeFile(t, root, "opt/alpha/etc/env", "secret", 0o600)
+				writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "database", 0o600)
+				writeFile(t, root, "var/opt/ikigenba/zeta/state/value", "later", 0o600)
+				writeFile(t, root, "opt/zeta/cache/value", "cache", 0o600)
+				legacy := filepath.Join(root, "opt/alpha/state")
+				switch kind {
+				case "directory":
+					writeFile(t, root, "opt/alpha/state/value", "legacy", 0o600)
+				case "file":
+					writeFile(t, root, "opt/alpha/state", "legacy", 0o600)
+				case "symlink":
+					if err := os.Symlink("/missing", legacy); err != nil {
+						t.Fatal(err)
+					}
+				}
+				watch := newFileAccessWatch(t, filepath.Join(root, "opt/alpha/etc/env"), filepath.Join(root, "var/opt/ikigenba/alpha/state/app.db"))
+				executor := &fileExecutor{unmapped: true}
+				client := newFileCloud()
+				env := fileHostEnv(root, executor.execute)
+				want := "/opt/alpha/state has not moved; install alpha first"
+				if snapshot {
+					got, err := backup.Snapshot(context.Background(), env, cloud.Env{Open: client.open}, store, "")
+					if err != nil || len(got) != 2 || got[0].Err == nil || got[0].Err.Error() != want || got[1].Err != nil {
+						t.Fatalf("Snapshot = %+v, %v", got, err)
+					}
+				} else {
+					got, err := backup.Files(context.Background(), env, cloud.Env{Open: client.open}, store, "")
+					if err != nil || len(got) != 2 || got[0].Err == nil || got[0].Err.Error() != want || got[1].Err != nil {
+						t.Fatalf("Files = %+v, %v", got, err)
+					}
+				}
+				watch.assertQuiet(t)
+				if len(client.puts) != 1 || !strings.Contains(client.puts[0], "/zeta/") {
+					t.Fatalf("puts = %v", client.puts)
+				}
+				for _, command := range executor.commands {
+					if strings.HasPrefix(command, "litestream") {
+						t.Fatalf("unexpected replica command: %s", command)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestFilesLegacyStateAloneIsNotAService(t *testing.T) {
+	// R-T7OU-NQ6M
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	writeFile(t, root, "opt/notes/state/value", "legacy", 0o600)
+	watch := newFileAccessWatch(t, filepath.Join(root, "opt/notes/state/value"))
+	got, err := backup.Files(context.Background(), fileHostEnv(root, unexpectedHostCommand(t)), cloud.Env{}, store, "notes")
+	watch.assertQuiet(t)
+	if err == nil || err.Error() != "no service 'notes'" || len(got) != 0 {
+		t.Fatalf("Files = %+v, %v", got, err)
+	}
+}
+
+func TestFilesCanonicalReadFailure(t *testing.T) {
+	// R-XMDY-OF48
+	for _, name := range []string{"opt/crm/etc/outbox", "var/opt/ikigenba/crm/state/outbox"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			writeFile(t, root, name, "private", 0o000)
+			client := newFileCloud()
+			executor := &fileExecutor{unmapped: true}
+			got, err := backup.Files(context.Background(), fileHostEnv(root, executor.execute), cloud.Env{Open: client.open}, store, "crm")
+			if err != nil || len(got) != 1 || got[0].Err == nil || got[0].Err.Error() != "/"+name+": permission denied" || len(client.puts) != 0 {
+				t.Fatalf("Files = %+v, %v; puts %v", got, err, client.puts)
+			}
+		})
+	}
+}
+
+func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
+	// R-T7OU-NQ6M R-TDSC-KKW3
+	for _, location := range []struct{ parent, marker, alternate, alternateMarker string }{
+		{"opt", "etc", "var/opt/ikigenba", "state"},
+		{"var/opt/ikigenba", "state", "opt", "etc"},
+	} {
+		for _, alternate := range []bool{false, true} {
+			for _, snapshot := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/alternate=%t/snapshot=%t", location.parent, alternate, snapshot), func(t *testing.T) {
+					root := t.TempDir()
+					store := configuredFileStore(t, root)
+					writeFile(t, root, location.parent+"/actual/"+location.marker+"/value", "target", 0o600)
+					if err := os.Symlink("actual", filepath.Join(root, location.parent, "alias")); err != nil {
+						t.Fatal(err)
+					}
+					if alternate {
+						writeFile(t, root, location.alternate+"/alias/"+location.alternateMarker+"/value", "alternate", 0o600)
+					}
+					client := newFileCloud()
+					executor := &fileExecutor{unmapped: true}
+					env := fileHostEnv(root, executor.execute)
+					opens := 0
+					cloudEnv := cloud.Env{Open: func(ctx context.Context, region string) (cloud.Client, error) {
+						opens++
+						return client.open(ctx, region)
+					}}
+					var err error
+					var count int
+					var resultErr error
+					if snapshot {
+						got, runErr := backup.Snapshot(context.Background(), env, cloudEnv, store, "alias")
+						err, count = runErr, len(got)
+						if count != 0 {
+							resultErr = got[0].Err
+						}
+					} else {
+						got, runErr := backup.Files(context.Background(), env, cloudEnv, store, "alias")
+						err, count = runErr, len(got)
+						if count != 0 {
+							resultErr = got[0].Err
+						}
+					}
+					if alternate {
+						if err != nil || count != 1 || resultErr != nil || len(client.puts) != 1 {
+							t.Fatalf("backup = %d, %v, %v; puts %v", count, resultErr, err, client.puts)
+						}
+					} else if err == nil || err.Error() != "no service 'alias'" || count != 0 || len(client.puts) != 0 || opens != 0 || len(executor.commands) != 0 {
+						t.Fatalf("alias backup = %d, %v; commands %v; puts %v", count, err, executor.commands, client.puts)
+					}
+				})
+			}
+		}
+	}
 }

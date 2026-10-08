@@ -158,7 +158,6 @@ func TestRetireServiceReportKeepsAdjacentDisabledAppsSeparate(t *testing.T) {
 func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 	// R-HZPA-6PHZ
 	t.Run("sync failure remains primary and both command captures render", func(t *testing.T) {
-		// R-YUZK-TJ3U
 		root := configuredBackupRoot(t)
 		manifest := filepath.Join(root, "opt/alpha/etc/manifest.toml")
 		if err := os.MkdirAll(filepath.Dir(manifest), 0o750); err != nil {
@@ -184,7 +183,7 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 			}
 		}
 		stdout, stderr, code := invokeBackupCLI([]string{"retire"}, hostCLIDeps(root, newHostCLICloud(), execute))
-		database := filepath.Join(root, "opt/alpha/state/app.db")
+		database := filepath.Join(root, "var/opt/ikigenba/alpha/state/app.db")
 		wantOut := "services: ok (none)\n" +
 			"litestream: failed: sync " + database + ": exit status 9\n"
 		wantErr := "opsctl: retire failed at litestream\n\n" +

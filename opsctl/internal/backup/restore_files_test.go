@@ -19,11 +19,14 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-XEAW-84OR R-23DZ-FK62 R-KALQ-MZPK
+	// R-XEAW-84OR R-S1AR-UPD9 R-KALQ-MZPK
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/stale", "remove", 0o600)
-	writeFile(t, root, "opt/notes/state/stale", "remove", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/notes/state/stale", "remove", 0o600)
 	writeFile(t, root, "opt/notes/bin/app", "keep-bin", 0o700)
 	writeFile(t, root, "opt/notes/share/asset", "keep-share", 0o600)
 	writeFile(t, root, "opt/notes/cache/value", "keep-cache", 0o600)
@@ -48,8 +51,8 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 	want := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
 		{Name: "stop", Detail: "ikigenba-notes.socket, ikigenba-notes.service, litestream.service"},
-		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 4 files"},
-		{Name: "db", Detail: "/opt/notes/state/app.db, newest 2026-09-16T11:00:00Z"},
+		{Name: "files", Detail: "/opt/notes/etc, /var/opt/ikigenba/notes/state, 4 files"},
+		{Name: "db", Detail: "/var/opt/ikigenba/notes/state/app.db, newest 2026-09-16T11:00:00Z"},
 		{Name: "litestream", Detail: "state/app.db"},
 		{Name: "start", Detail: "litestream.service, ikigenba-notes.socket, ikigenba-notes.service"},
 	}
@@ -65,20 +68,20 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 		"id --group --name ikigenba",
 		"getent passwd ikigenba",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
-		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
+		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/",
 		"systemctl start litestream.service",
 		"systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service",
 	}
 	if !reflect.DeepEqual(executor.commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v", executor.commands, wantCommands)
 	}
-	for _, name := range []string{"opt/notes/etc/stale", "opt/notes/state/stale"} {
+	for _, name := range []string{"opt/notes/etc/stale", "var/opt/ikigenba/notes/state/stale"} {
 		if _, err := os.Lstat(filepath.Join(root, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("stale %s remains: %v", name, err)
 		}
 	}
 	for name, wantData := range map[string]string{
-		"opt/notes/etc/env": "TOKEN=restored\n", "opt/notes/state/data": "restored",
+		"opt/notes/etc/env": "TOKEN=restored\n", "var/opt/ikigenba/notes/state/data": "restored",
 		"opt/notes/bin/app": "keep-bin", "opt/notes/share/asset": "keep-share", "opt/notes/cache/value": "keep-cache",
 	} {
 		data := readHostRestoreFile(t, root, name)
@@ -88,13 +91,13 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 	}
 	assertRestoreMetadata(t, root, "opt/notes/etc", 0o750, uid, gid)
 	assertRestoreMetadata(t, root, "opt/notes/etc/env", 0o640, uid, accountGID)
-	assertRestoreMetadata(t, root, "opt/notes/state", 0o710, uid, gid)
-	assertRestoreMetadata(t, root, "opt/notes/state/data", 0o620, uid, gid)
-	linkInfo, err := os.Lstat(filepath.Join(root, "opt/notes/state/current"))
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state", 0o710, uid, gid)
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/data", 0o620, uid, gid)
+	linkInfo, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/state/current"))
 	if err != nil || linkInfo.Mode()&os.ModeSymlink == 0 || int(linkInfo.Sys().(*syscall.Stat_t).Uid) != uid || int(linkInfo.Sys().(*syscall.Stat_t).Gid) != accountGID {
 		t.Fatalf("restored symlink metadata = %v, %v", linkInfo, err)
 	}
-	if target, err := os.Readlink(filepath.Join(root, "opt/notes/state/current")); err != nil || target != "data" {
+	if target, err := os.Readlink(filepath.Join(root, "var/opt/ikigenba/notes/state/current")); err != nil || target != "data" {
 		t.Fatalf("symlink target = %q, %v", target, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "run/opsctl/restore/notes.active")); !errors.Is(err, os.ErrNotExist) {
@@ -120,6 +123,9 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			store := configuredFileStore(t, root)
 			body := hostRestoreArchive(t,
 				restoreMember{name: "etc/manifest.toml", data: []byte("[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")},
@@ -176,9 +182,12 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			store := configuredFileStore(t, root)
 			writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
-			writeFile(t, root, "opt/notes/state/old", "old state", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/notes/state/old", "old state", 0o600)
 			body := hostRestoreArchive(t,
 				restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")},
 				restoreMember{name: "state/new", data: []byte("new")},
@@ -207,12 +216,12 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 			if !reflect.DeepEqual(executor.commands, test.wantCommands) || downstreamCalls != 0 {
 				t.Fatalf("commands = %v, downstream calls %d", executor.commands, downstreamCalls)
 			}
-			for name, want := range map[string]string{"opt/notes/etc/old": "old etc", "opt/notes/state/old": "old state"} {
+			for name, want := range map[string]string{"opt/notes/etc/old": "old etc", "var/opt/ikigenba/notes/state/old": "old state"} {
 				if got := string(readHostRestoreFile(t, root, name)); got != want {
 					t.Fatalf("%s = %q, want preserved %q", name, got, want)
 				}
 			}
-			if _, statErr := os.Stat(filepath.Join(root, "opt/notes/state/new")); !errors.Is(statErr, os.ErrNotExist) {
+			if _, statErr := os.Stat(filepath.Join(root, "var/opt/ikigenba/notes/state/new")); !errors.Is(statErr, os.ErrNotExist) {
 				t.Fatalf("failed stop published restored target: %v", statErr)
 			}
 		})
@@ -222,8 +231,11 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testing.T) {
 	// R-KALQ-MZPK
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n")},
 		restoreMember{name: "state/value", data: []byte("new"), uname: "ikigenba"},
@@ -235,10 +247,10 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "ownership" || len(report.Steps) != 3 || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
 		t.Fatalf("Restore() = %+v, %#v", report, err)
 	}
-	if data := readHostRestoreFile(t, root, "opt/notes/state/existing"); string(data) != "unchanged" {
+	if data := readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/existing"); string(data) != "unchanged" {
 		t.Fatalf("ownership failure replaced target: %q", data)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "opt/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(filepath.Join(root, "var/opt/ikigenba/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("ownership failure published new tree: %v", statErr)
 	}
 	assertRestoreMarker(t, root)
@@ -247,8 +259,11 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
 	// R-KALQ-MZPK
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), gname: "ikigenba"})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "id --user ikigenba", failErr: errors.New("account backend unavailable")}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error { return nil })
@@ -257,10 +272,10 @@ func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
 	if !errors.As(err, &failure) || failure.Stage != "ownership" || !errors.As(err, &commandFailure) || len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[0].Err != nil || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
 		t.Fatalf("Restore() = %+v, %#v", report, err)
 	}
-	if got := string(readHostRestoreFile(t, root, "opt/notes/state/existing")); got != "unchanged" {
+	if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/existing")); got != "unchanged" {
 		t.Fatalf("existing state = %q", got)
 	}
-	if _, statErr := os.Lstat(filepath.Join(root, "opt/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("incoming state published: %v", statErr)
 	}
 }
@@ -268,6 +283,9 @@ func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
 func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 	// R-KALQ-MZPK
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), uname: "ikigenba", gname: "ikigenba"})
 	client := restoreClientFor(t, body)
@@ -287,18 +305,21 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 	if !reflect.DeepEqual(executor.commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v", executor.commands, wantCommands)
 	}
-	assertRestoreMetadata(t, root, "opt/notes/state/value", 0o600, os.Getuid(), accountGID)
-	if info, statErr := os.Stat(filepath.Join(root, "opt/notes")); statErr != nil || info.Mode().Perm() != 0o755 {
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/value", 0o600, os.Getuid(), accountGID)
+	if info, statErr := os.Stat(filepath.Join(root, "var/opt/ikigenba/notes")); statErr != nil || info.Mode().Perm() != 0o750 {
 		t.Fatalf("new service root = %v, %v, want mode 0755", info, statErr)
 	}
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-KALQ-MZPK R-23DZ-FK62 R-G7FZ-2AO2 R-1XAH-IPGL
+	// R-KALQ-MZPK R-S1AR-UPD9 R-G7FZ-2AO2 R-1XAH-IPGL
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
-	writeFile(t, root, "opt/notes/state/old", "old state", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/notes/state/old", "old state", 0o600)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/new", data: []byte("new etc"), uid: os.Getuid(), gid: os.Getgid()},
 		restoreMember{name: "state/new", data: []byte("new state"), uid: os.Getuid() + 100000, gid: os.Getgid()},
@@ -317,12 +338,12 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 	if !strings.Contains(err.Error(), "set ownership") || downstreamCalls != 0 {
 		t.Fatalf("error = %v, downstream calls = %d", err, downstreamCalls)
 	}
-	for name, want := range map[string]string{"opt/notes/etc/old": "old etc", "opt/notes/state/old": "old state"} {
+	for name, want := range map[string]string{"opt/notes/etc/old": "old etc", "var/opt/ikigenba/notes/state/old": "old state"} {
 		if got := string(readHostRestoreFile(t, root, name)); got != want {
 			t.Fatalf("%s = %q, want preserved %q", name, got, want)
 		}
 	}
-	for _, name := range []string{"opt/notes/etc/new", "opt/notes/state/new"} {
+	for _, name := range []string{"opt/notes/etc/new", "var/opt/ikigenba/notes/state/new"} {
 		if _, statErr := os.Stat(filepath.Join(root, name)); !errors.Is(statErr, os.ErrNotExist) {
 			t.Fatalf("staging failure published %s: %v", name, statErr)
 		}
@@ -332,6 +353,9 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 	// R-KALQ-MZPK
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n"), uid: os.Getuid(), gid: os.Getgid()},
@@ -352,8 +376,11 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
 	// R-KALQ-MZPK
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "state/value", data: []byte("new"), gname: "ikigenba"},
 	)
@@ -368,10 +395,10 @@ func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
 	if len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
 		t.Fatalf("report = %+v, want source retained and failed files step", report)
 	}
-	if got := string(readHostRestoreFile(t, root, "opt/notes/state/existing")); got != "unchanged" {
+	if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/existing")); got != "unchanged" {
 		t.Fatalf("existing target = %q, want unchanged", got)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "opt/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(filepath.Join(root, "var/opt/ikigenba/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("group failure published new tree: %v", statErr)
 	}
 }
@@ -400,6 +427,11 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 		return executor.failResult, executor.failErr
 	}
 	switch command.Name {
+	case "chown":
+		if len(command.Args) != 2 || command.Args[0] != "ikigenba:ikigenba" || !strings.HasPrefix(command.Args[1], filepath.Join(executor.root, "var/opt/ikigenba")+"/") {
+			executor.t.Fatalf("unexpected data-directory ownership command: %v", command.Args)
+		}
+		return host.Result{}, nil
 	case "zstd":
 		compressed, err := io.ReadAll(command.Stdin)
 		if err != nil {
@@ -425,7 +457,7 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 			return host.Result{Stdout: []byte("LoadState=" + load + "\nActiveState=" + active + "\n")}, nil
 		}
 		if len(command.Args) == 2 && command.Args[0] == "stop" {
-			if _, err := os.Stat(filepath.Join(executor.root, "opt/notes/state/value")); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(filepath.Join(executor.root, "var/opt/ikigenba/notes/state/value")); !errors.Is(err, os.ErrNotExist) {
 				executor.t.Fatalf("target was replaced before %q: %v", text, err)
 			}
 			if command.Args[1] == "ikigenba-notes.socket" && executor.active {

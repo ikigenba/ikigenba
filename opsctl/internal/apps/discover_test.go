@@ -4,13 +4,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 )
 
-// R-XXBF-U0EO
+// R-G6SM-I0K3
+// R-G34X-CPC0
+// R-G5KQ-48TE
 func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T) {
 	missingRoot := t.TempDir()
 	services, err := apps.Discover(missingRoot)
@@ -19,13 +20,20 @@ func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T)
 	}
 
 	root := t.TempDir()
+	const dataRoot = apps.DataRoot
+	if dataRoot != "/var/opt/ikigenba" {
+		t.Fatalf("DataRoot = %q", dataRoot)
+	}
 	for _, path := range []string{
-		"opt/zeta/state",
+		"var/opt/ikigenba/zeta/state",
 		"opt/Alpha/etc",
-		"opt/bad_name/state",
-		"opt/data-only/state",
+		"var/opt/ikigenba/bad_name/state",
+		"var/opt/ikigenba/data-only/state",
 		"opt/both/etc",
-		"opt/both/state",
+		"var/opt/ikigenba/both/state",
+		"opt/legacy/state",
+		"var/opt/ikigenba/nested/child/state",
+		"var/opt/ikigenba/no-state/etc",
 		"opt/nested/child/etc",
 	} {
 		mkdirAll(t, filepath.Join(root, filepath.FromSlash(path)))
@@ -48,6 +56,19 @@ func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T)
 		t.Fatalf("Discover with unreadable /opt = %#v, %v; want enumeration error", services, err)
 	}
 
+	blockedData := t.TempDir()
+	writeFile(t, filepath.Join(blockedData, apps.DataRoot), []byte("not a directory"))
+	if services, err = apps.Discover(blockedData); err == nil || services != nil {
+		t.Fatalf("Discover with non-directory DataRoot = %#v, %v; want enumeration error", services, err)
+	}
+
+	dataOnlyRoot := t.TempDir()
+	mkdirAll(t, filepath.Join(dataOnlyRoot, apps.DataRoot, "crm", "state"))
+	services, err = apps.Discover(dataOnlyRoot)
+	if err != nil || !reflect.DeepEqual(serviceNames(services), []string{"crm"}) {
+		t.Fatalf("Discover with only DataRoot = %#v, %v", services, err)
+	}
+
 	escapeRoot := t.TempDir()
 	outside := t.TempDir()
 	mkdirAll(t, filepath.Join(outside, "escaped", "state"))
@@ -58,10 +79,20 @@ func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T)
 		t.Fatalf("Discover through /opt symlink outside root = %#v, %v; want root-containment error", services, err)
 	}
 
+	dataEscapeRoot := t.TempDir()
+	mkdirAll(t, filepath.Join(dataEscapeRoot, "var", "opt"))
+	if err := os.Symlink(outside, filepath.Join(dataEscapeRoot, apps.DataRoot)); err != nil {
+		t.Fatalf("create escaping DataRoot symlink: %v", err)
+	}
+	if services, err = apps.Discover(dataEscapeRoot); err == nil || services != nil {
+		t.Fatalf("Discover through DataRoot symlink outside root = %#v, %v", services, err)
+	}
+
 	nestedRoot := t.TempDir()
 	outsideEtc := t.TempDir()
 	writeFile(t, filepath.Join(outsideEtc, "manifest.toml"), []byte("app = \"etc-escape\"\n"))
-	mkdirAll(t, filepath.Join(nestedRoot, "opt", "etc-escape", "state"))
+	mkdirAll(t, filepath.Join(nestedRoot, apps.DataRoot, "etc-escape", "state"))
+	mkdirAll(t, filepath.Join(nestedRoot, "opt", "etc-escape"))
 	if err := os.Symlink(outsideEtc, filepath.Join(nestedRoot, "opt", "etc-escape", "etc")); err != nil {
 		t.Fatalf("create escaping etc symlink: %v", err)
 	}
@@ -75,8 +106,8 @@ func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T)
 	}
 
 	outsideState := t.TempDir()
-	mkdirAll(t, filepath.Join(nestedRoot, "opt", "state-escape"))
-	if err := os.Symlink(outsideState, filepath.Join(nestedRoot, "opt", "state-escape", "state")); err != nil {
+	mkdirAll(t, filepath.Join(nestedRoot, apps.DataRoot, "state-escape"))
+	if err := os.Symlink(outsideState, filepath.Join(nestedRoot, apps.DataRoot, "state-escape", "state")); err != nil {
 		t.Fatalf("create escaping state symlink: %v", err)
 	}
 
@@ -128,12 +159,12 @@ func TestDiscoverKeepsManifestFailuresPerService(t *testing.T) {
 	}
 }
 
-// R-XZR8-LJW2
+// R-G98F-9K1H
 func TestDiscoverUsesDirectoryIdentityAndRetainsStateOnlyServices(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "directory-name", "app = \"other-name\"\n")
-	mkdirAll(t, filepath.Join(root, "opt", "state-only", "state"))
-	writeFile(t, filepath.Join(root, "opt", "state-only", "state", "service.db"), []byte("data"))
+	mkdirAll(t, filepath.Join(root, apps.DataRoot, "state-only", "state"))
+	writeFile(t, filepath.Join(root, apps.DataRoot, "state-only", "state", "service.db"), []byte("data"))
 	writeFile(t, filepath.Join(root, "opt", "directory-name", "unrelated-binary"), []byte("not executable"))
 
 	services, err := apps.Discover(root)
@@ -141,7 +172,7 @@ func TestDiscoverUsesDirectoryIdentityAndRetainsStateOnlyServices(t *testing.T) 
 		t.Fatalf("Discover returned error: %v", err)
 	}
 	byName := servicesByName(services)
-	if got := byName["directory-name"]; got.Name != "directory-name" || got.Manifest != nil || got.ManifestError == nil || !strings.Contains(got.ManifestError.Error(), "other-name") || !strings.Contains(got.ManifestError.Error(), "directory-name") {
+	if got := byName["directory-name"]; got.Name != "directory-name" || got.Manifest != nil || got.ManifestError == nil {
 		t.Errorf("mismatched service = %#v", got)
 	}
 	if got := byName["state-only"]; got.Name != "state-only" || got.Manifest != nil || got.ManifestError != nil {

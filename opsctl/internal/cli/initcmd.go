@@ -45,16 +45,17 @@ Sequence:
                ikigenba-apps.slice, sized from the host's memory, and the
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
-  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
+               installed app whose manifest is no longer valid, or whose
+               state/ is still under /opt/APP/, stops init here, before
+               this step or any after it writes anything
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
                disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them;
-               a manifest that is no longer valid stops init before
-               any app is rewritten
+               an app's manifest declares are kept as install wrote them
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -331,6 +332,9 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 		err = apps.SetupSlices(ctx, env)
 	}
 	if err == nil {
+		err = checkInitStateMoved(p.deps.Root)
+	}
+	if err == nil {
 		err = nginx.Apply(ctx, env, p.host, apexApp)
 	}
 	if err == nil {
@@ -397,4 +401,40 @@ func renderInitAddresses(values []string) (string, error) {
 		canonical[i] = address.Unmap().String()
 	}
 	return strings.Join(uniqueSorted(canonical), ","), nil
+}
+
+// checkInitStateMoved refuses installed apps whose data still needs installation migration.
+func checkInitStateMoved(root string) error {
+	services, err := apps.Discover(root)
+	if err != nil {
+		return err
+	}
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	for _, service := range services {
+		if apps.ValidateName(service.Name) != nil {
+			continue
+		}
+		binary, err := filesystem.Stat(filepath.Join("opt", service.Name, "bin", service.Name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !binary.Mode().IsRegular() {
+			continue
+		}
+		_, err = filesystem.Lstat(filepath.Join("opt", service.Name, "state"))
+		if err == nil {
+			return fmt.Errorf("%s: /opt/%s/state has not moved; install %s first", service.Name, service.Name, service.Name)
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }

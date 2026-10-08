@@ -267,15 +267,15 @@ func renderConfiguration(root string, settings replicationSettings, services []d
 	}
 	configuration.WriteString("dbs:\n")
 	for _, service := range services {
-		databasePath := path.Join("/opt", service.name, service.database.Path)
+		databasePath := path.Join(apps.DataRoot, service.name, service.database.Path)
 		if root != "/" {
 			databasePath = path.Join(root, databasePath)
 		}
 		configuration.WriteString("  - path: ")
 		configuration.WriteString(yamlString(databasePath))
-		configuration.WriteString("\n    replicas:\n      - url: ")
+		configuration.WriteString("\n    replica:\n      url: ")
 		configuration.WriteString(yamlString(strings.TrimSuffix(settings.prefix, "/") + "/" + service.name + "/"))
-		configuration.WriteString("\n        force-path-style: true\n")
+		configuration.WriteString("\n      force-path-style: true\n")
 	}
 	return []byte(configuration.String())
 }

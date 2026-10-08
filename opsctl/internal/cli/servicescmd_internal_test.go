@@ -15,7 +15,7 @@ import (
 )
 
 func TestInstallConfigureServicesActionAndReportFailuresPreserveBothCauses(t *testing.T) {
-	// R-3GF7-5PQ9
+	// R-FRBV-ATQA
 	for _, failedStep := range []string{"nginx", "services", "litestream"} {
 		t.Run(failedStep, func(t *testing.T) {
 			root := t.TempDir()
@@ -82,6 +82,9 @@ func TestRestoreServicesPublicationIsSilentAndRunsOnlyAfterNginx(t *testing.T) {
 	for _, failure := range []string{"", "source", "nginx", "services"} {
 		t.Run(failure, func(t *testing.T) {
 			root := configuredBackupRoot(t)
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			store := config.Store{Root: root}
 			if err := store.Set("host.name", "HOST.Example.Test."); err != nil {
 				t.Fatal(err)

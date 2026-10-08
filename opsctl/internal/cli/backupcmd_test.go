@@ -20,7 +20,8 @@ import (
 const wantBackupUsage = `Usage: opsctl backup [SERVICE]
 
 Copy every service's etc/ and state/ to the prefix in backup.s3_uri, under the
-service's own name, or just SERVICE when one is named.
+service's own name, or just SERVICE when one is named. A service's etc/ is
+/opt/SERVICE/etc/ and its state/ is /var/opt/ikigenba/SERVICE/state/.
 
 Never copied: cache/, anything opsctl generates, and -- for a service that
 declares a [database] -- the database file, its -wal and -shm, and its
@@ -203,7 +204,7 @@ func TestBackupGrammarRejectsOptionsAndExcessOperandsBeforeHostAccess(t *testing
 }
 
 func TestBackupHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-DIWH-5HU0
+	// R-XF2K-DSO2
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "not-a-directory")
@@ -223,7 +224,9 @@ func TestBackupHelpIsExactAndHostIndependent(t *testing.T) {
 					return nil, nil
 				}},
 			}
+			assertRootUnread := observeRetireRootAccess(t, root)
 			stdout, stderr, code := invokeBackupCLI([]string{"backup", option}, deps)
+			assertRootUnread()
 			if code != 0 || stdout != wantBackupUsage || stderr != "" {
 				t.Errorf("backup %s as euid %d = exit %d stdout %q stderr %q", option, euid, code, stdout, stderr)
 			}
@@ -254,7 +257,7 @@ func configuredBackupRoot(t *testing.T) string {
 
 func writeBackupServiceFile(t *testing.T, root, service, content string) {
 	t.Helper()
-	filename := filepath.Join(root, "opt", service, "state", "value")
+	filename := filepath.Join(root, "var", "opt", "ikigenba", service, "state", "value")
 	if err := os.MkdirAll(filepath.Dir(filename), 0o750); err != nil {
 		t.Fatal(err)
 	}

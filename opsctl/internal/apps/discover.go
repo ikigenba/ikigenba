@@ -9,7 +9,7 @@ import (
 	"sort"
 )
 
-// Discover returns the services represented by directories below /opt.
+// Discover returns services represented by package or data directories.
 func Discover(root string) ([]Service, error) {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
@@ -17,25 +17,29 @@ func Discover(root string) ([]Service, error) {
 	}
 	defer func() { _ = filesystem.Close() }()
 
-	entries, err := fs.ReadDir(filesystem.FS(), "opt")
-	if errors.Is(err, os.ErrNotExist) {
-		return []Service{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("discover services: read /opt: %w", err)
-	}
-
-	services := make([]Service, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	names := make(map[string]struct{})
+	for _, location := range []struct{ directory, marker string }{
+		{"opt", "etc"},
+		{DataRoot[1:], "state"},
+	} {
+		entries, readErr := fs.ReadDir(filesystem.FS(), location.directory)
+		if errors.Is(readErr, os.ErrNotExist) {
 			continue
 		}
-		servicePath := path.Join("opt", entry.Name())
-		if !isDirectory(filesystem, path.Join(servicePath, "etc")) && !isDirectory(filesystem, path.Join(servicePath, "state")) {
-			continue
+		if readErr != nil {
+			return nil, fmt.Errorf("discover services: read /%s: %w", location.directory, readErr)
 		}
+		for _, entry := range entries {
+			if entry.IsDir() && isDirectory(filesystem, path.Join(location.directory, entry.Name(), location.marker)) {
+				names[entry.Name()] = struct{}{}
+			}
+		}
+	}
 
-		service := Service{Name: entry.Name()}
+	services := make([]Service, 0, len(names))
+	for name := range names {
+		servicePath := path.Join("opt", name)
+		service := Service{Name: name}
 		manifestPath := path.Join(servicePath, "etc", "manifest.toml")
 		data, readErr := filesystem.ReadFile(manifestPath)
 		switch {

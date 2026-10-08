@@ -19,12 +19,12 @@ func expectedResourceService(root string, stop int64, resourceLines string) stri
 	appRoot := filepath.Join(root, "opt", app)
 	return "[Unit]\nDescription=Ikigenba " + app + " app\nRequires=ikigenba-" + app + ".socket\nAfter=ikigenba-" + app + ".socket\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
-		"WorkingDirectory=" + appRoot + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"WorkingDirectory=" + filepath.Join(root, "var", "opt", "ikigenba", "notes") + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stop, 10) + "\n" + resourceLines + "\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
 }
 
-// R-ZWRV-69S5 R-ZXZR-K1IU
+// R-GE40-SN09 R-GQB0-MCF7
 func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
 	for _, test := range []struct{ name, table, lines string }{
 		{"absent", "", "Slice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n"},
@@ -80,7 +80,7 @@ func TestInstallPublishesExactResourceUnitsOnEveryInstall(t *testing.T) {
 	}
 }
 
-// R-07QY-M7GE
+// R-GP34-8KOI
 func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 	for _, manifest := range []string{
 		"app = 'notes'\n[resources]\ncpu_weight = 100\nmemory_max = '512M'\nslice = 'core'\ndelegate = true\noom_policy = 'continue'\n",
@@ -148,7 +148,7 @@ func TestSetupTimeoutsPreservesAndCorrectsManifestResources(t *testing.T) {
 	}
 }
 
-// R-07QY-M7GE
+// R-GP34-8KOI
 func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T) {
 	for _, manifest := range []string{"invalid = [", "app = 'other'", "app = 'zeta'\n[resources]\nio_weight = 50", "app = 'zeta'\n[resources]\nmemory_max = '512MB'"} {
 		root := t.TempDir()
@@ -177,7 +177,7 @@ func TestSetupTimeoutsRejectsInstalledManifestFailureBeforeAnyWrite(t *testing.T
 	}
 }
 
-// R-07QY-M7GE
+// R-GP34-8KOI
 func TestSetupTimeoutsRejectsUnreadableEnvironment(t *testing.T) {
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)

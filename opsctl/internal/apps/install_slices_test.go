@@ -22,7 +22,7 @@ func installSliceFixtures(t *testing.T, root string) {
 	}
 }
 
-// R-ZRW9-N6TD R-ZT46-0YK2 R-3DZE-E68V R-3CRI-0EI6
+// R-GYUB-AQM2 R-ZT46-0YK2 R-GSQT-DVWL R-GRIX-045W
 func TestInstallSliceChecksPrecedeDiscoveryAndMutation(t *testing.T) {
 	for _, test := range []struct {
 		name, slice, unit, contents, memory, want string
@@ -79,7 +79,7 @@ func TestInstallSliceChecksPrecedeDiscoveryAndMutation(t *testing.T) {
 	}
 }
 
-// R-ZT46-0YK2 R-3DZE-E68V
+// R-ZT46-0YK2 R-GSQT-DVWL
 func TestInstallAcceptsLastValidMemoryMaxAndEquality(t *testing.T) {
 	for _, slice := range []string{"apps", "core"} {
 		for _, ceiling := range []string{"1024M", "1536000", "1000", "00001024K"} {
@@ -124,7 +124,7 @@ func TestInstallReplacesItsOwnRejectedManifest(t *testing.T) {
 	}
 }
 
-// R-3F7A-RXZK R-3CRI-0EI6
+// R-GTYP-RNNA R-GRIX-045W
 func TestInstallReportsExactMemoryWarningsWithoutStopping(t *testing.T) {
 	type installed struct{ name, slice, memory, kind string }
 	for _, test := range []struct {
@@ -204,7 +204,7 @@ func TestInstallReportsExactMemoryWarningsWithoutStopping(t *testing.T) {
 	}
 }
 
-// R-ZRW9-N6TD R-3GF7-5PQ9
+// R-GYUB-AQM2 R-FRBV-ATQA
 func TestInstallSliceReadFailureAndReportFailureRetainCauses(t *testing.T) {
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	unit := filepath.Join(fixture.root, "etc/systemd/system/ikigenba.slice")

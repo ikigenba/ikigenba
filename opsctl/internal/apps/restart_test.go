@@ -57,7 +57,7 @@ func TestRestartRejectsInvalidAndUninstalledAppsBeforeExecution(t *testing.T) {
 }
 
 func TestRestartUsesInstalledUnitAndBinaryWithoutChangingHostFiles(t *testing.T) {
-	// R-XU5L-75BS
+	// R-HJKL-SU7V
 	// R-MBTM-17TU R-AMEV-4J2G
 	for _, initialState := range []string{"active", "inactive", "failed"} {
 		t.Run(initialState, func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestRestartUsesInstalledUnitAndBinaryWithoutChangingHostFiles(t *testing.T)
 }
 
 func TestRestartChecksResultingStateAfterSuccessfulRestart(t *testing.T) {
-	// R-XU5L-75BS
+	// R-HJKL-SU7V
 	// R-ME9E-SRB8
 	for _, resultingState := range []string{"active", "inactive", "failed"} {
 		t.Run(resultingState, func(t *testing.T) {

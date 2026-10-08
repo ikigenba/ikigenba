@@ -163,6 +163,9 @@ func (workflow *uninstallWorkflow) run(ctx context.Context) error {
 	if err := workflow.stop(ctx); err != nil {
 		return err
 	}
+	if err := workflow.data(ctx); err != nil {
+		return err
+	}
 	if err := workflow.removeUnit(ctx); err != nil {
 		return err
 	}
@@ -240,11 +243,30 @@ func (workflow *uninstallWorkflow) removeUnit(ctx context.Context) error {
 	return workflow.report("unit", "removed "+safeDiagnosticToken(workflow.socket)+", "+safeDiagnosticToken(workflow.service))
 }
 
+func (workflow *uninstallWorkflow) data(ctx context.Context) error {
+	plan, err := InspectData(workflow.env.Root, workflow.app)
+	if err != nil {
+		return workflow.fail("data", err)
+	}
+	if !plan.Changes() {
+		return nil
+	}
+	if plan.Moves() {
+		if err := PrepareDataDirectory(ctx, workflow.env, workflow.app); err != nil {
+			return workflow.fail("data", err)
+		}
+	}
+	if err := ApplyData(workflow.env.Root, workflow.app, plan); err != nil {
+		return workflow.fail("data", err)
+	}
+	return workflow.report("data", plan.Detail(workflow.app))
+}
+
 func (workflow *uninstallWorkflow) removeFiles() error {
 	filesystem, err := os.OpenRoot(workflow.env.Root)
 	if err == nil {
-		for _, directory := range []string{"bin", "etc", "share", "cache"} {
-			if removeErr := filesystem.RemoveAll(path.Join("opt", workflow.app, directory)); removeErr != nil {
+		for _, directory := range []string{path.Join("opt", workflow.app), path.Join(strings.TrimPrefix(DataRoot, "/"), workflow.app, "cache")} {
+			if removeErr := filesystem.RemoveAll(directory); removeErr != nil {
 				err = removeErr
 				break
 			}
@@ -254,7 +276,8 @@ func (workflow *uninstallWorkflow) removeFiles() error {
 	if err != nil {
 		return workflow.fail("files", err)
 	}
-	return workflow.report("files", fmt.Sprintf("removed /opt/%s/bin, etc, share, cache; kept state", safeDiagnosticToken(workflow.app)))
+	app := safeDiagnosticToken(workflow.app)
+	return workflow.report("files", fmt.Sprintf("removed /opt/%s, /var/opt/ikigenba/%s/cache; kept /var/opt/ikigenba/%s/state", app, app, app))
 }
 
 func (workflow *uninstallWorkflow) report(step, detail string) error {
@@ -537,18 +560,23 @@ func restartPrerequisites(root, app string) error {
 }
 
 func requireAppDirectory(filesystem *os.Root, app string) error {
-	info, err := filesystem.Lstat(path.Join("opt", app))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return &LifecycleError{Code: 1, Message: fmt.Sprintf("no service '%s'", safeDiagnosticToken(app)), Cause: err}
+	for _, location := range []struct{ parent, marker string }{{path.Join("opt", app), "etc"}, {path.Join(strings.TrimPrefix(DataRoot, "/"), app), "state"}} {
+		parent, err := filesystem.Lstat(location.parent)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
 		}
-		return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
+		if err != nil || !parent.IsDir() {
+			continue
+		}
+		info, err := filesystem.Lstat(path.Join(location.parent, location.marker))
+		if err == nil && info.IsDir() {
+			return nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
+		}
 	}
-	if !info.IsDir() {
-		err = errors.New("service path is not a directory")
-		return &LifecycleError{Code: 1, Message: "invalid service layout", Cause: err}
-	}
-	return nil
+	return &LifecycleError{Code: 1, Message: fmt.Sprintf("no service '%s'", safeDiagnosticToken(app))}
 }
 
 func requireInstalledBinary(filesystem *os.Root, app string) error {
@@ -677,7 +705,7 @@ func serviceJournalMode(root string, service Service) string {
 	}
 	defer func() { _ = filesystem.Close() }()
 
-	databasePath := path.Join("opt", service.Name, service.Manifest.Database.Path)
+	databasePath := path.Join(strings.TrimPrefix(DataRoot, "/"), service.Name, service.Manifest.Database.Path)
 	file, err := filesystem.Open(databasePath)
 	if err != nil {
 		return "-"

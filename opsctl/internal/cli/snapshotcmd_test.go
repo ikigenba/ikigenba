@@ -18,8 +18,9 @@ const wantSnapshotUsage = `Usage: opsctl snapshot [SERVICE]
 
 Copy every service's etc/ and state/, and the database of a service that
 declares a [database], to snapshots/<service>/ under the prefix in
-backup.s3_uri, or just SERVICE when one is named. Every snapshot of one run
-carries the same timestamp.
+backup.s3_uri, or just SERVICE when one is named. A service's etc/ is
+/opt/SERVICE/etc/ and its state/ is /var/opt/ikigenba/SERVICE/state/. Every
+snapshot of one run carries the same timestamp.
 
 The database copy is rebuilt from the replica litestream.service keeps, so
 nothing is stopped; it may trail the live database by the changes litestream
@@ -201,7 +202,7 @@ func TestSnapshotGrammarRejectsOptionsAndExcessOperandsBeforeHostAccess(t *testi
 }
 
 func TestSnapshotHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-1UUO-R5Z7
+	// R-XGAG-RKER
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "not-a-directory")
@@ -221,7 +222,9 @@ func TestSnapshotHelpIsExactAndHostIndependent(t *testing.T) {
 					return nil, nil
 				}},
 			}
+			assertRootUnread := observeRetireRootAccess(t, root)
 			stdout, stderr, code := invokeBackupCLI([]string{"snapshot", option}, deps)
+			assertRootUnread()
 			if code != 0 || stdout != wantSnapshotUsage || stderr != "" {
 				t.Errorf("snapshot %s as euid %d = exit %d stdout %q stderr %q", option, euid, code, stdout, stderr)
 			}

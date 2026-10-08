@@ -144,12 +144,13 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 }
 
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
-	// R-YISK-ZTOW R-HUTO-NMJ7 R-LZ82-QJF7
+	// R-XOTR-FYLM R-HUTO-NMJ7 R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
 	writeFile(t, root, "etc/letsencrypt/stale", "remove", 0o600)
 	writeFile(t, root, "opt/app/state/data", "untouched service", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/app/state/data", "untouched new data", 0o600)
 	writeFile(t, root, "etc/nginx/nginx.conf", "untouched nginx", 0o600)
 	writeFile(t, root, "etc/systemd/system/ikigenba-app.service", "untouched unit", 0o600)
 	writeFile(t, root, "var/lib/ikigenba/services.json", "generated launcher", 0o640)
@@ -157,6 +158,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	servicesBefore := fileTreeSnapshot(t, filepath.Join(root, "var/lib/ikigenba"))
 	untouched := map[string]string{
 		"opt/app/state/data":                      "untouched service",
+		"var/opt/ikigenba/app/state/data":         "untouched new data",
 		"etc/nginx/nginx.conf":                    "untouched nginx",
 		"etc/systemd/system/ikigenba-app.service": "untouched unit",
 		"var/lib/ikigenba/services.json":          "generated launcher",
@@ -506,6 +508,10 @@ func restoreHostEnv(t *testing.T, root string) host.Env {
 			}
 			if len(command.Args) >= 4 && command.Args[0] == "restore" && command.Args[1] == "-o" {
 				writeRestoreSQLite(t, command.Args[2])
+				return host.Result{}, nil
+			}
+		case "chown":
+			if len(command.Args) == 2 && command.Args[0] == "ikigenba:ikigenba" && strings.HasPrefix(command.Args[1], filepath.Join(root, "var/opt/ikigenba")+"/") {
 				return host.Result{}, nil
 			}
 		case "getent":

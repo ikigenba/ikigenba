@@ -40,8 +40,9 @@ const statusUsage = `Usage: opsctl status
 Print one line per service on this host, in name order: its name, the version
 its own binary reports, the state of its service unit, the state of its socket
 unit, and the journal mode of the database its manifest declares. A service is
-any /opt/<name>/ with an etc/ or state/ directory; '-' means opsctl could not
-ask, or there was nothing to ask.
+any /opt/<name>/ with an etc/ directory or any /var/opt/ikigenba/<name>/ with
+a state/ directory; '-' means opsctl could not ask, or there was nothing to
+ask.
 
 A service that is inactive behind an active socket is idle, not down: its
 socket starts it again when the next request arrives. The socket's field reads

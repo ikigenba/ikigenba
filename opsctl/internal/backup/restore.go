@@ -140,6 +140,18 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		report.Steps = append(report.Steps, RestoreStep{Name: "source", Err: err})
 		return report, &RestoreError{Service: service, Stage: "source", Err: err}
 	}
+	filesystem, rootErr := os.OpenRoot(env.Root)
+	if rootErr != nil {
+		return failRestoreStep(report, service, "source", "source", rootErr, nil)
+	}
+	_, legacyErr := filesystem.Lstat(path.Join("opt", service, "state"))
+	_ = filesystem.Close()
+	if !errors.Is(legacyErr, os.ErrNotExist) {
+		if legacyErr == nil {
+			legacyErr = fmt.Errorf("/opt/%s/state has not moved; install %s first", service, service)
+		}
+		return failRestoreStep(report, service, "source", "source", legacyErr, nil)
+	}
 	sourceName := service + "/" + source.basename
 	if from != "" {
 		sourceName = from
@@ -230,10 +242,29 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	if err == nil && regenerateEnvironment && !identity.needed {
 		_, _, err = ensureRestoreAccount(ctx, env)
 	}
+	if err == nil && !identity.needed {
+		for _, entry := range source.entries {
+			if entry.name == "state" || strings.HasPrefix(entry.name, "state/") {
+				filesystem, openErr := os.OpenRoot(env.Root)
+				if openErr != nil {
+					err = openErr
+					break
+				}
+				_, statErr := filesystem.Lstat(path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service))
+				_ = filesystem.Close()
+				if errors.Is(statErr, os.ErrNotExist) {
+					err = apps.EnsureAccount(ctx, env)
+				} else if statErr != nil {
+					err = statErr
+				}
+				break
+			}
+		}
+	}
 	if err != nil {
 		return failRestoreStep(report, service, "files", "ownership", err, stopped)
 	}
-	count, err := replaceServiceRestoreTrees(ctx, env.Root, service, source.entries, identity)
+	count, err := replaceServiceRestoreTrees(ctx, env, service, source.entries, identity)
 	if err != nil {
 		return failRestoreStep(report, service, "files", "files", err, stopped)
 	}
@@ -252,7 +283,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	}
 	report.Steps = append(report.Steps, RestoreStep{
 		Name:   "files",
-		Detail: fmt.Sprintf("/opt/%s/etc, /opt/%s/state, %d files", service, service, count),
+		Detail: fmt.Sprintf("/opt/%s/etc, %s/%s/state, %d files", service, apps.DataRoot, service, count),
 	})
 	if databaseIncoming {
 		database := *source.manifest.Database
@@ -270,7 +301,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		if ownershipErr := applyRestoredDatabaseOwnership(env.Root, service, database.Path, identity); ownershipErr != nil {
 			return failRestoreStep(report, service, "db", "database ownership", ownershipErr, stopped)
 		}
-		detail := "/opt/" + service + "/" + database.Path
+		detail := apps.DataRoot + "/" + service + "/" + database.Path
 		switch {
 		case from != "":
 			detail += ", from snapshot"
@@ -348,7 +379,7 @@ func restoreServiceDatabase(ctx context.Context, env host.Env, prefix, service s
 	if recovered.IsZero() {
 		return "", errors.New("no snapshot under the prefix")
 	}
-	destination := filepath.Join(env.Root, filepath.FromSlash(path.Join("opt", service, database.Path)))
+	destination := filepath.Join(env.Root, filepath.FromSlash(path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service, database.Path)))
 	args := []string{"restore", "-o", destination}
 	if at != nil {
 		args = append(args, "-timestamp", at.Format(time.RFC3339Nano))
@@ -373,7 +404,7 @@ func prepareRestoredDatabasePath(rootName, service, databasePath string) error {
 		return fmt.Errorf("open restore root: %w", err)
 	}
 	defer func() { _ = filesystem.Close() }()
-	relative := filepath.FromSlash(path.Join("opt", service, databasePath))
+	relative := filepath.FromSlash(path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service, databasePath))
 	for parent := filepath.Dir(relative); parent != "."; parent = filepath.Dir(parent) {
 		info, statErr := filesystem.Lstat(parent)
 		if statErr != nil {
@@ -397,7 +428,7 @@ func setRestoredDatabaseWAL(rootName, service, databasePath string) error {
 		return fmt.Errorf("open restore root: %w", err)
 	}
 	defer func() { _ = filesystem.Close() }()
-	name := filepath.FromSlash(path.Join("opt", service, databasePath))
+	name := filepath.FromSlash(path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service, databasePath))
 	file, err := filesystem.OpenFile(name, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("open restored database: %w", err)
@@ -431,7 +462,7 @@ func applyRestoredDatabaseOwnership(rootName, service, databasePath string, iden
 		return fmt.Errorf("open restore root: %w", err)
 	}
 	defer func() { _ = filesystem.Close() }()
-	base := filepath.FromSlash(path.Join("opt", service, databasePath))
+	base := filepath.FromSlash(path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service, databasePath))
 	for _, name := range []string{base, base + "-wal", base + "-shm"} {
 		info, err := filesystem.Lstat(name)
 		if errors.Is(err, os.ErrNotExist) {
@@ -859,10 +890,11 @@ func ensureRestoreAccount(ctx context.Context, env host.Env) (int, int, error) {
 	return uid, gid, nil
 }
 
-func replaceServiceRestoreTrees(ctx context.Context, rootName, service string, entries []serviceRestoreEntry, identity restoreIdentity) (int, error) {
+func replaceServiceRestoreTrees(ctx context.Context, env host.Env, service string, entries []serviceRestoreEntry, identity restoreIdentity) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
+	rootName := env.Root
 	root, err := os.OpenRoot(rootName)
 	if err != nil {
 		return 0, err
@@ -877,28 +909,49 @@ func replaceServiceRestoreTrees(ctx context.Context, rootName, service string, e
 	if err := populateServiceRestoreStage(root, rootName, stage, entries, identity); err != nil {
 		return 0, err
 	}
-	if err := root.MkdirAll("opt", 0o755); err != nil {
-		return 0, err
-	}
-	serviceRoot := path.Join("opt", service)
-	if _, err := root.Lstat(serviceRoot); errors.Is(err, os.ErrNotExist) {
-		if err := root.Mkdir(serviceRoot, 0o755); err != nil {
-			return 0, err
-		}
-	} else if err != nil {
-		return 0, err
-	}
-	for _, tree := range []string{"etc", "state"} {
-		if err := root.RemoveAll(path.Join(serviceRoot, tree)); err != nil {
-			return 0, err
-		}
-		staged := path.Join(stage, tree)
-		if _, err := root.Lstat(staged); err == nil {
-			if err := root.Rename(staged, path.Join(serviceRoot, tree)); err != nil {
+	dataParent := path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service)
+	if _, stagedErr := root.Lstat(path.Join(stage, "state")); stagedErr == nil {
+		if _, statErr := root.Lstat(dataParent); errors.Is(statErr, os.ErrNotExist) {
+			if err := apps.EnsureDataDirectory(ctx, env, service); err != nil {
 				return 0, err
 			}
-		} else if !errors.Is(err, os.ErrNotExist) {
+		} else if statErr != nil {
+			return 0, statErr
+		}
+	}
+	for _, tree := range []string{"etc", "state"} {
+		staged := path.Join(stage, tree)
+		_, stagedErr := root.Lstat(staged)
+		if stagedErr != nil && !errors.Is(stagedErr, os.ErrNotExist) {
+			return 0, stagedErr
+		}
+		parent := path.Join("opt", service)
+		if tree == "state" {
+			parent = path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service)
+		}
+		if stagedErr == nil {
+			if tree == "etc" {
+				for _, directory := range []string{"opt", parent} {
+					if _, err := root.Lstat(directory); errors.Is(err, os.ErrNotExist) {
+						if err := root.Mkdir(directory, 0o755); err != nil {
+							return 0, err
+						}
+						if err := root.Chmod(directory, 0o755); err != nil {
+							return 0, err
+						}
+					} else if err != nil {
+						return 0, err
+					}
+				}
+			}
+		}
+		if err := root.RemoveAll(path.Join(parent, tree)); err != nil {
 			return 0, err
+		}
+		if stagedErr == nil {
+			if err := root.Rename(staged, path.Join(parent, tree)); err != nil {
+				return 0, err
+			}
 		}
 	}
 	count := 0

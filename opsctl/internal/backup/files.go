@@ -109,8 +109,13 @@ func executeFileBackup(ctx context.Context, env host.Env, plan fileBackupPlan) (
 			results = append(results, result)
 			continue
 		}
+		if legacyErr := legacyStateError(env.Root, selected.Name); legacyErr != nil {
+			result.Err = legacyErr
+			results = append(results, result)
+			continue
+		}
 		if selected.ManifestError != nil {
-			result.Err = fmt.Errorf("service %q: %w", selected.Name, selected.ManifestError)
+			result.Err = snapshotReadError(env.Root, selected.ManifestError)
 			results = append(results, result)
 			continue
 		}
@@ -188,18 +193,12 @@ func discoverFileService(root, name string) (apps.Service, bool, error) {
 	defer func() { _ = filesystem.Close() }()
 
 	servicePath := path.Join("opt", name)
-	info, err := filesystem.Lstat(servicePath)
-	if errors.Is(err, os.ErrNotExist) || err == nil && !info.IsDir() {
-		return apps.Service{}, false, nil
-	}
+
+	etc, err := rootedServiceMarker(filesystem, servicePath, "etc")
 	if err != nil {
 		return apps.Service{}, false, fmt.Errorf("discover service %q: %w", name, err)
 	}
-	etc, err := rootedDirectory(filesystem, path.Join(servicePath, "etc"))
-	if err != nil {
-		return apps.Service{}, false, fmt.Errorf("discover service %q: %w", name, err)
-	}
-	state, err := rootedDirectory(filesystem, path.Join(servicePath, "state"))
+	state, err := rootedServiceMarker(filesystem, path.Join(apps.DataRoot[1:], name), "state")
 	if err != nil {
 		return apps.Service{}, false, fmt.Errorf("discover service %q: %w", name, err)
 	}
@@ -225,6 +224,20 @@ func discoverFileService(root, name string) (apps.Service, bool, error) {
 		}
 	}
 	return selected, true, nil
+}
+
+func rootedServiceMarker(filesystem *os.Root, servicePath, marker string) (bool, error) {
+	info, err := filesystem.Lstat(servicePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() {
+		return false, nil
+	}
+	return rootedDirectory(filesystem, path.Join(servicePath, marker))
 }
 
 func rootedDirectory(filesystem *os.Root, name string) (bool, error) {
@@ -260,7 +273,7 @@ func serviceArchive(ctx context.Context, env host.Env, service apps.Service) ([]
 	for _, tree := range []string{"etc", "state"} {
 		if err := archiveTree(ctx, filesystem, tarWriter, &resolver, service, tree); err != nil {
 			_ = tarWriter.Close()
-			return nil, fmt.Errorf("archive %q: %w", service.Name, err)
+			return nil, snapshotReadError(env.Root, err)
 		}
 	}
 	if err := tarWriter.Close(); err != nil {
@@ -278,6 +291,9 @@ func archiveTree(ctx context.Context, filesystem *os.Root, writer *tar.Writer, r
 
 func archiveTreeExcluding(ctx context.Context, filesystem *os.Root, writer *tar.Writer, resolver *identityResolver, service apps.Service, tree string, exclusions []string) error {
 	servicePath := path.Join("opt", service.Name)
+	if tree == "state" {
+		servicePath = path.Join(apps.DataRoot[1:], service.Name)
+	}
 	treePath := path.Join(servicePath, tree)
 	if _, err := filesystem.Lstat(treePath); errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -440,4 +456,26 @@ func compressArchive(ctx context.Context, execute func(context.Context, host.Com
 		return nil, fmt.Errorf("%s: invalid zstd output", label)
 	}
 	return result.Stdout, nil
+}
+
+func legacyStateError(root, service string) error {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	_, err = filesystem.Lstat(path.Join("opt", service, "state"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return &legacyStateFailure{service: service}
+}
+
+type legacyStateFailure struct{ service string }
+
+func (failure *legacyStateFailure) Error() string {
+	return fmt.Sprintf("/opt/%s/state has not moved; install %s first", failure.service, failure.service)
 }

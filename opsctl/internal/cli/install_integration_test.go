@@ -28,6 +28,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
@@ -40,10 +41,12 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 	fixture.assertOrderedCommands(t, []string{
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
+		"systemctl is-active ikigenba-notes.socket",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
 		"id --group --name ikigenba",
-		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
+		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "var", "opt", "ikigenba", "notes"),
+		"chown root:root " + filepath.Join(fixture.root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
@@ -61,7 +64,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
-	// R-3IUZ-X97N R-3HN3-JHGY
+	// R-FTRO-2D7O R-FSJR-OLGZ
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -79,6 +82,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test, example.test)\n" +
@@ -104,7 +108,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 }
 
 func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
-	// R-3HN3-JHGY
+	// R-FSJR-OLGZ
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -123,6 +127,7 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test)\n" +
@@ -135,13 +140,14 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-3IUZ-X97N, R-3HN3-JHGY, R-3GF7-5PQ9, R-YSCR-HDE0, R-EOKC-P8UO
+	// R-FTRO-2D7O, R-FSJR-OLGZ, R-FRBV-ATQA, R-YSCR-HDE0, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: failed: nginx -t: exit status 7\n"
@@ -151,10 +157,12 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 	fixture.assertOrderedCommands(t, []string{
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
+		"systemctl is-active ikigenba-notes.socket",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
 		"id --group --name ikigenba",
-		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
+		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "var", "opt", "ikigenba", "notes"),
+		"chown root:root " + filepath.Join(fixture.root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
@@ -168,7 +176,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-3IUZ-X97N, R-YSCR-HDE0
+	// R-FTRO-2D7O, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -179,6 +187,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
@@ -191,7 +200,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-3IUZ-X97N, R-YSCR-HDE0
+	// R-FTRO-2D7O, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -199,6 +208,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
@@ -212,7 +222,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-3IUZ-X97N, R-YSCR-HDE0
+	// R-FTRO-2D7O, R-YSCR-HDE0
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -259,7 +269,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	// R-3HN3-JHGY
+	// R-FSJR-OLGZ
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -294,7 +304,7 @@ func TestInstallCLIRejectsInvalidAppTimeoutsBeforeFetch(t *testing.T) {
 }
 
 func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
-	// R-3IUZ-X97N, R-3HN3-JHGY, R-YSCR-HDE0
+	// R-FTRO-2D7O, R-FSJR-OLGZ, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
 		t.Fatal(err)
@@ -304,6 +314,7 @@ func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
 	want := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example disabled)\n" +
@@ -324,7 +335,7 @@ func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
 }
 
 func TestInstallCLIStartupFailureKeepsEffectsAndRetrySucceeds(t *testing.T) {
-	// R-P8X5-WYJ6, R-XP9Z-O2D0
+	// R-P8X5-WYJ6, R-GLFF-39GF
 	fixture := newCLIInstallFixture(t)
 	const litestreamUnitPath = "etc/systemd/system/litestream.service"
 	litestreamUnit := filepath.Join(fixture.root, filepath.FromSlash(litestreamUnitPath))
@@ -362,8 +373,8 @@ func TestInstallCLIStartupFailureKeepsEffectsAndRetrySucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := filepath.Join(fixture.root, "opt", "notes", "state", "keep")
-	cache := filepath.Join(fixture.root, "opt", "notes", "cache", "keep")
+	state := filepath.Join(fixture.root, "var", "opt", "ikigenba", "notes", "state", "keep")
+	cache := filepath.Join(fixture.root, "var", "opt", "ikigenba", "notes", "cache", "keep")
 	writeCLIInstallFile(t, state, "state")
 	writeCLIInstallFile(t, cache, "cache")
 
@@ -402,8 +413,8 @@ func TestInstallCLIStartupFailureKeepsEffectsAndRetrySucceeds(t *testing.T) {
 			t.Fatalf("retry commands = %v; unexpected Litestream control %q", fixture.commands, forbidden)
 		}
 	}
-	stateContents, stateErr := rootFS.ReadFile("opt/notes/state/keep")
-	cacheContents, cacheErr := rootFS.ReadFile("opt/notes/cache/keep")
+	stateContents, stateErr := rootFS.ReadFile("var/opt/ikigenba/notes/state/keep")
+	cacheContents, cacheErr := rootFS.ReadFile("var/opt/ikigenba/notes/cache/keep")
 	if stateErr != nil || string(stateContents) != "state" {
 		t.Fatalf("preserved state = %q, %v", stateContents, stateErr)
 	}
@@ -421,6 +432,7 @@ func installReportThroughNginx() string {
 	return "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
 		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
+		"data: ok (/var/opt/ikigenba/notes)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
@@ -431,10 +443,12 @@ func installCommandsThroughNginx(root string) []string {
 	return []string{
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
+		"systemctl is-active ikigenba-notes.socket",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
 		"id --group --name ikigenba",
-		"chown ikigenba:ikigenba " + filepath.Join(root, "opt", "notes"),
+		"chown ikigenba:ikigenba " + filepath.Join(root, "var", "opt", "ikigenba", "notes"),
+		"chown root:root " + filepath.Join(root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(root, "opt", "notes", "bin") + " " + filepath.Join(root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",

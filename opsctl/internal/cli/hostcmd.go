@@ -14,8 +14,8 @@ import (
 const hostUsage = `Usage: opsctl host <subcommand>
 
 Back up and restore the host's own configuration: /etc/ikigenba/ and
-/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt is
-touched either way -- that is 'opsctl backup' and 'opsctl restore'.
+/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt or
+/var/opt is touched either way -- that is 'opsctl backup' and 'opsctl restore'.
 
 Subcommands:
   backup    write /etc/ikigenba/ and /etc/letsencrypt/ to S3

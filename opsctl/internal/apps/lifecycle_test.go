@@ -218,7 +218,7 @@ func TestStatusReadsPersistentSQLiteJournalMode(t *testing.T) {
 			if tc.mutate != nil {
 				data = tc.mutate(data)
 			}
-			if err := os.WriteFile(filepath.Join(root, "opt", service, "state", "app.db"), data, 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(root, apps.DataRoot, service, "state", "app.db"), data, 0o600); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -238,7 +238,7 @@ func TestStatusReadsPersistentSQLiteJournalMode(t *testing.T) {
 			t.Errorf("%s journal mode = %q, want %q", name, modes[name], want)
 		}
 	}
-	if matches, err := filepath.Glob(filepath.Join(root, "opt", "*", "state", "app.db-*")); err != nil || len(matches) != 0 {
+	if matches, err := filepath.Glob(filepath.Join(root, apps.DataRoot, "*", "state", "app.db-*")); err != nil || len(matches) != 0 {
 		t.Fatalf("status created SQLite sidecars: %v, %v", matches, err)
 	}
 }
@@ -249,14 +249,14 @@ func writeStatusService(t *testing.T, root, name, manifest string, mode byte) {
 	if err := os.MkdirAll(filepath.Join(directory, "etc"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(directory, "state"), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, apps.DataRoot, name, "state"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(directory, "etc", "manifest.toml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if mode != 0 {
-		if err := os.WriteFile(filepath.Join(directory, "state", "app.db"), sqliteDatabase(mode), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, apps.DataRoot, name, "state", "app.db"), sqliteDatabase(mode), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -277,4 +277,20 @@ func sqliteDatabase(mode byte) []byte {
 	data[100] = 13
 	binary.BigEndian.PutUint16(data[105:107], 4096)
 	return data
+}
+
+func TestStatusUsesOnlyRootedDataDirectoryForDatabase(t *testing.T) {
+	// R-G5KQ-48TE
+	root := t.TempDir()
+	writeStatusService(t, root, "notes", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 2)
+	writeFixturePath(t, root, "opt/notes/state/app.db", string(sqliteDatabase(1)))
+	rows, err := apps.Status(context.Background(), host.Env{Root: root})
+	if err != nil || len(rows) != 1 || rows[0].JournalMode != "wal" {
+		t.Fatalf("status = %#v: %v", rows, err)
+	}
+	removeFixturePath(t, root, "var/opt/ikigenba/notes/state/app.db")
+	rows, err = apps.Status(context.Background(), host.Env{Root: root})
+	if err != nil || len(rows) != 1 || rows[0].JournalMode != "-" {
+		t.Fatalf("status used old place: %#v: %v", rows, err)
+	}
 }

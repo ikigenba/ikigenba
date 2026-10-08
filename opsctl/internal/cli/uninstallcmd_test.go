@@ -23,11 +23,11 @@ import (
 )
 
 func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
-	// R-W9B4-QTH7 R-WBQX-ICYL R-YTKN-V54P
+	// R-W9B4-QTH7 R-HDH3-VZIE R-YTKN-V54P
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service", "etc/systemd/system/ikigenba-tasks.socket")
-	stateBefore := snapshotUninstallPaths(t, root, "opt/notes/state")
+	stateBefore := snapshotUninstallPaths(t, root, "var/opt/ikigenba/notes/state")
 	appStopped := false
 	writeUninstallFile(t, root, "replicas/notes/notes.db", "stale transaction")
 	writeUninstallFile(t, root, "replicas/tasks/tasks.db", "stale remaining replica")
@@ -43,16 +43,16 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 			if !appStopped {
 				t.Fatal("Litestream restarted before app stop completed")
 			}
-			if state := snapshotUninstallPaths(t, root, "opt/notes/state"); !reflect.DeepEqual(state, stateBefore) {
+			if state := snapshotUninstallPaths(t, root, "var/opt/ikigenba/notes/state"); !reflect.DeepEqual(state, stateBefore) {
 				t.Fatalf("shutdown synchronization lost database, sidecars or metadata: %#v", state)
 			}
 			// The existing replication process synchronizes its retained database on shutdown.
-			writeUninstallFile(t, root, "replicas/notes/notes.db", readUninstallFile(t, root, "opt/notes/state/notes.db"))
+			writeUninstallFile(t, root, "replicas/notes/notes.db", readUninstallFile(t, root, "var/opt/ikigenba/notes/state/notes.db"))
 			configuration := readUninstallFile(t, root, "etc/litestream.yml")
-			if !strings.Contains(configuration, "opt/tasks/state/tasks.db") || strings.Contains(configuration, "opt/notes/") {
+			if !strings.Contains(configuration, "var/opt/ikigenba/tasks/state/tasks.db") || strings.Contains(configuration, "opt/notes/") {
 				t.Fatalf("litestream restarted with wrong configuration: %q", configuration)
 			}
-			writeUninstallFile(t, root, "replicas/tasks/tasks.db", readUninstallFile(t, root, "opt/tasks/state/tasks.db"))
+			writeUninstallFile(t, root, "replicas/tasks/tasks.db", readUninstallFile(t, root, "var/opt/ikigenba/tasks/state/tasks.db"))
 			return host.Result{}, nil
 		default:
 			return uninstallCommandResult(command), nil
@@ -62,7 +62,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: execute})
 	wantOutput := "stop: ok (ikigenba-notes.socket, ikigenba-notes.service stopped, disabled)\n" +
 		"unit: ok (removed ikigenba-notes.socket, ikigenba-notes.service)\n" +
-		"files: ok (removed /opt/notes/bin, etc, share, cache; kept state)\n" +
+		"files: ok (removed /opt/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state)\n" +
 		"nginx: ok (notes.example.test, example.test removed)\n" +
 		"services: ok (notes removed)\n" +
 		"litestream: ok (state/notes.db removed)\n"
@@ -101,7 +101,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 	}
 
 	for _, name := range []string{"notes.db", "notes.db-wal", "notes.db-shm", ".notes.db-litestream/meta"} {
-		if _, err := os.Stat(filepath.Join(root, "opt/notes/state", filepath.FromSlash(name))); err != nil {
+		if _, err := os.Stat(filepath.Join(root, "var/opt/ikigenba/notes/state", filepath.FromSlash(name))); err != nil {
 			t.Errorf("retained %s: %v", name, err)
 		}
 	}
@@ -115,7 +115,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		t.Fatalf("nginx routes after uninstall = %q", nginxConfig)
 	}
 	litestream := readUninstallFile(t, root, "etc/litestream.yml")
-	if strings.Contains(litestream, "opt/notes/") || !strings.Contains(litestream, "opt/tasks/state/tasks.db") {
+	if strings.Contains(litestream, "opt/notes/") || !strings.Contains(litestream, "var/opt/ikigenba/tasks/state/tasks.db") {
 		t.Fatalf("litestream configuration after uninstall = %q", litestream)
 	}
 	if got := readUninstallFile(t, root, "remote/parameters/notes"); got != "owned by devctl" {
@@ -133,11 +133,11 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 
 	databaseFiles := backup.DatabaseFiles(apps.Database{Engine: "sqlite", Path: "state/notes.db"})
 	for _, name := range databaseFiles {
-		if _, err := os.Stat(filepath.Join(root, "opt/notes", filepath.FromSlash(name))); err != nil {
+		if _, err := os.Stat(filepath.Join(root, "var/opt/ikigenba/notes", filepath.FromSlash(name))); err != nil {
 			t.Errorf("manifest-free backup input %s: %v", name, err)
 		}
 	}
-	if got := readUninstallFile(t, root, "opt/notes/state/private/blob"); got != "private retained state" {
+	if got := readUninstallFile(t, root, "var/opt/ikigenba/notes/state/private/blob"); got != "private retained state" {
 		t.Fatalf("retained state changed to %q", got)
 	}
 	changed, err := backup.Regenerate(context.Background(), host.Env{Root: root}, config.Store{Root: root})
@@ -180,7 +180,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 					if err != nil {
 						return host.Result{}, err
 					}
-					archived["opt/notes/"+header.Name] = string(data)
+					archived["var/opt/ikigenba/notes/"+header.Name] = string(data)
 				}
 			}
 			return host.Result{Stdout: []byte{0x28, 0xb5, 0x2f, 0xfd, 0x20, 0, 1, 0, 0}}, nil
@@ -250,7 +250,7 @@ func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
 }
 
 func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
-	// R-XRPS-FLUE R-V69K-76BL
+	// R-XRPS-FLUE R-FZV5-Z7X5
 	for _, test := range []struct {
 		name       string
 		app        string
@@ -428,7 +428,7 @@ func waitForUninstallConfigReaderClose(name string) error {
 }
 
 func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
-	// R-XRPS-FLUE R-YTKN-V54P R-WBQX-ICYL
+	// R-XRPS-FLUE R-YTKN-V54P R-HDH3-VZIE
 	root := uninstallCommandRoot(t, true)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -491,7 +491,7 @@ func TestUninstallRejectsConfiguredApexWithoutParentBeforeEffects(t *testing.T) 
 }
 
 func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
-	// R-V51N-TEKW R-VRRP-V53F
+	// R-FYN9-LG6G R-VRRP-V53F
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -507,7 +507,7 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: execute})
 	wantOutput := "stop: ok (ikigenba-notes.socket, ikigenba-notes.service stopped, disabled)\n" +
 		"unit: ok (removed ikigenba-notes.socket, ikigenba-notes.service)\n" +
-		"files: ok (removed /opt/notes/bin, etc, share, cache; kept state)\n" +
+		"files: ok (removed /opt/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state)\n" +
 		"nginx: failed: nginx -t: exit status 7\n"
 	if code != 1 || stdout != wantOutput || stderr != "opsctl: uninstall failed\n\n> bad line one\n> bad line two\n" {
 		t.Fatalf("failure = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -535,7 +535,7 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 }
 
 func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
-	// R-V51N-TEKW R-VRRP-V53F R-V69K-76BL
+	// R-FYN9-LG6G R-VRRP-V53F R-FZV5-Z7X5
 	tests := []struct {
 		stage     string
 		wantSteps []string
@@ -598,7 +598,7 @@ func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
 }
 
 func TestUninstallReportWriteFailuresAreNotRetried(t *testing.T) {
-	// R-V51N-TEKW R-VRRP-V53F R-V69K-76BL
+	// R-FYN9-LG6G R-VRRP-V53F R-FZV5-Z7X5
 	for _, stage := range []string{"stop", "unit", "files", "nginx", "services", "litestream"} {
 		t.Run(stage, func(t *testing.T) {
 			root := uninstallCommandRoot(t, true)
@@ -654,7 +654,7 @@ func assertNoLifecycleCommandsAfter(t *testing.T, stage string, commands []host.
 }
 
 func TestUninstallWithoutStateDoesNotCreateDiscoverableService(t *testing.T) {
-	// R-WBQX-ICYL
+	// R-HDH3-VZIE
 	root := uninstallCommandRoot(t, false)
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
@@ -665,7 +665,7 @@ func TestUninstallWithoutStateDoesNotCreateDiscoverableService(t *testing.T) {
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "litestream: ok") {
 		t.Fatalf("uninstall = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
-	if _, err := os.Lstat(filepath.Join(root, "opt/notes/state")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/state")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("state directory created: %v", err)
 	}
 	services, err := apps.Discover(root)
@@ -688,19 +688,19 @@ func uninstallCommandRoot(t *testing.T, state bool) string {
 	writeUninstallFile(t, root, "opt/notes/bin/notes", "notes binary")
 	writeUninstallFile(t, root, "opt/notes/etc/manifest.toml", notesManifest)
 	writeUninstallFile(t, root, "opt/notes/share/asset", "notes asset")
-	writeUninstallFile(t, root, "opt/notes/cache/item", "notes cache")
+	writeUninstallFile(t, root, "var/opt/ikigenba/notes/cache/item", "notes cache")
 	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-notes.service", "notes unit")
 	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-notes.socket", "notes socket")
 	if state {
-		writeUninstallFile(t, root, "opt/notes/state/notes.db", "last committed transaction")
-		writeUninstallFile(t, root, "opt/notes/state/notes.db-wal", "wal")
-		writeUninstallFile(t, root, "opt/notes/state/notes.db-shm", "shm")
-		writeUninstallFile(t, root, "opt/notes/state/.notes.db-litestream/meta", "metadata")
-		writeUninstallFile(t, root, "opt/notes/state/private/blob", "private retained state")
+		writeUninstallFile(t, root, "var/opt/ikigenba/notes/state/notes.db", "last committed transaction")
+		writeUninstallFile(t, root, "var/opt/ikigenba/notes/state/notes.db-wal", "wal")
+		writeUninstallFile(t, root, "var/opt/ikigenba/notes/state/notes.db-shm", "shm")
+		writeUninstallFile(t, root, "var/opt/ikigenba/notes/state/.notes.db-litestream/meta", "metadata")
+		writeUninstallFile(t, root, "var/opt/ikigenba/notes/state/private/blob", "private retained state")
 	}
 	writeUninstallFile(t, root, "opt/tasks/bin/tasks", "other binary")
 	writeUninstallFile(t, root, "opt/tasks/etc/manifest.toml", tasksManifest)
-	writeUninstallFile(t, root, "opt/tasks/state/tasks.db", "other database")
+	writeUninstallFile(t, root, "var/opt/ikigenba/tasks/state/tasks.db", "other database")
 	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-tasks.service", "other unit")
 	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-tasks.socket", "other socket")
 	writeUninstallFile(t, root, "etc/nginx/conf.d/ikigenba.conf", "old nginx\n")
@@ -811,4 +811,28 @@ func (writer *failStepWriter) Write(data []byte) (int, error) {
 		writer.writesAfterFailure++
 	}
 	return writer.Buffer.Write(data)
+}
+
+func TestUninstallDataRefusalReportsOnlyStopAndData(t *testing.T) {
+	// R-G2AY-QREJ R-FYN9-LG6G
+	root := uninstallCommandRoot(t, true)
+	writeUninstallFile(t, root, "opt/notes/state/old", "legacy state")
+	writeUninstallFile(t, root, "opt/notes/cache/old", "legacy cache")
+	before := snapshotUninstallPaths(t, root, "opt/notes", "var/opt/ikigenba/notes", "etc/systemd/system", "etc/nginx", "etc/litestream.yml", "var/lib/ikigenba/services.json")
+	var commands []host.Command
+	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		commands = append(commands, command)
+		if command.Name == "systemctl" && command.Args[0] == "is-active" {
+			return host.Result{Stdout: []byte("active\n")}, nil
+		}
+		return host.Result{}, nil
+	}})
+	want := "stop: ok (ikigenba-notes.socket, ikigenba-notes.service stopped, disabled)\n" +
+		"data: failed: /opt/notes/state and /var/opt/ikigenba/notes/state both exist\n"
+	if code != 1 || stdout != want || stderr != "opsctl: uninstall failed\n" || len(commands) != 5 {
+		t.Fatalf("refusal = exit %d stdout %q stderr %q commands %#v", code, stdout, stderr, commands)
+	}
+	if after := snapshotUninstallPaths(t, root, "opt/notes", "var/opt/ikigenba/notes", "etc/systemd/system", "etc/nginx", "etc/litestream.yml", "var/lib/ikigenba/services.json"); !reflect.DeepEqual(after, before) {
+		t.Fatalf("data refusal changed host files: %#v", after)
+	}
 }

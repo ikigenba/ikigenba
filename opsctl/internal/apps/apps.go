@@ -10,6 +10,9 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 )
 
+// DataRoot is the host directory containing service data directories.
+const DataRoot = "/var/opt/ikigenba"
+
 // Database describes an app's database storage.
 type Database struct {
 	Engine string

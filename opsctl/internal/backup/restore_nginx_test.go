@@ -23,6 +23,9 @@ func TestNginxRegeneratorContractAndPreflight(t *testing.T) {
 	}
 
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	used := false
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
@@ -50,13 +53,19 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			store := configuredFileStore(t, root)
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba", test.service), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("published"), uid: os.Getuid(), gid: os.Getgid()})
 			executor := &restoreStageExecutor{t: t, root: root, installed: test.installed, active: test.active}
 			calls := 0
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientForService(t, body, test.service).open}, store, test.service, nil, "", func(context.Context) error {
 				calls++
-				if got := string(readHostRestoreFile(t, root, "opt/"+test.service+"/state/value")); got != "published" {
+				if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/"+test.service+"/state/value")); got != "published" {
 					t.Fatalf("nginx ran before restored files were published: %q", got)
 				}
 				if strings.Contains(strings.Join(executor.commands, "\n"), "systemctl start") {
@@ -74,6 +83,9 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
 	// R-1OPO-KTN9 R-G7FZ-2AO2 R-1XAH-IPGL
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("published"), uid: os.Getuid(), gid: os.Getgid()})
 	executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true}
@@ -89,7 +101,7 @@ func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
 	if strings.Contains(strings.Join(executor.commands, "\n"), "systemctl start") {
 		t.Fatalf("nginx failure allowed a later start: %v", executor.commands)
 	}
-	if got := string(readHostRestoreFile(t, root, "opt/notes/state/value")); got != "published" {
+	if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/value")); got != "published" {
 		t.Fatalf("nginx failure rolled back published files: %q", got)
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "run/opsctl/restore/notes.active")); statErr != nil {

@@ -40,6 +40,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 				if !reflect.DeepEqual(commands, []commandCall{
 					{"xz", []string{"--decompress", "--stdout"}},
 					{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
+					{"systemctl", []string{"is-active", "ikigenba-notes.socket"}},
 					{"systemctl", []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 				}) {
 					t.Fatalf("commands at secret read = %#v", commands)
@@ -224,7 +225,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 }
 
 func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
-	// R-3GF7-5PQ9
+	// R-FRBV-ATQA
 	for _, failAt := range []string{"", "nginx", "services", "litestream"} {
 		name := failAt
 		if name == "" {
@@ -248,7 +249,7 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 				return nil
 			}
 			err := fixture.run()
-			wantSteps := []string{"fetch", "file", "secrets", "unpack", "unit", "nginx", "services", "litestream", "service"}
+			wantSteps := []string{"fetch", "file", "secrets", "data", "unpack", "unit", "nginx", "services", "litestream", "service"}
 			if failAt != "" {
 				var failure *apps.InstallError
 				if !errors.As(err, &failure) || failure.Code != 1 || !errors.Is(failure.Cause, cause) {
@@ -256,11 +257,11 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 				}
 				switch failAt {
 				case "nginx":
-					wantSteps = wantSteps[:6]
-				case "services":
 					wantSteps = wantSteps[:7]
-				case "litestream":
+				case "services":
 					wantSteps = wantSteps[:8]
+				case "litestream":
+					wantSteps = wantSteps[:9]
 				}
 			} else if err != nil {
 				t.Fatal(err)
@@ -314,8 +315,8 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 }
 
 func TestInstallOwnedStagesStopOnActionAndReportFailures(t *testing.T) {
-	// R-3GF7-5PQ9
-	stages := []string{"fetch", "file", "secrets", "unpack", "unit", "service"}
+	// R-FRBV-ATQA
+	stages := []string{"fetch", "file", "secrets", "data", "unpack", "unit", "service"}
 	for index, stage := range stages {
 		for _, actionFails := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/action=%t", stage, actionFails), func(t *testing.T) {
@@ -334,13 +335,10 @@ func TestInstallOwnedStagesStopOnActionAndReportFailures(t *testing.T) {
 					case "secrets":
 						fixture.archive = validInstallTar(t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
 						fixture.secretsFailure = actionCause
+					case "data":
+						fixture.dataOwnershipFailure = actionCause
 					case "unpack":
-						if err := os.MkdirAll(filepath.Join(fixture.root, "opt"), 0o750); err != nil {
-							t.Fatal(err)
-						}
-						if err := os.Symlink(t.TempDir(), filepath.Join(fixture.root, "opt", "notes")); err != nil {
-							t.Fatal(err)
-						}
+						fixture.optOwnershipFailure = actionCause
 					case "unit":
 						fixture.ownershipFailure = actionCause
 					case "service":

@@ -22,11 +22,12 @@ import (
 
 const wantRestoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
-Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with a backup, and, when
-SERVICE declares a [database], replace that database with what litestream
-holds. Without --at or --from both halves are the newest there is. With
---from, everything comes from the one snapshot at that URI instead, database
-included. Nothing under bin/ or share/ is touched.
+Replace /opt/SERVICE/etc/ and /var/opt/ikigenba/SERVICE/state/ with a backup,
+and, when SERVICE declares a [database], replace that database with what
+litestream holds. Without --at or --from both halves are the newest there is.
+With --from, everything comes from the one snapshot at that URI instead,
+database included. Nothing under bin/ or share/ is touched. A SERVICE whose
+state/ is still under /opt/SERVICE/ is refused: install it first.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -66,7 +67,7 @@ Configuration keys:
 `
 
 func TestRestoreHelpIsExactAndInert(t *testing.T) {
-	// R-29HH-CEVJ
+	// R-XZSU-VW9V
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "host-state")
@@ -191,6 +192,9 @@ func TestRestoreInvalidNonRootInvocationReportsGrammarBeforeRefusal(t *testing.T
 func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	// R-XHYL-DFWU R-K9DU-97YV R-LZ82-QJF7
 	root := configuredBackupRoot(t)
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "HOST.Example.Test."); err != nil {
 		t.Fatal(err)
@@ -245,7 +249,7 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "--at", "2026-09-16T10:30:00Z", "notes"}, hostCLIDeps(root, client, execute))
 	want := "source: ok (notes/" + stamp + ".tar.zst, 0.0 MiB)\n" +
 		"stop: ok (no ikigenba-notes.socket)\n" +
-		"files: ok (/opt/notes/etc, /opt/notes/state, 2 files)\n" +
+		"files: ok (/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files)\n" +
 		"start: ok (no ikigenba-notes.socket)\n"
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("restore command = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -293,6 +297,9 @@ func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := configuredBackupRoot(t)
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			store := config.Store{Root: root}
 			if err := store.Set("host.name", "host.example.test"); err != nil {
 				t.Fatal(err)
@@ -341,6 +348,9 @@ func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
 func TestRestoreSourceFailureLeavesServicesFileUnchanged(t *testing.T) {
 	// R-K9DU-97YV R-LZ82-QJF7
 	root := configuredBackupRoot(t)
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "host.example.test"); err != nil {
 		t.Fatal(err)
@@ -401,6 +411,9 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := configuredBackupRoot(t)
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			store := config.Store{Root: root}
 			if err := store.Set("host.name", "host.example.test"); err != nil {
 				t.Fatal(err)
@@ -449,7 +462,7 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, readErr := rootFS.ReadFile("opt/notes/state/value")
+			data, readErr := rootFS.ReadFile("var/opt/ikigenba/notes/state/value")
 			closeErr := rootFS.Close()
 			if err := errors.Join(readErr, closeErr); err != nil || string(data) != test.wantValue {
 				t.Fatalf("selected restore contents = %q, %v, want %q", data, err, test.wantValue)
@@ -461,6 +474,9 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 	// R-XHYL-DFWU
 	root := configuredBackupRoot(t)
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "host.example.test"); err != nil {
 		t.Fatal(err)
@@ -553,6 +569,9 @@ func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			test.setup(t, root)
 			used := false
 			deps := Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) { used = true; return host.Result{}, nil }, Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { used = true; return nil, nil }}}
@@ -567,6 +586,9 @@ func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
 func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
 	// R-XHYL-DFWU
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	var keys []string
 	store := restoreStoreFunc(func(key string) (string, error) {
 		keys = append(keys, key)
@@ -602,6 +624,9 @@ func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
 func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
 	// R-XHYL-DFWU R-2J8O-EKT3
 	root := configuredBackupRoot(t)
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "LOCALHOST."); err != nil {
 		t.Fatal(err)
@@ -721,6 +746,9 @@ func TestRestoreFromFailuresRenderReportedSteps(t *testing.T) {
 	for _, stage := range []string{"source", "secrets"} {
 		t.Run(stage, func(t *testing.T) {
 			root := configuredBackupRoot(t)
+			if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+				t.Fatal(err)
+			}
 			if err := (config.Store{Root: root}).Set("host.name", "HOST.Example.Test."); err != nil {
 				t.Fatal(err)
 			}
@@ -761,4 +789,36 @@ type restoreFromCLICloud struct {
 func (client *restoreFromCLICloud) ReadSecrets(_ context.Context, parameter string) (map[string]string, error) {
 	client.parameter = parameter
 	return map[string]string{}, nil
+}
+
+func TestRestoreCommandRefusesUnmovedStateAtSource(t *testing.T) {
+	// R-DDQQ-Z0P6
+	root := configuredBackupRoot(t)
+	store := config.Store{Root: root}
+	if err := store.Set("host.name", "host.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "opt/notes/state"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	client := newHostCLICloud()
+	uri := "s3://backups.example/host/notes/2026-09-16T10:00:00Z.tar.zst"
+	archive := makeRestoreCLIArchive(t, map[string]string{"etc/manifest.toml": "app = \"notes\"\n", "state/value": "new"})
+	client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, archive...)
+	executeZstd := roundTripZstdExecute(nil)
+	var commands []string
+	execute := func(ctx context.Context, command host.Command) (host.Result, error) {
+		commands = append(commands, command.Name)
+		if command.Name != "zstd" {
+			t.Fatalf("legacy refusal executed %+v", command)
+		}
+		return executeZstd(ctx, command)
+	}
+	stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, hostCLIDeps(root, client, execute))
+	if code != 1 || stdout != "source: failed: /opt/notes/state has not moved; install notes first\n" || stderr != "opsctl: restore notes failed at source\n" || !reflect.DeepEqual(commands, []string{"zstd"}) {
+		t.Fatalf("restore = %d %q %q commands %v", code, stdout, stderr, commands)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("data created: %v", err)
+	}
 }

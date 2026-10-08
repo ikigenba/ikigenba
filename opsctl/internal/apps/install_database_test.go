@@ -8,30 +8,30 @@ import (
 )
 
 func TestInstallLeavesDatabaseAndCacheToTheApp(t *testing.T) {
-	// R-18WH-VAMP
+	// R-GCW4-EV9K
 	for _, existing := range []bool{false, true} {
 		root := t.TempDir()
 		fixture := newCompletedInstallFixture(t, root, existing)
 		fixture.archive = validInstallTar(t, "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
 		var before map[string]treeSnapshotEntry
 		if existing {
-			writeFixture(t, filepath.Join(root, "opt", "notes", "state", "notes.db"), []byte("database bytes"), 0600)
-			writeFixture(t, filepath.Join(root, "opt", "notes", "state", "migration.sql"), []byte("must not execute"), 0600)
-			writeFixture(t, filepath.Join(root, "opt", "notes", "cache", "entry"), []byte("cache bytes"), 0600)
-			before = snapshotTree(t, filepath.Join(root, "opt", "notes", "state"))
+			writeFixture(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "notes.db"), []byte("database bytes"), 0600)
+			writeFixture(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "migration.sql"), []byte("must not execute"), 0600)
+			writeFixture(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "entry"), []byte("cache bytes"), 0600)
+			before = snapshotTree(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "state"))
 		}
 		if err := fixture.run(); err != nil {
 			t.Fatal(err)
 		}
 		if existing {
-			after := snapshotTree(t, filepath.Join(root, "opt", "notes", "state"))
+			after := snapshotTree(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "state"))
 			if !reflect.DeepEqual(before, after) {
 				t.Fatalf("database state changed: %#v -> %#v", before, after)
 			}
-			assertFile(t, filepath.Join(root, "opt", "notes", "cache", "entry"), "cache bytes")
+			assertFile(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "entry"), "cache bytes")
 		} else {
 			for _, directory := range []string{"state", "cache"} {
-				if _, err := os.Lstat(filepath.Join(root, "opt", "notes", directory)); !os.IsNotExist(err) {
+				if _, err := os.Lstat(filepath.Join(root, "var", "opt", "ikigenba", "notes", directory)); !os.IsNotExist(err) {
 					t.Fatalf("install created %s: %v", directory, err)
 				}
 			}

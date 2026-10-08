@@ -23,10 +23,13 @@ devctl. The app name and the secrets it needs are read from
 etc/manifest.toml inside it; the secret values are read from the parameter
 /<host.name>/<app>.
 
-Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
-over a running app keeps its data. Safe to re-run. An app that is disabled
-stays disabled: its files and units are replaced, but neither unit is enabled
-or started until 'opsctl enable'.
+The app's data lives in its working directory, /var/opt/ikigenba/<app>/, which
+is created if missing; nothing in it is touched, so installing over a running
+app keeps its data. A state/ or cache/ still under /opt/<app>/ is moved there,
+with the app stopped; a cache/ in both places drops the old one, and a state/
+in both places fails the install before anything changes. Safe to re-run. An
+app that is disabled stays disabled: its files and units are replaced, but
+neither unit is enabled or started until 'opsctl enable'.
 
 The nginx configuration, /var/lib/ikigenba/services.json, and
 /etc/litestream.yml are regenerated from every app on the host, so an app that

@@ -43,14 +43,14 @@ func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
 		!reflect.DeepEqual(fixture.reports, []uninstallReport{
 			{"stop", "ikigenba-notes.socket, ikigenba-notes.service stopped, disabled", true},
 			{"unit", "removed ikigenba-notes.socket, ikigenba-notes.service", true},
-			{"files", "removed /opt/notes/bin, etc, share, cache; kept state", true},
+			{"files", "removed /opt/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state", true},
 		}) {
 		t.Fatalf("commands = %#v, configured = %#v, reports = %#v", fixture.commands, configured, fixture.reports)
 	}
 }
 
 func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
-	// R-XRPS-FLUE R-V69K-76BL
+	// R-XRPS-FLUE R-FZV5-Z7X5
 	for _, test := range []struct {
 		name   string
 		mutate func(*testing.T, *uninstallFixture)
@@ -110,7 +110,7 @@ func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
 	if info, statErr := os.Stat(manifest); statErr != nil || info.Mode().Perm() != 0 {
 		t.Fatalf("manifest mode after rejection = %v, %v", info, statErr)
 	}
-	for _, name := range []string{"opt/notes/bin/notes", "opt/notes/share/asset", "opt/notes/cache/item", "etc/systemd/system/ikigenba-notes.service"} {
+	for _, name := range []string{"opt/notes/bin/notes", "opt/notes/share/asset", "var/opt/ikigenba/notes/cache/item", "etc/systemd/system/ikigenba-notes.service"} {
 		if _, statErr := os.Lstat(filepath.Join(fixture.root, filepath.FromSlash(name))); statErr != nil {
 			t.Errorf("prerequisite rejection changed %s: %v", name, statErr)
 		}
@@ -119,7 +119,7 @@ func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
 
 func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	// R-YBI2-GUY1
-	// R-V51N-TEKW R-VGSM-F7F6 R-V69K-76BL
+	// R-FYN9-LG6G R-HB1B-4G10 R-FZV5-Z7X5
 	fixture := newUninstallFixture(t, "active")
 	actionErr := errors.New("stop transport failed")
 	reportErr := errors.New("report write failed")
@@ -147,7 +147,7 @@ func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 }
 
 func TestUninstallConfigureFailurePreservesOwnedOutcomes(t *testing.T) {
-	// R-V69K-76BL
+	// R-FZV5-Z7X5
 	fixture := newUninstallFixture(t, "active")
 	configureErr := errors.New("configuration failed")
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
@@ -164,7 +164,7 @@ func TestUninstallConfigureFailurePreservesOwnedOutcomes(t *testing.T) {
 	want := []uninstallReport{
 		{"stop", "ikigenba-notes.socket, ikigenba-notes.service stopped, disabled", true},
 		{"unit", "removed ikigenba-notes.socket, ikigenba-notes.service", true},
-		{"files", "removed /opt/notes/bin, etc, share, cache; kept state", true},
+		{"files", "removed /opt/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state", true},
 	}
 	if !reflect.DeepEqual(fixture.reports, want) {
 		t.Fatalf("reports after Configure failure = %#v, want %#v", fixture.reports, want)
@@ -211,7 +211,7 @@ func TestUninstallStopsOnlyActiveUnitsAndAlwaysDisables(t *testing.T) {
 }
 
 func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
-	// R-VJ8F-6QWK
+	// R-G132-CZNU
 	fixture := newUninstallFixture(t, "inactive")
 	unit := filepath.Join(fixture.root, "etc/systemd/system/ikigenba-notes.service")
 	outside := filepath.Join(t.TempDir(), "outside.service")
@@ -247,10 +247,10 @@ func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
 }
 
 func TestUninstallRemovesOnlyAppPayloadWithoutFollowingSymlinks(t *testing.T) {
-	// R-M4I7-QLDO
+	// R-HC97-I7RP
 	fixture := newUninstallFixture(t, "inactive")
-	stateFile := filepath.Join(fixture.root, "opt/notes/state/data.db")
-	writeFixturePath(t, fixture.root, "opt/notes/state/data.db", "preserved state")
+	stateFile := filepath.Join(fixture.root, "var/opt/ikigenba/notes/state/data.db")
+	writeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/state/data.db", "preserved state")
 	stateTime := time.Unix(1_600_000_000, 0)
 	if err := os.Chtimes(stateFile, stateTime, stateTime); err != nil {
 		t.Fatal(err)
@@ -261,14 +261,14 @@ func TestUninstallRemovesOnlyAppPayloadWithoutFollowingSymlinks(t *testing.T) {
 	writeFixturePath(t, other, "sentinel", "other unchanged")
 
 	removeFixturePath(t, fixture.root, "opt/notes/share")
-	removeFixturePath(t, fixture.root, "opt/notes/cache")
+	removeFixturePath(t, fixture.root, "var/opt/ikigenba/notes/cache")
 	if err := os.Symlink(outside, filepath.Join(fixture.root, "opt/notes/bin/escape")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(other, filepath.Join(fixture.root, "opt/notes/share")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("state", filepath.Join(fixture.root, "opt/notes/cache")); err != nil {
+	if err := os.Symlink("state", filepath.Join(fixture.root, "var/opt/ikigenba/notes/cache")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -281,14 +281,14 @@ func TestUninstallRemovesOnlyAppPayloadWithoutFollowingSymlinks(t *testing.T) {
 		}
 	}
 	stateInfo, err := os.Stat(stateFile)
-	stateData, readErr := readFixturePath(fixture.root, "opt/notes/state/data.db")
+	stateData, readErr := readFixturePath(fixture.root, "var/opt/ikigenba/notes/state/data.db")
 	outsideData, outsideErr := readFixturePath(outside, "sentinel")
 	otherData, otherErr := readFixturePath(other, "sentinel")
 	if err != nil || readErr != nil || string(stateData) != "preserved state" || !stateInfo.ModTime().Equal(stateTime) ||
 		outsideErr != nil || string(outsideData) != "outside unchanged" || otherErr != nil || string(otherData) != "other unchanged" {
 		t.Fatalf("preserved data changed: state=%q (%v, %v), outside=%q (%v), other=%q (%v)", stateData, err, readErr, outsideData, outsideErr, otherData, otherErr)
 	}
-	want := uninstallReport{"files", "removed /opt/notes/bin, etc, share, cache; kept state", true}
+	want := uninstallReport{"files", "removed /opt/notes, /var/opt/ikigenba/notes/cache; kept /var/opt/ikigenba/notes/state", true}
 	if fixture.reports[2] != want {
 		t.Fatalf("reports = %#v", fixture.reports)
 	}
@@ -317,7 +317,7 @@ func newUninstallFixture(t *testing.T, state string) *uninstallFixture {
 	writeFixturePath(t, root, "opt/notes/bin/notes", "binary")
 	writeFixturePath(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n")
 	writeFixturePath(t, root, "opt/notes/share/asset", "asset")
-	writeFixturePath(t, root, "opt/notes/cache/item", "cache")
+	writeFixturePath(t, root, "var/opt/ikigenba/notes/cache/item", "cache")
 	writeFixturePath(t, root, "etc/systemd/system/ikigenba-notes.service", "unit")
 	writeFixturePath(t, root, "etc/systemd/system/ikigenba-notes.socket", "unit")
 	fixture := &uninstallFixture{root: root, state: state}

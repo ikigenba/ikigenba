@@ -61,7 +61,7 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"wrong-installed-app\"\n", 0o600)
-	writeFile(t, root, "opt/other/state/private", "do not read or report this secret", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/other/state/private", "do not read or report this secret", 0o600)
 
 	olderURI := "s3://bucket/host/notes/2026-09-15T23:00:00Z.tar.zst"
 	selectedURI := "s3://bucket/host/notes/2026-09-16T00:00:00Z.tar.zst"
@@ -97,8 +97,8 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	wantReport := backup.RestoreReport{Steps: []backup.RestoreStep{
 		{Name: "source", Detail: wantDetail},
 		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.socket"},
-		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
-		{Name: "db", Detail: "/opt/notes/state/app.db, at 2026-09-16T12:00:00Z"},
+		{Name: "files", Detail: "/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files"},
+		{Name: "db", Detail: "/var/opt/ikigenba/notes/state/app.db, at 2026-09-16T12:00:00Z"},
 		{Name: "litestream", Detail: "state/app.db"},
 		{Name: "start", Detail: "litestream.service"},
 	}}
@@ -111,7 +111,7 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	if client.puts != 0 || nginxCalls != 1 || len(client.readers) != 1 || !client.readers[0].closed {
 		t.Fatalf("unexpected effects: puts %d nginx %d readers %#v", client.puts, nginxCalls, client.readers)
 	}
-	if data := readHostRestoreFile(t, root, "opt/other/state/private"); string(data) != "do not read or report this secret" {
+	if data := readHostRestoreFile(t, root, "var/opt/ikigenba/other/state/private"); string(data) != "do not read or report this secret" {
 		t.Fatalf("restore changed another service: %q", data)
 	}
 	joined := fmt.Sprint(report, err)
@@ -195,7 +195,7 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 	t.Run("missing cloud dependency", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 		before := fileTreeSnapshot(t, root)
 		executions := 0
 		nginxCalls := 0
@@ -216,7 +216,7 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 }
 
 func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
-	// R-20Y6-O0OO
+	// R-XTPC-Z1KE
 	tests := []struct {
 		name    string
 		objects []cloud.Object
@@ -230,7 +230,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
-			writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 			before := fileTreeSnapshot(t, root)
 			client := &restoreCloud{objects: test.objects}
 			env := restoreHostEnv(t, root)
@@ -278,7 +278,7 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
-			writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
 			before := fileTreeSnapshot(t, root)
 			body := test.compressed
 			if body == nil {

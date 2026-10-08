@@ -16,7 +16,8 @@ import (
 const backupUsage = `Usage: opsctl backup [SERVICE]
 
 Copy every service's etc/ and state/ to the prefix in backup.s3_uri, under the
-service's own name, or just SERVICE when one is named.
+service's own name, or just SERVICE when one is named. A service's etc/ is
+/opt/SERVICE/etc/ and its state/ is /var/opt/ikigenba/SERVICE/state/.
 
 Never copied: cache/, anything opsctl generates, and -- for a service that
 declares a [database] -- the database file, its -wal and -shm, and its

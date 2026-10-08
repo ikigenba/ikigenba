@@ -14,10 +14,15 @@ const wantUninstallUsage = `Usage: opsctl uninstall APP
 Take APP off the host: stop ikigenba-APP.socket and ikigenba-APP.service,
 socket first so no request starts the service again, disable both, remove
 both units (which ends a disabled APP's disabled state: a later install is a
-first install and comes up enabled), then remove /opt/APP/bin/, etc/, share/, and cache/. /opt/APP/state/ is kept
-untouched, so APP is still a service the host backs up, and a later install
-lands over its data the way an install over a restore does. Removing state/ is
-a decision made by hand, never here.
+first install and comes up enabled), then remove /opt/APP/ and
+/var/opt/ikigenba/APP/cache/. /var/opt/ikigenba/APP/state/ is kept untouched,
+so APP is still a service the host backs up, and a later install lands over
+its data the way an install over a restore does. Removing state/ is a decision
+made by hand, never here.
+
+A state/ or cache/ still under /opt/APP/ is first moved to
+/var/opt/ikigenba/APP/, once APP is stopped, as 'opsctl install' moves it; a
+state/ in both places fails the uninstall with nothing removed.
 
 The nginx configuration, /var/lib/ikigenba/services.json, and
 /etc/litestream.yml are regenerated from every app left on the host, so APP's
@@ -48,8 +53,9 @@ const wantStatusUsage = `Usage: opsctl status
 Print one line per service on this host, in name order: its name, the version
 its own binary reports, the state of its service unit, the state of its socket
 unit, and the journal mode of the database its manifest declares. A service is
-any /opt/<name>/ with an etc/ or state/ directory; '-' means opsctl could not
-ask, or there was nothing to ask.
+any /opt/<name>/ with an etc/ directory or any /var/opt/ikigenba/<name>/ with
+a state/ directory; '-' means opsctl could not ask, or there was nothing to
+ask.
 
 A service that is inactive behind an active socket is idle, not down: its
 socket starts it again when the next request arrives. The socket's field reads
@@ -70,7 +76,8 @@ Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
 request. The nginx configuration and /var/lib/ikigenba/services.json are then
 regenerated, so APP's names answer 503 and the service launcher shows APP
-disabled until it is enabled. Nothing on disk under /opt/APP/ changes.
+disabled until it is enabled. Nothing on disk under /opt/APP/ or
+/var/opt/ikigenba/APP/ changes.
 'opsctl enable APP' undoes it.
 
 auth, the authenticator every other app is checked against, is never
@@ -95,7 +102,7 @@ Configuration keys:
 `
 
 func TestUninstallHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-V062-ABM4
+	// R-H7DL-Z4SX
 	assertLifecycleHelp(t, "uninstall", wantUninstallUsage)
 }
 
@@ -105,12 +112,12 @@ func TestRestartHelpIsExactAndHostIndependent(t *testing.T) {
 }
 
 func TestStatusHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-VBX0-W4GE
+	// R-H8LI-CWJM
 	assertLifecycleHelp(t, "status", wantStatusUsage)
 }
 
 func TestDisableHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-V1DY-O3CT
+	// R-H9TE-QOAB
 	assertLifecycleHelp(t, "disable", wantDisableUsage)
 }
 

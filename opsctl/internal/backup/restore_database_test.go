@@ -20,8 +20,11 @@ import (
 )
 
 func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testing.T) {
-	// R-24LV-TBWR R-G2KD-J7PA R-GERD-CX48 R-ZBT9-WYGY
+	// R-TCKG-6T5E R-G2KD-J7PA R-GERD-CX48 R-ZBT9-WYGY
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	uid, gid := os.Getuid(), restoreAlternateGID(t)
 	body := hostRestoreArchive(t,
@@ -39,10 +42,10 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", func(context.Context) error {
 		nginxCalls++
 		configuration, readErr := readRootedRestoreFile(root, "etc/litestream.yml")
-		if readErr != nil || !strings.Contains(string(configuration), "/opt/notes/state/nested/app.db") {
+		if readErr != nil || !strings.Contains(string(configuration), "/var/opt/ikigenba/notes/state/nested/app.db") {
 			t.Fatalf("nginx ran before Litestream regeneration: %q, %v", configuration, readErr)
 		}
-		assertDatabaseWALAndMetadata(t, root, "opt/notes/state/nested/app.db", uid, gid)
+		assertDatabaseWALAndMetadata(t, root, "var/opt/ikigenba/notes/state/nested/app.db", uid, gid)
 		executor.events = append(executor.events, "nginx")
 		return nil
 	})
@@ -52,8 +55,8 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 	want := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
 		{Name: "stop", Detail: "ikigenba-notes.socket, ikigenba-notes.service, litestream.service"},
-		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
-		{Name: "db", Detail: "/opt/notes/state/nested/app.db, newest 2026-09-16T11:00:00Z"},
+		{Name: "files", Detail: "/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files"},
+		{Name: "db", Detail: "/var/opt/ikigenba/notes/state/nested/app.db, newest 2026-09-16T11:00:00Z"},
 		{Name: "litestream", Detail: "state/nested/app.db"},
 		{Name: "start", Detail: "litestream.service, ikigenba-notes.socket, ikigenba-notes.service"},
 	}
@@ -61,7 +64,7 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 		t.Fatalf("Restore() = %+v, %v; nginx calls %d", report, err, nginxCalls)
 	}
 	replica := "s3://bucket/host/notes/"
-	destination := filepath.Join(root, "opt/notes/state/nested/app.db")
+	destination := filepath.Join(root, "var/opt/ikigenba/notes/state/nested/app.db")
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
 		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
@@ -79,13 +82,16 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 	if !reflect.DeepEqual(executor.events, wantEvents) {
 		t.Fatalf("events = %v, want %v", executor.events, wantEvents)
 	}
-	assertRestoreMetadata(t, root, "opt/notes/state", 0o750, uid, gid)
-	assertRestoreMetadata(t, root, "opt/notes/state/nested", 0o710, uid, gid)
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state", 0o750, uid, gid)
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/nested", 0o710, uid, gid)
 }
 
 func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
-	// R-24LV-TBWR
+	// R-TCKG-6T5E
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	body := databaseRestoreArchive(t, false)
 	at := time.Date(2026, 9, 16, 10, 30, 0, 123000000, time.UTC)
@@ -94,16 +100,19 @@ func TestRestoreDatabaseAtRequestsInstantAndReportsRequestedTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	destination := filepath.Join(root, "opt/notes/state/app.db")
+	destination := filepath.Join(root, "var/opt/ikigenba/notes/state/app.db")
 	wantRestore := "litestream restore -o " + destination + " -timestamp 2026-09-16T10:30:00.123Z s3://bucket/host/notes/"
-	if report.Steps[3].Detail != "/opt/notes/state/app.db, at 2026-09-16T10:30:00.123Z" || !containsString(executor.events, wantRestore) {
+	if report.Steps[3].Detail != "/var/opt/ikigenba/notes/state/app.db, at 2026-09-16T10:30:00.123Z" || !containsString(executor.events, wantRestore) {
 		t.Fatalf("report = %+v, events = %v", report, executor.events)
 	}
 }
 
 func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
-	// R-24LV-TBWR
+	// R-TCKG-6T5E
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	at := time.Date(2026, 9, 16, 10, 30, 0, 123000000, time.UTC)
 	executor := &databaseRestoreExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"},{"timestamp":"2026-09-16T12:00:00Z"}]`}
@@ -116,7 +125,7 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 	wantReport := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
 		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.socket"},
-		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
+		{Name: "files", Detail: "/opt/notes/etc, /var/opt/ikigenba/notes/state, 2 files"},
 		{Name: "db", Err: errors.New("no snapshot under the prefix")},
 	}
 	if len(report.Steps) != len(wantReport) || report.Steps[0].Name != wantReport[0].Name || report.Steps[0].Detail != wantReport[0].Detail || !reflect.DeepEqual(report.Steps[1:3], wantReport[1:3]) || report.Steps[3].Name != "db" || report.Steps[3].Detail != "" || report.Steps[3].Err == nil || report.Steps[3].Err.Error() != "no snapshot under the prefix" {
@@ -136,6 +145,9 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T) {
 	// R-G2KD-J7PA R-YZO5-RZU6
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	manifest := "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n"
 	writeFile(t, root, "opt/notes/etc/manifest.toml", manifest, 0o600)
@@ -157,21 +169,24 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 		"id --group --name ikigenba",
 		"getent passwd ikigenba",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
-		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
+		"litestream restore -o " + filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + " s3://bucket/host/notes/",
 		"nginx",
 		"systemctl start litestream.service",
 	}
 	if err != nil || report.Steps[4] != (backup.RestoreStep{Name: "litestream", Detail: "unchanged"}) || !reflect.DeepEqual(executor.events, wantEvents) {
 		t.Fatalf("Restore() = %+v, %v; events %v", report, err, executor.events)
 	}
-	if got := readLitestream(t, root); !strings.Contains(got, "/opt/notes/state/app.db") {
+	if got := readLitestream(t, root); !strings.Contains(got, "/var/opt/ikigenba/notes/state/app.db") {
 		t.Fatalf("unchanged litestream configuration = %q", got)
 	}
 }
 
 func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
-	// R-24LV-TBWR
+	// R-TCKG-6T5E
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/manifest.toml", data: []byte("[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")},
@@ -183,7 +198,7 @@ func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
-		if _, err := os.Lstat(filepath.Join(root, "opt/notes/state/app.db") + suffix); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/state/app.db") + suffix); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("stale database sidecar %s remains after restore: %v", suffix, err)
 		}
 	}
@@ -192,6 +207,9 @@ func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
 func TestRestoreDatabaseMissingSnapshotStopsAtFailedDatabaseStep(t *testing.T) {
 	// R-25TS-73NG R-G7FZ-2AO2 R-1XAH-IPGL
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "etc/litestream.yml", "original configuration\n", 0o600)
 	body := hostRestoreArchive(t,
@@ -212,7 +230,7 @@ func TestRestoreDatabaseMissingSnapshotStopsAtFailedDatabaseStep(t *testing.T) {
 	if len(report.Steps) != 4 || report.Steps[0].Name != "source" || report.Steps[1].Name != "stop" || report.Steps[2].Name != "files" || report.Steps[3].Name != "db" || report.Steps[3].Detail != "" || report.Steps[3].Err == nil || report.Steps[3].Err.Error() != "no snapshot under the prefix" {
 		t.Fatalf("report = %+v", report)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "opt/notes/state/app.db")); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(filepath.Join(root, "var/opt/ikigenba/notes/state/app.db")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("database exists after missing snapshot: %v", statErr)
 	}
 	if got := string(readHostRestoreFile(t, root, "etc/litestream.yml")); got != "original configuration\n" {
@@ -221,7 +239,7 @@ func TestRestoreDatabaseMissingSnapshotStopsAtFailedDatabaseStep(t *testing.T) {
 	if nginxCalls != 0 || containsEventFragment(executor.events, "litestream restore") || containsEventFragment(executor.events, "systemctl start") {
 		t.Fatalf("later effects: nginx %d, events %v", nginxCalls, executor.events)
 	}
-	if got := string(readHostRestoreFile(t, root, "opt/notes/state/value")); got != "restored" {
+	if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/value")); got != "restored" {
 		t.Fatalf("completed files step rolled back: %q", got)
 	}
 }
@@ -229,6 +247,9 @@ func TestRestoreDatabaseMissingSnapshotStopsAtFailedDatabaseStep(t *testing.T) {
 func TestRestoreDatabaseRejectsNonSQLiteBeforeRegenerationOrStarts(t *testing.T) {
 	// R-GERD-CX48
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	executor := &databaseRestoreExecutor{t: t, root: root, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`, invalidDatabase: true}
 	nginxCalls := 0
@@ -242,6 +263,9 @@ func TestRestoreDatabaseRejectsNonSQLiteBeforeRegenerationOrStarts(t *testing.T)
 func TestRestoreDatabaseOwnershipFailurePreventsLaterLifecycle(t *testing.T) {
 	// R-ZBT9-WYGY
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	executor := &databaseRestoreExecutor{t: t, root: root, uid: os.Getuid(), gid: os.Getgid(), ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`, invalidSidecar: true}
 	nginxCalls := 0
@@ -255,6 +279,9 @@ func TestRestoreDatabaseOwnershipFailurePreventsLaterLifecycle(t *testing.T) {
 func TestRestoreDatabaseOwnershipUsesSymbolicArchiveMemberWithoutManifestApp(t *testing.T) {
 	// R-ZBT9-WYGY
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	store := configuredFileStore(t, root)
 	uid, gid := os.Getuid(), restoreAlternateGID(t)
 	body := hostRestoreArchive(t,
@@ -268,7 +295,7 @@ func TestRestoreDatabaseOwnershipUsesSymbolicArchiveMemberWithoutManifestApp(t *
 	if !containsString(executor.events, "getent passwd ikigenba") {
 		t.Fatalf("destination account was not resolved: %v", executor.events)
 	}
-	assertDatabaseWALAndMetadata(t, root, "opt/notes/state/app.db", uid, gid)
+	assertDatabaseWALAndMetadata(t, root, "var/opt/ikigenba/notes/state/app.db", uid, gid)
 }
 
 type databaseRestoreExecutor struct {
@@ -290,6 +317,11 @@ func (executor *databaseRestoreExecutor) execute(_ context.Context, command host
 	text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 	executor.events = append(executor.events, text)
 	switch command.Name {
+	case "chown":
+		if len(command.Args) != 2 || command.Args[0] != "ikigenba:ikigenba" || !strings.HasPrefix(command.Args[1], filepath.Join(executor.root, "var/opt/ikigenba")+"/") {
+			executor.t.Fatalf("unexpected data-directory ownership command: %v", command.Args)
+		}
+		return host.Result{}, nil
 	case "zstd":
 		compressed, err := io.ReadAll(command.Stdin)
 		if err != nil {

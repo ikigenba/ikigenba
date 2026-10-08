@@ -112,7 +112,7 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 
 // R-78QR-PFQ3
 // R-WILI-A3EP
-// R-W7T2-75GD
+// R-X7R6-367W
 // R-WOP0-6Y46
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
@@ -153,7 +153,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-W7T2-75GD
+// R-X7R6-367W
 // R-WOP0-6Y46
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
@@ -178,9 +178,13 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 		name  string
 		setup func(*testing.T, string)
 	}{
-		{name: "state directory", setup: func(t *testing.T, root string) {
+		{name: "data state directory", setup: func(t *testing.T, root string) {
 			t.Helper()
-			mkdir(t, filepath.Join(root, "opt", "auth", "state"))
+			mkdir(t, filepath.Join(root, "var", "opt", "ikigenba", "auth", "state"))
+		}},
+		{name: "etc directory", setup: func(t *testing.T, root string) {
+			t.Helper()
+			mkdir(t, filepath.Join(root, "opt", "auth", "etc"))
 		}},
 		{name: "manifest without app", setup: func(t *testing.T, root string) {
 			t.Helper()
@@ -226,7 +230,7 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-W7T2-75GD
+// R-X7R6-367W
 // R-EPD0-PHUT
 // R-W5D9-FLYZ
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
@@ -1446,7 +1450,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-7B6K-GZ7H R-W7T2-75GD R-78QR-PFQ3
+// R-7B6K-GZ7H R-X7R6-367W R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")

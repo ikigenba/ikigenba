@@ -18,7 +18,8 @@ Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
 request. The nginx configuration and /var/lib/ikigenba/services.json are then
 regenerated, so APP's names answer 503 and the service launcher shows APP
-disabled until it is enabled. Nothing on disk under /opt/APP/ changes.
+disabled until it is enabled. Nothing on disk under /opt/APP/ or
+/var/opt/ikigenba/APP/ changes.
 'opsctl enable APP' undoes it.
 
 auth, the authenticator every other app is checked against, is never

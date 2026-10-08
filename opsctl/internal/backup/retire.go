@@ -177,7 +177,15 @@ func Retire(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.
 		if service.Manifest == nil || service.Manifest.Database == nil {
 			continue
 		}
-		databasePath := path.Join(env.Root, "/opt", service.Name, service.Manifest.Database.Path)
+		if legacyErr := legacyStateError(env.Root, service.Name); legacyErr != nil {
+			var unmoved *legacyStateFailure
+			if errors.As(legacyErr, &unmoved) {
+				continue
+			}
+			syncErr = legacyErr
+			break
+		}
+		databasePath := path.Join(env.Root, apps.DataRoot, service.Name, service.Manifest.Database.Path)
 		if err := retirementSyncDatabase(ctx, env, databasePath); err != nil {
 			syncErr = err
 			break
@@ -234,6 +242,9 @@ func retirementSyncDatabase(ctx context.Context, env host.Env, databasePath stri
 	}
 	if result.ExitCode != 0 {
 		return &host.CommandError{Label: label, Result: result}
+	}
+	if err := ctx.Err(); err != nil {
+		return retirementCommandError(label, result, err)
 	}
 	if err := validateRetirementSyncProof(result.Stdout, databasePath); err != nil {
 		return fmt.Errorf("%s: %w", label, err)

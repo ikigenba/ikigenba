@@ -32,10 +32,10 @@ func TestStatusPrintsExactRowsAndTreatsFindingsAsSuccess(t *testing.T) {
 	database[21], database[22], database[23] = 64, 32, 32
 	binary.BigEndian.PutUint32(database[44:48], 4)
 	binary.BigEndian.PutUint32(database[56:60], 1)
-	if err := os.MkdirAll(filepath.Join(root, "opt/alpha/state"), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/alpha/state"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "opt/alpha/state/alpha.db"), database, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "var/opt/ikigenba/alpha/state/alpha.db"), database, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {

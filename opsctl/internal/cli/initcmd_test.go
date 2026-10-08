@@ -41,16 +41,17 @@ Sequence:
                ikigenba-apps.slice, sized from the host's memory, and the
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
-  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
+               installed app whose manifest is no longer valid, or whose
+               state/ is still under /opt/APP/, stops init here, before
+               this step or any after it writes anything
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
   apps         write the drain and stop settings into every installed app,
                restarting each enabled app whose settings changed; a
                disabled app is rewritten and left disabled. The resources
-               an app's manifest declares are kept as install wrote them;
-               a manifest that is no longer valid stops init before
-               any app is rewritten
+               an app's manifest declares are kept as install wrote them
 
 Configuration keys:
   host.name           the fully-qualified name this host answers at, at or under a configured zone
@@ -59,7 +60,7 @@ Configuration keys:
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-NYQ5-F9V5
+	// R-O1MF-1N60
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -501,7 +502,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, wantFragment := range []string{
-		filepath.Join(deps.Root, "opt", "notes", "state", "notes.db"),
+		filepath.Join(deps.Root, "var", "opt", "ikigenba", "notes", "state", "notes.db"),
 		"s3://bucket/host/notes/",
 		"snapshot:\n  interval: 3600s",
 		"sync-interval: 5s",
@@ -1401,4 +1402,161 @@ func treeState(t *testing.T, root string) map[string]treeEntry {
 		t.Fatal(err)
 	}
 	return state
+}
+
+// R-3J60-CID3
+func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) {
+	for _, stateKind := range []string{"directory", "file", "dangling symlink"} {
+		t.Run(stateKind, func(t *testing.T) {
+			deps := readyStateGuardDeps(t)
+			for _, name := range []string{"zeta", "alpha"} {
+				makeStateGuardApp(t, deps.Root, name, true)
+				state := filepath.Join(deps.Root, "opt", name, "state")
+				switch stateKind {
+				case "directory":
+					if err := os.Mkdir(state, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				case "file":
+					if err := os.WriteFile(state, []byte("legacy data"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				case "dangling symlink":
+					if err := os.Symlink("missing-data", state); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			// The state refusal wins over an earlier service's invalid manifest.
+			makeStateGuardApp(t, deps.Root, "aardvark", false)
+			if err := os.WriteFile(filepath.Join(deps.Root, "opt", "aardvark", "etc", "manifest.toml"), []byte("app = [\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for _, relative := range []string{"etc/nginx/conf.d/ikigenba.conf", "var/lib/ikigenba/services.json", "etc/litestream.yml", "etc/systemd/system/ikigenba-backup-host.timer", "etc/systemd/system/ikigenba-alpha.service", "opt/alpha/etc/env"} {
+				destination := filepath.Join(deps.Root, relative)
+				if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(destination, []byte("preserved\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var afterSlices map[string]treeEntry
+			var commands []string
+			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				commands = append(commands, command.Name+" "+strings.Join(command.Args, " "))
+				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
+					afterSlices = treeState(t, deps.Root)
+				}
+				return host.Result{}, nil
+			}
+			stdout, stderr, code := invoke([]string{"init"}, deps)
+			if code != 1 || stderr != "opsctl: alpha: /opt/alpha/state has not moved; install alpha first\n" || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") || strings.Count(stdout, "\n") != 12 {
+				t.Fatalf("init = %d, stdout %q, stderr %q", code, stdout, stderr)
+			}
+			if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
+				t.Fatal("state changed after slices")
+			}
+			if len(commands) != 3 || !strings.HasPrefix(commands[0], "certbot certonly ") || commands[1] != "systemctl daemon-reload" || commands[2] != "systemctl restart nginx" {
+				t.Fatalf("setup commands = %v", commands)
+			}
+		})
+	}
+}
+
+// R-3J60-CID3
+func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
+	for _, kind := range []string{"cache only", "no binary", "directory binary", "invalid name", "not discovered"} {
+		t.Run(kind, func(t *testing.T) {
+			deps := readyStateGuardDeps(t)
+			name := "notes"
+			if kind == "invalid name" {
+				name = "bad_name"
+			}
+			makeStateGuardApp(t, deps.Root, name, kind != "no binary" && kind != "directory binary")
+			appDir := filepath.Join(deps.Root, "opt", name)
+			if kind == "directory binary" {
+				if err := os.Mkdir(filepath.Join(appDir, "bin", name), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			dataKind := "state"
+			if kind == "cache only" {
+				dataKind = "cache"
+			}
+			if err := os.Mkdir(filepath.Join(appDir, dataKind), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "not discovered" {
+				if err := os.Remove(filepath.Join(appDir, "etc")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reachedNginx := false
+			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "nginx" {
+					reachedNginx = true
+					return host.Result{}, errors.New("stop at nginx")
+				}
+				return host.Result{}, nil
+			}
+			_, stderr, code := invoke([]string{"init"}, deps)
+			if code != 1 || !reachedNginx || strings.Contains(stderr, "has not moved") {
+				t.Fatalf("init = %d, %q; nginx reached %v", code, stderr, reachedNginx)
+			}
+		})
+	}
+}
+
+// R-3J60-CID3
+func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
+	deps := readyStateGuardDeps(t)
+	if err := os.WriteFile(filepath.Join(deps.Root, "opt"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var afterSlices map[string]treeEntry
+	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
+			afterSlices = treeState(t, deps.Root)
+		}
+		if command.Name == "nginx" {
+			t.Fatal("nginx called after discovery failure")
+		}
+		return host.Result{}, nil
+	}
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 1 || !strings.HasPrefix(stderr, "opsctl: discover services: read /opt:") || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") {
+		t.Fatalf("init = %d, %q, %q", code, stdout, stderr)
+	}
+	if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
+		t.Fatal("discovery failure changed state after slices")
+	}
+}
+
+func readyStateGuardDeps(t *testing.T) cli.Deps {
+	t.Helper()
+	deps := initDeps(t, map[string]string{dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZA", "host.name": "api.example.com", "acme.email": "admin@example.com"})
+	provider := &fakeDNSProvider{records: map[string][]dns.Record{"ZA": {{Name: "example.com", Type: "SOA"}, {Name: "example.com", Type: "NS", Values: []string{"ns1"}}}}}
+	deps.LookPath = foundInitTools
+	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) { return provider, nil }
+	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) { return []string{"ns1"}, nil }
+	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.10"}, nil }
+	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return deps
+}
+
+func makeStateGuardApp(t *testing.T, root, name string, binary bool) {
+	t.Helper()
+	for _, relative := range []string{"bin", "etc"} {
+		if err := os.MkdirAll(filepath.Join(root, "opt", name, relative), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if binary {
+		if err := os.WriteFile(filepath.Join(root, "opt", name, "bin", name), []byte("binary"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

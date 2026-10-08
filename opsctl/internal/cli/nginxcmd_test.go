@@ -30,10 +30,11 @@ Configuration keys:
   host.name  the fully-qualified name this host answers at
   host.apex  the app that answers at the parent of host.name; unset means none
 
-A service is any /opt/<name>/ with an etc/ or state/ directory. One with an
-etc/manifest.toml naming its app answers at <name>.<host.name>, proxied to
-its socket /run/ikigenba/<name>.sock, and the one whose manifest sets default
-answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
+A service is any /opt/<name>/ with an etc/ directory, or any
+/var/opt/ikigenba/<name>/ with a state/ directory. One with an
+/opt/<name>/etc/manifest.toml naming its app answers at <name>.<host.name>,
+proxied to its socket /run/ikigenba/<name>.sock, and the one whose manifest
+sets default answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
 included in its server block. An app whose socket unit systemd reports
 disabled keeps its names, and its block answers 503. Every proxied request
 carries X-Request-Id set to nginx's own request id, which also ends its
@@ -100,7 +101,7 @@ server {
 `
 
 func TestNginxHelpIsExactAndInert(t *testing.T) {
-	// R-W45D-1U8A
+	// R-X5BD-BMQI
 	for _, uid := range []int{0, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			called := false
@@ -626,6 +627,42 @@ func TestNginxManifestRejectionsUseExactStandaloneDiagnostic(t *testing.T) {
 			}
 			if !reflect.DeepEqual(before, treeState(t, root)) {
 				t.Fatal("failed command changed host state")
+			}
+		})
+	}
+}
+
+// R-3J60-CID3
+func TestStandaloneNginxAcceptsUnmovedInstalledState(t *testing.T) {
+	for _, subcommand := range []string{"show", "apply"} {
+		t.Run(subcommand, func(t *testing.T) {
+			root := configuredNginxRoot(t)
+			makeStateGuardApp(t, root, "api", true)
+			writeNginxManifest(t, root, "api", "app = 'api'\ndefault = true\n")
+			if err := os.Mkdir(filepath.Join(root, "opt", "api", "state"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(root, "etc/nginx/conf.d"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			stdout, stderr, code := invoke([]string{"nginx", subcommand}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+				if result, handled := servicesFixtureCommand(command); handled {
+					return result, nil
+				}
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+			}})
+			expectedOutput := ""
+			if subcommand == "show" {
+				expectedOutput = wantNginxShow
+			}
+			if code != 0 || stderr != "" || stdout != expectedOutput {
+				t.Fatalf("nginx %s = %d, %q, %q", subcommand, code, stdout, stderr)
+			}
+			if _, err := os.Stat(filepath.Join(root, "opt", "api", "state")); err != nil {
+				t.Fatalf("state changed: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "var", "opt", "ikigenba", "api")); !os.IsNotExist(err) {
+				t.Fatalf("data root created: %v", err)
 			}
 		})
 	}

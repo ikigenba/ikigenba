@@ -43,9 +43,15 @@ func Snapshot(ctx context.Context, env host.Env, cloudEnv cloud.Env, store confi
 			return results, fmt.Errorf("snapshot: %w", err)
 		}
 		result := SnapshotResult{Service: selected.Name}
+		var legacyErr error
+		if !invalidFileServiceName(selected.Name) {
+			legacyErr = legacyStateError(env.Root, selected.Name)
+		}
 		switch {
 		case invalidFileServiceName(selected.Name):
 			result.Err = fmt.Errorf("invalid service %q", selected.Name)
+		case legacyErr != nil:
+			result.Err = legacyErr
 		case selected.ManifestError != nil:
 			result.Err = snapshotReadError(env.Root, selected.ManifestError)
 		default:
@@ -146,9 +152,9 @@ func snapshotDatabase(ctx context.Context, env host.Env, filesystem *os.Root, re
 		return nil, nil, snapshotCommandError("rebuild snapshot database", result, err)
 	}
 	relative := service.Manifest.Database.Path
-	info, err := filesystem.Stat(path.Join("opt", service.Name, relative))
+	info, err := filesystem.Stat(path.Join(apps.DataRoot[1:], service.Name, relative))
 	if errors.Is(err, os.ErrNotExist) {
-		info, err = filesystem.Stat(path.Dir(path.Join("opt", service.Name, relative)))
+		info, err = filesystem.Stat(path.Dir(path.Join(apps.DataRoot[1:], service.Name, relative)))
 	}
 	if err != nil {
 		return nil, nil, err
@@ -186,7 +192,7 @@ func snapshotReadError(root string, err error) error {
 	}
 	name := filepath.ToSlash(pathErr.Path)
 	name = strings.TrimPrefix(name, strings.TrimSuffix(filepath.ToSlash(root), "/")+"/")
-	if strings.HasPrefix(name, "opt/") {
+	if strings.HasPrefix(name, "opt/") || strings.HasPrefix(name, "var/opt/") {
 		return fmt.Errorf("/%s: %w", name, pathErr.Err)
 	}
 	return err

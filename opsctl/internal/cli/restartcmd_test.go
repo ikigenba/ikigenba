@@ -195,6 +195,7 @@ func (writer *countingFailWriter) Write([]byte) (int, error) {
 func cliRestartRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	writeUninstallFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n")
 	binary := filepath.Join(root, "opt", "notes", "bin", "notes")
 	if err := os.MkdirAll(filepath.Dir(binary), 0o750); err != nil {
 		t.Fatal(err)

@@ -5,13 +5,9 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
-	"os/user"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
@@ -21,10 +17,10 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-USUN-ZP5Y R-EN8B-K8GR R-ZWRV-69S5 R-UMB4-UXVT
+	// R-FW7G-TWP2 R-GHRP-XY8C R-GE40-SN09 R-G3IV-4J58
 	root := t.TempDir()
-	statePath := filepath.Join(root, "opt", "notes", "state", "db")
-	cachePath := filepath.Join(root, "opt", "notes", "cache", "item")
+	statePath := filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "db")
+	cachePath := filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "item")
 	writeFixture(t, statePath, []byte("state"), 0o600)
 	writeFixture(t, cachePath, []byte("cache"), 0o600)
 
@@ -43,7 +39,7 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 	wantUnit := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket\n\n" +
 		"[Service]\nType=notify\n" +
 		"ExecStart=" + filepath.Join(appRoot, "bin", "notes") + "\n" +
-		"WorkingDirectory=" + appRoot + "\n" +
+		"WorkingDirectory=" + filepath.Join(root, "var", "opt", "ikigenba", "notes") + "\n" +
 		"EnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=10\nSlice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
@@ -51,7 +47,7 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 	assertFile(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service"), wantUnit)
 	assertFile(t, statePath, "state")
 	assertFile(t, cachePath, "cache")
-	assertMode(t, appRoot, 0o750)
+	assertMode(t, appRoot, 0o755)
 	assertMode(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service"), 0o644)
 	assertMode(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket"), 0o644)
 	assertMode(t, statePath, 0o600)
@@ -60,10 +56,13 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 	wantCommands := []commandCall{
 		{"xz", []string{"--decompress", "--stdout"}},
 		{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
+		{"systemctl", []string{"is-active", "ikigenba-notes.socket"}},
 		{"systemctl", []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 		{"id", []string{"--user", "ikigenba"}},
 		{"useradd", []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--user-group", "ikigenba"}},
-		{"chown", []string{"ikigenba:ikigenba", appRoot}},
+		{"chown", []string{"ikigenba:ikigenba", filepath.Join(root, "var", "opt", "ikigenba", "notes")}},
+		{"chown", []string{"root:root", filepath.Join(root, "opt")}},
+		{"chown", []string{"root:root", appRoot}},
 		{"chown", []string{"--recursive", "root:ikigenba", filepath.Join(appRoot, "bin"), filepath.Join(appRoot, "etc")}},
 		{"systemctl", []string{"daemon-reload"}},
 		{"systemctl", []string{"enable", "ikigenba-notes.service"}},
@@ -85,7 +84,7 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 }
 
 func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
-	// R-USUN-ZP5Y
+	// R-FW7G-TWP2
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	if err := fixture.run(); err != nil {
 		t.Fatal(err)
@@ -102,7 +101,7 @@ func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
 	if !errors.As(err, &failure) || failure.Code != 1 || !strings.Contains(failure.Cause.Error(), "primary group") {
 		t.Fatalf("wrong-group failure = %#v", err)
 	}
-	if got := wrongGroup.reports[len(wrongGroup.reports)-1]; got.step != "unit" || got.success || wrongGroup.configureCalls != 0 {
+	if got := wrongGroup.reports[len(wrongGroup.reports)-1]; got.step != "data" || got.success || wrongGroup.configureCalls != 0 {
 		t.Fatalf("reports = %#v, Configure calls = %d", wrongGroup.reports, wrongGroup.configureCalls)
 	}
 
@@ -115,7 +114,7 @@ func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
 }
 
 func TestInstallRejectsRootServiceAccount(t *testing.T) {
-	// R-USUN-ZP5Y
+	// R-FW7G-TWP2
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.accountUID = "0"
 	err := fixture.run()
@@ -127,8 +126,7 @@ func TestInstallRejectsRootServiceAccount(t *testing.T) {
 		{"fetch", "notes-from-uri-v0.tar.xz, 0.0 MiB", true},
 		{"file", "notes", true},
 		{"secrets", "0 keys", true},
-		{"unpack", "/opt/notes", true},
-		{"unit", "ikigenba account must not be root", false},
+		{"data", "ikigenba account must not be root", false},
 	}
 	if !reflect.DeepEqual(fixture.reports, wantReports) || fixture.configureCalls != 0 {
 		t.Fatalf("reports = %#v, Configure calls = %d", fixture.reports, fixture.configureCalls)
@@ -137,44 +135,59 @@ func TestInstallRejectsRootServiceAccount(t *testing.T) {
 
 func TestInstallCreatesOptWithoutChangingExistingOpt(t *testing.T) {
 	// R-EPO4-BRY5
-	if rerunInOwnershipNamespace(t) {
-		return
-	}
 	missingRoot := t.TempDir()
 	missing := newCompletedInstallFixture(t, missingRoot, false)
-	missing.mutateOwnership = true
 	if err := missing.run(); err != nil {
 		t.Fatal(err)
 	}
 	missingOpt := filepath.Join(missingRoot, "opt")
 	assertMode(t, missingOpt, 0o755)
-	assertOwnership(t, missingOpt, 0, 0)
-
+	var ownsOpt int
+	for _, cmd := range missing.commands {
+		if cmd.name == "chown" && reflect.DeepEqual(cmd.args, []string{"root:root", missingOpt}) {
+			ownsOpt++
+		}
+	}
+	if ownsOpt != 1 {
+		t.Fatalf("opt ownership commands=%d", ownsOpt)
+	}
 	existingRoot := t.TempDir()
 	opt := filepath.Join(existingRoot, "opt")
 	if err := os.Mkdir(opt, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chown(opt, 1, 1); err != nil {
+	before, err := os.Lstat(opt)
+	if err != nil {
 		t.Fatal(err)
 	}
 	existing := newCompletedInstallFixture(t, existingRoot, false)
-	existing.mutateOwnership = true
 	if err := existing.run(); err != nil {
 		t.Fatal(err)
 	}
+	after, err := os.Lstat(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	assertMode(t, opt, 0o700)
-	assertOwnership(t, opt, 1, 1)
+	if !os.SameFile(before, after) || !sameFileOwner(before, after) {
+		t.Fatal("existing opt ownership or identity changed")
+	}
+	for _, cmd := range existing.commands {
+		if cmd.name == "chown" {
+			for _, arg := range cmd.args {
+				if arg == opt {
+					t.Fatalf("existing opt chown: %#v", cmd)
+				}
+			}
+		}
+	}
 }
 
 func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
-	// R-EM0F-6GQ2 R-EN8B-K8GR
-	if rerunInOwnershipNamespace(t) {
-		return
-	}
+	// R-GGJT-K6HN R-GHRP-XY8C
 	root := t.TempDir()
-	state := filepath.Join(root, "opt", "notes", "state", "keep")
-	cache := filepath.Join(root, "opt", "notes", "cache", "keep")
+	state := filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "keep")
+	cache := filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "keep")
 	writeFixture(t, state, []byte("state"), 0o400)
 	writeFixture(t, cache, []byte("cache"), 0o500)
 	archive := tarEntries(t, []installTarEntry{
@@ -184,9 +197,10 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 		regularEntry("bin/data", []byte("data"), 0o666),
 		regularEntry("share/nested/page", []byte("page"), 0o644),
 	})
+	stateBefore := snapshotTree(t, filepath.Dir(state))
+	cacheBefore := snapshotTree(t, filepath.Dir(cache))
 	fixture := newCompletedInstallFixture(t, root, false)
 	fixture.archive = archive
-	fixture.mutateOwnership = true
 	if err := fixture.run(); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +209,6 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 	for _, directory := range []string{"bin", "etc", "share", filepath.Join("share", "nested")} {
 		name := filepath.Join(appRoot, directory)
 		assertMode(t, name, 0o750)
-		assertOwnership(t, name, 0, 1)
 	}
 	for name, mode := range map[string]os.FileMode{
 		filepath.Join("bin", "notes"):            0o750,
@@ -206,14 +219,13 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 		filepath.Join("share", "nested", "page"): 0o640,
 	} {
 		assertMode(t, filepath.Join(appRoot, name), mode)
-		assertOwnership(t, filepath.Join(appRoot, name), 0, 1)
 	}
-	assertMode(t, appRoot, 0o750)
-	assertOwnership(t, appRoot, 1, 1)
+	assertMode(t, appRoot, 0o755)
 	assertMode(t, state, 0o400)
 	assertMode(t, cache, 0o500)
-	assertOwnership(t, state, 0, 0)
-	assertOwnership(t, cache, 0, 0)
+	if !reflect.DeepEqual(stateBefore, snapshotTree(t, filepath.Dir(state))) || !reflect.DeepEqual(cacheBefore, snapshotTree(t, filepath.Dir(cache))) {
+		t.Fatal("data metadata changed")
+	}
 
 	var recursive []commandCall
 	for _, command := range fixture.commands {
@@ -231,13 +243,15 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 	}
 	reinstall := newCompletedInstallFixture(t, root, true)
 	reinstall.archive = archive
-	reinstall.mutateOwnership = true
 	if err := reinstall.run(); err != nil {
 		t.Fatal(err)
 	}
 	assertMode(t, filepath.Join(appRoot, "bin", "notes"), 0o750)
 	assertMode(t, state, 0o400)
 	assertMode(t, cache, 0o500)
+	if !reflect.DeepEqual(stateBefore, snapshotTree(t, filepath.Dir(state))) || !reflect.DeepEqual(cacheBefore, snapshotTree(t, filepath.Dir(cache))) {
+		t.Fatal("data metadata changed")
+	}
 }
 
 func TestInstallReportsInstalledTreeShapingFailures(t *testing.T) {
@@ -349,7 +363,7 @@ func assertLastAndOnlyStageReport(t *testing.T, reports []installReport, stage s
 }
 
 func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-18WH-VAMP
+	// R-GCW4-EV9K
 	tests := []struct {
 		name       string
 		target     string
@@ -398,6 +412,7 @@ func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
 				{"fetch", "notes-from-uri-v0.tar.xz, 0.0 MiB", true},
 				{"file", "notes", true},
 				{"secrets", "0 keys", true},
+				{"data", "/var/opt/ikigenba/notes", true},
 				{"unpack", "/opt/notes", true},
 				{"unit", failureDetail, false},
 			}
@@ -406,7 +421,7 @@ func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
 			}
 			wantCommands := completedInstallCommands(root, false)
 			if test.name == "another service" {
-				wantCommands = append(wantCommands[:3], wantCommands[4:]...)
+				wantCommands = append(wantCommands[:7], wantCommands[8:]...)
 			}
 			wantCommands = wantCommands[:len(wantCommands)-6]
 			if !reflect.DeepEqual(fixture.commands, wantCommands) {
@@ -442,7 +457,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 			if got := fixture.reports[len(fixture.reports)-1]; got.step != "unit" || got.success {
 				t.Fatalf("reports = %#v", fixture.reports)
 			}
-			wantCommands := completedInstallCommands(fixture.root, false)[:9]
+			wantCommands := completedInstallCommands(fixture.root, false)[:11]
 			if action == "enable" {
 				wantCommands = append(wantCommands, commandCall{"systemctl", []string{"enable", "ikigenba-notes.service"}})
 			}
@@ -454,7 +469,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 }
 
 func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
-	// R-3IUZ-X97N
+	// R-FTRO-2D7O
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	configureAt := -1
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
@@ -484,7 +499,7 @@ func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
 	if !errors.Is(err, stop) || failed.configureCalls != 1 {
 		t.Fatalf("error = %v, Configure calls = %d", err, failed.configureCalls)
 	}
-	wantFailedCommands := completedInstallCommands(failed.root, false)[:11]
+	wantFailedCommands := completedInstallCommands(failed.root, false)[:13]
 	if !reflect.DeepEqual(failed.commands, wantFailedCommands) {
 		t.Fatalf("commands = %#v, want %#v", failed.commands, wantFailedCommands)
 	}
@@ -511,7 +526,7 @@ func TestInstallStartsOrRestartsAndReportsBinaryVersion(t *testing.T) {
 }
 
 func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
-	// R-ZWRV-69S5 R-UMB4-UXVT R-UNJ1-8PMI
+	// R-GE40-SN09 R-G3IV-4J58 R-UNJ1-8PMI
 	root := t.TempDir()
 	servicePath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
 	socketPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket")
@@ -529,13 +544,13 @@ func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
 		"[Install]\nWantedBy=sockets.target\n"
 	wantService := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", "notes") + "\n" +
-		"WorkingDirectory=" + appRoot + "\n" +
+		"WorkingDirectory=" + filepath.Join(root, "var", "opt", "ikigenba", "notes") + "\n" +
 		"EnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=10\nSlice=ikigenba-apps.slice\nCPUWeight=100\nMemoryMax=134217728\nEnvironment=GOMEMLIMIT=100663296\n\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
 	assertFile(t, socketPath, wantSocket)
 	assertFile(t, servicePath, wantService)
-	wantCommands := completedInstallCommands(root, false)[:9]
+	wantCommands := completedInstallCommands(root, false)[:11]
 	wantCommands = append(wantCommands, commandCall{filepath.Join(appRoot, "bin", "notes"), []string{"--version"}})
 	if !reflect.DeepEqual(fixture.commands, wantCommands) {
 		t.Fatalf("commands = %#v, want %#v", fixture.commands, wantCommands)
@@ -562,7 +577,7 @@ func TestInstallActivationFailureObtainsJournal(t *testing.T) {
 	if !reflect.DeepEqual(fixture.reports, wantReports) {
 		t.Fatalf("reports = %#v, want %#v", fixture.reports, wantReports)
 	}
-	wantStartFailureCommands := completedInstallCommands(fixture.root, false)[:12]
+	wantStartFailureCommands := completedInstallCommands(fixture.root, false)[:14]
 	wantStartFailureCommands = append(wantStartFailureCommands,
 		commandCall{"journalctl", []string{"--unit", "ikigenba-notes.service", "--no-pager", "--lines", "50"}})
 	if !reflect.DeepEqual(fixture.commands, wantStartFailureCommands) {
@@ -572,7 +587,7 @@ func TestInstallActivationFailureObtainsJournal(t *testing.T) {
 	fixture = newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.resultingInactive = true
 	err = fixture.run()
-	wantInactiveCommands := completedInstallCommands(fixture.root, false)[:13]
+	wantInactiveCommands := completedInstallCommands(fixture.root, false)[:15]
 	wantInactiveCommands = append(wantInactiveCommands,
 		commandCall{"journalctl", []string{"--unit", "ikigenba-notes.service", "--no-pager", "--lines", "50"}})
 	if !errors.As(err, &failure) || failure.Message != "notes: service failed to start" ||
@@ -600,6 +615,8 @@ type completedInstallFixture struct {
 	t                        *testing.T
 	root                     string
 	initiallyActive          bool
+	initiallySocketActive    *bool
+	beforeStop               func(string)
 	accountMissing           bool
 	configure                func(context.Context, apps.Manifest) error
 	configureCalls           int
@@ -613,8 +630,8 @@ type completedInstallFixture struct {
 	accountGroup             string
 	archive                  []byte
 	ownershipFailure         error
+	dataOwnershipFailure     error
 	removeTreeAfterOwnership bool
-	mutateOwnership          bool
 	downloadFailure          error
 	fileFailure              error
 	secretsFailure           error
@@ -705,6 +722,12 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 			}
 			return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
 		case "is-active":
+			if command.Args[1] == "ikigenba-notes.socket" && fixture.initiallySocketActive != nil {
+				if *fixture.initiallySocketActive {
+					return host.Result{Stdout: []byte("active\n")}, nil
+				}
+				return host.Result{ExitCode: 3, Stdout: []byte("inactive\n")}, nil
+			}
 			if !fixture.activated && !fixture.initiallyActive {
 				return host.Result{ExitCode: 3, Stdout: []byte("inactive\n")}, nil
 			}
@@ -712,6 +735,10 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 				return host.Result{ExitCode: 3, Stdout: []byte("inactive\n")}, nil
 			}
 			return host.Result{Stdout: []byte("active\n")}, nil
+		case "stop":
+			if fixture.beforeStop != nil {
+				fixture.beforeStop(command.Args[1])
+			}
 		case "daemon-reload", "enable":
 			if command.Args[0] == fixture.unitFailureAction {
 				return host.Result{ExitCode: 9, Stderr: []byte("unit failure\n")}, nil
@@ -730,11 +757,11 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 		}
 		return host.Result{}, nil
 	case "chown":
+		if command.Args[0] == "ikigenba:ikigenba" && fixture.dataOwnershipFailure != nil {
+			return host.Result{}, fixture.dataOwnershipFailure
+		}
 		if len(command.Args) > 0 && command.Args[0] == "root:root" && fixture.optOwnershipFailure != nil {
 			return host.Result{}, fixture.optOwnershipFailure
-		}
-		if fixture.mutateOwnership {
-			fixture.applyOwnership(command.Args)
 		}
 		if len(command.Args) > 0 && command.Args[0] == "--recursive" {
 			if fixture.ownershipFailure != nil {
@@ -763,65 +790,12 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 	}
 }
 
-func (fixture *completedInstallFixture) applyOwnership(args []string) {
-	fixture.t.Helper()
-	uid, gid, paths := 0, 0, args[1:]
-	if args[0] == "ikigenba:ikigenba" {
-		uid, gid, paths = 1, 1, args[1:]
-	}
-	if args[0] == "--recursive" {
-		gid, paths = 1, args[2:]
-	}
-	for _, name := range paths {
-		if args[0] == "--recursive" {
-			if err := chownFixtureTree(name, uid, gid); err != nil {
-				fixture.t.Fatal(err)
-			}
-		} else if err := os.Chown(name, uid, gid); err != nil {
-			fixture.t.Fatal(err)
-		}
-	}
-}
-
-func chownFixtureTree(name string, uid, gid int) error {
-	filesystem, err := os.OpenRoot(name)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = filesystem.Close() }()
-	var apply func(string) error
-	apply = func(relative string) error {
-		if err := filesystem.Chown(relative, uid, gid); err != nil {
-			return err
-		}
-		info, err := filesystem.Lstat(relative)
-		if err != nil || !info.IsDir() {
-			return err
-		}
-		directory, err := filesystem.Open(relative)
-		if err != nil {
-			return err
-		}
-		entries, readErr := directory.ReadDir(-1)
-		closeErr := directory.Close()
-		if readErr != nil || closeErr != nil {
-			return errors.Join(readErr, closeErr)
-		}
-		for _, entry := range entries {
-			if err := apply(filepath.Join(relative, entry.Name())); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	return apply(".")
-}
-
 func completedInstallReports(serviceDetail string) []installReport {
 	return []installReport{
 		{"fetch", "notes-from-uri-v0.tar.xz, 0.0 MiB", true},
 		{"file", "notes", true},
 		{"secrets", "0 keys", true},
+		{"data", "/var/opt/ikigenba/notes", true},
 		{"unpack", "/opt/notes", true},
 		{"unit", "ikigenba-notes.socket, ikigenba-notes.service", true},
 		{"service", serviceDetail, true},
@@ -837,11 +811,13 @@ func completedInstallCommands(root string, initiallyActive bool) []commandCall {
 	return []commandCall{
 		{"xz", []string{"--decompress", "--stdout"}},
 		{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
+		{"systemctl", []string{"is-active", "ikigenba-notes.socket"}},
 		{"systemctl", []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
-		{"chown", []string{"root:root", filepath.Join(root, "opt")}},
 		{"id", []string{"--user", "ikigenba"}},
 		{"id", []string{"--group", "--name", "ikigenba"}},
-		{"chown", []string{"ikigenba:ikigenba", appRoot}},
+		{"chown", []string{"ikigenba:ikigenba", filepath.Join(root, "var", "opt", "ikigenba", "notes")}},
+		{"chown", []string{"root:root", filepath.Join(root, "opt")}},
+		{"chown", []string{"root:root", appRoot}},
 		{"chown", []string{"--recursive", "root:ikigenba", filepath.Join(appRoot, "bin"), filepath.Join(appRoot, "etc")}},
 		{"systemctl", []string{"daemon-reload"}},
 		{"systemctl", []string{"enable", "ikigenba-notes.service"}},
@@ -869,88 +845,4 @@ func assertMode(t *testing.T, name string, want os.FileMode) {
 	if info.Mode().Perm() != want {
 		t.Fatalf("%s mode = %v, want %v", name, info.Mode().Perm(), want)
 	}
-}
-
-func assertOwnership(t *testing.T, name string, uid, gid uint32) {
-	t.Helper()
-	info, err := os.Lstat(name)
-	if err != nil {
-		t.Fatalf("lstat %s: %v", name, err)
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatalf("%s has no syscall stat", name)
-	}
-	if stat.Uid != uid || stat.Gid != gid {
-		t.Fatalf("%s ownership = %d:%d, want %d:%d", name, stat.Uid, stat.Gid, uid, gid)
-	}
-}
-
-func rerunInOwnershipNamespace(t *testing.T) bool {
-	t.Helper()
-	key := "OPSCTL_OWNERSHIP_NAMESPACE_" + strings.ToUpper(strings.ReplaceAll(t.Name(), "/", "_"))
-	if os.Getenv(key) == "1" {
-		return false
-	}
-	current, err := user.Current()
-	if err != nil {
-		t.Fatal(err)
-	}
-	uid, err := strconv.Atoi(current.Uid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gid, err := strconv.Atoi(current.Gid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	subuid := subordinateIDStart(t, "/etc/subuid", current.Username)
-	subgid := subordinateIDStart(t, "/etc/subgid", current.Username)
-	mapping := func(host, namespace, count int) string {
-		return strconv.Itoa(host) + "," + strconv.Itoa(namespace) + "," + strconv.Itoa(count)
-	}
-	command := exec.Command("unshare")
-	command.Args = []string{"unshare",
-		"--user",
-		"--map-users=" + mapping(uid, 0, 1),
-		"--map-users=" + mapping(subuid, 1, 65536),
-		"--map-groups=" + mapping(gid, 0, 1),
-		"--map-groups=" + mapping(subgid, 1, 65536),
-		os.Args[0], "-test.run=^" + t.Name() + "$",
-	}
-	command.Env = append(os.Environ(), key+"=1")
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("ownership namespace: %v\n%s", err, output)
-	}
-	return true
-}
-
-func subordinateIDStart(t *testing.T, name, username string) int {
-	t.Helper()
-	var contents []byte
-	var err error
-	switch name {
-	case "/etc/subuid":
-		contents, err = os.ReadFile("/etc/subuid")
-	case "/etc/subgid":
-		contents, err = os.ReadFile("/etc/subgid")
-	default:
-		t.Fatalf("unexpected subordinate-id file %q", name)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	for line := range strings.SplitSeq(string(contents), "\n") {
-		fields := strings.Split(line, ":")
-		if len(fields) == 3 && fields[0] == username {
-			start, parseErr := strconv.Atoi(fields[1])
-			if parseErr != nil {
-				t.Fatal(parseErr)
-			}
-			return start
-		}
-	}
-	t.Fatalf("no subordinate id range for %s in %s", username, name)
-	return 0
 }

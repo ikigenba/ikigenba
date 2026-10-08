@@ -18,11 +18,12 @@ import (
 
 const restoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp> | --from <uri>]
 
-Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with a backup, and, when
-SERVICE declares a [database], replace that database with what litestream
-holds. Without --at or --from both halves are the newest there is. With
---from, everything comes from the one snapshot at that URI instead, database
-included. Nothing under bin/ or share/ is touched.
+Replace /opt/SERVICE/etc/ and /var/opt/ikigenba/SERVICE/state/ with a backup,
+and, when SERVICE declares a [database], replace that database with what
+litestream holds. Without --at or --from both halves are the newest there is.
+With --from, everything comes from the one snapshot at that URI instead,
+database included. Nothing under bin/ or share/ is touched. A SERVICE whose
+state/ is still under /opt/SERVICE/ is refused: install it first.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so

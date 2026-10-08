@@ -105,6 +105,7 @@ func (workflow *installWorkflow) run(ctx context.Context) error {
 		workflow.fetch,
 		workflow.inspectFiles,
 		workflow.fetchSecrets,
+		workflow.prepareData,
 		workflow.unpack,
 		workflow.publishUnit,
 		workflow.configure,
@@ -164,6 +165,184 @@ func (workflow *installWorkflow) fetchSecrets(ctx context.Context) error {
 	return nil
 }
 
+func (workflow *installWorkflow) prepareData(ctx context.Context) error {
+	app := workflow.checked.manifest.App
+	plan, err := InspectData(workflow.env.Root, app)
+	if err != nil {
+		return failInstallStage(workflow.hooks, "data", operationalFailure(err))
+	}
+	if err := EnsureAccount(ctx, workflow.env); err != nil {
+		return failInstallStage(workflow.hooks, "data", operationalFailure(err))
+	}
+	if err := PrepareDataDirectory(ctx, workflow.env, app); err != nil {
+		return failInstallStage(workflow.hooks, "data", operationalFailure(err))
+	}
+	if plan.Moves() {
+		for _, unit := range []struct {
+			name   string
+			active bool
+		}{{socketUnitName(app), workflow.checked.socketActive}, {appUnitName(app), workflow.checked.active}} {
+			if unit.active {
+				if err := executeInstallCommand(ctx, workflow.env, "stop "+unit.name, host.Command{Name: "systemctl", Args: []string{"stop", unit.name}}); err != nil {
+					return failInstallStage(workflow.hooks, "data", operationalFailure(err))
+				}
+			}
+		}
+	}
+	if err := ApplyData(workflow.env.Root, app, plan); err != nil {
+		return failInstallStage(workflow.hooks, "data", operationalFailure(err))
+	}
+	if err := workflow.hooks.Report("data", plan.Detail(app), true); err != nil {
+		return &InstallError{Code: 1, Message: "install failed", Cause: err}
+	}
+	return nil
+}
+
+// DataMoves describes the one-time moves from an app's installed tree.
+type DataMoves struct{ MoveState, MoveCache, DropCache bool }
+
+// Moves reports whether an entry must be renamed.
+func (moves DataMoves) Moves() bool { return moves.MoveState || moves.MoveCache }
+
+// Changes reports whether a move or drop is required.
+func (moves DataMoves) Changes() bool { return moves.Moves() || moves.DropCache }
+
+// Detail renders the data stage's host paths.
+func (moves DataMoves) Detail(app string) string {
+	detail := path.Join(DataRoot, app)
+	var moved []string
+	if moves.MoveState {
+		moved = append(moved, path.Join("/opt", app, "state"))
+	}
+	if moves.MoveCache {
+		moved = append(moved, path.Join("/opt", app, "cache"))
+	}
+	if len(moved) > 0 {
+		detail += "; moved " + strings.Join(moved, ", ")
+	}
+	if moves.DropCache {
+		detail += "; dropped " + path.Join("/opt", app, "cache")
+	}
+	return detail
+}
+
+// InspectData judges directory entries without following symbolic links.
+func InspectData(root, app string) (DataMoves, error) {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return DataMoves{}, err
+	}
+	defer func() { _ = filesystem.Close() }()
+	exists := func(name string) (bool, error) {
+		_, err := filesystem.Lstat(name)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	oldState, err := exists(path.Join("opt", app, "state"))
+	if err != nil {
+		return DataMoves{}, err
+	}
+	newState, err := exists(path.Join(strings.TrimPrefix(DataRoot, "/"), app, "state"))
+	if err != nil {
+		return DataMoves{}, err
+	}
+	if oldState && newState {
+		return DataMoves{}, fmt.Errorf("/opt/%s/state and %s/%s/state both exist", app, DataRoot, app)
+	}
+	oldCache, err := exists(path.Join("opt", app, "cache"))
+	if err != nil {
+		return DataMoves{}, err
+	}
+	newCache, err := exists(path.Join(strings.TrimPrefix(DataRoot, "/"), app, "cache"))
+	if err != nil {
+		return DataMoves{}, err
+	}
+	return DataMoves{MoveState: oldState && !newState, MoveCache: oldCache && !newCache, DropCache: oldCache && newCache}, nil
+}
+
+// ApplyData renames whole entries, preserving completed changes after failure.
+func ApplyData(root, app string, moves DataMoves) error {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	for _, entry := range []struct {
+		name string
+		move bool
+	}{{"state", moves.MoveState}, {"cache", moves.MoveCache}} {
+		if entry.move {
+			if err := filesystem.Rename(path.Join("opt", app, entry.name), path.Join(strings.TrimPrefix(DataRoot, "/"), app, entry.name)); err != nil {
+				return err
+			}
+		}
+	}
+	if moves.DropCache {
+		return filesystem.RemoveAll(path.Join("opt", app, "cache"))
+	}
+	return nil
+}
+
+// PrepareDataDirectory creates or normalizes the app data directory for a data migration.
+func PrepareDataDirectory(ctx context.Context, env host.Env, app string) error {
+	directory := rootedHostPath(env.Root, DataRoot, app)
+	_, err := lstatTimeoutPath(env.Root, directory)
+	existed := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := EnsureDataDirectory(ctx, env, app); err != nil {
+		return err
+	}
+	if !existed {
+		return nil
+	}
+	if err := chmodTimeoutPath(env.Root, directory, 0o750); err != nil {
+		return err
+	}
+	return executeInstallCommand(ctx, env, "set "+app+" data ownership", host.Command{Name: "chown", Args: []string{"ikigenba:ikigenba", directory}})
+}
+
+// EnsureDataDirectory prepares missing data directories without changing existing ones.
+func EnsureDataDirectory(ctx context.Context, env host.Env, app string) error {
+	filesystem, err := os.OpenRoot(env.Root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	for _, directory := range []string{"var", "var/opt", strings.TrimPrefix(DataRoot, "/"), path.Join(strings.TrimPrefix(DataRoot, "/"), app)} {
+		info, err := filesystem.Lstat(directory)
+		if err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("%s is not a directory", directory)
+			}
+			continue
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		mode := fs.FileMode(0o755)
+		isApp := directory == path.Join(strings.TrimPrefix(DataRoot, "/"), app)
+		if isApp {
+			mode = 0o750
+		}
+		if err := filesystem.Mkdir(directory, mode); err != nil {
+			return err
+		}
+		if err := filesystem.Chmod(directory, mode); err != nil {
+			return err
+		}
+		if isApp {
+			if err := executeInstallCommand(ctx, env, "set "+app+" data ownership", host.Command{Name: "chown", Args: []string{"ikigenba:ikigenba", rootedHostPath(env.Root, DataRoot, app)}}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (workflow *installWorkflow) unpack(ctx context.Context) error {
 	environment := renderEnvironment(workflow.checked.manifest, workflow.secrets, workflow.timeouts.DrainSeconds)
 	if failure := replaceInstalledFiles(ctx, workflow.env, workflow.checked, environment); failure != nil {
@@ -213,12 +392,13 @@ type stageFailure struct {
 }
 
 type inspectedArtifact struct {
-	basename string
-	manifest Manifest
-	entries  []archiveEntry
-	active   bool
-	disabled bool
-	warnings string
+	basename     string
+	manifest     Manifest
+	entries      []archiveEntry
+	active       bool
+	socketActive bool
+	disabled     bool
+	warnings     string
 }
 
 func (artifact *inspectedArtifact) hasTopLevel(name string) bool {
@@ -574,6 +754,18 @@ func completeFileStage(ctx context.Context, env host.Env, artifact *inspectedArt
 		err = &host.CommandError{Label: fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), Result: result}
 		return &stageFailure{code: 1, detail: err.Error(), cause: err}
 	}
+	socket := socketUnitName(artifact.manifest.App)
+	result, err = env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", socket}})
+	if err != nil {
+		return operationalFailure(commandTransportError("inspect "+socket, err))
+	}
+	switch result.ExitCode {
+	case 0:
+		artifact.socketActive = strings.TrimSpace(string(result.Stdout)) == "active"
+	case 3, 4:
+	default:
+		return operationalFailure(&host.CommandError{Label: "inspect " + socket, Result: result})
+	}
 	artifact.disabled, err = Disabled(ctx, env, artifact.manifest.App)
 	if err != nil {
 		return operationalFailure(err)
@@ -841,7 +1033,7 @@ func replaceInstalledFiles(ctx context.Context, env host.Env, artifact *inspecte
 	if err != nil {
 		return unpackFailure(err)
 	}
-	if err := filesystem.MkdirAll(appRoot, 0o750); err != nil {
+	if err := filesystem.MkdirAll(appRoot, 0o755); err != nil {
 		return unpackFailure(err)
 	}
 	staging, err := makeStagingDirectory(filesystem, artifact.manifest.App)
@@ -974,16 +1166,12 @@ func unpackFailure(err error) *stageFailure {
 
 func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifact, stopSeconds int64) *stageFailure {
 	manifest := artifact.manifest
-	if err := EnsureAccount(ctx, env); err != nil {
-		return operationalFailure(err)
-	}
-
 	appRoot := rootedHostPath(env.Root, "opt", manifest.App)
-	if err := makeAppRootWritable(env.Root, manifest.App); err != nil {
+	if err := setAppRootMode(env.Root, manifest.App); err != nil {
 		return operationalFailure(err)
 	}
-	if err := executeInstallCommand(ctx, env, fmt.Sprintf("make %s writable", safeDiagnosticToken(manifest.App)), host.Command{
-		Name: "chown", Args: []string{"ikigenba:ikigenba", appRoot},
+	if err := executeInstallCommand(ctx, env, fmt.Sprintf("set %s root ownership", safeDiagnosticToken(manifest.App)), host.Command{
+		Name: "chown", Args: []string{"root:root", appRoot},
 	}); err != nil {
 		return operationalFailure(err)
 	}
@@ -1096,13 +1284,13 @@ func applyInstalledPathModes(filesystem *os.Root, name, appRoot string, executab
 	return nil
 }
 
-func makeAppRootWritable(root, app string) error {
+func setAppRootMode(root, app string) error {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = filesystem.Close() }()
-	return filesystem.Chmod(path.Join("opt", app), 0o750)
+	return filesystem.Chmod(path.Join("opt", app), 0o755)
 }
 
 func writeAppUnit(root, app string, stopSeconds int64, resources Resources) error {
@@ -1168,7 +1356,7 @@ func serviceUnitBytes(root, app string, stopSeconds int64, resources Resources) 
 	}
 	return []byte("[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + "\n\n" +
 		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
-		"WorkingDirectory=" + appRoot + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"WorkingDirectory=" + rootedHostPath(root, DataRoot, app) + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
 		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stopSeconds, 10) + "\n" + limits.String() + "\n" +
 		"[Install]\nWantedBy=multi-user.target\n")
 }

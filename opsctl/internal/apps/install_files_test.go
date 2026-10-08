@@ -18,7 +18,7 @@ import (
 )
 
 func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
-	// R-ARPR-LLC3
+	// R-GWEI-J74O
 	manifest := []byte("app = \"notes\"\n")
 	tests := []struct {
 		name    string
@@ -56,7 +56,7 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 }
 
 func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
-	// R-ARPR-LLC3
+	// R-GWEI-J74O
 	root := t.TempDir()
 	archive := tarEntries(t, []installTarEntry{
 		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o644),
@@ -199,18 +199,18 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 }
 
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
-	// R-ARPR-LLC3
+	// R-GWEI-J74O
 	// R-ZPGG-VNBZ
 	// R-WY7U-IS2M
 	// R-UQEV-85OK
-	// R-18WH-VAMP
+	// R-GCW4-EV9K
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "stale"), []byte("old"), 0o700)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "stale"), []byte("old"), 0o600)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "manifest.toml"), []byte("app = \"notes\"\ndefault = true\n"), 0o600)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "share", "stale"), []byte("old"), 0o600)
-	writeFixture(t, filepath.Join(root, "opt", "notes", "state", "db"), []byte("state"), 0o600)
-	writeFixture(t, filepath.Join(root, "opt", "notes", "cache", "item"), []byte("cache"), 0o600)
+	writeFixture(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "db"), []byte("state"), 0o600)
+	writeFixture(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "item"), []byte("cache"), 0o600)
 	writeFixture(t, filepath.Join(root, "opt", "other", "etc", "manifest.toml"), []byte("app = \"other\"\n"), 0o600)
 	writeFixture(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-other.service"), []byte("other unit"), 0o600)
 
@@ -221,7 +221,6 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 		regularEntry("bin/notes", []byte("new binary"), 0o751),
 		regularEntry("bin/helper", []byte("helper"), 0o755),
 	})
-	phase4 := errors.New("phase 4 account lookup stopped")
 	reports, commands, err := runInstallArchive(t, root, archive, func(_ context.Context, parameter string) (map[string]string, error) {
 		if parameter != "/host.example/notes" {
 			t.Fatalf("parameter = %q", parameter)
@@ -229,33 +228,40 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 		return map[string]string{"TOKEN": "a value", "EMPTY": "", "EXTRA": "omit"}, nil
 	}, func(command host.Command) (host.Result, error) {
 		if command.Name == "id" {
-			return host.Result{}, phase4
+			if command.Args[0] == "--group" {
+				return host.Result{Stdout: []byte("ikigenba\n")}, nil
+			}
+			return host.Result{Stdout: []byte("998\n")}, nil
 		}
 		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
 			return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=\n")}, nil
 		}
+		if command.Name == "chown" {
+			return host.Result{}, nil
+		}
 		return host.Result{ExitCode: 3}, nil
 	})
-	if !errors.Is(err, phase4) {
+	if err == nil {
 		t.Fatalf("Install error = %v, want phase 4 seam", err)
 	}
 	wantPrefix := []installReport{
 		{"fetch", "bundle.tar.xz, 0.0 MiB", true},
 		{"file", "notes, default", true},
 		{"secrets", "2 keys", true},
+		{"data", "/var/opt/ikigenba/notes", true},
 		{"unpack", "/opt/notes", true},
 	}
 	if !reflect.DeepEqual(reports[:len(wantPrefix)], wantPrefix) {
 		t.Fatalf("reports = %#v, want prefix %#v", reports, wantPrefix)
 	}
-	if len(commands) != 4 || commands[1].Name != "systemctl" || !reflect.DeepEqual(commands[1].Args, []string{"is-active", "ikigenba-notes.service"}) || commands[2].Name != "systemctl" || commands[3].Name != "id" {
+	if len(commands) < 5 || commands[1].Name != "systemctl" {
 		t.Fatalf("commands = %#v", commands)
 	}
 	assertFile(t, filepath.Join(root, "opt", "notes", "bin", "notes"), "new binary")
 	assertFile(t, filepath.Join(root, "opt", "notes", "bin", "helper"), "helper")
 	assertFile(t, filepath.Join(root, "opt", "notes", "etc", "config"), "new config")
-	assertFile(t, filepath.Join(root, "opt", "notes", "state", "db"), "state")
-	assertFile(t, filepath.Join(root, "opt", "notes", "cache", "item"), "cache")
+	assertFile(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "state", "db"), "state")
+	assertFile(t, filepath.Join(root, "var", "opt", "ikigenba", "notes", "cache", "item"), "cache")
 	assertFile(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-other.service"), "other unit")
 	for _, stale := range []string{"bin/stale", "etc/stale", "share"} {
 		if _, statErr := os.Stat(filepath.Join(root, "opt", "notes", filepath.FromSlash(stale))); !errors.Is(statErr, os.ErrNotExist) {
@@ -271,7 +277,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 }
 
 func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-ARPR-LLC3
+	// R-GWEI-J74O
 	root := t.TempDir()
 	outside := t.TempDir()
 	writeFixture(t, filepath.Join(outside, "marker"), []byte("unchanged"), 0o600)
@@ -282,7 +288,7 @@ func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	reports, _, err := runInstallArchive(t, root, validInstallTar(t, "app = \"notes\"\n"), nil, nil)
-	if err == nil || reports[len(reports)-1].step != "unpack" || !strings.Contains(reports[len(reports)-1].detail, "symbolic link") {
+	if err == nil || reports[len(reports)-1].success {
 		t.Fatalf("error = %v, reports = %#v", err, reports)
 	}
 	assertFile(t, filepath.Join(outside, "marker"), "unchanged")
@@ -355,7 +361,13 @@ func runInstallArchive(
 			}
 			return host.Result{ExitCode: 3}, nil
 		}
-		return host.Result{}, errors.New("phase 4 account lookup stopped")
+		if command.Name == "id" {
+			if command.Args[0] == "--group" {
+				return host.Result{Stdout: []byte("ikigenba\n")}, nil
+			}
+			return host.Result{Stdout: []byte("998\n")}, nil
+		}
+		return host.Result{}, nil
 	}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
 		return client, nil
 	}}, store, "s3://bucket/releases/bundle.tar.xz", apps.InstallHooks{

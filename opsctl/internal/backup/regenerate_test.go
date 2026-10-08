@@ -25,7 +25,7 @@ func TestDatabaseFiles(t *testing.T) {
 }
 
 func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
-	// R-JKH0-KRY9 R-HLWS-EFZW R-LEL8-NRBG
+	// R-JKH0-KRY9 R-HLWS-EFZW R-T6GY-9YFX
 	root, store := regenerationFixture(t)
 	for key, value := range map[string]string{
 		"backup.s3_uri":              "s3://backups.example/hosts/example/",
@@ -53,10 +53,10 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 		"retention:\n  enabled: false\n" +
 		"dbs:\n" +
-		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/alpha/state/nested/alpha.db")) + "'\n" +
-		"    replicas:\n      - url: 's3://backups.example/hosts/example/alpha/'\n        force-path-style: true\n" +
-		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/zeta/state/zeta.db")) + "'\n" +
-		"    replicas:\n      - url: 's3://backups.example/hosts/example/zeta/'\n        force-path-style: true\n"
+		"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/alpha/state/nested/alpha.db")) + "'\n" +
+		"    replica:\n      url: 's3://backups.example/hosts/example/alpha/'\n      force-path-style: true\n" +
+		"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/zeta/state/zeta.db")) + "'\n" +
+		"    replica:\n      url: 's3://backups.example/hosts/example/zeta/'\n      force-path-style: true\n"
 	if got := readLitestream(t, root); got != want {
 		t.Fatalf("litestream.yml =\n%s\nwant:\n%s", got, want)
 	}
@@ -67,7 +67,7 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 }
 
 func TestRegenerateEmptyDatabaseSequence(t *testing.T) {
-	// R-LEL8-NRBG
+	// R-T6GY-9YFX
 	root, store := regenerationFixture(t)
 	writeService(t, root, "notes", "app = \"notes\"\n")
 	if _, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store); err != nil {
@@ -169,8 +169,8 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 				"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 				"retention:\n  enabled: false\n" +
 				"dbs:\n" +
-				"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/notes/state/notes.db")) + "'\n" +
-				"    replicas:\n      - url: '" + prefix + "notes/'\n        force-path-style: true\n"
+				"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/notes/state/notes.db")) + "'\n" +
+				"    replica:\n      url: '" + prefix + "notes/'\n      force-path-style: true\n"
 			if got := readLitestream(t, root); got != want {
 				t.Fatalf("litestream.yml = %q, want %q", got, want)
 			}
@@ -179,7 +179,7 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 }
 
 func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
-	// R-LEL8-NRBG R-1A4E-92DE
+	// R-T6GY-9YFX R-1A4E-92DE
 	root, store := regenerationFixture(t)
 	for _, key := range []string{"backup.service_db_seconds", "backup.service_wal_seconds"} {
 		if err := store.Set(key, "9223372036"); err != nil {
@@ -197,8 +197,8 @@ func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
 		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 		"retention:\n  enabled: false\n" +
 		"dbs:\n" +
-		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/bad_name/state/app.db")) + "'\n" +
-		"    replicas:\n      - url: 's3://backups/hosts/example/bad_name/'\n        force-path-style: true\n"
+		"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/bad_name/state/app.db")) + "'\n" +
+		"    replica:\n      url: 's3://backups/hosts/example/bad_name/'\n      force-path-style: true\n"
 	if got := readLitestream(t, root); got != want {
 		t.Fatalf("litestream.yml = %q, want %q", got, want)
 	}
@@ -310,7 +310,10 @@ func TestRegenerateDoesNotTouchDatabaseOrExecuteCommands(t *testing.T) {
 	// R-JU87-MXVT
 	root, store := regenerationFixture(t)
 	writeService(t, root, "notes", "[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
-	database := filepath.Join(root, "opt/notes/state/notes.db")
+	database := filepath.Join(root, "var/opt/ikigenba/notes/state/notes.db")
+	if err := os.MkdirAll(filepath.Dir(database), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(database, []byte("database marker"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +328,7 @@ func TestRegenerateDoesNotTouchDatabaseOrExecuteCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = filesystem.Close() }()
-	data, err := filesystem.ReadFile("opt/notes/state/notes.db")
+	data, err := filesystem.ReadFile("var/opt/ikigenba/notes/state/notes.db")
 	if err != nil || string(data) != "database marker" {
 		t.Fatalf("database = %q, %v; want unchanged marker", data, err)
 	}

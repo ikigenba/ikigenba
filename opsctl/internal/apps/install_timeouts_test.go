@@ -15,7 +15,7 @@ import (
 )
 
 func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
-	// R-UUUF-JC2O R-07QY-M7GE R-Y1GZ-HRRY
+	// R-UUUF-JC2O R-GP34-8KOI R-Y1GZ-HRRY
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{
 		"apps.drain_seconds": "7", "apps.stop_seconds": "19",
@@ -106,7 +106,7 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 }
 
 func TestSetupTimeoutsUpdatesOnlyInstalledAppsInNameOrder(t *testing.T) {
-	// R-07QY-M7GE R-Y1GZ-HRRY R-UYI4-ONAR
+	// R-GP34-8KOI R-Y1GZ-HRRY R-GNV7-USXT
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{"apps.drain_seconds": "8", "apps.stop_seconds": "20"})
 	for name, content := range map[string]string{
@@ -176,7 +176,7 @@ func TestSetupTimeoutsUpdatesOnlyInstalledAppsInNameOrder(t *testing.T) {
 }
 
 func TestSetupTimeoutsStopsAfterReloadFailure(t *testing.T) {
-	// R-UYI4-ONAR
+	// R-GNV7-USXT
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	appRoot := filepath.Join(root, "opt", "notes")
@@ -200,7 +200,7 @@ func TestSetupTimeoutsStopsAfterReloadFailure(t *testing.T) {
 }
 
 func TestSetupTimeoutsReturnsMissingEnvWithoutWritingUnit(t *testing.T) {
-	// R-07QY-M7GE R-UYI4-ONAR
+	// R-GP34-8KOI R-GNV7-USXT
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	appRoot := filepath.Join(root, "opt", "notes")
@@ -248,7 +248,7 @@ func TestSetupTimeoutsLeavesDisabledAppInactive(t *testing.T) {
 }
 
 func TestSetupTimeoutsIgnoresServicesWithoutBinary(t *testing.T) {
-	// R-07QY-M7GE
+	// R-GP34-8KOI
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	state := filepath.Join(root, "opt", "notes", "state", "keep")
@@ -266,7 +266,7 @@ func TestSetupTimeoutsIgnoresServicesWithoutBinary(t *testing.T) {
 }
 
 func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T) {
-	// R-07QY-M7GE
+	// R-GP34-8KOI
 	tests := []struct{ name, before, after string }{
 		{"replace both", "# header\nIKIGENBA_SERVICES=\"old\"\nKEEP='literal'\nDRAIN_SECONDS=0005\nTAIL=x", "# header\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\nKEEP='literal'\nDRAIN_SECONDS=5\nTAIL=x"},
 		{"append drain", "IKIGENBA_SERVICES=old\nKEEP=x", "IKIGENBA_SERVICES=/var/lib/ikigenba/services.json\nKEEP=x\nDRAIN_SECONDS=5\n"},
@@ -322,7 +322,7 @@ func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T
 }
 
 func TestSetupTimeoutsRejectsTimingBeforeWritingAndNonAppsStayUntouched(t *testing.T) {
-	// R-07QY-M7GE
+	// R-GP34-8KOI
 	root := t.TempDir()
 	fixture := newCompletedInstallFixture(t, root, false)
 	if err := fixture.run(); err != nil {

@@ -637,7 +637,7 @@ func TestParseManifestPortErrorTakesPrecedence(t *testing.T) {
 	}
 }
 
-// R-XW3J-G8NZ
+// R-G80I-VSAS
 func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
 	valid := []string{
 		"[database]\nengine = \"sqlite\"\npath = \"state/app.db\"",
@@ -677,6 +677,8 @@ func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
 			t.Errorf("ParseManifest(%q) succeeded with %#v", data, manifest)
 		}
 	}
+	// R-GAGB-NBS6: nested fields do not supply the required direct engine.
+	// R-XSFU-AXFW: decoding errors return no partially usable manifest.
 	for _, data := range []string{
 		"[database.child]",
 		"[database.child]\nengine = \"sqlite\"\npath = \"state/app.db\"",
@@ -685,7 +687,7 @@ func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
 		"database = { child.value = 1 }",
 	} {
 		manifest, err := apps.ParseManifest([]byte(data))
-		if err == nil || !strings.Contains(err.Error(), "database.engine") {
+		if err == nil || err.Error() != "'database.engine' must be \"sqlite\"" {
 			t.Errorf("ParseManifest(%q) = %#v, %v; want missing direct database engine", data, manifest, err)
 		}
 		if !reflect.DeepEqual(manifest, apps.Manifest{}) {
@@ -694,8 +696,9 @@ func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	stateDir := filepath.Join(root, "state")
-	if err := os.Mkdir(stateDir, 0o750); err != nil {
+	dataDir := filepath.Join(root, "var", "opt", "ikigenba", "app")
+	stateDir := filepath.Join(dataDir, "state")
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatalf("create state directory: %v", err)
 	}
 	databasePath := filepath.Join(stateDir, "app.db")
@@ -704,7 +707,7 @@ func TestParseManifestValidatesSQLiteDatabaseDeclaration(t *testing.T) {
 		t.Fatalf("create existing database: %v", err)
 	}
 	before := snapshotDatabaseState(t, databasePath, stateDir)
-	t.Chdir(root)
+	t.Chdir(dataDir)
 	if _, err := apps.ParseManifest([]byte("[database]\nengine = \"sqlite\"\npath = \"state/app.db\"")); err != nil {
 		t.Fatalf("ParseManifest with existing database returned error: %v", err)
 	}

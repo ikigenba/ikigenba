@@ -33,10 +33,15 @@ const uninstallUsage = `Usage: opsctl uninstall APP
 Take APP off the host: stop ikigenba-APP.socket and ikigenba-APP.service,
 socket first so no request starts the service again, disable both, remove
 both units (which ends a disabled APP's disabled state: a later install is a
-first install and comes up enabled), then remove /opt/APP/bin/, etc/, share/, and cache/. /opt/APP/state/ is kept
-untouched, so APP is still a service the host backs up, and a later install
-lands over its data the way an install over a restore does. Removing state/ is
-a decision made by hand, never here.
+first install and comes up enabled), then remove /opt/APP/ and
+/var/opt/ikigenba/APP/cache/. /var/opt/ikigenba/APP/state/ is kept untouched,
+so APP is still a service the host backs up, and a later install lands over
+its data the way an install over a restore does. Removing state/ is a decision
+made by hand, never here.
+
+A state/ or cache/ still under /opt/APP/ is first moved to
+/var/opt/ikigenba/APP/, once APP is stopped, as 'opsctl install' moves it; a
+state/ in both places fails the uninstall with nothing removed.
 
 The nginx configuration, /var/lib/ikigenba/services.json, and
 /etc/litestream.yml are regenerated from every app left on the host, so APP's

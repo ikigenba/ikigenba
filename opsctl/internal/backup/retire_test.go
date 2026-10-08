@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -21,7 +22,7 @@ var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.RetireRes
 
 func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 	// R-Y91D-XNRC R-Z3JR-9L00 R-X9FA-P1PZ R-XAN7-2TGO
-	// R-YW7H-7AUJ R-YUZK-TJ3U
+	// R-YW7H-7AUJ R-DEYN-CSFV
 	shape := backup.RetireResult{
 		Services:          []string{"alpha"},
 		Disabled:          []string{"ikigenba-alpha.service"},
@@ -52,9 +53,9 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
-	writeFile(t, root, "opt/alpha/state/app.db", "database", 0o600)
-	writeFile(t, root, "opt/alpha/state/ordinary", "alpha", 0o600)
-	writeFile(t, root, "opt/beta/state/value", "data only", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "database", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/ordinary", "alpha", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/beta/state/value", "data only", 0o600)
 	writeFile(t, root, "etc/letsencrypt/live/site/cert.pem", "certificate", 0o600)
 
 	client := newFileCloud()
@@ -98,7 +99,7 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 	if !retirementStopsOrdered(executor.commands, []string{"ikigenba-alpha.socket", "ikigenba-alpha.service", "litestream.service"}) {
 		t.Fatalf("stop order = %v", executor.commands)
 	}
-	wantSync := "litestream sync -wait -timeout 60 -socket " + filepath.Join(root, "var/run/litestream.sock") + " -json " + filepath.Join(root, "opt/alpha/state/app.db")
+	wantSync := "litestream sync -wait -timeout 60 -socket " + filepath.Join(root, "var/run/litestream.sock") + " -json " + filepath.Join(root, "var/opt/ikigenba/alpha/state/app.db")
 	if len(executor.commands) < 5 || executor.commands[executor.litestreamStop-1] != wantSync || executor.commands[executor.litestreamStop] != "systemctl stop litestream.service" {
 		t.Fatalf("sync and stop commands = %v, want serial sync %q then stop", executor.commands, wantSync)
 	}
@@ -135,7 +136,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("cloud opening is preworkflow", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
 		result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
 			return nil, errors.New("storage unavailable")
@@ -148,7 +149,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("missing cloud dependency is preworkflow", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		before := fileTreeSnapshot(t, root)
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
 		result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{}, store)
@@ -163,7 +164,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("invalid discovered name before unit operation", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/bad_name/state/value", "data", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/bad_name/state/value", "data", 0o600)
 		client := newFileCloud()
 		executor := newRetireExecutor(nil)
 		result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
@@ -175,8 +176,8 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("later service inspection prevents all stops", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
-		writeFile(t, root, "opt/zeta/state/value", "zeta", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/zeta/state/value", "zeta", 0o600)
 		client := newFileCloud()
 		transport := errors.New("system bus unavailable")
 		executor := newRetireExecutor(map[string]bool{"alpha": true, "zeta": true})
@@ -199,7 +200,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("litestream nonzero preserves stopped services", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		client := newFileCloud()
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
 		executor.fail = func(command string) (host.Result, error, bool) {
@@ -221,7 +222,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("service stop transport failure prevents later actions", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
-		writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		client := newFileCloud()
 		transport := errors.New("connection closed")
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
@@ -247,7 +248,7 @@ func TestRetireSocketFirstAndDisabledClassification(t *testing.T) {
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma", "delta"} {
-		writeFile(t, root, "opt/"+name+"/state/value", name, 0o600)
+		writeFile(t, root, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 	}
 	client := newFileCloud()
 	executor := newRetireExecutor(map[string]bool{"alpha": true, "beta": true, "delta": true})
@@ -280,7 +281,7 @@ func TestRetireDisabledInspectionFailurePreventsStops(t *testing.T) {
 	// R-XAN7-2TGO
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 	client := newFileCloud()
 	executor := newRetireExecutor(map[string]bool{"alpha": true})
 	executor.fail = func(command string) (host.Result, error, bool) {
@@ -305,7 +306,7 @@ func TestRetireDisabledRequiresInitiallyInactiveUnits(t *testing.T) {
 		t.Run(initialState, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
-			writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 			client := newFileCloud()
 			executor := newRetireExecutor(map[string]bool{"alpha": true})
 			executor.disabled["alpha"] = true
@@ -342,7 +343,7 @@ func TestRetirePostStopRequiresInactiveState(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
-			writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 			client := newFileCloud()
 			executor := newRetireExecutor(map[string]bool{"alpha": true})
 			executor.fail = func(command string) (host.Result, error, bool) {
@@ -373,7 +374,7 @@ func containsRetireCommand(commands []string, want string) bool {
 }
 
 func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
-	// R-YUZK-TJ3U
+	// R-DEYN-CSFV
 	tests := []struct {
 		name   string
 		output func(string) []byte
@@ -415,7 +416,7 @@ func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
 			writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 			client := newFileCloud()
 			executor := newRetireExecutor(map[string]bool{"alpha": false})
-			databasePath := filepath.Join(root, "opt/alpha/state/app.db")
+			databasePath := filepath.Join(root, "var/opt/ikigenba/alpha/state/app.db")
 			executor.fail = func(command string) (host.Result, error, bool) {
 				if strings.HasPrefix(command, "litestream sync ") {
 					return host.Result{Stdout: test.output(databasePath)}, nil, true
@@ -441,7 +442,7 @@ func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
 }
 
 func TestRetireSyncCommandFailuresStopWithoutRetry(t *testing.T) {
-	// R-YUZK-TJ3U
+	// R-DEYN-CSFV
 	transportErr := errors.New("control socket unavailable")
 	tests := []struct {
 		name    string
@@ -483,7 +484,7 @@ func TestRetireSyncCommandFailuresStopWithoutRetry(t *testing.T) {
 }
 
 func TestRetireRetainsPartialProofAndOrderedStopError(t *testing.T) {
-	// R-YUZK-TJ3U
+	// R-DEYN-CSFV
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
@@ -521,7 +522,7 @@ func TestRetireRetainsPartialProofAndOrderedStopError(t *testing.T) {
 }
 
 func TestRetireSuccessfulProofStillRequiresLitestreamStop(t *testing.T) {
-	// R-YUZK-TJ3U
+	// R-DEYN-CSFV
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
@@ -556,7 +557,7 @@ func TestRetireTimestampCollisionDoesNotAdvance(t *testing.T) {
 	// R-YW7H-7AUJ
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
-	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+	writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 	client := newFileCloud()
 	basename := "1970-01-01T00:00:07Z.tar.zst"
 	alphaURI := "s3://bucket/host/alpha/" + basename
@@ -587,7 +588,7 @@ func TestRetireArchiveFailuresRetainResultsAndStoppedUnits(t *testing.T) {
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
-		writeFile(t, root, "opt/"+name+"/state/value", name, 0o600)
+		writeFile(t, root, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 	}
 	client := newFileCloud()
 	oldObjects := map[string]string{
@@ -631,7 +632,7 @@ func TestRetireInterruptionStopsBeforeHostArchive(t *testing.T) {
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
-		writeFile(t, root, "opt/"+name+"/state/value", name, 0o600)
+		writeFile(t, root, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 	}
 	client := newFileCloud()
 	oldObjects := map[string]string{
@@ -766,4 +767,35 @@ func containsRetireAction(commands []string, action string) bool {
 		}
 	}
 	return false
+}
+
+func TestRetireSkipsUnmovedDatabaseAndReportsFileFailure(t *testing.T) {
+	// R-DEYN-CSFV R-JIF3-56FZ
+	for _, kind := range []string{"directory", "file", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			writeFile(t, root, "opt/alpha/etc/manifest.toml", "[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "live", 0o600)
+			switch kind {
+			case "directory":
+				writeFile(t, root, "opt/alpha/state/value", "old", 0o600)
+			case "file":
+				writeFile(t, root, "opt/alpha/state", "old", 0o600)
+			case "symlink":
+				if err := os.Symlink("/missing", filepath.Join(root, "opt/alpha/state")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			executor := newRetireExecutor(map[string]bool{"alpha": true})
+			client := newFileCloud()
+			got, err := backup.Retire(context.Background(), fileHostEnv(root, executor.execute), cloud.Env{Open: client.open}, store)
+			if err != nil || !got.ServicesStopped || !got.LitestreamStopped || len(got.SyncedDatabases) != 0 || len(got.Files) != 1 || got.Files[0].Err == nil || got.Files[0].Err.Error() != "/opt/alpha/state has not moved; install alpha first" || got.Host.Err != nil {
+				t.Fatalf("Retire = %+v, %v", got, err)
+			}
+			if countCommands(executor.commands, "litestream sync ") != 0 || len(client.puts) != 1 || !strings.Contains(client.puts[0], "/host/") {
+				t.Fatalf("commands %v, puts %v", executor.commands, client.puts)
+			}
+		})
+	}
 }
