@@ -50,11 +50,11 @@ Every HTML page these stories fix is drawn with the banner (S3): its
 `<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet, links
 `/_appkit/favicon.svg` as its icon, loads `/_appkit/feedback.js`, so that in
 a browser an enabled button visibly reacts as the user presses it (S3), and declares the phone-width viewport, it opens
-with the banner — when auth's services file lists services with an icon, the
-launcher (S3), whose button comes first, immediately before the mark; then
-the mark, the profile icon titled with the user's email as a link to `/`, and
-the `Sign out` button
-POSTing to `/logout` — its content sits in the page's one `<main>`, and it ends
+with the banner — the mark, showing the favicon, `Ikigenba`, and the service
+`auth` (S3); when auth's services file lists services with an icon, the
+launcher (S3), whose button comes immediately after the mark; then the
+profile icon titled with the user's email as a link to `/`, and the sign-out
+button labelled and titled `Sign out`, POSTing to `/logout` — its content sits in the page's one `<main>`, and it ends
 with the page footer reading `auth <display>` (S3). A card is a
 `<section class="card">` whose `<header>` holds an `<h2>` naming it. An icon
 is an inline `<svg class="ico" aria-hidden="true">` drawn before a button's

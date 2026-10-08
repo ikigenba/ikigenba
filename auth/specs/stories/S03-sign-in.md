@@ -78,11 +78,14 @@ page for a signed-in user — the profile here, the token-created page and
 the rejected-create page (`S05-tokens.md`), and the approve page
 (`S10-mcp-clients.md`) — is drawn with the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
-mark, the profile icon, and a sign-out button, in that order; when the page
-has a launcher (below), the launcher button comes first, immediately before
-the mark, and without a launcher there is no such button. The mark's text is
-`ikigenba`, and it names the service it fronts, `auth`, which a browser shows as
-`ikigenba │ auth`; the mark is not a link. The profile icon is a link to `/`,
+mark, the launcher button, the profile icon, and a sign-out icon button, in
+that order; the launcher button is there only when the page has a launcher
+(below), immediately after the mark, and without a launcher there is no such
+button. The mark shows the platform's favicon, then the product name
+`Ikigenba`, then the service it fronts, `auth`: auth's own icon and then its
+name when the services file (below) lists `auth` with an icon, and the name
+alone otherwise. The favicon in the mark is decoration and has no text of its
+own; the mark is not a link. The profile icon is a link to `/`,
 auth's own profile: `<a class="profile">`, labelled `Profile` for assistive
 technology and titled with the user's email address, which a browser shows as
 its tooltip, so hovering it shows who is signed in. It shows the `user-circle`
@@ -98,9 +101,10 @@ environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE`,
 
 The sign-out button signs the user out of the whole space in one click. It
 follows the profile icon in the banner, and it is a form, not a link:
-pressing it POSTs to `/logout` (`A user signs out`). The `logout` icon is drawn before
-the text and hidden from assistive technology, so the button's accessible
-text is `Sign out` alone.
+pressing it POSTs to `/logout` (`A user signs out`). Like the profile icon,
+it shows the `logout` icon and no text of its own: it is labelled `Sign out`
+for assistive technology and titled `Sign out`, which a browser shows as its
+tooltip.
 
 The launcher is the banner's way to the platform's other services. It is
 there only when the host's services file lists services: auth takes the
@@ -123,8 +127,8 @@ With no variable, a path
 not in its plain form, no readable file, a file that is not such an object, or
 no usable entry that carries an icon, the page has no launcher, and is
 otherwise the same page; auth writes nothing to stderr about the launcher,
-since a broken launcher never breaks a page. When the launcher is there, the banner opens with a
-launcher button labelled `Services`, immediately before the mark; pressing it
+since a broken launcher never breaks a page. When the launcher is there, the banner holds a
+launcher button labelled `Services`, immediately after the mark; pressing it
 opens the list of the services, which is closed when the page loads. The list
 holds a search field labelled `Find a service`, with the placeholder
 `Find a service`, and one entry per service that carries an icon, in the
@@ -755,9 +759,11 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
 link, feedback script, and viewport every page has, drawn with the banner:
-the mark's text `ikigenba`, naming the service `auth` and not a link, the
-profile icon labelled `Profile` and titled `ada@michaelgreenly.dev` as a link
-to `/`, and the `Sign out` button in the form that POSTs to `/logout`. The
+the mark, showing the platform's favicon, the text `Ikigenba`, and the
+service's name `auth` with no icon, since the services file does not list
+`auth`, and not a link; the profile icon labelled `Profile` and titled
+`ada@michaelgreenly.dev` as a link to `/`; and the sign-out button, labelled
+and titled `Sign out`, in the form that POSTs to `/logout`. The
 banner holds no
 launcher button, and the page loads no `/_appkit/launcher.js`, since auth's
 services file lists no service with an icon here. Inside the page's one
@@ -1003,8 +1009,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the profile page of `A user asks for the profile`,
-with the same banner, and the banner also holds the launcher button labelled
-`Services`, first in the banner, immediately before the mark. The page
+with the same banner, except that its mark shows auth's icon before the name
+`auth`, and the banner also holds the launcher button labelled `Services`,
+immediately after the mark. The page
 carries the list of services labelled `Services`, holding the search field
 labelled `Find a service` with the placeholder `Find a service` and three
 entries in the file's order: `auth`, showing its
