@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
-	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 type rejectingSink struct{}
@@ -91,7 +90,7 @@ func startTrailRun(t *testing.T, sink telemetry.Sink, issuer string) (Process, c
 }
 
 func TestRunTrailDelivery(t *testing.T) {
-	// R-BEG2-DPNX R-BGVV-595B R-BKJK-AKDE R-2MRR-GNCF R-B74O-337R R-2J42-BC4C
+	// R-BEG2-DPNX R-BGVV-595B R-BKJK-AKDE R-2MRR-GNCF R-8UWU-4C73 R-2J42-BC4C
 	for _, reject := range []bool{false, true} {
 		t.Run(fmt.Sprint(reject), func(t *testing.T) {
 			sink := &observedSink{reject: reject}
@@ -138,7 +137,7 @@ func TestRunTrailDelivery(t *testing.T) {
 				t.Fatalf("events=%+v", events)
 			}
 			first, last := events[0], events[len(events)-1]
-			if first.Name != "service.started" || first.RequestID != "" || first.User != "" || len(first.Attrs) != 1 || first.Attrs["version"] != version.Version {
+			if first.Name != "service.started" || first.RequestID != "" || first.User != "" || len(first.Attrs) != 1 || first.Attrs["version"] != p.Version {
 				t.Fatalf("start=%+v", first)
 			}
 			if last.Name != "service.stopping" || last.RequestID != "" || last.User != "" || len(last.Attrs) != 1 || last.Attrs["reason"] != "test stop" {
@@ -306,7 +305,7 @@ func TestAppkitOverflowAndLateEvents(t *testing.T) {
 	release := make(chan struct{})
 	sink := &queueSink{entered: entered, release: release}
 	var output bytes.Buffer
-	w := telemetry.New(telemetry.Config{Service: "auth", Version: version.Version, Sink: sink, Stderr: &output, Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }, Rand: zeroRand{}})
+	w := telemetry.New(telemetry.Config{Service: "auth", Version: "test display", Sink: sink, Stderr: &output, Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }, Rand: zeroRand{}})
 	w.Ready()
 	<-entered
 	for range telemetry.QueueCapacity {

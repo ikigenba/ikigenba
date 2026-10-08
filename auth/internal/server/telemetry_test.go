@@ -54,6 +54,8 @@ func newTrail(t *testing.T, cfg Config, random io.Reader) *trailFixture {
 
 func (f *trailFixture) events(t *testing.T) []telemetry.Event {
 	t.Helper()
+	// R-8YKJ-9NF6: observe the Config.Telemetry writer's recorded Events through
+	// Capture.Events after Flush, keeping their returned order and envelope fields.
 	if err := f.writer.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +67,8 @@ func (f *trailFixture) events(t *testing.T) []telemetry.Event {
 
 func (f *trailFixture) request(t *testing.T, r *http.Request) (*httptest.ResponseRecorder, []telemetry.Event) {
 	t.Helper()
+	// R-8ZSF-NF5V: observe events formed while this request is served, bounded
+	// by the ServeHTTP call, rather than grouping events by their request id.
 	before := len(f.events(t))
 	w := httptest.NewRecorder()
 	f.server.ServeHTTP(w, r)
@@ -80,7 +84,8 @@ func trailRequest(method, target string) *http.Request {
 
 func assertTrail(t *testing.T, events []telemetry.Event, r *http.Request, status int, names ...string) {
 	t.Helper()
-	// R-10QY-2VS1 R-11YU-GNIQ R-T6HN-3SJG R-BD85-ZXX8: the writer's captured envelope defines the ordered request trail.
+	// R-T6HN-3SJG R-BD85-ZXX8: assert the recorded Events' RequestID, User and
+	// Attrs fields, with domain events between this request's boundary events.
 	want := append([]string{"request.started"}, names...)
 	want = append(want, "request.finished")
 	got := make([]string, len(events))
