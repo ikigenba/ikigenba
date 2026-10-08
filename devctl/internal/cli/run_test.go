@@ -240,7 +240,7 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 	}{
 		{name: "space", args: []string{"space", "list"}},
 		{name: "secrets", args: []string{"secrets", "list", "sbx1"}},
-		{name: "deploy", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "deploy", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
 		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
 		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
 		{name: "apex", args: []string{"apex", "show"}},
@@ -280,8 +280,8 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 		{name: "space invalid", args: []string{"space", "list"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "secrets missing", args: []string{"secrets", "list", "sbx1"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
 		{name: "secrets invalid", args: []string{"secrets", "list", "sbx1"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
-		{name: "deploy missing", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive, wantStdout: "file: ok (crm v1.2.3)\n", wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
-		{name: "deploy invalid", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive, rootFile: `{}`, wantStdout: "file: ok (crm v1.2.3)\n", wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "deploy missing", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive, wantStdout: "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n", wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "deploy invalid", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive, rootFile: `{}`, wantStdout: "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n", wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "restore missing", args: []string{"restore", "sbx1", "crm"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
 		{name: "restore invalid", args: []string{"restore", "sbx1", "crm"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
 		{name: "remove missing", args: []string{"remove", "sbx1", "crm"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
@@ -339,7 +339,7 @@ func TestEveryCloudCommandStopsAtMissingRootFile(t *testing.T) {
 		{name: "space logs", args: []string{"space", "logs", "sbx1", "crm"}},
 		{name: "secrets push", args: []string{"secrets", "push", "sbx1"}},
 		{name: "secrets list", args: []string{"secrets", "list", "sbx1"}},
-		{name: "deploy", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "deploy", args: []string{"deploy", "sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
 		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
 		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
 		{name: "apex set", args: []string{"apex", "set", "crm.sbx1"}},
@@ -386,7 +386,7 @@ func TestEverySpaceOperandUsesSharedGrammarBeforeCloud(t *testing.T) {
 		{name: "space logs", args: []string{"space", "logs", "crm.sbx1", "crm"}},
 		{name: "secrets push", args: []string{"secrets", "push", "crm.sbx1"}},
 		{name: "secrets list", args: []string{"secrets", "list", "crm.sbx1"}},
-		{name: "deploy", args: []string{"deploy", "crm.sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "deploy", args: []string{"deploy", "crm.sbx1", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
 		{name: "restore", args: []string{"restore", "crm.sbx1", "crm"}},
 		{name: "remove", args: []string{"remove", "crm.sbx1", "crm"}},
 	}
@@ -405,7 +405,7 @@ func TestEverySpaceOperandUsesSharedGrammarBeforeCloud(t *testing.T) {
 			want := "devctl: 'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'\n"
 			wantStdout := ""
 			if test.name == "deploy" {
-				wantStdout = "file: ok (crm v1.2.3)\n"
+				wantStdout = "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n"
 			}
 			if result.code != 2 || result.stdout != wantStdout || result.stderr != want || cloudCalls != 0 {
 				t.Fatalf("Run(%q) = %#v, cloud calls %d", test.args, result, cloudCalls)
@@ -517,7 +517,7 @@ func TestCommandsReportMissingSpace(t *testing.T) {
 		{name: "space restart", args: []string{"space", "restart", "gone", "crm"}},
 		{name: "space logs", args: []string{"space", "logs", "gone", "crm"}},
 		{name: "secrets push", args: []string{"secrets", "push", "gone", "crm"}, prepare: prepareCLIApp},
-		{name: "deploy", args: []string{"deploy", "gone", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "deploy", args: []string{"deploy", "gone", "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"}, prepare: prepareCLIArchive},
 		{name: "remove", args: []string{"remove", "gone", "crm"}},
 		{name: "restore", args: []string{"restore", "gone", "crm"}},
 		{name: "apex set", args: []string{"apex", "set", "crm.gone"}},
@@ -534,7 +534,7 @@ func TestCommandsReportMissingSpace(t *testing.T) {
 			}
 			wantStdout := ""
 			if test.name == "deploy" {
-				wantStdout = "file: ok (crm v1.2.3)\n"
+				wantStdout = "file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)\n"
 			}
 			assertResult(t, invokeWithDeps(deps, test.args...), 1, wantStdout, "devctl: no space at 'gone.example.test'\n")
 			if !reflect.DeepEqual(ec2.listDomains, []string{"example.test"}) {
@@ -563,7 +563,7 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"space", "list"},
 		{"secrets", "list", "sbx1"},
 		{"build", "crm"},
-		{"deploy", "sbx1", "crm/dist/crm-v1.0.0.tar.xz"},
+		{"deploy", "sbx1", "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"},
 		{"restore", "sbx1", "crm"},
 		{"remove", "sbx1", "crm"},
 		{"apex", "show"},
@@ -1199,7 +1199,7 @@ func prepareCLIApp(t *testing.T, deps seam.Deps) seam.Deps {
 
 func prepareCLIArchive(t *testing.T, deps seam.Deps) seam.Deps {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(deps.Dir, "crm-v1.2.3.tar.xz"), []byte("archive"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(deps.Dir, "crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz"), []byte("archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	deps.Exec = cliCheckoutAndHostExec(t, deps.Exec)

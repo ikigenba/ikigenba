@@ -24,18 +24,19 @@ const (
 	helpCommand = "devctl deploy --help"
 	helpText    = `Usage: devctl deploy <space> <file>
 
-Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
+Upload <file>, an <app>/dist/<app>-<sha>.tar.xz written by build, to the
 space's deploy/ prefix in the bucket and have opsctl on the space install it
-from there. The app and tag (v<semver>) are read from the file name.
+from there. The app and commit sha (40 lowercase hex digits) are read from the
+file name.
 `
 )
 
 type invocation struct {
-	space   string
-	file    string
-	app     string
-	version string
-	path    string
+	space string
+	file  string
+	app   string
+	sha   string
+	path  string
 }
 
 // Run executes a deploy command.
@@ -56,7 +57,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	if err != nil {
 		return err
 	}
-	space.Step(stdout, "file", invocation.app+" "+invocation.version)
+	space.Step(stdout, "file", invocation.app+" "+invocation.sha)
 
 	root, err := checkout.ReadRootFile(ctx, deps.Defaults())
 	if err != nil {
@@ -157,15 +158,15 @@ func validateFile(value invocation, dir string) (invocation, error) {
 		return invocation{}, &NoFileError{Path: value.file}
 	}
 
-	app, version, err := appref.ParseFile(filepath.Base(value.file))
+	app, sha, err := appref.ParseFile(filepath.Base(value.file))
 	if err != nil {
 		return invocation{}, &FileError{
 			Path:   value.file,
-			Reason: "name is not <app>-v<semver>.tar.xz",
+			Reason: "name is not <app>-<sha>.tar.xz",
 		}
 	}
 	value.app = app
-	value.version = version
+	value.sha = sha
 	value.path = path
 	return value, nil
 }

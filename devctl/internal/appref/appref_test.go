@@ -53,56 +53,32 @@ func TestValidVersion(t *testing.T) {
 	}
 }
 
-func TestVersionForTag(t *testing.T) {
-	t.Parallel()
-
-	// R-CZKG-ZL99 R-CTGZ-2QJS
-	for _, tc := range []struct {
-		app     string
-		tag     string
-		version string
-		ok      bool
-	}{
-		{app: "crm-api", tag: "crm-api/v1.2.3-alpha+build.7", version: "v1.2.3-alpha+build.7", ok: true},
-		{app: "crm", tag: "other/v1.2.3"},
-		{app: "crm", tag: "v1.2.3"},
-		{app: "crm", tag: "crm/v1.2"},
-		{app: "host", tag: "host/v1.2.3"},
-		{app: "crm", tag: "crm/v1.2.3/extra"},
-	} {
-		version, ok := appref.VersionForTag(tc.app, tc.tag)
-		if version != tc.version || ok != tc.ok {
-			t.Errorf("VersionForTag(%q, %q) = (%q, %t), want (%q, %t)", tc.app, tc.tag, version, ok, tc.version, tc.ok)
-		}
-	}
-}
-
 func TestParseFile(t *testing.T) {
 	t.Parallel()
 
-	// R-D0SD-DCZY R-CUOV-GIAH
-	for _, tc := range []struct {
-		name    string
-		app     string
-		version string
-	}{
-		{name: "crm-v1.2.3.tar.xz", app: "crm", version: "v1.2.3"},
-		{name: "crm-api-v1.2.3-alpha-one.2+build.007.tar.xz", app: "crm-api", version: "v1.2.3-alpha-one.2+build.007"},
-	} {
-		app, version, err := appref.ParseFile(tc.name)
-		if err != nil || app != tc.app || version != tc.version {
-			t.Errorf("ParseFile(%q) = (%q, %q, %v), want (%q, %q, nil)", tc.name, app, version, err, tc.app, tc.version)
+	// R-5D0P-CZ58 R-5E8L-QQVX
+	const sha = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
+	for _, name := range []string{"crm", "my-app", "0", strings.Repeat("a", 63)} {
+		file := name + "-" + sha + ".tar.xz"
+		app, gotSHA, err := appref.ParseFile(file)
+		if err != nil || app != name || gotSHA != sha {
+			t.Errorf("ParseFile(%q) = (%q, %q, %v), want (%q, %q, nil)", file, app, gotSHA, err, name, sha)
 		}
 	}
 
 	invalid := []string{
-		"crm-v1.2.3", "crm-1.2.3.tar.xz", "host-v1.2.3.tar.xz", "CRM-v1.2.3.tar.xz",
-		"crm-v1.2.tar.xz", "crm/v1.2.3.tar.xz", `crm\v1.2.3.tar.xz`, "crm-v1.2.3.tar.xz/extra",
+		"notes.tar.xz", "crm-latest.tar.xz", "crm-v0.1.0.tar.xz", "crm-4b22285.tar.xz",
+		"crm-" + strings.ToUpper(sha) + ".tar.xz", "crm-" + sha + "0.tar.xz",
+		"crm-" + sha[:39] + "g.tar.xz", "-" + sha + ".tar.xz", "host-" + sha + ".tar.xz",
+		"crm-" + sha + ".tar.gz", "dist/crm-" + sha + ".tar.xz", `dist\crm-` + sha + ".tar.xz",
+		"CRM-" + sha + ".tar.xz", "crm_-" + sha + ".tar.xz", "-crm-" + sha + ".tar.xz",
+		strings.Repeat("a", 64) + "-" + sha + ".tar.xz", "crm-" + sha[:39] + ".tar.xz",
+		"crm-" + sha + ".tar.xz/extra", "crm" + sha + ".tar.xz", "",
 	}
-	for _, name := range invalid {
-		app, version, err := appref.ParseFile(name)
-		if err == nil || app != "" || version != "" {
-			t.Errorf("ParseFile(%q) = (%q, %q, %v), want empty components and error", name, app, version, err)
+	for _, file := range invalid {
+		app, gotSHA, err := appref.ParseFile(file)
+		if err == nil {
+			t.Errorf("ParseFile(%q) = (%q, %q, nil), want error", file, app, gotSHA)
 		}
 	}
 }

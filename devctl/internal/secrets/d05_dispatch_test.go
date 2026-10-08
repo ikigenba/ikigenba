@@ -410,3 +410,22 @@ func d05WriteNames(writes []pushWrite) []string {
 	}
 	return names
 }
+
+func TestPushDoesNotDeployOrOperateHost(t *testing.T) {
+	// R-652E-5P77
+	root := d05Checkout(t)
+	ssm := &d05SSM{}
+	opener := d05WorkingCloud(ssm)
+	var commands []seam.Cmd
+	var stdout strings.Builder
+	deps := d05Deps(t, root, &opener, map[string]string{
+		"CRM_API_KEY": "rotated-key", "CRM_API_SECRET": "rotated-secret", "CRM_ORG": "org",
+	}, &commands)
+	if err := Run(context.Background(), []string{"push", "sbx1", "crm"}, &stdout, deps); err != nil {
+		t.Fatal(err)
+	}
+	wantCommands := []seam.Cmd{{Path: "git", Args: []string{"rev-parse", "--show-toplevel"}, Dir: root}}
+	if !reflect.DeepEqual(commands, wantCommands) || ssm.attempts != 1 || stdout.String() != "crm: ok (3 keys)\n" {
+		t.Fatalf("push: commands %#v writes %d stdout %q", commands, ssm.attempts, stdout.String())
+	}
+}

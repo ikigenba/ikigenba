@@ -29,7 +29,7 @@ before that moment, and the database is rebuilt to the moment itself.
 func TestCLIDispatchesDeployAndFormatsHostFailure(t *testing.T) {
 	// R-O94A-735M
 	root := d09Root(t)
-	name := "gmail-v0.1.0.tar.xz"
+	name := "gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz"
 	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -44,9 +44,9 @@ func TestCLIDispatchesDeployAndFormatsHostFailure(t *testing.T) {
 		return baseExec(ctx, cmd)
 	}
 	result := invokeWithDeps(deps, "deploy", "sbx1", name)
-	wantOut := "file: ok (gmail v0.1.0)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)\ninstall: ok (opsctl installed gmail)\n"
+	wantOut := "file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz)\ninstall: ok (opsctl installed gmail)\n"
 	assertResult(t, result, 0, wantOut, "")
-	if len(ssh) != 1 || ssh[0].Path != "ssh" || ssh[0].Args[6] != "ec2-user@18.118.7.42" || ssh[0].Args[7] != "'sudo' 'opsctl' 'install' 's3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz'" {
+	if len(ssh) != 1 || ssh[0].Path != "ssh" || ssh[0].Args[6] != "ec2-user@18.118.7.42" || ssh[0].Args[7] != "'sudo' 'opsctl' 'install' 's3://ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz'" {
 		t.Fatalf("install command = %#v", ssh)
 	}
 
@@ -59,8 +59,8 @@ func TestCLIDispatchesDeployAndFormatsHostFailure(t *testing.T) {
 		return baseExec(ctx, cmd)
 	}
 	result = invokeWithDeps(deps, "deploy", "sbx1", name)
-	wantOut = "file: ok (gmail v0.1.0)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)\n"
-	wantErr := "devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1\n\n> install failed\n> more output\n> permission denied\n> more error\n"
+	wantOut = "file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz)\n"
+	wantErr := "devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz: exit status 1\n\n> install failed\n> more output\n> permission denied\n> more error\n"
 	assertResult(t, result, 1, wantOut, wantErr)
 }
 
@@ -85,7 +85,7 @@ func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
 }
 
 func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
-	// R-OBK2-YMN0 R-JW73-1HBN R-ORER-XNA1
+	// R-5VB7-3J9N R-JW73-1HBN R-ORER-XNA1
 	outside := t.TempDir()
 	for _, option := range []string{"--help", "-h"} {
 		result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", option)
@@ -96,20 +96,20 @@ func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
 	result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", "sbx1")
 	assertResult(t, result, 2, "", "devctl: restore needs <space> and <app>\n\nsee 'devctl restore --help' for usage\n")
 
-	result = invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "deploy", "sbx1", "crm/dist/crm-v0.2.0.tar.xz")
-	assertResult(t, result, 2, "", "devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'\n")
+	result = invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "deploy", "sbx1", "crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz")
+	assertResult(t, result, 2, "", "devctl: no such file 'crm/dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz'\n")
 
 	if err := os.WriteFile(filepath.Join(outside, "notes.tar.xz"), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	result = invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "deploy", "sbx1", "notes.tar.xz")
-	assertResult(t, result, 2, "", "devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-v<semver>.tar.xz\n")
+	assertResult(t, result, 2, "", "devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<sha>.tar.xz\n")
 }
 
 func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
-	// R-29VM-3Y73 R-2B3I-HPXS
+	// R-5WJ3-HB0C R-2B3I-HPXS
 	root := d09Root(t)
-	name := "gmail-v0.1.0.tar.xz"
+	name := "gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz"
 	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			deps := d09DepsWithInstances(t, root, test.instances, 0)
-			assertResult(t, invokeWithDeps(deps, "deploy", test.operand, name), 1, "file: ok (gmail v0.1.0)\n", test.diagnostic)
+			assertResult(t, invokeWithDeps(deps, "deploy", test.operand, name), 1, "file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)\n", test.diagnostic)
 			assertResult(t, invokeWithDeps(deps, "restore", test.operand, "crm"), 1, "", test.diagnostic)
 		})
 	}

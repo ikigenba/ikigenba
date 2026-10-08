@@ -14,10 +14,9 @@ import (
 
 const wantUsage = `Usage: devctl build <app>
 
-Build <app> for linux/amd64 and write <app>/dist/<app>-<version>.tar.xz, the
-file deploy copies to a host and opsctl installs. HEAD must be a commit that
-the app's version tag (<app>/v<semver>) points at, with no uncommitted
-changes.
+Build <app> for linux/amd64 and write <app>/dist/<app>-<sha>.tar.xz, the file
+deploy copies to a host and opsctl installs. <sha> is HEAD's full commit sha;
+the working tree must have no uncommitted changes.
 `
 
 func TestRunPublicSignature(_ *testing.T) {
@@ -27,6 +26,7 @@ func TestRunPublicSignature(_ *testing.T) {
 
 func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
+	// R-5GOE-IADB
 	for _, args := range [][]string{
 		{"--help"},
 		{"-h"},

@@ -7,7 +7,7 @@ func DistDir(app string) string {
 	return filepath.Join(app, "dist")
 }
 
-// File returns the final artifact path for an app and version.
-func File(app, version string) string {
-	return filepath.Join(DistDir(app), app+"-"+version+".tar.xz")
+// File returns the final artifact path for an app and commit sha.
+func File(app, sha string) string {
+	return filepath.Join(DistDir(app), app+"-"+sha+".tar.xz")
 }

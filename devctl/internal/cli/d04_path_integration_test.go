@@ -36,7 +36,7 @@ func TestDeploySeparatesCheckoutAndWorkingDirectoryPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const operand = "gmail-v0.1.0.tar.xz"
+	const operand = "gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz"
 	if err := os.WriteFile(filepath.Join(workingDir, operand), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestDeploySeparatesCheckoutAndWorkingDirectoryPaths(t *testing.T) {
 	}
 
 	result := invokeWithDeps(deps, "deploy", "sbx1", operand)
-	wantOut := "file: ok (gmail v0.1.0)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)\ninstall: ok (opsctl installed gmail)\n"
+	wantOut := "file: ok (gmail c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-c3d5e7f9a1b2c4d6e8f0a2b4c6d8e0f1a3b5c7d9.tar.xz)\ninstall: ok (opsctl installed gmail)\n"
 	assertResult(t, result, 0, wantOut, "")
 
 	wantPrefix := []seam.Cmd{
