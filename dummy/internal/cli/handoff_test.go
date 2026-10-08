@@ -29,12 +29,14 @@ type testTrail struct {
 	stderr  bytes.Buffer
 }
 
+const testVersion = "test display"
+
 func testMCP(t *testing.T) *testTrail {
 	t.Helper()
 	t.Setenv(services.Variable, "")
 	trail := &testTrail{capture: &telemetry.Capture{}}
-	trail.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: Version, Sink: trail.capture, Stderr: &trail.stderr, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 8192))})
-	trail.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: Version, Telemetry: trail.writer})
+	trail.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: testVersion, Sink: trail.capture, Stderr: &trail.stderr, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 8192))})
+	trail.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: testVersion, Telemetry: trail.writer})
 	t.Cleanup(func() { trail.writer.Shutdown(context.Background(), "test finished") })
 	return trail
 }
@@ -77,8 +79,8 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 			gate = NewGate(sink)
 			ordering.gate = gate
 			srv.writer.Shutdown(context.Background(), "replace fixture writer")
-			srv.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: Version, Sink: gate, Stderr: ordering, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}})
-			srv.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: Version, Telemetry: srv.writer})
+			srv.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: testVersion, Sink: gate, Stderr: ordering, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}})
+			srv.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: testVersion, Telemetry: srv.writer})
 		}
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -103,7 +105,7 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 			}
 			result := make(chan int, 1)
 			go func() {
-				result <- Run(ctx, Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return inherited, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Gate: gate, Rand: testWidgetRand(), Stdout: &stdout, Stderr: processStderr})
+				result <- Run(ctx, Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return inherited, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Gate: gate, Rand: testWidgetRand(), Stdout: &stdout, Stderr: processStderr})
 			}()
 			waitReady(t, notify)
 			conn, err := net.Dial("tcp", listener.Addr().String())
@@ -233,7 +235,7 @@ func TestRunNoRequestsAndNoNotification(t *testing.T) {
 		env["LISTEN_PID"], env["LISTEN_FDS"] = "42", "1"
 		calls := 0
 		var out, diagnostics bytes.Buffer
-		code := Run(ctx, Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { calls++; return page.Banner{} }, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
+		code := Run(ctx, Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { calls++; return page.Banner{} }, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
 		if code != ExitSuccess || calls != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
 			t.Errorf("code=%d banner=%d out=%q diagnostics=%q", code, calls, out.String(), diagnostics.String())
 		}
@@ -256,7 +258,7 @@ func (l *observingListener) Accept() (net.Conn, error) {
 func (l *observingListener) Close() error   { return nil }
 func (l *observingListener) Addr() net.Addr { return testAddr("observing") }
 
-// R-3N61-NOWX R-ERVL-5OIC
+// R-JBZ3-WMUC R-ERVL-5OIC
 func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
 	for _, abstract := range []bool{false, true} {
 		srv := testMCP(t)
@@ -283,7 +285,7 @@ func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
 			}
 		}
 		var out, diagnostics recordingWriter
-		code := Run(context.Background(), Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
+		code := Run(context.Background(), Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
 		if code != ExitServerFailed || out.Len() != 0 || !strings.HasPrefix(diagnostics.String(), "dummy: ") || !strings.HasSuffix(diagnostics.String(), "\n") || strings.Count(diagnostics.String(), "\n") != 1 {
 			t.Errorf("code=%d out=%q diagnostic=%q writes=%d", code, out.String(), diagnostics.String(), diagnostics.calls)
 		}
@@ -309,7 +311,7 @@ func TestReadyFailurePreventsAccept(t *testing.T) {
 		t.Fatal("notification unexpectedly succeeded")
 	}
 	var out, diagnostics recordingWriter
-	code := Run(context.Background(), Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
+	code := Run(context.Background(), Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv.server, Telemetry: srv.writer, Rand: testWidgetRand(), Stdout: &out, Stderr: &diagnostics})
 	if code != ExitServerFailed || out.Len() != 0 || diagnostics.String() != "dummy: "+wantErr.Error()+"\n" || ln.accepts != 0 {
 		t.Errorf("code=%d out=%q diagnostic=%q accepts=%d", code, out.String(), diagnostics.String(), ln.accepts)
 	}

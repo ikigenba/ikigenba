@@ -21,7 +21,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy"
-	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
@@ -86,7 +85,7 @@ func panelTestTelemetryWithClock(t *testing.T, stderr io.Writer, now func() time
 	t.Helper()
 	capture := &telemetry.Capture{}
 	diagnostics := &bytes.Buffer{}
-	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: cli.Version, Sink: capture, Stderr: io.MultiWriter(diagnostics, stderr), Now: now, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 65536))})
+	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: "test display", Sink: capture, Stderr: io.MultiWriter(diagnostics, stderr), Now: now, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{7}, 65536))})
 	t.Cleanup(func() { writer.Shutdown(context.Background(), "cleanup") })
 	return writer, capture, diagnostics
 }

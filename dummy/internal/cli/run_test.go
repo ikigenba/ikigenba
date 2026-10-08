@@ -26,7 +26,7 @@ func TestUsageConstant(t *testing.T) {
 	}
 }
 
-// R-2WC9-8QLN
+// R-J27W-UGWS
 func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	// Each field's address is stored in a slot of the declared pointer type,
 	// and Run is stored in a field of its declared type, so this compiles
@@ -41,7 +41,7 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	unsetenv := func(string) error { return nil }
 	inherit := func(uintptr) (net.Listener, error) { return nil, errors.New("unexpected") }
 	banner := func(page.User) page.Banner { return page.Banner{} }
-	p := Process{Dir: t.TempDir(), Now: testNow}
+	p := Process{Version: testVersion, Dir: t.TempDir(), Now: testNow}
 	fields := struct {
 		args      *[]string
 		lookupEnv *func(key string) (string, bool)
@@ -49,6 +49,7 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 		pid       *int
 		stdout    *io.Writer
 		stderr    *io.Writer
+		version   *string
 		inherit   *func(fd uintptr) (net.Listener, error)
 		banner    *func(u page.User) page.Banner
 		mcp       **mcp.Server
@@ -57,22 +58,22 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 		rand      *io.Reader
 		dir       *string
 		now       *func() time.Time
-	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner, &p.MCP, &p.Telemetry, &p.Gate, &p.Rand, &p.Dir, &p.Now}
+	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Version, &p.Inherit, &p.Banner, &p.MCP, &p.Telemetry, &p.Gate, &p.Rand, &p.Dir, &p.Now}
 	*fields.args, *fields.lookupEnv, *fields.unsetenv, *fields.pid = args, lookupEnv, unsetenv, 1
 	*fields.stdout, *fields.stderr, *fields.inherit, *fields.banner = stdout, stderr, inherit, banner
 	*fields.mcp = nil
-	if code := declared.run(context.Background(), p); code != ExitSuccess || out.String() != Version+"\n" || errOut.Len() != 0 {
+	if code := declared.run(context.Background(), p); code != ExitSuccess || out.String() != testVersion+"\n" || errOut.Len() != 0 {
 		t.Errorf("Run(--version) = %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
 }
 
-// R-QZLT-9HQT R-RKC3-RLCM R-S6AA-NGP4 R-UFZK-A3DN
+// R-J3FT-88NH R-RKC3-RLCM R-S6AA-NGP4 R-UFZK-A3DN
 func TestRunCommandsDoNotTouchServeState(t *testing.T) {
-	for _, tc := range []struct{ arg, want string }{{"--version", Version + "\n"}, {"manifest", Manifest}, {"--help", Usage}} {
+	for _, tc := range []struct{ arg, want string }{{"--version", testVersion + "\n"}, {"manifest", Manifest}, {"--help", Usage}} {
 		t.Run(tc.arg, func(t *testing.T) {
 			var out, err recordingWriter
 			calls := 0
-			p := Process{Dir: t.TempDir(), Now: testNow, Args: []string{tc.arg}, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, errors.New("unexpected") }, Stdout: &out, Stderr: &err}
+			p := Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Args: []string{tc.arg}, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, errors.New("unexpected") }, Stdout: &out, Stderr: &err}
 			if code := Run(context.Background(), p); code != ExitSuccess {
 				t.Errorf("exit = %d", code)
 			}
@@ -99,7 +100,7 @@ func TestRunInvalidArguments(t *testing.T) {
 	} {
 		var out, err recordingWriter
 		calls := 0
-		p := Process{Dir: t.TempDir(), Now: testNow, Args: tc.args, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, nil }, Stdout: &out, Stderr: &err}
+		p := Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Args: tc.args, LookupEnv: func(string) (string, bool) { calls++; return "", false }, Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, nil }, Stdout: &out, Stderr: &err}
 		if code := Run(context.Background(), p); code != ExitUsage {
 			t.Errorf("%v exit=%d", tc.args, code)
 		}
@@ -115,7 +116,7 @@ func TestDrainValidationPrecedesSocket(t *testing.T) {
 		var out, err recordingWriter
 		var looked []string
 		inherit, unset := 0, 0
-		p := Process{Dir: t.TempDir(), Now: testNow, LookupEnv: func(k string) (string, bool) {
+		p := Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, LookupEnv: func(k string) (string, bool) {
 			looked = append(looked, k)
 			if k == "DRAIN_SECONDS" {
 				return s, true
@@ -132,7 +133,7 @@ func TestDrainValidationPrecedesSocket(t *testing.T) {
 	}
 	for _, s := range []string{"1", "5", "9223372036854775808", strings.Repeat("9", 100)} {
 		var out, diagnostics recordingWriter
-		code := Run(context.Background(), Process{Dir: t.TempDir(), Now: testNow, LookupEnv: mapLookup(map[string]string{"DRAIN_SECONDS": s}), Stdout: &out, Stderr: &diagnostics})
+		code := Run(context.Background(), Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, LookupEnv: mapLookup(map[string]string{"DRAIN_SECONDS": s}), Stdout: &out, Stderr: &diagnostics})
 		const want = "dummy: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"
 		if code != ExitUsage || out.Len() != 0 || diagnostics.String() != want {
 			t.Errorf("valid drain %q rejected: code=%d out=%q diagnostics=%q", s, code, out.String(), diagnostics.String())
@@ -174,7 +175,7 @@ func TestSocketCount(t *testing.T) {
 			if drain != "unset" {
 				env["DRAIN_SECONDS"] = drain
 			}
-			p := Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(env), Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return ln, nil }, Stdout: &out, Stderr: &err}
+			p := Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(env), Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return ln, nil }, Stdout: &out, Stderr: &err}
 			if code := Run(context.Background(), p); code != ExitUsage {
 				t.Errorf("%q,%q exit=%d", tc.pid, tc.fds, code)
 			}
@@ -191,7 +192,7 @@ func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 	var out, err recordingWriter
 	var unset []string
 	var fds []uintptr
-	p := Process{Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "0001"}), Unsetenv: func(k string) error { unset = append(unset, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) {
+	p := Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "0001"}), Unsetenv: func(k string) error { unset = append(unset, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) {
 		fds = append(fds, fd)
 		return nil, errors.New("bad descriptor")
 	}, Stdout: &out, Stderr: &err}
@@ -205,7 +206,7 @@ func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 
 // R-L27E-BMZA R-3C6Y-7R8O
 func TestRunReturnsDeclaredExitCodes(t *testing.T) {
-	p := Process{Dir: t.TempDir(), Now: testNow, Stderr: io.Discard}
+	p := Process{Version: testVersion, Dir: t.TempDir(), Now: testNow, Stderr: io.Discard}
 	for _, args := range [][]string{{"--version"}, {"bogus"}, nil} {
 		p.Args = args
 		if len(args) > 0 && args[0] == "--version" {
@@ -233,3 +234,14 @@ type testAddr string
 
 func (a testAddr) Network() string { return "test" }
 func (a testAddr) String() string  { return string(a) }
+
+// R-J3FT-88NH
+func TestRunVersionUsesSuppliedDisplayIncludingEmpty(t *testing.T) {
+	for _, display := range []string{"operator display", ""} {
+		var out, diagnostics recordingWriter
+		code := Run(context.Background(), Process{Args: []string{"--version"}, Version: display, Dir: t.TempDir(), Now: testNow, Stdout: &out, Stderr: &diagnostics})
+		if code != ExitSuccess || out.String() != display+"\n" || diagnostics.Len() != 0 {
+			t.Fatalf("display=%q code=%d out=%q err=%q", display, code, out.String(), diagnostics.String())
+		}
+	}
+}

@@ -45,14 +45,14 @@ func TestGateForwardsExactlyOnceWithContextEventAndError(t *testing.T) {
 	}
 }
 
-// R-HT8M-I3MS R-2WC9-8QLN
+// R-HT8M-I3MS R-J27W-UGWS
 func TestGatePassesThroughAfterCancellationBeforeDrainDeadline(t *testing.T) {
 	trail := testMCP(t)
 	trail.writer.Shutdown(context.Background(), "replace fixture writer")
 	trail.capture = &telemetry.Capture{}
 	gate := NewGate(trail.capture)
-	trail.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: Version, Sink: gate, Stderr: &trail.stderr, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}})
-	trail.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: Version, Telemetry: trail.writer})
+	trail.writer = telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: testVersion, Sink: gate, Stderr: &trail.stderr, Now: func() time.Time { return time.Unix(123, 0) }, Sleep: func(context.Context, time.Duration) {}})
+	trail.server = mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: testVersion, Telemetry: trail.writer})
 	run := startConfiguredRun(t, trail, func(p *Process) { p.Gate = gate })
 	conn, err := net.Dial("tcp", strings.TrimPrefix(run.endpoint, "http://"))
 	if err != nil {
