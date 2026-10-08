@@ -411,7 +411,8 @@ Postconditions:
 
 ## A developer's release cannot be copied to the host
 
-What the copy over ssh said follows the error line, quoted with `> `.
+The copy is made with `scp`, and what it said follows the error line, quoted
+with `> `.
 
 Command:
 
@@ -424,17 +425,17 @@ Output:
 ```
 build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
-devctl: copy: ssh ec2-user@18.118.7.42: exit status 1
+devctl: copy: scp /home/dev/ikigenba/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz ec2-user@18.118.7.42:/tmp/tmp.Xb3kQ9aLpz: exit status 1
 
-> No space left on device
+> scp: /tmp/tmp.Xb3kQ9aLpz: No space left on device
 ```
 
 Exits 1. The `ok` lines are on stdout; the rest is on stderr.
 
 Preconditions:
 
-- As for deploying `r1`, and the host's temporary directory cannot hold the
-  tarball.
+- As for deploying `r1`, with the checkout at `/home/dev/ikigenba`, and the
+  host's temporary directory cannot hold the tarball.
 
 Postconditions:
 
@@ -459,7 +460,7 @@ Output:
 build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
-devctl: unpack: ssh ec2-user@18.118.7.42: exit status 2
+devctl: unpack: ssh ec2-user@18.118.7.42 sudo tar -x -J --no-same-owner -f /tmp/tmp.Xb3kQ9aLpz -C /opt/ikigenba/releases/.unpack.Q7mN2cRt4w: exit status 2
 
 > tar: 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/auth/bin/auth: Cannot write: No space left on device
 > tar: Exiting with failure status due to previous errors
