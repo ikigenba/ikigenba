@@ -448,6 +448,7 @@ func writeServices(t *testing.T, path, socket string) {
 	t.Helper()
 	services := map[string]any{"services": []map[string]any{
 		{"name": "telemetry", "url": "/", "description": "Trail", "socket": socket, "enabled": true, "mcp": false},
+		{"name": "auth", "url": "http://auth/", "description": "Identity", "socket": "/run/auth.sock", "enabled": true, "mcp": false, "icon": "<svg viewBox=\"0 0 24 24\"><path d=\"M1 1h2v2H1z\"/></svg>"},
 		{"name": "Wiring probe", "url": "https://probe.example.test/", "description": "Main wiring fixture", "socket": "/run/probe.sock", "enabled": true, "mcp": false, "icon": "<svg viewBox=\"0 0 24 24\"><path d=\"M3 3h18v18H3z\"/></svg>"},
 	}}
 	data, err := json.Marshal(services)
