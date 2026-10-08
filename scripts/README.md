@@ -17,12 +17,12 @@ run.
 
 `scripts` runs on an Ikigenba host beside `repos`, whose repositories it reads
 with the `git` the host provides, and runs scripts with the host's
-`python3.12`. From a checkout at a release tag, build it and deploy it to a
-space with [`devctl`](../devctl):
+`python3.12`. From a checkout, build the release and deploy it to a space with
+[`devctl`](../devctl):
 
 ```sh
-devctl build scripts
-devctl deploy <space> scripts/dist/scripts-vX.Y.Z.tar.xz
+devctl build <sha|tag>
+devctl deploy <space> <sha|tag>
 ```
 
 ## Using it
