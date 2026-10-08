@@ -16,11 +16,11 @@ The suite reaches a host as one release, a folder under
 `activate` makes it the one the host runs; `current` and `previous` links are
 the only record of what runs, and `rollback` goes one step back (D16 to D18).
 opsctl belongs to the release it was unpacked with and reports that release as
-its version. A host that has activated a release is a released host; one whose
-apps were installed one by one, which the first activate cuts over, is a
-per-app host; one with neither is fresh (D08). The designs cover command
+its version. A host that has activated a release is a released host; one still
+in the legacy layout, each app under `/opt/<app>/`, which the first activate
+cuts over, is a per-app host; one with neither is fresh (D08). The designs cover command
 conventions and configuration, DNS and preflight, nginx and certificates, the
-release layout, activate and rollback, app lifecycle, service and host
+release layout, activate and rollback, the legacy per-app host, app lifecycle, service and host
 backups, and restore and retirement. Every app runs behind a systemd socket
 unit that holds its Unix socket, which nginx proxies to, so no app listens on
 a TCP port and a restart refuses no request; an operator can disable an app,

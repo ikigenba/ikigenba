@@ -14,18 +14,18 @@ file, `/etc/opt/ikigenba/<app>/env`, carries (D08, D09, D17).
 A service is *listed* — has an entry in the file — when it has a package
 directory (D08), its manifest names its app, and its `bin/<name>` is a regular
 file: on a released host an app of the release `current` names, on a per-app
-host an app `install` put under `/opt/<name>/`. Each entry carries the
+host an app the legacy layout keeps under `/opt/<name>/`. Each entry carries the
 service's name and URL, its manifest's `description` and `mcp` (D08), the
 socket nginx sends its requests to, whether it is enabled, and — only when its
 package directory holds `share/icon.svg` — its icon. The icon does not decide
 whether a service is listed, but it is the whole launcher opt-in: a launcher
 shows only the entries that carry one, and the manifest carries no launcher
 key. A data-only service is never listed, and on a released host an
-`/opt/<name>/` left from per-app installs lists nothing. Package
+`/opt/<name>/` left from the per-app layout lists nothing. Package
 `internal/services` owns the listing criterion, the file's exact bytes, and
 its publication. Package `internal/apps` (D08) owns what the file is built
-from and what an app is given: the icon's package-relative path, the icon
-check `install` applies in its `file` step, the file's paths and variable name
+from and what an app is given: the icon's package-relative path, the file's
+paths and variable name
 that every app's environment carries, and the `ikigenba` account whose group
 owns the file.
 
@@ -40,26 +40,22 @@ changes that directory's owner or mode; only the file is `root:ikigenba` with
 mode `0640`.
 
 The file is rewritten wherever nginx's configuration is regenerated —
-`activate`, `rollback`, `install`, `uninstall`, `enable`, `disable`,
-`restore`, `init`, and `nginx apply` — and always after nginx's configuration
+`activate`, `rollback`, `enable`, `disable`, `restore`, `init`, and
+`nginx apply` — and always after nginx's configuration
 has succeeded, so the two files never disagree about which apps are disabled
 and a command that fails before or at its nginx step leaves the file as it
 was. Since every regeneration refuses a host where a manifest cannot be read
 (D06), so does the services file: it never claims to leave such a service out.
 An icon that cannot be embedded verbatim — not a regular file, unreadable, or
-not UTF-8, as a hand-placed or pre-check icon may be — fails the rewrite too,
+not UTF-8 — fails the rewrite too,
 and the file is left as it was.
 
-The commands that print per-app step lines (`install`, `uninstall`,
-`disable`, `enable`) report the rewrite on a `services` line right after
-`nginx`. The line names only the change to the command's own app's entry:
-`added`, `removed`, `disabled`, `enabled`, `updated`, or `unchanged` when that
-entry did not change, even if another entry did. Since every installed app has
-an entry, icon or not, installing an app reports `added` and uninstalling it
-`removed`; a reinstall reports `updated` only when its description, `mcp`, or
-icon changed, or it gained or lost an icon. The change is measured against the
-file on disk before the rewrite, because nothing else remembers the previous
-manifest or icon once `install` has replaced `etc/` and `share/`. `activate`
+The commands that print per-app step lines (`disable`, `enable`) report the
+rewrite on a `services` line right after `nginx`. The line names only the
+change to the command's own app's entry: `disabled`, `enabled`, or
+`unchanged` when that entry did not change, even if another entry did. The
+change is measured against the file on disk before the rewrite, because
+nothing else remembers the previous entry. `activate`
 and `rollback` report the number of entries instead (D18). `init`, `restore`,
 `nginx apply`, and `services apply` rewrite the file silently.
 
@@ -102,7 +98,7 @@ and opsctl writes both until no app in the release reads the old one.
 - R-BZML-VP81: `Write` MUST execute through `env.Execute` no command other than the `apps.Disabled` queries, the commands of `apps.EnsureAccount`, and the one `chown` of R-9ILX-YG3C; it MUST NOT read the configuration store, reload or test nginx, or change any unit.
 - R-YM99-KIOJ: On success `Write` MUST return `Changes` holding one key for each name whose entry differs between the file before the call and the file it leaves, and no other key: `Added` when the name has no previous entry, `Removed` when it has no new entry, `Disabled` when the previous `enabled` is `true` and the new one `false`, and `Enabled` when the previous `enabled` is `false` and the new one `true`, whatever else differs, and `Updated` for every other difference. Entries are matched by their `name` member and compared only by the presence and JSON values of `url`, `description`, `socket`, `enabled`, `mcp`, and `icon`, a member present in one entry and absent from the other being a difference, except that an `icon` whose value is not a string counts as absent; any other member and the layout MUST be ignored.
 - R-8QFT-9FXP: For classification, the file before the call MUST be taken to hold no entries when it is absent, cannot be read, or does not decode as a JSON object whose `services` member is an array; within such an array, an element that is not an object or whose `name` member is not a string MUST be ignored, and when several elements share a name the first MUST be used. Such a previous file MUST NOT make `Write` fail.
-- R-YNH5-YAF8: For `install`, `uninstall`, `disable`, and `enable`, `internal/cli` MUST call `services.Write` exactly once, with the normalised host name it gave nginx, only after the `nginx` step reported success and before any later step, and report step `services`: on success `services: ok (<app> <change>)` with `<app>` the command's app and `<change>` the text of `Changes.For(<app>)`, or exactly `services: ok (unchanged)` when that is `Unchanged`; on error `services: failed: <reason>` with `<reason>` the error's text, CR and LF escaped as the command's other step lines escape them, after which the command attempts no later step, writes `opsctl: <command> failed` to stderr, and exits 1. A run that fails before or at its `nginx` step MUST NOT call `services.Write`.
+- R-TRYH-YUAY: For `disable` and `enable`, `internal/cli` MUST call `services.Write` exactly once, with the normalised host name it gave nginx, only after the `nginx` step reported success and before any later step, and report step `services`: on success `services: ok (<app> <change>)` with `<app>` the command's app and `<change>` the text of `Changes.For(<app>)`, or exactly `services: ok (unchanged)` when that is `Unchanged`; on error `services: failed: <reason>` with `<reason>` the error's text, CR and LF escaped as the command's other step lines escape them, after which the command attempts no later step, writes `opsctl: <command> failed` to stderr, and exits 1. A run that fails before or at its `nginx` step MUST NOT call `services.Write`.
 - R-XTC1-NPBI: For `nginx apply` and `init`, `internal/cli` MUST call `services.Write` exactly once per run, and for `restore` exactly once per run on a released or per-app host (`apps.ReadLayout` giving `Released` or `PerApp`) and never on a fresh host, so a restore before the first activate never writes a services file; each call MUST use the normalised host name it gave nginx and come only after nginx's configuration was successfully published (`nginx.Apply` returned nil for `nginx apply` and `init`; `nginx.Write` returned nil inside restore's nginx regeneration callback), print nothing about it on success, and on error fail the command in the form D05, D06, and D14 prescribe for it; a run that fails before or at that publication MUST NOT call `services.Write`.
 - R-9JTU-C7U1: Backup operations (D11–D13) MUST NOT read, archive, or upload anything under `/var/lib/ikigenba/` or `/run/ikigenba/`, and restore (D14) MUST NOT write either services file except through `services.Write`: the services file is regenerated, never backed up.
 - R-9L1Q-PZKQ: `opsctl services --help` and `opsctl services -h` MUST, for any effective user id, perform no host-file access, process execution, or cloud call, exit 0 with empty stderr, and write exactly `"Usage: opsctl services <subcommand>\n\nGenerate /run/ikigenba/services.json, the services file every app reads\nthrough IKIGENBA_SERVICES, from the release /opt/ikigenba/current names,\nhost.name, and which apps systemd reports disabled. The file is generated,\nnever edited.\n\nSubcommands:\n  apply  write the file; with no current release, write an empty list\n\nConfiguration keys:\n  host.name  the fully-qualified name this host answers at\n\nikigenba-services.service runs 'opsctl services apply' at boot, before any\napp starts, so the file is there again after the host restarts.\n"` to stdout, where `\n` denotes one LF byte.

@@ -6,9 +6,9 @@ certificate-renewal schedule from configuration.
 
 A service archive holds only that service's `state/`, from its data directory
 `/var/opt/ikigenba/<service>/state/`, named `state/...`. What a release
-brought under `/opt/ikigenba/` comes back by activating a release again, what
-a per-app install brought under `/opt/<service>/` by installing it again, and
-the service's environment file under `/etc/opt/ikigenba/` is generated, so
+brought under `/opt/ikigenba/` comes back by activating a release again,
+which also replaces what the legacy per-app layout keeps under
+`/opt/<service>/`, and the service's environment file under `/etc/opt/ikigenba/` is generated, so
 none of them is archived; a service backup reads nothing under `/etc/`, and of
 the service's package directory (D08) only the manifest. The services come
 from discovery (D08), so on a released host they are the current release's
@@ -17,7 +17,7 @@ apps and every data-only service, an app a later release dropped whose
 is archived and a snapshot reads no replica for it. `cache/` is never
 archived, wherever it is. A service whose `state/` is still under
 `/opt/<service>/`, which only a per-app host can hold, is not backed up or
-snapshotted at all: it fails with a reason saying to install it first, and the
+snapshotted at all: it fails with a reason naming the unmoved `state/`, and the
 other services go on. Neither services file, under `/run/ikigenba/` or
 `/var/lib/ikigenba/`, is ever archived, because it is regenerated (D15,
 R-9JTU-C7U1). Activate's cutover takes its snapshots through `Snapshot` with

@@ -22,7 +22,7 @@ so the name in the configuration, the lineage path, and the refusal is the
 same one every other command uses.
 
 No app listens on a TCP port. Every routed app is proxied to its Unix socket,
-`/run/ikigenba/<name>.sock`, held by its socket unit (D09, D17); a service is
+`/run/ikigenba/<name>.sock`, held by its socket unit (D17); a service is
 routed when its manifest names its app. A routed app whose socket unit
 systemd reports disabled (D10's `Disabled`) keeps its block and every name it
 answers at, but the block answers 503 and proxies nowhere, so a disabled app
@@ -282,14 +282,14 @@ command the way an nginx failure does, with nginx left applied.
 Discovery is D08's, and rendering works the same on every layout. On a
 released host the services are the apps of the release `current` names and
 every data-only service, and an `/opt/<name>/` makes none; on a per-app host
-they are the apps `install` put under `/opt/<name>/` and every data-only
+they are the apps the legacy layout keeps under `/opt/<name>/` and every data-only
 service; a fresh host has only data-only services, so it gets the bare frame.
 Only a manifest in a service's package directory routes it, and its block
 includes `<package directory>/etc/nginx.conf*`, so on a released host
 `/opt/ikigenba/current/<name>/etc/nginx.conf*`, following `current` through
 every activate and rollback, and on a per-app host `/opt/<name>/etc/nginx.conf*`
-as before. A data-only service, such as the `state/` an uninstall or a release
-that dropped the app leaves behind, gets no block and is never the
+as before. A data-only service, such as the `state/` a release that dropped the
+app leaves behind, gets no block and is never the
 authenticator.
 
 Application manifests belong to D08; the host
@@ -352,4 +352,4 @@ belongs to D05.
 
 - R-WTKL-Q12Y: Package `internal/nginx` MUST export `Update(ctx context.Context, env host.Env, hostName, apexApp string) (changed bool, err error)`.
 - R-WUSI-3STN: `Update` MUST obtain candidate bytes exactly as `Render` does and propagate every `Render` failure, including the apex refusal before discovery, malformed manifests, conflicting routed defaults, and `apps.Disabled` errors, returning `false` without writing a file or executing a command beyond `Render`'s queries. When `/etc/nginx/conf.d/ikigenba.conf` under `env.Root` already holds exactly the candidate bytes it MUST return `false, nil` without writing any file or executing `nginx` or `systemctl`; otherwise it MUST publish, test, reload, and restore on test failure exactly as `Apply` does, returning `true, nil` only when publication, `nginx -t`, and `systemctl reload-or-restart nginx` all succeed and otherwise `false` with `Apply`'s error, including its `*host.CommandError` wrapping.
-- R-WW0E-HKKC: `internal/cli` MUST use `nginx.Update` only for `disable` and `enable` (D10); `nginx apply`, `init`, `install`, and `uninstall` MUST keep using `Apply`, which publishes, tests, and reloads on every call, and restore MUST keep using `Write`.
+- R-T2CL-XNQD: `internal/cli` MUST use `nginx.Update` only for `disable` and `enable` (D10); `nginx apply` and `init` MUST keep using `Apply`, which publishes, tests, and reloads on every call, and restore MUST keep using `Write`.

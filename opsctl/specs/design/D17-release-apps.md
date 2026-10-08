@@ -6,14 +6,13 @@ environment file and its two units. They are written by `activate` and
 `rollback` (D18), by `init`'s `apps` step on a released host, and, for the
 environment file, by `restore`; each of those composes the operations below, so
 an app's files never depend on which command wrote them last. Package
-`internal/apps` owns them, beside install's per-app files (D09), which stay for
-a per-app host.
+`internal/apps` owns them, beside the per-app host's files (D09).
 
 The environment file is the app's secrets from the parameter
 `/<host.name>/<app>`, its manifest's `[env]`, `DRAIN_SECONDS`, the services
 file's variable, and the release's identity: `IKIGENBA_COMMIT` always, and
 `IKIGENBA_RELEASE` only when the release has a label. Secrets and settings are
-encoded as install encodes them, a double-quoted value with `\` and `"`
+encoded as on a per-app host (D09), a double-quoted value with `\` and `"`
 escaped, which systemd.exec(5) (`EnvironmentFile=`) reads back as the literal
 value; the four host-set lines are bare. Only the secrets need the cloud, so
 reading them is its own operation and rendering the file is pure.
@@ -23,7 +22,7 @@ changes which binary every app runs and a restart makes it run.
 `RuntimeDirectory=ikigenba/<app>` gives the app `/run/ikigenba/<app>/`, created
 at start, owned by the unit's user, and removed at stop, and `PrivateTmp=yes`
 gives it a private `/tmp` (systemd.exec(5)); the listening socket stays
-`/run/ikigenba/<app>.sock`, held by the same socket unit install writes. Every
+`/run/ikigenba/<app>.sock`, held by the socket unit `WriteReleaseUnits` writes. Every
 app's service also wants and is ordered after `ikigenba-services.service`, the
 oneshot that writes `/run/ikigenba/services.json` at boot (D15), so the file is
 there whenever an app starts, though an app still starts if the oneshot fails
