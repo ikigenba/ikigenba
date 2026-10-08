@@ -22,12 +22,16 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
 	assets "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
 	"github.com/ikigenba/ikigenba/telemetry/internal/web"
 )
+
+const binaryTelemetryIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
 
 // TestBinary is the one process test: all command and host wiring is exercised here.
 func TestBinary(t *testing.T) {
@@ -138,7 +142,7 @@ func TestBinary(t *testing.T) {
 	writeServices := func(description string) {
 		entries := map[string]any{"services": []any{map[string]any{
 			"name": web.ServiceName, "url": "http://telemetry.test", "description": description,
-			"socket": "telemetry.sock", "enabled": true, "mcp": true, "icon": "<svg></svg>",
+			"socket": "telemetry.sock", "enabled": true, "mcp": true, "icon": binaryTelemetryIcon,
 		}}}
 		data, marshalErr := json.Marshal(entries)
 		if marshalErr != nil {
@@ -248,6 +252,7 @@ func TestBinary(t *testing.T) {
 	first, stopFirst := launch("first", false)
 	// R-XUXA-RACO
 	landing := binaryRequest(t, first, http.MethodGet, "/", nil, nil, http.StatusOK)
+	assertBinaryBanner(t, landing, display, "")
 	footerRE := regexp.MustCompile(`(?i)<footer[>\t\n\f\r ]`)
 	footers := footerRE.FindAllIndex(landing, -1)
 	if len(footers) != 1 {
@@ -307,6 +312,7 @@ func TestBinary(t *testing.T) {
 	assertBinaryStop(t, second, "SIGTERM")
 	// R-20BZ-B933
 	landing = binaryRequest(t, second, http.MethodGet, "/", nil, nil, http.StatusOK)
+	assertBinaryBanner(t, landing, display, servicesFile)
 	buttonRE := regexp.MustCompile(`(?is)<button(?:[\t\n\f\r ][^>]*)?>`)
 	classRE := regexp.MustCompile(`(?i)(?:[\t\n\f\r ])class[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r >]+))`)
 	launcher := false
@@ -346,6 +352,73 @@ func TestBinary(t *testing.T) {
 	if err := runProcess(statusCommand); err != nil || statusOutput.String() != appliedStatus.String() || statusErrors.Len() != 0 {
 		t.Fatalf("db status: %v stdout %q stderr %q, want %q", err, statusOutput.String(), statusErrors.String(), appliedStatus.String())
 	}
+}
+
+// R-20BZ-B933: observe the kit's banner through the binary's page response.
+func assertBinaryBanner(t *testing.T, body []byte, display, servicesPath string) {
+	t.Helper()
+	t.Setenv(services.Variable, servicesPath)
+	banner := page.New(web.ServiceName, display).Banner(page.User{
+		ProfileURL: "https://auth.test/", LogoutURL: "https://auth.test/logout",
+	})
+	var expected bytes.Buffer
+	if err := page.Templates().ExecuteTemplate(&expected, "banner", banner); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, expected.Bytes()) {
+		t.Fatalf("binary page does not carry the kit's banner: %s", body)
+	}
+	headers := regexp.MustCompile(`(?is)<header\b[^>]*>(.*?)</header>`).FindAllSubmatch(body, -1)
+	if len(headers) == 0 {
+		t.Fatalf("banner headers: %d", len(headers))
+	}
+	header := headers[0][1]
+	marks := regexp.MustCompile(`(?is)<strong\b[^>]*>(.*?)</strong>`).FindAllSubmatch(header, -1)
+	if len(marks) != 1 || !binaryAttributeIs(marks[0][0], "class", "mark") || !binaryAttributeIs(marks[0][0], "data-service", web.ServiceName) {
+		t.Fatalf("banner mark: %s", header)
+	}
+	service := regexp.MustCompile(`(?is)<span\b[^>]*>(.*?)</span>`).FindAllSubmatch(marks[0][1], -1)
+	icon := ""
+	if servicesPath != "" {
+		icon = binaryTelemetryIcon
+	}
+	if len(service) != 1 || !binaryAttributeIs(service[0][0], "class", "service") || strings.TrimSpace(string(service[0][1])) != icon+web.ServiceName {
+		t.Fatalf("banner service icon and name: %s", marks[0][1])
+	}
+	var signouts [][][]byte
+	for _, button := range regexp.MustCompile(`(?is)<button\b[^>]*>(.*?)</button>`).FindAllSubmatch(header, -1) {
+		if binaryAttributeIs(button[0], "class", "signout") {
+			signouts = append(signouts, button)
+		}
+	}
+	if len(signouts) != 1 {
+		t.Fatalf("sign-out buttons: %d", len(signouts))
+	}
+	button := signouts[0]
+	for attr, value := range map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"} {
+		if !binaryAttributeIs(button[0], attr, value) {
+			t.Fatalf("sign-out %s missing: %s", attr, button[0])
+		}
+	}
+	if len(regexp.MustCompile(`(?i)<svg\b`).FindAll(button[1], -1)) != 1 || strings.TrimSpace(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(string(button[1]), ""))) != "" {
+		t.Fatalf("sign-out icon or visible text: %s", button[1])
+	}
+}
+
+func binaryAttributeIs(element []byte, name, want string) bool {
+	end := bytes.IndexByte(element, '>')
+	if end < 0 {
+		return false
+	}
+	pattern := `(?i)(?:[\t\n\f\r ])` + regexp.QuoteMeta(name) + `[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r >]+))`
+	for _, match := range regexp.MustCompile(pattern).FindAllSubmatch(element[:end], -1) {
+		for _, value := range match[1:] {
+			if html.UnescapeString(string(value)) == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func binaryASCIISpace(value rune) bool {
