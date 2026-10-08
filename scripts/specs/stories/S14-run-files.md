@@ -241,7 +241,7 @@ HTTP/1.1 404 Not Found
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 404. The body is scripts' not-found page (`S12`): titled `Not found`, its heading `Not found` and its text `There is nothing at this address.`, with the footer `scripts v<semver>`, no banner, and no script but the button feedback script.
+Status 404. The body is scripts' not-found page (`S12`): titled `Not found`, its heading `Not found` and its text `There is nothing at this address.`, with the footer `scripts <display>`, no banner, and no script but the button feedback script.
 
 Preconditions:
 

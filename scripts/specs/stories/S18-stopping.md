@@ -343,4 +343,4 @@ Postconditions:
 
 - No process of either run is running. Both runs are recorded `killed`, `finished` 5 seconds after the old scripts' signal, as in `The host stops scripts while a script outlasts the drain`, and their folders are kept: `result` of either, asked of the new scripts, answers `status` `killed` with the output written before the kill (`S11`).
 - The journal holds the old scripts' lines: an `undelivered event` line with each run's `run.finished`, `status` `killed`, under that run's request id and user, then one with its `service.stopping`, `reason` `SIGTERM`, and no `stopped with` line. telemetry has received none of those three events.
-- A new scripts process is serving on `/run/ikigenba/scripts.sock`, over the same `state/scripts.db` and `state/runs/`; it marked no run, and telemetry has received its `service.started`, whose `version` is the version the new binary's `scripts --version` prints.
+- A new scripts process is serving on `/run/ikigenba/scripts.sock`, over the same `state/scripts.db` and `state/runs/`; it marked no run, and telemetry has received its `service.started`, whose `version` is the `<display>` of the new scripts' environment.

@@ -1,13 +1,13 @@
 # Stories — package
 
-The file that carries scripts to a space. `devctl build scripts` writes it from a commit that a `scripts/v<semver>` tag points at, and `opsctl install` unpacks it into `/opt/scripts/`. Its contents are the whole of what scripts ships: the static `linux/amd64` binary, the manifest, the nginx fragment, and `share/icon.svg`, nothing else. The host's nginx serves scripts with the configuration every app behind the authenticator gets, since the manifest declares no `guests` (`S01`; opsctl's `S5-nginx.md`, `An operator reads the configuration of a host running apps behind the authenticator`). `etc/nginx.conf` is scripts' own nginx configuration, which the host includes in the server that answers at scripts' public name, as it does for any app that ships one; its one effect is that `/events` and `/declarations` answer 404 through nginx for every method (`S24`), and no story fixes its text beyond that effect. `share/icon.svg` is scripts' icon, an SVG image a human draws; its presence is what lists scripts in the platform's service launcher on a space (`S24`), and no story fixes its content beyond its being an SVG. scripts keeps nothing under `etc/` but the manifest and the fragment and nothing under `share/` but the icon, so no other member exists. The pages' templates are inside the binary, and the files that give the pages their style, their launcher, their button feedback, and their favicon are appkit's, inside the binary too (`S04`), so no `assets/` directory and no font file ships beside it. Neither `git` nor `python3.12` is in the file: both are the host's, `git` installed by the space's first boot (opsctl's `init` finds it on the `PATH`, opsctl's `S4-init.md`) and `python3.12` by the space's first boot or, on a space launched before that, by the operator (`S22`). Neither the database nor any run folder is in the file: scripts creates `state/scripts.db` and `state/runs/` under its working directory on first start (`S02`), the manifest's `[database]` table declares the database so that the host keeps it across releases and replicates it, and the run folders under `state/runs/` stay on the host across releases, as everything under `state/` does, but are not replicated (`S20`). The manifest's `[resources]` table is read by the host, which runs scripts among its other apps, bounds scripts, every `git` it runs and every script it runs together with it, and hands scripts its service's part of the control group tree, in which scripts bounds each run on its own (`S01`; opsctl's `S7-apps.md`). The version is in the file's name and in the binary, never in a member's path.
+The file that carries scripts to a space. `devctl build scripts` writes it from the commit checked out, in a tree with no uncommitted changes; it reads no tag. The file is `scripts/dist/scripts-<sha>.tar.xz`, where `<sha>` is that commit's full 40-character lowercase hexadecimal sha, and `opsctl install` unpacks it into `/opt/scripts/`. Its contents are the whole of what scripts ships: the static `linux/amd64` binary, the manifest, the nginx fragment, and `share/icon.svg`, nothing else. The host's nginx serves scripts with the configuration every app behind the authenticator gets, since the manifest declares no `guests` (`S01`; opsctl's `S5-nginx.md`, `An operator reads the configuration of a host running apps behind the authenticator`). `etc/nginx.conf` is scripts' own nginx configuration, which the host includes in the server that answers at scripts' public name, as it does for any app that ships one; its one effect is that `/events` and `/declarations` answer 404 through nginx for every method (`S24`), and no story fixes its text beyond that effect. `share/icon.svg` is scripts' icon, an SVG image a human draws; its presence is what lists scripts in the platform's service launcher on a space (`S24`), and no story fixes its content beyond its being an SVG. scripts keeps nothing under `etc/` but the manifest and the fragment and nothing under `share/` but the icon, so no other member exists. The pages' templates are inside the binary, and the files that give the pages their style, their launcher, their button feedback, and their favicon are appkit's, inside the binary too (`S04`), so no `assets/` directory and no font file ships beside it. Neither `git` nor `python3.12` is in the file: both are the host's, `git` installed by the space's first boot (opsctl's `init` finds it on the `PATH`, opsctl's `S4-init.md`) and `python3.12` by the space's first boot or, on a space launched before that, by the operator (`S22`). Neither the database nor any run folder is in the file: scripts creates `state/scripts.db` and `state/runs/` under its working directory on first start (`S02`), the manifest's `[database]` table declares the database so that the host keeps it across releases and replicates it, and the run folders under `state/runs/` stay on the host across releases, as everything under `state/` does, but are not replicated (`S20`). The manifest's `[resources]` table is read by the host, which runs scripts among its other apps, bounds scripts, every `git` it runs and every script it runs together with it, and hands scripts its service's part of the control group tree, in which scripts bounds each run on its own (`S01`; opsctl's `S7-apps.md`). The commit is in the file's name only. No version and no commit is recorded in the binary or in any member, or in a member's path: scripts learns which code it is running from its environment when it runs (`S01`).
 
 ## A developer lists what the file holds
 
 Command:
 
 ```
-$ tar -tJf scripts/dist/scripts-v<semver>.tar.xz | sort
+$ tar -tJf scripts/dist/scripts-<sha>.tar.xz | sort
 ```
 
 Output:
@@ -23,7 +23,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `devctl build scripts` wrote `scripts/dist/scripts-v<semver>.tar.xz`.
+- `devctl build scripts`, run in a clean tree at the commit `<sha>`, wrote `scripts/dist/scripts-<sha>.tar.xz`.
 
 Postconditions:
 
@@ -31,12 +31,12 @@ Postconditions:
 
 ## A developer checks the binary the file holds
 
-The binary inside the file is what a host will run, so it is asked the two things a host asks it.
+The binary inside the file is what a host will run, so it is asked the two things a host asks it. Asked with neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE` set, it prints an empty line for its version: the binary carries no identity of its own, and the commit in the file's name is nowhere inside it.
 
 Command:
 
 ```
-$ tar -xJf scripts/dist/scripts-v<semver>.tar.xz -O bin/scripts > /tmp/scripts && chmod +x /tmp/scripts
+$ tar -xJf scripts/dist/scripts-<sha>.tar.xz -O bin/scripts > /tmp/scripts && chmod +x /tmp/scripts
 $ /tmp/scripts --version
 $ /tmp/scripts manifest
 ```
@@ -44,7 +44,7 @@ $ /tmp/scripts manifest
 Output:
 
 ```
-v<semver>
+
 app = "scripts"
 description = "Python scripts run from the suite's repositories"
 default = false
@@ -77,12 +77,13 @@ go_memory_limit = "128M"
 delegate = true
 ```
 
-Each command exits 0. The text is on stdout; stderr is empty. The version is the one in the file's name, and the manifest is byte for byte the file's `etc/manifest.toml`, the one `S01` shows.
+Each command exits 0. The text is on stdout; stderr is empty. `--version` prints one empty line, a single newline, and the manifest is byte for byte the file's `etc/manifest.toml`, the one `S01` shows.
 
 Preconditions:
 
-- `devctl build scripts` wrote `scripts/dist/scripts-v<semver>.tar.xz`.
+- `devctl build scripts`, run in a clean tree at the commit `<sha>`, wrote `scripts/dist/scripts-<sha>.tar.xz`.
 - The developer's machine is `linux/amd64`, or can run such a binary.
+- `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` are both unset or empty in the developer's environment.
 
 Postconditions:
 
