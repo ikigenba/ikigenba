@@ -501,7 +501,9 @@ devctl: 'host' is not a usable app name
 
 Exits 2. The line is on stderr; stdout is empty. Each of the other six
 reserved names, `seed` and `snapshots` among them, fails the same way, and so
-does a name that is not a DNS label, `Crm` or `crm_v2` say.
+does a name that is not a DNS label, `Crm` or `crm_v2` say, whenever the
+checkout has a sub-project of that name with a `main` package and
+`etc/manifest.toml`.
 
 Preconditions:
 
