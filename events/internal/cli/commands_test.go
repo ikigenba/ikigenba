@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,13 +27,10 @@ type writes struct {
 func (w *writes) Write(p []byte) (int, error)       { w.Calls++; return w.Buffer.Write(p) }
 func (w *writes) WriteString(p string) (int, error) { return w.Write([]byte(p)) }
 
-// R-ZTIK-BU7H R-ZUQG-PLY6 R-0AL5-OML7 R-0BT2-2EBW R-0D0Y-G62L R-0E8U-TXTA
+//	R-0AL5-OML7 R-0BT2-2EBW R-0D0Y-G62L R-0E8U-TXTA
+//
 // R-0GON-LHAO R-0HWJ-Z91D R-0KCC-QSIR R-0LK9-4K9G
 func TestConstants(t *testing.T) {
-	versionPointer := &cli.Version
-	if *versionPointer != cli.Version {
-		t.Fatal("version variable")
-	}
 	const usageConstant = cli.Usage
 	const manifestConstant = cli.Manifest
 	const nginxConstant = cli.NginxConf
@@ -49,9 +45,6 @@ func TestConstants(t *testing.T) {
 		t.Fatal("untyped constants")
 	}
 
-	if !regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`).MatchString(cli.Version) {
-		t.Fatal(cli.Version)
-	}
 	const exitExpression = cli.ExitSuccess + cli.ExitFailure + cli.ExitUsage
 	if exitExpression != 3 || cli.ExitSuccess != 0 || cli.ExitFailure != 1 || cli.ExitUsage != 2 {
 		t.Fatal("exit values")
@@ -88,7 +81,7 @@ func TestConstants(t *testing.T) {
 	}
 }
 
-// R-0FGR-7PJZ R-0MS5-IC05 R-0O01-W3QU R-0P7Y-9VHJ R-0QFU-NN88
+// R-0FGR-7PJZ R-9OYV-ZWFJ R-0O01-W3QU R-0P7Y-9VHJ R-0QFU-NN88
 // R-0RNR-1EYX R-0SVN-F6PM R-0U3J-SYGB R-0VBG-6Q70 R-12MU-HCN6
 func TestCommands(t *testing.T) {
 	cases := []struct {
@@ -96,7 +89,7 @@ func TestCommands(t *testing.T) {
 		out, err string
 		code     int
 	}{
-		{[]string{"--version"}, cli.Version + "\n", "", 0}, {[]string{"manifest"}, cli.Manifest, "", 0}, {[]string{"--help"}, cli.Usage, "", 0},
+		{[]string{"--version"}, "seam-display" + "\n", "", 0}, {[]string{"manifest"}, cli.Manifest, "", 0}, {[]string{"--help"}, cli.Usage, "", 0},
 	}
 	for _, args := range [][]string{{"bogus"}, {"--bogus"}, {"db"}, {"db", "bogus"}, {"db", "status", "extra"}, {"manifest", "extra"}, {"--version", "-x"}, {"--help", "extra", "more"}} {
 		arg := args[0]
@@ -122,7 +115,7 @@ func TestCommands(t *testing.T) {
 			var out bytes.Buffer
 			var errw writes
 			p := guardedProcess(t)
-			p.Args, p.Stdout, p.Stderr, p.Dir = tc.args, &out, &errw, dir
+			p.Args, p.Stdout, p.Stderr, p.Dir, p.Version = tc.args, &out, &errw, dir, "seam-display"
 
 			code := cli.Run(context.Background(), p)
 			if code != tc.code || out.String() != tc.out || errw.String() != tc.err {
@@ -139,7 +132,7 @@ func TestCommands(t *testing.T) {
 	}
 }
 
-// R-Q26R-L9UR R-0XR8-Y9OE R-0YZ5-C1F3 R-Q3EN-Z1LG R-HM3M-MEVY R-11EY-3KWH
+// R-Q26R-L9UR R-0XR8-Y9OE R-0YZ5-C1F3 R-9Q6S-DO68 R-9REO-RFWX R-11EY-3KWH
 func TestDatabaseStatus(t *testing.T) {
 	for _, kind := range []string{"absent", "empty_state", "valid", "newer", "bad"} {
 		t.Run(kind, func(t *testing.T) {
@@ -191,9 +184,6 @@ func TestDatabaseStatus(t *testing.T) {
 				if code != 1 || errw.Calls != 1 || errw.String() != "events: "+reference.Error()+"\n" {
 					t.Fatal(code, errw.String(), reference)
 				}
-				if kind == "newer" && !strings.Contains(errw.String(), "0002") {
-					t.Fatal(errw.String())
-				}
 			}
 			var after bytes.Buffer
 			_ = db.Status(context.Background(), db.Config{Path: path, Migrations: events.Migrations()}, &after)
@@ -213,5 +203,15 @@ func TestDatabaseStatus(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// R-9OYV-ZWFJ
+func TestEmptyVersionCommand(t *testing.T) {
+	p := guardedProcess(t)
+	var out, stderr bytes.Buffer
+	p.Args, p.Version, p.Dir, p.Stdout, p.Stderr = []string{"--version"}, "", t.TempDir(), &out, &stderr
+	if code := cli.Run(context.Background(), p); code != cli.ExitSuccess || out.String() != "\n" || stderr.Len() != 0 {
+		t.Fatal(code, out.String(), stderr.String())
 	}
 }

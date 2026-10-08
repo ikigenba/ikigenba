@@ -254,7 +254,7 @@ func TestSuccessfulDeliveryTrailOrdering(t *testing.T) {
 }
 
 func TestUndeliveredTrailPrivacyAndOneWritePerRecord(t *testing.T) {
-	// R-F9VJ-ZS40 R-98YL-W8I0
+	// R-F9VJ-ZS40 R-9XI6-OAME
 	received := make(chan struct{}, 1)
 	socket := trailSibling(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -328,7 +328,7 @@ func TestUndeliveredTrailPrivacyAndOneWritePerRecord(t *testing.T) {
 		switch record.Name {
 		case "service.started":
 			started++
-			if !reflect.DeepEqual(record.Attrs, telemetry.Attrs{"version": cli.Version}) {
+			if !reflect.DeepEqual(record.Attrs, telemetry.Attrs{"version": f.p.Version}) {
 				t.Fatal(record)
 			}
 		case "event.accepted":

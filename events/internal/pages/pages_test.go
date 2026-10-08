@@ -292,14 +292,23 @@ func TestExactTemplateAnswers(t *testing.T) {
 	check(t, invoke(nilStore.NotFound, "POST"), 404, expected(t, "notfound", notice))
 }
 
-// R-QS59-7TZB R-MZMS-U7R3 R-RCVJ-PXL4 R-MVZ3-OWJ0 R-RGJ8-V8T7 R-RIZ1-MSAL R-RK6Y-0K1A
+// R-QS59-7TZB R-MZMS-U7R3 R-RCVJ-PXL4 R-A3LO-L5BV R-A61H-COT9 R-A79D-QGJY R-A8HA-48AN
 func TestVisibleHooks(t *testing.T) {
+	for _, display := range []string{"test-build", ""} {
+		t.Run(display, func(t *testing.T) { visibleHooks(t, display) })
+	}
+}
+func visibleHooks(t *testing.T, display string) {
+	footer := "events"
+	if display != "" {
+		footer += " " + display
+	}
 	d, st, _ := fixture(t)
-	p := pages.New(pages.Config{Store: st, Version: "test-build"})
+	p := pages.New(pages.Config{Store: st, Version: display})
 	body := invoke(p.Landing, "GET").Body.String()
-	for _, tc := range []struct{ tag, attrs, want string }{{"title", "", "events"}, {"h1", "", "events"}, {"p", `id="summary" class="lede"`, "The suite's internal event bus: services emit events here, and each event is delivered, in order, to every service that accepts it."}, {"h2", `id="subscribers-title"`, "Subscribers"}, {"h3", `class="text-md"`, "No subscribers yet"}, {"a", `id="about-link" href="/about"`, "About events"}, {"footer", `class="footer"`, "events test-build"}} {
+	for _, tc := range []struct{ tag, attrs, want string }{{"title", "", "events"}, {"h1", "", "events"}, {"p", `id="summary" class="lede"`, "The suite's internal event bus: services emit events here, and each event is delivered, in order, to every service that accepts it."}, {"h2", `id="subscribers-title"`, "Subscribers"}, {"h3", `class="text-md"`, "No subscribers yet"}, {"a", `id="about-link" href="/about"`, "About events"}, {"footer", `class="footer"`, footer}} {
 		if tc.tag == "footer" {
-			if text(contents(t, body, "footer", "")) != "events test-build" {
+			if text(contents(t, body, "footer", "")) != footer {
 				t.Fatal(body)
 			}
 			continue
@@ -392,7 +401,7 @@ func TestVisibleHooks(t *testing.T) {
 	if len(facts) != 6 {
 		t.Fatal(facts)
 	}
-	for i, want := range []string{"Name", "events", "Version", "test-build", "Description", pages.Description} {
+	for i, want := range []string{"Name", "events", "Version", display, "Description", pages.Description} {
 		kind := "dt"
 		if i%2 == 1 {
 			kind = "dd"
@@ -408,7 +417,7 @@ func TestVisibleHooks(t *testing.T) {
 	if strings.Count(aboutList, "<") != 12 {
 		t.Fatal("unexpected about facts", aboutList)
 	}
-	for _, tc := range []struct{ tag, attrs, want string }{{"title", "", "About events"}, {"h1", "", "About events"}, {"dd", `id="about-name"`, "events"}, {"dd", `id="about-version"`, "test-build"}, {"dd", `id="about-description"`, pages.Description}, {"a", `id="home-link" href="/"`, "Back to events"}} {
+	for _, tc := range []struct{ tag, attrs, want string }{{"title", "", "About events"}, {"h1", "", "About events"}, {"dd", `id="about-name"`, "events"}, {"dd", `id="about-version"`, display}, {"dd", `id="about-description"`, pages.Description}, {"a", `id="home-link" href="/"`, "Back to events"}} {
 		if element(t, about, tc.tag, tc.attrs) != tc.want {
 			t.Fatal(tc)
 		}
@@ -439,7 +448,7 @@ func TestVisibleHooks(t *testing.T) {
 		}
 	}
 	for _, b := range []string{body, about, missing, unavailable} {
-		if text(contents(t, b, "footer", "")) != "events test-build" {
+		if text(contents(t, b, "footer", "")) != footer {
 			t.Fatal("footer", b)
 		}
 		if len(regexp.MustCompile(`<h1\b`).FindAllString(b, -1)) != 1 {
