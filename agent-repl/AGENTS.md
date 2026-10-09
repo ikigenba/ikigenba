@@ -1,6 +1,6 @@
 # agent-repl
 
-agent-repl is a REPL for exercising agentkit by hand. One conversation per session, the six `toolkit` file tools registered, every choice a `-c key=value` string, and a help screen generated from agentkit's catalog. The module path is `github.com/ikigenba/ikigenba/agent-repl`. The contract is `specs/design/`; this file restates none of it.
+agent-repl is a REPL for exercising agentkit by hand. One conversation per session, the six `toolkit` file tools registered, every choice a `-c key=value` string, and a help screen generated from agentkit's catalog. It is a command-line program; it has no stories today. The module path is `github.com/ikigenba/ikigenba/agent-repl`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
