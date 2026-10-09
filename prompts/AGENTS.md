@@ -21,7 +21,8 @@ eleven MCP tools, which agents reach through the MCP gateway: `list`, `show`,
 `create`, `update`, `delete`, `subscribe`, `unsubscribe`, `run`, `runs`,
 `result` and `cancel`. At `/` it serves a catalog of the user's prompts and
 their last runs, with a page for each prompt at `/<name>/` and for each run
-at `/<name>/runs/<run id>/`, and links to an about screen. On a host it runs
+at `/<name>/runs/<run id>/`, a tools page at `/tools` and an about screen
+at `/about`. On a host it runs
 as `/opt/ikigenba/current/prompts/bin/prompts` with
 `/var/opt/ikigenba/prompts` as its working directory and its environment from
 `/etc/opt/ikigenba/prompts/env`; a developer runs the same binary from the
@@ -63,12 +64,12 @@ templates under `assets/`, and the design in `specs/design/` is the record.
 `assets/` holds prompts' markup: the Go `html/template` files `landing.html`,
 the catalog (template `landing`), `prompt.html`, one prompt's page (template
 `prompt`), `run.html`, one run's page (template `run`), `about.html`, the
-about screen (template `about`), `notfound.html`, the not-found page
-(template `notfound`), and `unavailable.html`, the unavailable page (template
+about screen (template `about`), `tools.html`, the tools page (template
+`tools`), `notfound.html`, the not-found page (template `notfound`), and `unavailable.html`, the unavailable page (template
 `unavailable`). Each opens with a comment naming the data it receives; the
 hooks it carries are documented there for people and the stylesheet, and
 design never names them. Every page is shown only to a signed-in user. The
-landing, prompt, run and about pages carry appkit's banner; the not-found and
+landing, prompt, run, tools and about pages carry appkit's banner; the not-found and
 unavailable pages carry the footer only and never the banner. They follow the
 repository's `design/` and are inputs to the spec: the user or the delivering
 agent writes them, before design is drafted, and the build run reads them and
@@ -114,9 +115,11 @@ build run never writes it. `devctl build` packs it beside `bin/` and `etc/`.
 - the modules `go.mod` requires, in the Go module cache; `go.sum` is
   committed, and the gates themselves run offline. The build run moves to
   another release only when this file names one:
-  - appkit `v0.18.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.18.0`: a release that
-    exports the `db` and `version` packages. See Adopting the libraries
+  - appkit `v0.20.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.20.0`: a release that
+    exports the `db` and `version` packages, whose `page.Banner` carries
+    the trail, the home link and the tools flag the templates use, and
+    whose MCP server lists its registered tools. See Adopting the libraries
     below.
   - agentkit `v0.13.0`, set with
     `go get github.com/ikigenba/ikigenba/agentkit@v0.13.0`: the model
@@ -144,7 +147,7 @@ external dependency needs approval first, the user's or a delivery's.
 ### Adopting the libraries
 
 appkit, agentkit and toolkit are required only at a published release, here
-appkit `v0.18.0`, agentkit `v0.13.0` and toolkit `v0.3.0`, fetched through the
+appkit `v0.20.0`, agentkit `v0.13.0` and toolkit `v0.3.0`, fetched through the
 ordinary module proxy and checked against the checksum database (see the root
 `AGENTS.md`), each set with `go get` as above. No `replace` directive, no
 `go.work`, no local module cache stands in for any of them. A change that
