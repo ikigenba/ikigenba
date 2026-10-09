@@ -5,13 +5,13 @@ oauth is a CLI that runs the OAuth login flow agent-repl's providers need. One G
 ## Layout
 
 - `specs/` is the contract: `design/`.
-- `cmd/oauth` is the binary. `internal/` is everything else, one package per concern.
+- The root package `oauth` (`assets.go`) embeds `assets/`. `cmd/oauth` is the binary. `internal/` is everything else, one package per concern.
 - `assets/` holds the callback pages. The build run never writes it; the user or the delivering agent changes it.
 - The build run writes the Go source and the tests. `assets/`, `Makefile`, `.golangci.yml`, `install.sh`, `.goreleaser.yaml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets
 
-`assets/` holds `success.html` and `failure.html`, the callback pages, `html/template` files. They are self-contained, carrying no theme, chrome or reference to any further resource (R-GOTE-M2TF), and are an input to the spec. Go's `embed` reaches only files at or below the embedding package's directory, so the package that embeds them sits at or above `assets/`, not under `internal/`; design names it. The code executes them by template name, adding no markup of its own. Every word a person reads, and every class, id and attribute, lives in the template and nowhere else; a test, a requirement and the source never spell one. Design names each template and the data it receives, never its text, hooks, markup or styles. A test proves a page by executing the named template with the data the design says and comparing, or by checking that a value it supplied appears in the body; it never looks for a word or a tag. The one exception is the self-containment check: a test may parse a page's bytes as an HTML document for every external reference it carries, whatever element carries it, never looking for a word, class, id or other hook; the parse is written in the test, adding no dependency. A change to copy or markup is an edit to the asset alone. A template that is missing or wrong, or that cannot show a state the design names, is filed in `specs/issues/`; the run never edits an asset to close one.
+`assets/` holds `success.html` and `failure.html`, the callback pages, `html/template` files. They are self-contained, carrying no theme, chrome or reference to any further resource (R-GOTE-M2TF), and are an input to the spec. Go's `embed` reaches only files at or below the embedding package's directory, so the root package embeds them, not one under `internal/`; design names it. The code executes them by template name, adding no markup of its own. Every word a person reads, and every class, id and attribute, lives in the template and nowhere else; a test, a requirement and the source never spell one. Design names each template and the data it receives, never its text, hooks, markup or styles. A test proves a page by executing the named template with the data the design says and comparing, or by checking that a value it supplied appears in the body; it never looks for a word or a tag. The one exception is the self-containment check: a test may parse a page's bytes as an HTML document for every external reference it carries, whatever element carries it, never looking for a word, class, id or other hook; the parse is written in the test, adding no dependency. A change to copy or markup is an edit to the asset alone. A template that is missing or wrong, or that cannot show a state the design names, is filed in `specs/issues/`; the run never edits an asset to close one.
 
 ## Toolchain
 
@@ -23,11 +23,13 @@ Prefer the standard library, then a widely used public module; adding one needs 
 
 ## Test files
 
-The test files are every `*_test.go` under `cmd/` and `internal/`. The canonical gap greps them for ids:
+The test files are every `*_test.go` in the module: the root package, `cmd/oauth` and everything under `internal/`. The canonical gap greps them for ids:
 
 ```
-grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort -u
+grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
+
+`specs/` and `assets/` hold no `*_test.go`.
 
 **No id-shaped literal in a fixture.** oauth neither mints nor emits `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a requirement tag.
 
