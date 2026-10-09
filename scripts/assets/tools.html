@@ -1,12 +1,12 @@
 {{/* The tools screen at GET /tools: the MCP tools agents use to manage and
      run scripts. Shown only to a signed-in user. Data: .Banner (a page.Banner, for banner and footer); .Tools (a slice of items, each with .Name, the tool's name, and .Description, its description).
      Hooks: title "tools · scripts"; h1 with text "Tools"; p#summary.lede
-     naming the gateway's call and mutate, each in code; dl#tools.kv
-     holding, per item of .Tools in the given order, dt[data-tool=<.Name>]
-     holding .Name in a code element, followed by a dd holding
-     .Description. No section of the landing page's, no h2. No script but
-     appkit's /_appkit/feedback.js (and the launcher's, which the banner
-     carries). */}}
+     naming the gateway's call and mutate, each in code; a section.card
+     holding dl#tools.kv with one dt[data-tool=<.Name>] per tool, in the
+     order of .Tools, holding .Name in a code element and followed by a dd
+     holding .Description. No section of the landing page's, no h2. No
+     script but appkit's /_appkit/feedback.js (and the launcher's, which the
+     banner carries). */}}
 {{define "tools"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>tools · scripts</title></head>
