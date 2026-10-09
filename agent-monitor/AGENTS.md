@@ -1,6 +1,6 @@
 # agent-monitor
 
-agent-monitor watches the coding agents running on the developer's machine. Nothing depends on it. It is a Go binary run on a developer's own Linux machine, as that developer, to observe Claude Code, Codex and Grok at work: it reads the logs those agents keep under the developer's home directory and the process facts in `/proc`, and writes to neither. It is never deployed to a host. The module path is `github.com/ikigenba/ikigenba/agent-monitor`. The contract is `specs/design/`; this file restates none of it.
+agent-monitor watches the coding agents running on the developer's machine. Nothing depends on it. It is a Go binary run on a developer's own Linux machine, as that developer, to observe Claude Code, Codex and Grok at work: it reads the logs those agents keep under the developer's home directory and the process facts in `/proc`, and writes to neither. It is never deployed to a host. It is a command-line program with stories. The module path is `github.com/ikigenba/ikigenba/agent-monitor`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
