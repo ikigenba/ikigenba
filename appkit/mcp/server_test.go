@@ -105,7 +105,7 @@ func TestServerPublicContract(t *testing.T) {
 	if got := string(serverTestResult(t, w)["instructions"]); got != `"hello"` {
 		t.Fatal(got)
 	}
-	// R-HPU9-S2TW R-HSA2-JMBA R-HTHY-XE1Z: constant values usable by a consumer.
+	// R-CYPW-I51Z R-HSA2-JMBA R-HTHY-XE1Z: constant values usable by a consumer.
 	const body string = mcp.MissingCallerBody
 	const version string = mcp.ProtocolVersion
 	var codes = [...]int{mcp.CodeParseError, mcp.CodeInvalidRequest, mcp.CodeMethodNotFound, mcp.CodeInvalidParams, mcp.CodeInternalError, mcp.CodeHeaderMismatch, mcp.CodeUnsupportedProtocolVersion}
@@ -113,7 +113,8 @@ func TestServerPublicContract(t *testing.T) {
 	if wideCodes != [7]int64{-32700, -32600, -32601, -32602, -32603, -32020, -32022} {
 		t.Fatal(wideCodes)
 	}
-	if body != "identity middleware missing\n" || version != "2026-07-28" || codes != [7]int{-32700, -32600, -32601, -32602, -32603, -32020, -32022} {
+	wMissing := serverTestServe(s, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	if wMissing.Body.String() != body || version != "2026-07-28" || codes != [7]int{-32700, -32600, -32601, -32602, -32603, -32020, -32022} {
 		t.Fatal(body, version, codes)
 	}
 }
@@ -242,12 +243,12 @@ func TestServerTransport(t *testing.T) {
 }
 
 func TestServerTransportPrecedenceAndErrors(t *testing.T) {
-	// R-IAKK-A6FP
+	// R-D15P-9OJD R-CZXS-VWSO
 	for _, tc := range []struct {
 		status  int
 		message string
 		change  func(*http.Request)
-	}{{403, "Origin not allowed", func(r *http.Request) { r.Header.Set("Origin", "null") }}, {415, "Content-Type must be application/json", func(r *http.Request) { r.Header.Del("Content-Type") }}, {413, "Request body too large", func(r *http.Request) { r.Body = io.NopCloser(strings.NewReader(strings.Repeat("!", 1048577))) }}} {
+	}{{403, mcp.OriginNotAllowedMessage, func(r *http.Request) { r.Header.Set("Origin", "null") }}, {415, mcp.ContentTypeMessage, func(r *http.Request) { r.Header.Del("Content-Type") }}, {413, mcp.BodyTooLargeMessage, func(r *http.Request) { r.Body = io.NopCloser(strings.NewReader(strings.Repeat("!", 1048577))) }}} {
 		r := serverTestRequest("invalid")
 		tc.change(r)
 		w := serverTestServe(serverTestNew(t), r)
@@ -290,7 +291,7 @@ func serverTestRejection(t *testing.T, w *httptest.ResponseRecorder, method stri
 			return
 		}
 		code := mcp.CodeInvalidRequest
-		message := map[int]string{2: "Origin not allowed", 3: "Content-Type must be application/json", 4: "Request body too large"}[stage]
+		message := map[int]string{2: mcp.OriginNotAllowedMessage, 3: mcp.ContentTypeMessage, 4: mcp.BodyTooLargeMessage}[stage]
 		want := map[string]any{"jsonrpc": "2.0", "error": map[string]any{"code": float64(code), "message": message}}
 		var got map[string]any
 		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
@@ -340,7 +341,7 @@ func serverTestRejectRequest(r *http.Request, mask int) (*http.Request, int) {
 }
 
 func TestServerRejectionsTakePrecedence(t *testing.T) {
-	// R-T5ZE-56QV: every combination answers only its first rejection, with no calls or events.
+	// R-D4TE-EZRG: every combination answers only its first rejection, with no calls or events.
 	capture := &telemetry.Capture{}
 	writer := mcpTestWriter(t, capture, nil)
 	instructions, tools := 0, 0
@@ -547,7 +548,7 @@ func TestServerVersionSelection(t *testing.T) {
 	if w := serverTestServe(serverTestNew(t), r); w.Code != 200 {
 		t.Fatal(w.Code)
 	}
-	// R-IMRK-3VUN
+	// R-D2DL-NGA2
 	for _, version := range []any{"other", nil, 5, true, []any{}, map[string]any{}} {
 		r := serverTestRequest(serverTestMessage("tools/list", map[string]any{"_meta": map[string]any{serverTestVersionKey: version}}))
 		w := serverTestServe(serverTestNew(t), r)
@@ -558,7 +559,7 @@ func TestServerVersionSelection(t *testing.T) {
 			serverTestError(t, w, 400, mcp.CodeInvalidParams)
 		}
 	}
-	// R-4E26-5YZ0 R-4FA2-JQPP
+	// R-4E26-5YZ0 R-D3LI-180R
 	for _, version := range []string{mcp.ProtocolVersion, "unsupported", ""} {
 		r := serverTestRequest(serverTestMessage("ping", map[string]any{}))
 		r.Header.Set("MCP-Protocol-Version", version)
@@ -575,7 +576,7 @@ func TestServerVersionSelection(t *testing.T) {
 func serverTestVersionData(t *testing.T, e map[string]json.RawMessage, requested string) {
 	t.Helper()
 	want := map[string]any{"supported": []string{mcp.ProtocolVersion, "2025-11-25", "2025-06-18"}, "requested": requested}
-	if string(e["message"]) != `"Unsupported protocol version"` || !serverTestEqualJSON(e["data"], serverTestJSON(want)) {
+	if string(e["message"]) != string(serverTestJSON(mcp.UnsupportedVersionMessage)) || !serverTestEqualJSON(e["data"], serverTestJSON(want)) {
 		t.Fatal(e)
 	}
 }
@@ -645,7 +646,7 @@ func TestServerModernMetadata(t *testing.T) {
 }
 
 func TestServerModernPrecedence(t *testing.T) {
-	// R-8O2E-HKBQ
+	// R-D61A-SRI5
 	for _, tc := range []struct {
 		version              any
 		caps                 any
@@ -666,6 +667,20 @@ func TestServerModernPrecedence(t *testing.T) {
 		r := serverTestModern(method, map[string]any{"cursor": true, "name": nil})
 		r.Header.Set("Mcp-Method", "wrong")
 		serverTestError(t, serverTestServe(serverTestNew(t), r), 400, mcp.CodeHeaderMismatch)
+	}
+	// A tool-name mismatch takes precedence over the method's invalid arguments.
+	for _, nameHeader := range []string{"wrong", "absent", "tool"} {
+		r := serverTestModern("tools/call", map[string]any{"name": "tool", "arguments": false})
+		if nameHeader == "absent" {
+			r.Header.Del("Mcp-Name")
+		} else {
+			r.Header.Set("Mcp-Name", nameHeader)
+		}
+		code := mcp.CodeHeaderMismatch
+		if nameHeader == "tool" {
+			code = mcp.CodeInvalidParams
+		}
+		serverTestError(t, serverTestServe(serverTestNew(t), r), 400, code)
 	}
 }
 

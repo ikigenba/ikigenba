@@ -13,7 +13,7 @@ type Caller struct {
 }
 
 // MissingBody is the response when nginx did not provide a user identity.
-const MissingBody = "identity header missing\n"
+const MissingBody string = "identity header missing\n"
 
 type callerKey struct{}
 

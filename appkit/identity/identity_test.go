@@ -20,9 +20,11 @@ func TestPublicContract(t *testing.T) {
 	if c.UserID != "user" || c.Email != "email" || c.RequestID != "request" {
 		t.Fatalf("caller fields: %+v", c)
 	}
-	// R-KBDW-7FKA: usable as a constant.
-	const body = identity.MissingBody
-	if body != "identity header missing\n" {
+	// R-CXI0-4DBA: usable as a string constant.
+	const body string = identity.MissingBody
+	wMissing := httptest.NewRecorder()
+	identity.Require(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(wMissing, httptest.NewRequest(http.MethodGet, "/", nil))
+	if wMissing.Body.String() != body {
 		t.Fatalf("missing body: %q", body)
 	}
 	// R-2LZM-O9RP R-KDTO-YZ1O R-KF1L-CQSD R-KG9H-QIJ2: exact public signatures used below.

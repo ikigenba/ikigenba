@@ -36,9 +36,11 @@ const (
 	OutcomeOK        = "ok"
 	OutcomeSkip      = "skip"
 	OutcomeError     = "error"
-	PanicMessage     = "event handler panicked"
 	MaxDeliveryBytes = 131072
 )
+
+// PanicMessage is the public copy for a recovered handler panic.
+const PanicMessage string = "event handler panicked"
 
 // OK marks a handled delivery.
 func OK() Outcome { return Outcome{kind: OutcomeOK} }

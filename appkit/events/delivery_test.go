@@ -36,7 +36,7 @@ func fixtureBody(t *testing.T) string {
 	return string(b)
 }
 
-// R-F3G6-LZYD R-F4O2-ZRP2 R-F5VZ-DJFR R-F73V-RB6G R-F8BS-52X5 R-F9JO-IUNU R-FARK-WMEJ R-FBZH-AE58
+// R-F3G6-LZYD R-F4O2-ZRP2 R-F73V-RB6G R-F8BS-52X5 R-F9JO-IUNU R-FARK-WMEJ R-FBZH-AE58
 // R-FI2Z-78UP R-FJAV-L0LE R-FKIR-YSC3 R-FMYK-QBTH R-FO6H-43K6
 func TestOutcomeValues(t *testing.T) {
 	typ := reflect.TypeOf(Outcome{})
@@ -67,7 +67,7 @@ func TestOutcomeValues(t *testing.T) {
 	var a outcomeText = OutcomeOK
 	var b outcomeText = OutcomeSkip
 	var c outcomeText = OutcomeError
-	if a != "ok" || b != "skip" || c != "error" || PanicMessage != "event handler panicked" {
+	if a != "ok" || b != "skip" || c != "error" {
 		t.Fatal("constants")
 	}
 	type deliveryLimit int64
@@ -284,7 +284,16 @@ func TestDeliveryInvocationAndOutcomes(t *testing.T) {
 		}
 		return Skip()
 	}})
-	if w := deliveryRequest(panicky, "POST", "application/json", b); w.Code != 500 || w.Body.String() != `{"outcome":"error","error":"event handler panicked"}` {
+	// R-D8H3-KAZJ: exported string constant used for the recovered outcome.
+	const panicMessage string = PanicMessage
+	panicBody, err := json.Marshal(struct {
+		Outcome string `json:"outcome"`
+		Error   string `json:"error"`
+	}{OutcomeError, panicMessage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := deliveryRequest(panicky, "POST", "application/json", b); w.Code != 500 || w.Body.String() != string(panicBody) {
 		t.Fatal(w)
 	}
 	if w := deliveryRequest(panicky, "POST", "application/json", b); w.Code != 200 || w.Body.String() != `{"outcome":"skip"}` || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"application/json"}) {

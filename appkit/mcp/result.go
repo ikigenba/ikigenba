@@ -10,7 +10,7 @@ import (
 type Result struct{ members []jsonMember }
 
 // PanicText is the public error text for an internal tool failure.
-const PanicText = "The tool failed with an internal error."
+const PanicText string = "The tool failed with an internal error."
 
 // ErrorResult returns a text block marked as a tool error.
 func ErrorResult(text string) Result {

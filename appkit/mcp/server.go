@@ -20,9 +20,8 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// MissingCallerBody, the error codes, and ProtocolVersion name wire values consumers use.
+// The error codes and ProtocolVersion name wire values consumers use.
 const (
-	MissingCallerBody              = "identity middleware missing\n"
 	CodeParseError                 = -32700
 	CodeInvalidRequest             = -32600
 	CodeMethodNotFound             = -32601
@@ -31,6 +30,15 @@ const (
 	CodeHeaderMismatch             = -32020
 	CodeUnsupportedProtocolVersion = -32022
 	ProtocolVersion                = "2026-07-28"
+)
+
+// Rejection messages are copy shared with consumers.
+const (
+	MissingCallerBody         string = "identity middleware missing\n"
+	OriginNotAllowedMessage   string = "Origin not allowed"
+	BodyTooLargeMessage       string = "Request body too large"
+	ContentTypeMessage        string = "Content-Type must be application/json"
+	UnsupportedVersionMessage string = "Unsupported protocol version"
 )
 
 const serverVersionKey = "io.modelcontextprotocol/protocolVersion"
@@ -102,18 +110,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, origin := range r.Header.Values("Origin") {
 		scheme, host, found := strings.Cut(origin, "://")
 		if !found || scheme == "" || !strings.EqualFold(host, r.Host) {
-			serverError(w, http.StatusForbidden, nil, CodeInvalidRequest, "Origin not allowed", nil)
+			serverError(w, http.StatusForbidden, nil, CodeInvalidRequest, OriginNotAllowedMessage, nil)
 			return
 		}
 	}
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || !strings.EqualFold(media, "application/json") {
-		serverError(w, http.StatusUnsupportedMediaType, nil, CodeInvalidRequest, "Content-Type must be application/json", nil)
+		serverError(w, http.StatusUnsupportedMediaType, nil, CodeInvalidRequest, ContentTypeMessage, nil)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1048577))
 	if len(body) > 1048576 {
-		serverError(w, http.StatusRequestEntityTooLarge, nil, CodeInvalidRequest, "Request body too large", nil)
+		serverError(w, http.StatusRequestEntityTooLarge, nil, CodeInvalidRequest, BodyTooLargeMessage, nil)
 		return
 	}
 	if err != nil || !utf8.Valid(body) || !json.Valid(body) {
@@ -274,7 +282,7 @@ func (s *Server) serverRevision(w http.ResponseWriter, r *http.Request, id json.
 func serverVersionError(w http.ResponseWriter, id json.RawMessage, requested string) {
 	data := []jsonMember{{"supported", json.RawMessage(serverSupported)}, {"requested", serverJSON(requested)}}
 	encoded, _ := marshalJSONObject(data)
-	serverError(w, 400, id, CodeUnsupportedProtocolVersion, "Unsupported protocol version", encoded)
+	serverError(w, 400, id, CodeUnsupportedProtocolVersion, UnsupportedVersionMessage, encoded)
 }
 
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, caller identity.Caller, id json.RawMessage, method string, params map[string]json.RawMessage, modern bool) {

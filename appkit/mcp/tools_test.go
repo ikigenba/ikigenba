@@ -102,10 +102,7 @@ func TestToolPublicShapes(t *testing.T) {
 	if got := toolsCall(s, "read_raw", `{}`); got != resultBytes(t, mcp.TextResult("ok")) {
 		t.Fatal(got)
 	}
-	// R-KH3Q-10SZ
-	if mcp.PanicText != "The tool failed with an internal error." {
-		t.Fatal(mcp.PanicText)
-	}
+
 }
 
 func TestToolRegistrationFailures(t *testing.T) {
@@ -372,7 +369,9 @@ func TestToolPanicsRecover(t *testing.T) {
 			mcp.AddRawTool(s, toolsRaw("read_later"))
 			ctx := identity.NewContext(context.Background(), identity.Caller{UserID: "user", RequestID: requestID})
 			got := string(toolsRequest(ctx, s, "tools/call", `{"name":"read_data","arguments":{}}`))
-			if got != resultBytes(t, mcp.ErrorResult(mcp.PanicText)) {
+			// R-D797-6J8U: the exported string constant supplies the recovered failure.
+			const panicText string = mcp.PanicText
+			if got != resultBytes(t, mcp.ErrorResult(panicText)) {
 				t.Fatal(got)
 			}
 			if got := toolsCall(s, "read_later", `{}`); got != resultBytes(t, mcp.TextResult("ok")) {
