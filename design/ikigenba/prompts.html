@@ -9,9 +9,11 @@
 </head>
 <body>
 <header>
-  <strong class="mark" data-service="prompts"><img src="favicon.svg" alt="">Ikigenba<span class="service"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l5 5l-5 5"/><path d="M13 17l6 0"/></svg>prompts</span></strong>
-  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
-  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="prompts.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l5 5l-5 5"/><path d="M13 17l6 0"/></svg>prompts</a><button class="menu" type="button" popovertarget="pages" aria-label="prompts pages" title="prompts pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="prompts pages"><ul><li><a href="prompts.html" aria-current="page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l5 5l-5 5"/><path d="M13 17l6 0"/></svg>prompts<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg></a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
 </header>
 
 <main>
@@ -62,22 +64,6 @@
     </div>
   </section>
 
-  <section class="card" aria-labelledby="tools-title">
-    <header><h2 id="tools-title">MCP tools</h2><p>Agents manage and run prompts with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
-    <dl id="tools" class="kv">
-      <dt data-tool="list"><code>list</code></dt><dd>The prompts you own, by name.</dd>
-      <dt data-tool="show"><code>show</code></dt><dd>One of your prompts, with its model, its text, its tools and its last run.</dd>
-      <dt data-tool="create"><code>create</code></dt><dd>Create a prompt from a model and the text it is given.</dd>
-      <dt data-tool="update"><code>update</code></dt><dd>Change the model, text, system prompt, tools or schema of one of your prompts.</dd>
-      <dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your prompts and every run it has.</dd>
-      <dt data-tool="subscribe"><code>subscribe</code></dt><dd>Run one of your prompts each time an event matching a pattern is delivered.</dd>
-      <dt data-tool="unsubscribe"><code>unsubscribe</code></dt><dd>Stop running one of your prompts on an event it is subscribed to.</dd>
-      <dt data-tool="run"><code>run</code></dt><dd>Start a run of one of your prompts and return its id and status.</dd>
-      <dt data-tool="runs"><code>runs</code></dt><dd>The runs of one of your prompts, newest first.</dd>
-      <dt data-tool="result"><code>result</code></dt><dd>One run whole: its details, its usage and cost, its answer so far, and the files it wrote.</dd>
-      <dt data-tool="cancel"><code>cancel</code></dt><dd>End one of your runs that is still queued or running.</dd>
-    </dl>
-  </section>
   <p><a id="about-link" href="/about">About prompts</a></p>
 
   <section>

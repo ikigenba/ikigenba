@@ -285,11 +285,11 @@ hooks, words and states; what differs is listed here.
 - The catalog: `h1` prompts, a lede, the user's own prompts as
   `table#prompt-list` of Prompt / Model / Last run / Cost / When:
   `daily-digest` (`claude-sonnet-5`, exited 0, its cost), `triage-inbox`
-  (running, no cost yet), `summarize-crm` (exited 2), `echo` (never run). An
-  MCP tools list naming `list`, `show`, `create`, `update`, `delete`,
-  `subscribe`, `unsubscribe`, `run`, `runs`, `result`, `cancel`, and a link
-  to the about screen. State: no prompts (`div#no-prompts.empty`).
-- One prompt, `daily-digest`: breadcrumb prompts / daily-digest; a line
+  (running, no cost yet), `summarize-crm` (exited 2), `echo` (never run), and
+  a link to the about screen. Its tools (`list`, `show`, `create`, `update`,
+  `delete`, `subscribe`, `unsubscribe`, `run`, `runs`, `result`, `cancel`)
+  are on its tools page. State: no prompts (`div#no-prompts.empty`).
+- One prompt, `daily-digest`: the trail prompts / daily-digest; a line
   naming the model and the tool groups; `section#prompt-card`, a key/value
   card (id, model, tools as `span#tool-groups` of one `code[data-group]` per
   group, created, runs kept); then `section#text` (the prompt text),
@@ -299,7 +299,7 @@ hooks, words and states; what differs is listed here.
   one row per status, queued included. States: no tools (`span#no-tools`,
   "none"), no system prompt (`div#no-system.empty`), no schema
   (`div#no-schema.empty`), no subscriptions, no runs.
-- One run: breadcrumb prompts / daily-digest / `prr_3f9a1c2e8b7d4a60`; a
+- One run: the trail prompts / daily-digest / `prr_3f9a1c2e8b7d4a60`; a
   headline of status, start time, duration and cost; the run card (status,
   prompt, model, started, finished, duration, trigger, user, request, usage,
   cost, output sizes). The usage line, `dd#usage`, reads calls, tool calls,
