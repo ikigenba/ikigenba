@@ -7,7 +7,7 @@ import (
 )
 
 // Description is auth's one-line description, shared by its page and manifest.
-const Description string = "Sign-in and identity for the suite's services."
+const Description string = "Sign-in and identity for the suite's services"
 
 // AboutData supplies auth's about template.
 type AboutData struct {
