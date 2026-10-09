@@ -38,7 +38,7 @@ func iconEntry(name, url, icon string, enabled bool) map[string]any {
 }
 
 func TestPublicSurface(t *testing.T) {
-	// R-HLTX-LS8Q R-HT5B-WEOW R-HUD8-A6FL R-SGAN-GQS4 R-HY0X-FHNO
+	// R-HLTX-LS8Q R-HT5B-WEOW R-HUD8-A6FL R-F4AI-AQ0A R-F5IE-OHQZ R-HY0X-FHNO
 	t.Setenv(services.Variable, "")
 	user := page.User{"email", "/profile", "/logout"}
 	if user.Email != "email" || user.ProfileURL != "/profile" || user.LogoutURL != "/logout" {
@@ -49,8 +49,12 @@ func TestPublicSurface(t *testing.T) {
 	if service.Name != "app" || service.URL != "/app" || service.Icon != icon || !service.Enabled || service.Current {
 		t.Fatal("Service fields or order")
 	}
-	banner := page.Banner{"app", icon, "build", user.Email, user.ProfileURL, user.LogoutURL, []page.Service{service}}
-	if banner.Service != "app" || banner.Icon != icon || banner.Version != "build" || banner.Email != user.Email || banner.ProfileURL != user.ProfileURL || banner.LogoutURL != user.LogoutURL || banner.Services[0] != service {
+	level := page.Level{"section", "/section"}
+	if level.Name != "section" || level.URL != "/section" {
+		t.Fatal("Level fields or order")
+	}
+	banner := page.Banner{"app", icon, "build", user.Email, user.ProfileURL, user.LogoutURL, []page.Service{service}, "/home", true, []page.Level{level}}
+	if banner.Service != "app" || banner.Icon != icon || banner.Version != "build" || banner.Email != user.Email || banner.ProfileURL != user.ProfileURL || banner.LogoutURL != user.LogoutURL || banner.Services[0] != service || banner.Home != "/home" || !banner.Tools || banner.Trail[0] != level {
 		t.Fatal("Banner fields or order")
 	}
 	useBanner := func(bannerOf func(page.User) page.Banner) { _ = bannerOf(user) }
@@ -253,5 +257,167 @@ func TestBannerCurrentIcon(t *testing.T) {
 	}
 	if got := page.New("app", "build").Banner(page.User{}).Icon; got != "" {
 		t.Fatalf("unset path Icon = %q", got)
+	}
+}
+
+func TestBannerHome(t *testing.T) {
+	// R-F6QB-29HO
+	path := filepath.Join(t.TempDir(), "services.json")
+	t.Setenv(services.Variable, path)
+	kit := page.New("app", "build")
+	url := "  /front?x=1&y=<value>\n"
+	for _, enabled := range []bool{false, true} {
+		for _, hasIcon := range []bool{false, true} {
+			first := entry("home", url, enabled)
+			if hasIcon {
+				first["icon"] = "first-icon"
+			}
+			writeEntries(t, path, []map[string]any{
+				iconEntry("other", "/other", "other-icon", true),
+				first, iconEntry("home", "/second-home", "second-icon", !enabled),
+			})
+			want := ""
+			if enabled {
+				want = url
+			}
+			if got := kit.Banner(page.User{}).Home; got != want {
+				t.Fatalf("enabled=%v icon=%v Home=%q, want %q", enabled, hasIcon, got, want)
+			}
+		}
+	}
+	for _, entries := range [][]map[string]any{
+		nil,
+		{iconEntry("Home", "/wrong-case", "icon", true), entry("other", "/other", true)},
+	} {
+		writeEntries(t, path, entries)
+		if got := kit.Banner(page.User{}).Home; got != "" {
+			t.Fatalf("no home entry yielded Home=%q", got)
+		}
+	}
+}
+
+func TestBannerTools(t *testing.T) {
+	// R-F7Y7-G18D
+	path := filepath.Join(t.TempDir(), "services.json")
+	t.Setenv(services.Variable, path)
+	kit := page.New("app", "build")
+	for _, mcp := range []bool{false, true} {
+		for _, enabled := range []bool{false, true} {
+			for _, hasIcon := range []bool{false, true} {
+				first := entry("app", "/app", enabled)
+				first["mcp"] = mcp
+				if hasIcon {
+					first["icon"] = "first-icon"
+				}
+				second := iconEntry("app", "/second-app", "second-icon", !enabled)
+				second["mcp"] = !mcp
+				writeEntries(t, path, []map[string]any{entry("other", "/other", true), first, second})
+				if got := kit.Banner(page.User{}).Tools; got != mcp {
+					t.Fatalf("mcp=%v enabled=%v icon=%v Tools=%v", mcp, enabled, hasIcon, got)
+				}
+			}
+		}
+	}
+	other := iconEntry("APP", "/wrong-case", "icon", true)
+	other["mcp"] = true
+	for _, entries := range [][]map[string]any{nil, {other}} {
+		writeEntries(t, path, entries)
+		if kit.Banner(page.User{}).Tools {
+			t.Fatal("no matching service yielded Tools=true")
+		}
+	}
+}
+
+func TestBannerHomeAndToolsFallback(t *testing.T) {
+	// R-F963-TSZ2
+	path := filepath.Join(t.TempDir(), "services.json")
+	app := entry("app", "/app", true)
+	app["mcp"] = true
+	writeEntries(t, path, []map[string]any{entry("home", "/home", true), app})
+	t.Setenv(services.Variable, "")
+	empty := page.New("app", "build")
+	if err := os.Unsetenv(services.Variable); err != nil {
+		t.Fatal(err)
+	}
+	unset := page.New("app", "build")
+	t.Setenv(services.Variable, path)
+	var zero page.Kit
+	kits := []*page.Kit{empty, unset, &zero}
+	for _, badPath := range []string{filepath.Join(t.TempDir(), "missing"), t.TempDir(), path + "/"} {
+		t.Setenv(services.Variable, badPath)
+		kits = append(kits, page.New("app", "build"))
+	}
+	brokenPath := filepath.Join(t.TempDir(), "broken.json")
+	if err := os.WriteFile(brokenPath, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(services.Variable, brokenPath)
+	kits = append(kits, page.New("app", "build"))
+	for _, kit := range kits {
+		got := kit.Banner(page.User{})
+		if got.Home != "" || got.Tools {
+			t.Fatalf("fallback Home=%q Tools=%v", got.Home, got.Tools)
+		}
+	}
+}
+
+func TestBannerHomeAndToolsReadEachCall(t *testing.T) {
+	// R-FAE0-7KPR
+	path := filepath.Join(t.TempDir(), "services.json")
+	t.Setenv(services.Variable, path)
+	kit := page.New("app", "build")
+	check := func(home string, tools bool) {
+		t.Helper()
+		got := kit.Banner(page.User{})
+		if got.Home != home || got.Tools != tools {
+			t.Fatalf("Home=%q Tools=%v, want %q %v", got.Home, got.Tools, home, tools)
+		}
+	}
+	check("", false)
+	app := entry("app", "/app", false)
+	app["mcp"] = true
+	writeEntries(t, path, []map[string]any{entry("home", "/appeared", true), app})
+	check("/appeared", true)
+	app["mcp"] = false
+	writeEntries(t, path, []map[string]any{entry("home", "/changed", true), app})
+	check("/changed", false)
+	app["mcp"] = true
+	writeEntries(t, path, []map[string]any{entry("home", "/disabled", false), app})
+	check("", true)
+	writeEntries(t, path, nil)
+	check("", false)
+	writeEntries(t, path, []map[string]any{entry("home", "/restored", true), app})
+	check("/restored", true)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	check("", false)
+}
+
+func TestBannerStartsWithEmptyTrail(t *testing.T) {
+	// R-FBLW-LCGG
+	path := filepath.Join(t.TempDir(), "services.json")
+	t.Setenv(services.Variable, path)
+	kit := page.New("app", "build")
+	for _, entries := range [][]map[string]any{nil, {entry("home", "/home", true)}, {iconEntry("app", "/app", "icon", true)}} {
+		writeEntries(t, path, entries)
+		got := kit.Banner(page.User{})
+		if len(got.Trail) != 0 {
+			t.Fatalf("new Banner Trail=%+v", got.Trail)
+		}
+		got.Trail = []page.Level{{Name: "previous", URL: "/previous"}}
+		if next := kit.Banner(page.User{}); len(next.Trail) != 0 {
+			t.Fatalf("previous Banner affected next Trail=%+v", next.Trail)
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := kit.Banner(page.User{}); len(got.Trail) != 0 {
+		t.Fatalf("missing file Trail=%+v", got.Trail)
+	}
+	var zero page.Kit
+	if got := zero.Banner(page.User{}); len(got.Trail) != 0 {
+		t.Fatalf("zero Kit Trail=%+v", got.Trail)
 	}
 }
