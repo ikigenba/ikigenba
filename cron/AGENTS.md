@@ -22,7 +22,10 @@ every route), `mcp` (the server mounted at `/mcp`, and the client the tests
 drive it with), `telemetry` (the event contract, the request middleware, and
 the writer cron's events go through), `db` (the triggers' handle and its
 migrations), and `events` (the event bus). The contract is the documents in
-`specs/design/`. This file restates none of it.
+`specs/design/`. This file restates none of it. cron is an app, so it has no
+stories: its intent is the decisions document that delivered it, or what was
+agreed in conversation, together with its templates under `assets/`, and the
+design is the record.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
@@ -38,20 +41,26 @@ read-only to it.
 ## Assets
 
 `assets/` holds cron's markup: Go `html/template` files, each opening with a
-comment naming the data it receives and the hooks it emits. Every page is shown
-only to a signed-in user. They are written by the user or the delivering agent,
-following the repository's `design/`, and are inputs to the spec: the build run
-reads them and never writes them. The code parses them into the set appkit's
+comment naming the data it receives. Every page is shown only to a signed-in
+user. They are written by the user or the delivering agent, following the
+repository's `design/`, and are inputs to the spec: the build run reads them
+and never writes them. The code parses them into the set appkit's
 `page.Templates` returns and executes them by template name; it never writes
 markup of its own, not even a fragment or an error page. Go's `embed` reaches
 only files at or below the embedding package's directory, so the module's root
 package (the directory holding `go.mod`) embeds `assets/`, and design names
-what it exports. Design names each template, the data it receives, and the
-hooks it emits; the tests assert on those hooks and on visible text, never on
-layout. A needed template that is missing or wrong, a state a story names that
-the templates cannot show, or a hook design names that the templates lack is an
-issue: the run files it in `specs/issues/` and never edits the asset to close
-it.
+what it exports.
+
+Every word a person or an agent reads, and every class, id and attribute,
+lives in exactly one place, a template under `assets/` or a named copy constant
+in the source; a test and a requirement never spell one. Design names each
+template and the data it receives, never its text, hooks, markup or styles. A
+test proves a page by executing the named template with the data the design
+says and comparing, or by checking that a value the test supplied appears in
+the body; it never looks for a word or a tag. A change to copy or markup is an
+edit to the asset alone. A needed template that is missing or wrong, or a
+template that cannot show a state the design names, is an issue: the run files
+it in `specs/issues/` and never edits the asset to close it.
 
 cron holds no copy of the stylesheet, fonts, or licences; appkit's `page`
 package embeds and serves them. `share/icon.svg` is cron's icon in the service
