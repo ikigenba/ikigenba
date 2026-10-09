@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/ikigenba/ikigenba/oauth"
 )
 
 // Result is the successful information carried by a callback.
@@ -60,13 +62,13 @@ func callbackHandler(path, state string, completed chan<- waitResult) http.Handl
 
 		query := request.URL.Query()
 		if query.Get("state") != state || query.Get("state") == "" {
-			completeCallback(w, http.StatusBadRequest, failurePage, "The login could not be completed.", &completeOnce, completed, waitResult{err: ErrStateMismatch})
+			completeCallback(w, http.StatusBadRequest, "failure", failureData{}, &completeOnce, completed, waitResult{err: ErrStateMismatch})
 			return
 		}
 
 		if errorCode := query.Get("error"); errorCode != "" {
 			description := query.Get("error_description")
-			completeCallback(w, http.StatusBadRequest, failurePage, description, &completeOnce, completed, waitResult{err: &AuthorizeError{
+			completeCallback(w, http.StatusBadRequest, "failure", failureData{Description: description}, &completeOnce, completed, waitResult{err: &AuthorizeError{
 				Code:        errorCode,
 				Description: description,
 			}})
@@ -75,23 +77,24 @@ func callbackHandler(path, state string, completed chan<- waitResult) http.Handl
 
 		code := query.Get("code")
 		if code == "" {
-			completeCallback(w, http.StatusBadRequest, failurePage, "The login could not be completed.", &completeOnce, completed, waitResult{err: ErrNoCode})
+			completeCallback(w, http.StatusBadRequest, "failure", failureData{}, &completeOnce, completed, waitResult{err: ErrNoCode})
 			return
 		}
 
-		completeCallback(w, http.StatusOK, successPage, nil, &completeOnce, completed, waitResult{result: Result{Code: code}})
+		completeCallback(w, http.StatusOK, "success", nil, &completeOnce, completed, waitResult{result: Result{Code: code}})
 	})
 }
 
-var (
-	successPage = template.Must(template.New("success").Parse(`<!doctype html><html><head><meta charset="utf-8"><title>Login complete</title></head><body><p>Login complete. Go back to your terminal.</p></body></html>`))
-	failurePage = template.Must(template.New("failure").Parse(`<!doctype html><html><head><meta charset="utf-8"><title>Login failed</title></head><body><p>Login failed. Go back to your terminal.</p><p>{{.}}</p></body></html>`))
-)
+type failureData struct {
+	Description string
+}
+
+var pages = template.Must(template.ParseFS(oauth.Assets(), "*.html"))
 
 func completeCallback(
 	w http.ResponseWriter,
 	status int,
-	page *template.Template,
+	page string,
 	pageData any,
 	completeOnce *sync.Once,
 	completed chan<- waitResult,
@@ -99,7 +102,7 @@ func completeCallback(
 ) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	_ = page.Execute(w, pageData)
+	_ = pages.ExecuteTemplate(w, page, pageData)
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
