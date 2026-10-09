@@ -20,7 +20,7 @@ import (
 )
 
 // Manifest is the platform application declaration.
-const Manifest = "app = \"mcp\"\ndescription = \"Connect AI assistants to your services\"\ndefault = false\nmcp = false\nguests = true\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n"
+const Manifest = "app = \"mcp\"\ndescription = \"" + gateway.Description + "\"\ndefault = false\nmcp = false\nguests = true\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n"
 
 // Usage is the command's complete help text.
 const Usage = "Usage: mcp [command]\n\nServe the MCP gateway at /mcp, and its connect page at /, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"

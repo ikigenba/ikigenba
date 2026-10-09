@@ -76,7 +76,7 @@ func Handler(cfg Config) http.Handler {
 			serveAssets(w, r)
 			return
 		}
-		serveConnect(w, r, cfg, entries)
+		servePage(w, r, cfg, entries)
 	})
 	required := identity.Require(routes)
 	optional := identity.Optional(routes)

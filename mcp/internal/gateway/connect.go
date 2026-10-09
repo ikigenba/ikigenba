@@ -15,7 +15,7 @@ import (
 // NotFound is the body of the gateway's 404 response.
 const NotFound string = "not found\n"
 
-var connectTemplates = template.Must(page.Templates().ParseFS(assets.Assets(), "*.html"))
+var gatewayTemplates = template.Must(page.Templates().ParseFS(assets.Assets(), "*.html"))
 var appkitStatic = page.Static()
 
 type connectData struct {
@@ -36,8 +36,8 @@ func gatewayNotFound(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func serveConnect(w http.ResponseWriter, r *http.Request, cfg Config, entries services.List) {
-	if r.URL.Path != "/" {
+func servePage(w http.ResponseWriter, r *http.Request, cfg Config, entries services.List) {
+	if r.URL.Path != "/" && r.URL.Path != "/about" {
 		gatewayNotFound(w, r)
 		return
 	}
@@ -54,9 +54,16 @@ func serveConnect(w http.ResponseWriter, r *http.Request, cfg Config, entries se
 	}
 	origin := strings.TrimSuffix(addresses.TokenURL, "/")
 	u := page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: addresses.TokenURL, LogoutURL: origin + "/logout"}
-	data := connectData{Banner: cfg.Banner(u), Endpoint: addresses.Endpoint, Server: addresses.Server}
+	banner := cfg.Banner(u)
+	name := "connect"
+	var data any = connectData{Banner: banner, Endpoint: addresses.Endpoint, Server: addresses.Server}
+	if r.URL.Path == "/about" {
+		name = "about"
+		banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
+		data = AboutData{Banner: banner, Description: Description}
+	}
 	var body bytes.Buffer
-	if err := connectTemplates.ExecuteTemplate(&body, "connect", data); err != nil {
+	if err := gatewayTemplates.ExecuteTemplate(&body, name, data); err != nil {
 		panic(err)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

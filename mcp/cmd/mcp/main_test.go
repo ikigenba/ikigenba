@@ -32,7 +32,7 @@ import (
 const binaryMCPIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
 
 // The sole process test proves main's process, constructor and signal wiring.
-// R-MD9R-TB45 R-MEHO-72UU R-UVBH-CZPM R-Z9N2-A46I R-ZAUY-NVX7
+// R-MD9R-TB45 R-MEHO-72UU R-UVBH-CZPM R-ZUQ4-V6AY R-ZAUY-NVX7
 // R-MGXG-YMC8 R-MI5D-CE2X R-MJD9-Q5TM R-MLT2-HPB0 R-MN0Y-VH1P R-WSTR-5WZ7
 func TestBinary(t *testing.T) {
 	commit, release := "0123456789abcdef0123456789abcdef01234567", "workgroup"

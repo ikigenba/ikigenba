@@ -1,4 +1,4 @@
-// Package mcp provides the gateway's embedded connect page template.
+// Package mcp provides the gateway's embedded page templates.
 package mcp
 
 import (
@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed assets/connect.html
+//go:embed assets/about.html assets/connect.html
 var assets embed.FS
 
 // Assets returns the embedded gateway templates, rooted at their filenames.
