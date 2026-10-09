@@ -13,8 +13,8 @@ Unix socket only, never through nginx; events delivers each event to the
 is for a signed-in user of the space; nginx lets no guest through. At `/mcp`
 it offers five MCP tools, which agents reach through the MCP gateway:
 `catalog`, `search`, `subscribers`, `skip` and `resume`. At `/` it
-serves a landing page of its subscribers and links to an about screen. On a
-host it runs as `/opt/ikigenba/current/events/bin/events` with
+serves a landing page of its subscribers, with a tools page and an about
+screen. On a host it runs as `/opt/ikigenba/current/events/bin/events` with
 `/var/opt/ikigenba/events` as its working directory and its environment from
 `/etc/opt/ikigenba/events/env`; a developer runs the same binary from the
 checkout. The module path is
@@ -47,11 +47,12 @@ templates under `assets/`, and `specs/design/` is the record.
 ## Assets
 
 `assets/` holds events' markup: the Go `html/template` files design names,
-among them the landing page, the about screen, the not-found page and the
-unavailable page. Each opens with a comment naming the data it receives and,
-for people and the stylesheet, the hooks it carries. Every page is shown only
-to a signed-in user. The landing and about pages carry appkit's banner; the
-not-found and unavailable pages carry the footer only and never the banner.
+among them the landing page, the tools page, the about screen, the not-found
+page and the unavailable page. Each opens with a comment naming the data it
+receives and, for people and the stylesheet, the hooks it carries. Every page
+is shown only to a signed-in user. The landing, tools and about pages carry
+appkit's banner; the not-found and unavailable pages carry the footer only and
+never the banner.
 They are written by the user or the delivering agent, following the
 repository's `design/`, and are inputs to the spec: the build run reads them
 and never writes them. The code parses them into the set appkit's
