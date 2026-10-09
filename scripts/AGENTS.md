@@ -18,7 +18,8 @@ guest through. At `/mcp` it offers eleven MCP tools, which agents reach through
 the MCP gateway: `list`, `show`, `create`, `update`, `delete`, `subscribe`, `unsubscribe`, `run`, `runs`,
 `result` and `cancel`. At `/` it serves a catalog of the user's scripts and
 their last runs, with a page for each script at `/<name>/` and for each run
-at `/<name>/runs/<run id>/`, and links to an about screen. On a host it runs
+at `/<name>/runs/<run id>/`, a tools page at `/tools` and an about screen
+at `/about`. On a host it runs
 as `/opt/ikigenba/current/scripts/bin/scripts` with
 `/var/opt/ikigenba/scripts` as its working directory and its environment from
 `/etc/opt/ikigenba/scripts/env`; a developer runs the same binary from the
@@ -54,12 +55,13 @@ templates under `assets/`, and the design in `specs/design/` is the record.
 `assets/` holds scripts' markup: the Go `html/template` files `landing.html`,
 the catalog (template `landing`), `script.html`, one script's page (template
 `script`), `run.html`, one run's page (template `run`), `about.html`, the
-about screen (template `about`), `notfound.html`, the not-found page (template
+about screen (template `about`), `tools.html`, the tools page (template
+`tools`), `notfound.html`, the not-found page (template
 `notfound`), and `unavailable.html`, the unavailable page (template
 `unavailable`). Each opens with a comment naming the data it receives; the
 hooks it carries are documented there for people and the stylesheet, and
 design never names them. Every page is shown only to a signed-in user. The
-landing, script, run and about pages carry appkit's banner; the not-found and
+landing, script, run, tools and about pages carry appkit's banner; the not-found and
 unavailable pages carry the footer only and never the banner. They follow the repository's `design/` and are
 inputs to the spec: the user or the delivering agent writes them, before
 design is drafted, and the build run reads them and never writes them. The
