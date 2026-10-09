@@ -62,7 +62,7 @@ Relative to `Process.Dir` (the process's own working directory when empty, which
 
 ## Recorded decisions
 
-- appkit is required at `v0.17.0`, the release `AGENTS.md` names, which exports the `db`, `events` and `version` packages and whose `events` package admits the pattern declarations `cron.*.<kind>` the trail uses (`D07-trail`).
+- appkit is required at `v0.18.0`, the release `AGENTS.md` names, which exports the `db`, `events` and `version` packages and whose `events` package admits the pattern declarations `cron.*.<kind>` the trail uses (`D07-trail`).
 - `github.com/robfig/cron/v3` is required at `v3.0.1`, its newest release (`go list -m -versions` lists `v3.0.0-rc1 v3.0.0 v3.0.1`), and used for parsing only: its standard parser (`ParseStandard`, five fields plus descriptors) and the parsed schedule's `Next`. cron uses no `Cron` runner, no `Entry`, no job and no seconds field. Adding it is the external dependency `AGENTS.md` approves.
 - `Process` carries no environment for a child, since cron starts no process; `After` serves every wait cron has on its clock, the scheduler's, and no other wait.
 - The settings refusal is written by `Run` before it looks for its socket, which is how a bad `DRAIN_SECONDS` is reported whether or not a socket was passed in; the rest of the start order is `D03-serve`'s.
