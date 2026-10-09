@@ -1,6 +1,10 @@
 package tools
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+)
 
 // ListArgs is the public MCP argument type.
 type ListArgs struct {
@@ -23,12 +27,12 @@ type CreateArgs struct {
 
 // UpdateArgs is the public MCP argument type.
 type UpdateArgs struct {
-	Name   string          `json:"name" mcp:"required" description:"The name value."`
-	Model  *string         `json:"model" description:"The model value."`
-	Prompt *string         `json:"prompt" description:"The prompt value."`
-	System *string         `json:"system" description:"The system value."`
-	Tools  *[]string       `json:"tools" description:"The tools value."`
-	Schema json.RawMessage `json:"schema" description:"The schema value."`
+	Name   string                        `json:"name" mcp:"required" description:"The name value."`
+	Model  *string                       `json:"model" description:"The model value."`
+	Prompt *string                       `json:"prompt" description:"The prompt value."`
+	System *string                       `json:"system" description:"The system value."`
+	Tools  *[]string                     `json:"tools" description:"The tools value."`
+	Schema mcp.Nullable[json.RawMessage] `json:"schema" description:"The schema value."`
 }
 
 // DeleteArgs is the public MCP argument type.

@@ -27,7 +27,7 @@ const (
 	NotSubscribed string = "'%s' is not subscribed to '%s'"
 	Ended         string = "run '%s' has already ended"
 	UnknownModel  string = "unknown model '%s'"
-	InvalidTools  string = "invalid tools %s"
+	InvalidTools  string = "invalid tools '%s'"
 	InvalidSchema string = "invalid schema: %s"
 	EmptyPrompt   string = "prompt must not be empty"
 )
@@ -143,12 +143,12 @@ func (h handlers) update(ctx context.Context, c identity.Caller, a UpdateArgs) (
 	if err != nil {
 		return Prompt{}, err
 	}
-	if err = validate(a.Model, a.Prompt, a.Tools, a.Schema); err != nil {
+	if err = validate(a.Model, a.Prompt, a.Tools, a.Schema.Value); err != nil {
 		return Prompt{}, err
 	}
 	change := store.Change{Model: a.Model, Prompt: a.Prompt, System: a.System, Tools: a.Tools}
-	if len(a.Schema) > 0 {
-		change.Schema = &a.Schema
+	if a.Schema.Present {
+		change.Schema = &a.Schema.Value
 	}
 	p, changed, err := h.Store.Update(ctx, p.ID, change)
 	if err != nil {

@@ -181,7 +181,7 @@ func TestCopyFormats(t *testing.T) {
 	}
 }
 
-// R-92M9-9X46 R-93U5-NOUV R-9522-1GLK R-969Y-F8C9 R-97HU-T02Y R-99XN-KJKC R-9B5J-YBB1 R-9CDG-C31Q R-9DLC-PUSF R-9ET9-3MJ4 R-9G15-HE9T
+// R-92M9-9X46 R-93U5-NOUV R-9522-1GLK R-97HU-T02Y R-99XN-KJKC R-9B5J-YBB1 R-9CDG-C31Q R-9DLC-PUSF R-9ET9-3MJ4 R-9G15-HE9T
 func TestArgumentTypes(t *testing.T) {
 	text := "system"
 	groups := []string{"files"}
@@ -192,7 +192,6 @@ func TestArgumentTypes(t *testing.T) {
 	}{
 		{tools.ListArgs{}, `{}`}, {tools.ShowArgs{Name: "daily"}, `{"name":"daily"}`},
 		{tools.CreateArgs{Name: "daily", Model: "chosen", Prompt: "body", System: &text, Tools: &groups, Schema: raw}, `{"name":"daily","model":"chosen","prompt":"body","system":"system","tools":["files"],"schema":{}}`},
-		{tools.UpdateArgs{Name: "daily", Model: &text, Prompt: &text, System: &text, Tools: &groups, Schema: raw}, `{"name":"daily","model":"system","prompt":"system","system":"system","tools":["files"],"schema":{}}`},
 		{tools.DeleteArgs{Name: "daily"}, `{"name":"daily"}`}, {tools.SubscribeArgs{Name: "daily", Event: "cron.*.fired"}, `{"name":"daily","event":"cron.*.fired"}`}, {tools.UnsubscribeArgs{Name: "daily", Event: "repo.pushed"}, `{"name":"daily","event":"repo.pushed"}`},
 		{tools.RunArgs{Name: "daily", Input: raw}, `{"name":"daily","input":{}}`}, {tools.RunsArgs{Name: "daily"}, `{"name":"daily"}`}, {tools.ResultArgs{Run: "run-value"}, `{"run":"run-value"}`}, {tools.CancelArgs{Run: "run-value"}, `{"run":"run-value"}`},
 	}
@@ -201,6 +200,16 @@ func TestArgumentTypes(t *testing.T) {
 		if err != nil || string(b) != r.want {
 			t.Fatalf("%T: %s %v", r.v, b, err)
 		}
+	}
+}
+
+// R-MFLJ-QEE9
+func TestUpdateArgumentType(t *testing.T) {
+	text := "replacement"
+	groups := []string{"files"}
+	a := tools.UpdateArgs{Name: "daily", Model: &text, Prompt: &text, System: &text, Tools: &groups, Schema: mcp.Nullable[json.RawMessage]{Present: true, Value: json.RawMessage(`{}`)}}
+	if a.Name != "daily" || *a.Model != text || *a.Prompt != text || *a.System != text || !reflect.DeepEqual(*a.Tools, groups) || !a.Schema.Present || a.Schema.Null || string(a.Schema.Value) != `{}` {
+		t.Fatal(a)
 	}
 }
 
@@ -238,8 +247,8 @@ func TestDiscovery(t *testing.T) {
 		{"runs", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"}},"required":["name"],"additionalProperties":false}`},
 		// R-AAIN-1NT6
 		{"create", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"},"model":{"type":"string","description":"description"},"prompt":{"type":"string","description":"description"},"system":{"type":"string","description":"description"},"tools":{"type":"array","items":{"type":"string"},"description":"description"},"schema":{"type":"object","description":"description"}},"required":["name","model","prompt"],"additionalProperties":false}`},
-		// R-ABQJ-FFJV
-		{"update", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"},"model":{"type":"string","description":"description"},"prompt":{"type":"string","description":"description"},"system":{"type":"string","description":"description"},"tools":{"type":"array","items":{"type":"string"},"description":"description"},"schema":{"type":"object","description":"description"}},"required":["name"],"additionalProperties":false}`},
+		// R-MGTG-464Y
+		{"update", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"},"model":{"type":"string","description":"description"},"prompt":{"type":"string","description":"description"},"system":{"type":"string","description":"description"},"tools":{"type":"array","items":{"type":"string"},"description":"description"},"schema":{"type":["object","null"],"description":"description"}},"required":["name"],"additionalProperties":false}`},
 		// R-AE6C-6Z19
 		{"subscribe", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"},"event":{"type":"string","description":"description"}},"required":["name","event"],"additionalProperties":false}`},
 		// R-AFE8-KQRY
@@ -292,7 +301,7 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 
-// R-B680-ZP38 R-B7FX-DGTX R-BFZ8-1V0S R-BIF0-TEI6 R-AV8X-JREZ R-B504-LXCJ
+// R-B680-ZP38 R-B7FX-DGTX R-BFZ8-1V0S R-MI1C-HXVN R-AV8X-JREZ R-B504-LXCJ
 // R-9JOU-MPHW R-9KWR-0H8L R-9UNY-2N65
 func TestCatalogSuccess(t *testing.T) {
 	f := setup(t)
@@ -816,7 +825,7 @@ func rawPromptCall(t *testing.T, f *fixture, tool, args string) (tools.Prompt, s
 	return p, wire.Result.Content[0].Text
 }
 
-// R-BFZ8-1V0S R-BIF0-TEI6 R-BCBI-WJSP R-BDJF-ABJE R-BERB-O3A3
+// R-BFZ8-1V0S R-MI1C-HXVN R-BCBI-WJSP R-BDJF-ABJE R-BERB-O3A3
 func TestCreateOptionalFieldsAndModelSchemaUpdate(t *testing.T) {
 	f := setup(t)
 	defer assertNoRunFiles(t, f)
@@ -853,5 +862,54 @@ func TestCreateOptionalFieldsAndModelSchemaUpdate(t *testing.T) {
 	expected.Schema = json.RawMessage(updatedSchema)
 	if !reflect.DeepEqual(after, expected) {
 		t.Fatalf("update stored %#v want %#v", after, expected)
+	}
+}
+
+// R-MI1C-HXVN R-MFLJ-QEE9
+func TestUpdateSchemaNull(t *testing.T) {
+	f := setup(t)
+	defer assertNoRunFiles(t, f)
+	p := f.seed(t, "schema-null")
+	other := f.seed(t, "other-null")
+	decode[tools.Prompt](t, f.call(t, "subscribe", `{"name":"schema-null","event":"repo.pushed"}`))
+	schema := `{"type":"object"}`
+	withSchema, _ := rawPromptCall(t, f, "update", `{"name":"schema-null","schema":`+schema+`}`)
+	unchanged := decode[tools.Prompt](t, f.call(t, "update", `{"name":"schema-null"}`))
+	if !reflect.DeepEqual(unchanged, withSchema) {
+		t.Fatal(unchanged, withSchema)
+	}
+	before, err := f.st.Find(context.Background(), f.caller.UserID, p.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleared := f.call(t, "update", `{"name":"schema-null","schema":null}`)
+	answered := decode[tools.Prompt](t, cleared)
+	expected := withSchema
+	expected.Schema = nil
+	if !reflect.DeepEqual(answered, expected) {
+		t.Fatal(answered, expected)
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(content(t, cleared), &members); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := members["schema"]; exists {
+		t.Fatal("cleared schema member present", members)
+	}
+	after, err := f.st.Find(context.Background(), f.caller.UserID, p.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before.Schema = nil
+	if !reflect.DeepEqual(after, before) || after.Schema != nil {
+		t.Fatal(after, before)
+	}
+	again := decode[tools.Prompt](t, f.call(t, "update", `{"name":"schema-null","schema":null}`))
+	if !reflect.DeepEqual(again, answered) {
+		t.Fatal(again, answered)
+	}
+	gotOther := decode[tools.Prompt](t, f.call(t, "show", `{"name":"other-null"}`))
+	if !reflect.DeepEqual(gotOther, other) {
+		t.Fatal(gotOther, other)
 	}
 }

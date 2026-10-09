@@ -733,7 +733,7 @@ func child(t *testing.T, f *fixture, s agent.Spec, path string) (int, string, st
 	}
 }
 
-// R-95RU-YOB5 R-TFCS-MOSG R-KMD5-MD81 R-QHBI-P5Y1
+// R-95RU-YOB5 R-TFCS-MOSG R-KMD5-MD81 R-MPCQ-SKBT
 func TestRealChildToolsAndCredential(t *testing.T) {
 	bash, e := exec.LookPath("bash")
 	if e != nil {
@@ -747,14 +747,10 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 		if e != nil {
 			t.Error(e)
 		}
-		if bytes.Contains(data, []byte(key)) {
-			t.Error("gateway key")
-		}
+		noKeyFragment(t, key, data)
 		for _, vs := range r.Header {
 			for _, v := range vs {
-				if strings.Contains(v, key) {
-					t.Error("header key")
-				}
+				noKeyFragment(t, key, []byte(v))
 			}
 		}
 		var req map[string]any
@@ -789,6 +785,7 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 	if code != agent.ExitFailed || out != "" || !strings.Contains(diagnostic, "auth:") {
 		t.Fatal(code, out, diagnostic)
 	}
+	noKeyFragment(t, key, []byte(out), []byte(diagnostic))
 	if string(read(t, filepath.Join(f.work, "a.txt"))) != "file content" {
 		t.Fatal("Write root")
 	}
@@ -837,6 +834,76 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 		return nil
 	}); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func noKeyFragment(t *testing.T, key string, data ...[]byte) {
+	t.Helper()
+	for _, b := range data {
+		for i := 0; i+8 <= len(key); i++ {
+			if bytes.Contains(b, []byte(key[i:i+8])) {
+				t.Error("credential fragment in child output")
+			}
+		}
+	}
+}
+
+// R-MPCQ-SKBT
+func TestRealChildCredentialTransportFailure(t *testing.T) {
+	models := map[agentkit.Host]string{}
+	for _, entry := range agentkit.Catalog() {
+		off, err := agent.Offering(entry.Model)
+		if err == nil && models[off.Host] == "" {
+			models[off.Host] = entry.Model
+		}
+	}
+	if models[agentkit.HostGemini] == "" {
+		t.Fatal("no Gemini offering")
+	}
+	for host, model := range models {
+		t.Run(string(host), func(t *testing.T) {
+			f := setup(t)
+			key := "aZ9!fixture-secret.Mixed_456"
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				// The provider receives the credential; the failure response never echoes it.
+				found := false
+				for _, values := range r.Header {
+					for _, v := range values {
+						found = found || strings.Contains(v, key)
+					}
+				}
+				if !found {
+					t.Error("provider did not receive credential")
+				}
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				_ = conn.Close()
+			}))
+			defer server.Close()
+			s := spec(t, server.URL)
+			s.Model, s.Key = model, key
+			code, out, diagnostic := child(t, f, s, f.work)
+			if code != agent.ExitFailed || requests.Load() == 0 || diagnostic == "" {
+				t.Fatal(code, requests.Load(), diagnostic)
+			}
+			noKeyFragment(t, key, []byte(out), []byte(diagnostic))
+			if err := filepath.WalkDir(f.dir, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !d.IsDir() {
+					noKeyFragment(t, key, read(t, path))
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

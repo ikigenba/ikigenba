@@ -232,7 +232,7 @@ func TestEmptyAndOwnership(t *testing.T) {
 	}
 }
 
-// R-UXPF-XTGZ R-V50U-8FX5 R-VQZ1-4B9N R-W360-Y0OL R-W81M-H3ND R-W99I-UVE2 R-VKVJ-7GK6 R-W6TQ-3BWO R-W5LT-PK5Z
+// R-UXPF-XTGZ R-V50U-8FX5 R-VQZ1-4B9N R-W360-Y0OL R-W81M-H3ND R-W99I-UVE2 R-MJ98-VPMC R-W6TQ-3BWO R-W5LT-PK5Z
 func TestCreateAndFailures(t *testing.T) {
 	s, d, path := setup(t)
 	want := draft("example")
@@ -298,7 +298,7 @@ func TestCreateAndFailures(t *testing.T) {
 	}
 }
 
-// R-V68Q-M7NU R-WHST-J9KX R-0P8E-Z966 R-WK8M-AT2B
+// R-V68Q-M7NU R-MKH5-9HD1 R-0P8E-Z966 R-MLP1-N93Q
 func TestUpdate(t *testing.T) {
 	s, _, _ := setup(t)
 	p := create(t, s, "example")
@@ -336,8 +336,7 @@ func TestUpdate(t *testing.T) {
 		equal(t, v, want)
 	}
 	empty := ""
-	raw := json.RawMessage{}
-	for _, c := range []store.Change{{Model: &empty}, {Prompt: &empty}, {Schema: &raw}} {
+	for _, c := range []store.Change{{Model: &empty}, {Prompt: &empty}} {
 		for _, id := range []string{p.ID, "unknown"} {
 			v, changed, e = s.Update(ctx, id, c)
 			catalogError(t, e)
@@ -547,7 +546,7 @@ func TestRunTransitionsAndReads(t *testing.T) {
 	}
 }
 
-// R-VM3F-L8AV R-VNBB-Z01K R-WYVE-W1YN R-X1B7-NLG1 R-X4YW-SWO4 R-VIFQ-FX2S R-XS50-2JRB
+// R-VM3F-L8AV R-VNBB-Z01K R-WYVE-W1YN R-X1B7-NLG1 R-X4YW-SWO4 R-VIFQ-FX2S R-MO4U-ESL4
 func TestInvalidTransitionsAndPrecedence(t *testing.T) {
 	s, _, _ := setup(t)
 	p := create(t, s, "example")
@@ -809,7 +808,7 @@ func TestReopenAllContent(t *testing.T) {
 	}
 }
 
-// R-WAHF-8N4R R-9HNU-GYZI R-9IVQ-UQQ7 R-WRK0-LFIH R-X2J4-1D6Q R-X66T-6OET R-XKTL-RXB5 R-XN9E-JGSJ R-XQX3-OS0M
+// R-WAHF-8N4R R-MMWY-10UF R-9IVQ-UQQ7 R-WRK0-LFIH R-X2J4-1D6Q R-X66T-6OET R-XKTL-RXB5 R-XN9E-JGSJ R-XQX3-OS0M
 func TestConcurrentTransactions(t *testing.T) {
 	s, _, _ := setup(t)
 	parallel := func(f func(int)) {
@@ -1262,4 +1261,75 @@ func TestNameByteAlphabet(t *testing.T) {
 			}
 		}
 	}
+}
+
+// R-MJ98-VPMC R-MKH5-9HD1 R-0P8E-Z966 R-MLP1-N93Q
+func TestUpdateSchemaClearPersistsAndPreservesCatalog(t *testing.T) {
+	s, d, path := setup(t)
+	p := create(t, s, "schema-clear")
+	other := create(t, s, "other-schema")
+	var e error
+	p, e = s.Subscribe(ctx, p.ID, "repo.pushed")
+	if e != nil {
+		t.Fatal(e)
+	}
+	r := record(p, 91, store.StatusRunning)
+	r.Trigger, r.Event = store.TriggerEvent, "delivered-event"
+	r = add(t, s, r)
+	p, e = s.Find(ctx, p.Owner, p.Name)
+	if e != nil {
+		t.Fatal(e)
+	}
+	check := func() {
+		t.Helper()
+		read, e := s.Find(ctx, p.Owner, p.Name)
+		if e != nil {
+			t.Fatal(e)
+		}
+		equal(t, read, p)
+		equal(t, content(t, s), []store.Prompt{other, p})
+		got, e := s.RunByID(ctx, r.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		equal(t, got, r)
+		yes, e := s.Delivered(ctx, p.ID, r.Event)
+		if e != nil || !yes {
+			t.Fatal(yes, e)
+		}
+	}
+	for _, raw := range []json.RawMessage{nil, {}} {
+		schema := json.RawMessage(` {"arbitrary":true} `)
+		got, changed, e := s.Update(ctx, p.ID, store.Change{Schema: &schema})
+		if e != nil || !changed {
+			t.Fatal(got, changed, e)
+		}
+		p.Schema = schema
+		equal(t, got, p)
+		got, changed, e = s.Update(ctx, p.ID, store.Change{Schema: &raw})
+		if e != nil || !changed || got.Schema != nil {
+			t.Fatal(got, changed, e)
+		}
+		p.Schema = nil
+		equal(t, got, p)
+		check()
+		for _, ch := range []store.Change{{Schema: &raw}, {}} {
+			got, changed, e = s.Update(ctx, p.ID, ch)
+			if e != nil || changed {
+				t.Fatal(got, changed, e)
+			}
+			equal(t, got, p)
+		}
+		got, changed, e = s.Update(ctx, "unknown", store.Change{Schema: &raw})
+		if !errors.Is(e, store.ErrNotFound) || changed {
+			t.Fatal(got, changed, e)
+		}
+		equal(t, got, store.Prompt{})
+		check()
+	}
+	if e = d.Close(); e != nil {
+		t.Fatal(e)
+	}
+	s, _ = open(t, path, bytes.NewReader(make([]byte, 8)))
+	check()
 }

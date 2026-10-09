@@ -124,7 +124,7 @@ func trailPromptEvent(t *testing.T, es []telemetry.Event, id, name, prompt strin
 	}
 }
 
-// R-KYY6-UI0E R-L063-89R3 R-L1DZ-M1HS R-1D2D-CD6W R-MGLR-OEMY
+// R-KYY6-UI0E R-L063-89R3 R-L1DZ-M1HS R-5VO1-KI12 R-MGLR-OEMY
 func trailGeneral(t *testing.T, es []telemetry.Event) {
 	t.Helper()
 	allowed := map[string]bool{"service.started": true, "service.stopping": true, "request.started": true, "request.finished": true, "tool.called": true, "prompt.created": true, "prompt.updated": true, "prompt.deleted": true, "run.started": true, "run.finished": true}
@@ -237,7 +237,7 @@ func trailRuns(t *testing.T, f *serveFixture, es []telemetry.Event, requests map
 	}
 }
 
-// R-KWIE-2YJ0 R-L2LV-ZT8H R-L3TS-DKZ6 R-1AMK-KTPI R-1BUG-YLG7 R-L7HH-IW79 R-LB56-O7FC R-LCD3-1Z61 R-ME5Y-WV5K
+// R-KWIE-2YJ0 R-L2LV-ZT8H R-L3TS-DKZ6 R-5S0C-F6SZ R-5T88-SYJO R-L7HH-IW79 R-LB56-O7FC R-LCD3-1Z61 R-ME5Y-WV5K
 func TestTrailCatalogRequests(t *testing.T) {
 	f := newServeFixture(t)
 	f.start(t)
@@ -1026,7 +1026,7 @@ func trailBreakCgroup(t *testing.T, f *serveFixture) {
 	}
 }
 
-// R-1AMK-KTPI R-1BUG-YLG7
+// R-5S0C-F6SZ R-5T88-SYJO
 func TestTrailConcurrentUpdates(t *testing.T) {
 	f := newServeFixture(t)
 	f.start(t)
@@ -1236,6 +1236,59 @@ func TestTrailPruningEndedDeletionRefusedRunAndFile(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("file request event count %d", count)
+	}
+	trailGeneral(t, es)
+}
+
+// R-5S0C-F6SZ R-5T88-SYJO R-5VO1-KI12
+func TestTrailSchemaClear(t *testing.T) {
+	f := newServeFixture(t)
+	f.start(t)
+	p := trailCreate(t, f, "created-schema-clear", "clear-probe")
+	decodeServe[tools.Prompt](t, trailCall(t, f, "schema-set", "update", map[string]any{"name": p.Name, "schema": json.RawMessage(`{"type":"object"}`)}))
+	decodeServe[tools.Prompt](t, trailCall(t, f, "schema-absent", "update", map[string]any{"name": p.Name}))
+	decodeServe[tools.Prompt](t, trailCall(t, f, "schema-clear", "update", map[string]any{"name": p.Name, "schema": nil}))
+	decodeServe[tools.Prompt](t, trailCall(t, f, "schema-clear-empty", "update", map[string]any{"name": p.Name, "schema": nil}))
+	decodeServe[tools.Prompt](t, trailCall(t, f, "schema-restore", "update", map[string]any{"name": p.Name, "schema": json.RawMessage(`{"type":"object"}`)}))
+	ready := make(chan struct{})
+	done := make(chan struct{}, 2)
+	for _, id := range []string{"schema-concurrent-a", "schema-concurrent-b"} {
+		go func() {
+			<-ready
+			decodeServe[tools.Prompt](t, trailCall(t, f, id, "update", map[string]any{"name": p.Name, "schema": nil}))
+			done <- struct{}{}
+		}()
+	}
+	close(ready)
+	serveWait(t, done)
+	serveWait(t, done)
+	if code := f.stop(t); code != cli.ExitSuccess {
+		t.Fatal(code)
+	}
+	es := f.capture.Events()
+	for _, id := range []string{"schema-set", "schema-clear", "schema-restore"} {
+		trailPromptEvent(t, es, id, "prompt.updated", p.ID)
+	}
+	for _, id := range []string{"schema-absent", "schema-clear-empty"} {
+		trailNoDomain(t, es, id)
+	}
+	changed := 0
+	for _, id := range []string{"schema-concurrent-a", "schema-concurrent-b"} {
+		found := false
+		for _, e := range es {
+			if e.RequestID == id && e.Name == "prompt.updated" {
+				found = true
+			}
+		}
+		if found {
+			changed++
+			trailPromptEvent(t, es, id, "prompt.updated", p.ID)
+		} else {
+			trailNoDomain(t, es, id)
+		}
+	}
+	if changed != 1 {
+		t.Fatal("concurrent clears", changed)
 	}
 	trailGeneral(t, es)
 }

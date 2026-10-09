@@ -640,7 +640,7 @@ func readRecords(t *testing.T, path string) []agentkit.LogRecord {
 	return records
 }
 
-// R-9FUZ-3PNN R-OL46-D11Z R-GY3K-6WJA R-OORV-ICA2 R-OPZR-W40R R-47YK-GDTR R-OXB6-6QGX
+// R-9FUZ-3PNN R-OL46-D11Z R-GY3K-6WJA R-OORV-ICA2 R-OPZR-W40R R-MQKN-6C2I R-OXB6-6QGX
 func TestCoreEnvironmentSpecAndWork(t *testing.T) {
 	f := newCoreFixture(t)
 	bash, e := exec.LookPath("bash")
@@ -824,6 +824,146 @@ func TestCoreEnvironmentSpecAndWork(t *testing.T) {
 	f.event(t, "run.finished", srun.ID)
 	sr := readRecords(t, filepath.Join(f.c.Folder(srun), TranscriptFile))
 	testEqual(t, sr[0].Conversation.Output.Schema, p.Schema)
+}
+
+func checkRunCredentials(t *testing.T, f *coreFixture, r store.Run) {
+	t.Helper()
+	off, err := agent.Offering(r.Model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runKey := f.cfg.Keys[off.Host]
+	check := func(b []byte) {
+		for _, key := range f.cfg.Keys {
+			if key != "" && bytes.Contains(b, []byte(key)) {
+				t.Error("provider credential in run output")
+			}
+		}
+		for i := 0; i+8 <= len(runKey); i++ {
+			if bytes.Contains(b, []byte(runKey[i:i+8])) {
+				t.Error("provider credential fragment in run output")
+			}
+		}
+	}
+	if err := filepath.WalkDir(f.c.Folder(r), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			check(testRead(t, path))
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.w.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range f.sink.capture.Events() {
+		b, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(b)
+	}
+}
+
+// R-MQKN-6C2I
+func TestCoreCredentialsAfterProviderFailure(t *testing.T) {
+	f := newCoreFixture(t)
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.cfg.Path = filepath.Dir(bash)
+	f.cfg.OutputMaxBytes = 4096
+	// Keep every host's configured credential distinct, including unused ones.
+	f.cfg.Keys[agentkit.HostGemini] = "gT3!nB6%rV2@jC8&dW5?lS1+"
+	f.cfg.Keys[agentkit.HostOpenAI] = "oM4!uD7%sL2@cT9&hR5?eN1+"
+	f.cfg.Keys[agentkit.HostXAI] = "aJ6!fY3%wG8@kU2&nE9?qD4+"
+	f.cfg.Keys[agentkit.HostOpenRouter] = "rV5!mH8%zK1@pF4&uB7?dA2+"
+	requests := 0
+	server := provider(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("x-api-key") != f.cfg.Keys[agentkit.HostAnthropic] {
+			t.Error("provider did not receive credential")
+		}
+		if requests == 1 {
+			toolAnswer(w, "Bash", map[string]any{"command": `cat /proc/$$/environ > "$IKIGENBA_WORK_DIR/env"; :`})
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"type":"error","error":{"type":"authentication_error","message":"denied"}}`))
+		}
+	})
+	f.cfg.BaseURL = server.URL
+	f.rebuild()
+	p := f.p
+	p.Tools = []string{agent.GroupFiles, agent.GroupBash}
+	r := f.start(t, p, f.request())
+	f.event(t, "run.finished", r.ID)
+	ended, err := f.s.RunByID(context.Background(), r.ID)
+	if err != nil || ended.Status != store.StatusExited || ended.ExitCode != agent.ExitFailed || requests != 2 {
+		t.Fatal(ended, err, requests)
+	}
+	if len(testRead(t, filepath.Join(f.c.Folder(r), WorkDir, "env"))) == 0 {
+		t.Fatal("no environment probe")
+	}
+	checkRunCredentials(t, f, r)
+}
+
+// R-MQKN-6C2I
+func TestCoreCredentialTransportFailure(t *testing.T) {
+	models := map[agentkit.Host]string{}
+	for _, entry := range agentkit.Catalog() {
+		off, err := agent.Offering(entry.Model)
+		if err == nil && models[off.Host] == "" {
+			models[off.Host] = entry.Model
+		}
+	}
+	if models[agentkit.HostGemini] == "" {
+		t.Fatal("no Gemini offering")
+	}
+	for host, model := range models {
+		t.Run(string(host), func(t *testing.T) {
+			f := newCoreFixture(t)
+			f.cfg.Keys = map[agentkit.Host]string{host: "aZ9!fixture-secret.Mixed_456"}
+			f.cfg.OutputMaxBytes = 4096
+			requested := make(chan struct{}, 8)
+			server := provider(t, func(w http.ResponseWriter, r *http.Request) {
+				found := false
+				for _, values := range r.Header {
+					for _, value := range values {
+						found = found || strings.Contains(value, f.cfg.Keys[host])
+					}
+				}
+				if !found {
+					t.Error("provider did not receive credential")
+				}
+				requested <- struct{}{}
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				_ = conn.Close()
+			})
+			f.cfg.BaseURL = server.URL
+			f.rebuild()
+			p := f.p
+			p.Model = model
+			r := f.start(t, p, f.request())
+			f.event(t, "run.finished", r.ID)
+			testReceive(t, requested)
+			ended, err := f.s.RunByID(context.Background(), r.ID)
+			if err != nil || ended.Status != store.StatusExited || ended.ExitCode != agent.ExitFailed {
+				t.Fatal(ended, err)
+			}
+			if len(testRead(t, filepath.Join(f.c.Folder(r), StderrFile))) == 0 {
+				t.Fatal("missing transport diagnostic")
+			}
+			checkRunCredentials(t, f, r)
+		})
+	}
 }
 
 // R-PMX2-7X1I

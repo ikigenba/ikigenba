@@ -264,7 +264,7 @@ func (s *Store) Create(ctx context.Context, d Draft) (p Prompt, err error) {
 	return
 }
 func validChange(c Change) bool {
-	return (c.Model == nil || *c.Model != "") && (c.Prompt == nil || *c.Prompt != "") && (c.Schema == nil || len(*c.Schema) != 0)
+	return (c.Model == nil || *c.Model != "") && (c.Prompt == nil || *c.Prompt != "")
 }
 
 // Update replaces selected fields and reports whether their values changed.
@@ -291,7 +291,10 @@ func (s *Store) Update(ctx context.Context, id string, ch Change) (p Prompt, cha
 			p.Tools = append([]string{}, (*ch.Tools)...)
 		}
 		if ch.Schema != nil {
-			p.Schema = bytes.Clone(*ch.Schema)
+			p.Schema = nil
+			if len(*ch.Schema) > 0 {
+				p.Schema = bytes.Clone(*ch.Schema)
+			}
 		}
 		changed = p.Model != old.Model || p.Prompt != old.Prompt || p.System != old.System || !slices.Equal(p.Tools, old.Tools) || !bytes.Equal(p.Schema, old.Schema)
 		args := promptArgs(p)
