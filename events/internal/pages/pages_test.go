@@ -3,7 +3,6 @@ package pages_test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -74,7 +73,7 @@ func must(t *testing.T, err error) {
 	}
 }
 
-// R-SR5N-PCRU R-FWG8-XFGQ R-QJLY-JFSG R-QKTU-X7J5 R-QM1R-AZ9U R-QN9N-OR0J R-QOHK-2IR8 R-QPPG-GAHX R-QQXC-U28M R-FYW1-OYY4 R-SUTC-UNZX R-R1WG-9ZWV R-R34C-NRNK R-R4C9-1JE9 R-R5K5-FB4Y R-R6S1-T2VN R-R7ZY-6UMC
+// R-SR5N-PCRU R-FWG8-XFGQ R-QJLY-JFSG R-QKTU-X7J5 R-QM1R-AZ9U R-6RN7-LV47 R-6SV3-ZMUW R-QOHK-2IR8 R-QPPG-GAHX R-QQXC-U28M R-FYW1-OYY4 R-6U30-DELL R-R1WG-9ZWV R-R34C-NRNK R-R4C9-1JE9 R-R5K5-FB4Y R-R6S1-T2VN R-R7ZY-6UMC
 func TestExactTemplateAnswers(t *testing.T) {
 	d, st, now := fixture(t)
 	ctx := context.Background()
@@ -83,6 +82,7 @@ func TestExactTemplateAnswers(t *testing.T) {
 		must(t, st.Declare(ctx, service, store.Declaration{Accepts: []string{"repo.pushed"}}))
 	}
 	must(t, st.Deliver(ctx, appEvents.Event{ID: "evt_0000000000000001", Time: now, Service: "repos", Name: "repo.pushed", RequestID: "request", User: "user", Attrs: appEvents.Attrs{}}))
+	must(t, st.Advance(ctx, "scripts", 1))
 	must(t, st.Pause(ctx, "sites", 1, "publish <failed>&"))
 	must(t, st.Forget(ctx, "gone"))
 	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test-build").Banner, Store: st})
@@ -92,12 +92,12 @@ func TestExactTemplateAnswers(t *testing.T) {
 	must(t, err)
 	rows := []pages.SubscriberRow{}
 	for _, s := range subs {
-		kind := map[store.Status]string{store.StatusOK: pages.KindOK, store.StatusPaused: pages.KindWarn, store.StatusGone: pages.KindInfo}[s.Status]
-		reason := ""
+		var reason *pages.Reason
 		if s.Reason != nil {
-			reason = fmt.Sprintf(pages.ReasonFormat, s.Reason.Name, s.Reason.Seq, s.Reason.Error)
+			reason = &pages.Reason{s.Reason.Name, s.Reason.Seq, s.Reason.Error}
 		}
-		rows = append(rows, pages.SubscriberRow{Service: s.Service, Status: string(s.Status), Kind: kind, Reason: reason, Cursor: strconv.FormatInt(s.Cursor, 10), Lag: strconv.FormatInt(s.Lag, 10), Since: s.Since})
+		// Unkeyed construction proves the exact row and reason field shapes.
+		rows = append(rows, pages.SubscriberRow{s.Service, string(s.Status), strconv.FormatInt(s.Cursor, 10), strconv.FormatInt(s.Lag, 10), s.Since, reason})
 	}
 	changed := st.Changed()
 	for _, method := range []string{"GET", "HEAD"} {
@@ -117,17 +117,9 @@ func TestExactTemplateAnswers(t *testing.T) {
 	if !reflect.DeepEqual(subs, after) {
 		t.Fatal(after)
 	}
-	// R-SSDK-34IJ
 	const description = pages.Description
-	const reasonFormat = pages.ReasonFormat
-	const kindOK = pages.KindOK
-	const kindWarn = pages.KindWarn
-	const kindInfo = pages.KindInfo
-	if kindOK == kindWarn || kindOK == kindInfo || kindWarn == kindInfo {
-		t.Fatal("subscriber kinds must differ")
-	}
 	type copyText string
-	_ = []copyText{description, reasonFormat, kindOK, kindWarn, kindInfo}
+	_ = copyText(description)
 	notice := pages.NoticeData{Banner: page.Banner{Service: appEvents.ServiceName, Version: "test-build"}}
 	for _, failing := range []bool{false, true} {
 		d.SetFailing(failing)
