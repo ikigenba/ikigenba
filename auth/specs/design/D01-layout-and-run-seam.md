@@ -66,11 +66,12 @@ their licences, and the font preload link and its URL; auth authors none of
 them and carries no copy.
 
 The style files come from appkit, which serves them itself (D08). The pages
-auth draws are its own templates, drawn around appkit's banner templates: the
-sign-in pages and the profile's older parts are templates in
-`internal/server` (D05, D07), and the newer ones are human-authored files in
-`assets/`, embedded by the root package (below): the approve page an MCP
-client sends its user to (D09) and the profile's card of MCP clients (D07).
+auth draws are its own templates, drawn around appkit's banner templates, and
+every one of them is a human-authored file in `assets/`, embedded by the root
+package (below): the document the sign-in pages, the profile and the token
+pages are drawn in (D05, D07), the approve page an MCP client sends its user
+to (D09), and the profile's card of MCP clients (D07). The code writes no
+markup of its own.
 
 `version.Display` reads `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` from the real
 process environment, and `main` calls it exactly once, first, and holds the
@@ -133,25 +134,40 @@ Beside the code the checkout carries `etc/manifest.toml` (D02), the page
 templates in `assets/` (below), and `share/icon.svg`, auth's icon, an SVG
 image a human draws from Tabler's outline `user-circle` icon; its presence in
 the package is what lists auth in the platform's launcher on a space. The
-build run never writes the icon or `assets/`. Everything auth serves is inside the binary — its own templates, those in
-`internal/server` and those in `assets/`, and appkit's embedded files alike.
+build run never writes the icon or `assets/`. Everything auth serves is inside the binary — its own templates in
+`assets/` and appkit's embedded files alike.
 
 `assets/` at the module root holds auth's own page templates as Go
-`html/template` files: `approve.html`, whose template is `approve`, and
-`mcp-clients.html`, whose template is `mcp-clients`. They follow the platform's
-visual style, and the user or the delivering agent writes them;
-the build run reads them and never writes them. Go's `embed` reaches only
-files at or below the embedding package's directory, so the root package
-`auth` embeds them, beside the migrations, and exports `Assets`, a file system
-holding exactly those two files, the same on every call and depending on no
-file beside the binary. **auth's template set** is what the handlers draw
-those pages from: a fresh set from appkit's `page.Templates()`, which already
-defines `banner`, `launcher`, `footer` and `preload`, with every file of
-`Assets()` parsed into it and no template function added. The code adds no
-markup of its own around them, so a test renders the same template with the
-same data and compares the bytes. A template in `assets/` that writes a
-page's head draws appkit's `preload` template there, so auth's code names no
-font or hash.
+`html/template` files, each opening with a comment that names its templates
+and the data each receives: `page.html` (the templates `page` and `chrome`),
+`sign-in.html` (`signIn` and `alert`), `profile.html` (`profile`,
+`tokenList`, `tokenTime`, `tokenLastUsed`, `tokenNever` and `elapsed`),
+`token-create.html` (`tokenCreate` and `plusIcon`), `token-created.html`
+(`tokenCreated` and `copyIcon`), `mcp-clients.html` (`mcp-clients`) and
+`approve.html` (`approve`). They follow the platform's visual style, and the
+user or the delivering agent writes them; the build run reads them and never
+writes them. Go's `embed` reaches only files at or below the embedding
+package's directory, so the root package `auth` embeds them, beside the
+migrations, and exports `Assets`, a file system holding exactly those seven
+files, the same on every call and depending on no file beside the binary.
+
+**auth's template set** is what the handlers draw every page from: a fresh
+set from appkit's `page.Templates()`, which already defines `banner`,
+`launcher`, `footer` and `preload`; then one function, `splitNUL`, and one
+template, `value`, that auth's code supplies; then every file of `Assets()`
+parsed into it. The templates write every value they take from outside auth
+through `value`. It exists because `html/template` replaces a NUL byte in a
+value it writes with U+FFFD, while auth's pages keep the bytes a person
+submitted: `value` splits the value at each NUL with `splitNUL`, lets
+`html/template` escape each piece in its context, and writes a NUL from its
+own static text between them. It holds no word, no markup and no hook, so it
+is not copy and does not belong in an asset; and it is kept in Go because a
+raw NUL byte inside an asset file is fragile, invisible in an editor and easy
+to lose. A template is designed by its name and the data it receives
+(D05, D07, D09); the code adds no markup of its own around it, so a test
+renders the same template with the same data and compares the bytes. A
+template in `assets/` that writes a page's head draws appkit's `preload`
+template there, so auth's code names no font or hash.
 
 The database's schema is inside the binary too. It is a sequence of migration
 files in `migrations/` at the module root, which only a package at the module
@@ -317,10 +333,14 @@ that wants a particular reason cancels with a cause of its own choosing
 - R-7D1S-9R8B: `cli.Run` MUST return `0` on success, `1` on a failure that is not a usage error (the server failing, a database it cannot open, or a `db status` that fails, D02 and D03), and `2` on a usage error.
 - R-G55N-V09H: The module's root package, imported from the path `github.com/ikigenba/ikigenba/auth` with the package name `auth`, MUST export `func Migrations() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `0001_baseline.sql`, `0002_token_id_prefix.sql`, and `0003_mcp_clients.sql` and no other entry.
 - R-G6DK-8S06: Every call to the root package's `Migrations` MUST return a file system holding the same three files with the same contents, whatever the process working directory is, a directory that holds no `migrations/` directory included.
-- R-G7LG-MJQV: The module's root package, imported from the path `github.com/ikigenba/ikigenba/auth` with the package name `auth`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `approve.html` and `mcp-clients.html` and no other entry, embedded from the files of the same names in the module's `assets/` directory.
+- R-3BYY-W6QV: The module's root package, imported from the path `github.com/ikigenba/ikigenba/auth` with the package name `auth`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `approve.html`, `mcp-clients.html`, `page.html`, `profile.html`, `sign-in.html`, `token-create.html` and `token-created.html` and no other entry.
 - R-G8TD-0BHK: Every call to the root package's `Assets` MUST return a file system holding the same files with the same contents, whatever the process working directory is, a directory that holds no `assets/` directory included.
-- R-GA19-E389: auth's design defines **auth's template set** as the `*template.Template`, where `template` is the standard library's `html/template`, that results from calling the `ParseFS` method of a set `page.Templates()` returned with the file system the root package's `Assets()` returns (R-G7LG-MJQV) and the single pattern `*.html`, no function having been added to that set by `Funcs`; and every requirement of auth's design that names auth's template set MUST denote a set so made.
-- R-GB95-RUYY: Making auth's template set MUST succeed, its `ParseFS` call returning a nil error, and the set made MUST define a template named `approve` and a template named `mcp-clients`.
+- R-3D6V-9YHK: auth's design defines **auth's template set** as the `*template.Template`, where `template` is the standard library's `html/template`, that results from taking a set `page.Templates()` returned, calling its `Funcs` method with a `template.FuncMap` holding exactly one entry, the function `splitNUL` (R-6VOM-3PGI) under the name `splitNUL`, then calling the `Parse` method of the set that returns with `pageValueTemplate` (R-6VOM-3PGI), then calling the `ParseFS` method of the set that returns with the file system the root package's `Assets()` returns (R-3BYY-W6QV) and the single pattern `*.html`, no other function having been added to that set by `Funcs`; and every requirement of auth's design that names auth's template set MUST denote a set so made.
+- R-6T8T-C5Z4: Making auth's template set MUST succeed, its `Parse` and `ParseFS` calls each returning a nil error, and the set made MUST define templates named `page`, `chrome`, `signIn`, `alert`, `profile`, `tokenList`, `tokenTime`, `tokenLastUsed`, `tokenNever`, `elapsed`, `tokenCreate`, `plusIcon`, `tokenCreated`, `copyIcon`, `mcp-clients`, `approve` and `value`.
+- R-6VOM-3PGI: The `internal/server` package MUST declare the unexported `const pageValueTemplate string`, the text that defines the template `value`, and the unexported `func splitNUL(value string) []string`.
+- R-6WWI-HH77: `splitNUL(v)` MUST return what `strings.Split(v, "\x00")` returns for every string `v`; parsing `pageValueTemplate` with the `Parse` method of a set to which `splitNUL` has been added by `Funcs` under the name `splitNUL` MUST return a nil error and define exactly one template, named `value`; and in auth's template set, executing `value` with a string `v`, called from a place in a template of that set where an action writing a string is escaped in an HTML text context or in a double-quoted attribute value context, MUST write exactly the concatenation, in the order `strings.Split(v, "\x00")` returns them, of what an action at that place writing each of those pieces writes, with one NUL byte between each two consecutive pieces; so that a `v` holding no NUL byte is written exactly as an action at that place writing `v` writes it.
+- R-3EER-NQ89: auth's design names, as the data each template of auth's template set receives, an `authPageData` for `page` and for `chrome`; a `signInPageData` for `signIn` and for `alert`; a `profilePageData` for `profile`; a `[]tokenRowData` for `tokenList`; a `tokenTimeData` for `tokenTime`; a `tokenLastUsedData` for `tokenLastUsed`; an `elapsedData` for `elapsed`; a `tokenCreateData` for `tokenCreate`; a `tokenCreatedData` for `tokenCreated`; an `mcpClientsData` for `mcp-clients`; a `string` for `value`; and nil for `tokenNever`, `plusIcon` and `copyIcon` (`approve` receiving D09's approve data); every requirement of auth's design that names the data a template of auth's template set receives MUST denote that type.
+- R-3FMO-1HYY: Executing the template `page` of auth's template set MUST return a nil error with an `authPageData` whose `SignIn` points to a `signInPageData` whose `Refused` is each of the empty string, `cancelled` and `not_member`; with one whose `Profile` points to a `profilePageData` whose `Rows` and whose `Clients.Clients` are empty; with one whose `Profile` points to a `profilePageData` whose `Rows` holds one `tokenRowData` whose `LastUsed` and `Expires` are nil and `Enabled` false and one whose `LastUsed` and `Expires` are not nil and `Enabled` true, the `Elapsed` of each `LastUsed` having a `Unit` of `now`, `minute`, `hour` or `day`, and whose `Clients.Clients` holds one `mcpClientData` whose `LastUsed` is empty and `Expired` false and one whose `LastUsed` is not empty and `Expired` true; with one whose `Create` points to a `tokenCreateData` whose `Rejected` is true and whose `NameError` and `ExpiryError` are each true and each false; and with one whose `Created` points to a `tokenCreatedData`; executing `chrome` with each of those values whose `SignIn` is nil, `elapsed` with an `elapsedData` whose `Unit` is `now` and `Count` 0 and with one whose `Unit` is each of `minute`, `hour` and `day` and `Count` each of 1 and 2, and `tokenNever`, `plusIcon` and `copyIcon` with nil MUST each return a nil error, each template receiving the data R-3EER-NQ89 names for it.
 - R-7GPH-F2GE: auth's design defines the **database path** of a `Run` as `filepath.Join(p.Dir, "state", "auth.db")`, where `filepath` is the standard library's `path/filepath` and `p` is the `Process` given to that `Run`, a relative path resolved against the process working directory when `p.Dir` is empty; every requirement of auth's design that names the database path MUST denote this.
 - R-7BTV-VZHM: Given a `Process` whose `Stdout` and `Stderr` are in-memory buffers, `Args` an explicit slice, `LookupEnv` a fake lookup, `Unsetenv` nil or a recorder, `Pid` a value the test chose, `Inherit` a function returning a listener the test made, `Now` a fixed clock, `Rand` a deterministic reader, `OIDCIssuer` a loopback URL, `Dir` a temporary directory the test owns, `Banner` a function the test wrote, and `Sink` a `*telemetry.Capture` or a sink the test wrote, `cli.Run` MUST take every input and produce every output through that `Process` — reading arguments only from `Args`, environment only through `LookupEnv`, every time it records or compares against stored state, every event's time, and the time of every migration it applies only through `Now`, randomness, the request ids it mints included, only through `Rand`, except the request id appkit's `telemetry.Middleware` mints after its read of `Rand` fails (appkit D14, R-DRSL-TU2H), which MAY come from `crypto/rand`, and banner data only through `Banner`, delivering events only through `Sink`, and removing environment variables only through `Unsetenv` — and MUST NOT read the real process arguments, the real process environment, the real process id, or a global random source other than for such a request id; the drain deadline of D03 and `net/http`'s own deadlines are measured in real elapsed time and are not read through `Now`.
 - R-M22I-KPZ1: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.

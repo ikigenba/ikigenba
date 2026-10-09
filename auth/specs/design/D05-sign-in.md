@@ -143,48 +143,60 @@ is the browser's, and no requirement here asserts it.
 
 auth's pages adopt the platform's visual design, defined in the repository's
 `design/`. A page is designed by the template it executes and the data it
-receives; its words and its markup live in that template, never in this design.
-Two of auth's pages are asset templates today: D09's approve page and the
-profile's MCP clients card (D07), human-authored files under `assets/`. The
-other pages, the sign-in page, the cancelled and non-member sign-in pages, the
-profile, and D07's token-created and rejected-create pages, are written by
-`internal/server` without an asset template, so this design fixes of them only
-the route, the status, the headers, and the values each page shows. Every page
-auth draws is an **auth page**; auth's plain-text failures and its redirects are
-not pages.
+receives; its words, its markup, its link targets and form targets live in that
+template, never in this design. Every page auth draws is a template of auth's
+template set (D01), all of them human-authored files under `assets/`, and every
+page but D09's approve page is drawn by the template `page`, which draws the
+sign-in card alone for a visitor who is not signed in and otherwise the banner,
+one main and the footer through `chrome`. Its data, the **auth page data**,
+carries the banner and exactly one of four parts: the sign-in data, the profile
+data, D07's create data for a rejected submission, or D07's created data. A
+test proves a page by executing `page` with the data this design states and
+comparing the bytes with the answer, never by looking for a word or a tag.
+Every page auth draws is an **auth page**; auth's plain-text failures and its
+redirects are not pages.
 
 The shared files a page links, the stylesheet, the fonts, the launcher's and the
 button feedback scripts, and the favicon, are appkit's, served by auth under
-`/_appkit/` through `page.Static()`; the asset-serving design (D08) owns that. A
-browser that asks for `/favicon.ico` gets auth's ordinary 404. What a script
-does in a browser is appkit's and needs a JavaScript engine the gates do not
-have.
+`/_appkit/` through `page.Static()`; the asset-serving design (D08) owns that,
+and the rule that no page refers to another origin. A browser that asks for
+`/favicon.ico` gets auth's ordinary 404. What a script does in a browser is
+appkit's and needs a JavaScript engine the gates do not have.
 
-A page **shows** a value when its bytes hold that value as written. Every value
-auth writes into a page from outside itself, the `Host`, a return URL, an email
-Google returned, `WORKSPACE_DOMAIN`, anything from the store, is escaped, so it
-adds no tag; a value holding none of the characters escaping rewrites appears
-unchanged, and that is the kind of value a test supplies and looks for. Where in
-the page a value stands, and what words surround it, is the page's copy.
+Every value auth writes into a page from outside itself, the `Host`, a return
+URL, an email Google returned, `WORKSPACE_DOMAIN`, anything from the store, is
+escaped, so it adds no tag. The **apex** is the last two labels of the
+request's `Host` with its port dropped: `auth.sbx.ikigenba.dev` gives
+`ikigenba.dev`.
 
-The **apex** a page shows is the last two labels of the request's `Host` with
-its port dropped: `auth.sbx.ikigenba.dev` gives `ikigenba.dev`.
+The sign-in page at `/`, the cancelled page and the non-member page share one
+card, the template `signIn`, and one shape of data, the **sign-in data**: the
+apex; which refusal, if any, the page answers (`cancelled` when Google did not
+grant access, `not_member` when the account is not a verified member of the
+workspace, empty on the sign-in page); the return URL percent-encoded, with
+every byte outside RFC 3986's unreserved set written as `%` and two uppercase
+hex digits (RFC 3986 §2.1, §2.3); the destination's display host when the
+return URL is in the space; the request's `Host` exactly as sent; the
+workspace; and, on the non-member page, the email Google returned. These pages
+have no banner. The template chooses every word from that data and writes the
+login link itself, carrying the encoded return URL to the login start as its
+`return` query value, so what the design fixes of the link is the data it is
+built from and that the login start, given exactly that value, records the
+return URL the sign-in page was asked for. An out-of-space return URL is
+carried on all the same and discarded by the callback. Both the sign-in page
+and the login start decode `return` as a form-encoded query value (WHATWG URL
+Standard, `application/x-www-form-urlencoded` parsing), with three exceptions
+that are auth's own choice, not WHATWG's: a pair holding a `;` is ignored, a
+pair with a malformed `%` escape is ignored, and bytes that are not valid UTF-8
+are kept as they are rather than replaced by U+FFFD, so they re-encode to the
+same escapes. The percent-encoding holds no `;`, no `+` and no malformed
+escape, so the login start decodes it back to the same bytes.
 
-A page for a visitor who is not signed in has no banner. The sign-in page at `/`
-shows the apex. With no return URL, or one outside the space, it shows the
-workspace and auth's own host, exactly as the request's `Host` carries it. With
-an in-space return URL it shows the destination's host (and port, as the URL
-writes them) and the workspace. Whatever the return URL, the page carries it on
-to the login start percent-encoded, with every byte outside RFC 3986's
-unreserved set written as `%` and two uppercase hex digits (RFC 3986 §2.1,
-§2.3); an out-of-space one is then discarded by the callback. Both the sign-in
-page and the login start decode `return` as a form-encoded query value (WHATWG
-URL Standard, `application/x-www-form-urlencoded` parsing), with three
-exceptions that are auth's own choice, not WHATWG's: a pair holding a `;` is
-ignored, a pair with a malformed `%` escape is ignored, and bytes that are not
-valid UTF-8 are kept as they are rather than replaced by U+FFFD, so they
-re-encode to the same escapes. The cancelled page shows the apex; the non-member
-page shows the apex, the email Google returned, and the workspace.
+The login start's own answer is a redirect, not a page: auth answers it with
+the standard library's `http.Redirect`, whose documentation says that when no
+`Content-Type` has been set it sets `text/html; charset=utf-8` and writes a
+small HTML body; that body is the standard library's, and auth writes no
+markup of its own there.
 
 A page for a signed-in user is drawn with the banner, which is not auth's
 markup: it is the platform's, the same for every app, shipped by appkit as the
@@ -200,22 +212,22 @@ with the banner, with the **banner user**: the signed-in user's email, `/` as
 the profile URL, and `/logout` as the sign-out target, both relative, because
 auth is its own profile and its own sign-out, on its own origin. auth never
 calls it for anything else, so a page for a visitor who is not signed in never
-has a banner or a launcher and never causes a read of the services file.
+has a banner or a launcher and never causes a read of the services file; its
+auth page data carries the zero banner.
 
 appkit's design fixes what the banner and the footer show (its
 D03-page-templates). appkit's `footer` template, given the same data, writes the
 page's footer. So auth states only that the page carries the text the `banner`
 template writes for the data the call returned, the **appkit banner**, and after
 it the text the `footer` template writes for that same data, the **appkit
-footer**. A test builds the server with its own `Banner` closure, renders the
-expected banner and footer itself with `page.Templates()`, and compares; it
-finds the email a page was drawn for from the page's own data (the store), never
-from the banner's markup. The profile, D07's token-created page, D07's
-rejected-create page, and D09's approve page are drawn with the banner.
+footer**. A test builds the server with its own `Banner` closure and compares
+the page with `page` executed with the auth page data holding the banner its
+closure returned. The profile, D07's token-created page, D07's rejected-create
+page, and D09's approve page are drawn with the banner.
 
-The profile at `/` shows the apex, the user's email, and the workspace; D07
-fixes what it shows of the user's tokens, its MCP clients card, and D07's own
-pages.
+The profile at `/` is drawn from the **profile data**: the apex, the user's
+email, the workspace, the user's personal tokens as D07's token rows, an empty
+create form (D07's empty create data), and D07's MCP clients data.
 
 The identity headers `X-User-Id`/`X-User-Email` and credential parsing are
 D06's. Server construction and Google-config validation are D03's, and so is the
@@ -229,7 +241,7 @@ routing of *other* apps through `/check` or `/check/open`, the public `/check`
 and `/check/open` 404s, and the nginx-side redirect that carries `?return` are
 properties of the space produced by opsctl, a separate sub-project, and are out
 of scope here; what this design owns is that auth answers its own host's `/`
-with the sign-in page, and what that page shows.
+with the sign-in page, and the data that page is drawn from.
 
 ## What the flow records
 
@@ -306,9 +318,9 @@ were recorded.
 - R-V6RG-BC7T: For a request whose path is `/`, `/login/google`, `/login/google/callback`, or `/logout`, auth MUST record no event other than its `request.started` and `request.finished` events and the events R-TBD8-MVI8, R-TDT1-EEZM, R-TF0X-S6QB, and R-V5JJ-XKH4 require of it; so a request auth answers `500` (D03), a `GET /` or `GET /login/google` whatever its answer, and a `POST /logout` answered `403` record no other event.
 - R-TIOM-XHYE: No event auth records — its envelope request id, envelope user, and every attribute value — MUST contain, other than where it coincides with a value a requirement of auth's design states for that field, the value of any cookie the request carries, a session id auth minted, a token secret, a user's email, an ID token's email, a token's `Name`, an authorization `code` or login `state`, a return URL, or the text after the first `?` of the request's URL or of its `X-Original-URI` header.
 - R-V7ZC-P3YI: When auth serves its own host on a space, `GET https://auth.<space>/` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and the sign-in page (R-VCUY-86XA) as its body.
-- R-V979-2VP7: auth's design defines an **auth page** as a response body that a requirement of auth's design states is an auth page or is drawn with the banner, and says that an auth page **shows** a value `v` when, if `v` holds none of `&`, `<`, `>`, `"`, `'`, and the NUL character, the page's bytes contain `v`, saying nothing of where in the page `v` stands or what surrounds it; every requirement of auth's design that names an auth page or says a page shows a value MUST denote that.
+- R-3GUK-F9PN: auth's design defines an **auth page** as a response body that a requirement of auth's design states is an auth page or is drawn with the banner; every requirement of auth's design that names an auth page MUST denote that.
 - R-VAF5-GNFW: Every value auth writes into an auth page that it takes from the request, from Google, from `WORKSPACE_DOMAIN`, or from the store MUST contribute no `<` and no `>` character to the page's bytes.
-- R-3Q46-Q9HS: auth's design defines the **apex name** of a request as the result of taking the request's `Host` as sent, removing a trailing `:` followed by one or more ASCII digits, and keeping the last two of the remaining text's `.`-separated labels joined by `.`, or the whole remaining text when it has fewer than two labels, so that `auth.sbx.ikigenba.dev` gives `ikigenba.dev`; every apex a page shows MUST be the request's apex name.
+- R-3I2G-T1GC: auth's design defines the **apex name** of a request as the result of taking the request's `Host` as sent, removing a trailing `:` followed by one or more ASCII digits, and keeping the last two of the remaining text's `.`-separated labels joined by `.`, or the whole remaining text when it has fewer than two labels, so that `auth.sbx.ikigenba.dev` gives `ikigenba.dev`; every requirement of auth's design that names the apex name of a request MUST denote that.
 - R-4ZBA-OGOE: auth's design defines the **banner user** for a user as the `page.User` value, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`, whose `Email` is that user's email — the `Email` of the `store.Identity` (D04) the request's session resolves to — whose `ProfileURL` is `/`, and whose `LogoutURL` is `/logout`; every requirement of auth's design that names the banner user for a user MUST denote that.
 - R-50J7-28F3: auth's design defines the **appkit banner** of a response as the text written by executing the template named `banner` in a set that `page.Templates()` returns, with its data the `page.Banner` value that the `Banner` field of the `server.Config` passed to `server.New` (D03) returned from the call the server made to it while answering that response's request; every requirement of auth's design that names the appkit banner MUST denote that.
 - R-51R3-G05S: auth's design defines the **appkit footer** of a response as the text written by executing the template named `footer` in a set that `page.Templates()` returns, with its data the same `page.Banner` value the response's appkit banner is written from; every requirement of auth's design that names the appkit footer MUST denote that.
@@ -318,14 +330,18 @@ were recorded.
 - R-VCUY-86XA: `GET /` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body that is an auth page — the **sign-in page** — and MUST change no state, persisting neither the request's return URL nor anything else.
 - R-PNB9-4VJK: The **return URL** of a request for the sign-in page MUST be the value of the first `&`-separated pair of the request's query whose name, decoded the same way as the value, is exactly `return`, the name and value being decoded as the WHATWG URL Standard's `application/x-www-form-urlencoded` parser decodes them (`+` as a space, and `%` followed by two hexadecimal digits as the byte they denote), except that a pair that holds a `;`, or whose name or value holds a `%` not followed by two hexadecimal digits, MUST be ignored as though it were absent, and except that the decoded value MUST be the byte sequence the value denotes, kept as it is when it is not valid UTF-8 (no byte is replaced by U+FFFD), so that `?return=%FF` yields the single byte `0xFF`, whose percent-encoding is `%FF`; a request with no such pair, or whose first such pair's value decodes to the empty string, MUST be treated as carrying no return URL.
 - R-PPR1-WF0Y: `GET /login/google` MUST record, as the return URL of the login state it creates via `CreateLoginState`, the value of its own first `return` query parameter found and decoded by the rule R-PNB9-4VJK states for the sign-in page, unvalidated — including when that value is out-of-space or cannot be parsed as a URL — and MUST record no return URL when it has no such parameter or that parameter decodes to the empty string.
-- R-VE2U-LYNZ: When the request for the sign-in page carries a return URL, whether in-space or out-of-space, the sign-in page MUST show the percent-encoding of that return URL.
-- R-VFAQ-ZQEO: When the request for the sign-in page carries no return URL or an out-of-space one, the sign-in page MUST show the request's apex name, the value of `WORKSPACE_DOMAIN`, and the request's `Host` as sent, port included.
-- R-VGIN-DI5D: When the request for the sign-in page carries an in-space return URL, the sign-in page MUST show the request's apex name, the return URL's display host, and the value of `WORKSPACE_DOMAIN`.
 - R-QI40-VGBM: The **display host** of an in-space return URL MUST be the host subcomponent of its authority (RFC 3986 §3.2.2) exactly as the URL writes it, followed, when the authority has a non-empty port subcomponent (§3.2.3), by `:` and that port exactly as written; any userinfo subcomponent (§3.2.1) MUST NOT be part of it.
 - R-N2LW-9AQJ: A return URL MUST be treated as **in-space** if and only if all of the following hold: (a) it contains no `\` and no byte from 0x00 through 0x20 or equal to 0x7F (no ASCII control character and no space); (b) it begins with `http://` or `https://`, the scheme matched ASCII case-insensitively; (c) its **authority** — the text after that `//` up to, but not including, the first `/`, `?`, or `#` after it, or to its end when there is none — consists of a non-empty **host** made only of ASCII letters, ASCII digits, `-`, and `.`, optionally followed by `:` and zero or more ASCII digits, so that an authority holding `@`, `%`, `[`, or any byte that is not ASCII is never in-space; and (d) the space's host name — the space (R-ILH9-35UU) with a trailing `:` followed by one or more ASCII digits removed — is non-empty, and the host, compared with it ASCII case-insensitively, either equals it or ends with `.` followed by it. Every other return URL, including one that is not a URL at all, MUST be treated as **out-of-space**.
 - R-N3TS-N2H8: The `302` `Location` of a successful member sign-in MUST be the login state's carried return URL when that URL is in-space (R-N2LW-9AQJ), and MUST be `/` when there is no return URL or the carried return URL is out-of-space.
-- R-VHQJ-R9W2: The cancelled page (R-V4BN-JSQF) MUST be an auth page that shows the request's apex name.
-- R-VIYG-51MR: The `403` body R-U14O-MUY4 requires for a non-member result — the **non-member page** — MUST be an auth page that shows the request's apex name, the verified ID token's `Claims.Email`, and the value of `WORKSPACE_DOMAIN`.
 - R-VK6C-ITDG: The `200` body R-V33R-60ZQ requires of `GET /` with a live session — the **profile** — MUST be an auth page drawn with the banner for the user `LookupSessionIdentity` resolves for that session.
-- R-VLE8-WL45: The profile MUST show the request's apex name.
-- R-VMM5-ACUU: The profile MUST show the email of the user the profile is drawn for and the value of `WORKSPACE_DOMAIN`.
+- R-6ZCB-90OL: The `internal/server` package MUST declare the unexported `type authPageData struct { Banner page.Banner; SignIn *signInPageData; Profile *profilePageData; Create *tokenCreateData; Created *tokenCreatedData }`, with exactly these fields in this order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`; it is the **auth page data**.
+- R-70K7-MSFA: The `internal/server` package MUST declare the unexported `type signInPageData struct { Apex, Refused, Return, Destination, Host, Workspace, Email string }`, with exactly these fields in this order.
+- R-71S4-0K5Z: The `internal/server` package MUST declare the unexported `type profilePageData struct { Apex, Email, Workspace string; Rows []tokenRowData; Create tokenCreateData; Clients mcpClientsData }`, with exactly these fields in this order.
+- R-3JAD-6T71: auth's design defines the **sign-in data** of a request, for a refusal `f`, which is the empty string, `cancelled` or `not_member`, and an email `m`, as the `signInPageData` whose `Apex` is the request's apex name (R-3I2G-T1GC); whose `Refused` is `f`; whose `Return` is, when `f` is empty and the request carries a return URL (R-PNB9-4VJK), the percent-encoding (R-ED79-D60K) of that return URL, and otherwise the empty string; whose `Destination` is, when `f` is empty and the request carries an in-space return URL (R-N2LW-9AQJ), that return URL's display host (R-QI40-VGBM), and otherwise the empty string; whose `Host` is the request's `Host` as sent, port included; whose `Workspace` is the value of `WORKSPACE_DOMAIN`; and whose `Email` is `m`; every requirement of auth's design that names the sign-in data of a request MUST denote that value.
+- R-3MY2-C4F4: The sign-in page (R-VCUY-86XA) MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `SignIn` points to the request's sign-in data (R-3JAD-6T71) for the empty refusal and the empty email, and whose other fields are their zero values, the zero `page.Banner` included.
+- R-3O5Y-PW5T: The cancelled page (R-V4BN-JSQF) MUST be an auth page, and MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `SignIn` points to the request's sign-in data (R-3JAD-6T71) for the refusal `cancelled` and the empty email, and whose other fields are their zero values, the zero `page.Banner` included.
+- R-3PDV-3NWI: The `403` body R-U14O-MUY4 requires for a non-member result — the **non-member page** — MUST be an auth page, and MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `SignIn` points to the request's sign-in data (R-3JAD-6T71) for the refusal `not_member` and the email that is the verified ID token's `Claims.Email`, and whose other fields are their zero values, the zero `page.Banner` included.
+- R-3LQ5-YCOF: auth's design defines the **profile data** of a `GET /` answered with the profile (R-VK6C-ITDG) as the `profilePageData` whose `Apex` is the request's apex name (R-3I2G-T1GC); whose `Email` is the `Email` of the `store.Identity` that `LookupSessionIdentity` (D04) resolves for the request's session; whose `Workspace` is the value of `WORKSPACE_DOMAIN`; whose `Rows` holds exactly one element for each token of `Kind` `store.TokenPersonal` among the tokens `ListTokens` (D04) returns for that identity's user, the token row (D07) of that token for the profile's draw time (D07), the element of a token `a` lying before that of a token `b` whenever `a` precedes `b` in profile order (D07); whose `Create` is the empty create data (D07); and whose `Clients` is the profile's MCP clients data (D07); every requirement of auth's design that names the profile data MUST denote that value.
+- R-3RTN-V7DW: The profile (R-VK6C-ITDG) MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `Banner` is the `page.Banner` that the server's one call of the `Banner` field of its `server.Config` while answering the request (R-PT80-EZ08) returned, whose `Profile` points to the request's profile data (R-3LQ5-YCOF), and whose `SignIn`, `Create` and `Created` are nil.
+- R-3QLR-HFN7: For every request for the sign-in page whose sign-in data (R-3JAD-6T71) for the empty refusal and the empty email has a non-empty `Return` `x`, a `GET /login/google` whose URL query is exactly `return=` followed by `x` MUST record, as the return URL of the login state it creates via `CreateLoginState` (R-PPR1-WF0Y), exactly the return URL that request for the sign-in page carries, byte for byte, whatever bytes it holds; and a `GET /login/google` whose URL has no query MUST record no return URL.
+- R-7BJB-2Q3J: When `AuthCodeURL` returns a nil error during `GET /login/google` (R-TB6T-ZBSY), with the URL `u`, auth's answer MUST have the status, the `Location` and `Content-Type` header values, and the body that the standard library's `http.Redirect` writes when called with a `ResponseWriter` whose header map is empty, a request with the same method and URL, `u`, and `http.StatusFound`; so that the body is the standard library's and holds no markup of auth's own.
