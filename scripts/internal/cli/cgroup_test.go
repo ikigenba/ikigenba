@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
+	"github.com/ikigenba/ikigenba/scripts/internal/runs"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
@@ -53,7 +54,7 @@ func TestCgroupPreparedBeforeReady(t *testing.T) {
 }
 
 func TestUnavailableRunsLeaveStateUntouched(t *testing.T) {
-	// R-HCLY-1HUM R-HIPF-YCK3
+	// R-HCLY-1HUM R-I0PK-I7DE
 	for _, kind := range []string{"empty", "shared", "unicode-space", "missing-procs", "write-failure"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
@@ -102,7 +103,7 @@ func TestUnavailableRunsLeaveStateUntouched(t *testing.T) {
 					} `json:"content"`
 				}
 				mustCLI(t, json.Unmarshal(b, &object))
-				if !r.IsError() || len(object.Content) != 1 || object.Content[0].Text != "runs are unavailable: "+reason {
+				if !r.IsError() || len(object.Content) != 1 || object.Content[0].Text != fmt.Sprintf(runs.NoRuns, reason) {
 					t.Fatal(string(b))
 				}
 			}

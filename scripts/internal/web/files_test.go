@@ -190,7 +190,7 @@ func TestFilesWholeAndHead(t *testing.T) {
 	}
 }
 func TestFilesMissingAndIsolation(t *testing.T) {
-	// R-XZHJ-WUF5 R-O032-4QHT R-02O4-D7SA
+	// R-XZHJ-WUF5 R-Z4GJ-7O0J R-02O4-D7SA
 	f := fileSetup(t)
 	outside := filepath.Join(t.TempDir(), "outside")
 	fileWrite(t, outside, []byte("outside"))
@@ -434,7 +434,7 @@ func assertFileUnchanged(t *testing.T, f *fileFixture, before fileSnapshot) {
 	}
 }
 func TestFilesPreserveAllStateAndOwnerAssociation(t *testing.T) {
-	// R-XZHJ-WUF5 R-ZMTF-E759 R-O032-4QHT R-02O4-D7SA R-ZO1B-RYVY R-0UFV-YDCK
+	// R-XZHJ-WUF5 R-ZMTF-E759 R-Z4GJ-7O0J R-02O4-D7SA R-ZO1B-RYVY R-0UFV-YDCK
 	f := fileSetup(t)
 	ctx := context.Background()
 	other, e := f.st.Create(ctx, store.Draft{Owner: "alice", Name: "other", Repo: "rep_1111111111111111", Ref: "main"})

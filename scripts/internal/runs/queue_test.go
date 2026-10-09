@@ -66,7 +66,7 @@ func assertNoStart(t *testing.T, h *harness, id string) {
 	}
 }
 
-// R-Y1O4-NB79 R-Y2W1-12XY R-RIY5-3P37
+// R-Y1O4-NB79 R-YPTQ-MF47 R-0OJW-T44H
 func TestUnavailableAndDistinctAdmissionSentinels(t *testing.T) {
 	all := []error{runs.ErrNoCgroup, runs.ErrQueueFull, runs.ErrDraining, runs.ErrStarting, store.ErrNotFound, store.ErrDelivered, store.ErrEnded, limits.ErrHalted, context.Canceled}
 	for i, a := range all[:2] {
@@ -84,7 +84,7 @@ func TestUnavailableAndDistinctAdmissionSentinels(t *testing.T) {
 	h.cfg.Rand = strings.NewReader("")
 	h.core = runs.New(h.cfg)
 	r, e := h.core.Run(context.Background(), h.sc, runs.Request{})
-	if r != (store.Run{}) || !errors.Is(e, runs.ErrNoCgroup) || e.Error() != "runs are unavailable: no control group delegated" {
+	if r != (store.Run{}) || !errors.Is(e, runs.ErrNoCgroup) || e.Error() != fmt.Sprintf(runs.NoRuns, "no control group delegated") {
 		t.Fatal(r, e)
 	}
 	noNewWork(t, h)
@@ -151,7 +151,7 @@ func TestQueueStartsFIFOWithTimersAndTrailOrder(t *testing.T) {
 	h.finished(c.ID)
 }
 
-// R-RHQ8-PXCI R-RIY5-3P37
+// R-YS9J-DYLL R-0OJW-T44H
 func TestQueueFullRefusesBeforePreparationAndDuplicateWins(t *testing.T) {
 	h := queuedHarness(t)
 	h.cfg.MaxQueued = 1
@@ -162,7 +162,7 @@ func TestQueueFullRefusesBeforePreparationAndDuplicateWins(t *testing.T) {
 	assertQueued(t, h, b)
 	before := entries(t, filepath.Dir(h.core.Folder(b)))
 	r, e := h.core.Run(context.Background(), h.sc, runs.Request{})
-	if r != (store.Run{}) || !errors.Is(e, runs.ErrQueueFull) || e.Error() != "the run queue is full (1 queued); try again later" {
+	if r != (store.Run{}) || !errors.Is(e, runs.ErrQueueFull) || e.Error() != fmt.Sprintf(runs.QueueFull, int64(1)) {
 		t.Fatal(r, e)
 	}
 	if !reflect.DeepEqual(before, entries(t, filepath.Dir(h.core.Folder(b)))) {
@@ -317,7 +317,7 @@ func TestPreparationCompletingAfterDrainAbandonsInsteadOfQueuing(t *testing.T) {
 			drained := make(chan struct{})
 			go func() { h.core.Drain(context.Background()); close(drained) }()
 			until(t, func() bool {
-				return h.core.Deliver(context.Background(), events.Delivery{}) == events.Fail("scripts is stopping; try again later")
+				return h.core.Deliver(context.Background(), events.Delivery{}) == events.Fail(runs.Stopping)
 			})
 			now := started.Add(3 * time.Second)
 			if backwards {
@@ -520,4 +520,15 @@ func TestQueuedCatalogStartFailureKillsGroupAndPassesSlot(t *testing.T) {
 	}
 	h.release(c)
 	h.finished(c.ID)
+}
+
+// R-YOLU-8NDI
+func TestAdmissionCopyConstants(t *testing.T) {
+	const admissionCopy = runs.Stopping + runs.Starting + runs.NoEventID + runs.NoRuns + runs.QueueFull
+	_ = admissionCopy
+	for _, c := range []struct{ format, verb string }{{runs.NoRuns, "%s"}, {runs.QueueFull, "%d"}} {
+		if strings.Count(c.format, c.verb) != 1 || strings.Count(c.format, "%") != 1 {
+			t.Fatal("invalid admission format", c.format)
+		}
+	}
 }

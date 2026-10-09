@@ -22,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
+	"github.com/ikigenba/ikigenba/scripts/internal/runs"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
@@ -233,7 +234,7 @@ func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) 
 	}
 }
 
-// R-6Z8T-HIWW
+// R-ZQEQ-3JD1
 func TestEventFinishingBodyDuringDrainIsRefused(t *testing.T) {
 	h := newHarness(t)
 	h.set("DRAIN_SECONDS", "30")
@@ -268,7 +269,7 @@ func TestEventFinishingBodyDuringDrainIsRefused(t *testing.T) {
 	mustCLI(t, res.Body.Close())
 	var got map[string]string
 	mustCLI(t, json.Unmarshal(b, &got))
-	if res.StatusCode != 500 || !reflect.DeepEqual(got, map[string]string{"outcome": "error", "error": "scripts is stopping; try again later"}) {
+	if res.StatusCode != 500 || !reflect.DeepEqual(got, map[string]string{"outcome": "error", "error": runs.Stopping}) {
 		t.Fatalf("drain delivery %d %s", res.StatusCode, b)
 	}
 	handle, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
@@ -311,7 +312,7 @@ func TestRefusedDeliveryHasNoDomainTrail(t *testing.T) {
 	mustCLI(t, res.Body.Close())
 	var got map[string]string
 	mustCLI(t, json.Unmarshal(body, &got))
-	if res.StatusCode != 500 || got["outcome"] != "error" || !strings.HasPrefix(got["error"], "runs are unavailable: ") {
+	if res.StatusCode != 500 || got["outcome"] != "error" || !strings.HasPrefix(got["error"], fmt.Sprintf(runs.NoRuns, "")) {
 		t.Fatal(res.StatusCode, got)
 	}
 	if history := h.call("runs", map[string]any{"name": "subscriber"})["runs"].([]any); len(history) != 0 {

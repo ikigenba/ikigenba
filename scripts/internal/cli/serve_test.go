@@ -34,6 +34,7 @@ import (
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
+	"github.com/ikigenba/ikigenba/scripts/internal/runs"
 	"github.com/ikigenba/ikigenba/scripts/internal/settings"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
@@ -966,7 +967,7 @@ emptied:
 	}
 }
 
-// R-WOOO-YO34
+// R-ZP6T-PRMC
 func TestRunRequestFinishingBodyDuringDrainIsRefused(t *testing.T) {
 	h := newHarness(t)
 	h.set("DRAIN_SECONDS", "30")
@@ -995,7 +996,7 @@ func TestRunRequestFinishingBodyDuringDrainIsRefused(t *testing.T) {
 	b, e := io.ReadAll(res.Body)
 	mustCLI(t, e)
 	_ = res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(b), `"isError":true`) || !strings.Contains(string(b), "scripts is stopping; try again later") {
+	if res.StatusCode != 200 || !strings.Contains(string(b), `"isError":true`) || !strings.Contains(string(b), runs.Stopping) {
 		t.Fatalf("drain refusal %d %s", res.StatusCode, b)
 	}
 	mustCLI(t, os.WriteFile(filepath.Join(h.p.Dir, "state", "runs", sc["id"].(string), r["id"].(string), "out", "release"), nil, 0600))

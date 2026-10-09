@@ -26,7 +26,7 @@ func limitsRestart(t *testing.T, old *runHarness) *runHarness {
 	return h
 }
 func TestLimitsTreeAcrossRestartAndFrozenEnvironment(t *testing.T) {
-	// R-M54Z-47JO R-HNL1-HFIV
+	// R-M54Z-47JO R-I4D9-NILH
 	h := newHarness(t)
 	script := "pass\n" + "#" + strings.Repeat("x", 1018) + "\n"
 	if len(script) != 1025 {
@@ -164,7 +164,7 @@ func TestLimitsAlreadyExpiredOperation(t *testing.T) {
 	h.stop()
 }
 func TestLimitsPruneUsesStartupSettings(t *testing.T) {
-	// R-LPL3-GWRC R-HNL1-HFIV
+	// R-LPL3-GWRC R-I4D9-NILH
 	h := newHarness(t)
 	h.repository("pass\n")
 	h.p.Sink = &h.sink.capture
@@ -294,7 +294,7 @@ func assertKeptRuns(t *testing.T, c *trailClient, script, name string, ids []str
 }
 
 func TestLimitsPruneCountAtStartup(t *testing.T) {
-	// R-LPL3-GWRC R-HNL1-HFIV
+	// R-LPL3-GWRC R-I4D9-NILH
 	h := newHarness(t)
 	h.repository("pass\n")
 	h.start()

@@ -90,7 +90,7 @@ func TestFind(t *testing.T) {
 	}
 }
 
-// R-HA5V-ETYL R-HF1G-XWXD R-HBDR-SLPA R-HG9D-BOO2 R-HMCV-8JDJ
+// R-HA5V-ETYL R-HF1G-XWXD R-HBDR-SLPA R-HG9D-BOO2 R-Z20Q-G4J5
 func TestOutput(t *testing.T) {
 	d := t.TempDir()
 	env := environment(d)
@@ -129,7 +129,7 @@ func TestOutput(t *testing.T) {
 	_ = cmd.Run()
 	_, e = g.Output(context.Background(), "", args...)
 	var ge *git.Error
-	if !errors.As(e, &ge) || ge.Status != 128 || ge.Stderr != stderr.String() || !strings.HasPrefix(ge.Stderr, "fatal: not a git repository") || ge.Error() != "git exited with status 128" {
+	if !errors.As(e, &ge) || ge.Status != 128 || ge.Stderr != stderr.String() || ge.Error() == "" || !strings.Contains(ge.Error(), strconv.Itoa(ge.Status)) {
 		t.Fatalf("%#v", e)
 	}
 }

@@ -23,7 +23,7 @@ import (
 )
 
 func TestCatalogLifecycle(t *testing.T) {
-	// R-7F3I-GJJX R-7GBE-UBAM R-J4DJ-ROLI R-7JZ3-ZMIP R-52A4-ICD3 R-53I0-W43S R-54PX-9VUH R-55XT-NNL6 R-575Q-1FBV R-58DM-F72K R-59LI-SYT9 R-O7UW-EYEM R-5ATF-6QJY R-5C1B-KIAN R-5D97-YA1C R-C2RY-13RX
+	// R-7F3I-GJJX R-7GBE-UBAM R-J4DJ-ROLI R-7JZ3-ZMIP R-52A4-ICD3 R-53I0-W43S R-54PX-9VUH R-0QZP-KNLV R-YEUN-6HFY R-YG2J-K96N R-0S7L-YFCK R-O7UW-EYEM R-5ATF-6QJY R-5C1B-KIAN R-5D97-YA1C R-C2RY-13RX
 	h := setup(t, "print(1)\n")
 	if got := string(object(t, h.call("list", tools.ListArgs{}))); got != `{"scripts":[]}` {
 		t.Fatal(got)
@@ -41,26 +41,26 @@ func TestCatalogLifecycle(t *testing.T) {
 		t.Fatal(got, a)
 	}
 	for _, n := range []string{"missing", a.ID, "Not valid"} {
-		refusal(t, h.call("show", tools.ShowArgs{Name: n}), "no script named '"+n+"'")
+		refusal(t, h.call("show", tools.ShowArgs{Name: n}), fmt.Sprintf(tools.MissingScript, n))
 	}
 	other := identity.Caller{UserID: "bob", RequestID: "other"}
-	refusal(t, h.raw("show", `{"name":"zulu"}`, other), "no script named 'zulu'")
+	refusal(t, h.raw("show", `{"name":"zulu"}`, other), fmt.Sprintf(tools.MissingScript, "zulu"))
 	if got := string(object(t, h.raw("list", `{}`, other))); got != `{"scripts":[]}` {
 		t.Fatal(got)
 	}
 	bad := "..bad"
-	refusal(t, h.call("create", tools.CreateArgs{Name: "Not valid", Repo: "missing", Ref: &bad}), "invalid name 'Not valid'")
-	refusal(t, h.call("create", tools.CreateArgs{Name: a.Name, Repo: "missing", Ref: &bad}), "a script named 'zulu' already exists")
-	refusal(t, h.call("create", tools.CreateArgs{Name: "new", Repo: "missing", Ref: &bad}), "no repository 'missing'")
-	refusal(t, h.call("create", tools.CreateArgs{Name: "new", Repo: "rep_1111111111111111", Ref: &bad}), "invalid ref '..bad'")
+	refusal(t, h.call("create", tools.CreateArgs{Name: "Not valid", Repo: "missing", Ref: &bad}), fmt.Sprintf(tools.InvalidName, "Not valid"))
+	refusal(t, h.call("create", tools.CreateArgs{Name: a.Name, Repo: "missing", Ref: &bad}), fmt.Sprintf(tools.NameTaken, "zulu"))
+	refusal(t, h.call("create", tools.CreateArgs{Name: "new", Repo: "missing", Ref: &bad}), fmt.Sprintf(tools.NoRepository, "missing"))
+	refusal(t, h.call("create", tools.CreateArgs{Name: "new", Repo: "rep_1111111111111111", Ref: &bad}), fmt.Sprintf(tools.InvalidRef, "..bad"))
 	trace, e := os.ReadFile(h.trace)
 	must(t, e)
 	if strings.Contains(string(trace), "rev-parse") || strings.Contains(string(trace), "archive") {
 		t.Fatal(string(trace))
 	}
 	must(t, os.Remove(h.trace))
-	refusal(t, h.call("update", tools.UpdateArgs{Name: "missing", Ref: bad}), "no script named 'missing'")
-	refusal(t, h.call("update", tools.UpdateArgs{Name: a.Name, Ref: bad}), "invalid ref '..bad'")
+	refusal(t, h.call("update", tools.UpdateArgs{Name: "missing", Ref: bad}), fmt.Sprintf(tools.MissingScript, "missing"))
+	refusal(t, h.call("update", tools.UpdateArgs{Name: a.Name, Ref: bad}), fmt.Sprintf(tools.InvalidRef, "..bad"))
 	unchanged := decode[tools.Script](t, h.call("update", tools.UpdateArgs{Name: a.Name, Ref: "main"}))
 	if !reflect.DeepEqual(a, unchanged) {
 		t.Fatal(unchanged)
@@ -73,13 +73,13 @@ func TestCatalogLifecycle(t *testing.T) {
 	if !d.Deleted || d.ID != a.ID {
 		t.Fatal(d)
 	}
-	refusal(t, h.call("delete", tools.DeleteArgs{Name: a.Name}), "no script named 'zulu'")
+	refusal(t, h.call("delete", tools.DeleteArgs{Name: a.Name}), fmt.Sprintf(tools.MissingScript, "zulu"))
 	taken, e := h.st.Taken(context.Background(), a.Name)
 	must(t, e)
 	if taken {
 		t.Fatal("name still taken")
 	}
-	// R-TC6C-KPOV R-4XEI-Z9EB
+	// R-YDMQ-SPP9 R-4XEI-Z9EB
 	if _, e = os.Stat(h.trace); !os.IsNotExist(e) {
 		t.Fatal("read/update/delete ran git", e)
 	}
@@ -93,7 +93,7 @@ func TestCatalogLifecycle(t *testing.T) {
 }
 
 func TestConcurrentCreate(t *testing.T) {
-	// R-575Q-1FBV
+	// R-YEUN-6HFY
 	h := setup(t, "print(1)\n")
 	var wg, ready sync.WaitGroup
 	ready.Add(8)
@@ -113,7 +113,7 @@ func TestConcurrentCreate(t *testing.T) {
 	n := 0
 	for r := range answers {
 		if r.IsError() {
-			refusal(t, r, "a script named 'job' already exists")
+			refusal(t, r, fmt.Sprintf(tools.NameTaken, "job"))
 		} else {
 			n++
 			_ = decode[tools.Script](t, r)
@@ -200,7 +200,7 @@ func catalogOmit(s state, id string, folders bool) state {
 }
 
 func TestCatalogCreateStoredRecordAndExistingEntries(t *testing.T) {
-	// R-59LI-SYT9 R-O7UW-EYEM
+	// R-0S7L-YFCK R-O7UW-EYEM
 	h := setup(t, "print(1)\n")
 	catalogSeed(t, h, "survivor", "alice", "run_aaaaaaaaaaaaaaaa")
 	catalogSeed(t, h, "foreign", "bob", "run_bbbbbbbbbbbbbbbb")
@@ -232,7 +232,7 @@ func TestCatalogCreateStoredRecordAndExistingEntries(t *testing.T) {
 }
 
 func TestCatalogOwnerBoundariesAndGitStarts(t *testing.T) {
-	// R-575Q-1FBV R-O7UW-EYEM R-5ATF-6QJY R-5D97-YA1C R-55XT-NNL6
+	// R-YEUN-6HFY R-O7UW-EYEM R-5ATF-6QJY R-5D97-YA1C R-0QZP-KNLV
 	h := setup(t, "print(1)\n")
 	catalogSeed(t, h, "own", "alice", "run_cccccccccccccccc")
 	catalogSeed(t, h, "foreign", "bob", "run_dddddddddddddddd")
@@ -240,14 +240,14 @@ func TestCatalogOwnerBoundariesAndGitStarts(t *testing.T) {
 		tool, args, want string
 		git              int
 	}{
-		{"create", `{"name":"own","repo":"missing","ref":"..bad"}`, "a script named 'own' already exists", 0},
-		{"create", `{"name":"foreign","repo":"missing","ref":"..bad"}`, "a script named 'foreign' already exists", 0},
-		{"create", `{"name":"Invalid","repo":"rep_1111111111111111","ref":"..bad"}`, "invalid name 'Invalid'", 0},
-		{"create", `{"name":"new","repo":"missing","ref":"..bad"}`, "no repository 'missing'", 0},
-		{"create", `{"name":"new","repo":"rep_1111111111111111","ref":"..bad"}`, "invalid ref '..bad'", 1},
-		{"update", `{"name":"foreign","ref":"..bad"}`, "no script named 'foreign'", 0},
-		{"update", `{"name":"absent","ref":"..bad"}`, "no script named 'absent'", 0},
-		{"delete", `{"name":"foreign"}`, "no script named 'foreign'", 0},
+		{"create", `{"name":"own","repo":"missing","ref":"..bad"}`, fmt.Sprintf(tools.NameTaken, "own"), 0},
+		{"create", `{"name":"foreign","repo":"missing","ref":"..bad"}`, fmt.Sprintf(tools.NameTaken, "foreign"), 0},
+		{"create", `{"name":"Invalid","repo":"rep_1111111111111111","ref":"..bad"}`, fmt.Sprintf(tools.InvalidName, "Invalid"), 0},
+		{"create", `{"name":"new","repo":"missing","ref":"..bad"}`, fmt.Sprintf(tools.NoRepository, "missing"), 0},
+		{"create", `{"name":"new","repo":"rep_1111111111111111","ref":"..bad"}`, fmt.Sprintf(tools.InvalidRef, "..bad"), 1},
+		{"update", `{"name":"foreign","ref":"..bad"}`, fmt.Sprintf(tools.MissingScript, "foreign"), 0},
+		{"update", `{"name":"absent","ref":"..bad"}`, fmt.Sprintf(tools.MissingScript, "absent"), 0},
+		{"delete", `{"name":"foreign"}`, fmt.Sprintf(tools.MissingScript, "foreign"), 0},
 	} {
 		before := snapshot(t, h)
 		removeTrace(t, h)
@@ -366,7 +366,7 @@ func TestCatalogDeleteNeverRanAndRepositoryGone(t *testing.T) {
 			}
 			noGit(t, h)
 			refusedBefore := snapshot(t, h)
-			refusal(t, h.call("delete", tools.DeleteArgs{Name: victim.Name}), "no script named 'victim'")
+			refusal(t, h.call("delete", tools.DeleteArgs{Name: victim.Name}), fmt.Sprintf(tools.MissingScript, "victim"))
 			unchanged(t, h, refusedBefore)
 		})
 	}

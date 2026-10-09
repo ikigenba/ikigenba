@@ -17,7 +17,7 @@ import (
 )
 
 func TestSubscriptionTypes(t *testing.T) {
-	// R-GIHT-VXSW R-GJPQ-9PJL R-7DVM-2RT8
+	// R-XKD5-M7WL R-XLL1-ZZNA R-7DVM-2RT8
 	for _, tt := range []struct {
 		value any
 		want  string
@@ -33,12 +33,12 @@ func TestSubscriptionTypes(t *testing.T) {
 		}
 	}
 	assertShape(t, tools.SubscribeArgs{}, struct {
-		Name  string `json:"name" mcp:"required" description:"The script's name."`
-		Event string `json:"event" mcp:"required" description:"The event pattern, such as repo.pushed or cron.*.fired."`
+		Name  string `json:"name" mcp:"required" description:"fixture"`
+		Event string `json:"event" mcp:"required" description:"fixture"`
 	}{}, true)
 	assertShape(t, tools.UnsubscribeArgs{}, struct {
-		Name  string `json:"name" mcp:"required" description:"The script's name."`
-		Event string `json:"event" mcp:"required" description:"The event pattern exactly as the script is subscribed to it."`
+		Name  string `json:"name" mcp:"required" description:"fixture"`
+		Event string `json:"event" mcp:"required" description:"fixture"`
 	}{}, true)
 	assertShape(t, tools.Subscription{}, struct {
 		Event   string `json:"event" mcp:"required"`
@@ -72,7 +72,7 @@ func subscriptionTrail(t *testing.T, h *fixture, id, tool, outcome string) {
 }
 
 func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
-	// R-GKXM-NHAA R-GM5J-190Z R-8O7S-M1ZM R-T3OP-T4GN R-8FOH-XNSR R-GNDF-F0RO
+	// R-YHAF-Y0XC R-YIIC-BSO1 R-8O7S-M1ZM R-T3OP-T4GN R-8FOH-XNSR R-XVC9-25KU
 	h, sc, _, conn := paused(t)
 	ctx := context.Background()
 	foreign, e := h.st.Create(ctx, store.Draft{Owner: "bob", Name: "foreign", Repo: sc.Repo, Ref: "main"})
@@ -93,33 +93,33 @@ func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
 		subscriptionTrail(t, h, id, tool, "error")
 	}
 	for _, tool := range []string{"subscribe", "unsubscribe"} {
-		check(tool, foreign.Name, "repo.pushed", "no script named '"+foreign.Name+"'")
+		check(tool, foreign.Name, "repo.pushed", fmt.Sprintf(tools.MissingScript, foreign.Name))
 		for _, name := range []string{"foreign", "absent", sc.ID, "Nightly Report"} {
-			check(tool, name, "Repo.Pushed", "no script named '"+name+"'")
+			check(tool, name, "Repo.Pushed", fmt.Sprintf(tools.MissingScript, name))
 		}
 		for _, event := range []string{"Repo.Pushed", "pushed", "*", "repo..pushed", "repo.pushed.", "re*po.pushed", "repo.push*", "repo.**", "repo-x.pushed", " repo.pushed", ""} {
-			check(tool, sc.Name, event, "invalid event '"+event+"'")
+			check(tool, sc.Name, event, fmt.Sprintf(tools.InvalidEvent, event))
 		}
 	}
-	check("unsubscribe", sc.Name, "repo.pushed", "'"+sc.Name+"' is not subscribed to 'repo.pushed'")
+	check("unsubscribe", sc.Name, "repo.pushed", fmt.Sprintf(tools.NotSubscribed, sc.Name, "repo.pushed"))
 	_, e = h.st.Subscribe(ctx, sc.ID, "repo.pushed")
 	must(t, e)
-	check("unsubscribe", sc.Name, "crm.contact_added", "'"+sc.Name+"' is not subscribed to 'crm.contact_added'")
+	check("unsubscribe", sc.Name, "crm.contact_added", fmt.Sprintf(tools.NotSubscribed, sc.Name, "crm.contact_added"))
 	_, e = h.st.Subscribe(ctx, sc.ID, "cron.*.fired")
 	must(t, e)
-	check("unsubscribe", sc.Name, "cron.hourly.fired", "'"+sc.Name+"' is not subscribed to 'cron.hourly.fired'")
+	check("unsubscribe", sc.Name, "cron.hourly.fired", fmt.Sprintf(tools.NotSubscribed, sc.Name, "cron.hourly.fired"))
 	_, e = h.st.Unsubscribe(ctx, sc.ID, "cron.*.fired")
 	must(t, e)
 	_, e = h.st.Subscribe(ctx, sc.ID, "cron.hourly.fired")
 	must(t, e)
-	check("unsubscribe", sc.Name, "cron.*.fired", "'"+sc.Name+"' is not subscribed to 'cron.*.fired'")
+	check("unsubscribe", sc.Name, "cron.*.fired", fmt.Sprintf(tools.NotSubscribed, sc.Name, "cron.*.fired"))
 	for _, name := range []string{"events", "declarations"} {
-		refusal(t, h.call("create", tools.CreateArgs{Name: name, Repo: sc.Repo}), "invalid name '"+name+"'")
+		refusal(t, h.call("create", tools.CreateArgs{Name: name, Repo: sc.Repo}), fmt.Sprintf(tools.InvalidName, name))
 	}
 }
 
 func TestSubscriptionMutationsPreserveEventRun(t *testing.T) {
-	// R-GPT8-6K92 R-GR14-KBZR R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603
+	// R-0TFI-C739 R-0UNE-PYTY R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603
 	h, sc, r, conn := pausedCause(t, events.Cause{ID: "evt_1122334455667788", Depth: 2})
 	ctx := context.Background()
 	other, e := h.st.Create(ctx, store.Draft{Owner: "bob", Name: "another", Repo: sc.Repo, Ref: "main"})

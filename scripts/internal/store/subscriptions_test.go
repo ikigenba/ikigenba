@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
-// R-R7EC-DYXR R-G3V1-AOWK R-R66G-0772
+// R-R7EC-DYXR R-G3V1-AOWK R-Z0SU-2CSG
 func TestEventVocabulary(t *testing.T) {
 	equal(t, store.TriggerEvent, "event")
 	for i, a := range []error{store.ErrNotFound, store.ErrNameTaken, store.ErrEnded, store.ErrNotSubscribed, store.ErrDelivered} {

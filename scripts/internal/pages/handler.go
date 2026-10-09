@@ -90,7 +90,7 @@ func Handler(cfg Config) http.Handler {
 				refusal()
 				return
 			}
-			d := ScriptData{Banner: banner(), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format("2006-01-02 15:04 UTC"), CreatedAt: datetime(sc.Created), RunsKept: len(rs), KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
+			d := ScriptData{Banner: banner(), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format(CardLayout), CreatedAt: datetime(sc.Created), RunsKept: len(rs), KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
 			for _, u := range rs {
 				d.Runs = append(d.Runs, runRow(u, sc.Name))
 			}

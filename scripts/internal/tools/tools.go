@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -28,9 +29,9 @@ type Config struct {
 	Telemetry *telemetry.Writer
 }
 
-func missingScript(n string) error { return errors.New("no script named '" + n + "'") }
-func missingRun(n string) error    { return errors.New("no run '" + n + "'") }
-func invalidRef(n string) error    { return errors.New("invalid ref '" + n + "'") }
+func missingScript(n string) error { return fmt.Errorf(MissingScript, n) }
+func missingRun(n string) error    { return fmt.Errorf(MissingRun, n) }
+func invalidRef(n string) error    { return fmt.Errorf(InvalidRef, n) }
 func catalogError() error          { return errors.New(store.Unreachable) }
 func findScript(ctx context.Context, cfg Config, u identity.Caller, n string) (store.Script, error) {
 	if !store.ValidName(n) {
@@ -189,7 +190,7 @@ func showHandler(cfg Config) func(context.Context, identity.Caller, ShowArgs) (S
 func createHandler(cfg Config) func(context.Context, identity.Caller, CreateArgs) (Script, error) {
 	return func(ctx context.Context, u identity.Caller, a CreateArgs) (Script, error) {
 		if !store.ValidName(a.Name) {
-			return Script{}, errors.New("invalid name '" + a.Name + "'")
+			return Script{}, fmt.Errorf(InvalidName, a.Name)
 		}
 		taken, e := cfg.Store.Taken(ctx, a.Name)
 		if e != nil {
@@ -199,7 +200,7 @@ func createHandler(cfg Config) func(context.Context, identity.Caller, CreateArgs
 			return Script{}, catalogError()
 		}
 		if taken {
-			return Script{}, errors.New("a script named '" + a.Name + "' already exists")
+			return Script{}, fmt.Errorf(NameTaken, a.Name)
 		}
 		owner := ""
 		if source.ValidRepo(a.Repo) {
@@ -207,7 +208,7 @@ func createHandler(cfg Config) func(context.Context, identity.Caller, CreateArgs
 			cutoff(ctx, e)
 		}
 		if e != nil || owner != u.UserID {
-			return Script{}, errors.New("no repository '" + a.Repo + "'")
+			return Script{}, fmt.Errorf(NoRepository, a.Repo)
 		}
 		ref := "main"
 		if a.Ref != nil {
@@ -218,7 +219,7 @@ func createHandler(cfg Config) func(context.Context, identity.Caller, CreateArgs
 		}
 		s, e := cfg.Store.Create(ctx, store.Draft{Owner: u.UserID, Name: a.Name, Repo: a.Repo, Ref: ref})
 		if errors.Is(e, store.ErrNameTaken) {
-			return Script{}, errors.New("a script named '" + a.Name + "' already exists")
+			return Script{}, fmt.Errorf(NameTaken, a.Name)
 		}
 		if e != nil {
 			return Script{}, catalogError()
@@ -274,7 +275,7 @@ func subscription(ctx context.Context, cfg Config, u identity.Caller, name, even
 		return Script{}, err
 	}
 	if !store.ValidEvent(event) {
-		return Script{}, errors.New("invalid event '" + event + "'")
+		return Script{}, fmt.Errorf(InvalidEvent, event)
 	}
 	if remove {
 		sc, err = cfg.Store.Unsubscribe(ctx, sc.ID, event)
@@ -285,7 +286,7 @@ func subscription(ctx context.Context, cfg Config, u identity.Caller, name, even
 		return Script{}, missingScript(name)
 	}
 	if errors.Is(err, store.ErrNotSubscribed) {
-		return Script{}, errors.New("'" + name + "' is not subscribed to '" + event + "'")
+		return Script{}, fmt.Errorf(NotSubscribed, name, event)
 	}
 	if err != nil {
 		return Script{}, catalogError()
@@ -316,7 +317,7 @@ func runHandler(cfg Config) func(context.Context, identity.Caller, RunArgs) (Sta
 		if e != nil {
 			cutoff(ctx, e)
 			if errors.Is(e, runs.ErrDraining) {
-				return Started{}, errors.New("scripts is stopping; try again later")
+				return Started{}, errors.New(runs.Stopping)
 			}
 			if errors.Is(e, runs.ErrNoCgroup) || errors.Is(e, runs.ErrQueueFull) {
 				return Started{}, e
@@ -367,7 +368,7 @@ func cancelHandler(cfg Config) func(context.Context, identity.Caller, CancelArgs
 			return RunEntry{}, missingRun(a.Run)
 		}
 		if errors.Is(e, store.ErrEnded) {
-			return RunEntry{}, errors.New("run '" + a.Run + "' has already ended")
+			return RunEntry{}, fmt.Errorf(Ended, a.Run)
 		}
 		if e != nil {
 			return RunEntry{}, catalogError()

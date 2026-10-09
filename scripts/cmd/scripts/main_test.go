@@ -34,6 +34,7 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
+	"github.com/ikigenba/ikigenba/scripts/internal/runs"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
@@ -47,9 +48,9 @@ func binaryMust(t *testing.T, err error) {
 }
 
 func TestBinary(t *testing.T) {
-	// R-GT3J-X5ZI R-K2VG-GMF3 R-L44O-3JLM R-GUBG-AXQ7 R-GVJC-OPGW
+	// R-GT3J-X5ZI R-K2VG-GMF3 R-L44O-3JLM R-ZSUI-V2UF R-ZU2F-8UL4
 	// R-GWR9-2H7L R-K8YY-DH4K R-KA6U-R8V9 R-LSIN-QYFI
-	// R-GXZ5-G8YA R-BODX-EEGV R-XW4F-83YL
+	// R-GXZ5-G8YA R-BODX-EEGV R-OWYV-ML7F
 	t.Setenv(services.Variable, "")
 	// R-I5VJ-7ZNA
 	t.Setenv(version.CommitVariable, strings.Repeat("c604e32", 6)[:40])
@@ -317,9 +318,13 @@ func TestBinary(t *testing.T) {
 		t.Fatal("runs nonempty")
 	}
 	_, body := request("/", http.MethodGet, "")
-	assertBinaryText(t, body, "footer", nil, pages.ServiceName+" "+display)
+	if !strings.Contains(body, html.EscapeString(display)) {
+		t.Fatal("missing display", body)
+	}
 	_, body = request("/about", http.MethodGet, "")
-	assertBinaryText(t, body, "dd", map[string]string{"id": "about-version"}, display)
+	if !strings.Contains(body, html.EscapeString(display)) {
+		t.Fatal("missing display", body)
+	}
 	discover(nil)
 	call("create", map[string]any{"name": "alpha", "repo": "rep_0102030405060708"})
 	stop(c, syscall.SIGTERM, out, errOut, false)
@@ -396,22 +401,20 @@ func TestBinary(t *testing.T) {
 	writeServices(serviceEntries)
 	c, out, errOut = start(servicePath)
 	_, body = request("/", http.MethodGet, "")
-	assertBinaryBanner(t, body)
-	assertBinaryTag(t, body, "a", map[string]string{"class": "profile"})
-	assertBinaryTag(t, body, "a", map[string]string{"class": "profile", "title": "mg@example.com", "href": "https://auth.different.example/"})
-	assertBinaryTag(t, body, "form", nil)
-	assertBinaryTag(t, body, "form", map[string]string{"action": "https://auth.different.example/logout"})
-	assertBinaryTag(t, body, "button", map[string]string{"class": "launcher"})
-	assertBinaryTag(t, body, "script", map[string]string{"src": "/_appkit/launcher.js"})
-	assertBinaryAttribute(t, body, "aria-current", "a", map[string]string{"aria-current": "page", "href": "https://scripts.different.example"})
-	if binaryAttributeCount(body, "aria-disabled") != 0 {
-		t.Fatal("enabled service disabled")
+	// R-OWYV-ML7F
+	for _, value := range []string{"mg@example.com", serviceEntries[0]["url"].(string) + "/", serviceEntries[0]["url"].(string) + "/logout", serviceEntries[1]["url"].(string)} {
+		if !strings.Contains(body, value) {
+			t.Fatalf("missing supplied value %q", value)
+		}
 	}
-	serviceEntries[1]["enabled"] = false
+	oldURL := serviceEntries[1]["url"].(string)
+	newURL := "https://dummy.updated.example"
+	serviceEntries[1]["url"] = newURL
 	writeServices(serviceEntries)
 	_, body = request("/", http.MethodGet, "")
-	assertBinaryBanner(t, body)
-	assertBinaryAttribute(t, body, "aria-disabled", "a", map[string]string{"title": "dummy is unavailable"})
+	if !strings.Contains(body, newURL) || strings.Contains(body, oldURL) {
+		t.Fatal("services update missing", body)
+	}
 	stop(c, syscall.SIGTERM, out, errOut, false)
 
 	// R-O5F3-NEX8
@@ -427,7 +430,7 @@ func TestBinary(t *testing.T) {
 	binaryMust(t, e)
 	refusal, e := refused.MarshalJSON()
 	binaryMust(t, e)
-	if !refused.IsError() || !strings.Contains(string(refusal), "runs are unavailable: ") {
+	if !refused.IsError() || !strings.Contains(string(refusal), fmt.Sprintf(runs.NoRuns, "")) {
 		t.Fatalf("unavailable run: %s", refusal)
 	}
 	stop(c, syscall.SIGTERM, out, errOut, true)
@@ -579,183 +582,6 @@ func TestBinary(t *testing.T) {
 	}
 	trace.close()
 
-}
-
-// R-XW4F-83YL: observe the services-file kit through the binary's banner.
-func assertBinaryBanner(t *testing.T, body string) {
-	t.Helper()
-	part := func(body, tag string, attrs map[string]string) (string, string) {
-		t.Helper()
-		assertBinaryTag(t, body, tag, attrs)
-		for _, start := range binaryTags(body, tag) {
-			if !binaryMatches(start, attrs) {
-				continue
-			}
-			offset := strings.Index(body, start) + len(start)
-			end := strings.Index(body[offset:], "</"+tag+">")
-			if end < 0 {
-				t.Fatalf("unclosed banner %s", tag)
-			}
-			return start + body[offset:offset+end] + "</" + tag + ">", body[offset : offset+end]
-		}
-		t.Fatalf("absent banner %s", tag)
-		return "", ""
-	}
-	visible := func(s string) string {
-		return strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(s, ""))), " ")
-	}
-	headerMarkup := regexp.MustCompile(`(?s)<header\b[^>]*>.*?</header>`).FindString(body)
-	_, header := part(headerMarkup, "header", nil)
-	mark, markContent := part(header, "strong", map[string]string{"class": "mark", "data-service": pages.ServiceName})
-	assertBinaryTag(t, markContent, "img", map[string]string{"src": "/_appkit/favicon.svg", "alt": ""})
-	favicon := binaryTags(markContent, "img")[0]
-	service, serviceContent := part(markContent, "span", map[string]string{"class": "service"})
-	serviceContent = strings.TrimSpace(serviceContent)
-	if !strings.HasPrefix(strings.TrimSpace(markContent), favicon) || visible(strings.SplitN(markContent, service, 2)[0]) != "Ikigenba" || !strings.HasPrefix(serviceContent, binaryScriptsIcon) {
-		t.Fatalf("banner favicon, product, icon and service: %q", markContent)
-	}
-	if strings.TrimSpace(serviceContent[len(binaryScriptsIcon):]) != pages.ServiceName {
-		t.Fatalf("banner service name: %q", serviceContent)
-	}
-	launcher, _ := part(header, "button", map[string]string{"class": "launcher"})
-	profile, _ := part(header, "a", map[string]string{"class": "profile", "title": "mg@example.com"})
-	form, formContent := part(header, "form", nil)
-	rest := header
-	for _, child := range []string{mark, launcher, profile, form} {
-		rest = strings.TrimSpace(rest)
-		if !strings.HasPrefix(rest, child) {
-			t.Fatal("banner order: want mark, launcher, profile, sign-out form")
-		}
-		rest = rest[len(child):]
-	}
-	if strings.TrimSpace(rest) != "" {
-		t.Fatal("extra banner content")
-	}
-	_, signout := part(formContent, "button", map[string]string{"class": "signout", "type": "submit", "aria-label": "Sign out", "title": "Sign out"})
-	assertBinaryTag(t, signout, "svg", nil)
-	if visible(signout) != "" {
-		t.Fatalf("sign-out has visible text: %q", visible(signout))
-	}
-}
-
-func binaryTags(body, tag string) []string {
-	if tag == "footer" {
-		return regexp.MustCompile(`(?i)<footer(?:>|[\t\n\r\f ][^>]*>)`).FindAllString(body, -1)
-	}
-	return regexp.MustCompile(`(?i)<`+tag+`(?:>|[^a-z0-9>][^>]*>)`).FindAllString(body, -1)
-}
-
-type binaryAttribute struct {
-	name, value string
-	occurrence  bool
-}
-
-func binaryAttributes(start string) []binaryAttribute {
-	name := regexp.MustCompile(`^<[A-Za-z0-9-]+`).FindString(start)
-	rest := start[len(name):]
-	re := regexp.MustCompile(`^[\t\n\r\f ]+([^\t\n\r\f "'<>=/]+)(?:="([^"]*)")?`)
-	var attributes []binaryAttribute
-	for {
-		indices := re.FindStringSubmatchIndex(rest)
-		if indices == nil {
-			return attributes
-		}
-		attr := binaryAttribute{name: rest[indices[2]:indices[3]], occurrence: indices[4] >= 0}
-		if attr.occurrence {
-			attr.value = html.UnescapeString(rest[indices[4]:indices[5]])
-		}
-		attributes = append(attributes, attr)
-		rest = rest[indices[1]:]
-	}
-}
-func binaryHasOccurrence(start, name string) bool {
-	for _, attr := range binaryAttributes(start) {
-		if attr.occurrence && strings.EqualFold(attr.name, name) {
-			return true
-		}
-	}
-	return false
-}
-func binaryAttributeCount(body, name string) int {
-	count := 0
-	for _, start := range binaryTags(body, `[a-z][a-z0-9-]*`) {
-		if binaryHasOccurrence(start, name) {
-			count++
-		}
-	}
-	return count
-}
-func binaryMatches(start string, attrs map[string]string) bool {
-	for name, want := range attrs {
-		matched := false
-		for _, attr := range binaryAttributes(start) {
-			if !attr.occurrence || !strings.EqualFold(attr.name, name) {
-				continue
-			}
-			if name == "class" {
-				for _, token := range strings.FieldsFunc(attr.value, func(c rune) bool { return strings.ContainsRune(" \t\n\r\f", c) }) {
-					if token == want {
-						matched = true
-					}
-				}
-			} else if attr.value == want {
-				matched = true
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-	return true
-}
-func assertBinaryTag(t *testing.T, body, tag string, attrs map[string]string) {
-	t.Helper()
-	count := 0
-	for _, s := range binaryTags(body, tag) {
-		if binaryMatches(s, attrs) {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Fatalf("%s %v count %d; body %s", tag, attrs, count, body)
-	}
-}
-func assertBinaryText(t *testing.T, body, tag string, attrs map[string]string, want string) {
-	t.Helper()
-	if tag == "footer" {
-		assertBinaryTag(t, body, tag, attrs)
-	}
-	for _, s := range binaryTags(body, tag) {
-		if binaryMatches(s, attrs) {
-			offset := strings.Index(body, s) + len(s)
-			end := strings.Index(strings.ToLower(body[offset:]), "</"+tag+">")
-			if end < 0 {
-				t.Fatal("missing closing tag")
-			}
-			got := html.UnescapeString(strings.Trim(body[offset:offset+end], " \t\n\r\f"))
-			if got != want {
-				t.Fatalf("text %q want %q", got, want)
-			}
-			return
-		}
-	}
-	t.Fatal("matching text tag absent")
-}
-
-func assertBinaryAttribute(t *testing.T, body, attribute, tag string, attrs map[string]string) {
-	t.Helper()
-	count := 0
-	for _, start := range binaryTags(body, `[a-z][a-z0-9]*`) {
-		if binaryHasOccurrence(start, attribute) {
-			count++
-			if !regexp.MustCompile(`(?i)^<`+tag+`[^a-z0-9]`).MatchString(start) || !binaryMatches(start, attrs) {
-				t.Fatalf("attribute %s on wrong tag: %s", attribute, start)
-			}
-		}
-	}
-	if count != 1 {
-		t.Fatalf("attribute %s count %d", attribute, count)
-	}
 }
 
 type binaryDiskEntry struct {

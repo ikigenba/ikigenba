@@ -16,10 +16,10 @@ func (c *Core) Deliver(ctx context.Context, d events.Delivery) events.Outcome {
 	stopping := c.draining
 	c.mu.Unlock()
 	if stopping {
-		return events.Fail("scripts is stopping; try again later")
+		return events.Fail(Stopping)
 	}
 	if d.Event.ID == "" {
-		return events.Fail("event has no id")
+		return events.Fail(NoEventID)
 	}
 	ctx = context.WithoutCancel(ctx)
 	subs, err := c.cfg.Store.Subscribers(ctx, d.Event.Name)
@@ -82,10 +82,10 @@ func (c *Core) Deliver(ctx context.Context, d events.Delivery) events.Outcome {
 		}
 	}
 	if halted {
-		return events.Fail("scripts is stopping; try again later")
+		return events.Fail(Stopping)
 	}
 	if starting {
-		return events.Fail("a run for this event is starting; try again later")
+		return events.Fail(Starting)
 	}
 	if failed {
 		return events.Fail(store.Unreachable)

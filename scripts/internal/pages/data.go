@@ -2,6 +2,7 @@ package pages
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
@@ -27,21 +28,21 @@ func datetime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 func status(u store.Run) (word, kind string) {
 	switch u.Status {
 	case store.StatusQueued:
-		return "queued", "info"
+		return WordQueued, KindInfo
 	case store.StatusRunning:
-		return "running", "info"
+		return WordRunning, KindInfo
 	case store.StatusExited:
-		kind = "warn"
+		kind = KindWarn
 		if u.ExitCode == 0 {
-			kind = "ok"
+			kind = KindOK
 		}
-		return "exited " + strconv.Itoa(u.ExitCode), kind
+		return WordExited + strconv.Itoa(u.ExitCode), kind
 	case store.StatusTimedOut:
-		return "timed out", "warn"
+		return WordTimedOut, KindWarn
 	case store.StatusKilled:
-		return "killed", "warn"
+		return WordKilled, KindWarn
 	default:
-		return "failed", "err"
+		return WordFailed, KindErr
 	}
 }
 func duration(u store.Run) string {
@@ -50,18 +51,18 @@ func duration(u store.Run) string {
 	}
 	d := int64(u.Finished.Sub(u.Started) / time.Second)
 	if d < 60 {
-		return strconv.FormatInt(d, 10) + "s"
+		return strconv.FormatInt(d, 10) + UnitSecond
 	}
-	return strconv.FormatInt(d/60, 10) + "m " + strconv.FormatInt(d%60, 10) + "s"
+	return strconv.FormatInt(d/60, 10) + UnitMinute + strconv.FormatInt(d%60, 10) + UnitSecond
 }
 func size(n int64) string {
 	if n < 1000 {
-		return strconv.FormatInt(n, 10) + " B"
+		return strconv.FormatInt(n, 10) + UnitByte
 	}
 	if n < 1000000 {
-		return strconv.FormatInt(n/1000, 10) + "." + strconv.FormatInt(n/100%10, 10) + " kB"
+		return strconv.FormatInt(n/1000, 10) + "." + strconv.FormatInt(n/100%10, 10) + UnitKilobyte
 	}
-	return strconv.FormatInt(n/1000000, 10) + "." + strconv.FormatInt(n/100000%10, 10) + " MB"
+	return strconv.FormatInt(n/1000000, 10) + "." + strconv.FormatInt(n/100000%10, 10) + UnitMegabyte
 }
 func runRow(u store.Run, name string) RunRow {
 	word, kind := status(u)
@@ -73,7 +74,7 @@ func runRow(u store.Run, name string) RunRow {
 	if u.Status == store.StatusExited {
 		exit = strconv.Itoa(u.ExitCode)
 	}
-	return RunRow{u.ID, "/" + name + "/runs/" + u.ID + "/", word, kind, sha, u.Started.UTC().Format("2006-01-02 15:04"), datetime(u.Started), duration(u), exit}
+	return RunRow{u.ID, "/" + name + "/runs/" + u.ID + "/", word, kind, sha, u.Started.UTC().Format(MinuteLayout), datetime(u.Started), duration(u), exit}
 }
 func failure(ctx context.Context, cfg Config, sc store.Script, u store.Run) *Failure {
 	repo := sc.Repo
@@ -84,33 +85,33 @@ func failure(ctx context.Context, cfg Config, sc store.Script, u store.Run) *Fai
 	}
 	switch u.Reason {
 	case store.ReasonRepositoryMissing:
-		return &Failure{"The repository is unavailable", "The repository " + sc.Repo + " is not there. The script was not started."}
+		return &Failure{TitleRepositoryMissing, fmt.Sprintf(TextRepositoryMissing, sc.Repo)}
 	case store.ReasonCommitMissing:
-		return &Failure{"The ref did not resolve", "'" + u.Ref + "' names no commit in the repository " + repo + ". The script was not started."}
+		return &Failure{TitleCommitMissing, fmt.Sprintf(TextCommitMissing, u.Ref, repo)}
 	case store.ReasonTooLarge:
-		return &Failure{"The tree is too large", "The commit's files add up to more than " + strconv.FormatInt(cfg.TreeMaxBytes, 10) + " bytes. The script was not started."}
+		return &Failure{TitleTooLarge, fmt.Sprintf(TextTooLarge, cfg.TreeMaxBytes)}
 	case store.ReasonGitFailed:
-		return &Failure{"git failed", "git could not read the repository " + repo + ". The script was not started."}
+		return &Failure{TitleGitFailed, fmt.Sprintf(TextGitFailed, repo)}
 	case store.ReasonQueueAbandoned:
-		return &Failure{"The run never left the queue", "The run was waiting for a slot when scripts stopped. The script was not started."}
+		return &Failure{TitleQueueAbandoned, TextQueueAbandoned}
 	case store.ReasonTimedOut:
-		return &Failure{"git took too long", "git took longer than " + strconv.FormatInt(cfg.OperationSeconds, 10) + " seconds. The script was not started."}
+		return &Failure{TitleTimedOut, fmt.Sprintf(TextTimedOut, cfg.OperationSeconds)}
 	default:
-		return &Failure{"The script could not start", "The script's process could not be launched. The script was not started."}
+		return &Failure{TitleStartFailed, TextStartFailed}
 	}
 }
 func runData(ctx context.Context, cfg Config, sc store.Script, u store.Run, b page.Banner) RunData {
 	word, kind := status(u)
 	out, errout := cfg.Runs.Sizes(u)
-	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: word, Kind: kind, Running: u.Status == store.StatusQueued || u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format("2006-01-02 15:04:05 UTC"), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
+	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: word, Kind: kind, Running: u.Status == store.StatusQueued || u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format(SecondLayout), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
 	switch u.Status {
 	case store.StatusQueued:
-		c.Notice = "Queued"
+		c.Notice = NoticeQueued
 	case store.StatusRunning:
-		c.Notice = "Running"
+		c.Notice = NoticeRunning
 	}
 	if !c.Running {
-		c.Finished = u.Finished.UTC().Format("2006-01-02 15:04:05 UTC")
+		c.Finished = u.Finished.UTC().Format(SecondLayout)
 		c.FinishedAt = datetime(u.Finished)
 	}
 	if u.Status == store.StatusFailed {

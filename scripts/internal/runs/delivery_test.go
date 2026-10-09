@@ -64,7 +64,7 @@ func noNewWork(t *testing.T, h *harness) {
 	}
 }
 
-// R-2T51-2K1E
+// R-YVX8-J9TO
 func TestDeliveryUnavailableRefusesOnlyUndeliveredSubscribers(t *testing.T) {
 	h := queuedHarness(t)
 	subscribe(t, h, h.sc)
@@ -72,7 +72,7 @@ func TestDeliveryUnavailableRefusesOnlyUndeliveredSubscribers(t *testing.T) {
 	var calls atomic.Int32
 	h.sourceAfter(func(time.Duration) <-chan time.Time { calls.Add(1); return make(chan time.Time) })
 	d := events.Delivery{Event: deliveredEvent(), Attempt: 1}
-	if got := h.core.Deliver(context.Background(), d); got != events.Fail("runs are unavailable: delegation missing") {
+	if got := h.core.Deliver(context.Background(), d); got != events.Fail(fmt.Sprintf(runs.NoRuns, "delegation missing")) {
 		t.Fatal(got)
 	}
 	noNewWork(t, h)
@@ -108,7 +108,7 @@ func TestDeliveryUnavailableRefusesOnlyUndeliveredSubscribers(t *testing.T) {
 	}
 }
 
-// R-2UCX-GBS3
+// R-YX54-X1KD
 func TestDeliveryFullQueueRefusesBeforeAnyPreparation(t *testing.T) {
 	h := queuedHarness(t)
 	h.cfg.MaxQueued = 1
@@ -135,7 +135,7 @@ func TestDeliveryFullQueueRefusesBeforeAnyPreparation(t *testing.T) {
 	beforeFolders := runFolderSnapshot(t, h.cfg.Runs)
 	beforeEvents := h.sink.capture.Events()
 	d := events.Delivery{Event: deliveredEvent(), Attempt: 1}
-	if got := h.core.Deliver(context.Background(), d); got != events.Fail("the run queue is full (1 queued); try again later") {
+	if got := h.core.Deliver(context.Background(), d); got != events.Fail(fmt.Sprintf(runs.QueueFull, int64(1))) {
 		t.Fatal(got)
 	}
 	if calls.Load() != beforeCalls || len(h.timers) != 1 || !reflect.DeepEqual(beforeFolders, runFolderSnapshot(t, h.cfg.Runs)) || !reflect.DeepEqual(beforeEvents, h.sink.capture.Events()) || len(runList(t, h, h.sc)) != 2 || h.record(a.ID) != a || h.record(b.ID) != b {
@@ -161,7 +161,7 @@ func TestDeliveryFullQueueRefusesBeforeAnyPreparation(t *testing.T) {
 	h.finished(queued.ID)
 }
 
-// R-SBN1-0EEO R-T4WM-6W7C R-2LTM-RXL8 R-SHQI-X945 R-SIYF-B0UU R-2O9F-JH2M
+// R-SBN1-0EEO R-T4WM-6W7C R-0ZJ0-91SQ R-SHQI-X945 R-SIYF-B0UU R-10QW-MTJF
 func TestDeliveryCanonicalRunsAndTrail(t *testing.T) {
 	script := `import os,json
 with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
@@ -325,7 +325,7 @@ with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
 	}
 }
 
-// R-SCUX-E65D R-1CFG-L6G7 R-ZD3Q-J39X R-ZEBM-WV0M R-ZGRF-OEI0
+// R-YTHF-RQCA R-YUPC-5I2Z R-ZD3Q-J39X R-ZEBM-WV0M R-ZGRF-OEI0
 func TestDeliveryEarlyRefusals(t *testing.T) {
 	for _, mode := range []string{"drain", "empty", "failing", "irrelevant", "run-failing"} {
 		t.Run(mode, func(t *testing.T) {
@@ -340,11 +340,11 @@ func TestDeliveryEarlyRefusals(t *testing.T) {
 				h.core.Drain(context.Background())
 				h.db.SetFailing(true)
 				ev.ID = ""
-				want = events.Fail("scripts is stopping; try again later")
+				want = events.Fail(runs.Stopping)
 			case "empty":
 				ev.ID = ""
 				h.db.SetFailing(true)
-				want = events.Fail("event has no id")
+				want = events.Fail(runs.NoEventID)
 			case "failing", "run-failing":
 				h.db.SetFailing(true)
 			case "irrelevant":
@@ -441,7 +441,7 @@ func TestDeliveryIgnoresCancellationAndStartsSideBySide(t *testing.T) {
 	}
 }
 
-// R-SAF4-MMNZ R-SLE8-2KC8 R-BIOT-T3QU R-2RX4-OSAP R-2PHB-X8TB
+// R-SAF4-MMNZ R-SLE8-2KC8 R-BIOT-T3QU R-YZKX-OL1R R-YYD1-ATB2
 func TestEventAdmissionAndDuplicateMemory(t *testing.T) {
 	h := fixture(t, waitScript)
 	subscribe(t, h, h.sc)
@@ -468,7 +468,7 @@ func TestEventAdmissionAndDuplicateMemory(t *testing.T) {
 	<-held
 	n := calls.Load()
 	beforeFolders := entries(t, filepath.Join(h.cfg.Runs, h.sc.ID))
-	if got := h.core.Deliver(context.Background(), d); got != events.Fail("a run for this event is starting; try again later") {
+	if got := h.core.Deliver(context.Background(), d); got != events.Fail(runs.Starting) {
 		t.Fatal(got)
 	}
 	req := runs.Request{Caller: identity.Caller{UserID: "owner", RequestID: "manual-event"}, Cause: events.Cause{ID: ev.ID}}
@@ -591,7 +591,7 @@ func TestDeliveryUsesRunBoundsAndEndings(t *testing.T) {
 				done := make(chan struct{})
 				go func() { h.core.Drain(context.Background()); close(done) }()
 				until(t, func() bool {
-					return h.core.Deliver(context.Background(), events.Delivery{}) == events.Fail("scripts is stopping; try again later")
+					return h.core.Deliver(context.Background(), events.Delivery{}) == events.Fail(runs.Stopping)
 				})
 				select {
 				case <-done:
@@ -617,7 +617,7 @@ func TestDeliveryUsesRunBoundsAndEndings(t *testing.T) {
 	}
 }
 
-// R-2PHB-X8TB R-2O9F-JH2M: partial deliveries retain earlier records for retries.
+// R-YYD1-ATB2 R-10QW-MTJF: partial deliveries retain earlier records for retries.
 func TestDeliveryPartialFailureRetryAndDrainCutoff(t *testing.T) {
 	for _, mode := range []string{"catalog", "drain"} {
 		t.Run(mode, func(t *testing.T) {
@@ -645,7 +645,7 @@ func TestDeliveryPartialFailureRetryAndDrainCutoff(t *testing.T) {
 						cancel()
 						go func() { h.core.Drain(ctx); close(drained) }()
 						until(t, func() bool {
-							return h.core.Deliver(context.Background(), events.Delivery{}) == events.Fail("scripts is stopping; try again later")
+							return h.core.Deliver(context.Background(), events.Delivery{}) == events.Fail(runs.Stopping)
 						})
 					}
 				}
@@ -654,7 +654,7 @@ func TestDeliveryPartialFailureRetryAndDrainCutoff(t *testing.T) {
 			// The prior core still owns its live run; the replacement core shares the store.
 			want := events.Fail(store.Unreachable)
 			if mode == "drain" {
-				want = events.Fail("scripts is stopping; try again later")
+				want = events.Fail(runs.Stopping)
 			}
 			if got := h.core.Deliver(context.Background(), d); got != want {
 				t.Fatal(got, want)

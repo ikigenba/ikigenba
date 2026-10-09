@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
+	"github.com/ikigenba/ikigenba/scripts/internal/runs"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 )
 
@@ -41,7 +43,7 @@ func assertQueuedFinished(t *testing.T, es []telemetry.Event, run any, origin, s
 }
 
 func TestQueueAdmissionPromotionAndFrozenBounds(t *testing.T) {
-	// R-HL58-PW1H R-HNL1-HFIV R-TODC-EF3T R-TPL8-S6UI
+	// R-I35D-9QUS R-I4D9-NILH R-TODC-EF3T R-TPL8-S6UI
 	h := newHarness(t)
 	h.repository(waitingMain)
 	h.set("RUN_MAX_ACTIVE", "1")
@@ -77,7 +79,7 @@ func TestQueueAdmissionPromotionAndFrozenBounds(t *testing.T) {
 	mustCLI(t, e)
 	b, e := r.MarshalJSON()
 	mustCLI(t, e)
-	if !r.IsError() || !strings.Contains(string(b), "the run queue is full (1 queued); try again later") {
+	if !r.IsError() || !strings.Contains(string(b), fmt.Sprintf(runs.QueueFull, int64(1))) {
 		t.Fatal(string(b))
 	}
 	noRunStarted(t, h.sink.capture.Events(), second["id"])

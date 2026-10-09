@@ -28,7 +28,7 @@ import (
 )
 
 func TestRunRecordsAndFiles(t *testing.T) {
-	// R-IZHY-8LMQ R-J5LG-5GC7 R-7HJB-831B R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-T9QJ-T67H R-5I4T-HD04 R-5KKM-8WHI R-5N0F-0FYW R-5O8B-E7PL R-TDE8-YHFK
+	// R-IZHY-8LMQ R-J5LG-5GC7 R-7HJB-831B R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-T9QJ-T67H R-5I4T-HD04 R-5KKM-8WHI R-5N0F-0FYW R-5O8B-E7PL R-YM61-H3W4
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	if got := string(object(t, h.call("runs", tools.RunsArgs{Name: "job"}))); got != `{"runs":[]}` {
@@ -105,12 +105,12 @@ func TestRunRecordsAndFiles(t *testing.T) {
 	if shown.LastRun == nil || shown.LastRun.ID != r.ID || shown.LastRun.ExitCode != nil || shown.LastRun.Started != "2025-01-02T02:04:05Z" {
 		t.Fatal(shown)
 	}
-	refusal(t, h.call("cancel", tools.CancelArgs{Run: r.ID}), "run '"+r.ID+"' has already ended")
+	refusal(t, h.call("cancel", tools.CancelArgs{Run: r.ID}), fmt.Sprintf(tools.Ended, r.ID))
 	for _, id := range []string{sc.ID, "job", "run_2222222222222222"} {
-		refusal(t, h.call("result", tools.ResultArgs{Run: id}), "no run '"+id+"'")
-		refusal(t, h.call("cancel", tools.CancelArgs{Run: id}), "no run '"+id+"'")
+		refusal(t, h.call("result", tools.ResultArgs{Run: id}), fmt.Sprintf(tools.MissingRun, id))
+		refusal(t, h.call("cancel", tools.CancelArgs{Run: id}), fmt.Sprintf(tools.MissingRun, id))
 	}
-	refusal(t, h.raw("result", fmt.Sprintf(`{"run":%q}`, r.ID), identity.Caller{UserID: "bob"}), "no run '"+r.ID+"'")
+	refusal(t, h.raw("result", fmt.Sprintf(`{"run":%q}`, r.ID), identity.Caller{UserID: "bob"}), fmt.Sprintf(tools.MissingRun, r.ID))
 	must(t, os.RemoveAll(folder))
 	v = decode[tools.RunResult](t, h.call("result", tools.ResultArgs{Run: r.ID}))
 	if v.FilesGone == nil || !*v.FilesGone || v.Stdout != nil || v.Stderr != nil || v.Files != nil {
@@ -120,7 +120,7 @@ func TestRunRecordsAndFiles(t *testing.T) {
 }
 
 func TestLiveRunCancelAndDelete(t *testing.T) {
-	// R-5PG7-RZGA R-TEM5-C969 R-C2RY-13RX R-54PX-9VUH R-T9QJ-T67H
+	// R-5PG7-RZGA R-0VVB-3QKN R-C2RY-13RX R-54PX-9VUH R-T9QJ-T67H
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	must(t, e)
 	defer func() { _ = listener.Close() }()
@@ -205,7 +205,7 @@ func TestLiveRunCancelAndDelete(t *testing.T) {
 }
 
 func TestDrainAndRunFolderFailure(t *testing.T) {
-	// R-RE2J-KM4F R-RGIC-C5LT R-8FOH-XNSR
+	// R-YJQ8-PKEQ R-YKY5-3C5F R-8FOH-XNSR
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	must(t, os.MkdirAll(filepath.Join(h.root, "runs"), 0700))
@@ -226,8 +226,8 @@ func TestDrainAndRunFolderFailure(t *testing.T) {
 	}
 	must(t, root.Chmod("runs", 0700))
 	h.core.Drain(context.Background())
-	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), "scripts is stopping; try again later")
-	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), "no script named 'missing'")
+	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), runs.Stopping)
+	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), fmt.Sprintf(tools.MissingScript, "missing"))
 	h.flush()
 	n := 0
 	for _, e := range h.capture.Events() {
@@ -295,7 +295,7 @@ func TestDeleteDuringPendingRun(t *testing.T) {
 	must(t, syscall.Close(fd))
 	select {
 	case a := <-answer:
-		refusal(t, a, "no script named 'job'")
+		refusal(t, a, fmt.Sprintf(tools.MissingScript, "job"))
 	case <-time.After(10 * time.Second):
 		t.Fatal("pending run did not answer")
 	}
@@ -307,7 +307,7 @@ func TestDeleteDuringPendingRun(t *testing.T) {
 }
 
 func TestCancelRacesExit(t *testing.T) {
-	// R-5T3W-XAOD
+	// R-YNDX-UVMT
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	must(t, e)
 	defer func() { _ = listener.Close() }()
@@ -335,7 +335,7 @@ func TestCancelRacesExit(t *testing.T) {
 		record, e := h.st.RunByID(context.Background(), start.ID)
 		must(t, e)
 		if r.IsError() {
-			refusal(t, r, "run '"+start.ID+"' has already ended")
+			refusal(t, r, fmt.Sprintf(tools.Ended, start.ID))
 			if record.Status != "exited" || record.ExitCode != 7 {
 				t.Fatal(record)
 			}
@@ -367,7 +367,7 @@ func lifecycleUntil(t *testing.T, predicate func() bool) {
 }
 
 func TestDrainRunVariantsAndArrival(t *testing.T) {
-	// R-RE2J-KM4F
+	// R-YJQ8-PKEQ
 	h := setup(t, "print(1)\n")
 	h.create("own")
 	_, e := h.st.Create(context.Background(), store.Draft{Owner: "bob", Name: "foreign", Repo: "rep_1111111111111111", Ref: "main"})
@@ -397,7 +397,7 @@ func TestDrainRunVariantsAndArrival(t *testing.T) {
 	close(release)
 	select {
 	case r := <-answer:
-		refusal(t, r, "scripts is stopping; try again later")
+		refusal(t, r, runs.Stopping)
 	case <-time.After(10 * time.Second):
 		t.Fatal("arrived run did not answer")
 	}
@@ -407,9 +407,9 @@ func TestDrainRunVariantsAndArrival(t *testing.T) {
 			removeTrace(t, h)
 			u := caller()
 			u.RequestID = "drain-variant"
-			want := "no script named '" + name + "'"
+			want := fmt.Sprintf(tools.MissingScript, name)
 			if name == "own" {
-				want = "scripts is stopping; try again later"
+				want = runs.Stopping
 			}
 			refusal(t, h.raw("run", `{"name":"`+name+`"`+extras+`}`, u), want)
 			unchanged(t, h, before)
@@ -498,7 +498,7 @@ func TestStartAnswersMetadataAndDefaultInput(t *testing.T) {
 }
 
 func TestOwnEndedCancelPreservesRecords(t *testing.T) {
-	// R-TDE8-YHFK
+	// R-YM61-H3W4
 	for i, status := range []string{store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed} {
 		t.Run(status, func(t *testing.T) {
 			h, sc, live, conn := paused(t)
@@ -523,7 +523,7 @@ func TestOwnEndedCancelPreservesRecords(t *testing.T) {
 			removeTrace(t, h)
 			u := caller()
 			u.RequestID = "ended-" + status
-			refusal(t, h.raw("cancel", fmt.Sprintf(`{"run":%q}`, r.ID), u), "run '"+r.ID+"' has already ended")
+			refusal(t, h.raw("cancel", fmt.Sprintf(`{"run":%q}`, r.ID), u), fmt.Sprintf(tools.Ended, r.ID))
 			unchanged(t, h, before)
 			noGit(t, h)
 			noDomain(t, h, u.RequestID)
@@ -533,7 +533,7 @@ func TestOwnEndedCancelPreservesRecords(t *testing.T) {
 }
 
 func TestCancelKillsGroupAndRetainsBytes(t *testing.T) {
-	// R-TEM5-C969
+	// R-0VVB-3QKN
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	must(t, e)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -658,7 +658,7 @@ func lifecycleProcessGone(pid string) bool {
 }
 
 func TestQueuedToolsLifecycle(t *testing.T) {
-	// R-T179-4S0M R-T9QJ-T67H R-RE2J-KM4F R-TH1Y-3SNN R-TDE8-YHFK R-TI9U-HKEC R-TJHQ-VC51 R-TC6C-KPOV
+	// R-T179-4S0M R-T9QJ-T67H R-YJQ8-PKEQ R-TH1Y-3SNN R-YM61-H3W4 R-0X37-HIBC R-TJHQ-VC51 R-YDMQ-SPP9
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	must(t, e)
 	defer func() { _ = listener.Close() }()
@@ -702,8 +702,8 @@ func TestQueuedToolsLifecycle(t *testing.T) {
 		}
 	}
 	removeTrace(t, h)
-	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), "the run queue is full (10 queued); try again later")
-	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), "no script named 'missing'")
+	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), fmt.Sprintf(runs.QueueFull, int64(10)))
+	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), fmt.Sprintf(tools.MissingScript, "missing"))
 	noGit(t, h)
 	q := queued[0]
 	before, e := os.ReadDir(h.core.Folder(q))
@@ -723,8 +723,8 @@ func TestQueuedToolsLifecycle(t *testing.T) {
 	}
 	_ = object(t, h.call("delete", tools.DeleteArgs{Name: sc.Name}))
 	for _, r := range queued {
-		refusal(t, h.call("result", tools.ResultArgs{Run: r.ID}), "no run '"+r.ID+"'")
-		refusal(t, h.call("cancel", tools.CancelArgs{Run: r.ID}), "no run '"+r.ID+"'")
+		refusal(t, h.call("result", tools.ResultArgs{Run: r.ID}), fmt.Sprintf(tools.MissingRun, r.ID))
+		refusal(t, h.call("cancel", tools.CancelArgs{Run: r.ID}), fmt.Sprintf(tools.MissingRun, r.ID))
 	}
 	for _, marker := range markers {
 		if _, e := os.Stat(marker); !os.IsNotExist(e) {
@@ -743,7 +743,7 @@ func TestQueuedToolsLifecycle(t *testing.T) {
 	noGit(t, h)
 }
 
-// R-TI9U-HKEC
+// R-0X37-HIBC
 func TestQueuedCancelStaysKilledAfterRunningRunEnds(t *testing.T) {
 	ctx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
@@ -797,13 +797,13 @@ func TestQueuedCancelStaysKilledAfterRunningRunEnds(t *testing.T) {
 }
 
 func TestUnavailableRunRefusal(t *testing.T) {
-	// R-RE2J-KM4F R-TC6C-KPOV
+	// R-YJQ8-PKEQ R-YDMQ-SPP9
 	h := setup(t, "print(1)\n", func(c *runs.Config) { c.Unavailable = "no delegation" })
 	h.create("job")
 	removeTrace(t, h)
-	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), "runs are unavailable: no delegation")
-	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), "no script named 'missing'")
+	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), fmt.Sprintf(runs.NoRuns, "no delegation"))
+	refusal(t, h.call("run", tools.RunArgs{Name: "missing", Input: json.RawMessage(`{}`)}), fmt.Sprintf(tools.MissingScript, "missing"))
 	h.core.Drain(context.Background())
-	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), "scripts is stopping; try again later")
+	refusal(t, h.call("run", tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}), runs.Stopping)
 	noGit(t, h)
 }

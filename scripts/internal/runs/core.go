@@ -207,10 +207,10 @@ func (c *Core) Run(ctx context.Context, sc store.Script, req Request) (store.Run
 }
 
 func (c *Core) unavailable() error {
-	return &refusal{"runs are unavailable: " + c.cfg.Unavailable, ErrNoCgroup}
+	return &refusal{fmt.Sprintf(NoRuns, c.cfg.Unavailable), ErrNoCgroup}
 }
 func (c *Core) queueFull() error {
-	return &refusal{fmt.Sprintf("the run queue is full (%d queued); try again later", c.cfg.MaxQueued), ErrQueueFull}
+	return &refusal{fmt.Sprintf(QueueFull, c.cfg.MaxQueued), ErrQueueFull}
 }
 
 type refusal struct {

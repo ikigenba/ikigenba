@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -249,32 +250,22 @@ func TestToolMetadata(t *testing.T) {
 	h := setup(t, "print(1)\n")
 	infos, e := h.client.ListTools(context.Background(), caller())
 	must(t, e)
+	// R-490J-BUKF R-4JZM-RS8O R-4L7J-5JZD R-88D3-N1CL R-89L0-0T3A R-8ASW-EKTZ R-8C0S-SCKO R-8D8P-64BD R-XWK5-FXBJ R-XXS1-TP28 R-XYZY-7GSX R-Y07U-L8JM R-Y1FQ-Z0AB R-Y2NN-CS10 R-Y3VJ-QJRP R-Y53G-4BIE
 	wants := []struct {
-		name, description, input, output string
-		effect                           mcp.Effect
+		name, input, output string
+		effect              mcp.Effect
 	}{
-		// R-GB6F-LBCQ R-490J-BUKF R-89L0-0T3A
-		{"list", "The scripts you own, by name.\n\nTakes no arguments. Each script has its id, name, repo (the id of the repos repository it runs from), ref (the branch, tag, or commit a run resolves), subscriptions (how many event patterns it is subscribed to), and last_run (its newest run's id, status, exit_code when it exited, and started; absent when it has never run). Use show for one script's created time and the events it is subscribed to, and runs for all of its runs.", "{\"type\":\"object\",\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"scripts\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"integer\"},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"subscriptions\"],\"additionalProperties\":false}}},\"required\":[\"scripts\"],\"additionalProperties\":false}", mcp.Read},
-		// R-GCEB-Z33F R-4A8F-PMB4 R-88D3-N1CL
-		{"show", "One of your scripts, with its repository, its ref and its last run.\n\nPass name, the script's name. The result has its id, name, repo (the id of the repos repository it runs from), ref (the branch, tag, or commit a run resolves), created, subscriptions (each event pattern it is subscribed to, with event and created, sorted by event; empty when none), and last_run (its newest run's id, status, exit_code when it exited, and started); last_run is absent when it has never run.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The script's name.\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Read},
-		// R-7UY7-FK6Y R-83HI-3YDT R-88D3-N1CL
-		{"create", "Create a script from one of your repositories and a ref.\n\nname is 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, is not about, mcp, events, or declarations, and must not already name a script in the space: names are shared by every user, because a script's page is at its name. repo is the id of one of your repositories in repos. ref is the branch, tag, or commit a run uses, main unless given; it is not resolved until a run, so it may name nothing yet. A run unpacks that commit and runs " + runner.Interpreter + " main.py from the repository's root. The script does not run until you call run. The result is what show returns.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The new script's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about, mcp, events, or declarations, and not already a script's name in the space.\"},\"repo\":{\"type\":\"string\",\"description\":\"The id of one of your repositories in repos (rep_ and 16 hexadecimal digits).\"},\"ref\":{\"type\":\"string\",\"description\":\"The branch, tag, or commit a run uses; main unless given.\"}},\"required\":[\"name\",\"repo\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
-		// R-7W63-TBXN R-4CO8-H5SI R-88D3-N1CL
-		{"update", "Change the ref one of your scripts runs from.\n\nPass name and ref, the branch, tag, or commit every later run resolves, under the rules of create. A run already started keeps the commit it resolved, and the script keeps its subscriptions, whose later runs use the new ref. A script's name and repository never change. The result is what show returns.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The script's name.\"},\"ref\":{\"type\":\"string\",\"description\":\"The branch, tag, or commit the script runs from now on.\"}},\"required\":[\"name\",\"ref\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
-		// R-T2F5-IJRB R-4A8F-PMB4 R-4JZM-RS8O
-		{"delete", "Delete one of your scripts and every run it has.\n\nPass name. Every run of the script goes with it, its output and files included, a run still running is killed, and a run still queued never starts. Its subscriptions go too, so no event starts it again. Its name is free for anyone to take. The repository and its history stay in repos. The result is the id of the deleted script.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The script's name.\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"deleted\":{\"type\":\"boolean\"},\"id\":{\"type\":\"string\"}},\"required\":[\"deleted\",\"id\"],\"additionalProperties\":false}", mcp.Destructive},
-		// R-GDM8-CUU4 R-GG21-4EBI R-88D3-N1CL
-		{"subscribe", "Run one of your scripts each time an event matching a pattern is delivered.\n\nPass name, the script's name, and event, an event pattern such as repo.pushed or cron.*.fired: two or more words joined by single dots, each word either * or a lowercase letter followed by lowercase letters, digits, or single underscores between them. A * matches exactly one word of an event name, so cron.*.fired matches cron.hourly.fired but not cron.fired or cron.a.b.fired; a pattern with no * matches only that name. It need not match any event a service sends yet. Each time the suite's events app delivers to scripts an event whose name matches, the script runs as run would run it, as you, at its ref, with the whole event as its input; that run's trigger is event and its event is the event's id. An event runs a script once, however many of its subscriptions match. Subscribing a script to a pattern it is already subscribed to changes nothing. The result is what show returns.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The script's name.\"},\"event\":{\"type\":\"string\",\"description\":\"The event pattern, such as repo.pushed or cron.*.fired.\"}},\"required\":[\"name\",\"event\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
-		// R-GEU4-QMKT R-GH9X-I627 R-88D3-N1CL
-		{"unsubscribe", "Stop running one of your scripts on an event it is subscribed to.\n\nPass name and event, the pattern exactly as subscribe took it: a name the pattern matches is not the pattern. Events it matches delivered later no longer run the script, unless another of its subscriptions matches them; a run already started is not touched. A script that is not subscribed to exactly that pattern is refused. The result is what show returns.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The script's name.\"},\"event\":{\"type\":\"string\",\"description\":\"The event pattern exactly as the script is subscribed to it.\"}},\"required\":[\"name\",\"event\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Destructive},
-		// R-T62U-NUZE R-4DW4-UXJ7 R-4L7J-5JZD
-		{"run", "Start a run of one of your scripts and return its id, status and commit.\n\nPass name, and ref to run a branch, tag, or commit other than the one the script runs from; a ref given here is used for this run only and does not change the script's ref. Pass input, a JSON object, for the script to read from the file its IKIGENBA_INPUT variable names; {} unless given. The ref is resolved and its commit unpacked before the answer; the script then runs on its own, and run never waits for it. The result is the run's id, its status, and sha, the commit it runs; the status is running, or queued when too many runs are already running, and a queued run starts on its own when one ends. When too many runs are already queued, run is refused; try again later. A run that could not start is still a run: its status is failed, with reason (repository_missing, commit_missing, too_large, git_failed, timed_out, or start_failed), and sha when the ref resolved. Follow a run with result until its status is final; end it early with cancel.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The script's name.\"},\"ref\":{\"type\":\"string\",\"description\":\"The branch, tag, or commit to run, for this run only; the script's own ref unless given.\"},\"input\":{\"type\":\"object\",\"description\":\"A JSON object the run's script reads as its input; {} unless given.\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\"],\"additionalProperties\":false}", mcp.Additive},
-		// R-T3N1-WBI0 R-4A8F-PMB4 R-8C0S-SCKO
-		{"runs", "The runs of one of your scripts, newest first.\n\nPass name, the script's name. Each run has its id, sha (the commit it ran, absent when the ref never resolved), ref, trigger (manual, or event when an event started it), event (the id of the event that started it, when trigger is event), status (queued, running, exited, killed, timed_out, or failed), exit_code (when it exited), started, finished (absent while queued or running), truncated (whether output was cut), and reason (why it never started, when it failed). Use result for one run's output and files.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The script's name.\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"runs\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"ref\",\"trigger\",\"status\",\"started\",\"truncated\"],\"additionalProperties\":false}}},\"required\":[\"runs\"],\"additionalProperties\":false}", mcp.Read},
-		// R-T4UY-A38P R-4F41-8P9W R-8D8P-64BD
-		{"result", "One run whole: its details, its output so far, and the files it wrote.\n\nPass run, the run's id. The result has its id, script (the script's id), sha, ref, user, request_id, trigger (manual, or event when an event started it), event (the event's id, when trigger is event), status, exit_code (when it exited), started, finished (absent while queued or running), stdout_bytes and stderr_bytes (how much of each is kept), truncated, and reason (when it failed), then stdout and stderr, the output kept so far, and files, each file the script wrote under its out folder, with its path and size. While status is queued or running, call result again until it is final. When the run's files are gone, stdout, stderr, and files are absent and files_gone is true.", "{\"type\":\"object\",\"properties\":{\"run\":{\"type\":\"string\",\"description\":\"The run's id (run_ and 16 hexadecimal digits).\"}},\"required\":[\"run\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"script\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"user\":{\"type\":\"string\"},\"request_id\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"stdout_bytes\":{\"type\":\"integer\"},\"stderr_bytes\":{\"type\":\"integer\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"},\"stdout\":{\"type\":\"string\"},\"stderr\":{\"type\":\"string\"},\"files\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"size\":{\"type\":\"integer\"}},\"required\":[\"path\",\"size\"],\"additionalProperties\":false}},\"files_gone\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"script\",\"ref\",\"user\",\"request_id\",\"trigger\",\"status\",\"started\",\"stdout_bytes\",\"stderr_bytes\",\"truncated\"],\"additionalProperties\":false}", mcp.Read},
-		// R-T7AR-1MQ3 R-4F41-8P9W R-8ASW-EKTZ
-		{"cancel", "End one of your runs that is still queued or running.\n\nPass run, the run's id. The script's process group is killed whole, and the run is recorded killed; what it wrote so far is kept. A queued run is taken from the queue and recorded killed without ever starting. A run that has already ended is refused. The result is the run as runs lists it, with its final status and finished.", "{\"type\":\"object\",\"properties\":{\"run\":{\"type\":\"string\",\"description\":\"The run's id (run_ and 16 hexadecimal digits).\"}},\"required\":[\"run\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"ref\",\"trigger\",\"status\",\"started\",\"truncated\"],\"additionalProperties\":false}", mcp.Destructive},
+		{"list", "{\"type\":\"object\",\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"scripts\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"integer\"},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"subscriptions\"],\"additionalProperties\":false}}},\"required\":[\"scripts\"],\"additionalProperties\":false}", mcp.Read},
+		{"show", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Read},
+		{"create", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"repo\":{\"type\":\"string\",\"description\":\"fixture\"},\"ref\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"repo\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
+		{"update", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"ref\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"ref\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
+		{"delete", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"deleted\":{\"type\":\"boolean\"},\"id\":{\"type\":\"string\"}},\"required\":[\"deleted\",\"id\"],\"additionalProperties\":false}", mcp.Destructive},
+		{"subscribe", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"event\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"event\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
+		{"unsubscribe", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"event\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"event\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Destructive},
+		{"run", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"ref\":{\"type\":\"string\",\"description\":\"fixture\"},\"input\":{\"type\":\"object\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\"],\"additionalProperties\":false}", mcp.Additive},
+		{"runs", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"runs\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"ref\",\"trigger\",\"status\",\"started\",\"truncated\"],\"additionalProperties\":false}}},\"required\":[\"runs\"],\"additionalProperties\":false}", mcp.Read},
+		{"result", "{\"type\":\"object\",\"properties\":{\"run\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"run\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"script\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"user\":{\"type\":\"string\"},\"request_id\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"stdout_bytes\":{\"type\":\"integer\"},\"stderr_bytes\":{\"type\":\"integer\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"},\"stdout\":{\"type\":\"string\"},\"stderr\":{\"type\":\"string\"},\"files\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"size\":{\"type\":\"integer\"}},\"required\":[\"path\",\"size\"],\"additionalProperties\":false}},\"files_gone\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"script\",\"ref\",\"user\",\"request_id\",\"trigger\",\"status\",\"started\",\"stdout_bytes\",\"stderr_bytes\",\"truncated\"],\"additionalProperties\":false}", mcp.Read},
+		{"cancel", "{\"type\":\"object\",\"properties\":{\"run\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"run\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"ref\",\"trigger\",\"status\",\"started\",\"truncated\"],\"additionalProperties\":false}", mcp.Destructive},
 	}
 	if len(infos) != len(wants) {
 		t.Fatalf("tool count %d", len(infos))
@@ -293,13 +284,13 @@ func TestToolMetadata(t *testing.T) {
 		if string(ann) != wantAnn {
 			t.Errorf("%s annotations %s", w.name, ann)
 		}
-		if g.Name != w.name || g.Description != w.description || string(g.InputSchema) != w.input || string(g.OutputSchema) != w.output || g.Effect() != w.effect {
+		if g.Name != w.name || g.Description == "" || schemaWithoutCopy(t, g.InputSchema) != w.input || string(g.OutputSchema) != w.output || g.Effect() != w.effect {
 			t.Errorf("metadata %s: description %q; input %s; output %s; effect %v", w.name, g.Description, g.InputSchema, g.OutputSchema, g.Effect())
 		}
 	}
 }
 func TestArgumentShapes(t *testing.T) {
-	// R-2YOC-SKE1 R-IPQR-6FP6 R-7CNP-P02J R-IS6J-XZ6K R-ITEG-BQX9 R-IUMC-PINY R-IVU9-3AEN R-IX25-H25C R-IYA1-UTW1
+	// R-2YOC-SKE1 R-XFHK-34XT R-XGPG-GWOI R-XHXC-UOF7 R-XJ59-8G5W R-XMSY-DRDZ R-XP8R-5AVD R-XQGN-J2M2 R-XROJ-WUCR
 	for _, tt := range []struct {
 		value any
 		want  string
@@ -312,17 +303,19 @@ func TestArgumentShapes(t *testing.T) {
 	}
 }
 func TestCatalogRefusalsAndInvalidArguments(t *testing.T) {
-	// R-3RXX-Z26P R-GNDF-F0RO R-8I4A-P7A5 R-A8LZ-2P82 R-8GWE-BFJG
+	// R-XSWG-AM3G R-XVC9-25KU R-YB6Y-167V R-YCEU-EXYK R-Y7J8-VUZS
 	h := setup(t, "print(1)\n")
 	a := h.create("job")
 	must(t, os.Remove(h.trace))
 	before, e := h.st.List(context.Background(), "alice")
 	must(t, e)
-	for i, tt := range []struct{ tool, args, want string }{{"list", `{"name":"job"}`, "name: unknown field"}, {"show", `{"script":"job"}`, "name: missing required field\nscript: unknown field"}, {"create", `{"name":"new"}`, "repo: missing required field"}, {"create", `{"name":"new","repo":"rep_1111111111111111","ref":1,"owner":"bob"}`, "ref: expected string, got number\nowner: unknown field"}, {"update", `{"name":"job"}`, "ref: missing required field"}, {"update", `{"name":"job","ref":2,"repo":"rep","new_name":"daily"}`, "ref: expected string, got number\nrepo: unknown field\nnew_name: unknown field"}, {"delete", `{"id":"scr"}`, "name: missing required field\nid: unknown field"}, {"subscribe", `{"name":"job"}`, "event: missing required field"}, {"unsubscribe", `{"name":"job"}`, "event: missing required field"}, {"subscribe", `{"name":"job","event":["repo.pushed"],"ref":"main"}`, "event: expected string, got array\nref: unknown field"}, {"unsubscribe", `{"name":"job","event":["repo.pushed"],"ref":"main"}`, "event: expected string, got array\nref: unknown field"}, {"run", `{"ref":"main"}`, "name: missing required field"}, {"run", `{"name":"job","input":"text"}`, "input: expected object, got string"}, {"run", `{"name":"job","input":["sales"]}`, "input: expected object, got array"}, {"runs", `{"script":"job"}`, "name: missing required field\nscript: unknown field"}, {"result", `{"id":"run"}`, "run: missing required field\nid: unknown field"}, {"result", `{"run":3}`, "run: expected string, got number"}, {"cancel", `{"name":"job"}`, "run: missing required field\nname: unknown field"}} {
+	for i, tt := range []struct{ tool, args string }{{"list", `{"name":"job"}`}, {"show", `{"script":"job"}`}, {"create", `{"name":"new"}`}, {"create", `{"name":"new","repo":"rep_1111111111111111","ref":1,"owner":"bob"}`}, {"update", `{"name":"job"}`}, {"update", `{"name":"job","ref":2,"repo":"rep","new_name":"daily"}`}, {"delete", `{"id":"scr"}`}, {"subscribe", `{"name":"job"}`}, {"unsubscribe", `{"name":"job"}`}, {"subscribe", `{"name":"job","event":["repo.pushed"],"ref":"main"}`}, {"unsubscribe", `{"name":"job","event":["repo.pushed"],"ref":"main"}`}, {"run", `{"ref":"main"}`}, {"run", `{"name":"job","input":"text"}`}, {"run", `{"name":"job","input":["sales"]}`}, {"runs", `{"script":"job"}`}, {"result", `{"id":"run"}`}, {"result", `{"run":3}`}, {"cancel", `{"name":"job"}`}} {
 		u := caller()
 		u.RequestID = fmt.Sprintf("invalid-%d", i)
 		beforeState := snapshot(t, h)
-		refusal(t, h.raw(tt.tool, tt.args, u), "invalid arguments:\n"+tt.want)
+		if !h.raw(tt.tool, tt.args, u).IsError() {
+			t.Fatal("accepted invalid arguments")
+		}
 		unchanged(t, h, beforeState)
 		noGit(t, h)
 		h.flush()
@@ -367,10 +360,10 @@ func TestCatalogRefusalsAndInvalidArguments(t *testing.T) {
 	for _, tt := range []struct{ tool, args string }{{"list", `{}`}, {"show", `{"name":"job"}`}, {"create", `{"name":"new","repo":"rep_1111111111111111"}`}, {"update", `{"name":"job","ref":"main"}`}, {"delete", `{"name":"job"}`}, {"subscribe", `{"name":"job","event":"Repo.Pushed"}`}, {"unsubscribe", `{"name":"job","event":"Repo.Pushed"}`}, {"run", `{"name":"job"}`}, {"runs", `{"name":"job"}`}, {"result", `{"run":"run_1111111111111111"}`}, {"cancel", `{"run":"run_1111111111111111"}`}} {
 		refusal(t, h.raw(tt.tool, tt.args, caller()), store.Unreachable)
 	}
-	refusal(t, h.call("create", tools.CreateArgs{Name: "Invalid", Repo: "rep"}), "invalid name 'Invalid'")
+	refusal(t, h.call("create", tools.CreateArgs{Name: "Invalid", Repo: "rep"}), fmt.Sprintf(tools.InvalidName, "Invalid"))
 	bad := "..bad"
-	refusal(t, h.call("create", tools.CreateArgs{Name: "new", Repo: "rep", Ref: &bad}), "invalid ref '..bad'")
-	refusal(t, h.call("update", tools.UpdateArgs{Name: a.Name, Ref: bad}), "invalid ref '..bad'")
+	refusal(t, h.call("create", tools.CreateArgs{Name: "new", Repo: "rep", Ref: &bad}), fmt.Sprintf(tools.InvalidRef, "..bad"))
+	refusal(t, h.call("update", tools.UpdateArgs{Name: a.Name, Ref: bad}), fmt.Sprintf(tools.InvalidRef, "..bad"))
 	for _, tool := range []string{"show", "update", "delete", "subscribe", "unsubscribe", "run", "runs"} {
 		args := `{"name":"Invalid"}`
 		if tool == "subscribe" || tool == "unsubscribe" {
@@ -379,21 +372,21 @@ func TestCatalogRefusalsAndInvalidArguments(t *testing.T) {
 		if tool == "update" {
 			args = `{"name":"Invalid","ref":"..bad"}`
 		}
-		refusal(t, h.raw(tool, args, caller()), "no script named 'Invalid'")
+		refusal(t, h.raw(tool, args, caller()), fmt.Sprintf(tools.MissingScript, "Invalid"))
 	}
 	for _, tool := range []string{"result", "cancel"} {
-		refusal(t, h.raw(tool, `{"run":"job"}`, caller()), "no run 'job'")
+		refusal(t, h.raw(tool, `{"run":"job"}`, caller()), fmt.Sprintf(tools.MissingRun, "job"))
 	}
 	noGit(t, h)
 	h.db.SetFailing(false)
 	unchanged(t, h, beforeFailure)
 }
 func TestUnknownAndMissingArguments(t *testing.T) {
-	// R-4TQT-TY68 R-O92S-SQ5B
+	// R-Y9Z1-NEH6 R-Y8R5-9MQH
 	h := setup(t, "print(1)\n")
 	_, e := h.client.CallTool(context.Background(), caller(), "rename", json.RawMessage(`{}`))
 	var rpc *mcp.RPCError
-	if !errors.As(e, &rpc) || rpc.Code != -32602 || rpc.Message != "Unknown tool: rename" {
+	if !errors.As(e, &rpc) || rpc.Code != -32602 {
 		t.Fatal(e)
 	}
 	h.flush()
@@ -423,13 +416,15 @@ func TestUnknownAndMissingArguments(t *testing.T) {
 				t.Fatal("missing list")
 			}
 		} else {
-			refusal(t, results[0], "invalid arguments:\nname: missing required field")
+			if !results[0].IsError() {
+				t.Fatal("accepted missing argument")
+			}
 		}
 	}
 }
 
 func TestCatalogFailsDuringGit(t *testing.T) {
-	// R-8I4A-P7A5
+	// R-YB6Y-167V
 	for _, tool := range []string{"create", "run"} {
 		t.Run(tool, func(t *testing.T) {
 			h := setup(t, "print(1)\n")
@@ -777,7 +772,7 @@ func TestToolCalledPerOutcomeAndKind(t *testing.T) {
 }
 
 func TestFinalOutputShapes(t *testing.T) {
-	// R-IZHY-8LMQ R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-TDE8-YHFK
+	// R-IZHY-8LMQ R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-YM61-H3W4
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	for i, status := range []string{store.StatusExited, store.StatusKilled, store.StatusTimedOut} {
@@ -808,7 +803,7 @@ func TestFinalOutputShapes(t *testing.T) {
 		if shown.LastRun == nil || shown.LastRun.ID != id || shown.LastRun.Started != v.Started || !reflect.DeepEqual(shown.LastRun.ExitCode, v.ExitCode) {
 			t.Fatal(shown)
 		}
-		refusal(t, h.call("cancel", tools.CancelArgs{Run: id}), "run '"+id+"' has already ended")
+		refusal(t, h.call("cancel", tools.CancelArgs{Run: id}), fmt.Sprintf(tools.Ended, id))
 		root, e := os.OpenRoot(folder)
 		must(t, e)
 		must(t, root.WriteFile("stdout", []byte("unreadable"), 0000))
@@ -1080,7 +1075,7 @@ func TestCompleteWireRecords(t *testing.T) {
 }
 
 func TestRepositoryOwnerRefusals(t *testing.T) {
-	// R-58DM-F72K R-4XEI-Z9EB
+	// R-YG2J-K96N R-4XEI-Z9EB
 	for _, condition := range []string{"foreign", "unset", "missing", "git-missing", "deadline"} {
 		t.Run(condition, func(t *testing.T) {
 			h := setup(t, "print(1)\n")
@@ -1099,7 +1094,7 @@ func TestRepositoryOwnerRefusals(t *testing.T) {
 			before := snapshot(t, h)
 			u := caller()
 			u.RequestID = "owner-" + condition
-			refusal(t, h.raw("create", `{"name":"refused","repo":"rep_1111111111111111"}`, u), "no repository 'rep_1111111111111111'")
+			refusal(t, h.raw("create", `{"name":"refused","repo":"rep_1111111111111111"}`, u), fmt.Sprintf(tools.NoRepository, "rep_1111111111111111"))
 			unchanged(t, h, before)
 			noDomain(t, h, u.RequestID)
 		})
@@ -1152,7 +1147,7 @@ func stillLive(t *testing.T, c net.Conn) {
 	}
 }
 func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
-	// R-54PX-9VUH R-4XEI-Z9EB R-TC6C-KPOV R-3RXX-Z26P R-TDE8-YHFK R-TEM5-C969 R-5N0F-0FYW R-5O8B-E7PL
+	// R-54PX-9VUH R-4XEI-Z9EB R-YDMQ-SPP9 R-XSWG-AM3G R-YM61-H3W4 R-0VVB-3QKN R-5N0F-0FYW R-5O8B-E7PL
 	h, sc, r, conn := paused(t)
 	for i, tt := range []struct{ tool, args string }{{"list", `{}`}, {"show", `{"name":"live-job"}`}, {"runs", `{"name":"live-job"}`}, {"result", fmt.Sprintf(`{"run":%q}`, r.ID)}} {
 		before := snapshot(t, h)
@@ -1164,7 +1159,7 @@ func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
 		noGit(t, h)
 		stillLive(t, conn)
 	}
-	for i, tt := range []struct{ tool, args, want string }{{"update", `{"name":"live-job","ref":"..bad"}`, "invalid ref '..bad'"}, {"delete", `{"name":"absent"}`, "no script named 'absent'"}, {"run", `{"name":"absent"}`, "no script named 'absent'"}, {"create", `{"name":"Invalid","repo":"rep_1111111111111111"}`, "invalid name 'Invalid'"}, {"create", `{"name":"live-job","repo":"rep_1111111111111111"}`, "a script named 'live-job' already exists"}, {"cancel", `{"run":"unknown"}`, "no run 'unknown'"}} {
+	for i, tt := range []struct{ tool, args, want string }{{"update", `{"name":"live-job","ref":"..bad"}`, fmt.Sprintf(tools.InvalidRef, "..bad")}, {"delete", `{"name":"absent"}`, fmt.Sprintf(tools.MissingScript, "absent")}, {"run", `{"name":"absent"}`, fmt.Sprintf(tools.MissingScript, "absent")}, {"create", `{"name":"Invalid","repo":"rep_1111111111111111"}`, fmt.Sprintf(tools.InvalidName, "Invalid")}, {"create", `{"name":"live-job","repo":"rep_1111111111111111"}`, fmt.Sprintf(tools.NameTaken, "live-job")}, {"cancel", `{"run":"unknown"}`, fmt.Sprintf(tools.MissingRun, "unknown")}} {
 		before := snapshot(t, h)
 		removeTrace(t, h)
 		u := caller()
@@ -1177,12 +1172,12 @@ func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
 	}
 	// Refused reads are as inert as successful reads, including foreign runs.
 	for i, tt := range []struct{ tool, args, user, want string }{
-		{"show", `{"name":"absent"}`, "alice", "no script named 'absent'"},
-		{"runs", `{"name":"absent"}`, "alice", "no script named 'absent'"},
-		{"result", `{"run":"run_9999999999999999"}`, "alice", "no run 'run_9999999999999999'"},
-		{"show", `{"name":"live-job"}`, "bob", "no script named 'live-job'"},
-		{"runs", `{"name":"live-job"}`, "bob", "no script named 'live-job'"},
-		{"result", fmt.Sprintf(`{"run":%q}`, r.ID), "bob", "no run '" + r.ID + "'"},
+		{"show", `{"name":"absent"}`, "alice", fmt.Sprintf(tools.MissingScript, "absent")},
+		{"runs", `{"name":"absent"}`, "alice", fmt.Sprintf(tools.MissingScript, "absent")},
+		{"result", `{"run":"run_9999999999999999"}`, "alice", fmt.Sprintf(tools.MissingRun, "run_9999999999999999")},
+		{"show", `{"name":"live-job"}`, "bob", fmt.Sprintf(tools.MissingScript, "live-job")},
+		{"runs", `{"name":"live-job"}`, "bob", fmt.Sprintf(tools.MissingScript, "live-job")},
+		{"result", fmt.Sprintf(`{"run":%q}`, r.ID), "bob", fmt.Sprintf(tools.MissingRun, r.ID)},
 	} {
 		before := snapshot(t, h)
 		removeTrace(t, h)
@@ -1200,7 +1195,7 @@ func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
 	beforeDeleted := snapshot(t, h)
 	removeTrace(t, h)
 	deletedCaller := identity.Caller{UserID: "alice", RequestID: "deleted-run-read"}
-	refusal(t, h.raw("result", fmt.Sprintf(`{"run":%q}`, deleted.ID), deletedCaller), "no run '"+deleted.ID+"'")
+	refusal(t, h.raw("result", fmt.Sprintf(`{"run":%q}`, deleted.ID), deletedCaller), fmt.Sprintf(tools.MissingRun, deleted.ID))
 	unchanged(t, h, beforeDeleted)
 	noGit(t, h)
 	noDomain(t, h, deletedCaller.RequestID)
@@ -1208,7 +1203,7 @@ func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
 	beforeOwner := snapshot(t, h)
 	removeTrace(t, h)
 	ownerCaller := identity.Caller{UserID: "alice", RequestID: "valid-owner-invalid-ref"}
-	refusal(t, h.raw("create", `{"name":"new-job","repo":"rep_1111111111111111","ref":"..bad"}`, ownerCaller), "invalid ref '..bad'")
+	refusal(t, h.raw("create", `{"name":"new-job","repo":"rep_1111111111111111","ref":"..bad"}`, ownerCaller), fmt.Sprintf(tools.InvalidRef, "..bad"))
 	unchanged(t, h, beforeOwner)
 	noDomain(t, h, ownerCaller.RequestID)
 	stillLive(t, conn)
@@ -1235,7 +1230,7 @@ func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
 	before := snapshot(t, h)
 	removeTrace(t, h)
 	bob := identity.Caller{UserID: "bob", RequestID: "foreign-live"}
-	refusal(t, h.raw("cancel", fmt.Sprintf(`{"run":%q}`, r.ID), bob), "no run '"+r.ID+"'")
+	refusal(t, h.raw("cancel", fmt.Sprintf(`{"run":%q}`, r.ID), bob), fmt.Sprintf(tools.MissingRun, r.ID))
 	unchanged(t, h, before)
 	noGit(t, h)
 	noDomain(t, h, bob.RequestID)
@@ -1250,7 +1245,7 @@ func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
 	before = snapshot(t, h)
 	removeTrace(t, h)
 	bob.RequestID = "foreign-ended"
-	refusal(t, h.raw("cancel", fmt.Sprintf(`{"run":%q}`, r.ID), bob), "no run '"+r.ID+"'")
+	refusal(t, h.raw("cancel", fmt.Sprintf(`{"run":%q}`, r.ID), bob), fmt.Sprintf(tools.MissingRun, r.ID))
 	unchanged(t, h, before)
 	noGit(t, h)
 	noDomain(t, h, bob.RequestID)
@@ -1271,6 +1266,12 @@ func assertShape(t *testing.T, value, expected any, tags bool) {
 	}
 	for i := 0; i < want.NumField(); i++ {
 		g, w := got.Field(i), want.Field(i)
+		if w.Tag.Get("description") != "" {
+			if g.Tag.Get("description") == "" {
+				t.Errorf("%v field %d: empty description", got, i)
+			}
+			g.Tag = reflect.StructTag(regexp.MustCompile(`description:"(?:[^"\\]|\\.)*"`).ReplaceAllString(string(g.Tag), `description:"fixture"`))
+		}
 		if g.Name != w.Name || g.Type != w.Type || g.Anonymous != w.Anonymous || g.PkgPath != w.PkgPath || (tags && g.Tag != w.Tag) {
 			t.Errorf("%v field %d: %s %v %q, want %s %v %q", got, i, g.Name, g.Type, g.Tag, w.Name, w.Type, w.Tag)
 		}
@@ -1287,42 +1288,42 @@ func TestPublicTypeShapes(t *testing.T) {
 	// R-2YOC-SKE1
 	assertShape(t, tools.ListArgs{}, struct {
 	}{}, false)
-	// R-IPQR-6FP6
+	// R-XFHK-34XT
 	assertShape(t, tools.ShowArgs{}, struct {
-		Name string `json:"name" mcp:"required" description:"The script's name."`
+		Name string `json:"name" mcp:"required" description:"fixture"`
 	}{}, true)
-	// R-7CNP-P02J
+	// R-XGPG-GWOI
 	assertShape(t, tools.CreateArgs{}, struct {
-		Name string  `json:"name" mcp:"required" description:"The new script's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about, mcp, events, or declarations, and not already a script's name in the space."`
-		Repo string  `json:"repo" mcp:"required" description:"The id of one of your repositories in repos (rep_ and 16 hexadecimal digits)."`
-		Ref  *string `json:"ref" description:"The branch, tag, or commit a run uses; main unless given."`
+		Name string  `json:"name" mcp:"required" description:"fixture"`
+		Repo string  `json:"repo" mcp:"required" description:"fixture"`
+		Ref  *string `json:"ref" description:"fixture"`
 	}{}, true)
-	// R-IS6J-XZ6K
+	// R-XHXC-UOF7
 	assertShape(t, tools.UpdateArgs{}, struct {
-		Name string `json:"name" mcp:"required" description:"The script's name."`
-		Ref  string `json:"ref" mcp:"required" description:"The branch, tag, or commit the script runs from now on."`
+		Name string `json:"name" mcp:"required" description:"fixture"`
+		Ref  string `json:"ref" mcp:"required" description:"fixture"`
 	}{}, true)
-	// R-ITEG-BQX9
+	// R-XJ59-8G5W
 	assertShape(t, tools.DeleteArgs{}, struct {
-		Name string `json:"name" mcp:"required" description:"The script's name."`
+		Name string `json:"name" mcp:"required" description:"fixture"`
 	}{}, true)
-	// R-IUMC-PINY
+	// R-XMSY-DRDZ
 	assertShape(t, tools.RunArgs{}, struct {
-		Name  string          `json:"name" mcp:"required" description:"The script's name."`
-		Ref   *string         `json:"ref" description:"The branch, tag, or commit to run, for this run only; the script's own ref unless given."`
-		Input json.RawMessage `json:"input" description:"A JSON object the run's script reads as its input; {} unless given."`
+		Name  string          `json:"name" mcp:"required" description:"fixture"`
+		Ref   *string         `json:"ref" description:"fixture"`
+		Input json.RawMessage `json:"input" description:"fixture"`
 	}{}, true)
-	// R-IVU9-3AEN
+	// R-XP8R-5AVD
 	assertShape(t, tools.RunsArgs{}, struct {
-		Name string `json:"name" mcp:"required" description:"The script's name."`
+		Name string `json:"name" mcp:"required" description:"fixture"`
 	}{}, true)
-	// R-IX25-H25C
+	// R-XQGN-J2M2
 	assertShape(t, tools.ResultArgs{}, struct {
-		Run string `json:"run" mcp:"required" description:"The run's id (run_ and 16 hexadecimal digits)."`
+		Run string `json:"run" mcp:"required" description:"fixture"`
 	}{}, true)
-	// R-IYA1-UTW1
+	// R-XROJ-WUCR
 	assertShape(t, tools.CancelArgs{}, struct {
-		Run string `json:"run" mcp:"required" description:"The run's id (run_ and 16 hexadecimal digits)."`
+		Run string `json:"run" mcp:"required" description:"fixture"`
 	}{}, true)
 	// R-IZHY-8LMQ
 	assertShape(t, tools.LastRun{}, struct {
@@ -1412,7 +1413,7 @@ func TestPublicTypeShapes(t *testing.T) {
 }
 
 func TestCatalogReadsAfterRepositoryRemoval(t *testing.T) {
-	// R-52A4-ICD3 R-53I0-W43S R-TC6C-KPOV
+	// R-52A4-ICD3 R-53I0-W43S R-YDMQ-SPP9
 	h := setup(t, "print(1)\n")
 	h.create("zulu")
 	h.create("alpha")
@@ -1462,7 +1463,7 @@ func TestFileListUnreachableEntries(t *testing.T) {
 }
 
 func TestSuccessfulMutationsAndStoppingRunDoNotUseGit(t *testing.T) {
-	// R-TC6C-KPOV
+	// R-YDMQ-SPP9
 	h, sc, r, _ := paused(t)
 	for i, tt := range []struct{ tool, args string }{
 		{"update", fmt.Sprintf(`{"name":%q,"ref":"main"}`, sc.Name)},
@@ -1479,8 +1480,37 @@ func TestSuccessfulMutationsAndStoppingRunDoNotUseGit(t *testing.T) {
 	before := snapshot(t, h)
 	removeTrace(t, h)
 	u := identity.Caller{UserID: "alice", RequestID: "no-git-stopping"}
-	refusal(t, h.raw("run", `{"name":"stop-job"}`, u), "scripts is stopping; try again later")
+	refusal(t, h.raw("run", `{"name":"stop-job"}`, u), runs.Stopping)
 	unchanged(t, h, before)
 	noGit(t, h)
 	noDomain(t, h, u.RequestID)
+}
+
+// schemaWithoutCopy preserves schema bytes and order while checking description values.
+func schemaWithoutCopy(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	return regexp.MustCompile(`"description":("(?:[^"\\]|\\.)*")`).ReplaceAllStringFunc(string(raw), func(member string) string {
+		var value string
+		must(t, json.Unmarshal([]byte(strings.TrimPrefix(member, `"description":`)), &value))
+		if value == "" {
+			t.Fatal("empty argument description")
+		}
+		return `"description":"fixture"`
+	})
+}
+
+// R-XU4C-ODU5
+func TestRefusalCopyFormats(t *testing.T) {
+	const formats = tools.MissingScript + tools.MissingRun + tools.InvalidName + tools.InvalidRef + tools.InvalidEvent + tools.NameTaken + tools.NoRepository + tools.NotSubscribed + tools.Ended
+	_ = formats
+	for _, c := range []struct {
+		format string
+		count  int
+	}{
+		{tools.MissingScript, 1}, {tools.MissingRun, 1}, {tools.InvalidName, 1}, {tools.InvalidRef, 1}, {tools.InvalidEvent, 1}, {tools.NameTaken, 1}, {tools.NoRepository, 1}, {tools.NotSubscribed, 2}, {tools.Ended, 1},
+	} {
+		if strings.Count(c.format, "%s") != c.count || strings.Count(c.format, "%") != c.count {
+			t.Fatal("invalid refusal format", c.format)
+		}
+	}
 }

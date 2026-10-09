@@ -405,7 +405,7 @@ func TestServicesSocketNotContacted(t *testing.T) {
 	}
 }
 
-// R-CBDU-XW5S R-CCLR-BNWH R-CDTN-PFN6 R-ZAMF-KHQB R-ZBUB-Y9H0 R-CF1K-37DV R-CG9G-GZ4K R-CHHC-UQV9 R-ZGPX-HCFS R-ZHXT-V46H
+// R-CBDU-XW5S R-CCLR-BNWH R-CDTN-PFN6 R-ZAMF-KHQB R-ZBUB-Y9H0 R-CF1K-37DV R-CG9G-GZ4K R-CHHC-UQV9 R-ZGPX-HCFS R-OY6S-0CY4
 func TestSharedStaticFiles(t *testing.T) {
 	f := makeFixture(t, nil)
 	g := makeFixture(t, nil)
@@ -509,7 +509,7 @@ func TestSharedStaticFiles(t *testing.T) {
 				r.Header.Set("If-None-Match", match)
 				got := httptest.NewRecorder()
 				f.h.ServeHTTP(got, r)
-				if got.Code != 404 || strings.Contains(got.Body.String(), "There is nothing at this address.") {
+				if got.Code != 404 || got.Body.String() == missingPage(t, f.cfg) {
 					t.Fatal(path, got)
 				}
 			}
@@ -535,7 +535,7 @@ func sharedFiles(t *testing.T, h http.Handler) map[string]string {
 	return files
 }
 
-// R-CIP9-8ILY
+// R-OZEO-E4OT
 func TestSharedStaticPlainFontAliasesMissing(t *testing.T) {
 	f := makeFixture(t, nil)
 	hashed := regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`)
@@ -551,7 +551,7 @@ func TestSharedStaticPlainFontAliasesMissing(t *testing.T) {
 				r.Header.Set("If-None-Match", match)
 				w := httptest.NewRecorder()
 				f.h.ServeHTTP(w, r)
-				if w.Code != 404 || strings.Contains(w.Body.String(), "There is nothing at this address.") {
+				if w.Code != 404 || w.Body.String() == missingPage(t, f.cfg) {
 					t.Fatalf("%s %s validator %q: %d %s", method, path, match, w.Code, w.Body.String())
 				}
 			}
@@ -786,4 +786,15 @@ func deliveryJSON(d events.Delivery) ([]byte, error) {
 	}
 	obj["attempt"] = json.RawMessage(fmt.Sprint(d.Attempt))
 	return json.Marshal(obj)
+}
+
+func missingPage(t *testing.T, cfg web.Config) string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	set, err := pages.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	set.Write(w, httptest.NewRequest("GET", "/", nil), 404, "notfound", pages.NoticeData{Banner: cfg.Banner(page.User{})})
+	return w.Body.String()
 }

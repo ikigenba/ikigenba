@@ -17,7 +17,7 @@ import (
 const ServiceName = "scripts"
 
 // Description describes this service in its manifest.
-const Description = "Python scripts run from the suite's repositories"
+const Description string = "Python scripts run from the suite's repositories"
 
 // Set holds the parsed embedded page templates.
 type Set struct{ templates *template.Template }
