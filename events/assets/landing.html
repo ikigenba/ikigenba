@@ -1,14 +1,13 @@
-{{/* The landing page at GET /: what the service is, the bus's subscribers,
-     and the tools that inspect and unstick them. The root of the hierarchy,
-     so no breadcrumb. Shown only to a signed-in user. Data: .Banner (a
-     page.Banner, for banner and footer); .Subscribers, one row per
-     subscriber, each with .Service (the subscribing service's name),
-     .Status (the status word: "ok", "paused" or "gone"; the template shows
-     ok as kind "ok", paused as "warn" and gone as "info"), .Reason (nil
-     unless the subscriber is stuck on an event; otherwise a pointer to a
-     struct with .Name, the name of the event it is stuck on, .Seq, an int64,
-     that event's sequence number, and .Error, the error it answered),
-     .Cursor (the last event it was
+{{/* The landing page at GET /: what the service is and the bus's
+     subscribers. The root of the hierarchy, so no breadcrumb. Shown only to
+     a signed-in user. Data: .Banner (a page.Banner, for banner and footer);
+     .Subscribers, one row per subscriber, each with .Service (the
+     subscribing service's name), .Status (the status word: "ok", "paused"
+     or "gone"; the template shows ok as kind "ok", paused as "warn" and
+     gone as "info"), .Reason (nil unless the subscriber is stuck on an
+     event; otherwise a pointer to a struct with .Name, the name of the
+     event it is stuck on, .Seq, an int64, that event's sequence number, and
+     .Error, the error it answered), .Cursor (the last event it was
      delivered, as text), .Lag (how many events it is behind, as text), and
      .Since (a time.Time, when it entered its status; shown in UTC as
      "2006-01-02 15:04", and as RFC 3339 UTC in the datetime attribute).
@@ -20,13 +19,9 @@
      td.subscriber-service (text .Service), td.subscriber-status holding
      span.status[data-kind=<kind of .Status>][data-status=<.Status>] (text
      .Status) followed, when .Reason is not nil, by span.muted (text "at
-     <Reason.Name> <Reason.Seq>: <Reason.Error>"),
-     td.subscriber-cursor (text .Cursor), td.subscriber-lag (text .Lag), and
-     td.subscriber-since holding time[datetime=<.Since, RFC 3339 UTC>] (text
-     .Since as shown); a section with h2 "MCP tools" and dl#tools.kv holding
-     one dt[data-tool=<name>] per MCP tool, in the order catalog, search,
-     subscribers, skip, resume, each holding the tool's name in a code
-     element and followed by a dd holding the first line of its description;
+     <Reason.Name> <Reason.Seq>: <Reason.Error>"), td.subscriber-cursor
+     (text .Cursor), td.subscriber-lag (text .Lag), and td.subscriber-since
+     holding time[datetime=<.Since, RFC 3339 UTC>] (text .Since as shown);
      a#about-link whose href is "/about". No script but appkit's
      /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
@@ -56,16 +51,6 @@
 <h3 class="text-md">No subscribers yet</h3>
 <p>A service that accepts events shows up here once it declares an event it accepts.</p>
 </div>{{end}}
-</section>
-<section class="card" aria-labelledby="tools-title">
-<header><h2 id="tools-title">MCP tools</h2><p>Agents inspect the bus and unstick subscribers with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
-<dl id="tools" class="kv">
-<dt data-tool="catalog"><code>catalog</code></dt><dd>Every event the suite emits, who emits and accepts it, counts and last seen.</dd>
-<dt data-tool="search"><code>search</code></dt><dd>The retained log, newest first, filtered by service, event, user, request id, cause or attributes.</dd>
-<dt data-tool="subscribers"><code>subscribers</code></dt><dd>Each subscriber's status, reason, cursor and lag.</dd>
-<dt data-tool="skip"><code>skip</code></dt><dd>Skip the event a paused subscriber is stuck on and resume it.</dd>
-<dt data-tool="resume"><code>resume</code></dt><dd>Retry the event a paused subscriber is stuck on.</dd>
-</dl>
 </section>
 <p><a id="about-link" href="/about">About events</a></p>
 </main>
