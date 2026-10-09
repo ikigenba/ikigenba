@@ -269,7 +269,7 @@ Postconditions:
 
 ## An app reads the services file
 
-Every app can find every other app in the sandbox through the file `IKIGENBA_SERVICES` names, written in the platform's published format: one JSON object whose `services` array lists every app of the last `up` in name order, one service to a line. Each service gives its `name`; its `url` in this sandbox; its manifest's `description`, `""` when it has none; its `socket` in this sandbox; `enabled`, always `true`; and `mcp`, `false` when the manifest does not set it. `<socket of auth>` and `<socket of dummy>` are `/run/user/<uid>/sandbox/7400/auth.sock` and `/run/user/<uid>/sandbox/7400/dummy.sock`, where `<uid>` is the developer's user id: sockets live in the developer's runtime directory keyed by the sandbox's port, not under the sandbox's data, because a Unix socket path may hold at most 108 bytes.
+Every app can find every other app in the sandbox through the file `IKIGENBA_SERVICES` names, written in the platform's published format: one JSON object whose `services` array lists every app of the last `up` in name order, one service to a line. Each service gives its `name`; its `url` in this sandbox; its manifest's `description`, `""` when it has none; its `socket` in this sandbox; `enabled`, always `true`; `mcp`, `false` when the manifest does not set it; and, last, its `group`, `"core"` or `"application"`, from its manifest's `[home]` table, `"application"` when the manifest has no `[home]` table or no `group` in it. `<socket of auth>` and `<socket of dummy>` are `/run/user/<uid>/sandbox/7400/auth.sock` and `/run/user/<uid>/sandbox/7400/dummy.sock`, where `<uid>` is the developer's user id: sockets live in the developer's runtime directory keyed by the sandbox's port, not under the sandbox's data, because a Unix socket path may hold at most 108 bytes.
 
 Command:
 
@@ -282,8 +282,8 @@ Output:
 ```
 {
   "services": [
-    { "name": "auth", "url": "http://auth.wip.localhost:7400", "description": "", "socket": "<socket of auth>", "enabled": true, "mcp": false },
-    { "name": "dummy", "url": "http://dummy.wip.localhost:7400", "description": "Demo widgets to list and create", "socket": "<socket of dummy>", "enabled": true, "mcp": true }
+    { "name": "auth", "url": "http://auth.wip.localhost:7400", "description": "", "socket": "<socket of auth>", "enabled": true, "mcp": false, "group": "application" },
+    { "name": "dummy", "url": "http://dummy.wip.localhost:7400", "description": "Demo widgets to list and create", "socket": "<socket of dummy>", "enabled": true, "mcp": true, "group": "application" }
   ]
 }
 ```
@@ -302,7 +302,7 @@ Postconditions:
 
 ## An app reads the services file when an app has an icon and is the default
 
-An app that ships `share/icon.svg` carries an `icon` member last, holding the file's bytes verbatim as a JSON string; an app without one has no `icon` member at all. Being the default app does not change a service's `url`: it is always the app's own name in the sandbox.
+An app that ships `share/icon.svg` carries an `icon` member after `mcp`, holding the file's bytes verbatim as a JSON string, and its `group` follows it; an app without one has no `icon` member at all. Being the default app does not change a service's `url`: it is always the app's own name in the sandbox.
 
 Command:
 
@@ -315,8 +315,8 @@ Output:
 ```
 {
   "services": [
-    { "name": "auth", "url": "http://auth.wip.localhost:7400", "description": "", "socket": "<socket of auth>", "enabled": true, "mcp": false },
-    { "name": "dummy", "url": "http://dummy.wip.localhost:7400", "description": "Demo widgets to list and create", "socket": "<socket of dummy>", "enabled": true, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n" }
+    { "name": "auth", "url": "http://auth.wip.localhost:7400", "description": "", "socket": "<socket of auth>", "enabled": true, "mcp": false, "group": "application" },
+    { "name": "dummy", "url": "http://dummy.wip.localhost:7400", "description": "Demo widgets to list and create", "socket": "<socket of dummy>", "enabled": true, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n", "group": "application" }
   ]
 }
 ```
@@ -327,6 +327,53 @@ Preconditions:
 
 - dummy's manifest sets `default = true`.
 - `dummy/share/icon.svg` holds the one line `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>` and a newline; `auth/share/icon.svg` does not exist.
+- `wip` is up from an `up` run with the checkout in that state.
+- The command runs with an app's environment, where `IKIGENBA_SERVICES` is set as the sandbox sets it.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An app reads the services file when an app's manifest names its home group
+
+The home page shows an app with the core services or with the applications, and the services file says which. A manifest says so in its `[home]` table, whose one key, `group`, is `"core"` or `"application"`; a `[home]` table without `group` leaves the app with the applications, as no table does.
+
+`auth/etc/manifest.toml` holds the manifest above plus:
+
+```toml
+[home]
+group = "core"
+```
+
+`dummy/etc/manifest.toml` holds the manifest above plus:
+
+```toml
+[home]
+```
+
+Command:
+
+```
+$ cat "$IKIGENBA_SERVICES"
+```
+
+Output:
+
+```
+{
+  "services": [
+    { "name": "auth", "url": "http://auth.wip.localhost:7400", "description": "", "socket": "<socket of auth>", "enabled": true, "mcp": false, "group": "core" },
+    { "name": "dummy", "url": "http://dummy.wip.localhost:7400", "description": "Demo widgets to list and create", "socket": "<socket of dummy>", "enabled": true, "mcp": true, "group": "application" }
+  ]
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- auth's and dummy's manifests hold the `[home]` tables above.
+- Neither `auth/share/icon.svg` nor `dummy/share/icon.svg` exists.
 - `wip` is up from an `up` run with the checkout in that state.
 - The command runs with an app's environment, where `IKIGENBA_SERVICES` is set as the sandbox sets it.
 
@@ -612,7 +659,7 @@ Postconditions:
 
 ## A developer brings up an app whose manifest gives a key the wrong type
 
-A key sandbox reads that holds a value of the wrong type is refused in sandbox's own words, which say what the key must be: `app` and `description` a string, `default`, `mcp` and `guests` a boolean, `secrets` an array of strings, `env` a table of strings, `resources` a table.
+A key sandbox reads that holds a value of the wrong type is refused in sandbox's own words, which say what the key must be: `app` and `description` a string, `default`, `mcp` and `guests` a boolean, `secrets` an array of strings, `env` a table of strings, `resources` a table, `home` a table.
 
 Command:
 
@@ -839,6 +886,125 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose home group is neither core nor application
+
+An app shows on home with the core services or with the applications, and `group` says which: `"core"` or `"application"`, exactly, and nothing else. The platform refuses any other value, and the sandbox refuses it too, in the same words.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'home.group' must be "core" or "application"
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a `[home]` table with `group = "Core"`, or `"apps"`, or `""`, or `1`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose home table names a key other than group
+
+`[home]` has one key, `group`, and any other is refused, as an unknown key under `[resources]` is. A `group` that is not valid is reported before an unknown key, and among unknown keys the first in byte order is the one reported.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'home.order' is not allowed; the only home key is group
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus:
+
+  ```toml
+  [home]
+  order = 1
+  ```
+
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose home is not a table
+
+`home` is refused like any other key of the wrong type.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'home' must be a table
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a top-level `home = "core"`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose resources and home group are both not valid
+
+A manifest's `[resources]` table is checked before its `[home]` table, and only the first fault is reported.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'resources.cpu_weight' must be a whole number from 1 to 10000
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above plus a `[resources]` table with `cpu_weight = 0` and a `[home]` table with `group = "apps"`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+- Nothing was said about dummy's home group.
 
 ## A developer brings up an app whose manifest names another app
 
