@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/prompts"
 	"github.com/ikigenba/ikigenba/prompts/internal/runs"
@@ -155,6 +156,15 @@ type AboutData struct {
 	Description string
 }
 
+// ToolsData is the tools page data.
+type ToolsData struct {
+	Banner page.Banner
+	Tools  []Tool
+}
+
+// Tool is one registered MCP tool.
+type Tool struct{ Name, Description string }
+
 // NoticeData is the data of a footer-only notice page.
 type NoticeData struct{ Banner page.Banner }
 
@@ -165,5 +175,6 @@ type Config struct {
 	ServicesPath        string
 	Store               *store.Store
 	Runs                *runs.Core
+	MCP                 *mcp.Server
 	KeepDays, KeepCount int64
 }

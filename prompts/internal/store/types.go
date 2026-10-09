@@ -127,7 +127,7 @@ func ValidEvent(s string) bool { return eventPattern.MatchString(s) }
 
 // ValidName reports whether s is a valid prompt name.
 func ValidName(s string) bool {
-	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "mcp" || s == "events" || s == "declarations" {
+	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "tools" || s == "mcp" || s == "events" || s == "declarations" {
 		return false
 	}
 	for i := range len(s) {

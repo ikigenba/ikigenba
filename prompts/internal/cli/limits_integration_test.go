@@ -659,7 +659,7 @@ func securityDisk(t *testing.T, f *serveFixture, secrets []string) {
 }
 func securityToolAnswer(w http.ResponseWriter, name string) {
 	w.Header().Set("Content-Type", "text/event-stream")
-	command := `mkdir -p d; cat /proc/$$/environ >env; cat env >d/env; cat /proc/$PPID/cmdline >cmdline`
+	command := `mkdir -p "$IKIGENBA_WORK_DIR/d"; cat /proc/$$/environ >"$IKIGENBA_WORK_DIR/env"; cat /proc/$$/environ >"$IKIGENBA_WORK_DIR/d/env"; cat /proc/$PPID/cmdline >"$IKIGENBA_WORK_DIR/cmdline"`
 	arguments, _ := json.Marshal(map[string]string{"command": command})
 	start, _ := json.Marshal(map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "tool_use", "id": "capture-call", "name": name, "input": map[string]any{}}})
 	delta, _ := json.Marshal(map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]string{"type": "input_json_delta", "partial_json": string(arguments)}})
@@ -668,7 +668,7 @@ func securityToolAnswer(w http.ResponseWriter, name string) {
 	}
 }
 
-// R-1T6I-11M9 R-1UEE-ETCY R-94VV-NRZE R-963S-1JQ3 R-97BO-FBGS R-98JK-T37H R-99RH-6UY6 R-9AZD-KMOV R-9C79-YEFK
+// R-1T6I-11M9 R-1UEE-ETCY R-YZAY-8W1G R-Z0IU-MNS5 R-Z1QR-0FIU R-Z2YN-E79J R-Z46J-RZ08 R-Z5EG-5QQX R-Z6MC-JIHM
 func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 	bash, e := exec.LookPath("bash")
 	if e != nil {
@@ -798,6 +798,16 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 				t.Helper()
 				return decodeServe[tools.Prompt](t, call("create", map[string]any{"name": name, "model": serveChatModel(t), "prompt": "supplied security prompt", "tools": groups}))
 			}
+			capture := func(prompt, id string) {
+				t.Helper()
+				for _, file := range []string{"env", "d/env", "cmdline"} {
+					b := integrationFile(t, f, prompt, id, filepath.Join(runs.WorkDir, file))
+					if len(b) == 0 {
+						t.Fatal("empty process capture", id, file)
+					}
+					securityCheck(t, "process "+id+"/"+file, b, allSecrets)
+				}
+			}
 			for pass, header := range []string{"Bearer " + bearer, "Basic " + encoded} {
 				transport.credential.Store(header)
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -822,22 +832,14 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 				if final.ExitCode == nil || *final.ExitCode != 0 {
 					t.Fatal(final)
 				}
-				for _, file := range []string{"env", "d/env", "cmdline"} {
-					b := integrationFile(t, f, p.ID, first.ID, filepath.Join(runs.WorkDir, file))
-					if len(b) == 0 {
-						t.Fatal("empty process capture", file)
-					}
-					securityCheck(t, "process "+file, b, allSecrets)
-				}
+				capture(p.ID, first.ID)
 				second := start(name, true, false)
 				serveWait(t, held)
 				r := result(second.ID)
 				if r.Status != store.StatusRunning {
 					t.Fatal(r)
 				}
-				if len(integrationFile(t, f, p.ID, second.ID, filepath.Join(runs.WorkDir, "env"))) == 0 {
-					t.Fatal("held capture empty")
-				}
+				capture(p.ID, second.ID)
 				securityDisk(t, f, allSecrets)
 				call("cancel", map[string]any{"run": second.ID})
 				awaitServeEvent(t, sink, "run.finished", second.ID)
@@ -846,6 +848,7 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 				if refusal.ExitCode == nil || *refusal.ExitCode == 0 || refusal.Stderr == nil || *refusal.Stderr == "" {
 					t.Fatal(refusal)
 				}
+				capture(p.ID, refused.ID)
 				suite := create(suiteName, []string{"suite"})
 				unbuilt := start(suiteName, false, false)
 				unusable := finish(unbuilt.ID)
@@ -856,7 +859,7 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 				if r := call("cancel", map[string]any{"run": first.ID}); !r.IsError() {
 					t.Fatal("finished cancellation accepted")
 				}
-				paths := []string{"/", "/about", "/_appkit/theme.css", "/" + name + "/", "/" + name, "/missing-security/", "/" + name + "/runs/" + first.ID + "/", "/" + name + "/runs/" + first.ID, "/" + name + "/runs/prr_ffffffffffffffff/"}
+				paths := []string{"/", "/about", "/tools", "/_appkit/theme.css", "/" + name + "/", "/" + name, "/missing-security/", "/" + name + "/runs/" + first.ID + "/", "/" + name + "/runs/" + first.ID, "/" + name + "/runs/prr_ffffffffffffffff/"}
 				for _, file := range []string{runs.InputFile, runs.StdoutFile, runs.StderrFile, runs.TranscriptFile, "work/", "work/d", "work/env", "work/d/env", "work/cmdline"} {
 					paths = append(paths, "/"+name+"/runs/"+first.ID+"/"+file)
 				}
@@ -891,9 +894,7 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 				if r := result(running.ID); r.Status != store.StatusRunning {
 					t.Fatal(r)
 				}
-				b = integrationFile(t, f, deletion.ID, running.ID, filepath.Join(runs.WorkDir, "env"))
-				securityCheck(t, "deleted process environment", b, allSecrets)
-				securityCheck(t, "deleted process arguments", integrationFile(t, f, deletion.ID, running.ID, filepath.Join(runs.WorkDir, "cmdline")), allSecrets)
+				capture(deletion.ID, running.ID)
 				securityDisk(t, f, allSecrets)
 				call("delete", map[string]any{"name": other})
 			}

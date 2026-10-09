@@ -15,7 +15,7 @@ var etc embed.FS
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-// Assets returns the six embedded page templates.
+// Assets returns the seven embedded page templates.
 func Assets() fs.FS { f, _ := fs.Sub(assets, "assets"); return f }
 
 // Etc returns the embedded deployment files.

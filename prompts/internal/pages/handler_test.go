@@ -22,7 +22,9 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/prompts"
 	"github.com/ikigenba/ikigenba/prompts/internal/pages"
@@ -41,6 +43,7 @@ type fixture struct {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
+	t.Setenv(services.Variable, "")
 	root := t.TempDir()
 	clock := func() time.Time { return instant }
 	d, e := db.Open(context.Background(), db.Config{Path: filepath.Join(root, "catalog.db"), Migrations: prompts.Migrations(), Now: clock})
@@ -65,11 +68,11 @@ func setup(t *testing.T) *fixture {
 	}
 	core := runs.New(runs.Config{Store: s, Writer: writer, Runs: dir, PromptSeconds: 1, OutputMaxBytes: 1, MaxToolCalls: 1, KeepDays: 1, KeepCount: 1, RunMemoryMaxBytes: 1, RunPidsMax: 1, MaxActive: 1, MaxQueued: 1, Now: clock, Rand: bytes.NewReader(random), ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
 	f := &fixture{db: d, root: dir}
-	f.cfg = pages.Config{Pages: load(t), Store: s, Runs: core, KeepDays: 7, KeepCount: 3, Banner: func(u page.User) page.Banner { f.calls = append(f.calls, u); return bannerValue(u) }}
+	f.cfg = pages.Config{Pages: load(t), MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: writer}), Store: s, Runs: core, KeepDays: 7, KeepCount: 3, Banner: func(u page.User) page.Banner { f.calls = append(f.calls, u); return bannerValue(u) }}
 	return f
 }
 func bannerValue(u page.User) page.Banner {
-	return page.Banner{Service: pages.ServiceName, Version: "fixture-display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	return page.Banner{Service: pages.ServiceName, Version: "fixture-display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Trail: []page.Level{{Name: "source-fixture", URL: "/source-fixture/"}}, Home: "https://home.fixture/", Tools: true}
 }
 func request(method, path, owner string) *http.Request {
 	r := httptest.NewRequest(method, path, nil)
@@ -112,8 +115,10 @@ func add(t *testing.T, f *fixture, p store.Prompt, n int, status string, ending 
 	}
 	return u
 }
-func wantBanner(owner string) page.Banner {
-	return bannerValue(page.User{Email: owner + "@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
+func wantBanner(owner string, trail ...page.Level) page.Banner {
+	b := bannerValue(page.User{Email: owner + "@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
+	b.Trail = trail
+	return b
 }
 func expectedRow(u store.Run, name string) pages.RunRow {
 	var duration *pages.Duration
@@ -172,7 +177,7 @@ func assertPage(t *testing.T, w *httptest.ResponseRecorder, status int, name str
 	}
 }
 
-// R-BX68-RXYU R-BYE5-5PPJ R-CAL4-ZF4H R-CBT1-D6V6 R-CGOM-W9TY R-CP7X-KO0T R-CFGQ-II39
+// R-YUFC-PT2O R-YDCR-D0OY R-YEKN-QSFN R-YLW2-1EVT R-CBT1-D6V6 R-CGOM-W9TY R-YN3Y-F6MI R-CFGQ-II39
 func TestLanding(t *testing.T) {
 	f := setup(t)
 	assertPage(t, serve(f.cfg, request("GET", "/?fixture=query", "alice")), 200, "landing", pages.LandingData{Banner: wantBanner("alice")})
@@ -188,7 +193,7 @@ func TestLanding(t *testing.T) {
 	assertPage(t, serve(f.cfg, r), 200, "landing", data)
 }
 
-// R-CHWJ-A1KN R-CSVM-PZ8W R-CD0X-QYLV R-CE8U-4QCK
+// R-CHWJ-A1KN R-YPJR-6Q3W R-CD0X-QYLV R-CE8U-4QCK
 func TestPrompt(t *testing.T) {
 	f := setup(t)
 	p := create(t, f, "fixture", "alice")
@@ -211,7 +216,7 @@ func TestPrompt(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	d := pages.PromptData{Banner: wantBanner("alice"), Prompt: pages.PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(pages.CardLayout), CreatedAt: p.Created.UTC().Format(time.RFC3339), RunsKept: len(rs), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}
+	d := pages.PromptData{Banner: wantBanner("alice", page.Level{Name: p.Name, URL: "/" + p.Name + "/"}), Prompt: pages.PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(pages.CardLayout), CreatedAt: p.Created.UTC().Format(time.RFC3339), RunsKept: len(rs), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}
 	for i, g := range p.Tools {
 		d.Prompt.Tools = append(d.Prompt.Tools, pages.ToolGroup{Name: g, First: i == 0, Last: i == len(p.Tools)-1})
 	}
@@ -224,13 +229,13 @@ func TestPrompt(t *testing.T) {
 	assertPage(t, serve(f.cfg, request("GET", "/fixture/?arbitrary=query", "alice")), 200, "prompt", d)
 }
 
-// R-CLK8-FCSQ R-CQFT-YFRI
+// R-CLK8-FCSQ R-YOBU-SYD7
 func TestAbout(t *testing.T) {
 	f := setup(t)
 	f.db.SetFailing(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	assertPage(t, serve(f.cfg, request("GET", "/about?query=yes", "alice").WithContext(ctx)), 200, "about", pages.AboutData{Banner: wantBanner("alice"), Description: pages.Description})
+	assertPage(t, serve(f.cfg, request("GET", "/about?query=yes", "alice").WithContext(ctx)), 200, "about", pages.AboutData{Banner: wantBanner("alice", page.Level{Name: "about", URL: "/about"}), Description: pages.Description})
 }
 
 // R-CMS4-T4JF R-CO01-6WA4 R-C9D8-LNDS R-CVBF-HIQA R-CWJB-VAGZ R-CXR8-927O R-CYZ4-MTYD
@@ -361,7 +366,7 @@ func fileSize(n int64) pages.Size {
 	}
 }
 
-// R-93NZ-A08P R-CKCC-1L21 R-CU3J-3QZL R-CD0X-QYLV R-CE8U-4QCK R-CFGQ-II39
+// R-93NZ-A08P R-CKCC-1L21 R-YQRN-KHUL R-CD0X-QYLV R-CE8U-4QCK R-CFGQ-II39
 func TestRunPages(t *testing.T) {
 	f := setup(t)
 	p := create(t, f, "fixture", "alice")
@@ -412,7 +417,7 @@ func TestRunPages(t *testing.T) {
 				base := "/fixture/runs/" + u.ID + "/"
 				running := u.Status == store.StatusQueued || u.Status == store.StatusRunning
 				row := expectedRow(u, p.Name)
-				d := pages.RunData{Banner: wantBanner("alice"), Prompt: pages.PromptLink{Name: p.Name, URL: "/fixture/"}, Run: pages.RunCard{ID: u.ID, URL: base, Status: u.Status, ExitCode: u.ExitCode, Running: running, Model: u.Model, Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: row.Duration, Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, Usage: expectedUsage(u), StdoutSize: fileSize(0), StderrSize: fileSize(0), TranscriptSize: fileSize(0), Truncated: u.Truncated(), StdoutTruncated: u.StdoutTruncated, StderrTruncated: u.StderrTruncated, FilesGone: variant == 0}}
+				d := pages.RunData{Banner: wantBanner("alice", page.Level{Name: p.Name, URL: "/" + p.Name + "/"}, page.Level{Name: u.ID, URL: base}), Prompt: pages.PromptLink{Name: p.Name, URL: "/fixture/"}, Run: pages.RunCard{ID: u.ID, URL: base, Status: u.Status, ExitCode: u.ExitCode, Running: running, Model: u.Model, Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: row.Duration, Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, Usage: expectedUsage(u), StdoutSize: fileSize(0), StderrSize: fileSize(0), TranscriptSize: fileSize(0), Truncated: u.Truncated(), StdoutTruncated: u.StdoutTruncated, StderrTruncated: u.StderrTruncated, FilesGone: variant == 0}}
 				if !running {
 					d.Run.Finished = u.Finished.UTC().Format(pages.SecondLayout)
 					d.Run.FinishedAt = u.Finished.UTC().Format(time.RFC3339)
@@ -601,7 +606,7 @@ func TestConcurrentHandler(t *testing.T) {
 	wg.Wait()
 }
 
-// R-CHWJ-A1KN R-CSVM-PZ8W
+// R-CHWJ-A1KN R-YPJR-6Q3W
 func TestPromptOptionalFields(t *testing.T) {
 	f := setup(t)
 	for i, groups := range [][]string{nil, {"files"}, {"bash", "suite", "files"}} {
@@ -617,7 +622,7 @@ func TestPromptOptionalFields(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data := pages.PromptData{Banner: wantBanner("alice"), Prompt: pages.PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(pages.CardLayout), CreatedAt: p.Created.UTC().Format(time.RFC3339), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}
+			data := pages.PromptData{Banner: wantBanner("alice", page.Level{Name: p.Name, URL: "/" + p.Name + "/"}), Prompt: pages.PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(pages.CardLayout), CreatedAt: p.Created.UTC().Format(time.RFC3339), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}
 			for index, group := range groups {
 				data.Prompt.Tools = append(data.Prompt.Tools, pages.ToolGroup{Name: group, First: index == 0, Last: index == len(groups)-1})
 			}
@@ -634,9 +639,42 @@ func TestBannerServicesRewrite(t *testing.T) {
 		writeFixture(t, f.cfg.ServicesPath, []byte(`{"services":[{"name":"auth","url":"`+auth+`","description":"","socket":"","enabled":true,"mcp":false}]}`))
 		f.calls = nil
 		expected := page.User{Email: "alice@example.test", ProfileURL: auth + "/", LogoutURL: auth + "/logout"}
-		assertPage(t, serve(f.cfg, request("GET", "/about", "alice")), 200, "about", pages.AboutData{Banner: bannerValue(expected), Description: pages.Description})
+		assertPage(t, serve(f.cfg, request("GET", "/about", "alice")), 200, "about", pages.AboutData{Banner: func() page.Banner {
+			b := bannerValue(expected)
+			b.Trail = []page.Level{{Name: "about", URL: "/about"}}
+			return b
+		}(), Description: pages.Description})
 		if !reflect.DeepEqual(f.calls, []page.User{expected}) {
 			t.Fatal("banner services", f.calls)
 		}
+	}
+}
+
+// R-YWV5-HCK2 R-YVN9-3KTD R-YUFC-PT2O
+func TestTools(t *testing.T) {
+	f := setup(t)
+	data := pages.ToolsData{Banner: wantBanner("alice", page.Level{Name: "tools", URL: "/tools"})}
+	assertPage(t, serve(f.cfg, request("GET", "/tools?fixture=query", "alice")), 200, "tools", data)
+	addTool := func(name, description string) {
+		mcp.AddTool(f.cfg.MCP, mcp.Tool[struct{}, struct{}]{Name: name, Description: description, Effect: mcp.Read, Handler: func(context.Context, identity.Caller, struct{}) (struct{}, error) { return struct{}{}, nil }})
+	}
+	addTool("fixture_z", "first-fixture<&.\nsecond-private-fixture")
+	addTool("fixture_a", "single-fixture.")
+	data.Tools = []pages.Tool{{Name: "fixture_z", Description: "first-fixture<&."}, {Name: "fixture_a", Description: "single-fixture."}}
+	f.db.SetFailing(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	assertPage(t, serve(f.cfg, request("GET", "/tools?fixture=query", "alice").WithContext(ctx)), 200, "tools", data)
+	addTool("fixture_later", "later-fixture.")
+	data.Tools = append(data.Tools, pages.Tool{Name: "fixture_later", Description: "later-fixture."})
+	get := serve(f.cfg, request("GET", "/tools", "alice"))
+	assertPage(t, get, 200, "tools", data)
+	head := serve(f.cfg, request("HEAD", "/tools", "alice"))
+	if head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 {
+		t.Fatal("tools HEAD differs")
+	}
+	post := serve(f.cfg, request("POST", "/tools", "alice"))
+	if post.Code != 405 || post.Body.Len() != 0 || !reflect.DeepEqual(post.Header(), http.Header{"Allow": []string{"GET, HEAD"}}) {
+		t.Fatal("tools method refusal differs")
 	}
 }

@@ -45,7 +45,7 @@ func statuses() []string {
 	return []string{store.StatusQueued, store.StatusRunning, store.StatusExited, store.StatusTimedOut, store.StatusKilled, store.StatusFailed}
 }
 
-// R-B3WN-LG66 R-B54J-Z7WV R-A5MM-0F6O R-B7KC-QRE9 R-BZM1-JHG8 R-C0TX-X96X
+// R-B3WN-LG66 R-B54J-Z7WV R-A5MM-0F6O R-B7KC-QRE9 R-BZM1-JHG8 R-YFSK-4K6C
 func TestTemplateSet(t *testing.T) {
 	if pages.ServiceName != "prompts" {
 		t.Fatal("service name")
@@ -61,7 +61,7 @@ func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s := load(t)
 	set := templates(t)
-	for _, name := range []string{"landing", "prompt", "run", "about", "notfound", "unavailable", "run-status", "run-duration", "file-size"} {
+	for _, name := range []string{"landing", "prompt", "run", "about", "tools", "notfound", "unavailable", "run-status", "run-duration", "file-size"} {
 		if set.Lookup(name) == nil {
 			t.Fatal(name)
 		}
@@ -78,13 +78,13 @@ type pageRecorder struct{ *httptest.ResponseRecorder }
 
 func (w pageRecorder) Write(b []byte) (int, error) { return w.Body.Write(b) }
 
-// R-B8S9-4J4Y R-C4HN-2KF0 R-C5PJ-GC5P R-C85C-7VN3
+// R-B8S9-4J4Y R-YI8C-W3NQ R-YJG9-9VEF R-YKO5-NN54
 func TestWrite(t *testing.T) {
 	set, s := templates(t), load(t)
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", pages.LandingData{}}, {"prompt", pages.PromptData{}}, {"run", pages.RunData{}}, {"about", pages.AboutData{}}, {"notfound", pages.NoticeData{}}, {"unavailable", pages.NoticeData{}}}
+	}{{"landing", pages.LandingData{}}, {"prompt", pages.PromptData{}}, {"run", pages.RunData{}}, {"about", pages.AboutData{}}, {"tools", pages.ToolsData{}}, {"notfound", pages.NoticeData{}}, {"unavailable", pages.NoticeData{}}}
 	for _, c := range cases {
 		want := render(t, set, c.name, c.data)
 		for code := 200; code <= 599; code++ {
@@ -132,7 +132,7 @@ func TestPartials(t *testing.T) {
 	}
 }
 
-// R-C39Q-OSOB R-BA05-IAVN R-BB81-W2MC R-BEVR-1DUF R-BG3N-F5L4 R-BHBJ-SXBT
+// R-YH0G-IBX1 R-BA05-IAVN R-BB81-W2MC R-BEVR-1DUF R-BG3N-F5L4 R-BHBJ-SXBT
 // R-BIJG-6P2I R-BJRC-KGT7 R-BNF1-PS1A R-BOMY-3JRZ R-BPUU-HBIO R-BR2Q-V39D
 // R-BSAN-8V02 R-BUQG-0EHG R-BVYC-E685
 func TestAllTemplateStates(t *testing.T) {
@@ -224,6 +224,8 @@ func TestAllTemplateStates(t *testing.T) {
 			}
 		}
 		render(t, set, "about", pages.AboutData{Banner: banner, Description: pages.Description})
+		render(t, set, "tools", pages.ToolsData{Banner: banner})
+		render(t, set, "tools", pages.ToolsData{Banner: banner, Tools: []pages.Tool{{Name: "fixture-tool", Description: "fixture-description"}}})
 		for _, name := range []string{"notfound", "unavailable"} {
 			render(t, set, name, pages.NoticeData{Banner: banner})
 		}

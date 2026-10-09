@@ -129,14 +129,14 @@ func TestIDs(t *testing.T) {
 	}
 }
 
-// R-VS6X-I30C R-VTET-VUR1 R-VCC8-J2DB R-VDK4-WU40 R-VB4C-5AMM
+// R-YAWY-LH7K R-VTET-VUR1 R-VCC8-J2DB R-VDK4-WU40 R-VB4C-5AMM
 func TestValidation(t *testing.T) {
-	for _, s := range []string{"a", "0", "a-", "about-us", "mcp-audit", "events-digest", "declarations2", strings.Repeat("a", 64)} {
+	for _, s := range []string{"a", "0", "a-", "about-us", "toolset", "mcp-audit", "events-digest", "declarations2", strings.Repeat("a", 64)} {
 		if !store.ValidName(s) {
 			t.Fatal(s)
 		}
 	}
-	for _, s := range []string{"about", "mcp", "events", "declarations", "Daily Digest", " digest", "-digest", "a_b", "", strings.Repeat("a", 65), "é"} {
+	for _, s := range []string{"about", "tools", "mcp", "events", "declarations", "Daily Digest", " digest", "-digest", "a_b", "", strings.Repeat("a", 65), "é"} {
 		if store.ValidName(s) {
 			t.Fatal(s)
 		}
@@ -1242,4 +1242,24 @@ func TestRetentionAcrossPrompts(t *testing.T) {
 		t.Fatal(e)
 	}
 	equal(t, got, []store.Run{expected[1], expected[0]})
+}
+
+// R-YAWY-LH7K: every byte obeys the name alphabet and leading-byte rule.
+func TestNameByteAlphabet(t *testing.T) {
+	for n := 0; n < 256; n++ {
+		b := byte(n)
+		allowed := b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-'
+		for _, tc := range []struct {
+			name string
+			want bool
+		}{
+			{string([]byte{'a', b}), allowed},
+			{string([]byte{b, 'a'}), allowed && b != '-'},
+			{string([]byte{b}), allowed && b != '-'},
+		} {
+			if got := store.ValidName(tc.name); got != tc.want {
+				t.Fatalf("name %q: got %t want %t", tc.name, got, tc.want)
+			}
+		}
+	}
 }

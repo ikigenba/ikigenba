@@ -35,8 +35,16 @@ func Handler(cfg Config) http.Handler {
 		panic(err)
 	}
 	tools.Register(cfg.MCP, tools.Config{Store: cfg.Store, Runs: cfg.Runs, Telemetry: cfg.Telemetry})
-	p := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Runs: cfg.Runs, KeepDays: cfg.KeepDays, KeepCount: cfg.KeepCount})
+	p := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Runs: cfg.Runs, MCP: cfg.MCP, KeepDays: cfg.KeepDays, KeepCount: cfg.KeepCount})
 	f := Files(FilesConfig{Banner: cfg.Banner, Pages: set, Store: cfg.Store, Runs: cfg.Runs})
+	// Prompt resources preserve escaped segment boundaries for pages and files.
+	prompt := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isRunFile(r) {
+			f.ServeHTTP(w, r)
+			return
+		}
+		p.ServeHTTP(w, r)
+	})
 	static := page.Static()
 	handlers := events.Handlers{"*": cfg.Runs.Deliver}
 	delivery := events.DeliveryHandler(handlers)
@@ -47,10 +55,10 @@ func Handler(cfg Config) http.Handler {
 			cfg.MCP.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, page.StaticPrefix):
 			static.ServeHTTP(w, r)
-		case isRunFile(r):
-			f.ServeHTTP(w, r)
-		default:
+		case r.URL.Path == "/" || r.URL.Path == "/about" || r.URL.Path == "/tools":
 			p.ServeHTTP(w, r)
+		default:
+			prompt.ServeHTTP(w, r)
 		}
 	}))
 	return telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

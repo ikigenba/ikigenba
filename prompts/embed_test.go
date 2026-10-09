@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/prompts"
 )
 
-// R-LNW1-JWPJ R-LP3X-XOG8 R-LQBU-BG6X R-LRJQ-P7XM R-LSRN-2ZOB R-LTZJ-GRF0
+// R-Y15R-JBA0 R-Y2DN-X30P R-LQBU-BG6X R-LRJQ-P7XM R-LSRN-2ZOB R-LTZJ-GRF0
 func TestEmbeddedResources(t *testing.T) {
 	etc := prompts.Etc()
 	checkEmbeddedType(etc)
@@ -19,7 +19,7 @@ func TestEmbeddedResources(t *testing.T) {
 		again func() fs.FS
 		dir   string
 		names []string
-	}{{prompts.Assets(), prompts.Assets, ".", []string{"about.html", "landing.html", "notfound.html", "prompt.html", "run.html", "unavailable.html"}}, {etc, func() fs.FS { return prompts.Etc() }, "etc", []string{"manifest.toml", "nginx.conf"}}, {prompts.Migrations(), prompts.Migrations, ".", []string{"0001_catalog.sql"}}}
+	}{{prompts.Assets(), prompts.Assets, ".", []string{"about.html", "landing.html", "notfound.html", "prompt.html", "run.html", "tools.html", "unavailable.html"}}, {etc, func() fs.FS { return prompts.Etc() }, "etc", []string{"manifest.toml", "nginx.conf"}}, {prompts.Migrations(), prompts.Migrations, ".", []string{"0001_catalog.sql"}}}
 	roots, e := fs.ReadDir(etc, ".")
 	if e != nil || len(roots) != 1 || roots[0].Name() != "etc" || !roots[0].IsDir() {
 		t.Fatalf("etc root: %v %v", roots, e)

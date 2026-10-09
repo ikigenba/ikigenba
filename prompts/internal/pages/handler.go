@@ -34,11 +34,22 @@ func Handler(cfg Config) http.Handler {
 				notice(http.StatusServiceUnavailable, "unavailable")
 			}
 		}
-		banner := func() page.Banner {
-			return cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
+		banner := func(trail ...page.Level) page.Banner {
+			b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
+			b.Trail = trail
+			return b
 		}
 		if r.URL.Path == "/about" {
-			cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{Banner: banner(), Description: Description})
+			cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{Banner: banner(page.Level{Name: "about", URL: "/about"}), Description: Description})
+			return
+		}
+		if r.URL.Path == "/tools" {
+			data := ToolsData{Banner: banner(page.Level{Name: "tools", URL: "/tools"})}
+			for _, tool := range cfg.MCP.Tools() {
+				first, _, _ := strings.Cut(tool.Description, "\n")
+				data.Tools = append(data.Tools, Tool{Name: tool.Name, Description: first})
+			}
+			cfg.Pages.Write(w, r, http.StatusOK, "tools", data)
 			return
 		}
 		caller, _ := identity.FromContext(r.Context())
@@ -89,7 +100,7 @@ func Handler(cfg Config) http.Handler {
 				failed(e)
 				return
 			}
-			cfg.Pages.Write(w, r, http.StatusOK, "prompt", promptData(p, rs, cfg, banner()))
+			cfg.Pages.Write(w, r, http.StatusOK, "prompt", promptData(p, rs, cfg, banner(page.Level{Name: p.Name, URL: base})))
 			return
 		}
 		if (len(parts) == 3 || len(parts) == 4 && parts[3] == "") && parts[1] == "runs" && parts[2] != "" {
@@ -106,7 +117,7 @@ func Handler(cfg Config) http.Handler {
 				redirect(base + "runs/" + u.ID + "/")
 				return
 			}
-			cfg.Pages.Write(w, r, http.StatusOK, "run", runData(p, u, cfg, banner()))
+			cfg.Pages.Write(w, r, http.StatusOK, "run", runData(p, u, cfg, banner(page.Level{Name: p.Name, URL: base}, page.Level{Name: u.ID, URL: base + "runs/" + u.ID + "/"})))
 			return
 		}
 		notice(http.StatusNotFound, "notfound")

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/prompts"
 	"github.com/ikigenba/ikigenba/prompts/internal/pages"
 	"github.com/ikigenba/ikigenba/prompts/internal/runs"
 	"github.com/ikigenba/ikigenba/prompts/internal/store"
@@ -86,18 +88,25 @@ func routePages(t *testing.T, q *routeFixture) http.Handler {
 	if e != nil {
 		t.Fatal(e)
 	}
-	return identity.Require(pages.Handler(pages.Config{Banner: q.cfg.Banner, Pages: set, ServicesPath: q.cfg.ServicesPath, Store: q.cfg.Store, Runs: q.cfg.Runs, KeepDays: q.cfg.KeepDays, KeepCount: q.cfg.KeepCount}))
+	return identity.Require(pages.Handler(pages.Config{Banner: q.cfg.Banner, Pages: set, ServicesPath: q.cfg.ServicesPath, Store: q.cfg.Store, Runs: q.cfg.Runs, MCP: q.cfg.MCP, KeepDays: q.cfg.KeepDays, KeepCount: q.cfg.KeepCount}))
 }
 
-// R-HX6I-K7EL R-HVYM-6FNW: gate every non-exempt spelling before its route or method.
+// R-Y4TG-OMI3: gate every non-exempt spelling before its route or method.
 func TestRoutesMissingIdentity(t *testing.T) {
 	q := routes(t, nil, "")
-	for _, failing := range []bool{false, true} {
-		q.f.d.SetFailing(failing)
-		for _, path := range []string{"/", "/_appkit/theme.css", "/mcp", "/nightly-report/runs/prr_0102030405060708/stdout", "/about", "/nope", "/events/", "/Events", "/declarations/repo.pushed", "/_appkit", "//", "/a/../b"} {
+	for _, state := range []string{"open", "failing", "closed"} {
+		q.f.d.SetFailing(state == "failing")
+		if state == "closed" {
+			if err := q.f.d.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, path := range []string{"/", "/_appkit/theme.css", "/mcp", "/nightly-report/runs/prr_0102030405060708/stdout", "/about", "/tools", "/tools/", "/nope", "/events/", "/Events", "/declarations/repo.pushed", "/_appkit", "//", "/a/../b"} {
 			for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 				for _, empty := range []bool{false, true} {
-					r := routeRequest(method, path)
+					r := routeRequest(method, path+"?route=/events")
+					r.Body = io.NopCloser(strings.NewReader("fixture-body"))
+					r.Header.Set("X-Other", "fixture")
 					r.Header.Del("X-User-Id")
 					if empty {
 						r.Header["X-User-Id"] = []string{"", "later"}
@@ -135,13 +144,13 @@ func TestRoutesMCP(t *testing.T) {
 	}
 }
 
-// R-I3A0-H242 R-I4HW-UTUR R-I85M-052U: use path alone and preserve delegated answers, including redirects.
+// R-Y3LK-AURE R-Y61D-2E8S R-Y799-G5ZH R-Y8H5-TXQ6: use path alone and preserve delegated answers, including redirects.
 func TestRoutesPages(t *testing.T) {
 	q := routes(t, nil, "")
 	p := create(t, q.f, "nightly-report", "alice")
 	ref := routePages(t, q)
-	for _, path := range []string{"/", "/about", "/" + p.Name + "/", "/" + p.Name, "/nope", "/about/", "/mcp/tools", "/_appkit", "/mcp/", "/events/", "/events/x", "/declarations/repo.pushed", "/Events", "//", "/a/../b"} {
-		for _, method := range []string{"GET", "HEAD", "POST"} {
+	for _, path := range []string{"/", "/about", "/tools", "/tools/", "/%74ools", "/%61bout", "/" + p.Name + "/", "/" + p.Name, "/nope", "/about/", "/mcp/tools", "/_appkit", "/mcp/", "/events/", "/events/x", "/declarations/repo.pushed", "/Events", "//", "/a/../b"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
 			for _, host := range []string{"prompts.sbx.ikigenba.dev", "backend", "example.org"} {
 				r := routeRequest(method, path+"?route=/mcp")
 				r.Host = host
@@ -646,4 +655,74 @@ func routeSocketPending(t *testing.T, l *net.UnixListener) bool {
 		t.Fatal(acceptErr)
 	}
 	return false
+}
+
+// R-Y9P2-7PGV: render the same discovery surface the mounted MCP client sees.
+func TestRoutesToolsDiscoveryPage(t *testing.T) {
+	q := routes(t, nil, "")
+	srv := httptest.NewServer(q.h)
+	t.Cleanup(srv.Close)
+	infos, err := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"}).ListTools(context.Background(), identity.Caller{UserID: "alice", RequestID: "tools-discovery"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := []string{"list", "show", "create", "update", "delete", "subscribe", "unsubscribe", "run", "runs", "result", "cancel"}
+	if len(infos) != len(names) {
+		t.Fatalf("discovered %d tools", len(infos))
+	}
+	data := pages.ToolsData{Banner: page.Banner{Service: pages.ServiceName, Version: "fixture", Trail: []page.Level{{Name: "tools", URL: "/tools"}}}}
+	for i, info := range infos {
+		if info.Name != names[i] {
+			t.Fatalf("tool %d: %q", i, info.Name)
+		}
+		first, _, _ := strings.Cut(info.Description, "\n")
+		data.Tools = append(data.Tools, pages.Tool{Name: info.Name, Description: first})
+	}
+	templates, err := page.Templates().ParseFS(prompts.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want bytes.Buffer
+	if err := templates.ExecuteTemplate(&want, "tools", data); err != nil {
+		t.Fatal(err)
+	}
+	for _, failing := range []bool{false, true} {
+		q.f.d.SetFailing(failing)
+		r := routeRequest("GET", "/tools?route=/mcp")
+		r.Header.Set("X-Other", "fixture")
+		r.Body = io.NopCloser(strings.NewReader("fixture-body"))
+		got := routeResponse(q.h, r)
+		if got.Code != http.StatusOK || got.Body.String() != want.String() {
+			t.Fatalf("tools page: %d %q want %q", got.Code, got.Body.String(), want.String())
+		}
+	}
+}
+
+// R-Y8H5-TXQ6 R-Y799-G5ZH R-I5PT-8LLG: one decoded prompt route preserves each resource's escaped segments.
+func TestRoutesEncodedPromptSeparator(t *testing.T) {
+	q := routes(t, nil, "")
+	q.f.d.SetFailing(true)
+	set, err := pages.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := identity.Require(web.Files(web.FilesConfig{Banner: q.cfg.Banner, Pages: set, Store: q.cfg.Store, Runs: q.cfg.Runs}))
+	ordinary := routeRequest("GET", "/n/runs/r/stdout")
+	encoded := routeRequest("GET", "/n%2Fruns/r/stdout")
+	if ordinary.URL.Path != encoded.URL.Path {
+		t.Fatal("fixtures need the same decoded path")
+	}
+	for _, method := range []string{"GET", "HEAD"} {
+		ordinary.Method, encoded.Method = method, method
+		fileResponse := routeResponse(q.h, ordinary.Clone(ordinary.Context()))
+		pageResponse := routeResponse(q.h, encoded.Clone(encoded.Context()))
+		routeSame(t, fileResponse, routeResponse(files, ordinary.Clone(ordinary.Context())))
+		routeSame(t, pageResponse, routeResponse(routePages(t, q), encoded.Clone(encoded.Context())))
+		if fileResponse.Code != http.StatusServiceUnavailable || fileResponse.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+			t.Fatalf("file refusal: %d %v", fileResponse.Code, fileResponse.Header())
+		}
+		if pageResponse.Code != http.StatusServiceUnavailable || pageResponse.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+			t.Fatalf("page refusal: %d %v", pageResponse.Code, pageResponse.Header())
+		}
+	}
 }
