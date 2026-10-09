@@ -61,6 +61,10 @@ layout.
 - `icon` — the contents of `/opt/ikigenba/current/<name>/share/icon.svg`,
   verbatim, as a JSON string, present only when the release ships that file for
   the app.
+- `group` — the manifest's `[home]` `group`, `"core"` or `"application"`;
+  `"application"` when the manifest has no `[home]` table or no `group` in it
+  (see `S07-apps.md`). It is the last member of every entry, after `icon` when
+  there is one.
 
 The launcher in every app's banner shows only the entries that carry an
 `icon`: the icon is the whole launcher opt-in, and the manifest carries no
@@ -69,11 +73,11 @@ a string.
 
 The file has no version field, and its format only grows: a later opsctl may
 add members, and a reader ignores any member it does not know. `name`, `url`,
-`description`, `socket`, `enabled`, and `mcp` are in every entry; `icon` is
-optional, and a reader treats its absence as no icon. A change an existing
-reader could not survive never edits this file; it becomes a new file with its
-own variable — `services.v2.json`, named by `IKIGENBA_SERVICES_V2`, say — and
-opsctl writes both until no app in the release reads the old one.
+`description`, `socket`, `enabled`, `mcp`, and `group` are in every entry;
+`icon` is optional, and a reader treats its absence as no icon. A change an
+existing reader could not survive never edits this file; it becomes a new file
+with its own variable — `services.v2.json`, named by `IKIGENBA_SERVICES_V2`,
+say — and opsctl writes both until no app in the release reads the old one.
 
 ## An operator asks what `services` can do
 
@@ -125,9 +129,11 @@ the apex, and each still has `https://<name>.<host.name>` as its `url`: a
 reader names a service by its own name. `auth` ships no icon and its manifest
 sets neither `description` nor `mcp`, so its entry has `""`, `false`, and no
 `icon`: it is in the file but not in the launcher, since the authenticator is
-not somewhere a user goes on purpose. `crm` describes itself and offers its
-tools to the MCP catalog. Each icon is its file's bytes, the trailing newline
-included.
+not somewhere a user goes on purpose. `auth` is the one core service of the
+three, so its entry's `group` is `"core"`; `crm` and `dashboard` carry no
+`[home]` table, so theirs is `"application"`. `crm` describes itself and
+offers its tools to the MCP catalog. Each icon is its file's bytes, the
+trailing newline included.
 
 The manifests' relevant keys:
 
@@ -135,6 +141,9 @@ The manifests' relevant keys:
 
 ```toml
 app = "auth"
+
+[home]
+group = "core"
 ```
 
 `/opt/ikigenba/current/crm/etc/manifest.toml`:
@@ -175,9 +184,9 @@ Output:
 ```
 {
   "services": [
-    { "name": "auth", "url": "https://auth.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/auth.sock", "enabled": true, "mcp": false },
-    { "name": "crm", "url": "https://crm.sbx.ikigenba.dev", "description": "Customers, contacts, and deals", "socket": "/run/ikigenba/crm.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n" },
-    { "name": "dashboard", "url": "https://dashboard.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/dashboard.sock", "enabled": true, "mcp": false, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"20\" height=\"20\" x=\"2\" y=\"2\"/></svg>\n" }
+    { "name": "auth", "url": "https://auth.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/auth.sock", "enabled": true, "mcp": false, "group": "core" },
+    { "name": "crm", "url": "https://crm.sbx.ikigenba.dev", "description": "Customers, contacts, and deals", "socket": "/run/ikigenba/crm.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n", "group": "application" },
+    { "name": "dashboard", "url": "https://dashboard.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/dashboard.sock", "enabled": true, "mcp": false, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"20\" height=\"20\" x=\"2\" y=\"2\"/></svg>\n", "group": "application" }
   ]
 }
 ```
@@ -221,9 +230,9 @@ Output:
 ```
 {
   "services": [
-    { "name": "auth", "url": "https://auth.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/auth.sock", "enabled": true, "mcp": false },
-    { "name": "crm", "url": "https://crm.sbx.ikigenba.dev", "description": "Customers, contacts, and deals", "socket": "/run/ikigenba/crm.sock", "enabled": false, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n" },
-    { "name": "dashboard", "url": "https://dashboard.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/dashboard.sock", "enabled": true, "mcp": false, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"20\" height=\"20\" x=\"2\" y=\"2\"/></svg>\n" }
+    { "name": "auth", "url": "https://auth.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/auth.sock", "enabled": true, "mcp": false, "group": "core" },
+    { "name": "crm", "url": "https://crm.sbx.ikigenba.dev", "description": "Customers, contacts, and deals", "socket": "/run/ikigenba/crm.sock", "enabled": false, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n", "group": "application" },
+    { "name": "dashboard", "url": "https://dashboard.sbx.ikigenba.dev", "description": "", "socket": "/run/ikigenba/dashboard.sock", "enabled": true, "mcp": false, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><rect width=\"20\" height=\"20\" x=\"2\" y=\"2\"/></svg>\n", "group": "application" }
   ]
 }
 ```
@@ -324,7 +333,7 @@ Output:
 ```
 {
   "services": [
-    { "name": "crm", "url": "https://crm.sbx.ikigenba.dev", "description": "Customers, contacts, and deals", "socket": "/run/ikigenba/crm.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n" }
+    { "name": "crm", "url": "https://crm.sbx.ikigenba.dev", "description": "Customers, contacts, and deals", "socket": "/run/ikigenba/crm.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n", "group": "application" }
   ]
 }
 ```

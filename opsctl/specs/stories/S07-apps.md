@@ -143,6 +143,20 @@ limits are the app's, not a process's: everything the app starts — a `git`
 it runs for a client, say — runs inside the app's service and counts against
 them, so an app cannot escape its ceiling by doing its work in children.
 
+A manifest may also carry a `[home]` table with one key, `group`, saying
+whether the app is one of the suite's core services or an application, the
+two groups the home page shows its services in:
+
+```toml
+[home]
+group = "core"
+```
+
+`group` is `"core"` or `"application"`; absent, or with no `[home]` table,
+it is `"application"`, and a `[home]` table with no `group` is accepted and
+means the same. Any other key in the table is refused. The group reaches the
+home page through the app's entry in the services file (`S09-services.md`).
+
 A manifest that breaks one of these rules is refused wherever opsctl reads
 it, always in the same words: `activate` refuses the release that carries it
 before anything on the host is written (`S10-releases.md`), and `init` stops
@@ -160,8 +174,8 @@ The words follow `etc/manifest.toml: `, except the name's, which stand alone:
   `description` is accepted, and the app's entry carries the description
   `""`.
 - A `description` that is not a string, an `mcp` or a `guests` that is not a
-  Boolean (`guests = "yes"` or `guests = 1`, say), or a `resources` that is
-  not a table, is refused the way any other key of the wrong type is:
+  Boolean (`guests = "yes"` or `guests = 1`, say), or a `resources` or a
+  `home` that is not a table, is refused the way any other key of the wrong type is:
   `<decoder complaint>`, the TOML decoder's own words for the key and the
   type it found, so it varies with the value.
 - A `[database]` with no `engine`, or one naming anything but `"sqlite"`
@@ -191,6 +205,10 @@ The words follow `etc/manifest.toml: `, except the name's, which stand alone:
   go_memory_limit, cpu_weight, delegate, and oom_policy`. A manifest written
   for an older opsctl, with `io_weight` in it, is refused this way until the
   app drops the key.
+- A `group` other than the string `"core"` or `"application"` (`"apps"`,
+  `"Core"`, `""`, or `1`): `'home.group' must be "core" or "application"`.
+- A key the `[home]` table does not know, `title` or `order` say:
+  `'home.title' is not allowed; the only home key is group`.
 - An `app` that is missing or empty, is not a DNS label, or is one of the
   reserved names above: `'<name>' is not a usable app name`, with no
   `etc/manifest.toml: ` before it.
@@ -198,8 +216,11 @@ The words follow `etc/manifest.toml: `, except the name's, which stand alone:
 When the `[resources]` table holds more than one fault, only the first is
 reported, in the order `slice`, `memory_max`, `go_memory_limit` (its form,
 then the comparison), `cpu_weight`, `delegate`, `oom_policy`, then unknown
-keys in byte order. Any app may set `delegate` and `oom_policy`; opsctl keeps
-no list of which apps should.
+keys in byte order. The `[home]` table is judged after it, so a fault in
+`[resources]` is reported before any in `[home]`; when `[home]` holds more
+than one fault, only the first is reported, `group` before unknown keys in
+byte order. Any app may set `delegate` and `oom_policy`; opsctl keeps no list
+of which apps should.
 
 Whether `memory_max` fits the host is not a rule of the manifest's: `activate`
 judges it against the slice units `init` wrote, not the host's memory, at its
@@ -234,9 +255,9 @@ launcher; nothing in the manifest puts it there. Every command here that
 regenerates nginx also rewrites the services file —
 `/run/ikigenba/services.json` on a released host,
 `/var/lib/ikigenba/services.json` on a per-app host — the list of the host's
-services, each with its manifest's `description` and `mcp`, and its icon when
-it ships one (see `S09-services.md`), and reports it on a `services` line
-right after the `nginx` line. Every app the host runs has an entry there,
+services, each with its manifest's `description` and `mcp`, its icon when it
+ships one, and its group (see `S09-services.md`), and reports it on a
+`services` line right after the `nginx` line. Every app the host runs has an entry there,
 icon or not, so the line reports a change for any app that is disabled or
 enabled.
 
@@ -255,8 +276,8 @@ engine = "sqlite"
 path = "state/crm.db"
 ```
 
-The stories below use this manifest as it stands, with no `[resources]`,
-unless one says otherwise.
+The stories below use this manifest as it stands, with no `[resources]` and
+no `[home]`, unless one says otherwise.
 
 A host may have no default app, in which case its own name answers 404 (see
 `S05-nginx.md`); it may never have two. The root domain's apex is a separate
