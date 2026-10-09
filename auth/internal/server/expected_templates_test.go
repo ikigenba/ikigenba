@@ -13,7 +13,7 @@ import (
 
 func expectedAuthTemplates(t *testing.T) *template.Template {
 	t.Helper()
-	// R-3D6V-9YHK: this is the design's canonical template construction.
+	// R-RBDY-NA13: this is the design's canonical template construction.
 	set, err := page.Templates().Funcs(template.FuncMap{"splitNUL": splitNUL}).Parse(pageValueTemplate)
 	if err != nil {
 		t.Fatal(err)
@@ -46,9 +46,9 @@ func TestTemplateDataShapesAndStates(t *testing.T) {
 	signIn := signInPageData{"fixture.test", "", "encoded", "destination.test", "auth.fixture.test:443", "workspace.test", "email@fixture.test"}
 	profile := profilePageData{"fixture.test", "email@fixture.test", "workspace.test", nil, tokenCreateData{Expiry: "90d"}, mcpClientsData{}}
 	_ = authPageData{page.Banner{}, &signIn, &profile, nil, nil}
-	// R-6T8T-C5Z4 R-3EER-NQ89 R-3FMO-1HYY
+	// R-RCLV-11RS R-RDTR-ETIH R-RF1N-SL96
 	set := expectedAuthTemplates(t)
-	for _, name := range []string{"page", "chrome", "signIn", "alert", "profile", "tokenList", "tokenTime", "tokenLastUsed", "tokenNever", "elapsed", "tokenCreate", "plusIcon", "tokenCreated", "copyIcon", "mcp-clients", "approve", "value"} {
+	for _, name := range []string{"page", "chrome", "signIn", "alert", "profile", "tokenList", "tokenTime", "tokenLastUsed", "tokenNever", "elapsed", "tokenCreate", "plusIcon", "tokenCreated", "copyIcon", "mcp-clients", "approve", "about", "value"} {
 		if set.Lookup(name) == nil {
 			t.Fatalf("missing template %s", name)
 		}
@@ -97,6 +97,11 @@ func TestTemplateDataShapesAndStates(t *testing.T) {
 	for _, name := range []string{"tokenNever", "plusIcon", "copyIcon"} {
 		execute(name, nil)
 	}
+	execute("about", AboutData{})
+	execute("about", AboutData{
+		Banner:      page.Banner{Service: "fixture-service", Version: "fixture-version", Trail: []page.Level{{Name: "fixture-level", URL: "/fixture-level"}}},
+		Description: "fixture-description",
+	})
 	// D09's declared approve data is compatible with the same set.
 	execute("approve", map[string]any{"Banner": page.Banner{}, "ClientName": "fixture-client", "Gateway": "gateway.test", "Until": "fixture-until", "ReturnHost": "return.test", "ClientID": "fixture-id", "RedirectURI": "https://return.test/", "Challenge": "fixture-challenge", "State": "fixture-state", "Resource": "https://gateway.test/"})
 }

@@ -45,7 +45,7 @@ func assertPageBanner(t *testing.T, body string, data page.Banner) {
 }
 
 func TestPagesUseReturnedBannerOnce(t *testing.T) {
-	// R-4ZBA-OGOE R-50J7-28F3 R-51R3-G05S R-VBN1-UF6L R-PT80-EZ08
+	// R-4ZBA-OGOE R-RL55-PFYN R-RNKY-GZG1 R-51R3-G05S R-VBN1-UF6L R-PT80-EZ08
 	for _, services := range [][]page.Service{nil, {
 		{Name: "auth", URL: "https://auth.example/", Icon: template.HTML("fixture-icon-one"), Enabled: true, Current: true},
 	}, {
@@ -55,7 +55,7 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 		st := openTokenTestStore(t)
 		user, session := tokenTestIdentity(t, st, "banner")
 		calls := []page.User{}
-		returned := page.Banner{Service: "returned service", Version: "fixture<& version", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services}
+		returned := page.Banner{Service: "returned service", Version: "fixture<& version", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services, Trail: []page.Level{{Name: "incoming", URL: "/incoming"}}}
 		for _, service := range services {
 			if service.Current {
 				returned.Icon = service.Icon
@@ -74,7 +74,12 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 				t.Fatalf("request %d calls=%v want=%v", i, calls, wantUser)
 			}
 			body := w.Body.String()
-			assertPageBanner(t, body, returned)
+			wantBanner := returned
+			wantBanner.Trail = []page.Level{}
+			assertPageBanner(t, body, wantBanner)
+			if returned.Trail[0].Name != "incoming" || returned.Trail[0].URL != "/incoming" {
+				t.Fatal("returned banner trail mutated")
+			}
 		}
 	}
 }
@@ -101,6 +106,9 @@ func TestOtherResponsesNeverCallBanner(t *testing.T) {
 	}
 	requests := []*http.Request{
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil),
+		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/about", nil),
+		httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/about", nil),
+		httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/about", nil),
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login/google/callback?error=access_denied", nil),
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login/google", nil),
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login/google/callback", nil),

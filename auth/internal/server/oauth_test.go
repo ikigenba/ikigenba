@@ -400,7 +400,7 @@ func TestOAuthAuthorizeOriginAndStoreFailures(t *testing.T) {
 }
 
 func TestOAuthApprovePage(t *testing.T) {
-	// R-4PMR-1OR0 R-4VQ8-YJGH R-531N-95WN R-APGL-FX3A: canonical template bytes and exact approve data, one injected banner call, no mutations.
+	// R-4PMR-1OR0 R-4VQ8-YJGH R-531N-95WN R-RYK1-WX4A: canonical template bytes and exact approve data, one injected banner call, no mutations.
 	for _, origin := range []string{"", "http://auth.wip.localhost:7400"} {
 		for _, name := range []string{`fixture<&"`, "a\tb", "  x", "client\x00<&name"} {
 			for _, state := range []string{"", "a b&c=d"} {
@@ -410,6 +410,9 @@ func TestOAuthApprovePage(t *testing.T) {
 				p.Set("state", state)
 				p.Set("redirect_uri", "http://localhost:61000/callback")
 				banner := testPageBanner(page.User{Email: f.user.Email, ProfileURL: "/", LogoutURL: "/logout"})
+				banner.Trail = []page.Level{{Name: "approve supplied trail", URL: "/supplied-approve"}}
+				wantBanner := banner
+				wantBanner.Trail = nil
 				calls := 0
 				f.trail.server.cfg.Banner = func(user page.User) page.Banner {
 					calls++
@@ -418,8 +421,10 @@ func TestOAuthApprovePage(t *testing.T) {
 					}
 					return banner
 				}
-				before := (identityFixture{store: f.st}).snapshot(t)
-				clientsBefore := oauthRows(t, f.st, "clients")
+				before := map[string][][]any{}
+				for _, table := range []string{"clients", "tokens", "auth_codes"} {
+					before[table] = oauthRows(t, f.st, table)
+				}
 				gateway := "mcp.sbx.ikigenba.dev"
 				resource := "https://" + gateway + "/mcp"
 				if origin != "" {
@@ -432,14 +437,15 @@ func TestOAuthApprovePage(t *testing.T) {
 				}
 				w, e := f.request(t, "GET", "/authorize?"+p.Encode(), "", f.session.ID)
 				oauthNoDomain(t, e)
-				data := map[string]any{"Banner": banner, "ClientName": name, "Gateway": gateway, "Until": "2027-01-05", "ReturnHost": "localhost:61000", "ClientID": c.ID, "RedirectURI": p.Get("redirect_uri"), "Challenge": oauthChallenge, "State": state, "Resource": resource}
+				data := map[string]any{"Banner": wantBanner, "ClientName": name, "Gateway": gateway, "Until": f.now.Add(store.ClientTokenTTL).UTC().Format("2006-01-02"), "ReturnHost": "localhost:61000", "ClientID": c.ID, "RedirectURI": p.Get("redirect_uri"), "Challenge": oauthChallenge, "State": state, "Resource": resource}
 				expected := expectedAuthTemplate(t, "approve", data)
 				if w.Code != 200 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" || w.Body.String() != expected || calls != 1 {
 					t.Fatalf("approve response %d calls=%d %q", w.Code, calls, w.Body.String())
 				}
-				after := (identityFixture{store: f.st}).snapshot(t)
-				if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(clientsBefore, oauthRows(t, f.st, "clients")) || oauthCount(t, f.st, "auth_codes") != 0 {
-					t.Fatal("GET mutated domain")
+				for _, table := range []string{"clients", "tokens", "auth_codes"} {
+					if !reflect.DeepEqual(before[table], oauthRows(t, f.st, table)) {
+						t.Fatalf("GET mutated %s", table)
+					}
 				}
 			}
 		}
@@ -481,7 +487,7 @@ func oauthRows(t *testing.T, st *store.Store, table string) [][]any {
 }
 
 func TestOAuthAuthorizationPreservesAndAddsOnlyCode(t *testing.T) {
-	// R-G06U-97RZ R-APGL-FX3A R-FYYX-VG1A R-FXR1-HOAL: table-level evidence for repeated rendering, denial, invalid decision and exact one code addition.
+	// R-G06U-97RZ R-RYK1-WX4A R-FYYX-VG1A R-FXR1-HOAL: table-level evidence for repeated rendering, denial, invalid decision and exact one code addition.
 	f := newOAuthFixture(t, "")
 	c := f.client(t, "Persistent client", oauthCallback)
 	_, _, err := f.st.CreateToken(f.user.ID, "prior token", store.ExpiryNever, f.now)
@@ -490,14 +496,16 @@ func TestOAuthAuthorizationPreservesAndAddsOnlyCode(t *testing.T) {
 	}
 	p := oauthAuthParams(c)
 	p.Set("decision", "approve")
-	w, _ := f.request(t, "POST", "/authorize", p.Encode(), f.session.ID)
-	if w.Code != 302 {
-		t.Fatal(w.Code)
+	for range 3 {
+		w, _ := f.request(t, "POST", "/authorize", p.Encode(), f.session.ID)
+		if w.Code != 302 {
+			t.Fatal(w.Code)
+		}
 	}
 	clientRows := oauthRows(t, f.st, "clients")
 	tokenRows := oauthRows(t, f.st, "tokens")
 	codeRows := oauthRows(t, f.st, "auth_codes")
-	for _, decision := range []string{"GET", "deny", "invalid"} {
+	for _, decision := range []string{"GET", "GET", "GET", "deny", "invalid"} {
 		method, path, body := "POST", "/authorize", ""
 		if decision == "GET" {
 			method, path, body = "GET", "/authorize?"+p.Encode(), ""
@@ -509,13 +517,17 @@ func TestOAuthAuthorizationPreservesAndAddsOnlyCode(t *testing.T) {
 		if decision == "GET" && w.Code != 200 || decision == "deny" && w.Code != 302 || decision == "invalid" && w.Code != 400 {
 			t.Fatal(decision, w.Code)
 		}
+		if decision == "GET" {
+			data := map[string]any{"Banner": testPageBanner(page.User{Email: f.user.Email, ProfileURL: "/", LogoutURL: "/logout"}), "ClientName": c.Name, "Gateway": "mcp.sbx.ikigenba.dev", "Until": f.now.Add(store.ClientTokenTTL).UTC().Format("2006-01-02"), "ReturnHost": "localhost:53682", "ClientID": c.ID, "RedirectURI": oauthCallback, "Challenge": oauthChallenge, "State": p.Get("state"), "Resource": "https://mcp.sbx.ikigenba.dev/mcp"}
+			assertAuthTemplate(t, w.Body.String(), "approve", data)
+		}
 		if !reflect.DeepEqual(clientRows, oauthRows(t, f.st, "clients")) || !reflect.DeepEqual(tokenRows, oauthRows(t, f.st, "tokens")) || !reflect.DeepEqual(codeRows, oauthRows(t, f.st, "auth_codes")) {
 			t.Fatal("nonapproval changed domain")
 		}
 	}
 	p.Set("decision", "approve")
 	p.Set("resource", "https://mcp.sbx.ikigenba.dev/other")
-	w, _ = f.request(t, "POST", "/authorize", p.Encode(), f.session.ID)
+	w, _ := f.request(t, "POST", "/authorize", p.Encode(), f.session.ID)
 	codesAfter := oauthRows(t, f.st, "auth_codes")
 	if len(codesAfter) != len(codeRows)+1 || !reflect.DeepEqual(clientRows, oauthRows(t, f.st, "clients")) || !reflect.DeepEqual(tokenRows, oauthRows(t, f.st, "tokens")) {
 		t.Fatal("approval domain changes")

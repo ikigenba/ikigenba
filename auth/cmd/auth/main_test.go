@@ -32,7 +32,7 @@ import (
 func TestMainWiring(t *testing.T) {
 	// R-3WNI-4FXO
 	// R-P2IH-IN1T R-7KD6-KDOH
-	// R-QB6N-JUCJ
+	// R-RG9K-6CZV
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
 	// R-LPHC-TKY0: the serve cases run the binary bare with the Google settings
@@ -95,6 +95,7 @@ func buildBinary(t *testing.T) string {
 }
 
 const wantManifest = `app = "auth"
+description = "` + server.Description + `"
 default = false
 secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 

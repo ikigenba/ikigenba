@@ -61,6 +61,7 @@ Exit codes:
 `
 
 const manifestText = `app = "auth"
+description = "` + server.Description + `"
 default = false
 secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 

@@ -226,7 +226,7 @@ func TestTokenProfileValuesAndOrder(t *testing.T) {
 }
 
 func TestTokenRejectedPageValues(t *testing.T) {
-	// R-VV5F-YR1P R-3U9G-MQVA R-3T1K-8Z4L
+	// R-VV5F-YR1P R-RW49-5DMW R-3T1K-8Z4L
 	for _, tc := range []struct{ name, expiry string }{
 		{"", "never"}, {" \t\n ", "30d"}, {strings.Repeat("界", 65), "90d"},
 		{"  retained name  ", "bad"}, {"kept", ""}, {"", "365d"}, {"", "bad"},
@@ -235,6 +235,9 @@ func TestTokenRejectedPageValues(t *testing.T) {
 		user, session := tokenTestIdentity(t, st, "rejected")
 		calls := 0
 		banner := testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"})
+		banner.Trail = []page.Level{{Name: "token supplied trail", URL: "/supplied-token"}}
+		wantBanner := banner
+		wantBanner.Trail = nil
 		srv := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(got page.User) page.Banner {
 			calls++
 			if got.Email != user.Email || got.ProfileURL != "/" || got.LogoutURL != "/logout" {
@@ -260,16 +263,19 @@ func TestTokenRejectedPageValues(t *testing.T) {
 		if got := tokenCreateValues(tc.name, tc.expiry, true); got != data {
 			t.Fatalf("rejected data=%#v want %#v", got, data)
 		}
-		assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: banner, Create: &data})
+		assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: wantBanner, Create: &data})
 	}
 }
 
 func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
-	// R-VXL8-QAJ3 R-3VHD-0ILZ R-W011-HU0H
+	// R-VXL8-QAJ3 R-RXC5-J5DL R-W011-HU0H
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "created")
 	calls := 0
 	banner := testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"})
+	banner.Trail = []page.Level{{Name: "token supplied trail", URL: "/supplied-token"}}
+	wantBanner := banner
+	wantBanner.Trail = nil
 	srv := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(got page.User) page.Banner {
 		calls++
 		if got.Email != user.Email || got.ProfileURL != "/" || got.LogoutURL != "/logout" {
@@ -286,7 +292,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal(w.Code)
 	}
-	assertPageBanner(t, w.Body.String(), testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"}))
+	assertPageBanner(t, w.Body.String(), wantBanner)
 	assertPageValues(t, w.Body.String(), strings.TrimSpace(name))
 	tokens, err := st.ListTokens(user.ID)
 	if err != nil || len(tokens) != 1 {
@@ -296,7 +302,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if !ok || strings.Count(w.Body.String(), secret) != 1 {
 		t.Fatal("secret missing or repeated")
 	}
-	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: banner, Created: &tokenCreatedData{Name: strings.TrimSpace(name), Secret: secret}})
+	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: wantBanner, Created: &tokenCreatedData{Name: strings.TrimSpace(name), Secret: secret}})
 	for _, r := range []*http.Request{
 		tokenProfileRequest(session.ID), tokenActionRequest(session.ID, tokens[0].ID, "disable"),
 		tokenRequest("/tokens", session.ID, url.Values{"name": {""}, "expires": {"never"}}),

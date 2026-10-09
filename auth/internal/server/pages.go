@@ -81,5 +81,7 @@ func writeNonMemberPage(w http.ResponseWriter, host, workspace, email string) {
 }
 
 func (s *Server) pageBanner(email string) page.Banner {
-	return s.cfg.Banner(page.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
+	banner := s.cfg.Banner(page.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
+	banner.Trail = []page.Level{}
+	return banner
 }
