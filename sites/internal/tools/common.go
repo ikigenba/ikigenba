@@ -23,11 +23,11 @@ func catalogError(err error) error {
 }
 func (cfg Config) find(ctx context.Context, user, name string) (store.Site, error) {
 	if !store.ValidName(name) {
-		return store.Site{}, fmt.Errorf("no site named '%s'", name)
+		return store.Site{}, fmt.Errorf(MissingSite, name)
 	}
 	s, err := cfg.Store.Find(ctx, user, name)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Site{}, fmt.Errorf("no site named '%s'", name)
+		return store.Site{}, fmt.Errorf(MissingSite, name)
 	}
 	return s, catalogError(err)
 }
@@ -45,23 +45,23 @@ func siteObject(ctx context.Context, s store.Site) Site {
 func gitFailure(err error) string {
 	var ge *git.Error
 	if !errors.As(err, &ge) {
-		return "git failed"
+		return GitFailed
 	}
 	stderr := strings.TrimSuffix(ge.Stderr, "\n")
 	if stderr == "" {
-		return "git failed"
+		return GitFailed
 	}
-	return "git failed\n\n> " + strings.ReplaceAll(stderr, "\n", "\n> ")
+	return GitFailed + "\n\n> " + strings.ReplaceAll(stderr, "\n", "\n> ")
 }
 func (cfg Config) gitError(ctx context.Context, err error) error {
 	if errors.Is(err, limits.ErrHalted) || context.Cause(ctx) != nil && errors.Is(err, context.Cause(ctx)) {
 		runtime.Goexit()
 	}
 	if errors.Is(err, limits.ErrTimedOut) {
-		return fmt.Errorf("git took longer than %d seconds", cfg.Limits.Settings().OperationSeconds)
+		return fmt.Errorf(TimedOut, cfg.Limits.Settings().OperationSeconds)
 	}
 	if errors.Is(err, limits.ErrTooLarge) {
-		return fmt.Errorf("site exceeds %d bytes", cfg.Limits.Settings().SiteMaxBytes)
+		return fmt.Errorf(TooLarge, cfg.Limits.Settings().SiteMaxBytes)
 	}
 	return errors.New(gitFailure(err))
 }

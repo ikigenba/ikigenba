@@ -108,7 +108,7 @@ func makeTreeMarker(t *testing.T, h *harness, s store.Site) {
 	}
 }
 
-// R-LKDI-8SVM R-PO7P-9OAU R-L86I-F3GO
+// R-0F87-JH63 R-0494-3JHU R-05H0-HB8J
 func TestCreateRulesAndTakenNames(t *testing.T) {
 	h := newHarness(t)
 	repo := "rep_0123456789abcdef"
@@ -116,15 +116,15 @@ func TestCreateRulesAndTakenNames(t *testing.T) {
 	own := h.add(t, "alice", "owned", false)
 	h.add(t, "bob", "taken", true)
 	cases := []struct{ args, want string }{
-		{`{"name":"Bad","repo":"bad","ref":"..bad","visibility":"secret"}`, "invalid name 'Bad'"},
-		{`{"name":"api","repo":"bad","ref":"..bad","visibility":"secret"}`, "invalid name 'api'"},
-		{`{"name":"taken","repo":"bad","ref":"..bad","visibility":"secret"}`, "a site named 'taken' already exists"},
-		{`{"name":"owned","repo":"bad"}`, "a site named 'owned' already exists"},
-		{fmt.Sprintf(`{"name":%q,"repo":"bad"}`, own.Slug), fmt.Sprintf("a site named '%s' already exists", own.Slug)},
-		{`{"name":"fresh","repo":"bad","ref":"..bad","visibility":"secret"}`, "no repository 'bad'"},
-		{`{"name":"fresh","repo":"rep_aaaaaaaaaaaaaaaa","ref":"..bad"}`, "no repository 'rep_aaaaaaaaaaaaaaaa'"},
-		{fmt.Sprintf(`{"name":"fresh","repo":%q,"ref":"..bad","visibility":"secret"}`, repo), "invalid ref '..bad'"},
-		{fmt.Sprintf(`{"name":"fresh","repo":%q,"visibility":"Public"}`, repo), "visibility must be public or private"},
+		{`{"name":"Bad","repo":"bad","ref":"..bad","visibility":"secret"}`, fmt.Sprintf(tools.InvalidName, "Bad")},
+		{`{"name":"api","repo":"bad","ref":"..bad","visibility":"secret"}`, fmt.Sprintf(tools.InvalidName, "api")},
+		{`{"name":"taken","repo":"bad","ref":"..bad","visibility":"secret"}`, fmt.Sprintf(tools.NameTaken, "taken")},
+		{`{"name":"owned","repo":"bad"}`, fmt.Sprintf(tools.NameTaken, "owned")},
+		{fmt.Sprintf(`{"name":%q,"repo":"bad"}`, own.Slug), fmt.Sprintf(tools.NameTaken, own.Slug)},
+		{`{"name":"fresh","repo":"bad","ref":"..bad","visibility":"secret"}`, fmt.Sprintf(tools.NoRepository, "bad")},
+		{`{"name":"fresh","repo":"rep_aaaaaaaaaaaaaaaa","ref":"..bad"}`, fmt.Sprintf(tools.NoRepository, "rep_aaaaaaaaaaaaaaaa")},
+		{fmt.Sprintf(`{"name":"fresh","repo":%q,"ref":"..bad","visibility":"secret"}`, repo), fmt.Sprintf(tools.InvalidRef, "..bad")},
+		{fmt.Sprintf(`{"name":"fresh","repo":%q,"visibility":"Public"}`, repo), tools.BadVisibility},
 	}
 	for _, c := range cases {
 		expectRefusal(t, h, "create", c.args, c.want)
@@ -137,11 +137,11 @@ func TestCreateRulesAndTakenNames(t *testing.T) {
 		} else {
 			h.git(t, dir, "config", "ikigenba.owner", owner)
 		}
-		expectRefusal(t, h, "create", fmt.Sprintf(`{"name":"fresh","repo":%q}`, id), fmt.Sprintf("no repository '%s'", id))
+		expectRefusal(t, h, "create", fmt.Sprintf(`{"name":"fresh","repo":%q}`, id), fmt.Sprintf(tools.NoRepository, id))
 	}
 }
 
-// R-PO7P-9OAU
+// R-0494-3JHU
 func TestConcurrentCreateHasOneWinner(t *testing.T) {
 	h := newHarness(t)
 	repo := "rep_0123456789abcdef"
@@ -163,7 +163,7 @@ func TestConcurrentCreateHasOneWinner(t *testing.T) {
 	for r := range results {
 		if !r.IsError() {
 			wins++
-		} else if got := refusal(t, r); got != "a site named 'race' already exists" {
+		} else if got := refusal(t, r); got != fmt.Sprintf(tools.NameTaken, "race") {
 			t.Fatal(got)
 		}
 	}
@@ -172,7 +172,7 @@ func TestConcurrentCreateHasOneWinner(t *testing.T) {
 	}
 }
 
-// R-LVCL-OQJV R-NRDL-0697
+// R-0GG3-X8WS R-NRDL-0697
 func TestCreateDefaultsAndOverrides(t *testing.T) {
 	for _, overrides := range []bool{false, true} {
 		t.Run(fmt.Sprint(overrides), func(t *testing.T) {
@@ -225,7 +225,7 @@ func TestCreateDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-// R-NYOZ-ASPD
+// R-0CSE-RXOP
 func TestUpdateRuleOrder(t *testing.T) {
 	h := newHarness(t)
 	s := h.add(t, "alice", "blog", true)
@@ -234,18 +234,18 @@ func TestUpdateRuleOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ args, want string }{
-		{`{"name":"api","visibility":"secret","ref":"..bad"}`, "no site named 'api'"},
-		{`{"name":"other","visibility":"secret","ref":"..bad"}`, "no site named 'other'"},
-		{`{"name":"blog"}`, "update needs at least one of visibility, listed, ref"},
-		{`{"name":"blog","visibility":"secret","ref":"..bad"}`, "visibility must be public or private"},
-		{`{"name":"blog","visibility":"private","ref":"..bad"}`, "invalid ref '..bad'"},
-		{`{"name":"blog","visibility":"private"}`, "apex site must be public"},
+		{`{"name":"api","visibility":"secret","ref":"..bad"}`, fmt.Sprintf(tools.MissingSite, "api")},
+		{`{"name":"other","visibility":"secret","ref":"..bad"}`, fmt.Sprintf(tools.MissingSite, "other")},
+		{`{"name":"blog"}`, tools.EmptyUpdate},
+		{`{"name":"blog","visibility":"secret","ref":"..bad"}`, tools.BadVisibility},
+		{`{"name":"blog","visibility":"private","ref":"..bad"}`, fmt.Sprintf(tools.InvalidRef, "..bad")},
+		{`{"name":"blog","visibility":"private"}`, tools.ApexNotPublic},
 	} {
 		expectRefusal(t, h, "update", c.args, c.want)
 	}
 }
 
-// R-O14S-2C6R R-O2CO-G3XG
+// R-0LBP-GBVK R-O2CO-G3XG
 func TestUpdatePreservesFieldsWithoutRepository(t *testing.T) {
 	h := newHarness(t)
 	s := h.add(t, "alice", "blog", false)
@@ -315,7 +315,7 @@ func TestDeleteRemovesOnlySiteAndClearsApex(t *testing.T) {
 				}
 			}
 			otherBefore := treeSnapshot(t, filepath.Join(h.cacheRoot, other.ID))
-			expectRefusal(t, h, "delete", `{"name":"other"}`, "no site named 'other'")
+			expectRefusal(t, h, "delete", `{"name":"other"}`, fmt.Sprintf(tools.MissingSite, "other"))
 			r := h.call(t, "alice", "delete", `{"name":"blog"}`)
 			if string(resultObject(t, r)) != fmt.Sprintf(`{"deleted":true,"id":%q}`, s.ID) {
 				t.Fatalf("delete %s", resultObject(t, r))
@@ -338,12 +338,12 @@ func TestDeleteRemovesOnlySiteAndClearsApex(t *testing.T) {
 			if err != nil || ok == isApex || !isApex && !reflect.DeepEqual(got, other) {
 				t.Fatal("apex wrong")
 			}
-			expectRefusal(t, h, "delete", `{"name":"blog"}`, "no site named 'blog'")
+			expectRefusal(t, h, "delete", `{"name":"blog"}`, fmt.Sprintf(tools.MissingSite, "blog"))
 		})
 	}
 }
 
-// R-O60D-LF5J R-O789-Z6W8 R-O8G6-CYMX R-WE97-TFX1 R-O9O2-QQDM
+// R-0E0B-5PFE R-0NRI-7VCY R-O8G6-CYMX R-WE97-TFX1 R-O9O2-QQDM
 func TestApexReadSetClearAndRules(t *testing.T) {
 	h := newHarness(t)
 	s := h.add(t, "alice", "blog", true)
@@ -357,9 +357,9 @@ func TestApexReadSetClearAndRules(t *testing.T) {
 	makeTreeMarker(t, h, other)
 	before := treeSnapshot(t, h.cacheRoot)
 	for _, c := range []struct{ args, want string }{
-		{`{"name":"missing","clear":true}`, "apex takes name or clear, not both"},
-		{`{"name":"other"}`, "no site named 'other'"},
-		{`{"name":"private"}`, "apex site must be public"},
+		{`{"name":"missing","clear":true}`, tools.NameOrClear},
+		{`{"name":"other"}`, fmt.Sprintf(tools.MissingSite, "other")},
+		{`{"name":"private"}`, tools.ApexNotPublic},
 	} {
 		expectRefusal(t, h, "apex", c.args, c.want)
 	}
@@ -416,14 +416,14 @@ func TestApexReadSetClearAndRules(t *testing.T) {
 	}
 }
 
-// R-L86I-F3GO
+// R-05H0-HB8J
 func TestCreateRepositoryDeadlineAndGitFailure(t *testing.T) {
 	t.Run("deadline", func(t *testing.T) {
 		h := newHarness(t)
 		repo := "rep_0123456789abcdef"
 		h.repo(t, repo, "alice")
 		h.after = func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); ch <- h.now; return ch }
-		expectRefusal(t, h, "create", fmt.Sprintf(`{"name":"fresh","repo":%q}`, repo), fmt.Sprintf("git took longer than %d seconds", h.cfg.Limits.Settings().OperationSeconds))
+		expectRefusal(t, h, "create", fmt.Sprintf(`{"name":"fresh","repo":%q}`, repo), fmt.Sprintf(tools.TimedOut, h.cfg.Limits.Settings().OperationSeconds))
 	})
 	t.Run("git stderr", func(t *testing.T) {
 		h := newHarness(t)
@@ -444,7 +444,7 @@ func TestCreateRepositoryDeadlineAndGitFailure(t *testing.T) {
 			t.Fatalf("expected git failure, got %v", err)
 		}
 		stderr := strings.TrimSuffix(ge.Stderr, "\n")
-		want := "git failed"
+		want := tools.GitFailed
 		if stderr != "" {
 			want += "\n\n> " + strings.ReplaceAll(stderr, "\n", "\n> ")
 		}

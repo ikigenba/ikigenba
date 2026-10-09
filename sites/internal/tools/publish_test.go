@@ -93,7 +93,7 @@ func outsideSiteSnapshot(t *testing.T, h *harness, id string) map[string]diskEnt
 }
 
 func TestPublishSuccessPruningAndOwnerIndependence(t *testing.T) {
-	// R-LQH0-5NL3 R-XJWW-Q6D5 R-NXH2-X0YO R-NBIW-15M6
+	// R-0IVW-OSE6 R-XJWW-Q6D5 R-NXH2-X0YO R-NBIW-15M6
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
 	first := commitFile(t, h, p, "old")
@@ -172,7 +172,7 @@ func TestPublishSuccessPruningAndOwnerIndependence(t *testing.T) {
 }
 
 func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
-	// R-9KCD-7BMZ R-LBU7-KEOR R-LO17-E43P R-9FGR-O8O7 R-9HWK-FS5L
+	// R-06OW-V2Z8 R-07WT-8UPX R-094P-MMGM R-9FGR-O8O7 R-0317-PRR5
 	for _, which := range []string{"missing-site", "missing-repo", "no-ref", "malformed-ref", "large", "resolve-timeout", "archive-timeout", "disk", "archive-git"} {
 		t.Run(which, func(t *testing.T) {
 			h := newHarness(t)
@@ -188,23 +188,23 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 			switch which {
 			case "missing-site":
 				arg = `{"name":"missing","ref":"..bad"}`
-				want = "no site named 'missing'"
+				want = fmt.Sprintf(tools.MissingSite, "missing")
 			case "missing-repo":
 				if e := os.RemoveAll(p); e != nil {
 					t.Fatal(e)
 				}
-				want = "repository '" + s.Repo + "' is unavailable"
+				want = fmt.Sprintf(tools.RepoUnavailable, s.Repo)
 			case "no-ref":
 				arg = `{"name":"blog","ref":"absent"}`
-				want = "no commit for 'absent'"
+				want = fmt.Sprintf(tools.NoCommit, "absent")
 			case "malformed-ref":
 				arg = `{"name":"blog","ref":"..bad"}`
-				want = "no commit for '..bad'"
+				want = fmt.Sprintf(tools.NoCommit, "..bad")
 			case "large":
 				sconf.SiteMaxBytes = 3
-				want = "site exceeds 3 bytes"
+				want = fmt.Sprintf(tools.TooLarge, 3)
 			case "resolve-timeout", "archive-timeout":
-				want = "git took longer than 17 seconds"
+				want = fmt.Sprintf(tools.TimedOut, 17)
 			case "disk":
 				parent, e := os.OpenRoot(filepath.Dir(h.cacheRoot))
 				if e != nil {
@@ -214,9 +214,9 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 					t.Fatal(e)
 				}
 				t.Cleanup(func() { _ = parent.Chmod(filepath.Base(h.cacheRoot), 0700); _ = parent.Close() })
-				want = "git failed"
+				want = tools.GitFailed
 			case "archive-git":
-				want = "git failed\n\n> "
+				want = tools.GitFailed + "\n\n> "
 			}
 			h.after = func(time.Duration) <-chan time.Time {
 				calls++
@@ -250,7 +250,7 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 				if len(lines) < 2 {
 					t.Fatalf("expected multi-line git failure, got %q", stderr.String())
 				}
-				expected := "git failed\n\n> " + strings.Join(lines, "\n> ")
+				expected := tools.GitFailed + "\n\n> " + strings.Join(lines, "\n> ")
 				if got != expected {
 					t.Fatalf("got %q want %q", got, expected)
 				}
@@ -270,7 +270,7 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 }
 
 func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
-	// R-X9DB-P64F R-9FGR-O8O7
+	// R-01TB-C00G R-9FGR-O8O7
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			h := newHarness(t)
@@ -367,7 +367,7 @@ func TestHaltedAndCanceledToolsEndWithoutResult(t *testing.T) {
 }
 
 func TestCommittedPublishAndDeleteSucceedDespiteCleanupFailure(t *testing.T) {
-	// R-LZ0A-U1RY
+	// R-0MJL-U3M9
 	for _, tool := range []string{"publish", "delete"} {
 		t.Run(tool, func(t *testing.T) {
 			h := newHarness(t)
@@ -413,7 +413,7 @@ func TestCommittedPublishAndDeleteSucceedDespiteCleanupFailure(t *testing.T) {
 }
 
 func TestPublishRefusesHostileRealGitArchive(t *testing.T) {
-	// R-LO17-E43P
+	// R-094P-MMGM
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
 	blob := gitInput(t, h, p, "target", "hash-object", "-w", "--stdin")
@@ -423,7 +423,7 @@ func TestPublishRefusesHostileRealGitArchive(t *testing.T) {
 	h.git(t, p, "update-ref", "refs/heads/main", sha)
 	h.add(t, "alice", "blog", true)
 	before := diskSnapshot(t, h.cacheRoot, false)
-	if got := refusal(t, h.call(t, "alice", "publish", `{"name":"blog"}`)); got != "git failed" {
+	if got := refusal(t, h.call(t, "alice", "publish", `{"name":"blog"}`)); got != tools.GitFailed {
 		t.Fatal(got)
 	}
 	if !reflect.DeepEqual(before, diskSnapshot(t, h.cacheRoot, false)) {

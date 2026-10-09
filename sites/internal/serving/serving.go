@@ -129,7 +129,7 @@ func Sites(cfg Config) http.Handler {
 			w.WriteHeader(status)
 		case template == "stopping":
 			w.Header().Set("Retry-After", "30")
-			text(w, r, status, "sites is stopping; try again later\n")
+			text(w, r, status, Stopping+"\n")
 		case template != "":
 			if template == "unavailable" {
 				w.Header().Set("Retry-After", "60")
@@ -281,3 +281,6 @@ func contentType(name string) string {
 	}
 	return "application/octet-stream"
 }
+
+// Stopping is the response line while the service drains.
+const Stopping string = "sites is stopping; try again later"

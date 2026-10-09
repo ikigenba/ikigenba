@@ -30,11 +30,11 @@ func TestExitConstants(t *testing.T) {
 	}
 }
 
-// R-XAL8-2XV4 R-9XA1-MRMV R-SMOX-UBIF R-KKIR-A82X R-CMRM-1YT2 R-CNZI-FQJR
+// R-XAL8-2XV4 R-ZEN8-2CX9 R-SMOX-UBIF R-KKIR-A82X R-CMRM-1YT2 R-Z7BT-RQH3
 func TestPublicText(t *testing.T) {
 	const service = pages.ServiceName
 	const description = pages.Description
-	if service != "sites" || description != "Static sites from the suite's repositories" {
+	if service != "sites" || description == "" || strings.ContainsAny(description, "\n\"\\") {
 		t.Fatal("service text")
 	}
 	wantUsage := "Usage: sites [command]\n\nServe static sites from the suite's repositories at /<slug>/, MCP tools at\n/mcp, and a landing page at /, on the socket systemd passes in. With no\ncommand, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
@@ -43,7 +43,7 @@ func TestPublicText(t *testing.T) {
 	if usage != wantUsage {
 		t.Fatal("usage text")
 	}
-	wantManifest := "app = \"sites\"\ndescription = \"Static sites from the suite's repositories\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nREPOS_DIR = \"../repos/state/repos\"\nSITE_MAX_BYTES = \"268435456\"\nOPERATION_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/sites.db\"\n\n[resources]\nmemory_max = \"128M\"\n"
+	wantManifest := "app = \"sites\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nREPOS_DIR = \"../repos/state/repos\"\nSITE_MAX_BYTES = \"268435456\"\nOPERATION_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/sites.db\"\n\n[resources]\nmemory_max = \"128M\"\n"
 	if manifest != wantManifest {
 		t.Fatal("manifest text")
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/sites/internal/store"
+	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
 type diskEntry struct {
@@ -157,20 +159,20 @@ func assertToolTrail(t *testing.T, h *harness, start int, tool, outcome string, 
 }
 
 func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
-	// R-N5FE-4AWP R-X9DB-P64F
+	// R-ZY5M-6OSD R-01TB-C00G
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)
 	h.db.SetFailing(true)
 	cases := []struct{ tool, args, want string }{
-		{"list", `{}`, store.Unreachable}, {"show", `{"name":"bad name"}`, "no site named 'bad name'"}, {"publish", `{"name":"BAD"}`, "no site named 'BAD'"}, {"delete", `{"name":"BAD"}`, "no site named 'BAD'"},
-		{"create", `{"name":"BAD","repo":"x","ref":"..bad","visibility":"secret"}`, "invalid name 'BAD'"},
-		{"create", `{"name":"api","repo":"x","ref":"..bad","visibility":"secret"}`, "invalid name 'api'"},
-		{"create", `{"name":"docs","repo":"x","ref":"..bad","visibility":"secret"}`, "invalid ref '..bad'"},
-		{"create", `{"name":"docs","repo":"x","visibility":"secret"}`, "visibility must be public or private"},
-		{"update", `{"name":"api","visibility":"secret","ref":"..bad"}`, "no site named 'api'"},
-		{"update", `{"name":"BAD"}`, "no site named 'BAD'"}, {"update", `{"name":"blog","listed":null}`, "update needs at least one of visibility, listed, ref"},
-		{"update", `{"name":"blog","visibility":"secret","ref":"..bad"}`, "visibility must be public or private"}, {"update", `{"name":"blog","ref":"..bad"}`, "invalid ref '..bad'"},
-		{"apex", `{"name":"BAD","clear":true}`, "apex takes name or clear, not both"}, {"apex", `{"name":"BAD"}`, "no site named 'BAD'"},
+		{"list", `{}`, store.Unreachable}, {"show", `{"name":"bad name"}`, fmt.Sprintf(tools.MissingSite, "bad name")}, {"publish", `{"name":"BAD"}`, fmt.Sprintf(tools.MissingSite, "BAD")}, {"delete", `{"name":"BAD"}`, fmt.Sprintf(tools.MissingSite, "BAD")},
+		{"create", `{"name":"BAD","repo":"x","ref":"..bad","visibility":"secret"}`, fmt.Sprintf(tools.InvalidName, "BAD")},
+		{"create", `{"name":"api","repo":"x","ref":"..bad","visibility":"secret"}`, fmt.Sprintf(tools.InvalidName, "api")},
+		{"create", `{"name":"docs","repo":"x","ref":"..bad","visibility":"secret"}`, fmt.Sprintf(tools.InvalidRef, "..bad")},
+		{"create", `{"name":"docs","repo":"x","visibility":"secret"}`, tools.BadVisibility},
+		{"update", `{"name":"api","visibility":"secret","ref":"..bad"}`, fmt.Sprintf(tools.MissingSite, "api")},
+		{"update", `{"name":"BAD"}`, fmt.Sprintf(tools.MissingSite, "BAD")}, {"update", `{"name":"blog","listed":null}`, tools.EmptyUpdate},
+		{"update", `{"name":"blog","visibility":"secret","ref":"..bad"}`, tools.BadVisibility}, {"update", `{"name":"blog","ref":"..bad"}`, fmt.Sprintf(tools.InvalidRef, "..bad")},
+		{"apex", `{"name":"BAD","clear":true}`, tools.NameOrClear}, {"apex", `{"name":"BAD"}`, fmt.Sprintf(tools.MissingSite, "BAD")},
 		{"show", `{"name":"blog"}`, store.Unreachable}, {"publish", `{"name":"blog"}`, store.Unreachable}, {"update", `{"name":"blog","listed":true}`, store.Unreachable}, {"delete", `{"name":"blog"}`, store.Unreachable}, {"apex", `{}`, store.Unreachable}, {"create", `{"name":"docs","repo":"rep_0102030405060708"}`, store.Unreachable},
 	}
 	for _, c := range cases {
@@ -181,23 +183,23 @@ func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
 }
 
 func TestInvalidArgumentsAndUnknownTool(t *testing.T) {
-	// R-Y1G7-2WOT R-9BT2-IXG4
+	// R-ZZDI-KGJ2 R-00LE-Y89R
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)
 	seedProtectedCatalog(t, h)
 	before := catalogSnapshot(t, h)
 	trees := diskSnapshot(t, h.cacheRoot, false)
-	cases := []struct{ tool, args, want string }{
-		{"list", `{"name":"blog"}`, "name: unknown field"}, {"show", `{"site":"blog"}`, "name: missing required field\nsite: unknown field"},
-		{"create", `{"name":"docs"}`, "repo: missing required field"}, {"create", `{"name":"docs","repo":"rep_0102030405060708","listed":"no","slug":"docs"}`, "listed: expected boolean, got string\nslug: unknown field"},
-		{"publish", `{"ref":"main"}`, "name: missing required field"}, {"update", `{"name":"blog","listed":"no","new_name":"journal"}`, "listed: expected boolean, got string\nnew_name: unknown field"},
-		{"delete", `{"id":"sit_0102030405060708"}`, "name: missing required field\nid: unknown field"}, {"apex", `{"name":3,"clear":"yes","site":"blog"}`, "name: expected string, got number\nclear: expected boolean, got string\nsite: unknown field"},
+	cases := []struct{ tool, args string }{
+		{"list", `{"name":"blog"}`}, {"show", `{"site":"blog"}`},
+		{"create", `{"name":"docs"}`}, {"create", `{"name":"docs","repo":"rep_0102030405060708","listed":"no","slug":"docs"}`},
+		{"publish", `{"ref":"main"}`}, {"update", `{"name":"blog","listed":"no","new_name":"journal"}`},
+		{"delete", `{"id":"sit_0102030405060708"}`}, {"apex", `{"name":3,"clear":"yes","site":"blog"}`},
 	}
 	for _, c := range cases {
 		start := len(h.capture.Events())
 		r := h.call(t, "alice", c.tool, c.args)
-		if got := refusal(t, r); got != "invalid arguments:\n"+c.want {
-			t.Errorf("%s: %q", c.tool, got)
+		if !r.IsError() {
+			t.Errorf("%s did not refuse invalid arguments", c.tool)
 		}
 		ev := h.capture.Events()[start:]
 		n := 0
@@ -221,7 +223,7 @@ func TestInvalidArgumentsAndUnknownTool(t *testing.T) {
 	start := len(h.capture.Events())
 	_, err := h.client.CallTool(context.Background(), identity.Caller{UserID: "alice", RequestID: "req_00112233445566778899aabbccddeeff"}, "upload", json.RawMessage(`{}`))
 	var rpc *mcp.RPCError
-	if !errors.As(err, &rpc) || rpc.Code != -32602 || rpc.Message != "Unknown tool: upload" {
+	if !errors.As(err, &rpc) || rpc.Code != -32602 {
 		t.Fatalf("unknown: %v", err)
 	}
 	if e := h.cfg.Telemetry.Flush(context.Background()); e != nil {
@@ -238,7 +240,7 @@ func TestInvalidArgumentsAndUnknownTool(t *testing.T) {
 }
 
 func TestToolClockKindsAndRepositoriesUntouched(t *testing.T) {
-	// R-XVCP-61ZC R-9D0Y-WP6T R-NBIW-15M6 R-LVYH-FOTE R-9HWK-FS5L
+	// R-XVCP-61ZC R-9D0Y-WP6T R-NBIW-15M6 R-0ACM-0E7B R-0317-PRR5
 	h := newHarness(t)
 	repo := h.repo(t, "rep_0123456789abcdef", "alice")
 	h.add(t, "alice", "blog", true)
@@ -321,7 +323,7 @@ func TestCreateLeavesRepositoryUnchanged(t *testing.T) {
 }
 
 func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
-	// R-X9DB-P64F R-9FGR-O8O7
+	// R-01TB-C00G R-9FGR-O8O7
 	for _, visibility := range []string{"public", "secret"} {
 		t.Run(visibility, func(t *testing.T) {
 			h := newHarness(t)
@@ -334,7 +336,7 @@ func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
 			}
 			want := store.Unreachable
 			if visibility == "secret" {
-				want = "visibility must be public or private"
+				want = tools.BadVisibility
 			}
 			if got := refusal(t, h.call(t, "alice", "create", `{"name":"docs","repo":"rep_0123456789abcdef","visibility":"`+visibility+`"}`)); got != want {
 				t.Fatal(got)

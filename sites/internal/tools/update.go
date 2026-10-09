@@ -14,16 +14,16 @@ import (
 
 func updateRules(a UpdateArgs) error {
 	if !store.ValidName(a.Name) {
-		return fmt.Errorf("no site named '%s'", a.Name)
+		return fmt.Errorf(MissingSite, a.Name)
 	}
 	if a.Visibility == nil && a.Listed == nil && a.Ref == nil {
-		return errors.New("update needs at least one of visibility, listed, ref")
+		return errors.New(EmptyUpdate)
 	}
 	if a.Visibility != nil && *a.Visibility != store.Public && *a.Visibility != store.Private {
-		return errors.New("visibility must be public or private")
+		return errors.New(BadVisibility)
 	}
 	if a.Ref != nil && !cache.ValidRef(*a.Ref) {
-		return fmt.Errorf("invalid ref '%s'", *a.Ref)
+		return fmt.Errorf(InvalidRef, *a.Ref)
 	}
 	return nil
 }
@@ -42,7 +42,7 @@ func (cfg Config) update(ctx context.Context, u identity.Caller, a UpdateArgs) (
 	}
 	s, changed, err := cfg.Store.Update(ctx, s.ID, store.Change{Visibility: a.Visibility, Listed: a.Listed, Ref: a.Ref})
 	if errors.Is(err, store.ErrNotPublic) {
-		return Site{}, errors.New("apex site must be public")
+		return Site{}, errors.New(ApexNotPublic)
 	}
 	if err != nil {
 		return Site{}, catalogError(err)

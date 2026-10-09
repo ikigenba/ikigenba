@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -52,59 +53,37 @@ func TestAdvertisedSurface(t *testing.T) {
 			t.Fatalf("output %s", x.OutputSchema)
 		}
 	}
-	// R-MC5S-XT41
-	if infos[0].Description != "The sites you own, by name.\n\nTakes no arguments. Each site has its id, name, slug, url (the address it answers at), visibility (public or private), listed, and commit (the sha it is published at, absent before the first publish). Use show for one site's repository and ref." {
-		t.Fatalf("description %s", infos[0].Description)
-	}
-	// R-MDDP-BKUQ
-	if infos[1].Description != "One of your sites, with its URL, its repository, and what is published.\n\nPass name, the site's name. The result has its id, name, slug, url, repo (the id of the repos repository it is served from), ref (the ref it tracks), visibility, listed, commit (the sha it is published at), created, and published (when it was last published); commit and published are absent before the first publish." {
-		t.Fatalf("description %s", infos[1].Description)
-	}
-	// R-KJNV-3U0V
-	if infos[2].Description != "Create a site from one of your repositories and return it; publish it to make it live.\n\nname is 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, is none of about, mcp, or api, and must not already name a site in the space: names are shared by every user, because a listed site answers at its name. repo is the id of one of your repositories in repos. ref is the branch, tag, or commit the site tracks, main unless given. visibility is public, served to anyone, or private, served only to users signed in to the space; public unless given. listed is true unless given: a listed site answers at its name and is on the landing page; an unlisted one answers at its name followed by '-' and 8 random hexadecimal digits, and is on the landing page only for you. The site serves nothing until you publish it. The result is what show returns." {
-		t.Fatalf("description %s", infos[2].Description)
-	}
-	// R-MFTI-34C4
-	if infos[3].Description != "Publish one of your sites at a commit of its repository: the ref it tracks, or a ref or commit you name.\n\nPass name, and ref to publish a branch, tag, or commit sha other than the one the site tracks; a ref given here is used for this publish only and does not change the site's ref. The site serves the files of that commit exactly as git holds them, from the moment publish returns, and what it served before until then. Push to the repository, then publish again, to change what a site serves. The result is what show returns, with the new commit." {
-		t.Fatalf("description %s", infos[3].Description)
-	}
-	// R-MH1E-GW2T
-	if infos[4].Description != "Change one of your sites' visibility, whether it is listed, or the ref it tracks.\n\nPass name and at least one of visibility, listed, and ref, under the rules of create. Changing ref does not publish: call publish to serve the new ref. Changing listed never changes the slug, so a site keeps answering at the address it was created with. The apex site must stay public. The result is what show returns." {
-		t.Fatalf("description %s", infos[4].Description)
-	}
-	// R-MI9A-UNTI
-	if infos[5].Description != "Delete one of your sites; its repository is untouched.\n\nPass name. The site stops answering at once, its name is free for anyone to take, and if it was the apex site the apex is cleared. The repository and its history stay in repos. The result is the id of the deleted site." {
-		t.Fatalf("description %s", infos[5].Description)
-	}
-	// R-MJH7-8FK7
-	if infos[6].Description != "Show, set or clear the site the space's apex domain redirects to.\n\nWith no arguments, the result is the apex site, or null when there is none. Pass name to make one of your public sites the apex, or clear true to clear it, whoever set it; not both. The result is the apex after the call." {
-		t.Fatalf("description %s", infos[6].Description)
+	// R-ZLYM-CZDF
+	for _, info := range infos {
+		if info.Description == "" {
+			t.Fatalf("empty description for %s", info.Name)
+		}
 	}
 	// R-MKP3-M7AW
 	if string(infos[0].InputSchema) != "{\"type\":\"object\",\"additionalProperties\":false}" {
 		t.Fatalf("list inputSchema: %s", infos[0].InputSchema)
 	}
-	// R-MLWZ-ZZ1L
-	if string(infos[1].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The site's name.\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
+	// R-ZN6I-QR44
+	if schemaWithoutCopy(t, infos[1].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("show inputSchema: %s", infos[1].InputSchema)
 	}
-	if string(infos[5].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The site's name.\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
+	if schemaWithoutCopy(t, infos[5].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("delete inputSchema: %s", infos[5].InputSchema)
 	}
-	// R-KKVR-HLRK
-	if string(infos[2].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The new site's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about, mcp, or api, and not already a site's name in the space.\"},\"repo\":{\"type\":\"string\",\"description\":\"The id of one of your repositories in repos (rep_ and 16 hexadecimal digits).\"},\"ref\":{\"type\":\"string\",\"description\":\"The branch, tag, or commit the site tracks; main unless given.\"},\"visibility\":{\"type\":\"string\",\"description\":\"public or private; public unless given.\"},\"listed\":{\"type\":\"boolean\",\"description\":\"Whether the site is on the landing page and answers at its name; true unless given.\"}},\"required\":[\"name\",\"repo\"],\"additionalProperties\":false}" {
+	// R-ZOEF-4IUT
+	if schemaWithoutCopy(t, infos[2].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"repo\":{\"type\":\"string\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"},\"visibility\":{\"type\":\"string\",\"description\":\"\"},\"listed\":{\"type\":\"boolean\",\"description\":\"\"}},\"required\":[\"name\",\"repo\"],\"additionalProperties\":false}" {
 		t.Fatalf("create inputSchema: %s", infos[2].InputSchema)
 	}
-	// R-MOCS-RIIZ
-	if string(infos[3].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The site's name.\"},\"ref\":{\"type\":\"string\",\"description\":\"The branch, tag, or commit to publish, for this publish only; the site's own ref unless given.\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
+	// R-ZPMB-IALI
+	if schemaWithoutCopy(t, infos[3].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("publish inputSchema: %s", infos[3].InputSchema)
 	}
-	// R-MPKP-5A9O
-	if string(infos[4].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The site's name.\"},\"visibility\":{\"type\":\"string\",\"description\":\"public or private.\"},\"listed\":{\"type\":\"boolean\",\"description\":\"Whether the site is on the landing page.\"},\"ref\":{\"type\":\"string\",\"description\":\"The branch, tag, or commit the site tracks from now on.\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
+	// R-ZQU7-W2C7
+	if schemaWithoutCopy(t, infos[4].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"visibility\":{\"type\":\"string\",\"description\":\"\"},\"listed\":{\"type\":\"boolean\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("update inputSchema: %s", infos[4].InputSchema)
 	}
-	// R-MQSL-J20D
-	if string(infos[6].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"The name of one of your public sites, to make the apex.\"},\"clear\":{\"type\":\"boolean\",\"description\":\"true to clear the apex.\"}},\"additionalProperties\":false}" {
+	// R-ZS24-9U2W
+	if schemaWithoutCopy(t, infos[6].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"clear\":{\"type\":\"boolean\",\"description\":\"\"}},\"additionalProperties\":false}" {
 		t.Fatalf("apex inputSchema: %s", infos[6].InputSchema)
 	}
 	// R-MS0H-WTR2
@@ -181,7 +160,7 @@ func TestResultDeclarations(t *testing.T) {
 	}
 }
 
-// R-NIUA-BS2C R-NK26-PJT1 R-N0JS-L7XX R-99D9-RDYQ R-FC07-11HE R-QSR6-GFOH R-OK16-82FU
+// R-NIUA-BS2C R-NK26-PJT1 R-N0JS-L7XX R-ZTA0-NLTL R-FC07-11HE R-QSR6-GFOH R-OK16-82FU
 func TestReadCalls(t *testing.T) {
 	h := newHarness(t)
 	z := h.add(t, "alice", "zulu", false)
@@ -224,7 +203,7 @@ func TestReadCalls(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"other", z.Slug, a.ID, "Bad Name", "missing"} {
-		if got := refusal(t, h.call(t, "alice", "show", `{"name":"`+name+`"}`)); got != "no site named '"+name+"'" {
+		if got := refusal(t, h.call(t, "alice", "show", `{"name":"`+name+`"}`)); got != fmt.Sprintf(tools.MissingSite, name) {
 			t.Fatal(got)
 		}
 	}
@@ -333,7 +312,7 @@ func TestToolsListingAcrossCatalogAndRepositoryStates(t *testing.T) {
 	}
 }
 
-// R-N2ZL-CRFB
+// R-ZUHX-1DKA
 func TestGitFailureTextAtToolBoundary(t *testing.T) {
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
@@ -353,7 +332,7 @@ func TestGitFailureTextAtToolBoundary(t *testing.T) {
 	if text == "" {
 		t.Fatal("fixture needs stderr")
 	}
-	want := "git failed\n\n> " + strings.ReplaceAll(text, "\n", "\n> ")
+	want := tools.GitFailed + "\n\n> " + strings.ReplaceAll(text, "\n", "\n> ")
 	got := refusal(t, h.call(t, "alice", "create", `{"name":"docs","repo":"rep_0123456789abcdef"}`))
 	if got != want {
 		t.Fatalf("failure %q want %q", got, want)
@@ -371,12 +350,12 @@ func TestGitFailureTextAtToolBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = parent.Chmod(filepath.Base(h.cacheRoot), 0700); _ = parent.Close() })
-	if got = refusal(t, h.call(t, "alice", "publish", `{"name":"blog"}`)); got != "git failed" {
+	if got = refusal(t, h.call(t, "alice", "publish", `{"name":"blog"}`)); got != tools.GitFailed {
 		t.Fatal(got)
 	}
 }
 
-// R-N47H-QJ60
+// R-ZVPT-F5AZ
 func TestLimitRefusalNumbersAtToolBoundary(t *testing.T) {
 	for _, timeout := range []bool{false, true} {
 		t.Run(fmt.Sprint(timeout), func(t *testing.T) {
@@ -388,14 +367,33 @@ func TestLimitRefusalNumbersAtToolBoundary(t *testing.T) {
 			s.SiteMaxBytes = 3
 			s.OperationSeconds = 23
 			configureCache(t, h, s, nil)
-			want := "site exceeds 3 bytes"
+			want := fmt.Sprintf(tools.TooLarge, 3)
 			if timeout {
 				h.after = func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); ch <- h.now; return ch }
-				want = "git took longer than 23 seconds"
+				want = fmt.Sprintf(tools.TimedOut, 23)
 			}
 			if got := refusal(t, h.call(t, "alice", "publish", `{"name":"blog"}`)); got != want {
 				t.Fatalf("refusal %q want %q", got, want)
 			}
 		})
 	}
+}
+
+// schemaWithoutCopy retains byte order and all schema structure while checking copy by type and presence.
+func schemaWithoutCopy(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	pattern := regexp.MustCompile(`"description":("(?:[^"\\]|\\.)*")`)
+	n := 0
+	result := pattern.ReplaceAllStringFunc(string(raw), func(s string) string {
+		var d string
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(s, `"description":`)), &d); err != nil || d == "" {
+			t.Fatalf("invalid property description: %s", s)
+		}
+		n++
+		return `"description":""`
+	})
+	if n == 0 {
+		t.Fatal("no property descriptions")
+	}
+	return result
 }

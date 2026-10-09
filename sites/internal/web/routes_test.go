@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 	"github.com/ikigenba/ikigenba/sites/internal/serving"
+	"github.com/ikigenba/ikigenba/sites/internal/store"
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
 	"github.com/ikigenba/ikigenba/sites/internal/urls"
 )
@@ -127,7 +128,7 @@ func TestCatalogRefusalAndRecovery(t *testing.T) {
 						continue
 					}
 					r := f.get(t, method, path, host, user, nil)
-					if r.Code != 503 || len(r.Header().Values("Content-Type")) != 1 || r.Header().Get("Content-Type") != "text/plain; charset=utf-8" || (method == "HEAD" && r.Body.Len() != 0) || (method != "HEAD" && r.Body.String() != "cannot reach the catalog; try again later\n") {
+					if r.Code != 503 || len(r.Header().Values("Content-Type")) != 1 || r.Header().Get("Content-Type") != "text/plain; charset=utf-8" || (method == "HEAD" && r.Body.Len() != 0) || (method != "HEAD" && r.Body.String() != store.Unreachable+"\n") {
 						t.Fatalf("catalog %s %s %s user=%q: %d %s", host, method, path, user, r.Code, r.Body.String())
 					}
 				}

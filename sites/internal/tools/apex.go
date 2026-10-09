@@ -51,7 +51,7 @@ func apexResult(s *Site) (mcp.Result, error) {
 }
 func (cfg Config) apex(ctx context.Context, u identity.Caller, a ApexArgs) (mcp.Result, error) {
 	if a.Name != nil && a.Clear != nil && *a.Clear {
-		return mcp.Result{}, errors.New("apex takes name or clear, not both")
+		return mcp.Result{}, errors.New(NameOrClear)
 	}
 	if a.Name != nil {
 		s, err := cfg.find(ctx, u.UserID, *a.Name)
@@ -59,11 +59,11 @@ func (cfg Config) apex(ctx context.Context, u identity.Caller, a ApexArgs) (mcp.
 			return mcp.Result{}, err
 		}
 		if s.Visibility != store.Public {
-			return mcp.Result{}, errors.New("apex site must be public")
+			return mcp.Result{}, errors.New(ApexNotPublic)
 		}
 		s, err = cfg.Store.SetApex(ctx, s.ID)
 		if errors.Is(err, store.ErrNotPublic) {
-			return mcp.Result{}, errors.New("apex site must be public")
+			return mcp.Result{}, errors.New(ApexNotPublic)
 		}
 		if err != nil {
 			return mcp.Result{}, catalogError(err)

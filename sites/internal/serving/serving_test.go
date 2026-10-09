@@ -568,7 +568,7 @@ func TestFreshCatalogAndCachedTreeReadOnly(t *testing.T) {
 	assertNotice(t, f.answer(r, false), f.notice(r, 404, "notfound"))
 }
 
-// R-F6QY-UAUY R-W4I0-R9ZH R-LPUZ-IU3X R-HENR-6828 R-LON3-52D8
+// R-ZIAX-7O5C R-W4I0-R9ZH R-LPUZ-IU3X R-HENR-6828 R-LON3-52D8
 func TestRebuildFailuresAndDrain(t *testing.T) {
 	for _, reason := range []string{cache.ReasonRepositoryMissing, cache.ReasonCommitMissing, cache.ReasonTooLarge, cache.ReasonTimedOut, cache.ReasonGitFailed, "stopping"} {
 		t.Run(reason, func(t *testing.T) {
@@ -606,7 +606,7 @@ func TestRebuildFailuresAndDrain(t *testing.T) {
 				if reason == "stopping" {
 					assertHeader(t, w, "Retry-After", "30")
 					assertHeader(t, w, "Content-Type", "text/plain; charset=utf-8")
-					if w.Body.String() != "sites is stopping; try again later\n" {
+					if w.Body.String() != serving.Stopping+"\n" {
 						t.Fatal("drain body")
 					}
 				} else {
@@ -1087,5 +1087,13 @@ func TestUnpublishedViewsHaveExactAttributes(t *testing.T) {
 		if len(events) != i+1 || events[i].Name != "site.viewed" || !reflect.DeepEqual(events[i].Attrs, want) {
 			t.Fatalf("unpublished view %v want %v", events, want)
 		}
+	}
+}
+
+// R-ZH30-TWEN
+func TestStoppingCopyConstant(t *testing.T) {
+	const stopping string = serving.Stopping
+	if stopping == "" || strings.Contains(stopping, "\n") {
+		t.Fatal("invalid stopping copy")
 	}
 }

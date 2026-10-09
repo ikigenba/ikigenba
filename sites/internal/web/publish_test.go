@@ -3,16 +3,17 @@ package web_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/sites/internal/store"
+	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
-// R-LFHW-PPWU
+// R-0K3T-2K4V
 func TestPublishKeepsOldTreeVisibleUntilInstallation(t *testing.T) {
 	f := fresh(t)
 	f.repository(t)
@@ -70,7 +71,7 @@ func TestPublishKeepsOldTreeVisibleUntilInstallation(t *testing.T) {
 	}
 }
 
-// R-0ZRS-ZOAG
+// R-0BKI-E5Y0
 func TestRefusedPublishPreservesServing(t *testing.T) {
 	for _, mode := range []string{"missing", "timeout", "git", "size"} {
 		t.Run(mode, func(t *testing.T) {
@@ -132,19 +133,19 @@ func TestRefusedPublishPreservesServing(t *testing.T) {
 			text := answer.Content[0].Text
 			switch mode {
 			case "missing":
-				if !strings.HasPrefix(text, "no commit for") {
+				if text != fmt.Sprintf(tools.NoCommit, "absent") {
 					t.Fatal(text)
 				}
 			case "timeout":
-				if text != "git took longer than 600 seconds" {
+				if text != fmt.Sprintf(tools.TimedOut, 600) {
 					t.Fatal(text)
 				}
 			case "git":
-				if text != "git failed" {
+				if text != tools.GitFailed {
 					t.Fatal(text)
 				}
 			case "size":
-				if text != "site exceeds 7 bytes" {
+				if text != fmt.Sprintf(tools.TooLarge, 7) {
 					t.Fatal(text)
 				}
 			}

@@ -19,7 +19,7 @@ func (cfg Config) publish(ctx context.Context, caller identity.Caller, a Publish
 	}
 	info, err := os.Stat(cfg.Cache.RepoDir(s.Repo))
 	if err != nil || !info.IsDir() {
-		return Site{}, fmt.Errorf("repository '%s' is unavailable", s.Repo)
+		return Site{}, fmt.Errorf(RepoUnavailable, s.Repo)
 	}
 	ref := s.Ref
 	if a.Ref != nil {
@@ -28,7 +28,7 @@ func (cfg Config) publish(ctx context.Context, caller identity.Caller, a Publish
 	sha, err := cfg.Cache.Resolve(ctx, s.Repo, ref)
 	if err != nil {
 		if errors.Is(err, cache.ErrNoCommit) {
-			return Site{}, fmt.Errorf("no commit for '%s'", ref)
+			return Site{}, fmt.Errorf(NoCommit, ref)
 		}
 		return Site{}, cfg.gitError(ctx, err)
 	}

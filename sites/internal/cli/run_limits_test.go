@@ -26,7 +26,10 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
+	"github.com/ikigenba/ikigenba/sites/internal/pages"
+	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
 func limitWait[T any](t *testing.T, ch <-chan T) T {
@@ -72,7 +75,7 @@ func limitResponse(t *testing.T, f *startFixture, path string, status int, body 
 	}
 }
 
-// R-ZZFM-ZVIU R-YAZ0-C8YJ
+// R-ZJIT-LFW1 R-YAZ0-C8YJ
 func TestRunLimitsBelongToCurrentRun(t *testing.T) {
 	first := newStartFixture(t)
 	root := filepath.Join(t.TempDir(), "repos")
@@ -108,7 +111,7 @@ func TestRunLimitsBelongToCurrentRun(t *testing.T) {
 			}
 			limitResponse(t, f, "/blog/", 200, "hello site")
 		} else {
-			if !r.IsError() || limitResultText(t, r) != "site exceeds "+size+" bytes" {
+			if !r.IsError() || limitResultText(t, r) != fmt.Sprintf(tools.TooLarge, mustParseLimit(t, size)) {
 				t.Fatalf("size %s: %s", size, limitResultText(t, r))
 			}
 			limitResponse(t, f, "/blog/", 503, "")
@@ -140,7 +143,7 @@ func TestRunLimitsBelongToCurrentRun(t *testing.T) {
 		}
 		f.start(t)
 		r := limitCall(t, f, "publish", `{"name":"blog"}`)
-		if !r.IsError() || limitResultText(t, r) != "git took longer than "+seconds+" seconds" {
+		if !r.IsError() || limitResultText(t, r) != fmt.Sprintf(tools.TimedOut, mustParseLimit(t, seconds)) {
 			t.Fatal(limitResultText(t, r))
 		}
 		if f.stop(t) != cli.ExitSuccess {
@@ -374,11 +377,21 @@ func TestRunLiveGitDeadlineEndsBeforeAnswer(t *testing.T) {
 			timer <- time.Time{}
 			answer := limitWait(t, answered)
 			held.exited(t)
-			if request == "publish" && answer != "git took longer than 19 seconds" {
+			if request == "publish" && answer != fmt.Sprintf(tools.TimedOut, 19) {
 				t.Fatal(answer)
 			}
-			if request == "rebuild" && (!strings.HasPrefix(answer, "503 ") || !strings.Contains(answer, "Site unavailable")) {
-				t.Fatal(answer)
+			if request == "rebuild" {
+				templates, err := page.Templates().ParseFS(sites.Assets(), "*.html")
+				if err != nil {
+					t.Fatal(err)
+				}
+				var expected bytes.Buffer
+				if err := templates.ExecuteTemplate(&expected, "unavailable", pages.NoticeData{Banner: g.p.Banner(page.User{})}); err != nil {
+					t.Fatal(err)
+				}
+				if answer != fmt.Sprintf("%d %s %v", http.StatusServiceUnavailable, expected.String(), nil) {
+					t.Fatal("rebuild answer differs from unavailable template")
+				}
 			}
 			if g.stop(t) != cli.ExitSuccess {
 				t.Fatal("deadline stop failed")
@@ -618,4 +631,13 @@ func TestRunMakesNoLateStderrWrite(t *testing.T) {
 	if output.late.Load() || output.overlap.Load() {
 		t.Fatalf("late=%v overlap=%v", output.late.Load(), output.overlap.Load())
 	}
+}
+
+func mustParseLimit(t *testing.T, s string) int64 {
+	t.Helper()
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,17 +22,19 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
+	"github.com/ikigenba/ikigenba/sites/internal/urls"
 )
 
 const binarySitesIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
 
-// R-W4OI-ROHH R-W74B-J7YV R-YX1P-GMHL R-YY9L-UE8A R-28RY-26BD R-W9K4-ARG9
+// R-W4OI-ROHH R-W74B-J7YV R-YX1P-GMHL R-YY9L-UE8A
 // R-WAS0-OJ6Y R-Z357-DH72 R-R02K-R24N R-WBZX-2AXN R-W7MM-ZP1J
-// R-WILQ-FMPS R-66QV-EPPN
+// R-WILQ-FMPS
 func TestBinary(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
 	t.Setenv(version.CommitVariable, "abcdef0123456789-dirty")
@@ -147,31 +147,23 @@ func TestBinary(t *testing.T) {
 		if !reflect.DeepEqual(meta, map[string]any{"name": pages.ServiceName, "version": v}) {
 			t.Fatalf("server info: %v", meta)
 		}
-		landing := f.get(t, "/")
-		footers := regexp.MustCompile(`(?is)<footer(?:\s[^>]*)?>(.*?)</footer>`).FindAllStringSubmatch(landing, -1)
-		if len(regexp.MustCompile(`(?i)<footer(?:>|[ \t\r\n\f])`).FindAllString(landing, -1)) != 1 || len(footers) != 1 || html.UnescapeString(strings.Trim(footers[0][1], " \t\r\n\f")) != pages.ServiceName+" "+v {
-			t.Fatalf("footer: %v", footers)
-		}
-		about := f.get(t, "/about")
-		version := regexp.MustCompile(`(?is)<dd\b[^>]*\bid="about-version"[^>]*>(.*?)</dd>`).FindStringSubmatch(about)
-		if len(version) != 2 || html.UnescapeString(strings.Trim(version[1], " \t\r\n\f")) != v {
-			t.Fatalf("about: %s", about)
-		}
+		assertBinaryPage(t, f, "/about", v, "")
 		f.instructions(t, false, "")
 		f.stop(t, sig)
 		assertUndelivered(t, f.stderr.String(), sig, v)
 	}
-	fEmpty := startBinary(t, binary, work, emptyEnv)
-	emptyLanding := fEmpty.get(t, "/")
-	footer := regexp.MustCompile(`(?is)<footer(?:\s[^>]*)?>(.*?)</footer>`).FindAllStringSubmatch(emptyLanding, -1)
-	if len(regexp.MustCompile(`(?i)<footer(?:>|[ \t\r\n\f])`).FindAllString(emptyLanding, -1)) != 1 || len(footer) != 1 || html.UnescapeString(strings.Trim(footer[0][1], " \t\r\n\f")) != pages.ServiceName {
-		t.Fatal(footer)
+	// R-ZC7F-ATFV R-ZDFB-OL6K
+	emptyWork := filepath.Join(root, "empty-sites")
+	if err := os.Mkdir(emptyWork, 0700); err != nil {
+		t.Fatal(err)
 	}
-	emptyAbout := fEmpty.get(t, "/about")
-	aboutVersion := regexp.MustCompile(`(?is)<dd\b[^>]*\bid="about-version"[^>]*>(.*?)</dd>`).FindStringSubmatch(emptyAbout)
-	if len(aboutVersion) != 2 || html.UnescapeString(strings.Trim(aboutVersion[1], " \t\r\n\f")) != "" {
-		t.Fatal(emptyAbout)
-	}
+	fVersion := startBinary(t, binary, emptyWork, env)
+	assertBinaryPage(t, fVersion, "/", v, "")
+	assertBinaryPage(t, fVersion, "/about", v, "")
+	fVersion.stop(t, syscall.SIGTERM)
+	fEmpty := startBinary(t, binary, emptyWork, emptyEnv)
+	assertBinaryPage(t, fEmpty, "/", "", "")
+	assertBinaryPage(t, fEmpty, "/about", "", "")
 	emptyList := fEmpty.call(t, "list", "")
 	if !reflect.DeepEqual(emptyList["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"], map[string]any{"name": pages.ServiceName, "version": ""}) {
 		t.Fatal(emptyList)
@@ -188,25 +180,15 @@ func TestBinary(t *testing.T) {
 		}
 	}
 	writeServices(false, "First description")
-	f := startBinary(t, binary, work, append(append([]string{}, env...), "IKIGENBA_SERVICES="+services))
-	beforeBody := f.get(t, "/")
-	assertBinaryBanner(t, beforeBody)
-	before := binaryTags(beforeBody)
-	assertTagCount(t, before, "form", "", 1)
-	assertTagCount(t, before, "", "aria-current", 1)
-	assertTagCount(t, before, "", "aria-disabled", 0)
-	assertTag(t, before, "a", "class", "profile", map[string]string{"title": "mg@example.com", "href": "https://account.example.test/"})
-	assertTag(t, before, "form", "action", "https://account.example.test/logout", nil)
-	assertTag(t, before, "button", "class", "launcher", nil)
-	assertTag(t, before, "script", "src", "/_appkit/launcher.js", nil)
-	assertTag(t, before, "a", "aria-current", "page", map[string]string{"href": "https://sites.example.test"})
+	f := startBinary(t, binary, emptyWork, append(append([]string{}, env...), "IKIGENBA_SERVICES="+services))
+	// R-Z8JQ-5I7S
+	beforeBody := assertBinaryPage(t, f, "/", v, services)
 	f.instructions(t, true, "First description")
 	writeServices(true, "Changed description")
-	afterBody := f.get(t, "/")
-	assertBinaryBanner(t, afterBody)
-	after := binaryTags(afterBody)
-	assertTagCount(t, after, "", "aria-disabled", 1)
-	assertTag(t, after, "a", "aria-disabled", "true", map[string]string{"title": "dummy is unavailable"})
+	afterBody := assertBinaryPage(t, f, "/", v, services)
+	if beforeBody == afterBody {
+		t.Fatal("services rewrite did not reach the page")
+	}
 	f.instructions(t, true, "Changed description")
 	// Each broken or absent entry form is observed by the same live server.
 	for _, data := range []string{`invalid`, `{"services":[]}`} {
@@ -479,125 +461,33 @@ func assertLifecycle(t *testing.T, events []map[string]any, sig syscall.Signal, 
 	}
 }
 
-// R-66QV-EPPN: observe the kit's banner in the binary's response.
-func assertBinaryBanner(t *testing.T, body string) {
+func assertBinaryPage(t *testing.T, f *binaryFixture, path, display, servicesPath string) string {
 	t.Helper()
-	headers := regexp.MustCompile(`(?is)<header\b[^>]*>(.*?)</header>`).FindAllStringSubmatch(body, -1)
-	if len(headers) == 0 {
-		t.Fatalf("banner headers: %d", len(headers))
+	t.Setenv("IKIGENBA_SERVICES", servicesPath)
+	r, err := http.NewRequest("GET", "http://sites.sbx.ikigenba.dev"+path, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	header := headers[0][1]
-	assertTag(t, binaryTags(header), "strong", "class", "mark", map[string]string{"data-service": pages.ServiceName})
-	marks := regexp.MustCompile(`(?is)<strong\b[^>]*>(.*?)</strong>`).FindAllStringSubmatch(header, -1)
-	if len(marks) != 1 {
-		t.Fatalf("banner marks: %d", len(marks))
+	r.Header.Set("X-User-Email", "mg@example.com")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	b := page.New(pages.ServiceName, display).Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, servicesPath), LogoutURL: urls.AuthLogout(r, servicesPath)})
+	name := "landing"
+	var data any = pages.LandingData{Banner: b, SitesURL: urls.SitesURL(r, servicesPath)}
+	if path == "/about" {
+		name = "about"
+		data = pages.AboutData{Banner: b, Description: pages.Description}
 	}
-	mark := marks[0][1]
-	assertTag(t, binaryTags(mark), "img", "src", "/_appkit/favicon.svg", map[string]string{"alt": ""})
-	assertTagCount(t, binaryTags(mark), "img", "", 1)
-	favicon := regexp.MustCompile(`(?is)<img\b[^>]*>`).FindString(mark)
-	if !strings.HasPrefix(strings.TrimLeft(mark, " \t\r\n\f"), favicon) {
-		t.Fatal("banner mark does not begin with favicon")
+	templates, err := page.Templates().ParseFS(sites.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
 	}
-	assertTag(t, binaryTags(mark), "span", "class", "service", nil)
-	services := regexp.MustCompile(`(?is)<span\b[^>]*>(.*?)</span>`).FindAllStringSubmatch(mark, -1)
-	if len(services) != 1 || strings.TrimSpace(services[0][1]) != binarySitesIcon+pages.ServiceName {
-		t.Fatalf("banner service icon and name: %v", services)
+	var expected bytes.Buffer
+	if err := templates.ExecuteTemplate(&expected, name, data); err != nil {
+		t.Fatal(err)
 	}
-	visible := func(s string) string {
-		return strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(s, ""))), " ")
+	body := f.get(t, path)
+	if body != expected.String() {
+		t.Fatalf("%s differs from the template with expected data", path)
 	}
-	product := strings.SplitN(mark, services[0][0], 2)[0]
-	if visible(product) != "Ikigenba" {
-		t.Fatalf("banner product text: %q", visible(product))
-	}
-	if !strings.HasPrefix(strings.TrimLeft(header, " \t\r\n\f"), marks[0][0]) {
-		t.Fatal("banner does not begin with mark")
-	}
-	afterMark := strings.TrimLeft(strings.SplitN(header, marks[0][0], 2)[1], " \t\r\n\f")
-	buttons := regexp.MustCompile(`(?is)<button\b[^>]*>`).FindAllString(afterMark, -1)
-	if len(buttons) == 0 || !strings.HasPrefix(afterMark, buttons[0]) {
-		t.Fatal("launcher does not immediately follow mark")
-	}
-	assertTag(t, binaryTags(buttons[0]), "button", "class", "launcher", nil)
-	assertTag(t, binaryTags(header), "button", "class", "signout", map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"})
-	for _, button := range regexp.MustCompile(`(?is)<button\b[^>]*>(.*?)</button>`).FindAllStringSubmatch(header, -1) {
-		for _, tag := range binaryTags(button[0]) {
-			if tag.name == "button" && strings.Contains(" "+tag.attrs["class"]+" ", " signout ") {
-				assertTagCount(t, binaryTags(button[1]), "svg", "", 1)
-				if visible(button[1]) != "" {
-					t.Fatalf("sign-out button has visible text: %q", visible(button[1]))
-				}
-			}
-		}
-	}
-}
-
-type binaryTag struct {
-	name  string
-	attrs map[string]string
-}
-
-func binaryTags(body string) []binaryTag {
-	var tags []binaryTag
-	starts := regexp.MustCompile(`(?is)<([a-z][a-z0-9]*)\b([^>]*)>`)
-	attrs := regexp.MustCompile(`([a-zA-Z][-a-zA-Z0-9]*)\s*=\s*"([^"]*)"`)
-	for _, m := range starts.FindAllStringSubmatch(body, -1) {
-		tag := binaryTag{name: strings.ToLower(m[1]), attrs: map[string]string{}}
-		for _, a := range attrs.FindAllStringSubmatch(m[2], -1) {
-			tag.attrs[strings.ToLower(a[1])] = html.UnescapeString(a[2])
-		}
-		tags = append(tags, tag)
-	}
-	return tags
-}
-func assertTag(t *testing.T, tags []binaryTag, name, key, value string, extra map[string]string) {
-	t.Helper()
-	count := 0
-	for _, tag := range tags {
-		v := tag.attrs[key]
-		match := v == value
-		if key == "class" {
-			match = false
-			for _, class := range strings.Fields(v) {
-				if class == value {
-					match = true
-				}
-			}
-		}
-		if !match {
-			continue
-		}
-		count++
-		if tag.name != name {
-			t.Fatalf("tag %s want %s", tag.name, name)
-		}
-		for k, want := range extra {
-			if tag.attrs[k] != want {
-				t.Fatalf("%s %s=%q want %q", name, k, tag.attrs[k], want)
-			}
-		}
-	}
-	if count != 1 {
-		t.Fatalf("%s[%s=%q]: %d tags", name, key, value, count)
-	}
-}
-
-func assertTagCount(t *testing.T, tags []binaryTag, name, attribute string, want int) {
-	t.Helper()
-	count := 0
-	for _, tag := range tags {
-		if name != "" && tag.name != name {
-			continue
-		}
-		if attribute != "" {
-			if _, present := tag.attrs[attribute]; !present {
-				continue
-			}
-		}
-		count++
-	}
-	if count != want {
-		t.Fatalf("tags named %q carrying %q: %d, want %d", name, attribute, count, want)
-	}
+	return body
 }

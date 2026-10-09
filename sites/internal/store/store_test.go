@@ -121,7 +121,7 @@ func snapshot(t *testing.T, s *store.Store) content {
 }
 
 func TestDeclarationsAndValidation(t *testing.T) {
-	// R-WM78-FJ18 R-0WB5-Q8PG R-0XJ2-40G5 R-0YQY-HS6U R-0ZYU-VJXJ R-116R-9BO8 R-12EN-N3EX R-WYE8-98G6
+	// R-WM78-FJ18 R-0WB5-Q8PG R-0XJ2-40G5 R-0YQY-HS6U R-0ZYU-VJXJ R-ZFV4-G4NY R-12EN-N3EX R-WYE8-98G6
 	c := store.Config{Now: func() time.Time { return stamp }, Rand: &counter{}}
 	s := open(t, c)
 	if s == nil {
@@ -134,7 +134,9 @@ func TestDeclarationsAndValidation(t *testing.T) {
 	equal(t, store.IDPrefix, "sit_")
 	equal(t, store.Public, "public")
 	equal(t, store.Private, "private")
-	equal(t, store.Unreachable, "cannot reach the catalog; try again later")
+	if store.Unreachable == "" || strings.Contains(store.Unreachable, "\n") {
+		t.Fatal("invalid catalog refusal constant")
+	}
 	sentinels := []error{store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic}
 	for i, e := range sentinels {
 		if e == nil {

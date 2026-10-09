@@ -1,16 +1,19 @@
 package web_test
 
 import (
+	"bytes"
 	"net/http"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/sites"
+	"github.com/ikigenba/ikigenba/sites/internal/pages"
 )
 
 // R-8ED5-8WC1 R-8GSY-0FTF R-8J8Q-RZAT R-DMWP-R6AY R-F04K-TWPO
-// R-8MWF-XAIW R-8PC8-OU0A R-8SZX-U58D R-F506-CZOG R-F682-QRF5
+// R-8MWF-XAIW R-8PC8-OU0A R-8SZX-U58D R-F506-CZOG R-Z9RM-J9YH
 func TestSharedFiles(t *testing.T) {
 	f := fresh(t)
 	other := fresh(t)
@@ -105,7 +108,7 @@ func TestSharedFiles(t *testing.T) {
 	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/feedback.js/", "/_appkit/feedback.js/x", "/_appkit/FEEDBACK.JS", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/FAVICON.SVG"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := f.get(t, method, path, "sites", "", map[string]string{"If-None-Match": "*"})
-			if r.Code != 404 || strings.Contains(r.Body.String(), "There is nothing at this address.") {
+			if r.Code != 404 || r.Body.String() == notfoundBody(t, f) {
 				t.Fatalf("unknown static %s %s %d", method, path, r.Code)
 			}
 		}
@@ -159,4 +162,17 @@ func TestSharedFilesPlainFontAliasesMissing(t *testing.T) {
 			}
 		}
 	}
+}
+
+func notfoundBody(t *testing.T, f *fixture) string {
+	t.Helper()
+	templates, err := page.Templates().ParseFS(sites.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	if err := templates.ExecuteTemplate(&b, "notfound", pages.NoticeData{Banner: f.cfg.Banner(page.User{})}); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }
