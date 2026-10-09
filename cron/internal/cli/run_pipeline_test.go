@@ -437,7 +437,7 @@ func TestRunCutsOffRequestsAtRealDeadlineWithoutFiring(t *testing.T) {
 	}
 }
 
-// R-JCVY-7M9S R-JE3U-LE0H R-JFBQ-Z5R6
+// R-JCVY-7M9S R-3STN-NF63 R-3U1K-16WS
 func TestRunRejectedEventsHaveExactDiagnosticsAndLoss(t *testing.T) {
 	h := newRunHarness(t, t.TempDir())
 	h.p.Sink = runTelemetrySink(func(c context.Context, e telemetry.Event) error { _ = h.tc.Deliver(c, e); return telemetry.ErrRejected })
@@ -490,7 +490,7 @@ func TestRunRejectedEventsHaveExactDiagnosticsAndLoss(t *testing.T) {
 	}
 }
 
-// R-N4KA-F7HR
+// R-3WHC-SQE6
 func TestRunBusDeliveryContinuesDuringDrain(t *testing.T) {
 	for _, recover := range []bool{false, true} {
 		t.Run(fmt.Sprint(recover), func(t *testing.T) {
@@ -652,7 +652,7 @@ func (w *runGuardOutput) Write(b []byte) (int, error) {
 	return w.out.Write(b)
 }
 
-// R-JNV1-NJY1
+// R-3YX5-K9VK
 func TestRunSerializesStderrOfConcurrentRequestsAndFire(t *testing.T) {
 	h := newRunHarness(t, t.TempDir())
 	out := &runGuardOutput{}

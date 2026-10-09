@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -22,8 +21,10 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/version"
+	cron "github.com/ikigenba/ikigenba/cron"
 	"github.com/ikigenba/ikigenba/cron/internal/cli"
 	"github.com/ikigenba/ikigenba/cron/internal/pages"
 )
@@ -191,13 +192,29 @@ func (b *binaryRun) tool(t *testing.T, name string, args json.RawMessage) map[st
 	}
 	return result
 }
-func elementText(t *testing.T, body, pattern string) string {
+func binaryPage(t *testing.T, name, display, servicesPath, authBase string) string {
 	t.Helper()
-	matches := regexp.MustCompile(pattern).FindAllStringSubmatch(body, -1)
-	if len(matches) != 1 {
-		t.Fatalf("element count %d for %s", len(matches), pattern)
+	t.Setenv(services.Variable, servicesPath)
+	banner := page.New(pages.ServiceName, display).Banner(page.User{Email: "mg@example.com", ProfileURL: authBase + "/", LogoutURL: authBase + "/logout"})
+	ts := page.Templates()
+	var data any = banner
+	if name != "footer" {
+		var err error
+		ts, err = ts.ParseFS(cron.Assets(), "*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "landing" {
+			data = pages.LandingData{Banner: banner, Triggers: []pages.TriggerRow{}}
+		} else {
+			data = pages.AboutData{Banner: banner, Description: pages.Description}
+		}
 	}
-	return html.UnescapeString(strings.Trim(matches[0][1], " \t\r\n\f"))
+	var out bytes.Buffer
+	if err := ts.ExecuteTemplate(&out, name, data); err != nil {
+		t.Fatal(err)
+	}
+	return out.String()
 }
 func writeServices(t *testing.T, path string, entries []map[string]any) {
 	t.Helper()
@@ -210,7 +227,7 @@ func writeServices(t *testing.T, path string, entries []map[string]any) {
 	}
 }
 func entry(name, url, desc, socket string) map[string]any {
-	return map[string]any{"name": name, "url": url, "description": desc, "socket": socket, "enabled": true, "mcp": true, "icon": "<svg></svg>"}
+	return map[string]any{"name": name, "url": url, "description": desc, "socket": socket, "enabled": true, "mcp": true, "icon": "test-icon"}
 }
 func rpcResult(t *testing.T, b *binaryRun, method, protocol string) map[string]any {
 	t.Helper()
@@ -234,9 +251,9 @@ func rpcResult(t *testing.T, b *binaryRun, method, protocol string) map[string]a
 }
 
 // TestBinary is the module's only test that builds and executes a process.
-// R-8FB6-MZVW R-8GJ3-0RML R-8HQZ-EJDA R-8IYV-SB3Z R-8K6S-62UO R-8LEO-JULD
+// R-8FB6-MZVW R-8GJ3-0RML R-8HQZ-EJDA R-8IYV-SB3Z R-3NY2-4C7B R-3P5Y-I3Y0
 // R-8MMK-XMC2 R-8NUH-BE2R R-8QAA-2XK5 R-8RI6-GPAU R-PD6S-T4SE R-PEEP-6WJ3
-// R-I7PH-98TV R-DAXZ-PF62
+// R-4B45-DZAI R-4CC1-RR17
 func TestBinary(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	t.Setenv(version.CommitVariable, "abcdef1234567890abcdef1234567890abcdef12")
@@ -286,13 +303,13 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("database %v %v", info, err)
 		}
 		landing := string(b.request(t, "/", "GET", nil, nil))
-		footer := elementText(t, landing, `(?is)<footer(?:\s[^>]*)?>(.*?)</footer>`)
-		if footer != strings.Trim(pages.ServiceName+" "+display, " \t\r\n\f") {
-			t.Fatal(footer)
+		footer := binaryPage(t, "footer", display, "", "https://auth.sbx.ikigenba.dev")
+		if !strings.Contains(landing, footer) {
+			t.Fatal("footer differs from template")
 		}
 		about := string(b.request(t, "/about", "GET", nil, nil))
-		if elementText(t, about, `(?is)<dd\b[^>]*\bid="about-version"[^>]*>(.*?)</dd>`) != display {
-			t.Fatal("about display")
+		if about != binaryPage(t, "about", display, "", "https://auth.sbx.ikigenba.dev") {
+			t.Fatal("about differs from template")
 		}
 		result := b.tool(t, "list", nil)
 		meta := result["_meta"].(map[string]any)
@@ -341,11 +358,11 @@ func TestBinary(t *testing.T) {
 	// Unset identity is also propagated to served pages and MCP.
 	emptyRun := startBinary(t, bin, t.TempDir(), []string{})
 	emptyLanding := string(emptyRun.request(t, "/", "GET", nil, nil))
-	if elementText(t, emptyLanding, `(?is)<footer(?:\s[^>]*)?>(.*?)</footer>`) != pages.ServiceName {
+	if !strings.Contains(emptyLanding, binaryPage(t, "footer", "", "", "https://auth.sbx.ikigenba.dev")) {
 		t.Fatal("empty display footer")
 	}
 	emptyAbout := string(emptyRun.request(t, "/about", "GET", nil, nil))
-	if elementText(t, emptyAbout, `(?is)<dd\b[^>]*\bid="about-version"[^>]*>(.*?)</dd>`) != "" {
+	if emptyAbout != binaryPage(t, "about", "", "", "https://auth.sbx.ikigenba.dev") {
 		t.Fatal("empty display about")
 	}
 	emptyInfo := emptyRun.tool(t, "list", nil)["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"]
@@ -382,11 +399,16 @@ func TestBinary(t *testing.T) {
 	}
 	checkInstructions("published cron description")
 	body := string(b.request(t, "/", "GET", nil, nil))
-	checkLauncher(t, body, false)
+	if body != binaryPage(t, "landing", display, servicesPath, "https://auth.alternate.example") {
+		t.Fatal("services landing differs from template")
+	}
 	entries[1]["enabled"] = false
 	entries[2]["description"] = "changed published description"
 	writeServices(t, servicesPath, entries)
-	checkLauncher(t, string(b.request(t, "/", "GET", nil, nil)), true)
+	changed := string(b.request(t, "/", "GET", nil, nil))
+	if changed == body || changed != binaryPage(t, "landing", display, servicesPath, "https://auth.alternate.example") {
+		t.Fatal("rewritten services landing differs")
+	}
 	checkInstructions("changed published description")
 	// The file is read afresh: no cron entry, malformed, missing, and empty description.
 	writeServices(t, servicesPath, entries[:2])
@@ -400,8 +422,8 @@ func TestBinary(t *testing.T) {
 	}
 	checkInstructions("")
 	missing := string(b.request(t, "/", "GET", nil, nil))
-	if len(tags(missing, "button", "class", "launcher")) != 0 || len(tags(missing, "input", "", "")) != 0 || strings.Contains(missing, "/_appkit/launcher.js") {
-		t.Fatal("missing services launcher")
+	if missing != binaryPage(t, "landing", display, servicesPath, "https://auth.sbx.ikigenba.dev") {
+		t.Fatal("missing services landing differs from template")
 	}
 	entries[2]["description"] = ""
 	writeServices(t, servicesPath, entries)
@@ -486,74 +508,5 @@ func TestBinary(t *testing.T) {
 				t.Fatal("request event order", recorded)
 			}
 		})
-	}
-}
-
-// tags extracts start tags and their attributes from response HTML only.
-func tags(body, name, key, value string) []map[string]string {
-	var out []map[string]string
-	for _, tag := range regexp.MustCompile(`(?is)<`+name+`(?:\s[^>]*)?>`).FindAllString(body, -1) {
-		attrs := map[string]string{"tag": strings.ToLower(regexp.MustCompile(`^<([a-zA-Z][a-zA-Z0-9]*)`).FindStringSubmatch(tag)[1])}
-		for _, a := range regexp.MustCompile(`([a-zA-Z][-a-zA-Z0-9]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`).FindAllStringSubmatch(tag, -1) {
-			attrs[strings.ToLower(a[1])] = html.UnescapeString(a[2] + a[3] + a[4])
-		}
-		_, present := attrs[key]
-		if key == "" || (value == "*" && present) || attrs[key] == value || (key == "class" && containsWord(attrs[key], value)) {
-			out = append(out, attrs)
-		}
-	}
-	return out
-}
-func containsWord(text, word string) bool {
-	for _, v := range strings.Fields(text) {
-		if v == word {
-			return true
-		}
-	}
-	return false
-}
-func checkLauncher(t *testing.T, body string, disabled bool) {
-	t.Helper()
-	expect := func(name, key, value string) map[string]string {
-		t.Helper()
-		found := tags(body, name, key, value)
-		if len(found) != 1 {
-			t.Fatalf("%s %s=%s count %d", name, key, value, len(found))
-		}
-		return found[0]
-	}
-	profile := expect("a", "class", "profile")
-	if profile["title"] != "mg@example.com" || profile["href"] != "https://auth.alternate.example/" {
-		t.Fatal(profile)
-	}
-	if expect("form", "", "")["action"] != "https://auth.alternate.example/logout" {
-		t.Fatal("logout")
-	}
-	expect("button", "class", "launcher")
-	expect("script", "src", "/_appkit/launcher.js")
-	if expect("[a-zA-Z][a-zA-Z0-9]*", "id", "services")["tag"] != "nav" {
-		t.Fatal("services is not nav")
-	}
-	nav := elementText(t, body, `(?is)<nav\b[^>]*\bid="services"[^>]*>(.*?)</nav>`)
-	links := tags(nav, "a", "", "")
-	if len(links) != 3 {
-		t.Fatal(links)
-	}
-	for i, url := range []string{"https://auth.alternate.example", "https://dummy.example", "https://cron.example"} {
-		if (!disabled || i != 1) && links[i]["href"] != url {
-			t.Fatal(links)
-		}
-	}
-	current := expect("[a-zA-Z][a-zA-Z0-9]*", "aria-current", "*")
-	if current["tag"] != "a" || current["aria-current"] != "page" || current["href"] != "https://cron.example" {
-		t.Fatal(current)
-	}
-	unavailable := tags(body, "[a-zA-Z][a-zA-Z0-9]*", "aria-disabled", "*")
-	if disabled {
-		if len(unavailable) != 1 || unavailable[0]["tag"] != "a" || unavailable[0]["title"] != "dummy is unavailable" {
-			t.Fatal(unavailable)
-		}
-	} else if len(unavailable) != 0 {
-		t.Fatal(unavailable)
 	}
 }

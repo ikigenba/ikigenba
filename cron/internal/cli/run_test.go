@@ -442,7 +442,7 @@ func TestRunDatabaseFailureBeforeReadiness(t *testing.T) {
 	}
 }
 
-// R-86RV-YLP1 R-87ZS-CDFQ R-897O-Q56F R-8AFL-3WX4 R-8BNH-HONT R-8CVD-VGEI R-IZH2-0545 R-J1WU-ROLJ R-J34R-5GC8 R-J4CN-J82X R-JAG5-G2SE R-JBO1-TUJ3 R-JMN5-9S7C
+// R-86RV-YLP1 R-87ZS-CDFQ R-897O-Q56F R-8AFL-3WX4 R-8BNH-HONT R-8CVD-VGEI R-IZH2-0545 R-J1WU-ROLJ R-J34R-5GC8 R-J4CN-J82X R-JAG5-G2SE R-JBO1-TUJ3 R-3XP9-6I4V
 func TestRunPersistenceInjectedSourcesAndLifecycle(t *testing.T) {
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "work")
@@ -658,7 +658,7 @@ func TestRunAheadDatabaseWarningPreservesStatus(t *testing.T) {
 	}
 }
 
-// R-J5KJ-WZTM
+// R-3RLR-9NFE
 func TestRunServicesFileDoesNotRefuseStart(t *testing.T) {
 	for _, kind := range []string{"absent", "missing", "invalid", "directory"} {
 		t.Run(kind, func(t *testing.T) {
@@ -695,7 +695,7 @@ func TestRunServicesFileDoesNotRefuseStart(t *testing.T) {
 	}
 }
 
-// R-IVTC-UTW2
+// R-3QDU-VVOP
 func TestRunLoadsActiveAndPausedSlotsWithoutFiring(t *testing.T) {
 	dir := t.TempDir()
 	clock := newRunClock()

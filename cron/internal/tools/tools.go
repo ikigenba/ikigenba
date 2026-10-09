@@ -102,15 +102,25 @@ func Register(srv *mcp.Server, cfg Config) {
 
 type handlers struct{ cfg Config }
 
-func missing(slug string) error { return fmt.Errorf("no trigger named '%s'", slug) }
+// NoTrigger describes a trigger that the caller cannot find.
+func NoTrigger(slug string) string { return fmt.Sprintf("no trigger named '%s'", slug) }
+
+// InvalidSlug describes a refused slug.
+func InvalidSlug(slug string) string { return fmt.Sprintf("invalid slug '%s'", slug) }
+
+// SlugTaken describes an occupied slug.
+func SlugTaken(slug string) string { return fmt.Sprintf("a trigger named '%s' already exists", slug) }
+
+// InvalidWhen describes a refused schedule.
+func InvalidWhen(when string) string { return fmt.Sprintf("invalid when '%s'", when) }
 func answerError(err error, slug, when string) error {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return missing(slug)
+		return errors.New(NoTrigger(slug))
 	case errors.Is(err, store.ErrSlugTaken):
-		return fmt.Errorf("a trigger named '%s' already exists", slug)
+		return errors.New(SlugTaken(slug))
 	case errors.Is(err, store.ErrInvalid):
-		return fmt.Errorf("invalid when '%s'", when)
+		return errors.New(InvalidWhen(when))
 	default:
 		return errors.New(store.Unreachable)
 	}
@@ -142,7 +152,7 @@ func (h handlers) list(ctx context.Context, _ identity.Caller, _ ListArgs) (Trig
 }
 func (h handlers) show(ctx context.Context, _ identity.Caller, a ShowArgs) (Trigger, error) {
 	if !store.ValidSlug(a.Slug) {
-		return Trigger{}, missing(a.Slug)
+		return Trigger{}, errors.New(NoTrigger(a.Slug))
 	}
 	x, err := h.cfg.Store.Get(ctx, a.Slug)
 	if err != nil {
@@ -152,17 +162,17 @@ func (h handlers) show(ctx context.Context, _ identity.Caller, a ShowArgs) (Trig
 }
 func (h handlers) create(ctx context.Context, c identity.Caller, a CreateArgs) (Trigger, error) {
 	if !store.ValidSlug(a.Slug) {
-		return Trigger{}, fmt.Errorf("invalid slug '%s'", a.Slug)
+		return Trigger{}, errors.New(InvalidSlug(a.Slug))
 	}
 	_, err := h.cfg.Store.Get(ctx, a.Slug)
 	if err == nil {
-		return Trigger{}, fmt.Errorf("a trigger named '%s' already exists", a.Slug)
+		return Trigger{}, errors.New(SlugTaken(a.Slug))
 	}
 	if !errors.Is(err, store.ErrNotFound) {
 		return Trigger{}, answerError(err, a.Slug, a.When)
 	}
 	if !store.ValidWhen(a.When) {
-		return Trigger{}, fmt.Errorf("invalid when '%s'", a.When)
+		return Trigger{}, errors.New(InvalidWhen(a.When))
 	}
 	x, err := h.cfg.Scheduler.Create(ctx, store.Draft{Slug: a.Slug, When: a.When, OwnerID: c.UserID, OwnerEmail: c.Email})
 	if err != nil {
@@ -172,7 +182,7 @@ func (h handlers) create(ctx context.Context, c identity.Caller, a CreateArgs) (
 }
 func (h handlers) update(ctx context.Context, c identity.Caller, a UpdateArgs) (Trigger, error) {
 	if !store.ValidSlug(a.Slug) {
-		return Trigger{}, missing(a.Slug)
+		return Trigger{}, errors.New(NoTrigger(a.Slug))
 	}
 	x, err := h.cfg.Scheduler.Update(ctx, c.UserID, a.Slug, a.When)
 	if err != nil {
@@ -182,7 +192,7 @@ func (h handlers) update(ctx context.Context, c identity.Caller, a UpdateArgs) (
 }
 func (h handlers) pause(ctx context.Context, c identity.Caller, a PauseArgs) (Trigger, error) {
 	if !store.ValidSlug(a.Slug) {
-		return Trigger{}, missing(a.Slug)
+		return Trigger{}, errors.New(NoTrigger(a.Slug))
 	}
 	x, err := h.cfg.Scheduler.Pause(ctx, c.UserID, a.Slug)
 	if err != nil {
@@ -192,7 +202,7 @@ func (h handlers) pause(ctx context.Context, c identity.Caller, a PauseArgs) (Tr
 }
 func (h handlers) resume(ctx context.Context, c identity.Caller, a ResumeArgs) (Trigger, error) {
 	if !store.ValidSlug(a.Slug) {
-		return Trigger{}, missing(a.Slug)
+		return Trigger{}, errors.New(NoTrigger(a.Slug))
 	}
 	x, err := h.cfg.Scheduler.Resume(ctx, c.UserID, a.Slug)
 	if err != nil {
@@ -202,7 +212,7 @@ func (h handlers) resume(ctx context.Context, c identity.Caller, a ResumeArgs) (
 }
 func (h handlers) delete(ctx context.Context, c identity.Caller, a DeleteArgs) (Deleted, error) {
 	if !store.ValidSlug(a.Slug) {
-		return Deleted{}, missing(a.Slug)
+		return Deleted{}, errors.New(NoTrigger(a.Slug))
 	}
 	x, err := h.cfg.Scheduler.Delete(ctx, c.UserID, a.Slug)
 	if err != nil {

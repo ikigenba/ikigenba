@@ -173,7 +173,7 @@ func TestNextSlot(t *testing.T) {
 	}
 }
 
-// R-GDKS-JT0O R-GESO-XKRD R-GH8H-P48R R-GOJV-ZQOX R-GPRS-DIFM R-GS7L-51X0 R-GTFH-ITNP R-HLH6-BJPO
+// R-GDKS-JT0O R-GESO-XKRD R-GH8H-P48R R-GOJV-ZQOX R-43SR-3CUC R-GS7L-51X0 R-GTFH-ITNP R-450N-H4L1
 func TestStartAndFreshSlots(t *testing.T) {
 	f := newFixture(t)
 	h := f.create(t, "hourly", "@hourly")

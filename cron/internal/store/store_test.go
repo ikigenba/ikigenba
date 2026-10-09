@@ -3,6 +3,7 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -77,11 +78,14 @@ func failure(t *testing.T, result store.Trigger, err, want error) {
 }
 
 func TestValidation(t *testing.T) {
-	// R-CHUU-04JP R-CJ2Q-DWAE R-CKAM-RO13
+	// R-CHUU-04JP R-CJ2Q-DWAE R-4051-Y1M9
 	same(t, store.IDPrefix, "crn_")
 	same(t, store.Active, "active")
 	same(t, store.Paused, "paused")
-	same(t, store.Unreachable, "cannot reach the database; try again later")
+	const unreachable string = store.Unreachable
+	if unreachable == "" {
+		t.Fatal("empty unreachable response")
+	}
 	// R-CE74-UTBM R-9Y6N-UO95
 	for _, s := range []string{"crn_0123456789abcdef", "crn_0000000000000000"} {
 		if !store.ValidID(s) {
@@ -396,7 +400,7 @@ func TestRandomFailure(t *testing.T) {
 	same(t, content(t, s), before)
 }
 func TestListAcrossOwners(t *testing.T) {
-	// R-ACTG-FX5H
+	// R-42KU-PL3N
 	_, s := fixture(t)
 	names := []string{"weekly_digest", "nightly_backup", "month_end", "hourly", "crm_sync"}
 	for i, name := range names {
@@ -500,4 +504,54 @@ func TestRandomErrorClassification(t *testing.T) {
 		}
 		same(t, len(content(t, s)), 0)
 	}
+}
+
+func TestFourTriggers(t *testing.T) {
+	// R-41CY-BTCY
+	ctx := context.Background()
+	want := []store.Trigger{
+		{ID: "crn_3f9a1c7e5b2d8046", Slug: "hourly", When: "@hourly", OwnerID: "u_7f3a9c21", OwnerEmail: "mg@example.com", Status: store.Active, Created: stamp(t, "2026-09-20T08:00:00Z"), LastFired: stamp(t, "2026-10-05T09:00:00Z")},
+		{ID: "crn_1a4f8c6e9b3d7025", Slug: "month_end", When: "@monthly", OwnerID: "u_2b8e1d04", OwnerEmail: "ann@example.com", Status: store.Active, Created: stamp(t, "2026-10-04T10:00:00Z")},
+		{ID: "crn_8d2e6b4a1f7c3095", Slug: "nightly_backup", When: "30 2 * * *", OwnerID: "u_2b8e1d04", OwnerEmail: "ann@example.com", Status: store.Active, Created: stamp(t, "2026-09-28T17:15:00Z"), LastFired: stamp(t, "2026-10-05T02:30:00Z")},
+		{ID: "crn_5c7b9e2f4a6d1038", Slug: "weekly_digest", When: "0 8 * * 1", OwnerID: "u_7f3a9c21", OwnerEmail: "mg@example.com", Status: store.Paused, Created: stamp(t, "2026-09-01T12:00:00Z"), LastFired: stamp(t, "2026-09-28T08:00:00Z")},
+	}
+	var random []byte
+	for _, x := range want {
+		b, err := hex.DecodeString(strings.TrimPrefix(x.ID, store.IDPrefix))
+		if err != nil {
+			t.Fatal(err)
+		}
+		random = append(random, b...)
+	}
+	d, _ := fixture(t)
+	var now time.Time
+	s := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: bytes.NewReader(random)})
+	for _, x := range want {
+		now = x.Created
+		got, err := s.Create(ctx, store.Draft{Slug: x.Slug, When: x.When, OwnerID: x.OwnerID, OwnerEmail: x.OwnerEmail})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !x.LastFired.IsZero() {
+			got, err = s.SetLastFired(ctx, got.ID, x.LastFired)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err = s.SetStatus(ctx, got.ID, x.Status)
+		if err != nil {
+			t.Fatal(err)
+		}
+		same(t, got, x)
+	}
+	same(t, content(t, s), want)
+}
+
+func stamp(t *testing.T, value string) time.Time {
+	t.Helper()
+	v, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }

@@ -18,10 +18,10 @@ import (
 
 // Trigger identifiers, statuses and the shared unreachable response.
 const (
-	IDPrefix    = "crn_"
-	Active      = "active"
-	Paused      = "paused"
-	Unreachable = "cannot reach the database; try again later"
+	IDPrefix           = "crn_"
+	Active             = "active"
+	Paused             = "paused"
+	Unreachable string = "cannot reach the database; try again later"
 )
 
 // Errors distinguish record refusals from unavailable storage.

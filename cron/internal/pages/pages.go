@@ -20,7 +20,7 @@ import (
 const ServiceName = "cron"
 
 // Description is cron's manifest and about description.
-const Description = "Triggers that emit events on a schedule"
+const Description string = "Triggers that emit events on a schedule"
 
 // Set holds the parsed embedded page templates.
 type Set struct{ templates *template.Template }

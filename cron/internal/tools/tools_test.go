@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -294,23 +295,23 @@ func (f *fixture) unchanged(name string, args any, want string) {
 	}
 }
 
-// R-K4NS-JWTO R-K5VO-XOKD R-K73L-BGB2 R-K8BH-P81R R-K9JE-2ZSG R-KARA-GRJ5 R-KBZ6-UJ9U
-// R-KMYA-AGY3 R-KO66-O8OS R-KPE3-20FH R-KQLZ-FS66 R-KRTV-TJWV R-KT1S-7BNK R-KU9O-L3E9 R-V886-VS2E
+// R-K4NS-JWTO R-4JNG-2DHD R-4KVC-G582 R-4M38-TWYR R-4NB5-7OPG R-4OJ1-LGG5 R-4PQX-Z86U
+// R-KMYA-AGY3 R-4TEN-4JEX R-4UMJ-IB5M R-4VUF-W2WB R-4YA8-NMDP R-4ZI5-1E4E R-50Q1-F5V3 R-51XX-SXLS
 // R-KWPH-CMVN R-KZ5A-46D1 R-L0D6-HY3Q R-L1L2-VPUF
 func TestInventory(t *testing.T) {
 	f := setup(t, true)
 	expected := []struct {
-		name, description, input, output string
-		effect                           mcp.Effect
-		args                             any
+		name, input, output string
+		effect              mcp.Effect
+		args                any
 	}{
-		{"list", "Every trigger in the space, by slug.\n\nTakes no arguments. Every user's triggers are listed, not only yours. Each trigger has its id, slug, when (its schedule, as it was given), owner (the email of the user who created it), status (active or paused), last_fired (the slot it last fired for; absent when it has never fired), and next (the next slot it fires; absent while paused). Times are UTC. Use show for one trigger's created time.", `{"type":"object","additionalProperties":false}`, `{"type":"object","properties":{"triggers":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}}},"additionalProperties":false}`, mcp.Read, tools.ListArgs{}},
-		{"show", "One trigger, with its schedule, its owner, and when it last fired and fires next.\n\nPass slug, the trigger's slug; any user's trigger can be shown. The result has its id, slug, when (its schedule, as it was given), owner (the email of the user who created it), status (active or paused), created, last_fired (the slot it last fired for; absent when it has never fired), and next (the next slot it fires; absent while paused). Times are UTC.", `{"type":"object","properties":{"slug":{"type":"string","description":"The trigger's slug."}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Read, tools.ShowArgs{}},
-		{"create", "Create a trigger that emits an event on a schedule.\n\nslug is 1 to 64 characters: a lowercase letter, then lowercase letters and digits, with single underscores between them; it must not already be a trigger's slug in the space, whoever owns that trigger. when is the schedule, read in UTC: five cron fields (minute hour day-of-month month day-of-week), such as */15 * * * * or 0 9 * * MON-FRI, separated by single spaces with nothing before or after, or exactly one of @hourly, @daily, @weekly, @monthly, and @yearly; there is no seconds field and no other descriptor. Each time the schedule comes due, the trigger emits cron.<slug>.fired on the suite's event bus, with attrs trigger (its id), when, and scheduled (the slot it fired for); a slot missed is never made up. Creating it emits cron.<slug>.created. The trigger is yours: only you can update, pause, resume, or delete it. The result is what show returns.", `{"type":"object","properties":{"slug":{"type":"string","description":"The new trigger's slug: a lowercase letter, then lowercase letters and digits with single underscores between them, 1 to 64 characters, not already a trigger's slug in the space."},"when":{"type":"string","description":"The schedule, read in UTC: five cron fields, or @hourly, @daily, @weekly, @monthly, or @yearly."}},"required":["slug","when"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.CreateArgs{}},
-		{"update", "Change the schedule of a trigger you own.\n\nPass slug and when, the new schedule, under the rules of create. Only the schedule changes: the trigger keeps its id, slug, status, and last_fired, and its next slot follows the new schedule. No event is emitted. Another user's trigger is refused as one that does not exist. The result is what show returns.", `{"type":"object","properties":{"slug":{"type":"string","description":"The trigger's slug."},"when":{"type":"string","description":"The new schedule, under the rules of create."}},"required":["slug","when"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.UpdateArgs{}},
-		{"pause", "Stop a trigger you own from firing.\n\nPass slug. A paused trigger keeps its slug, its schedule, and last_fired, has no next, and fires nothing until you resume it; the slots that pass while it is paused are never fired. Pausing emits cron.<slug>.paused; pausing a trigger already paused changes nothing. Another user's trigger is refused as one that does not exist. The result is what show returns.", `{"type":"object","properties":{"slug":{"type":"string","description":"The trigger's slug."}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Destructive, tools.PauseArgs{}},
-		{"resume", "Start a paused trigger you own firing again, from its next slot.\n\nPass slug. The trigger fires again from the first slot of its schedule after the call; the slots it missed while paused are not made up. Resuming emits cron.<slug>.resumed; resuming a trigger already active changes nothing. Another user's trigger is refused as one that does not exist. The result is what show returns.", `{"type":"object","properties":{"slug":{"type":"string","description":"The trigger's slug."}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.ResumeArgs{}},
-		{"delete", "Delete a trigger you own.\n\nPass slug. The trigger never fires again, and deleting it emits cron.<slug>.deleted. Its slug is free for anyone to take. A trigger created with the slug later is a new trigger with its own id. Another user's trigger is refused as one that does not exist. The result is deleted, true, and the id of the deleted trigger.", `{"type":"object","properties":{"slug":{"type":"string","description":"The trigger's slug."}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"deleted":{"type":"boolean"},"id":{"type":"string"}},"additionalProperties":false}`, mcp.Destructive, tools.DeleteArgs{}},
+		{"list", `{"type":"object","additionalProperties":false}`, `{"type":"object","properties":{"triggers":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}}},"additionalProperties":false}`, mcp.Read, tools.ListArgs{}},
+		{"show", `{"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Read, tools.ShowArgs{Slug: "hourly"}},
+		{"create", `{"type":"object","properties":{"slug":{"type":"string"},"when":{"type":"string"}},"required":["slug","when"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.CreateArgs{Slug: "crm_sync", When: "*/15 * * * *"}},
+		{"update", `{"type":"object","properties":{"slug":{"type":"string"},"when":{"type":"string"}},"required":["slug","when"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.UpdateArgs{Slug: "hourly", When: "@daily"}},
+		{"pause", `{"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Destructive, tools.PauseArgs{Slug: "hourly"}},
+		{"resume", `{"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.ResumeArgs{Slug: "hourly"}},
+		{"delete", `{"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"deleted":{"type":"boolean"},"id":{"type":"string"}},"additionalProperties":false}`, mcp.Destructive, tools.DeleteArgs{Slug: "hourly"}},
 	}
 	checkInventory := func(infos []mcp.ToolInfo) {
 		if len(infos) != len(expected) {
@@ -318,7 +319,7 @@ func TestInventory(t *testing.T) {
 		}
 		for i, info := range infos {
 			x := expected[i]
-			if info.Name != x.name || info.Description != x.description || string(info.InputSchema) != x.input || string(info.OutputSchema) != x.output || info.Effect() != x.effect {
+			if info.Name != x.name || info.Description == "" || schemaWithoutCopy(t, info.InputSchema) != x.input || string(info.OutputSchema) != x.output || info.Effect() != x.effect {
 				t.Fatalf("wrong tool metadata %s: %+v", x.name, info)
 			}
 			a := info.Annotations
@@ -329,8 +330,17 @@ func TestInventory(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			if !json.Valid(b) {
-				t.Fatal("args encoding")
+			wantArgs := `{"slug":"hourly"}`
+			switch x.name {
+			case "list":
+				wantArgs = `{}`
+			case "create":
+				wantArgs = `{"slug":"crm_sync","when":"*/15 * * * *"}`
+			case "update":
+				wantArgs = `{"slug":"hourly","when":"@daily"}`
+			}
+			if string(b) != wantArgs {
+				t.Fatalf("args encoding: %s, want %s", b, wantArgs)
 			}
 		}
 	}
@@ -380,7 +390,7 @@ func TestInventory(t *testing.T) {
 }
 
 // R-KEEZ-M2R8 R-KFMV-ZUHX R-KGUS-DM8M R-KI2O-RDZB R-KLQD-WP7E
-// R-D2F3-OMM4 R-LDS2-PF9D R-LEZZ-3702
+// R-D2F3-OMM4 R-581F-PSB9 R-599C-3K1Y
 func TestReadResults(t *testing.T) {
 	f := setup(t, true)
 	before := f.content()
@@ -454,11 +464,11 @@ func assertTrigger(t *testing.T, f *fixture, v tools.Trigger, x store.Trigger) {
 	}
 }
 
-// R-D177-AUVF R-L8WH-6CAL R-LA4D-K41A R-LBC9-XVRZ R-9CFM-1FPR R-LJVK-M9YU R-LL3H-01PJ R-ZCET-URVZ
+// R-D177-AUVF R-535U-6PCH R-54DQ-KH36 R-55LM-Y8TV R-5AH8-HBSN R-5BP4-V3JC R-5CX1-8VA1 R-5GKQ-E6I4
 func TestRefusals(t *testing.T) {
 	f := setup(t, true)
 	for _, s := range []string{"cleanup", "crn_0101010101010101", "CRM_Sync", ""} {
-		f.unchanged("show", tools.ShowArgs{Slug: s}, "no trigger named '"+s+"'")
+		f.unchanged("show", tools.ShowArgs{Slug: s}, tools.NoTrigger(s))
 	}
 	for _, s := range []string{"nightly_backup", "cleanup", "CRM_Sync", ""} {
 		for _, name := range []string{"update", "pause", "resume", "delete"} {
@@ -466,24 +476,24 @@ func TestRefusals(t *testing.T) {
 			if name == "update" {
 				a["when"] = "bogus"
 			}
-			f.unchanged(name, a, "no trigger named '"+s+"'")
+			f.unchanged(name, a, tools.NoTrigger(s))
 		}
 	}
 	for _, slug := range []string{"crm-sync", "CRM_Sync", "9am_report", "_crm", "crm__sync", "crm_", "crm.sync", "crm sync", " crm_sync", "", strings.Repeat("a", 65)} {
-		f.unchanged("create", tools.CreateArgs{Slug: slug, When: "bogus"}, "invalid slug '"+slug+"'")
+		f.unchanged("create", tools.CreateArgs{Slug: slug, When: "bogus"}, tools.InvalidSlug(slug))
 	}
 	for _, slug := range []string{"hourly", "month_end"} {
 		for _, when := range []string{"@daily", "bogus"} {
-			f.unchanged("create", tools.CreateArgs{Slug: slug, When: when}, "a trigger named '"+slug+"' already exists")
+			f.unchanged("create", tools.CreateArgs{Slug: slug, When: when}, tools.SlugTaken(slug))
 		}
 	}
 	for _, w := range []string{"0 */15 * * * *", "@every 5m", "@reboot", "@annually", "@midnight", "@DAILY", "bogus", "", " */15 * * * *", "*/15 * * * * ", "*/15  * * * *", " @hourly", "@hourly "} {
-		f.unchanged("create", tools.CreateArgs{Slug: "crm_sync", When: w}, "invalid when '"+w+"'")
-		f.unchanged("update", tools.UpdateArgs{Slug: "hourly", When: w}, "invalid when '"+w+"'")
+		f.unchanged("create", tools.CreateArgs{Slug: "crm_sync", When: w}, tools.InvalidWhen(w))
+		f.unchanged("update", tools.UpdateArgs{Slug: "hourly", When: w}, tools.InvalidWhen(w))
 	}
 }
 
-// R-PNV3-IEE9 R-D177-AUVF
+// R-56TJ-C0KK R-D177-AUVF
 func TestFailingDatabaseAndRandom(t *testing.T) {
 	f := setup(t, true)
 	before, ns := f.content(), f.nexts()
@@ -520,9 +530,9 @@ func TestFailingDatabaseAndRandom(t *testing.T) {
 		if name == "update" {
 			a["when"] = "bogus"
 		}
-		refusal(t, f.call(name, a), "no trigger named 'CRM_Sync'")
+		refusal(t, f.call(name, a), tools.NoTrigger("CRM_Sync"))
 	}
-	refusal(t, f.call("create", tools.CreateArgs{Slug: "crm-sync", When: "bogus"}), "invalid slug 'crm-sync'")
+	refusal(t, f.call("create", tools.CreateArgs{Slug: "crm-sync", When: "bogus"}), tools.InvalidSlug("crm-sync"))
 	f.d.SetFailing(false)
 	f.flush()
 	if !reflect.DeepEqual(before, f.content()) || !reflect.DeepEqual(ns, f.nexts()) || len(f.ec.Events()) != en {
@@ -614,7 +624,7 @@ func TestCreate(t *testing.T) {
 	}
 }
 
-// R-ZB6X-H05A R-D3N0-2ECT
+// R-5E4X-MN0Q R-D3N0-2ECT
 func TestUpdate(t *testing.T) {
 	cases := []struct{ slug, when, next string }{{"hourly", "@hourly", "2026-10-05T10:00:00Z"}, {"hourly", "45 * * * *", "2026-10-05T09:45:00Z"}, {"hourly", "0 * * * *", "2026-10-05T10:00:00Z"}, {"hourly", "30 * * * *", "2026-10-05T10:30:00Z"}, {"hourly", "0 0 30 2 *", ""}, {"weekly_digest", "0 9 * * 1", ""}}
 	for _, c := range cases {
@@ -659,7 +669,7 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
-// R-ZEUM-MBDD R-ZG2J-0342 R-ZHAF-DUUR R-D4UW-G63I
+// R-5HSM-RY8T R-5J0J-5PZI R-5K8F-JHQ7 R-5LGB-X9GW
 func TestPauseResumeDelete(t *testing.T) {
 	for _, c := range []struct{ name, slug, status, next, event string }{
 		{"pause", "hourly", store.Paused, "", "cron.hourly.paused"},
@@ -735,7 +745,7 @@ func TestPauseResumeDelete(t *testing.T) {
 					if name == "update" {
 						a["when"] = "@daily"
 					}
-					f.unchanged(name, a, "no trigger named '"+c.slug+"'")
+					f.unchanged(name, a, tools.NoTrigger(c.slug))
 				}
 				f.caller.UserID = "other"
 				var created tools.Trigger
@@ -883,7 +893,7 @@ func (causeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r)
 }
 
-// R-LNJ9-RL6X R-D4UW-G63I
+// R-LNJ9-RL6X R-5LGB-X9GW
 func TestLifecycleCause(t *testing.T) {
 	for _, name := range []string{"create", "pause", "resume", "delete"} {
 		t.Run(name, func(t *testing.T) {
@@ -923,10 +933,42 @@ func TestLifecycleCause(t *testing.T) {
 // R-L2SZ-9HL4
 func TestRefusalTrace(t *testing.T) {
 	f := setup(t, true)
-	refusal(t, f.call("show", tools.ShowArgs{Slug: "cleanup"}), "no trigger named 'cleanup'")
+	refusal(t, f.call("show", tools.ShowArgs{Slug: "cleanup"}), tools.NoTrigger("cleanup"))
 	f.flush()
 	checkCallEvents(t, f, "show", "read", "error", "", store.Trigger{})
 	refusal(t, f.callRaw("create", json.RawMessage(`{"slug":"crm_sync"}`)), "invalid arguments:\nwhen: missing required field")
 	f.flush()
 	checkCallEvents(t, f, "create", "additive", "invalid_arguments", "", store.Trigger{})
+}
+
+// R-4QYU-CZXJ R-4S6Q-QRO8
+func TestRefusalCopy(t *testing.T) {
+	for _, fn := range []func(string) string{tools.NoTrigger, tools.InvalidSlug, tools.SlugTaken, tools.InvalidWhen} {
+		for _, arg := range []string{"", "a'\n<&value", "雪", " spaced "} {
+			got := fn(arg)
+			if got == "" || !strings.Contains(got, arg) {
+				t.Fatalf("refusal %q does not carry %q", got, arg)
+			}
+		}
+	}
+}
+
+func schemaWithoutCopy(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var schema struct{ Properties map[string]json.RawMessage }
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, property := range schema.Properties {
+		assertKeys(t, property, []string{"type", "description"})
+		var fields map[string]string
+		if err := json.Unmarshal(property, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if fields["description"] == "" {
+			t.Fatal("empty field description")
+		}
+	}
+	// Remove only the descriptions, retaining object member order for comparison.
+	return string(regexp.MustCompile(`,"description":"(?:[^"\\]|\\.)*"`).ReplaceAll(raw, nil))
 }

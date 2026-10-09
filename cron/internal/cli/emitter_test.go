@@ -212,7 +212,7 @@ func ecAwait[T any](t *testing.T, ch <-chan T) T {
 	}
 }
 
-// R-D3VK-D172 R-UTVO-U646
+// R-4DJY-5IRW R-UTVO-U646
 func TestRunEmitterOrderedDelivery(t *testing.T) {
 	var mu sync.Mutex
 	var names []string
@@ -280,7 +280,7 @@ func TestRunEmitterOrderedDelivery(t *testing.T) {
 	}
 }
 
-// R-USNS-GEDH R-UTVO-U646
+// R-4FZQ-X29A R-UTVO-U646
 func TestRunEmitterRetryWindow(t *testing.T) {
 	for _, jump := range []bool{false, true} {
 		t.Run(fmt.Sprint(jump), func(t *testing.T) {
@@ -383,7 +383,7 @@ func TestRunEmitterRetryWindow(t *testing.T) {
 	}
 }
 
-// R-D7J9-ICF5
+// R-4H7N-ATZZ
 func TestRunEmitterPermanentRejection(t *testing.T) {
 	var mu sync.Mutex
 	var attempts []events.Event
@@ -410,7 +410,7 @@ func TestRunEmitterPermanentRejection(t *testing.T) {
 	}
 }
 
-// R-UV3L-7XUV R-D3VK-D172
+// R-4IFJ-OLQO R-4DJY-5IRW
 func TestRunEmitterQueueCapacity(t *testing.T) {
 	completed := make(chan struct{}, 1)
 	first := make(chan struct{}, 1)

@@ -8,13 +8,14 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	cron "github.com/ikigenba/ikigenba/cron"
+	"github.com/ikigenba/ikigenba/cron/internal/pages"
 )
 
 // Usage is the published command text.
 const Usage = "Usage: cron [command]\n\nKeep triggers that emit events on the suite's event bus on a schedule,\nwith MCP tools at /mcp and a page of triggers at /, on the socket\nsystemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 
 // Manifest is the published command text.
-const Manifest = "app = \"cron\"\ndescription = \"Triggers that emit events on a schedule\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/cron.db\"\n\n[resources]\nmemory_max = \"128M\"\n"
+const Manifest = "app = \"cron\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/cron.db\"\n\n[resources]\nmemory_max = \"128M\"\n"
 
 // NginxConf is the published command text.
 const NginxConf = "location = /events { return 404; }\nlocation = /declarations { return 404; }\n"
