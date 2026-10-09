@@ -297,7 +297,7 @@ func (s deployNoS3) CopyObject(context.Context, string, string, string) error {
 
 func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
 	// R-VQ0L-U00U R-9WMJ-QLVW R-W9IZ-YBVY R-WAQW-C3MN R-WBYS-PVDC R-WD6P-3N41
-	for _, operand := range []string{"r1", "auth/" + strings.TrimPrefix(version, "v"), "4b22285"} {
+	for _, operand := range []string{"r1", "feature/x", "4b22285"} {
 		t.Run(operand, func(t *testing.T) {
 			f := newDeployRelease(t)
 			version := invokeWithDeps(f.deps(), "--version").stdout
@@ -319,6 +319,19 @@ func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
 			}
 			if metadata.Devctl != strings.TrimSuffix(version, "\n") {
 				t.Fatalf("version %q want %q", metadata.Devctl, version)
+			}
+			object := operand + "^{commit}"
+			if label != "" {
+				object = "refs/tags/" + object
+			}
+			resolved := false
+			for _, c := range f.commands {
+				if c.Path == "git" && c.Args[0] == "rev-parse" && c.Args[len(c.Args)-1] == object {
+					resolved = true
+				}
+			}
+			if !resolved {
+				t.Fatalf("operand %q not resolved as typed: %#v", operand, f.commands)
 			}
 			last := f.commands[len(f.commands)-1]
 			wantRemote := "'sudo' '/opt/ikigenba/releases/" + deploySHA + "/opsctl/bin/opsctl' 'activate' '" + deploySHA + "'"

@@ -48,7 +48,7 @@ is opsctl's.
 
 - R-WLPZ-S1AW: Package `internal/release` MUST export `Label(rev string) string`.
 
-- R-WMXW-5T1L: `release.Label` MUST return the empty string when `rev` is 4 to 40 bytes each an ASCII digit or a lowercase letter `a` to `f`, the form D04's `ResolveCommit` resolves as an object name, and `rev` unchanged otherwise; verified at least by `r1`, `r3-rc1`, `auth/v0.18.2`, `4B22285`, the 3-byte `abc` and the 41-byte `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a0` each returned unchanged, and by `4b22`, `4b22285`, `deadbeef` and `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` each giving the empty string.
+- R-D8WD-YFG6: `release.Label` MUST return the empty string when `rev` is 4 to 40 bytes each an ASCII digit or a lowercase letter `a` to `f`, the form D04's `ResolveCommit` resolves as an object name, and `rev` unchanged otherwise; verified at least by `r1`, `r3-rc1`, `feature/x`, `4B22285`, the 3-byte `abc` and the 41-byte `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a0` each returned unchanged, and by `4b22`, `4b22285`, `deadbeef` and `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` each giving the empty string.
 
 - R-WO5S-JKSA: Package `internal/release` MUST export a `NotCommitError` struct whose only field is `Rev string`, with the methods `Error() string`, returning `'<Rev>' is not a commit`, and `ExitCode() int`, returning 2, verified at least by reproducing `'r9' is not a commit`.
 

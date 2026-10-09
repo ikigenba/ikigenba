@@ -379,7 +379,7 @@ func fakeCreateBuild(t *testing.T, root string, c seam.Cmd) (seam.Result, bool, 
 }
 
 func TestCreateReleaseResolutionThroughCLI(t *testing.T) {
-	// R-V0EP-STG9 R-UZ6T-F1PK R-UVJ4-9QHH R-UWR0-NI86
+	// R-DA4A-C76V R-UZ6T-F1PK R-UVJ4-9QHH R-UWR0-NI86
 	for _, tc := range []struct {
 		args                 []string
 		tags, rev, sha, want string
@@ -388,7 +388,7 @@ func TestCreateReleaseResolutionThroughCLI(t *testing.T) {
 		{[]string{"--release", "9e1c7a3"}, "", "9e1c7a3^{commit}", "9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c", ""},
 		{[]string{"--release=r3-rc1"}, "", "refs/tags/r3-rc1^{commit}", createSHA, ""},
 		{[]string{"--release", "main"}, "", "refs/tags/main^{commit}", "", "devctl: 'main' is not a commit\n"},
-		{nil, "r1-rc1\nauth/arbitrary-tag\n", "", "", "devctl: no r<N> release tag in this checkout; name one with --release <sha|tag>\n"},
+		{nil, "r1-rc1\nfeature/x\n", "", "", "devctl: no r<N> release tag in this checkout; name one with --release <sha|tag>\n"},
 		{[]string{"--release=first", "--release", "r2"}, "", "refs/tags/r2^{commit}", createSHA, ""},
 	} {
 		h := newCommandHarness(t)
@@ -822,7 +822,7 @@ func (f *completeCreateFake) DeleteObjects(context.Context, string, []string) er
 }
 
 func TestCreateUnlabelledReleaseThroughCLI(t *testing.T) {
-	// R-V2UI-KCXN R-V0EP-STG9
+	// R-V2UI-KCXN R-DA4A-C76V
 	f := newCompleteCreateFake(t)
 	deps := f.deps()
 	exec := deps.Exec

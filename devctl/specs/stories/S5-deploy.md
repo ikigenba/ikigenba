@@ -2,7 +2,7 @@
 
 Deploy puts one release of the whole suite on one space. Its argument after
 `<space>` is a commit, given as a full sha, a shorter sha or a tag; tags such
-as `auth/v0.18.2` carry a slash and are tags like any other. It resolves the
+as `feature/x` carry a slash and are tags like any other. It resolves the
 argument to the full commit sha exactly as build does (see `S4-build.md`):
 lowercase hex of 4 to 40 characters, or a tag under `refs/tags/`, looked up in
 the local repository with nothing fetched, and a branch or `HEAD` is not a
@@ -13,7 +13,7 @@ of built releases. On the host the tarball is unpacked into
 `/opt/ikigenba/releases/<sha>/`, and that release's own opsctl,
 `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`, activates it with
 `activate <sha> [label]`. The label is the tag exactly as typed, `r1` or
-`auth/v0.18.2`; a sha, full or short, gives no label. Nothing reaches the host
+`feature/x`; a sha, full or short, gives no label. Nothing reaches the host
 until the space's secrets objects hold every name the manifests in the
 release declare. What activate does on the host, and what its lines say, is
 opsctl's; devctl copies opsctl's stdout to its own stdout as opsctl writes
@@ -144,7 +144,7 @@ Postconditions:
 
 A sha, full or as short as the local repository resolves, deploys the same
 release a tag on that commit would, with no label: activate is given the sha
-alone. A tag with a slash, such as `auth/v0.18.2`, is a tag like any other and
+alone. A tag with a slash, such as `feature/x`, is a tag like any other and
 is the label as typed.
 
 Command:

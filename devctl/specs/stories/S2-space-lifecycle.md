@@ -500,7 +500,7 @@ Preconditions:
 
 - The working directory is inside the checkout.
 - The local repository holds no tag named exactly `r<N>`; it may hold
-  release candidates such as `r1-rc1` and tags such as `auth/v0.18.2`.
+  release candidates such as `r1-rc1` and tags such as `feature/x`.
 
 Postconditions:
 

@@ -605,7 +605,7 @@ func TestCreateForwardsVersionIntoBuiltRelease(t *testing.T) {
 }
 
 func TestCreateReleaseQueryErrorsPropagate(t *testing.T) {
-	// R-V0EP-STG9
+	// R-DA4A-C76V
 	for _, query := range []string{"tag", "resolve"} {
 		t.Run(query, func(t *testing.T) {
 			f := newCreateFake(t)
