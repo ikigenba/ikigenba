@@ -111,11 +111,11 @@
       </li>
       <li>
         <div>
-          <h3>Install a service on the host</h3>
-          <p>opsctl lays the release down under <code>/opt</code>, wires its socket and nginx route, and starts it behind the identity check.</p>
+          <h3>Build and deploy a release</h3>
+          <p>From your machine, build the suite at a sha. The release, <code>dist/&lt;sha&gt;.tar.xz</code>, holds every app and opsctl. Deploy copies it to the space's host and unpacks it under <code>/opt/ikigenba/releases/&lt;sha&gt;/</code>, and that release's opsctl activates it, which starts every app in the release.</p>
         </div>
-        <pre><code><span class="prompt">$</span> devctl deploy acme 3f9c2d1
-<span class="prompt">$</span> ssh acme.ikigenba.com sudo opsctl enable dummy</code></pre>
+        <pre><code><span class="prompt">$</span> devctl build 3f9c2d1
+<span class="prompt">$</span> devctl deploy acme 3f9c2d1</code></pre>
       </li>
       <li>
         <div>
