@@ -90,7 +90,7 @@ dummy.
 process environment, and `main` calls it exactly once, first, and holds the
 result: that value is the version dummy shows everywhere it shows one, and
 the one it hands every constructor below and `Run`. So one start reads the
-two variables once, as the serve story says, and `--version`, which is a run
+two variables once, and `--version`, which is a run
 of its own, reads them once too. Nothing below `main` calls `version.Display`;
 `Run` receives the string as `Process.Version`, so an in-process test hands
 it any string it likes, the empty string included, and sets no variable.
@@ -107,8 +107,7 @@ or empty variable, or a file that is missing, unreadable or malformed, yields
 no services and no instructions, never an error. Reading the real environment
 is exactly what the run seam keeps out of everything below `main`, so these
 two constructors are called in `main` and nowhere else, once each, at start.
-That is the read of `IKIGENBA_SERVICES` the serve story describes ("dummy
-reads the variable once, when it starts"): two constructors read it in the
+That is dummy's one read of `IKIGENBA_SERVICES`, made when it starts: two constructors read it in the
 same instant, and since neither can fail on its account, the variable can
 never stop dummy starting. `mcp.NewServer` panics only on an empty name or a
 nil `Telemetry`; dummy's name is the constant `panel.ServiceName`, and its
@@ -211,7 +210,7 @@ expects by calling `version.Display` itself after setting the same two
 values with `testing.T.Setenv`, so the expectation rests on appkit's promise
 and no test spells a version; it also runs `--version` with neither variable
 in the child's environment and expects one empty line. The page the serving
-child answers opens with exactly the banner and ends with exactly the footer
+child answers carries exactly the banner and exactly the footer
 that appkit's templates draw for the data a kit made with `ServiceName` and
 that display string over the same services file returns, which the test
 computes by making such a kit itself after setting `IKIGENBA_SERVICES` as
@@ -325,8 +324,7 @@ will be one, so an interface would be a name with no second member.
 `internal/cli` declares no version: the version `--version` prints is the
 display string `main` reads and hands `Run` as `Process.Version`, and its
 value is data the host supplies at run time. The manifest is a constant in
-`internal/cli` holding exactly the text the
-bootstrap story shows, with a trailing newline: dummy's name; its description,
+`internal/cli` holding the manifest text, with a trailing newline: dummy's name; its description,
 the one line the host publishes in its services file and dummy's MCP endpoint
 gives its clients as instructions; that it is not the host's default app; that
 it offers an MCP endpoint, so the platform's MCP gateway may reach it; no
@@ -341,7 +339,7 @@ that every name `internal/cli` exports is declared in one place; its value
 belongs to `D02-cli`, because the help output is that design's subject, and it
 is fixed there byte for byte.
 
-The package story lists exactly three members in dummy's tree in the suite release —
+dummy's tree in the suite release holds exactly three members —
 `bin/dummy`, `etc/manifest.toml` and `share/icon.svg`. `share/icon.svg` is
 dummy's icon, an SVG image a human draws, and its presence in the package is
 what lists dummy in the platform's launcher on a space. It is a human-authored
@@ -433,7 +431,7 @@ handler answers is `D04-panel` and the designs it leads to.
 - R-M1JO-5KOP: dummy's design defines the **display string** of a run of the `dummy` binary, and every requirement in dummy's design that names the display string of a run MUST denote that string, as the string that appkit's `version.Display`, from the package `github.com/ikigenba/ikigenba/appkit/version`, returns when called in a process in whose environment each of the variables `version.CommitVariable` and `version.ReleaseVariable` name is set to the same value as in the environment that run of the binary was started with, or is unset when it was unset there.
 - R-M2RK-JCFE: The `dummy` binary MUST behave as `cli.Run` does when given the binary's arguments after the program name, the process's environment, its process id, its standard output and standard error, and as `Version` the display string of that run of the binary (R-M1JO-5KOP), with an empty `Dir` and a nil `Now`, and MUST exit with the value `Run` returns.
 - R-K1I1-7X3J: When the `dummy` binary is serving and receives `SIGTERM` or `SIGINT`, it MUST stop as `Run` does when its context is cancelled with a cause whose `Error` method returns `SIGTERM` or `SIGINT` respectively.
-- R-M3ZG-X463: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file, the body of its answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST contain, beginning immediately after the `>` of its first `body` start tag, as `D04-panel` defines start tags and end tags (R-LPDH-LA2H), with nothing but ASCII whitespace between them, the text that executing the template `banner` of a set `page.Templates()` returns writes for `b`, and, ending immediately before the `<` of its last `</body>` end tag with nothing but ASCII whitespace between them, the text that executing the template `footer` of such a set writes for `b`, where `b` is the `page.Banner` that the `Banner` method of the `Kit` `page.New(panel.ServiceName, d)` returns, `d` being the display string of that run of the binary (R-M1JO-5KOP), in a process whose `IKIGENBA_SERVICES` has the same value, returns for the banner user (`D04-panel` R-YV2Y-1CAU) of that request while the services file holds what it held when the request was answered.
+- R-VN0V-44AG: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file, the body of its answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST contain the text that executing the template `banner` of a set `page.Templates()` returns writes for `b`, and the text that executing the template `footer` of such a set writes for `b`, where `b` is the `page.Banner` that the `Banner` method of the `Kit` `page.New(panel.ServiceName, d)` returns, `d` being the display string of that run of the binary (R-M1JO-5KOP), in a process whose `IKIGENBA_SERVICES` has the same value, returns for the banner user (`D04-panel` R-YV2Y-1CAU) of that request while the services file holds what it held when the request was answered.
 - R-M57D-AVWS: When the `dummy` binary is serving, a `CallTool` call for the tool `list_widgets` with nil `args`, made by an appkit `mcp.Client` whose requests reach the socket the binary serves on with the URL path `/mcp`, on behalf of an `identity.Caller` whose `UserID` is not empty, MUST return a nil error and a `Result` whose `IsError` is false and whose `MarshalJSON` output is an object with a member `_meta` whose member `io.modelcontextprotocol/serverInfo` is exactly the JSON object `{"name":<n>,"version":<v>}`, where `<n>` is the value of `panel.ServiceName` (`D04-panel`) and `<v>` the display string of that run of the binary (R-M1JO-5KOP), each as a JSON string.
 - R-E3SQ-JFOR: When the `dummy` binary is serving with `IKIGENBA_SERVICES` naming a services file, a `server/discover` request POSTed over the socket the binary serves on to the URL path `/mcp` with a non-empty `X-User-Id` header, `Content-Type: application/json`, `MCP-Protocol-Version` and `Mcp-Method` headers equal to `mcp.ProtocolVersion` and `server/discover`, and a body whose `params._meta` holds `io.modelcontextprotocol/protocolVersion` equal to `mcp.ProtocolVersion` and `io.modelcontextprotocol/clientCapabilities` equal to `{}`, MUST be answered with status 200 and a JSON-RPC result whose `instructions` member is exactly the `Description` of the entry that appkit's `List.Find` returns for `panel.ServiceName` in what `services.Read` returns for that file at the time the request is answered, whenever that `Description` is not empty, so that rewriting the file's description between two such requests changes the second answer.
 - R-E68J-AZ65: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset, a `server/discover` request as R-E3SQ-JFOR describes it MUST be answered with status 200 and a JSON-RPC result that has no `instructions` member.
@@ -446,7 +444,7 @@ handler answers is `D04-panel` and the designs it leads to.
 - R-DNY1-KF1Q: Every call to `dummy.Assets` MUST return a file system holding the same four files with the same contents, whatever the process working directory is, a directory that holds no `assets/` directory included.
 - R-2TWG-H749: The module's root package `dummy` MUST export `func Migrations() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular file `0001_widgets.sql` and no other entry.
 - R-2V4C-UYUY: Every call to `dummy.Migrations` MUST return a file system holding the same one file with the same contents, whatever the process working directory is, a directory that holds no `migrations/` directory included.
-- R-SCNW-L802: The `internal/cli` package MUST export `const Manifest = "app = \"dummy\"\ndescription = \"Demo widgets to list and create\"\ndefault = false\nmcp = true\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/dummy.db\"\n\n[resources]\nmemory_max = \"64M\"\n"`.
+- R-VO8R-HW15: The `internal/cli` package MUST export `Manifest` as a string constant whose value is exactly `app = "dummy"\ndescription = `, then a TOML basic string, on one line, whose value is not empty, then `\ndefault = false\nmcp = true\nsecrets = []\n\n[database]\nengine = "sqlite"\npath = "state/dummy.db"\n\n[resources]\nmemory_max = "64M"\n`.
 - R-F2D6-M8QD: The `internal/cli` package MUST export `Usage` as a string constant, holding the usage text whose value `D02-cli` fixes.
 - R-J27W-UGWS: The `internal/cli` package MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Version string; Inherit func(fd uintptr) (net.Listener, error); Banner func(u page.User) page.Banner; MCP *mcp.Server; Telemetry *telemetry.Writer; Gate *Gate; Rand io.Reader; Dir string; Now func() time.Time }` and `func Run(ctx context.Context, p Process) int`, where `page`, `mcp` and `telemetry` are the packages `github.com/ikigenba/ikigenba/appkit/page`, `github.com/ikigenba/ikigenba/appkit/mcp` and `github.com/ikigenba/ikigenba/appkit/telemetry` and `time` is the standard library's `time`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Version` is the display string `Run` writes for `--version` (`D02-cli`), `Banner` is the source of the banner data every page the handler draws with the banner is drawn from, `MCP` is the server the handler registers dummy's tools on and mounts at `/mcp`, `Telemetry` is the writer every event the handler records goes through and on which `Run` calls `Ready` and `Shutdown`, `Gate` is the gate (R-HS0Q-4BW3) that `Telemetry` delivers its events through, `Rand` is the source of the ids of the widgets `Run` creates, nil meaning `crypto/rand.Reader`, `Dir` is the directory against which `Run` resolves the path `state/dummy.db` of its database, empty meaning the process working directory, and `Now` is the clock `Run` stamps the migrations it applies to that database with, nil meaning the standard library's `time.Now`.
 - R-HS0Q-4BW3: The `internal/cli` package MUST export `type Gate struct`, with no exported field, `func NewGate(next telemetry.Sink) *Gate`, and `func (g *Gate) Deliver(ctx context.Context, e telemetry.Event) error`, so that `*Gate` implements `telemetry.Sink`, where `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`; the sink passed as `next` is that gate's **next sink**.

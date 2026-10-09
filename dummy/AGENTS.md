@@ -4,7 +4,7 @@ dummy is the reference app: a control panel over widgets that shows the patterns
 
 ## Layout
 
-- `specs/` is the contract: `stories/` and `design/`.
+- `specs/` is the contract: `design/`.
 - `assets/` is the page markup and `share/icon.svg` the launcher icon. The build run never writes them; the user or the delivering agent changes them.
 - `migrations/` holds the database's migrations, which the root package embeds; the build run writes it.
 - `assets.go` is the root package, which embeds `assets/` and `migrations/`. `cmd/dummy` is the binary. `internal/` is everything else, one package per concern.
@@ -14,7 +14,9 @@ dummy is the reference app: a control panel over widgets that shows the patterns
 
 ## Assets
 
-`assets/` holds `page.html`, `table.html`, `form.html` and `script.html`. They follow the repository's `design/` and are inputs to the spec. The root package embeds them, since Go's `embed` reaches only files at or below its own directory, and D01 names what it exports; the code executes them by template name. Code never writes markup of its own, not even a fragment or an error page. Tests assert on the hooks design names and on visible text, never on layout. A template that is missing or wrong, a state a story names that it cannot show, or a hook design names that it lacks is filed in `specs/issues/`; the run never edits an asset to close one.
+dummy is an app: it has no stories. Its intent is the decisions document that delivered it, or the intent agreed in conversation, together with its templates under `assets/`; the design is the record.
+
+`assets/` holds `page.html`, `table.html`, `form.html` and `script.html`. They follow the repository's `design/` and are inputs to the spec. The root package embeds them, since Go's `embed` reaches only files at or below its own directory, and D01 names what it exports; the code executes them by template name. Code never writes markup of its own, not even a fragment or an error page. Every word a person or an agent reads, and every class, id and attribute, lives in the asset and nowhere else; a test, a requirement and the source never spell one. Design names each template and the data it receives, never its text, hooks, markup or styles. A test proves a page by executing the named template with the data the design says and comparing, or by checking that a value the test supplied appears in the body; it never looks for a word or a tag. A change to copy or markup is an edit to the asset alone. A template that is missing or wrong, or one that cannot show a state the design names, is filed in `specs/issues/`; the run never edits an asset to close one.
 
 dummy holds no stylesheet, fonts or licences; appkit's `page` package serves them. `share/icon.svg` is the Tabler outline `cube` from `design/ikigenba/icons/tabler/`, stripped as `design/README.md` asks of a launcher icon. `devctl build` packs it beside `bin/` and `etc/`.
 
