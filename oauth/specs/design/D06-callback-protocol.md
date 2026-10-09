@@ -66,7 +66,7 @@ protocol does not define — yields `ErrNoCode`, distinct from both so a
 misbehaving provider is not misreported as a rejection.
 
 **The pages the browser is shown.** Every terminal outcome writes an HTML page:
-`200` with "Login complete" on success, `400` on each failure. They are the
+`200` on success, `400` on each failure. They are the
 only thing the user sees in the browser, and the terminal is where the real
 detail goes, so they stay minimal.
 
@@ -83,7 +83,7 @@ browser executes.
 
 Both pages declare `Content-Type: text/html; charset=utf-8` and are flushed
 before `Wait` returns, so the browser has the page in hand while the token
-exchange (D04) is still in flight — the user sees "go back to your terminal"
+exchange (D04) is still in flight — the user is told to go back to the terminal
 at the moment the terminal starts doing the work, rather than after it
 finishes.
 

@@ -1,6 +1,6 @@
 # oauth
 
-oauth is a CLI that runs the OAuth login flow agent-repl's providers need. One Go binary runs the OAuth 2.0 authorization-code plus PKCE flow against any protocol-compliant service and writes the token endpoint's response verbatim to stdout. It holds no provider-specific knowledge: a service is described entirely by flags. The module path is `github.com/ikigenba/ikigenba/oauth`. The contract is `specs/design/`; this file restates none of it.
+oauth is a CLI that runs the OAuth login flow agent-repl's providers need. One Go binary runs the OAuth 2.0 authorization-code plus PKCE flow against any protocol-compliant service and writes the token endpoint's response verbatim to stdout. It holds no provider-specific knowledge: a service is described entirely by flags. It is a command-line program; it has no stories today. The module path is `github.com/ikigenba/ikigenba/oauth`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
