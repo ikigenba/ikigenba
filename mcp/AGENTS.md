@@ -4,7 +4,7 @@ mcp is the MCP gateway: one endpoint through which agents reach every service's 
 
 ## Layout
 
-- `specs/` is the contract: `stories/` and `design/`.
+- `specs/` is the contract: `design/`.
 - `assets/` is the page markup, and `share/icon.svg` the launcher icon. The build run never writes them; the user or the delivering agent changes them.
 - `assets.go` is the root package, which embeds `assets/`. `cmd/mcp` is the binary. `internal/` is everything else, one package per concern.
 - `etc/` is what the host needs: `manifest.toml`.
@@ -12,7 +12,9 @@ mcp is the MCP gateway: one endpoint through which agents reach every service's 
 
 ## Assets
 
-`assets/` holds `connect.html`, the connect page, an `html/template` file that follows the repository's `design/`. It is an input to the spec. The root package embeds it, since Go's `embed` reaches only files at or below its own directory, and the code executes it by template name. That each `Copy` button puts its command or the endpoint on the clipboard is checked by hand in a browser against the sandbox, never by the gates. Code never writes markup of its own, not even a fragment or an error page. Design names the template, the data it receives and the hooks it emits; tests assert on those hooks and on visible text, never on layout. A template that is missing or wrong, a state a story names that it cannot show, or a hook design names that it lacks is filed in `specs/issues/`; the run never edits an asset to close one.
+mcp is an app, so it has no stories: its intent is the decisions document that delivered it, or the intent agreed in conversation, together with its templates under `assets/`, and the design in `specs/design/` is the record.
+
+`assets/` holds `connect.html`, the connect page, an `html/template` file that follows the repository's `design/`. It is an input to the spec: the build run never writes it; the user or the delivering agent does, before design is drafted. The root package embeds it, since Go's `embed` reaches only files at or below its own directory, and the code executes it by template name. Code never writes markup of its own, not even a fragment or an error page. Every word a person or an agent reads, and every class, id and attribute, lives in the asset and nowhere else; a test, a requirement and the source never spell one. Design names the template and the data it receives, never its text, hooks, markup or styles. A test proves the page by executing the named template with the data the design says and comparing, or by checking that a value the test supplied appears in the body; it never looks for a word or a tag. That each copy-to-clipboard control puts its command or the endpoint on the clipboard is checked by hand in a browser against the sandbox, never by the gates. A change to copy or markup is an edit to the asset alone. An asset that is missing or wrong, or a template that cannot show a state the design names, is raised as an issue, not fixed; the run never edits an asset to close one.
 
 mcp holds no stylesheet, fonts or licences; appkit's `page` package serves them. `share/icon.svg` is the Tabler outline `plug-connected` from `design/ikigenba/icons/tabler/`, stripped as `design/README.md` asks of a launcher icon. `devctl build` packs it beside `bin/` and `etc/`.
 
