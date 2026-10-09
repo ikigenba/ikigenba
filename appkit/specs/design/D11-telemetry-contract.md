@@ -32,6 +32,8 @@ An attribute naming an entity has the entity's type as its key (`token`, `widget
 |---|---|---|
 | `cli_` | `client` | `auth` |
 | `evt_` | `event` | `events` |
+| `prm_` | `prompt` | `prompts` |
+| `prr_` | `prompt_run` | `prompts` |
 | `rep_` | `repo` | `repos` |
 | `run_` | `run` | `scripts` |
 | `scr_` | `script` | `scripts` |
