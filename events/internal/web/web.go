@@ -12,9 +12,10 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// Pages supplies the three page routes.
+// Pages supplies the four page routes.
 type Pages interface {
 	Landing(w http.ResponseWriter, r *http.Request)
+	Tools(w http.ResponseWriter, r *http.Request)
 	About(w http.ResponseWriter, r *http.Request)
 	NotFound(w http.ResponseWriter, r *http.Request)
 }
@@ -33,15 +34,18 @@ func Handler(cfg Config) http.Handler {
 	emit := events.EmitHandler(cfg.Sink)
 	public := telemetry.Middleware(cfg.Telemetry, identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/" || r.URL.Path == "/about":
+		case r.URL.Path == "/" || r.URL.Path == "/tools" || r.URL.Path == "/about":
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				w.Header().Set("Allow", "GET, HEAD")
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
-			if r.URL.Path == "/" {
+			switch r.URL.Path {
+			case "/":
 				cfg.Pages.Landing(w, r)
-			} else {
+			case "/tools":
+				cfg.Pages.Tools(w, r)
+			default:
 				cfg.Pages.About(w, r)
 			}
 		case r.URL.Path == "/mcp":

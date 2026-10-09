@@ -73,7 +73,8 @@ func must(t *testing.T, err error) {
 	}
 }
 
-// R-SR5N-PCRU R-FWG8-XFGQ R-QJLY-JFSG R-QKTU-X7J5 R-QM1R-AZ9U R-6RN7-LV47 R-6SV3-ZMUW R-QOHK-2IR8 R-QPPG-GAHX R-QQXC-U28M R-FYW1-OYY4 R-6U30-DELL R-R1WG-9ZWV R-R34C-NRNK R-R4C9-1JE9 R-R5K5-FB4Y R-R6S1-T2VN R-R7ZY-6UMC
+// R-DJV5-C8NH R-DOQQ-VBM9 R-DPYN-93CY R-IZH6-OB6U
+// R-SR5N-PCRU R-QJLY-JFSG R-QM1R-AZ9U R-6RN7-LV47 R-6SV3-ZMUW R-QOHK-2IR8 R-QPPG-GAHX R-QQXC-U28M R-FYW1-OYY4 R-6U30-DELL R-R34C-NRNK R-R5K5-FB4Y R-R7ZY-6UMC
 func TestExactTemplateAnswers(t *testing.T) {
 	d, st, now := fixture(t)
 	ctx := context.Background()
@@ -124,7 +125,7 @@ func TestExactTemplateAnswers(t *testing.T) {
 	for _, failing := range []bool{false, true} {
 		d.SetFailing(failing)
 		for _, method := range []string{"GET", "HEAD"} {
-			body := expected(t, "about", pages.AboutData{Banner: b, Description: pages.Description})
+			body := expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description})
 			if method == "HEAD" {
 				body = ""
 			}
@@ -144,11 +145,12 @@ func TestExactTemplateAnswers(t *testing.T) {
 		}
 	}
 	nilStore := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test-build").Banner})
-	check(t, invoke(nilStore.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
+	check(t, invoke(nilStore.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}))
 	check(t, invoke(nilStore.NotFound, "POST"), 404, expected(t, "notfound", notice))
 }
 
-// R-QTD5-LLQ0 R-QUL1-ZDGP R-QX0U-QWY3 R-FXO5-B77F R-SW19-8FQM
+// R-DTMC-EEL1 R-DSEG-0MUC
+// R-QTD5-LLQ0 R-QUL1-ZDGP R-QX0U-QWY3
 func TestBannerRefreshAndFallback(t *testing.T) {
 	_, st, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -167,7 +169,7 @@ func TestBannerRefreshAndFallback(t *testing.T) {
 				scheme = "https"
 			}
 			b := page.Banner{Service: "events", Version: "test", Email: "email", ProfileURL: scheme + "://auth.space.test/", LogoutURL: scheme + "://auth.space.test/logout"}
-			if w.Body.String() != expected(t, "about", pages.AboutData{Banner: b, Description: pages.Description}) {
+			if w.Body.String() != expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}) {
 				t.Fatal(host, proto)
 			}
 		}
@@ -179,16 +181,17 @@ func TestBannerRefreshAndFallback(t *testing.T) {
 	}
 	for _, enabled := range []bool{true, false} {
 		write(enabled)
-		b := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://accounts.test/", LogoutURL: "https://accounts.test/logout", Icon: template.HTML("fixture-icon"), Services: []page.Service{{Name: "other", URL: "https://other.test", Icon: template.HTML("fixture-icon"), Enabled: enabled}, {Name: "events", URL: "https://events.test", Icon: template.HTML("fixture-icon"), Enabled: true, Current: true}}}
+		b := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://accounts.test/", LogoutURL: "https://accounts.test/logout", Icon: template.HTML("fixture-icon"), Tools: true, Services: []page.Service{{Name: "other", URL: "https://other.test", Icon: template.HTML("fixture-icon"), Enabled: enabled}, {Name: "events", URL: "https://events.test", Icon: template.HTML("fixture-icon"), Enabled: true, Current: true}}}
 		check(t, invoke(p.Landing, "GET"), 200, expected(t, "landing", pages.LandingData{Banner: b}))
-		check(t, invoke(p.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
+		check(t, invoke(p.Tools, "GET"), 200, expected(t, "tools", pages.ToolsData{Banner: withTrail(b, "tools")}))
+		check(t, invoke(p.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}))
 	}
 	must(t, os.WriteFile(path, []byte(`broken`), 0600))
 	b := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
-	check(t, invoke(p.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
+	check(t, invoke(p.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}))
 }
 
-// R-RAFQ-YE3Q
+// R-DW25-5Y2F
 func TestConcurrentPages(t *testing.T) {
 	_, st, _ := fixture(t)
 	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, Store: st})
@@ -199,7 +202,8 @@ func TestConcurrentPages(t *testing.T) {
 		body    string
 	}{
 		{p.Landing, 200, expected(t, "landing", pages.LandingData{Banner: banner})},
-		{p.About, 200, expected(t, "about", pages.AboutData{Banner: banner, Description: pages.Description})},
+		{p.Tools, 200, expected(t, "tools", pages.ToolsData{Banner: withTrail(banner, "tools")})},
+		{p.About, 200, expected(t, "about", pages.AboutData{Banner: withTrail(banner, "about"), Description: pages.Description})},
 		{p.NotFound, 404, expected(t, "notfound", pages.NoticeData{Banner: page.Banner{Service: "events", Version: "test"}})},
 	}
 	var wg sync.WaitGroup
@@ -216,14 +220,14 @@ func TestConcurrentPages(t *testing.T) {
 	wg.Wait()
 }
 
-// R-FWG8-XFGQ R-FYW1-OYY4 R-FXO5-B77F R-SW19-8FQM
+// R-DIN8-YGWS R-DNIU-HJVK R-DTMC-EEL1 R-FYW1-OYY4
 func TestBannerSourcePerAnswer(t *testing.T) {
 	d, st, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
 	must(t, os.WriteFile(path, []byte(`{"services":[{"name":"auth","url":"https://accounts.test","description":"auth","socket":"","enabled":true,"mcp":false},{"name":"path-only","url":"https://path.test","description":"path","socket":"","enabled":true,"mcp":false,"icon":"fixture-icon"}]}`), 0600))
 	var users []page.User
 	returned := page.Banner{
-		Service: "supplied-service", Version: "construction",
+		Service: "supplied-service", Version: "construction", Tools: true, Trail: []page.Level{{Name: "source-trail", URL: "/source-trail"}},
 		Email: "supplied-email", ProfileURL: "https://supplied.test/profile", LogoutURL: "https://supplied.test/out",
 		Icon:     template.HTML("own-icon"),
 		Services: []page.Service{{Name: "source-only", URL: "https://source.test", Icon: template.HTML("launcher-icon"), Enabled: true}},
@@ -233,7 +237,10 @@ func TestBannerSourcePerAnswer(t *testing.T) {
 		return returned
 	}
 	// An unkeyed construction uses the declared field order and types.
-	p := pages.New(pages.Config{source, path, st})
+	p := pages.New(pages.Config{source, path, st, nil})
+	if len(users) != 0 {
+		t.Fatal("New requested a banner")
+	}
 	answer := 0
 	for _, failing := range []bool{false, true} {
 		d.SetFailing(failing)
@@ -242,7 +249,7 @@ func TestBannerSourcePerAnswer(t *testing.T) {
 				handler func(http.ResponseWriter, *http.Request)
 				name    string
 				status  int
-			}{{p.Landing, "landing", 200}, {p.About, "about", 200}, {p.NotFound, "notfound", 404}} {
+			}{{p.Landing, "landing", 200}, {p.Tools, "tools", 200}, {p.About, "about", 200}, {p.NotFound, "notfound", 404}} {
 				name, status := route.name, route.status
 				if failing && name == "landing" {
 					name, status = "unavailable", 503
@@ -253,12 +260,15 @@ func TestBannerSourcePerAnswer(t *testing.T) {
 				out := invoke(route.handler, method)
 				wantUser := page.User{}
 				var data any = pages.NoticeData{Banner: returned}
-				if name == "landing" || name == "about" {
+				if name == "landing" || name == "tools" || name == "about" {
 					wantUser = page.User{Email: "<person>&@example.test", ProfileURL: "https://accounts.test/", LogoutURL: "https://accounts.test/logout"}
-					if name == "landing" {
-						data = pages.LandingData{Banner: returned}
-					} else {
-						data = pages.AboutData{Banner: returned, Description: pages.Description}
+					switch name {
+					case "landing":
+						data = pages.LandingData{Banner: withTrail(returned, "")}
+					case "tools":
+						data = pages.ToolsData{Banner: withTrail(returned, "tools")}
+					default:
+						data = pages.AboutData{Banner: withTrail(returned, "about"), Description: pages.Description}
 					}
 				}
 				found := false
@@ -275,6 +285,58 @@ func TestBannerSourcePerAnswer(t *testing.T) {
 					want = ""
 				}
 				check(t, out, status, want)
+			}
+		}
+	}
+}
+
+// withTrail constructs the expected replacement of the supplied banner's trail.
+func withTrail(b page.Banner, name string) page.Banner {
+	b.Trail = nil
+	if name != "" {
+		b.Trail = []page.Level{{Name: name, URL: "/" + name}}
+	}
+	return b
+}
+
+// R-DL31-Q0E6 R-DMAY-3S4V R-IVTH-IZYR R-IZH6-OB6U
+func TestToolsTemplateAnswers(t *testing.T) {
+	d, st, _ := fixture(t)
+	banner := page.Banner{Service: "tools-fixture", Version: "tools-build", Tools: true,
+		Trail:    []page.Level{{Name: "source-place", URL: "/source-place"}},
+		Services: []page.Service{{Name: "supplied-launcher", URL: "https://launcher.test", Enabled: true, Icon: "fixture-icon"}}}
+	for _, tools := range [][]pages.Tool{nil, {}, {{"zeta<&", "first description <&"}, {"alpha", "second description"}}} {
+		for _, store := range []*store.Store{st, nil} {
+			p := pages.New(pages.Config{func(page.User) page.Banner { return banner }, "", store, tools})
+			for _, failing := range []bool{false, true} {
+				d.SetFailing(failing)
+				for _, method := range []string{"GET", "HEAD"} {
+					want := expected(t, "tools", pages.ToolsData{withTrail(banner, "tools"), tools})
+					if method == "GET" {
+						for _, wrong := range [][]page.Level{nil, {{Name: "tools", URL: "/wrong"}}, {{Name: "other", URL: "/other"}}} {
+							wrongBanner := banner
+							wrongBanner.Trail = wrong
+							if want == expected(t, "tools", pages.ToolsData{wrongBanner, tools}) {
+								t.Fatal("tools template cannot distinguish required trail")
+							}
+						}
+					} else {
+						want = ""
+					}
+					check(t, invoke(p.Tools, method), 200, want)
+					check(t, invoke(p.About, method), 200, func() string {
+						if method == "HEAD" {
+							return ""
+						}
+						return expected(t, "about", pages.AboutData{withTrail(banner, "about"), pages.Description})
+					}())
+					check(t, invoke(p.NotFound, method), 404, func() string {
+						if method == "HEAD" {
+							return ""
+						}
+						return expected(t, "notfound", pages.NoticeData{banner})
+					}())
+				}
 			}
 		}
 	}

@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed assets/landing.html assets/about.html assets/notfound.html assets/unavailable.html
+//go:embed assets/landing.html assets/tools.html assets/about.html assets/notfound.html assets/unavailable.html
 var assets embed.FS
 
 //go:embed migrations/0001_log.sql
