@@ -27,7 +27,7 @@ type writes struct {
 func (w *writes) Write(p []byte) (int, error)       { w.Calls++; return w.Buffer.Write(p) }
 func (w *writes) WriteString(p string) (int, error) { return w.Write([]byte(p)) }
 
-//	R-0AL5-OML7 R-0BT2-2EBW R-0D0Y-G62L R-0E8U-TXTA
+//	R-0AL5-OML7 R-SOPU-XTAG R-0D0Y-G62L R-0E8U-TXTA
 //
 // R-0GON-LHAO R-0HWJ-Z91D R-0KCC-QSIR R-0LK9-4K9G
 func TestConstants(t *testing.T) {
@@ -53,7 +53,7 @@ func TestConstants(t *testing.T) {
 	if cli.Usage != wantUsage {
 		t.Fatal(cli.Usage)
 	}
-	wantManifest := "app = \"events\"\ndescription = \"The suite's internal event bus\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nEVENTS_DEPTH_MAX = \"8\"\nEVENTS_DELIVERY_TIMEOUT_SECONDS = \"5\"\nEVENTS_DELIVERY_ATTEMPTS = \"10\"\nEVENTS_INFLIGHT_MAX = \"4\"\nEVENTS_RETENTION_DAYS = \"2\"\nEVENTS_DECLARATIONS_SECONDS = \"60\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/events.db\"\n"
+	wantManifest := "app = \"events\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nEVENTS_DEPTH_MAX = \"8\"\nEVENTS_DELIVERY_TIMEOUT_SECONDS = \"5\"\nEVENTS_DELIVERY_ATTEMPTS = \"10\"\nEVENTS_INFLIGHT_MAX = \"4\"\nEVENTS_RETENTION_DAYS = \"2\"\nEVENTS_DECLARATIONS_SECONDS = \"60\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/events.db\"\n"
 	if cli.Manifest != wantManifest || cli.NginxConf != "location = /emit { return 404; }\n" {
 		t.Fatal("deployment constants")
 	}

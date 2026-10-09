@@ -224,7 +224,7 @@ func (f *fixture) start() (*delivery.Loop, context.CancelFunc, <-chan struct{}) 
 }
 
 // R-GQE8-ODLW R-Q6UW-O1MD R-GU1X-TOTZ R-BTKQ-IRMN
-// R-Z8LS-NVI1 R-ZH53-C9OW R-G1LB-MGO7 R-H68X-NE8X R-ZM0O-VCNO
+// R-Z8LS-NVI1 R-ZH53-C9OW R-G1LB-MGO7 R-H68X-NE8X R-OXDA-5UBT
 func TestOrderedDeliveryAndRecords(t *testing.T) {
 	f := newFixture(t)
 	calls := make(chan events.Delivery, 10)
@@ -275,7 +275,7 @@ func TestOrderedDeliveryAndRecords(t *testing.T) {
 	absent(t, calls)
 }
 
-// R-QAIL-TCUG R-G2T8-08EW R-FWPQ-3DPF R-ZDHE-6YGT R-ZEPA-KQ7I R-ZFX6-YHY7
+// R-QAIL-TCUG R-G2T8-08EW R-OTPL-0J3Q R-OUXH-EAUF R-OW5D-S2L4 R-ZFX6-YHY7
 func TestOutcomes(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -283,7 +283,7 @@ func TestOutcomes(t *testing.T) {
 		body    string
 		skip    bool
 		message string
-	}{{"skip", 200, `{"outcome":"skip"}`, true, ""}, {"missing", 404, "", true, ""}, {"error", 500, `{"outcome":"error","error":"publish failed: commit not found"}`, false, "publish failed: commit not found"}, {"empty", 500, `{"outcome":"error","error":""}`, false, "answered with status 500"}, {"bad", 200, `{}`, false, "answered with status 200"}, {"badrequest", 400, "", false, "answered with status 400"}, {"conflict", 409, "", false, "answered with status 409"}, {"busy", 429, "", false, "answered with status 429"}, {"gateway", 502, "", false, "answered with status 502"}, {"unavailable", 503, `{"outcome":"error","error":"ignored"}`, false, "answered with status 503"}}
+	}{{"skip", 200, `{"outcome":"skip"}`, true, ""}, {"missing", 404, "", true, ""}, {"error", 500, `{"outcome":"error","error":"publish failed: commit not found"}`, false, "publish failed: commit not found"}, {"empty", 500, `{"outcome":"error","error":""}`, false, fmt.Sprintf(delivery.AnsweredWithStatus, 500)}, {"bad", 200, `{}`, false, fmt.Sprintf(delivery.AnsweredWithStatus, 200)}, {"badrequest", 400, "", false, fmt.Sprintf(delivery.AnsweredWithStatus, 400)}, {"conflict", 409, "", false, fmt.Sprintf(delivery.AnsweredWithStatus, 409)}, {"busy", 429, "", false, fmt.Sprintf(delivery.AnsweredWithStatus, 429)}, {"gateway", 502, "", false, fmt.Sprintf(delivery.AnsweredWithStatus, 502)}, {"unavailable", 503, `{"outcome":"error","error":"ignored"}`, false, fmt.Sprintf(delivery.AnsweredWithStatus, 503)}}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -331,7 +331,7 @@ func TestOutcomes(t *testing.T) {
 	}
 }
 
-// R-QCYE-KWBU R-GCZC-GWG9 R-GE78-UO6Y R-H9WM-SPH0 R-BTKQ-IRMN R-ZM0O-VCNO
+// R-QCYE-KWBU R-GCZC-GWG9 R-GE78-UO6Y R-H9WM-SPH0 R-BTKQ-IRMN R-OXDA-5UBT
 func TestRetriesAndUnchangedDeclaration(t *testing.T) {
 	f := newFixture(t)
 	f.cfg.Settings.DeliveryAttempts = 100
@@ -422,7 +422,7 @@ func TestRetryAfterUncapped(t *testing.T) {
 	}
 }
 
-// R-GRM5-25CL R-GSU1-FX3A R-FWPQ-3DPF
+// R-GRM5-25CL R-GSU1-FX3A R-OTPL-0J3Q
 func TestDeadlineClosesConnection(t *testing.T) {
 	for _, seconds := range []int64{1, 5} {
 		t.Run(fmt.Sprint(seconds), func(t *testing.T) {
@@ -447,9 +447,9 @@ func TestDeadlineClosesConnection(t *testing.T) {
 			tm.fire <- time.Time{}
 			receive(t, closed)
 			r := f.record("subscriber.paused")
-			message := "no answer from consumer within 1 second"
+			message := fmt.Sprintf(delivery.NoAnswerWithinOne, "consumer", int64(1))
 			if seconds != 1 {
-				message = fmt.Sprintf("no answer from consumer within %d seconds", seconds)
+				message = fmt.Sprintf(delivery.NoAnswerWithin, "consumer", seconds)
 			}
 			if r.Attrs["error"] != message {
 				t.Fatal(r)
@@ -458,7 +458,7 @@ func TestDeadlineClosesConnection(t *testing.T) {
 	}
 }
 
-// R-FWPQ-3DPF R-QAIL-TCUG R-H68X-NE8X
+// R-OTPL-0J3Q R-QAIL-TCUG R-H68X-NE8X
 func TestUnreachableSocket(t *testing.T) {
 	f := newFixture(t)
 	f.cfg.Settings.DeliveryAttempts = 1
@@ -472,7 +472,7 @@ func TestUnreachableSocket(t *testing.T) {
 		t.Fatal(called)
 	}
 	paused := f.record("subscriber.paused")
-	if paused.Attrs["error"] != "no answer from consumer" {
+	if paused.Attrs["error"] != fmt.Sprintf(delivery.NoAnswer, "consumer") {
 		t.Fatal(paused)
 	}
 }
@@ -543,7 +543,7 @@ func TestBackoffAndMissingTargetDoNotHoldSlot(t *testing.T) {
 	absent(t, failed)
 }
 
-// R-GWHQ-L8BD R-HB4J-6H7P R-ZN8L-94ED R-ZOGH-MW52
+// R-GWHQ-L8BD R-HB4J-6H7P R-OYL6-JM2I R-OZT2-XDT7
 // R-ZICZ-Q1FL R-GYXJ-CRSR
 func TestStopPreservesActiveAnswer(t *testing.T) {
 	f := newFixture(t)
@@ -573,8 +573,8 @@ func TestStopPreservesActiveAnswer(t *testing.T) {
 	absent(t, calls)
 }
 
-// R-ZKSS-HKWZ R-H05F-QJJG R-ZJKW-3T6A R-H2L8-I30U R-H3T4-VURJ
-// R-H68X-NE8X R-ZOGH-MW52
+// R-P28V-OXAL R-H05F-QJJG R-P10Z-B5JW R-H2L8-I30U R-H3T4-VURJ
+// R-H68X-NE8X R-OZT2-XDT7
 func TestDrainAbandonsUnansweredAndPartialBody(t *testing.T) {
 	for _, partial := range []bool{false, true} {
 		t.Run(fmt.Sprint(partial), func(t *testing.T) {
@@ -732,7 +732,7 @@ func TestNoTargetCases(t *testing.T) {
 					t.Fatal(called)
 				}
 				paused := f.record("subscriber.paused")
-				if paused.Attrs["error"] != "no answer from consumer" {
+				if paused.Attrs["error"] != fmt.Sprintf(delivery.NoAnswer, "consumer") {
 					t.Fatal(paused)
 				}
 				sub := f.subscriber(name)
@@ -789,7 +789,7 @@ func TestUnacceptedEventsPassWithoutAttempt(t *testing.T) {
 	}
 }
 
-// R-ZB1L-FEZF R-G1LB-MGO7 R-ZEPA-KQ7I
+// R-ZB1L-FEZF R-G1LB-MGO7 R-OW5D-S2L4
 func TestStoreOutcomeFailureRechecks(t *testing.T) {
 	for _, success := range []bool{true, false} {
 		t.Run(fmt.Sprint(success), func(t *testing.T) {
@@ -877,7 +877,7 @@ func TestResumeAndSkipResetAttempts(t *testing.T) {
 	checkPair(second)
 }
 
-// R-QCYE-KWBU R-Z8LS-NVI1 R-ZH53-C9OW R-G1LB-MGO7 R-ZEPA-KQ7I
+// R-QCYE-KWBU R-Z8LS-NVI1 R-ZH53-C9OW R-G1LB-MGO7 R-OW5D-S2L4
 func TestGoneInFlightAndReturn(t *testing.T) {
 	for _, ok := range []bool{true, false} {
 		t.Run(fmt.Sprint(ok), func(t *testing.T) {
@@ -926,7 +926,7 @@ func TestGoneInFlightAndReturn(t *testing.T) {
 	}
 }
 
-// R-QAIL-TCUG R-FWPQ-3DPF R-H68X-NE8X
+// R-QAIL-TCUG R-OTPL-0J3Q R-H68X-NE8X
 func TestConnectionLostBeforeAnswer(t *testing.T) {
 	f := newFixture(t)
 	f.cfg.Settings.DeliveryAttempts = 1
@@ -946,7 +946,7 @@ func TestConnectionLostBeforeAnswer(t *testing.T) {
 		t.Fatal(called)
 	}
 	paused := f.record("subscriber.paused")
-	if paused.Attrs["error"] != "no answer from consumer" {
+	if paused.Attrs["error"] != fmt.Sprintf(delivery.NoAnswer, "consumer") {
 		t.Fatal(paused)
 	}
 }
@@ -1168,7 +1168,7 @@ func TestStalledFailingAndTargetlessPeersDoNotDelayHealthy(t *testing.T) {
 	receive(t, closed)
 }
 
-// R-ZN8L-94ED R-ZOGH-MW52 R-ZEPA-KQ7I R-ZFX6-YHY7
+// R-OYL6-JM2I R-OZT2-XDT7 R-OW5D-S2L4 R-ZFX6-YHY7
 func TestDrainHandlesSkipAndFailureAfterStop(t *testing.T) {
 	for _, outcome := range []string{"skip", "retry", "pause"} {
 		t.Run(outcome, func(t *testing.T) {
@@ -1263,4 +1263,16 @@ func TestStoreReadFailureRechecksWithAnotherAttemptActive(t *testing.T) {
 	abort()
 	l.Drain(ctx)
 	receive(t, closed)
+}
+
+// R-OR9S-8ZMC
+func TestFailureCopyConstants(_ *testing.T) {
+	type copyText string
+	const (
+		one    = delivery.NoAnswerWithinOne
+		many   = delivery.NoAnswerWithin
+		status = delivery.AnsweredWithStatus
+		absent = delivery.NoAnswer
+	)
+	_ = []copyText{one, many, status, absent}
 }

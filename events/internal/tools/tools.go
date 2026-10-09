@@ -100,7 +100,17 @@ func entry(s store.Subscriber) subscriberEntry {
 	return e
 }
 
-var errLog = errors.New("cannot reach the log; try again later")
+// Tool refusal copy is shared with callers and tests.
+const (
+	Unreachable  = "cannot reach the log; try again later"
+	BadCursor    = "cursor is not one search issued"
+	BadTime      = "%s is not an RFC 3339 time: '%s'"
+	BadLimit     = "limit must be between 1 and 500, got %d"
+	NoSubscriber = "no subscriber '%s'"
+	NotPaused    = "'%s' is not paused"
+)
+
+var errLog = errors.New(Unreachable)
 
 // Register adds the five tools in their published order.
 func Register(srv *mcp.Server, cfg Config) {
@@ -162,9 +172,9 @@ func Register(srv *mcp.Server, cfg Config) {
 func controlError(err error, service string) error {
 	switch {
 	case errors.Is(err, store.ErrNoSubscriber):
-		return fmt.Errorf("no subscriber '%s'", service)
+		return fmt.Errorf(NoSubscriber, service)
 	case errors.Is(err, store.ErrNotPaused):
-		return fmt.Errorf("'%s' is not paused", service)
+		return fmt.Errorf(NotPaused, service)
 	default:
 		return errLog
 	}
@@ -180,7 +190,7 @@ func search(ctx context.Context, st *store.Store, in searchInput) (searchOutput,
 		if field.value != nil {
 			t, err := time.Parse(time.RFC3339, *field.value)
 			if err != nil {
-				return searchOutput{}, fmt.Errorf("%s is not an RFC 3339 time: '%s'", field.name, *field.value)
+				return searchOutput{}, fmt.Errorf(BadTime, field.name, *field.value)
 			}
 			*field.target = &t
 		}
@@ -190,7 +200,7 @@ func search(ctx context.Context, st *store.Store, in searchInput) (searchOutput,
 		limit = *in.Limit
 	}
 	if limit < 1 || limit > 500 {
-		return searchOutput{}, fmt.Errorf("limit must be between 1 and 500, got %d", limit)
+		return searchOutput{}, fmt.Errorf(BadLimit, limit)
 	}
 	after := store.Cursor("")
 	if in.Cursor != nil {
@@ -199,7 +209,7 @@ func search(ctx context.Context, st *store.Store, in searchInput) (searchOutput,
 	f.Attrs = decodeAttrs(in.Attrs)
 	p, err := st.Search(ctx, f, int(limit), after)
 	if errors.Is(err, store.ErrCursor) {
-		return searchOutput{}, errors.New("cursor is not one search issued")
+		return searchOutput{}, errors.New(BadCursor)
 	}
 	if err != nil {
 		return searchOutput{}, errLog

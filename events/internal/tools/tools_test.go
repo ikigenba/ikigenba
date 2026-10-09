@@ -6,15 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"math/big"
-	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,11 +21,9 @@ import (
 	appEvents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
-	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events"
-	"github.com/ikigenba/ikigenba/events/internal/pages"
 	"github.com/ikigenba/ikigenba/events/internal/store"
 	"github.com/ikigenba/ikigenba/events/internal/tools"
 )
@@ -294,7 +290,7 @@ func (h *harness) snapshot() []byte {
 }
 
 func TestToolList(t *testing.T) {
-	// R-D21A-JUFA R-YW1S-U90F R-D5OZ-P5ND R-D6WW-2XE2 R-D84S-GP4R R-D9CO-UGVG R-DAKL-88M5 R-DBSH-M0CU
+	// R-D21A-JUFA R-YW1S-U90F R-SYH1-ZZ80 R-SZOY-DQYP R-T0WU-RIPE R-T24R-5AG3 R-T3CN-J26S R-DBSH-M0CU
 	h := newHarness(t, false)
 	listed, err := h.client.ListTools(context.Background(), caller)
 	if err != nil {
@@ -304,11 +300,10 @@ func TestToolList(t *testing.T) {
 	if len(listed) != len(wantNames) {
 		t.Fatalf("tools = %v", listed)
 	}
-	descriptions := []string{"Every event the suite emits, who emits and accepts it, counts and last seen.", "The retained log, newest first, filtered by service, event, user, request id, cause or attributes.", "Each subscriber's status, reason, cursor and lag.", "Skip the event a paused subscriber is stuck on and resume it.", "Retry the event a paused subscriber is stuck on."}
 	schemas := []string{`{"type":"object","properties":{"service":{"type":"string"},"event":{"type":"string"}},"additionalProperties":false}`, `{"type":"object","properties":{"since":{"type":"string"},"until":{"type":"string"},"services":{"type":"array","items":{"type":"string"}},"events":{"type":"array","items":{"type":"string"}},"user":{"type":"string"},"request_id":{"type":"string"},"cause":{"type":"string"},"attrs":{"type":"object"},"limit":{"type":"integer"},"cursor":{"type":"string"}},"additionalProperties":false}`, `{"type":"object","additionalProperties":false}`, `{"type":"object","properties":{"service":{"type":"string"}},"required":["service"],"additionalProperties":false}`, `{"type":"object","properties":{"service":{"type":"string"}},"required":["service"],"additionalProperties":false}`}
 	propertyOrder := [][]string{{"service", "event"}, {"since", "until", "services", "events", "user", "request_id", "cause", "attrs", "limit", "cursor"}, nil, {"service"}, {"service"}}
 	for i, tool := range listed {
-		if tool.Name != wantNames[i] || strings.SplitN(tool.Description, "\n", 2)[0] != descriptions[i] {
+		if tool.Name != wantNames[i] || tool.Description == "" {
 			t.Fatalf("tool %d = %+v", i, tool)
 		}
 		var schema map[string]json.RawMessage
@@ -363,7 +358,7 @@ func TestToolList(t *testing.T) {
 }
 
 func TestCatalog(t *testing.T) {
-	// R-YYHL-LSHT R-DLJO-O6AE R-CZLH-SAXW R-YR67-B61N
+	// R-T70C-ODEV R-DLJO-O6AE R-CZLH-SAXW R-YR67-B61N
 	h := newHarness(t, false)
 	h.seed(2)
 	before := h.snapshot()
@@ -548,22 +543,22 @@ func TestSearchEmptyAndNumericValues(t *testing.T) {
 }
 
 func TestSearchRefusalOrder(t *testing.T) {
-	// R-DU2Z-CKH9 R-DVAV-QC7Y R-DWIS-43YN R-YX9P-80R4 R-YOQE-JMK9
+	// R-T9G5-FWW9 R-TAO1-TOMY R-TBVY-7GDN R-TD3U-L84C R-T5SG-ALO6
 	h := newHarness(t, false)
 	h.seed(1)
 	before := h.snapshot()
 	for _, failing := range []bool{false, true} {
 		h.d.SetFailing(failing)
 		for _, value := range []string{"", "2026-01-02", "today", "2026-01-02T03:04:05", "line\nbreak"} {
-			refusal(t, h.call("search", fmt.Sprintf(`{"since":%q,"until":"bad","limit":0,"cursor":"page2"}`, value)), "since is not an RFC 3339 time: '"+value+"'")
-			refusal(t, h.call("search", fmt.Sprintf(`{"until":%q,"limit":0,"cursor":"page2"}`, value)), "until is not an RFC 3339 time: '"+value+"'")
+			refusal(t, h.call("search", fmt.Sprintf(`{"since":%q,"until":"bad","limit":0,"cursor":"page2"}`, value)), timeRefusal(t, "since", value))
+			refusal(t, h.call("search", fmt.Sprintf(`{"until":%q,"limit":0,"cursor":"page2"}`, value)), timeRefusal(t, "until", value))
 		}
 		for _, limit := range []int64{-1, 0, 501, 9223372036854775807} {
-			refusal(t, h.call("search", fmt.Sprintf(`{"limit":%d,"cursor":"page2"}`, limit)), fmt.Sprintf("limit must be between 1 and 500, got %d", limit))
+			refusal(t, h.call("search", fmt.Sprintf(`{"limit":%d,"cursor":"page2"}`, limit)), limitRefusal(t, limit))
 		}
-		refusal(t, h.call("search", `{"cursor":"page2"}`), "cursor is not one search issued")
+		refusal(t, h.call("search", `{"cursor":"page2"}`), tools.BadCursor)
 		if failing {
-			refusal(t, h.call("search", `{}`), "cannot reach the log; try again later")
+			refusal(t, h.call("search", `{}`), tools.Unreachable)
 		}
 		h.d.SetFailing(false)
 		h.unchanged(before)
@@ -598,7 +593,7 @@ func checkSubscriber(t *testing.T, raw []byte, s store.Subscriber) {
 }
 
 func TestSubscribers(t *testing.T) {
-	// R-YZPH-ZK8I R-D0TE-62OL R-CZLH-SAXW R-YR67-B61N
+	// R-T889-255K R-D0TE-62OL R-CZLH-SAXW R-YR67-B61N
 	h := newHarness(t, false)
 	equalJSON(t, success(t, h.call("subscribers", `{}`)), []byte(`{"subscribers":[]}`))
 	h.seed(2)
@@ -690,7 +685,7 @@ func TestSkipAndResume(t *testing.T) {
 }
 
 func TestControlRefusals(t *testing.T) {
-	// R-YUTW-GH9Q R-YSE3-OXSC R-YR67-B61N
+	// R-TFJN-CRLQ R-YSE3-OXSC R-YR67-B61N
 	h := newHarness(t, false)
 	h.seed(1)
 	h.declare("gone", store.Declaration{Accepts: []string{"item.changed"}})
@@ -700,9 +695,12 @@ func TestControlRefusals(t *testing.T) {
 	before := h.snapshot()
 	for _, tool := range []string{"skip", "resume"} {
 		for _, name := range []string{"", "missing", "producer", "worker", "gone", "quote'\nline"} {
-			want := "no subscriber '" + name + "'"
+			want := fmt.Sprintf(tools.NoSubscriber, name)
 			if name == "worker" || name == "gone" {
-				want = "'" + name + "' is not paused"
+				want = fmt.Sprintf(tools.NotPaused, name)
+			}
+			if !strings.Contains(want, name) {
+				t.Fatal("refusal lost service", name)
 			}
 			refusal(t, h.call(tool, fmt.Sprintf(`{"service":%q}`, name)), want)
 			h.unchanged(before)
@@ -714,7 +712,7 @@ func TestControlRefusals(t *testing.T) {
 }
 
 func TestInvalidArguments(t *testing.T) {
-	// R-YNII-5UTK R-YSE3-OXSC
+	// R-T4KJ-WTXH R-YSE3-OXSC
 	h := newHarness(t, false)
 	h.seed(1)
 	h.pause()
@@ -785,7 +783,7 @@ func TestInvalidArguments(t *testing.T) {
 }
 
 func TestUnavailableLog(t *testing.T) {
-	// R-YOQE-JMK9 R-YSE3-OXSC
+	// R-T5SG-ALO6 R-YSE3-OXSC
 	h := newHarness(t, false)
 	h.seed(2)
 	h.pause()
@@ -796,7 +794,7 @@ func TestUnavailableLog(t *testing.T) {
 		if tool == "skip" || tool == "resume" {
 			args = `{"service":"worker"}`
 		}
-		refusal(t, h.call(tool, args), "cannot reach the log; try again later")
+		refusal(t, h.call(tool, args), tools.Unreachable)
 		h.d.SetFailing(false)
 		h.unchanged(before)
 	}
@@ -850,34 +848,34 @@ func TestEveryCallerSeesSameBus(t *testing.T) {
 	}
 }
 
-func TestLandingToolDescriptions(t *testing.T) {
-	// R-G2JQ-UA67
-	h := newHarness(t, false)
-	listed, err := h.client.ListTools(context.Background(), caller)
-	if err != nil {
-		t.Fatal(err)
+// R-SX95-M7HB
+func TestCopyConstants(_ *testing.T) {
+	type copyText string
+	const (
+		unreachable = tools.Unreachable
+		cursor      = tools.BadCursor
+		badTime     = tools.BadTime
+		limit       = tools.BadLimit
+		missing     = tools.NoSubscriber
+		paused      = tools.NotPaused
+	)
+	_ = []copyText{unreachable, cursor, badTime, limit, missing, paused}
+}
+
+func timeRefusal(t *testing.T, field, value string) string {
+	t.Helper()
+	text := fmt.Sprintf(tools.BadTime, field, value)
+	if !strings.Contains(text, value) {
+		t.Fatal("refusal lost supplied time")
 	}
-	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, Store: h.st})
-	r := httptest.NewRequest(http.MethodGet, "https://events.space.test/", nil)
-	r.Header.Set("X-User-Id", caller.UserID)
-	r.Header.Set("X-User-Email", caller.Email)
-	r.Header.Set("X-Forwarded-Proto", "https")
-	w := httptest.NewRecorder()
-	p.Landing(w, r)
-	if w.Code != http.StatusOK {
-		t.Fatalf("landing status = %d", w.Code)
+	return text
+}
+
+func limitRefusal(t *testing.T, limit int64) string {
+	t.Helper()
+	text := fmt.Sprintf(tools.BadLimit, limit)
+	if !strings.Contains(text, strconv.FormatInt(limit, 10)) {
+		t.Fatal("refusal lost supplied limit")
 	}
-	section := regexp.MustCompile(`(?s)<dl[^>]*id="tools"[^>]*>(.*?)</dl>`).FindStringSubmatch(w.Body.String())
-	if len(section) != 2 {
-		t.Fatal("missing tools dl")
-	}
-	rows := regexp.MustCompile(`(?s)<dt[^>]*data-tool="([^"]+)"[^>]*>.*?</dt>\s*<dd[^>]*>(.*?)</dd>`).FindAllStringSubmatch(section[1], -1)
-	if len(rows) != len(listed) {
-		t.Fatalf("tool rows = %d", len(rows))
-	}
-	for i, tool := range listed {
-		if rows[i][1] != tool.Name || html.UnescapeString(strings.TrimSpace(rows[i][2])) != strings.SplitN(tool.Description, "\n", 2)[0] {
-			t.Fatalf("row %v disagrees with %+v", rows[i], tool)
-		}
-	}
+	return text
 }

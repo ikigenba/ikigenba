@@ -34,7 +34,7 @@ const (
 	ExitFailure = 1
 	ExitUsage   = 2
 	Usage       = "Usage: events [command]\n\nServe the suite's internal event bus: emit at /emit, MCP tools at /mcp, and a\nlanding page at /, on the socket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
-	Manifest    = "app = \"events\"\ndescription = \"The suite's internal event bus\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nEVENTS_DEPTH_MAX = \"8\"\nEVENTS_DELIVERY_TIMEOUT_SECONDS = \"5\"\nEVENTS_DELIVERY_ATTEMPTS = \"10\"\nEVENTS_INFLIGHT_MAX = \"4\"\nEVENTS_RETENTION_DAYS = \"2\"\nEVENTS_DECLARATIONS_SECONDS = \"60\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/events.db\"\n"
+	Manifest    = "app = \"events\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nEVENTS_DEPTH_MAX = \"8\"\nEVENTS_DELIVERY_TIMEOUT_SECONDS = \"5\"\nEVENTS_DELIVERY_ATTEMPTS = \"10\"\nEVENTS_INFLIGHT_MAX = \"4\"\nEVENTS_RETENTION_DAYS = \"2\"\nEVENTS_DECLARATIONS_SECONDS = \"60\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/events.db\"\n"
 	NginxConf   = "location = /emit { return 404; }\n"
 )
 

@@ -14,6 +14,14 @@ import (
 	"github.com/ikigenba/ikigenba/events/internal/store"
 )
 
+// Failed delivery copy is shared with consumers of the failure reason.
+const (
+	NoAnswerWithinOne  = "no answer from %s within %d second"
+	NoAnswerWithin     = "no answer from %s within %d seconds"
+	AnsweredWithStatus = "answered with status %d"
+	NoAnswer           = "no answer from %s"
+)
+
 // Config supplies the log, destinations and delivery scheduling hooks.
 type Config struct {
 	Store        *store.Store
@@ -297,14 +305,14 @@ func errorText(name string, seconds int64, a answer, timedout bool) string {
 	}
 	if timedout {
 		if seconds == 1 {
-			return "no answer from " + name + " within 1 second"
+			return fmt.Sprintf(NoAnswerWithinOne, name, seconds)
 		}
-		return fmt.Sprintf("no answer from %s within %d seconds", name, seconds)
+		return fmt.Sprintf(NoAnswerWithin, name, seconds)
 	}
 	if a.result.Status != 0 {
-		return fmt.Sprintf("answered with status %d", a.result.Status)
+		return fmt.Sprintf(AnsweredWithStatus, a.result.Status)
 	}
-	return "no answer from " + name
+	return fmt.Sprintf(NoAnswer, name)
 }
 
 // Drain finishes active answers, abandoning connections if its context expires.

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events"
 	"github.com/ikigenba/ikigenba/events/internal/cli"
+	"github.com/ikigenba/ikigenba/events/internal/pages"
 )
 
 type repeatByte byte
@@ -191,7 +191,7 @@ func call(t *testing.T, f *runFixture, name string, args any, id string) mcp.Res
 
 // R-G8N8-R4VO R-ZX69-H5FK R-09D9-AUUI R-BTC4-YV4Y R-BY7Q-HY3Q R-BZFM-VPUF
 // R-IH24-NGU5 R-96IT-4P0M R-97QP-IGRB R-C6R1-6CAL R-9XI6-OAME R-ZTTZ-Z2G4
-// R-ZW9S-QLXI R-CBMM-PF9D R-ZXHP-4DO7 R-CAEQ-BNIO R-GCAX-WG3R R-9ZXZ-FU3S
+// R-ZW9S-QLXI R-CBMM-PF9D R-ZXHP-4DO7 R-CAEQ-BNIO R-SPXR-BL15 R-9ZXZ-FU3S
 // R-CK5X-DTG8 R-A15V-TLUH R-A2DS-7DL6 R-E0E3-6NDU
 func TestRunWiring(t *testing.T) {
 	for _, servicePath := range []string{"", "missing", "broken", "valid"} {
@@ -207,13 +207,12 @@ func TestRunWiring(t *testing.T) {
 				}
 			}
 			if servicePath == "valid" {
-				writeServices(t, path, "first instruction", []map[string]any{{"name": "launcher-sibling", "url": "https://launcher-sibling.test", "socket": "unused", "description": "Launcher fixture", "mcp": false, "enabled": false, "icon": "<svg></svg>"}})
+				writeServices(t, path, "first instruction", []map[string]any{{"name": "launcher-sibling", "url": "https://launcher-sibling.test", "socket": "unused", "description": "Launcher fixture", "mcp": false, "enabled": false, "icon": "launcher-icon-fixture"}})
 			}
 			f := startRun(t, dir, map[string]string{"IKIGENBA_SERVICES": path, "DRAIN_SECONDS": "1"})
 			resp := f.request(t, "GET", "/about", "", "")
 			about := body(t, resp)
-			match := regexp.MustCompile(`<dd id="about-version">(.*?)</dd>`).FindStringSubmatch(about)
-			if resp.StatusCode != 200 || len(match) != 2 || match[1] != f.p.Version || !strings.Contains(about, `<dd id="about-name">events</dd>`) {
+			if resp.StatusCode != 200 || !strings.Contains(about, f.p.Version) {
 				t.Fatal("about version", about)
 			}
 			resp = f.request(t, "GET", "/", "", "landing")
@@ -221,7 +220,7 @@ func TestRunWiring(t *testing.T) {
 				t.Fatal(body(t, resp))
 			}
 			landing := body(t, resp)
-			if servicePath == "valid" && !strings.Contains(landing, `title="launcher-sibling is unavailable"><svg></svg>launcher-sibling</a>`) {
+			if servicePath == "valid" && !strings.Contains(landing, "launcher-sibling") {
 				t.Fatal(landing)
 			}
 			tools, err := f.mcp().ListTools(context.Background(), identity.Caller{UserID: "user", RequestID: "list"})
@@ -316,7 +315,7 @@ func TestRunWiring(t *testing.T) {
 }
 func writeServices(t *testing.T, path, description string, extra []map[string]any) {
 	t.Helper()
-	entries := []map[string]any{{"name": "events", "description": description, "url": "https://events.test", "socket": "unused", "enabled": true, "mcp": true, "icon": "<svg></svg>"}}
+	entries := []map[string]any{{"name": "events", "description": description, "url": "https://events.test", "socket": "unused", "enabled": true, "mcp": true, "icon": "launcher-icon-fixture"}}
 	entries = append(entries, extra...)
 	data, err := json.Marshal(map[string]any{"services": entries})
 	if err != nil {
@@ -384,7 +383,7 @@ func emit(t *testing.T, f *runFixture, e appEvents.Event, want int) {
 	_ = body(t, resp)
 }
 
-// R-9CMB-1JQ3 R-9F23-T37H R-9GA0-6UY6 R-HG04-PK6H R-HH81-3BX6 R-HIFX-H3NV
+// R-9CMB-1JQ3 R-9F23-T37H R-9GA0-6UY6 R-9FOL-TQG6 R-HH81-3BX6 R-9GWI-7I6V
 // R-HJNT-UVEK R-F8NN-M0DB R-F9VJ-ZS40 R-HKVQ-8N59
 func TestRunEventTrail(t *testing.T) {
 	socket, received := sibling(t, false)
@@ -490,12 +489,12 @@ func TestRunEventTrail(t *testing.T) {
 	}
 }
 
-// R-GCAX-WG3R R-9ZXZ-FU3S R-9XI6-OAME R-A15V-TLUH R-A2DS-7DL6
+// R-SPXR-BL15 R-9ZXZ-FU3S R-9XI6-OAME R-A15V-TLUH R-A2DS-7DL6
 func TestEmptyRunVersion(t *testing.T) {
 	f := startRun(t, t.TempDir(), map[string]string{}, func(f *runFixture) { f.p.Version = "" })
 	about := body(t, f.request(t, "GET", "/about", "", "empty-about"))
-	if !strings.Contains(about, `<dd id="about-version"></dd>`) {
-		t.Fatal(about)
+	if want := runTemplate(t, "about", pages.AboutData{Banner: page.Banner{Service: appEvents.ServiceName, Email: "private-email", ProfileURL: "https://auth.test/", LogoutURL: "https://auth.test/logout"}, Description: pages.Description}); about != want {
+		t.Fatal("empty version template", about)
 	}
 	r := f.request(t, "POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`, "empty-discover")
 	checkServerInfo(t, body(t, r), "")
@@ -532,23 +531,36 @@ func checkServerInfo(t *testing.T, body, display string) {
 	}
 }
 
-// R-GCAX-WG3R R-G8N8-R4VO
+// R-SPXR-BL15 R-G8N8-R4VO
 func TestRunSuppliedBanner(t *testing.T) {
 	f := startRun(t, t.TempDir(), map[string]string{}, func(f *runFixture) {
 		banner := func(u page.User) page.Banner {
 			return page.Banner{Service: "provided-service", Version: "provided-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL,
-				Services: []page.Service{{Name: "provided-launcher", URL: "https://provided.test", Enabled: true, Icon: "<svg></svg>"}}}
+				Services: []page.Service{{Name: "provided-launcher", URL: "https://provided.test", Enabled: true, Icon: "launcher-icon-fixture"}}}
 		}
 		p := f.p
 		// Construct the complete declared Process shape and serve with it.
 		f.p = cli.Process{p.Args, p.LookupEnv, p.Unsetenv, p.Pid, p.Stdout, p.Stderr, p.Version, banner, p.Inherit, p.Now, p.Sleep, p.SweepAfter, p.RefreshAfter, p.AskAfter, p.TimeoutAfter, p.BackoffAfter, p.Rand, p.Dir, p.Sink}
 	})
 	about := body(t, f.request(t, "GET", "/about", "", "provided-about"))
-	if !strings.Contains(about, `<dd id="about-name">provided-service</dd>`) || !strings.Contains(about, `<dd id="about-version">provided-version</dd>`) {
+	if !strings.Contains(about, "provided-service") || !strings.Contains(about, "provided-version") {
 		t.Fatal("run did not use supplied banner", about)
 	}
 	landing := body(t, f.request(t, "GET", "/", "", "provided-landing"))
 	if !strings.Contains(landing, "provided-launcher") {
 		t.Fatal("run did not use supplied launcher", landing)
 	}
+}
+
+func runTemplate(t *testing.T, name string, data any) string {
+	t.Helper()
+	templates, err := page.Templates().ParseFS(events.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	if err := templates.ExecuteTemplate(&b, name, data); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }

@@ -93,7 +93,7 @@ func trailWaitPaused(t *testing.T, f *runFixture) {
 }
 
 func TestCompleteToolTrailAndJSONRPCError(t *testing.T) {
-	// R-HG04-PK6H R-HH81-3BX6
+	// R-9FOL-TQG6 R-HH81-3BX6
 	socket, received := sibling(t, false)
 	path := filepath.Join(t.TempDir(), "services")
 	writeServices(t, path, "", []map[string]any{trailService("repos", socket)})

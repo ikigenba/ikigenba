@@ -2,6 +2,7 @@
 package pages
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
@@ -16,6 +17,14 @@ import (
 
 // Description is the bus description shared with its manifest.
 const Description = "The suite's internal event bus"
+
+// Subscriber display copy is shared with consumers of the row data.
+const (
+	KindOK       = "ok"
+	KindWarn     = "warn"
+	KindInfo     = "info"
+	ReasonFormat = "at %s %d: %s"
+)
 
 // Config supplies the store and page identity.
 type Config struct {
@@ -92,10 +101,10 @@ func (p *Pages) banner(r *http.Request) page.Banner {
 	return p.cfg.Banner(u)
 }
 func row(s store.Subscriber) SubscriberRow {
-	kinds := map[store.Status]string{store.StatusOK: "ok", store.StatusPaused: "warn", store.StatusGone: "info"}
+	kinds := map[store.Status]string{store.StatusOK: KindOK, store.StatusPaused: KindWarn, store.StatusGone: KindInfo}
 	r := SubscriberRow{Service: s.Service, Status: string(s.Status), Kind: kinds[s.Status], Cursor: strconv.FormatInt(s.Cursor, 10), Lag: strconv.FormatInt(s.Lag, 10), Since: s.Since}
 	if s.Reason != nil {
-		r.Reason = "at " + s.Reason.Name + " " + strconv.FormatInt(s.Reason.Seq, 10) + ": " + s.Reason.Error
+		r.Reason = fmt.Sprintf(ReasonFormat, s.Reason.Name, s.Reason.Seq, s.Reason.Error)
 	}
 	return r
 }
