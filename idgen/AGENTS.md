@@ -1,6 +1,6 @@
 # idgen
 
-idgen mints the `R-XXXX-XXXX` requirement ids the specs use. It is a small Go CLI: an id is `PREFIX-XXXX-XXXX` (default prefix `R`), short and traceable, minted from a 2026 UTC epoch and decodable back to a timestamp. The module path is `github.com/ikigenba/ikigenba/idgen`. The contract is `specs/design/`; this file restates none of it.
+idgen mints the `R-XXXX-XXXX` requirement ids the specs use. It is a small Go CLI: an id is `PREFIX-XXXX-XXXX` (default prefix `R`), short and traceable, minted from a 2026 UTC epoch and decodable back to a timestamp. It is a command-line program with stories. The module path is `github.com/ikigenba/ikigenba/idgen`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
