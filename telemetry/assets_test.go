@@ -9,16 +9,16 @@ import (
 )
 
 func TestAssetsFiles(t *testing.T) {
-	// R-U12W-VA8E
+	// R-DI11-BYJQ
 	assets := telemetry.Assets
 	entries, err := fs.ReadDir(assets(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 {
+	if len(entries) != 3 {
 		t.Fatalf("entries: %v", entries)
 	}
-	for i, name := range []string{"about.html", "landing.html"} {
+	for i, name := range []string{"about.html", "landing.html", "tools.html"} {
 		info, err := entries[i].Info()
 		if err != nil {
 			t.Fatal(err)
@@ -33,9 +33,9 @@ func TestAssetsFiles(t *testing.T) {
 }
 
 func TestAssetsIndependentOfDirectory(t *testing.T) {
-	// R-U2AT-91Z3
+	// R-P95L-3A71
 	before := make(map[string][]byte)
-	for _, name := range []string{"landing.html", "about.html"} {
+	for _, name := range []string{"landing.html", "about.html", "tools.html"} {
 		body, err := fs.ReadFile(telemetry.Assets(), name)
 		if err != nil {
 			t.Fatal(err)
@@ -45,7 +45,7 @@ func TestAssetsIndependentOfDirectory(t *testing.T) {
 	t.Chdir(t.TempDir())
 	for range 3 {
 		entries, err := fs.ReadDir(telemetry.Assets(), ".")
-		if err != nil || len(entries) != 2 {
+		if err != nil || len(entries) != 3 {
 			t.Fatalf("entries: %v %v", entries, err)
 		}
 		for name, expected := range before {
