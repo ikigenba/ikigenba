@@ -70,13 +70,13 @@ auth draws are its own templates, drawn around appkit's banner templates: the
 sign-in pages and the profile's older parts are templates in
 `internal/server` (D05, D07), and the newer ones are human-authored files in
 `assets/`, embedded by the root package (below): the approve page an MCP
-client sends its user to (D09) and the profile's `MCP clients` card (D07).
+client sends its user to (D09) and the profile's card of MCP clients (D07).
 
 `version.Display` reads `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` from the real
 process environment, and `main` calls it exactly once, first, and holds the
 result `v`: that value is the version auth shows everywhere it shows one, and
 the one it hands `page.New` and `Run`. So one start reads the two variables
-once, as the serve story says, and `--version`, which is a run of its own,
+once, and `--version`, which is a run of its own,
 reads them once too. Nothing below `main` calls `version.Display`; `Run`
 receives the string as `Process.Version`, so an in-process test hands it any
 string it likes, the empty string included, and sets no variable. `Run` hands
@@ -107,19 +107,18 @@ such entries draws no launcher, and the entry the test looks for in the
 launcher carries all six members and an `icon`. Reading the real environment
 is exactly what the run seam keeps out of everything below `main`, so
 `page.New("auth", v)` is called in `main` and nowhere else,
-once, at start: that is the one read of `IKIGENBA_SERVICES` the serve story
-describes, and since `New` cannot fail, the variable can never stop auth
+once, at start: that is the one read of `IKIGENBA_SERVICES`, and since `New` cannot fail, the variable can never stop auth
 starting. auth's own code never reads the
 variable. The second argument, `v`, is the display string `main` read (above), the same value `--version` prints (D02);
 appkit hands it back unaltered in every `Banner` it returns, and its `footer`
-template writes it after the service's name, so every page auth draws with
-the banner ends `auth <display>`. The one exec'ing test proves that wiring:
+template writes it beside the service's name, so every page auth draws with
+the banner carries both. The one exec'ing test proves that wiring:
 it composes `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` into the child's
 environment, both non-empty, and computes the display string it expects by
 calling `version.Display` itself after setting the same two values with
 `testing.T.Setenv`, so the expectation rests on appkit's promise and no test
-spells a version; it reads the footer of the page it requests and compares
-it with that string, and it runs `--version` with neither variable in the
+spells a version; it renders appkit's `footer` for `auth` and that string
+and finds it in the page it requests, and it runs `--version` with neither variable in the
 child's environment and expects one empty line.
 
 What crosses the seam is not the kit but a function, the banner source,
@@ -151,9 +150,8 @@ defines `banner`, `launcher`, `footer` and `preload`, with every file of
 `Assets()` parsed into it and no template function added. The code adds no
 markup of its own around them, so a test renders the same template with the
 same data and compares the bytes. A template in `assets/` that writes a
-page's head, as `approve.html` does, invokes `{{template "preload"}}` there,
-so the page preloads upright Inter (D05) without auth writing a font name or
-hash.
+page's head draws appkit's `preload` template there, so auth's code names no
+font or hash.
 
 The database's schema is inside the binary too. It is a sequence of migration
 files in `migrations/` at the module root, which only a package at the module
@@ -285,7 +283,7 @@ supplies at run time.
 auth records what it does as a trail of events, through one
 `telemetry.Writer` that `Run` builds once it is about to serve (D03): its
 service is `auth`, its version `Process.Version`, the display string `main`
-read, the same value `--version` prints and the footer shows, its clock `Process.Now`, its
+read, the same value `--version` prints and the footer carries, its clock `Process.Now`, its
 random source `Process.Rand`, and its diagnostic stream `Process.Stderr`. The
 events go to a `telemetry.Sink`, and the sink is the last thing the seam
 carries, `Process.Sink`. `main` passes the socket sink appkit's
@@ -312,7 +310,7 @@ that wants a particular reason cancels with a cause of its own choosing
 - R-3FKW-RNJY: The Go module path MUST be `github.com/ikigenba/ikigenba/auth`.
 - R-LPHC-TKY0: When the `auth` executable runs with no command, the three Google settings in its environment, a listening socket passed as file descriptor 3 by the socket-activation protocol, and `IKIGENBA_SERVICES` naming a services file whose entry named `telemetry` names a Unix socket on which an HTTP server answers every `POST /ingest` with `204`, it MUST open its database at `state/auth.db` relative to its working directory, MUST draw its pages' banner from the services file that `IKIGENBA_SERVICES` names in its environment at start, and on `SIGTERM` or `SIGINT` MUST stop and exit `0`, having written nothing to stdout and nothing to stderr other than, when its database records a version that `auth.Migrations()` does not hold, the one warning line appkit's `db.Open` writes as it starts (R-LO9G-FT7B).
 - R-8CMC-DS2O: auth's design defines the **display string** of a run of the `auth` executable, and every requirement in auth's design that names the display string of a run MUST denote that string, as the string that appkit's `version.Display`, from the package `github.com/ikigenba/ikigenba/appkit/version`, returns when called in a process in whose environment each of the variables `version.CommitVariable` and `version.ReleaseVariable` name is set to the same value as in the environment that run of the executable was started with, or is unset when it was unset there.
-- R-VIKR-6BLE: When the `auth` executable serves as R-LPHC-TKY0 describes, every page it draws with the banner MUST end its `body` element's content, apart from trailing ASCII whitespace, with a `footer` element whose content reads `auth`, a single space, and the display string of that run of the executable (R-8CMC-DS2O).
+- R-IKSW-UMVP: When the `auth` executable serves as R-LPHC-TKY0 describes, every page it draws with the banner MUST carry in its body the output of appkit's `footer` template, from the set `page.Templates()` returns, executed with a `page.Banner` whose `Service` is `auth` and whose `Version` is the display string of that run of the executable (R-8CMC-DS2O).
 - R-8DU8-RJTD: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Version string; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; Dir string; Banner func(u page.User) page.Banner; Sink telemetry.Sink }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page` and `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Version` is the display string `Run` writes for `--version` (D02) and gives the telemetry writer it builds as its version, `Now` is the clock every time `Run` records or compares against is read from, the time of every migration it applies included, `Dir` is the directory against which `Run` resolves the path `state/auth.db` of its database, empty meaning the process working directory, `Banner` is the banner source from which every page auth draws with the banner is drawn, and `Sink` is the sink to which `Run` delivers the events it records.
 - R-LUR4-A3IV: `internal/cli` MUST export `func Run(ctx context.Context, p Process) int`.
 - R-3WNI-4FXO: `main` MUST terminate the process with the exact integer that `cli.Run` returns as the process exit status.
@@ -328,7 +326,7 @@ that wants a particular reason cancels with a cause of its own choosing
 - R-M22I-KPZ1: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.
 - R-M3AE-YHPQ: The `internal/server` package MUST export `type DrainError struct { Unfinished int }` and `func (e *DrainError) Error() string`.
 - R-L9FH-DHDY: `*server.Server` MUST implement `http.Handler` through `func (*Server) ServeHTTP(w http.ResponseWriter, r *http.Request)`.
-- R-VL0J-XV2S: The `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0`, run as R-LPHC-TKY0 describes from a working directory that holds nothing but `state/auth.db`, a database holding a live session (no `etc/` directory, no `share/` directory, and no configuration file), with any services file `IKIGENBA_SERVICES` names and the socket its `telemetry` entry names kept outside that directory, MUST answer `GET /` carrying that session's `SessionCookieName` cookie with the page R-VIKR-6BLE describes.
+- R-IM0T-8EME: The `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0`, run as R-LPHC-TKY0 describes from a working directory that holds nothing but `state/auth.db`, a database holding a live session (no `etc/` directory, no `share/` directory, and no configuration file), with any services file `IKIGENBA_SERVICES` names and the socket its `telemetry` entry names kept outside that directory, MUST answer `GET /` carrying that session's `SessionCookieName` cookie with a body that carries the `footer` output R-IKSW-UMVP states.
 - R-LT51-YW63: After the `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0` has run as R-LPHC-TKY0 describes and exited, from a working directory that held nothing but a `state/` directory, empty or holding a database at `state/auth.db`, with any services file `IKIGENBA_SERVICES` names and the socket its `telemetry` entry names kept outside that directory, that working directory MUST hold nothing but `state/`, `state/auth.db`, and, in `state/`, only files named `auth.db-journal`, `auth.db-wal`, or `auth.db-shm`.
 - R-VJSN-K3C3: When the `auth` executable serves as R-LPHC-TKY0 describes, the HTTP server on the socket its `telemetry` entry names MUST receive, as the body of a `POST /ingest`, an event whose `event` is `service.started`, whose `service` is `auth`, whose `request_id` and `user` are empty, and whose `attrs` hold exactly `version`, the display string of that run of the executable (R-8CMC-DS2O), before any other event; and, before the process exits on `SIGTERM` or `SIGINT`, an event whose `event` is `service.stopping`, whose `request_id` and `user` are empty, and whose `attrs` hold exactly `reason`, `SIGTERM` or `SIGINT` respectively, after every other event.
 - R-LWSR-47E6: When the `auth` executable serves as R-LPHC-TKY0 describes and, while it serves, its services file is replaced by one whose `telemetry` entry names a second Unix socket on which an HTTP server answers every `POST /ingest` with `204`, the events of a request it receives after the replacement, and its `service.stopping`, MUST be received by the server on the second socket and not by the server on the first, without the process being restarted.

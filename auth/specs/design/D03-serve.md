@@ -179,7 +179,7 @@ declares, whatever `Dir` is, so an operator reads the same line on every host;
 the error's text names the absolute path where appkit's does. A newline in that
 text is replaced by a space, so the line is one line whatever appkit's error
 holds. Under systemd the start fails, and the socket keeps queueing for an
-auth that can serve. The refusals the serve stories show are a regular file
+auth that can serve. Two such refusals are a regular file
 named `state` where the directory belongs and a `state/auth.db` auth cannot
 open (not a SQLite database, or not writable). A missing database is not this
 error; it is the first start.
@@ -380,7 +380,7 @@ A store failure is the same failure on every route: whatever the route, a
 store operation that fails with anything other than `store.ErrNotFound` —
 which each route already answers as its own 400, 401, 403 or 404, or as
 D09's redirect or OAuth error — is
-answered 500 with a single plain-text line saying the server failed, and no
+answered 500 with a single plain-text line, and no
 identity headers. A test makes the store fail at the server, where it holds
 the handle: it builds the store with `store.New` over a handle of its own and
 calls `SetFailing(true)` on that handle (appkit's failure seam, D04), or,
