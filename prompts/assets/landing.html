@@ -1,0 +1,84 @@
+{{/* The catalog at GET /: what the service is, the caller's prompts with
+     their last runs, and the tools that manage them. The root of the
+     hierarchy, so no breadcrumb. Shown only to a signed-in user. Data:
+     .Banner (a page.Banner, for banner and footer); .Prompts, the caller's
+     own prompts (never another user's), sorted by name, each with .Name,
+     .URL ("/<name>/"), .Model (the model's name in agentkit's catalog), and
+     .LastRun (nil when the prompt has never run; else .Status, the store's
+     status value, .ExitCode, int, the exit code, .Cost (the run's cost in
+     US dollars to six decimal places, "0.023714", from its cost_nanos;
+     empty while the run is queued or running), .Started, the start time as
+     shown, "2006-01-02 15:04", and .StartedAt, the same as RFC 3339 UTC).
+     Status words and kinds, chosen here from .Status and .ExitCode by the
+     run-status template (defined in run.html): "queued" and "running"
+     info; "exited <.ExitCode>" ok when .ExitCode is 0, else warn; "timed
+     out" (timed_out) and "killed" warn; "failed" err. A cost is shown as
+     "$" then .Cost. Hooks: h1 with text "prompts"; p#summary.lede;
+     section#prompts with h2 "Your prompts" and either div#no-prompts.empty
+     (h3 text "No prompts yet") when .Prompts is empty, or table#prompt-list
+     with one tr[data-prompt=<name>] per prompt holding td.prompt-name >
+     a.prompt-link (href .URL, text .Name), td.prompt-model > code (text
+     .Model), td.prompt-last holding span.status[data-kind=<kind>] (text the
+     status word) or, when never run, td.prompt-last.muted with text "never
+     run", td.prompt-cost.num (text the cost, empty when never run or when
+     .Cost is empty), and td.prompt-when holding
+     time[datetime=<.LastRun.StartedAt>] (text .LastRun.Started), empty when
+     never run; a section with h2 "MCP tools" and dl#tools.kv holding one
+     dt[data-tool=<name>] per MCP tool, in the order list, show, create,
+     update, delete, subscribe, unsubscribe, run, runs, result, cancel, each
+     holding the tool's name in a code element and followed by a dd holding
+     the first line of its description; a#about-link whose href is "/about".
+     No script but appkit's /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>prompts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>prompts</h1>
+<p id="summary" class="lede">Prompts run by an agent over the suite's models. An agent creates a prompt, naming a model and the text, and runs it; every run keeps its folder, its answer, its transcript and what it cost here.</p>
+<section id="prompts" class="card flush" aria-labelledby="prompts-title">
+<header><div><h2 id="prompts-title">Your prompts</h2><p>Each one is a model and the text it is given. A run is one turn: the model reads the text and the input, uses the tools the prompt allows, and its final message is the answer.</p></div></header>
+{{if .Prompts}}<div class="table-scroll">
+<table id="prompt-list">
+<thead><tr><th>Prompt</th><th>Model</th><th>Last run</th><th class="num">Cost</th><th>When</th></tr></thead>
+<tbody>
+{{range .Prompts}}<tr data-prompt="{{.Name}}">
+<td class="prompt-name"><a class="prompt-link" href="{{.URL}}">{{.Name}}</a></td>
+<td class="prompt-model"><code>{{.Model}}</code></td>
+{{with .LastRun}}<td class="prompt-last">{{template "run-status" .}}</td>
+<td class="prompt-cost num">{{with .Cost}}${{.}}{{end}}</td>
+<td class="prompt-when"><time datetime="{{.StartedAt}}">{{.Started}}</time></td>
+{{else}}<td class="prompt-last muted">never run</td>
+<td class="prompt-cost num"></td>
+<td class="prompt-when"></td>
+{{end}}</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-prompts" class="empty">
+<h3 class="text-md">No prompts yet</h3>
+<p>A prompt you create with the <code>create</code> tool shows up here.</p>
+</div>{{end}}
+</section>
+<section class="card" aria-labelledby="tools-title">
+<header><h2 id="tools-title">MCP tools</h2><p>Agents manage and run prompts with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
+<dl id="tools" class="kv">
+<dt data-tool="list"><code>list</code></dt><dd>The prompts you own, by name.</dd>
+<dt data-tool="show"><code>show</code></dt><dd>One of your prompts, with its model, its text, its tools and its last run.</dd>
+<dt data-tool="create"><code>create</code></dt><dd>Create a prompt from a model and the text it is given.</dd>
+<dt data-tool="update"><code>update</code></dt><dd>Change the model, text, system prompt, tools or schema of one of your prompts.</dd>
+<dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your prompts and every run it has.</dd>
+<dt data-tool="subscribe"><code>subscribe</code></dt><dd>Run one of your prompts each time an event matching a pattern is delivered.</dd>
+<dt data-tool="unsubscribe"><code>unsubscribe</code></dt><dd>Stop running one of your prompts on an event it is subscribed to.</dd>
+<dt data-tool="run"><code>run</code></dt><dd>Start a run of one of your prompts and return its id and status.</dd>
+<dt data-tool="runs"><code>runs</code></dt><dd>The runs of one of your prompts, newest first.</dd>
+<dt data-tool="result"><code>result</code></dt><dd>One run whole: its details, its usage and cost, its answer so far, and the files it wrote.</dd>
+<dt data-tool="cancel"><code>cancel</code></dt><dd>End one of your runs that is still queued or running.</dd>
+</dl>
+</section>
+<p><a id="about-link" href="/about">About prompts</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

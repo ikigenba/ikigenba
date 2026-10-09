@@ -1,0 +1,163 @@
+{{/* One run at GET /<name>/runs/<run id>/: its record, its usage and cost,
+     its answer, input, transcript and files. Shown only to the signed-in
+     user who owns its prompt. The page does not stream; a run still running
+     shows what exists when the page is loaded. Data: .Banner (a
+     page.Banner, for banner and footer); .Prompt, the run's prompt, with
+     .Name and .URL ("/<name>/"); .Run, with .ID (its prr_ id), .URL (this
+     page's path), .Status (the store's status value: "queued", "running",
+     "exited", "timed_out", "killed" or "failed"), .ExitCode (int, the
+     child's exit code; meaningful only when .Status is "exited"), .Running
+     (bool: queued or running), .Model (the model the run used), .Started
+     ("2006-01-02 15:04:05 UTC") and .StartedAt (RFC 3339 UTC), .Finished
+     and .FinishedAt (likewise, empty while running), .Duration (nil while
+     running or when the run failed to start; else .Minutes and .Seconds,
+     ints, the whole minutes and the remaining seconds), .Trigger (how it
+     started, "manual" or "event"), .Event (string: the id of the event that
+     started the run, empty for a manual run), .User (the user id of the
+     user who started it), .Request (the request id, nginx's X-Request-Id,
+     32 hex, of the request that started it), .Usage (nil while the run is
+     queued or running; else what the run spent, summed from its
+     transcript's usage records, zeros when there is no transcript: .Calls,
+     .ToolCalls, .InputTokens, .CachedTokens, .OutputTokens and
+     .ReasoningTokens, each a count as shown, its digits grouped in threes
+     by commas, "18,204", and .Cost, the cost in US dollars to six decimal
+     places, "0.023714", from the run's cost_nanos), .StdoutSize,
+     .StderrSize and .TranscriptSize (each a size, the bytes kept, zero when
+     the file does not exist: .Number, the scaled number as shown, "812" or
+     "1.2", and .Unit, "byte", "kilobyte" or "megabyte"), .Truncated (bool:
+     the run's output was cut, whichever stream), .Failure (nil unless the
+     run failed to start; else .Reason, the store's reason value:
+     "queue_abandoned" or "start_failed") and .FilesGone (bool: the run's
+     folder is no longer kept); .Stdout, .Stderr and .Input (each nil when
+     its file does not exist; else .Size, a size, .Text, the file's
+     contents, empty when the file is empty, and .URL, its download path);
+     .Transcript (nil when transcript.jsonl does not exist; else .Size, a
+     size, and .URL, its download path); .Files, what the run wrote under
+     work/, sorted by path, each with .Path (relative to work/), .Size, a
+     size, and .URL, its download path. Status words and kinds, chosen here
+     from .Status and .ExitCode by the run-status template: "queued" and
+     "running" info; "exited <.ExitCode>" ok when .ExitCode is 0, else
+     warn; "timed out" (timed_out) and "killed" warn; "failed" err. The
+     duration is shown as "<.Minutes>m <.Seconds>s", the minutes part
+     omitted when .Minutes is 0 (run-duration); a size as .Number then " B",
+     " kB" or " MB" for its .Unit (file-size); a cost as "$" then .Cost. Each
+     count of the usage line takes the singular noun when it is "1" and the
+     plural otherwise. The notice's first word is "Queued" or "Running",
+     from .Status. A failure's title and sentence are chosen from .Reason.
+     Hooks: nav.crumbs[aria-label="Breadcrumb"] holding an ol of li
+     a[href="/"] (text "prompts"), li a[href=.Prompt.URL] (text
+     .Prompt.Name), then li[aria-current="page"] (text .Run.ID, no link); h1
+     with text .Run.ID; p#headline.cluster holding
+     span.status[data-kind=<kind>] (text the status word), a space, and a
+     span.muted holding "started" and time[datetime=.StartedAt] (text
+     .Started), then " · " and .Duration when there is one, then " · " and
+     the cost when .Usage is set, or, when .Failure is set, the time alone;
+     when .Running, div#running.alert.quiet[data-kind=info] (strong#notice,
+     the notice word, then text "The page does not stream. Reload it to see
+     more output.") and a#reload.button (href .Run.URL, text "Reload"); when
+     .Failure is set, div#failure.alert[data-kind=err] (strong, the
+     failure's title, p, its sentence); when .FilesGone,
+     div#files-gone.alert.quiet (strong "Files no longer kept");
+     section#run-card with h2 "Run", then, when .Event is set, p#started-by
+     "Started by the event <.Event>." (the id in code), else, when .Trigger
+     is "manual", p#started-by "Started by the run tool." (run in code), and
+     dl#run.kv holding dt "Status" (dd span.status, then
+     span.badge[data-kind=warn] with text "output truncated" when
+     .Truncated), dt "Prompt" (dd a, href .Prompt.URL, text .Prompt.Name),
+     dt "Model" (dd code .Model), dt "Started" (dd time), dt "Finished" (dd
+     time, only when .Finished is set), dt "Duration" (dd the duration, only
+     when .Duration is set), dt "Trigger", dt "User", dt "Request" (dd code
+     .Request), dt "Usage" (dd#usage "<.Calls> calls · <.ToolCalls> tool
+     calls · <.InputTokens> input tokens (<.CachedTokens> cached) ·
+     <.OutputTokens> output tokens · <.ReasoningTokens> reasoning tokens"
+     when .Usage is set, else dd#usage.muted with text "counted when the run
+     ends"), dt "Cost" (dd#cost, the cost; only when .Usage is set) and dt
+     "Output" (dd "stdout <size> · stderr <size> · transcript <size>", never
+     "(truncated)"); unless .FilesGone, in this order, section#stdout,
+     section#stderr and section#input, each present only when its file
+     exists, with h2 "Answer", "Standard error" or "Input", a p naming the
+     file (code "stdout", "stderr" or "input.json") and its size,
+     a.button[download] (href its .URL, text "Download"), and either pre >
+     code holding .Text or, when .Text is empty, p.muted with text "No
+     output." or "No input."; then section#transcript, present only when
+     .Transcript is set, with h2 "Transcript", a p naming the file (code
+     "transcript.jsonl") and its size, a.button[download] (href its .URL,
+     text "Download") and a p.muted saying what the file holds, never its
+     contents; then section#files with h2 "Files" and either p#no-files.empty
+     (text "No files.") when .Files is empty, or table#file-list with one
+     tr[data-file=<path>] per file holding td.file-path > code (text .Path),
+     td.file-size.num (text the size) and td.row-actions >
+     a.button[download] (href .URL, text "Download"). No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "run"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Run.ID}} · {{.Prompt.Name}} · prompts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<nav class="crumbs" aria-label="Breadcrumb">
+<ol>
+<li><a href="/">prompts</a></li>
+<li><a href="{{.Prompt.URL}}">{{.Prompt.Name}}</a></li>
+<li aria-current="page">{{.Run.ID}}</li>
+</ol>
+</nav>
+{{with .Run}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster">{{template "run-status" .}} <span class="muted">{{if .Failure}}<time datetime="{{.StartedAt}}">{{.Started}}</time>{{else}}started <time datetime="{{.StartedAt}}">{{.Started}}</time>{{with .Duration}} · {{template "run-duration" .}}{{end}}{{with .Usage}} · ${{.Cost}}{{end}}{{end}}</span></p>
+{{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">{{if eq .Status "queued"}}Queued{{else}}Running{{end}}</strong><p>The page does not stream. Reload it to see more output.</p></div>
+<p><a id="reload" class="button secondary small" href="{{.URL}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
+{{end}}{{with .Failure}}<div id="failure" class="alert" data-kind="err">{{if eq .Reason "queue_abandoned"}}<strong>The run never left the queue</strong><p>The run was waiting for a slot when prompts stopped. The prompt was not run.</p>{{else}}<strong>The prompt could not start</strong><p>The run's process could not be launched. The prompt was not run.</p>{{end}}</div>
+{{end}}{{if .FilesGone}}<div id="files-gone" class="alert quiet"><strong>Files no longer kept</strong><p>This run's folder is gone, so its input, answer, transcript and files cannot be shown. The record stays.</p></div>
+{{end}}<section id="run-card" class="card" aria-labelledby="run-title">
+<header><h2 id="run-title">Run</h2>{{if .Event}}<p id="started-by">Started by the event <code>{{.Event}}</code>.</p>{{else if eq .Trigger "manual"}}<p id="started-by">Started by the <code>run</code> tool.</p>{{end}}</header>
+<dl id="run" class="kv">
+<dt>Status</dt><dd>{{template "run-status" .}}{{if .Truncated}} <span class="badge" data-kind="warn">output truncated</span>{{end}}</dd>
+<dt>Prompt</dt><dd><a href="{{$.Prompt.URL}}">{{$.Prompt.Name}}</a></dd>
+<dt>Model</dt><dd><code>{{.Model}}</code></dd>
+<dt>Started</dt><dd><time datetime="{{.StartedAt}}">{{.Started}}</time></dd>
+{{if .Finished}}<dt>Finished</dt><dd><time datetime="{{.FinishedAt}}">{{.Finished}}</time></dd>
+{{end}}{{with .Duration}}<dt>Duration</dt><dd>{{template "run-duration" .}}</dd>
+{{end}}<dt>Trigger</dt><dd>{{.Trigger}}</dd>
+<dt>User</dt><dd>{{.User}}</dd>
+<dt>Request</dt><dd><code>{{.Request}}</code></dd>
+{{with .Usage}}<dt>Usage</dt><dd id="usage">{{.Calls}} {{if eq .Calls "1"}}call{{else}}calls{{end}} · {{.ToolCalls}} {{if eq .ToolCalls "1"}}tool call{{else}}tool calls{{end}} · {{.InputTokens}} {{if eq .InputTokens "1"}}input token{{else}}input tokens{{end}} ({{.CachedTokens}} cached) · {{.OutputTokens}} {{if eq .OutputTokens "1"}}output token{{else}}output tokens{{end}} · {{.ReasoningTokens}} {{if eq .ReasoningTokens "1"}}reasoning token{{else}}reasoning tokens{{end}}</dd>
+<dt>Cost</dt><dd id="cost">${{.Cost}}</dd>
+{{else}}<dt>Usage</dt><dd id="usage" class="muted">counted when the run ends</dd>
+{{end}}<dt>Output</dt><dd>stdout {{template "file-size" .StdoutSize}} · stderr {{template "file-size" .StderrSize}} · transcript {{template "file-size" .TranscriptSize}}</dd>
+</dl>
+</section>
+{{end}}{{if not .Run.FilesGone}}{{with .Stdout}}<section id="stdout" class="card" aria-labelledby="stdout-title">
+<header><h2 id="stdout-title">Answer</h2><p><code>stdout</code>, {{template "file-size" .Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+{{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No output.</p>{{end}}
+</section>
+{{end}}{{with .Stderr}}<section id="stderr" class="card" aria-labelledby="stderr-title">
+<header><h2 id="stderr-title">Standard error</h2><p><code>stderr</code>, {{template "file-size" .Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+{{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No output.</p>{{end}}
+</section>
+{{end}}{{with .Input}}<section id="input" class="card" aria-labelledby="input-title">
+<header><h2 id="input-title">Input</h2><p><code>input.json</code>, {{template "file-size" .Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+{{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No input.</p>{{end}}
+</section>
+{{end}}{{with .Transcript}}<section id="transcript" class="card" aria-labelledby="transcript-title">
+<header><h2 id="transcript-title">Transcript</h2><p><code>transcript.jsonl</code>, {{template "file-size" .Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+<p class="muted">Every message, tool use, tool result and usage record of the run, one JSON object per line.</p>
+</section>
+{{end}}<section id="files" class="card flush" aria-labelledby="files-title">
+<header><div><h2 id="files-title">Files</h2><p>What the run wrote under <code>work/</code>. Each downloads as a file.</p></div></header>
+{{if .Files}}<div class="table-scroll">
+<table id="file-list">
+<thead><tr><th>File</th><th class="num">Size</th><th></th></tr></thead>
+<tbody>
+{{range .Files}}<tr data-file="{{.Path}}"><td class="file-path"><code>{{.Path}}</code></td><td class="file-size num">{{template "file-size" .Size}}</td><td class="row-actions"><a class="button ghost small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></td></tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<p id="no-files" class="empty">No files.</p>{{end}}
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
+{{define "run-status"}}<span class="status" data-kind="{{if eq .Status "queued" "running"}}info{{else if eq .Status "exited"}}{{if eq .ExitCode 0}}ok{{else}}warn{{end}}{{else if eq .Status "timed_out" "killed"}}warn{{else}}err{{end}}">{{if eq .Status "queued"}}queued{{else if eq .Status "running"}}running{{else if eq .Status "exited"}}exited {{.ExitCode}}{{else if eq .Status "timed_out"}}timed out{{else if eq .Status "killed"}}killed{{else}}failed{{end}}</span>{{end}}
+{{define "run-duration"}}{{if .Minutes}}{{.Minutes}}m {{end}}{{.Seconds}}s{{end}}
+{{define "file-size"}}{{.Number}}{{if eq .Unit "byte"}} B{{else if eq .Unit "kilobyte"}} kB{{else}} MB{{end}}{{end}}

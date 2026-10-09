@@ -1,0 +1,134 @@
+{{/* One prompt at GET /<name>/: its record, its text, its subscriptions and
+     its runs, newest first. Shown only to the signed-in user who owns it.
+     Data: .Banner (a page.Banner, for banner and footer); .Prompt, with .ID
+     (its prm_ id), .Name, .Model (the model's name in agentkit's catalog),
+     .Tools (the prompt's tool groups in the order stored, empty when none,
+     each with .Name, "files", "bash" or "suite", and .First and .Last,
+     bools, whether it is the first and the last of them), .Text (the
+     prompt's text, the first user message of every run), .System (the
+     system prompt, empty when none), .Schema (the output schema's JSON as
+     shown, empty when none), .Created (the creation time as shown,
+     "2006-01-02 15:04 UTC") and .CreatedAt (the same as RFC 3339 UTC),
+     .RunsKept (how many runs are kept), .KeepNewest and .KeepDays (the
+     retention rule: the newest .KeepNewest runs are kept past .KeepDays
+     days); .Runs, the prompt's runs, newest first, each with .ID (its prr_
+     id), .URL ("/<name>/runs/<id>/"), .Status (the store's status value),
+     .ExitCode (int, the exit code; meaningful only when .Status is
+     "exited"), .Model (the model the run used), .Cost (the run's cost in US
+     dollars to six decimal places, "0.023714", from its cost_nanos; empty
+     while the run is queued or running), .Started ("2006-01-02 15:04") and
+     .StartedAt (RFC 3339 UTC), .Duration (nil while running or when the run
+     failed to start; else .Minutes and .Seconds, ints, shown as
+     "<.Minutes>m <.Seconds>s" with the minutes part omitted when .Minutes
+     is 0, by run-duration in run.html); .Subscriptions ([]string, the event
+     names the prompt is subscribed to, sorted by name). Status words and
+     kinds, chosen here from .Status and .ExitCode by the run-status
+     template (defined in run.html): "queued" and "running" info; "exited
+     <.ExitCode>" ok when .ExitCode is 0, else warn; "timed out" (timed_out)
+     and "killed" warn; "failed" err. A cost is shown as "$" then .Cost.
+     Hooks: nav.crumbs[aria-label="Breadcrumb"] holding an ol of li
+     a[href="/"] (text "prompts") then li[aria-current="page"] (text
+     .Prompt.Name, no link); h1 with text .Prompt.Name; p#about-prompt
+     naming the model (code, .Model) and the tool groups (each a code, .Name,
+     joined by ", " and a final " and "), or "no tools" when .Tools is
+     empty; section#prompt-card with h2 "Prompt" and dl#prompt.kv holding dt
+     "Id" (dd code .ID), dt "Model" (dd code .Model), dt "Tools" (dd
+     span#tool-groups.cluster holding one code[data-group=<name>] (text
+     .Name) per group, or, when .Tools is empty, dd > span#no-tools.muted
+     with text "none"), dt "Created" (dd time[datetime=.CreatedAt], text
+     .Created) and dt "Runs kept" (dd ".RunsKept · the newest .KeepNewest
+     are kept past .KeepDays days"); section#text with h2 "Text" and pre >
+     code holding .Text; section#system with h2 "System prompt" and either
+     pre > code holding .System or, when .System is empty,
+     div#no-system.empty (text "This prompt has no system prompt.");
+     section#schema with h2 "Output schema" and either pre > code holding
+     .Schema or, when .Schema is empty, div#no-schema.empty (text "This
+     prompt has no output schema; its answer is the model's final message
+     as written."); section#subscriptions with h2 "Subscriptions" and either
+     ul#subscription-list with one li[data-event=<name>] > code (text the
+     name) per event name, in the given order, or, when .Subscriptions is
+     empty, div#no-subscriptions.empty (text "This prompt is subscribed to
+     no events."); section#runs with h2 "Runs" and either div#no-runs.empty
+     (h3 text "No runs yet") when .Runs is empty, or table#run-list with one
+     tr[data-run=<id>] per run holding td.run-id > a.run-link (href .URL) >
+     code (text .ID), td.run-status > span.status[data-kind=<kind>] (text
+     the status word), td.run-model > code (text .Model), td.run-started >
+     time[datetime=.StartedAt] (text .Started), td.run-duration (text the
+     duration, empty when none), td.run-cost.num (text the cost, empty when
+     .Cost is empty) and td.run-exit.num (text .ExitCode when .Status is
+     "exited", else empty). No script but appkit's /_appkit/feedback.js. */}}
+{{define "prompt"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Prompt.Name}} · prompts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Prompt}}<nav class="crumbs" aria-label="Breadcrumb">
+<ol>
+<li><a href="/">prompts</a></li>
+<li aria-current="page">{{.Name}}</li>
+</ol>
+</nav>
+<h1>{{.Name}}</h1>
+<p id="about-prompt">Runs on <code>{{.Model}}</code> with {{if .Tools}}the tools {{range .Tools}}{{if not .First}}{{if .Last}} and {{else}}, {{end}}{{end}}<code>{{.Name}}</code>{{end}}{{else}}no tools{{end}}.</p>
+<section id="prompt-card" class="card" aria-labelledby="prompt-title">
+<header><h2 id="prompt-title">Prompt</h2><p>Changed by an agent through the <code>update</code> tool.</p></header>
+<dl id="prompt" class="kv">
+<dt>Id</dt><dd><code>{{.ID}}</code></dd>
+<dt>Model</dt><dd><code>{{.Model}}</code></dd>
+<dt>Tools</dt><dd>{{if .Tools}}<span id="tool-groups" class="cluster">{{range .Tools}}<code data-group="{{.Name}}">{{.Name}}</code>{{end}}</span>{{else}}<span id="no-tools" class="muted">none</span>{{end}}</dd>
+<dt>Created</dt><dd><time datetime="{{.CreatedAt}}">{{.Created}}</time></dd>
+<dt>Runs kept</dt><dd>{{.RunsKept}} · the newest {{.KeepNewest}} are kept past {{.KeepDays}} days</dd>
+</dl>
+</section>
+<section id="text" class="card" aria-labelledby="text-title">
+<header><h2 id="text-title">Text</h2><p>The first user message of every run. The run's input follows it after an empty line, unless the input is <code>{}</code>.</p></header>
+<pre><code>{{.Text}}</code></pre>
+</section>
+<section id="system" class="card" aria-labelledby="system-title">
+<header><h2 id="system-title">System prompt</h2></header>
+{{if .System}}<pre><code>{{.System}}</code></pre>{{else}}<div id="no-system" class="empty">
+<p>This prompt has no system prompt.</p>
+</div>{{end}}
+</section>
+<section id="schema" class="card" aria-labelledby="schema-title">
+<header><h2 id="schema-title">Output schema</h2>{{if .Schema}}<p>The answer is an object this schema accepts, written as JSON.</p>{{end}}</header>
+{{if .Schema}}<pre><code>{{.Schema}}</code></pre>{{else}}<div id="no-schema" class="empty">
+<p>This prompt has no output schema; its answer is the model's final message as written.</p>
+</div>{{end}}
+</section>
+{{end}}<section id="subscriptions" class="card" aria-labelledby="subscriptions-title">
+<header><h2 id="subscriptions-title">Subscriptions</h2><p>The events that start this prompt, set by an agent.</p></header>
+{{if .Subscriptions}}<ul id="subscription-list">
+{{range .Subscriptions}}<li data-event="{{.}}"><code>{{.}}</code></li>
+{{end}}</ul>{{else}}<div id="no-subscriptions" class="empty">
+<p>This prompt is subscribed to no events.</p>
+</div>{{end}}
+</section>
+<section id="runs" class="card flush" aria-labelledby="runs-title">
+<header><div><h2 id="runs-title">Runs</h2><p>Newest first. A run still running shows its progress when the page is reloaded.</p></div></header>
+{{if .Runs}}<div class="table-scroll">
+<table id="run-list">
+<thead><tr><th>Run</th><th>Status</th><th>Model</th><th>Started</th><th>Duration</th><th class="num">Cost</th><th class="num">Exit</th></tr></thead>
+<tbody>
+{{range .Runs}}<tr data-run="{{.ID}}">
+<td class="run-id"><a class="run-link" href="{{.URL}}"><code>{{.ID}}</code></a></td>
+<td class="run-status">{{template "run-status" .}}</td>
+<td class="run-model"><code>{{.Model}}</code></td>
+<td class="run-started"><time datetime="{{.StartedAt}}">{{.Started}}</time></td>
+<td class="run-duration">{{with .Duration}}{{template "run-duration" .}}{{end}}</td>
+<td class="run-cost num">{{with .Cost}}${{.}}{{end}}</td>
+<td class="run-exit num">{{if eq .Status "exited"}}{{.ExitCode}}{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-runs" class="empty">
+<h3 class="text-md">No runs yet</h3>
+<p>Runs started with the <code>run</code> tool show up here, newest first.</p>
+</div>{{end}}
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

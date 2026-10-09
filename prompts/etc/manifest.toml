@@ -1,0 +1,29 @@
+app = "prompts"
+description = "Prompts run by an agent over the suite's models"
+default = false
+mcp = true
+guests = false
+secrets = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY"]
+
+[env]
+PROMPT_SECONDS = "600"
+OUTPUT_MAX_BYTES = "1048576"
+RUN_MAX_TOOL_CALLS = "50"
+RUN_MEMORY_MAX_BYTES = "134217728"
+RUNS_MEMORY_MAX_BYTES = "536870912"
+RUNS_CPU_PERCENT = "100"
+RUN_PIDS_MAX = "64"
+RUN_MAX_ACTIVE = "4"
+RUN_MAX_QUEUED = "10"
+RUN_KEEP_DAYS = "15"
+RUN_KEEP_COUNT = "10"
+
+[database]
+engine = "sqlite"
+path = "state/prompts.db"
+
+[resources]
+slice = "apps"
+memory_max = "896M"
+go_memory_limit = "128M"
+delegate = true
