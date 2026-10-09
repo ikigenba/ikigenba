@@ -18,7 +18,7 @@ import (
 const ServiceName = "home"
 
 // Description is home's one-line description.
-const Description string = "The front door to every service on this space."
+const Description string = "Every service on this space"
 
 // LandingData supplies the landing template.
 type LandingData struct {

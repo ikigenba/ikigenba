@@ -1,5 +1,5 @@
 app = "home"
-description = "The front door to every service on this space."
+description = "Every service on this space"
 default = true
 mcp = false
 guests = false
