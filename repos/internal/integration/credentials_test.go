@@ -185,7 +185,7 @@ func (a *inspection) assert(t *testing.T) {
 	for _, problem := range a.problems {
 		t.Error(problem)
 	}
-	for _, route := range []string{"GET /", "GET /about", "POST /mcp"} {
+	for _, route := range []string{"GET /", "GET /about", "GET /tools", "POST /mcp"} {
 		if a.requests[route] == 0 {
 			t.Errorf("route %s was never exercised", route)
 		}
@@ -362,9 +362,9 @@ func exerciseCredentials(t *testing.T, endpoint string, cs []credential, a *insp
 	clientRoot := t.TempDir()
 	executable, env := gitEnvironment(t, clientRoot)
 	for i, c := range cs {
-		for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/absent"} {
+		for _, path := range []string{"/", "/about", "/tools", "/_appkit/theme.css", "/absent"} {
 			response := credentialHTTP(t, endpoint, http.MethodGet, path, c.header, true, "", "")
-			if (path == "/" || path == "/about") && response.Code != http.StatusOK {
+			if (path == "/" || path == "/about" || path == "/tools") && response.Code != http.StatusOK {
 				t.Fatalf("%s status=%d", path, response.Code)
 			}
 		}
@@ -422,7 +422,7 @@ func (s *eventSink) Deliver(ctx context.Context, event telemetry.Event) error {
 	return s.failure
 }
 
-// R-GTMI-EQAJ R-S64N-K6TA R-GUUE-SI18 R-GW2B-69RX R-EGA6-18BQ R-3W3T-QBMN: Drive the entire run,
+// R-X7O3-6A9L R-X8VZ-K20A R-GUUE-SI18 R-XA3V-XTQZ R-XBBS-BLHO R-XCJO-PD8D: Drive the entire run,
 // inspect every delivery attempt and stderr, and inspect every regular state file.
 func TestRunDoesNotExportCredentials(t *testing.T) {
 	for _, sinkMode := range []string{"delivered", "failed", "rejected"} {
@@ -613,7 +613,7 @@ func assertEventTraffic(t *testing.T, events []telemetry.Event) {
 			t.Errorf("credential traffic delivered no %s event to the sink", name)
 		}
 	}
-	for _, path := range []string{"GET /", "GET /about", "POST /mcp"} {
+	for _, path := range []string{"GET /", "GET /about", "GET /tools", "POST /mcp"} {
 		if paths[path] < 2 {
 			t.Errorf("sink did not see both credentials on %s", path)
 		}
@@ -699,13 +699,13 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 			{"POST", "/stable.git/git-upload-pack", "0000", "application/x-git-upload-pack-request"},
 			{"POST", "/stable.git/git-receive-pack", "0000", "application/x-git-receive-pack-request"},
 			{"GET", "/stable.git/HEAD", "", ""}, {"HEAD", "/stable.git/", "", ""},
-			{"PUT", "/", "neutral body", "text/plain"}, {"POST", "/about", "", ""},
+			{"PUT", "/", "neutral body", "text/plain"}, {"POST", "/about", "", ""}, {"POST", "/tools", "", ""},
 			{"GET", "/absent.git/info/refs?service=git-upload-pack", "", ""},
 			{"GET", "/mcp", "", ""},
 		} {
 			credentialHTTP(t, server.URL, request.method, request.path, c.header, true, request.body, request.contentType)
 		}
-		for _, path := range []string{"/", "/about", "/mcp", "/stable.git/info/refs?service=git-upload-pack", "/_appkit/theme.css"} {
+		for _, path := range []string{"/", "/about", "/tools", "/mcp", "/stable.git/info/refs?service=git-upload-pack", "/_appkit/theme.css"} {
 			response := credentialHTTP(t, server.URL, http.MethodGet, path, c.header, false, "", "")
 			if response.Code == http.StatusOK {
 				t.Errorf("missing identity unexpectedly succeeded at %s", path)

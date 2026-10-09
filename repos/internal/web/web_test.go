@@ -29,21 +29,25 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
 )
 
-// R-BIXW-EM48
+// R-X6G6-SIIW
 func TestIdentityBeforeEveryRoute(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
 	before := f.gitCalls.Load()
-	paths := []string{"/", "/about", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/feedback.js", "/_appkit/favicon.svg", "/_appkit/OFL.txt", "/_appkit/TABLER-LICENSE.txt", "/_appkit/nope", "/_appkit", "/favicon.ico", "/mcp", "/events/", "/declarations/", "/notes.git/info/refs?service=git-upload-pack", "/nope"}
+	paths := []string{"/", "/about", "/tools", "/_appkit/theme.css", "/_appkit/launcher.js", "/_appkit/feedback.js", "/_appkit/favicon.svg", "/_appkit/OFL.txt", "/_appkit/TABLER-LICENSE.txt", "/_appkit/nope", "/_appkit", "/favicon.ico", "/mcp", "/events/", "/declarations/", "/notes.git/info/refs?service=git-upload-pack", "/nope"}
 	for name := range webSharedFiles(t, h) {
 		paths = append(paths, page.StaticPrefix+name)
 	}
 	for _, path := range paths {
-		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "custom"} {
 			for _, values := range [][]string{nil, {""}, {"", "later-user"}} {
-				r := httptest.NewRequest(method, path, strings.NewReader(`{"name":"intruder"}`))
+				body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create","arguments":{"name":"intruder"},"_meta":{"io.modelcontextprotocol/protocolVersion":%q,"io.modelcontextprotocol/clientCapabilities":{}}}}`, mcp.ProtocolVersion)
+				r := httptest.NewRequest(method, path, strings.NewReader(body))
 				r.Header["X-User-Id"] = values
 				r.Header.Set("Content-Type", "application/json")
+				r.Header.Set("MCP-Protocol-Version", mcp.ProtocolVersion)
+				r.Header.Set("Mcp-Method", "tools/call")
+				r.Header.Set("Mcp-Name", "create")
 				r.Header.Set("If-None-Match", "*")
 				r.Header.Set("X-Request-Id", "missing-user")
 				got, baseline := httptest.NewRecorder(), httptest.NewRecorder()
@@ -69,14 +73,14 @@ func TestIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-QUJU-S70W R-U9EJ-B509 R-QY7J-XI8Z R-BK5S-SDUX
+// R-QUJU-S70W R-U9EJ-B509 R-QY7J-XI8Z R-T6YM-LH8X
 func TestExactRoutesAndNotFound(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
 	before := f.gitCalls.Load()
-	paths := []string{"/nope", "/assets/theme.css", "/assets/favicon.svg", "/favicon.ico", "/mcp/", "/mcp/tool", "/about/", "/notes", "/notes/info/refs", "/_appkit", "/index.html", "//", "/x/../", "/x/notes.git/info/refs", "/notes.gitx"}
+	paths := []string{"/nope", "/assets/theme.css", "/assets/favicon.svg", "/favicon.ico", "/mcp/", "/mcp/tool", "/mcp/tools/call", "/about/", "/tools/", "/notes", "/notes/info/refs", "/_appkit", "/index.html", "//", "/x/./", "/x/../", "/x/notes.git/info/refs", "/notes.gitx"}
 	for _, path := range paths {
-		for _, method := range []string{"GET", "HEAD", "POST"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "custom"} {
 			r := httptest.NewRequest(method, "http://misleading.test"+path+"?route=/mcp", strings.NewReader("ignored"))
 			r.Header.Set("X-User-Id", "user")
 			r.Header.Set("X-Original-URI", "/")
@@ -94,7 +98,7 @@ func TestExactRoutesAndNotFound(t *testing.T) {
 	if f.gitCalls.Load() != before {
 		t.Fatal("repos404 started git")
 	}
-	for _, path := range []string{"/%61bout", "/%6dcp"} {
+	for _, path := range []string{"/%61bout", "/%74ools", "/%6dcp"} {
 		w := webRequest(h, "GET", path, "user", "decoded", nil)
 		want := 200
 		if path == "/%6dcp" {
@@ -277,7 +281,7 @@ func TestNoSiblingConnections(t *testing.T) {
 	}
 }
 
-// R-UBUC-2OHN R-8394-513A R-UD28-GG8C R-R6QU-LWFU R-RCUC-IR5B
+// R-UBUC-2OHN R-T86I-Z8ZM R-T9EF-D0QB R-R6QU-LWFU R-RCUC-IR5B
 func TestRequestTraceAcrossRoutes(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -285,8 +289,8 @@ func TestRequestTraceAcrossRoutes(t *testing.T) {
 		method, path, user string
 		status             int
 	}{
-		{"GET", "/", "user", 200}, {"GET", "/about", "user", 200},
-		{"HEAD", "/", "user", 200}, {"HEAD", "/about", "user", 200},
+		{"GET", "/", "user", 200}, {"GET", "/about", "user", 200}, {"GET", "/tools", "user", 200},
+		{"HEAD", "/", "user", 200}, {"HEAD", "/about", "user", 200}, {"HEAD", "/tools", "user", 200},
 		{"GET", "/_appkit/theme.css", "user", 200}, {"HEAD", "/_appkit/theme.css", "user", 200},
 		{"GET", "/_appkit/feedback.js", "user", 200}, {"HEAD", "/_appkit/feedback.js", "user", 200},
 		{"GET", "/_appkit/favicon.svg", "user", 200}, {"HEAD", "/_appkit/favicon.svg", "user", 200},
@@ -294,8 +298,8 @@ func TestRequestTraceAcrossRoutes(t *testing.T) {
 		{"GET", "/favicon.ico", "user", 404}, {"POST", "/assets/favicon.svg", "user", 404},
 		{"POST", "/_appkit/feedback.js", "user", 405}, {"GET", "/_appkit/nope", "user", 404},
 		{"HEAD", "/_appkit/nope", "", 500},
-		{"POST", "/about", "user", 405}, {"GET", "/nope", "user", 404},
-		{"GET", "/ghost.git/info/refs", "user", 404}, {"GET", "/", "", 500},
+		{"POST", "/about", "user", 405}, {"POST", "/tools", "user", 405}, {"GET", "/nope", "user", 404},
+		{"GET", "/ghost.git/info/refs", "user", 404}, {"GET", "/", "", 500}, {"GET", "/tools", "", 500},
 		{"GET", "/mcp", "user", 405},
 	} {
 		id := fmt.Sprintf("trace-%d", i)
@@ -315,7 +319,11 @@ func TestRequestTraceAcrossRoutes(t *testing.T) {
 			t.Fatalf("%s %s: %d", tc.method, tc.path, w.Code)
 		}
 		events := webEventsFor(f.events(t), id)
-		assertWebTrace(t, events, tc.user, tc.method, r.URL.Path, w.Code, 0, int64(w.Body.Len()))
+		responseBytes := int64(w.Body.Len())
+		if tc.method == "HEAD" && (tc.path == "/" || tc.path == "/about" || tc.path == "/tools") {
+			responseBytes = 0
+		}
+		assertWebTrace(t, events, tc.user, tc.method, r.URL.Path, w.Code, 0, responseBytes)
 		if len(events) != 2 {
 			t.Fatalf("simple route emitted domain event: %v", events)
 		}
@@ -876,27 +884,30 @@ func TestConcurrentRequestsKeepTheirOwnCallers(t *testing.T) {
 	}
 }
 
-// R-UD28-GG8C
+// R-T9EF-D0QB
 func TestSharedPathsEmitOnlyRequestTrace(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
-	paths := []string{"/", "/about", "/nope", "/_appkit/", "/_appkit/nope", "/_appkit/theme.css/x"}
+	paths := []string{"/", "/about", "/tools", "/nope", "/tools/", "/mcp/", "/notes", "/notes/info/refs", "/_appkit/", "/_appkit/nope", "/_appkit/theme.css/x"}
 	for name := range webSharedFiles(t, h) {
 		paths = append(paths, page.StaticPrefix+name)
 	}
 	for i, path := range paths {
 		for j, method := range []string{"GET", "HEAD", "POST", "DELETE", "custom"} {
 			for k, validator := range []string{"", "*", `W/"stale"`} {
-				id := fmt.Sprintf("shared-trace-%d-%d-%d", i, j, k)
-				r := httptest.NewRequest(method, path+"?ignored=true", strings.NewReader("ignored body"))
-				r.Header.Set("X-User-Id", "user")
-				r.Header.Set("X-Request-Id", id)
-				r.Header.Set("If-None-Match", validator)
-				w := httptest.NewRecorder()
-				h.ServeHTTP(w, r)
-				events := webEventsFor(f.events(t), id)
-				if len(events) != 2 || events[0].Name != "request.started" || events[1].Name != "request.finished" {
-					t.Fatalf("%s %s validator %q: %v", method, path, validator, events)
+				for u, user := range [][]string{nil, {""}, {"", "ignored-user"}, {"user"}, {"user", "ignored-user"}} {
+					id := fmt.Sprintf("shared-trace-%d-%d-%d-%d", i, j, k, u)
+					r := httptest.NewRequest(method, path+"?ignored=true", strings.NewReader("ignored body"))
+					r.Header["X-User-Id"] = user
+					r.Header.Set("X-Request-Id", id)
+					r.Header.Set("If-None-Match", validator)
+					w := httptest.NewRecorder()
+					before := len(f.events(t))
+					h.ServeHTTP(w, r)
+					events := f.events(t)[before:]
+					if len(events) != 2 || events[0].Name != "request.started" || events[1].Name != "request.finished" {
+						t.Fatalf("%s %s validator %q: %v", method, path, validator, events)
+					}
 				}
 			}
 		}

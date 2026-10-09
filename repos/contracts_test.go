@@ -37,10 +37,10 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/web"
 )
 
-// R-S5H8-N3EM R-S6P5-0V5B: Access both embedded templates before and after
+// R-SNG8-H5DT R-S6P5-0V5B: Access all three embedded templates before and after
 // moving into an empty test directory, and compare every byte.
 func TestEmbeddedAssets(t *testing.T) {
-	first := files(t, repos.Assets(), []string{"about.html", "landing.html"})
+	first := files(t, repos.Assets(), []string{"about.html", "landing.html", "tools.html"})
 	// Chdir directly: testing.T.Chdir would also mutate the PWD environment.
 	original, err := os.Getwd()
 	if err != nil {
@@ -55,7 +55,7 @@ func TestEmbeddedAssets(t *testing.T) {
 	if err := os.Chdir(empty); err != nil {
 		t.Fatal(err)
 	}
-	second := files(t, repos.Assets(), []string{"about.html", "landing.html"})
+	second := files(t, repos.Assets(), []string{"about.html", "landing.html", "tools.html"})
 	for name, body := range first {
 		if len(body) == 0 || !bytes.Equal(body, second[name]) {
 			t.Errorf("embedded template %s changed or is empty", name)
@@ -506,4 +506,30 @@ func TestMaintenancePublicContract(t *testing.T) {
 		}
 	}
 	exercise(maintenance.Start(cfg))
+}
+
+// R-SOO4-UX4I R-SPW1-8OV7: Positional construction proves the exported field
+// count, order and types; the declared fields are consumed by the tools template.
+func TestToolsDataPublicContract(t *testing.T) {
+	var fields = struct{ Name, Description string }{"fixture_tool", "fixture supplied description"}
+	tool := web.Tool(fields)
+	banner := page.Banner{Service: "fixture-service", Trail: []page.Level{{Name: "tools", URL: "/tools"}}}
+	var dataFields = struct {
+		Banner page.Banner
+		Tools  []web.Tool
+	}{banner, []web.Tool{tool}}
+	data := web.ToolsData(dataFields)
+	templates, err := page.Templates().ParseFS(repos.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	if err := templates.ExecuteTemplate(&body, "tools", data); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{fields.Name, fields.Description, banner.Service} {
+		if !strings.Contains(body.String(), value) {
+			t.Fatalf("tools template omitted supplied value %q", value)
+		}
+	}
 }
