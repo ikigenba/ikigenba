@@ -11,14 +11,14 @@ Each record is owned by the document whose part makes it, and this one cites the
 - `service.started`, with `version`, the display string `Process.Version`, empty when the host set no identity (R-9XI6-OAME, R-9NQZ-M4OU), once events is serving, after the start's declaration asks (R-8LSI-MLET, R-8N0F-0D5I); `service.stopping`, with `reason`, last of all (R-BM0Q-O8OS).
 - `sibling.called`, one per call to a sibling's socket: a declarations ask (R-355A-QQIN) or a delivery attempt (R-H68X-NE8X). This document closes the set (R-HJNT-UVEK).
 - `event.accepted`, once per event the store keeps, none for a duplicate or a refusal (R-69AX-8R2N, R-Z4Y3-IK9Y, R-2J73-UV65).
-- `event.delivered` and a subscriber's own `event.skipped` (R-G1LB-MGO7, R-G2T8-08EW); `subscriber.paused` (R-A3XX-0C5L); an agent's `event.skipped` (R-YTM0-2PJ1).
+- `event.delivered` and a subscriber's own `event.skipped` (R-G1LB-MGO7, R-G2T8-08EW); `subscriber.paused` (R-OW5D-S2L4); an agent's `event.skipped` (R-YTM0-2PJ1).
 - `request.started` and `request.finished` for every request but a post to `/emit` (R-EYWG-JUFR, R-F04C-XM6G; `/emit` records none, R-CWCX-7IV6), and `tool.called` for each tool call answered with a result (R-9FOL-TQG6, R-HH81-3BX6; an `invalid_arguments` refusal records `duration_us` 0, since appkit's `mcp` server refuses the arguments before the handler runs, probed). These three are appkit's machinery (`telemetry.Middleware` and the `mcp` server), probed against the installed module, and stated here as events' own behaviour, so events' tests fail if a release of appkit stopped giving them.
 
 ## A request's records
 
 nginx gives every request an `X-Request-Id` and the caller's `X-User-Id`; the request's records carry the first as their request id and the second as their user, and a request without an id gets one made up from the seam's random source (R-ZW9S-QLXI). That id is the one the caller in the request's context carries (R-CXKT-LALV), so an agent's `skip` records its `event.skipped` under it. A request's records come in one order: `request.started`, then the `event.skipped` of a `skip` that unstuck a subscriber, then `tool.called`, then `request.finished`, and nothing else carries its id (R-9GWI-7I6V). A read tool and `resume` therefore add three records, a page two, and an agent's `skip` four.
 
-`request.started`'s `path` is the URL's path without its query, and the user is the caller's id, never the email: attributes name what happened and the ids of what it touched, never data. No record carries a bus event's attributes, a tool's arguments, a caller's email or a request's query (R-F9VJ-ZS40); the one piece of free text the trail carries is the error a subscriber gave when it was paused (R-A3XX-0C5L, R-9XUF-3HG4).
+`request.started`'s `path` is the URL's path without its query, and the user is the caller's id, never the email: attributes name what happened and the ids of what it touched, never data. No record carries a bus event's attributes, a tool's arguments, a caller's email or a request's query (R-F9VJ-ZS40); the one piece of free text the trail carries is the error a subscriber gave when it was paused (R-OW5D-S2L4, R-OTPL-0J3Q).
 
 ## What the broker never records
 
@@ -44,11 +44,11 @@ A `cli.Run` test serves with a `telemetry.Capture` as `Sink` and a services file
 
 ## Coverage
 
-- The records by name: R-8LSI-MLET, R-BM0Q-O8OS (service); R-EYWG-JUFR, R-F04C-XM6G, R-F1C9-BDX5, R-CWCX-7IV6 (request); R-9FOL-TQG6, R-HH81-3BX6 (tool); R-355A-QQIN, R-H68X-NE8X, R-HJNT-UVEK (sibling); R-69AX-8R2N, R-Z4Y3-IK9Y, R-2J73-UV65 (accepted); R-G1LB-MGO7, R-G2T8-08EW, R-YTM0-2PJ1 (delivered, skipped); R-A1I4-8SO7, R-A3XX-0C5L (paused); telemetry entry and undelivered line: R-G9V5-4WMD, R-9XI6-OAME; time: R-ZTTZ-Z2G4; no data: R-F9VJ-ZS40; request order and ids: R-9GWI-7I6V, R-F1C9-BDX5, R-ZW9S-QLXI; no `event.lost`: R-F8NN-M0DB.
+- The records by name: R-8LSI-MLET, R-BM0Q-O8OS (service); R-EYWG-JUFR, R-F04C-XM6G, R-F1C9-BDX5, R-CWCX-7IV6 (request); R-9FOL-TQG6, R-HH81-3BX6 (tool); R-355A-QQIN, R-H68X-NE8X, R-HJNT-UVEK (sibling); R-69AX-8R2N, R-Z4Y3-IK9Y, R-2J73-UV65 (accepted); R-G1LB-MGO7, R-G2T8-08EW, R-YTM0-2PJ1 (delivered, skipped); R-OUXH-EAUF, R-OW5D-S2L4 (paused); telemetry entry and undelivered line: R-G9V5-4WMD, R-9XI6-OAME; time: R-ZTTZ-Z2G4; no data: R-F9VJ-ZS40; request order and ids: R-9GWI-7I6V, R-F1C9-BDX5, R-ZW9S-QLXI; no `event.lost`: R-F8NN-M0DB.
 - An emitted event and the broker's records of it: R-69AX-8R2N, R-H68X-NE8X, R-G1LB-MGO7, R-F9VJ-ZS40, R-HKVQ-8N59 (order), R-A2DS-7DL6 (no stderr).
 - A caused event's cause in the trail: R-69AX-8R2N (cause), R-9CMB-1JQ3, R-A2DS-7DL6.
 - An event a subscriber skips: R-HKVQ-8N59, R-G2T8-08EW, R-H68X-NE8X, R-69AX-8R2N, R-A2DS-7DL6.
-- An event a subscriber fails on: R-HKVQ-8N59, R-A1I4-8SO7, R-A3XX-0C5L, R-9XUF-3HG4, R-9U6P-Y681, R-H9WM-SPH0, R-H68X-NE8X, R-A2DS-7DL6.
+- An event a subscriber fails on: R-HKVQ-8N59, R-OUXH-EAUF, R-OW5D-S2L4, R-OTPL-0J3Q, R-OR9S-8ZMC, R-H9WM-SPH0, R-H68X-NE8X, R-A2DS-7DL6.
 - An agent's skip of a stuck event: R-9GWI-7I6V, R-F1C9-BDX5, R-YTM0-2PJ1, R-9FOL-TQG6, R-F04C-XM6G, R-F9VJ-ZS40, R-E06H-9F6Q.
 - Declaration asks in the trail: R-B661-P81R, R-8N0F-0D5I, R-EPSZ-12CY, R-355A-QQIN, R-OSJE-66XP, R-OTRA-JYOE, R-CBMM-PF9D, R-A2DS-7DL6; `systemctl` is systemd's.
 - An agent's call to events' tools: R-9GWI-7I6V, R-9FOL-TQG6, R-F9VJ-ZS40, R-YR67-B61N (nothing changed).
