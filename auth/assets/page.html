@@ -1,0 +1,20 @@
+{{/* The document every auth page but the approve page is drawn in (D05,
+     D07): GET / (the sign-in page, or the profile when signed in), GET
+     /login/google/callback (the cancelled and non-member pages), and POST
+     /tokens (the token-created page, and the rejected-create page answered
+     400). Template "page" receives the auth page data: .Banner (a
+     page.Banner, empty for a visitor who is not signed in) and exactly one
+     of .SignIn (the sign-in data, sign-in.html), .Profile (the profile data,
+     profile.html), .Create (the create data, token-create.html, for a
+     rejected submission) and .Created (the created data,
+     token-created.html), the others nil. Template "chrome" receives the same
+     data. Values are written through the "value" template, which auth's
+     code defines (it keeps a NUL byte a value holds). Hooks: the head links
+     appkit's preload, /_appkit/theme.css, /_appkit/favicon.svg and
+     /_appkit/feedback.js (deferred) and nothing from another origin; with
+     .SignIn the body holds the signIn template alone, no banner; otherwise
+     "chrome": the banner right after <body>, one main holding the profile,
+     the create card or the created card, and the footer right before
+     </body>. */}}
+{{define "page"}}<!DOCTYPE html><html><head><title>auth</title>{{template "preload"}}<link rel="stylesheet" href="/_appkit/theme.css"><link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg"><script src="/_appkit/feedback.js" defer></script><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{if .SignIn}}{{template "signIn" .SignIn}}{{else}}{{template "chrome" .}}{{end}}</body></html>{{end}}
+{{define "chrome"}}{{template "banner" .Banner}}<main>{{if .Profile}}{{template "profile" .Profile}}{{else if .Create}}{{template "tokenCreate" .Create}}{{else if .Created}}{{template "tokenCreated" .Created}}{{end}}</main>{{template "footer" .Banner}}{{end}}

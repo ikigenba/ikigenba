@@ -1,0 +1,33 @@
+{{/* The sign-in card (D05), drawn by "page" (page.html) with no banner: the
+     sign-in page at GET / for a visitor who is not signed in, and the
+     cancelled and non-member pages at GET /login/google/callback (the
+     non-member page answered 403). Templates "signIn" and "alert" both
+     receive the sign-in data: .Apex (the request Host's last two labels,
+     port dropped); .Refused ("" on the sign-in page, "cancelled" when
+     Google did not grant access, "not_member" when the account is not a
+     verified member of the workspace); .Return (the percent-encoding of
+     the return URL, empty when the request carried none, and always empty
+     when .Refused is set); .Destination (an in-space return URL's host, and
+     port as the URL writes it, empty otherwise); .Host (the request's Host
+     exactly); .Workspace (WORKSPACE_DOMAIN); .Email (the email Google
+     returned, empty unless "not_member"). This data replaces the fields
+     .Sentence, .Link, .Word, .Footer and .Alert (and the alert data
+     .Kind, .Role, .Title, .Message): the template chooses every word and
+     writes the login link itself. The link's query is written through
+     printf on purpose: html/template then treats it as the URL's path part
+     and leaves .Return's percent-encoding as it is, where a literal
+     "?return=" followed by {{.Return}} would encode its % signs again.
+     Hooks: main.auth-page holding one section.card: span.mark,
+     h1 "Sign in to <Apex>"; then div.alert (data-kind warn, role status,
+     "Sign-in cancelled", when "cancelled"; data-kind err, role alert,
+     "Workspace membership required", naming .Email and .Workspace, when
+     "not_member"; each a strong then a p) or, on the sign-in page, a p
+     naming .Destination or else .Workspace; then
+     a.button.secondary.large.google[href=/login/google], followed by
+     ?return=<.Return> when .Return is set, reading "Try another
+     account" when "not_member" and "Continue with Google" otherwise; then a
+     footer on the sign-in page (naming .Workspace when .Destination is set,
+     else .Host) and when "not_member" (naming .Workspace), none when
+     "cancelled". No form, button, input, select, svg or script. */}}
+{{define "signIn"}}<main class="auth-page"><section class="card"><span class="mark">ikigenba</span> <h1>Sign in to {{template "value" .Apex}}</h1> {{if .Refused}}{{template "alert" .}}{{else if .Destination}}<p>Sign in to continue to {{template "value" .Destination}}.</p>{{else}}<p>Access is limited to Google accounts in the {{template "value" .Workspace}} workspace.</p>{{end}} <a class="button secondary large google" href="/login/google{{with .Return}}{{printf "?return=%s" .}}{{end}}">{{if eq .Refused "not_member"}}Try another account{{else}}Continue with Google{{end}}</a>{{if eq .Refused "not_member"}} <footer>Think you should have access? Ask your {{template "value" .Workspace}} workspace admin to add you.</footer>{{else if not .Refused}} <footer>{{if .Destination}}Access is limited to Google accounts in the {{template "value" .Workspace}} workspace.{{else}}You're signing in at {{template "value" .Host}}. One sign-in covers every service in this space.{{end}}</footer>{{end}}</section></main>{{end}}
+{{define "alert"}}{{if eq .Refused "cancelled"}}<div class="alert" data-kind="warn" role="status"><strong>Sign-in cancelled</strong> <p>Google didn't grant access, so you weren't signed in. You can try again.</p></div>{{else if eq .Refused "not_member"}}<div class="alert" data-kind="err" role="alert"><strong>Workspace membership required</strong> <p>{{template "value" .Email}} isn't a verified account in the {{template "value" .Workspace}} workspace. Sign in with your @{{template "value" .Workspace}} account instead.</p></div>{{end}}{{end}}

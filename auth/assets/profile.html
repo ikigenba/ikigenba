@@ -1,0 +1,40 @@
+{{/* The profile (D05, D07) at GET / for a signed-in user, drawn by "chrome"
+     (page.html) inside main. Template "profile" receives the profile data:
+     .Apex (the request Host's last two labels, port dropped), .Email,
+     .Workspace (WORKSPACE_DOMAIN), .Rows (the personal-token rows, below),
+     .Create (the create data for an empty form, token-create.html) and
+     .Clients (the MCP clients data, mcp-clients.html). Template "tokenList"
+     receives .Rows, a list in profile order, one per personal token, each
+     with .ID (the tok_ id), .Name, .Created and .Expires (each a token time:
+     .Datetime, YYYY-MM-DDTHH:MM:SSZ, and .Text, YYYY-MM-DD HH:MM UTC;
+     .Expires nil when the token never expires), .LastUsed (nil when never
+     used; else .Datetime, .Title, the time as YYYY-MM-DD HH:MM UTC, and
+     .Elapsed, the elapsed data; .Elapsed replaces the field .Text, which
+     held the words) and .Enabled (bool). "tokenTime" receives a token time,
+     "tokenLastUsed" a .LastUsed, "tokenNever" nothing. Template "elapsed"
+     receives the elapsed data, how long before the page was drawn a token
+     was last used, also used by mcp-clients.html: .Unit ("now" under a
+     minute, negative included; else "minute", "hour" or "day", the largest
+     whole unit, a day at most) and .Count (int64, whole units elapsed, at
+     least 1; 0 when .Unit is "now"); it writes "just now", or the count and
+     the unit word, singular when .Count is 1, followed by "ago". Hooks: h1
+     "Your account" and a p naming .Apex; section.card with h2 "Account" and
+     dl.kv of Email, Workspace and "Signed in via" Google; then
+     section.card.flush with h2 "API tokens" and a p; with rows,
+     div.table-scroll holding one table whose head reads Name, Created, Last
+     used, Expires, Status and an empty th, one tr per row of six td: the
+     name; a time cell; a last-used cell (time with datetime and title) or
+     td.muted "Never"; a time cell or td.muted "Never"; a span.badge,
+     data-kind ok "Enabled" or bare "Disabled"; and td.row-actions holding
+     form.inline[method=post][action=/tokens/<ID>/disable] (or enable when
+     not .Enabled) with button.ghost.small[type=submit] "Disable" or
+     "Enable", and form.inline[method=post][action=/tokens/<ID>/delete] with
+     button.ghost.small[type=submit] "Delete". Without rows, div.empty with
+     h3 "No tokens yet" and a p. Then the create card and the MCP clients
+     card. */}}
+{{define "profile"}}<h1>Your account</h1><p>You're signed in to {{template "value" .Apex}}.</p><section class="card"><header><h2>Account</h2></header><dl class="kv"><dt>Email</dt><dd>{{template "value" .Email}}</dd><dt>Workspace</dt><dd>{{template "value" .Workspace}}</dd><dt>Signed in via</dt><dd>Google</dd></dl></section>{{template "tokenList" .Rows}}{{template "tokenCreate" .Create}}{{template "mcp-clients" .Clients}}{{end}}
+{{define "tokenList"}}<section class="card flush"><header><h2>API tokens</h2><p>Personal access tokens let scripts and tools act as you. Send one as a bearer token.</p></header>{{if .}}<div class="table-scroll"><table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>{{range .}}<tr><td>{{template "value" .Name}}</td>{{template "tokenTime" .Created}}{{if .LastUsed}}{{template "tokenLastUsed" .LastUsed}}{{else}}{{template "tokenNever"}}{{end}}{{if .Expires}}{{template "tokenTime" .Expires}}{{else}}{{template "tokenNever"}}{{end}}<td>{{if .Enabled}}<span class="badge" data-kind="ok">Enabled</span>{{else}}<span class="badge">Disabled</span>{{end}}</td><td class="row-actions"><form class="inline" method="post" action="/tokens/{{.ID}}/{{if .Enabled}}disable{{else}}enable{{end}}"><button class="ghost small" type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form><form class="inline" method="post" action="/tokens/{{.ID}}/delete"><button class="ghost small" type="submit">Delete</button></form></td></tr>{{end}}</tbody></table></div>{{else}}<div class="empty"><h3>No tokens yet</h3><p>Create one below when a script or tool needs to act as you.</p></div>{{end}}</section>{{end}}
+{{define "tokenTime"}}<td><time datetime="{{.Datetime}}">{{.Text}}</time></td>{{end}}
+{{define "tokenLastUsed"}}<td><time datetime="{{.Datetime}}" title="{{.Title}}">{{template "elapsed" .Elapsed}}</time></td>{{end}}
+{{define "tokenNever"}}<td class="muted">Never</td>{{end}}
+{{define "elapsed"}}{{if eq .Unit "now"}}just now{{else if eq .Unit "minute"}}{{.Count}} {{if eq .Count 1}}minute{{else}}minutes{{end}} ago{{else if eq .Unit "hour"}}{{.Count}} {{if eq .Count 1}}hour{{else}}hours{{end}} ago{{else if eq .Unit "day"}}{{.Count}} {{if eq .Count 1}}day{{else}}days{{end}} ago{{end}}{{end}}

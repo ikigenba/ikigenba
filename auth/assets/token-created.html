@@ -1,0 +1,12 @@
+{{/* The token-created page (D07), answered 200 to an accepted POST /tokens,
+     drawn by "chrome" (page.html) alone in main. Template "tokenCreated"
+     receives the created data: .Name (the token's name, trimmed) and
+     .Secret (the ikp_ secret, shown this once). "copyIcon" receives
+     nothing. Hooks: section.card with h2 "Token created";
+     div.alert.quiet[data-kind=warn] with strong "Copy it now" and a p
+     naming .Name; div.secret holding code (text .Secret) and
+     button.secondary[type=button] with the Tabler copy icon (svg.ico)
+     "Copy"; then a[href=/] "Back to your account". No form, input or
+     select. */}}
+{{define "tokenCreated"}}<section class="card"><header><h2>Token created</h2></header><div class="alert quiet" data-kind="warn"><strong>Copy it now</strong><p>This is the only time {{template "value" .Name}} is shown. Only its hash is stored.</p></div><div class="secret"><code>{{.Secret}}</code><button class="secondary" type="button">{{template "copyIcon"}}Copy</button></div><a href="/">Back to your account</a></section>{{end}}
+{{define "copyIcon"}}<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"></path><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"></path></svg>{{end}}

@@ -3,8 +3,11 @@
      a list in profile order, one entry per MCP client token, each with .ID
      (the tok_ id), .Name (the client's registered name, written as text),
      .Approved and .ApprovedText (the approval time as datetime and as
-     YYYY-MM-DD HH:MM UTC), .LastUsed, .LastUsedTitle and .LastUsedText (all
-     empty when never used; else datetime, minute and elapsed text),
+     YYYY-MM-DD HH:MM UTC), .LastUsed and .LastUsedTitle (both empty when
+     never used; else datetime and minute), .LastUsedElapsed (the elapsed
+     data, written by the "elapsed" template in profile.html: .Unit and
+     .Count, zero when never used; it replaces the field .LastUsedText,
+     which held the words),
      .Expires and .ExpiresText (the expiry as datetime and minute) and
      .Expired (the expiry is not after the draw time). Hooks:
      section.card.flush; header with h2 "MCP clients" and p "MCP clients you
@@ -24,7 +27,7 @@
 {{if .Clients}}<div class="table-scroll"><table>
 <thead><tr><th>Client</th><th>Approved</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
 <tbody>
-{{range .Clients}}<tr><td>{{.Name}}</td><td><time datetime="{{.Approved}}">{{.ApprovedText}}</time></td>{{if .LastUsed}}<td><time datetime="{{.LastUsed}}" title="{{.LastUsedTitle}}">{{.LastUsedText}}</time></td>{{else}}<td class="muted">Never</td>{{end}}{{if .Expired}}<td><time datetime="{{.Expires}}" title="{{.ExpiresText}}">Expired</time></td>{{else}}<td><time datetime="{{.Expires}}">{{.ExpiresText}}</time></td>{{end}}<td class="row-actions"><form class="inline" method="post" action="/tokens/{{.ID}}/revoke"><button class="ghost small" type="submit">Revoke</button></form></td></tr>
+{{range .Clients}}<tr><td>{{.Name}}</td><td><time datetime="{{.Approved}}">{{.ApprovedText}}</time></td>{{if .LastUsed}}<td><time datetime="{{.LastUsed}}" title="{{.LastUsedTitle}}">{{template "elapsed" .LastUsedElapsed}}</time></td>{{else}}<td class="muted">Never</td>{{end}}{{if .Expired}}<td><time datetime="{{.Expires}}" title="{{.ExpiresText}}">Expired</time></td>{{else}}<td><time datetime="{{.Expires}}">{{.ExpiresText}}</time></td>{{end}}<td class="row-actions"><form class="inline" method="post" action="/tokens/{{.ID}}/revoke"><button class="ghost small" type="submit">Revoke</button></form></td></tr>
 {{end}}</tbody>
 </table></div>{{else}}<div class="empty"><h3>No MCP clients yet</h3> <p>A client appears here once you approve it from its login.</p></div>{{end}}
 </section>{{end}}

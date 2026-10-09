@@ -1,0 +1,23 @@
+{{/* The create card (D07): inside the profile at GET / (an empty form) and
+     alone in main, drawn by "chrome" (page.html), as the rejected-create
+     page answered 400 to POST /tokens. Template "tokenCreate" receives the
+     create data: .Name (the submitted name as sent, untrimmed; shown only
+     when .Rejected), .Expiry (the selected choice: "30d", "90d", "365d" or
+     "never"; "90d" when the submitted value is none of those), .Rejected
+     (bool: this answers a rejected submission), .NameError (bool: the
+     trimmed name is not 1 to 64 characters) and .ExpiryError (bool: the
+     submitted expiry is none of the choices). "plusIcon" receives nothing.
+     Hooks: section.card with h2 "Create a token"; form[method=post]
+     [action=/tokens] holding label[for=token-name], input#token-name
+     [type=text][name=name][maxlength=64] with value .Name when .Rejected
+     and aria-describedby=token-name-error when .NameError, then
+     span#token-name-error when .NameError or else span.hint;
+     label[for=token-expires], select#token-expires[name=expires] with
+     aria-describedby=token-expires-error when .ExpiryError, options 30d,
+     90d, 365d and never, the one equal to .Expiry selected, then
+     span#token-expires-error when .ExpiryError; then button[type=submit]
+     with the Tabler plus icon (svg.ico) "Create token", and when .Rejected
+     the button and a.button.ghost[href=/] "Cancel" inside div.actions. No
+     other form, button, input, select or a. */}}
+{{define "tokenCreate"}}<section class="card"><header><h2>Create a token</h2></header><form method="post" action="/tokens"><label for="token-name">Name</label><input id="token-name" type="text" name="name" maxlength="64" placeholder="e.g. ci-deploy"{{if .Rejected}} value="{{template "value" .Name}}"{{end}}{{if .NameError}} aria-describedby="token-name-error"{{end}}>{{if .NameError}}<span id="token-name-error">the name must be 1 to 64 characters</span>{{else}}<span class="hint">Something that tells you where it's used. Up to 64 characters.</span>{{end}}<label for="token-expires">Expires</label><select id="token-expires" name="expires"{{if .ExpiryError}} aria-describedby="token-expires-error"{{end}}><option value="30d"{{if eq .Expiry "30d"}} selected{{end}}>In 30 days</option><option value="90d"{{if eq .Expiry "90d"}} selected{{end}}>In 90 days</option><option value="365d"{{if eq .Expiry "365d"}} selected{{end}}>In 365 days</option><option value="never"{{if eq .Expiry "never"}} selected{{end}}>Never</option></select>{{if .ExpiryError}}<span id="token-expires-error">choose one of the listed expiry options</span>{{end}}{{if .Rejected}}<div class="actions">{{end}}<button type="submit">{{template "plusIcon"}}Create token</button>{{if .Rejected}}<a class="button ghost" href="/">Cancel</a></div>{{end}}</form></section>{{end}}
+{{define "plusIcon"}}<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"></path><path d="M5 12l14 0"></path></svg>{{end}}
