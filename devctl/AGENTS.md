@@ -1,6 +1,6 @@
 # devctl
 
-devctl is the developer's CLI; it creates and destroys spaces on the substrate. It is a Go binary built and run on the developer's own machine, as an ordinary user under the developer's own AWS identity; it never runs as root and holds no host-side secrets. It has no configuration of its own: the root domain and region come from `infra/terraform.tfvars.json` at the top of the checkout it runs inside, the same file Terraform reads. It manages spaces, each complete on one Linux host, through AWS APIs and, over ssh, through the `opsctl` installed on the host, reached only by its published interface. The module path is `github.com/ikigenba/ikigenba/devctl`. The contract is `specs/design/`; this file restates none of it.
+devctl is the developer's CLI; it creates and destroys spaces on the substrate. It is a Go binary built and run on the developer's own machine, as an ordinary user under the developer's own AWS identity; it never runs as root and holds no host-side secrets. It has no configuration of its own: the root domain and region come from `infra/terraform.tfvars.json` at the top of the checkout it runs inside, the same file Terraform reads. It manages spaces, each complete on one Linux host, through AWS APIs and, over ssh, through the `opsctl` installed on the host, reached only by its published interface. It is a command-line program with stories. The module path is `github.com/ikigenba/ikigenba/devctl`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
