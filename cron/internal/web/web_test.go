@@ -127,7 +127,7 @@ func sameAnswer(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-JWEC-BY4W R-JXM8-PPVL R-K19X-V13O R-K2HU-8SUD
+// R-JWEC-BY4W R-JXM8-PPVL R-K19X-V13O R-ZAZT-J3XI
 // R-K65J-E42G R-KC91-AYRX R-KDGX-OQIM R-KB14-X718
 func TestExactRoutesAndIdentity(t *testing.T) {
 	f := setup(t)
@@ -135,8 +135,8 @@ func TestExactRoutesAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ph := identity.Require(pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Scheduler: f.cfg.Scheduler}))
-	routes := []string{"/", "/about", "/nope", "/mcp/", "/about/", "/_appkit", "//", "/events/", "/declarations/", "/About", "/about?target=/mcp", "/%61bout", "/a/../about"}
+	ph := identity.Require(pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Scheduler: f.cfg.Scheduler, MCP: f.cfg.MCP}))
+	routes := []string{"/", "/about", "/tools", "/nope", "/mcp/", "/about/", "/tools/", "/_appkit", "//", "/events/", "/declarations/", "/About", "/about?target=/mcp", "/%61bout", "/%74ools", "/tools?target=/mcp", "/a/../about"}
 	paths := append(append([]string{}, routes...), "/events", "/declarations", "/mcp", "/_appkit/theme.css", "/_appkit/nope.css")
 	before, err := f.cfg.Store.List(f.ctx)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestExactRoutesAndIdentity(t *testing.T) {
 // R-JRIQ-SV64 R-JTYJ-KENI R-JV6F-Y6E7
 func TestRequestEnvelopeAndBodyCounts(t *testing.T) {
 	f := setup(t)
-	for i, tc := range []struct{ method, path, user, id string }{{"GET", "/", "", ""}, {"GET", "/", "user", "provided"}, {"GET", "/about", "user", ""}, {"HEAD", "/", "user", "head_root"}, {"HEAD", "/about", "user", "head_about"}, {"POST", "/events", "", "bus"}, {"GET", "/_appkit/theme.css", "user", "css"}} {
+	for i, tc := range []struct{ method, path, user, id string }{{"GET", "/", "", ""}, {"GET", "/", "user", "provided"}, {"GET", "/about", "user", ""}, {"HEAD", "/", "user", "head_root"}, {"HEAD", "/about", "user", "head_about"}, {"GET", "/tools", "user", "tools"}, {"HEAD", "/tools", "user", "head_tools"}, {"POST", "/events", "", "bus"}, {"GET", "/_appkit/theme.css", "user", "css"}} {
 		r := request(tc.method, tc.path, tc.user, tc.id)
 		if i == 0 {
 			r.Header["X-Request-Id"] = []string{"", "ignored"}
@@ -457,7 +457,7 @@ func TestRequestsDoNotConnectToServices(t *testing.T) {
 			t.Fatalf("%s: %v %v", call.name, res, err)
 		}
 	}
-	for _, path := range []string{"/", "/about", "/nope", "/_appkit/theme.css", "/events", "/declarations"} {
+	for _, path := range []string{"/", "/about", "/tools", "/nope", "/_appkit/theme.css", "/events", "/declarations"} {
 		answer(f.h, request("GET", path, "u", "socket_probe"))
 	}
 	if err := ln.SetDeadline(time.Unix(1, 0)); err != nil {

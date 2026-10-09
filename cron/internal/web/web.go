@@ -34,7 +34,7 @@ func Handler(cfg Config) http.Handler {
 		panic(err)
 	}
 	tools.Register(cfg.MCP, tools.Config{Store: cfg.Store, Scheduler: cfg.Scheduler})
-	ph := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Scheduler: cfg.Scheduler})
+	ph := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Scheduler: cfg.Scheduler, MCP: cfg.MCP})
 	static := page.Static()
 	authenticated := events.Middleware(identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
