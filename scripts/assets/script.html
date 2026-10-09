@@ -8,15 +8,19 @@
      as RFC 3339 UTC), .RunsKept (how many runs are kept), .KeepNewest and
      .KeepDays (the retention rule: the newest .KeepNewest runs are kept past
      .KeepDays days); .Runs, the script's runs, newest first, each with .ID
-     (its run_ id), .URL ("/<name>/runs/<id>/"), .Status (the status word),
-     .Kind (its kind), .Commit (the commit's short hash, empty when the ref
+     (its run_ id), .URL ("/<name>/runs/<id>/"), .Status (the store's status
+     value), .ExitCode (int, the exit code; meaningful only when .Status is
+     "exited"), .Commit (the commit's short hash, empty when the ref
      never resolved), .Started ("2006-01-02 15:04") and .StartedAt (RFC 3339
-     UTC), .Duration (as shown, "12s" or "3m 41s"; empty while running or
-     when the run failed to start) and .Exit (the exit code as text, empty
-     when the process did not exit by itself); .Subscriptions ([]string, the
-     event names the script is subscribed to, sorted by name). Status words and kinds:
-     "queued" and "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
-     out" and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
+     UTC), .Duration (nil while running or when the run failed to start;
+     else .Minutes and .Seconds, ints, shown as "<.Minutes>m <.Seconds>s"
+     with the minutes part omitted when .Minutes is 0, by run-duration in
+     run.html); .Subscriptions ([]string, the
+     event names the script is subscribed to, sorted by name). Status
+     words and kinds, chosen here from .Status and .ExitCode by the
+     run-status template (defined in run.html): "queued" and "running"
+     info; "exited <.ExitCode>" ok when .ExitCode is 0, else warn; "timed
+     out" (timed_out) and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
      "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts") then
      li[aria-current="page"] (text .Script.Name, no link); h1 with text
      .Script.Name; p#about-script naming the repository (strong, .Repo.Name,
@@ -34,10 +38,12 @@
      no events."); section#runs with h2 "Runs" and either div#no-runs.empty (h3 text "No
      runs yet") when .Runs is empty, or table#run-list with one
      tr[data-run=<id>] per run holding td.run-id > a.run-link (href .URL) >
-     code (text .ID), td.run-status > span.status[data-kind=<.Kind>] (text
-     .Status), td.run-sha holding code .Commit (empty when none),
+     code (text .ID), td.run-status > span.status[data-kind=<kind>] (text
+     the status word), td.run-sha holding code .Commit (empty when none),
      td.run-started > time[datetime=.StartedAt] (text .Started),
-     td.run-duration (text .Duration) and td.run-exit.num (text .Exit). No
+     td.run-duration (text the duration, empty when none) and
+     td.run-exit.num (text .ExitCode when .Status is "exited", else
+     empty). No
      script but appkit's /_appkit/feedback.js. */}}
 {{define "script"}}<!doctype html>
 <html lang="en">
@@ -79,11 +85,11 @@
 <tbody>
 {{range .Runs}}<tr data-run="{{.ID}}">
 <td class="run-id"><a class="run-link" href="{{.URL}}"><code>{{.ID}}</code></a></td>
-<td class="run-status"><span class="status" data-kind="{{.Kind}}">{{.Status}}</span></td>
+<td class="run-status">{{template "run-status" .}}</td>
 <td class="run-sha">{{with .Commit}}<code>{{.}}</code>{{end}}</td>
 <td class="run-started"><time datetime="{{.StartedAt}}">{{.Started}}</time></td>
-<td class="run-duration">{{.Duration}}</td>
-<td class="run-exit num">{{.Exit}}</td>
+<td class="run-duration">{{with .Duration}}{{template "run-duration" .}}{{end}}</td>
+<td class="run-exit num">{{if eq .Status "exited"}}{{.ExitCode}}{{end}}</td>
 </tr>
 {{end}}</tbody>
 </table>

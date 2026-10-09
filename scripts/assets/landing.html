@@ -7,10 +7,14 @@
      stores, and .Name, the name read from the repository's directory when
      the page renders, empty when the directory is gone or the name cannot be
      read), .Ref, and .LastRun (nil when the script has never run; else
-     .Status, the status word, .Kind, its kind, .Started, the start time as
+     .Status, the store's status value, .ExitCode, int, the exit code,
+     .Started, the start time as
      shown, "2006-01-02 15:04", and .StartedAt, the same as RFC 3339 UTC).
-     Status words and kinds: "queued" and "running" info; "exited 0" ok; "exited <n>" for
-     a non-zero n, "timed out" and "killed" warn; "failed" err. Hooks: h1
+     Status
+     words and kinds, chosen here from .Status and .ExitCode by the
+     run-status template (defined in run.html): "queued" and "running"
+     info; "exited <.ExitCode>" ok when .ExitCode is 0, else warn; "timed
+     out" (timed_out) and "killed" warn; "failed" err. Hooks: h1
      with text "scripts"; p#summary.lede; section#scripts with h2 "Your
      scripts" and either div#no-scripts.empty (h3 text "No scripts yet")
      when .Scripts is empty, or table#script-list with one
@@ -19,7 +23,7 @@
      span[title=<.Repo.ID>] (text .Repo.Name) or, when .Repo.Name is empty,
      span.muted[title="the repository is gone"] (text .Repo.ID),
      td.script-ref (text .Ref), td.script-last holding
-     span.status[data-kind=<.LastRun.Kind>] (text .LastRun.Status) or, when
+     span.status[data-kind=<kind>] (text the status word) or, when
      never run, td.script-last.muted with text "never run", and
      td.script-when holding time[datetime=<.LastRun.StartedAt>] (text
      .LastRun.Started), empty when never run; a section with h2 "MCP tools"
@@ -47,7 +51,7 @@
 <td class="script-name"><a class="script-link" href="{{.URL}}">{{.Name}}</a></td>
 <td class="script-repo">{{if .Repo.Name}}<span title="{{.Repo.ID}}">{{.Repo.Name}}</span>{{else}}<span class="muted" title="the repository is gone">{{.Repo.ID}}</span>{{end}}</td>
 <td class="script-ref">{{.Ref}}</td>
-{{with .LastRun}}<td class="script-last"><span class="status" data-kind="{{.Kind}}">{{.Status}}</span></td>
+{{with .LastRun}}<td class="script-last">{{template "run-status" .}}</td>
 <td class="script-when"><time datetime="{{.StartedAt}}">{{.Started}}</time></td>
 {{else}}<td class="script-last muted">never run</td>
 <td class="script-when"></td>

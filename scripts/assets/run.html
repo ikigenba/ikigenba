@@ -3,40 +3,57 @@
      page does not stream; a run still running shows what exists when the
      page is loaded. Data: .Banner (a page.Banner, for banner and footer);
      .Script, the run's script, with .Name and .URL ("/<name>/"); .Run, with
-     .ID (its run_ id), .URL (this page's path), .Status (the status word),
-     .Kind (its kind), .Running (bool: queued or running), .Notice (the notice's first word, "Queued" or "Running"; empty when not .Running), .Commit (the full
+     .ID (its run_ id), .URL (this page's path), .Status (the store's
+     status value: "queued", "running", "exited", "timed_out", "killed" or
+     "failed"), .ExitCode (int, the process's exit code; meaningful only
+     when .Status is "exited"), .Running (bool: queued or running), .Commit (the full
      commit hash, empty when the ref never resolved), .Ref (the ref as named
      when the run started), .Started ("2006-01-02 15:04:05 UTC") and
      .StartedAt (RFC 3339 UTC), .Finished and .FinishedAt (likewise, empty
-     while running), .Duration (as shown, "12s" or "10m 0s"; empty while
-     running or when the run failed to start), .Trigger (how it started,
+     while running), .Duration (nil while running or when the run failed to
+     start; else .Minutes and .Seconds, ints, the whole minutes and the
+     remaining seconds), .Trigger (how it started,
      "manual" or "event"), .Event (string: the id of the event that started
      the run, empty for a manual run), .User (the user id of the user
      who started it), .Request (the request id, nginx's X-Request-Id, 32
-     hex, of the request that started it), .StdoutSize and .StderrSize (as
-     shown, "1.2 kB", the bytes kept), .Truncated (bool: the run's output
+     hex, of the request that started it), .StdoutSize and .StderrSize (each a
+     size, the bytes kept: .Number, the scaled number as shown, "812" or
+     "1.2", and .Unit, "byte", "kilobyte" or "megabyte"), .Truncated (bool: the run's output
      was cut, whichever stream), .Failure (nil unless the run failed to
-     start; else .Title, a short headline, and .Reason, a sentence saying
-     why, both plain text) and .FilesGone (bool: the run's folder is no
+     start; else .Reason, the store's reason value: "repository_missing",
+     "commit_missing", "too_large", "git_failed", "timed_out",
+     "queue_abandoned" or "start_failed"; .Repo, the script's repository,
+     with .ID and .Name, empty when it cannot be read; .Ref, the ref as
+     named; .TreeMaxBytes and .OperationSeconds, ints, the tree size limit
+     and the git time limit) and .FilesGone (bool: the run's folder is no
      longer kept); .Input, .Stdout and .Stderr (each nil when its file does
-     not exist; else .Size as shown, .Text, the file's contents, empty when
+     not exist; else .Size, a size, .Text, the file's contents, empty when
      the file is empty, and .URL, its download path); .Files, what the run
      wrote under out/, sorted by path, each with .Path (relative to out/),
-     .Size as shown and .URL, its download path. Status words and kinds:
-     "queued" and "running" info; "exited 0" ok; "exited <n>" for a non-zero n, "timed
-     out" and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
+     .Size, a size, and .URL, its download path. Status
+     words and kinds, chosen here from .Status and .ExitCode by the
+     run-status template (defined in run.html): "queued" and "running"
+     info; "exited <.ExitCode>" ok when .ExitCode is 0, else warn; "timed
+     out" (timed_out) and "killed" warn; "failed" err. The
+     duration is shown as "<.Minutes>m <.Seconds>s", the minutes part
+     omitted when .Minutes is 0 (run-duration); a size as .Number then
+     " B", " kB" or " MB" for its .Unit (file-size). The notice's first
+     word is "Queued" or "Running", from .Status. A failure's title and
+     sentence are chosen from .Reason; the repository is named by .Repo.ID
+     for "repository_missing" and by .Repo.Name, or .Repo.ID when that is
+     empty, for "commit_missing" and "git_failed". Hooks: nav.crumbs[aria-label=
      "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts"), li
      a[href=.Script.URL] (text .Script.Name), then li[aria-current="page"]
      (text .Run.ID, no link); h1 with text .Run.ID; p#headline.cluster
-     holding span.status[data-kind=<.Kind>] (text .Status), a space, and a
+     holding span.status[data-kind=<kind>] (text the status word), a space, and a
      span.muted holding "started" and time[datetime=.StartedAt] (text
      .Started), then " · " and .Duration when there is one, or, when
      .Failure is set, the time alone; when .Running,
-     div#running.alert.quiet[data-kind=info] (strong#notice, text .Notice, then text "The
+     div#running.alert.quiet[data-kind=info] (strong#notice, the notice word, then text "The
      page does not stream. Reload it to see more output.") and
      a#reload.button (href .Run.URL, text "Reload"); when .Failure is set,
-     div#failure.alert[data-kind=err] (strong .Failure.Title, p
-     .Failure.Reason); when .FilesGone, div#files-gone.alert.quiet (strong
+     div#failure.alert[data-kind=err] (strong, the failure's title, p,
+     its sentence); when .FilesGone, div#files-gone.alert.quiet (strong
      "Files no longer kept"); section#run-card with h2 "Run", then, when
      .Event is set, p#started-by "Started by the event <.Event>." (the id in
      code), else, when .Trigger is "manual", p#started-by "Started by the run
@@ -46,7 +63,7 @@
      .Truncated), dt "Script" (dd a, href .Script.URL, text .Script.Name),
      dt "Commit" (dd code .Commit, empty when none), dt "Ref" (dd code
      .Ref), dt "Started" (dd time), dt "Finished" (dd time, only when
-     .Finished is set), dt "Duration" (dd .Duration, only when .Duration is
+     .Finished is set), dt "Duration" (dd the duration, only when .Duration is
      set), dt "Trigger", dt "User", dt "Request" (dd code .Request) and dt
      "Output" (dd "stdout <size> · stderr <size>", never "(truncated)");
      unless .FilesGone, section#input, section#stdout and section#stderr,
@@ -58,7 +75,7 @@
      .FilesGone, section#files with h2 "Files" and either p#no-files.empty
      (text "No files.") when .Files is empty, or table#file-list with one
      tr[data-file=<path>] per file holding td.file-path > code (text .Path),
-     td.file-size.num (text .Size) and td.row-actions > a.button[download]
+     td.file-size.num (text the size) and td.row-actions > a.button[download]
      (href .URL, text "Download"). No script but appkit's
      /_appkit/feedback.js. */}}
 {{define "run"}}<!doctype html>
@@ -75,37 +92,37 @@
 </ol>
 </nav>
 {{with .Run}}<h1>{{.ID}}</h1>
-<p id="headline" class="cluster"><span class="status" data-kind="{{.Kind}}">{{.Status}}</span> <span class="muted">{{if .Failure}}<time datetime="{{.StartedAt}}">{{.Started}}</time>{{else}}started <time datetime="{{.StartedAt}}">{{.Started}}</time>{{with .Duration}} · {{.}}{{end}}{{end}}</span></p>
-{{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">{{.Notice}}</strong><p>The page does not stream. Reload it to see more output.</p></div>
+<p id="headline" class="cluster">{{template "run-status" .}} <span class="muted">{{if .Failure}}<time datetime="{{.StartedAt}}">{{.Started}}</time>{{else}}started <time datetime="{{.StartedAt}}">{{.Started}}</time>{{with .Duration}} · {{template "run-duration" .}}{{end}}{{end}}</span></p>
+{{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">{{if eq .Status "queued"}}Queued{{else}}Running{{end}}</strong><p>The page does not stream. Reload it to see more output.</p></div>
 <p><a id="reload" class="button secondary small" href="{{.URL}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
-{{end}}{{with .Failure}}<div id="failure" class="alert" data-kind="err"><strong>{{.Title}}</strong><p>{{.Reason}}</p></div>
+{{end}}{{with .Failure}}<div id="failure" class="alert" data-kind="err">{{if eq .Reason "repository_missing"}}<strong>The repository is unavailable</strong><p>The repository {{.Repo.ID}} is not there. The script was not started.</p>{{else if eq .Reason "commit_missing"}}<strong>The ref did not resolve</strong><p>'{{.Ref}}' names no commit in the repository {{with .Repo.Name}}{{.}}{{else}}{{.Repo.ID}}{{end}}. The script was not started.</p>{{else if eq .Reason "too_large"}}<strong>The tree is too large</strong><p>The commit's files add up to more than {{.TreeMaxBytes}} bytes. The script was not started.</p>{{else if eq .Reason "git_failed"}}<strong>git failed</strong><p>git could not read the repository {{with .Repo.Name}}{{.}}{{else}}{{.Repo.ID}}{{end}}. The script was not started.</p>{{else if eq .Reason "timed_out"}}<strong>git took too long</strong><p>git took longer than {{.OperationSeconds}} seconds. The script was not started.</p>{{else if eq .Reason "queue_abandoned"}}<strong>The run never left the queue</strong><p>The run was waiting for a slot when scripts stopped. The script was not started.</p>{{else}}<strong>The script could not start</strong><p>The script's process could not be launched. The script was not started.</p>{{end}}</div>
 {{end}}{{if .FilesGone}}<div id="files-gone" class="alert quiet"><strong>Files no longer kept</strong><p>This run's folder is gone, so its input, output and files cannot be shown. The record stays.</p></div>
 {{end}}<section id="run-card" class="card" aria-labelledby="run-title">
 <header><h2 id="run-title">Run</h2>{{if .Event}}<p id="started-by">Started by the event <code>{{.Event}}</code>.</p>{{else if eq .Trigger "manual"}}<p id="started-by">Started by the <code>run</code> tool.</p>{{end}}</header>
 <dl id="run" class="kv">
-<dt>Status</dt><dd><span class="status" data-kind="{{.Kind}}">{{.Status}}</span>{{if .Truncated}} <span class="badge" data-kind="warn">output truncated</span>{{end}}</dd>
+<dt>Status</dt><dd>{{template "run-status" .}}{{if .Truncated}} <span class="badge" data-kind="warn">output truncated</span>{{end}}</dd>
 <dt>Script</dt><dd><a href="{{$.Script.URL}}">{{$.Script.Name}}</a></dd>
 <dt>Commit</dt><dd>{{with .Commit}}<code>{{.}}</code>{{end}}</dd>
 <dt>Ref</dt><dd><code>{{.Ref}}</code></dd>
 <dt>Started</dt><dd><time datetime="{{.StartedAt}}">{{.Started}}</time></dd>
 {{if .Finished}}<dt>Finished</dt><dd><time datetime="{{.FinishedAt}}">{{.Finished}}</time></dd>
-{{end}}{{if .Duration}}<dt>Duration</dt><dd>{{.Duration}}</dd>
+{{end}}{{with .Duration}}<dt>Duration</dt><dd>{{template "run-duration" .}}</dd>
 {{end}}<dt>Trigger</dt><dd>{{.Trigger}}</dd>
 <dt>User</dt><dd>{{.User}}</dd>
 <dt>Request</dt><dd><code>{{.Request}}</code></dd>
-<dt>Output</dt><dd>stdout {{.StdoutSize}} · stderr {{.StderrSize}}</dd>
+<dt>Output</dt><dd>stdout {{template "file-size" .StdoutSize}} · stderr {{template "file-size" .StderrSize}}</dd>
 </dl>
 </section>
 {{end}}{{if not .Run.FilesGone}}{{with .Input}}<section id="input" class="card" aria-labelledby="input-title">
-<header><h2 id="input-title">Input</h2><p><code>input.json</code>, {{.Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+<header><h2 id="input-title">Input</h2><p><code>input.json</code>, {{template "file-size" .Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
 {{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No input.</p>{{end}}
 </section>
 {{end}}{{with .Stdout}}<section id="stdout" class="card" aria-labelledby="stdout-title">
-<header><h2 id="stdout-title">Standard output</h2><p><code>stdout</code>, {{.Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+<header><h2 id="stdout-title">Standard output</h2><p><code>stdout</code>, {{template "file-size" .Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
 {{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No output.</p>{{end}}
 </section>
 {{end}}{{with .Stderr}}<section id="stderr" class="card" aria-labelledby="stderr-title">
-<header><h2 id="stderr-title">Standard error</h2><p><code>stderr</code>, {{.Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+<header><h2 id="stderr-title">Standard error</h2><p><code>stderr</code>, {{template "file-size" .Size}}</p><div class="actions"><a class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
 {{if .Text}}<pre><code>{{.Text}}</code></pre>{{else}}<p class="muted">No output.</p>{{end}}
 </section>
 {{end}}<section id="files" class="card flush" aria-labelledby="files-title">
@@ -114,7 +131,7 @@
 <table id="file-list">
 <thead><tr><th>File</th><th class="num">Size</th><th></th></tr></thead>
 <tbody>
-{{range .Files}}<tr data-file="{{.Path}}"><td class="file-path"><code>{{.Path}}</code></td><td class="file-size num">{{.Size}}</td><td class="row-actions"><a class="button ghost small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></td></tr>
+{{range .Files}}<tr data-file="{{.Path}}"><td class="file-path"><code>{{.Path}}</code></td><td class="file-size num">{{template "file-size" .Size}}</td><td class="row-actions"><a class="button ghost small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></td></tr>
 {{end}}</tbody>
 </table>
 </div>{{else}}<p id="no-files" class="empty">No files.</p>{{end}}
@@ -124,3 +141,6 @@
 </body>
 </html>
 {{end}}
+{{define "run-status"}}<span class="status" data-kind="{{if eq .Status "queued" "running"}}info{{else if eq .Status "exited"}}{{if eq .ExitCode 0}}ok{{else}}warn{{end}}{{else if eq .Status "timed_out" "killed"}}warn{{else}}err{{end}}">{{if eq .Status "queued"}}queued{{else if eq .Status "running"}}running{{else if eq .Status "exited"}}exited {{.ExitCode}}{{else if eq .Status "timed_out"}}timed out{{else if eq .Status "killed"}}killed{{else}}failed{{end}}</span>{{end}}
+{{define "run-duration"}}{{if .Minutes}}{{.Minutes}}m {{end}}{{.Seconds}}s{{end}}
+{{define "file-size"}}{{.Number}}{{if eq .Unit "byte"}} B{{else if eq .Unit "kilobyte"}} kB{{else}} MB{{end}}{{end}}
