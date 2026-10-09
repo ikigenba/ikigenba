@@ -97,16 +97,15 @@ func TestOfferingAuthenticatorRequiresAcceptedRotator(t *testing.T) {
 	}
 }
 
-// R-IWON-ZJE2
+// R-OS5I-G567
 func TestAPIKeyAuthenticatorUsesRotatorTokenForSpecifiedWiresAndEachRequest(t *testing.T) {
 	tests := []struct {
 		name       string
 		wire       WireFormat
 		wantHeader string
-		wantQuery  string
 	}{
 		{name: "anthropic", wire: AnthropicMessagesWire(), wantHeader: "x-api-key"},
-		{name: "gemini", wire: GeminiGenerateContentWire(), wantQuery: "key"},
+		{name: "gemini", wire: GeminiGenerateContentWire(), wantHeader: "x-goog-api-key"},
 		{name: "chat", wire: ChatWire(), wantHeader: "Authorization"},
 		{name: "responses", wire: ResponsesWire(), wantHeader: "Authorization"},
 		{name: "openai chat", wire: OpenAIChatWire(), wantHeader: "Authorization"},
@@ -126,9 +125,6 @@ func TestAPIKeyAuthenticatorUsesRotatorTokenForSpecifiedWiresAndEachRequest(t *t
 			for call, bearer := range []string{"first", "second"} {
 				if err := authenticator.Authenticate(context.Background(), request, nil); err != nil {
 					t.Fatalf("Authenticate call %d: %v", call+1, err)
-				}
-				if test.wantQuery != "" && request.URL.Query().Get(test.wantQuery) != bearer {
-					t.Fatalf("query %s after call %d = %q, want %q", test.wantQuery, call+1, request.URL.Query().Get(test.wantQuery), bearer)
 				}
 				if test.wantHeader != "" {
 					want := bearer
@@ -152,7 +148,7 @@ func TestAPIKeyAuthenticatorUsesRotatorTokenForSpecifiedWiresAndEachRequest(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := authenticator.Authenticate(context.Background(), httptest.NewRequest("GET", "https://example.test", nil), nil); !errors.Is(got, tokenErr) {
+	if got := authenticator.Authenticate(context.Background(), httptest.NewRequest("GET", "https://example.test", nil), nil); any(got) != any(tokenErr) {
 		t.Fatalf("Authenticate error = %v, want exact Token error %v", got, tokenErr)
 	}
 }

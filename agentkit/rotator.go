@@ -44,6 +44,7 @@ func (apiKeyRotator) Rotate(context.Context, Rotation) (Token, error) {
 type oauthRotator struct {
 	mu         sync.Mutex
 	store      TokenStore
+	secrets    *secretSet
 	token      Token
 	raw        []byte
 	cached     bool
@@ -58,7 +59,7 @@ type rotateCall struct {
 
 // OAuthRotator returns a rotator backed by a token store.
 func OAuthRotator(store TokenStore) Rotator {
-	return &oauthRotator{store: store}
+	return &oauthRotator{store: store, secrets: &secretSet{}}
 }
 
 func (*oauthRotator) AuthMode() AuthMode {
@@ -78,6 +79,7 @@ func (r *oauthRotator) Token(ctx context.Context) (Token, error) {
 		return Token{}, err
 	}
 
+	r.secrets.rememberOAuth(raw)
 	accessToken, _, ok, err := oauthAccessToken(raw)
 	if err != nil {
 		return Token{}, fmt.Errorf("decode OAuth token: %w", ErrInvalidConfig)
@@ -129,25 +131,25 @@ func (r *oauthRotator) Rotate(ctx context.Context, rotation Rotation) (Token, er
 }
 
 func (r *oauthRotator) rotateOnce(ctx context.Context, rotation Rotation) (Token, error) {
-	if rotation.RefreshURL == "" {
-		return Token{}, fmt.Errorf("OAuth rotation has no refresh URL: %w", ErrInvalidConfig)
-	}
-
-	refreshToken, err := r.refreshToken(ctx)
+	refreshToken, secrets, err := r.refreshToken(ctx)
 	if err != nil {
 		return Token{}, err
+	}
+	if rotation.RefreshURL == "" {
+		return Token{}, redactError(fmt.Errorf("OAuth rotation has no refresh URL: %w", ErrInvalidConfig), secrets)
 	}
 	req, err := oauthRefreshRequest(ctx, rotation, refreshToken)
 	if err != nil {
-		return Token{}, err
+		return Token{}, redactError(err, secrets)
 	}
-	body, err := executeOAuthRefresh(req)
+	body, err := executeOAuthRefresh(req, r.secrets)
 	if err != nil {
 		return Token{}, err
 	}
+	secrets = append(secrets, oauthSecrets(body)...)
 	accessToken, updated, err := mergeOAuthRefresh(body, refreshToken)
 	if err != nil {
-		return Token{}, err
+		return Token{}, redactError(err, secrets)
 	}
 	if err := r.store.Write(ctx, updated); err != nil {
 		return Token{}, err
@@ -163,7 +165,7 @@ func (r *oauthRotator) rotateOnce(ctx context.Context, rotation Rotation) (Token
 	return token, nil
 }
 
-func (r *oauthRotator) refreshToken(ctx context.Context) (string, error) {
+func (r *oauthRotator) refreshToken(ctx context.Context) (string, []string, error) {
 	r.mu.Lock()
 	raw := append([]byte(nil), r.raw...)
 	r.mu.Unlock()
@@ -171,19 +173,21 @@ func (r *oauthRotator) refreshToken(ctx context.Context) (string, error) {
 		var err error
 		raw, err = r.store.Read(ctx)
 		if err != nil {
-			return "", fmt.Errorf("read OAuth refresh token: %w", ErrInvalidConfig)
+			return "", nil, err
 		}
 	}
 
+	r.secrets.rememberOAuth(raw)
+	secrets := r.secrets.snapshot()
 	var stored map[string]any
 	if err := json.Unmarshal(raw, &stored); err != nil {
-		return "", fmt.Errorf("decode OAuth refresh token: %w", ErrInvalidConfig)
+		return "", secrets, redactError(fmt.Errorf("decode OAuth refresh token: %w", ErrInvalidConfig), secrets)
 	}
 	refreshToken, ok := stored["refresh_token"].(string)
 	if !ok || refreshToken == "" {
-		return "", fmt.Errorf("OAuth token has no refresh_token: %w", ErrInvalidConfig)
+		return "", secrets, redactError(fmt.Errorf("OAuth token has no refresh_token: %w", ErrInvalidConfig), secrets)
 	}
-	return refreshToken, nil
+	return refreshToken, secrets, nil
 }
 
 func oauthRefreshRequest(ctx context.Context, rotation Rotation, refreshToken string) (*http.Request, error) {
@@ -201,18 +205,19 @@ func oauthRefreshRequest(ctx context.Context, rotation Rotation, refreshToken st
 	return req, nil
 }
 
-func executeOAuthRefresh(req *http.Request) ([]byte, error) {
+func executeOAuthRefresh(req *http.Request, secrets *secretSet) ([]byte, error) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, &Error{Category: CategoryTransport}
+		return nil, redactError(&Error{Category: CategoryTransport, Message: err.Error(), err: err}, secrets.snapshot())
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	body, err := io.ReadAll(resp.Body)
+	secrets.rememberOAuth(body)
 	if err != nil {
-		return nil, &Error{Category: CategoryTransport, Status: resp.StatusCode}
+		return nil, redactError(&Error{Category: CategoryTransport, Status: resp.StatusCode, Message: err.Error(), err: err}, secrets.snapshot())
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		var oauthError struct {
@@ -220,12 +225,12 @@ func executeOAuthRefresh(req *http.Request) ([]byte, error) {
 			Message string `json:"error_description"`
 		}
 		_ = json.Unmarshal(body, &oauthError)
-		return nil, &Error{
+		return nil, redactError(&Error{
 			Category: CategoryAuth,
 			Status:   resp.StatusCode,
 			Code:     oauthError.Code,
 			Message:  oauthError.Message,
-		}
+		}, secrets.snapshot())
 	}
 	return body, nil
 }
@@ -290,3 +295,5 @@ func accessTokenExpiry(claims map[string]json.RawMessage) time.Time {
 	}
 	return time.Unix(int64(expiry), 0)
 }
+
+func (r *oauthRotator) oauthSecretValues() []string { return r.secrets.snapshot() }

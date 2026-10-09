@@ -203,6 +203,7 @@ type geminiCachedContentResponse struct {
 	statusCode int
 	header     http.Header
 	body       []byte
+	secrets    []string
 }
 
 func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *http.Client, endpoint Endpoint, state requestState) error {
@@ -267,19 +268,20 @@ func sendGeminiCacheRequest(
 	if err := endpoint.config.auth.Authenticate(ctx, request, body); err != nil {
 		return geminiCachedContentResponse{}, err
 	}
-	response, err := client.Do(request)
+	response, err := credentialSafeDo(client, request)
 	if err != nil {
-		return geminiCachedContentResponse{}, fmt.Errorf("agentkit: create Gemini cached content: %w", err)
+		return geminiCachedContentResponse{}, redactError(fmt.Errorf("agentkit: create Gemini cached content: %w", err), requestSecrets(request))
 	}
 	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return geminiCachedContentResponse{}, fmt.Errorf("agentkit: Gemini cached content response: %w", err)
+		return geminiCachedContentResponse{}, redactError(fmt.Errorf("agentkit: Gemini cached content response: %w", err), requestSecrets(request))
 	}
 	return geminiCachedContentResponse{
 		statusCode: response.StatusCode,
 		header:     response.Header,
 		body:       responseBody,
+		secrets:    requestSecrets(request),
 	}, nil
 }
 
@@ -290,7 +292,7 @@ func (w *geminiGenerateContentWire) handleCacheResponse(response geminiCachedCon
 			// Keep the cache empty so encodeRequest renders the turn uncached.
 			return nil
 		}
-		return classifiedGeminiCacheError(response.statusCode, response.header, response.body)
+		return redactError(classifiedGeminiCacheError(response.statusCode, response.header, response.body), response.secrets)
 	}
 	var created struct {
 		Name string `json:"name"`
@@ -320,17 +322,17 @@ func (w *geminiGenerateContentWire) releaseCache(ctx context.Context, client *ht
 	if err := endpoint.config.auth.Authenticate(ctx, request, nil); err != nil {
 		return err
 	}
-	response, err := client.Do(request)
+	response, err := credentialSafeDo(client, request)
 	if err != nil {
-		return fmt.Errorf("agentkit: delete Gemini cached content: %w", err)
+		return redactError(fmt.Errorf("agentkit: delete Gemini cached content: %w", err), requestSecrets(request))
 	}
 	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return fmt.Errorf("agentkit: Gemini cached content delete response: %w", err)
+		return redactError(fmt.Errorf("agentkit: Gemini cached content delete response: %w", err), requestSecrets(request))
 	}
 	if !isHTTPSuccess(response.StatusCode) {
-		return classifiedGeminiCacheError(response.StatusCode, response.Header, responseBody)
+		return redactError(classifiedGeminiCacheError(response.StatusCode, response.Header, responseBody), requestSecrets(request))
 	}
 	w.cacheName = ""
 	return nil

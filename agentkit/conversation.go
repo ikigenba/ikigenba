@@ -177,7 +177,13 @@ func (c *Conversation) driveSend(ctx context.Context, turn turnSnapshot, yield f
 	log := c.beginTurnLog(turn)
 	accounting := turnTotals{}
 	var terminal error
-	defer func() { finishTurnLog(log, terminal) }()
+	defer func() {
+		var secrets []string
+		if source, ok := c.provider.(interface{ errorLogSecrets() []string }); ok {
+			secrets = source.errorLogSecrets()
+		}
+		finishTurnLog(log, redactError(terminal, secrets))
+	}()
 	orchestrator, err := c.prepareOrchestrator()
 	if err != nil {
 		terminal = invalidConfigError(c.identity, err)
@@ -644,7 +650,7 @@ func (c *Conversation) reissueAfterUnauthorized(ctx context.Context, state reque
 	body, err := io.ReadAll(response.Body)
 	_ = response.Body.Close()
 	if err != nil {
-		return nil, wrapProviderError(fmt.Errorf("credential-rejection response body was truncated: %w", err), CategoryTransport, response.StatusCode, c.identity)
+		return nil, wrapProviderError(redactError(fmt.Errorf("credential-rejection response body was truncated: %w", err), requestSecrets(response.Request)), CategoryTransport, response.StatusCode, c.identity)
 	}
 	classifier, _ := c.provider.(rejectedCredentialClassifier)
 	if classifier == nil || !classifier.isRejectedCredential(response.StatusCode, body) {
@@ -679,7 +685,7 @@ func (c *Conversation) reissueAfterStaleCache(ctx context.Context, state request
 	body, err := io.ReadAll(response.Body)
 	_ = response.Body.Close()
 	if err != nil {
-		return nil, wrapProviderError(fmt.Errorf("stale-cache response body was truncated: %w", err), CategoryTransport, response.StatusCode, c.identity)
+		return nil, wrapProviderError(redactError(fmt.Errorf("stale-cache response body was truncated: %w", err), requestSecrets(response.Request)), CategoryTransport, response.StatusCode, c.identity)
 	}
 	if !classifier.isCacheStaleRejection(response.StatusCode, body) {
 		response.Body = io.NopCloser(bytes.NewReader(body))
@@ -771,7 +777,11 @@ func (c *Conversation) execute(request *http.Request) (*http.Response, error) {
 		return nil, errors.New("agentkit: nil HTTP client")
 	}
 
-	return c.client.Do(request)
+	response, err := credentialSafeDo(c.client, request)
+	if response != nil {
+		response.Request = request
+	}
+	return response, redactError(err, requestSecrets(request))
 }
 
 func (c *Conversation) consumeResponse(ctx context.Context, response *http.Response, yield func(Event) bool) ([]Event, bool, error) {
@@ -783,11 +793,11 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 		body, readErr := io.ReadAll(response.Body)
 		if readErr != nil {
 			contextual := fmt.Errorf("provider error response body ended before it could be read completely: %w", readErr)
-			return nil, true, wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
+			return nil, true, wrapProviderError(redactError(contextual, requestSecrets(response.Request)), CategoryUnknown, response.StatusCode, c.identity)
 		}
 
 		classified := c.provider.Classify(response.StatusCode, response.Header, body)
-		return nil, true, wrapProviderError(classified, CategoryUnknown, response.StatusCode, c.identity)
+		return nil, true, wrapProviderError(redactError(classified, requestSecrets(response.Request)), CategoryUnknown, response.StatusCode, c.identity)
 	}
 
 	var events []Event
@@ -796,7 +806,7 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 			// Provider.Decode exposes one canonical terminal error channel. Preserve
 			// that seam as CategoryUnknown without inferring provider-private detail.
 			contextual := fmt.Errorf("provider response decoding ended before completion: %w", decodeErr)
-			return events, true, wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
+			return events, true, wrapProviderError(redactError(contextual, requestSecrets(response.Request)), CategoryUnknown, response.StatusCode, c.identity)
 		}
 		events = append(events, event)
 		if !publishEvent(c.eventSink, yield, event) {

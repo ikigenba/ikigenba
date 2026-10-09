@@ -248,3 +248,10 @@ func synchronizeRequestBody(request *http.Request, body []byte) {
 		return io.NopCloser(bytes.NewReader(bodyCopy)), nil
 	}
 }
+
+func (provider *composedProvider) errorLogSecrets() []string {
+	if source, ok := provider.endpoint.config.auth.(interface{ errorLogSecrets() []string }); ok {
+		return source.errorLogSecrets()
+	}
+	return nil
+}

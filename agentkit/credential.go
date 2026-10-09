@@ -45,9 +45,9 @@ func (o Offering) Authenticator(r Rotator) (Authenticator, error) {
 	}
 	switch r.AuthMode() {
 	case AuthModeAPIKey:
-		return apiKeyApplier{provider: o.ID, wire: o.WireFormat, rotator: r, baseURL: matched.BaseURL}, nil
+		return apiKeyApplier{provider: o.ID, wire: o.WireFormat, rotator: r, baseURL: matched.BaseURL, secrets: &secretSet{}}, nil
 	case AuthModeOAuth:
-		return oauthApplier{provider: o.ID, wire: o.WireFormat, rotator: r, rotation: matched.Rotation, baseURL: matched.BaseURL}, nil
+		return oauthApplier{provider: o.ID, wire: o.WireFormat, rotator: r, rotation: matched.Rotation, baseURL: matched.BaseURL, secrets: &secretSet{}}, nil
 	default:
 		return nil, fmt.Errorf("%w: unrecognized auth mode %q", ErrInvalidConfig, r.AuthMode())
 	}
@@ -67,6 +67,7 @@ type apiKeyApplier struct {
 	wire     WireFormat
 	rotator  Rotator
 	baseURL  string
+	secrets  *secretSet
 }
 
 func (a apiKeyApplier) EndpointIdentity() string { return string(a.provider) }
@@ -78,13 +79,13 @@ func (a apiKeyApplier) Authenticate(ctx context.Context, req *http.Request, _ []
 	if err != nil {
 		return err
 	}
+	a.secrets.remember(token.Bearer)
+	rememberRequestSecrets(req, a.secrets)
 	switch a.wire.(type) {
 	case *anthropicMessagesWire:
 		req.Header.Set("x-api-key", token.Bearer)
 	case *geminiGenerateContentWire:
-		query := req.URL.Query()
-		query.Set("key", token.Bearer)
-		req.URL.RawQuery = query.Encode()
+		req.Header.Set("x-goog-api-key", token.Bearer)
 	default:
 		req.Header.Set("Authorization", "Bearer "+token.Bearer)
 	}
@@ -97,6 +98,7 @@ type oauthApplier struct {
 	rotator  Rotator
 	rotation Rotation
 	baseURL  string
+	secrets  *secretSet
 }
 
 // oauthRefreshHook lets Conversation ask an applier to re-mint credentials
@@ -116,12 +118,15 @@ func (a oauthApplier) Authenticate(ctx context.Context, req *http.Request, _ []b
 	if err != nil {
 		return err
 	}
+	a.secrets.remember(token.Bearer)
 	if !token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now().Add(OAuthRefreshWindow)) {
 		token, err = a.rotator.Rotate(ctx, a.rotation)
 		if err != nil {
 			return err
 		}
 	}
+	a.secrets.remember(token.Bearer)
+	rememberRequestSecrets(req, a.secrets)
 	req.Header.Set("Authorization", "Bearer "+token.Bearer)
 	switch a.wire.(type) {
 	case *openAIResponsesWire, *openAIChatWire:
@@ -134,6 +139,19 @@ func (a oauthApplier) Authenticate(ctx context.Context, req *http.Request, _ []b
 }
 
 func (a oauthApplier) refreshOn401(ctx context.Context) error {
-	_, err := a.rotator.Rotate(ctx, a.rotation)
+	token, err := a.rotator.Rotate(ctx, a.rotation)
+	if err == nil {
+		a.secrets.remember(token.Bearer)
+	}
 	return err
+}
+
+func (a apiKeyApplier) errorLogSecrets() []string { return a.secrets.snapshot() }
+
+func (a oauthApplier) errorLogSecrets() []string {
+	values := a.secrets.snapshot()
+	if source, ok := a.rotator.(interface{ oauthSecretValues() []string }); ok {
+		values = append(values, source.oauthSecretValues()...)
+	}
+	return values
 }
