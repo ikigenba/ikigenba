@@ -70,8 +70,8 @@ a launcher icon. The build run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.17.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.17.0`: a release that
+  - appkit `v0.18.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.18.0`: a release that
     exports the `db` and `version` packages. See Adopting appkit below.
   - `github.com/robfig/cron/v3`, used for parsing schedules only. The schedules
     are the standard five-field cron expressions and `@hourly`, `@daily`,
@@ -93,10 +93,10 @@ external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.17.0`, fetched
+appkit is required only at a published release, here `v0.18.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@v0.17.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.18.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
