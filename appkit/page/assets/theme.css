@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit 11853e4. The design lab's
+   Copied from design/ikigenba/theme.css at commit 89a0b03. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -145,10 +145,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 /* The banner every app emits: the mark (the favicon as an image and
    Ikigenba, a link to home), a hairline, the breadcrumb trail (the service's
    own icon and name, the chevron that opens its page menu, then each deeper
-   level), then at the right edge three quiet 36px icon buttons: the service
-   launcher's grid (only when there are services), the profile (a user-circle
-   linking to the user's auth profile, titled with their email) and sign out
-   (a logout icon). Below 900px the product name hides and the favicon stays;
+   level), then at the right edge two quiet 36px icon buttons: the profile (a
+   user-circle linking to the user's auth profile, titled with their email)
+   and sign out (a logout icon). Below 900px the product name hides and the favicon stays;
    below 640px the trail's middle levels collapse to one ellipsis. The lab
    frames a banner in .frame. */
 :is(body, .frame) > header {
@@ -194,9 +193,6 @@ a.profile {
 }
 a.profile:hover { background: var(--line-soft); color: var(--fg); text-decoration: none; }
 a.profile svg.ico { width: 20px; height: 20px; }
-/* The launcher sits right, first of the icon buttons. */
-:is(body, .frame) > header > .mark ~ .launcher { margin-left: auto; margin-right: 0; }
-:is(body, .frame) > header > .launcher ~ .profile { margin-left: 0; }
 /* Sign out as an icon button, the same quiet 36px square as the others. */
 button.signout {
   width: 36px; height: 36px; padding: 0; margin: 0;
@@ -279,35 +275,12 @@ nav.pages a > svg.ico { margin-left: auto; color: var(--muted); }
 .frame > header > nav.pages { position: absolute; z-index: 2; top: 50px; left: calc(var(--s4) + 118px); }
 .frame:is(.mid, .narrow) > header > nav.pages { left: calc(var(--s4) + 34px); }
 
-/* -------------------------------------------------------------- launcher */
-/* The service launcher: a grid button at the banner's right edge, before the
-   profile, opens a panel of every service on the space — an icon over its name, A to Z, the
-   current one marked in black, a disabled one faint. The panel is a popover,
-   so it opens, closes on Escape or an outside click, and returns focus on its
-   own. It hangs under its button, its right edge on the banner's; the tile
-   grid scrolls under the search field. */
-button.launcher {
-  width: 36px; height: 36px; padding: 0; margin-left: calc(-1 * var(--s2)); margin-right: calc(-1 * var(--s2));
-  background: transparent; color: var(--muted); box-shadow: none;
-}
-button.launcher:hover, body:has(nav.services:popover-open) button.launcher { background: var(--line-soft); color: var(--fg); }
-button.launcher svg.ico { width: 20px; height: 20px; }
-
-nav.services {
-  display: grid; gap: var(--s3); width: 348px; max-width: 100%; padding: var(--s3);
-  background: var(--surface); color: var(--fg);
-  border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow);
-}
-nav.services[popover] {
-  position: fixed; inset: auto; margin: 0;
-  top: calc(56px + var(--s2)); right: max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
-  max-width: calc(100% - 2 * var(--s4));
-}
-nav.services[popover]:not(:popover-open) { display: none; }
+/* -------------------------------------------------------------- services */
+/* The service tiles home draws, one grid per group: an icon over its name,
+   a disabled one faint. The grid fills the page's width. */
 nav.services ul {
   list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s1);
-  max-height: min(396px, calc(100vh - 56px - 96px)); overflow-y: auto; overscroll-behavior: contain;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--s1);
 }
 nav.services a {
   display: grid; justify-items: center; align-content: start; gap: 6px; padding: 10px var(--s1);
@@ -320,31 +293,25 @@ nav.services a > svg {
   background: var(--surface); box-shadow: var(--shadow-sm);
 }
 nav.services a:hover > svg { border-color: color-mix(in srgb, var(--line) 60%, var(--fg) 20%); }
-nav.services a[aria-current] { font-weight: 600; }
-nav.services a[aria-current] > svg { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 /* A disabled service keeps its tile, so the grid never reshuffles: faint,
    unlinked, and saying why on hover. */
 nav.services a:not([href]) { color: var(--faint); cursor: default; }
 nav.services a:not([href]):hover { background: none; }
 nav.services a:not([href]) > svg,
 nav.services a:not([href]):hover > svg { background: var(--subtle); border-color: var(--line-soft); box-shadow: none; }
-nav.services > p { padding: var(--s5) var(--s3); text-align: center; color: var(--muted); font-size: var(--text-sm); }
-nav.services > p[hidden] { display: none; }
-/* home's landing draws the same tiles in main: the launcher's rules and look,
-   without the panel, the grid filling the page's width. */
-main > nav.services { width: auto; padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; }
-main > nav.services ul { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); max-height: none; overflow: visible; }
 
 main { max-width: var(--page); margin: 0 auto; padding: var(--s6) var(--s4) var(--s8); }
 main > * + * { margin-top: var(--s5); }
 main > h1 + p { margin-top: var(--s2); color: var(--muted); font-size: var(--text-md); }
 
-/* An app's footer names the service and its version, muted and small. */
+/* An app's footer names the release, muted and small, at the right edge; the
+   commit beside it, in a span, fainter still. */
 body > footer {
   border-top: 1px solid var(--line); background: var(--surface);
   padding: var(--s6) max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
-  color: var(--muted); font-size: var(--text-sm);
+  color: var(--muted); font-size: var(--text-sm); text-align: right;
 }
+body > footer > span { color: var(--faint); }
 
 /* ----------------------------------------------------------------- icons */
 /* Inline Tabler outline icons: <svg class="ico" ...> copied from icons/tabler/.
@@ -600,7 +567,7 @@ dl.kv > :nth-last-child(-n+2) { border-bottom: 0; }
 /* ------------------------------------------------------------ responsive */
 /* Below 900px the product name hides and the favicon stays as the home link:
    the mark's own text shrinks to nothing. The trail needs the room sooner
-   than the rest of the banner; the launcher's sheet still waits for 640px. */
+   than the rest of the banner. */
 @media (max-width: 900px) {
   :is(body, .frame) > header > .mark:has(> img) { font-size: 0; gap: 0; }
 }
@@ -802,11 +769,7 @@ main > section.card { margin-top: var(--s5); }
 
 @media (max-width: 640px) {
   :is(body, .frame) > header > form.inline { margin-left: auto; }
-  :is(body, .frame) > header > :is(.launcher, .profile) ~ form.inline { margin-left: 0; }
-  nav.services[popover] {
-    top: 56px; right: 0; left: 0; width: auto; max-width: none;
-    border-width: 0 0 1px; border-radius: 0 0 var(--r-lg) var(--r-lg);
-  }
+  :is(body, .frame) > header > .profile ~ form.inline { margin-left: 0; }
   .card > header > h2:first-child + p { text-align: left; }
   .identity { gap: var(--s3); }
 }
