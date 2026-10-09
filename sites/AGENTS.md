@@ -35,6 +35,10 @@ writer sites' events go through) and `db` (the catalog's handle and its
 migrations). The contract is the documents in
 `specs/design/`. This file restates none of it.
 
+sites is an app, so it has no stories: its intent is the decisions
+document that delivered it, or the intent agreed in conversation, together
+with its templates under `assets/`, and `specs/design/` is the record.
+
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
 `go.sum`, the catalog's migrations under `migrations/`, which the root package
@@ -52,22 +56,28 @@ the landing page (template `landing`), `about.html`, the about screen
 (template `about`), `notfound.html`, the not-found page (template
 `notfound`), and `unavailable.html`, the page shown while a site's published
 commit cannot be served (template `unavailable`). Each opens with a comment
-naming the data it receives and the hooks it emits. The landing and about
-pages carry appkit's banner and are shown only to a signed-in user; the
-not-found and unavailable pages may be shown to a guest, so they carry the
-footer only and never the banner. They are written by the user or the delivering agent,
-following the repository's `design/`, and are inputs
-to the spec: the build run reads them and never writes them. The code parses
-them into the set appkit's `page.Templates` returns and executes them by
-template name; it never writes markup of its own, not even a fragment or an
-error page. The files of a site are the site's own and are served as they
-are. Go's `embed` reaches only files at or below the embedding package's
-directory, so the module's root package (the directory holding `go.mod`)
-embeds `assets/`, and design names what it exports. Design names each
-template, the data it receives, and the hooks it emits; the tests assert on
-those hooks and on visible text, never on layout. A needed template that is
-missing or wrong, a state a story names that the templates cannot show, or a
-hook design names that the templates lack is an issue: the run
+naming the data it receives and, for people and the stylesheet, the hooks
+it carries. The landing and about pages carry appkit's banner and are shown
+only to a signed-in user; the not-found and unavailable pages may be shown
+to a guest, so they carry the footer only and never the banner. They follow
+the repository's `design/` and are an input to the spec: the user or the
+delivering agent writes them, before design is drafted, and the build run
+reads them and never writes them. The code parses them into the set
+appkit's `page.Templates` returns and executes them by template name; it
+never writes markup of its own, not even a fragment or an error page. The
+files of a site are the site's own and are served as they are. Go's `embed`
+reaches only files at or below the embedding package's directory, so the
+module's root package (the directory holding `go.mod`) embeds `assets/`,
+and design names what it exports. Every word a person or an agent reads,
+and every class, id and attribute, lives in a template, or, for a line the
+code sends without one, in a named copy constant in the source, and nowhere
+else; a test and a requirement never spell one. Design names each template
+and the data it receives, never its text, hooks, markup or styles. A test
+proves a page by executing the named template with the data design states
+and comparing, or by checking that a value it supplied appears in the body;
+it never looks for a word or a tag. A change to copy or markup is an edit
+to the asset or the constant alone. A needed template that is missing or
+wrong, or one that cannot show a state design names, is an issue: the run
 files it in `specs/issues/` and never edits the asset to close it.
 
 sites holds no copy of the stylesheet, fonts, or licences; appkit's `page`
