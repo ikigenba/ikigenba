@@ -33,6 +33,7 @@ The checks that no step of a path is a symbolic link hold for a folder that stan
 - `Content-Disposition` quotes the base name as an HTTP quoted string when every byte of it is printable ASCII, a `\` or `"` escaped with a `\`; a name with any other byte is sent as `attachment` alone, leaving the browser to name the file from the URL, since nothing fixes that case otherwise and the header must not carry raw bytes.
 - The serving requirements are stated for a request that carries none of `Range`, `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` and `If-Range`, since no answer to them is fixed.
 - The five forms are matched byte for byte after decoding, so `Stdout`, `Transcript.jsonl` and `stdout/` name nothing.
+- A run's file carries no banner and so no level of the banner trail (`D08-pages`): it is the run's own bytes, not a page, and its not-found answer is the `notfound` page, which draws no banner.
 
 ## Consumer tasks
 
