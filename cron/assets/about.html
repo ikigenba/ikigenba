@@ -6,10 +6,9 @@
      "About cron"; dl#about.kv holding dt "Name" then dd#about-name
      (.Banner.Service), dt "Version" then dd#about-version (.Banner.Version,
      present even when empty), and dt "Description" then
-     dd#about-description (.Description); a#home-link (text "Back to cron")
-     whose href is "/". No section of the landing page's, no h2. No script
-     but appkit's /_appkit/feedback.js (and the launcher's, which the banner
-     carries). */}}
+     dd#about-description (.Description). No section of the landing page's,
+     no h2. No script but appkit's /_appkit/feedback.js (and the launcher's,
+     which the banner carries). */}}
 {{define "about"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About cron</title></head>
@@ -24,7 +23,6 @@
 <dt>Description</dt><dd id="about-description">{{.Description}}</dd>
 </dl>
 </section>
-<p><a id="home-link" href="/">Back to cron</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
