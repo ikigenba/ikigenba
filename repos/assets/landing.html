@@ -16,7 +16,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>repos</h1>
-<p id="summary" class="lede">Git repositories for the suite's content. Agents create repositories with the tools below and push to them with ordinary git over HTTPS. Each repository belongs to the user who created it, and only that user can see it or reach it.</p>
+<p id="summary" class="lede">Git repositories for the suite's content. Agents create repositories and push to them with ordinary git over HTTPS. Each repository belongs to the user who created it, and only that user can see it or reach it.</p>
 <section id="clone" class="card">
 <header><h2>Clone with git</h2><p id="clone-url">Clone a repository you own from <code>{{.ReposURL}}/&lt;name&gt;.git</code>, where &lt;name&gt; is its name.</p></header>
 <p id="credentials-intro">{{.Credentials.Intro}}</p>
