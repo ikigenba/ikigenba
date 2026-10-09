@@ -1,5 +1,5 @@
-{{/* The catalog at GET /: what the service is, the caller's scripts with
-     their last runs, and the tools that manage them. The root of the
+{{/* The catalog at GET /: what the service is and the caller's scripts with
+     their last runs. The root of the
      hierarchy, so no breadcrumb. Shown only to a signed-in user. Data:
      .Banner (a page.Banner, for banner and footer); .Scripts, the caller's
      own scripts (never another user's), sorted by name, each with .Name,
@@ -26,12 +26,7 @@
      span.status[data-kind=<kind>] (text the status word) or, when
      never run, td.script-last.muted with text "never run", and
      td.script-when holding time[datetime=<.LastRun.StartedAt>] (text
-     .LastRun.Started), empty when never run; a section with h2 "MCP tools"
-     and dl#tools.kv holding one dt[data-tool=<name>] per MCP tool, in the
-     order list, show, create, update, delete, subscribe, unsubscribe, run,
-     runs, result, cancel,
-     each holding the tool's name in a code element and followed by a dd
-     holding the first line of its description; a#about-link whose href is
+     .LastRun.Started), empty when never run; a#about-link whose href is
      "/about". No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -62,22 +57,6 @@
 <h3 class="text-md">No scripts yet</h3>
 <p>A script you create with the <code>create</code> tool, from one of your repositories, shows up here.</p>
 </div>{{end}}
-</section>
-<section class="card" aria-labelledby="tools-title">
-<header><h2 id="tools-title">MCP tools</h2><p>Agents manage and run scripts with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
-<dl id="tools" class="kv">
-<dt data-tool="list"><code>list</code></dt><dd>The scripts you own, by name.</dd>
-<dt data-tool="show"><code>show</code></dt><dd>One of your scripts, with its repository, its ref and its last run.</dd>
-<dt data-tool="create"><code>create</code></dt><dd>Create a script from one of your repositories and a ref.</dd>
-<dt data-tool="update"><code>update</code></dt><dd>Change the ref one of your scripts runs from.</dd>
-<dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your scripts and every run it has.</dd>
-<dt data-tool="subscribe"><code>subscribe</code></dt><dd>Run one of your scripts each time an event matching a pattern is delivered.</dd>
-<dt data-tool="unsubscribe"><code>unsubscribe</code></dt><dd>Stop running one of your scripts on an event it is subscribed to.</dd>
-<dt data-tool="run"><code>run</code></dt><dd>Start a run of one of your scripts and return its id, status and commit.</dd>
-<dt data-tool="runs"><code>runs</code></dt><dd>The runs of one of your scripts, newest first.</dd>
-<dt data-tool="result"><code>result</code></dt><dd>One run whole: its details, its output so far, and the files it wrote.</dd>
-<dt data-tool="cancel"><code>cancel</code></dt><dd>End one of your runs that is still queued or running.</dd>
-</dl>
 </section>
 <p><a id="about-link" href="/about">About scripts</a></p>
 </main>
