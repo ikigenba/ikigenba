@@ -38,7 +38,7 @@ func Handler(cfg Config) http.Handler {
 		panic(err)
 	}
 	settings := cfg.Limits.Settings()
-	p := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Source: cfg.Source, Runs: cfg.Runs, KeepDays: settings.RunKeepDays, KeepCount: settings.RunKeepCount, TreeMaxBytes: settings.TreeMaxBytes, OperationSeconds: settings.OperationSeconds})
+	p := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Source: cfg.Source, Runs: cfg.Runs, MCP: cfg.MCP, KeepDays: settings.RunKeepDays, KeepCount: settings.RunKeepCount, TreeMaxBytes: settings.TreeMaxBytes, OperationSeconds: settings.OperationSeconds})
 	f := Files(FilesConfig{Banner: cfg.Banner, Pages: set, Store: cfg.Store, Runs: cfg.Runs})
 	static := page.Static()
 	tools.Register(cfg.MCP, tools.Config{Store: cfg.Store, Source: cfg.Source, Runs: cfg.Runs, Telemetry: cfg.Telemetry})

@@ -64,7 +64,7 @@ func assertNoCredential(t *testing.T, secrets []string, b []byte) {
 }
 
 func TestCredentialSequence(t *testing.T) {
-	// R-VZA3-2BOY R-8QNL-DLH0 R-8RVH-RD7P R-8T3E-54YE R-8UBA-IWP3 R-8VJ6-WOFS
+	// R-VZA3-2BOY R-0VAF-TSER R-0WIC-7K5G R-0XQ8-LBW5 R-0YY4-Z3MU R-1061-CVDJ
 	user, password := strings.Join([]string{"AZBZCZDZ", "EXFXGXHX", "JXKXLXMX", "NXOX"}, ""), strings.Join([]string{"PZQZRZSZ", "TUVWXZYX", "AXBYCXDY", "EXFY"}, "")
 	encoded := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
 	var secrets []string
@@ -172,7 +172,7 @@ if json.load(open(os.environ['IKIGENBA_INPUT'])).get('hold'):
 					t.Fatal("cancel ended accepted")
 				}
 				prefix := "/" + name + "/runs/" + ended
-				paths := []string{"/", "/about", "/_appkit/theme.css", "/" + name + "/", "/" + name, "/missing-script/", prefix + "/", prefix, "/" + name + "/runs/run_ffffffffffffffff/", prefix + "/input.json", prefix + "/stdout", prefix + "/stderr", prefix + "/out/", prefix + "/out/d", prefix + "/out/env", prefix + "/out/d/env", "/" + name + "/runs/" + held + "/", "/" + name + "/runs/" + held + "/stdout"}
+				paths := []string{"/", "/about", "/tools", "/_appkit/theme.css", "/" + name + "/", "/" + name, "/missing-script/", prefix + "/", prefix, "/" + name + "/runs/run_ffffffffffffffff/", prefix + "/input.json", prefix + "/stdout", prefix + "/stderr", prefix + "/out/", prefix + "/out/d", prefix + "/out/env", prefix + "/out/d/env", "/" + name + "/runs/" + held + "/", "/" + name + "/runs/" + held + "/stdout"}
 				for _, path := range paths {
 					req, e := http.NewRequest(http.MethodGet, "http://"+h.listener.Addr().String()+path, nil)
 					mustCLI(t, e)

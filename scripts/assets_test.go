@@ -16,10 +16,10 @@ var (
 	_ func() embed.FS = scripts.Etc
 )
 
-// R-J4Q9-R1NN R-J5Y6-4TEC
+// R-RHW4-YAD2 R-RJ41-C23R
 func TestAssets(t *testing.T) {
 	first := scripts.Assets()
-	names := []string{"about.html", "landing.html", "notfound.html", "run.html", "script.html", "unavailable.html"}
+	names := []string{"about.html", "landing.html", "notfound.html", "run.html", "script.html", "tools.html", "unavailable.html"}
 	assertEntries(t, first, ".", names, false)
 	contents := make(map[string][]byte)
 	for _, name := range names {

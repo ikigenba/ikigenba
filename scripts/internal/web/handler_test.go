@@ -111,11 +111,11 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-6RXF-6WGQ R-OLN5-ANNP
+// R-6RXF-6WGQ R-11DX-QN48
 func TestMissingIdentityBeforeEveryRoute(t *testing.T) {
 	f := makeFixture(t, nil)
 	f.db.SetFailing(true)
-	for _, p := range []string{"/", "/_appkit/theme.css", "/mcp", "/n/runs/r/stdout", "/about", "/nope", "/events/", "/Events", "/declarations/repo.pushed"} {
+	for _, p := range []string{"/", "/tools", "/_appkit/theme.css", "/mcp", "/n/runs/r/stdout", "/about", "/nope", "/events/", "/Events", "/declarations/repo.pushed"} {
 		for _, m := range []string{"GET", "HEAD", "POST", "DELETE"} {
 			for _, email := range []string{"", "user@example.test"} {
 				got := serve(f.h, m, p, "", email, "request")
@@ -129,7 +129,7 @@ func TestMissingIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-6T5B-KO7F R-C5GI-R6UL R-8CIO-SOZP R-CAC4-A9TD R-8DQL-6GQE R-CDZT-FL1G R-CF7P-TCS5 R-CMJ4-3Z8B
+// R-RKBX-PTUG R-C5GI-R6UL R-RMRQ-HDBU R-RNZM-V52J R-8DQL-6GQE R-CDZT-FL1G R-RP7J-8WT8 R-CMJ4-3Z8B
 func TestRoutingMatchesOwnedHandlers(t *testing.T) {
 	f := makeFixture(t, nil)
 	set, err := pages.Load()
@@ -137,7 +137,7 @@ func TestRoutingMatchesOwnedHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := f.cfg.Limits.Settings()
-	p := identity.Require(pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, Store: f.cfg.Store, Source: f.cfg.Source, Runs: f.cfg.Runs, KeepDays: s.RunKeepDays, KeepCount: s.RunKeepCount, TreeMaxBytes: s.TreeMaxBytes, OperationSeconds: s.OperationSeconds}))
+	p := identity.Require(pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, Store: f.cfg.Store, Source: f.cfg.Source, Runs: f.cfg.Runs, MCP: f.cfg.MCP, KeepDays: s.RunKeepDays, KeepCount: s.RunKeepCount, TreeMaxBytes: s.TreeMaxBytes, OperationSeconds: s.OperationSeconds}))
 	files := identity.Require(web.Files(web.FilesConfig{Banner: f.cfg.Banner, Pages: set, Store: f.cfg.Store, Runs: f.cfg.Runs}))
 	static := identity.Require(page.Static())
 	endpoint := identity.Require(f.cfg.MCP)
@@ -148,7 +148,7 @@ func TestRoutingMatchesOwnedHandlers(t *testing.T) {
 		for _, row := range []struct {
 			path    string
 			handler http.Handler
-		}{{"/", p}, {"/about", p}, {"/nope", p}, {"/about/", p}, {"/mcp/tools", p}, {"/mcp/", p}, {"/events/", p}, {"/events/x", p}, {"/declarations/repo.pushed", p}, {"/Events", p}, {"/_appkit", p}, {"//", p}, {"/a/../b", p}, {"/n/runs/r/", p}, {"/n/runs/r", p}, {"/n/runs/r/stdout", files}, {"/n/runs/r//", files}, {"/n/runs/r/out/", files}, {"/n/runs/r/./stdout", files}, {"/n/runs/r/stdout/", files}, {"/n/%72uns/r/stdout", files}, {"/n%2Fruns/r/stdout", p}, {"/_appkit/theme.css", static}, {"/_appkit/nope.css", static}, {"/mcp", endpoint}} {
+		}{{"/", p}, {"/about", p}, {"/tools", p}, {"/tools/", p}, {"/nope", p}, {"/about/", p}, {"/mcp/tools", p}, {"/mcp/", p}, {"/events/", p}, {"/events/x", p}, {"/declarations/repo.pushed", p}, {"/Events", p}, {"/_appkit", p}, {"//", p}, {"/a/../b", p}, {"/n/runs/r/", p}, {"/n/runs/r", p}, {"/n/runs/r/stdout", files}, {"/n/runs/r//", files}, {"/n/runs/r/out/", files}, {"/n/runs/r/./stdout", files}, {"/n/runs/r/stdout/", files}, {"/n/%72uns/r/stdout", files}, {"/n%2Fruns/r/stdout", p}, {"/_appkit/theme.css", static}, {"/_appkit/nope.css", static}, {"/mcp", endpoint}} {
 			for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 				got := serve(f.h, method, row.path, "owner", "", "request")
 				want := serve(row.handler, method, row.path, "owner", "", "request")
@@ -797,4 +797,47 @@ func missingPage(t *testing.T, cfg web.Config) string {
 	}
 	set.Write(w, httptest.NewRequest("GET", "/", nil), 404, "notfound", pages.NoticeData{Banner: cfg.Banner(page.User{})})
 	return w.Body.String()
+}
+
+// R-RQFF-MOJX
+func TestToolsPageMatchesMCPCatalog(t *testing.T) {
+	f := makeFixture(t, nil)
+	f.cfg.Banner = func(u page.User) page.Banner {
+		return page.Banner{Service: "fixture-service", Version: "fixture-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}}
+	}
+	// Handler registers on the server supplied to the page handler.
+	f.cfg.MCP = mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "fixture", Telemetry: f.cfg.Telemetry})
+	f.h = web.Handler(f.cfg)
+	srv := httptest.NewServer(f.h)
+	defer srv.Close()
+	infos, err := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"}).ListTools(context.Background(), identity.Caller{UserID: "fixture-owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []pages.Tool
+	var names []string
+	for _, info := range infos {
+		entries = append(entries, pages.Tool{Name: info.Name, Description: info.Description})
+		names = append(names, info.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"list", "show", "create", "update", "delete", "subscribe", "unsubscribe", "run", "runs", "result", "cancel"}) {
+		t.Fatal(names)
+	}
+	tpls, err := page.Templates().ParseFS(scripts.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	b := f.cfg.Banner(page.User{ProfileURL: "https://auth.backend/", LogoutURL: "https://auth.backend/logout"})
+	b.Trail = []page.Level{{Name: "tools", URL: "/tools"}}
+	if err := tpls.ExecuteTemplate(&body, "tools", pages.ToolsData{Banner: b, Tools: entries}); err != nil {
+		t.Fatal(err)
+	}
+	for _, failing := range []bool{false, true} {
+		f.db.SetFailing(failing)
+		response := serve(f.h, "GET", "/tools?ignored=anything", "fixture-owner", "", "fixture-request")
+		if response.Code != 200 || response.Body.String() != body.String() {
+			t.Fatalf("tools response: status %d, body match %t", response.Code, response.Body.String() == body.String())
+		}
+	}
 }
