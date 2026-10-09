@@ -2,7 +2,7 @@
 
 dummy's pages take the platform's visual style and its service launcher from files dummy does not author: the stylesheet every page links, the fonts that stylesheet loads, one of which every page preloads, the launcher's script, the button-feedback script every page links, the favicon every page links as its icon, and the licences of the fonts and of the Tabler icons the style draws. They are the platform's shared web files, the same for every app, and they come from appkit's `page` package (`github.com/ikigenba/ikigenba/appkit/page`), which embeds them and serves them through the handler `page.Static()` returns, under the prefix `page.StaticPrefix`, `/_appkit/`. This design is how dummy mounts that handler and what a caller observes of it through dummy.
 
-dummy holds no copy of any of these files. Its own `assets/` directory holds only its page templates (`D04-panel`, `D06-table`, `D07-form`), which are never served as files; dummy has no `/assets/` route and no extension-to-`Content-Type` table of its own, and a path under `/assets/` is an ordinary path that does not exist, answered by `D04-panel`'s catch-all like any other.
+dummy holds no copy of any of these files. Its own `assets/` directory holds only its page templates (`D04-panel`, `D06-table`, `D07-form`), including those of the about and tools pages, which are never served as files; dummy has no `/assets/` route and no extension-to-`Content-Type` table of its own, and a path under `/assets/` is an ordinary path that does not exist, answered by `D04-panel`'s catch-all like any other.
 
 ## Mounting inside the identity gate
 
