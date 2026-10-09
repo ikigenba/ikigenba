@@ -317,7 +317,23 @@ func TestServeBusDrainRecoveryAndDeadline(t *testing.T) {
 func serveRecordedEvents(t *testing.T, f *serveFixture) []telemetry.Event {
 	t.Helper()
 	es := f.capture.Events()
+	// When the drain deadline ends the writer's shutdown, the event whose
+	// delivery is under way is written out as undelivered whatever that call
+	// returns, so the capture's last event may also be a fallback line.
+	// Count that one event once.
+	var inflight string
+	if n := len(es); n > 0 {
+		canonical, err := es[n-1].MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		inflight = "repos: undelivered event: " + string(canonical) + "\n"
+	}
 	for _, line := range f.stderr.lines() {
+		if line == inflight {
+			inflight = ""
+			continue
+		}
 		prefix := []byte("repos: undelivered event: ")
 		if bytes.HasPrefix([]byte(line), prefix) {
 			var wire struct {
