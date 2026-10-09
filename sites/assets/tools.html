@@ -2,9 +2,10 @@
      service by, through the MCP gateway.
      Data: .Banner (a page.Banner, for banner and footer); .Tools (a slice of items, each with .Name, the tool's name, and .Description, its description).
      Hooks: title "tools · sites"; h1 with text "Tools"; p#summary (text
-     "Agents manage sites with these tools, through the MCP gateway's call and mutate.", call and mutate each in a code element);
-     dl#tools.kv holding one dt[data-tool=<.Name>] per item, in the order
-     of .Tools, each holding .Name in a code element and followed by a dd
+     "Agents manage sites with these tools, through the MCP gateway's call
+     and mutate.", call and mutate each in a code element); a section.card
+     holding dl#tools.kv with one dt[data-tool=<.Name>] per tool, in the
+     order of .Tools, holding .Name in a code element and followed by a dd
      holding .Description. No section of the landing page's. No script but
      appkit's /_appkit/feedback.js (and the launcher's, which the banner
      carries). */}}
