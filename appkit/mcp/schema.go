@@ -16,6 +16,28 @@ import (
 var propertyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var rawMessageType = reflect.TypeFor[json.RawMessage]()
 
+// Nullable distinguishes an omitted input member from null and a value.
+type Nullable[T any] struct {
+	Present, Null bool
+	Value         T
+}
+
+func (Nullable[T]) nullableType() reflect.Type { return reflect.TypeFor[Nullable[T]]() }
+
+type nullable interface {
+	nullableType() reflect.Type
+}
+
+func nullableElement(t reflect.Type) (reflect.Type, bool) {
+	if t.Kind() != reflect.Struct || !t.Implements(reflect.TypeFor[nullable]()) {
+		return nil, false
+	}
+	if reflect.Zero(t).Interface().(nullable).nullableType() != t {
+		return nil, false
+	}
+	return t.Field(2).Type, true
+}
+
 type schemaProperty struct {
 	name     string
 	index    int
@@ -29,6 +51,7 @@ type valueSchema struct {
 	properties  []schemaProperty
 	element     *valueSchema
 	optional    bool
+	nullable    bool
 	raw         bool
 	values      []string
 	description string
@@ -53,6 +76,21 @@ func hasCustomJSON(t reflect.Type) bool {
 
 func deriveValue(t reflect.Type, output, field bool, visiting map[reflect.Type]bool) (*valueSchema, error) {
 	s := &valueSchema{goType: t}
+	if inner, ok := nullableElement(t); ok {
+		if output || !field {
+			return nil, fmt.Errorf("Nullable must be an input struct field")
+		}
+		_, nested := nullableElement(inner)
+		if inner.Kind() == reflect.Pointer || nested {
+			return nil, fmt.Errorf("Nullable cannot wrap a pointer or Nullable")
+		}
+		element, err := deriveValue(inner, false, true, visiting)
+		if err != nil {
+			return nil, err
+		}
+		s.kind, s.nullable, s.element = element.kind, true, element
+		return s, nil
+	}
 	if t == rawMessageType {
 		if !field {
 			return nil, fmt.Errorf("RawMessage must be a struct field")
@@ -163,6 +201,23 @@ func deriveValue(t reflect.Type, output, field bool, visiting map[reflect.Type]b
 func jsonString(s string) json.RawMessage { b, _ := json.Marshal(s); return b }
 
 func (s *valueSchema) json() json.RawMessage {
+	if s.nullable {
+		members, _ := parseJSONObject(s.element.json())
+		for i := range members {
+			switch members[i].name {
+			case "type":
+				members[i].value = json.RawMessage(`[` + string(jsonString(s.kind)) + `,"null"]`)
+			case "enum":
+				value := members[i].value
+				members[i].value = append(append(json.RawMessage(nil), value[:len(value)-1]...), []byte(",null]")...)
+			}
+		}
+		if s.description != "" {
+			members = append(members, jsonMember{name: "description", value: jsonString(s.description)})
+		}
+		b, _ := marshalJSONObject(members)
+		return b
+	}
 	if s.optional {
 		copySchema := *s.element
 		copySchema.description = s.description
@@ -254,6 +309,20 @@ func offence(path, reason string) []string {
 func (s *valueSchema) decode(data json.RawMessage, path string) (reflect.Value, []string) {
 	v := reflect.New(s.goType).Elem()
 	got := jsonKind(data)
+	if s.nullable {
+		v.Field(0).SetBool(true)
+		if got == "null" {
+			v.Field(1).SetBool(true)
+			return v, nil
+		}
+		match := got == s.kind || (s.kind == "integer" && got == "number")
+		if !match {
+			return v, offence(path, "expected "+s.kind+" or null, got "+got)
+		}
+		element, errs := s.element.decode(data, path)
+		v.Field(2).Set(element)
+		return v, errs
+	}
 	if s.optional {
 		if got == "null" {
 			return v, nil

@@ -122,7 +122,7 @@ type schemaModel struct {
 
 func TestSchemaObjectsAndOrdering(t *testing.T) {
 	// R-6MRV-S1RK R-TRVR-1U87 R-TT3N-FLYW R-TVJG-75GA R-TWRC-KX6Z
-	// R-TPFY-AAQT R-TXZ8-YOXO R-TZ75-CGOD R-TQNU-O2HI R-U0F1-Q8F2 R-U1MY-405R
+	// R-TPFY-AAQT R-PI8U-UZFZ R-TZ75-CGOD R-TQNU-O2HI R-U0F1-Q8F2 R-U1MY-405R
 	s := schemaServer(t)
 	schemaRegister(s, func(in schemaModel) schemaModel { in.hidden = "ignored"; return in })
 	in, out := schemaList(t, s)
@@ -369,7 +369,7 @@ func TestSchemaOffenceAggregation(t *testing.T) {
 	schemaInvalid[input](t, `{"last":4,"rows":[{"a":"no","z":8,"odd.name":0},{"a":null}],"dup":"bad","dup":{"nested":null},"unknown":1,"unknown":2,"quote\"key":3,"":4}`, "invalid arguments:\nfirst: missing required field\nrows[0].z: expected string, got number\nrows[0].a: expected boolean, got string\nrows[0][\"odd.name\"]: unknown field\nrows[1].z: missing required field\nrows[1].a: expected boolean, got null\ndup: duplicate field\nlast: expected boolean, got number\nunknown: unknown field\nunknown: unknown field\n[\"quote\\\"key\"]: unknown field\n[\"\"]: unknown field")
 }
 func TestSchemaTypeMismatches(t *testing.T) {
-	// R-MQSZ-NNHI R-L95E-TQUY
+	// R-PFT2-3FYL R-PH0Y-H7PA
 	type input struct {
 		S string      `json:"s"`
 		B bool        `json:"b"`
@@ -439,7 +439,7 @@ func TestSchemaFloatAndEnumValidation(t *testing.T) {
 	}
 }
 func TestSchemaRawAndPointerInput(t *testing.T) {
-	// R-BPVL-RNX0 R-BSBE-J7EE R-BR3I-5FNP
+	// R-BPVL-RNX0 R-VBQP-WXUR R-BR3I-5FNP
 	type input struct {
 		Raw json.RawMessage `json:"raw"`
 		P   *int            `json:"p" mcp:"required"`
@@ -539,5 +539,168 @@ func TestSchemaUnencodableValues(t *testing.T) {
 		if !bad || text != mcp.PanicText {
 			t.Fatalf("%#v: %s error=%t", value, text, bad)
 		}
+	}
+}
+
+type schemaDefinedNullable mcp.Nullable[string]
+type schemaNullableAlias = mcp.Nullable[string]
+
+func TestNullableShapeAndSchema(t *testing.T) {
+	// R-P61V-1A11 R-P79R-F1RQ R-PI8U-UZFZ
+	value := mcp.Nullable[int]{true, false, 7}
+	if !value.Present || value.Null || value.Value != 7 {
+		t.Fatalf("fields: %#v", value)
+	}
+	type input struct {
+		Text   schemaNullableAlias           `json:"text" description:"kept description"`
+		Choice mcp.Nullable[schemaChoice]    `json:"choice"`
+		Count  mcp.Nullable[uint64]          `json:"count" mcp:"required"`
+		List   mcp.Nullable[[]schemaLeaf]    `json:"list"`
+		Object mcp.Nullable[schemaLeaf]      `json:"object"`
+		Raw    mcp.Nullable[json.RawMessage] `json:"raw"`
+	}
+	for _, raw := range []bool{false, true} {
+		s := schemaServer(t)
+		if raw {
+			schemaRawRegister(s, func(input) {})
+		} else {
+			schemaRegister(s, func(input) schemaEmpty { return schemaEmpty{} })
+		}
+		in, _ := schemaList(t, s)
+		want := `{"type":"object","properties":{"text":{"type":["string","null"],"description":"kept description"},"choice":{"type":["string","null"],"enum":["second","first\nquoted\"",null]},"count":{"type":["integer","null"],"minimum":0},"list":{"type":["array","null"],"items":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"boolean"}},"required":["z"],"additionalProperties":false}},"object":{"type":["object","null"],"properties":{"z":{"type":"string"},"a":{"type":"boolean"}},"required":["z"],"additionalProperties":false},"raw":{"type":["object","null"]}},"required":["count"],"additionalProperties":false}`
+		if string(in) != want {
+			t.Fatalf("schema: %s; want %s", in, want)
+		}
+	}
+	// A defined type follows the ordinary struct rules, including JSON tags.
+	schemaRejectIn[struct {
+		Value schemaDefinedNullable `json:"value"`
+	}](t)
+}
+
+func nullableRejectInput[In any](t *testing.T) {
+	t.Helper()
+	schemaMustPanic(t, func() { schemaRegister(schemaServer(t), func(In) schemaEmpty { return schemaEmpty{} }) })
+	schemaMustPanic(t, func() { schemaRawRegister(schemaServer(t), func(In) {}) })
+}
+
+func TestNullableRegistrationRestrictions(t *testing.T) {
+	// R-P8HN-STIF
+	nullableRejectInput[mcp.Nullable[string]](t)
+	nullableRejectInput[struct {
+		V []mcp.Nullable[string] `json:"v"`
+	}](t)
+	nullableRejectInput[struct {
+		V *mcp.Nullable[string] `json:"v"`
+	}](t)
+	nullableRejectInput[struct {
+		V mcp.Nullable[*string] `json:"v"`
+	}](t)
+	nullableRejectInput[struct {
+		V mcp.Nullable[mcp.Nullable[string]] `json:"v"`
+	}](t)
+	// R-P9PK-6L94
+	schemaMustPanic(t, func() {
+		schemaRegister(schemaServer(t), func(schemaEmpty) mcp.Nullable[string] { return mcp.Nullable[string]{} })
+	})
+	schemaMustPanic(t, func() {
+		schemaRegister(schemaServer(t), func(schemaEmpty) struct {
+			V mcp.Nullable[string] `json:"v"`
+		} {
+			return struct {
+				V mcp.Nullable[string] `json:"v"`
+			}{}
+		})
+	})
+	schemaMustPanic(t, func() {
+		schemaRegister(schemaServer(t), func(schemaEmpty) struct {
+			V []struct {
+				N mcp.Nullable[int] `json:"n"`
+			} `json:"v"`
+		} {
+			return struct {
+				V []struct {
+					N mcp.Nullable[int] `json:"n"`
+				} `json:"v"`
+			}{}
+		})
+	})
+	// R-PI8U-UZFZ: the wrapped type is checked as a struct field.
+	nullableRejectInput[struct {
+		V mcp.Nullable[map[string]int] `json:"v"`
+	}](t)
+	nullableRejectInput[struct {
+		V mcp.Nullable[schemaMarshal] `json:"v"`
+	}](t)
+	nullableRejectInput[struct {
+		V mcp.Nullable[schemaMissingTag] `json:"v"`
+	}](t)
+	nullableRejectInput[struct {
+		V mcp.Nullable[schemaEmptyEnum] `json:"v"`
+	}](t)
+}
+
+type schemaNullableInput struct {
+	Text   mcp.Nullable[string]          `json:"text"`
+	Count  mcp.Nullable[int8]            `json:"count" mcp:"required"`
+	Choice mcp.Nullable[schemaChoice]    `json:"choice"`
+	Number mcp.Nullable[float64]         `json:"number"`
+	Flag   mcp.Nullable[bool]            `json:"flag"`
+	List   mcp.Nullable[[]schemaLeaf]    `json:"list"`
+	Object mcp.Nullable[schemaLeaf]      `json:"object"`
+	Raw    mcp.Nullable[json.RawMessage] `json:"raw"`
+}
+
+func TestNullableInputStates(t *testing.T) {
+	// R-PAXG-KCZT R-PC5C-Y4QI R-PEL5-PO7W
+	raw := `{ "nested" : [1, null], "duplicate":0,"duplicate":1 }`
+	cases := []struct {
+		args string
+		want schemaNullableInput
+	}{
+		{`{"count":null}`, schemaNullableInput{Count: mcp.Nullable[int8]{Present: true, Null: true}}},
+		{`{"text":null,"count":null,"choice":null,"number":null,"flag":null,"list":null,"object":null,"raw":null}`, schemaNullableInput{Text: mcp.Nullable[string]{Present: true, Null: true}, Count: mcp.Nullable[int8]{Present: true, Null: true}, Choice: mcp.Nullable[schemaChoice]{Present: true, Null: true}, Number: mcp.Nullable[float64]{Present: true, Null: true}, Flag: mcp.Nullable[bool]{Present: true, Null: true}, List: mcp.Nullable[[]schemaLeaf]{Present: true, Null: true}, Object: mcp.Nullable[schemaLeaf]{Present: true, Null: true}, Raw: mcp.Nullable[json.RawMessage]{Present: true, Null: true}}},
+		{`{"text":"kept\ntext","count":3e0,"choice":"second","number":2.5,"flag":true,"list":[{"z":"first"},{"z":"second","a":true}],"object":{"z":"object"},"raw":` + raw + `}`, schemaNullableInput{Text: mcp.Nullable[string]{Present: true, Value: "kept\ntext"}, Count: mcp.Nullable[int8]{Present: true, Value: 3}, Choice: mcp.Nullable[schemaChoice]{Present: true, Value: "second"}, Number: mcp.Nullable[float64]{Present: true, Value: 2.5}, Flag: mcp.Nullable[bool]{Present: true, Value: true}, List: mcp.Nullable[[]schemaLeaf]{Present: true, Value: []schemaLeaf{{Z: "first"}, {Z: "second", A: true}}}, Object: mcp.Nullable[schemaLeaf]{Present: true, Value: schemaLeaf{Z: "object"}}, Raw: mcp.Nullable[json.RawMessage]{Present: true, Value: json.RawMessage(raw)}}},
+	}
+	for _, c := range cases {
+		for _, typed := range []bool{false, true} {
+			s := schemaServer(t)
+			var got schemaNullableInput
+			called := false
+			h := func(in schemaNullableInput) { got = in; called = true }
+			if typed {
+				schemaRegister(s, func(in schemaNullableInput) schemaEmpty { h(in); return schemaEmpty{} })
+			} else {
+				schemaRawRegister(s, h)
+			}
+			text, _, bad := schemaCall(t, s, c.args)
+			if bad || !called || !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("%s: got %#v, text=%s, want %#v", c.args, got, text, c.want)
+			}
+		}
+	}
+	// All fields, including Count, are optional in this input.
+	type optional struct {
+		Value mcp.Nullable[schemaLeaf] `json:"value"`
+	}
+	s := schemaServer(t)
+	got := optional{Value: mcp.Nullable[schemaLeaf]{Present: true, Null: true}}
+	schemaRawRegister(s, func(in optional) { got = in })
+	_, _, bad := schemaCall(t, s, `{}`)
+	if bad || got != (optional{}) {
+		t.Fatalf("absent: %#v", got)
+	}
+}
+
+func TestNullableOffences(t *testing.T) {
+	// R-PC5C-Y4QI R-PFT2-3FYL R-PH0Y-H7PA
+	cases := []struct{ args, want string }{
+		{`{}`, `count: missing required field`},
+		{`{"text":1,"count":false,"choice":{},"number":[],"flag":"yes","list":true,"object":2,"raw":"x"}`, "text: expected string or null, got number\ncount: expected integer or null, got boolean\nchoice: expected string or null, got object\nnumber: expected number or null, got array\nflag: expected boolean or null, got string\nlist: expected array or null, got boolean\nobject: expected object or null, got number\nraw: expected object or null, got string"},
+		{`{"count":128,"choice":"other","number":1e309,"list":[{"z":1},{"a":null}],"object":{"a":"x","unknown":null}}`, "count: must be between -128 and 127, got 128\nchoice: must be one of \"second\", \"first\\nquoted\\\"\", got \"other\"\nnumber: out of range for a 64-bit float, got 1e309\nlist[0].z: expected string, got number\nlist[1].z: missing required field\nlist[1].a: expected boolean, got null\nobject.z: missing required field\nobject.a: expected boolean, got string\nobject.unknown: unknown field"},
+		{`{"count":1.5,"text":null,"text":{},"object":{"z":"first","z":4}}`, "text: duplicate field\ncount: expected integer, got 1.5\nobject.z: duplicate field"},
+	}
+	for _, c := range cases {
+		schemaInvalid[schemaNullableInput](t, c.args, "invalid arguments:\n"+c.want)
 	}
 }
