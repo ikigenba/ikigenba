@@ -60,6 +60,12 @@ Route verified findings:
 - **Test proves by reading source instead of by use:** remove the tag. If no
   test could prove the requirement by use, also file an issue: the
   requirement must leave the design.
+- **Test asserts copy:** a test that spells a word, tag, class, id or
+  attribute of a page, or the value of a copy constant (`spec`, "Copy is
+  not contract"), proves the asset, not the requirement. Remove the
+  assertion, or the test when nothing else remains. If the requirement
+  itself quotes copy, also file an issue: the requirement must leave the
+  design.
 - **Requirement untestable or contract cannot be satisfied:** file an evidenced
   issue under spec's rules. Validate it as a blocker and use fanout's halt
   behavior; the audit cannot redesign the contract.

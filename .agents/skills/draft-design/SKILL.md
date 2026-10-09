@@ -14,10 +14,18 @@ decomposition, ownership, verification, capacity handling, and repairs.
 
 ## Goal and authority
 
-Produce a coherent, testable public contract for the selected story groups
-in one sub-project. For a library, the input is instead the public interface
-agreed with the user in this conversation: present it at a high level and
-get agreement before authoring; this operation locks it in. Finish all work
+Produce a coherent, testable public contract for one sub-project. For a
+command-line program the input is the selected story groups. For a library
+it is the public interface agreed with the user in this conversation:
+present it at a high level and get agreement before authoring; this
+operation locks it in. For an app it is the decisions document the user or
+`deliver` names, or the intent agreed in conversation, together with the
+templates under the sub-project's `assets/`, which exist before this
+operation starts: each template's name and the data its opening comment
+names are inputs, and its words and markup are copy the design never
+states (`spec`, "Copy is not contract"). A template a decision needs that
+is missing or cannot show a named state is reported to the user, never
+designed around. Finish all work
 possible from available inputs while carrying unsettled user decisions to
 the root.
 
@@ -43,9 +51,10 @@ Report blockers and unresolved decisions to the user, not `specs/issues/`.
 
 ## Coverage and design work
 
-Delegate an inventory of input stories and acceptance criteria (for a
-library, the agreed interface and its consumer tasks), using stable
-source locators rather than minted ids. For stories without explicit criteria,
+Delegate an inventory of the inputs' outcomes: the stories and their
+acceptance criteria, or for a library the agreed interface and its consumer
+tasks, or for an app the decisions and the templates with their data, using
+stable source locators rather than minted ids. For stories without explicit criteria,
 identify their stated outcomes and distinguish them from open questions.
 Track, for each of those outcomes, its owning scope, requirements, verified
 result, exclusion, or pending decision. Partition the inventory when needed;
@@ -116,9 +125,13 @@ Verification must establish:
   defect that passes it: a wrong value, a missed case, an overflow, never an
   implementation that special-cases the test's inputs. If one exists, the
   requirement is reworded,
-  or the test rule it needs goes to the user as a decision.
+  or the test rule it needs goes to the user as a decision. A wrong word,
+  tag or hook in a template is not such a defect: copy is the asset's, and
+  a requirement that would guard it is removed, not tightened.
 - Behavioral requirements state observable outcomes at public seams, never how
   the code produces them.
+- No requirement quotes copy or names a hook, and every copy constant is
+  declared without a value (`spec`'s design format, "Copy").
 - The contract passes the declared gates. In a throwaway worktree, stub the
   declared public surface, write the consumer tasks as code against it, and
   run the sub-project's gates, then remove the worktree. A shape the gates

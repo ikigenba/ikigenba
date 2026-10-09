@@ -20,9 +20,11 @@ contradictory stories. Drafting includes updating existing stories.
 
 Resolve the selected sub-project to an absolute directory holding `specs/` and
 its own `AGENTS.md`; ask if the sub-project is not identified by context.
-Read applicable ancestor guidance and the sub-project's `AGENTS.md`. If it
-is a library, stop: a library has no stories, and its interface is agreed in
-conversation and locked in by `draft-design`. Supply
+Read applicable ancestor guidance and the sub-project's `AGENTS.md`. Only a
+command-line program has stories. If the sub-project is a library or an app,
+stop: a library's interface is agreed in conversation, an app's intent is its
+decisions document or the conversation together with the templates under its
+`assets/`, and `draft-design` locks either in. Supply
 that directory, the user's request and settled decisions, this skill, and the
 completion criteria to the fanout assignments.
 

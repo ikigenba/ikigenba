@@ -3,8 +3,10 @@
 See `../SKILL.md` for the layout. Stories live in `specs/stories/`; they are
 the input to `specs/design/` and the `draft-stories` skill authors them.
 
-A story is the intent the sub-project is built to serve, written before any
-design. It says who wants what, the preconditions in the system, the exact
+A story is the intent a command-line program is built to serve, written
+before any design. Only a command-line program has stories: its literal
+output is its product, so a story can quote it. An app and a library have
+none; see `../SKILL.md`. It says who wants what, the preconditions in the system, the exact
 interaction, what each option does, and the postconditions once the
 interaction has run. It is concrete: literal command lines, literal output,
 literal exit codes. A reader who has only the story can sit at a terminal and
@@ -101,26 +103,18 @@ implemented or tested; those belong to the design. It does name the things the a
 can see: paths on disk the command reads or writes, environment it consults,
 a resource's identifier scheme.
 
-## For a library
+## For a library or an app
 
 A library has no stories: no person interacts with it. Its intent is the
 public interface agreed with the user in conversation, and `draft-design`
 locks that agreement in as design.
 
-## For a web app
-
-A sub-project whose consumer is an HTTP client keeps the same sections with
-the interaction as a request. `Command:` becomes `Request:`, one fenced block
-per form, each a plain HTTP request: the request line, the headers the story
-depends on, and any body. A request to the app names no address or
-transport, since the app serves whatever socket it is given; a request made
-through a deployed host is a `$ curl -si` line to its public URL. `Output:` becomes
-`Response:`, a fenced block holding the status line and only the headers the
-story fixes. The exit line becomes a status line: `Status 200.` followed by
-what the body must satisfy, stated as a fact (`The body is an HTML page whose
-visible text is ...`), never quoted whole. A header or body the story does not
-mention is not fixed. Preconditions and postconditions are unchanged; a
-read-only request says `Nothing has changed.`
+An app has no stories either. What a user does and sees on its pages is
+copy and markup, which live in the templates under `assets/` and nowhere
+else (`../SKILL.md`, "Copy is not contract"); what its routes and tools do
+is settled by the decisions document that delivers it, or in conversation,
+and `draft-design` locks that in as design. A story for a page would only
+restate the template.
 
 ## Example
 

@@ -20,7 +20,7 @@ In scope (the public surface):
 - Public types and data shapes that cross a boundary, including their fields.
 - Operation signatures: name, parameters, return type, and errors/failure modes surfaced. The shape only, never the body. (e.g. an exported Go function signature or interface, a module's exported JavaScript functions.)
 - Interfaces/protocols the module implements or depends on.
-- Constants that are part of the contract: limits, defaults, enumerated values, error codes.
+- Constants that are part of the contract: limits, defaults, enumerated values, error codes. A copy constant is declared by name only; see "Copy" below.
 - External tools and services the code relies on, reached through their published interfaces. Which internal package imports which is not observable and not a requirement.
 - Observable behavior and invariants: what an operation does as seen from outside, and pre/postconditions at the boundary. Expressed as requirements (below), not as procedure steps.
 - State machine, when the subsystem is stateful: the set of states, the events/operations that trigger transitions, which transitions are allowed, guards on them, and the observable effect of each.
@@ -33,7 +33,18 @@ Out of scope (implementation):
 - Internal ordering of steps, micro-optimizations, and caching, unless a specific guarantee is itself part of the contract.
 - How state is stored or how transition logic is coded.
 - Anything a consumer can neither see nor depend on.
+- Copy: the words, markup and hooks of a template, the value of a copy constant. See "Copy" below.
 - Version numbers — a dependency's, a tool's, a sibling sub-project's release. A design names *what* it depends on; which release satisfies that is data and lives where the data belongs (`go.mod`, a lockfile, `AGENTS.md`'s toolchain). A requirement never states a version.
+
+## Copy
+
+`../SKILL.md`, "Copy is not contract", draws the line: text a program parses is contract; text only a person or an LLM reads is copy, and so is a page's markup with its classes, ids and attributes. A design treats copy as it treats an external tool's output: it says **that** it is shown and **where it comes from**, never what it says.
+
+- A page is designed as a template name and the data it receives. A structural requirement declares the data type with its fields; a behavioral requirement says which template a route executes with which data, and under what status and headers. No requirement names a heading, a label, a sentence, a class, an id or an attribute, and no requirement defines how markup is read. The test executes the named template with the stated data and compares, or checks that a value it supplied appears in the body.
+- A string the code emits without a template, an error line or a description, is a **copy constant**: the structural requirement declares its name and type (`const Unreachable string`) and never its value, and the source holds the words. A behavioral requirement says the answer is that constant; the test references the constant. A copy constant is the one contract constant declared without a value.
+- A template that cannot show a state the design names is an issue, never a requirement about the template's text.
+
+So a change to copy or markup touches one asset or one constant and no requirement, no id and no test.
 
 ## Depending on an external tool
 

@@ -11,12 +11,12 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 
 ## Layout
 
-- `specs/stories/` — user stories, one group per file (`S<int>-<slug>.md`). The intent the designs realise; written first, carry no ids. Absent for a library, whose intent is the interface agreed in conversation and locked in by `draft-design`. Format: `references/story-format.md`.
+- `specs/stories/` — user stories, one group per file (`S<int>-<slug>.md`). The intent the designs realise; written first, carry no ids. Present only for a command-line program, whose literal output is its product. Absent for a library, whose intent is the interface agreed in conversation, and for an app, whose intent is the decisions document that delivers it or the intent agreed in conversation, together with the templates under its `assets/`; `draft-design` locks either in. The sub-project's `AGENTS.md` says which kind it is. Format: `references/story-format.md`.
 - `specs/design/` — design documents (`D<int>-<slug>.md`). Authored by `draft-design`, never by the build run.
 - `specs/issues/` — escalation channel; one markdown file per open issue, named `<slug>.md` (issues carry no minted id).
 - `AGENTS.md` — beside `specs/`; declares the sub-project's toolchain, test files, gates, and commit conventions (below). Authored outside the build run, which treats it as read-only.
 
-Those four entries are the whole of `specs/`. Nothing else is created under it: no review, evidence, ledger, or progress files.
+Those entries are the whole of `specs/`. Nothing else is created under it: no review, evidence, ledger, or progress files.
 
 ## Requirement ids
 
@@ -42,6 +42,10 @@ The gap is the diff: an id in design but not tests must be **added**; an id in t
 ## Tests prove by use
 
 A test proves a requirement by using what it declares: it imports the package, calls the function with the declared signature, constructs the type with the declared fields, runs the command with the declared flag, requests the declared route, and asserts the outcome. A name or shape is verified because using it compiles and behaves as stated. A test never reads the module's source, layout, or `go.mod`, and never parses or reflects over source to check how something is written. A requirement is provable only if a test the sub-project's `AGENTS.md` permits can tell a compliant implementation from a non-compliant one. A requirement that use cannot reach is not a requirement.
+
+## Copy is not contract
+
+Text is contract only when a program parses it: a command's stdout, an error line a caller matches, a header, a JSON field, an MCP result's shape. Text only a person or an LLM reads is **copy**: page text, headings, labels, a page's markup and its classes, ids and attributes, a description, a tool's description. Copy lives in exactly one place, a template under `assets/` or a named constant in the source, and nowhere else. A requirement never quotes copy; it names the template or the constant. A test never spells copy: it references the constant, or executes the named template with the data the requirement says and compares, or checks that a value it supplied appears in a body. It never looks for a word, a tag, a class or an id. A copy change is then an edit to one asset or one constant, with no id, no gap and no test touched. The design format says how a copy constant is declared.
 
 ## The sub-project's AGENTS.md
 
