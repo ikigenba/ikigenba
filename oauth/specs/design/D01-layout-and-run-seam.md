@@ -8,6 +8,8 @@ third-party modules.
 
 ```
 oauth/                          (this sub-project; go.mod lives here)
+├── assets.go                   root package oauth: embeds assets/, exports Assets
+├── assets/                     the callback pages, human-authored templates
 ├── cmd/oauth/main.go           thin: os.Args/stdio/real deps → cli.Run(); os.Exit
 ├── internal/cli/               orchestration, streams, exit codes, version string
 ├── internal/options/           flag grammar, usage text, all pre-I/O validation
@@ -16,6 +18,16 @@ oauth/                          (this sub-project; go.mod lives here)
 └── internal/browser/           platform browser launcher (build-tagged)
 ```
 
+- **the root package `oauth`** — holds the callback pages. `assets/` at the
+  module root holds them as Go `html/template` files, `success.html` and
+  `failure.html`, each opening with a comment that names its template and the
+  data it receives; the user or the delivering agent writes them, and the
+  build run reads them and never writes them. Go's `embed` reaches only files
+  at or below the embedding package's directory, so no package under
+  `internal/` can embed `assets/`; the root package, the directory holding
+  `go.mod`, is the one that can. It exports `Assets`, a file system holding
+  exactly those two files, the same on every call and depending on no file
+  beside the binary. `internal/callback` draws its pages from it (D06).
 - **`internal/oauth`** — the pure protocol core: per-login secrets, the PKCE
   challenge, authorize-URL construction, and the token exchange. Contracts in
   D02, D03, D04.
@@ -108,3 +120,5 @@ it.
 - R-E810-GC5Q: A successful `Run` MUST obtain its browser launch, its random bytes, its token-exchange HTTP round trip, and its loopback listener from the corresponding `Deps` fields, verified by four injected fakes each of which records that it was used.
 - R-EAGT-7VN4: The binary built from `./cmd/oauth`, run with `--no-browser` against an `httptest` provider that redirects to the binary's own loopback listener, MUST exit 0 and write exactly the provider's token response bytes to stdout.
 - R-EBOP-LNDT: Two successive runs of the binary built from `./cmd/oauth` against an `httptest` provider MUST present that provider with different `state` values and different `code_challenge` values, proving `main` wired a real entropy source rather than a fixed or empty one.
+- R-GQNY-95SV: The module's root package, imported from the path `github.com/ikigenba/ikigenba/oauth` with the package name `oauth`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `failure.html` and `success.html` and no other entry.
+- R-GRVU-MXJK: Every call to the root package's `Assets` MUST return a file system holding the same two files with the same contents, whatever the process working directory is, a directory that holds no `assets/` directory included.
