@@ -16,6 +16,16 @@ import (
 	"github.com/ikigenba/ikigenba/telemetry/internal/store"
 )
 
+// Refusal copy is shared with consumers and tests.
+const (
+	ReadFailed string = "cannot read the trail"
+	BadCursor  string = "cursor is not one search issued"
+	BadSince   string = "since is not an RFC 3339 time: '%s'"
+	BadUntil   string = "until is not an RFC 3339 time: '%s'"
+	BadBy      string = "by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got '%s'"
+	BadLimit   string = "limit must be between 1 and 500, got %d"
+)
+
 const timestamp = "2006-01-02T15:04:05.000000Z"
 
 const catalogDescription = "The services, the events each records, and the attribute keys each carries.\n\nWithout arguments, every service in the trail in name order, each with its events in name order, and for each event how many records it has, when the latest was recorded, and the attribute keys its records carry. Pass service or event, or both, to narrow it. Call it first to learn what search and count can filter on."
@@ -93,7 +103,7 @@ func Register(srv *mcp.Server, s *store.Store) {
 	mcp.AddTool(srv, mcp.Tool[catalogInput, catalogOutput]{Name: "catalog", Description: catalogDescription, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, in catalogInput) (catalogOutput, error) {
 		entries, err := s.Catalog(ctx, in.Service, in.Event)
 		if err != nil {
-			return catalogOutput{}, errors.New("cannot read the trail")
+			return catalogOutput{}, errors.New(ReadFailed)
 		}
 		out := catalogOutput{Services: make([]catalogEntry, 0, len(entries))}
 		for _, e := range entries {
@@ -116,7 +126,7 @@ func Register(srv *mcp.Server, s *store.Store) {
 			limit = *in.Limit
 		}
 		if limit < 1 || limit > 500 {
-			return searchOutput{}, fmt.Errorf("limit must be between 1 and 500, got %d", limit)
+			return searchOutput{}, fmt.Errorf(BadLimit, limit)
 		}
 		var cursor store.Cursor
 		if in.Cursor != nil {
@@ -124,10 +134,10 @@ func Register(srv *mcp.Server, s *store.Store) {
 		}
 		page, err := s.Search(ctx, f, limit, cursor)
 		if errors.Is(err, store.ErrCursor) {
-			return searchOutput{}, errors.New("cursor is not one search issued")
+			return searchOutput{}, errors.New(BadCursor)
 		}
 		if err != nil {
-			return searchOutput{}, errors.New("cannot read the trail")
+			return searchOutput{}, errors.New(ReadFailed)
 		}
 		out := searchOutput{Records: records(page.Records)}
 		if page.Next != "" {
@@ -144,16 +154,16 @@ func Register(srv *mcp.Server, s *store.Store) {
 		if in.By == nil {
 			total, e := s.Count(ctx, f)
 			if e != nil {
-				return countOutput{}, errors.New("cannot read the trail")
+				return countOutput{}, errors.New(ReadFailed)
 			}
 			return countOutput{Total: total}, nil
 		}
 		total, groups, err := s.CountBy(ctx, f, store.GroupBy(*in.By))
 		if errors.Is(err, store.ErrGroupBy) {
-			return countOutput{}, fmt.Errorf("by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got '%s'", *in.By)
+			return countOutput{}, fmt.Errorf(BadBy, *in.By)
 		}
 		if err != nil {
-			return countOutput{}, errors.New("cannot read the trail")
+			return countOutput{}, errors.New(ReadFailed)
 		}
 		out := make([]group, 0, len(groups))
 		for _, g := range groups {
@@ -164,7 +174,7 @@ func Register(srv *mcp.Server, s *store.Store) {
 	mcp.AddTool(srv, mcp.Tool[traceInput, traceOutput]{Name: "trace", Description: traceDescription, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, in traceInput) (traceOutput, error) {
 		rs, err := s.Trace(ctx, in.RequestID)
 		if err != nil {
-			return traceOutput{}, errors.New("cannot read the trail")
+			return traceOutput{}, errors.New(ReadFailed)
 		}
 		return traceOutput{Records: records(rs)}, nil
 	}})
@@ -179,14 +189,14 @@ func records(rs []store.Record) []record {
 func filter(since, until *string, services, events []string, user, requestID *string, attrs json.RawMessage) (store.Filter, error) {
 	f := store.Filter{Services: services, Events: events, User: user, RequestID: requestID}
 	for _, bound := range []struct {
-		name   string
+		format string
 		value  *string
 		target **time.Time
-	}{{"since", since, &f.Since}, {"until", until, &f.Until}} {
+	}{{BadSince, since, &f.Since}, {BadUntil, until, &f.Until}} {
 		if bound.value != nil {
 			v, err := time.Parse(time.RFC3339, *bound.value)
 			if err != nil {
-				return f, fmt.Errorf("%s is not an RFC 3339 time: '%s'", bound.name, *bound.value)
+				return f, fmt.Errorf(bound.format, *bound.value)
 			}
 			*bound.target = &v
 		}

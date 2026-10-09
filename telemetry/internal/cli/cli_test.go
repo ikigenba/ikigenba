@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/telemetry/internal/cli"
+	"github.com/ikigenba/ikigenba/telemetry/internal/web"
 )
 
 type writes struct{ calls [][]byte }
@@ -48,10 +49,10 @@ func assertEmpty(t *testing.T, dir string) {
 	}
 }
 
-// R-V80L-VTUN R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
+// R-94PP-DHNT R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
 func TestDeclarations(t *testing.T) {
 	const manifest = cli.Manifest
-	if manifest != "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n" {
+	if manifest != "app = \"telemetry\"\ndescription = \""+web.Description+"\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n" {
 		t.Fatal("manifest")
 	}
 	const nginx = cli.NginxConf

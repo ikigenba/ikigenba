@@ -21,7 +21,10 @@ import (
 const ServiceName = "telemetry"
 
 // Description is the service's one-line purpose.
-const Description = "The suite's trail of events"
+const Description string = "The suite's trail of events"
+
+// NotFound is the copy for an unknown route.
+const NotFound string = "not found"
 
 // Config supplies the handler's page, protocol, and trail dependencies.
 type Config struct {
@@ -50,7 +53,7 @@ func Handler(cfg Config) http.Handler {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
 			if r.Method != http.MethodHead {
-				_, _ = w.Write([]byte("not found\n"))
+				_, _ = w.Write([]byte(NotFound + "\n"))
 			}
 		}
 	})

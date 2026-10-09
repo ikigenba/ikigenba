@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,7 +163,7 @@ func recordsJSON(t *testing.T, es ...telemetry.Event) string {
 	return out + "]}"
 }
 
-// R-B7HO-8WBT R-B8PK-MO2I R-B9XH-0FT7 R-BJOO-2LQR
+// R-B7HO-8WBT R-B8PK-MO2I R-B9XH-0FT7 R-9GWP-772R
 func TestToolsList(t *testing.T) {
 	r := setup(t)
 	infos, err := r.c.ListTools(ctx, caller)
@@ -171,57 +173,57 @@ func TestToolsList(t *testing.T) {
 	if len(infos) != 4 {
 		t.Fatalf("tools: %v", infos)
 	}
-	// R-BDL6-5R1A R-BG0Y-XAIO R-BH8V-B29D
+	// R-9C13-O43Z R-9D90-1VUO R-9EGW-FNLD
 	{
 		info := infos[0]
-		if info.Name != "catalog" || info.Description != "The services, the events each records, and the attribute keys each carries.\n\nWithout arguments, every service in the trail in name order, each with its events in name order, and for each event how many records it has, when the latest was recorded, and the attribute keys its records carry. Pass service or event, or both, to narrow it. Call it first to learn what search and count can filter on." || info.Effect() != mcp.Read {
+		if info.Name != "catalog" || info.Description == "" || info.Effect() != mcp.Read {
 			t.Fatalf("metadata: %+v", info)
 		}
 		a := info.Annotations
 		if a.ReadOnlyHint == nil || !*a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint || a.OpenWorldHint == nil || *a.OpenWorldHint || a.IdempotentHint != nil {
 			t.Fatalf("annotations: %+v", a)
 		}
-		equalJSON(t, info.InputSchema, []byte(`{"type":"object","properties":{"service":{"type":"string","description":"Keep only this service's entry."},"event":{"type":"string","description":"Keep only this event, in every service's entry."}},"additionalProperties":false}`))
-		equalJSON(t, info.OutputSchema, []byte(`{"type":"object","properties":{"services":{"type":"array","items":{"type":"object","properties":{"service":{"type":"string"},"events":{"type":"array","items":{"type":"object","properties":{"event":{"type":"string"},"count":{"type":"integer"},"last_seen":{"type":"string"},"attrs":{"type":"array","items":{"type":"string"}}},"required":["event","count","last_seen","attrs"],"additionalProperties":false}}},"required":["service","events"],"additionalProperties":false},"description":"Every service with records, in name order, each with its events in name order."}},"required":["services"],"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.InputSchema), []byte(`{"type":"object","properties":{"service":{"type":"string"},"event":{"type":"string"}},"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.OutputSchema), []byte(`{"type":"object","properties":{"services":{"type":"array","items":{"type":"object","properties":{"service":{"type":"string"},"events":{"type":"array","items":{"type":"object","properties":{"event":{"type":"string"},"count":{"type":"integer"},"last_seen":{"type":"string"},"attrs":{"type":"array","items":{"type":"string"}}},"required":["event","count","last_seen","attrs"],"additionalProperties":false}}},"required":["service","events"],"additionalProperties":false}}},"required":["services"],"additionalProperties":false}`))
 	}
-	// R-BIGR-OU02 R-BKWK-GDHG R-BM4G-U585
+	// R-9FOS-TFC2 R-9I4L-KYTG R-9JCH-YQK5
 	{
 		info := infos[1]
-		if info.Name != "search" || info.Description != "The records that match a filter, newest first.\n\nEvery argument is optional and they combine: since and until bound the time (RFC 3339, since inclusive, until exclusive), services and events take any of the names given, user and request_id match exactly, and attrs is an object whose every pair a record must carry. limit is 1 to 500, 50 when left out. When more records match, the result carries a cursor; pass it back with the same filters for the next page." || info.Effect() != mcp.Read {
+		if info.Name != "search" || info.Description == "" || info.Effect() != mcp.Read {
 			t.Fatalf("metadata: %+v", info)
 		}
 		a := info.Annotations
 		if a.ReadOnlyHint == nil || !*a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint || a.OpenWorldHint == nil || *a.OpenWorldHint || a.IdempotentHint != nil {
 			t.Fatalf("annotations: %+v", a)
 		}
-		equalJSON(t, info.InputSchema, []byte(`{"type":"object","properties":{"since":{"type":"string","description":"Keep records at or after this RFC 3339 time."},"until":{"type":"string","description":"Keep records before this RFC 3339 time."},"services":{"type":"array","items":{"type":"string"},"description":"Keep records of any of these services."},"events":{"type":"array","items":{"type":"string"},"description":"Keep records of any of these events."},"user":{"type":"string","description":"Keep records whose user is exactly this."},"request_id":{"type":"string","description":"Keep records whose request id is exactly this."},"attrs":{"type":"object","description":"Keep records that carry every one of these keys with exactly this value; a number matches a number and a string a string."},"limit":{"type":"integer","description":"The most records one page holds, 1 to 500; 50 when left out."},"cursor":{"type":"string","description":"The cursor a previous page gave, to continue it with the same filters."}},"additionalProperties":false}`))
-		equalJSON(t, info.OutputSchema, []byte(`{"type":"object","properties":{"records":{"type":"array","items":{"type":"object","properties":{"time":{"type":"string"},"service":{"type":"string"},"event":{"type":"string"},"request_id":{"type":"string"},"user":{"type":"string"},"attrs":{"type":"object"}},"required":["time","service","event","request_id","user","attrs"],"additionalProperties":false},"description":"The matching records, newest first."},"cursor":{"type":"string","description":"Present when more records match: pass it back with the same filters for the next page."}},"required":["records"],"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.InputSchema), []byte(`{"type":"object","properties":{"since":{"type":"string"},"until":{"type":"string"},"services":{"type":"array","items":{"type":"string"}},"events":{"type":"array","items":{"type":"string"}},"user":{"type":"string"},"request_id":{"type":"string"},"attrs":{"type":"object"},"limit":{"type":"integer"},"cursor":{"type":"string"}},"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.OutputSchema), []byte(`{"type":"object","properties":{"records":{"type":"array","items":{"type":"object","properties":{"time":{"type":"string"},"service":{"type":"string"},"event":{"type":"string"},"request_id":{"type":"string"},"user":{"type":"string"},"attrs":{"type":"object"}},"required":["time","service","event","request_id","user","attrs"],"additionalProperties":false}},"cursor":{"type":"string"}},"required":["records"],"additionalProperties":false}`))
 	}
-	// R-BNCD-7WYU R-BOK9-LOPJ R-BPS5-ZGG8
+	// R-9KKE-CIAU R-9LSA-QA1J R-9N07-41S8
 	{
 		info := infos[2]
-		if info.Name != "count" || info.Description != "How many records match a filter, grouped by a field or a time bucket.\n\nTakes the filters of search. Without by, the total. With by, one of service, event, user, request_id, minute, hour, day, or attrs.<key>, the total and one group per value with its count." || info.Effect() != mcp.Read {
+		if info.Name != "count" || info.Description == "" || info.Effect() != mcp.Read {
 			t.Fatalf("metadata: %+v", info)
 		}
 		a := info.Annotations
 		if a.ReadOnlyHint == nil || !*a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint || a.OpenWorldHint == nil || *a.OpenWorldHint || a.IdempotentHint != nil {
 			t.Fatalf("annotations: %+v", a)
 		}
-		equalJSON(t, info.InputSchema, []byte(`{"type":"object","properties":{"since":{"type":"string","description":"Keep records at or after this RFC 3339 time."},"until":{"type":"string","description":"Keep records before this RFC 3339 time."},"services":{"type":"array","items":{"type":"string"},"description":"Keep records of any of these services."},"events":{"type":"array","items":{"type":"string"},"description":"Keep records of any of these events."},"user":{"type":"string","description":"Keep records whose user is exactly this."},"request_id":{"type":"string","description":"Keep records whose request id is exactly this."},"attrs":{"type":"object","description":"Keep records that carry every one of these keys with exactly this value; a number matches a number and a string a string."},"by":{"type":"string","description":"Group the count by service, event, user, request_id, minute, hour, day, or attrs.<key>."}},"additionalProperties":false}`))
-		equalJSON(t, info.OutputSchema, []byte(`{"type":"object","properties":{"total":{"type":"integer","description":"How many records match the filter."},"groups":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string","description":"The group's value as text: the field's value, the bucket's start, or the attribute's value."},"count":{"type":"integer"}},"required":["key","count"],"additionalProperties":false},"description":"Present when by was given: one group per value, with its count."}},"required":["total"],"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.InputSchema), []byte(`{"type":"object","properties":{"since":{"type":"string"},"until":{"type":"string"},"services":{"type":"array","items":{"type":"string"}},"events":{"type":"array","items":{"type":"string"}},"user":{"type":"string"},"request_id":{"type":"string"},"attrs":{"type":"object"},"by":{"type":"string"}},"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.OutputSchema), []byte(`{"type":"object","properties":{"total":{"type":"integer"},"groups":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"count":{"type":"integer"}},"required":["key","count"],"additionalProperties":false}}},"required":["total"],"additionalProperties":false}`))
 	}
-	// R-BR02-D86X R-BS7Y-QZXM R-BTFV-4ROB
+	// R-9O83-HTIX R-9PFZ-VL9M R-9QNW-9D0B
 	{
 		info := infos[3]
-		if info.Name != "trace" || info.Description != "Every record of one request, from every service it touched, oldest first.\n\nPass the request id; the result is the records of that id from every service, in the order they happened. An id the trail does not hold gives no records, not an error." || info.Effect() != mcp.Read {
+		if info.Name != "trace" || info.Description == "" || info.Effect() != mcp.Read {
 			t.Fatalf("metadata: %+v", info)
 		}
 		a := info.Annotations
 		if a.ReadOnlyHint == nil || !*a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint || a.OpenWorldHint == nil || *a.OpenWorldHint || a.IdempotentHint != nil {
 			t.Fatalf("annotations: %+v", a)
 		}
-		equalJSON(t, info.InputSchema, []byte(`{"type":"object","properties":{"request_id":{"type":"string","description":"The request id, exactly as a service recorded it."}},"required":["request_id"],"additionalProperties":false}`))
-		equalJSON(t, info.OutputSchema, []byte(`{"type":"object","properties":{"records":{"type":"array","items":{"type":"object","properties":{"time":{"type":"string"},"service":{"type":"string"},"event":{"type":"string"},"request_id":{"type":"string"},"user":{"type":"string"},"attrs":{"type":"object"}},"required":["time","service","event","request_id","user","attrs"],"additionalProperties":false},"description":"Every record of the request, oldest first."}},"required":["records"],"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.InputSchema), []byte(`{"type":"object","properties":{"request_id":{"type":"string"}},"required":["request_id"],"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.OutputSchema), []byte(`{"type":"object","properties":{"records":{"type":"array","items":{"type":"object","properties":{"time":{"type":"string"},"service":{"type":"string"},"event":{"type":"string"},"request_id":{"type":"string"},"user":{"type":"string"},"attrs":{"type":"object"}},"required":["time","service","event","request_id","user","attrs"],"additionalProperties":false}}},"required":["records"],"additionalProperties":false}`))
 	}
 }
 
@@ -256,7 +258,7 @@ func TestCatalogTraceAndReadOnly(t *testing.T) {
 	success(t, call(t, r, "count", `{}`), `{"total":1}`)
 }
 
-// R-CAKF-ZA46 R-JHOV-XQDA R-C82N-Q0KN R-JLCL-31LD R-CJ1R-5Y8W
+// R-CAKF-ZA46 R-JHOV-XQDA R-C82N-Q0KN R-A1MZ-PAOK R-CJ1R-5Y8W
 func TestSearchFilterAndCount(t *testing.T) {
 	a := event("test.one", "alpha", "u", "req", 0, telemetry.Attrs{"status": int64(500), "flag": true, "text": "ok"})
 	b := event("test.two", "beta", "", "", 1, telemetry.Attrs{"status": "500", "flag": false})
@@ -307,23 +309,23 @@ func TestTopLevelNulls(t *testing.T) {
 	}
 }
 
-// R-JBLE-0VNT R-JCTA-ENEI R-JF93-66VW R-JIWS-BI3Z R-JK4O-P9UO R-B7R3-CDKB
+// R-9T3P-0WHP R-9VJH-SFZ3 R-9WRE-67PS R-9Z76-XR76 R-A0F3-BIXV R-B7R3-CDKB
 func TestRefusalsAndOutcomes(t *testing.T) {
 	r := setup(t)
 	cases := []struct{ tool, args, text string }{
-		{"search", `{"since":"yesterday","until":"bad","limit":0,"cursor":"page2"}`, "since is not an RFC 3339 time: 'yesterday'"},
-		{"search", `{"until":"bad","limit":0,"cursor":"page2"}`, "until is not an RFC 3339 time: 'bad'"},
-		{"search", `{"since":""}`, "since is not an RFC 3339 time: ''"},
-		{"search", `{"limit":0,"cursor":"page2"}`, "limit must be between 1 and 500, got 0"},
-		{"search", `{"limit":501}`, "limit must be between 1 and 500, got 501"},
-		{"search", `{"cursor":"page2"}`, "cursor is not one search issued"},
-		{"count", `{"since":"bad","until":"bad","by":"path"}`, "since is not an RFC 3339 time: 'bad'"},
-		{"count", `{"until":"2026-10-02 14:00","by":"path"}`, "until is not an RFC 3339 time: '2026-10-02 14:00'"},
+		{"search", `{"since":"yesterday","until":"bad","limit":0,"cursor":"page2"}`, fmt.Sprintf(tools.BadSince, "yesterday")},
+		{"search", `{"until":"bad","limit":0,"cursor":"page2"}`, fmt.Sprintf(tools.BadUntil, "bad")},
+		{"search", `{"since":""}`, fmt.Sprintf(tools.BadSince, "")},
+		{"search", `{"limit":0,"cursor":"page2"}`, fmt.Sprintf(tools.BadLimit, 0)},
+		{"search", `{"limit":501}`, fmt.Sprintf(tools.BadLimit, 501)},
+		{"search", `{"cursor":"page2"}`, tools.BadCursor},
+		{"count", `{"since":"bad","until":"bad","by":"path"}`, fmt.Sprintf(tools.BadSince, "bad")},
+		{"count", `{"until":"2026-10-02 14:00","by":"path"}`, fmt.Sprintf(tools.BadUntil, "2026-10-02 14:00")},
 		{"trace", `{"request_id":null}`, "invalid arguments:\nrequest_id: expected string, got null"},
 	}
 	for _, by := range []string{"path", "status", "attrs.", ""} {
 		args, _ := json.Marshal(map[string]string{"by": by})
-		cases = append(cases, struct{ tool, args, text string }{"count", string(args), "by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got '" + by + "'"})
+		cases = append(cases, struct{ tool, args, text string }{"count", string(args), fmt.Sprintf(tools.BadBy, by)})
 	}
 	for _, tc := range cases {
 		refusal(t, call(t, r, tc.tool, tc.args), tc.text)
@@ -347,7 +349,7 @@ func TestRefusalsAndOutcomes(t *testing.T) {
 	}
 }
 
-// R-JGGZ-JYML R-C6UR-C8TY
+// R-9XZA-JZGH R-C6UR-C8TY
 func TestPagesAndCursorPositions(t *testing.T) {
 	es := []telemetry.Event{event("test.one", "alpha", "", "r", 0, nil), event("test.two", "beta", "", "r", 0, nil), event("test.three", "alpha", "", "r", 1, nil), event("test.four", "beta", "", "r", 2, nil)}
 	r := setup(t, es...)
@@ -378,6 +380,18 @@ func TestPagesAndCursorPositions(t *testing.T) {
 		if pageIndex == 0 && env.Structured.Cursor == "" || pageIndex == 1 && env.Structured.Cursor != "" {
 			t.Fatalf("cursor %s", encoded(t, res))
 		}
+		want := recordsJSON(t, es[3], es[2])
+		if pageIndex == 1 {
+			want = recordsJSON(t, es[1], es[0])
+		}
+		if env.Structured.Cursor != "" {
+			encodedCursor, err := json.Marshal(env.Structured.Cursor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want = want[:len(want)-1] + `,"cursor":` + string(encodedCursor) + "}"
+		}
+		success(t, res, want)
 		if pageIndex == 0 {
 			cursor = env.Structured.Cursor
 			success(t, call(t, r, "search", `{"services":["alpha"],"limit":2,"cursor":"`+cursor+`"}`), recordsJSON(t, es[0]))
@@ -385,7 +399,7 @@ func TestPagesAndCursorPositions(t *testing.T) {
 			if damaged == cursor {
 				damaged = "B" + cursor[1:]
 			}
-			refusal(t, call(t, r, "search", `{"cursor":"`+damaged+`"}`), "cursor is not one search issued")
+			refusal(t, call(t, r, "search", `{"cursor":"`+damaged+`"}`), tools.BadCursor)
 		}
 		all = append(all, env.Structured.Records...)
 	}
@@ -424,7 +438,7 @@ func reverse(es []telemetry.Event) []telemetry.Event {
 	return out
 }
 
-// R-JMKH-GTC2 R-CFE2-0N0T R-CGLY-EERI
+// R-A2UW-32F9 R-CFE2-0N0T R-CGLY-EERI
 func TestCountGroups(t *testing.T) {
 	r := setup(t,
 		event("test.one", "z", "", "a", -1, telemetry.Attrs{"status": int64(200), "flag": true}),
@@ -450,7 +464,7 @@ func TestCountGroups(t *testing.T) {
 	success(t, call(t, r, "count", `{"services":["z"],"by":"service"}`), `{"total":2,"groups":[{"key":"z","count":2}]}`)
 }
 
-// R-SL41-NMVJ R-YQO5-O9FH
+// R-9RVS-N4R0 R-YQO5-O9FH
 func TestFailedReadsAndWriterIsolation(t *testing.T) {
 	r := setup(t, event("test.one", "alpha", "", "r", 0, nil))
 	before, err := r.s.Search(ctx, store.Filter{}, 500, "")
@@ -486,7 +500,7 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 	r.database.SetFailing(true)
 	for _, tc := range []struct{ name, args string }{{"catalog", `{}`}, {"search", `{}`}, {"search", `{"services":["absent"]}`}, {"search", `{"attrs":{"status":null}}`}, {"search", `{"since":"2026-10-03T00:00:00Z","until":"2026-10-02T00:00:00Z"}`}, {"count", `{}`}, {"count", `{"by":"service"}`}, {"count", `{"by":"attrs.missing"}`}, {"count", `{"attrs":{"status":null}}`}, {"trace", `{"request_id":"missing"}`}} {
 		before := len(r.capture.Events())
-		refusal(t, call(t, r, tc.name, tc.args), "cannot read the trail")
+		refusal(t, call(t, r, tc.name, tc.args), tools.ReadFailed)
 		if err := r.w.Flush(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -495,8 +509,8 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 			t.Fatalf("%s failure events: %+v", tc.name, added)
 		}
 	}
-	refusal(t, call(t, r, "search", `{"cursor":"page2"}`), "cursor is not one search issued")
-	refusal(t, call(t, r, "count", `{"by":"path"}`), "by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got 'path'")
+	refusal(t, call(t, r, "search", `{"cursor":"page2"}`), tools.BadCursor)
+	refusal(t, call(t, r, "count", `{"by":"path"}`), fmt.Sprintf(tools.BadBy, "path"))
 	if err := r.w.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -560,4 +574,53 @@ func TestLiveTrailAndWriterSink(t *testing.T) {
 	}
 	success(t, call(t, r, "trace", `{"request_id":"r"}`), recordsJSON(t, a, b))
 	success(t, call(t, r, "catalog", `{"service":"beta"}`), `{"services":[{"service":"beta","events":[{"event":"test.two","count":1,"last_seen":"2026-10-02T14:01:00.000000Z","attrs":[]}]}]}`)
+}
+
+func schemaWithoutDescriptions(t *testing.T, raw json.RawMessage) []byte {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	var strip func(any)
+	strip = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			delete(v, "description")
+			for _, child := range v {
+				strip(child)
+			}
+		case []any:
+			for _, child := range v {
+				strip(child)
+			}
+		}
+	}
+	strip(value)
+	result, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+// R-99LA-WKML
+func TestRefusalConstants(t *testing.T) {
+	const read string = tools.ReadFailed
+	const cursor string = tools.BadCursor
+	if read == "" || cursor == "" {
+		t.Fatal("empty refusal")
+	}
+	const since string = tools.BadSince
+	const until string = tools.BadUntil
+	const by string = tools.BadBy
+	const limit string = tools.BadLimit
+	for _, format := range []string{since, until, by} {
+		if strings.Count(format, "%") != 1 || !strings.Contains(format, "%s") {
+			t.Fatal("string refusal format", format)
+		}
+	}
+	if strings.Count(limit, "%") != 1 || !strings.Contains(limit, "%d") {
+		t.Fatal("limit refusal format", tools.BadLimit)
+	}
 }

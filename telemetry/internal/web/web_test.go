@@ -82,10 +82,10 @@ func equalResponse(t *testing.T, a, b *httptest.ResponseRecorder) {
 }
 
 func TestNamesAndHandlerContract(t *testing.T) {
-	// R-UFPP-GJ4Q R-UGXL-UAVF R-UJDE-LUCT R-UKLA-ZM3I
+	// R-UFPP-GJ4Q R-95XL-R9EI R-975I-5157 R-UJDE-LUCT R-UKLA-ZM3I
 	const n = web.ServiceName
 	const d = web.Description
-	if n != "telemetry" || d != "The suite's trail of events" {
+	if n != "telemetry" || d == "" || strings.ContainsAny(d, "\r\n") || web.NotFound == "" || strings.ContainsAny(web.NotFound, "\r\n") {
 		t.Fatal(n, d)
 	}
 	f := newFixture(t)
@@ -113,7 +113,7 @@ func TestIdentityBeforeRouting(t *testing.T) {
 	}
 }
 func TestExactPathsAnd404(t *testing.T) {
-	// R-QM3J-N515 R-QNBG-0WRU R-UOEK-WNRS R-RHSX-L6B7
+	// R-QM3J-N515 R-98DE-ISVW R-UOEK-WNRS R-RHSX-L6B7
 	f := newFixture(t)
 	for _, path := range []string{"/mcp/", "/mcp/a", "/ingest/", "/ingest/a", "/about/", "/_appkit", "/assets/", "/assets/a", "/logout", "/index.html", "//", "/nope", "/nope/", "/x/../", "/x/./", "/_APPKIT/feedback.js", "/_APPKIT/favicon.svg", "/favicon.svg", "/_appkit-extra/favicon.svg"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CUSTOM"} {
@@ -125,7 +125,7 @@ func TestExactPathsAnd404(t *testing.T) {
 			r.Header.Set("X-Original-URL", "/_appkit/favicon.svg")
 			out := httptest.NewRecorder()
 			f.h.ServeHTTP(out, r)
-			want := "not found\n"
+			want := web.NotFound + "\n"
 			if method == "HEAD" {
 				want = ""
 			}

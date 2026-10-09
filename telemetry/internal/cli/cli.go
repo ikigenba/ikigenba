@@ -14,10 +14,11 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	root "github.com/ikigenba/ikigenba/telemetry"
+	"github.com/ikigenba/ikigenba/telemetry/internal/web"
 )
 
 // Manifest describes the application's host configuration.
-const Manifest = "app = \"telemetry\"\ndescription = \"The suite's trail of events\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n"
+const Manifest = "app = \"telemetry\"\ndescription = \"" + web.Description + "\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n"
 
 // NginxConf prevents public access to the sibling ingest endpoint.
 const NginxConf = "location = /ingest { return 404; }\n"
