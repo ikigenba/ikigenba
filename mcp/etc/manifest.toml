@@ -7,3 +7,6 @@ secrets = []
 
 [resources]
 memory_max = "128M"
+
+[home]
+group = "core"

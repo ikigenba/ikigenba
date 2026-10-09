@@ -14,3 +14,6 @@ path = "state/webhooks.db"
 
 [resources]
 memory_max = "128M"
+
+[home]
+group = "core"

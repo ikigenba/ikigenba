@@ -15,3 +15,6 @@ EVENTS_DECLARATIONS_SECONDS = "60"
 [database]
 engine = "sqlite"
 path = "state/events.db"
+
+[home]
+group = "core"

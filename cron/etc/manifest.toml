@@ -11,3 +11,6 @@ path = "state/cron.db"
 
 [resources]
 memory_max = "128M"
+
+[home]
+group = "core"

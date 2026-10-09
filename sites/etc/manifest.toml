@@ -16,3 +16,6 @@ path = "state/sites.db"
 
 [resources]
 memory_max = "128M"
+
+[home]
+group = "core"

@@ -13,3 +13,6 @@ path = "state/auth.db"
 [resources]
 slice = "core"
 memory_max = "128M"
+
+[home]
+group = "core"
