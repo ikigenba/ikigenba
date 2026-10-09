@@ -1,6 +1,6 @@
 # opsctl
 
-opsctl is the operator's CLI on a host; it bootstraps and manages that one deployment. It is a Go binary that ships inside the suite release unpacked on a Linux host, run from `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`, with `/usr/local/bin/opsctl` a link to `/opt/ikigenba/current/opsctl/bin/opsctl` that every activate re-creates. The host runs one complete deployment of the platform, and opsctl runs there as root, typically over ssh, by humans and agents. A project runs many such hosts over time, each created and torn down independently, and opsctl reasons only about the one it runs on. The module path is `github.com/ikigenba/ikigenba/opsctl`. The contract is `specs/design/`; this file restates none of it.
+opsctl is the operator's CLI on a host; it bootstraps and manages that one deployment. It is a Go binary that ships inside the suite release unpacked on a Linux host, run from `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`, with `/usr/local/bin/opsctl` a link to `/opt/ikigenba/current/opsctl/bin/opsctl` that every activate re-creates. The host runs one complete deployment of the platform, and opsctl runs there as root, typically over ssh, by humans and agents. A project runs many such hosts over time, each created and torn down independently, and opsctl reasons only about the one it runs on. It is a command-line program with stories. The module path is `github.com/ikigenba/ikigenba/opsctl`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
