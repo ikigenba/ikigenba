@@ -240,7 +240,7 @@ func TestInvalidSpaceAndAppNeverConnectThroughCLI(t *testing.T) {
 }
 
 func TestCreateConnectsOnceAndStopsOnIdentityFailureThroughCLI(t *testing.T) {
-	// R-UZ6T-F1PK
+	// R-27QI-54Y6
 	//
 	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev"} {
 		h := newCommandHarness(t)
@@ -379,7 +379,7 @@ func fakeCreateBuild(t *testing.T, root string, c seam.Cmd) (seam.Result, bool, 
 }
 
 func TestCreateReleaseResolutionThroughCLI(t *testing.T) {
-	// R-DA4A-C76V R-UZ6T-F1PK R-UVJ4-9QHH R-UWR0-NI86
+	// R-DA4A-C76V R-27QI-54Y6 R-UVJ4-9QHH R-UWR0-NI86
 	for _, tc := range []struct {
 		args                 []string
 		tags, rev, sha, want string
