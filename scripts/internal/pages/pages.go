@@ -62,7 +62,18 @@ type ScriptRow struct {
 type Repo struct{ ID, Name string }
 
 // RunRow is a formatted run in a table.
-type RunRow struct{ ID, URL, Status, Kind, Commit, Started, StartedAt, Duration, Exit string }
+type RunRow struct {
+	ID, URL, Status            string
+	ExitCode                   int
+	Commit, Started, StartedAt string
+	Duration                   *Duration
+}
+
+// Duration carries whole minutes and the remaining seconds.
+type Duration struct{ Minutes, Seconds int64 }
+
+// Size carries a scaled byte count and its unit.
+type Size struct{ Number, Unit string }
 
 // ScriptData is a script and its retained runs.
 type ScriptData struct {
@@ -95,22 +106,38 @@ type ScriptLink struct{ Name, URL string }
 
 // RunCard is the formatted headline and details of a run.
 type RunCard struct {
-	ID, URL, Status, Kind                                                                                                          string
-	Running                                                                                                                        bool
-	Notice, Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
-	Truncated                                                                                                                      bool
-	Failure                                                                                                                        *Failure
-	FilesGone                                                                                                                      bool
+	ID, URL, Status                                       string
+	ExitCode                                              int
+	Running                                               bool
+	Commit, Ref, Started, StartedAt, Finished, FinishedAt string
+	Duration                                              *Duration
+	Trigger, Event, User, Request                         string
+	StdoutSize, StderrSize                                Size
+	Truncated                                             bool
+	Failure                                               *Failure
+	FilesGone                                             bool
 }
 
-// Failure explains why a script did not start.
-type Failure struct{ Title, Reason string }
+// Failure carries the recorded reason and the values its template may show.
+type Failure struct {
+	Reason                         string
+	Repo                           Repo
+	Ref                            string
+	TreeMaxBytes, OperationSeconds int64
+}
 
 // FileText carries a kept text file and its download address.
-type FileText struct{ Size, Text, URL string }
+type FileText struct {
+	Size      Size
+	Text, URL string
+}
 
 // FileRow carries one regular output file.
-type FileRow struct{ Path, Size, URL string }
+type FileRow struct {
+	Path string
+	Size Size
+	URL  string
+}
 
 // AboutData describes this service.
 type AboutData struct {

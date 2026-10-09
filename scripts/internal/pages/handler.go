@@ -27,11 +27,7 @@ func Handler(cfg Config) http.Handler {
 			cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(page.User{})})
 		}
 		refusal := func() {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			if r.Method != http.MethodHead {
-				_, _ = w.Write([]byte(store.Unreachable + "\n"))
-			}
+			cfg.Pages.Write(w, r, http.StatusServiceUnavailable, "unavailable", NoticeData{Banner: cfg.Banner(page.User{})})
 		}
 		redirect := func(path string) {
 			if r.URL.RawQuery != "" {

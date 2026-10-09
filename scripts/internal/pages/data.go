@@ -2,7 +2,6 @@ package pages
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
@@ -25,91 +24,35 @@ func repository(ctx context.Context, cfg Config, sc store.Script) Repo {
 	return v
 }
 func datetime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
-func status(u store.Run) (word, kind string) {
-	switch u.Status {
-	case store.StatusQueued:
-		return WordQueued, KindInfo
-	case store.StatusRunning:
-		return WordRunning, KindInfo
-	case store.StatusExited:
-		kind = KindWarn
-		if u.ExitCode == 0 {
-			kind = KindOK
-		}
-		return WordExited + strconv.Itoa(u.ExitCode), kind
-	case store.StatusTimedOut:
-		return WordTimedOut, KindWarn
-	case store.StatusKilled:
-		return WordKilled, KindWarn
-	default:
-		return WordFailed, KindErr
-	}
-}
-func duration(u store.Run) string {
+func duration(u store.Run) *Duration {
 	if u.Status == store.StatusQueued || u.Status == store.StatusRunning || u.Status == store.StatusFailed {
-		return ""
+		return nil
 	}
 	d := int64(u.Finished.Sub(u.Started) / time.Second)
-	if d < 60 {
-		return strconv.FormatInt(d, 10) + UnitSecond
-	}
-	return strconv.FormatInt(d/60, 10) + UnitMinute + strconv.FormatInt(d%60, 10) + UnitSecond
+	return &Duration{Minutes: d / 60, Seconds: d % 60}
 }
-func size(n int64) string {
+func size(n int64) Size {
 	if n < 1000 {
-		return strconv.FormatInt(n, 10) + UnitByte
+		return Size{Number: strconv.FormatInt(n, 10), Unit: "byte"}
 	}
 	if n < 1000000 {
-		return strconv.FormatInt(n/1000, 10) + "." + strconv.FormatInt(n/100%10, 10) + UnitKilobyte
+		return Size{Number: strconv.FormatInt(n/1000, 10) + "." + strconv.FormatInt(n/100%10, 10), Unit: "kilobyte"}
 	}
-	return strconv.FormatInt(n/1000000, 10) + "." + strconv.FormatInt(n/100000%10, 10) + UnitMegabyte
+	return Size{Number: strconv.FormatInt(n/1000000, 10) + "." + strconv.FormatInt(n/100000%10, 10), Unit: "megabyte"}
 }
 func runRow(u store.Run, name string) RunRow {
-	word, kind := status(u)
 	sha := u.SHA
 	if len(sha) > 7 {
 		sha = sha[:7]
 	}
-	exit := ""
-	if u.Status == store.StatusExited {
-		exit = strconv.Itoa(u.ExitCode)
-	}
-	return RunRow{u.ID, "/" + name + "/runs/" + u.ID + "/", word, kind, sha, u.Started.UTC().Format(MinuteLayout), datetime(u.Started), duration(u), exit}
+	return RunRow{u.ID, "/" + name + "/runs/" + u.ID + "/", u.Status, u.ExitCode, sha, u.Started.UTC().Format(MinuteLayout), datetime(u.Started), duration(u)}
 }
 func failure(ctx context.Context, cfg Config, sc store.Script, u store.Run) *Failure {
-	repo := sc.Repo
-	if u.Reason == store.ReasonCommitMissing || u.Reason == store.ReasonGitFailed {
-		if r := repository(ctx, cfg, sc); r.Name != "" {
-			repo = r.Name
-		}
-	}
-	switch u.Reason {
-	case store.ReasonRepositoryMissing:
-		return &Failure{TitleRepositoryMissing, fmt.Sprintf(TextRepositoryMissing, sc.Repo)}
-	case store.ReasonCommitMissing:
-		return &Failure{TitleCommitMissing, fmt.Sprintf(TextCommitMissing, u.Ref, repo)}
-	case store.ReasonTooLarge:
-		return &Failure{TitleTooLarge, fmt.Sprintf(TextTooLarge, cfg.TreeMaxBytes)}
-	case store.ReasonGitFailed:
-		return &Failure{TitleGitFailed, fmt.Sprintf(TextGitFailed, repo)}
-	case store.ReasonQueueAbandoned:
-		return &Failure{TitleQueueAbandoned, TextQueueAbandoned}
-	case store.ReasonTimedOut:
-		return &Failure{TitleTimedOut, fmt.Sprintf(TextTimedOut, cfg.OperationSeconds)}
-	default:
-		return &Failure{TitleStartFailed, TextStartFailed}
-	}
+	return &Failure{Reason: u.Reason, Repo: repository(ctx, cfg, sc), Ref: u.Ref, TreeMaxBytes: cfg.TreeMaxBytes, OperationSeconds: cfg.OperationSeconds}
 }
 func runData(ctx context.Context, cfg Config, sc store.Script, u store.Run, b page.Banner) RunData {
-	word, kind := status(u)
 	out, errout := cfg.Runs.Sizes(u)
-	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: word, Kind: kind, Running: u.Status == store.StatusQueued || u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format(SecondLayout), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
-	switch u.Status {
-	case store.StatusQueued:
-		c.Notice = NoticeQueued
-	case store.StatusRunning:
-		c.Notice = NoticeRunning
-	}
+	c := RunCard{ID: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/", Status: u.Status, ExitCode: u.ExitCode, Running: u.Status == store.StatusQueued || u.Status == store.StatusRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format(SecondLayout), StartedAt: datetime(u.Started), Duration: duration(u), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: size(out), StderrSize: size(errout), Truncated: u.Truncated, FilesGone: cfg.Runs.Gone(u)}
 	if !c.Running {
 		c.Finished = u.Finished.UTC().Format(SecondLayout)
 		c.FinishedAt = datetime(u.Finished)

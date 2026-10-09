@@ -157,16 +157,22 @@ func (fullErrorReader) Read(p []byte) (int, error) {
 type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("random unavailable") }
+
+func TestTriggerVocabulary(t *testing.T) {
+	// R-D6K2-8T7A
+	const (
+		manual             = store.TriggerManual
+		event              = store.TriggerEvent
+		unreachable string = store.Unreachable
+	)
+	equal(t, []string{manual, event}, []string{"manual", "event"})
+	_ = unreachable
+}
+
 func TestWordsAndNames(t *testing.T) {
-	// R-8X3J-K44N R-8YBF-XVVC R-Z0SU-2CSG R-XX43-QPZC R-RDHU-ATN8
+	// R-8X3J-K44N R-8YBF-XVVC R-XX43-QPZC R-RDHU-ATN8
 	equal(t, []string{store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed}, []string{"running", "exited", "killed", "timed_out", "failed"})
 	equal(t, []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed}, []string{"repository_missing", "commit_missing", "too_large", "git_failed", "timed_out", "start_failed"})
-	equal(t, store.TriggerManual, "manual")
-	const unreachable string = store.Unreachable
-	if unreachable == "" {
-		t.Fatal("empty catalog refusal")
-	}
-	equal(t, store.TriggerEvent, "event")
 	sentinels := []error{store.ErrNotFound, store.ErrNameTaken, store.ErrEnded}
 	for i, a := range sentinels {
 		if a == nil {

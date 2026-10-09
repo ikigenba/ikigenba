@@ -58,7 +58,8 @@ func requireEqual(t *testing.T, got, want any) {
 	}
 }
 
-// R-VKHH-HQ5X R-OIC3-1CB3 R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-7TOP-X110 R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7 R-WCJ6-AG7W R-WDR2-O7YL R-WEYZ-1ZPA R-WHER-TJ6O
+// R-VKHH-HQ5X R-OIC3-1CB3 R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7
+// R-CN1O-4HC6 R-CPHG-W0TK R-CQPD-9SK9 R-CRX9-NKAY
 func TestTemplateSetAndData(t *testing.T) {
 	const serviceName = pages.ServiceName
 	const description = pages.Description
@@ -78,23 +79,24 @@ func TestTemplateSetAndData(t *testing.T) {
 		t.Fatalf("load: %v", e)
 	}
 	repo := pages.Repo{ID: "repo", Name: "Repository <name>"}
-	row := pages.RunRow{ID: "run", URL: "/alpha/runs/run/", Status: pages.WordExited + "0", Kind: pages.KindOK, Commit: "abcdef0", Started: "start", StartedAt: "stamp", Duration: "12" + pages.UnitSecond, Exit: "0"}
-	card := pages.RunCard{ID: "run", URL: row.URL, Status: row.Status, Kind: row.Kind, Running: false, Commit: "abcdef012345", Ref: "main", Started: "start", StartedAt: "stamp", Finished: "finish", FinishedAt: "endstamp", Duration: "12" + pages.UnitSecond, Trigger: "manual", User: "user", Request: "request", StdoutSize: "1" + pages.UnitByte, StderrSize: "0" + pages.UnitByte, Truncated: true, Failure: &pages.Failure{Title: "Fail", Reason: "Reason <text>"}, FilesGone: false}
-	file := &pages.FileText{Size: "1" + pages.UnitByte, Text: "<text>&\n", URL: "/file"}
+	row := pages.RunRow{ID: "run", URL: "/alpha/runs/run/", Status: store.StatusExited, Commit: "abcdef0", Started: "start", StartedAt: "stamp", Duration: &pages.Duration{Seconds: 12}, ExitCode: 0}
+	card := pages.RunCard{ID: "run", URL: row.URL, Status: row.Status, ExitCode: row.ExitCode, Running: false, Commit: "abcdef012345", Ref: "main", Started: "start", StartedAt: "stamp", Finished: "finish", FinishedAt: "endstamp", Duration: &pages.Duration{Seconds: 12}, Trigger: "manual", User: "user", Request: "request", StdoutSize: pages.Size{Number: "1", Unit: "byte"}, StderrSize: pages.Size{Number: "0", Unit: "byte"}, Truncated: true, Failure: &pages.Failure{Reason: store.ReasonTooLarge, Repo: repo, Ref: "fixture-ref", TreeMaxBytes: 123, OperationSeconds: 7}, FilesGone: false}
+	file := &pages.FileText{Size: pages.Size{Number: "1", Unit: "byte"}, Text: "<text>&\n", URL: "/file"}
 	cases := []struct {
 		name string
 		data any
 	}{
 		{"landing", pages.LandingData{Banner: fixedBanner, Scripts: []pages.ScriptRow{{Name: "alpha", URL: "/alpha/", Repo: repo, Ref: "main", LastRun: &row}}}},
 		{"script", pages.ScriptData{Banner: fixedBanner, Script: pages.ScriptCard{ID: "script", Name: "alpha", Repo: repo, Ref: "main", Created: "created", CreatedAt: "stamp", RunsKept: 1, KeepNewest: 10, KeepDays: 30}, Runs: []pages.RunRow{row}}},
-		{"run", pages.RunData{Banner: fixedBanner, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: card, Input: file, Stdout: file, Stderr: file, Files: []pages.FileRow{{Path: "file", Size: "1" + pages.UnitByte, URL: "/file"}}}},
+		{"run", pages.RunData{Banner: fixedBanner, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: card, Input: file, Stdout: file, Stderr: file, Files: []pages.FileRow{{Path: "file", Size: pages.Size{Number: "1", Unit: "byte"}, URL: "/file"}}}},
 		{"about", pages.AboutData{Banner: fixedBanner, Description: pages.Description}},
 		{"notfound", pages.NoticeData{Banner: fixedBanner}},
 		{"unavailable", pages.NoticeData{Banner: fixedBanner}},
 	}
 	for _, c := range cases {
+		body := rendered(t, c.name, c.data)
 		for _, method := range []string{"GET", "HEAD", "POST"} {
-			for _, code := range []int{200, 404, 503, 599} {
+			for code := 200; code <= 599; code++ {
 				w := httptest.NewRecorder()
 				w.Header().Add("X-Keep", "one")
 				w.Header().Add("X-Keep", "two")
@@ -104,11 +106,29 @@ func TestTemplateSetAndData(t *testing.T) {
 				requireEqual(t, w.Header(), http.Header{"Content-Type": {"text/html; charset=utf-8"}, "X-Keep": {"one", "two"}})
 				want := ""
 				if method != "HEAD" {
-					want = rendered(t, c.name, c.data)
+					want = body
 				}
 				requireEqual(t, w.Body.String(), want)
 			}
 		}
+	}
+}
+
+// R-CO9K-I92V R-CN1O-4HC6
+func TestPartials(t *testing.T) {
+	for _, status := range []string{store.StatusQueued, store.StatusRunning, store.StatusExited, store.StatusTimedOut, store.StatusKilled, store.StatusFailed} {
+		row := pages.RunRow{Status: status}
+		card := pages.RunCard{Status: status}
+		requireEqual(t, rendered(t, "run-status", row), rendered(t, "run-status", card))
+	}
+	for _, exit := range []int{0, 1} {
+		requireEqual(t, rendered(t, "run-status", pages.RunRow{Status: store.StatusExited, ExitCode: exit}), rendered(t, "run-status", pages.RunCard{Status: store.StatusExited, ExitCode: exit}))
+	}
+	for _, minutes := range []int64{0, 1} {
+		_ = rendered(t, "run-duration", pages.Duration{Minutes: minutes, Seconds: 41})
+	}
+	for _, unit := range []string{"byte", "kilobyte", "megabyte"} {
+		_ = rendered(t, "file-size", pages.Size{Number: "17", Unit: unit})
 	}
 }
 
@@ -241,7 +261,8 @@ func writeFile(t *testing.T, p, text string) {
 	}
 }
 
-// R-W8VH-54ZT R-WA3D-IWQI R-NY3P-CSH2 R-WJUK-L2O2 R-WL2G-YUER R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-WX9G-SJTP R-WZP9-K3B3 R-0KOO-W7F0 R-X252-BMSH R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0N4H-NQWE R-0PKA-FADS R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ R-XGRU-WVOT
+// R-W8VH-54ZT R-WA3D-IWQI R-NY3P-CSH2 R-WJUK-L2O2 R-WL2G-YUER R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-WX9G-SJTP R-WZP9-K3B3 R-0KOO-W7F0 R-X252-BMSH R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ
+// R-CUD2-F3SC R-CZ8N-Y6R4 R-D0GK-BYHT R-D1OG-PQ8I
 func TestPageRoutesAndData(t *testing.T) {
 	var handler func(pages.Config) http.Handler
 	f := setup(t)
@@ -253,12 +274,12 @@ func TestPageRoutesAndData(t *testing.T) {
 	u := f.add(t, f.sc, 1, store.StatusExited, "", 12, 0)
 	foreign := f.add(t, other, 2, store.StatusRunning, "", 0, 0)
 	sibling := f.add(t, second, 3, store.StatusRunning, "", 0, 0)
-	row := pages.RunRow{ID: u.ID, URL: "/alpha/runs/" + u.ID + "/", Status: pages.WordExited + "0", Kind: pages.KindOK, Commit: "aaaaaaa", Started: u.Started.UTC().Format(pages.MinuteLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: "12" + pages.UnitSecond, Exit: "0"}
+	row := pages.RunRow{ID: u.ID, URL: "/alpha/runs/" + u.ID + "/", Status: store.StatusExited, Commit: "aaaaaaa", Started: u.Started.UTC().Format(pages.MinuteLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: &pages.Duration{Seconds: 12}, ExitCode: 0}
 	b := fixedBanner
 	b.Email = "person@example.com"
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
-	expectedLanding := pages.LandingData{Banner: b, Scripts: []pages.ScriptRow{{Name: "alpha", URL: "/alpha/", Repo: pages.Repo{ID: f.sc.Repo, Name: "Repository"}, Ref: "main", LastRun: &row}, {Name: "beta", URL: "/beta/", Repo: pages.Repo{ID: second.Repo, Name: "Repository"}, Ref: "main", LastRun: &pages.RunRow{ID: sibling.ID, URL: "/beta/runs/" + sibling.ID + "/", Status: pages.WordRunning, Kind: pages.KindInfo, Commit: "aaaaaaa", Started: sibling.Started.UTC().Format(pages.MinuteLayout), StartedAt: sibling.Started.UTC().Format(time.RFC3339)}}}}
+	expectedLanding := pages.LandingData{Banner: b, Scripts: []pages.ScriptRow{{Name: "alpha", URL: "/alpha/", Repo: pages.Repo{ID: f.sc.Repo, Name: "Repository"}, Ref: "main", LastRun: &row}, {Name: "beta", URL: "/beta/", Repo: pages.Repo{ID: second.Repo, Name: "Repository"}, Ref: "main", LastRun: &pages.RunRow{ID: sibling.ID, URL: "/beta/runs/" + sibling.ID + "/", Status: store.StatusRunning, Commit: "aaaaaaa", Started: sibling.Started.UTC().Format(pages.MinuteLayout), StartedAt: sibling.Started.UTC().Format(time.RFC3339)}}}}
 	w := f.request(context.Background(), "GET", "/?query=yes", "owner")
 	requireEqual(t, w.Code, 200)
 	requireEqual(t, w.Body.String(), rendered(t, "landing", expectedLanding))
@@ -362,10 +383,10 @@ func TestPageRoutesAndData(t *testing.T) {
 		for _, method := range []string{"GET", "HEAD"} {
 			w = f.request(ctx, method, path, "owner")
 			requireEqual(t, w.Code, 503)
-			requireEqual(t, w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"})
+			requireEqual(t, w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"})
 			want := ""
 			if method == "GET" {
-				want = store.Unreachable + "\n"
+				want = rendered(t, "unavailable", pages.NoticeData{Banner: fixedBanner})
 			}
 			requireEqual(t, w.Body.String(), want)
 		}
@@ -378,11 +399,11 @@ func TestPageRoutesAndData(t *testing.T) {
 		for _, method := range []string{"GET", "HEAD"} {
 			w = f.request(context.Background(), method, path, "owner")
 			requireEqual(t, w.Code, 503)
-			requireEqual(t, w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"})
+			requireEqual(t, w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"})
 			requireEqual(t, w.Header().Values("Location"), []string(nil))
 			want := ""
 			if method == "GET" {
-				want = store.Unreachable + "\n"
+				want = rendered(t, "unavailable", pages.NoticeData{Banner: fixedBanner})
 			}
 			requireEqual(t, w.Body.String(), want)
 		}
@@ -396,36 +417,41 @@ func TestPageRoutesAndData(t *testing.T) {
 		}
 	}
 	f.mu.Lock()
-	requireEqual(t, len(f.users), 0)
+	requireEqual(t, len(f.users), 20)
+	for _, user := range f.users {
+		requireEqual(t, user, page.User{})
+	}
 	f.mu.Unlock()
 	w = f.request(context.Background(), "GET", "/about", "owner")
 	requireEqual(t, w.Code, 200)
 	requireEqual(t, w.Body.String(), rendered(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
 }
 
-// R-OQVD-PQHY R-OTB6-H9ZC R-WOQ6-45MU R-OUJ2-V1Q1 R-OVQZ-8TGQ R-WUTO-10CB R-X3CY-PEJ6
+// R-X3CY-PEJ6
+// R-CVKY-SVJ1 R-CWSV-6N9Q R-CY0R-KF0F R-CUD2-F3SC R-CT56-1C1N
 func TestRunPageData(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
 	cases := []struct {
-		status, reason, word, kind, title, sentence string
-		seconds                                     int64
-		exit                                        int
+		status, reason string
+		seconds        int64
+		exit           int
 	}{
-		{store.StatusQueued, "", pages.WordQueued, pages.KindInfo, "", "", 0, 0},
-		{store.StatusRunning, "", pages.WordRunning, pages.KindInfo, "", "", 0, 0},
-		{store.StatusExited, "", pages.WordExited + "0", pages.KindOK, "", "", 12, 0},
-		{store.StatusExited, "", pages.WordExited + "7", pages.KindWarn, "", "", 221, 7},
-		{store.StatusTimedOut, "", pages.WordTimedOut, pages.KindWarn, "", "", 600, 0},
-		{store.StatusKilled, "", pages.WordKilled, pages.KindWarn, "", "", 1, 0},
-		{store.StatusFailed, store.ReasonRepositoryMissing, pages.WordFailed, pages.KindErr, pages.TitleRepositoryMissing, fmt.Sprintf(pages.TextRepositoryMissing, sc.Repo), 0, 0},
-		{store.StatusFailed, store.ReasonCommitMissing, pages.WordFailed, pages.KindErr, pages.TitleCommitMissing, fmt.Sprintf(pages.TextCommitMissing, "main", "Repository"), 0, 0},
-		{store.StatusFailed, store.ReasonTooLarge, pages.WordFailed, pages.KindErr, pages.TitleTooLarge, fmt.Sprintf(pages.TextTooLarge, f.cfg.TreeMaxBytes), 0, 0},
-		{store.StatusFailed, store.ReasonGitFailed, pages.WordFailed, pages.KindErr, pages.TitleGitFailed, fmt.Sprintf(pages.TextGitFailed, "Repository"), 0, 0},
-		{store.StatusFailed, store.ReasonTimedOut, pages.WordFailed, pages.KindErr, pages.TitleTimedOut, fmt.Sprintf(pages.TextTimedOut, f.cfg.OperationSeconds), 0, 0},
-		{store.StatusFailed, store.ReasonQueueAbandoned, pages.WordFailed, pages.KindErr, pages.TitleQueueAbandoned, pages.TextQueueAbandoned, 0, 0},
-		{store.StatusFailed, store.ReasonStartFailed, pages.WordFailed, pages.KindErr, pages.TitleStartFailed, pages.TextStartFailed, 0, 0},
+		{store.StatusQueued, "", 0, 0},
+		{store.StatusRunning, "", 0, 0},
+		{store.StatusExited, "", 12, 0},
+		{store.StatusExited, "", 221, 7},
+		{store.StatusTimedOut, "", 600, 0},
+		{store.StatusKilled, "", 1, 0},
+		{store.StatusFailed, store.ReasonRepositoryMissing, 0, 0},
+		{store.StatusFailed, store.ReasonCommitMissing, 0, 0},
+		{store.StatusFailed, store.ReasonTooLarge, 0, 0},
+		{store.StatusFailed, store.ReasonGitFailed, 0, 0},
+		{store.StatusFailed, store.ReasonTimedOut, 0, 0},
+		{store.StatusFailed, store.ReasonQueueAbandoned, 0, 0},
+		{store.StatusFailed, store.ReasonStartFailed, 0, 0},
 	}
+	var rows []pages.RunRow
 	for i, c := range cases {
 		u := f.add(t, sc, i+1, c.status, c.reason, c.seconds, c.exit)
 		folder := f.cfg.Runs.Folder(u)
@@ -451,37 +477,35 @@ func TestRunPageData(t *testing.T) {
 		b.Email = "person@example.com"
 		b.ProfileURL = "https://auth.sbx.example/"
 		b.LogoutURL = "https://auth.sbx.example/logout"
-		dur := ""
+		var dur *pages.Duration
 		if c.status != store.StatusQueued && c.status != store.StatusRunning && c.status != store.StatusFailed {
-			dur = fmt.Sprintf("%d%s", c.seconds, pages.UnitSecond)
-			if c.seconds >= 60 {
-				dur = fmt.Sprintf("%d%s%d%s", c.seconds/60, pages.UnitMinute, c.seconds%60, pages.UnitSecond)
-			}
+			dur = &pages.Duration{Minutes: c.seconds / 60, Seconds: c.seconds % 60}
 		}
-		outSize, errSize := "1.2"+pages.UnitKilobyte, "69"+pages.UnitByte
+		outSize, errSize := pages.Size{Number: "1.2", Unit: "kilobyte"}, pages.Size{Number: "69", Unit: "byte"}
 		if c.status == store.StatusQueued || c.status == store.StatusRunning {
-			errSize = "0" + pages.UnitByte
+			errSize = pages.Size{Number: "0", Unit: "byte"}
 		}
 		if c.status == store.StatusQueued || c.status == store.StatusFailed {
-			outSize = "0" + pages.UnitByte
-			errSize = "0" + pages.UnitByte
+			outSize = pages.Size{Number: "0", Unit: "byte"}
+			errSize = pages.Size{Number: "0", Unit: "byte"}
 		}
-		card := pages.RunCard{ID: u.ID, URL: path, Status: c.word, Kind: c.kind, Running: c.status == store.StatusRunning || c.status == store.StatusQueued, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: dur, Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: outSize, StderrSize: errSize, Truncated: u.Truncated}
-		if card.Running {
-			card.Notice = pages.NoticeRunning
-			if c.status == store.StatusQueued {
-				card.Notice = pages.NoticeQueued
-			}
-		}
+		card := pages.RunCard{ID: u.ID, URL: path, Status: c.status, ExitCode: c.exit, Running: c.status == store.StatusRunning || c.status == store.StatusQueued, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: dur, Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: outSize, StderrSize: errSize, Truncated: u.Truncated}
 		if !card.Running {
 			card.Finished = u.Finished.UTC().Format(pages.SecondLayout)
 			card.FinishedAt = u.Finished.UTC().Format(time.RFC3339)
 		}
-		if c.title != "" {
-			card.Failure = &pages.Failure{Title: c.title, Reason: c.sentence}
+		if c.status == store.StatusFailed {
+			card.Failure = &pages.Failure{Reason: c.reason, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: u.Ref, TreeMaxBytes: f.cfg.TreeMaxBytes, OperationSeconds: f.cfg.OperationSeconds}
 		}
-		data := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: card, Input: &pages.FileText{Size: "17" + pages.UnitByte, Text: "{\"text\":\"<&>\"}\n", URL: path + runs.InputFile}, Stdout: &pages.FileText{Size: "1.2" + pages.UnitKilobyte, Text: strings.Repeat("x", 1229), URL: path + runs.StdoutFile}, Stderr: &pages.FileText{Size: "0" + pages.UnitByte, URL: path + runs.StderrFile}, Files: []pages.FileRow{{Path: ".hidden", Size: "1" + pages.UnitByte, URL: path + "out/.hidden"}, {Path: "a b/é?#.txt", Size: "4" + pages.UnitByte, URL: path + "out/a%20b/%C3%A9%3F%23.txt"}, {Path: "a.txt", Size: "7" + pages.UnitByte, URL: path + "out/a.txt"}, {Path: "a/z", Size: "6" + pages.UnitByte, URL: path + "out/a/z"}, {Path: "z", Size: "1.0" + pages.UnitMegabyte, URL: path + "out/z"}}}
-		data.Input.Size = fmt.Sprintf("%d%s", len(data.Input.Text), pages.UnitByte)
+		data := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: card, Input: &pages.FileText{Size: pages.Size{Number: "17", Unit: "byte"}, Text: "{\"text\":\"<&>\"}\n", URL: path + runs.InputFile}, Stdout: &pages.FileText{Size: pages.Size{Number: "1.2", Unit: "kilobyte"}, Text: strings.Repeat("x", 1229), URL: path + runs.StdoutFile}, Stderr: &pages.FileText{Size: pages.Size{Number: "0", Unit: "byte"}, URL: path + runs.StderrFile}, Files: []pages.FileRow{{Path: ".hidden", Size: pages.Size{Number: "1", Unit: "byte"}, URL: path + "out/.hidden"}, {Path: "a b/é?#.txt", Size: pages.Size{Number: "4", Unit: "byte"}, URL: path + "out/a%20b/%C3%A9%3F%23.txt"}, {Path: "a.txt", Size: pages.Size{Number: "7", Unit: "byte"}, URL: path + "out/a.txt"}, {Path: "a/z", Size: pages.Size{Number: "6", Unit: "byte"}, URL: path + "out/a/z"}, {Path: "z", Size: pages.Size{Number: "1.0", Unit: "megabyte"}, URL: path + "out/z"}}}
+		row := pages.RunRow{ID: u.ID, URL: path, Status: u.Status, ExitCode: u.ExitCode, Commit: "aaaaaaa", Started: u.Started.UTC().Format(pages.MinuteLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: dur}
+		if u.SHA == "" {
+			row.Commit = ""
+		}
+		rows = append([]pages.RunRow{row}, rows...)
+		requireEqual(t, f.request(context.Background(), "GET", "/", "owner").Body.String(), rendered(t, "landing", pages.LandingData{Banner: b, Scripts: []pages.ScriptRow{{Name: sc.Name, URL: "/alpha/", Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, LastRun: &row}}}))
+		requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "owner").Body.String(), rendered(t, "script", pages.ScriptData{Banner: b, Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), RunsKept: len(rows), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}, Runs: rows}))
+		data.Input.Size = pages.Size{Number: fmt.Sprint(len(data.Input.Text)), Unit: "byte"}
 		requireEqual(t, w.Body.String(), rendered(t, "run", data))
 		if e := os.Remove(filepath.Join(folder, runs.InputFile)); e != nil {
 			t.Fatal(e)
@@ -500,15 +524,15 @@ func TestRunPageData(t *testing.T) {
 		data.Stderr = nil
 		data.Files = nil
 		if card.Running {
-			data.Run.StdoutSize = "0" + pages.UnitByte
-			data.Run.StderrSize = "0" + pages.UnitByte
+			data.Run.StdoutSize = pages.Size{Number: "0", Unit: "byte"}
+			data.Run.StderrSize = pages.Size{Number: "0", Unit: "byte"}
 		}
 		w = f.request(context.Background(), "GET", path, "owner")
 		requireEqual(t, w.Body.String(), rendered(t, "run", data))
 	}
 }
 
-// R-XBW9-DSQ1 R-WUTO-10CB R-X3CY-PEJ6
+// R-XBW9-DSQ1 R-X3CY-PEJ6
 func TestNoticeAndEmptyRunFiles(t *testing.T) {
 	f := setup(t)
 	w := f.request(context.Background(), "GET", "/missing/", "owner")
@@ -525,15 +549,15 @@ func TestNoticeAndEmptyRunFiles(t *testing.T) {
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
 	path := "/alpha/runs/" + u.ID + "/"
-	d := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: pages.RunCard{ID: u.ID, URL: path, Status: pages.WordRunning, Kind: pages.KindInfo, Running: true, Notice: pages.NoticeRunning, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: "0" + pages.UnitByte, StderrSize: "0" + pages.UnitByte}}
+	d := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: pages.RunCard{ID: u.ID, URL: path, Status: store.StatusRunning, Running: true, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: pages.Size{Number: "0", Unit: "byte"}, StderrSize: pages.Size{Number: "0", Unit: "byte"}}}
 	w = f.request(context.Background(), "GET", path, "owner")
 	requireEqual(t, w.Body.String(), rendered(t, "run", d))
 	for _, name := range []string{runs.InputFile, runs.StdoutFile, runs.StderrFile} {
 		writeFile(t, filepath.Join(folder, name), "")
 	}
-	d.Input = &pages.FileText{Size: "0" + pages.UnitByte, URL: path + runs.InputFile}
-	d.Stdout = &pages.FileText{Size: "0" + pages.UnitByte, URL: path + runs.StdoutFile}
-	d.Stderr = &pages.FileText{Size: "0" + pages.UnitByte, URL: path + runs.StderrFile}
+	d.Input = &pages.FileText{Size: pages.Size{Number: "0", Unit: "byte"}, URL: path + runs.InputFile}
+	d.Stdout = &pages.FileText{Size: pages.Size{Number: "0", Unit: "byte"}, URL: path + runs.StdoutFile}
+	d.Stderr = &pages.FileText{Size: pages.Size{Number: "0", Unit: "byte"}, URL: path + runs.StderrFile}
 	w = f.request(context.Background(), "GET", path, "owner")
 	requireEqual(t, w.Body.String(), rendered(t, "run", d))
 }
@@ -586,7 +610,8 @@ func snapshot(t *testing.T, root string) map[string]snapshotEntry {
 	return result
 }
 
-// R-NZBL-QK7R R-XFJY-J3Y4 R-XJ7N-OF67
+// R-NZBL-QK7R R-XJ7N-OF67
+// R-D449-H9PW
 func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -672,7 +697,7 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 		{"/alpha/runs/" + u.ID + "/", nil},
 		{"/alpha/runs/" + failed.ID + "/", [][]string{argv(sc.Repo)}},
 		{"/alpha/runs/" + gitFailed.ID + "/", [][]string{argv(sc.Repo)}},
-		{"/alpha/runs/" + otherFailure.ID + "/", nil},
+		{"/alpha/runs/" + otherFailure.ID + "/", [][]string{argv(sc.Repo)}},
 		{"/about", nil}, {"/alpha", nil}, {"/alpha/runs/" + u.ID, nil},
 		{"/missing/", nil}, {"/private/", nil}, {"/alpha/runs/nope/", nil},
 	}
@@ -747,7 +772,8 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 
 // The anonymous conversions prove the complete ordered data contracts by use;
 // adding, removing, reordering or changing a field makes these fail to compile.
-// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-VU8O-JW3H R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-7TOP-X110 R-W2RZ-8AAC R-W3ZV-M211 R-W57R-ZTRQ R-W6FO-DLIF R-W7NK-RD94 R-W8VH-54ZT
+// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-W8VH-54ZT
+// R-CFQ9-TUW0 R-CDAH-2BEM R-CEID-G35B R-CGY6-7MMP R-CI62-LEDE R-CJDY-Z643 R-CLTR-QPLH
 func TestDataContracts(t *testing.T) {
 	_ = struct {
 		Banner  page.Banner
@@ -760,7 +786,14 @@ func TestDataContracts(t *testing.T) {
 		LastRun   *pages.RunRow
 	}(pages.ScriptRow{})
 	_ = struct{ ID, Name string }(pages.Repo{})
-	_ = struct{ ID, URL, Status, Kind, Commit, Started, StartedAt, Duration, Exit string }(pages.RunRow{})
+	_ = struct {
+		ID, URL, Status            string
+		ExitCode                   int
+		Commit, Started, StartedAt string
+		Duration                   *pages.Duration
+	}(pages.RunRow{})
+	_ = struct{ Minutes, Seconds int64 }(pages.Duration{})
+	_ = struct{ Number, Unit string }(pages.Size{})
 	_ = struct {
 		Banner        page.Banner
 		Script        pages.ScriptCard
@@ -783,16 +816,32 @@ func TestDataContracts(t *testing.T) {
 	}(pages.RunData{})
 	_ = struct{ Name, URL string }(pages.ScriptLink{})
 	_ = struct {
-		ID, URL, Status, Kind                                                                                                          string
-		Running                                                                                                                        bool
-		Notice, Commit, Ref, Started, StartedAt, Finished, FinishedAt, Duration, Trigger, Event, User, Request, StdoutSize, StderrSize string
-		Truncated                                                                                                                      bool
-		Failure                                                                                                                        *pages.Failure
-		FilesGone                                                                                                                      bool
+		ID, URL, Status                                       string
+		ExitCode                                              int
+		Running                                               bool
+		Commit, Ref, Started, StartedAt, Finished, FinishedAt string
+		Duration                                              *pages.Duration
+		Trigger, Event, User, Request                         string
+		StdoutSize, StderrSize                                pages.Size
+		Truncated                                             bool
+		Failure                                               *pages.Failure
+		FilesGone                                             bool
 	}(pages.RunCard{})
-	_ = struct{ Title, Reason string }(pages.Failure{})
-	_ = struct{ Size, Text, URL string }(pages.FileText{})
-	_ = struct{ Path, Size, URL string }(pages.FileRow{})
+	_ = struct {
+		Reason                         string
+		Repo                           pages.Repo
+		Ref                            string
+		TreeMaxBytes, OperationSeconds int64
+	}(pages.Failure{})
+	_ = struct {
+		Size      pages.Size
+		Text, URL string
+	}(pages.FileText{})
+	_ = struct {
+		Path string
+		Size pages.Size
+		URL  string
+	}(pages.FileRow{})
 	_ = struct {
 		Banner      page.Banner
 		Description string
@@ -810,7 +859,7 @@ func TestDataContracts(t *testing.T) {
 	requireEqual(t, pages.ServiceName, "scripts")
 }
 
-// R-XGRU-WVOT
+// R-D5C5-V1GL
 func TestBannerCallCounts(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -838,56 +887,39 @@ func TestBannerCallCounts(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	f.mu.Lock()
-	f.users = nil
-	f.mu.Unlock()
-	w := f.request(ctx, "GET", "/alpha/", "owner")
-	requireEqual(t, w.Code, 503)
-	f.mu.Lock()
-	requireEqual(t, len(f.users), 0)
-	f.mu.Unlock()
-}
-
-// R-OJJZ-F41S R-OKRV-SVSH R-OLZS-6NJ6 R-ON7O-KF9V R-OOFK-Y70K R-OPNH-BYR9
-func TestCopyConstants(t *testing.T) {
-	const words = pages.WordQueued + pages.WordRunning + pages.WordExited + pages.WordTimedOut + pages.WordKilled + pages.WordFailed
-	const kinds = pages.KindInfo + pages.KindOK + pages.KindWarn + pages.KindErr
-	const notices = pages.NoticeQueued + pages.NoticeRunning
-	const titles = pages.TitleRepositoryMissing + pages.TitleCommitMissing + pages.TitleTooLarge + pages.TitleGitFailed + pages.TitleTimedOut + pages.TitleStartFailed + pages.TitleQueueAbandoned
-	const formats = pages.TextRepositoryMissing + pages.TextCommitMissing + pages.TextTooLarge + pages.TextGitFailed + pages.TextTimedOut + pages.TextStartFailed + pages.TextQueueAbandoned
-	const display = pages.MinuteLayout + pages.CardLayout + pages.SecondLayout + pages.UnitSecond + pages.UnitMinute + pages.UnitByte + pages.UnitKilobyte + pages.UnitMegabyte
-	_ = []string{words, kinds, notices, titles, formats, display}
-	for _, v := range []string{pages.WordQueued, pages.WordRunning, pages.WordExited, pages.WordTimedOut, pages.WordKilled, pages.WordFailed, pages.KindInfo, pages.KindOK, pages.KindWarn, pages.KindErr, pages.NoticeQueued, pages.NoticeRunning, pages.TitleRepositoryMissing, pages.TitleCommitMissing, pages.TitleTooLarge, pages.TitleGitFailed, pages.TitleTimedOut, pages.TitleStartFailed, pages.TitleQueueAbandoned, pages.MinuteLayout, pages.CardLayout, pages.SecondLayout, pages.UnitSecond, pages.UnitMinute, pages.UnitByte, pages.UnitKilobyte, pages.UnitMegabyte} {
-		if v == "" {
-			t.Fatal("empty copy constant")
+	for _, failing := range []bool{false, true} {
+		f.db.SetFailing(failing)
+		requestContext := ctx
+		if failing {
+			requestContext = context.Background()
 		}
-	}
-	for _, c := range []struct{ format, verbs string }{
-		{pages.TextRepositoryMissing, "%s"}, {pages.TextCommitMissing, "%s%s"}, {pages.TextTooLarge, "%d"}, {pages.TextGitFailed, "%s"}, {pages.TextTimedOut, "%d"}, {pages.TextStartFailed, ""}, {pages.TextQueueAbandoned, ""},
-	} {
-		if c.format == "" {
-			t.Fatal("empty format")
-		}
-		var verbs string
-		for i := 0; i < len(c.format); i++ {
-			if c.format[i] == '%' {
-				if i+1 == len(c.format) {
-					t.Fatal("unfinished verb")
-				}
-				verbs += c.format[i : i+2]
-				i++
+		for _, method := range []string{"GET", "HEAD"} {
+			for _, path := range []string{"/", "/alpha/", "/alpha", "/none/", "/alpha/runs/" + u.ID + "/"} {
+				f.mu.Lock()
+				f.users = nil
+				f.mu.Unlock()
+				w := f.request(requestContext, method, path, "owner")
+				requireEqual(t, w.Code, 503)
+				f.mu.Lock()
+				requireEqual(t, f.users, []page.User{{}})
+				f.mu.Unlock()
 			}
 		}
-		requireEqual(t, verbs, c.verbs)
 	}
+}
+
+// R-CC2K-OJNX
+func TestTimeLayouts(t *testing.T) {
+	const layouts = pages.MinuteLayout + pages.CardLayout + pages.SecondLayout
+	_ = layouts
 	for _, layout := range []string{pages.MinuteLayout, pages.CardLayout, pages.SecondLayout} {
-		if fixedTime.Format(layout) == "" {
-			t.Fatal("empty formatted time")
+		if layout == "" || fixedTime.Format(layout) == "" {
+			t.Fatal("empty time layout")
 		}
 	}
 }
 
-// R-OTB6-H9ZC R-OVQZ-8TGQ R-WUTO-10CB R-X3CY-PEJ6
+// R-CT56-1C1N R-CWSV-6N9Q R-X3CY-PEJ6
 func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -899,17 +931,16 @@ func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 		bytes        int64
 		number, unit string
 		seconds      int64
-		duration     string
 	}{
-		{0, "0", pages.UnitByte, 0, "0" + pages.UnitSecond},
-		{69, "69", pages.UnitByte, 12, "12" + pages.UnitSecond},
-		{999, "999", pages.UnitByte, 59, "59" + pages.UnitSecond},
-		{1000, "1.0", pages.UnitKilobyte, 60, "1" + pages.UnitMinute + "0" + pages.UnitSecond},
-		{1229, "1.2", pages.UnitKilobyte, 221, "3" + pages.UnitMinute + "41" + pages.UnitSecond},
-		{12034, "12.0", pages.UnitKilobyte, 600, "10" + pages.UnitMinute + "0" + pages.UnitSecond},
-		{999999, "999.9", pages.UnitKilobyte, 1, "1" + pages.UnitSecond},
-		{1000000, "1.0", pages.UnitMegabyte, 2, "2" + pages.UnitSecond},
-		{1048576, "1.0", pages.UnitMegabyte, 3, "3" + pages.UnitSecond},
+		{0, "0", "byte", 0},
+		{69, "69", "byte", 12},
+		{999, "999", "byte", 59},
+		{1000, "1.0", "kilobyte", 60},
+		{1229, "1.2", "kilobyte", 221},
+		{12034, "12.0", "kilobyte", 600},
+		{999999, "999.9", "kilobyte", 1},
+		{1000000, "1.0", "megabyte", 2},
+		{1048576, "1.0", "megabyte", 3},
 	} {
 		u := f.add(t, sc, i+1, store.StatusRunning, "", 0, 0)
 		var err error
@@ -919,10 +950,10 @@ func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 		}
 		path := "/alpha/runs/" + u.ID + "/"
 		want := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: sc.Name, URL: "/alpha/"}, Run: pages.RunCard{
-			ID: u.ID, URL: path, Status: pages.WordExited + "0", Kind: pages.KindOK, Commit: u.SHA, Ref: u.Ref,
+			ID: u.ID, URL: path, Status: store.StatusExited, Commit: u.SHA, Ref: u.Ref,
 			Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339),
-			Finished: u.Finished.UTC().Format(pages.SecondLayout), FinishedAt: u.Finished.UTC().Format(time.RFC3339), Duration: c.duration,
-			Trigger: u.Trigger, User: u.User, Request: u.RequestID, StdoutSize: c.number + c.unit, StderrSize: c.number + c.unit, FilesGone: true,
+			Finished: u.Finished.UTC().Format(pages.SecondLayout), FinishedAt: u.Finished.UTC().Format(time.RFC3339), Duration: &pages.Duration{Minutes: c.seconds / 60, Seconds: c.seconds % 60},
+			Trigger: u.Trigger, User: u.User, Request: u.RequestID, StdoutSize: pages.Size{Number: c.number, Unit: c.unit}, StderrSize: pages.Size{Number: c.number, Unit: c.unit}, FilesGone: true,
 		}}
 		requireEqual(t, f.request(context.Background(), "GET", path, "owner").Body.String(), rendered(t, "run", want))
 	}
@@ -954,7 +985,7 @@ func TestScriptSubscriptions(t *testing.T) {
 	check([]string{"repo.pushed"})
 }
 
-// R-WOQ6-45MU R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-OQVD-PQHY R-OUJ2-V1Q1 R-OVQZ-8TGQ R-WUTO-10CB R-X3CY-PEJ6
+// R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-X3CY-PEJ6
 func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 	f := setup(t)
 	b := fixedBanner
@@ -974,10 +1005,10 @@ func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 		requireEqual(t, f.request(context.Background(), "GET", "/", "owner").Body.String(), rendered(t, "landing", pages.LandingData{Banner: b, Scripts: []pages.ScriptRow{{Name: sc.Name, URL: "/alpha/", Repo: repo, Ref: sc.Ref}}}))
 		requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "owner").Body.String(), rendered(t, "script", pages.ScriptData{Banner: b, Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repo, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}))
 	}
-	for i, c := range []struct{ status, reason, title, text string }{
-		{store.StatusRunning, "", "", ""},
-		{store.StatusFailed, store.ReasonCommitMissing, pages.TitleCommitMissing, fmt.Sprintf(pages.TextCommitMissing, sc.Ref, sc.Repo)},
-		{store.StatusFailed, store.ReasonGitFailed, pages.TitleGitFailed, fmt.Sprintf(pages.TextGitFailed, sc.Repo)},
+	for i, c := range []struct{ status, reason string }{
+		{store.StatusRunning, ""},
+		{store.StatusFailed, store.ReasonCommitMissing},
+		{store.StatusFailed, store.ReasonGitFailed},
 	} {
 		u := store.Run{ID: fmt.Sprintf("run_%016x", i+1), Script: sc.ID, Ref: sc.Ref, Trigger: store.TriggerEvent, Event: fmt.Sprintf("fixture-event-%d", i), User: sc.Owner, RequestID: "fixture-request", Status: c.status, Reason: c.reason, Started: fixedTime}
 		if c.status == store.StatusFailed {
@@ -991,15 +1022,13 @@ func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := "/alpha/runs/" + u.ID + "/"
-		card := pages.RunCard{ID: u.ID, URL: path, Status: pages.WordRunning, Kind: pages.KindInfo, Running: true, Notice: pages.NoticeRunning, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: "0" + pages.UnitByte, StderrSize: "0" + pages.UnitByte, FilesGone: true}
+		card := pages.RunCard{ID: u.ID, URL: path, Status: store.StatusRunning, Running: true, Commit: u.SHA, Ref: u.Ref, Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: u.Trigger, Event: u.Event, User: u.User, Request: u.RequestID, StdoutSize: pages.Size{Number: "0", Unit: "byte"}, StderrSize: pages.Size{Number: "0", Unit: "byte"}, FilesGone: true}
 		if c.status == store.StatusFailed {
-			card.Status = pages.WordFailed
-			card.Kind = pages.KindErr
+			card.Status = store.StatusFailed
 			card.Running = false
-			card.Notice = ""
 			card.Finished = u.Finished.UTC().Format(pages.SecondLayout)
 			card.FinishedAt = u.Finished.UTC().Format(time.RFC3339)
-			card.Failure = &pages.Failure{Title: c.title, Reason: c.text}
+			card.Failure = &pages.Failure{Reason: c.reason, Repo: pages.Repo{ID: sc.Repo}, Ref: u.Ref, TreeMaxBytes: f.cfg.TreeMaxBytes, OperationSeconds: f.cfg.OperationSeconds}
 		}
 		requireEqual(t, f.request(context.Background(), "GET", path, "owner").Body.String(), rendered(t, "run", pages.RunData{Banner: b, Script: pages.ScriptLink{Name: sc.Name, URL: "/alpha/"}, Run: card}))
 	}
