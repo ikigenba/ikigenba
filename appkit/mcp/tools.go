@@ -43,11 +43,28 @@ type RawTool[In any] struct {
 	Handler           func(ctx context.Context, c identity.Caller, in In) (Result, error)
 }
 
+// RegisteredTool is the metadata a service can show for one of its tools.
+type RegisteredTool struct {
+	Name, Description string
+}
+
 type registeredTool struct {
-	name string
-	info json.RawMessage
-	kind string
-	call func(context.Context, identity.Caller, json.RawMessage) toolCall
+	name        string
+	description string
+	info        json.RawMessage
+	kind        string
+	call        func(context.Context, identity.Caller, json.RawMessage) toolCall
+}
+
+// Tools returns an independent copy of the tool metadata in registration order.
+func (s *Server) Tools() []RegisteredTool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tools := make([]RegisteredTool, len(s.tools))
+	for i, tool := range s.tools {
+		tools[i] = RegisteredTool{Name: tool.name, Description: tool.description}
+	}
+	return tools
 }
 
 type toolCall struct {
@@ -144,7 +161,7 @@ func AddTool[In, Out any](s *Server, t Tool[In, Out]) {
 	if err != nil {
 		panic(err)
 	}
-	tool := registeredTool{name: t.Name, kind: toolKind(t.Effect), info: toolInfo(t.Name, t.Description, t.Effect, in, out)}
+	tool := registeredTool{name: t.Name, description: t.Description, kind: toolKind(t.Effect), info: toolInfo(t.Name, t.Description, t.Effect, in, out)}
 	tool.call = func(ctx context.Context, c identity.Caller, args json.RawMessage) toolCall {
 		if len(args) == 0 {
 			args = json.RawMessage(`{}`)
@@ -181,7 +198,7 @@ func AddRawTool[In any](s *Server, t RawTool[In]) {
 	if err != nil {
 		panic(err)
 	}
-	tool := registeredTool{name: t.Name, kind: toolKind(t.Effect), info: toolInfo(t.Name, t.Description, t.Effect, in, nil)}
+	tool := registeredTool{name: t.Name, description: t.Description, kind: toolKind(t.Effect), info: toolInfo(t.Name, t.Description, t.Effect, in, nil)}
 	tool.call = func(ctx context.Context, c identity.Caller, args json.RawMessage) toolCall {
 		if len(args) == 0 {
 			args = json.RawMessage(`{}`)
