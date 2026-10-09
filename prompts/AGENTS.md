@@ -227,7 +227,7 @@ built over, before a call or from a hook design names, never by corrupting
 the file, removing permissions or closing the store. The one exception is the
 test of a failed `Recover` through `Run`, where the store is `Run`'s own: from
 a hook design names it opens a second handle of its own on the same file with
-`db.Open` and `prompts.Migrations()`, drops the `catalog` table inside that
+`db.Open` and `prompts.Migrations()`, drops the `runs` table inside that
 handle's `Write`, and closes it. A disk failure on the runs directory is still
 produced by removing a permission from the test's own directory, as design
 names. Tests prove prompts' use of the catalog, its schema, its store and its
@@ -238,7 +238,9 @@ status`), which appkit's own tests prove.
 **The child is real, and the provider is the test's.** A run is the binary's
 own `agent` role started through the runner, and what prompts proves is that
 a run is the child's agentkit session as the child runs it, so tests run the
-real child and never a stand-in for it. A test builds nothing and execs
+real child and never a stand-in for it; the one exception is the probe
+program `internal/runner`'s own tests run in its place, which prove the runner
+and not the child. A test builds nothing and execs
 nothing but the test binary's own `agent` role, through the runner, the way
 design names; it starts no other program. The provider is an
 `httptest` server the test serves on loopback, found through the endpoint base
@@ -319,8 +321,9 @@ starts and `bash`, as above, no test starts a process: tests under
 `internal/` never start prompts' server. The wiring in `cmd/prompts` can be
 proved no other way, so exactly one test that execs the binary is admissible,
 and it lives in `cmd/prompts`. It builds the binary into a temporary
-directory and runs it with `--version`, with `manifest`, with `bogus`, and
-bare with no socket passed in. For the serve case it stands in for systemd:
+directory and runs it with `--version`, with `manifest`, with `bogus`, with
+`prompts agent` and a run spec on standard input, and bare with no socket
+passed in. For the serve case it stands in for systemd:
 it makes a Unix socket in a short temporary directory, passes it as
 `exec.Cmd.ExtraFiles[0]` (descriptor 3 in the child), and starts the child
 through `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
