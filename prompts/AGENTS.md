@@ -115,17 +115,19 @@ build run never writes it. `devctl build` packs it beside `bin/` and `etc/`.
 - the modules `go.mod` requires, in the Go module cache; `go.sum` is
   committed, and the gates themselves run offline. The build run moves to
   another release only when this file names one:
-  - appkit `v0.20.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.20.0`: a release that
+  - appkit `v0.21.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.21.0`: a release that
     exports the `db` and `version` packages, whose `page.Banner` carries
-    the trail, the home link and the tools flag the templates use, and
-    whose MCP server lists its registered tools. See Adopting the libraries
-    below.
-  - agentkit `v0.13.0`, set with
-    `go get github.com/ikigenba/ikigenba/agentkit@v0.13.0`: the model
+    the trail, the home link and the tools flag the templates use, whose
+    MCP server lists its registered tools, and whose `mcp.Nullable` lets a
+    tool's input tell an absent field from a JSON `null`. See Adopting the
+    libraries below.
+  - agentkit `v0.14.0`, set with
+    `go get github.com/ikigenba/ikigenba/agentkit@v0.14.0`: the model
     catalog and `Lookup`, `APIKeyRotator`, the tool loop, `NewTool` and
     `NewToolFromSchema`, `OutputContract` and `ValidateOutputSchema`,
-    `Limits`, and the JSON Lines log `NewLog`.
+    `Limits`, and the JSON Lines log `NewLog`; a release that keeps every
+    provider's key out of request URLs, error text and error records.
   - toolkit `v0.3.0`, set with
     `go get github.com/ikigenba/ikigenba/toolkit@v0.3.0`: `Bash`, `Read`,
     `Write`, `Edit`, `Glob` and `Grep` as agentkit tools rooted at a
@@ -147,7 +149,7 @@ external dependency needs approval first, the user's or a delivery's.
 ### Adopting the libraries
 
 appkit, agentkit and toolkit are required only at a published release, here
-appkit `v0.20.0`, agentkit `v0.13.0` and toolkit `v0.3.0`, fetched through the
+appkit `v0.21.0`, agentkit `v0.14.0` and toolkit `v0.3.0`, fetched through the
 ordinary module proxy and checked against the checksum database (see the root
 `AGENTS.md`), each set with `go get` as above. No `replace` directive, no
 `go.work`, no local module cache stands in for any of them. A change that
