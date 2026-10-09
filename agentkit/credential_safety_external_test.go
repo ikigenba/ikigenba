@@ -119,7 +119,11 @@ func safetyCheckLog(t *testing.T, log *bytes.Buffer, secrets ...string) {
 		}
 		if record["type"] == string(ak.RecordError) {
 			found = true
-			check(record)
+			payload, ok := record["error"].(map[string]any)
+			if !ok {
+				t.Fatal("error log record has no error object")
+			}
+			check(payload)
 		}
 	}
 	if !found {
@@ -132,7 +136,7 @@ type safetyReader struct{ err error }
 func (r safetyReader) Read([]byte) (int, error) { return 0, r.err }
 func (safetyReader) Close() error               { return nil }
 
-// R-T6FE-G1JX R-VZ8C-D8NY R-F0WI-DARB R-SZ40-5F3R
+// R-T6FE-G1JX R-VZ8C-D8NY R-F0WI-DARB R-SZ40-5F3R R-URHJ-5JWN
 func TestCredentialSafetyProviderFailures(t *testing.T) {
 	wires := []struct {
 		name    string
@@ -307,7 +311,7 @@ func TestCredentialSafetyOAuthRefresh(t *testing.T) {
 	}
 }
 
-// R-W0G8-R0EN R-VZ8C-D8NY
+// R-W0G8-R0EN R-VZ8C-D8NY R-URHJ-5JWN
 func TestCredentialSafetyGeminiCacheLifecycle(t *testing.T) {
 	for _, operation := range []string{"create", "release", "close"} {
 		for _, mode := range []string{"transport", "non2xx"} {
@@ -360,11 +364,12 @@ func TestCredentialSafetyGeminiCacheLifecycle(t *testing.T) {
 	}
 }
 
+// R-URHJ-5JWN
 func TestCredentialSafetyOAuthRefreshEventLog(t *testing.T) {
 	const access = "oauth-access-0123456789"
 	const refresh = "oauth-refresh-0123456789"
 	const minted = "oauth-response-0123456789"
-	for _, mode := range []string{"transport", "non2xx", "unusable"} {
+	for _, mode := range []string{"transport", "non2xx", "unusable", "body", "build"} {
 		t.Run(mode, func(t *testing.T) {
 			safetyClient(t, func(r *http.Request) (*http.Response, error) {
 				if r.URL.Path != "/refresh" {
@@ -372,6 +377,11 @@ func TestCredentialSafetyOAuthRefreshEventLog(t *testing.T) {
 				}
 				if mode == "transport" {
 					return nil, errors.Join(errors.New(access), errors.New(refresh))
+				}
+				if mode == "body" {
+					response := safetyResponse(200, "")
+					response.Body = safetyReader{err: errors.Join(errors.New(access), errors.New(refresh))}
+					return response, nil
 				}
 				body := `{"error":"` + refresh + `","error_description":"` + access + ` / ` + minted + `","refresh_token":"` + minted + `"}`
 				status := 401
@@ -382,7 +392,11 @@ func TestCredentialSafetyOAuthRefreshEventLog(t *testing.T) {
 			})
 			store := &safetyStore{data: []byte(`{"access_token":"` + access + `","refresh_token":"` + refresh + `"}`)}
 			var log bytes.Buffer
-			c := safetyConversation(t, ak.ChatWire(), ak.OAuthRotator(store), &log, ak.Rotation{RefreshURL: "http://127.0.0.1/refresh"})
+			rotation := ak.Rotation{RefreshURL: "http://127.0.0.1/refresh"}
+			if mode == "build" {
+				rotation.RefreshURL = "http://127.0.0.1/%" + refresh
+			}
+			c := safetyConversation(t, ak.ChatWire(), ak.OAuthRotator(store), &log, rotation)
 			err := safetySend(context.Background(), c)
 			safetyCheckChain(t, err, access, refresh, minted)
 			safetyCheckLog(t, &log, access, refresh, minted)
@@ -406,7 +420,7 @@ func (*safetySequenceRotator) Rotate(context.Context, ak.Rotation) (ak.Token, er
 	return ak.Token{}, errors.New("unexpected rotation")
 }
 
-// R-F0WI-DARB R-T6FE-G1JX
+// R-F0WI-DARB R-T6FE-G1JX R-URHJ-5JWN
 func TestCredentialSafetyRotatedBearerOverlap(t *testing.T) {
 	const short = "loopback-example-0123456789"
 	const long = short + "-extended"
@@ -452,6 +466,7 @@ func TestCredentialSafetyContextSentinelText(t *testing.T) {
 	}
 }
 
+// R-URHJ-5JWN
 func TestCredentialSafetyOrdinaryOAuthProviderLog(t *testing.T) {
 	const access = "ordinary-access-0123456789"
 	const refresh = "ordinary-refresh-0123456789"
@@ -475,6 +490,60 @@ func TestCredentialSafetyOrdinaryOAuthProviderLog(t *testing.T) {
 	}
 }
 
+// R-URHJ-5JWN R-T8UR-8BFL
+func TestCredentialSafetyErrorMemberPreservesLogID(t *testing.T) {
+	const access = `log-"access\0123456789`
+	const refresh = `log-"refresh\0123456789`
+	for _, oauth := range []bool{false, true} {
+		t.Run(fmt.Sprint(oauth), func(t *testing.T) {
+			safetyClient(t, func(*http.Request) (*http.Response, error) {
+				return safetyResponse(422, access+" / "+refresh), nil
+			})
+			wire := ak.ChatWire()
+			rotator := ak.APIKeyRotator(access)
+			model := "model"
+			secrets := []string{access}
+			if oauth {
+				data, err := json.Marshal(map[string]string{"access_token": access, "refresh_token": refresh})
+				if err != nil {
+					t.Fatal(err)
+				}
+				rotator = ak.OAuthRotator(&safetyStore{data: data})
+				model = refresh
+				secrets = append(secrets, refresh)
+			}
+			auth, err := (ak.Offering{ID: ak.OfferingAnthropicMessages, WireFormat: wire, Endpoints: []ak.EndpointSpec{{AuthMode: rotator.AuthMode()}}}).Authenticator(rotator)
+			if err != nil {
+				t.Fatal(err)
+			}
+			endpoint, err := ak.NewEndpoint(auth, ak.WithBaseURL("http://127.0.0.1/provider"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var log bytes.Buffer
+			id := "consumer " + access + " / " + refresh
+			c, err := ak.New(wire, endpoint, model, ak.Config{Log: ak.NewLog(&log, func() time.Time { return time.Time{} }, id)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := safetySend(context.Background(), c); err == nil {
+				t.Fatal("missing provider error")
+			}
+			safetyCheckLog(t, &log, secrets...)
+			decoder := json.NewDecoder(bytes.NewReader(log.Bytes()))
+			for decoder.More() {
+				var record ak.LogRecord
+				if err := decoder.Decode(&record); err != nil {
+					t.Fatal(err)
+				}
+				if record.ID != id {
+					t.Fatal("log ID was not preserved verbatim")
+				}
+			}
+		})
+	}
+}
+
 type safetyProactiveRotator struct{ initial, updated string }
 
 func (*safetyProactiveRotator) AuthMode() ak.AuthMode { return ak.AuthModeOAuth }
@@ -485,7 +554,7 @@ func (r *safetyProactiveRotator) Rotate(context.Context, ak.Rotation) (ak.Token,
 	return ak.Token{Bearer: r.updated}, nil
 }
 
-// R-T6FE-G1JX R-F0WI-DARB
+// R-T6FE-G1JX R-F0WI-DARB R-URHJ-5JWN
 func TestCredentialSafetyProactiveRotationReturnedBearer(t *testing.T) {
 	const previous = "old-returned-0123456789"
 	const current = "new-returned-0123456789"
