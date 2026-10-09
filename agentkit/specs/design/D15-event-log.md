@@ -221,3 +221,4 @@ func (l *Log) Close() error
 - R-5LWX-PVNG: A log write failure MUST NOT abort the turn and MUST NOT change `Stream.Err()`; the failure MAY be retained on the log for inspection.
 - R-5N4U-3NE5: `Close` MUST emit exactly one cumulative `summary` record and MUST be idempotent; a `Send` after `Close` MUST return `ErrClosed`.
 - R-0NE8-TO91: `agentkit` MUST export `type RetryInfo struct { Attempt int; Delay time.Duration; Reason string }` with exactly those three fields.
+- R-F24E-R2I0: For a failure that R-T6FE-G1JX, R-W0G8-R0EN, R-EYGP-LR9X, or R-F0WI-DARB covers, every string in the decoded JSON of the `error` record the event log writes MUST NOT contain a credential secret (R-T6FE-G1JX) or an OAuth secret (R-EYGP-LR9X) of the `OAuthRotator(store)` the conversation's authenticator uses.

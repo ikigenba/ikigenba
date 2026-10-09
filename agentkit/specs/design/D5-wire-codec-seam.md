@@ -11,7 +11,7 @@ which pairs it with an `Endpoint` (D6) for the orchestrator. Eight wires ship:
 | Constructor | Struct | `WireName` (D21) | Credential placement | Used by hosts |
 |---|---|---|---|---|
 | `AnthropicMessagesWire()` | `anthropicMessagesWire` | `messages` | `x-api-key` header; also sets `anthropic-version` | anthropic |
-| `GeminiGenerateContentWire()` | `geminiGenerateContentWire` | `generate-content` | `key` query parameter | gemini |
+| `GeminiGenerateContentWire()` | `geminiGenerateContentWire` | `generate-content` | `x-goog-api-key` header | gemini |
 | `ChatWire()` | `chatWire` | `chat` | `Authorization: Bearer` | openrouter |
 | `ResponsesWire()` | `responsesWire` | `responses` | `Authorization: Bearer` | openrouter |
 | `OpenAIChatWire()` | `openAIChatWire` | `chat` | bearer | openai |
@@ -136,7 +136,7 @@ classification of its vendor's error responses into `Category` (D4), because the
 error envelope is part of the vendor's grammar. The wire also owns the
 **protocol headers**: every header the vendor's HTTP protocol requires
 (`anthropic-version`) and **where a credential is placed** on the request —
-which header or query parameter carries the secret. The secret itself, and its
+which header carries the secret; no wire puts it in the URL. The secret itself, and its
 lifecycle, belong to the `Authenticator` (D6, D7): the authenticator resolves
 the current credential and the wire places it. The base URL belongs to the
 `Endpoint` (D6). The dividing question is "does this change the bytes the

@@ -77,7 +77,7 @@ type Error struct {
     Category   Category
     Status     int           // HTTP status, 0 if no response was received
     Code       string        // vendor envelope code, verbatim, when present
-    Message    string        // vendor message text, verbatim
+    Message    string        // vendor message text, verbatim but for redacted credentials
     RetryAfter time.Duration // classifier's reading of a retry hint, 0 if none
     Endpoint   Identity      // which endpoint/model produced this (D-identity)
     err        error         // wrapped cause, exposed via Unwrap
@@ -192,6 +192,21 @@ an unrepresentable reasoning form or an out-of-subset tool schema fails. Every
 condition that would have been a warning is now either a typed field or a hard
 `Send`-time error; nothing is whispered.
 
+**No error carries a credential.** An error's text travels: into a log
+record (D15), a transcript, a consumer's stderr. So agentkit guarantees that no
+credential secret, the key or token a request presented, appears in the text of
+any error it returns or anywhere in the chain of errors that error wraps. Two
+paths could carry one. A transport failure quotes the request URL, which is why
+no wire puts a credential in a URL (D7). A vendor may echo the credential back
+in an error body or in-band error frame; there agentkit keeps the vendor's text
+and replaces each occurrence of the secret with the copy constant
+`RedactionMark`, so the diagnostic survives and the secret does not. The
+OAuth refresh path (D22) obeys the same rule for its access and refresh
+tokens. Redaction never costs the cause: a provider request ended by its
+context still reports that context's error through `errors.Is`. An error a
+rotator itself returns passes through unchanged (D7, D22); the built-in OAuth
+rotator's `Rotate` errors are held to the same rule.
+
 ## REQUIREMENTS
 
 - R-IVU4-KSGT: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field.
@@ -213,3 +228,9 @@ condition that would have been a warning is now either a typed field or a hard
 - R-B5TT-UVF1: `agentkit` MUST export the sentinel errors `ErrInvalidConfig`, `ErrClosed`, and `ErrInvalidArgument`, each an `error`.
 - R-1JWR-1RWS: Built-in classification MUST set `Error.RetryAfter` to N seconds when the response carries a `Retry-After` header whose value is a non-negative integer N (RFC 9110 delta-seconds), and MUST leave `RetryAfter` zero when the header is absent or its value is anything else, including an HTTP-date.
 - R-OHYJ-3C6O: Built-in classification MUST map HTTP status to `Category` as: 401 and 403 → `CategoryAuth`; 400, 404, 409, 413, 415, and 422 → `CategoryInvalidRequest`; 402 → `CategoryInsufficientQuota`; 429 → `CategoryRateLimit`; 408 and 504 → `CategoryTimeout`; 500, 502, 503, and 529 → `CategoryOverloaded`; every other non-2xx status → `CategoryUnknown`.
+- R-SZ40-5F3R: `agentkit` MUST export the copy constant `RedactionMark string`.
+- R-EYGP-LR9X: Every error `Rotate` on the rotator from `OAuthRotator(store)` returns, other than an error `store.Read` or `store.Write` returned that it passes through unchanged, MUST NOT contain an OAuth secret in its `Error()` text or in the `Error()` text of any error reachable from it through `Unwrap() error` or `Unwrap() []error`, whether the refresh failed before any response, with a non-2xx response, or with a 2xx response it could not use, where an OAuth secret is the value, of at least 16 bytes, of a top-level `access_token` or `refresh_token` JSON string field in the store's bytes or in the refresh response's body.
+- R-T3ZL-OI2J: When a request a `Conversation` sends to the provider fails before any response because its context was canceled or its deadline passed, the error `Send` or `Stream.Err()` returns MUST satisfy `errors.Is(err, context.Canceled)` or `errors.Is(err, context.DeadlineExceeded)` respectively.
+- R-T6FE-G1JX: When a request a `Conversation` sends to the provider with any of the eight shipped wires fails — before any response, with a non-2xx response, with an in-band stream error, or while its body is read — the error `Send` or `Stream.Err()` returns MUST NOT contain a credential secret in its `Error()` text or in the `Error()` text of any error reachable from it through `Unwrap() error` or `Unwrap() []error`, where a credential secret is a `Token.Bearer` of at least 16 bytes that the rotator behind the conversation's authenticator returned and that the consumer placed in no other input (base URL, message, tool, or setting); an error the rotator itself returned, which `Send` surfaces unchanged (R-OS5I-G567, R-K98B-C31I, R-J2S5-WE3J, R-EBV0-BHS5), is outside this requirement.
+- R-W0G8-R0EN: When a `GeminiGenerateContentWire()` `cachedContents` create or delete (D27) fails, before any response or with a non-2xx response, an error that `Send`, `Stream.Err()`, `Release`, or `Close` returns MUST NOT contain a credential secret (R-T6FE-G1JX) in its `Error()` text or in the `Error()` text of any error reachable from it through `Unwrap() error` or `Unwrap() []error`.
+- R-F0WI-DARB: When the vendor text a `*Error` carries in `Code` or `Message` — from a non-2xx response body, an in-band stream error, or a refresh endpoint's `error` or `error_description` (D22) — contains a credential secret (R-T6FE-G1JX) or, for an error `Rotate` returns on the rotator from `OAuthRotator(store)`, an OAuth secret (R-EYGP-LR9X), that field MUST hold the vendor text with every occurrence of each such secret replaced by `RedactionMark`, a longer secret replaced before a shorter one it contains, and every other byte of the vendor text preserved in order; this takes precedence over R-ISHO-CITZ, R-IW5D-HU22, R-IXD9-VLSR, R-IYL6-9DJG, and R-KTYL-U6NB, which fix the field's content only where it holds no such secret.

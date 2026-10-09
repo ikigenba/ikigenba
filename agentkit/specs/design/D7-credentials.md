@@ -93,7 +93,7 @@ The authenticator resolves the token and the wire format places it:
 | Wire format | API key | OAuth |
 |---|---|---|
 | `AnthropicMessagesWire()` | `x-api-key` header | not accepted (Anthropic's terms do not permit it) |
-| `GeminiGenerateContentWire()` | `key` query parameter | not accepted |
+| `GeminiGenerateContentWire()` | `x-goog-api-key` header | not accepted |
 | `ChatWire()`, `ResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` |
 | `OpenAIChatWire()` | `Authorization: Bearer` | not accepted (no chat endpoint honors a ChatGPT token) |
 | `OpenAIResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` + `ChatGPT-Account-Id` |
@@ -112,6 +112,13 @@ string and `Identity.AuthMode` the rotator's mode. That is the link cost (D3)
 prices on, and it holds even when the consumer overrides the base URL: a proxy
 in front of Anthropic still prices as Anthropic.
 
+No wire puts a credential in the URL. A URL is what a transport failure quotes,
+so a key there would reach every error text and log record that carries the
+failure (D4). Gemini accepts its key either as a `key` query parameter or as
+the `x-goog-api-key` header; agentkit uses the header, proven live on both
+`generateContent` and `streamGenerateContent?alt=sse` (200 with the header,
+403 without a key).
+
 ## REQUIREMENTS
 
 - R-P5PA-T4A1: `agentkit` MUST export `type AuthMode string` with the constants `AuthModeAPIKey = "api_key"` and `AuthModeOAuth = "oauth"`.
@@ -120,6 +127,7 @@ in front of Anthropic still prices as Anthropic.
 - R-K4CP-T02Q: `agentkit` MUST export `func OAuthRotator(store TokenStore) Rotator`, whose `AuthMode` returns `AuthModeOAuth`; its `Token` and `Rotate` behavior is fixed by D22.
 - R-BC2W-K5J6: `NewEndpoint` MUST accept any `Authenticator`.
 - R-O9D5-TK1H: `agentkit` MUST export `func (o Offering) Authenticator(r Rotator) (Authenticator, error)`, which MUST return `ErrInvalidConfig` for a nil `r` or for a rotator whose `AuthMode()` matches no `EndpointSpec.AuthMode` in `o.Endpoints`.
-- R-IWON-ZJE2: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeAPIKey` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as placed by `o.WireFormat`: as the `x-api-key` header when it is `AnthropicMessagesWire()`, as the `key` URL query parameter when it is `GeminiGenerateContentWire()`, and as the `Authorization: Bearer <Bearer>` header when it is `ChatWire()`, `ResponsesWire()`, `OpenAIChatWire()`, `OpenAIResponsesWire()`, `XAIChatWire()`, or `XAIResponsesWire()`; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
+- R-OS5I-G567: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeAPIKey` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as placed by `o.WireFormat`: as the `x-api-key` header when it is `AnthropicMessagesWire()`, as the `x-goog-api-key` header when it is `GeminiGenerateContentWire()`, and as the `Authorization: Bearer <Bearer>` header when it is `ChatWire()`, `ResponsesWire()`, `OpenAIChatWire()`, `OpenAIResponsesWire()`, `XAIChatWire()`, or `XAIResponsesWire()`; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
 - R-K98B-C31I: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeOAuth` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as the `Authorization: Bearer` header; when `o.WireFormat` is `OpenAIResponsesWire()` it MUST also transmit `Token.AccountID` as the `ChatGPT-Account-Id` header and MUST fail with `ErrInvalidConfig` when `AccountID` is empty; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
 - R-KAG7-PUS7: A `Conversation` built by `New(o.WireFormat, ep, model, cfg)` where `ep` was built by `NewEndpoint` from `o.Authenticator(r)` MUST report `Identity.Endpoint` equal to `string(o.ID)` whether or not `WithBaseURL` was given, and `Identity.AuthMode` equal to `string(r.AuthMode())`.
+- R-VZ8C-D8NY: A request a `Conversation` sends with any of the eight shipped wires, `GeminiGenerateContentWire()`'s `cachedContents` create and delete (D27) included, MUST NOT carry a credential secret (R-T6FE-G1JX) anywhere in its URL.
