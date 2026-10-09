@@ -4,7 +4,7 @@ toolkit is agentkit's standard local tools: Bash, Read, Write, Edit, Glob and Gr
 
 ## Layout
 
-- `specs/` is the contract: `design/`.
+- `specs/` is the contract: `design/`. toolkit is a library and has no stories.
 - The module root is the one package, `toolkit`; source and tests sit flat beside `go.mod`.
 - The build run writes the Go source, the tests, `go.mod` and `go.sum`. `Makefile`, `.golangci.yml`, `README.md` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
