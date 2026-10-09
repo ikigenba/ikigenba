@@ -40,26 +40,38 @@ and `build-spec` skills. Everything below is what the build run computes the
 gap and runs the gates against; it is written outside the run and read-only
 to it.
 
+events is an app, so it has no stories: its intent is the decisions document
+that delivered it, or the intent agreed in conversation, together with the
+templates under `assets/`, and `specs/design/` is the record.
+
 ## Assets
 
 `assets/` holds events' markup: the Go `html/template` files design names,
 among them the landing page, the about screen, the not-found page and the
-unavailable page. Each opens with a comment naming the data it receives and
-the hooks it emits. Every page is shown only to a signed-in user. The landing
-and about pages carry appkit's banner; the not-found and unavailable pages
-carry the footer only and never the banner. They are written by the user or
-the delivering agent, following the repository's `design/`, and are inputs to
-the spec: the build run reads them and never writes them. The code parses
-them into the set appkit's `page.Templates` returns and executes them by
-template name; it never writes markup of its own, not even a fragment or an
-error page. Go's `embed` reaches only files at or below the embedding
-package's directory, so the module's root package (the directory holding
-`go.mod`) embeds `assets/`, and design names what it exports. Design names
-each template, the data it receives, and the hooks it emits; the tests assert
-on those hooks and on visible text, never on layout. A needed template that
-is missing or wrong, a state a story names that the templates cannot show, or
-a hook design names that the templates lack is an issue: the run files it in
-`specs/issues/` and never edits the asset to close it.
+unavailable page. Each opens with a comment naming the data it receives and,
+for people and the stylesheet, the hooks it carries. Every page is shown only
+to a signed-in user. The landing and about pages carry appkit's banner; the
+not-found and unavailable pages carry the footer only and never the banner.
+They are written by the user or the delivering agent, following the
+repository's `design/`, and are inputs to the spec: the build run reads them
+and never writes them. The code parses them into the set appkit's
+`page.Templates` returns and executes them by template name; it never writes
+markup of its own, not even a fragment or an error page. Go's `embed` reaches
+only files at or below the embedding package's directory, so the module's
+root package (the directory holding `go.mod`) embeds `assets/`, and design
+names what it exports.
+
+Every word a person or an agent reads, and every class, id and attribute,
+lives in a template or in a copy constant the source declares, and nowhere
+else. Design names each template and the data it receives, and each copy
+constant by name, never its text, hooks, markup or styles; a test and a
+requirement never spell one. A test proves a page by executing the named
+template with the data design states and comparing, or by checking that a
+value the test supplied appears in the body; it never looks for a word or a
+tag. A change to copy or markup is an edit to the asset or the constant
+alone. A needed template that is missing or wrong, or one that cannot show a
+state design names, is an issue: the run files it in `specs/issues/` and
+never edits the asset to close it.
 
 events holds no copy of the stylesheet, fonts, or licences; appkit's `page`
 package embeds and serves them. `share/icon.svg` is events' icon in the
