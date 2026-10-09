@@ -1,5 +1,6 @@
 {{/* One prompt at GET /<name>/: its record, its text, its subscriptions and
-     its runs, newest first. Shown only to the signed-in user who owns it.
+     its runs, newest first. One level below the root: .Banner's .Trail is the one
+     level <name> at /<name>/. Shown only to the signed-in user who owns it.
      Data: .Banner (a page.Banner, for banner and footer); .Prompt, with .ID
      (its prm_ id), .Name, .Model (the model's name in agentkit's catalog),
      .Tools (the prompt's tool groups in the order stored, empty when none,
@@ -26,9 +27,7 @@
      template (defined in run.html): "queued" and "running" info; "exited
      <.ExitCode>" ok when .ExitCode is 0, else warn; "timed out" (timed_out)
      and "killed" warn; "failed" err. A cost is shown as "$" then .Cost.
-     Hooks: nav.crumbs[aria-label="Breadcrumb"] holding an ol of li
-     a[href="/"] (text "prompts") then li[aria-current="page"] (text
-     .Prompt.Name, no link); h1 with text .Prompt.Name; p#about-prompt
+     Hooks: h1 with text .Prompt.Name; p#about-prompt
      naming the model (code, .Model) and the tool groups (each a code, .Name,
      joined by ", " and a final " and "), or "no tools" when .Tools is
      empty; section#prompt-card with h2 "Prompt" and dl#prompt.kv holding dt
@@ -63,13 +62,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{with .Prompt}}<nav class="crumbs" aria-label="Breadcrumb">
-<ol>
-<li><a href="/">prompts</a></li>
-<li aria-current="page">{{.Name}}</li>
-</ol>
-</nav>
-<h1>{{.Name}}</h1>
+{{with .Prompt}}<h1>{{.Name}}</h1>
 <p id="about-prompt">Runs on <code>{{.Model}}</code> with {{if .Tools}}the tools {{range .Tools}}{{if not .First}}{{if .Last}} and {{else}}, {{end}}{{end}}<code>{{.Name}}</code>{{end}}{{else}}no tools{{end}}.</p>
 <section id="prompt-card" class="card" aria-labelledby="prompt-title">
 <header><h2 id="prompt-title">Prompt</h2><p>Changed by an agent through the <code>update</code> tool.</p></header>

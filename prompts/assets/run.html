@@ -1,6 +1,8 @@
 {{/* One run at GET /<name>/runs/<run id>/: its record, its usage and cost,
      its answer, input, transcript and files. Shown only to the signed-in
-     user who owns its prompt. The page does not stream; a run still running
+     user who owns its prompt. Two levels below the root: .Banner's .Trail is the
+     prompt's level, <name> at /<name>/, then the run's, <run id> at this
+     page's path. The page does not stream; a run still running
      shows what exists when the page is loaded. Data: .Banner (a
      page.Banner, for banner and footer); .Prompt, the run's prompt, with
      .Name and .URL ("/<name>/"); .Run, with .ID (its prr_ id), .URL (this
@@ -45,10 +47,7 @@
      count of the usage line takes the singular noun when it is "1" and the
      plural otherwise. The notice's first word is "Queued" or "Running",
      from .Status. A failure's title and sentence are chosen from .Reason.
-     Hooks: nav.crumbs[aria-label="Breadcrumb"] holding an ol of li
-     a[href="/"] (text "prompts"), li a[href=.Prompt.URL] (text
-     .Prompt.Name), then li[aria-current="page"] (text .Run.ID, no link); h1
-     with text .Run.ID; p#headline.cluster holding
+     Hooks: h1 with text .Run.ID; p#headline.cluster holding
      span.status[data-kind=<kind>] (text the status word), a space, and a
      span.muted holding "started" and time[datetime=.StartedAt] (text
      .Started), then " · " and .Duration when there is one, then " · " and
@@ -96,13 +95,6 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-<nav class="crumbs" aria-label="Breadcrumb">
-<ol>
-<li><a href="/">prompts</a></li>
-<li><a href="{{.Prompt.URL}}">{{.Prompt.Name}}</a></li>
-<li aria-current="page">{{.Run.ID}}</li>
-</ol>
-</nav>
 {{with .Run}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{template "run-status" .}} <span class="muted">{{if .Failure}}<time datetime="{{.StartedAt}}">{{.Started}}</time>{{else}}started <time datetime="{{.StartedAt}}">{{.Started}}</time>{{with .Duration}} · {{template "run-duration" .}}{{end}}{{with .Usage}} · ${{.Cost}}{{end}}{{end}}</span></p>
 {{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">{{if eq .Status "queued"}}Queued{{else}}Running{{end}}</strong><p>The page does not stream. Reload it to see more output.</p></div>
