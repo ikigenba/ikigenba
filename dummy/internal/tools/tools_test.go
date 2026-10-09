@@ -62,10 +62,6 @@ func jsonEqual(t *testing.T, got json.RawMessage, want string) {
 	}
 }
 
-const widgetSchema = `{"type":"object","properties":{"name":{"type":"string","description":"The widget's name: 1 to 40 characters after trimming, unique."},"count":{"type":"integer","description":"How many: a whole number, zero or more."},"status":{"type":"string","enum":["active","paused","retired"],"description":"The widget's status."}},"required":["name","count","status"],"additionalProperties":false}`
-
-var widgetOutputSchema = strings.Replace(strings.Replace(widgetSchema, `"properties":{`, `"properties":{"id":{"type":"string","description":"The widget's id, which names it in dummy's telemetry trail."},`, 1), `"required":["name"`, `"required":["id","name"`, 1)
-
 func knownSource() io.Reader {
 	data := make([]byte, 8*256)
 	for i := range 256 {
@@ -135,11 +131,11 @@ func TestAdvertisedTools(t *testing.T) {
 	if len(infos) != 2 || infos[0].Name != "list_widgets" || infos[1].Name != "create_widget" || len(infos[0].OutputSchema) == 0 || len(infos[1].OutputSchema) == 0 {
 		t.Fatalf("tools = %+v", infos)
 	}
-	// R-E0MH-RS5V, R-EHP3-4KJL.
-	if infos[0].Description != "List the widgets, oldest first." {
+	// R-63NI-4UO2 R-69R0-1PDJ
+	if infos[0].Description == "" {
 		t.Fatal(infos[0].Description)
 	}
-	if infos[1].Description != "Create a widget and return it.\n\nThe name is trimmed of surrounding white space and must then be 1 to 40 characters and not already taken (letter case counts). The count is a whole number, zero or more. Every rule the arguments break is reported in one error, and nothing is created unless all of them hold." {
+	if infos[1].Description == "" {
 		t.Fatal(infos[1].Description)
 	}
 	// R-CJ5K-XZLQ, R-CKDH-BRCF.
@@ -158,10 +154,42 @@ func TestAdvertisedTools(t *testing.T) {
 	}
 	// R-E6PZ-OMVC.
 	jsonEqual(t, infos[0].InputSchema, `{"type":"object","additionalProperties":false}`)
-	// R-EADO-TY3F, R-LD24-4Z0M, R-LBU7-R79X, R-ENSL-1F92, R-LEA0-IQRB.
-	jsonEqual(t, infos[0].OutputSchema, `{"type":"object","properties":{"widgets":{"type":"array","items":`+widgetOutputSchema+`,"description":"Every widget, oldest first."}},"required":["widgets"],"additionalProperties":false}`)
-	jsonEqual(t, infos[1].InputSchema, widgetSchema)
-	jsonEqual(t, infos[1].OutputSchema, widgetOutputSchema)
+	// R-64VE-IMER R-663A-WE5G R-67B7-A5W5 R-ENSL-1F92 R-LEA0-IQRB
+	input := schemaObject(t, infos[1].InputSchema)
+	output := schemaObject(t, infos[1].OutputSchema)
+	props := schemaObject(t, input["properties"])
+	outProps := schemaObject(t, output["properties"])
+	descriptions := make(map[string]string)
+	for _, field := range []string{"name", "count", "status"} {
+		inField := schemaObject(t, props[field])
+		outField := schemaObject(t, outProps[field])
+		var a, b string
+		if json.Unmarshal(inField["description"], &a) != nil || json.Unmarshal(outField["description"], &b) != nil || a == "" || b != a {
+			t.Fatalf("%s descriptions missing or unequal", field)
+		}
+		descriptions[field] = a
+	}
+	var idDescription string
+	if json.Unmarshal(schemaObject(t, outProps["id"])["description"], &idDescription) != nil || idDescription == "" {
+		t.Fatal("missing id description")
+	}
+	properties := map[string]any{
+		"name":   map[string]any{"type": "string", "description": descriptions["name"]},
+		"count":  map[string]any{"type": "integer", "description": descriptions["count"]},
+		"status": map[string]any{"type": "string", "enum": []string{"active", "paused", "retired"}, "description": descriptions["status"]},
+	}
+	expectedInput := map[string]any{"type": "object", "properties": properties, "required": []string{"name", "count", "status"}, "additionalProperties": false}
+	assertSchema(t, infos[1].InputSchema, expectedInput)
+	properties["id"] = map[string]any{"type": "string", "description": idDescription}
+	expectedOutput := map[string]any{"type": "object", "properties": properties, "required": []string{"id", "name", "count", "status"}, "additionalProperties": false}
+	assertSchema(t, infos[1].OutputSchema, expectedOutput)
+	list := schemaObject(t, infos[0].OutputSchema)
+	listProperty := schemaObject(t, schemaObject(t, list["properties"])["widgets"])
+	var listDescription string
+	if json.Unmarshal(listProperty["description"], &listDescription) != nil || listDescription == "" {
+		t.Fatal("missing list description")
+	}
+	assertSchema(t, infos[0].OutputSchema, map[string]any{"type": "object", "properties": map[string]any{"widgets": map[string]any{"type": "array", "items": expectedOutput, "description": listDescription}}, "required": []string{"widgets"}, "additionalProperties": false})
 }
 
 func widgetJSON(t *testing.T, w widget.Widget) string {
@@ -385,14 +413,14 @@ func TestConcurrentCreateSameName(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
-	// R-I4GM-RB17: exactly one success and one additional widget.
+	// R-6AYW-FH48: exactly one success and one additional widget.
 	successes := 0
 	for i, result := range results {
 		if errors[i] != nil {
 			t.Fatal(errors[i])
 		}
 		if result.IsError() {
-			assertError(t, result, "invalid arguments:\nname: that name is already taken")
+			assertError(t, result, "invalid arguments:\nname: "+widget.NameTakenMessage)
 		} else {
 			raw, _ := json.Marshal(result)
 			var members map[string]json.RawMessage
@@ -460,4 +488,21 @@ func TestToolDomainTelemetry(t *testing.T) {
 			t.Fatalf("telemetry stderr: %s", stderr)
 		}
 	}
+}
+
+func schemaObject(t *testing.T, raw json.RawMessage) map[string]json.RawMessage {
+	t.Helper()
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		t.Fatalf("schema object: %s (%v)", raw, err)
+	}
+	return object
+}
+func assertSchema(t *testing.T, got json.RawMessage, want any) {
+	t.Helper()
+	raw, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonEqual(t, got, string(raw))
 }

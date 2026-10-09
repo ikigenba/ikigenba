@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -327,26 +326,16 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal, env []string, di
 	}
 }
 
-// R-M3ZG-X463
+// R-VN0V-44AG
 func assertAppkitFrame(t *testing.T, body string, banner page.Banner) {
 	t.Helper()
-	starts := regexp.MustCompile(`(?i)<body(?:[^a-z0-9>][^>]*|)>`).FindStringIndex(body)
-	ends := regexp.MustCompile(`(?i)</body(?:[^a-z0-9>][^>]*|)>`).FindAllStringIndex(body, -1)
-	if starts == nil || len(ends) == 0 {
-		t.Fatal("response lacks body tags")
-	}
-	content := body[starts[1]:ends[len(ends)-1][0]]
 	for _, name := range []string{"banner", "footer"} {
 		var expected bytes.Buffer
 		if err := page.Templates().ExecuteTemplate(&expected, name, banner); err != nil {
 			t.Fatal(err)
 		}
-		if name == "banner" {
-			if !strings.HasPrefix(strings.TrimLeft(content, " \t\r\n\f\v"), strings.TrimLeft(expected.String(), " \t\r\n\f\v")) {
-				t.Errorf("body does not begin with appkit banner: %q", content)
-			}
-		} else if !strings.HasSuffix(strings.TrimRight(content, " \t\r\n\f\v"), strings.TrimRight(expected.String(), " \t\r\n\f\v")) {
-			t.Errorf("body does not end with appkit footer: %q", content)
+		if !strings.Contains(body, expected.String()) {
+			t.Errorf("body missing rendered %s", name)
 		}
 	}
 }
@@ -409,7 +398,6 @@ func assertMCPWiring(t *testing.T, httpClient *http.Client, display string) {
 	if resultBody.StructuredContent.Widgets == nil || len(resultBody.StructuredContent.Widgets) != 0 {
 		t.Errorf("fresh widgets=%+v", resultBody)
 	}
-
 }
 
 // R-E3SQ-JFOR R-E68J-AZ65

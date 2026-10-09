@@ -219,7 +219,7 @@ func TestPanelPanicTrail(t *testing.T) {
 	}
 }
 
-// R-GWK8-ZKC7
+// R-CQ7U-JXPU
 func TestPanelKeepsWidgetIDsOutOfBodies(t *testing.T) {
 	for _, tc := range []struct{ method, path, body string }{{"GET", "/widgets", ""}, {"GET", "/widgets/table", ""}, {"POST", "/widgets", "name=new&count=bad&status=active"}, {"GET", "/missing", ""}} {
 		t.Run(tc.path+tc.method, func(t *testing.T) {

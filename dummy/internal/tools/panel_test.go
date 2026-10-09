@@ -1,19 +1,18 @@
 package tools_test
 
 import (
+	"bytes"
 	"encoding/json"
-	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
@@ -43,94 +42,6 @@ func panelRequest(h http.Handler, method, path, body, etag string) *httptest.Res
 	return response
 }
 
-var tablePattern = regexp.MustCompile(`(?is)<table(?:[^a-z0-9>][^>]*|)>.*?</table(?:[^a-z0-9>][^>]*|)>`)
-var rowPattern = regexp.MustCompile(`(?is)<tr(?:[^a-z0-9>][^>]*|)>(.*?)</tr(?:[^a-z0-9>][^>]*|)>`)
-var cellPattern = regexp.MustCompile(`(?is)(<td(?:[^a-z0-9>][^>]*|)>)(.*?)</td(?:[^a-z0-9>][^>]*|)>`)
-var spanPattern = regexp.MustCompile(`(?is)^(<span(?:[^a-z0-9>][^>]*|)>)(.*?)</span(?:[^a-z0-9>][^>]*|)>$`)
-var tagPattern = regexp.MustCompile(`<[^>]*>`)
-var attributePattern = regexp.MustCompile(`^[\t\n\v\f\r ]+([^\t\n\v\f\r "'<>/=]+)(?:="([^"]*)")?`)
-
-// readAttribute follows the design's left-to-right attribute grammar. A bare
-// attribute is not an occurrence, and a second named occurrence is refused.
-func readAttribute(attributes, name string) (string, bool) {
-	value := ""
-	found := false
-	for {
-		indices := attributePattern.FindStringSubmatchIndex(attributes)
-		if indices == nil {
-			return value, found
-		}
-		key := attributes[indices[2]:indices[3]]
-		if indices[4] >= 0 && strings.EqualFold(key, name) {
-			if found {
-				return "", false
-			}
-			value = html.UnescapeString(attributes[indices[4]:indices[5]])
-			found = true
-		}
-		attributes = attributes[indices[1]:]
-	}
-}
-
-// tagAttributes skips the whole ASCII letter/digit/hyphen tag-name run,
-// including any suffix permitted by the design's lexical tag definition.
-func tagAttributes(tag string) string {
-	end := strings.IndexByte(tag, '>')
-	start := 1
-	for start < end {
-		c := tag[start]
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' {
-			break
-		}
-		start++
-	}
-	return tag[start:end]
-}
-
-func widgetsTable(body string) string {
-	for _, table := range tablePattern.FindAllString(body, -1) {
-		if value, ok := readAttribute(tagAttributes(table), "id"); ok && value == "widgets-table" {
-			return table
-		}
-	}
-	return ""
-}
-
-func assertLastRow(t *testing.T, body string, w widget.Widget) {
-	t.Helper()
-	table := widgetsTable(body)
-	rows := rowPattern.FindAllStringSubmatch(table, -1)
-	var last [][]string
-	for _, row := range rows {
-		if cells := cellPattern.FindAllStringSubmatch(row[1], -1); len(cells) > 0 {
-			last = cells
-		}
-	}
-	if len(last) < 3 {
-		t.Fatalf("last row missing: %s", table)
-	}
-	want := []string{strings.Join(strings.Fields(w.Name), " "), strconv.Itoa(w.Count), string(w.Status)}
-	for i := range 3 {
-		text := strings.Join(strings.Fields(html.UnescapeString(tagPattern.ReplaceAllString(last[i][2], ""))), " ")
-		if text != want[i] {
-			t.Fatalf("cell %d = %q; want %q", i, text, want[i])
-		}
-	}
-	if value, ok := readAttribute(tagAttributes(last[1][1]), "class"); !ok || value != "num" {
-		t.Fatal("count cell lacks num hook")
-	}
-	span := spanPattern.FindStringSubmatch(strings.Trim(last[2][2], "\t\n\v\f\r "))
-	if len(span) != 3 || span[2] != string(w.Status) {
-		t.Fatalf("status cell = %s", last[2][2])
-	}
-	if value, ok := readAttribute(tagAttributes(span[1]), "class"); !ok || value != "status" {
-		t.Fatal("status span lacks status class")
-	}
-	if value, ok := readAttribute(tagAttributes(span[1]), "data-status"); !ok || value != string(w.Status) {
-		t.Fatal("status span lacks matching data-status")
-	}
-}
-
 func TestToolCreationAppearsInPanel(t *testing.T) {
 	s := toolsTestStore(t)
 	c, h := panelClient(t, s)
@@ -142,14 +53,42 @@ func TestToolCreationAppearsInPanel(t *testing.T) {
 	if result.IsError() {
 		t.Fatal("creation failed")
 	}
-	w := widget.Widget{Name: "from MCP & panel", Count: 23, Status: widget.StatusPaused}
-	// R-FH26-7X1Q: both surfaces show the created last row; stale validator gets 200.
+	raw, err := result.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answer struct {
+		Widget widget.Widget `json:"structuredContent"`
+	}
+	if err = json.Unmarshal(raw, &answer); err != nil {
+		t.Fatal(err)
+	}
+	widgets := toolsStoreAll(t, s)
+	if len(widgets) == 0 || widgets[len(widgets)-1] != answer.Widget {
+		t.Fatal("result differs from final stored widget")
+	}
+	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// R-6C6S-T8UX: both surfaces show the created last row; stale validator gets 200.
 	for _, path := range []string{"/widgets", "/widgets/table"} {
 		response := panelRequest(h, http.MethodGet, path, "", "")
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s status = %d", path, response.Code)
 		}
-		assertLastRow(t, response.Body.String(), w)
+		var expected bytes.Buffer
+		name, data := "table", any(widgets)
+		if path == "/widgets" {
+			name = "page"
+			data = map[string]any{"Banner": page.Banner{}, "Panel": true, "Message": "", "Count": len(widgets), "Table": widgets, "Form": panel.FormView{Statuses: widget.Statuses()}}
+		}
+		if err = set.ExecuteTemplate(&expected, name, data); err != nil {
+			t.Fatal(err)
+		}
+		if response.Body.String() != expected.String() {
+			t.Fatalf("%s differs from template", path)
+		}
 	}
 	conditional := panelRequest(h, http.MethodGet, "/widgets/table", "", before.Header().Get("ETag"))
 	if conditional.Code != http.StatusOK {

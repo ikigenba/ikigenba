@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"reflect"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +18,8 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/dummy"
+	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
 func waitReady(t *testing.T, notify *net.UnixConn) {
@@ -167,7 +168,7 @@ func runWidgets(t *testing.T, run *servingRun) []servedWidget {
 	return result.StructuredContent.Widgets
 }
 
-// R-DPQ2-9T5Q R-JAR7-IV3N R-JD70-AEL1 R-3IAG-4LY5 R-3JIC-IDOU R-PAJ5-K3UY R-PBR1-XVLN R-IXZD-5HBP
+// R-DPQ2-9T5Q R-JAR7-IV3N R-JD70-AEL1 R-3IAG-4LY5 R-3JIC-IDOU R-6DEP-70LM R-PBR1-XVLN R-IXZD-5HBP
 func TestRunSharesWidgetsAndPersists(t *testing.T) {
 	dir := t.TempDir()
 	var saved []servedWidget
@@ -214,24 +215,23 @@ func TestRunSharesWidgetsAndPersists(t *testing.T) {
 			t.Fatal("successful create has isError member")
 		}
 		code, body := run.request(t, http.MethodGet, "/widgets/table", "", "test-user", "")
-		rows := regexp.MustCompile(`(?is)<tr(?:\s[^>]*)?>.*?</tr\s*>`).FindAllString(body, -1)
-		if code != http.StatusOK || len(rows) == 0 {
-			t.Fatalf("table status=%d body=%q", code, body)
+		var answer struct {
+			Widget widget.Widget `json:"structuredContent"`
 		}
-		last := rows[len(rows)-1]
-		cells := regexp.MustCompile(`(?is)<td(?:\s[^>]*)?>(.*?)</td\s*>`).FindAllStringSubmatch(last, -1)
-		if len(cells) < 3 {
-			t.Fatalf("last row lacks cells: %q", last)
+		if err = json.Unmarshal(data, &answer); err != nil {
+			t.Fatal(err)
 		}
-		tags := regexp.MustCompile(`<[^>]*>`)
-		for i, wantText := range []string{"tool-widget", "7", "retired"} {
-			got := strings.Join(strings.Fields(tags.ReplaceAllString(cells[i][1], "")), " ")
-			if got != wantText {
-				t.Errorf("last row cell %d=%q want %q", i, got, wantText)
-			}
+		widgets := []widget.Widget{{ID: want[0].ID, Name: want[0].Name, Count: want[0].Count, Status: widget.Status(want[0].Status)}, answer.Widget}
+		set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
+		if err != nil {
+			t.Fatal(err)
 		}
-		if !strings.Contains(last, `class="num"`) || !strings.Contains(cells[2][1], `class="status"`) || !strings.Contains(cells[2][1], `data-status="retired"`) {
-			t.Errorf("last row missing widget hooks: %q", last)
+		var expected bytes.Buffer
+		if err = set.ExecuteTemplate(&expected, "table", widgets); err != nil {
+			t.Fatal(err)
+		}
+		if code != http.StatusOK || body != expected.String() {
+			t.Fatalf("table differs from template: %d", code)
 		}
 
 		want = append(want, servedWidget{"wgt_0100000000000000", "tool-widget", 7, "retired"})

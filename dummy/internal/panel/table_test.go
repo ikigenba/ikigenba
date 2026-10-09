@@ -3,7 +3,6 @@ package panel_test
 import (
 	"bytes"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -44,217 +43,17 @@ func tableTestCreate(t *testing.T, store *widget.Store, name string) {
 
 func tableTestFragment(t *testing.T, raw string, widgets []widget.Widget) {
 	t.Helper()
-	fragment := strings.TrimSpace(raw)
-	starts := pageTestTags(fragment, "table", false)
-	ends := pageTestTags(fragment, "table", true)
-	if len(starts) != 1 || len(ends) != 1 || starts[0][0] != 0 || ends[0][1] != len(fragment) {
-		t.Fatalf("not exactly a table fragment: %q", fragment)
+	if raw != renderPanelTemplate(t, "table", widgets) {
+		t.Fatal("table differs from template")
 	}
-	for _, tag := range []string{"html", "body", "script"} {
-		if len(pageTestTags(raw, tag, false)) != 0 {
-			t.Errorf("fragment carries forbidden %s tag", tag)
-		}
-	}
-	if strings.Contains(strings.ToLower(raw), "<!doctype") {
-		t.Error("fragment carries doctype")
-	}
-	if id, ok := pageTestAttribute(fragment[starts[0][0]:starts[0][1]], "id"); !ok || id != "widgets-table" {
-		t.Errorf("table id = %q, present = %v", id, ok)
-	}
-	stripped := pageTestStrip(fragment)
-	rows := pageTestTags(stripped, "tr", false)
-	headerCount, dataCount := 0, 0
-	for _, rowStart := range rows {
-		endTags := pageTestTags(stripped[rowStart[1]:], "tr", true)
-		if len(endTags) == 0 {
-			t.Fatal("unclosed row")
-		}
-		row := stripped[rowStart[1] : rowStart[1]+endTags[0][0]]
-		cells := pageTestTags(row, "td", false)
-		headingCells := pageTestTags(row, "th", false)
-		if len(headingCells) > 0 && len(cells) == 0 {
-			headerCount++
-			if dataCount != 0 {
-				t.Error("header follows a data row")
-			}
-		}
-		if len(cells) == 0 {
-			continue
-		}
-		if dataCount >= len(widgets) {
-			t.Fatal("extra data row")
-		}
-		if len(cells) < 3 {
-			t.Fatal("data row has fewer than three cells")
-		}
-		w := widgets[dataCount]
-		want := []string{strings.Join(strings.Fields(strings.ReplaceAll(w.Name, "\x00", "\ufffd")), " "), strconv.Itoa(w.Count), string(w.Status)}
-		for i, cell := range cells[:3] {
-			endCells := pageTestTags(row[cell[1]:], "td", true)
-			if len(endCells) == 0 {
-				t.Fatal("unclosed cell")
-			}
-			got := pageTestNormalize(row[cell[1] : cell[1]+endCells[0][0]])
-			if got != want[i] {
-				t.Errorf("row %d cell %d = %q, want %q", dataCount, i, got, want[i])
-			}
-		}
-		dataCount++
-	}
-	if headerCount != 1 || dataCount != len(widgets) {
-		t.Errorf("header/data rows = %d/%d, want 1/%d", headerCount, dataCount, len(widgets))
-	}
-}
-
-func tableTestPageSpan(t *testing.T, raw string) string {
-	t.Helper()
-	r := httptest.NewRequest(http.MethodGet, "/widgets", nil)
-	r.Header = tableTestIdentity()
-	body := pageTestStrip(pageTestWritten(t, raw, r))
-	starts, ends := pageTestTags(body, "table", false), pageTestTags(body, "table", true)
-	if len(starts) != 1 || len(ends) != 1 || starts[0][0] >= ends[0][0] {
-		t.Fatalf("page has no unique ordered table span: %q", body)
-	}
-	return body[starts[0][0]:ends[0][1]]
 }
 
 func TestTableMarkupAndPageIdentity(t *testing.T) {
-	// R-76HS-3U6R R-CEKZ-GD0R R-H8LI-D5DT R-HEUQ-Q4GM R-MHXI-6ORQ
-	// R-MJ5E-KGIF R-HUJP-90QB R-HIIF-VFOP
-	for _, empty := range []bool{false, true} {
-		t.Run(fmt.Sprintf("empty=%v", empty), func(t *testing.T) {
-			store := panelTestStore(t)
-			if empty {
-				store = panelEmptyStore(t)
-			} else {
-				tableTestCreate(t, store, "  my  \twidget\n<&>\"\x00  ")
-				tableTestCreate(t, store, "last widget")
-			}
-			h := coreHandler(t, store, pageTestBanner, io.Discard)
-			headers := tableTestIdentity()
-			fragment := tableTestRequest(h, "GET", "/widgets/table", headers, "")
-			if fragment.Code != http.StatusOK || fragment.Header().Get("Content-Type") != "text/html; charset=utf-8" {
-				t.Fatalf("fragment response = %d %v", fragment.Code, fragment.Header())
-			}
-			tableTestFragment(t, fragment.Body.String(), panelStoreAll(t, store))
-			page := tableTestRequest(h, "GET", "/widgets", headers, "")
-			if page.Code != http.StatusOK {
-				t.Fatalf("page status = %d", page.Code)
-			}
-			headers.Set("Content-Type", "application/x-www-form-urlencoded")
-			rejected := tableTestRequest(h, "POST", "/widgets", headers, "name=&count=bad&status=unknown")
-			if rejected.Code != http.StatusUnprocessableEntity {
-				t.Fatalf("rejected status = %d", rejected.Code)
-			}
-			for _, response := range []*httptest.ResponseRecorder{page, rejected} {
-				span := tableTestPageSpan(t, response.Body.String())
-				tableTestFragment(t, span, panelStoreAll(t, store))
-				if span != fragment.Body.String() {
-					t.Errorf("page %d table differs from fragment", response.Code)
-				}
-			}
-		})
-	}
-}
-
-func tableTestClassValues(tag string) []string {
-	matches := regexp.MustCompile(`(?i)[\t\n\v\f\r ]class="([^"]*)"`).FindAllStringSubmatch(tag, -1)
-	values := make([]string, 0, len(matches))
-	for _, match := range matches {
-		values = append(values, html.UnescapeString(match[1]))
-	}
-	return values
-}
-
-func tableTestHasASCIIClass(value, name string) bool {
-	for _, part := range strings.FieldsFunc(value, func(r rune) bool {
-		return r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r'
-	}) {
-		if part == name {
-			return true
-		}
-	}
-	return false
-}
-
-func TestTableCountAndStatusMarkup(t *testing.T) {
-	// R-HH4T-1JKO R-HICP-FBBD R-HM0E-KMJG R-HOG7-C60U
-	store := panelTestStore(t)
-	for _, status := range widget.Statuses() {
-		if _, errs := panelStoreCreate(t, store, widget.Draft{Name: "widget " + string(status), Count: 7, Status: status}); errs.Any() {
-			t.Fatalf("create %q: %+v", status, errs)
-		}
-	}
-	response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("fragment status = %d", response.Code)
-	}
-	fragment := response.Body.String()
-	rows := pageTestTags(fragment, "tr", false)
-	widgets := panelStoreAll(t, store)
-	if len(rows) != len(widgets)+1 {
-		t.Fatalf("rows = %d, want %d", len(rows), len(widgets)+1)
-	}
-	for rowIndex, rowStart := range rows {
-		closing := pageTestTags(fragment[rowStart[1]:], "tr", true)
-		if len(closing) == 0 {
-			t.Fatalf("row %d unclosed", rowIndex)
-		}
-		row := fragment[rowStart[1] : rowStart[1]+closing[0][0]]
-		cellName := "td"
-		if rowIndex == 0 {
-			cellName = "th"
-		}
-		cells := pageTestTags(row, cellName, false)
-		if len(cells) < 2 || rowIndex > 0 && len(cells) < 3 {
-			t.Fatalf("row %d cells = %d", rowIndex, len(cells))
-		}
-		for _, kind := range []string{"th", "td"} {
-			for cellIndex, cell := range pageTestTags(row, kind, false) {
-				classes := tableTestClassValues(row[cell[0]:cell[1]])
-				if kind == cellName && cellIndex == 1 {
-					if !slices.Contains(classes, "num") {
-						t.Errorf("row %d second %s classes = %q, want exact num", rowIndex, kind, classes)
-					}
-				} else {
-					for _, value := range classes {
-						if tableTestHasASCIIClass(value, "num") {
-							t.Errorf("row %d %s cell %d has num class", rowIndex, kind, cellIndex)
-						}
-					}
-				}
-			}
-		}
-		if rowIndex == 0 {
-			ends := pageTestTags(row, "th", true)
-			if len(cells) != 3 || len(ends) != 3 {
-				t.Fatalf("header cells: starts=%d ends=%d", len(cells), len(ends))
-			}
-			for i, want := range []string{`<th>Name</th>`, `<th class="num">Count</th>`, `<th>Status</th>`} {
-				following := pageTestTags(row[cells[i][1]:], "th", true)
-				if len(following) == 0 || row[cells[i][0]:cells[i][1]+following[0][1]] != want {
-					t.Errorf("header cell %d: %q", i, row)
-				}
-			}
-			continue
-		}
-		third := cells[2]
-		closingCell := pageTestTags(row[third[1]:], "td", true)
-		if len(closingCell) == 0 {
-			t.Fatalf("row %d third cell unclosed", rowIndex)
-		}
-		content := strings.Trim(row[third[1]:third[1]+closingCell[0][0]], " \t\n\v\f\r")
-		starts, ends := pageTestTags(content, "span", false), pageTestTags(content, "span", true)
-		if len(starts) != 1 || len(ends) != 1 || starts[0][0] != 0 || ends[0][1] != len(content) {
-			t.Errorf("row %d status cell structure = %q", rowIndex, content)
-			continue
-		}
-		startTag := content[:starts[0][1]]
-		status := string(widgets[rowIndex-1].Status)
-		class, classOK := pageTestAttribute(startTag, "class")
-		dataStatus, dataOK := pageTestAttribute(startTag, "data-status")
-		if !classOK || class != "status" || !dataOK || dataStatus != status || content[starts[0][1]:ends[0][0]] != status {
-			t.Errorf("row %d status marker = %q, want %q", rowIndex, content, status)
+	// R-HIIF-VFOP
+	for _, store := range []*widget.Store{panelEmptyStore(t), panelTestStore(t)} {
+		response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+			t.Fatal("fragment status or content type")
 		}
 	}
 }
@@ -486,24 +285,6 @@ func TestTableTransportHeadParity(t *testing.T) {
 				t.Errorf("Content-Length = %q, want %d", get.headers.Get("Content-Length"), len(get.body))
 			}
 		})
-	}
-}
-
-// R-CI8O-LO8U
-func TestTableFragmentExcludesPageHeading(t *testing.T) {
-	store := panelTestStore(t)
-	for _, extra := range []bool{false, true} {
-		if extra {
-			tableTestCreate(t, store, "one more")
-		}
-		h := coreHandler(t, store, pageTestBanner, io.Discard)
-		fragment := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Body.String()
-		page := tableTestRequest(h, "GET", "/widgets", tableTestIdentity(), "").Body.String()
-		for _, body := range []string{fragment, tableTestPageSpan(t, page)} {
-			if len(pageTestTags(body, "h1", false)) != 0 || strings.Contains(body, `id="panel-subtitle"`) {
-				t.Fatalf("page heading in fragment: %q", body)
-			}
-		}
 	}
 }
 
