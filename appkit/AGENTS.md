@@ -1,6 +1,6 @@
 # appkit
 
-appkit holds what every app shares: page chrome, identity, the MCP server and client, telemetry, and the database open path. It is a Go library with one concern per package and no package privileged; the module root exports nothing. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
+appkit holds what every app shares: page chrome, identity, the MCP server and client, telemetry, and the database open path. It is a Go library with one concern per package and no package privileged; the module root exports nothing. As a library it has no stories: the design is the record. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -51,7 +51,7 @@ These rules govern everything `go test ./...` runs.
 
 **Logs are captured.** Anything appkit writes as a diagnostic goes to an `io.Writer` the test supplies, and the test asserts on it; no test reads the process's real stderr.
 
-**Hooks, not layout.** Tests assert on the hooks design names and on visible text, never on styles, nor on markup structure beyond the containment and order design names as hooks.
+**Values, not copy.** A test proves a template by executing it with the data design states and checking that the values it supplied appear in the output; it never looks for a word, a tag, a class, an id or an attribute. A test that needs a copy constant references it by name and never spells its words.
 
 ## Live tests
 

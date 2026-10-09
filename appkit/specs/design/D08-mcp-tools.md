@@ -43,7 +43,7 @@ Unknown-tool and malformed-params errors in `tools/call` are protocol errors and
 - R-KDG0-VPKW: Package `mcp` MUST export `type Result` as a struct type with no exported fields, with the methods `func (r Result) IsError() bool`, `func (r Result) MarshalJSON() ([]byte, error)`, and `func (r *Result) UnmarshalJSON(data []byte) error`.
 - R-KENX-9HBL: Package `mcp` MUST export `func ErrorResult(text string) Result`.
 - R-KFVT-N92A: Package `mcp` MUST export `func TextResult(text string) Result`.
-- R-KH3Q-10SZ: Package `mcp` MUST export `const PanicText = "The tool failed with an internal error."`.
+- R-D797-6J8U: Package `mcp` MUST export `const PanicText string`.
 - R-KIBM-ESJO: Every panic `AddTool` or `AddRawTool` raises MUST have a `string` panic value that begins with `mcp: tool `, followed by the tool's `Name` quoted as `strconv.Quote` quotes it, followed by `: ` and a non-empty reason; and a call that panics MUST leave the Server's set of registered tools unchanged.
 - R-KJJI-SKAD: `AddTool` and `AddRawTool` MUST panic when the tool's `Name` does not match the regular expression `^[a-z][a-z0-9]*(_[a-z0-9]+)*$` or is longer than 64 bytes.
 - R-KKRF-6C12: `AddTool` and `AddRawTool` MUST panic when the tool's `Name` equals the `Name` of a tool already registered on the same Server by either function.

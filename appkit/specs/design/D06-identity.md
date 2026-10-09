@@ -21,7 +21,7 @@ When a service calls a sibling on the caller's behalf (the MCP gateway calling a
 ## REQUIREMENTS
 
 - R-KA5Z-TNTL: Package `identity` MUST export `type Caller struct { UserID, Email, RequestID string }`, with exactly these fields in this order.
-- R-KBDW-7FKA: Package `identity` MUST export `const MissingBody = "identity header missing\n"`.
+- R-CXI0-4DBA: Package `identity` MUST export `const MissingBody string`.
 - R-2LZM-O9RP: Package `identity` MUST export `func Require(next http.Handler) http.Handler`, where `http` is the standard library's `net/http`.
 - R-KDTO-YZ1O: Package `identity` MUST export `func FromContext(ctx context.Context) (Caller, bool)`, where `context` is the standard library's `context`.
 - R-KF1L-CQSD: Package `identity` MUST export `func NewContext(ctx context.Context, c Caller) context.Context`.

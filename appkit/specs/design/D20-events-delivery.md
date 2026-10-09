@@ -49,7 +49,7 @@ A service's test calls its handlers directly with `events.Delivery{Event: e, Att
 - R-F28A-887O: Package `events` MUST export `type Delivery struct { Event Event; Attempt int }`, with exactly these fields in this order.
 - R-F3G6-LZYD: Package `events` MUST export a struct type `Outcome` that has no exported fields and whose values are comparable with `==`.
 - R-F4O2-ZRP2: Package `events` MUST export `const OutcomeOK = "ok"`, `const OutcomeSkip = "skip"`, and `const OutcomeError = "error"`, each an untyped string constant.
-- R-F5VZ-DJFR: Package `events` MUST export `const PanicMessage = "event handler panicked"`.
+- R-D8H3-KAZJ: Package `events` MUST export `const PanicMessage string`.
 - R-F73V-RB6G: Package `events` MUST export the untyped integer constant `MaxDeliveryBytes = 131072`.
 - R-F8BS-52X5: Package `events` MUST export `func OK() Outcome`.
 - R-F9JO-IUNU: Package `events` MUST export `func Skip() Outcome`.
