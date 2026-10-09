@@ -240,9 +240,10 @@ own `agent` role started through the runner, and what prompts proves is that
 a run is the child's agentkit session as the child runs it, so tests run the
 real child and never a stand-in for it; the one exception is the probe
 program `internal/runner`'s own tests run in its place, which prove the runner
-and not the child. A test builds nothing and execs
-nothing but the test binary's own `agent` role, through the runner, the way
-design names; it starts no other program. The provider is an
+and not the child. Apart from the runner's probe,
+the `bash` a run starts and the one exec'ing test in `cmd/prompts`, a test
+execs nothing but the test binary's own `agent` role, through the runner, the
+way design names; it starts no other program. The provider is an
 `httptest` server the test serves on loopback, found through the endpoint base
 URL the run spec carries for that reason and the app sets only under test; no
 test reaches a real provider or holds a real key, and a key a test hands
@@ -322,7 +323,7 @@ starts and `bash`, as above, no test starts a process: tests under
 proved no other way, so exactly one test that execs the binary is admissible,
 and it lives in `cmd/prompts`. It builds the binary into a temporary
 directory and runs it with `--version`, with `manifest`, with `bogus`, with
-`prompts agent` and a run spec on standard input, and bare with no socket
+`agent` and a run spec on standard input, and bare with no socket
 passed in. For the serve case it stands in for systemd:
 it makes a Unix socket in a short temporary directory, passes it as
 `exec.Cmd.ExtraFiles[0]` (descriptor 3 in the child), and starts the child
