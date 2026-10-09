@@ -8,14 +8,17 @@ every service on the space: at `/` it serves a landing page of the services
 the host's services file names, as tiles under the launcher's rules, and links
 to an about screen at `/about`. It is the home the banner's product mark links
 to on every app's pages. It holds no state, keeps no database, offers no MCP
-tools and emits no events of its own beyond appkit's request records. Every
+tools and records no events of its own beyond appkit's request and service
+events. Every
 page is for a signed-in user of the space; nginx lets no guest through. On a
 host it runs as `/opt/home/bin/home` with `/opt/home` as its working directory
 and its environment from `/opt/home/etc/env`; a developer runs the same binary
 from the checkout. The module path is `github.com/ikigenba/ikigenba/home`. It
 requires appkit (`github.com/ikigenba/ikigenba/appkit`) and uses appkit's
 packages `page` (the banner, launcher and footer, the services the launcher
-draws, and the shared static files under `/_appkit/`), `identity` (the caller
+draws, and the shared static files under `/_appkit/`), `services` (the services
+file, read afresh for auth's links), `version` (the display string `main`
+reads), `identity` (the caller
 nginx authenticated, required on every route), and `telemetry` (the event
 contract, the request middleware, and the writer home's events go through).
 The contract is the documents in `specs/design/`. This file restates none of
@@ -172,7 +175,8 @@ fails the test.
 **Events come from the test's own sink.** Where a test observes the events
 home records, it hands home's writer appkit's `telemetry.Capture`, or a
 services file whose `telemetry` entry names a Unix socket the test holds, as
-design names.
+design names. A sink that rejects every event returns an error wrapping
+`telemetry.ErrRejected`, so nothing is retried.
 
 **Environment variables, set by the test.** appkit's constructors read
 `IKIGENBA_SERVICES` (`services.Variable`) from the process environment; it is
@@ -222,10 +226,11 @@ the test composes, never the developer's, with non-empty `IKIGENBA_COMMIT` and
 `IKIGENBA_RELEASE`; the test computes the display string it expects with
 `version.Display()` after setting the same two values with `t.Setenv`, so no
 test spells a version. Separately it runs `--version` with neither variable in
-the child's environment and expects exactly one empty line. The test waits for
-`READY=1`, makes the requests design names for the binary, over the socket,
-then stops the child with `SIGTERM`, and in a second run with `SIGINT`,
-asserting what design states. The binary's `--version` output, the pages'
+the child's environment and expects exactly one empty line. For each serving run
+the test waits for `READY=1`, makes the requests design names for that run
+over the socket, and stops the child with a signal, `SIGTERM` in one run and
+`SIGINT` in another, asserting what design states; design decides how many
+serving runs there are and what each one's environment holds. The binary's `--version` output, the pages'
 banner and footer, and `service.started` all carry that display string. Any
 other test that builds, execs, waits on, or signals a process is a bug.
 
