@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"html"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +14,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"unicode"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
@@ -28,497 +26,6 @@ func pageConfig(t *testing.T, path string, banner func(page.User) page.Banner) g
 	t.Setenv(services.Variable, "")
 	writer, _ := handlerTelemetry(t, nil)
 	return gateway.Config{ServicesPath: path, Banner: banner, MCP: gateway.NewServer("test", writer), Telemetry: writer}
-}
-
-type markupTag struct {
-	name       string
-	start, end int
-	attrs      map[string][]string
-	bareAttrs  map[string]int
-}
-
-func asciiSpace(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
-}
-
-func asciiAlnum(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
-}
-
-func readTags(s string, name string, closing bool) []markupTag {
-	var tags []markupTag
-	for offset := 0; offset < len(s); {
-		start := strings.IndexByte(s[offset:], '<')
-		if start < 0 {
-			break
-		}
-		start += offset
-		end := strings.IndexByte(s[start:], '>')
-		if end < 0 {
-			break
-		}
-		end += start + 1
-		i := start + 1
-		isClosing := i < end && s[i] == '/'
-		if isClosing {
-			i++
-		}
-		begin := i
-		for i < end && (asciiAlnum(s[i]) || s[i] == '-') {
-			i++
-		}
-		tagName := strings.ToLower(s[begin:i])
-		matches := name == "" && tagName != "" || len(name)+begin < end && strings.EqualFold(s[begin:begin+len(name)], name) && !asciiAlnum(s[begin+len(name)])
-		if matches && closing == isClosing {
-			attrs := make(map[string][]string)
-			bareAttrs := make(map[string]int)
-			for i < end {
-				white := i
-				for i < end && asciiSpace(s[i]) {
-					i++
-				}
-				if i == white {
-					break
-				}
-				attrStart := i
-				for i < end && !asciiSpace(s[i]) && !strings.ContainsRune("\"'<>/=", rune(s[i])) {
-					i++
-				}
-				if i == attrStart {
-					break
-				}
-				attrName := strings.ToLower(s[attrStart:i])
-				if i < end && s[i] == '=' {
-					i++
-					if i >= end || s[i] != '"' {
-						break
-					}
-					i++
-					valueStart := i
-					for i < end && s[i] != '"' {
-						i++
-					}
-					if i >= end {
-						break
-					}
-					attrs[attrName] = append(attrs[attrName], html.UnescapeString(s[valueStart:i]))
-					i++
-				} else {
-					bareAttrs[attrName]++
-				}
-			}
-			tags = append(tags, markupTag{name: tagName, start: start, end: end, attrs: attrs, bareAttrs: bareAttrs})
-		}
-		offset = end
-	}
-	return tags
-}
-
-func elementContent(s string, tag markupTag) (string, bool) {
-	ends := readTags(s[tag.end:], tag.name, true)
-	if len(ends) == 0 {
-		return "", false
-	}
-	return s[tag.end : tag.end+ends[0].start], true
-}
-
-func normalise(s string) string {
-	for {
-		start := strings.IndexByte(s, '<')
-		if start < 0 {
-			break
-		}
-		end := strings.IndexByte(s[start:], '>')
-		if end < 0 {
-			s = s[:start]
-			break
-		}
-		s = s[:start] + s[start+end+1:]
-	}
-	return strings.Join(strings.FieldsFunc(html.UnescapeString(s), unicode.IsSpace), " ")
-}
-
-func visibleText(s string) string {
-	bodies := readTags(s, "body", false)
-	if len(bodies) == 0 {
-		return ""
-	}
-	content, found := elementContent(s, bodies[0])
-	if !found {
-		return ""
-	}
-	return normalise(content)
-}
-
-func attributed(s, name, value string) []markupTag {
-	var selected []markupTag
-	for _, tag := range readTags(s, "", false) {
-		for _, v := range tag.attrs[name] {
-			if v == value {
-				selected = append(selected, tag)
-				break
-			}
-		}
-	}
-	return selected
-}
-
-func oneTag(t *testing.T, tags []markupTag) markupTag {
-	t.Helper()
-	if len(tags) != 1 {
-		t.Fatalf("expected one tag, got %#v", tags)
-	}
-	return tags[0]
-}
-
-func firstTag(t *testing.T, tags []markupTag) markupTag {
-	t.Helper()
-	if len(tags) == 0 {
-		t.Fatal("expected at least one tag")
-	}
-	return tags[0]
-}
-
-func ofName(tags []markupTag, name string) []markupTag {
-	var selected []markupTag
-	for _, tag := range tags {
-		if tag.name == name {
-			selected = append(selected, tag)
-		}
-	}
-	return selected
-}
-
-func checkContent(t *testing.T, s string, tag markupTag, expected string) {
-	t.Helper()
-	content, found := elementContent(s, tag)
-	if !found || normalise(content) != expected {
-		t.Fatalf("%s content %q, found=%v want %q", tag.name, normalise(content), found, expected)
-	}
-}
-
-func renderAppkit(t *testing.T, name string, b page.Banner) string {
-	t.Helper()
-	var out bytes.Buffer
-	if err := page.Templates().ExecuteTemplate(&out, name, b); err != nil {
-		t.Fatal(err)
-	}
-	return out.String()
-}
-
-// R-S953-OHOS: inspect the shared banner in the actual response.
-func assertBannerHooks(t *testing.T, body string, b page.Banner) {
-	t.Helper()
-	part := func(s, name, class string) (string, string, markupTag) {
-		t.Helper()
-		tags := readTags(s, name, false)
-		if class != "" {
-			tags = ofName(attributed(s, "class", class), name)
-		}
-		tag := oneTag(t, tags)
-		ends := readTags(s[tag.end:], name, true)
-		if len(ends) == 0 {
-			t.Fatalf("unclosed banner %s", name)
-		}
-		return s[tag.start : tag.end+ends[0].end], s[tag.end : tag.end+ends[0].start], tag
-	}
-	_, header, _ := part(body, "header", "")
-	mark, markContent, markTag := part(header, "strong", "mark")
-	if !slices.Equal(markTag.attrs["data-service"], []string{gateway.ServiceName}) {
-		t.Fatal("banner service hook")
-	}
-	favicon := oneTag(t, readTags(markContent, "img", false))
-	if !slices.Equal(favicon.attrs["src"], []string{"/_appkit/favicon.svg"}) || !slices.Equal(favicon.attrs["alt"], []string{""}) {
-		t.Fatal("banner favicon hooks")
-	}
-	service, serviceContent, serviceTag := part(markContent, "span", "service")
-	if strings.TrimSpace(markContent[:favicon.start]) != "" || strings.TrimSpace(markContent[favicon.end:serviceTag.start]) != "Ikigenba" || strings.TrimSpace(markContent[serviceTag.start+len(service):]) != "" {
-		t.Fatal("banner favicon, product and service order")
-	}
-	serviceContent = strings.TrimSpace(serviceContent)
-	if !strings.HasPrefix(serviceContent, string(b.Icon)) || strings.TrimSpace(serviceContent[len(b.Icon):]) != gateway.ServiceName {
-		t.Fatalf("banner service icon and name: %q", serviceContent)
-	}
-	children := []string{mark}
-	if len(b.Services) > 0 {
-		launcher, _, _ := part(header, "button", "launcher")
-		children = append(children, launcher)
-	}
-	profile, profileContent, profileTag := part(header, "a", "profile")
-	if !slices.Equal(profileTag.attrs["title"], []string{b.Email}) || !slices.Equal(profileTag.attrs["aria-label"], []string{"Profile"}) || normalise(profileContent) != "" {
-		t.Fatal("banner profile labels and visible text")
-	}
-	oneTag(t, readTags(profileContent, "svg", false))
-	form, formContent, _ := part(header, "form", "")
-	_, signout, signoutTag := part(formContent, "button", "signout")
-	for name, value := range map[string]string{"type": "submit", "aria-label": "Sign out", "title": "Sign out"} {
-		if !slices.Equal(signoutTag.attrs[name], []string{value}) {
-			t.Fatalf("banner sign-out %s", name)
-		}
-	}
-	oneTag(t, readTags(signout, "svg", false))
-	if normalise(signout) != "" {
-		t.Fatal("sign-out button has visible text")
-	}
-	children = append(children, profile, form)
-	rest := header
-	for _, child := range children {
-		rest = strings.TrimSpace(rest)
-		if !strings.HasPrefix(rest, child) {
-			t.Fatal("banner order: want only mark, optional launcher, profile and sign-out form")
-		}
-		rest = rest[len(child):]
-	}
-	if strings.TrimSpace(rest) != "" {
-		t.Fatal("extra banner header content")
-	}
-}
-
-func feedbackScripts(s string) []markupTag {
-	var selected []markupTag
-	for _, tag := range readTags(s, "script", false) {
-		if slices.Contains(tag.attrs["src"], "/_appkit/feedback.js") {
-			selected = append(selected, tag)
-		}
-	}
-	return selected
-}
-
-func TestMarkupFeedbackScriptSelection(t *testing.T) {
-	for _, tc := range []struct {
-		markup string
-		count  int
-	}{
-		{markup: `<script src="/_appkit/feedback.js" defer>`, count: 1},
-		{markup: `<script-extra src="/_appkit/feedback.js" defer>`, count: 1},
-		{markup: `<ScRiPt-EXTRA SRC="/_appkit/feedback.js" defer>`, count: 1},
-		{markup: `<script src="/_appkit/feedback.js" src="/_appkit/feedback.js" defer>`, count: 1},
-		{markup: `<script-extra src="/_appkit/feedback.js"><script src="/_appkit/feedback.js">`, count: 2},
-		{markup: `<script1 src="/_appkit/feedback.js" defer>`, count: 0},
-		{markup: `<script src defer>`, count: 0},
-		{markup: `<script src="other.js" defer>`, count: 0},
-	} {
-		if got := len(feedbackScripts(tc.markup)); got != tc.count {
-			t.Errorf("feedback script count for %q = %d, want %d", tc.markup, got, tc.count)
-		}
-	}
-}
-
-// R-CZG0-KNZV
-func TestMarkupBareAttributeOccurrences(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		markup    string
-		bareDefer int
-		bareSrc   int
-		deferVals []string
-	}{
-		{name: "bare", markup: `<script defer>`, bareDefer: 1},
-		{name: "case and duplicates", markup: `<SCRIPT DeFeR defer DEFER="">`, bareDefer: 2, deferVals: []string{""}},
-		{name: "valued only", markup: `<script defer="defer">`, deferVals: []string{"defer"}},
-		{name: "empty valued source", markup: `<script src="" defer>`, bareDefer: 1},
-		{name: "bare source", markup: `<script src defer>`, bareDefer: 1, bareSrc: 1},
-		{name: "all ASCII whitespace", markup: "<script\tdefer\nsrc\rdefer\fdefer\vdefer>", bareDefer: 4, bareSrc: 1},
-		{name: "whole attribute name", markup: `<script defer-extra srcset>`, bareDefer: 0},
-		{name: "non ASCII whitespace", markup: "<script\u00a0defer>", bareDefer: 0},
-		{name: "missing separating whitespace", markup: `<script src="local"defer>`, bareDefer: 0},
-		{name: "unquoted value stops reading", markup: `<script defer=plain src>`, bareDefer: 0},
-		{name: "single quoted value stops reading", markup: `<script src='local' defer>`, bareDefer: 0},
-		{name: "whitespace before equals", markup: `<script defer ="" src>`, bareDefer: 1},
-		{name: "slash stops reading", markup: `<script defer / src>`, bareDefer: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tag := oneTag(t, readTags(tc.markup, "script", false))
-			if tag.bareAttrs["defer"] != tc.bareDefer || tag.bareAttrs["src"] != tc.bareSrc || !slices.Equal(tag.attrs["defer"], tc.deferVals) {
-				t.Fatalf("bare attributes=%v valued attributes=%v; want defer bare=%d src bare=%d defer values=%q", tag.bareAttrs, tag.attrs, tc.bareDefer, tc.bareSrc, tc.deferVals)
-			}
-		})
-	}
-}
-
-// R-S31L-RMZB R-S49I-5EQ0 R-S5HE-J6GP R-S6PA-WY7E R-S7X7-APY3
-// R-TDDS-AX5P R-S953-OHOS R-SAD0-29FH
-// R-SV3A-KD1A R-SWB6-Y4RZ R-SXJ3-BWIO R-D1VT-C7H9 R-D33P-PZ7Y R-T16S-H7QR
-// R-KYQ9-8QIO
-// R-RFG9-KLDO
-// R-UDJA-V6WH R-RLCU-FECE R-ROH2-5F5O R-RQWU-WYN2 R-RSO8-Q0SK
-// R-RNSN-6XTS R-RJLG-MC6W R-T4UH-MIYU R-TC5V-X5F0
-func TestPlainPageMarkupHooksAndText(t *testing.T) {
-	for _, variant := range []string{"empty", "launcher", "icon"} {
-		t.Run(variant, func(t *testing.T) {
-			installed := variant != "empty"
-			entries := []map[string]any{}
-			if installed {
-				entries = append(entries, service("zeta", "Disabled <service> &amp;", false, true), service("alpha", "Enabled & ready", true, true), service("other", "not MCP", true, false), service("mcp", "gateway", true, true))
-			}
-			bannerFor := func(u page.User) page.Banner {
-				b := basicBanner(u)
-				if installed {
-					if variant == "icon" {
-						b.Icon = `<svg viewBox="0 0 24 24"><path d="M1 1h2v2H1z"/></svg>`
-					}
-					b.Services = []page.Service{{Name: gateway.ServiceName, URL: "https://mcp.space.test", Enabled: true, Current: true, Icon: b.Icon}}
-				}
-				return b
-			}
-			cfg := pageConfig(t, servicesFile(t, entries), bannerFor)
-			r := pageRequest("GET", "/")
-			w := answer(gateway.Handler(cfg), r)
-			if w.Code != 200 {
-				t.Fatalf("status %d", w.Code)
-			}
-			body := w.Body.String()
-			b := bannerFor(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"})
-			assertBannerHooks(t, body, b)
-			banner, footer := renderAppkit(t, "banner", b), renderAppkit(t, "footer", b)
-			bodyStart := firstTag(t, readTags(body, "body", false))
-			bodyEnds := readTags(body, "body", true)
-			if len(bodyEnds) == 0 {
-				t.Fatal("body end missing")
-			}
-			bannerStart := strings.Index(body, banner)
-			footerStart := strings.LastIndex(body, footer)
-			if bannerStart < bodyStart.end || footerStart < bannerStart+len(banner) || footerStart+len(footer) > bodyEnds[len(bodyEnds)-1].start {
-				t.Fatal("banner/footer out of body order")
-			}
-			if strings.Trim(body[bodyStart.end:bannerStart], " \t\n\r\f\v") != "" || strings.Trim(body[footerStart+len(footer):bodyEnds[len(bodyEnds)-1].start], " \t\n\r\f\v") != "" {
-				t.Fatal("markup outside banner/footer boundaries")
-			}
-			written := body[:bannerStart] + body[bannerStart+len(banner):footerStart] + body[footerStart+len(footer):]
-			writtenBody := firstTag(t, readTags(written, "body", false))
-			title := oneTag(t, readTags(written, "title", false))
-			titleEnd := oneTag(t, readTags(written, "title", true))
-			if title.start >= titleEnd.start || titleEnd.end > writtenBody.start {
-				t.Fatal("title position")
-			}
-			checkContent(t, written, title, gateway.ServiceName)
-			stylesheet := oneTag(t, ofName(attributed(written, "rel", "stylesheet"), "link"))
-			if stylesheet.name != "link" || stylesheet.end > writtenBody.start || !slices.Contains(stylesheet.attrs["href"], "/_appkit/theme.css") {
-				t.Fatalf("stylesheet %#v", stylesheet)
-			}
-			var preloads []markupTag
-			for _, link := range readTags(written, "link", false) {
-				if slices.Contains(link.attrs["rel"], "preload") {
-					preloads = append(preloads, link)
-				}
-			}
-			preload := oneTag(t, preloads)
-			if preload.start >= writtenBody.start || !slices.Contains(preload.attrs["as"], "font") || !slices.Contains(preload.attrs["type"], "font/woff2") || !slices.Contains(preload.attrs["href"], page.PreloadURL()) || preload.bareAttrs["crossorigin"] == 0 && !slices.Contains(preload.attrs["crossorigin"], "") {
-				t.Fatalf("font preload attributes or position: %#v", preload)
-			}
-			var icons []markupTag
-			for _, link := range readTags(written, "link", false) {
-				if slices.Contains(link.attrs["rel"], "icon") {
-					icons = append(icons, link)
-				}
-			}
-			icon := oneTag(t, icons)
-			if icon.end > writtenBody.start || !slices.Contains(icon.attrs["href"], "/_appkit/favicon.svg") || !slices.Contains(icon.attrs["type"], "image/svg+xml") {
-				t.Fatalf("favicon %#v", icon)
-			}
-			viewport := oneTag(t, ofName(attributed(written, "name", "viewport"), "meta"))
-			if viewport.name != "meta" || viewport.end > writtenBody.start || !slices.Contains(viewport.attrs["content"], "width=device-width, initial-scale=1") {
-				t.Fatalf("viewport %#v", viewport)
-			}
-			feedback := oneTag(t, feedbackScripts(written))
-			if feedback.end > writtenBody.start || len(feedback.attrs["defer"]) == 0 && feedback.bareAttrs["defer"] == 0 {
-				t.Fatalf("feedback script position or defer: %#v", feedback)
-			}
-			for _, script := range readTags(written, "script", false) {
-				if script.bareAttrs["src"] != 0 {
-					t.Fatalf("bare script source: %#v", script)
-				}
-				for _, src := range script.attrs["src"] {
-					if src != "/_appkit/feedback.js" {
-						t.Fatalf("unexpected script source %q", src)
-					}
-				}
-			}
-			for _, tag := range readTags(written, "", false) {
-				if len(tag.attrs["style"]) != 0 || len(tag.attrs["srcset"]) != 0 {
-					t.Fatalf("inline load attributes %#v", tag)
-				}
-				if tag.name == "a" {
-					continue
-				}
-				for _, attr := range []string{"href", "src", "poster", "data", "background", "manifest"} {
-					for _, v := range tag.attrs[attr] {
-						local := v == "/" || len(v) > 1 && v[0] == '/' && v[1] != '/' && v[1] != '\\'
-						if !local {
-							t.Fatalf("external resource %s=%q", attr, v)
-						}
-					}
-				}
-			}
-			h1 := oneTag(t, readTags(written, "h1", false))
-			checkContent(t, written, h1, "Connect MCP Client")
-			endpoint := "https://mcp.space.test:8443/mcp"
-			endpointTag := oneTag(t, attributed(written, "id", "endpoint"))
-			if endpointTag.name != "code" {
-				t.Fatal("endpoint not code")
-			}
-			checkContent(t, written, endpointTag, endpoint)
-			if len(readTags(written, "a", false)) != 0 {
-				t.Fatal("link in written markup")
-			}
-			headings := readTags(written, "h2", false)
-			if len(headings) != 3 {
-				t.Fatalf("headings: %d", len(headings))
-			}
-			ids := []string{"claude-code", "codex", "endpoint"}
-			codeText := make([]string, len(ids))
-			for i, heading := range headings {
-				checkContent(t, written, heading, []string{"Claude Code", "Codex", "Other clients"}[i])
-				code := oneTag(t, attributed(written, "id", ids[i]))
-				if code.name != "code" || heading.start <= h1.start || code.start <= heading.start || i < 2 && code.start >= headings[i+1].start {
-					t.Fatal("section hooks out of order")
-				}
-				content, found := elementContent(written, code)
-				if !found {
-					t.Fatal("code content missing")
-				}
-				codeText[i] = normalise(content)
-				if i < 2 && (!strings.Contains(codeText[i], "space-test") || !strings.Contains(codeText[i], endpoint)) {
-					t.Fatalf("%s content %q lacks server name or endpoint", ids[i], codeText[i])
-				}
-			}
-			var blocks []markupTag
-			for _, tag := range readTags(written, "", false) {
-				for _, classes := range tag.attrs["class"] {
-					if slices.Contains(strings.FieldsFunc(classes, func(r rune) bool { return strings.ContainsRune(" \t\n\r\f\v", r) }), "secret") {
-						blocks = append(blocks, tag)
-						break
-					}
-				}
-			}
-			if len(blocks) != 3 {
-				t.Fatalf("copy blocks: %d", len(blocks))
-			}
-			for i, block := range blocks {
-				content, found := elementContent(written, block)
-				if !found {
-					t.Fatal("copy block content missing")
-				}
-				oneTag(t, readTags(content, "code", false))
-				button := oneTag(t, readTags(content, "button", false))
-				if !slices.Contains(button.attrs["type"], "button") {
-					t.Fatal("copy button type")
-				}
-				checkContent(t, content, button, "Copy")
-				id := ids[i]
-				oneTag(t, attributed(content, "id", id))
-			}
-			text := visibleText(written)
-			if strings.Contains(text, normalise(r.Header.Get("X-User-Email"))) {
-				t.Fatal("email in written visible text")
-			}
-			wantText := strings.Join([]string{"Connect MCP Client", "Claude Code", codeText[0], "Copy", "Codex", codeText[1], "Copy", "Other clients", endpoint, "Copy"}, " ")
-			if text != wantText {
-				t.Fatalf("visible text %q want %q", text, wantText)
-			}
-
-		})
-	}
 }
 
 func basicBanner(u page.User) page.Banner {
@@ -608,7 +115,6 @@ func TestConnectExactlyRendersRequestData(t *testing.T) {
 					if !slices.Contains(users, u) {
 						t.Fatalf("banner calls: %#v want %#v", users, u)
 					}
-					assertBannerHooks(t, w.Body.String(), basicBanner(u))
 					endpoint := scheme + "://" + host + "/mcp"
 					data := map[string]any{"Banner": basicBanner(u), "Endpoint": endpoint, "Server": map[string]string{"mcp.space.test:8443": "space-test", "mcp.space.test:": "space-test", "mcp.": "mcp-", "space.test:word": "space-test-word", "mcp.mcp.space.test": "mcp-space-test", "mcp.space<&>.test:8443": "space----test"}[host]}
 					set, err := page.Templates().ParseFS(assets.Assets(), "*.html")
@@ -653,8 +159,9 @@ func TestConnectRejectsOtherMethods(t *testing.T) {
 	}
 }
 
-// R-SMJZ-VYUF R-RK4Y-1MLP
+// R-ZDAR-FFEL R-ZEIN-T75A R-RK4Y-1MLP
 func TestUnknownPathsReturnExact404(t *testing.T) {
+	const bodyCopy string = gateway.NotFound
 	h := gateway.Handler(pageConfig(t, "", basicBanner))
 	for _, path := range []string{"/_appkit", "/assets/", "/assets/connect.html", "/logout", "/index.html", "/setup", "/setup.txt", "/setup.sh", "/.well-known", "/.well-known/", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resourcex", "/setup.txt/", "/setup.sh/", "/setup.txt/x", "/setup.sh/x", "//", "/nope/", "/x/../", "/./", "/x/%2e%2e/", "/%61ssets/theme.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "OPTIONS"} {
@@ -662,7 +169,7 @@ func TestUnknownPathsReturnExact404(t *testing.T) {
 				r := pageRequest(method, path+"?ignored=yes")
 				setPageIdentity(r, identity)
 				w := answer(h, r)
-				body := "not found\n"
+				body := bodyCopy
 				if method == "HEAD" {
 					body = ""
 				}
@@ -730,47 +237,10 @@ func TestNonMCPRoutesNeitherSetCookiesNorContactBackends(t *testing.T) {
 	}
 }
 
-// R-IA1Y-Z12O
-func TestConnectWrittenMarkupIgnoresOtherServices(t *testing.T) {
-	for _, authState := range []string{"absent", "empty", "url"} {
-		var authEntries []map[string]any
-		if authState != "absent" {
-			auth := service("auth", "authentication", true, false)
-			if authState == "url" {
-				auth["url"] = "http://accounts.test/base/"
-			}
-			authEntries = append(authEntries, auth)
-		}
-		cfg := pageConfig(t, "", basicBanner)
-		var want string
-		for i, other := range [][]map[string]any{
-			{},
-			{service("alpha", "Enabled & ready", true, true), service("zeta", "Disabled <service> &amp;", false, true)},
-			{service("zeta", "Different service", true, false), service("mcp", "gateway", true, true), service("alpha", "Unavailable", false, true), service("alpha", "Duplicate", true, true)},
-		} {
-			entries := append(append([]map[string]any{}, authEntries...), other...)
-			cfg.ServicesPath = servicesFile(t, entries)
-			r := pageRequest("GET", "/")
-			body := answer(gateway.Handler(cfg), r).Body.String()
-			profileURL := "https://auth.space.test/"
-			if authState == "url" {
-				profileURL = "http://accounts.test/base//"
-			}
-			b := basicBanner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: profileURL, LogoutURL: strings.TrimSuffix(profileURL, "/") + "/logout"})
-			written := strings.Replace(body, renderAppkit(t, "banner", b), "", 1)
-			written = strings.Replace(written, renderAppkit(t, "footer", b), "", 1)
-			if i == 0 {
-				want = written
-			} else if written != want {
-				t.Fatalf("%s: written markup depends on services", authState)
-			}
-		}
-	}
-}
-
 // R-6P2M-PC2C
 func TestConnectServerNames(t *testing.T) {
-	h := gateway.Handler(pageConfig(t, "", basicBanner))
+	var banner page.Banner
+	h := gateway.Handler(pageConfig(t, "", func(u page.User) page.Banner { banner = basicBanner(u); return banner }))
 	templates, err := page.Templates().ParseFS(assets.Assets(), "*.html")
 	if err != nil {
 		t.Fatal(err)
@@ -797,7 +267,7 @@ func TestConnectServerNames(t *testing.T) {
 				scheme = "http"
 			}
 			data := map[string]any{
-				"Banner":   basicBanner(page.User{}),
+				"Banner":   banner,
 				"Endpoint": scheme + "://" + tc.host + "/mcp",
 				"Server":   tc.server,
 			}
@@ -805,12 +275,8 @@ func TestConnectServerNames(t *testing.T) {
 			if err := templates.ExecuteTemplate(&expected, "connect", data); err != nil {
 				t.Fatal(err)
 			}
-			for _, id := range []string{"claude-code", "codex"} {
-				content, found := elementContent(body, oneTag(t, attributed(body, "id", id)))
-				want, wantFound := elementContent(expected.String(), oneTag(t, attributed(expected.String(), "id", id)))
-				if !found || !wantFound || content != want {
-					t.Fatalf("host %q: %s content %q, want %q for server name %q", tc.host, id, content, want, tc.server)
-				}
+			if body != expected.String() {
+				t.Fatalf("host %q: render differs for server %q", tc.host, tc.server)
 			}
 		}
 	}

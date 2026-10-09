@@ -12,6 +12,9 @@ import (
 	assets "github.com/ikigenba/ikigenba/mcp"
 )
 
+// NotFound is the body of the gateway's 404 response.
+const NotFound string = "not found\n"
+
 var connectTemplates = template.Must(page.Templates().ParseFS(assets.Assets(), "*.html"))
 var appkitStatic = page.Static()
 
@@ -29,7 +32,7 @@ func gatewayNotFound(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusNotFound)
 	if r.Method != http.MethodHead {
-		_, _ = w.Write([]byte("not found\n"))
+		_, _ = w.Write([]byte(NotFound))
 	}
 }
 

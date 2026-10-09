@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -35,12 +36,17 @@ const describeDescription = "Show a service's tools, or one tool's full descript
 const callDescription = "Run a read tool of a service and return its result.\n\nName the service and the tool as describe shows them, and pass the tool's arguments in args, an object matching its input schema ({} when left out). Only a tool of kind read runs here; a write tool runs with mutate."
 const mutateDescription = "Run a write tool of a service and return its result.\n\nName the service and the tool as describe shows them, and pass the tool's arguments in args, an object matching its input schema ({} when left out). Only a tool of kind write runs here; a read tool runs with call. A write tool may change or remove data."
 
+// InstructionsReaching formats instructions for a connection reaching services.
+const InstructionsReaching string = "This server reaches these services: %s.\nCall services to see which are available, and describe before call or mutate."
+
+// InstructionsNone supplies instructions for a connection reaching no services.
+const InstructionsNone string = "This server reaches no services.\nCall services to see which are available, and describe before call or mutate."
+
 func instructions(ctx context.Context) string {
-	first := "This server reaches no services."
 	if s := requestStateFrom(ctx); s != nil && len(s.reached) > 0 {
-		first = "This server reaches these services: " + strings.Join(s.reached, ", ") + "."
+		return fmt.Sprintf(InstructionsReaching, strings.Join(s.reached, ", "))
 	}
-	return first + "\nCall services to see which are available, and describe before call or mutate."
+	return InstructionsNone
 }
 
 // NewServer constructs the appkit transport and registers the gateway tools.

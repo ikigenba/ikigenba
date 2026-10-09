@@ -16,17 +16,32 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
+// Refusal formats supply the gateway's user-facing copy.
+const (
+	RefuseUnknownService string = "Unknown service: %s. Call services to see the services you can use."
+	RefuseUnavailable    string = "Service %s is unavailable: %s. Do not retry; call services to see the services you can use."
+	RefuseUnreachable    string = "Service %s could not be reached. Retry later."
+	RefuseTimedOut       string = "Service %s did not answer within %s s. Retry later."
+	RefuseRPCError       string = "Service %s answered with an error: %s"
+	RefuseUnreadable     string = "Service %s gave an answer the gateway could not read. Retry later."
+	RefuseNoTool         string = "Service %[1]s has no tool %[2]s. Call describe with service %[1]s to see its tools."
+	RefuseWriteTool      string = "Tool %[2]s of service %[1]s is a write tool. Use mutate to run it."
+	RefuseReadTool       string = "Tool %[2]s of service %[1]s is a read tool. Use call to run it."
+	RefuseCallTimedOut   string = "Service %s did not answer within %s s; the call may still have completed."
+	RefuseCallUnreadable string = "Service %s gave an answer the gateway could not read; the call may still have completed."
+)
+
 func serveBackend(ctx context.Context, caller identity.Caller, service string, tool *string, args json.RawMessage, operation, version string) (mcp.Result, error) {
 	state := requestStateFrom(ctx)
 	if state == nil {
 		return mcp.ErrorResult("The gateway request has no connection."), nil
 	}
 	if !slices.Contains(state.reached, service) {
-		return mcp.ErrorResult(fmt.Sprintf("Unknown service: %s. Call services to see the services you can use.", service)), nil
+		return mcp.ErrorResult(fmt.Sprintf(RefuseUnknownService, service)), nil
 	}
 	_, available, reason := serviceStatus(state.entries, service)
 	if !available {
-		return mcp.ErrorResult(fmt.Sprintf("Service %s is unavailable: %s. Do not retry; call services to see the services you can use.", service, *reason)), nil
+		return mcp.ErrorResult(fmt.Sprintf(RefuseUnavailable, service, *reason)), nil
 	}
 	entry, _ := state.entries.Find(service)
 	budget := state.cfg.Budget
@@ -58,7 +73,7 @@ func serveBackend(ctx context.Context, caller identity.Caller, service string, t
 			}
 		}
 		if selected == nil {
-			return mcp.ErrorResult(fmt.Sprintf("Service %s has no tool %s. Call describe with service %s to see its tools.", service, *tool, service)), nil
+			return mcp.ErrorResult(fmt.Sprintf(RefuseNoTool, service, *tool)), nil
 		}
 	}
 	if operation == "describe" {
@@ -69,10 +84,10 @@ func serveBackend(ctx context.Context, caller identity.Caller, service string, t
 	}
 	kind := backendKind(*selected)
 	if operation == "call" && kind == "write" {
-		return mcp.ErrorResult(fmt.Sprintf("Tool %s of service %s is a write tool. Use mutate to run it.", *tool, service)), nil
+		return mcp.ErrorResult(fmt.Sprintf(RefuseWriteTool, service, *tool)), nil
 	}
 	if operation == "mutate" && kind == "read" {
-		return mcp.ErrorResult(fmt.Sprintf("Tool %s of service %s is a read tool. Use call to run it.", *tool, service)), nil
+		return mcp.ErrorResult(fmt.Sprintf(RefuseReadTool, service, *tool)), nil
 	}
 	if args == nil {
 		args = json.RawMessage(`{}`)
@@ -135,21 +150,21 @@ func backendRefusal(service, seconds string, called bool, outcome string, err er
 	case "cancelled":
 		return mcp.ErrorResult("The caller cancelled the request.")
 	case "unreachable":
-		return mcp.ErrorResult(fmt.Sprintf("Service %s could not be reached. Retry later.", service))
+		return mcp.ErrorResult(fmt.Sprintf(RefuseUnreachable, service))
 	case "timed out":
 		if called {
-			return mcp.ErrorResult(fmt.Sprintf("Service %s did not answer within %s s; the call may still have completed.", service, seconds))
+			return mcp.ErrorResult(fmt.Sprintf(RefuseCallTimedOut, service, seconds))
 		}
-		return mcp.ErrorResult(fmt.Sprintf("Service %s did not answer within %s s. Retry later.", service, seconds))
+		return mcp.ErrorResult(fmt.Sprintf(RefuseTimedOut, service, seconds))
 	default:
 		var rpc *mcp.RPCError
 		if errors.As(err, &rpc) {
-			return mcp.ErrorResult(fmt.Sprintf("Service %s answered with an error: %s", service, rpc.Message))
+			return mcp.ErrorResult(fmt.Sprintf(RefuseRPCError, service, rpc.Message))
 		}
 		if called {
-			return mcp.ErrorResult(fmt.Sprintf("Service %s gave an answer the gateway could not read; the call may still have completed.", service))
+			return mcp.ErrorResult(fmt.Sprintf(RefuseCallUnreadable, service))
 		}
-		return mcp.ErrorResult(fmt.Sprintf("Service %s gave an answer the gateway could not read. Retry later.", service))
+		return mcp.ErrorResult(fmt.Sprintf(RefuseUnreadable, service))
 	}
 }
 func backendSingleLine(value string) string {

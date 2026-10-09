@@ -262,12 +262,21 @@ func backendComparableJSON(t *testing.T, raw []byte) string {
 	return value()
 }
 
-// R-JMKA-0LPZ R-2K95-ZCLW R-2LH2-D4CL
+// R-ZT5G-EG1M R-JMKA-0LPZ R-ZUDC-S7SB R-ZVL9-5ZJ0
 func TestBackendPreflight(t *testing.T) {
+	const (
+		_ string = RefuseUnknownService
+		_ string = RefuseUnavailable
+		_ string = RefuseUnreachable
+		_ string = RefuseTimedOut
+		_ string = RefuseRPCError
+		_ string = RefuseUnreadable
+		_ string = RefuseNoTool
+	)
 	for _, tc := range []struct {
 		name, scope, args, want string
 		enabled, isMCP          bool
-	}{{"unknown", "/mcp", `{"service":"missing"}`, "Unknown service: missing. Call services to see the services you can use.", true, true}, {"disabled", "/mcp", `{"service":"alpha"}`, "Service alpha is unavailable: disabled. Do not retry; call services to see the services you can use.", false, true}, {"absent", "/mcp/alpha", `{"service":"alpha"}`, "Service alpha is unavailable: not installed. Do not retry; call services to see the services you can use.", true, false}} {
+	}{{"unknown", "/mcp", `{"service":"missing"}`, fmt.Sprintf(RefuseUnknownService, "missing"), true, true}, {"disabled", "/mcp", `{"service":"alpha"}`, fmt.Sprintf(RefuseUnavailable, "alpha", "disabled"), false, true}, {"absent", "/mcp/alpha", `{"service":"alpha"}`, fmt.Sprintf(RefuseUnavailable, "alpha", "not installed"), true, false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := backendSetup(t, 0, backendStatic(backendReadList, `{"content":[]}`))
 			entries, err := services.Read(f.path)
@@ -359,9 +368,15 @@ func TestBackendHopAndArguments(t *testing.T) {
 	}
 }
 
-// R-RFLE-24TT R-KKPG-Q6HF R-K62O-4XL3
+// R-044J-UDPV R-05CG-85GK R-06KC-LX79 R-02WN-GLZ6
 func TestBackendKindAndMissing(t *testing.T) {
-	for _, tc := range []struct{ op, tool, list, want string }{{"call", "write", backendWriteList, "Tool write of service alpha is a write tool. Use mutate to run it."}, {"mutate", "read", backendReadList, "Tool read of service alpha is a read tool. Use call to run it."}, {"call", "missing", backendReadList, "Service alpha has no tool missing. Call describe with service alpha to see its tools."}} {
+	const (
+		_ string = RefuseWriteTool
+		_ string = RefuseReadTool
+		_ string = RefuseCallTimedOut
+		_ string = RefuseCallUnreadable
+	)
+	for _, tc := range []struct{ op, tool, list, want string }{{"call", "write", backendWriteList, fmt.Sprintf(RefuseWriteTool, "alpha", "write")}, {"mutate", "read", backendReadList, fmt.Sprintf(RefuseReadTool, "alpha", "read")}, {"call", "missing", backendReadList, fmt.Sprintf(RefuseNoTool, "alpha", "missing")}} {
 		t.Run(tc.op+tc.tool, func(t *testing.T) {
 			f := backendSetup(t, 0, backendStatic(tc.list, `{"content":[]}`))
 			backendError(t, f.call(t, tc.op, fmt.Sprintf(`{"service":"alpha","tool":%q}`, tc.tool)), tc.want)
@@ -372,7 +387,7 @@ func TestBackendKindAndMissing(t *testing.T) {
 	}
 }
 
-// R-JZZ6-82VM
+// R-ZWT5-JR9P
 func TestBackendFreshTools(t *testing.T) {
 	var mu sync.Mutex
 	list := `{"tools":[]}`
@@ -394,12 +409,12 @@ func TestBackendFreshTools(t *testing.T) {
 	mu.Lock()
 	list = strings.ReplaceAll(backendReadList, `"readOnlyHint":true`, `"readOnlyHint":false`)
 	mu.Unlock()
-	backendError(t, f.call(t, "call", `{"service":"alpha","tool":"read"}`), "Tool read of service alpha is a write tool. Use mutate to run it.")
+	backendError(t, f.call(t, "call", `{"service":"alpha","tool":"read"}`), fmt.Sprintf(RefuseWriteTool, "alpha", "read"))
 	backendFreshRun(t, f, "mutate")
 	mu.Lock()
 	list = `{"tools":[]}`
 	mu.Unlock()
-	backendError(t, f.call(t, "mutate", `{"service":"alpha","tool":"read"}`), "Service alpha has no tool read. Call describe with service alpha to see its tools.")
+	backendError(t, f.call(t, "mutate", `{"service":"alpha","tool":"read"}`), fmt.Sprintf(RefuseNoTool, "alpha", "read"))
 }
 
 func backendFreshRun(t *testing.T, f *backendFixture, operation string) {
@@ -459,7 +474,7 @@ func TestBackendArgumentRefusals(t *testing.T) {
 	}
 }
 
-// R-BN10-HXNQ R-KI9N-YN01 R-K172-LUMB R-K3MV-DE3P R-K4UR-R5UE R-KPL2-99G7
+// R-BN10-HXNQ R-KI9N-YN01 R-ZY11-XJ0E R-00GU-P2HS R-01OR-2U8H R-P0ST-UGI8
 func TestBackendFailures(t *testing.T) {
 	for _, stage := range []string{"tools/list", "tools/call"} {
 		for _, failure := range []string{"unreachable", "rpc", "http", "broken", "malformed"} {
@@ -512,17 +527,17 @@ func TestBackendFailures(t *testing.T) {
 				want := ""
 				switch failure {
 				case "unreachable":
-					want = "Service alpha could not be reached. Retry later."
+					want = fmt.Sprintf(RefuseUnreachable, "alpha")
 				case "rpc":
-					want = "Service alpha answered with an error: Backend\nrefusal\runchanged"
+					want = fmt.Sprintf(RefuseRPCError, "alpha", "Backend\nrefusal\runchanged")
 				case "http":
 				case "broken":
 				case "malformed":
 				}
 				if want == "" {
-					want = "Service alpha gave an answer the gateway could not read. Retry later."
+					want = fmt.Sprintf(RefuseUnreadable, "alpha")
 					if stage == "tools/call" {
-						want = "Service alpha gave an answer the gateway could not read; the call may still have completed."
+						want = fmt.Sprintf(RefuseCallUnreadable, "alpha")
 					}
 				}
 				backendError(t, result, want)
@@ -559,7 +574,7 @@ func TestBackendFailures(t *testing.T) {
 	}
 }
 
-// R-KN59-HPYT R-O3U0-KWFR R-JQW7-8JSX R-JS43-MBJM
+// R-KN59-HPYT R-O3U0-KWFR R-JQW7-8JSX R-ZPHR-94TJ
 func TestBackendRelay(t *testing.T) {
 	for _, toolError := range []bool{false, true} {
 		t.Run(fmt.Sprint(toolError), func(t *testing.T) {
@@ -614,7 +629,7 @@ func TestBackendRelay(t *testing.T) {
 	}
 }
 
-// R-VOL2-JHIA R-JRFV-JOOR R-K2EY-ZMD0 R-KOD5-VHPI R-DMN3-C0IH R-DNUZ-PS96 R-2NWV-4NTZ
+// R-VOL2-JHIA R-JRFV-JOOR R-ZZ8Y-BAR3 R-07S8-ZOXY R-DMN3-C0IH R-DNUZ-PS96 R-2NWV-4NTZ
 func TestBackendBudget(t *testing.T) {
 	for _, stage := range []string{"tools/list", "tools/call"} {
 		t.Run(stage, func(t *testing.T) {
@@ -651,9 +666,9 @@ func TestBackendBudget(t *testing.T) {
 			started := time.Now()
 			result := f.call(t, "call", `{"service":"alpha","tool":"read"}`)
 			elapsed := time.Since(started)
-			want := "Service alpha did not answer within 0.2 s. Retry later."
+			want := fmt.Sprintf(RefuseTimedOut, "alpha", "0.2")
 			if stage == "tools/call" {
-				want = "Service alpha did not answer within 0.2 s; the call may still have completed."
+				want = fmt.Sprintf(RefuseCallTimedOut, "alpha", "0.2")
 			}
 			backendError(t, result, want)
 			if elapsed > budget+100*time.Millisecond {
@@ -915,9 +930,9 @@ func TestBackendResponseStatuses(t *testing.T) {
 				w.WriteHeader(status)
 				_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32123,"message":"refused"}}`, w.Header().Get("Test-RPC-ID"))
 			})
-			want := "Service alpha gave an answer the gateway could not read. Retry later."
+			want := fmt.Sprintf(RefuseUnreadable, "alpha")
 			if status == 500 || status == 502 {
-				want = "Service alpha answered with an error: refused"
+				want = fmt.Sprintf(RefuseRPCError, "alpha", "refused")
 			}
 			backendError(t, f.call(t, "describe", `{"service":"alpha"}`), want)
 			f.assertStatuses(t, int64(status))
@@ -943,7 +958,7 @@ func TestBackendResponseStatuses(t *testing.T) {
 				_, _ = buf.WriteString(head)
 				_ = buf.Flush()
 			})
-			backendError(t, f.call(t, "describe", `{"service":"alpha"}`), "Service alpha gave an answer the gateway could not read. Retry later.")
+			backendError(t, f.call(t, "describe", `{"service":"alpha"}`), fmt.Sprintf(RefuseUnreadable, "alpha"))
 			f.assertStatuses(t, 0)
 		})
 	}
@@ -1009,7 +1024,7 @@ func backendTelemetry(t testing.TB, sink telemetry.Sink, stderr io.Writer, now f
 	return writer, capture
 }
 
-// R-O3U0-KWFR R-JQW7-8JSX R-JS43-MBJM
+// R-O3U0-KWFR R-JQW7-8JSX R-ZPHR-94TJ
 func TestBackendArgumentErrorTrail(t *testing.T) {
 	f := backendSetup(t, 0, backendStatic(backendReadList, `{"content":[{"type":"text","text":"invalid tool arguments"}],"isError":true}`))
 	result := f.call(t, "call", `{"service":"alpha","tool":"read","args":{"wrong":true}}`)
@@ -1036,7 +1051,7 @@ func TestBackendArgumentErrorTrail(t *testing.T) {
 }
 
 func TestBackendSuccessfulToolTrail(t *testing.T) {
-	// R-O3U0-KWFR R-JQW7-8JSX R-JS43-MBJM
+	// R-O3U0-KWFR R-JQW7-8JSX R-ZPHR-94TJ
 	for _, tc := range []struct{ tool, args, result string }{
 		{"describe", `{"service":"alpha"}`, `{"content":[]}`},
 		{"call", `{"service":"alpha","tool":"read"}`, `{"content":[]}`},

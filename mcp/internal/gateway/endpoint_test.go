@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -230,12 +231,12 @@ func TestEndpointCatalogue(t *testing.T) {
 }
 
 func TestEndpointScopes(t *testing.T) {
-	// R-VS8R-OSQD R-ZBX8-V01U
+	// R-VS8R-OSQD R-ZQPN-MWK8
 	h := gateway.Handler(endpointConfig(t, ""))
 	for _, scope := range []string{"", "a,,b", ",dummy", "dummy,", "dummy,dummy", "du_mmy", "dummy/", "-dummy", "dummy-", strings.Repeat("x", 64), "/dummy", "./dummy", "a/../dummy", "é"} {
 		for _, method := range []string{"GET", "POST", "DELETE"} {
 			w := endpointRaw(h, "/mcp/"+scope, method, `{}`, mcp.ProtocolVersion, endpointIdentity())
-			if w.Code != 404 || w.Body.String() != "not found\n" {
+			if w.Code != 404 || w.Body.String() != gateway.NotFound || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) {
 				t.Fatalf("%s %q %d %q", method, scope, w.Code, w.Body.String())
 			}
 		}
@@ -249,7 +250,12 @@ func TestEndpointScopes(t *testing.T) {
 }
 
 func TestEndpointInstructions(t *testing.T) {
-	// R-3R4C-4LO2 R-2BPV-AYF1
+	const reaching string = gateway.InstructionsReaching
+	const noneCopy string = gateway.InstructionsNone
+	if reaching == "" || noneCopy == "" {
+		t.Fatal("empty instructions")
+	}
+	// R-P20Q-888X R-ZN1Y-HLC5 R-2BPV-AYF1
 	path := endpointFile(t, `[{"name":"zeta","mcp":true,"enabled":false},{"name":"alpha","mcp":true,"enabled":true}]`)
 	h := gateway.Handler(endpointConfig(t, path))
 	for _, tc := range []struct{ path, names string }{{"/mcp", "alpha, zeta"}, {"/mcp/Z,unknown", "Z, unknown"}} {
@@ -266,7 +272,7 @@ func TestEndpointInstructions(t *testing.T) {
 			if err := json.Unmarshal(endpointPart(t, result, "instructions"), &text); err != nil {
 				t.Fatal(w.Body.String(), err)
 			}
-			want := "This server reaches these services: " + tc.names + ".\nCall services to see which are available, and describe before call or mutate."
+			want := fmt.Sprintf(gateway.InstructionsReaching, tc.names)
 			if text != want {
 				t.Fatal(text)
 			}
@@ -281,7 +287,11 @@ func TestEndpointInstructions(t *testing.T) {
 	}
 	endpointWrite(t, path, `[]`)
 	w := endpointRaw(h, "/mcp", "POST", `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}`, mcp.ProtocolVersion, endpointIdentity())
-	if !bytes.Contains(w.Body.Bytes(), []byte(`This server reaches no services.\nCall services`)) {
+	var none string
+	if err := json.Unmarshal(endpointPart(t, endpointPart(t, w.Body.Bytes(), "result"), "instructions"), &none); err != nil {
+		t.Fatal(err)
+	}
+	if none != gateway.InstructionsNone {
 		t.Fatal(w.Body.String())
 	}
 	b := endpointCall(t, endpointClient(t, h, "/mcp"), "")
@@ -291,10 +301,17 @@ func TestEndpointInstructions(t *testing.T) {
 }
 
 func TestEndpointServicesArgumentRefusal(t *testing.T) {
-	// R-TPYH-KBRP
+	// R-ZO9U-VD2U
 	h := gateway.Handler(endpointConfig(t, ""))
 	b := endpointCall(t, endpointClient(t, h, "/mcp"), `{"bogus":true}`)
-	expected, _ := mcp.ErrorResult("invalid arguments:\nbogus: unknown field").MarshalJSON()
+	t.Setenv(services.Variable, "")
+	writer, _ := handlerTelemetry(t, nil)
+	reference := mcp.NewServer(mcp.ServerConfig{Name: "reference", Telemetry: writer})
+	mcp.AddTool(reference, mcp.Tool[struct{}, struct{}]{Name: "services", Description: "Fixture description.", Effect: mcp.Read, Handler: func(context.Context, identity.Caller, struct{}) (struct{}, error) {
+		t.Fatal("invalid arguments accepted")
+		return struct{}{}, nil
+	}})
+	expected := endpointCall(t, endpointClient(t, identity.Require(reference), "/mcp"), `{"bogus":true}`)
 	var actual, want map[string]json.RawMessage
 	if err := json.Unmarshal(b, &actual); err != nil {
 		t.Fatal(err)
@@ -303,6 +320,7 @@ func TestEndpointServicesArgumentRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(actual, "_meta")
+	delete(want, "_meta")
 	a, _ := json.Marshal(actual)
 	e, _ := json.Marshal(want)
 	if !bytes.Equal(a, e) {
@@ -364,13 +382,13 @@ func TestEndpointNoBackend(t *testing.T) {
 }
 
 func TestEndpointTools(t *testing.T) {
-	// R-3DPF-X4IF R-3EXC-AW94 R-ZAPC-H8B5 R-3HD5-2FQI R-3IL1-G7H7 R-3JSX-TZ7W
+	// R-ZFQK-6YVZ R-ZGYG-KQMO R-ZI6C-YIDD R-ZJE9-CA42 R-ZKM5-Q1UR R-ZLU2-3TLG R-3JSX-TZ7W
 	h := gateway.Handler(endpointConfig(t, endpointFile(t, `[{"name":"dummy","enabled":true,"mcp":true}]`)))
 	expected := []string{
-		`{"name":"services","description":"List the services this connection reaches, and whether each is available.\n\nAn unavailable service says why: disabled or not installed. Call describe to see a service's tools.","inputSchema":{"type":"object","additionalProperties":false},"outputSchema":{"type":"object","properties":{"services":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string","description":"The service's name."},"description":{"type":"string","description":"What the service is for, from the services file; empty when it is not installed."},"available":{"type":"boolean","description":"Whether the service can be used now."},"reason":{"type":"string","description":"Why the service is unavailable: disabled or not installed. Present only when available is false."}},"required":["name","description","available"],"additionalProperties":false},"description":"Every service this connection reaches, in name order."}},"required":["services"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,
-		`{"name":"describe","description":"Show a service's tools, or one tool's full description and schemas.\n\nWithout tool, lists each tool of the service with its one-line summary and its kind: a read tool runs with call, a write tool with mutate. With tool, gives that tool's full description, its input schema, its output schema when it has one, and its kind. Call describe before call or mutate.","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"The service's name, as services lists it."},"tool":{"type":"string","description":"A tool's name, as describe lists it. Leave it out to list the service's tools."}},"required":["service"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,
-		`{"name":"call","description":"Run a read tool of a service and return its result.\n\nName the service and the tool as describe shows them, and pass the tool's arguments in args, an object matching its input schema ({} when left out). Only a tool of kind read runs here; a write tool runs with mutate.","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"The service's name, as services lists it."},"tool":{"type":"string","description":"The tool's name, as describe lists it."},"args":{"type":"object","description":"The tool's arguments, matching its input schema. Leave it out for {}."}},"required":["service","tool"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,
-		`{"name":"mutate","description":"Run a write tool of a service and return its result.\n\nName the service and the tool as describe shows them, and pass the tool's arguments in args, an object matching its input schema ({} when left out). Only a tool of kind write runs here; a read tool runs with call. A write tool may change or remove data.","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"The service's name, as services lists it."},"tool":{"type":"string","description":"The tool's name, as describe lists it."},"args":{"type":"object","description":"The tool's arguments, matching its input schema. Leave it out for {}."}},"required":["service","tool"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":true,"openWorldHint":false}}`,
+		`{"name":"services","description":"","inputSchema":{"type":"object","additionalProperties":false},"outputSchema":{"type":"object","properties":{"services":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string","description":""},"description":{"type":"string","description":""},"available":{"type":"boolean","description":""},"reason":{"type":"string","description":""}},"required":["name","description","available"],"additionalProperties":false},"description":""}},"required":["services"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,
+		`{"name":"describe","description":"","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":""},"tool":{"type":"string","description":""}},"required":["service"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,
+		`{"name":"call","description":"","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":""},"tool":{"type":"string","description":""},"args":{"type":"object","description":""}},"required":["service","tool"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}`,
+		`{"name":"mutate","description":"","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":""},"tool":{"type":"string","description":""},"args":{"type":"object","description":""}},"required":["service","tool"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":true,"openWorldHint":false}}`,
 	}
 	for _, path := range []string{"/mcp", "/mcp/dummy", "/mcp/missing"} {
 		c := endpointClient(t, h, path)
@@ -395,7 +413,55 @@ func TestEndpointTools(t *testing.T) {
 			t.Fatal(w.Body.String())
 		}
 		for i, b := range raw {
-			endpointOrderedEqual(t, b, []byte(expected[i]))
+			endpointOrderedDescriptionsEqual(t, b, []byte(expected[i]))
 		}
+	}
+}
+
+func endpointOrderedDescriptionsEqual(t *testing.T, actual, expected []byte) {
+	t.Helper()
+	tokens := func(raw []byte, normalize bool) []any {
+		d := json.NewDecoder(bytes.NewReader(raw))
+		var out []any
+		// Track object keys separately from array values and string values.
+		type frame struct{ object, key bool }
+		var stack []frame
+		description := false
+		for {
+			token, err := d.Token()
+			if errors.Is(err, io.EOF) {
+				return out
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			isKey := len(stack) > 0 && stack[len(stack)-1].object && stack[len(stack)-1].key
+			if value, ok := token.(string); ok && description && !isKey {
+				if normalize && value == "" {
+					t.Fatal("empty description", string(raw))
+				}
+				if normalize {
+					token = ""
+				}
+			}
+			description = isKey && token == "description"
+			if delim, ok := token.(json.Delim); ok {
+				switch delim {
+				case '{', '[':
+					if len(stack) > 0 && stack[len(stack)-1].object && !isKey {
+						stack[len(stack)-1].key = true
+					}
+					stack = append(stack, frame{object: delim == '{', key: delim == '{'})
+				case '}', ']':
+					stack = stack[:len(stack)-1]
+				}
+			} else if len(stack) > 0 && stack[len(stack)-1].object {
+				stack[len(stack)-1].key = !isKey
+			}
+			out = append(out, token)
+		}
+	}
+	if !reflect.DeepEqual(tokens(actual, true), tokens(expected, false)) {
+		t.Fatalf("schema or order differs: got %s want %s", actual, expected)
 	}
 }

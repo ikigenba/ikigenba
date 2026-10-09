@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,9 +20,11 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	appkitmcp "github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
+	assets "github.com/ikigenba/ikigenba/mcp"
 	"github.com/ikigenba/ikigenba/mcp/internal/cli"
 	"github.com/ikigenba/ikigenba/mcp/internal/gateway"
 )
@@ -32,7 +32,7 @@ import (
 const binaryMCPIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
 
 // The sole process test proves main's process, constructor and signal wiring.
-// R-MD9R-TB45 R-MEHO-72UU R-UVBH-CZPM R-UWJD-QRGB R-G9Z3-NU0G
+// R-MD9R-TB45 R-MEHO-72UU R-UVBH-CZPM R-Z9N2-A46I R-ZAUY-NVX7
 // R-MGXG-YMC8 R-MI5D-CE2X R-MJD9-Q5TM R-MLT2-HPB0 R-MN0Y-VH1P R-WSTR-5WZ7
 func TestBinary(t *testing.T) {
 	commit, release := "0123456789abcdef0123456789abcdef01234567", "workgroup"
@@ -263,24 +263,25 @@ func TestBinary(t *testing.T) {
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("page status %d: %s", response.StatusCode, body)
 			}
-			assertBinaryBanner(t, string(body), run == 0)
 			if run == 0 {
-				launcher := regexp.MustCompile(`(?i)<button\b[^>]*\bclass="launcher"[^>]*>`)
-				if !launcher.Match(body) {
-					t.Fatalf("launcher absent: %s", body)
+				t.Setenv(services.Variable, file)
+				kit := page.New(gateway.ServiceName, display)
+				templates, err := page.Templates().ParseFS(assets.Assets(), "*.html")
+				if err != nil {
+					t.Fatal(err)
 				}
-			} else {
-				lower := strings.ToLower(string(body))
-				footers := regexp.MustCompile(`<footer[>\t\n\r\f\v ]`).FindAllStringIndex(lower, -1)
-				if len(footers) != 1 {
-					t.Fatalf("footer count %d: %s", len(footers), body)
+				var expected bytes.Buffer
+				data := map[string]any{"Banner": kit.Banner(page.User{ProfileURL: "https://auth.gateway/", LogoutURL: "https://auth.gateway/logout"}), "Endpoint": "https://gateway/mcp", "Server": "gateway"}
+				if err := templates.ExecuteTemplate(&expected, "connect", data); err != nil {
+					t.Fatal(err)
 				}
-				start := footers[0][0] + strings.IndexByte(lower[footers[0][0]:], '>') + 1
-				end := strings.Index(lower[start:], "</footer>")
-				if end < 0 || strings.Trim(string(body[start:start+end]), " \t\n\r\f\v") != gateway.ServiceName+" "+display {
-					t.Fatalf("footer: %s", body)
+				if string(body) != expected.String() {
+					t.Fatalf("binary page differs from template: %s", body)
 				}
+			} else if !bytes.Contains(body, []byte(display)) {
+				t.Fatalf("display absent: %s", body)
 			}
+
 			client := appkitmcp.NewClient(appkitmcp.ClientConfig{Endpoint: "http://gateway/mcp", HTTPClient: httpClient})
 			result, err := client.CallTool(context.Background(), caller, "services", nil)
 			if err != nil || result.IsError() {
@@ -424,83 +425,6 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("remaining owner cannot accept queued connection: %v", err)
 		}
 		_ = accepted.Close()
-	}
-}
-
-// R-UWJD-QRGB: observe the kit's services-file icon and banner through main.
-func assertBinaryBanner(t *testing.T, body string, installed bool) {
-	t.Helper()
-	part := func(s, name string, attrs map[string]string) (string, string) {
-		t.Helper()
-		matches := regexp.MustCompile(`(?s)<`+name+`\b[^>]*>(.*?)</`+name+`>`).FindAllStringSubmatch(s, -1)
-		var selected [][]string
-		for _, match := range matches {
-			start := match[0][:strings.IndexByte(match[0], '>')+1]
-			found := true
-			for key, value := range attrs {
-				attr := regexp.MustCompile(`[\t\n\r\f ]` + key + `="([^"]*)"`).FindStringSubmatch(start)
-				if len(attr) != 2 || html.UnescapeString(attr[1]) != value {
-					found = false
-				}
-			}
-			if found {
-				selected = append(selected, match)
-			}
-		}
-		if len(selected) != 1 {
-			t.Fatalf("banner %s %v count %d", name, attrs, len(selected))
-		}
-		return selected[0][0], selected[0][1]
-	}
-	visible := func(s string) string {
-		return strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(s, ""))), " ")
-	}
-	_, header := part(body, "header", nil)
-	mark, markContent := part(header, "strong", map[string]string{"class": "mark", "data-service": gateway.ServiceName})
-	favicon := regexp.MustCompile(`<img\b[^>]*>`).FindString(markContent)
-	if !regexp.MustCompile(`[\t\n\r\f ]src="/_appkit/favicon.svg"`).MatchString(favicon) || !regexp.MustCompile(`[\t\n\r\f ]alt=""`).MatchString(favicon) {
-		t.Fatal("banner favicon hooks")
-	}
-	service, serviceContent := part(markContent, "span", map[string]string{"class": "service"})
-	before, after, _ := strings.Cut(markContent, service)
-	if !strings.HasPrefix(strings.TrimSpace(before), favicon) || strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(before), favicon)) != "Ikigenba" || strings.TrimSpace(after) != "" {
-		t.Fatal("banner favicon, product and service order")
-	}
-	icon := ""
-	if installed {
-		icon = binaryMCPIcon
-	}
-	serviceContent = strings.TrimSpace(serviceContent)
-	if !strings.HasPrefix(serviceContent, icon) || strings.TrimSpace(serviceContent[len(icon):]) != gateway.ServiceName {
-		t.Fatalf("banner service icon and name: %q", serviceContent)
-	}
-	children := []string{mark}
-	if installed {
-		launcher, _ := part(header, "button", map[string]string{"class": "launcher"})
-		children = append(children, launcher)
-	}
-	profile, profileContent := part(header, "a", map[string]string{"class": "profile", "aria-label": "Profile", "title": ""})
-	part(profileContent, "svg", nil)
-	if visible(profileContent) != "" {
-		t.Fatal("profile link has visible text")
-	}
-	form, formContent := part(header, "form", nil)
-	_, signout := part(formContent, "button", map[string]string{"class": "signout", "type": "submit", "aria-label": "Sign out", "title": "Sign out"})
-	part(signout, "svg", nil)
-	if visible(signout) != "" {
-		t.Fatal("sign-out button has visible text")
-	}
-	children = append(children, profile, form)
-	rest := header
-	for _, child := range children {
-		rest = strings.TrimSpace(rest)
-		if !strings.HasPrefix(rest, child) {
-			t.Fatal("banner order: want only mark, optional launcher, profile and sign-out form")
-		}
-		rest = rest[len(child):]
-	}
-	if strings.TrimSpace(rest) != "" {
-		t.Fatal("extra banner header content")
 	}
 }
 

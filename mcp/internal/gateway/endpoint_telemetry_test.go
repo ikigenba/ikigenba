@@ -59,7 +59,7 @@ func TestEndpointStandaloneTools(t *testing.T) {
 }
 
 func TestEndpointToolTrail(t *testing.T) {
-	// R-O3U0-KWFR R-JQW7-8JSX R-JS43-MBJM R-VTGO-2KH2
+	// R-O3U0-KWFR R-JQW7-8JSX R-ZPHR-94TJ R-VTGO-2KH2
 	for _, path := range []string{"/mcp", "/mcp/missing"} {
 		for _, tc := range []struct{ tool, args, kind, outcome string }{
 			{"services", `{}`, "read", "ok"},
