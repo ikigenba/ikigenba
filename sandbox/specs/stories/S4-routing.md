@@ -1148,18 +1148,18 @@ Response:
 HTTP/1.1 500 Internal Server Error
 ```
 
-Status 500. This is dummy's own answer, not nginx's: the body is the one line `identity header missing`.
+Status 500. This is dummy's own answer, not nginx's: the body is appkit's `identity.MissingBody`.
 
 Preconditions:
 
 - The checkout holds `dummy` and no `auth`, and `wip` is up from an `up` run with it so; `sandbox-wip-dummy.service` is active.
-- dummy answers any request that carries no `X-User-Id` with 500 and the body `identity header missing`, and writes `dummy: request <id>: X-User-Id is missing` to its stderr, where `<id>` is the `X-Request-Id` it received.
+- dummy answers any request that carries no `X-User-Id` with 500 and the body appkit's `identity.MissingBody`, and writes to its stderr a diagnostic naming the missing header and the `X-Request-Id` it received.
 
 Postconditions:
 
 - Nothing has changed. No `/check` subrequest was made, and no redirect to sign in was sent.
 - dummy received `GET /widgets` with no `X-User-Id` and no `X-User-Email` header, and with an `X-Request-Id` nginx made; neither `1` nor `boss@michaelgreenly.dev` reached dummy.
-- dummy's journal holds `dummy: request <id>: X-User-Id is missing`, naming that same id.
+- dummy's journal holds a diagnostic naming the missing header and that same id.
 
 ## A browser asks for the bare localhost address in a sandbox without auth
 
@@ -1243,12 +1243,12 @@ Access-Control-Expose-Headers: Mcp-Session-Id, WWW-Authenticate
 Vary: Origin
 ```
 
-Status 500. This is dummy's own answer, not nginx's: the body is the one line `identity header missing`.
+Status 500. This is dummy's own answer, not nginx's: the body is appkit's `identity.MissingBody`.
 
 Preconditions:
 
 - The checkout holds `dummy` and no `auth`, and `wip` is up from an `up` run with it so; `sandbox-wip-dummy.service` is active.
-- dummy answers any request that carries no `X-User-Id` with 500 and the body `identity header missing`.
+- dummy answers any request that carries no `X-User-Id` with 500 and the body appkit's `identity.MissingBody`.
 
 Postconditions:
 
