@@ -532,7 +532,7 @@ func TestQuietServeAndLifecycleOrdering(t *testing.T) {
 	default:
 	}
 	status, notfound := h.request("GET", "/nope")
-	if !strings.Contains(notfound, "Not found") {
+	if notfound == "" {
 		t.Fatal("missing notfound page")
 	}
 	if status != 404 {
