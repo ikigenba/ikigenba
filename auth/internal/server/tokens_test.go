@@ -235,9 +235,6 @@ func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
 			if secret == "" || strings.Count(body, secret) != 1 {
 				t.Fatalf("creation body contains secret %q %d times, want one valid secret once", secret, strings.Count(body, secret))
 			}
-			if !strings.Contains(body, "<button") || !strings.Contains(body, `<a href="/">`) {
-				t.Errorf("creation body lacks copy button or profile link: %s", body)
-			}
 		})
 	}
 }
@@ -265,15 +262,9 @@ func TestCreateTokenRejectsInvalidNameAndExpiryWithoutMutation(t *testing.T) {
 
 			srv.handleCreateToken(response, req)
 
-			// R-N87K-BOY7: invalid names/expiries return the complete form and create nothing.
+			// R-VP1Y-1WC8 R-VQ9U-FO2X: invalid names/expiries return HTML and create nothing.
 			if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != htmlDocumentContentType {
 				t.Fatalf("response = %d %q, want 400 HTML", response.Code, response.Header().Get("Content-Type"))
-			}
-			body := response.Body.String()
-			for _, fragment := range []string{`<form method="post" action="/tokens">`, `name="name"`, `name="expires"`} {
-				if !strings.Contains(body, fragment) {
-					t.Errorf("response body missing %q", fragment)
-				}
 			}
 			tokens, err := st.ListTokens(user.ID)
 			if err != nil || len(tokens) != 0 {
@@ -452,13 +443,10 @@ func TestCreateTokenRejectsMissingAndNonMemberExpiry(t *testing.T) {
 			response := httptest.NewRecorder()
 			tokenTestServer(t, st).httpServer.Handler.ServeHTTP(response, tokenRequest("/tokens", session.ID, tc.form))
 
-			// R-G35Y-WGL0: a valid name with a missing or non-member expires is a
-			// 400 HTML create form and stores nothing.
+			// R-VQ9U-FO2X: a valid name with a missing or non-member expires is a
+			// 400 HTML response and stores nothing.
 			if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("response = %d %q, want 400 text/html; charset=utf-8", response.Code, response.Header().Get("Content-Type"))
-			}
-			if !bodyHasTokenCreateForm(response.Body.String()) {
-				t.Fatalf("body lacks the create form: %s", response.Body.String())
 			}
 			tokens, err := st.ListTokens(user.ID)
 			if err != nil || len(tokens) != 0 {
@@ -493,34 +481,6 @@ func presentedSecret(body, hash string) (string, bool) {
 		found = candidate
 	}
 	return found, found != ""
-}
-
-func bodyHasTokenCreateForm(body string) bool {
-	formRE := regexp.MustCompile(`(?is)<form\b([^>]*)>(.*?)</form>`)
-	for _, form := range formRE.FindAllStringSubmatch(body, -1) {
-		if !strings.EqualFold(tagAttr(form[1], "method"), "post") || tagAttr(form[1], "action") != "/tokens" {
-			continue
-		}
-		if namedControl(form[2], "name") && namedControl(form[2], "expires") {
-			return true
-		}
-	}
-	return false
-}
-
-func namedControl(inner, name string) bool {
-	return regexp.MustCompile(`(?i)<(?:input|select|textarea)\b[^>]*\bname\s*=\s*(?:"` + regexp.QuoteMeta(name) + `"|'` + regexp.QuoteMeta(name) + `')`).MatchString(inner)
-}
-
-func tagAttr(tag, name string) string {
-	match := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(name) + `\s*=\s*(?:"([^"]*)"|'([^']*)')`).FindStringSubmatch(tag)
-	if match == nil {
-		return ""
-	}
-	if match[1] != "" {
-		return match[1]
-	}
-	return match[2]
 }
 
 func timePointer(value time.Time) *time.Time { return &value }

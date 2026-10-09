@@ -205,7 +205,7 @@ func TestClientAndPersonalRefusalCausesAreIndistinguishable(t *testing.T) {
 }
 
 func TestMeRejectsClientTokensRegardlessOfHost(t *testing.T) {
-	// R-A5Y7-BL86 R-AATS-UO6Y: /me always supplies empty host; live and expired client tokens yield the same plain refusal as unknown/personal failures.
+	// R-A5Y7-BL86 R-IN8P-M6D3: /me always supplies empty host; live and expired client tokens yield the same plain refusal as unknown/personal failures.
 	var expected string
 	for _, cause := range []string{"live-client", "expired-client", "unknown", "disabled", "expired", "stale-owner"} {
 		for _, hosts := range [][]string{nil, {"mcp.sbx.ikigenba.dev"}} {

@@ -68,20 +68,32 @@ func tokenMinute(t time.Time) string   { return t.UTC().Format("2006-01-02 15:04
 func tokenTime(t time.Time) tokenTimeData {
 	return tokenTimeData{Datetime: tokenDatetime(t), Text: tokenMinute(t)}
 }
+
+// ElapsedJustNow and the other elapsed constants supply relative-time copy.
+const (
+	ElapsedJustNow string = "just now"
+	ElapsedMinute  string = "1 minute ago"
+	ElapsedMinutes string = "%d minutes ago"
+	ElapsedHour    string = "1 hour ago"
+	ElapsedHours   string = "%d hours ago"
+	ElapsedDay     string = "1 day ago"
+	ElapsedDays    string = "%d days ago"
+)
+
 func tokenElapsed(d time.Duration) string {
 	if d < time.Minute {
-		return "just now"
+		return ElapsedJustNow
 	}
-	unit, n := "minute", int64(d/time.Minute)
+	singular, plural, n := ElapsedMinute, ElapsedMinutes, int64(d/time.Minute)
 	if d >= 24*time.Hour {
-		unit, n = "day", int64(d/(24*time.Hour))
+		singular, plural, n = ElapsedDay, ElapsedDays, int64(d/(24*time.Hour))
 	} else if d >= time.Hour {
-		unit, n = "hour", int64(d/time.Hour)
+		singular, plural, n = ElapsedHour, ElapsedHours, int64(d/time.Hour)
 	}
-	if n != 1 {
-		unit += "s"
+	if n == 1 {
+		return singular
 	}
-	return fmt.Sprintf("%d %s ago", n, unit)
+	return fmt.Sprintf(plural, n)
 }
 
 func tokenCreateValues(name, expiry string, rejected bool) tokenCreateData {

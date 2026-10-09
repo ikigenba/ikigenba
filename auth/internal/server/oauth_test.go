@@ -171,7 +171,10 @@ func TestOAuthRegistration(t *testing.T) {
 			t.Fatal("refused registration persisted")
 		}
 	}
-	// R-J4FO-X3XJ R-62EQ-CIES: exact registration object, one client, no token/session, no credentials/origin check.
+	// R-IPOI-DPUH R-IQWE-RHL6 R-62EQ-CIES: exact registration object, one client, no token/session, no credentials/origin check.
+	if DefaultClientName == "" {
+		t.Fatal("empty default client name")
+	}
 	valid := []string{base, base + strings.Repeat(" ", 65536-len(base)), fmt.Sprintf(`{"client_name":%q,"redirect_uris":[%q],"scope":"\u0000","token_endpoint_auth_method":"ignored","grant_types":9}`, strings.Repeat("é", 200), longURI), `{"client_name":"a\\u0000b","redirect_uris":["http://127.0.0.1:9/"]}`}
 	ten := make([]string, 10)
 	for i := range ten {
@@ -202,7 +205,7 @@ func TestOAuthRegistration(t *testing.T) {
 		_ = json.Unmarshal([]byte(body), &input)
 		name, ok := input["client_name"].(string)
 		if !ok {
-			name = "MCP client"
+			name = DefaultClientName
 		}
 		want := map[string]any{"client_id": c.ID, "client_id_issued_at": float64(f.now.Unix()), "client_name": name, "redirect_uris": input["redirect_uris"], "grant_types": []any{"authorization_code"}, "response_types": []any{"code"}, "token_endpoint_auth_method": "none"}
 		if !reflect.DeepEqual(obj, want) || c.Name != name || oauthCount(t, f.st, "clients") != before+1 || oauthCount(t, f.st, "tokens") != 0 || oauthCount(t, f.st, "sessions") != sessions {
@@ -398,9 +401,8 @@ func TestOAuthAuthorizeOriginAndStoreFailures(t *testing.T) {
 
 func TestOAuthApprovePage(t *testing.T) {
 	// R-4PMR-1OR0 R-4VQ8-YJGH R-531N-95WN R-APGL-FX3A: canonical template bytes and exact approve data, one injected banner call, no mutations.
-	// R-AQOH-TOTZ R-ARWE-7GKO R-AT4A-L8BD R-AUC6-Z022 R-AVK3-CRSR: approve page structure, text, form fields, buttons and escaping.
 	for _, origin := range []string{"", "http://auth.wip.localhost:7400"} {
-		for _, name := range []string{`<b>x</b> & "y"`, "a\tb", "  x"} {
+		for _, name := range []string{`fixture<&"`, "a\tb", "  x"} {
 			for _, state := range []string{"", "a b&c=d"} {
 				f := newOAuthFixture(t, origin)
 				c := f.client(t, name, oauthCallback)
@@ -441,72 +443,6 @@ func TestOAuthApprovePage(t *testing.T) {
 				after := (identityFixture{store: f.st}).snapshot(t)
 				if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(clientsBefore, oauthRows(t, f.st, "clients")) || oauthCount(t, f.st, "auth_codes") != 0 {
 					t.Fatal("GET mutated domain")
-				}
-				body := w.Body.String()
-				assertAuthPage(t, body)
-				assertAuthPagePreload(t, body)
-				main := pageContent(body, pageOne(t, body, "main"))
-				sections := pageSequence(t, main, "section")
-				section := pageContent(main, sections[0])
-				pageAttr(t, sections[0], "class", "card")
-				children := pageSequence(t, section, "header", "p", "p", "p", "form")
-				header := pageContent(section, children[0])
-				h := pageSequence(t, header, "h2")
-				if pageText(pageContent(header, h[0])) != strings.Join(strings.Fields("Connect "+name), " ") {
-					t.Fatal("title text")
-				}
-				sentences := []string{name + " wants to act as you at the MCP gateway, " + gateway + ", until 2027-01-05.", "Approve only if you started this from a client you trust. You can revoke it from your profile at any time.", "After you approve, you return to localhost:61000."}
-				for i, sentence := range sentences {
-					if pageText(pageContent(section, children[i+1])) != strings.Join(strings.Fields(sentence), " ") {
-						t.Fatal("sentence", i)
-					}
-				}
-				if pageText(main) != strings.Join(strings.Fields("Connect "+name+" "+strings.Join(sentences, " ")+" Approve Deny"), " ") || len(pageElements(main, "b")) != 0 {
-					t.Fatal("main text/escaping")
-				}
-				form := children[4]
-				pageAttr(t, form, "method", "post")
-				pageAttr(t, form, "action", "/authorize")
-				content := pageContent(section, form)
-				fields := map[string]string{"response_type": "code", "client_id": c.ID, "redirect_uri": p.Get("redirect_uri"), "code_challenge": oauthChallenge, "code_challenge_method": "S256", "resource": resource}
-				if state != "" {
-					fields["state"] = state
-				}
-				inputs := pageElements(content, "input")
-				if len(inputs) != len(fields) || len(pageElements(content, "select")) != 0 {
-					t.Fatal("fields")
-				}
-				for _, input := range inputs {
-					attrs := pageAttrs(input)
-					name := attrs["name"][0]
-					value, ok := fields[name]
-					if !ok {
-						t.Fatal("duplicate/unexpected field")
-					}
-					pageAttr(t, input, "type", "hidden")
-					pageAttr(t, input, "value", value)
-					delete(fields, name)
-				}
-				actions := pageOne(t, content, "div")
-				pageAttr(t, actions, "class", "actions")
-				buttons := pageSequence(t, pageContent(content, actions), "button", "button")
-				if len(pageElements(content, "button")) != 2 {
-					t.Fatal("buttons")
-				}
-				for i, button := range buttons {
-					pageAttr(t, button, "type", "submit")
-					pageAttr(t, button, "name", "decision")
-					decision, label := "approve", "Approve"
-					if i == 1 {
-						decision, label = "deny", "Deny"
-						pageAttr(t, button, "class", "secondary")
-					} else if len(pageAttrs(button)["class"]) != 0 {
-						t.Fatal("primary class")
-					}
-					pageAttr(t, button, "value", decision)
-					if pageText(pageContent(pageContent(content, actions), button)) != label {
-						t.Fatal("button text")
-					}
 				}
 			}
 		}

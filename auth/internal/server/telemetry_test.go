@@ -278,7 +278,7 @@ func TestRequestIDRandomness(t *testing.T) {
 }
 
 func TestSignInSuccessAndSignOutTrail(t *testing.T) {
-	// R-TBD8-MVI8 R-TDT1-EEZM R-TF0X-S6QB R-THGQ-JQ7P: only successful identity changes emit user events; creation occurs once.
+	// R-TBD8-MVI8 R-TDT1-EEZM R-TF0X-S6QB R-V6RG-BC7T: only successful identity changes emit user events; creation occurs once.
 	issuer := newSignInIssuer(t)
 	issuer.issue("member-code", "trail-subject", "member@green.example")
 	st := openSignInStore(t)
@@ -353,7 +353,7 @@ func assertTrailPrivate(t *testing.T, events []telemetry.Event, secrets ...strin
 }
 
 func TestSignInRefusalTrail(t *testing.T) {
-	// R-TG8U-5YH0 R-THGQ-JQ7P: unknown, cancelled, not-member and provider failures have precise, anonymous reasons.
+	// R-V5JJ-XKH4 R-V6RG-BC7T: unknown, cancelled, not-member and provider failures have precise, anonymous reasons.
 	issuer := newSignInIssuer(t)
 	issuer.issueClaims("outside-code", map[string]any{"iss": "https://accounts.google.com", "sub": "outside", "aud": "client-id", "exp": 4102444800, "iat": 1700000000, "email": "outside@elsewhere.test", "email_verified": true, "hd": "elsewhere.test"})
 	st := openSignInStore(t)
@@ -728,7 +728,7 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 }
 
 func TestDomainFailuresRecordOnlyRequiredEvents(t *testing.T) {
-	// R-THGQ-JQ7P R-TUVM-R7DC: rejected operations and store failures do not masquerade as state changes.
+	// R-V6RG-BC7T R-TUVM-R7DC: rejected operations and store failures do not masquerade as state changes.
 	st := openSignInStore(t)
 	user, _, err := st.UpsertUserOnLogin("issuer", "owner", "owner@green.example", signInNow)
 	if err != nil {

@@ -449,7 +449,7 @@ func TestMeRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 			before := fixture.snapshot(t)
 			response := serveIdentity(fixture.server(t).handleMe, identityRequest("/me", session.ID, secret))
 
-			// R-AATS-UO6Y: all refusal causes yield the same single-line token-refused response.
+			// R-IN8P-M6D3: all refusal causes yield the same single-line token-refused response.
 			// R-NN2M-J7OI: a refused bearer does not fall back to a live session.
 			// R-2UUB-27PR: refused /me paths do not change any stored row.
 			assertPlainRefusal(t, response, http.StatusForbidden, "token refused\n")

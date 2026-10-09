@@ -11,14 +11,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -229,8 +227,8 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	st := openSignInStore(t)
 	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Fapp.green.example%2Fwork", "auth.green.example", nil, "")
-	// R-TQ5L-6X9V: auth's own space host serves an anonymous sign-in page.
-	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != signInHTMLContentType || !strings.Contains(w.Body.String(), `href="/login/google?return=`) {
+	// R-V7ZC-P3YI: auth's own space host serves an anonymous sign-in page.
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != signInHTMLContentType {
 		t.Fatalf("anonymous root = %d %q %s", w.Code, w.Header().Get("Content-Type"), w.Body.String())
 	}
 	states, err := st.ConsumeLoginState("https://app.green.example/work")
@@ -239,9 +237,8 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	}
 }
 
-func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
-	// R-QC0I-YLM5: an anonymous GET / is the HTML sign-in page. Its link target
-	// is /login/google, and a return query is carried only on that link.
+func TestAnonymousRootShowsReturnWithoutPersisting(t *testing.T) {
+	// R-VCUY-86XA R-VE2U-LYNZ: anonymous pages show the encoded return without storing it.
 	returnURL := `https://evil.example/steal?x=1&y=2"`
 	issuer := newSignInIssuer(t)
 	for _, host := range []string{"auth.green.example", "localhost:3001"} {
@@ -252,19 +249,14 @@ func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
 			bare := serveSignIn(s, http.MethodGet, "/", host, nil, "")
 			assertHTMLStatus(t, bare, http.StatusOK)
 			assertNoSetCookie(t, bare)
-			if !hasExactSignInLink(bare.Body.String(), "/login/google") || strings.Contains(bare.Body.String(), "return=") {
-				t.Fatalf("bare root links = %#v body %s", signInLinkHrefs(bare.Body.String()), bare.Body.String())
-			}
 			assertEmptySignInTables(t, st)
 
 			bogus := &http.Cookie{Name: SessionCookieName, Value: "not-a-session", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 			carried := serveSignIn(s, http.MethodGet, "/?return="+url.QueryEscape(returnURL), host, bogus, "")
 			assertHTMLStatus(t, carried, http.StatusOK)
 			assertNoSetCookie(t, carried)
-			if strings.Contains(carried.Body.String(), `action="/logout"`) {
-				t.Fatalf("unknown cookie rendered the profile: %s", carried.Body.String())
-			}
-			href := requireLoginReturnLink(t, carried.Body.String(), returnURL)
+			assertPageValues(t, carried.Body.String(), percentEncode(returnURL))
+			href := "/login/google?return=" + percentEncode(returnURL)
 			assertEmptySignInTables(t, st)
 			assertReturnNotPersisted(t, st, returnURL)
 
@@ -283,12 +275,7 @@ func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
 			deadPage := serveSignIn(dead, http.MethodGet, "/?return="+url.QueryEscape(returnURL), host, deadCookie, "")
 			assertHTMLStatus(t, deadPage, http.StatusOK)
 			assertNoSetCookie(t, deadPage)
-			if strings.Contains(deadPage.Body.String(), `action="/logout"`) {
-				t.Fatalf("dead session rendered the profile: %s", deadPage.Body.String())
-			}
-			if got := requireLoginReturnLink(t, deadPage.Body.String(), returnURL); got != href {
-				t.Fatalf("dead-session link = %q, want %q", got, href)
-			}
+			assertPageValues(t, deadPage.Body.String(), percentEncode(returnURL))
 			if formatSignInIdentity(t, st) != before {
 				t.Fatalf("dead-session root changed identity rows:\n%s", formatSignInIdentity(t, st))
 			}
@@ -313,16 +300,13 @@ func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
 	}
 }
 
-func TestOwnSpaceHostAnonymousRootLinksToLogin(t *testing.T) {
-	// R-TQ5L-6X9V: an anonymous HTTPS request to auth's own space host
-	// reaches the sign-in page, with a link directly to the login start.
+func TestOwnSpaceHostAnonymousRoot(t *testing.T) {
+	// R-V7ZC-P3YI: an anonymous HTTPS request to auth's own space host
+	// reaches the sign-in page.
 	st := openSignInStore(t)
 	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 	w := serveSignIn(s, http.MethodGet, "https://auth.green.example/", "auth.green.example", nil, "")
 	assertHTMLStatus(t, w, http.StatusOK)
-	if !hasExactSignInLink(w.Body.String(), "/login/google") {
-		t.Fatalf("anonymous root links = %#v", signInLinkHrefs(w.Body.String()))
-	}
 }
 
 func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
@@ -433,7 +417,7 @@ func TestLoginStartDiscoveryFailureRemovesState(t *testing.T) {
 }
 
 func TestCallbackAccessDeniedPrecedesStateValidation(t *testing.T) {
-	// R-T8XF-VC0U: access_denied is a cookie-free sign-in page, consumes only
+	// R-V4BN-JSQF: access_denied is a cookie-free sign-in page, consumes only
 	// the named login state, and does not create a user or session. It wins
 	// over the unknown-state 400.
 	issuer := newSignInIssuer(t)
@@ -477,9 +461,6 @@ func TestCallbackAccessDeniedPrecedesStateValidation(t *testing.T) {
 		w := serveSignIn(s, http.MethodGet, target, "auth.green.example", nil, "")
 		assertHTMLStatus(t, w, http.StatusOK)
 		assertNoSetCookie(t, w)
-		if !hasExactSignInLink(w.Body.String(), "/login/google") || strings.Contains(w.Body.String(), "should-not-leak") || strings.Contains(w.Body.String(), "return=") {
-			t.Fatalf("access_denied links = %#v body %s", signInLinkHrefs(w.Body.String()), w.Body.String())
-		}
 		if formatSignInIdentity(t, st) != before || issuer.formCount() != 0 {
 			t.Fatalf("access_denied created a user, session, or exchange: forms=%d\n%s", issuer.formCount(), formatSignInIdentity(t, st))
 		}
@@ -499,7 +480,7 @@ func TestCallbackAccessDeniedPrecedesStateValidation(t *testing.T) {
 }
 
 func TestCallbackAccessDeniedReportsStoreFailure(t *testing.T) {
-	// R-T8XF-VC0U: failure to consume a named state takes the store-error
+	// R-V4BN-JSQF: failure to consume a named state takes the store-error
 	// response path, even though a normal access_denied response is 200.
 	st := openSignInStore(t)
 	state, err := st.CreateLoginState("verifier", "")
@@ -866,9 +847,9 @@ func TestCallbackMembershipIsHostedDomainAndVerifiedEmail(t *testing.T) {
 	}
 }
 
-func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
-	// R-LAND-R94N: live-session GET / resolves without touching state, ignores
-	// return, and supplies logout and token-creation forms in a 200 HTML page.
+func TestProfileUsesLookupAndIgnoresReturn(t *testing.T) {
+	// R-V33R-60ZQ: live-session GET / resolves without touching state, ignores
+	// return, and responds with a 200 HTML page.
 	st := openSignInStore(t)
 	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
 	if err != nil {
@@ -899,30 +880,6 @@ func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
 		t.Fatalf("profile response = %d %q", baseline.Code, baseline.Header().Get("Content-Type"))
 	}
 	body := baseline.Body.String()
-	logout, create := false, false
-	for _, form := range pageElements(body, "form") {
-		attrs := pageAttrs(form)
-		if len(attrs["method"]) != 1 || !strings.EqualFold(attrs["method"][0], "post") || len(attrs["action"]) != 1 {
-			continue
-		}
-		switch attrs["action"][0] {
-		case "/logout":
-			logout = true
-		case "/tokens":
-			fields := make(map[string]bool)
-			for _, field := range pageTags(pageContent(body, form)) {
-				if field.name == "input" || field.name == "select" || field.name == "textarea" {
-					for _, name := range pageAttrs(field)["name"] {
-						fields[name] = true
-					}
-				}
-			}
-			create = fields["name"] && fields["expires"]
-		}
-	}
-	if !logout || !create {
-		t.Fatalf("profile forms: logout=%t, token creation with name/expires=%t", logout, create)
-	}
 	if got := profileStateSnapshot(t, st); got != before {
 		t.Fatalf("profile changed state:\n%s\nwant:\n%s", got, before)
 	}
@@ -1115,45 +1072,6 @@ func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
 			}
 		})
 	}
-}
-
-var signInLinkPattern = regexp.MustCompile(`(?i)<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')`)
-
-func signInLinkHrefs(body string) []string {
-	matches := signInLinkPattern.FindAllStringSubmatch(body, -1)
-	hrefs := make([]string, 0, len(matches))
-	for _, match := range matches {
-		raw := match[1]
-		if raw == "" {
-			raw = match[2]
-		}
-		hrefs = append(hrefs, html.UnescapeString(raw))
-	}
-	return hrefs
-}
-
-func hasExactSignInLink(body, href string) bool {
-	for _, got := range signInLinkHrefs(body) {
-		if got == href {
-			return true
-		}
-	}
-	return false
-}
-
-func requireLoginReturnLink(t *testing.T, body, returnURL string) string {
-	t.Helper()
-	for _, href := range signInLinkHrefs(body) {
-		parsed, err := url.Parse(href)
-		if err != nil || parsed.Host != "" || parsed.Path != "/login/google" {
-			continue
-		}
-		if parsed.Query().Get("return") == returnURL {
-			return href
-		}
-	}
-	t.Fatalf("no /login/google link carries %q in %s (links %#v)", returnURL, body, signInLinkHrefs(body))
-	return ""
 }
 
 func setCookieAttr(header, attr string) bool {

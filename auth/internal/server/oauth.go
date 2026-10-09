@@ -16,6 +16,9 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
+// DefaultClientName is the display name for a registration without a name.
+const DefaultClientName string = "MCP client"
+
 func (s *Server) mcpOrigin(r *http.Request) string {
 	scheme, authority, _ := strings.Cut(ownOrigin(r.Host, s.cfg.PublicURL), "://")
 	return scheme + "://mcp." + strings.TrimPrefix(authority, "auth.")
@@ -123,7 +126,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	var object map[string]json.RawMessage
 	_ = json.Unmarshal(body, &object)
-	name := "MCP client"
+	name := DefaultClientName
 	if raw, ok := object["client_name"]; ok {
 		if string(raw) == "null" || json.Unmarshal(raw, &name) != nil || utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 200 || strings.ContainsRune(name, 0) {
 			oauthError(w, "invalid_client_metadata")

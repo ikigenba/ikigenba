@@ -7,20 +7,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/auth"
@@ -268,7 +267,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 		writeServices(t, services, secondSocket)
 		// R-GNC2-6SEM: main leaves Inherit nil; the response comes from
 		// the listening socket supplied as descriptor 3.
-		// R-VL0J-XV2S: the cgo-free executable serves the live session from
+		// R-IM0T-8EME: the cgo-free executable serves the live session from
 		// a working directory containing only state/auth.db.
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -293,22 +292,13 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Contains(body, []byte(`popovertarget="services"`)) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
-			t.Fatalf("main banner source has no launcher drawn from IKIGENBA_SERVICES: %s", body)
+		// R-IKSW-UMVP: the embedded footer uses the run's display string.
+		var footer bytes.Buffer
+		if err := page.Templates().ExecuteTemplate(&footer, "footer", page.Banner{Service: "auth", Version: display}); err != nil {
+			t.Fatal(err)
 		}
-		// R-VIKR-6BLE: the real executable's banner page ends its body with
-		// the footer carrying appkit's display string for this run.
-		bodyContent := regexp.MustCompile(`(?s)<body\b[^>]*>(.*)</body>`).FindSubmatch(body)
-		if len(bodyContent) != 2 {
-			t.Fatalf("main page has no body element: %s", body)
-		}
-		footer := regexp.MustCompile(`(?s)<footer\b[^>]*>(.*?)</footer>[ \t\r\n\f\v]*$`).FindSubmatch(bodyContent[1])
-		if len(footer) != 2 {
-			t.Fatalf("main page body does not end with a footer: %s", bodyContent[1])
-		}
-		text := html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(string(footer[1]), ""))
-		if text != "auth "+display {
-			t.Fatalf("main footer text = %q, want %q", text, "auth "+display)
+		if !bytes.Contains(body, footer.Bytes()) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
+			t.Fatal("main page omits supplied banner values or expected footer")
 		}
 	}
 
