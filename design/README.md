@@ -18,9 +18,8 @@ design/
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: banner, widgets table, add form, states
     banner.html     the banner: the home link, the breadcrumb trail and its
-                    page menu, launcher, profile, sign out, on every kind of
-                    page, with and without the launcher, and at 375px
-    launcher.html   the banner's service launcher, open, filtered, empty, disabled
+                    page menu, profile, sign out, on every kind of page, and
+                    at 375px
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
     scripts.html    scripts' catalog: your scripts and their last runs
@@ -38,7 +37,8 @@ design/
                     one run: details, usage and cost, answer, transcript,
                     files, other states
     webhooks.html   webhooks' landing: the space's webhooks
-    home.html       home's landing: every service on the space, as tiles
+    home.html       home's landing: every service on the space, as tiles,
+                    application services over core services
     icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
@@ -87,11 +87,14 @@ systems. The product name is **Ikigenba**. The example space is
 `ada@acme.dev`.
 
 **app.html** — dummy's control panel.
-- Banner: as banner.html has it, the service `dummy`, without the launcher;
-  the profile links to `https://auth.acme.ikigenba.com/`, sign out posts to
+- Banner: as banner.html has it, the service `dummy`; the profile links to
+  `https://auth.acme.ikigenba.com/`, sign out posts to
   `https://auth.acme.ikigenba.com/logout`.
-- Footer: the service name and its version, `dummy v0.8.0`, muted and small.
-  Banner and footer appear only on signed-in pages.
+- Footer (decided 2026-10-09): the release alone, `release-7`, then the
+  commit it was built from in parentheses, `(85e082b)`, in a `span`; muted
+  and small, the commit fainter, the whole line at the right edge. The
+  service's name is not repeated: the banner's trail names it. Banner and
+  footer appear only on signed-in pages.
 - `h1` Widgets; a table of Name / Count / Status: `alpha` 3 active, `beta` 0
   paused, `gamma` 12 retired, `delta` 128 active, `epsilon` 7 paused,
   `zeta` 1024 active.
@@ -102,7 +105,9 @@ systems. The product name is **Ikigenba**. The example space is
   ("Widget created." + `Back to widgets`).
 
 **banner.html** — the banner every app page carries, in this order (decided
-2026-10-09, banner navigation; it replaces the mark that held the service):
+2026-10-09, banner navigation; it replaces the mark that held the service;
+the same day the service launcher left the banner, since home's tiles are
+the way to every service):
 - The product mark, `a.mark`: the favicon as an image (`img` of
   `favicon.svg`, `alt=""`, 18px; the glyph is hidden when the mark holds
   one), then the text **Ikigenba**, capitalised, bold. It links to home: the
@@ -123,8 +128,8 @@ systems. The product name is **Ikigenba**. The example space is
 - The chevron, `button.menu` after the service name: a Tabler
   `chevron-down` at 14px, labelled and titled `<service> pages`, the only
   trigger of the page menu, on every signed-in page, root pages included.
-  It opens a native popover (`popovertarget=pages`), as the launcher's
-  button does, so no script opens or closes it. The service name stays a
+  It opens a native popover (`popovertarget=pages`), so no script opens or
+  closes it. The service name stays a
   plain link to the landing page and never opens a menu.
 - The page menu, `nav.pages#pages[popover]` labelled `<service> pages`,
   hanging under the trail's root: a `ul` of the service's pages, the landing
@@ -134,54 +139,32 @@ systems. The product name is **Ikigenba**. The example space is
   The list never grows beyond these: deeper navigation starts from the
   landing page's content, never from the banner. The menu is placed with CSS
   anchor positioning; a browser without it gets a fixed offset.
-- At the right edge three quiet 36px icon buttons: the service launcher's
-  grid (`button.launcher[popovertarget=services]`, labelled and titled
-  `Services`, only when there are services), the profile (`a.profile`, a
-  `user-circle`, labelled `Profile`, titled with the email) and sign out
+- At the right edge two quiet 36px icon buttons: the profile (`a.profile`,
+  a `user-circle`, labelled `Profile`, titled with the email) and sign out
   (`button.signout`, the `logout` icon, labelled and titled `Sign out`, in
-  `form.inline` posting to the logout URL). With no launcher the other two
-  keep their places.
+  `form.inline` posting to the logout URL). No service launcher: the mark
+  leads to home, and home's tiles lead to every service.
 - Two breakpoints. Below 900px the product name hides and the favicon stays
   as the home link, so the trail has the room: the rule sets the mark's
   `font-size` to 0. Below 640px the trail's middle levels collapse to one
-  `…` between the root and the current page, and the launcher's panel
-  becomes a full-width sheet. At any width the current level truncates with
+  `…` between the root and the current page. At any width the current
+  level truncates with
   an ellipsis when it must; the `h1` beneath repeats it in full.
 - The separator between mark and trail is the hairline; a `|` glyph was
   drawn and dropped.
 - Shown on the landing page with the menu closed and open, on a two-level
-  and a three-level trail, on tools (menu open) and about, with and without
-  the launcher, with `telemetry`, and without home, each also in a 375px
-  frame; the three-level trail also at 880px. The page's own banner opens
-  both popovers. The lab frames a banner in `.frame`, which shares
+  and a three-level trail, on tools (menu open) and about, with `telemetry`,
+  and without home, each also in a 375px frame; the three-level trail also
+  at 880px. The page's own banner opens the page menu. The lab frames a
+  banner in `.frame`, which shares
   `body > header`'s rules (`:is(body, .frame) > header`); `.frame.mid` (880px)
   takes the below-900px rules, `.frame.narrow` (375px) those and the
   below-640px rules, and `.frame.tall` leaves room for a menu drawn open,
   without `popover`, under its chevron.
 
-**launcher.html** — the service launcher, shown from dummy.
-- Banner and footer as in app.html, with the launcher's grid button first of
-  the icons at the right edge; the panel open on load, hanging under it, its
-  right edge on the banner's.
-- The panel: a `Find a service` search field over a 4-column grid of 30
-  services, A to Z, each a Tabler icon over its name, linking to
-  `https://<name>.acme.ikigenba.com/`; `dummy` marked current. The services
-  known today — `auth`, `crm`, `cron`, `dummy`, `events`, `files`,
-  `invoices`, `ledger`, `prompts`, `repos`, `scripts`, `sites`, `webhooks`,
-  `wiki` — with plausible others to fill the grid to scale.
-- `repos` is disabled (`opsctl disable`): its tile stays in place, faint and
-  unlinked, titled "repos is unavailable".
-- States: filtered by `cr` (cron, scripts, secrets); no match for `kafka`;
-  filtered by `re` with `repos` unavailable beside `secrets`.
-- Below 640px the panel is a full-width sheet under the banner.
-- Each tile's icon is the app's own `share/icon.svg`, inserted verbatim, so
-  it carries no class: the launcher styles `nav.services a > svg`, never
-  `svg.ico`, and leaves the icon without `aria-hidden` (the link text names
-  the service).
-
 **scripts.html, scripts-script.html, scripts-run.html** — scripts at
 `scripts.acme.ikigenba.com`, three levels deep: the catalog, one script, one
-run. Banner and footer as in app.html, the service `scripts`, `scripts v0.1.0`.
+run. Banner and footer as in app.html, the service `scripts`.
 - The catalog: `h1` scripts, a lede, the user's own scripts (never another
   user's) as a table of Script / Repository / Ref / Last run / When:
   `nightly-report` (exited 0), `sync-crm` (running), `rotate-keys` (failed),
@@ -213,8 +196,7 @@ run. Banner and footer as in app.html, the service `scripts`, `scripts v0.1.0`.
   a non-zero exit, timed out and killed are warn, failed is err.
 
 **events.html** — events at `events.acme.ikigenba.com`, the suite's internal
-event bus. Banner and footer as in app.html, the service `events`,
-`events v0.1.0`.
+event bus. Banner and footer as in app.html, the service `events`.
 - `h1` events, a lede, the subscribers as a table of Service / Status /
   Cursor / Lag / Since: `scripts` ok and caught up, `sites` paused, showing,
   muted, the event it is stuck on and the error it answered, and a link to
@@ -226,7 +208,7 @@ event bus. Banner and footer as in app.html, the service `events`,
 
 **cron.html** — cron at `cron.acme.ikigenba.com`, triggers that emit events
 on the suite's event bus on a schedule. Banner and footer as in app.html, the
-service `cron`, `cron v0.1.0`.
+service `cron`.
 - `h1` cron, a lede, every trigger in the space, whoever owns it, sorted by
   slug, as a table of ID / Slug / When / Owner / Status / Last fired / Next:
   `month_end` (`@monthly`, `grace@acme.dev`, active, never fired, next
@@ -242,7 +224,7 @@ service `cron`, `cron v0.1.0`.
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's
 event bus. Banner and footer as in app.html, the service `webhooks` (Tabler
-`webhook` icon), `webhooks v0.1.0`.
+`webhook` icon).
 - `h1` webhooks, a lede, every webhook in the space, whoever owns it, sorted
   by slug, as a table of ID / Slug / Scheme / URL / Owner / Last received:
   `gh_push` (`github-hmac`, the user's own, marked with the `yours` badge,
@@ -266,21 +248,25 @@ trail scripts / tools, the menu's `Tools` row current.
 
 **home.html** — home at `home.acme.ikigenba.com`, the default app, so it also
 answers at `acme.ikigenba.com`: the suite's front door, where the product mark
-leads. Banner and footer as in app.html, the service `home` (Tabler `home`
-icon), `home v0.1.0`; its menu holds home and About, no Tools.
-- `h1` Services, a lede, then the services of the space as a grid of tiles in
-  `main > nav.services`, each the service's icon over its name linking to its
-  URL, in the services file's order, entries with an icon only: exactly the
-  launcher's rules and look, drawn in `main` rather than a popover, with no
-  search field. `repos` is disabled, faint and unlinked; `home` is marked
-  current.
+leads. Banner and footer as in app.html, the service `home` with the Tabler
+`grid-dots` icon (decided 2026-10-09: the launcher's grid, now home's own);
+its menu holds home and About, no Tools.
+- `h1` Services, no lede, then the services of the space in two groups
+  (decided 2026-10-09), each a `main > section` with a `.section-head` `h2`
+  and no subtitle over a `nav.services` grid of tiles, each the service's
+  icon over its name linking to its URL, in the services file's order,
+  entries with an icon only, no search field: `Application Services`
+  (`section#application-services`), today only `dummy`; then `Core
+  Services` (`section#core-services`), every other service. `home` itself
+  draws no tile: the banner's mark is the way to it, so no tile is ever
+  current. `repos` is disabled, faint and unlinked.
 - State: no services (`div#no-services.empty`).
 
 **prompts.html, prompts-prompt.html, prompts-run.html** — prompts at
 `prompts.acme.ikigenba.com`, prompts run by an agent over the suite's models,
 three levels deep like scripts: the catalog, one prompt, one run. Banner and
-footer as in app.html, the service `prompts` with the Tabler `prompt` glyph,
-`prompts v0.1.0`. Where a part is the same as scripts' it keeps scripts'
+footer as in app.html, the service `prompts` with the Tabler `prompt` glyph.
+Where a part is the same as scripts' it keeps scripts'
 hooks, words and states; what differs is listed here.
 - The catalog: `h1` prompts, a lede, the user's own prompts as
   `table#prompt-list` of Prompt / Model / Last run / Cost / When:
