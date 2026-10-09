@@ -31,6 +31,7 @@ design/
     tools.html      scripts' tools page: its MCP tools, as every app's
     events.html     events' landing: its subscribers
     cron.html       cron's landing: the space's triggers
+    webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles
     icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
@@ -231,6 +232,22 @@ service `cron`, `cron v0.1.0`.
 - Trigger status reads as a `.status` word whose `data-status` is the status:
   active is ok, paused is warn. Times are UTC to the minute in a `time`
   carrying the RFC 3339 moment; a cell with no time is empty.
+
+**webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
+turn an authenticated delivery from outside into an event on the suite's
+event bus. Banner and footer as in app.html, the service `webhooks` (Tabler
+`webhook` icon), `webhooks v0.1.0`.
+- `h1` webhooks, a lede, every webhook in the space, whoever owns it, sorted
+  by slug, as a table of ID / Slug / Scheme / URL / Owner / Last received:
+  `gh_push` (`github-hmac`, the user's own, marked with the `yours` badge,
+  last received `2026-10-09 14:12`), `n8n_invoice` (`bearer`,
+  `grace@acme.dev`, never received), and a link to the about screen. Its
+  tools (`create`, `list`, `show`, `rotate`, `delete`, `delivery`) are on its
+  tools page. No per-webhook or per-delivery page. State: no webhooks
+  (`div#no-webhooks.empty`).
+- The scheme and the URL are `code`; the URL is the address a sender posts
+  to, `/in/<slug>` on webhooks' own host. Times are UTC to the minute in a
+  `time` carrying the RFC 3339 moment; a cell with no time is empty.
 
 **tools.html** — scripts' tools page at `/tools`, the example for every app
 whose manifest sets `mcp = true`. Banner and footer as in scripts.html, the
