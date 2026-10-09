@@ -160,7 +160,7 @@ func ValidRunID(s string) bool {
 
 // ValidName reports whether s is an available script-name shape.
 func ValidName(s string) bool {
-	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "mcp" || s == "events" || s == "declarations" {
+	if len(s) < 1 || len(s) > 64 || s[0] == '-' || s == "about" || s == "tools" || s == "mcp" || s == "events" || s == "declarations" {
 		return false
 	}
 	for _, b := range []byte(s) {

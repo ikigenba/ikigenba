@@ -44,7 +44,7 @@ func Handler(cfg Config) http.Handler {
 	gitHTTP := smarthttp.Handler(smarthttp.Config{Store: cfg.Store, Git: cfg.Git, Limits: cfg.Limits, Telemetry: cfg.Telemetry, Events: cfg.Events})
 	routes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/" || r.URL.Path == "/about":
+		case r.URL.Path == "/" || r.URL.Path == "/about" || r.URL.Path == "/tools":
 			pages.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, page.StaticPrefix):
 			static.ServeHTTP(w, r)

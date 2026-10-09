@@ -14,6 +14,8 @@ Platform apps, each one Go binary behind the host's nginx:
 - `scripts` runs Python scripts kept in `repos` on behalf of agents and keeps each run's input, output and files.
 - `events` is the suite's internal event bus: services emit events to it and it delivers them to the services that accept them.
 - `cron` keeps triggers, each a slug and a cron schedule, and emits an event on the bus each time one fires; agents subscribe scripts to those events.
+- `home` is the suite's front door: a grid of every service on the space, served at the space host.
+- `webhooks` keeps webhooks, each a slug with a minted secret, and turns each authenticated delivery from outside into an event on the bus; agents subscribe scripts to those events and fetch the body.
 - `prompts` runs prompts kept in its catalog on behalf of agents, each run one agentkit session over the suite's models, and keeps each run's input, answer, transcript and files.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 

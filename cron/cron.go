@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed assets/landing.html assets/about.html assets/notfound.html
+//go:embed assets/landing.html assets/about.html assets/tools.html assets/notfound.html
 var assets embed.FS
 
 //go:embed etc/manifest.toml etc/nginx.conf

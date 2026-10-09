@@ -41,10 +41,7 @@
      word is "Queued" or "Running", from .Status. A failure's title and
      sentence are chosen from .Reason; the repository is named by .Repo.ID
      for "repository_missing" and by .Repo.Name, or .Repo.ID when that is
-     empty, for "commit_missing" and "git_failed". Hooks: nav.crumbs[aria-label=
-     "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts"), li
-     a[href=.Script.URL] (text .Script.Name), then li[aria-current="page"]
-     (text .Run.ID, no link); h1 with text .Run.ID; p#headline.cluster
+     empty, for "commit_missing" and "git_failed". Hooks: h1 with text .Run.ID; p#headline.cluster
      holding span.status[data-kind=<kind>] (text the status word), a space, and a
      span.muted holding "started" and time[datetime=.StartedAt] (text
      .Started), then " · " and .Duration when there is one, or, when
@@ -84,13 +81,6 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-<nav class="crumbs" aria-label="Breadcrumb">
-<ol>
-<li><a href="/">scripts</a></li>
-<li><a href="{{.Script.URL}}">{{.Script.Name}}</a></li>
-<li aria-current="page">{{.Run.ID}}</li>
-</ol>
-</nav>
 {{with .Run}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{template "run-status" .}} <span class="muted">{{if .Failure}}<time datetime="{{.StartedAt}}">{{.Started}}</time>{{else}}started <time datetime="{{.StartedAt}}">{{.Started}}</time>{{with .Duration}} · {{template "run-duration" .}}{{end}}{{end}}</span></p>
 {{if .Running}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">{{if eq .Status "queued"}}Queued{{else}}Running{{end}}</strong><p>The page does not stream. Reload it to see more output.</p></div>

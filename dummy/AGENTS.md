@@ -16,7 +16,7 @@ dummy is the reference app: a control panel over widgets that shows the patterns
 
 dummy is an app: it has no stories. Its intent is the decisions document that delivered it, or the intent agreed in conversation, together with its templates under `assets/`; the design is the record.
 
-`assets/` holds `page.html`, `table.html`, `form.html` and `script.html`. They follow the repository's `design/` and are inputs to the spec. The root package embeds them, since Go's `embed` reaches only files at or below its own directory, and D01 names what it exports; the code executes them by template name. Code never writes markup of its own, not even a fragment or an error page. Every word a person or an agent reads, and every class, id and attribute, lives in the asset and nowhere else; a test, a requirement and the source never spell one. Design names each template and the data it receives, never its text, hooks, markup or styles. A test proves a page by executing the named template with the data the design says and comparing, or by checking that a value the test supplied appears in the body; it never looks for a word or a tag. A change to copy or markup is an edit to the asset alone. A template that is missing or wrong, or one that cannot show a state the design names, is filed in `specs/issues/`; the run never edits an asset to close one.
+`assets/` holds `page.html`, `table.html`, `form.html`, `script.html`, `about.html` and `tools.html`. They follow the repository's `design/` and are inputs to the spec. The root package embeds them, since Go's `embed` reaches only files at or below its own directory, and D01 names what it exports; the code executes them by template name. Code never writes markup of its own, not even a fragment or an error page. Every word a person or an agent reads, and every class, id and attribute, lives in the asset and nowhere else; a test, a requirement and the source never spell one. Design names each template and the data it receives, never its text, hooks, markup or styles. A test proves a page by executing the named template with the data the design says and comparing, or by checking that a value the test supplied appears in the body; it never looks for a word or a tag. A change to copy or markup is an edit to the asset alone. A template that is missing or wrong, or one that cannot show a state the design names, is filed in `specs/issues/`; the run never edits an asset to close one.
 
 dummy holds no stylesheet, fonts or licences; appkit's `page` package serves them. `share/icon.svg` is the Tabler outline `cube` from `design/ikigenba/icons/tabler/`, stripped as `design/README.md` asks of a launcher icon. `devctl build` packs it beside `bin/` and `etc/`.
 
@@ -24,7 +24,7 @@ dummy holds no stylesheet, fonts or licences; appkit's `page` package serves the
 
 - Go 1.26 or later.
 - A C compiler cgo can use, such as `gcc`: `go test -race` needs it (gate 4). The release build is cgo-free (gate 3).
-- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit at `v0.18.0` (see Adopting appkit).
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: appkit at `v0.20.0` (see Adopting appkit).
 - `modernc.org/sqlite`, the cgo-free SQLite driver, an approved dependency that arrives through appkit's `db` package; dummy never imports it directly.
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - A POSIX shell at `/bin/sh`, for the one exec'ing test.
@@ -34,7 +34,7 @@ Prefer the standard library, then a widely used public module; adding one needs 
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.18.0`, fetched through the ordinary module proxy and checked against the checksum database (see the root `AGENTS.md`); the build run sets it with `go get github.com/ikigenba/ikigenba/appkit@v0.18.0`. No `replace` directive, no `go.work`, no local module cache stands in for it.
+appkit is required only at a published release, here `v0.20.0`, fetched through the ordinary module proxy and checked against the checksum database (see the root `AGENTS.md`); the build run sets it with `go get github.com/ikigenba/ikigenba/appkit@v0.20.0`. No `replace` directive, no `go.work`, no local module cache stands in for it.
 
 ## Test files
 

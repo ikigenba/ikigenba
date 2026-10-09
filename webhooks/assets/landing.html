@@ -1,0 +1,61 @@
+{{/* The landing page at GET /: what the service is and every webhook in
+     the space. The root of the hierarchy: .Banner's .Trail is empty, so the
+     banner's breadcrumb holds only the service. Shown only to a signed-in
+     user; a guest is sent to sign in. Data: .Banner (a page.Banner, for
+     banner and footer); .Webhooks, every webhook in the space (whoever owns
+     it), sorted by slug, each with .ID, .Slug, .Scheme ("bearer" or
+     "github-hmac"), .URL (the address a sender posts to), .Owner (the
+     owner's email), .Mine (bool: the caller owns it), .LastReceived and
+     .LastReceivedText (RFC 3339 UTC to the second, and UTC to the minute,
+     "2026-10-05 09:00"; both empty until its first delivery). Hooks: title
+     "webhooks"; h1 with text "webhooks"; p#summary (text "Webhooks that turn
+     an authenticated delivery from outside into an event on the suite's
+     event bus."); section#webhooks with h2 "Webhooks" and either, when
+     .Webhooks is empty, div#no-webhooks.empty holding h3 "No webhooks yet"
+     and a p (text "A webhook an agent creates with the create tool shows up
+     here.", create in a code element), or table#webhook-list whose th read
+     ID, Slug, Scheme, URL, Owner, Last received, with one
+     tr[data-webhook=<.Slug>] per webhook holding td.webhook-id (.ID),
+     td.webhook-slug (.Slug), td.webhook-scheme (.Scheme in a code element),
+     td.webhook-url (.URL in a code element), td.webhook-owner (.Owner, then,
+     only when .Mine, a space and span.badge[data-kind=mine] with text
+     "yours"), and td.webhook-last holding, only when .LastReceived is not
+     empty, time[datetime=<.LastReceived>] (text .LastReceivedText); a
+     #about-link (text "About webhooks") whose href is "/about". No script
+     but appkit's /_appkit/feedback.js (and the launcher's, which the banner
+     carries). */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>webhooks</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>webhooks</h1>
+<p id="summary" class="lede">Webhooks that turn an authenticated delivery from outside into an event on the suite's event bus.</p>
+<section id="webhooks" class="card flush" aria-labelledby="webhooks-title">
+<header><h2 id="webhooks-title">Webhooks</h2></header>
+{{if .Webhooks}}<div class="table-scroll">
+<table id="webhook-list">
+<thead><tr><th>ID</th><th>Slug</th><th>Scheme</th><th>URL</th><th>Owner</th><th>Last received</th></tr></thead>
+<tbody>
+{{range .Webhooks}}<tr data-webhook="{{.Slug}}">
+<td class="webhook-id">{{.ID}}</td>
+<td class="webhook-slug">{{.Slug}}</td>
+<td class="webhook-scheme"><code>{{.Scheme}}</code></td>
+<td class="webhook-url"><code>{{.URL}}</code></td>
+<td class="webhook-owner">{{.Owner}}{{if .Mine}} <span class="badge" data-kind="mine">yours</span>{{end}}</td>
+<td class="webhook-last">{{if .LastReceived}}<time datetime="{{.LastReceived}}">{{.LastReceivedText}}</time>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-webhooks" class="empty">
+<h3 class="text-md">No webhooks yet</h3>
+<p>A webhook an agent creates with the <code>create</code> tool shows up here.</p>
+</div>{{end}}
+</section>
+<p><a id="about-link" href="/about">About webhooks</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

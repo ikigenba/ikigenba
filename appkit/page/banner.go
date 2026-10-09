@@ -26,6 +26,14 @@ type Banner struct {
 	Icon                                  template.HTML
 	Version, Email, ProfileURL, LogoutURL string
 	Services                              []Service
+	Home                                  string
+	Tools                                 bool
+	Trail                                 []Level
+}
+
+// Level describes one step below the app's landing page.
+type Level struct {
+	Name, URL string
 }
 
 // Kit holds the app identity and the services path captured at construction.
@@ -47,6 +55,12 @@ func (k *Kit) Banner(u User) Banner {
 	entries, err := services.Read(k.path)
 	if err != nil {
 		return banner
+	}
+	if home, ok := entries.Find("home"); ok && home.Enabled {
+		banner.Home = home.URL
+	}
+	if service, ok := entries.Find(k.service); ok {
+		banner.Tools = service.MCP
 	}
 	for _, entry := range entries {
 		if entry.HasIcon {

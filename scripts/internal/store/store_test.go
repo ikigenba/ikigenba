@@ -170,7 +170,7 @@ func TestTriggerVocabulary(t *testing.T) {
 }
 
 func TestWordsAndNames(t *testing.T) {
-	// R-8X3J-K44N R-8YBF-XVVC R-XX43-QPZC R-RDHU-ATN8
+	// R-8X3J-K44N R-8YBF-XVVC R-XX43-QPZC R-RRNC-0GAM
 	equal(t, []string{store.StatusRunning, store.StatusExited, store.StatusKilled, store.StatusTimedOut, store.StatusFailed}, []string{"running", "exited", "killed", "timed_out", "failed"})
 	equal(t, []string{store.ReasonRepositoryMissing, store.ReasonCommitMissing, store.ReasonTooLarge, store.ReasonGitFailed, store.ReasonTimedOut, store.ReasonStartFailed}, []string{"repository_missing", "commit_missing", "too_large", "git_failed", "timed_out", "start_failed"})
 	sentinels := []error{store.ErrNotFound, store.ErrNameTaken, store.ErrEnded}
@@ -184,10 +184,10 @@ func TestWordsAndNames(t *testing.T) {
 			}
 		}
 	}
-	for _, good := range []string{"a", "0", "a-", "about-us", "mcp-audit", "events-digest", "declarations2", strings.Repeat("a", 64)} {
+	for _, good := range []string{"a", "0", "a-", "about-us", "toolset", "mcp-audit", "events-digest", "declarations2", strings.Repeat("a", 64)} {
 		equal(t, store.ValidName(good), true)
 	}
-	for _, bad := range []string{"", "about", "mcp", "events", "declarations", "CRM Weekly", " report", "-report", "a_b", strings.Repeat("a", 65), "é", "a\x00"} {
+	for _, bad := range []string{"", "about", "tools", "mcp", "events", "declarations", "CRM Weekly", " report", "-report", "a_b", strings.Repeat("a", 65), "é", "a\x00"} {
 		equal(t, store.ValidName(bad), false)
 	}
 	for b := 0; b < 256; b++ {

@@ -1,0 +1,31 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. Shown only to a signed-in user. Data: .Banner (a
+     page.Banner, for banner and footer; its .Service is the name and its
+     .Version the version shown); .Description (the service's one-line
+     description, the manifest's). Hooks: title "About mcp"; h1 with text
+     "About mcp"; dl#about.kv holding dt "Name" then dd#about-name
+     (.Banner.Service), dt "Version" then dd#about-version (.Banner.Version,
+     present even when empty), and dt "Description" then
+     dd#about-description (.Description). No link of the page's own: the
+     banner's trail is the way back. No section of the landing page's, no
+     h2. No script but appkit's /_appkit/feedback.js (and the launcher's,
+     which the banner carries). */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About mcp</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About mcp</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{.Banner.Version}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

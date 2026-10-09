@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>webhooks</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="webhooks.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.876 13.61a4 4 0 1 0 6.124 3.39h6"/><path d="M15.066 20.502a4 4 0 1 0 1.934 -7.502c-.706 0 -1.424 .179 -2 .5l-3 -5.5"/><path d="M16 8a4 4 0 1 0 -8 0c0 1.506 .77 2.818 2 3.5l-3 5.5"/></svg>webhooks</a><button class="menu" type="button" popovertarget="pages" aria-label="webhooks pages" title="webhooks pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="webhooks pages"><ul><li><a href="webhooks.html" aria-current="page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.876 13.61a4 4 0 1 0 6.124 3.39h6"/><path d="M15.066 20.502a4 4 0 1 0 1.934 -7.502c-.706 0 -1.424 .179 -2 .5l-3 -5.5"/><path d="M16 8a4 4 0 1 0 -8 0c0 1.506 .77 2.818 2 3.5l-3 5.5"/></svg>webhooks<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg></a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
+</header>
+
+<main>
+  <h1>webhooks</h1>
+  <p id="summary" class="lede">Webhooks that turn an authenticated delivery from outside into an event on the suite's event bus.</p>
+
+  <section id="webhooks" class="card flush" aria-labelledby="webhooks-title">
+    <header><h2 id="webhooks-title">Webhooks</h2></header>
+    <div class="table-scroll">
+      <table id="webhook-list">
+        <thead><tr><th>ID</th><th>Slug</th><th>Scheme</th><th>URL</th><th>Owner</th><th>Last received</th></tr></thead>
+        <tbody>
+          <tr data-webhook="gh_push">
+            <td class="webhook-id">whk_3c8e1f5a7b9d2046</td>
+            <td class="webhook-slug">gh_push</td>
+            <td class="webhook-scheme"><code>github-hmac</code></td>
+            <td class="webhook-url"><code>https://webhooks.acme.ikigenba.com/in/gh_push</code></td>
+            <td class="webhook-owner">ada@acme.dev <span class="badge" data-kind="mine">yours</span></td>
+            <td class="webhook-last"><time datetime="2026-10-09T14:12:37Z">2026-10-09 14:12</time></td>
+          </tr>
+          <tr data-webhook="n8n_invoice">
+            <td class="webhook-id">whk_9a1d4b7e2c6f8035</td>
+            <td class="webhook-slug">n8n_invoice</td>
+            <td class="webhook-scheme"><code>bearer</code></td>
+            <td class="webhook-url"><code>https://webhooks.acme.ikigenba.com/in/n8n_invoice</code></td>
+            <td class="webhook-owner">grace@acme.dev</td>
+            <td class="webhook-last"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p><a id="about-link" href="/about">About webhooks</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shape this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No webhooks</h3>
+      <div id="no-webhooks" class="empty">
+        <h3 class="text-md">No webhooks yet</h3>
+        <p>A webhook an agent creates with the <code>create</code> tool shows up here.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>webhooks v0.1.0</footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

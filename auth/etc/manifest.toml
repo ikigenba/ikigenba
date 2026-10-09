@@ -1,4 +1,5 @@
 app = "auth"
+description = "Sign-in and identity for the suite's services"
 default = false
 secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 

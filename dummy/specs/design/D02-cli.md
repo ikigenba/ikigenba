@@ -15,7 +15,9 @@ one product to `Stdout` and return `ExitSuccess` without touching the
 environment: `--version` writes `Process.Version`, the display string `main`
 read (`D01-layout-and-run-seam`), and a newline, which is one empty line when
 the host set no identity, `manifest` writes
-`Manifest` exactly as declared, and `--help` writes `Usage`, the constant
+`Manifest` exactly as declared, whose description line carries exactly
+`panel.Description`, the copy constant `D04-panel` declares and the about page
+shows, so the two never drift, and `--help` writes `Usage`, the constant
 `D01-layout-and-run-seam` declares and whose value this design fixes byte for
 byte, so the help text is contract. The one two-word command is `db status`.
 Any other `Args` is a usage error. The argument dummy complains about is the
@@ -90,6 +92,7 @@ with the same stream.
 - R-32FR-5LB4: `Usage` MUST be exactly `"Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"`.
 - R-J3FT-88NH: When `Args` is exactly `["--version"]`, `Run` MUST write `p.Version` followed by a single `"\n"` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`, so that an empty `p.Version` writes exactly `"\n"`.
 - R-RKC3-RLCM: When `Args` is exactly `["manifest"]`, `Run` MUST write exactly `Manifest` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
+- R-YDR4-WIEE: `Manifest` MUST contain the line `description = "` followed by exactly the text of `panel.Description` (`D04-panel`) followed by `"`, so that the description the manifest publishes and the one the about screen shows are the same string.
 - R-S6AA-NGP4: When `Args` is exactly `["--help"]`, `Run` MUST write exactly `Usage` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
 - R-363G-AWJ7: When `Args` is exactly `["db", "status"]`, `Run` MUST write to `Stdout` exactly the bytes, and nothing else, that appkit's `db.Status` (package `github.com/ikigenba/ikigenba/appkit/db`) writes to its writer when called with a context that is not done and a `db.Config` whose `Path` is `filepath.Join(p.Dir, "state", "dummy.db")` and whose `Migrations` is `dummy.Migrations()`, over the database as it is when `Run` is called; so that `Run` reports the migrations of `state/dummy.db` under `p.Dir`, or under the process working directory when `p.Dir` is empty.
 - R-37BC-OO9W: When `Args` is exactly `["db", "status"]` and the `db.Status` call R-363G-AWJ7 describes returns nil, `Run` MUST write nothing to `Stderr` and return `ExitSuccess`.

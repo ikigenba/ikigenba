@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
 )
 
-// R-XQD8-2NJA R-XRL4-GF9Z R-XST0-U70O R-XU0X-7YRD
+// R-AV6W-UT0P R-XRL4-GF9Z R-XST0-U70O R-XU0X-7YRD
 func TestEmbeddedFiles(t *testing.T) {
 	assets, etc := sites.Assets(), sites.Etc()
 	read := func(f fs.FS, names []string) map[string][]byte {
@@ -34,7 +34,7 @@ func TestEmbeddedFiles(t *testing.T) {
 		}
 		return result
 	}
-	names := []string{"about.html", "landing.html", "notfound.html", "unavailable.html"}
+	names := []string{"about.html", "landing.html", "notfound.html", "tools.html", "unavailable.html"}
 	originalAssets := read(assets, names)
 	originalEtc := read(etc, []string{"manifest.toml"})
 	t.Chdir(t.TempDir())

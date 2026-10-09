@@ -22,6 +22,7 @@ type Config struct {
 	Banner       func(u page.User) page.Banner
 	ServicesPath string
 	Store        *store.Store
+	Tools        []Tool
 }
 
 // Pages holds the immutable templates and page configuration.
@@ -50,6 +51,17 @@ type Reason struct {
 	Error string
 }
 
+// Tool holds one registered tool’s display values.
+type Tool struct {
+	Name, Description string
+}
+
+// ToolsData supplies the tools template.
+type ToolsData struct {
+	Banner page.Banner
+	Tools  []Tool
+}
+
 // AboutData supplies the about template.
 type AboutData struct {
 	Banner      page.Banner
@@ -67,7 +79,7 @@ func New(cfg Config) *Pages {
 func (p *Pages) notice() page.Banner {
 	return p.cfg.Banner(page.User{})
 }
-func (p *Pages) banner(r *http.Request) page.Banner {
+func (p *Pages) banner(r *http.Request, trail []page.Level) page.Banner {
 	u := page.User{Email: r.Header.Get("X-User-Email")}
 	scheme := r.Header.Get("X-Forwarded-Proto")
 	if scheme != "http" && scheme != "https" {
@@ -97,7 +109,9 @@ func (p *Pages) banner(r *http.Request) page.Banner {
 	}
 	u.ProfileURL = auth + "/"
 	u.LogoutURL = auth + "/logout"
-	return p.cfg.Banner(u)
+	b := p.cfg.Banner(u)
+	b.Trail = trail
+	return b
 }
 func row(s store.Subscriber) SubscriberRow {
 	r := SubscriberRow{Service: s.Service, Status: string(s.Status), Cursor: strconv.FormatInt(s.Cursor, 10), Lag: strconv.FormatInt(s.Lag, 10), Since: s.Since}
@@ -121,16 +135,21 @@ func (p *Pages) Landing(w http.ResponseWriter, r *http.Request) {
 		p.answer(w, r, http.StatusServiceUnavailable, "unavailable", NoticeData{Banner: p.notice()})
 		return
 	}
-	data := LandingData{Banner: p.banner(r)}
+	data := LandingData{Banner: p.banner(r, nil)}
 	for _, s := range subs {
 		data.Subscribers = append(data.Subscribers, row(s))
 	}
 	p.answer(w, r, http.StatusOK, "landing", data)
 }
 
+// Tools renders the registered tool list.
+func (p *Pages) Tools(w http.ResponseWriter, r *http.Request) {
+	p.answer(w, r, http.StatusOK, "tools", ToolsData{Banner: p.banner(r, []page.Level{{Name: "tools", URL: "/tools"}}), Tools: p.cfg.Tools})
+}
+
 // About renders the service identity.
 func (p *Pages) About(w http.ResponseWriter, r *http.Request) {
-	p.answer(w, r, http.StatusOK, "about", AboutData{Banner: p.banner(r), Description: Description})
+	p.answer(w, r, http.StatusOK, "about", AboutData{Banner: p.banner(r, []page.Level{{Name: "about", URL: "/about"}}), Description: Description})
 }
 
 // NotFound renders the missing-address notice.

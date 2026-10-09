@@ -38,6 +38,7 @@ func (p *pages) reply(w http.ResponseWriter, r *http.Request, name string, statu
 	}
 }
 func (p *pages) Landing(w http.ResponseWriter, r *http.Request)  { p.reply(w, r, "landing", 200) }
+func (p *pages) Tools(w http.ResponseWriter, r *http.Request)    { p.reply(w, r, "tools", 200) }
 func (p *pages) About(w http.ResponseWriter, r *http.Request)    { p.reply(w, r, "about", 200) }
 func (p *pages) NotFound(w http.ResponseWriter, r *http.Request) { p.reply(w, r, "missing", 404) }
 
@@ -73,10 +74,10 @@ func flush(t *testing.T, w *telemetry.Writer, c *telemetry.Capture) []telemetry.
 	return c.Events()
 }
 
-// R-B02J-SDCA R-8JCP-V1XF R-8KKM-8TO4 R-9Q17-90VQ R-9R93-MSMF
+// R-DA3Y-A2PX R-8JCP-V1XF R-8KKM-8TO4 R-9Q17-90VQ R-9R93-MSMF
 func TestIdentityBeforeRoutes(t *testing.T) {
 	h, p, _, _, _ := fixture(t)
-	for _, path := range []string{"/", "/about", "/mcp", "/nope", "/_appkit/theme.css"} {
+	for _, path := range []string{"/", "/tools", "/about", "/mcp", "/nope", "/_appkit/theme.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			out := request(h, method, path, "")
 			want := identity.MissingBody
@@ -93,17 +94,30 @@ func TestIdentityBeforeRoutes(t *testing.T) {
 	}
 }
 
-// R-CTX4-FZDS R-CXKT-LALV R-D00M-CU39 R-D18I-QLTY R-DFVB-BUQA R-DH37-PMGZ
+// R-DBBU-NUGM R-DCJR-1M7B R-DEZJ-T5OP R-DG7G-6XFE
+// R-CXKT-LALV R-DFVB-BUQA R-DH37-PMGZ
 func TestRoutesAndCaller(t *testing.T) {
 	h, p, _, _, _ := fixture(t)
 	for _, tc := range []struct {
 		path, name string
 		code       int
-	}{{"/?q=x", "landing", 200}, {"/about?q=x", "about", 200}, {"/mcp/", "missing", 404}, {"/mcp/tools", "missing", 404}, {"/emit/", "missing", 404}, {"/about/", "missing", 404}, {"/assets/theme.css", "missing", 404}, {"/_appkit", "missing", 404}, {"//", "missing", 404}} {
-		for _, method := range []string{"GET", "HEAD"} {
+	}{{"/?q=x", "landing", 200}, {"/tools?q=x", "tools", 200}, {"/about?q=x", "about", 200}, {"/mcp/", "missing", 404}, {"/mcp/tools", "missing", 404}, {"/emit/", "missing", 404}, {"/about/", "missing", 404}, {"/tools/", "missing", 404}, {"/nope", "missing", 404}, {"/assets/theme.css", "missing", 404}, {"/_appkit", "missing", 404}, {"//", "missing", 404}} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "custom"} {
+			if tc.code == 200 && method != "GET" && method != "HEAD" {
+				continue
+			}
 			before := len(p.calls)
-			out := request(h, method, tc.path, "user-first")
-			if out.Code != tc.code || len(p.calls) != before+1 || p.calls[before] != tc.name || out.Header().Get("Location") != "" || out.Header().Get("Set-Cookie") != "" {
+			r := httptest.NewRequest(method, tc.path, strings.NewReader("input"))
+			r.Host = "unrelated.example.test"
+			r.Header.Set("X-Original-URI", "/different-route")
+			identity.Forward(identity.Caller{UserID: "user-first", Email: "first@example.test", RequestID: "request-first"}, r)
+			out := httptest.NewRecorder()
+			h.ServeHTTP(out, r)
+			wantBody := "input" + tc.name
+			if method == "HEAD" {
+				wantBody = ""
+			}
+			if out.Body.String() != wantBody || out.Header().Get("Content-Type") != "test/page" || out.Code != tc.code || len(p.calls) != before+1 || p.calls[before] != tc.name || out.Header().Get("Location") != "" || out.Header().Get("Set-Cookie") != "" {
 				t.Fatalf("%s: %d %v", tc.path, out.Code, out.Header())
 			}
 			if p.caller != (identity.Caller{UserID: "user-first", Email: "first@example.test", RequestID: "request-first"}) {
@@ -111,11 +125,11 @@ func TestRoutesAndCaller(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/", "/about"} {
-		for _, method := range []string{"POST", "DELETE", "PUT"} {
+	for _, path := range []string{"/", "/tools", "/about"} {
+		for _, method := range []string{"POST", "DELETE", "PUT", "PATCH", "OPTIONS", "TRACE", "custom"} {
 			before := len(p.calls)
 			out := request(h, method, path, "user")
-			if out.Code != 405 || out.Header().Get("Allow") != "GET, HEAD" || out.Body.Len() != 0 || len(p.calls) != before {
+			if out.Code != 405 || out.Header().Get("Allow") != "GET, HEAD" || len(out.Header().Values("Allow")) != 1 || out.Header().Get("Location") != "" || out.Body.Len() != 0 || len(p.calls) != before {
 				t.Fatal(out)
 			}
 		}

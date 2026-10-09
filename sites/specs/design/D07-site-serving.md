@@ -58,7 +58,7 @@ When `cache.Tree` fails, the request is served from nowhere else. While sites is
 
 ## The apex
 
-`D03-serve` hands every apex request to `serving.Apex`, whatever its method and path, `/`, `/about` and `/mcp` included. An apex answer reads the catalog's apex setting and the apex site's slug and nothing else — not the site's visibility, its commit, its tree, nor who asks — so it never refuses a method and is never a view. With an apex set it is a `302` to `urls.ApexBase` followed by `/<slug>/` and the request's path without its leading `/`, query kept; with none it is the not-found page with `Cache-Control: no-cache`; and when the catalog cannot be read, sites' catalog refusal, which `D03-serve` states for every apex request (R-XQFX-1YI5).
+`D03-serve` hands every apex request to `serving.Apex`, whatever its method and path, `/`, `/about`, `/tools` and `/mcp` included. An apex answer reads the catalog's apex setting and the apex site's slug and nothing else — not the site's visibility, its commit, its tree, nor who asks — so it never refuses a method and is never a view. With an apex set it is a `302` to `urls.ApexBase` followed by `/<slug>/` and the request's path without its leading `/`, query kept; with none it is the not-found page with `Cache-Control: no-cache`; and when the catalog cannot be read, sites' catalog refusal, which `D03-serve` states for every apex request (R-XQFX-1YI5).
 
 ## Decisions
 

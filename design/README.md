@@ -17,24 +17,28 @@ design/
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: banner, widgets table, add form, states
-    banner.html     the banner: product, service, launcher, profile, sign out,
-                    with and without the launcher, and at 375px
+    banner.html     the banner: the home link, the breadcrumb trail and its
+                    page menu, launcher, profile, sign out, on every kind of
+                    page, with and without the launcher, and at 375px
     launcher.html   the banner's service launcher, open, filtered, empty, disabled
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
     scripts.html    scripts' catalog: your scripts and their last runs
     scripts-script.html
-                    one script and its runs, under a breadcrumb
+                    one script and its runs, two levels down the trail
     scripts-run.html
                     one run: details, input, output, files, other states
-    events.html     events' landing: its subscribers and its MCP tools
-    cron.html       cron's landing: the space's triggers and its MCP tools
+    tools.html      scripts' tools page: its MCP tools, as every app's
+    events.html     events' landing: its subscribers
+    cron.html       cron's landing: the space's triggers
     prompts.html    prompts' catalog: your prompts and their last runs
     prompts-prompt.html
                     one prompt: its fields, subscriptions and runs
     prompts-run.html
                     one run: details, usage and cost, answer, transcript,
                     files, other states
+    webhooks.html   webhooks' landing: the space's webhooks
+    home.html       home's landing: every service on the space, as tiles
     icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
@@ -65,11 +69,13 @@ design/
   container.
 - Visible focus states. Errors are stated in words, with an icon, as well as
   in color.
-- A page below the root of a hierarchy opens with a breadcrumb: a
-  `nav.crumbs` labelled `Breadcrumb`, holding an ordered list, root first,
-  each level a link except the last, the current page, which carries
-  `aria-current="page"` and no link. The root page has none; its `h1` is the
-  root. The `h1` beneath repeats the current level's name.
+- Where a page sits is the banner's to say: its breadcrumb trail (see
+  banner.html) names every level, root first. No page draws a `nav.crumbs`
+  under `main`. The `h1` of a page below the root repeats the current level's
+  name; the root page's `h1` is the root.
+- Every app has an `about` page and, when it has MCP tools, a `tools` page;
+  both are reached from the banner's page menu, not from a card on the
+  landing page.
 - Every page ends with the feedback script (`ikigenba/feedback.js`), then the
   lab toolbar script (`ikigenba/lab.js`).
 
@@ -95,14 +101,39 @@ systems. The product name is **Ikigenba**. The example space is
 - A states section: the table with no widgets; the message page
   ("Widget created." + `Back to widgets`).
 
-**banner.html** — the banner every app page carries, in this order:
-- `strong.mark[data-service=<service>]`: the favicon as an image (`img` of
+**banner.html** — the banner every app page carries, in this order (decided
+2026-10-09, banner navigation; it replaces the mark that held the service):
+- The product mark, `a.mark`: the favicon as an image (`img` of
   `favicon.svg`, `alt=""`, 18px; the glyph is hidden when the mark holds
-  one), the text **Ikigenba**, capitalised, then after a hairline
-  `span.service` holding the app's own icon and its name. The icon is the
-  app's `share/icon.svg` inserted verbatim, no class, 16px, styled as
-  `.mark > .service > svg`. `data-service` stays as a hook; the visible name
-  is the span's.
+  one), then the text **Ikigenba**, capitalised, bold. It links to home: the
+  URL of the service named `home` in the services file. With no `home` the
+  mark is a `strong.mark`, not a link. The mark holds the product only.
+- A hairline, then the breadcrumb trail: `nav.crumbs` labelled `Breadcrumb`
+  holding an `ol`. The first item, `li.root`, is a link to the app's landing
+  page `/` holding the app's own icon and its name, muted, then the chevron.
+  The icon is the app's `share/icon.svg` inserted verbatim, no class, 16px.
+  Each further item is one level of the page's hierarchy, a link except the
+  last, the current page, which carries `aria-current="page"` and no link,
+  its name in a `span`, drawn darker. The `/` separators are the style's,
+  never text. The root page has no further level. A page's levels: scripts'
+  script page is `scripts / <name>`, its run page `scripts / <name> / <run
+  id>`; every other page below a root is one level named by its path segment
+  (`tools`, `about`); a notice page (not found, unavailable) stays at the
+  root.
+- The chevron, `button.menu` after the service name: a Tabler
+  `chevron-down` at 14px, labelled and titled `<service> pages`, the only
+  trigger of the page menu, on every signed-in page, root pages included.
+  It opens a native popover (`popovertarget=pages`), as the launcher's
+  button does, so no script opens or closes it. The service name stays a
+  plain link to the landing page and never opens a menu.
+- The page menu, `nav.pages#pages[popover]` labelled `<service> pages`,
+  hanging under the trail's root: a `ul` of the service's pages, the landing
+  page first (the app's icon and name, set off by a hairline), then `Tools`,
+  only when the service has MCP tools, then `About`. The current page's row
+  carries `aria-current="page"`, bolder, with a `check` icon at its right.
+  The list never grows beyond these: deeper navigation starts from the
+  landing page's content, never from the banner. The menu is placed with CSS
+  anchor positioning; a browser without it gets a fixed offset.
 - At the right edge three quiet 36px icon buttons: the service launcher's
   grid (`button.launcher[popovertarget=services]`, labelled and titled
   `Services`, only when there are services), the profile (`a.profile`, a
@@ -110,15 +141,23 @@ systems. The product name is **Ikigenba**. The example space is
   (`button.signout`, the `logout` icon, labelled and titled `Sign out`, in
   `form.inline` posting to the logout URL). With no launcher the other two
   keep their places.
-- Below 640px the product name hides and the favicon stays, so a long
-  service name (`telemetry`) fits beside three icons at 375px. The text stays
-  bare in the mark: the rule sets the mark's `font-size` to 0 and the
-  service restores it.
-- The separator is the hairline; a `|` glyph was drawn and dropped.
-- Shown with the launcher (its popover opens from the page's banner),
-  without it, with `telemetry`, and in 375px frames. The lab frames a banner
-  in `.frame`, which shares `body > header`'s rules (`:is(body, .frame) >
-  header`); `.frame.narrow` takes the below-640px rules.
+- Two breakpoints. Below 900px the product name hides and the favicon stays
+  as the home link, so the trail has the room: the rule sets the mark's
+  `font-size` to 0. Below 640px the trail's middle levels collapse to one
+  `…` between the root and the current page, and the launcher's panel
+  becomes a full-width sheet. At any width the current level truncates with
+  an ellipsis when it must; the `h1` beneath repeats it in full.
+- The separator between mark and trail is the hairline; a `|` glyph was
+  drawn and dropped.
+- Shown on the landing page with the menu closed and open, on a two-level
+  and a three-level trail, on tools (menu open) and about, with and without
+  the launcher, with `telemetry`, and without home, each also in a 375px
+  frame; the three-level trail also at 880px. The page's own banner opens
+  both popovers. The lab frames a banner in `.frame`, which shares
+  `body > header`'s rules (`:is(body, .frame) > header`); `.frame.mid` (880px)
+  takes the below-900px rules, `.frame.narrow` (375px) those and the
+  below-640px rules, and `.frame.tall` leaves room for a menu drawn open,
+  without `popover`, under its chevron.
 
 **launcher.html** — the service launcher, shown from dummy.
 - Banner and footer as in app.html, with the launcher's grid button first of
@@ -149,10 +188,10 @@ run. Banner and footer as in app.html, the service `scripts`, `scripts v0.1.0`.
   `backfill` (never run). The catalog stores a repository as its `rep_` id;
   a page resolves the name from the repository's directory when it renders,
   the id in the cell's `title`, and shows the id, muted, when the directory
-  is gone (`backfill`). An MCP
-  tools list naming `list`, `show`, `create`, `update`, `delete`, `run`,
-  `runs`, `result`, `cancel`. State: no scripts.
-- One script, `nightly-report`: breadcrumb scripts / nightly-report; a key/
+  is gone (`backfill`). Its tools (`list`, `show`, `create`, `update`,
+  `delete`, `run`, `runs`, `result`, `cancel`) are on tools.html. State: no
+  scripts.
+- One script, `nightly-report`: the trail scripts / nightly-report; a key/
   value card (id, repository, ref, created, runs kept); the runs table, newest
   first, Run / Status / Commit / Started / Duration / Exit, with one row per
   status. The repository shows its name over its id as secondary text.
@@ -161,7 +200,7 @@ run. Banner and footer as in app.html, the service `scripts`, `scripts v0.1.0`.
   subscribed event, sorted by name. States: no subscriptions
   (`div#no-subscriptions.empty`, "This script is subscribed to no events."),
   no runs.
-- One run: breadcrumb scripts / nightly-report / `run_3f9a1c2e8b7d4a60`; a
+- One run: the trail scripts / nightly-report / `run_3f9a1c2e8b7d4a60`; a
   headline of status, start time and duration; the run card (status, script,
   commit, ref, started, finished, duration, trigger, user, request, output
   sizes); then Input, Standard output, Standard error, each a `pre` with a
@@ -178,9 +217,9 @@ event bus. Banner and footer as in app.html, the service `events`,
 `events v0.1.0`.
 - `h1` events, a lede, the subscribers as a table of Service / Status /
   Cursor / Lag / Since: `scripts` ok and caught up, `sites` paused, showing,
-  muted, the event it is stuck on and the error it answered. An MCP tools
-  list naming `catalog`, `search`, `subscribers`, `skip`, `resume`, and a
-  link to the about screen. State: no subscribers.
+  muted, the event it is stuck on and the error it answered, and a link to
+  the about screen. Its tools (`catalog`, `search`, `subscribers`, `skip`,
+  `resume`) are on its tools page. State: no subscribers.
 - Subscriber status reads as a `.status` word carrying two attributes:
   `data-status` is the real status (`ok`, `paused` or `gone`) and `data-kind`
   is the theme kind it shows as: ok is ok, paused is warn, gone is info.
@@ -192,13 +231,50 @@ service `cron`, `cron v0.1.0`.
   slug, as a table of ID / Slug / When / Owner / Status / Last fired / Next:
   `month_end` (`@monthly`, `grace@acme.dev`, active, never fired, next
   `2026-11-01 00:00`), `weekly_digest` (`0 8 * * 1`, the user's own, marked
-  with the `yours` badge, paused, last fired `2026-09-28 08:00`, no next). An
-  MCP tools list naming `list`, `show`, `create`, `update`, `pause`,
-  `resume`, `delete`, and a link to the about screen. State: no triggers
-  (`div#no-triggers.empty`).
+  with the `yours` badge, paused, last fired `2026-09-28 08:00`, no next),
+  and a link to the about screen. Its tools (`list`, `show`, `create`,
+  `update`, `pause`, `resume`, `delete`) are on its tools page. State: no
+  triggers (`div#no-triggers.empty`).
 - Trigger status reads as a `.status` word whose `data-status` is the status:
   active is ok, paused is warn. Times are UTC to the minute in a `time`
   carrying the RFC 3339 moment; a cell with no time is empty.
+
+**webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
+turn an authenticated delivery from outside into an event on the suite's
+event bus. Banner and footer as in app.html, the service `webhooks` (Tabler
+`webhook` icon), `webhooks v0.1.0`.
+- `h1` webhooks, a lede, every webhook in the space, whoever owns it, sorted
+  by slug, as a table of ID / Slug / Scheme / URL / Owner / Last received:
+  `gh_push` (`github-hmac`, the user's own, marked with the `yours` badge,
+  last received `2026-10-09 14:12`), `n8n_invoice` (`bearer`,
+  `grace@acme.dev`, never received), and a link to the about screen. Its
+  tools (`create`, `list`, `show`, `rotate`, `delete`, `delivery`) are on its
+  tools page. No per-webhook or per-delivery page. State: no webhooks
+  (`div#no-webhooks.empty`).
+- The scheme and the URL are `code`; the URL is the address a sender posts
+  to, `/in/<slug>` on webhooks' own host. Times are UTC to the minute in a
+  `time` carrying the RFC 3339 moment; a cell with no time is empty.
+
+**tools.html** — scripts' tools page at `/tools`, the example for every app
+whose manifest sets `mcp = true`. Banner and footer as in scripts.html, the
+trail scripts / tools, the menu's `Tools` row current.
+- `h1` Tools; a lede naming the MCP gateway's `call` and `mutate`; the tools
+  as `dl#tools.kv` in a card, each `dt[data-tool=<name>] > code` the name and
+  its `dd` the description. Each app's tools page carries the words its
+  landing page's MCP tools card carried; the landing page no longer has the
+  card.
+
+**home.html** — home at `home.acme.ikigenba.com`, the default app, so it also
+answers at `acme.ikigenba.com`: the suite's front door, where the product mark
+leads. Banner and footer as in app.html, the service `home` (Tabler `home`
+icon), `home v0.1.0`; its menu holds home and About, no Tools.
+- `h1` Services, a lede, then the services of the space as a grid of tiles in
+  `main > nav.services`, each the service's icon over its name linking to its
+  URL, in the services file's order, entries with an icon only: exactly the
+  launcher's rules and look, drawn in `main` rather than a popover, with no
+  search field. `repos` is disabled, faint and unlinked; `home` is marked
+  current.
+- State: no services (`div#no-services.empty`).
 
 **prompts.html, prompts-prompt.html, prompts-run.html** — prompts at
 `prompts.acme.ikigenba.com`, prompts run by an agent over the suite's models,
@@ -276,9 +352,11 @@ error; a key/value list; a card/panel; an empty state.
   `data-status` (active, paused, retired).
 - Alerts: `.alert` (white card, colored icon), `.alert.callout` (adds a
   colored left edge), `.alert.quiet` (grey fill).
-- Breadcrumbs: `nav.crumbs > ol`, small and muted, levels separated by a
-  faint `/`, the current page in the foreground color. They wrap on a narrow
-  screen.
+- Breadcrumbs live in the banner only: `nav.crumbs > ol` after the mark's
+  hairline, 15px and muted, levels separated by a faint `/`, the current page
+  in the foreground color, weight 500. The trail never wraps: below 640px
+  its middle levels collapse to `/ … /`, and the current level truncates
+  with an ellipsis.
 - Field errors: message only. The input keeps its normal border; the red
   message with its icon beneath it, matched by `[id$="-error"]`, carries the
   error.

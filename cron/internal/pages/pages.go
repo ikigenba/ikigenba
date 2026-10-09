@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	cron "github.com/ikigenba/ikigenba/cron"
@@ -45,6 +46,17 @@ type AboutData struct {
 	Description string
 }
 
+// ToolsData supplies chrome and the server's registered tools.
+type ToolsData struct {
+	Banner page.Banner
+	Tools  []Tool
+}
+
+// Tool contains the name and whole description of a registered tool.
+type Tool struct {
+	Name, Description string
+}
+
 // NoticeData supplies the footer of a not-found page.
 type NoticeData struct{ Banner page.Banner }
 
@@ -55,6 +67,7 @@ type Config struct {
 	ServicesPath string
 	Store        *store.Store
 	Scheduler    *scheduler.Scheduler
+	MCP          *mcp.Server
 }
 
 // Load parses cron's assets into appkit's template set.
@@ -129,7 +142,7 @@ func row(t store.Trigger, user string, s *scheduler.Scheduler) TriggerRow {
 func Handler(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if (path == "/" || path == "/about") && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		if (path == "/" || path == "/about" || path == "/tools") && r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -145,6 +158,7 @@ func Handler(cfg Config) http.Handler {
 				return
 			}
 			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Triggers: make([]TriggerRow, 0, len(entries))}
+			data.Banner.Trail = nil
 			caller, _ := identity.FromContext(r.Context())
 			for _, t := range entries {
 				data.Triggers = append(data.Triggers, row(t, caller.UserID, cfg.Scheduler))
@@ -153,8 +167,20 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		b := cfg.Banner(bannerUser(r, cfg.ServicesPath))
+		b.Trail = nil
 		if path == "/about" {
+			b.Trail = []page.Level{{Name: "about", URL: "/about"}}
 			cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{Banner: b, Description: Description})
+			return
+		}
+		if path == "/tools" {
+			b.Trail = []page.Level{{Name: "tools", URL: "/tools"}}
+			registered := cfg.MCP.Tools()
+			data := ToolsData{Banner: b, Tools: make([]Tool, 0, len(registered))}
+			for _, t := range registered {
+				data.Tools = append(data.Tools, Tool{Name: t.Name, Description: t.Description})
+			}
+			cfg.Pages.Write(w, r, http.StatusOK, "tools", data)
 			return
 		}
 		cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: b})

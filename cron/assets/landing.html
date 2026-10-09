@@ -1,35 +1,30 @@
-{{/* The landing page at GET /: what the service is, every trigger in the
-     space, and the tools that manage them. The root of the hierarchy, so no
-     breadcrumb. Shown only to a signed-in user. Data: .Banner (a
-     page.Banner, for banner and footer); .Triggers, every trigger in the
-     space (whoever owns it), sorted by slug, each with .ID, .Slug, .When
-     (the schedule as sent), .Owner (the owner's email), .Status ("active"
-     or "paused"), .Mine (bool: the caller owns it), .LastFired and
-     .LastFiredText (RFC 3339 UTC to the second, and UTC to the minute,
-     "2026-10-05 09:00"; both empty when it never fired), .Next and
-     .NextText (the same forms; both empty when it has no next). Hooks:
+{{/* The landing page at GET /: what the service is and every trigger in the
+     space. The root of the hierarchy: .Banner's .Trail is empty, so the
+     banner's breadcrumb holds only the service. Shown only to a signed-in
+     user. Data: .Banner (a page.Banner, for banner and footer); .Triggers,
+     every trigger in the space (whoever owns it), sorted by slug, each with
+     .ID, .Slug, .When (the schedule as sent), .Owner (the owner's email),
+     .Status ("active" or "paused"), .Mine (bool: the caller owns it),
+     .LastFired and .LastFiredText (RFC 3339 UTC to the second, and UTC to
+     the minute, "2026-10-05 09:00"; both empty when it never fired), .Next
+     and .NextText (the same forms; both empty when it has no next). Hooks:
      title "cron"; h1 with text "cron"; p#summary (text "Triggers that emit
-     events on the suite's event bus on a schedule."); section#triggers
-     with h2 "Triggers" and either, when .Triggers is empty,
+     events on the suite's event bus on a schedule."); section#triggers with
+     h2 "Triggers" and either, when .Triggers is empty,
      div#no-triggers.empty holding h3 "No triggers yet" and a p (text "A
      trigger an agent creates with the create tool shows up here.", create
-     in a code element), or table#trigger-list whose th read ID, Slug,
-     When, Owner, Status, Last fired, Next, with one tr[data-trigger=<.Slug>]
-     per trigger holding td.trigger-id (.ID), td.trigger-slug (.Slug),
+     in a code element), or table#trigger-list whose th read ID, Slug, When,
+     Owner, Status, Last fired, Next, with one tr[data-trigger=<.Slug>] per
+     trigger holding td.trigger-id (.ID), td.trigger-slug (.Slug),
      td.trigger-when (.When), td.trigger-owner (.Owner, then, only when
      .Mine, a space and span.badge[data-kind=mine] with text "yours"),
      td.trigger-status holding span.status[data-status=<.Status>] (text
      .Status), td.trigger-last holding, only when .LastFired is not empty,
      time[datetime=<.LastFired>] (text .LastFiredText), and td.trigger-next
      holding, only when .Next is not empty, time[datetime=<.Next>] (text
-     .NextText); a section with h2 "MCP tools", a p (text "Agents manage
-     triggers with these tools, through the MCP gateway's call and
-     mutate."), and dl#tools.kv holding one dt[data-tool=<name>] per MCP
-     tool, in the order list, show, create, update, pause, resume, delete,
-     each holding the tool's name in a code element and followed by a dd
-     holding the first line of its description; a#about-link (text "About
-     cron") whose href is "/about". No script but appkit's
-     /_appkit/feedback.js (and the launcher's, which the banner carries). */}}
+     .NextText); a#about-link (text "About cron") whose href is "/about". No
+     script but appkit's /_appkit/feedback.js (and the launcher's, which the
+     banner carries). */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>cron</title></head>
@@ -59,18 +54,6 @@
 <h3 class="text-md">No triggers yet</h3>
 <p>A trigger an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
-</section>
-<section class="card" aria-labelledby="tools-title">
-<header><h2 id="tools-title">MCP tools</h2><p>Agents manage triggers with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
-<dl id="tools" class="kv">
-<dt data-tool="list"><code>list</code></dt><dd>Every trigger in the space, by slug.</dd>
-<dt data-tool="show"><code>show</code></dt><dd>One trigger, with its schedule, its owner, and when it last fired and fires next.</dd>
-<dt data-tool="create"><code>create</code></dt><dd>Create a trigger that emits an event on a schedule.</dd>
-<dt data-tool="update"><code>update</code></dt><dd>Change the schedule of a trigger you own.</dd>
-<dt data-tool="pause"><code>pause</code></dt><dd>Stop a trigger you own from firing.</dd>
-<dt data-tool="resume"><code>resume</code></dt><dd>Start a paused trigger you own firing again, from its next slot.</dd>
-<dt data-tool="delete"><code>delete</code></dt><dd>Delete a trigger you own.</dd>
-</dl>
 </section>
 <p><a id="about-link" href="/about">About cron</a></p>
 </main>

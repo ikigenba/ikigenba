@@ -20,9 +20,7 @@
      words and kinds, chosen here from .Status and .ExitCode by the
      run-status template (defined in run.html): "queued" and "running"
      info; "exited <.ExitCode>" ok when .ExitCode is 0, else warn; "timed
-     out" (timed_out) and "killed" warn; "failed" err. Hooks: nav.crumbs[aria-label=
-     "Breadcrumb"] holding an ol of li a[href="/"] (text "scripts") then
-     li[aria-current="page"] (text .Script.Name, no link); h1 with text
+     out" (timed_out) and "killed" warn; "failed" err. Hooks: h1 with text
      .Script.Name; p#about-script naming the repository (strong, .Repo.Name,
      or span.muted holding .Repo.ID when the name is empty) and the ref (code,
      .Ref); section#script-card with h2 "Script" and dl#script.kv holding dt
@@ -51,13 +49,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{with .Script}}<nav class="crumbs" aria-label="Breadcrumb">
-<ol>
-<li><a href="/">scripts</a></li>
-<li aria-current="page">{{.Name}}</li>
-</ol>
-</nav>
-<h1>{{.Name}}</h1>
+{{with .Script}}<h1>{{.Name}}</h1>
 <p id="about-script">Runs <code>main.py</code> from the repository {{if .Repo.Name}}<strong>{{.Repo.Name}}</strong>{{else}}<span class="muted" title="the repository is gone">{{.Repo.ID}}</span>{{end}} at <code>{{.Ref}}</code>.</p>
 <section id="script-card" class="card" aria-labelledby="script-title">
 <header><h2 id="script-title">Script</h2><p>Changed by an agent through the <code>update</code> tool.</p></header>

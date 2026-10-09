@@ -9,9 +9,11 @@
 </head>
 <body>
 <header>
-  <strong class="mark" data-service="events"><img src="favicon.svg" alt="">Ikigenba<span class="service"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.364 19.364a9 9 0 1 0 -12.728 0"/><path d="M15.536 16.536a5 5 0 1 0 -7.072 0"/><path d="M11 13a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>events</span></strong>
-  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
-  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="events.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.364 19.364a9 9 0 1 0 -12.728 0"/><path d="M15.536 16.536a5 5 0 1 0 -7.072 0"/><path d="M11 13a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>events</a><button class="menu" type="button" popovertarget="pages" aria-label="events pages" title="events pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="events pages"><ul><li><a href="events.html" aria-current="page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.364 19.364a9 9 0 1 0 -12.728 0"/><path d="M15.536 16.536a5 5 0 1 0 -7.072 0"/><path d="M11 13a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>events<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg></a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
 </header>
 
 <main>
@@ -46,17 +48,6 @@
         </tbody>
       </table>
     </div>
-  </section>
-
-  <section class="card" aria-labelledby="tools-title">
-    <header><h2 id="tools-title">MCP tools</h2><p>Agents inspect the bus and unstick subscribers with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
-    <dl id="tools" class="kv">
-      <dt data-tool="catalog"><code>catalog</code></dt><dd>Every event the suite emits, who emits and accepts it, counts and last seen.</dd>
-      <dt data-tool="search"><code>search</code></dt><dd>The retained log, newest first, filtered by service, event, user, request id, cause or attributes.</dd>
-      <dt data-tool="subscribers"><code>subscribers</code></dt><dd>Each subscriber's status, reason, cursor and lag.</dd>
-      <dt data-tool="skip"><code>skip</code></dt><dd>Skip the event a paused subscriber is stuck on and resume it.</dd>
-      <dt data-tool="resume"><code>resume</code></dt><dd>Retry the event a paused subscriber is stuck on.</dd>
-    </dl>
   </section>
 
   <p><a id="about-link" href="/about">About events</a></p>

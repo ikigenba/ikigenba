@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit 1a01448. The design lab's
+   Copied from design/ikigenba/theme.css at commit 11853e4. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -142,12 +142,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 .eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
 /* ---------------------------------------------------------------- banner */
-/* The banner every app emits: the mark (the favicon as an image, Ikigenba,
-   a hairline, the service's own icon and name), then at the right edge three
-   quiet 36px icon buttons: the service launcher's grid (only when there are
-   services), the profile (a user-circle linking to the user's auth profile,
-   titled with their email) and sign out (a logout icon). Below 640px the
-   product name hides and the favicon stays. The lab frames a banner in .frame. */
+/* The banner every app emits: the mark (the favicon as an image and
+   Ikigenba, a link to home), a hairline, the breadcrumb trail (the service's
+   own icon and name, the chevron that opens its page menu, then each deeper
+   level), then at the right edge three quiet 36px icon buttons: the service
+   launcher's grid (only when there are services), the profile (a user-circle
+   linking to the user's auth profile, titled with their email) and sign out
+   (a logout icon). Below 900px the product name hides and the favicon stays;
+   below 640px the trail's middle levels collapse to one ellipsis. The lab
+   frames a banner in .frame. */
 :is(body, .frame) > header {
   display: flex; align-items: center; gap: var(--s4);
   padding: 0 max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
@@ -167,28 +170,23 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
    without one (the sign-in card). */
 .mark > img { width: 18px; height: 18px; }
 .mark:has(> img)::before { display: none; }
-/* A mark with no service element shows its data-service as text (the landing
+/* A mark carrying data-service shows it as text after a hairline (the landing
    page's product shot). */
-.mark[data-service]:not(:has(> .service))::after {
+.mark[data-service]::after {
   content: attr(data-service); font-weight: 450; color: var(--muted); margin-left: 4px;
   padding-left: var(--s3); border-left: 1px solid var(--line);
 }
-/* The service as an element, so its own icon can lead its name. The icon is
-   the app's share/icon.svg, inserted verbatim, so it carries no class. */
-.mark > .service {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-weight: 450; color: var(--muted); margin-left: 4px;
-  padding-left: var(--s3); border-left: 1px solid var(--line);
-}
-.mark > .service > svg { width: 16px; height: 16px; flex: none; }
+/* The mark links to home, the service named home in the services file; with
+   no home it is a strong, as before. */
+a.mark { color: var(--fg); }
 :is(body, .frame) > header > :is(span, a:not([class])) { margin-left: auto; color: var(--muted); font-size: var(--text-sm); }
 :is(body, .frame) > header > a:not([class]):hover { color: var(--fg); }
-:is(body, .frame) > header nav { display: flex; gap: var(--s1); margin-left: var(--s4); }
-:is(body, .frame) > header nav a {
+:is(body, .frame) > header > nav:not(.crumbs, .pages) { display: flex; gap: var(--s1); margin-left: var(--s4); }
+:is(body, .frame) > header > nav:not(.crumbs, .pages) a {
   color: var(--muted); font-size: var(--text-sm); font-weight: 500; padding: 6px 10px; border-radius: var(--r-sm);
 }
-:is(body, .frame) > header nav a:hover { color: var(--fg); background: var(--subtle); text-decoration: none; }
-:is(body, .frame) > header nav a[aria-current] { color: var(--fg); background: var(--line-soft); }
+:is(body, .frame) > header > nav:not(.crumbs, .pages) a:hover { color: var(--fg); background: var(--subtle); text-decoration: none; }
+:is(body, .frame) > header > nav:not(.crumbs, .pages) a[aria-current] { color: var(--fg); background: var(--line-soft); }
 :is(body, .frame) > header > .profile { margin-left: auto; }
 a.profile {
   display: inline-flex; align-items: center; justify-content: center;
@@ -206,6 +204,80 @@ button.signout {
 }
 button.signout:hover { background: var(--line-soft); color: var(--fg); }
 button.signout svg.ico { width: 20px; height: 20px; }
+
+
+/* ------------------------------------------------------------ breadcrumb */
+/* The trail sits in the banner, after the mark and a hairline: a nav.crumbs
+   labelled Breadcrumb holding an ol, root first. The root is the service's
+   own icon (share/icon.svg, verbatim, no class, 16px) and name, muted, a
+   link to the landing page, then button.menu, the chevron that opens the
+   page menu. Each further level is a link but the last, the current page,
+   unlinked, aria-current="page", darker, its name in a span that truncates
+   with an ellipsis when it must. The separators are the style's, never text.
+   The trail never wraps; the nav clips, padded so a focus ring shows. */
+:is(body, .frame) > header > nav.crumbs {
+  display: flex; min-width: 0; flex: 0 1 auto; overflow: hidden;
+  margin-left: calc(var(--s2) + 4px - var(--s4)); padding: 4px 4px 4px 0;
+}
+:is(body, .frame) > header > nav.crumbs ol {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: var(--s2); min-width: 0;
+  margin: 0; padding: 0 0 0 var(--s3); border-left: 1px solid var(--line);
+  list-style: none; font-size: 15px; color: var(--muted);
+}
+:is(body, .frame) > header > nav.crumbs li { display: inline-flex; align-items: center; gap: var(--s2); flex: none; white-space: nowrap; }
+:is(body, .frame) > header > nav.crumbs li + li::before { content: "/"; color: var(--faint); }
+:is(body, .frame) > header > nav.crumbs li.root { gap: 2px; }
+:is(body, .frame) > header > nav.crumbs a {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 450;
+}
+:is(body, .frame) > header > nav.crumbs a:hover { color: var(--fg); text-decoration: none; }
+:is(body, .frame) > header > nav.crumbs li.root a > svg { width: 16px; height: 16px; flex: none; }
+:is(body, .frame) > header > nav.crumbs li[aria-current] { flex: 0 1 auto; min-width: 0; color: var(--fg); font-weight: 500; }
+:is(body, .frame) > header > nav.crumbs li[aria-current] > span { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The chevron: the only menu trigger; the service name stays a plain link. */
+:is(body, .frame) > header > nav.crumbs button.menu {
+  width: 22px; height: 22px; padding: 0; margin: 0; flex: none;
+  background: transparent; color: var(--faint); box-shadow: none; border-radius: var(--r-sm);
+}
+:is(body, .frame) > header > nav.crumbs button.menu:hover,
+body:has(nav.pages:popover-open) > header > nav.crumbs button.menu { background: var(--line-soft); color: var(--fg); }
+:is(body, .frame) > header > nav.crumbs button.menu svg { width: 14px; height: 14px; }
+
+/* ------------------------------------------------------------- page menu */
+/* nav.pages, labelled "<service> pages": a native popover the chevron opens
+   (popovertarget, no script), hanging under the trail's root. A ul of the
+   service's pages: the landing page first, as the service's icon and name,
+   set off by a hairline; then Tools (only for a service with MCP tools);
+   then About. The current row carries aria-current="page", bolder, with a
+   check icon at its right. */
+nav.pages {
+  display: block; min-width: 180px; padding: var(--s1); margin: 0;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow);
+}
+nav.pages[popover] {
+  position: fixed; inset: auto; margin: 0; top: 50px;
+  left: calc(max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4))) + 118px);
+}
+nav.pages[popover]:not(:popover-open) { display: none; }
+@supports (anchor-name: --pages) {
+  body > header > nav.crumbs li.root { anchor-name: --pages; }
+  nav.pages[popover] { position-anchor: --pages; top: calc(anchor(bottom) + 6px); left: anchor(left); }
+}
+nav.pages ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.pages li:first-child { padding-bottom: 2px; margin-bottom: 2px; border-bottom: 1px solid var(--line-soft); }
+nav.pages a {
+  display: flex; align-items: center; gap: var(--s2); padding: 6px 10px; border-radius: var(--r-sm);
+  color: var(--fg); font-size: var(--text-sm); font-weight: 450;
+}
+nav.pages a:hover { background: var(--subtle); text-decoration: none; }
+nav.pages a[aria-current] { font-weight: 600; }
+nav.pages a > svg { width: 16px; height: 16px; flex: none; }
+nav.pages a > svg.ico { margin-left: auto; color: var(--muted); }
+/* The lab draws a menu open inside a frame, under its chevron. */
+.frame > header { position: relative; }
+.frame > header > nav.pages { position: absolute; z-index: 2; top: 50px; left: calc(var(--s4) + 118px); }
+.frame:is(.mid, .narrow) > header > nav.pages { left: calc(var(--s4) + 34px); }
 
 /* -------------------------------------------------------------- launcher */
 /* The service launcher: a grid button at the banner's right edge, before the
@@ -258,6 +330,10 @@ nav.services a:not([href]) > svg,
 nav.services a:not([href]):hover > svg { background: var(--subtle); border-color: var(--line-soft); box-shadow: none; }
 nav.services > p { padding: var(--s5) var(--s3); text-align: center; color: var(--muted); font-size: var(--text-sm); }
 nav.services > p[hidden] { display: none; }
+/* home's landing draws the same tiles in main: the launcher's rules and look,
+   without the panel, the grid filling the page's width. */
+main > nav.services { width: auto; padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; }
+main > nav.services ul { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); max-height: none; overflow: visible; }
 
 main { max-width: var(--page); margin: 0 auto; padding: var(--s6) var(--s4) var(--s8); }
 main > * + * { margin-top: var(--s5); }
@@ -461,19 +537,6 @@ dl.kv > :nth-last-child(-n+2) { border-bottom: 0; }
 .tabs a:hover { color: var(--fg); text-decoration: none; }
 .tabs a[aria-current] { color: var(--fg); border-bottom-color: var(--accent); }
 
-/* breadcrumbs (scripts): where the page sits in a hierarchy, root first; the
-   last entry is the current page, unlinked, with aria-current="page". A
-   nav.crumbs holds an ol; the levels wrap on a narrow screen. */
-nav.crumbs ol {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2);
-  margin: 0; padding: 0; list-style: none; font-size: var(--text-sm); color: var(--muted);
-}
-nav.crumbs li { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; }
-nav.crumbs li + li::before { content: "/"; color: var(--faint); }
-nav.crumbs a { color: var(--muted); font-weight: 500; }
-nav.crumbs a:hover { color: var(--fg); }
-nav.crumbs [aria-current] { color: var(--fg); font-weight: 500; }
-main > nav.crumbs + h1 { margin-top: var(--s3); }
 
 /* --------------------------------------------------------------- layouts */
 .stack > * + * { margin-top: var(--s4); }
@@ -535,15 +598,28 @@ main > nav.crumbs + h1 { margin-top: var(--s3); }
 .lede { font-size: 19px; line-height: 1.55; color: var(--muted); }
 
 /* ------------------------------------------------------------ responsive */
+/* Below 900px the product name hides and the favicon stays as the home link:
+   the mark's own text shrinks to nothing. The trail needs the room sooner
+   than the rest of the banner; the launcher's sheet still waits for 640px. */
+@media (max-width: 900px) {
+  :is(body, .frame) > header > .mark:has(> img) { font-size: 0; gap: 0; }
+}
+@supports not (anchor-name: --pages) {
+  @media (max-width: 900px) { nav.pages[popover] { left: calc(var(--s4) + 34px); } }
+}
+/* Below 640px the trail's middle levels collapse to one ellipsis between the
+   root and the current page. */
+@media (max-width: 640px) {
+  :is(body, .frame) > header:has(> nav.crumbs) { gap: var(--s2); }
+  :is(body, .frame) > header > nav.crumbs { margin-left: calc(var(--s2) + 4px - var(--s3)); }
+  :is(body, .frame) > header > nav.crumbs li:not(:first-child):not(:last-child) { display: none; }
+  :is(body, .frame) > header > nav.crumbs li:nth-child(n+3):last-child::before { content: "/ \2026 /"; letter-spacing: 1px; }
+}
 @media (max-width: 640px) {
   :root { --h1: 26px; --h2: 21px; }
   :is(body, .frame) > header { gap: var(--s3); }
   :is(body, .frame) > header > :is(span, a:not([class])) { display: none; }
-  :is(body, .frame) > header nav { display: none; }
-  /* The product name hides, the favicon stays: the mark's own text shrinks
-     to nothing and the service restores its size. */
-  :is(body, .frame) > header > .mark:has(> .service) { font-size: 0; gap: 0; }
-  :is(body, .frame) > header > .mark > .service { font-size: 15px; margin-left: calc(var(--s2) + 4px); }
+  :is(body, .frame) > header > nav:not(.crumbs, .pages) { display: none; }
   main { padding-top: var(--s5); }
   .hero { padding: var(--s7) 0 var(--s6); }
   .hero > p:not(.eyebrow) { font-size: 17px; }
@@ -612,11 +688,17 @@ main > section > .section-head h2 { font-size: var(--h3); }
 /* banner lab: each variant in its own frame, the banner alone */
 .frame { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
 .frame > header { border-bottom: 0; }
+.frame.tall { height: 180px; }
+.frame.mid { width: 880px; max-width: 100%; }
 .frame.narrow { width: 375px; max-width: 100%; }
-/* A narrow frame on a wide screen takes the banner's below-640px rules. */
+/* A mid frame on a wide screen takes the banner's below-900px rules; a narrow
+   frame takes those and the below-640px rules. */
+.frame:is(.mid, .narrow) > header > .mark:has(> img) { font-size: 0; gap: 0; }
 .frame.narrow > header { gap: var(--s3); }
-.frame.narrow > header > .mark:has(> .service) { font-size: 0; gap: 0; }
-.frame.narrow > header > .mark > .service { font-size: 15px; margin-left: calc(var(--s2) + 4px); }
+.frame.narrow > header:has(> nav.crumbs) { gap: var(--s2); }
+.frame.narrow > header > nav.crumbs { margin-left: calc(var(--s2) + 4px - var(--s3)); }
+.frame.narrow > header > nav.crumbs li:not(:first-child):not(:last-child) { display: none; }
+.frame.narrow > header > nav.crumbs li:nth-child(n+3):last-child::before { content: "/ \2026 /"; letter-spacing: 1px; }
 /* specimen: icon set */
 .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }

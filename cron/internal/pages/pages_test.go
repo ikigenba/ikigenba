@@ -18,12 +18,15 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	cron "github.com/ikigenba/ikigenba/cron"
 	"github.com/ikigenba/ikigenba/cron/internal/pages"
 	"github.com/ikigenba/ikigenba/cron/internal/scheduler"
 	"github.com/ikigenba/ikigenba/cron/internal/store"
+	"github.com/ikigenba/ikigenba/cron/internal/tools"
 	"github.com/ikigenba/ikigenba/cron/internal/trail"
 )
 
@@ -41,12 +44,12 @@ func require(t *testing.T, ok bool, why string) {
 }
 func templates(t *testing.T) *template.Template {
 	t.Helper()
-	// R-D7V6-ODWX R-CK47-AGUS
+	// R-D7V6-ODWX R-ZC7P-WVO7
 	ts, err := page.Templates().ParseFS(cron.Assets(), "*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []string{"landing", "about", "notfound"} {
+	for _, n := range []string{"landing", "about", "tools", "notfound"} {
 		require(t, ts.Lookup(n) != nil, "missing template "+n)
 	}
 	return ts
@@ -92,10 +95,12 @@ func TestPublicDataAndTemplateExecution(t *testing.T) {
 	}{
 		{"landing", pages.LandingData{}, pages.LandingData{b, []pages.TriggerRow{row}}},
 		{"about", pages.AboutData{}, pages.AboutData{b, "<description>"}},
+		// R-ZQUI-I4KJ R-ZS2E-VWB8
+		{"tools", pages.ToolsData{}, pages.ToolsData{b, []pages.Tool{{"example", "<description>"}}}},
 		{"notfound", pages.NoticeData{}, pages.NoticeData{b}},
 	}
 	ts := templates(t)
-	// R-CMK0-20C6 R-CNRW-FS2V R-COZS-TJTK R-CQ7P-7BK9
+	// R-ZDFM-ANEW R-ZENI-OF5L R-ZFVF-26WA R-ZH3B-FYMZ
 	for _, d := range data {
 		for _, v := range []any{d.zero, d.full} {
 			for _, method := range []string{"GET", "HEAD", "POST"} {
@@ -136,6 +141,7 @@ var now = time.Date(2026, 10, 5, 9, 32, 0, 0, time.UTC)
 
 func setup(t *testing.T, populated bool) *fixture {
 	t.Helper()
+	t.Setenv(services.Variable, "")
 	dir := t.TempDir()
 	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "state", "cron.db"), Migrations: cron.Migrations(), Now: func() time.Time { return now }})
 	if err != nil {
@@ -151,7 +157,7 @@ func setup(t *testing.T, populated bool) *fixture {
 		random[i] = byte(i)
 	}
 	st := store.New(d, store.Config{Now: func() time.Time { return now.Add(-24 * time.Hour) }, Rand: bytes.NewReader(random)})
-	f := &fixture{db: d, store: st, banner: page.Banner{Service: "cron", Version: "test-display"}, path: filepath.Join(dir, "services.json")}
+	f := &fixture{db: d, store: st, banner: page.Banner{Service: "cron", Version: "test-display", Home: "/sentinel-home", Tools: true, Email: "source@example.test", ProfileURL: "/sentinel-profile", LogoutURL: "/sentinel-logout", Trail: []page.Level{{Name: "source", URL: "/source"}}}, path: filepath.Join(dir, "services.json")}
 	if populated {
 		for _, draft := range []store.Draft{
 			{Slug: "weekly_digest", When: "@weekly", OwnerID: "u_7f3a9c21", OwnerEmail: "mira@example.test"},
@@ -190,8 +196,10 @@ func setup(t *testing.T, populated bool) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// R-D5FD-WUFJ R-D6NA-AM68
-	f.cfg = pages.Config{func(page.User) page.Banner { return f.banner }, loaded(t), f.path, st, sch}
+	// R-ZIB7-TQDO R-ZJJ4-7I4D
+	srv := mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w})
+	tools.Register(srv, tools.Config{Store: st, Scheduler: sch})
+	f.cfg = pages.Config{func(page.User) page.Banner { return f.banner }, loaded(t), f.path, st, sch, srv}
 	return f
 }
 func request(method, path, user, email, host, proto string) *http.Request {
@@ -211,6 +219,18 @@ func answer(cfg pages.Config, r *http.Request) *httptest.ResponseRecorder {
 	identity.Require(pages.Handler(cfg)).ServeHTTP(w, r)
 	return w
 }
+func expectedBanner(f *fixture, path string) page.Banner {
+	// R-ZTAB-9O1X
+	b := f.banner
+	b.Trail = nil
+	if path == "/about" {
+		b.Trail = []page.Level{{Name: "about", URL: "/about"}}
+	}
+	if path == "/tools" {
+		b.Trail = []page.Level{{Name: "tools", URL: "/tools"}}
+	}
+	return b
+}
 func expectedRows(f *fixture, user string) []pages.TriggerRow {
 	// R-DK26-I3BV R-DLA2-VV2K
 	rows := make([]pages.TriggerRow, 0, len(f.triggers))
@@ -229,7 +249,7 @@ func expectedRows(f *fixture, user string) []pages.TriggerRow {
 	return rows
 }
 func TestLandingAndAboutExactBodies(t *testing.T) {
-	// R-47GG-8O2F R-DNPV-NEJY
+	// R-ZPMM-4CTU R-ZKR0-L9V2
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
 			f := setup(t, populated)
@@ -241,9 +261,9 @@ func TestLandingAndAboutExactBodies(t *testing.T) {
 					w := answer(f.cfg, request("GET", path+"?arbitrary=query", user, "MiRa+tag@example.test", "cron.sbx.example.test:443", "HTTPS"))
 					equal(t, w.Code, 200)
 					equal(t, w.Header(), http.Header{"Content-Type": []string{"text/html; charset=utf-8"}})
-					want := rendered(t, ts, "about", pages.AboutData{Banner: f.banner, Description: pages.Description})
+					want := rendered(t, ts, "about", pages.AboutData{Banner: expectedBanner(f, "/about"), Description: pages.Description})
 					if path == "/" {
-						want = rendered(t, ts, "landing", pages.LandingData{Banner: f.banner, Triggers: expectedRows(f, user)})
+						want = rendered(t, ts, "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: expectedRows(f, user)})
 					}
 					equal(t, w.Body.String(), want)
 					require(t, len(seen) > 0, "banner not called")
@@ -300,7 +320,7 @@ func TestBannerUserAndFreshServices(t *testing.T) {
 			writeServices(t, f.path, "https://replacement.example.test")
 		}
 		for _, c := range cases {
-			for _, path := range []string{"/", "/about", "/nope"} {
+			for _, path := range []string{"/", "/about", "/tools", "/nope"} {
 				base := c.base
 				if servicesMode == "custom" {
 					base = "http://accounts.example.test/prefix/"
@@ -316,7 +336,7 @@ func TestBannerUserAndFreshServices(t *testing.T) {
 	}
 }
 func TestRoutesMethodsFailuresAndReadOnly(t *testing.T) {
-	// R-DOXS-16AN R-48OC-MFT4 R-DRDK-SPS1 R-49W9-07JT R-DTTD-K99F R-CRFL-L3AY R-CSNH-YV1N
+	// R-ZLYW-Z1LR R-ZOEP-QL35 R-ZN6T-CTCG R-49W9-07JT R-DTTD-K99F R-CRFL-L3AY R-CSNH-YV1N
 	f := setup(t, true)
 	ts := templates(t)
 	before := append([]store.Trigger(nil), f.triggers...)
@@ -325,7 +345,7 @@ func TestRoutesMethodsFailuresAndReadOnly(t *testing.T) {
 	for _, x := range before {
 		next[x.ID], has[x.ID] = f.scheduler.Next(x.ID)
 	}
-	for _, path := range []string{"/", "/about", "/nope", "/hourly", "/hourly/", "/about/", "/mcp/", "/_appkit", "//"} {
+	for _, path := range []string{"/", "/about", "/tools", "/nope", "/hourly", "/hourly/", "/about/", "/tools/", "/mcp/", "/_appkit", "//"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
 			var healthy *httptest.ResponseRecorder
 			for _, failing := range []bool{false, true} {
@@ -334,11 +354,11 @@ func TestRoutesMethodsFailuresAndReadOnly(t *testing.T) {
 				equal(t, w.Header().Values("Set-Cookie"), []string(nil))
 				equal(t, w.Header().Values("Location"), []string(nil))
 				switch {
-				case path != "/" && path != "/about":
+				case path != "/" && path != "/about" && path != "/tools":
 					equal(t, w.Code, 404)
 					equal(t, w.Header().Values("Allow"), []string(nil))
 					equal(t, w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"})
-					want := rendered(t, ts, "notfound", pages.NoticeData{Banner: f.banner})
+					want := rendered(t, ts, "notfound", pages.NoticeData{Banner: expectedBanner(f, path)})
 					if method == "HEAD" {
 						want = ""
 					}
@@ -397,8 +417,11 @@ func TestConcurrentPages(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			path := "/"
-			if i%2 == 0 {
+			switch i % 3 {
+			case 0:
 				path = "/about"
+			case 1:
+				path = "/tools"
 			}
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, request("GET", path, "viewer", "viewer@example.test", "cron.example.test", "https"))
@@ -422,10 +445,51 @@ func TestLandingPrivateData(t *testing.T) {
 	// R-E4SH-06XO R-ET6G-NLRK
 	f := setup(t, true)
 	body := answer(f.cfg, request("GET", "/", "viewer", "viewer@example.test", "cron.example.test", "https")).Body.String()
-	equal(t, body, rendered(t, templates(t), "landing", pages.LandingData{Banner: f.banner, Triggers: expectedRows(f, "viewer")}))
+	equal(t, body, rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: expectedRows(f, "viewer")}))
 	for _, x := range f.triggers {
 		require(t, !strings.Contains(body, x.OwnerID), "owner id exposed")
 		require(t, !strings.Contains(body, x.Created.UTC().Format(time.RFC3339)), "creation stamp exposed")
 		require(t, !strings.Contains(body, x.Created.UTC().Format("2006-01-02 15:04")), "creation text exposed")
+	}
+}
+
+func TestToolsExactBodiesAndFreshRegistration(t *testing.T) {
+	// R-ZUI7-NFSM R-ZWY0-EZA0 R-ZTAB-9O1X
+	f := setup(t, false)
+	ts := templates(t)
+	registered := f.cfg.MCP
+	for _, server := range []string{"empty", "custom", "cron"} {
+		if server != "cron" {
+			capture := &telemetry.Capture{}
+			writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: capture, Stderr: &bytes.Buffer{}, Now: func() time.Time { return now }, Rand: bytes.NewReader(make([]byte, 1024)), Sleep: func(context.Context, time.Duration) {}})
+			t.Cleanup(func() { writer.Shutdown(context.Background(), "test complete") })
+			f.cfg.MCP = mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: writer})
+		} else {
+			f.cfg.MCP = registered
+		}
+		for step := range 2 {
+			if server == "custom" && step == 1 {
+				for _, tool := range []pages.Tool{{Name: "zulu", Description: "First supplied tool.\n\nFull description <&> for a model."}, {Name: "alpha", Description: "Second supplied tool."}} {
+					mcp.AddTool(f.cfg.MCP, mcp.Tool[struct{}, struct{}]{Name: tool.Name, Description: tool.Description, Effect: mcp.Read, Handler: func(context.Context, identity.Caller, struct{}) (struct{}, error) { return struct{}{}, nil }})
+				}
+			}
+			expected := make([]pages.Tool, 0)
+			for _, tool := range f.cfg.MCP.Tools() {
+				expected = append(expected, pages.Tool{Name: tool.Name, Description: tool.Description})
+			}
+			for _, failing := range []bool{false, true} {
+				f.db.SetFailing(failing)
+				var seen []page.User
+				f.cfg.Banner = func(u page.User) page.Banner { seen = append(seen, u); return f.banner }
+				w := answer(f.cfg, request("GET", "/tools?arbitrary=query", "viewer", "supplied<&@example.test", "cron.example.test", "http"))
+				equal(t, w.Code, 200)
+				equal(t, w.Header(), http.Header{"Content-Type": []string{"text/html; charset=utf-8"}})
+				equal(t, w.Body.String(), rendered(t, ts, "tools", pages.ToolsData{Banner: expectedBanner(f, "/tools"), Tools: expected}))
+				require(t, len(seen) > 0, "banner source not called")
+				for _, user := range seen {
+					equal(t, user, page.User{Email: "supplied<&@example.test", ProfileURL: "http://auth.example.test/", LogoutURL: "http://auth.example.test/logout"})
+				}
+			}
+		}
 	}
 }

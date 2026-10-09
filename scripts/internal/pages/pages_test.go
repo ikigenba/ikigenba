@@ -20,7 +20,9 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/git"
@@ -30,10 +32,11 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/settings"
 	"github.com/ikigenba/ikigenba/scripts/internal/source"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
+	"github.com/ikigenba/ikigenba/scripts/internal/tools"
 )
 
 var fixedTime = time.Date(2026, 10, 5, 9, 31, 40, 0, time.FixedZone("test", 3600))
-var fixedBanner = page.Banner{Service: pages.ServiceName, Version: "test"}
+var fixedBanner = page.Banner{Service: pages.ServiceName, Version: "test", Icon: template.HTML("fixture-icon"), Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}, Services: []page.Service{{Name: "fixture-sibling", URL: "https://fixture-sibling.test", Enabled: true}}}
 
 func templates(t *testing.T) *template.Template {
 	t.Helper()
@@ -59,7 +62,7 @@ func requireEqual(t *testing.T, got, want any) {
 }
 
 // R-VKHH-HQ5X R-OIC3-1CB3 R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7
-// R-CN1O-4HC6 R-CPHG-W0TK R-CQPD-9SK9 R-CRX9-NKAY
+// R-RWIX-JJ9E R-RYYQ-B2QS R-S06M-OUHH R-S1EJ-2M86
 func TestTemplateSetAndData(t *testing.T) {
 	const serviceName = pages.ServiceName
 	const description = pages.Description
@@ -90,6 +93,7 @@ func TestTemplateSetAndData(t *testing.T) {
 		{"script", pages.ScriptData{Banner: fixedBanner, Script: pages.ScriptCard{ID: "script", Name: "alpha", Repo: repo, Ref: "main", Created: "created", CreatedAt: "stamp", RunsKept: 1, KeepNewest: 10, KeepDays: 30}, Runs: []pages.RunRow{row}}},
 		{"run", pages.RunData{Banner: fixedBanner, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: card, Input: file, Stdout: file, Stderr: file, Files: []pages.FileRow{{Path: "file", Size: pages.Size{Number: "1", Unit: "byte"}, URL: "/file"}}}},
 		{"about", pages.AboutData{Banner: fixedBanner, Description: pages.Description}},
+		{"tools", pages.ToolsData{fixedBanner, []pages.Tool{{"fixture-tool", "fixture-description"}}}},
 		{"notfound", pages.NoticeData{Banner: fixedBanner}},
 		{"unavailable", pages.NoticeData{Banner: fixedBanner}},
 	}
@@ -114,7 +118,7 @@ func TestTemplateSetAndData(t *testing.T) {
 	}
 }
 
-// R-CO9K-I92V R-CN1O-4HC6
+// R-CO9K-I92V R-RWIX-JJ9E
 func TestPartials(t *testing.T) {
 	for _, status := range []string{store.StatusQueued, store.StatusRunning, store.StatusExited, store.StatusTimedOut, store.StatusKilled, store.StatusFailed} {
 		row := pages.RunRow{Status: status}
@@ -137,6 +141,7 @@ type fixture struct {
 	cfg         pages.Config
 	db          *db.DB
 	handler     http.Handler
+	writer      *telemetry.Writer
 	sc          store.Script
 	root, trace string
 	mu          sync.Mutex
@@ -145,6 +150,7 @@ type fixture struct {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
+	t.Setenv(services.Variable, "")
 	dir := t.TempDir()
 	f := &fixture{t: t, root: dir, trace: filepath.Join(dir, "trace")}
 	gitPath, e := exec.LookPath("git")
@@ -182,6 +188,7 @@ func setup(t *testing.T) *fixture {
 	}
 	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: fixedBanner.Version, Sink: &telemetry.Capture{}, Stderr: io.Discard, Now: func() time.Time { return fixedTime }, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 1024)), Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() { w.Shutdown(context.Background(), "done") })
+	f.writer = w
 	core := runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Store: s, Source: src, Writer: w, Runs: filepath.Join(dir, "runs"), ScriptSeconds: 1, OutputMaxBytes: 1, KeepDays: 30, KeepCount: 10, Now: func() time.Time { return fixedTime }, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Rand: bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8})})
 	set, e := pages.Load()
 	if e != nil {
@@ -196,7 +203,8 @@ func setup(t *testing.T) *fixture {
 		b.ProfileURL = u.ProfileURL
 		b.LogoutURL = u.LogoutURL
 		return b
-	}, Pages: set, Store: s, Source: src, Runs: core, KeepDays: 30, KeepCount: 10, TreeMaxBytes: 1229, OperationSeconds: 12}
+	}, Pages: set, Store: s, Source: src, Runs: core, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: fixedBanner.Version, Telemetry: w}), KeepDays: 30, KeepCount: 10, TreeMaxBytes: 1229, OperationSeconds: 12}
+	tools.Register(f.cfg.MCP, tools.Config{Store: s, Source: src, Runs: core, Telemetry: w})
 	f.handler = identity.Require(pages.Handler(f.cfg))
 	return f
 }
@@ -261,7 +269,7 @@ func writeFile(t *testing.T, p, text string) {
 	}
 }
 
-// R-W8VH-54ZT R-WA3D-IWQI R-NY3P-CSH2 R-WJUK-L2O2 R-WL2G-YUER R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-WX9G-SJTP R-WZP9-K3B3 R-0KOO-W7F0 R-X252-BMSH R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ
+// R-RU34-RZS0 R-RVB1-5RIP R-NY3P-CSH2 R-S9XT-R0F1 R-WL2G-YUER R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-WX9G-SJTP R-S2MF-GDYV R-RSV8-E81B R-S528-7XG9 R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ
 // R-CUD2-F3SC R-CZ8N-Y6R4 R-D0GK-BYHT R-D1OG-PQ8I
 func TestPageRoutesAndData(t *testing.T) {
 	var handler func(pages.Config) http.Handler
@@ -275,7 +283,7 @@ func TestPageRoutesAndData(t *testing.T) {
 	foreign := f.add(t, other, 2, store.StatusRunning, "", 0, 0)
 	sibling := f.add(t, second, 3, store.StatusRunning, "", 0, 0)
 	row := pages.RunRow{ID: u.ID, URL: "/alpha/runs/" + u.ID + "/", Status: store.StatusExited, Commit: "aaaaaaa", Started: u.Started.UTC().Format(pages.MinuteLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: &pages.Duration{Seconds: 12}, ExitCode: 0}
-	b := fixedBanner
+	b := withTrail(fixedBanner)
 	b.Email = "person@example.com"
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
@@ -283,13 +291,13 @@ func TestPageRoutesAndData(t *testing.T) {
 	w := f.request(context.Background(), "GET", "/?query=yes", "owner")
 	requireEqual(t, w.Code, 200)
 	requireEqual(t, w.Body.String(), rendered(t, "landing", expectedLanding))
-	expectedScript := pages.ScriptData{Banner: b, Script: pages.ScriptCard{ID: f.sc.ID, Name: "alpha", Repo: pages.Repo{ID: f.sc.Repo, Name: "Repository"}, Ref: "main", Created: f.sc.Created.UTC().Format(pages.CardLayout), CreatedAt: f.sc.Created.UTC().Format(time.RFC3339), RunsKept: 1, KeepNewest: 10, KeepDays: 30}, Runs: []pages.RunRow{row}}
+	expectedScript := pages.ScriptData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}), Script: pages.ScriptCard{ID: f.sc.ID, Name: "alpha", Repo: pages.Repo{ID: f.sc.Repo, Name: "Repository"}, Ref: "main", Created: f.sc.Created.UTC().Format(pages.CardLayout), CreatedAt: f.sc.Created.UTC().Format(time.RFC3339), RunsKept: 1, KeepNewest: 10, KeepDays: 30}, Runs: []pages.RunRow{row}}
 	w = f.request(context.Background(), "GET", "/alpha/", "owner")
 	requireEqual(t, w.Code, 200)
 	requireEqual(t, w.Body.String(), rendered(t, "script", expectedScript))
 	w = f.request(context.Background(), "GET", "/about?x=1", "owner")
 	requireEqual(t, w.Code, 200)
-	requireEqual(t, w.Body.String(), rendered(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
+	requireEqual(t, w.Body.String(), rendered(t, "about", pages.AboutData{Banner: withTrail(b, page.Level{Name: "about", URL: "/about"}), Description: pages.Description}))
 	f.mu.Lock()
 	for _, user := range f.users {
 		requireEqual(t, user, page.User{Email: b.Email, ProfileURL: b.ProfileURL, LogoutURL: b.LogoutURL})
@@ -344,7 +352,7 @@ func TestPageRoutesAndData(t *testing.T) {
 	f.mu.Unlock()
 	missing := rendered(t, "notfound", pages.NoticeData{Banner: fixedBanner})
 	requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "other").Body.String(), missing)
-	for _, path := range []string{"/nope/", "/nope", "/nope/runs/" + foreign.ID + "/", "/Alpha/", "/private/", "/private", "/about/", "/mcp/tools", "/alpha/runs/latest", "/alpha/runs/latest/", "/alpha/runs/" + foreign.ID + "/", "/alpha/runs/" + foreign.ID, "/alpha/runs/" + sibling.ID + "/", "/alpha/runs/" + sibling.ID, "/alpha/runs/" + strings.ToUpper(u.ID) + "/", "/alpha/runs/" + strings.ToUpper(u.ID), "/alpha/runs", "/alpha/runs/", "/alpha/other", "/alpha/other/", "/alpha/index.html", "/alpha/./", "/alpha/%2e/", "/alpha/../", "/alpha//", "/alpha/runs/" + u.ID + "//", "//", "/%2falpha/"} {
+	for _, path := range []string{"/nope/", "/nope", "/nope/runs/" + foreign.ID + "/", "/Alpha/", "/private/", "/private", "/about/", "/tools/", "/mcp/tools", "/alpha/runs/latest", "/alpha/runs/latest/", "/alpha/runs/" + foreign.ID + "/", "/alpha/runs/" + foreign.ID, "/alpha/runs/" + sibling.ID + "/", "/alpha/runs/" + sibling.ID, "/alpha/runs/" + strings.ToUpper(u.ID) + "/", "/alpha/runs/" + strings.ToUpper(u.ID), "/alpha/runs", "/alpha/runs/", "/alpha/other", "/alpha/other/", "/alpha/index.html", "/alpha/./", "/alpha/%2e/", "/alpha/../", "/alpha//", "/alpha/runs/" + u.ID + "//", "//", "/%2falpha/"} {
 		w = f.request(context.Background(), "GET", path, "owner")
 		requireEqual(t, w.Code, 404)
 		requireEqual(t, w.Body.String(), missing)
@@ -361,7 +369,7 @@ func TestPageRoutesAndData(t *testing.T) {
 	}
 	f.users = nil
 	f.mu.Unlock()
-	for _, path := range []string{"/", "/about", "/alpha/", "/alpha", "/alpha/runs/" + u.ID + "/", "/nope/"} {
+	for _, path := range []string{"/", "/about", "/tools", "/alpha/", "/alpha", "/alpha/runs/" + u.ID + "/", "/nope/"} {
 		get := f.request(context.Background(), "GET", path, "owner")
 		head := f.request(context.Background(), "HEAD", path, "owner")
 		requireEqual(t, head.Code, get.Code)
@@ -370,7 +378,7 @@ func TestPageRoutesAndData(t *testing.T) {
 		requireEqual(t, get.Header().Values("Set-Cookie"), []string(nil))
 	}
 	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
-		for _, path := range []string{"/", "/about", "/alpha/", "/private/", "/nope/"} {
+		for _, path := range []string{"/", "/about", "/tools", "/alpha/", "/private/", "/nope/"} {
 			w = f.request(context.Background(), method, path, "owner")
 			requireEqual(t, w.Code, 405)
 			requireEqual(t, w.Header(), http.Header{"Allow": {"GET, HEAD"}})
@@ -409,7 +417,7 @@ func TestPageRoutesAndData(t *testing.T) {
 		}
 	}
 	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
-		for _, path := range []string{"/", "/about", "/alpha/", "/private/", "/nope/"} {
+		for _, path := range []string{"/", "/about", "/tools", "/alpha/", "/private/", "/nope/"} {
 			w = f.request(context.Background(), method, path, "owner")
 			requireEqual(t, w.Code, 405)
 			requireEqual(t, w.Header(), http.Header{"Allow": {"GET, HEAD"}})
@@ -424,10 +432,10 @@ func TestPageRoutesAndData(t *testing.T) {
 	f.mu.Unlock()
 	w = f.request(context.Background(), "GET", "/about", "owner")
 	requireEqual(t, w.Code, 200)
-	requireEqual(t, w.Body.String(), rendered(t, "about", pages.AboutData{Banner: b, Description: pages.Description}))
+	requireEqual(t, w.Body.String(), rendered(t, "about", pages.AboutData{Banner: withTrail(b, page.Level{Name: "about", URL: "/about"}), Description: pages.Description}))
 }
 
-// R-X3CY-PEJ6
+// R-S6A4-LP6Y
 // R-CVKY-SVJ1 R-CWSV-6N9Q R-CY0R-KF0F R-CUD2-F3SC R-CT56-1C1N
 func TestRunPageData(t *testing.T) {
 	f := setup(t)
@@ -473,7 +481,7 @@ func TestRunPageData(t *testing.T) {
 		path := "/alpha/runs/" + u.ID + "/"
 		w := f.request(context.Background(), "GET", path, "owner")
 		requireEqual(t, w.Code, 200)
-		b := fixedBanner
+		b := withTrail(fixedBanner)
 		b.Email = "person@example.com"
 		b.ProfileURL = "https://auth.sbx.example/"
 		b.LogoutURL = "https://auth.sbx.example/logout"
@@ -497,14 +505,14 @@ func TestRunPageData(t *testing.T) {
 		if c.status == store.StatusFailed {
 			card.Failure = &pages.Failure{Reason: c.reason, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: u.Ref, TreeMaxBytes: f.cfg.TreeMaxBytes, OperationSeconds: f.cfg.OperationSeconds}
 		}
-		data := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: card, Input: &pages.FileText{Size: pages.Size{Number: "17", Unit: "byte"}, Text: "{\"text\":\"<&>\"}\n", URL: path + runs.InputFile}, Stdout: &pages.FileText{Size: pages.Size{Number: "1.2", Unit: "kilobyte"}, Text: strings.Repeat("x", 1229), URL: path + runs.StdoutFile}, Stderr: &pages.FileText{Size: pages.Size{Number: "0", Unit: "byte"}, URL: path + runs.StderrFile}, Files: []pages.FileRow{{Path: ".hidden", Size: pages.Size{Number: "1", Unit: "byte"}, URL: path + "out/.hidden"}, {Path: "a b/é?#.txt", Size: pages.Size{Number: "4", Unit: "byte"}, URL: path + "out/a%20b/%C3%A9%3F%23.txt"}, {Path: "a.txt", Size: pages.Size{Number: "7", Unit: "byte"}, URL: path + "out/a.txt"}, {Path: "a/z", Size: pages.Size{Number: "6", Unit: "byte"}, URL: path + "out/a/z"}, {Path: "z", Size: pages.Size{Number: "1.0", Unit: "megabyte"}, URL: path + "out/z"}}}
+		data := pages.RunData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}, page.Level{Name: u.ID, URL: "/alpha/runs/" + u.ID + "/"}), Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: card, Input: &pages.FileText{Size: pages.Size{Number: "17", Unit: "byte"}, Text: "{\"text\":\"<&>\"}\n", URL: path + runs.InputFile}, Stdout: &pages.FileText{Size: pages.Size{Number: "1.2", Unit: "kilobyte"}, Text: strings.Repeat("x", 1229), URL: path + runs.StdoutFile}, Stderr: &pages.FileText{Size: pages.Size{Number: "0", Unit: "byte"}, URL: path + runs.StderrFile}, Files: []pages.FileRow{{Path: ".hidden", Size: pages.Size{Number: "1", Unit: "byte"}, URL: path + "out/.hidden"}, {Path: "a b/é?#.txt", Size: pages.Size{Number: "4", Unit: "byte"}, URL: path + "out/a%20b/%C3%A9%3F%23.txt"}, {Path: "a.txt", Size: pages.Size{Number: "7", Unit: "byte"}, URL: path + "out/a.txt"}, {Path: "a/z", Size: pages.Size{Number: "6", Unit: "byte"}, URL: path + "out/a/z"}, {Path: "z", Size: pages.Size{Number: "1.0", Unit: "megabyte"}, URL: path + "out/z"}}}
 		row := pages.RunRow{ID: u.ID, URL: path, Status: u.Status, ExitCode: u.ExitCode, Commit: "aaaaaaa", Started: u.Started.UTC().Format(pages.MinuteLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Duration: dur}
 		if u.SHA == "" {
 			row.Commit = ""
 		}
 		rows = append([]pages.RunRow{row}, rows...)
 		requireEqual(t, f.request(context.Background(), "GET", "/", "owner").Body.String(), rendered(t, "landing", pages.LandingData{Banner: b, Scripts: []pages.ScriptRow{{Name: sc.Name, URL: "/alpha/", Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, LastRun: &row}}}))
-		requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "owner").Body.String(), rendered(t, "script", pages.ScriptData{Banner: b, Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), RunsKept: len(rows), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}, Runs: rows}))
+		requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "owner").Body.String(), rendered(t, "script", pages.ScriptData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}), Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), RunsKept: len(rows), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}, Runs: rows}))
 		data.Input.Size = pages.Size{Number: fmt.Sprint(len(data.Input.Text)), Unit: "byte"}
 		requireEqual(t, w.Body.String(), rendered(t, "run", data))
 		if e := os.Remove(filepath.Join(folder, runs.InputFile)); e != nil {
@@ -532,7 +540,7 @@ func TestRunPageData(t *testing.T) {
 	}
 }
 
-// R-XBW9-DSQ1 R-X3CY-PEJ6
+// R-XBW9-DSQ1 R-S6A4-LP6Y
 func TestNoticeAndEmptyRunFiles(t *testing.T) {
 	f := setup(t)
 	w := f.request(context.Background(), "GET", "/missing/", "owner")
@@ -544,12 +552,12 @@ func TestNoticeAndEmptyRunFiles(t *testing.T) {
 	if e := os.MkdirAll(filepath.Join(folder, runs.OutDir), 0700); e != nil {
 		t.Fatal(e)
 	}
-	b := fixedBanner
+	b := withTrail(fixedBanner)
 	b.Email = "person@example.com"
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
 	path := "/alpha/runs/" + u.ID + "/"
-	d := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: pages.RunCard{ID: u.ID, URL: path, Status: store.StatusRunning, Running: true, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: pages.Size{Number: "0", Unit: "byte"}, StderrSize: pages.Size{Number: "0", Unit: "byte"}}}
+	d := pages.RunData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}, page.Level{Name: u.ID, URL: "/alpha/runs/" + u.ID + "/"}), Script: pages.ScriptLink{Name: "alpha", URL: "/alpha/"}, Run: pages.RunCard{ID: u.ID, URL: path, Status: store.StatusRunning, Running: true, Commit: u.SHA, Ref: "main", Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339), Trigger: "manual", User: "owner", Request: u.RequestID, StdoutSize: pages.Size{Number: "0", Unit: "byte"}, StderrSize: pages.Size{Number: "0", Unit: "byte"}}}
 	w = f.request(context.Background(), "GET", path, "owner")
 	requireEqual(t, w.Body.String(), rendered(t, "run", d))
 	for _, name := range []string{runs.InputFile, runs.StdoutFile, runs.StderrFile} {
@@ -698,7 +706,7 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 		{"/alpha/runs/" + failed.ID + "/", [][]string{argv(sc.Repo)}},
 		{"/alpha/runs/" + gitFailed.ID + "/", [][]string{argv(sc.Repo)}},
 		{"/alpha/runs/" + otherFailure.ID + "/", [][]string{argv(sc.Repo)}},
-		{"/about", nil}, {"/alpha", nil}, {"/alpha/runs/" + u.ID, nil},
+		{"/about", nil}, {"/tools", nil}, {"/alpha", nil}, {"/alpha/runs/" + u.ID, nil},
 		{"/missing/", nil}, {"/private/", nil}, {"/alpha/runs/nope/", nil},
 	}
 	for _, c := range cases {
@@ -756,7 +764,7 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 	assertState(f.cfg.Store)
 	f.db.SetFailing(true)
 	for _, method := range []string{"GET", "HEAD", "POST"} {
-		for _, path := range []string{"/", "/alpha/", "/alpha", "/never/", "/alpha/runs/" + failed.ID + "/", "/missing/", "/about"} {
+		for _, path := range []string{"/", "/alpha/", "/alpha", "/never/", "/alpha/runs/" + failed.ID + "/", "/missing/", "/about", "/tools"} {
 			writeFile(t, f.trace, "")
 			f.request(context.Background(), method, path, "owner")
 			assertGit(nil)
@@ -772,7 +780,7 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 
 // The anonymous conversions prove the complete ordered data contracts by use;
 // adding, removing, reordering or changing a field makes these fail to compile.
-// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-W8VH-54ZT
+// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-RU34-RZS0
 // R-CFQ9-TUW0 R-CDAH-2BEM R-CEID-G35B R-CGY6-7MMP R-CI62-LEDE R-CJDY-Z643 R-CLTR-QPLH
 func TestDataContracts(t *testing.T) {
 	_ = struct {
@@ -846,6 +854,12 @@ func TestDataContracts(t *testing.T) {
 		Banner      page.Banner
 		Description string
 	}(pages.AboutData{})
+	// R-S7I0-ZGXN R-S8PX-D8OC
+	_ = struct {
+		Banner page.Banner
+		Tools  []pages.Tool
+	}(pages.ToolsData{})
+	_ = struct{ Name, Description string }(pages.Tool{})
 	_ = struct{ Banner page.Banner }(pages.NoticeData{})
 	_ = struct {
 		Banner                                              func(page.User) page.Banner
@@ -854,6 +868,7 @@ func TestDataContracts(t *testing.T) {
 		Store                                               *store.Store
 		Source                                              *source.Source
 		Runs                                                *runs.Core
+		MCP                                                 *mcp.Server
 		KeepDays, KeepCount, TreeMaxBytes, OperationSeconds int64
 	}(pages.Config{})
 	requireEqual(t, pages.ServiceName, "scripts")
@@ -919,11 +934,11 @@ func TestTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-CT56-1C1N R-CWSV-6N9Q R-X3CY-PEJ6
+// R-CT56-1C1N R-CWSV-6N9Q R-S6A4-LP6Y
 func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
-	b := fixedBanner
+	b := withTrail(fixedBanner)
 	b.Email = "person@example.com"
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
@@ -949,7 +964,7 @@ func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := "/alpha/runs/" + u.ID + "/"
-		want := pages.RunData{Banner: b, Script: pages.ScriptLink{Name: sc.Name, URL: "/alpha/"}, Run: pages.RunCard{
+		want := pages.RunData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}, page.Level{Name: u.ID, URL: "/alpha/runs/" + u.ID + "/"}), Script: pages.ScriptLink{Name: sc.Name, URL: "/alpha/"}, Run: pages.RunCard{
 			ID: u.ID, URL: path, Status: store.StatusExited, Commit: u.SHA, Ref: u.Ref,
 			Started: u.Started.UTC().Format(pages.SecondLayout), StartedAt: u.Started.UTC().Format(time.RFC3339),
 			Finished: u.Finished.UTC().Format(pages.SecondLayout), FinishedAt: u.Finished.UTC().Format(time.RFC3339), Duration: &pages.Duration{Minutes: c.seconds / 60, Seconds: c.seconds % 60},
@@ -963,13 +978,13 @@ func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 func TestScriptSubscriptions(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
-	b := fixedBanner
+	b := withTrail(fixedBanner)
 	b.Email = "person@example.com"
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
 	check := func(names []string) {
 		t.Helper()
-		want := pages.ScriptData{Banner: b, Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}, Subscriptions: names}
+		want := pages.ScriptData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}), Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}, Subscriptions: names}
 		requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "owner").Body.String(), rendered(t, "script", want))
 	}
 	check(nil)
@@ -985,10 +1000,10 @@ func TestScriptSubscriptions(t *testing.T) {
 	check([]string{"repo.pushed"})
 }
 
-// R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-X3CY-PEJ6
+// R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-S6A4-LP6Y
 func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 	f := setup(t)
-	b := fixedBanner
+	b := withTrail(fixedBanner)
 	b.Email = "person@example.com"
 	b.ProfileURL = "https://auth.sbx.example/"
 	b.LogoutURL = "https://auth.sbx.example/logout"
@@ -1003,7 +1018,7 @@ func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 			repo.Name = ""
 		}
 		requireEqual(t, f.request(context.Background(), "GET", "/", "owner").Body.String(), rendered(t, "landing", pages.LandingData{Banner: b, Scripts: []pages.ScriptRow{{Name: sc.Name, URL: "/alpha/", Repo: repo, Ref: sc.Ref}}}))
-		requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "owner").Body.String(), rendered(t, "script", pages.ScriptData{Banner: b, Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repo, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}))
+		requireEqual(t, f.request(context.Background(), "GET", "/alpha/", "owner").Body.String(), rendered(t, "script", pages.ScriptData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}), Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repo, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}))
 	}
 	for i, c := range []struct{ status, reason string }{
 		{store.StatusRunning, ""},
@@ -1030,6 +1045,60 @@ func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 			card.FinishedAt = u.Finished.UTC().Format(time.RFC3339)
 			card.Failure = &pages.Failure{Reason: c.reason, Repo: pages.Repo{ID: sc.Repo}, Ref: u.Ref, TreeMaxBytes: f.cfg.TreeMaxBytes, OperationSeconds: f.cfg.OperationSeconds}
 		}
-		requireEqual(t, f.request(context.Background(), "GET", path, "owner").Body.String(), rendered(t, "run", pages.RunData{Banner: b, Script: pages.ScriptLink{Name: sc.Name, URL: "/alpha/"}, Run: card}))
+		requireEqual(t, f.request(context.Background(), "GET", path, "owner").Body.String(), rendered(t, "run", pages.RunData{Banner: withTrail(b, page.Level{Name: "alpha", URL: "/alpha/"}, page.Level{Name: u.ID, URL: "/alpha/runs/" + u.ID + "/"}), Script: pages.ScriptLink{Name: sc.Name, URL: "/alpha/"}, Run: card}))
 	}
+}
+
+func withTrail(b page.Banner, trail ...page.Level) page.Banner {
+	b.Trail = trail
+	return b
+}
+
+// R-SB5Q-4S5Q R-SCDM-IJWF R-S3UB-U5PK R-S9XT-R0F1
+func TestToolsPageUsesCurrentServerAndOwnTrail(t *testing.T) {
+	f := setup(t)
+	original := page.Banner{Service: "fixture-service", Version: "fixture-version", Icon: template.HTML("fixture-icon"), Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}, Services: []page.Service{{Name: "fixture-sibling", URL: "https://fixture-sibling.test", Enabled: true}}}
+	f.cfg.Banner = func(user page.User) page.Banner {
+		b := original
+		b.Email = user.Email
+		b.ProfileURL = user.ProfileURL
+		b.LogoutURL = user.LogoutURL
+		return b
+	}
+	f.cfg.MCP = mcp.NewServer(mcp.ServerConfig{Name: "fixture-server", Version: "fixture-version", Telemetry: f.writer})
+	f.handler = identity.Require(pages.Handler(f.cfg))
+	b := original
+	b.Email = "person@example.com"
+	b.ProfileURL = "https://auth.sbx.example/"
+	b.LogoutURL = "https://auth.sbx.example/logout"
+	check := func() {
+		var entries []pages.Tool
+		for _, tool := range f.cfg.MCP.Tools() {
+			entries = append(entries, pages.Tool{tool.Name, tool.Description})
+		}
+		for _, failing := range []bool{false, true} {
+			f.db.SetFailing(failing)
+			for _, suffix := range []string{"", "?ignored=anything"} {
+				get := f.request(context.Background(), "GET", "/tools"+suffix, "owner")
+				requireEqual(t, get.Code, 200)
+				requireEqual(t, get.Body.String(), rendered(t, "tools", pages.ToolsData{withTrail(b, page.Level{Name: "tools", URL: "/tools"}), entries}))
+				head := f.request(context.Background(), "HEAD", "/tools"+suffix, "owner")
+				requireEqual(t, head.Code, get.Code)
+				requireEqual(t, head.Header(), get.Header())
+				requireEqual(t, head.Body.Len(), 0)
+				about := f.request(context.Background(), "GET", "/about"+suffix, "owner")
+				requireEqual(t, about.Code, 200)
+				requireEqual(t, about.Body.String(), rendered(t, "about", pages.AboutData{withTrail(b, page.Level{Name: "about", URL: "/about"}), pages.Description}))
+			}
+		}
+	}
+	check()
+	for _, tool := range []struct{ name, description string }{{"z_fixture", "Fixture description one<&>.\n\nFixture details."}, {"a_fixture", "Fixture description two."}} {
+		mcp.AddTool(f.cfg.MCP, mcp.Tool[tools.ListArgs, tools.ScriptList]{Name: tool.name, Description: tool.description, Effect: mcp.Read, Handler: func(context.Context, identity.Caller, tools.ListArgs) (tools.ScriptList, error) {
+			t.Error("tools page called a tool")
+			return tools.ScriptList{}, nil
+		}})
+		check()
+	}
+	requireEqual(t, original.Trail, []page.Level{{Name: "stale", URL: "/stale"}})
 }

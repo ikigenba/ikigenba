@@ -53,11 +53,12 @@ written outside the run and read-only to it.
 
 `assets/` holds sites' markup: the Go `html/template` files `landing.html`,
 the landing page (template `landing`), `about.html`, the about screen
-(template `about`), `notfound.html`, the not-found page (template
-`notfound`), and `unavailable.html`, the page shown while a site's published
+(template `about`), `tools.html`, the tools page (template `tools`),
+`notfound.html`, the not-found page (template `notfound`), and
+`unavailable.html`, the page shown while a site's published
 commit cannot be served (template `unavailable`). Each opens with a comment
 naming the data it receives and, for people and the stylesheet, the hooks
-it carries. The landing and about pages carry appkit's banner and are shown
+it carries. The landing, about and tools pages carry appkit's banner and are shown
 only to a signed-in user; the not-found and unavailable pages may be shown
 to a guest, so they carry the footer only and never the banner. They follow
 the repository's `design/` and are an input to the spec: the user or the
@@ -104,7 +105,7 @@ run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit at `v0.18.0` (see Adopting appkit below). It and the modules it
+  - appkit at `v0.20.0` (see Adopting appkit below). It and the modules it
     pulls in are sites' only dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
@@ -121,10 +122,10 @@ among them — needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.18.0`, fetched
+appkit is required only at a published release, here `v0.20.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@v0.18.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.20.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files

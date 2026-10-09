@@ -1,14 +1,10 @@
-{{/* The landing page at GET /: what the service is, its tools, and how to
-     clone with git. Lists no repositories. Data: .Banner (a page.Banner, for
+{{/* The landing page at GET /: what the service is and how to clone with
+     git. Lists no repositories. Data: .Banner (a page.Banner, for
      banner and footer); .ReposURL (<repos-url>: the services file's repos
      url less one trailing "/", else <scheme>://<Host>); .Credentials, the
      credentials text's three non-empty lines, each verbatim: .Intro (line
      1), .Helper (line 3, the git config command) and .Warning (line 5).
-     Hooks: h1 with text "repos"; p#summary; a section with h2 "MCP
-     tools" and dl#tools.kv holding one dt[data-tool=<name>] per MCP tool, in
-     the order list, show, status, create, rename, delete, each holding the
-     tool's name in a code element and followed by a dd holding the first
-     line of its description; section#clone with h2 "Clone with git",
+     Hooks: h1 with text "repos"; p#summary; section#clone with h2 "Clone with git",
      p#clone-url whose code element holds "<.ReposURL>/<name>.git",
      p#credentials-intro (.Credentials.Intro), code#git-helper inside a pre
      (.Credentials.Helper) and p#credentials-warning (.Credentials.Warning);
@@ -20,18 +16,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>repos</h1>
-<p id="summary" class="lede">Git repositories for the suite's content. Agents create repositories with the tools below and push to them with ordinary git over HTTPS. Each repository belongs to the user who created it, and only that user can see it or reach it.</p>
-<section class="card">
-<header><h2>MCP tools</h2><p>Agents manage repositories with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
-<dl id="tools" class="kv">
-<dt data-tool="list"><code>list</code></dt><dd>The repositories you own, by name.</dd>
-<dt data-tool="show"><code>show</code></dt><dd>One of your repositories, with its clone URL and how to give git your token.</dd>
-<dt data-tool="status"><code>status</code></dt><dd>How busy repos is, and how close each of your repositories is to its size limit.</dd>
-<dt data-tool="create"><code>create</code></dt><dd>Create an empty repository and return it, with its clone URL and how to give git your token.</dd>
-<dt data-tool="rename"><code>rename</code></dt><dd>Give one of your repositories a new name; its id does not change.</dd>
-<dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your repositories and everything in it.</dd>
-</dl>
-</section>
+<p id="summary" class="lede">Git repositories for the suite's content. Agents create repositories and push to them with ordinary git over HTTPS. Each repository belongs to the user who created it, and only that user can see it or reach it.</p>
 <section id="clone" class="card">
 <header><h2>Clone with git</h2><p id="clone-url">Clone a repository you own from <code>{{.ReposURL}}/&lt;name&gt;.git</code>, where &lt;name&gt; is its name.</p></header>
 <p id="credentials-intro">{{.Credentials.Intro}}</p>

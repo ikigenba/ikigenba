@@ -207,6 +207,7 @@ func binaryPage(t *testing.T, name, display, servicesPath, authBase string) stri
 		if name == "landing" {
 			data = pages.LandingData{Banner: banner, Triggers: []pages.TriggerRow{}}
 		} else {
+			banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
 			data = pages.AboutData{Banner: banner, Description: pages.Description}
 		}
 	}
@@ -251,7 +252,7 @@ func rpcResult(t *testing.T, b *binaryRun, method, protocol string) map[string]a
 }
 
 // TestBinary is the module's only test that builds and executes a process.
-// R-8FB6-MZVW R-8GJ3-0RML R-8HQZ-EJDA R-8IYV-SB3Z R-3NY2-4C7B R-3P5Y-I3Y0
+// R-8FB6-MZVW R-8GJ3-0RML R-8HQZ-EJDA R-8IYV-SB3Z R-3NY2-4C7B R-Z9RX-5C6T
 // R-8MMK-XMC2 R-8NUH-BE2R R-8QAA-2XK5 R-8RI6-GPAU R-PD6S-T4SE R-PEEP-6WJ3
 // R-4B45-DZAI R-4CC1-RR17
 func TestBinary(t *testing.T) {

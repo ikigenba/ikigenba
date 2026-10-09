@@ -31,7 +31,7 @@ func TestRoutingUsesDecodedPathWithoutRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ph := pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Scheduler: f.cfg.Scheduler})
+	ph := pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Scheduler: f.cfg.Scheduler, MCP: f.cfg.MCP})
 	static := page.Static()
 	delivery := events.DeliveryHandler(nil)
 	declarations := events.DeclarationsHandler(f.cfg.Events, nil)
@@ -39,8 +39,8 @@ func TestRoutingUsesDecodedPathWithoutRedirects(t *testing.T) {
 		path string
 		h    http.Handler
 	}{
-		{"/", ph}, {"/about", ph}, {"/%61bout", ph},
-		{"/nope", ph}, {"/about/", ph}, {"/mcp/", ph},
+		{"/", ph}, {"/about", ph}, {"/%61bout", ph}, {"/tools", ph}, {"/%74ools", ph},
+		{"/nope", ph}, {"/about/", ph}, {"/tools/", ph}, {"/mcp/", ph},
 		{"/events/", ph}, {"/declarations/", ph}, {"/_appkit", ph},
 		{"//", ph}, {"/a/../about", ph}, {"/About", ph},
 		{"/_appkit/theme.css", static}, {"/%5fappkit/theme.css", static},

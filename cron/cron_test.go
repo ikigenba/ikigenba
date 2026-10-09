@@ -9,14 +9,14 @@ import (
 	"github.com/ikigenba/ikigenba/cron"
 )
 
-// R-7N9H-U9TX R-7PPA-LTBB R-7S53-DCSP
+// R-Z8K0-RKG4 R-7PPA-LTBB R-7S53-DCSP
 func TestEmbeddedFileSets(t *testing.T) {
 	cases := []struct {
 		name  string
 		files fs.FS
 		want  []string
 	}{
-		{"assets", cron.Assets(), []string{"about.html", "landing.html", "notfound.html"}},
+		{"assets", cron.Assets(), []string{"about.html", "landing.html", "notfound.html", "tools.html"}},
 		{"etc", cron.Etc(), []string{"manifest.toml", "nginx.conf"}},
 		{"migrations", cron.Migrations(), []string{"0001_triggers.sql"}},
 	}
@@ -47,7 +47,7 @@ func TestEmbeddedFileSets(t *testing.T) {
 	}
 }
 
-// R-7OHE-81KM R-7QX6-ZL20 R-7TCZ-R4JE
+// R-TDD5-HYK4 R-7QX6-ZL20 R-7TCZ-R4JE
 func TestEmbeddedFilesIndependentOfWorkingDirectory(t *testing.T) {
 	sources := []func() fs.FS{cron.Assets, cron.Etc, cron.Migrations}
 	expected := make([]map[string][]byte, len(sources))

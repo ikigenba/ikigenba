@@ -113,7 +113,11 @@ func Run(ctx context.Context, p Process) int {
 	decl = declarations.New(declarations.Config{Store: st, Services: servicePath, Telemetry: writer, AskAfter: p.AskAfter})
 	srv := mcp.NewServer(mcp.ServerConfig{Name: appEvents.ServiceName, Version: p.Version, Telemetry: writer, Instructions: func(context.Context) string { return instructions(servicePath) }})
 	tools.Register(srv, tools.Config{Store: st, Telemetry: writer})
-	pg := pages.New(pages.Config{Banner: p.Banner, ServicesPath: servicePath, Store: st})
+	var pageTools []pages.Tool
+	for _, tool := range srv.Tools() {
+		pageTools = append(pageTools, pages.Tool{Name: tool.Name, Description: tool.Description})
+	}
+	pg := pages.New(pages.Config{Banner: p.Banner, ServicesPath: servicePath, Store: st, Tools: pageTools})
 	handler := web.Handler(web.Config{Pages: pg, MCP: srv, Sink: st, Telemetry: writer})
 	loop := delivery.New(delivery.Config{Store: st, Services: servicePath, Telemetry: writer, Settings: s, TimeoutAfter: p.TimeoutAfter, BackoffAfter: p.BackoffAfter})
 	notify, haveNotify := p.LookupEnv("NOTIFY_SOCKET")

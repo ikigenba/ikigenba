@@ -19,9 +19,9 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/urls"
 )
 
-// R-UXAG-GEV5 R-3NN6-FZEC R-XPM2-VTHM R-WNHB-YPOK R-WOP8-CHF9
-// R-WPX4-Q95Y R-WR51-40WN R-WUSQ-9C4Q R-WW0M-N3VF R-WX8J-0VM4
-// R-WYGF-ENCT R-XD37-ZW95
+// R-UXAG-GEV5 R-3NN6-FZEC R-XPM2-VTHM R-WWFV-811E R-WXNR-LSS3
+// R-WPX4-Q95Y R-WR51-40WN R-WYVN-ZKIS R-WW0M-N3VF R-WX8J-0VM4
+// R-X03K-DC9H R-XD37-ZW95
 func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 	f := fresh(t)
 	p, e := pages.Load()
@@ -29,7 +29,12 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 		t.Fatal(e)
 	}
 	sc := serving.Config{Banner: f.cfg.Banner, Pages: p, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Cache: f.cfg.Cache, Telemetry: f.cfg.Telemetry, Rand: f.cfg.Rand}
-	own := map[string]http.Handler{"apex": serving.Apex(sc), "site": serving.Sites(sc), "page": pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: p, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store}), "static": page.Static()}
+	registered := f.cfg.MCP.Tools()
+	pageTools := make([]pages.Tool, len(registered))
+	for i, tool := range registered {
+		pageTools[i] = pages.Tool{Name: tool.Name, Description: tool.Description}
+	}
+	own := map[string]http.Handler{"apex": serving.Apex(sc), "site": serving.Sites(sc), "page": pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: p, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Tools: pageTools}), "static": page.Static()}
 	for _, test := range []struct {
 		host string
 		apex bool
@@ -41,26 +46,30 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 		{"sitesx.dev", true}, {"www.sites.dev", true}, {"example.org:80:90", true}, {"[::ffff:192.0.2.1]:80", true},
 	} {
 		host, apex := test.host, test.apex
-		for _, path := range []string{"/", "/about", "/mcp", "/_appkit/theme.css", "/_appkit", "/about/", "/mcp/", "/mcp/tools", "//", "/blog/../x", "/nope?next=/mcp"} {
-			for _, method := range []string{"GET", "HEAD", "POST"} {
+		for _, path := range []string{"/", "/about", "/tools", "/mcp", "/_appkit/theme.css", "/_appkit", "/about/", "/tools/", "/mcp/", "/mcp/tools", "//", "/blog/../x", "/nope?next=/mcp", "/tools?next=/mcp", "/?next=/_appkit/theme.css", "/%74ools", "/%61bout", "/%6dcp", "/_appkit%2ftheme.css"} {
+			for _, method := range []string{"GET", "HEAD", "POST", "OPTIONS", "CUSTOM"} {
 				for _, user := range []string{"", "user"} {
 					request := func() *http.Request {
-						r := httptest.NewRequest(method, path, nil)
+						r := httptest.NewRequest(method, path, strings.NewReader("fixture-body"))
 						r.Host = host
 						r.Header.Set("X-Request-Id", "req_0123456789abcdef0123456789abcdef")
 						r.Header.Set("X-User-Id", user)
 						r.Header.Set("X-User-Email", "other@example.invalid")
+						r.Header.Set("X-Forwarded-Host", "unrelated.example")
+						r.Header.Set("X-Original-URI", "/mcp")
+						r.Header.Set("X-Forwarded-Proto", "https")
 						return r
 					}
+					decoded := request().URL.Path
 					expected := own["site"]
 					switch {
 					case apex:
 						expected = own["apex"]
-					case path == "/" || path == "/about":
+					case decoded == "/" || decoded == "/about" || decoded == "/tools":
 						expected = own["page"]
-					case strings.HasPrefix(path, "/_appkit/"):
+					case strings.HasPrefix(decoded, "/_appkit/"):
 						expected = own["static"]
-					case path == "/mcp":
+					case decoded == "/mcp":
 						expected = identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 							f.cfg.MCP.ServeHTTP(w, r.WithContext(urls.NewContext(r.Context(), urls.SitesURL(r, f.cfg.ServicesPath))))
 						}))
@@ -75,7 +84,7 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/", "/about", "/mcp", "/_appkit/theme.css", "/nope"} {
+	for _, path := range []string{"/", "/about", "/tools", "/mcp", "/_appkit/theme.css", "/nope"} {
 		a := f.get(t, "GET", path, "sites", "user", nil)
 		b := f.get(t, "GET", path, "sites", "user", map[string]string{"X-User-Email": ""})
 		if a.Code != b.Code || !reflect.DeepEqual(a.Header(), b.Header()) || a.Code == 500 {
@@ -144,7 +153,7 @@ func TestCatalogRefusalAndRecovery(t *testing.T) {
 	}
 }
 
-// R-3NN6-FZEC R-WOP8-CHF9
+// R-3NN6-FZEC R-WXNR-LSS3
 func TestUnicodeHostsAreApexRequests(t *testing.T) {
 	f := fresh(t)
 	for _, host := range []string{"SİTES.example", "SİTES.example:80"} {
@@ -155,5 +164,78 @@ func TestUnicodeHostsAreApexRequests(t *testing.T) {
 		if r.Header().Get("Set-Cookie") != "" {
 			t.Fatal("apex minted a visitor")
 		}
+	}
+}
+
+// R-WXNR-LSS3 R-X03K-DC9H
+func TestRedirectsMatchTheirOwningHandlers(t *testing.T) {
+	f := fresh(t)
+	site := f.add(t, "public", store.Public)
+	if _, err := f.cfg.Store.SetApex(context.Background(), site.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.add(t, "private", store.Private)
+	set, err := pages.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := serving.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Cache: f.cfg.Cache, Telemetry: f.cfg.Telemetry, Rand: f.cfg.Rand}
+	for _, host := range []string{"ikigenba.dev", "sites"} {
+		owner := serving.Apex(cfg)
+		paths := []string{"/", "/about", "/tools", "/mcp", "/_appkit/theme.css", "/tools/", "/blog/../x", "//"}
+		if host == "sites" {
+			owner = serving.Sites(cfg)
+			paths = []string{"/private", "/private/"}
+		}
+		for _, path := range paths {
+			for _, method := range []string{"GET", "HEAD", "POST", "CUSTOM"} {
+				request := func() *http.Request {
+					r := httptest.NewRequest(method, path+"?next=/tools", strings.NewReader("redirect-fixture"))
+					r.Host = host
+					r.Header.Set("X-Request-Id", "req_0123456789abcdef0123456789abcdef")
+					r.Header.Set("X-Forwarded-Proto", "https")
+					return r
+				}
+				got, want := httptest.NewRecorder(), httptest.NewRecorder()
+				f.h.ServeHTTP(got, request())
+				identity.Optional(owner).ServeHTTP(want, request())
+				if got.Code != want.Code || got.Body.String() != want.Body.String() || !reflect.DeepEqual(got.Header(), want.Header()) {
+					t.Fatalf("redirect %s %s host=%q: got %d %v, want %d %v", method, path, host, got.Code, got.Header(), want.Code, want.Header())
+				}
+			}
+		}
+	}
+}
+
+// R-WYVN-ZKIS
+func TestToolsPageUsesMCPDescriptions(t *testing.T) {
+	f := fresh(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Host = "sites"
+		f.h.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
+	registered, err := client.ListTools(context.Background(), identity.Caller{UserID: "user", RequestID: "req_0123456789abcdef0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageTools := make([]pages.Tool, len(registered))
+	for i, tool := range registered {
+		pageTools[i] = pages.Tool{Name: tool.Name, Description: tool.Description}
+	}
+	set, err := pages.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := identity.Optional(pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Tools: pageTools}))
+	want := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/tools", nil)
+	r.Host = "sites"
+	r.Header.Set("X-User-Id", "user")
+	owner.ServeHTTP(want, r)
+	got := f.get(t, "GET", "/tools", "sites", "user", nil)
+	if got.Code != http.StatusOK || got.Body.String() != want.Body.String() || !reflect.DeepEqual(got.Header(), want.Header()) {
+		t.Fatalf("tools page differs from tools/list: status %d", got.Code)
 	}
 }

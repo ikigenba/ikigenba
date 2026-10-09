@@ -14,7 +14,9 @@ document only fixes that a bare invocation is the one that serves.
 The manifest is a fact about the binary, so the binary emits it. The committed
 `etc/manifest.toml` in the checkout is a copy kept so the tree can be read
 without a build. The manifest declares auth's
-name, that it is not the host's default app, the secrets it needs, its
+name; its description, which is `server.Description` (D05), the line the
+about page shows and the host publishes in its services file, so the two
+cannot drift; that it is not the host's default app, the secrets it needs, its
 Workspace domain, and its SQLite database; its `[resources]` table places it
 among the platform's core services and caps its memory at 128M. It declares no
 port: auth serves on the socket the host passes it, and a manifest carrying `port` is refused by
@@ -113,9 +115,10 @@ identity; auth writes no version literal.
     1  failure
     2  usage error
   ```
-- R-QB6N-JUCJ: The app manifest MUST be exactly the following text, and nothing else (a trailing newline follows the last line):
+- R-RG9K-6CZV: The app manifest MUST be exactly the following text, and nothing else (a trailing newline follows the last line), where `<description>` stands for exactly the text of the `internal/server` package's `Description` (D05):
   ```
   app = "auth"
+  description = "<description>"
   default = false
   secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 

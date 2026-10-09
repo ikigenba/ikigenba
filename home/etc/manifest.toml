@@ -1,0 +1,9 @@
+app = "home"
+description = "Every service on this space"
+default = true
+mcp = false
+guests = false
+secrets = []
+
+[resources]
+memory_max = "128M"

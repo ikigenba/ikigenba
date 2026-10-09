@@ -240,13 +240,14 @@ the client cannot send.
 ## Packages
 
 The module's root package, `dummy`, holds the embedded templates. dummy's
-markup is the four human-authored `html/template` files in `assets/` —
-`page.html`, `table.html`, `form.html` and `script.html` — which the build run
+markup is the six human-authored `html/template` files in `assets/` —
+`page.html`, `table.html`, `form.html`, `script.html`, `about.html` and
+`tools.html` — which the build run
 reads and never writes. Go's `embed` reaches only files at or below the
 embedding package's directory, so neither `internal/panel` nor any other
 package under `internal/` can embed `assets/`; the root package, the directory
 holding `go.mod`, is the one that can. It exports `Assets`, a file
-system holding exactly those four files and nothing else, each embedded from
+system holding exactly those six files and nothing else, each embedded from
 the file of the same name in `assets/`, and `internal/panel`
 parses them from it into the set `page.Templates()` returns.
 
@@ -275,7 +276,8 @@ says what it does with them; it knows nothing of widgets, routes, identity,
 HTML, MCP, telemetry, sockets passed in or systemd.
 `internal/panel` owns dummy's whole HTTP surface: the one handler, wrapped in
 `identity.Require` and that in `telemetry.Middleware`, routing, the page frame the appkit banner is drawn in,
-rendering, the failure shapes, the table fragment, the form, the mounting of
+rendering, the failure shapes, the table fragment, the form, the about and
+tools pages with the trail each hands the banner, dummy's description, the mounting of
 appkit's shared files under `/_appkit/`, and the mounting of the MCP server at
 `/mcp` with dummy's tools registered on it (`D04-panel`, `D06-table`,
 `D07-form`, `D08-assets`). `internal/tools` owns dummy's two MCP tools,
@@ -325,7 +327,7 @@ will be one, so an interface would be a name with no second member.
 display string `main` reads and hands `Run` as `Process.Version`, and its
 value is data the host supplies at run time. The manifest is a constant in
 `internal/cli` holding the manifest text, with a trailing newline: dummy's name; its description,
-the one line the host publishes in its services file and dummy's MCP endpoint
+`panel.Description` (`D02-cli` ties the two), the one line the host publishes in its services file and dummy's MCP endpoint
 gives its clients as instructions; that it is not the host's default app; that
 it offers an MCP endpoint, so the platform's MCP gateway may reach it; no
 secrets; after an empty line, a `[database]` table declaring the SQLite
@@ -440,8 +442,8 @@ handler answers is `D04-panel` and the designs it leads to.
 - R-M8V2-G74V: When the `dummy` binary serves as R-M6F9-ONNH describes and is stopped by `SIGTERM` or `SIGINT` with no request being handled, it MUST write nothing to its standard output or its standard error from its start to its exit, and the last event that sink receives MUST be a `service.stopping` event.
 - R-K7LJ-4RT0: When the `dummy` binary serves with `IKIGENBA_SERVICES` absent from its environment and is stopped by `SIGTERM` or `SIGINT` with no request being handled, it MUST write nothing to its standard output, and everything it writes to its standard error MUST be lines each consisting of `dummy: undelivered event: `, a JSON object, and a newline, of which the first holds the member `event` with the value `service.started` and the last holds the member `event` with the value `service.stopping`.
 - R-MA2Y-TYVK: When the `dummy` binary, started from a working directory that holds no entry, has served as R-M6F9-ONNH describes and has exited after `SIGTERM`, that working directory MUST hold a regular file `state/dummy.db`, so that the database the binary keeps its widgets in is `state/dummy.db` under its working directory.
-- R-E5L5-F828: The module's root package, imported from the path `github.com/ikigenba/ikigenba/dummy` with the package name `dummy`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `page.html`, `table.html`, `form.html` and `script.html` and no other entry.
-- R-DNY1-KF1Q: Every call to `dummy.Assets` MUST return a file system holding the same four files with the same contents, whatever the process working directory is, a directory that holds no `assets/` directory included.
+- R-YBBC-4YX0: The module's root package, imported from the path `github.com/ikigenba/ikigenba/dummy` with the package name `dummy`, MUST export `func Assets() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular files `page.html`, `table.html`, `form.html`, `script.html`, `about.html` and `tools.html` and no other entry.
+- R-YCJ8-IQNP: Every call to `dummy.Assets` MUST return a file system holding the same six files with the same contents, whatever the process working directory is, a directory that holds no `assets/` directory included.
 - R-2TWG-H749: The module's root package `dummy` MUST export `func Migrations() fs.FS`, where `fs` is the standard library's `io/fs`, returning a file system whose root directory holds exactly the regular file `0001_widgets.sql` and no other entry.
 - R-2V4C-UYUY: Every call to `dummy.Migrations` MUST return a file system holding the same one file with the same contents, whatever the process working directory is, a directory that holds no `migrations/` directory included.
 - R-VO8R-HW15: The `internal/cli` package MUST export `Manifest` as a string constant whose value is exactly `app = "dummy"\ndescription = `, then a TOML basic string, on one line, whose value is not empty, then `\ndefault = false\nmcp = true\nsecrets = []\n\n[database]\nengine = "sqlite"\npath = "state/dummy.db"\n\n[resources]\nmemory_max = "64M"\n`.

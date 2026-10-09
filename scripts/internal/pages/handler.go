@@ -12,7 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/scripts/internal/urls"
 )
 
-// Handler answers the catalog, about, script and run page paths.
+// Handler answers the catalog, about, tools, script and run page paths.
 func Handler(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -20,8 +20,10 @@ func Handler(cfg Config) http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		banner := func() page.Banner {
-			return cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
+		banner := func(trail []page.Level) page.Banner {
+			b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
+			b.Trail = trail
+			return b
 		}
 		missing := func() {
 			cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(page.User{})})
@@ -40,7 +42,15 @@ func Handler(cfg Config) http.Handler {
 		caller, _ := identity.FromContext(ctx)
 		owner := caller.UserID
 		if r.URL.Path == "/about" {
-			cfg.Pages.Write(w, r, 200, "about", AboutData{banner(), Description})
+			cfg.Pages.Write(w, r, 200, "about", AboutData{banner([]page.Level{{Name: "about", URL: "/about"}}), Description})
+			return
+		}
+		if r.URL.Path == "/tools" {
+			d := ToolsData{Banner: banner([]page.Level{{Name: "tools", URL: "/tools"}})}
+			for _, tool := range cfg.MCP.Tools() {
+				d.Tools = append(d.Tools, Tool{Name: tool.Name, Description: tool.Description})
+			}
+			cfg.Pages.Write(w, r, 200, "tools", d)
 			return
 		}
 		if r.URL.Path == "/" {
@@ -49,7 +59,7 @@ func Handler(cfg Config) http.Handler {
 				refusal()
 				return
 			}
-			d := LandingData{Banner: banner()}
+			d := LandingData{Banner: banner(nil)}
 			for _, sc := range scripts {
 				row := ScriptRow{Name: sc.Name, URL: "/" + sc.Name + "/", Repo: repository(ctx, cfg, sc), Ref: sc.Ref}
 				if sc.Last != nil {
@@ -86,7 +96,7 @@ func Handler(cfg Config) http.Handler {
 				refusal()
 				return
 			}
-			d := ScriptData{Banner: banner(), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format(CardLayout), CreatedAt: datetime(sc.Created), RunsKept: len(rs), KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
+			d := ScriptData{Banner: banner([]page.Level{{Name: sc.Name, URL: "/" + sc.Name + "/"}}), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format(CardLayout), CreatedAt: datetime(sc.Created), RunsKept: len(rs), KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
 			for _, u := range rs {
 				d.Runs = append(d.Runs, runRow(u, sc.Name))
 			}
@@ -114,7 +124,7 @@ func Handler(cfg Config) http.Handler {
 				redirect("/" + sc.Name + "/runs/" + u.ID + "/")
 				return
 			}
-			cfg.Pages.Write(w, r, 200, "run", runData(ctx, cfg, sc, u, banner()))
+			cfg.Pages.Write(w, r, 200, "run", runData(ctx, cfg, sc, u, banner([]page.Level{{Name: sc.Name, URL: "/" + sc.Name + "/"}, {Name: u.ID, URL: "/" + sc.Name + "/runs/" + u.ID + "/"}})))
 			return
 		}
 		missing()

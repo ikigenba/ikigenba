@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/runs"
@@ -145,6 +146,15 @@ type AboutData struct {
 	Description string
 }
 
+// ToolsData lists the server's registered tools.
+type ToolsData struct {
+	Banner page.Banner
+	Tools  []Tool
+}
+
+// Tool carries a registered tool's name and description.
+type Tool struct{ Name, Description string }
+
 // NoticeData carries only the notice footer.
 type NoticeData struct{ Banner page.Banner }
 
@@ -156,5 +166,6 @@ type Config struct {
 	Store                                               *store.Store
 	Source                                              *source.Source
 	Runs                                                *runs.Core
+	MCP                                                 *mcp.Server
 	KeepDays, KeepCount, TreeMaxBytes, OperationSeconds int64
 }

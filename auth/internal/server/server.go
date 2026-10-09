@@ -58,6 +58,7 @@ func New(cfg Config) *Server {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleRoot)
+	mux.HandleFunc("/about", s.handleAbout)
 	mux.HandleFunc("GET /login/google", s.handleLoginGoogle)
 	mux.HandleFunc("GET /login/google/callback", s.handleLoginGoogleCallback)
 	mux.HandleFunc("POST /logout", s.handleLogout)

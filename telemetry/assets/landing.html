@@ -1,9 +1,6 @@
 {{/* The landing page at GET /: what the service is.
      Data: .Banner (a page.Banner, for banner and footer). Hooks: h1 with text
-     "telemetry"; p#summary; dl#tools.kv with one dt[data-tool=<name>] per MCP
-     tool, in the order catalog, search, count, trace, each holding the tool's
-     name in a code element and followed by a dd describing it; a#about-link
-     whose href is "/about". No script. */}}
+     "telemetry"; p#summary; a#about-link whose href is "/about". No script. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>telemetry</title></head>
@@ -12,15 +9,6 @@
 <main>
 <h1>telemetry</h1>
 <p id="summary" class="lede">The suite's trail of events. Every service on this host records what it does here: each request it serves, each call it makes to a sibling, each MCP tool it runs, and the events of its own domain.</p>
-<section class="card">
-<header><h2>MCP tools</h2><p>Agents search the trail with these tools, through the MCP gateway's <code>call</code>.</p></header>
-<dl id="tools" class="kv">
-<dt data-tool="catalog"><code>catalog</code></dt><dd>The services, the events each records, and the attribute keys each carries.</dd>
-<dt data-tool="search"><code>search</code></dt><dd>The records that match a filter, newest first.</dd>
-<dt data-tool="count"><code>count</code></dt><dd>How many records match a filter, grouped by a field or a time bucket.</dd>
-<dt data-tool="trace"><code>trace</code></dt><dd>Every record of one request, from every service it touched, oldest first.</dd>
-</dl>
-</section>
 <p><a id="about-link" href="/about">About telemetry</a></p>
 </main>
 {{template "footer" .Banner}}

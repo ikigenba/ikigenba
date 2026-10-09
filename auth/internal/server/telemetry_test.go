@@ -196,7 +196,7 @@ func TestRequestEventsFormBeforeDelivery(t *testing.T) {
 }
 
 func TestRequestTrailEveryRoute(t *testing.T) {
-	// R-ORBB-5N5F R-3HP0-MB1R: shared files, pages, refusals, unknown routes, and handled store failures share the outer middleware.
+	// R-ORBB-5N5F R-3HP0-MB1R R-RUWC-RLW7: shared files, pages, refusals, unknown routes, and handled store failures share the outer middleware.
 	st := openSignInStore(t)
 	f := newTrail(t, Config{Store: st, WorkspaceDomain: "green.example"}, nil)
 	for _, tc := range []struct {
@@ -204,7 +204,7 @@ func TestRequestTrailEveryRoute(t *testing.T) {
 		status       int
 		domain       []string
 	}{
-		{"GET", "/", 200, nil}, {"GET", "/_appkit/theme.css", 200, nil}, {"PATCH", "/missing", 404, nil},
+		{"GET", "/", 200, nil}, {"GET", "/about", 200, nil}, {"POST", "/about", 405, nil}, {"GET", "/_appkit/theme.css", 200, nil}, {"PATCH", "/missing", 404, nil},
 		{"GET", "/check", 401, []string{"check.refused"}}, {"GET", "/me", 401, nil}, {"POST", "/tokens", 403, nil},
 		{"POST", "/logout", 403, nil}, {"GET", "/login/google/callback?state=unknown", 400, []string{"sign_in.refused"}},
 	} {
@@ -278,7 +278,7 @@ func TestRequestIDRandomness(t *testing.T) {
 }
 
 func TestSignInSuccessAndSignOutTrail(t *testing.T) {
-	// R-TBD8-MVI8 R-TDT1-EEZM R-TF0X-S6QB R-V6RG-BC7T: only successful identity changes emit user events; creation occurs once.
+	// R-TBD8-MVI8 R-TDT1-EEZM R-TF0X-S6QB R-RUWC-RLW7: only successful identity changes emit user events; creation occurs once.
 	issuer := newSignInIssuer(t)
 	issuer.issue("member-code", "trail-subject", "member@green.example")
 	st := openSignInStore(t)
@@ -353,7 +353,7 @@ func assertTrailPrivate(t *testing.T, events []telemetry.Event, secrets ...strin
 }
 
 func TestSignInRefusalTrail(t *testing.T) {
-	// R-V5JJ-XKH4 R-V6RG-BC7T: unknown, cancelled, not-member and provider failures have precise, anonymous reasons.
+	// R-V5JJ-XKH4 R-RUWC-RLW7: unknown, cancelled, not-member and provider failures have precise, anonymous reasons.
 	issuer := newSignInIssuer(t)
 	issuer.issueClaims("outside-code", map[string]any{"iss": "https://accounts.google.com", "sub": "outside", "aud": "client-id", "exp": 4102444800, "iat": 1700000000, "email": "outside@elsewhere.test", "email_verified": true, "hd": "elsewhere.test"})
 	st := openSignInStore(t)
@@ -728,7 +728,7 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 }
 
 func TestDomainFailuresRecordOnlyRequiredEvents(t *testing.T) {
-	// R-V6RG-BC7T R-TUVM-R7DC: rejected operations and store failures do not masquerade as state changes.
+	// R-RUWC-RLW7 R-TUVM-R7DC: rejected operations and store failures do not masquerade as state changes.
 	st := openSignInStore(t)
 	user, _, err := st.UpsertUserOnLogin("issuer", "owner", "owner@green.example", signInNow)
 	if err != nil {
@@ -753,7 +753,7 @@ func TestDomainFailuresRecordOnlyRequiredEvents(t *testing.T) {
 		assertTrail(t, events, r, w.Code)
 	}
 	failServerStore(t, st)
-	for _, tc := range []struct{ method, target string }{{"GET", "/"}, {"GET", "/login/google"}, {"GET", "/login/google/callback?state=unknown"}, {"POST", "/logout"}, {"POST", "/tokens"}, {"POST", "/tokens/unknown/delete"}, {"GET", "/me"}} {
+	for _, tc := range []struct{ method, target string }{{"GET", "/"}, {"GET", "/about"}, {"GET", "/login/google"}, {"GET", "/login/google/callback?state=unknown"}, {"POST", "/logout"}, {"POST", "/tokens"}, {"POST", "/tokens/unknown/delete"}, {"GET", "/me"}} {
 		r := trailRequest(tc.method, tc.target)
 		r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		r.Header.Set("Origin", "https://auth.green.example")

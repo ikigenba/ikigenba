@@ -112,7 +112,7 @@ func answer(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 }
 
 func banner(u page.User) page.Banner {
-	return page.Banner{Service: "sites", Version: "test-build+local", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	return page.Banner{Service: "sites", Version: "test-build+local", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Tools: true, Trail: []page.Level{{Name: "source-level", URL: "/source-level"}}}
 }
 
 func config(t *testing.T, s *store.Store) pages.Config {
@@ -121,7 +121,8 @@ func config(t *testing.T, s *store.Store) pages.Config {
 }
 
 // R-CP7E-TIAG R-CQFB-7A15 R-CSV3-YTIJ R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
-// R-D06I-9FYP R-D1EE-N7PE R-D2MB-0ZG3 R-IBAF-6046 R-ICIB-JRUV
+// R-D06I-9FYP R-X3R9-INHK R-X4Z5-WF89 R-X7EY-NYPN R-X8MV-1QGC
+// R-X9UR-FI71 R-XB2N-T9XQ R-XCAK-71OF
 func TestTemplateSetAndWrite(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s := load(t)
@@ -136,6 +137,8 @@ func TestTemplateSetAndWrite(t *testing.T) {
 		{"landing", pages.LandingData{b, "https://example.test/<\"&", []pages.SiteRow{row}}},
 		{"landing", pages.LandingData{b, "https://example.test/", nil}},
 		{"about", pages.AboutData{b, "description<\"&"}},
+		{"tools", pages.ToolsData{b, []pages.Tool{{"tool<\"&", "description<\"&"}, {"second-tool", "second description"}}}},
+		{"tools", pages.ToolsData{b, nil}},
 		{"notfound", pages.NoticeData{b}},
 		{"unavailable", pages.NoticeData{b}},
 	}
@@ -175,7 +178,7 @@ func TestTemplateSetAndWrite(t *testing.T) {
 	}
 }
 
-// R-CXQP-HWHB R-CYYL-VO80 R-XWC7-R027 R-D7HW-K2EV R-XXK4-4RSW
+// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-XDIG-KTF4 R-XEQC-YL5T R-XFY9-CCWI
 // R-XYS0-IJJL R-DCDI-35DN R-DJOW-DRTT
 func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	s := catalog(t)
@@ -191,9 +194,9 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 			t.Fatal(err)
 		}
 		var users []page.User
-		cfg := pages.Config{func(u page.User) page.Banner { users = append(users, u); return banner(u) }, load(t), servicesPath, s}
+		cfg := pages.Config{func(u page.User) page.Banner { users = append(users, u); return banner(u) }, load(t), servicesPath, s, []pages.Tool{{Name: "supplied-second", Description: "second supplied description"}, {Name: "supplied-first", Description: "first supplied description"}}}
 		h := identity.Optional(pages.Handler(cfg))
-		for _, path := range []string{"/?query=a%26b", "/about?query=a%26b"} {
+		for _, path := range []string{"/?query=a%26b", "/about?query=a%26b", "/tools?query=a%26b"} {
 			for _, email := range []string{" alice<&\"@example.test ", ""} {
 				for _, user := range []string{"alice", "bob"} {
 					r := request("GET", path, user, email)
@@ -205,9 +208,11 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 						t.Fatalf("banner users: %#v, want %#v", users, u)
 					}
 					b := banner(u)
+					b.Trail = []page.Level{{Name: "about", URL: "/about"}}
 					name := "about"
 					var data any = pages.AboutData{Banner: b, Description: pages.Description}
 					if r.URL.Path == "/" {
+						b.Trail = nil
 						name = "landing"
 						base := urls.SitesURL(r, servicesPath)
 						xs, err := s.Visible(r.Context(), user)
@@ -220,6 +225,22 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 						}
 						data = pages.LandingData{Banner: b, SitesURL: base, Sites: rows}
 					}
+					if r.URL.Path == "/tools" {
+						name = "tools"
+						b.Trail = []page.Level{{Name: "tools", URL: "/tools"}}
+						data = pages.ToolsData{Banner: b, Tools: cfg.Tools}
+						for _, tool := range cfg.Tools {
+							if !strings.Contains(w.Body.String(), tool.Name) || !strings.Contains(w.Body.String(), tool.Description) {
+								t.Fatal("supplied tool missing from page")
+							}
+						}
+					}
+					if r.URL.Path != "/" {
+						level := b.Trail[0]
+						if !strings.Contains(w.Body.String(), level.Name) || !strings.Contains(w.Body.String(), level.URL) {
+							t.Fatal("expected level missing from page")
+						}
+					}
 					if w.Code != 200 || !reflect.DeepEqual(w.Header()["Content-Type"], []string{"text/html; charset=utf-8"}) || w.Body.String() != execute(t, templateSet(t), name, data) {
 						t.Fatalf("%s %s: wrong template answer %d", path, user, w.Code)
 					}
@@ -229,14 +250,14 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	}
 }
 
-// R-DDLE-GX4C R-DETA-UOV1 R-DG17-8GLQ R-X0U1-0RXK R-DJOW-DRTT
+// R-XH65-Q4N7 R-XIE2-3WDW R-XJLY-HO4L R-XKTU-VFVA R-DJOW-DRTT
 func TestMethodsGuestsAndFailingCatalog(t *testing.T) {
 	s, handle := catalogHandle(t)
 	var calls int
 	cfg := config(t, s)
 	cfg.Banner = func(u page.User) page.Banner { calls++; return banner(u) }
 	h := identity.Optional(pages.Handler(cfg))
-	for _, target := range []string{"/?from=launcher", "/about?from=launcher"} {
+	for _, target := range []string{"/?from=launcher", "/about?from=launcher", "/tools?from=launcher"} {
 		for _, user := range []string{"", "alice"} {
 			get := answer(h, request("GET", target, user, "present@example.test"))
 			head := answer(h, request("HEAD", target, user, "present@example.test"))
@@ -247,10 +268,10 @@ func TestMethodsGuestsAndFailingCatalog(t *testing.T) {
 	}
 	var before []*httptest.ResponseRecorder
 	var rs []*http.Request
-	for _, target := range []string{"/?from=launcher", "/about?from=launcher"} {
+	for _, target := range []string{"/?from=launcher", "/about?from=launcher", "/tools?from=launcher"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CUSTOM"} {
 			for _, user := range []string{"", "alice"} {
-				if user != "" && (method == "GET" || method == "HEAD") {
+				if target != "/tools?from=launcher" && user != "" && (method == "GET" || method == "HEAD") {
 					continue
 				}
 				r := request(method, target, user, "present@example.test")
@@ -259,14 +280,23 @@ func TestMethodsGuestsAndFailingCatalog(t *testing.T) {
 				}
 				calls = 0
 				w := answer(h, r)
-				if calls != 0 {
-					t.Fatal("banner called for refusal/redirect")
+				wantCalls := 0
+				if user != "" && (method == "GET" || method == "HEAD") {
+					wantCalls = 1
 				}
-				if method == "GET" || method == "HEAD" {
+				if calls != wantCalls {
+					t.Fatal("wrong banner call count")
+				}
+				switch {
+				case user != "" && (method == "GET" || method == "HEAD"):
+					if w.Code != 200 {
+						t.Fatal("signed-in tools page failed")
+					}
+				case method == "GET" || method == "HEAD":
 					if w.Code != 302 || !reflect.DeepEqual(w.Header()["Location"], []string{urls.SignIn(r)}) {
 						t.Fatalf("guest: %d %v", w.Code, w.Header())
 					}
-				} else if w.Code != 405 || !reflect.DeepEqual(w.Header()["Allow"], []string{"GET, HEAD"}) || w.Body.Len() != 0 {
+				case w.Code != 405 || !reflect.DeepEqual(w.Header()["Allow"], []string{"GET, HEAD"}) || w.Body.Len() != 0:
 					t.Fatalf("refusal: %d %v %q", w.Code, w.Header(), w.Body.String())
 				}
 				before = append(before, w)

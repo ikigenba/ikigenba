@@ -35,6 +35,17 @@ type Config struct {
 	Telemetry    *telemetry.Writer
 }
 
+// Tool is one registered MCP tool shown on the tools page.
+type Tool struct {
+	Name, Description string
+}
+
+// ToolsData supplies the tools template's banner and registered tools.
+type ToolsData struct {
+	Banner page.Banner
+	Tools  []Tool
+}
+
 // Handler builds the HTTP surface and registers its four tools.
 func Handler(cfg Config) http.Handler {
 	templates := template.Must(page.Templates().ParseFS(assets.Assets(), "*.html"))
@@ -43,7 +54,7 @@ func Handler(cfg Config) http.Handler {
 	ingest := telemetry.IngestHandler(cfg.Store)
 	routes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/" || r.URL.Path == "/about":
+		case r.URL.Path == "/" || r.URL.Path == "/about" || r.URL.Path == "/tools":
 			servePage(w, r, cfg, templates)
 		case r.URL.Path == "/mcp":
 			cfg.MCP.ServeHTTP(w, r)
@@ -74,15 +85,26 @@ func servePage(w http.ResponseWriter, r *http.Request, cfg Config, templates *te
 		return
 	}
 	banner := cfg.Banner(bannerUser(r, cfg.ServicesPath))
+	banner.Trail = nil
 	var body bytes.Buffer
 	var err error
-	if r.URL.Path == "/" {
+	switch r.URL.Path {
+	case "/":
 		err = templates.ExecuteTemplate(&body, "landing", struct{ Banner page.Banner }{banner})
-	} else {
+	case "/about":
+		banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
 		err = templates.ExecuteTemplate(&body, "about", struct {
 			Banner      page.Banner
 			Description string
 		}{banner, Description})
+	case "/tools":
+		banner.Trail = []page.Level{{Name: "tools", URL: "/tools"}}
+		registered := cfg.MCP.Tools()
+		listed := make([]Tool, len(registered))
+		for i, tool := range registered {
+			listed[i] = Tool{Name: tool.Name, Description: tool.Description}
+		}
+		err = templates.ExecuteTemplate(&body, "tools", ToolsData{Banner: banner, Tools: listed})
 	}
 	if err != nil {
 		panic(err)

@@ -1,0 +1,16 @@
+app = "webhooks"
+description = "Webhooks that turn deliveries from outside into events"
+default = false
+mcp = true
+guests = true
+secrets = []
+
+[env]
+WEBHOOKS_RETENTION_DAYS = "2"
+
+[database]
+engine = "sqlite"
+path = "state/webhooks.db"
+
+[resources]
+memory_max = "128M"

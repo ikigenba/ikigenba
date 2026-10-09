@@ -336,7 +336,7 @@ auth now keeps in its `assets/` directory (D01) are drawn into pages, never
 served as files, so they change nothing here.
 
 auth's own routes are those D05, D06 and D07 define — the sign-in and profile
-pages, `/check`, `/check/open`, `/me`, and the token actions, among them
+pages, the about page at `/about`, `/check`, `/check/open`, `/me`, and the token actions, among them
 `POST /tokens/<id>/revoke` for an MCP client token — and the OAuth
 authorization server's, which D09 defines: `GET
 /.well-known/oauth-authorization-server`, `POST /register`, `GET /authorize`,

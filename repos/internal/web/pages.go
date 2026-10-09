@@ -23,6 +23,17 @@ type aboutData struct {
 	Description string
 }
 
+// Tool is the name and description of one registered MCP tool.
+type Tool struct {
+	Name, Description string
+}
+
+// ToolsData supplies the tools page's banner and registered tools.
+type ToolsData struct {
+	Banner page.Banner
+	Tools  []Tool
+}
+
 func newPages(cfg Config) http.Handler {
 	templates := template.Must(page.Templates().ParseFS(repos.Assets(), "*.html"))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,12 +43,26 @@ func newPages(cfg Config) http.Handler {
 			return
 		}
 		banner := cfg.Banner(bannerUser(r, cfg.ServicesPath))
-		name := "about"
-		var data any = aboutData{Banner: banner, Description: Description}
-		if r.URL.Path == "/" {
+		var name string
+		var data any
+		switch r.URL.Path {
+		case "/":
 			name = "landing"
 			base := clone.Base(r, cfg.ServicesPath)
 			data = landingData{Banner: banner, ReposURL: base, Credentials: clone.Guidance(base)}
+		case "/about":
+			name = "about"
+			banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
+			data = aboutData{Banner: banner, Description: Description}
+		case "/tools":
+			name = "tools"
+			banner.Trail = []page.Level{{Name: "tools", URL: "/tools"}}
+			registered := cfg.MCP.Tools()
+			listed := make([]Tool, len(registered))
+			for i, tool := range registered {
+				listed[i] = Tool{Name: tool.Name, Description: tool.Description}
+			}
+			data = ToolsData{Banner: banner, Tools: listed}
 		}
 		var body bytes.Buffer
 		if err := templates.ExecuteTemplate(&body, name, data); err != nil {

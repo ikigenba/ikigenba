@@ -4,8 +4,7 @@
      (the service's one-line description). Hooks: h1 with text "About
      telemetry"; dl#about.kv holding dt "Name" then dd#about-name (.Banner.Service),
      dt "Version" then dd#about-version (.Banner.Version), and dt "Description"
-     then dd#about-description (.Description); a#home-link whose href is "/".
-     No script. */}}
+     then dd#about-description (.Description). No script. */}}
 {{define "about"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About telemetry</title></head>
@@ -20,7 +19,6 @@
 <dt>Description</dt><dd id="about-description">{{.Description}}</dd>
 </dl>
 </section>
-<p><a id="home-link" href="/">Back to telemetry</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>

@@ -22,7 +22,7 @@ The tools record nothing of their own: every call's `tool.called` is appkit's, a
 
 ## Consumer tasks
 
-The handler registers the tools once when it is built, `tools.Register(cfg.MCP, cfg.Store)`, on the server `mcp.NewServer` returned for the handler's writer, and mounts that server at `/mcp`.
+The handler registers the tools once when it is built, `tools.Register(cfg.MCP, cfg.Store)`, on the server `mcp.NewServer` returned for the handler's writer, and mounts that server at `/mcp`. The tools page at `/tools` reads the same server's `Tools` method (appkit's D08) for the names and descriptions it lists (`D04-pages`), so the page and `tools/list` cannot disagree.
 
 A model, through the gateway's `call` or a client at `/mcp`, lists the tools and reads the whole catalog with `catalog` and `{}`; narrows it with `{"service":"dummy"}` or `{"event":"service.started"}`; traces one request with `trace` and `{"request_id":"3f9c2a7be1d04c6a8b5e0f1d2c3b4a59"}`, getting `{"records":[...]}` oldest first, or `{"records":[]}` for an id the trail does not hold.
 

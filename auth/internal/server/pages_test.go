@@ -68,15 +68,18 @@ func TestCancelledAndNonmemberPageValues(t *testing.T) {
 }
 
 func TestProfilePageValues(t *testing.T) {
-	// R-3LQ5-YCOF R-3RTN-V7DW R-VK6C-ITDG
+	// R-3LQ5-YCOF R-ROSU-UR6Q R-VK6C-ITDG
 	st := openSignInStore(t)
 	user, session := tokenTestIdentity(t, st, "profile-values")
 	workspace, host := "fixture-workspace.test", "auth.sbx.ikigenba.dev"
 	banner := testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"})
+	banner.Trail = []page.Level{{Name: "profile supplied trail", URL: "/supplied-profile"}}
+	wantBanner := banner
+	wantBanner.Trail = nil
 	s := newTestServer(t, Config{Banner: func(page.User) page.Banner { return banner }, Store: st, Now: func() time.Time { return tokenTestNow }, WorkspaceDomain: workspace})
 	w := serveSignIn(s, http.MethodGet, "/", host, &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}, "")
 	assertHTMLStatus(t, w, 200)
-	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: banner, Profile: &profilePageData{Apex: "ikigenba.dev", Email: user.Email, Workspace: workspace, Create: tokenCreateData{Expiry: "90d"}}})
+	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: wantBanner, Profile: &profilePageData{Apex: "ikigenba.dev", Email: user.Email, Workspace: workspace, Create: tokenCreateData{Expiry: "90d"}}})
 }
 
 func TestReturnQueryDecodeAndByteEncoding(t *testing.T) {

@@ -96,7 +96,7 @@ func TestNamesAndHandlerContract(t *testing.T) {
 func TestIdentityBeforeRouting(t *testing.T) {
 	// R-QKVN-9DAG
 	f := newFixture(t)
-	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/mcp", "/missing"} {
+	for _, path := range []string{"/", "/about", "/tools", "/_appkit/theme.css", "/mcp", "/missing"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT"} {
 			for _, empty := range []bool{false, true} {
 				r := httptest.NewRequest(method, "http://example"+path, strings.NewReader("ignored"))
@@ -113,9 +113,9 @@ func TestIdentityBeforeRouting(t *testing.T) {
 	}
 }
 func TestExactPathsAnd404(t *testing.T) {
-	// R-QM3J-N515 R-98DE-ISVW R-UOEK-WNRS R-RHSX-L6B7
+	// R-DJ8X-PQAF R-98DE-ISVW R-DKGU-3I14 R-RHSX-L6B7
 	f := newFixture(t)
-	for _, path := range []string{"/mcp/", "/mcp/a", "/ingest/", "/ingest/a", "/about/", "/_appkit", "/assets/", "/assets/a", "/logout", "/index.html", "//", "/nope", "/nope/", "/x/../", "/x/./", "/_APPKIT/feedback.js", "/_APPKIT/favicon.svg", "/favicon.svg", "/_appkit-extra/favicon.svg"} {
+	for _, path := range []string{"/mcp/", "/mcp/a", "/ingest/", "/ingest/a", "/about/", "/tools/", "/_appkit", "/assets/", "/assets/a", "/logout", "/index.html", "//", "/nope", "/nope/", "/x/../", "/x/./", "/_APPKIT/feedback.js", "/_APPKIT/favicon.svg", "/favicon.svg", "/_appkit-extra/favicon.svg"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CUSTOM"} {
 			r := httptest.NewRequest(method, "http://another.example"+path+"?path=/_appkit/favicon.svg", strings.NewReader("ignored body"))
 			r.Header.Set("X-User-Id", "u")
@@ -134,7 +134,7 @@ func TestExactPathsAnd404(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/mcp", "/ingest"} {
+	for _, path := range []string{"/", "/about", "/tools", "/_appkit/theme.css", "/mcp", "/ingest"} {
 		out := request(f.h, "GET", path, "u")
 		if out.Code >= 300 && out.Code < 400 || out.Header().Get("Location") != "" || len(out.Header().Values("Set-Cookie")) > 0 {
 			t.Fatal(out)

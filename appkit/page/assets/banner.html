@@ -1,17 +1,34 @@
 {{/* The banner every app emits, the service launcher it opens, and the
      footer that ends the page. Follows design/ikigenba/banner.html,
-     launcher.html and app.html. Data: an appkit.Banner. The mark holds the
-     suite's favicon, the product name, and the service: the app's own icon,
-     when .Icon is set, then its name. The launcher button, panel, and script
-     appear only when .Services is not empty; the button then follows the
-     mark, first of the icon buttons. Icons: Tabler grid-dots, user-circle,
-     and logout (TABLER-LICENSE.txt); each service's own icon is inserted
+     launcher.html and app.html. Data: a page.Banner. .Home is the URL of
+     the services file's home entry: the mark (the suite's favicon and the
+     product name) is an a.mark linking there, or a strong.mark when .Home
+     is empty. The trail is nav.crumbs, an ol whose first item, li.root, is
+     .Service and .Icon: the app's own icon, when set, and its name,
+     linking to /, then button.menu, the chevron (svg.chev) that opens the
+     page menu. .Trail is the page's levels after the root, each a .Name
+     and a .URL: every level links to its .URL but the last, the current
+     page, which is an li with aria-current="page" and its .Name in a span;
+     an empty .Trail is the landing page. The page menu,
+     nav.pages#pages[popover], lists the landing page (.Icon and .Service),
+     Tools at /tools when .Tools is set, and About at /about; the current
+     row (the landing page when .Trail is empty, Tools or About when .Trail
+     is the one level whose .URL is /tools or /about) carries
+     aria-current="page" and a check icon (svg.ico). The separators,
+     hairline, and placement are the stylesheet's. The launcher button,
+     panel, and script appear only when .Services is not empty; the button
+     then follows the trail, first of the icon buttons. .Version, .Email,
+     .ProfileURL and .LogoutURL feed the footer, profile link, and sign
+     out. Icons: Tabler chevron-down, check, grid-dots, user-circle, and
+     logout (TABLER-LICENSE.txt); each service's own icon is inserted
      verbatim. */}}
-{{define "banner"}}<header>
-<strong class="mark" data-service="{{.Service}}"><img src="/_appkit/favicon.svg" alt="">Ikigenba<span class="service">{{.Icon}}{{.Service}}</span></strong>
+{{define "banner"}}{{$current := ""}}{{if not .Trail}}{{$current = "/"}}{{else if eq (len .Trail) 1}}{{$current = (index .Trail 0).URL}}{{end}}<header>
+{{if .Home}}<a class="mark" href="{{.Home}}"><img src="/_appkit/favicon.svg" alt="">Ikigenba</a>{{else}}<strong class="mark"><img src="/_appkit/favicon.svg" alt="">Ikigenba</strong>{{end}}
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="/">{{.Icon}}{{.Service}}</a><button class="menu" type="button" popovertarget="pages" aria-label="{{.Service}} pages" title="{{.Service}} pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li>{{range $i, $level := .Trail}}{{if eq (len (slice $.Trail $i)) 1}}<li aria-current="page"><span>{{$level.Name}}</span></li>{{else}}<li><a href="{{$level.URL}}">{{$level.Name}}</a></li>{{end}}{{end}}</ol></nav>
 {{if .Services}}<button class="launcher" type="button" popovertarget="services" aria-label="Services" title="Services"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M11 5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M18 5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M4 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M18 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M4 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M11 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M18 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg></button>
 {{end}}<a class="profile" href="{{.ProfileURL}}" aria-label="Profile" title="{{.Email}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
 <form class="inline" method="post" action="{{.LogoutURL}}"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="{{.Service}} pages"><ul><li><a href="/"{{if eq $current "/"}} aria-current="page"{{end}}>{{.Icon}}{{.Service}}{{if eq $current "/"}}<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg>{{end}}</a></li>{{if .Tools}}<li><a href="/tools"{{if eq $current "/tools"}} aria-current="page"{{end}}>Tools{{if eq $current "/tools"}}<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg>{{end}}</a></li>{{end}}<li><a href="/about"{{if eq $current "/about"}} aria-current="page"{{end}}>About{{if eq $current "/about"}}<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg>{{end}}</a></li></ul></nav>
 </header>
 {{if .Services}}{{template "launcher" .}}
 <script src="/_appkit/launcher.js" defer></script>

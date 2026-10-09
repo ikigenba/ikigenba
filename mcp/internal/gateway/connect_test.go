@@ -68,14 +68,14 @@ func answer(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-// R-RF9C-IJMX R-SK47-4FD1
+// R-ZTI8-HEK9 R-ZVY1-8Y1N
 func TestGatewayTemplateSet(t *testing.T) {
 	templates, err := page.Templates().ParseFS(assets.Assets(), "*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if templates.Lookup("connect") == nil {
-		t.Fatal("connect template absent")
+	if templates.Lookup("connect") == nil || templates.Lookup("about") == nil {
+		t.Fatal("gateway template absent")
 	}
 	var out bytes.Buffer
 	if err := templates.ExecuteTemplate(&out, "connect", map[string]any{"Banner": basicBanner(page.User{}), "Endpoint": "https://mcp.example.test/mcp", "Server": "example-test"}); err != nil {
@@ -159,11 +159,11 @@ func TestConnectRejectsOtherMethods(t *testing.T) {
 	}
 }
 
-// R-ZDAR-FFEL R-ZEIN-T75A R-RK4Y-1MLP
+// R-ZDAR-FFEL R-ZEIN-T75A R-ZX5X-MPSC
 func TestUnknownPathsReturnExact404(t *testing.T) {
 	const bodyCopy string = gateway.NotFound
 	h := gateway.Handler(pageConfig(t, "", basicBanner))
-	for _, path := range []string{"/_appkit", "/assets/", "/assets/connect.html", "/logout", "/index.html", "/setup", "/setup.txt", "/setup.sh", "/.well-known", "/.well-known/", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resourcex", "/setup.txt/", "/setup.sh/", "/setup.txt/x", "/setup.sh/x", "//", "/nope/", "/x/../", "/./", "/x/%2e%2e/", "/%61ssets/theme.css"} {
+	for _, path := range []string{"/_appkit", "/assets/", "/assets/connect.html", "/logout", "/index.html", "/setup", "/setup.txt", "/setup.sh", "/.well-known", "/.well-known/", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resourcex", "/about/", "/about/x", "/setup.txt/", "/setup.sh/", "/setup.txt/x", "/setup.sh/x", "//", "/nope/", "/x/../", "/./", "/x/%2e%2e/", "/%61ssets/theme.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "OPTIONS"} {
 			for _, identity := range []string{"signed", "absent", "empty"} {
 				r := pageRequest(method, path+"?ignored=yes")
@@ -205,7 +205,7 @@ func TestNonMCPRoutesNeitherSetCookiesNorContactBackends(t *testing.T) {
 	entry := service("alpha", "backend", true, true)
 	entry["socket"] = socket
 	h := gateway.Handler(pageConfig(t, servicesFile(t, []map[string]any{entry}), basicBanner))
-	for _, path := range []string{"/", "/setup.txt", "/setup.sh", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp/a,,b", "/_appkit/theme.css", "/_appkit/../theme.css", "/logout", "/assets/connect.html", "/unknown"} {
+	for _, path := range []string{"/", "/about", "/setup.txt", "/setup.sh", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp/a,,b", "/_appkit/theme.css", "/_appkit/../theme.css", "/logout", "/assets/connect.html", "/unknown"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			for _, user := range []string{"person", ""} {
 				r := pageRequest(method, path)

@@ -33,8 +33,8 @@ func assertFiles(t *testing.T, f fs.FS, directory string, want []string) {
 }
 
 func TestAssetsShape(t *testing.T) {
-	// R-ZM76-17RB
-	assertFiles(t, events.Assets(), ".", []string{"about.html", "landing.html", "notfound.html", "unavailable.html"})
+	// R-D7O5-IJ8J
+	assertFiles(t, events.Assets(), ".", []string{"about.html", "landing.html", "notfound.html", "tools.html", "unavailable.html"})
 }
 
 func TestMigrationsShape(t *testing.T) {
@@ -63,12 +63,12 @@ func assertEtc(t *testing.T, etc embed.FS) {
 }
 
 func TestEmbeddedFilesIndependentOfWorkingDirectory(t *testing.T) {
-	// R-ZNF2-EZI0 R-ZPUV-6IZE R-ZSAN-Y2GS
+	// R-D8W1-WAZ8 R-ZPUV-6IZE R-ZSAN-Y2GS
 	cases := []struct {
 		open  func() fs.FS
 		files []string
 	}{
-		{events.Assets, []string{"about.html", "landing.html", "notfound.html", "unavailable.html"}},
+		{events.Assets, []string{"about.html", "landing.html", "notfound.html", "tools.html", "unavailable.html"}},
 		{events.Migrations, []string{"0001_log.sql"}},
 		{func() fs.FS { return events.Etc() }, []string{"etc/manifest.toml", "etc/nginx.conf"}},
 	}
@@ -84,7 +84,7 @@ func TestEmbeddedFilesIndependentOfWorkingDirectory(t *testing.T) {
 	}
 	for range 2 {
 		t.Chdir(t.TempDir())
-		assertFiles(t, events.Assets(), ".", []string{"about.html", "landing.html", "notfound.html", "unavailable.html"})
+		assertFiles(t, events.Assets(), ".", []string{"about.html", "landing.html", "notfound.html", "tools.html", "unavailable.html"})
 		assertFiles(t, events.Migrations(), ".", []string{"0001_log.sql"})
 		assertEtc(t, events.Etc())
 		for i, c := range cases {
