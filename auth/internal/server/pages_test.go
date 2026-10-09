@@ -21,14 +21,17 @@ func assertPageValues(t *testing.T, body string, values ...string) {
 }
 
 func TestSignInPageValues(t *testing.T) {
-	// R-VCUY-86XA R-VE2U-LYNZ R-VFAQ-ZQEO R-VGIN-DI5D R-V979-2VP7 R-QI40-VGBM
+	// R-3GUK-F9PN R-3I2G-T1GC R-3JAD-6T71 R-3MY2-C4F4 R-VCUY-86XA R-QI40-VGBM
 	workspace := "fixture-workspace.example"
-	for _, tc := range []struct{ host, returnURL, display string }{
-		{"auth.sbx.ikigenba.dev:443", "", ""}, {"localhost:3001", "", ""},
-		{"auth.green.example", "https://outside.test/path?a=b", ""},
-		{"auth.sbx.ikigenba.dev", "HTTPS://App.SBX.Ikigenba.Dev:0080/path?x=1", "App.SBX.Ikigenba.Dev:0080"},
-		{"localhost:3001", "http://LOCALHOST:3000/path", "LOCALHOST:3000"},
-		{"auth.green.example", "https://app.green.example:/", "app.green.example"},
+	for _, tc := range []struct{ host, apex, returnURL, display string }{
+		{"auth.sbx.ikigenba.dev:443", "ikigenba.dev", "", ""},
+		{"localhost:3001", "localhost", "", ""},
+		{"auth.green.example", "green.example", "https://outside.test/path?a=b", ""},
+		{"auth.sbx.ikigenba.dev", "ikigenba.dev", "HTTPS://App.SBX.Ikigenba.Dev:0080/path?x=1", "App.SBX.Ikigenba.Dev:0080"},
+		{"localhost:3001", "localhost", "http://LOCALHOST:3000/path", "LOCALHOST:3000"},
+		{"auth.green.example", "green.example", "https://app.green.example:/", "app.green.example"},
+		{"a.b:port", "a.b:port", "", ""}, {"name", "name", "", ""}, {"name:", "name:", "", ""},
+		{"auth.A.B:001", "A.B", "", ""}, {"auth.a.b.", "b.", "", ""},
 	} {
 		t.Run(tc.host+tc.returnURL, func(t *testing.T) {
 			st := openSignInStore(t)
@@ -36,14 +39,7 @@ func TestSignInPageValues(t *testing.T) {
 			before := profileStateSnapshot(t, st)
 			w := serveSignIn(s, http.MethodGet, "/?return="+percentEncode(tc.returnURL), tc.host, nil, "")
 			assertHTMLStatus(t, w, 200)
-			display := tc.display
-			if display == "" {
-				display = tc.host
-			}
-			assertPageValues(t, w.Body.String(), apexName(tc.host), workspace, display)
-			if tc.returnURL != "" {
-				assertPageValues(t, w.Body.String(), percentEncode(tc.returnURL))
-			}
+			assertAuthTemplate(t, w.Body.String(), "page", authPageData{SignIn: &signInPageData{Apex: tc.apex, Return: percentEncode(tc.returnURL), Destination: tc.display, Host: tc.host, Workspace: workspace}})
 			if before != profileStateSnapshot(t, st) {
 				t.Fatal("sign-in changed state")
 			}
@@ -52,39 +48,39 @@ func TestSignInPageValues(t *testing.T) {
 }
 
 func TestCancelledAndNonmemberPageValues(t *testing.T) {
-	// R-VHQJ-R9W2 R-VIYG-51MR
+	// R-3O5Y-PW5T R-3PDV-3NWI
 	host, workspace, email := "auth.sbx.ikigenba.dev:443", "fixture-workspace.test", "visitor@other.test"
 	issuer := newSignInIssuer(t)
 	issuer.issueClaims("refused", map[string]any{"iss": "https://accounts.google.com", "sub": "visitor", "aud": "client-id", "exp": 4102444800, "iat": 1700000000, "email": email, "email_verified": true, "hd": "other"})
 	st := openSignInStore(t)
 	s := signInServer(t, st, issuer, func() time.Time { return signInNow })
 	s.cfg.WorkspaceDomain = workspace
-	cancelled := serveSignIn(s, http.MethodGet, "/login/google/callback?error=access_denied", host, nil, "")
+	cancelled := serveSignIn(s, http.MethodGet, "/login/google/callback?error=access_denied&return=ignored", host, nil, "")
 	assertHTMLStatus(t, cancelled, 200)
-	assertPageValues(t, cancelled.Body.String(), apexName(host))
-	state, err := st.CreateLoginState("verifier", "")
+	assertAuthTemplate(t, cancelled.Body.String(), "page", authPageData{SignIn: &signInPageData{Apex: "ikigenba.dev", Refused: "cancelled", Host: host, Workspace: workspace}})
+	state, err := st.CreateLoginState("verifier", "https://app.sbx.ikigenba.dev/ignored")
 	if err != nil {
 		t.Fatal(err)
 	}
 	refused := serveSignIn(s, http.MethodGet, "/login/google/callback?state="+state.State+"&code=refused", host, nil, "")
 	assertHTMLStatus(t, refused, 403)
-	assertPageValues(t, refused.Body.String(), apexName(host), email, workspace)
+	assertAuthTemplate(t, refused.Body.String(), "page", authPageData{SignIn: &signInPageData{Apex: "ikigenba.dev", Refused: "not_member", Host: host, Workspace: workspace, Email: email}})
 }
 
 func TestProfilePageValues(t *testing.T) {
-	// R-VK6C-ITDG R-VLE8-WL45 R-VMM5-ACUU
+	// R-3LQ5-YCOF R-3RTN-V7DW R-VK6C-ITDG
 	st := openSignInStore(t)
 	user, session := tokenTestIdentity(t, st, "profile-values")
 	workspace, host := "fixture-workspace.test", "auth.sbx.ikigenba.dev"
-	s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }, WorkspaceDomain: workspace})
+	banner := testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"})
+	s := newTestServer(t, Config{Banner: func(page.User) page.Banner { return banner }, Store: st, Now: func() time.Time { return tokenTestNow }, WorkspaceDomain: workspace})
 	w := serveSignIn(s, http.MethodGet, "/", host, &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}, "")
 	assertHTMLStatus(t, w, 200)
-	assertPageValues(t, w.Body.String(), apexName(host), user.Email, workspace)
-	assertPageBanner(t, w.Body.String(), testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"}))
+	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: banner, Profile: &profilePageData{Apex: "ikigenba.dev", Email: user.Email, Workspace: workspace, Create: tokenCreateData{Expiry: "90d"}}})
 }
 
 func TestReturnQueryDecodeAndByteEncoding(t *testing.T) {
-	// R-PNB9-4VJK R-PPR1-WF0Y R-ED79-D60K
+	// R-PNB9-4VJK R-PPR1-WF0Y R-ED79-D60K R-3QLR-HFN7
 	issuer := newSignInIssuer(t)
 	for _, tc := range []struct{ query, value, encoded string }{
 		{"", "", ""}, {"return", "", ""}, {"return=&return=later", "", ""}, {"return=first&return=second", "first", "first"}, {"x=1&ret%75rn=a+b%20c", "a b c", "a%20b%20c"}, {"return=%FF", "\xff", "%FF"}, {"return=%C3%A9", "é", "%C3%A9"},
@@ -134,27 +130,6 @@ func TestCallbackUsesTextPolicyForCarriedReturn(t *testing.T) {
 		if w.Code != 302 || w.Header().Get("Location") != tc.want {
 			t.Errorf("return %q -> %d %q want %q", tc.value, w.Code, w.Header().Get("Location"), tc.want)
 		}
-	}
-}
-
-func TestPagesShowRequestApex(t *testing.T) {
-	// R-3Q46-Q9HS
-	for host, want := range map[string]string{
-		"auth.sbx.ikigenba.dev": "ikigenba.dev", "localhost:3001": "localhost",
-		"a.b.c:001": "b.c", "a.b:port": "a.b:port", "name": "name", "name:": "name:",
-		"auth.A.B:443": "A.B", "auth.a.b.": "b.",
-	} {
-		t.Run(host, func(t *testing.T) {
-			st := openSignInStore(t)
-			s := newTestServer(t, Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }})
-			for _, target := range []string{"/", "/login/google/callback?error=access_denied"} {
-				w := serveSignIn(s, http.MethodGet, target, host, nil, "")
-				assertPageValues(t, w.Body.String(), want)
-			}
-			_, session := tokenTestIdentity(t, st, "apex")
-			w := serveSignIn(s, http.MethodGet, "/", host, &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}, "")
-			assertPageValues(t, w.Body.String(), want)
-		})
 	}
 }
 
@@ -217,5 +192,42 @@ func TestExternalPageValuesContributeNoAngleBrackets(t *testing.T) {
 				t.Fatal("unescaped external value")
 			}
 		})
+	}
+}
+
+func TestSignInCarriedReturnEveryByte(t *testing.T) {
+	// R-3JAD-6T71 R-3QLR-HFN7: include every possible byte in one carried return.
+	raw := make([]byte, 256)
+	var encoded strings.Builder
+	const hexDigits = "0123456789ABCDEF"
+	for i := range raw {
+		b := byte(i)
+		raw[i] = b
+		if b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || strings.ContainsRune("-._~", rune(b)) {
+			encoded.WriteByte(b)
+		} else {
+			encoded.WriteByte('%')
+			encoded.WriteByte(hexDigits[b>>4])
+			encoded.WriteByte(hexDigits[b&15])
+		}
+	}
+	issuer := newSignInIssuer(t)
+	st := openSignInStore(t)
+	s := signInServer(t, st, issuer, func() time.Time { return signInNow })
+	s.cfg.WorkspaceDomain = "workspace.test"
+	w := serveSignIn(s, http.MethodGet, "/?return="+url.QueryEscape(string(raw)), "auth.green.example", nil, "")
+	assertHTMLStatus(t, w, http.StatusOK)
+	assertAuthTemplate(t, w.Body.String(), "page", authPageData{SignIn: &signInPageData{Apex: "green.example", Return: encoded.String(), Host: "auth.green.example", Workspace: "workspace.test"}})
+	start := serveSignIn(s, http.MethodGet, "/login/google?return="+encoded.String(), "auth.green.example", nil, "")
+	if start.Code != http.StatusFound {
+		t.Fatal(start.Code)
+	}
+	location, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := st.ConsumeLoginState(location.Query().Get("state"))
+	if err != nil || state.ReturnURL != string(raw) {
+		t.Fatalf("return bytes differ: %q, error %v", state.ReturnURL, err)
 	}
 }

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"errors"
 	"net/http/httptest"
 	"net/url"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
-	"github.com/ikigenba/ikigenba/auth"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
@@ -37,40 +35,8 @@ func mintProfileClient(t *testing.T, st *store.Store, owner, name string, approv
 	return token, secret
 }
 
-func TestAuthAssetTemplateSet(t *testing.T) {
-	// R-GA19-E389 R-GB95-RUYY: use the exact published asset and page template seam, with no Funcs.
-	expected, err := page.Templates().ParseFS(auth.Assets(), "*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"approve", "mcp-clients"} {
-		if expected.Lookup(name) == nil || authTemplates.Lookup(name) == nil {
-			t.Fatalf("missing template %s", name)
-		}
-	}
-	data := mcpClientsData{Clients: []mcpClientData{{ID: "tok_00000000000000000000000000", Name: "client <&", Approved: "2026-01-01T01:02:03Z", ApprovedText: "2026-01-01 01:02 UTC", Expires: "2026-04-01T01:02:03Z", ExpiresText: "2026-04-01 01:02 UTC"}}}
-	var want, got bytes.Buffer
-	if err = expected.ExecuteTemplate(&want, "mcp-clients", data); err != nil {
-		t.Fatal(err)
-	}
-	if err = authTemplates.ExecuteTemplate(&got, "mcp-clients", data); err != nil {
-		t.Fatal(err)
-	}
-	if got.String() != want.String() {
-		t.Fatal("auth template differs from asset template")
-	}
-	// A fresh canonical set has no legacy rendering functions.
-	fresh, err := makeAuthTemplates()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = fresh.Parse(`{{splitNUL "x"}}`); err == nil {
-		t.Fatal("canonical set has legacy functions")
-	}
-}
-
 func TestClientProfileTemplateAndData(t *testing.T) {
-	// R-5RCW-COGY R-VTXJ-KZB0: canonical client data and template output.
+	// R-7RE0-1QQK R-3LQ5-YCOF R-3RTN-V7DW R-3T1K-8Z4L: canonical rich profile data and template output.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "client-profile")
 	other, _ := tokenTestIdentity(t, st, "foreign-client")
@@ -124,7 +90,7 @@ func TestClientProfileTemplateAndData(t *testing.T) {
 		if token.LastUsedAt != nil {
 			row.LastUsed = token.LastUsedAt.UTC().Format("2006-01-02T15:04:05Z")
 			row.LastUsedTitle = token.LastUsedAt.UTC().Format("2006-01-02 15:04 UTC")
-			row.LastUsedText = expectedElapsed(tokenTestNow.Sub(*token.LastUsedAt))
+			row.LastUsedElapsed = expectedElapsed(tokenTestNow.Sub(*token.LastUsedAt))
 		}
 		expected.Clients = append(expected.Clients, row)
 	}
@@ -135,15 +101,9 @@ func TestClientProfileTemplateAndData(t *testing.T) {
 	if !reflect.DeepEqual(data, expected) {
 		t.Fatalf("client data=%#v want %#v", data, expected)
 	}
-	var render bytes.Buffer
-	templates, err := page.Templates().ParseFS(auth.Assets(), "*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = templates.ExecuteTemplate(&render, "mcp-clients", expected); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(w.Body.String(), render.String()) {
+	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"}), Profile: &profilePageData{Apex: "localhost", Email: user.Email, Workspace: srv.cfg.WorkspaceDomain, Rows: []tokenRowData{expectedTokenRow(personal, tokenTestNow)}, Create: tokenCreateData{Expiry: "90d"}, Clients: expected}})
+	render := expectedAuthTemplate(t, "mcp-clients", expected)
+	if !strings.Contains(w.Body.String(), render) {
 		t.Fatal("profile omits canonical client template output")
 	}
 	for _, secret := range append(secrets, personalSecret) {
@@ -151,7 +111,7 @@ func TestClientProfileTemplateAndData(t *testing.T) {
 			t.Fatal("secret on profile")
 		}
 	}
-	if strings.Contains(render.String(), personal.ID) || strings.Contains(w.Body.String(), foreign.ID) {
+	if strings.Contains(render, personal.ID) || strings.Contains(w.Body.String(), foreign.ID) {
 		t.Fatal("wrong kind or owner")
 	}
 }

@@ -11,7 +11,7 @@ import (
 var _ func() fs.FS = auth.Assets
 
 func TestEmbeddedAssetsIgnoreWorkingDirectory(t *testing.T) {
-	// R-G7LG-MJQV R-G8TD-0BHK
+	// R-3BYY-W6QV R-G8TD-0BHK
 	read := func() map[string]string {
 		t.Helper()
 		files := auth.Assets()
@@ -36,7 +36,7 @@ func TestEmbeddedAssetsIgnoreWorkingDirectory(t *testing.T) {
 			}
 			contents[entry.Name()] = string(data)
 		}
-		if !reflect.DeepEqual(names, []string{"approve.html", "mcp-clients.html"}) {
+		if !reflect.DeepEqual(names, []string{"approve.html", "mcp-clients.html", "page.html", "profile.html", "sign-in.html", "token-create.html", "token-created.html"}) {
 			t.Fatalf("assets: %v", names)
 		}
 		return contents

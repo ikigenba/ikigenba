@@ -402,7 +402,7 @@ func TestOAuthAuthorizeOriginAndStoreFailures(t *testing.T) {
 func TestOAuthApprovePage(t *testing.T) {
 	// R-4PMR-1OR0 R-4VQ8-YJGH R-531N-95WN R-APGL-FX3A: canonical template bytes and exact approve data, one injected banner call, no mutations.
 	for _, origin := range []string{"", "http://auth.wip.localhost:7400"} {
-		for _, name := range []string{`fixture<&"`, "a\tb", "  x"} {
+		for _, name := range []string{`fixture<&"`, "a\tb", "  x", "client\x00<&name"} {
 			for _, state := range []string{"", "a b&c=d"} {
 				f := newOAuthFixture(t, origin)
 				c := f.client(t, name, oauthCallback)
@@ -433,11 +433,8 @@ func TestOAuthApprovePage(t *testing.T) {
 				w, e := f.request(t, "GET", "/authorize?"+p.Encode(), "", f.session.ID)
 				oauthNoDomain(t, e)
 				data := map[string]any{"Banner": banner, "ClientName": name, "Gateway": gateway, "Until": "2027-01-05", "ReturnHost": "localhost:61000", "ClientID": c.ID, "RedirectURI": p.Get("redirect_uri"), "Challenge": oauthChallenge, "State": state, "Resource": resource}
-				var expected bytes.Buffer
-				if err := authTemplates.ExecuteTemplate(&expected, "approve", data); err != nil {
-					t.Fatal(err)
-				}
-				if w.Code != 200 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" || w.Body.String() != expected.String() || calls != 1 {
+				expected := expectedAuthTemplate(t, "approve", data)
+				if w.Code != 200 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" || w.Body.String() != expected || calls != 1 {
 					t.Fatalf("approve response %d calls=%d %q", w.Code, calls, w.Body.String())
 				}
 				after := (identityFixture{store: f.st}).snapshot(t)

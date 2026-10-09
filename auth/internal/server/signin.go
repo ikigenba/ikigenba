@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 
@@ -69,17 +68,7 @@ func (s *Server) handleLoginGoogle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Absolute authorization URL: same 302 as http.Redirect, Location left as authURL.
-	h := w.Header()
-	_, hadCT := h["Content-Type"]
-	h.Set("Location", authURL)
-	if !hadCT && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
-		h.Set("Content-Type", "text/html; charset=utf-8")
-	}
-	w.WriteHeader(http.StatusFound)
-	if !hadCT && r.Method == http.MethodGet {
-		_, _ = fmt.Fprintln(w, `<a href="`+html.EscapeString(authURL)+`">`+http.StatusText(http.StatusFound)+`</a>.`+"\n")
-	}
+	http.RedirectHandler(authURL, http.StatusFound).ServeHTTP(w, r)
 }
 
 func mintPKCEVerifier(rand io.Reader) (string, error) {
@@ -101,7 +90,7 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		s.record(r, "sign_in.refused", "", telemetry.Attrs{"reason": "cancelled"})
-		writeCancelledPage(w, r.Host)
+		writeCancelledPage(w, r.Host, s.cfg.WorkspaceDomain)
 		return
 	}
 

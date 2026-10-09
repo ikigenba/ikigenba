@@ -238,7 +238,7 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 }
 
 func TestAnonymousRootShowsReturnWithoutPersisting(t *testing.T) {
-	// R-VCUY-86XA R-VE2U-LYNZ: anonymous pages show the encoded return without storing it.
+	// R-VCUY-86XA: anonymous pages show the encoded return without storing it.
 	returnURL := `https://evil.example/steal?x=1&y=2"`
 	issuer := newSignInIssuer(t)
 	for _, host := range []string{"auth.green.example", "localhost:3001"} {
@@ -349,6 +349,12 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	wantLocation, err := gc.AuthCodeURL(recorded.State, recorded.Verifier, wantRedirectURI)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// R-7BJB-2Q3J: the successful response is the standard library redirect.
+	wantRedirect := httptest.NewRecorder()
+	http.Redirect(wantRedirect, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/login/google?return="+url.QueryEscape(returnURL), nil), wantLocation, http.StatusFound)
+	if w.Code != wantRedirect.Code || w.Header().Get("Content-Type") != wantRedirect.Header().Get("Content-Type") || w.Body.String() != wantRedirect.Body.String() {
+		t.Fatalf("redirect differs from http.Redirect: %#v body %q, want %#v body %q", w.Header(), w.Body.String(), wantRedirect.Header(), wantRedirect.Body.String())
 	}
 	if got := w.Header().Get("Location"); got != wantLocation {
 		t.Fatalf("Location = %q, want AuthCodeURL %q", got, wantLocation)

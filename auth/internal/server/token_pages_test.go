@@ -6,12 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
-	"github.com/ikigenba/ikigenba/auth"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
@@ -57,50 +58,95 @@ func tokenAssertPlainLine(t *testing.T, s *Server, r *http.Request, status int) 
 	}
 }
 
-func expectedElapsed(d time.Duration) string {
+func expectedElapsed(d time.Duration) elapsedData {
 	switch {
 	case d < time.Minute:
-		return ElapsedJustNow
-	case d < 2*time.Minute:
-		return ElapsedMinute
+		return elapsedData{"now", 0}
 	case d < time.Hour:
-		return fmt.Sprintf(ElapsedMinutes, int64(d/time.Minute))
-	case d < 2*time.Hour:
-		return ElapsedHour
+		return elapsedData{"minute", int64(d / time.Minute)}
 	case d < 24*time.Hour:
-		return fmt.Sprintf(ElapsedHours, int64(d/time.Hour))
-	case d < 48*time.Hour:
-		return ElapsedDay
+		return elapsedData{"hour", int64(d / time.Hour)}
 	default:
-		return fmt.Sprintf(ElapsedDays, int64(d/(24*time.Hour)))
+		return elapsedData{"day", int64(d / (24 * time.Hour))}
 	}
 }
 
-func TestElapsedCopyConstants(t *testing.T) {
-	// R-PKOP-QKTD
-	for _, text := range []string{ElapsedJustNow, ElapsedMinute, ElapsedHour, ElapsedDay} {
-		if text == "" {
-			t.Fatal("empty elapsed copy")
-		}
-	}
-	for _, format := range []string{ElapsedMinutes, ElapsedHours, ElapsedDays} {
-		if strings.Count(format, "%d") != 1 || strings.Contains(strings.ReplaceAll(format, "%d", ""), "%") {
-			t.Fatalf("invalid elapsed format %q", format)
-		}
-	}
+func TestTokenDataDeclarations(_ *testing.T) {
+	// R-7DZ3-U9KX R-7F70-81BM R-7GEW-LT2B R-7HMS-ZKT0 R-7IUP-DCJP R-7K2L-R4AE R-7LAI-4W13 R-7MIE-INRS
+	// Assignment to the declared underlying structs checks names, types and order.
+	var _ struct {
+		ID, Name string
+		Created  tokenTimeData
+		LastUsed *tokenLastUsedData
+		Expires  *tokenTimeData
+		Enabled  bool
+	} = tokenRowData{}
+	var _ struct{ Datetime, Text string } = tokenTimeData{}
+	var _ struct {
+		Datetime, Title string
+		Elapsed         elapsedData
+	} = tokenLastUsedData{}
+	var _ struct {
+		Unit  string
+		Count int64
+	} = elapsedData{}
+	var _ struct {
+		Name, Expiry                     string
+		Rejected, NameError, ExpiryError bool
+	} = tokenCreateData{}
+	var _ struct{ Name, Secret string } = tokenCreatedData{}
+	var _ struct{ Clients []mcpClientData } = mcpClientsData{}
+	var _ struct {
+		ID, Name, Approved, ApprovedText, LastUsed, LastUsedTitle string
+		LastUsedElapsed                                           elapsedData
+		Expires, ExpiresText                                      string
+		Expired                                                   bool
+	} = mcpClientData{}
 }
 
 func TestTokenElapsedBoundaries(t *testing.T) {
-	// R-PDDB-FYD7
-	for _, d := range []time.Duration{-time.Hour, 0, time.Minute - time.Nanosecond, time.Minute, 2 * time.Minute, time.Hour - time.Nanosecond, time.Hour, 2 * time.Hour, 24*time.Hour - time.Nanosecond, 24 * time.Hour, 48 * time.Hour, 365 * 24 * time.Hour} {
-		if got, want := tokenElapsed(d), expectedElapsed(d); got != want {
-			t.Errorf("elapsed(%s)=%q want %q", d, got, want)
+	// R-7OY7-A796
+	cases := []struct {
+		duration time.Duration
+		want     elapsedData
+	}{
+		{-time.Hour, elapsedData{"now", 0}}, {0, elapsedData{"now", 0}},
+		{time.Minute - time.Nanosecond, elapsedData{"now", 0}}, {time.Minute, elapsedData{"minute", 1}},
+		{2 * time.Minute, elapsedData{"minute", 2}}, {time.Hour - time.Nanosecond, elapsedData{"minute", 59}},
+		{time.Hour, elapsedData{"hour", 1}}, {2 * time.Hour, elapsedData{"hour", 2}},
+		{24*time.Hour - time.Nanosecond, elapsedData{"hour", 23}}, {24 * time.Hour, elapsedData{"day", 1}},
+		{48 * time.Hour, elapsedData{"day", 2}}, {365 * 24 * time.Hour, elapsedData{"day", 365}},
+		{time.Duration(1<<63 - 1), elapsedData{"day", 106751}},
+	}
+	for _, tc := range cases {
+		if got := tokenElapsedData(tc.duration); got != tc.want {
+			t.Errorf("elapsed(%s)=%#v want %#v", tc.duration, got, tc.want)
 		}
 	}
 }
 
+func TestTokenTimeValues(t *testing.T) {
+	// R-7NQA-WFIH
+	at := time.Date(2026, 2, 3, 4, 5, 6, 987654321, time.FixedZone("offset", 5400))
+	want := tokenTimeData{"2026-02-03T02:35:06Z", "2026-02-03 02:35 UTC"}
+	if got := tokenTime(at); got != want {
+		t.Fatalf("token time=%#v want %#v", got, want)
+	}
+}
+
+func expectedTokenRow(token store.Token, draw time.Time) tokenRowData {
+	row := tokenRowData{ID: token.ID, Name: token.Name, Created: tokenTimeData{token.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"), token.CreatedAt.UTC().Format("2006-01-02 15:04 UTC")}, Enabled: token.Enabled}
+	if token.LastUsedAt != nil {
+		row.LastUsed = &tokenLastUsedData{token.LastUsedAt.UTC().Format("2006-01-02T15:04:05Z"), token.LastUsedAt.UTC().Format("2006-01-02 15:04 UTC"), expectedElapsed(draw.Sub(*token.LastUsedAt))}
+	}
+	if token.ExpiresAt != nil {
+		row.Expires = &tokenTimeData{token.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"), token.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")}
+	}
+	return row
+}
+
 func TestTokenProfileValuesAndOrder(t *testing.T) {
-	// R-VRHQ-TFTM R-T8UC-H064 R-592E-M4CJ R-VSPN-77KB
+	// R-7Q63-NYZV R-592E-M4CJ
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "profile-rows")
 	used := tokenTestNow.Add(-2 * time.Hour)
@@ -130,15 +176,44 @@ func TestTokenProfileValuesAndOrder(t *testing.T) {
 		}
 		byName[c.name] = token
 	}
+
+	// Include a disabled never-expiring row, preserving the unaltered name.
+	extra, _, err := st.CreateToken(user.ID, "never-expiring <&\x00", store.ExpiryNever, tokenTestNow.Add(-72*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTokenEnabled(user.ID, extra.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	extra.Enabled = false
+	byName[extra.Name] = extra
+	mintProfileClient(t, st, user.ID, "other-kind", tokenTestNow)
+	other, _ := tokenTestIdentity(t, st, "other-profile")
+	if _, _, err := st.CreateToken(other.ID, "other-owner", store.ExpiryNever, tokenTestNow); err != nil {
+		t.Fatal(err)
+	}
+	order := []string{"latest", "used-new", "used-old", "never-new", "never-old", extra.Name}
+	wantRows := make([]tokenRowData, 0, len(order))
+	for _, name := range order {
+		wantRows = append(wantRows, expectedTokenRow(byName[name], tokenTestNow))
+	}
+	srv := tokenTestServer(t, st)
+	rows, err := srv.tokenRows(user.ID, tokenTestNow)
+	if err != nil || !reflect.DeepEqual(rows, wantRows) {
+		t.Fatalf("rows=%#v err=%v want %#v", rows, err, wantRows)
+	}
 	w := httptest.NewRecorder()
 	tokenTestServer(t, st).ServeHTTP(w, tokenProfileRequest(session.ID))
 	if w.Code != 200 {
 		t.Fatal(w.Code)
 	}
 	body, previous := w.Body.String(), -1
-	for _, name := range []string{"latest", "used-new", "used-old", "never-new", "never-old"} {
+	if !strings.Contains(body, expectedAuthTemplate(t, "tokenList", wantRows)) {
+		t.Fatal("profile omits token rows template output")
+	}
+	for _, name := range order {
 		token := byName[name]
-		assertPageValues(t, body, token.ID, token.Name, token.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"), token.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"))
+		assertPageValues(t, body, token.ID, token.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"), token.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"))
 		if token.LastUsedAt != nil {
 			assertPageValues(t, body, token.LastUsedAt.UTC().Format("2006-01-02T15:04:05Z"))
 		}
@@ -151,31 +226,63 @@ func TestTokenProfileValuesAndOrder(t *testing.T) {
 }
 
 func TestTokenRejectedPageValues(t *testing.T) {
-	// R-VV5F-YR1P R-VWDC-CISE
+	// R-VV5F-YR1P R-3U9G-MQVA R-3T1K-8Z4L
 	for _, tc := range []struct{ name, expiry string }{
 		{"", "never"}, {" \t\n ", "30d"}, {strings.Repeat("界", 65), "90d"},
-		{"  retained name  ", "bad"}, {"kept", ""},
+		{"  retained name  ", "bad"}, {"kept", ""}, {"", "365d"}, {"", "bad"},
 	} {
 		st := openTokenTestStore(t)
 		user, session := tokenTestIdentity(t, st, "rejected")
+		calls := 0
+		banner := testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"})
+		srv := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(got page.User) page.Banner {
+			calls++
+			if got.Email != user.Email || got.ProfileURL != "/" || got.LogoutURL != "/logout" {
+				t.Fatalf("banner user=%#v", got)
+			}
+			return banner
+		}})
 		w := httptest.NewRecorder()
-		tokenTestServer(t, st).ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{"name": {tc.name}, "expires": {tc.expiry}}))
+		srv.ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{"name": {tc.name}, "expires": {tc.expiry}}))
+		if calls != 1 {
+			t.Fatalf("banner calls=%d", calls)
+		}
 		if w.Code != 400 {
 			t.Fatal(w.Code)
 		}
-		assertPageValues(t, w.Body.String(), tc.name)
-		assertPageBanner(t, w.Body.String(), testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"}))
+		expiry := tc.expiry
+		valid := expiry == "never" || expiry == "30d" || expiry == "90d" || expiry == "365d"
+		if !valid {
+			expiry = "90d"
+		}
+		count := utf8.RuneCountInString(strings.TrimSpace(tc.name))
+		data := tokenCreateData{tc.name, expiry, true, count < 1 || count > 64, !valid}
+		if got := tokenCreateValues(tc.name, tc.expiry, true); got != data {
+			t.Fatalf("rejected data=%#v want %#v", got, data)
+		}
+		assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: banner, Create: &data})
 	}
 }
 
 func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
-	// R-VXL8-QAJ3 R-VYT5-429S R-W011-HU0H
+	// R-VXL8-QAJ3 R-3VHD-0ILZ R-W011-HU0H
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "created")
-	srv := tokenTestServer(t, st)
+	calls := 0
+	banner := testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"})
+	srv := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(got page.User) page.Banner {
+		calls++
+		if got.Email != user.Email || got.ProfileURL != "/" || got.LogoutURL != "/logout" {
+			t.Fatalf("banner user=%#v", got)
+		}
+		return banner
+	}})
 	name := "  fixture-token-name  "
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{"name": {name}, "expires": {"never"}}))
+	if calls != 1 {
+		t.Fatalf("banner calls=%d", calls)
+	}
 	if w.Code != 200 {
 		t.Fatal(w.Code)
 	}
@@ -189,6 +296,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if !ok || strings.Count(w.Body.String(), secret) != 1 {
 		t.Fatal("secret missing or repeated")
 	}
+	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: banner, Created: &tokenCreatedData{Name: strings.TrimSpace(name), Secret: secret}})
 	for _, r := range []*http.Request{
 		tokenProfileRequest(session.ID), tokenActionRequest(session.ID, tokens[0].ID, "disable"),
 		tokenRequest("/tokens", session.ID, url.Values{"name": {""}, "expires": {"never"}}),
@@ -216,7 +324,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 }
 
 func TestProfileUsesOneActualDrawTime(t *testing.T) {
-	// R-PWVP-KA8B R-PDDB-FYD7
+	// R-PWVP-KA8B
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "common-clock")
 	used := []time.Time{tokenTestNow.Add(-3 * time.Minute), tokenTestNow.Add(-7 * time.Minute)}
@@ -245,23 +353,134 @@ func TestProfileUsesOneActualDrawTime(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal(w.Code)
 	}
-	templates, err := page.Templates().ParseFS(auth.Assets(), "*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, draw := range readings {
-		row := mcpClientData{ID: client.ID, Name: client.Name, Approved: client.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"), ApprovedText: client.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"), LastUsed: clientUsed.UTC().Format("2006-01-02T15:04:05Z"), LastUsedTitle: clientUsed.UTC().Format("2006-01-02 15:04 UTC"), LastUsedText: expectedElapsed(draw.Sub(clientUsed)), Expires: client.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"), ExpiresText: client.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"), Expired: !client.ExpiresAt.After(draw)}
-		var expected strings.Builder
-		if err := templates.ExecuteTemplate(&expected, "mcp-clients", mcpClientsData{Clients: []mcpClientData{row}}); err != nil {
-			t.Fatal(err)
-		}
-		common := strings.Contains(w.Body.String(), expected.String())
+		row := mcpClientData{ID: client.ID, Name: client.Name, Approved: client.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"), ApprovedText: client.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"), LastUsed: clientUsed.UTC().Format("2006-01-02T15:04:05Z"), LastUsedTitle: clientUsed.UTC().Format("2006-01-02 15:04 UTC"), LastUsedElapsed: expectedElapsed(draw.Sub(clientUsed)), Expires: client.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"), ExpiresText: client.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"), Expired: !client.ExpiresAt.After(draw)}
+		common := strings.Contains(w.Body.String(), expectedAuthTemplate(t, "mcp-clients", mcpClientsData{Clients: []mcpClientData{row}}))
 		for _, at := range used {
-			common = common && strings.Contains(w.Body.String(), expectedElapsed(draw.Sub(at)))
+			expected := tokenLastUsedData{at.UTC().Format("2006-01-02T15:04:05Z"), at.UTC().Format("2006-01-02 15:04 UTC"), expectedElapsed(draw.Sub(at))}
+			common = common && strings.Contains(w.Body.String(), expectedAuthTemplate(t, "tokenLastUsed", expected))
 		}
 		if common {
 			return
 		}
 	}
 	t.Fatal("profile values do not share any actual injected draw time")
+}
+
+func TestTokenCreateDataInputs(t *testing.T) {
+	// R-3T1K-8Z4L R-3Z52-5TU2
+	empty := tokenCreateData{Expiry: "90d"}
+	if got := tokenCreateValues("", "", false); got != empty {
+		t.Fatalf("empty create=%#v", got)
+	}
+	cases := []struct {
+		name, expiry string
+		want         tokenCreateData
+	}{
+		{" \u2003\u00a0 ", "never", tokenCreateData{" \u2003\u00a0 ", "never", true, true, false}},
+		{strings.Repeat("界", 64), "30d", tokenCreateData{strings.Repeat("界", 64), "30d", true, false, false}},
+		{strings.Repeat("界", 65), "365d", tokenCreateData{strings.Repeat("界", 65), "365d", true, true, false}},
+		{" \xff ", "invalid", tokenCreateData{" \xff ", "90d", true, false, true}},
+		{strings.Repeat("\xff", 65), "90d", tokenCreateData{strings.Repeat("\xff", 65), "90d", true, true, false}},
+	}
+	for _, tc := range cases {
+		if got := tokenCreateValues(tc.name, tc.expiry, true); got != tc.want {
+			t.Errorf("data=%#v want %#v", got, tc.want)
+		}
+	}
+	// ParseForm chooses the first body value ahead of the query's value.
+	st := openTokenTestStore(t)
+	user, session := tokenTestIdentity(t, st, "form-precedence")
+	req := tokenRequest("/tokens?name=query-name&expires=never", session.ID, url.Values{"name": {"  preserved first  ", "second"}, "expires": {"bad", "30d"}})
+	w := httptest.NewRecorder()
+	tokenTestServer(t, st).ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatal(w.Code)
+	}
+	data := tokenCreateData{"  preserved first  ", "90d", true, false, true}
+	assertAuthTemplate(t, w.Body.String(), "page", authPageData{Banner: testPageBanner(page.User{Email: user.Email, ProfileURL: "/", LogoutURL: "/logout"}), Create: &data})
+}
+
+func TestTokenUnicodeAndInvalidUTF8Trimming(t *testing.T) {
+	// R-3Z52-5TU2
+	for _, tc := range []struct{ name, want string }{
+		{"\u2003\u00a0" + strings.Repeat("界", 64) + "\u202f", strings.Repeat("界", 64)},
+		{" \xff ", "\xff"},
+		{" \xff\u2003x\u00a0 ", "\xff\u2003x"},
+	} {
+		st := openTokenTestStore(t)
+		user, session := tokenTestIdentity(t, st, "unicode-name")
+		w := httptest.NewRecorder()
+		tokenTestServer(t, st).ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{"name": {tc.name}, "expires": {"never"}}))
+		tokens, err := st.ListTokens(user.ID)
+		if w.Code != 200 || err != nil || len(tokens) != 1 || tokens[0].Name != tc.want {
+			t.Fatalf("status=%d tokens=%#v err=%v want name %q", w.Code, tokens, err, tc.want)
+		}
+	}
+}
+
+func TestProfileDataTokenActionRoutes(t *testing.T) {
+	// R-3WP9-EACO
+	for _, enabled := range []bool{true, false} {
+		for _, action := range []string{"toggle", "delete", "revoke"} {
+			st := openTokenTestStore(t)
+			user, session := tokenTestIdentity(t, st, "data-routes")
+			personal, _, err := st.CreateToken(user.ID, "data-personal", store.ExpiryNever, tokenTestNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetTokenEnabled(user.ID, personal.ID, enabled); err != nil {
+				t.Fatal(err)
+			}
+			client, _ := mintProfileClient(t, st, user.ID, "data-client", tokenTestNow)
+			srv := tokenTestServer(t, st)
+			rows, err := srv.tokenRows(user.ID, tokenTestNow)
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("rows=%#v %v", rows, err)
+			}
+			clients, err := srv.profileClients(user.ID, tokenTestNow)
+			if err != nil || len(clients.Clients) != 1 {
+				t.Fatalf("clients=%#v %v", clients, err)
+			}
+			id, verb := rows[0].ID, action
+			if action == "toggle" {
+				verb = "enable"
+				if rows[0].Enabled {
+					verb = "disable"
+				}
+			}
+			if action == "revoke" {
+				id = clients.Clients[0].ID
+			}
+			before, err := st.ListTokens(user.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, tokenRequest("/tokens/"+id+"/"+verb, session.ID, nil))
+			if w.Code != 302 || w.Header().Get("Location") != "/" {
+				t.Fatalf("route=%d %v", w.Code, w.Header())
+			}
+			after, err := st.ListTokens(user.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []store.Token
+			for _, token := range before {
+				if token.ID == id {
+					if action != "toggle" {
+						continue
+					}
+					token.Enabled = !enabled
+				}
+				want = append(want, token)
+			}
+			if !reflect.DeepEqual(after, want) {
+				t.Fatalf("action=%s after=%#v want %#v", action, after, want)
+			}
+			if personal.ID != rows[0].ID || client.ID != clients.Clients[0].ID {
+				t.Fatal("data IDs do not name supplied tokens")
+			}
+		}
+	}
 }
