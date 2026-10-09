@@ -653,34 +653,61 @@ func TestPlainPageHeadsAndChrome(t *testing.T) {
 	}
 }
 func TestLauncherPresence(t *testing.T) {
-	// R-EEJO-2CV8
+	// R-ZYI0-YPM4
 	f := setup(t, false)
-	for _, enabled := range []bool{false, true} {
-		f.banner.Services = nil
-		if enabled {
-			f.banner.Services = []page.Service{{Name: "cron", URL: "https://cron.example.test", Icon: template.HTML("icon"), Enabled: true, Current: true}}
-		}
-		for _, path := range []string{"/", "/about"} {
-			body := answer(f.cfg, request("GET", path, "viewer", "viewer@example.test", "cron.example.test", "https")).Body.String()
-			buttons := []tag{}
-			for _, x := range named(body, "button") {
-				if x.class("launcher") {
-					buttons = append(buttons, x)
-				}
-			}
-			count := 0
-			if enabled {
-				count = 1
-			}
-			equal(t, len(buttons), count)
-			equal(t, len(matching(body, "src", "/_appkit/launcher.js")), count)
-			for _, x := range named(body, "script") {
-				v := x.values("src")
-				require(t, reflect.DeepEqual(v, []string{"/_appkit/feedback.js"}) || (enabled && reflect.DeepEqual(v, []string{"/_appkit/launcher.js"})), "unexpected script")
-			}
-			if !enabled {
-				equal(t, len(named(body, "input")), 0)
-				require(t, !strings.Contains(body, "/_appkit/launcher.js"), "launcher path without services")
+	services := []struct {
+		name    string
+		entries []page.Service
+	}{
+		{"nil", nil},
+		{"empty", []page.Service{}},
+		{"one", []page.Service{{Name: "cron", URL: "https://cron.example.test", Icon: template.HTML("icon"), Enabled: true, Current: true}}},
+		{"several", []page.Service{{Name: "auth", URL: "https://auth.example.test", Enabled: true}, {Name: "cron", URL: "https://cron.example.test", Icon: template.HTML("&amp; icon"), Current: true}}},
+	}
+	for _, entries := range services {
+		for _, icon := range []template.HTML{"", "icon", "&amp; icon"} {
+			for _, path := range []string{"/", "/about"} {
+				t.Run(fmt.Sprintf("%s/%s/%s", entries.name, icon, path), func(t *testing.T) {
+					f.banner.Services = entries.entries
+					f.banner.Icon = icon
+					w := answer(f.cfg, request("GET", path, "viewer", "viewer@example.test", "cron.example.test", "https"))
+					equal(t, w.Code, http.StatusOK)
+					body := w.Body.String()
+					buttons := []tag{}
+					for _, x := range named(body, "button") {
+						if x.class("launcher") {
+							buttons = append(buttons, x)
+						}
+					}
+					count := 0
+					if len(entries.entries) != 0 {
+						count = 1
+					}
+					equal(t, len(buttons), count)
+					launcherScripts := 0
+					for _, x := range named(body, "script") {
+						v := x.values("src")
+						launcher := false
+						feedback := false
+						for _, src := range v {
+							launcher = launcher || src == "/_appkit/launcher.js"
+							feedback = feedback || src == "/_appkit/feedback.js"
+						}
+						switch {
+						case count == 1 && launcher:
+							launcherScripts++
+						case count == 1:
+							require(t, feedback, "non-launcher script must load feedback")
+						default:
+							equal(t, v, []string{"/_appkit/feedback.js"})
+							require(t, !x.bare("src"), "other src occurrence without services")
+						}
+					}
+					equal(t, launcherScripts, count)
+					if count == 0 {
+						equal(t, len(named(body, "input")), 0)
+					}
+				})
 			}
 		}
 	}
