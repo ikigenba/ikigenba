@@ -19,6 +19,9 @@ import (
 // ServiceName names the service.
 const ServiceName = "dummy"
 
+// Description is the service's one-line description.
+const Description string = "Demo widgets to list and create"
+
 // MethodNotAllowedBody reports a refused fragment method.
 const MethodNotAllowedBody = "method not allowed\n"
 
@@ -116,6 +119,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "/widgets/table":
 		h.table(w, r)
+	case "/about", "/tools":
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			h.renderInfo(w, r)
+			return
+		}
+		w.Header().Set("Allow", "GET, HEAD")
+		h.renderFailure(w, r, http.StatusMethodNotAllowed, MethodNotAllowedMessage)
 	default:
 		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
 	}

@@ -165,8 +165,8 @@ func TestPageIdentityBeforeRouting(t *testing.T) {
 	}
 }
 
-// R-1I73-VG50 R-1KMW-MZME R-1N2P-EJ3S R-1KMW-MZME R-1PII-62L6
-// R-1RYA-XM2K R-1UE3-P5JY R-MGPL-SX11
+// R-YA3F-R76B R-1KMW-MZME R-1N2P-EJ3S R-1KMW-MZME R-1PII-62L6
+// R-Y8VJ-DFFM R-1UE3-P5JY R-MGPL-SX11
 func TestPageRoutes(t *testing.T) {
 	cases := []struct {
 		method, path   string
@@ -183,8 +183,18 @@ func TestPageRoutes(t *testing.T) {
 		{"GET", "/mcp/", 404, "", panel.NotFoundMessage}, {"POST", "/mcp/more", 404, "", panel.NotFoundMessage},
 		{"GET", "/widgets/", 404, "", panel.NotFoundMessage}, {"POST", "/widgets/", 404, "", panel.NotFoundMessage},
 		{"GET", "/widgets/table/", 404, "", panel.NotFoundMessage}, {"HEAD", "/widgets/table/", 404, "", panel.NotFoundMessage},
+		{"GET", "/about/", 404, "", panel.NotFoundMessage}, {"POST", "/tools/", 404, "", panel.NotFoundMessage},
 		{"GET", "//widgets", 404, "", panel.NotFoundMessage}, {"GET", "/Widgets", 404, "", panel.NotFoundMessage},
 		{"GET", "/widgets/table", 200, "", ""}, {"POST", "/widgets/table", 405, "GET, HEAD", ""},
+	}
+	for _, path := range []string{"/unknown", "/widgets/", "/widgets/table/", "/about/", "/tools/", "/mcp/", "/mcp/more"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
+			cases = append(cases, struct {
+				method, path   string
+				status         int
+				allow, message string
+			}{method, path + "?q=/widgets", 404, "", panel.NotFoundMessage})
+		}
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+tc.path, func(t *testing.T) {
@@ -423,13 +433,13 @@ func coreHandler(t *testing.T, s *widget.Store, banner func(page.User) page.Bann
 func coreDraft(sub widget.Submission) widget.Draft { d, _ := widget.ParseSubmission(sub); return d }
 
 // R-UTCV-ZF5P R-RG8D-DVVH R-RHG9-RNM6 R-U955-PAW6
-// R-Y5H2-05Q9 R-Y7WU-RP7N R-YACN-J8P1
+// R-Y5H2-05Q9 R-Y2S1-GKQ5 R-YACN-J8P1
 func TestPageTemplateContract(t *testing.T) {
 	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"page", "table", "form", "script"} {
+	for _, name := range []string{"page", "table", "form", "script", "about", "tools"} {
 		if set.Lookup(name) == nil {
 			t.Fatalf("missing %s", name)
 		}

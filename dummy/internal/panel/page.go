@@ -45,8 +45,12 @@ func (h *handler) renderFailure(w http.ResponseWriter, r *http.Request, status i
 }
 
 func (h *handler) renderDocument(w http.ResponseWriter, r *http.Request, status int, data pageData) {
+	h.renderTemplate(w, r, status, "page", data)
+}
+
+func (h *handler) renderTemplate(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
 	var body bytes.Buffer
-	if err := h.templates.ExecuteTemplate(&body, "page", data); err != nil {
+	if err := h.templates.ExecuteTemplate(&body, name, data); err != nil {
 		panic(err)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

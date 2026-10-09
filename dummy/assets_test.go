@@ -9,10 +9,10 @@ import (
 	"github.com/ikigenba/ikigenba/dummy"
 )
 
-// R-E5L5-F828 R-DNY1-KF1Q
+// R-YBBC-4YX0 R-YCJ8-IQNP
 func TestAssets(t *testing.T) {
 	assets := []func() fs.FS{dummy.Assets}[0]
-	names := []string{"form.html", "page.html", "script.html", "table.html"}
+	names := []string{"about.html", "form.html", "page.html", "script.html", "table.html", "tools.html"}
 	original := assets()
 	entries, err := fs.ReadDir(original, ".")
 	if err != nil {
