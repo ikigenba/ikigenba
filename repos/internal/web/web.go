@@ -22,7 +22,7 @@ import (
 const ServiceName = "repos"
 
 // Description is the service's one-line description.
-const Description = "Git repositories for the suite's content"
+const Description string = "Git repositories for the suite's content"
 
 // Config supplies the handler's banner, tools, repositories and request writer.
 type Config struct {
@@ -57,7 +57,7 @@ func Handler(cfg Config) http.Handler {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
 			if r.Method != http.MethodHead {
-				_, _ = w.Write([]byte("not found\n"))
+				_, _ = w.Write([]byte(smarthttp.NotFound + "\n"))
 			}
 		}
 	})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,7 @@ func startRequest(ctx context.Context, f *fixture, method, path, body string) <-
 }
 
 func TestQueuedSelectedGitDisappears(t *testing.T) {
-	// R-5DKH-QSIE
+	// R-VB7F-60ZS
 	f := setup(t)
 	repo := f.create("notes")
 	dir := filepath.Join(f.root, "git-path")
@@ -97,7 +98,7 @@ func TestQueuedSelectedGitDisappears(t *testing.T) {
 }
 
 func TestRequestCancelledWhileWaitEventIsRecorded(t *testing.T) {
-	// R-5DKH-QSIE
+	// R-VB7F-60ZS
 	f := setup(t)
 	repo := f.create("notes")
 	before := f.refs(repo.ID)
@@ -175,7 +176,7 @@ func TestRequestCancelledWhileWaitEventIsRecorded(t *testing.T) {
 }
 
 func TestQueuedSelectedGitRetainedDuringWaitRecord(t *testing.T) {
-	// R-5DKH-QSIE
+	// R-VB7F-60ZS
 	f := setup(t)
 	repo := f.create("notes")
 	dir := filepath.Join(f.root, "selected-executable")
@@ -230,7 +231,7 @@ func TestQueuedSelectedGitRetainedDuringWaitRecord(t *testing.T) {
 }
 
 func TestQueuedSelectedGitImageRetainedDuringWaitRecord(t *testing.T) {
-	// R-5DKH-QSIE
+	// R-VB7F-60ZS
 	for _, mode := range []os.FileMode{0500, 0111} {
 		t.Run(strconv.FormatUint(uint64(mode), 8), func(t *testing.T) {
 			queuedSelectedGitImage(t, mode)
@@ -545,7 +546,7 @@ func opposite(op limits.Op) limits.Op {
 }
 
 func TestQueueRejectionsAndDrain(t *testing.T) {
-	// R-8WIH-NM4X R-8XQE-1DVM R-5CCL-D0RP R-99XD-V3AK
+	// R-V7JQ-0PRP R-V8RM-EHIE R-V9ZI-S993 R-99XD-V3AK
 	for _, kind := range []string{"queue_length", "queue_seconds", "draining"} {
 		t.Run(kind, func(t *testing.T) {
 			f := setup(t)
@@ -570,9 +571,9 @@ func TestQueueRejectionsAndDrain(t *testing.T) {
 				f.limits.Drain()
 				w = finishRequest(t, waiting)
 			}
-			message := "too many git operations; try again later\n"
+			message := smarthttp.TooBusy + "\n"
 			if kind == "draining" {
-				message = "repos is stopping; try again later\n"
+				message = smarthttp.Stopping + "\n"
 			}
 			outcome(t, w, 503, message)
 			same(t, w.Header().Get("Retry-After"), strconv.FormatInt(f.settings.QueueSeconds, 10))
@@ -622,7 +623,7 @@ func TestQueuedContextCancellation(t *testing.T) {
 }
 
 func TestWaitAndRepositoryReresolution(t *testing.T) {
-	// R-3PR7-BDW7 R-5DKH-QSIE R-951S-C0BS R-99XD-V3AK
+	// R-V3W0-VEJM R-VB7F-60ZS R-951S-C0BS R-99XD-V3AK
 	for _, change := range []string{"rename", "delete", "close"} {
 		for _, method := range []string{"GET", "POST"} {
 			t.Run(change+method, func(t *testing.T) {
@@ -652,9 +653,9 @@ func TestWaitAndRepositoryReresolution(t *testing.T) {
 					same(t, w.Code, 200)
 					same(t, w.Header().Get("Content-Type"), contentType)
 				case "delete":
-					outcome(t, w, 404, "repository not found\n")
+					outcome(t, w, 404, smarthttp.RepoNotFound+"\n")
 				case "close":
-					outcome(t, w, 500, "cannot reach the repositories; try again later\n")
+					outcome(t, w, 500, smarthttp.Unreachable+"\n")
 				}
 				events := ownEvents(f.events())
 				if change == "rename" {
@@ -675,7 +676,7 @@ func TestWaitAndRepositoryReresolution(t *testing.T) {
 }
 
 func TestWaitEventBeforeFetchAndWithinRequestDuration(t *testing.T) {
-	// R-5DKH-QSIE R-5H86-W3QH R-99XD-V3AK
+	// R-VB7F-60ZS R-5H86-W3QH R-99XD-V3AK
 	f := setup(t)
 	repo := f.create("notes")
 	// This test gives middleware and limits the same monotonic time source.
@@ -717,7 +718,7 @@ func TestWaitEventBeforeFetchAndWithinRequestDuration(t *testing.T) {
 }
 
 func TestSizePreflightBeforeFullWriteQueueAndDrain(t *testing.T) {
-	// R-59WS-LHAB R-5CCL-D0RP
+	// R-V53X-96AB R-V9ZI-S993
 	f := setup(t)
 	repo := f.create("notes")
 	f.settings.RepoMaxBytes = 1
@@ -754,7 +755,7 @@ func TestSizePreflightBeforeFullWriteQueueAndDrain(t *testing.T) {
 				method = "POST"
 			}
 			w := f.request(method, path, strings.NewReader("0000"))
-			outcome(t, w, 507, "repository is at its size limit of 1 bytes\n")
+			outcome(t, w, 507, fmt.Sprintf(smarthttp.AtSizeLimit, 1)+"\n")
 			same(t, w.Header().Get("Retry-After"), "")
 		}
 		events := ownEvents(f.events()[before:])

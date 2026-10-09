@@ -21,7 +21,7 @@ import (
 // Inject faults at the final Head invocation, after Rename changed the
 // repository config and Size and Head's soundness check succeeded.
 func TestAtomicMCPLateRenameDirectoryFaults(t *testing.T) {
-	// R-ZCXC-ZLTY R-ZFD5-R5BC
+	// R-ULLJ-4UF7 R-UO1B-WDWL
 	for _, fault := range []string{"git", "cancel", "root", "repository", "all-permissions"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newToolsFixture(t)
@@ -94,7 +94,7 @@ func TestAtomicMCPLateRenameDirectoryFaults(t *testing.T) {
 			f.Client = atomicCancelServer(t, f, &cancelRequest)
 			offset := len(f.events(t))
 			armed.Store(true)
-			refusal(t, f.call(t, "rename", toolsArguments(r.ID, "journal")), "cannot reach the repositories; try again later")
+			refusal(t, f.call(t, "rename", toolsArguments(r.ID, "journal")), tools.Unreachable)
 			toolsEqual(t, witness.Load(), true)
 			toolsEqual(t, calls.Load(), int64(3))
 			events := f.events(t)[offset:]

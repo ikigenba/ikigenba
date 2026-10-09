@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -15,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,9 +23,12 @@ import (
 	busevents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/version"
+	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
+	"github.com/ikigenba/ikigenba/repos/internal/clone"
 	"github.com/ikigenba/ikigenba/repos/internal/web"
 )
 
@@ -127,11 +128,10 @@ func TestBinary(t *testing.T) {
 	if response.StatusCode != 200 || response.Header.Get("Content-Type") != "application/x-git-upload-pack-advertisement" {
 		t.Fatalf("advertisement: %d %v", response.StatusCode, response.Header)
 	}
-	// R-KHLF-0Z2F: exact plain footer text carries the display string.
-	_, page := first.request(t, http.MethodGet, "/", nil)
-	footerCount, footerText := binaryFooter(page)
-	if footerCount != 1 || footerText != web.ServiceName+" "+version.Display() {
-		t.Fatalf("footer: count=%d text=%q", footerCount, footerText)
+	// R-U235-0IK3: the page carries the injected display string.
+	_, bodyWithoutServices := first.request(t, http.MethodGet, "/", nil)
+	if !strings.Contains(bodyWithoutServices, version.Display()) {
+		t.Fatal("page lacks display string")
 	}
 	// R-S1TJ-HS6J: absent services produce no discovery instructions.
 	if _, found := first.discover(t)["instructions"]; found {
@@ -187,9 +187,25 @@ func TestBinary(t *testing.T) {
 	}
 	launcher := startBinary(t, binary, launcherDir, append(append([]string{}, env...), services.Variable+"="+servicePath))
 	_, body := launcher.request(t, http.MethodGet, "/", nil)
-	// R-HIVZ-JT3J: appkit's real kit loads the ordered service entries in main.
-	assertBinaryLauncher(t, body, list[2].URL)
-	assertBinaryBanner(t, body)
+	// R-UEA4-U7Z1: compare the binary's page with its kit and template.
+	t.Setenv(services.Variable, servicePath)
+	request, err := http.NewRequest(http.MethodGet, "http://repos.example.test/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	banner := page.New(web.ServiceName, version.Display()).Banner(page.User{ProfileURL: list[0].URL + "/", LogoutURL: list[0].URL + "/logout"})
+	base := clone.Base(request, servicePath)
+	templates, err := page.Templates().ParseFS(repos.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected bytes.Buffer
+	if err := templates.ExecuteTemplate(&expected, "landing", map[string]any{"Banner": banner, "ReposURL": base, "Credentials": clone.Guidance(base)}); err != nil {
+		t.Fatal(err)
+	}
+	if body != expected.String() {
+		t.Fatal("binary page differs from rendered landing template")
+	}
 	for _, description := range []string{"Published repos", "Changed instructions"} {
 		listed[2]["description"] = description
 		writeBinaryServices(t, servicePath, listed)
@@ -585,218 +601,5 @@ func (c *binaryChild) stop(t *testing.T, sig syscall.Signal, silent bool) {
 	}
 	if err := queued.Close(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func binaryFooter(body string) (int, string) {
-	lower := strings.ToLower(body)
-	count, content := 0, ""
-	for offset := 0; offset < len(lower); {
-		i := strings.Index(lower[offset:], "<footer")
-		if i < 0 {
-			break
-		}
-		i += offset
-		offset = i + len("<footer")
-		if offset >= len(lower) || (lower[offset] != '>' && !binarySpace(lower[offset])) {
-			continue
-		}
-		count++
-		end := strings.IndexByte(lower[offset:], '>')
-		if end < 0 {
-			continue
-		}
-		start := offset + end + 1
-		footerEnd := strings.Index(lower[start:], "</footer>")
-		if footerEnd >= 0 {
-			content = html.UnescapeString(strings.Trim(body[start:start+footerEnd], " \t\r\n\f"))
-		}
-	}
-	return count, content
-}
-
-type binaryTag struct {
-	name  string
-	attrs map[string][]string
-}
-
-func (tag binaryTag) matches(name string) bool {
-	return tag.name == name || strings.HasPrefix(tag.name, name+"-")
-}
-
-func (tag binaryTag) has(name, value string) bool {
-	for _, got := range tag.attrs[name] {
-		if got == value {
-			return true
-		}
-	}
-	return false
-}
-
-func binarySpace(b byte) bool {
-	return b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == '\v' || b == '\f'
-}
-func binaryName(b byte) bool {
-	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '-'
-}
-
-// binaryTags reads start spans and double-quoted attribute occurrences by D04.
-func binaryTags(body string) []binaryTag {
-	var result []binaryTag
-	for offset := 0; offset < len(body); {
-		start := strings.IndexByte(body[offset:], '<')
-		if start < 0 {
-			break
-		}
-		start += offset
-		end := strings.IndexByte(body[start:], '>')
-		if end < 0 {
-			break
-		}
-		end += start
-		offset = start + 1
-		p := start + 1
-		for p < end && binaryName(body[p]) {
-			p++
-		}
-		if p == start+1 {
-			continue
-		}
-		tag := binaryTag{name: strings.ToLower(body[start+1 : p]), attrs: map[string][]string{}}
-		for p < end {
-			if !binarySpace(body[p]) {
-				break
-			}
-			for p < end && binarySpace(body[p]) {
-				p++
-			}
-			nameStart := p
-			for p < end && !binarySpace(body[p]) && !strings.ContainsRune(`"'<>/=`, rune(body[p])) {
-				p++
-			}
-			if p == nameStart {
-				break
-			}
-			name := strings.ToLower(body[nameStart:p])
-			if p < end && body[p] == '=' {
-				p++
-				if p >= end || body[p] != '"' {
-					break
-				}
-				p++
-				valueStart := p
-				for p < end && body[p] != '"' {
-					p++
-				}
-				if p >= end {
-					break
-				}
-				tag.attrs[name] = append(tag.attrs[name], html.UnescapeString(body[valueStart:p]))
-				p++
-			}
-		}
-		result = append(result, tag)
-	}
-	return result
-}
-
-// R-HIVZ-JT3J: observe the kit's current service icon and banner hooks.
-func assertBinaryBanner(t *testing.T, body string) {
-	t.Helper()
-	part := func(body, name, class string) (string, string) {
-		t.Helper()
-		pattern := regexp.MustCompile(`(?s)<` + name + `\b[^>]*>(.*?)</` + name + `>`)
-		for _, match := range pattern.FindAllStringSubmatch(body, -1) {
-			for _, tag := range binaryTags(match[0]) {
-				if tag.matches(name) && (class == "" || tag.has("class", class)) {
-					return match[0], match[1]
-				}
-			}
-		}
-		t.Fatalf("absent banner %s.%s", name, class)
-		return "", ""
-	}
-	visible := func(s string) string {
-		return strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(s, ""))), " ")
-	}
-	_, header := part(body, "header", "")
-	mark, markContent := part(header, "strong", "mark")
-	if !binaryTags(mark)[0].has("data-service", web.ServiceName) {
-		t.Fatal("banner service hook")
-	}
-	favicon := regexp.MustCompile(`<img\b[^>]*>`).FindString(markContent)
-	if favicon == "" || !binaryTags(favicon)[0].has("src", "/_appkit/favicon.svg") || !binaryTags(favicon)[0].has("alt", "") {
-		t.Fatal("banner favicon hooks")
-	}
-	service, serviceContent := part(markContent, "span", "service")
-	serviceContent = strings.TrimSpace(serviceContent)
-	if !strings.HasPrefix(strings.TrimSpace(markContent), favicon) || visible(strings.SplitN(markContent, service, 2)[0]) != "Ikigenba" || !strings.HasPrefix(serviceContent, binaryReposIcon) {
-		t.Fatalf("banner favicon, product, service icon and name: %q", markContent)
-	}
-	if strings.TrimSpace(serviceContent[len(binaryReposIcon):]) != web.ServiceName {
-		t.Fatalf("banner service name: %q", serviceContent)
-	}
-	launcher, _ := part(header, "button", "launcher")
-	profile, _ := part(header, "a", "profile")
-	form, formContent := part(header, "form", "")
-	if !binaryTags(profile)[0].has("title", "") {
-		t.Fatal("banner profile email title")
-	}
-	rest := header
-	for _, child := range []string{mark, launcher, profile, form} {
-		rest = strings.TrimSpace(rest)
-		if !strings.HasPrefix(rest, child) {
-			t.Fatal("banner order: want mark, launcher, profile and sign-out form")
-		}
-		rest = rest[len(child):]
-	}
-	if strings.TrimSpace(rest) != "" {
-		t.Fatal("extra banner header content")
-	}
-	button, signout := part(formContent, "button", "signout")
-	tag := binaryTags(button)[0]
-	if !tag.has("type", "submit") || !tag.has("aria-label", "Sign out") || !tag.has("title", "Sign out") {
-		t.Fatal("banner sign-out labels")
-	}
-	part(signout, "svg", "")
-	if visible(signout) != "" {
-		t.Fatal("sign-out button has visible text")
-	}
-}
-
-func assertBinaryLauncher(t *testing.T, body, url string) {
-	t.Helper()
-	buttons, current := 0, 0
-	var scripts []binaryTag
-	for _, tag := range binaryTags(body) {
-		if tag.matches("button") {
-			launcher := false
-			for _, value := range tag.attrs["class"] {
-				for _, class := range strings.FieldsFunc(value, func(r rune) bool { return r == ' ' || r == '\t' || r == '\r' || r == '\n' || r == '\v' || r == '\f' }) {
-					if class == "launcher" {
-						launcher = true
-					}
-				}
-			}
-			if launcher {
-				buttons++
-			}
-		}
-		if tag.matches("script") {
-			scripts = append(scripts, tag)
-		}
-		if len(tag.attrs["aria-current"]) > 0 {
-			current++
-			if !tag.matches("a") || !tag.has("aria-current", "page") || !tag.has("href", url) {
-				t.Fatalf("current launcher entry: %v", tag)
-			}
-		}
-	}
-	if buttons != 1 || len(scripts) != 2 || current != 1 {
-		t.Fatalf("launcher counts: buttons=%d scripts=%d current=%d", buttons, len(scripts), current)
-	}
-	if (!scripts[0].has("src", "/_appkit/launcher.js") || !scripts[1].has("src", "/_appkit/feedback.js")) &&
-		(!scripts[1].has("src", "/_appkit/launcher.js") || !scripts[0].has("src", "/_appkit/feedback.js")) {
-		t.Fatal("launcher and feedback sources must occur on distinct script tags")
 	}
 }

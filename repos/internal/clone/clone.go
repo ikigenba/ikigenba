@@ -42,6 +42,12 @@ func URL(base, name string) string { return base + "/" + name + ".git" }
 // Credentials holds shared authentication guidance for git users.
 type Credentials struct{ Intro, Helper, Warning string }
 
+// Intro is shared credential guidance.
+const Intro string = "Git authenticates with your personal access token as the password; the username is ignored. Keep the token in the environment variable IKIGENBA_TOKEN and give it to git with this credential helper, which reads the variable whenever git asks:"
+
+// Warning is shared credential guidance.
+const Warning string = "Or set GIT_ASKPASS to a program that prints $IKIGENBA_TOKEN. Never put the token in a remote's URL or on a command line, and never use credential.helper store: each writes it to disk in plain text."
+
 // Guidance builds the credential helper scoped to the base's space.
 func Guidance(base string) Credentials {
 	scheme, host, found := strings.Cut(base, "://")
@@ -53,9 +59,9 @@ func Guidance(base string) Credentials {
 		host = host[6:]
 	}
 	return Credentials{
-		Intro:   "Git authenticates with your personal access token as the password; the username is ignored. Keep the token in the environment variable IKIGENBA_TOKEN and give it to git with this credential helper, which reads the variable whenever git asks:",
+		Intro:   Intro,
 		Helper:  "git config --global credential." + scheme + "://*." + host + ".helper '!f() { test \"$1\" = get && printf \"username=token\\npassword=%s\\n\" \"$IKIGENBA_TOKEN\"; }; f'",
-		Warning: "Or set GIT_ASKPASS to a program that prints $IKIGENBA_TOKEN. Never put the token in a remote's URL or on a command line, and never use credential.helper store: each writes it to disk in plain text.",
+		Warning: Warning,
 	}
 }
 

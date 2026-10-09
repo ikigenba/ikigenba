@@ -20,6 +20,27 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 )
 
+// NotFound is the response copy for a git refusal.
+const NotFound string = "not found"
+
+// RepoNotFound is the response copy for a git refusal.
+const RepoNotFound string = "repository not found"
+
+// Unreachable is the response copy for a git refusal.
+const Unreachable string = "cannot reach the repositories; try again later"
+
+// Unavailable is the response copy for a git refusal.
+const Unavailable string = "repository unavailable"
+
+// TooBusy is the response copy for a git refusal.
+const TooBusy string = "too many git operations; try again later"
+
+// Stopping is the response copy for a git refusal.
+const Stopping string = "repos is stopping; try again later"
+
+// AtSizeLimit is the response copy for a git refusal.
+const AtSizeLimit string = "repository is at its size limit of %d bytes"
+
 // Config supplies the repositories, git, shared limits and event writer.
 type Config struct {
 	Store     *store.Store
@@ -76,9 +97,9 @@ func answer(w http.ResponseWriter, r *http.Request, status int, message string) 
 
 func storeAnswer(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, store.ErrNotFound) {
-		answer(w, r, 404, "repository not found")
+		answer(w, r, 404, RepoNotFound)
 	} else {
-		answer(w, r, 500, "cannot reach the repositories; try again later")
+		answer(w, r, 500, Unreachable)
 	}
 }
 
@@ -95,11 +116,11 @@ func (cfg Config) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !repo.Available {
-		answer(w, r, 503, "repository unavailable")
+		answer(w, r, 503, Unavailable)
 		return
 	}
 	if q.service == "" {
-		answer(w, r, 404, "not found")
+		answer(w, r, 404, NotFound)
 		return
 	}
 	if q.op == limits.Push {
@@ -110,13 +131,13 @@ func (cfg Config) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		if size >= cfg.Limits.Settings().RepoMaxBytes {
 			cfg.operation(r.Context(), "operation.rejected", repo.ID, q.op, "repo_max_bytes", 0)
-			answer(w, r, 507, fmt.Sprintf("repository is at its size limit of %d bytes", cfg.Limits.Settings().RepoMaxBytes))
+			answer(w, r, 507, fmt.Sprintf(AtSizeLimit, cfg.Limits.Settings().RepoMaxBytes))
 			return
 		}
 	}
 	grant, err := cfg.Limits.Acquire(r.Context(), repo.ID, q.op, q.push)
 	if err != nil {
-		limit, message := "", "too many git operations; try again later"
+		limit, message := "", TooBusy
 		switch {
 		case errors.Is(err, limits.ErrQueueFull):
 			limit = "queue_length"
@@ -124,7 +145,7 @@ func (cfg Config) serve(w http.ResponseWriter, r *http.Request) {
 			limit = "queue_seconds"
 		case errors.Is(err, limits.ErrDraining):
 			limit = "draining"
-			message = "repos is stopping; try again later"
+			message = Stopping
 		default:
 			return
 		}

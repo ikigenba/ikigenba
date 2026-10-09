@@ -148,7 +148,7 @@ func TestStatusRefusesUnreachableList(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
 	f.DB.SetFailing(true)
-	refusal(t, f.call(t, "status", "{}"), "cannot reach the repositories; try again later")
+	refusal(t, f.call(t, "status", "{}"), tools.Unreachable)
 	assertOnlyToolCalls(t, f, 0, "error")
 }
 
@@ -213,7 +213,7 @@ func TestStatusRefusesSizeFailureAfterSuccessfulList(t *testing.T) {
 			before, err := f.Store.All(toolsContext(t))
 			toolsMust(t, err)
 			disk := toolsSnapshot(t, f.Root)
-			refusal(t, f.call(t, "status", "{}"), "cannot reach the repositories; try again later")
+			refusal(t, f.call(t, "status", "{}"), tools.Unreachable)
 			after, err := f.Store.All(toolsContext(t))
 			toolsMust(t, err)
 			toolsEqual(t, after, before)

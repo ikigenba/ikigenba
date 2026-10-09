@@ -3,16 +3,17 @@ package smarthttp_test
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/repos/internal/smarthttp"
 )
 
 func TestRealClientsCloneFetchAndGzip(t *testing.T) {
@@ -240,7 +241,7 @@ func TestDynamicPackLimitAndRejectionEvents(t *testing.T) {
 }
 
 func TestSizePreflightAndOvershootFetch(t *testing.T) {
-	// R-59WS-LHAB R-5B4O-Z910 R-8U2O-W2NJ R-5CCL-D0RP
+	// R-V53X-96AB R-V6BT-MY10 R-8U2O-W2NJ R-V9ZI-S993
 	f := setup(t)
 	repo := f.create("notes")
 	size, err := f.store.Size(deadline(t), repo.ID)
@@ -263,7 +264,7 @@ func TestSizePreflightAndOvershootFetch(t *testing.T) {
 	timers := len(f.clock.timers)
 	for _, tc := range []struct{ method, path string }{{"GET", "/notes.git/info/refs?service=git-receive-pack"}, {"POST", "/notes.git/git-receive-pack"}} {
 		w := f.request(tc.method, tc.path, strings.NewReader("0000"))
-		outcome(t, w, 507, "repository is at its size limit of "+strconv.FormatInt(f.settings.RepoMaxBytes, 10)+" bytes\n")
+		outcome(t, w, 507, fmt.Sprintf(smarthttp.AtSizeLimit, f.settings.RepoMaxBytes)+"\n")
 		same(t, w.Header().Get("Retry-After"), "")
 	}
 	same(t, len(f.clock.timers), timers)

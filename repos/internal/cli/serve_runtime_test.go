@@ -19,6 +19,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
+	"github.com/ikigenba/ikigenba/repos/internal/smarthttp"
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 )
 
@@ -377,7 +378,7 @@ func TestServeInjectedQueueAndOperationTimersControlOutcomes(t *testing.T) {
 	queue := takeServeTimer(t, f, 19*time.Second)
 	queue.ch <- f.p.Now()
 	refused := finishServePush(t, second)
-	if refused.err != nil || refused.status != 503 || string(refused.body) != "too many git operations; try again later\n" || refused.headers.Get("Retry-After") != "19" {
+	if refused.err != nil || refused.status != 503 || string(refused.body) != smarthttp.TooBusy+"\n" || refused.headers.Get("Retry-After") != "19" {
 		t.Fatalf("queue timer outcome %+v", refused)
 	}
 	operation.ch <- f.p.Now()

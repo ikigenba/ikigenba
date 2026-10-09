@@ -34,7 +34,7 @@ import (
 )
 
 func TestMutationLateHeadFailurePreservesState(t *testing.T) {
-	// R-ZFD5-R5BC: a refusal after a response read fails preserves the catalog and tree.
+	// R-UO1B-WDWL: a refusal after a response read fails preserves the catalog and tree.
 	f := newToolsFixture(t)
 	var armed atomic.Bool
 	var calls atomic.Int64
@@ -63,7 +63,7 @@ func TestMutationLateHeadFailurePreservesState(t *testing.T) {
 	eventOffset := len(f.events(t))
 	armed.Store(true)
 	result := f.call(t, "rename", toolsArguments(r.ID, "journal"))
-	refusal(t, result, "cannot reach the repositories; try again later")
+	refusal(t, result, tools.Unreachable)
 	if calls.Load() < 3 {
 		t.Fatal("failure did not reach the late Head read")
 	}
@@ -230,7 +230,7 @@ func TestMutationCreateOwnerBoundariesAndConcurrentName(t *testing.T) {
 		reply := mutationTake(t, replies)
 		toolsMust(t, reply.err)
 		if _, failed := resultMembers(t, reply.result)["isError"]; failed {
-			refusal(t, reply.result, "invalid arguments:\nname: 'shared' is already one of your repositories")
+			refusal(t, reply.result, "invalid arguments:\nname: "+fmt.Sprintf(tools.NameTaken, "shared"))
 		} else {
 			successes++
 			object := mutationObject(t, reply.result)
@@ -273,24 +273,24 @@ func TestMutationRuleRefusalsPreserveAllState(t *testing.T) {
 	for _, name := range []string{" notes", "Notes", "My Drafts", "-notes", "notes.git", "no_tes", "", strings.Repeat("a", 65)} {
 		args, err := json.Marshal(map[string]string{"name": name})
 		toolsMust(t, err)
-		mutationRefusalUnchanged(t, f, "create", string(args), "invalid arguments:\nname: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit")
+		mutationRefusalUnchanged(t, f, "create", string(args), "invalid arguments:\nname: "+tools.InvalidName)
 	}
 	for _, c := range []struct{ tool, args, text string }{
-		{"create", `{"name":"notes"}`, "invalid arguments:\nname: 'notes' is already one of your repositories"},
-		{"rename", toolsArguments(notes.ID, "site"), "invalid arguments:\nname: 'site' is already one of your repositories"},
-		{"rename", toolsArguments(notes.Name, "Bad Name"), "invalid arguments:\nname: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit"},
-		{"rename", `{"repo":"drafts","name":"site"}`, "invalid arguments:\nrepo: no repository 'drafts'\nname: 'site' is already one of your repositories"},
-		{"rename", `{"repo":"drafts","name":"Bad Name"}`, "invalid arguments:\nrepo: no repository 'drafts'\nname: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit"},
-		{"rename", toolsArguments(other.ID, "site"), "invalid arguments:\nrepo: no repository '" + other.ID + "'\nname: 'site' is already one of your repositories"},
-		{"rename", toolsArguments(other.Name, "free"), "invalid arguments:\nrepo: no repository 'private'"},
-		{"delete", toolsRepoArgument(other.ID), "invalid arguments:\nrepo: no repository '" + other.ID + "'"},
-		{"delete", toolsRepoArgument("rep_zz"), "invalid arguments:\nrepo: no repository 'rep_zz'"},
+		{"create", `{"name":"notes"}`, "invalid arguments:\nname: " + fmt.Sprintf(tools.NameTaken, "notes")},
+		{"rename", toolsArguments(notes.ID, "site"), "invalid arguments:\nname: " + fmt.Sprintf(tools.NameTaken, "site")},
+		{"rename", toolsArguments(notes.Name, "Bad Name"), "invalid arguments:\nname: " + tools.InvalidName},
+		{"rename", `{"repo":"drafts","name":"site"}`, "invalid arguments:\nrepo: " + fmt.Sprintf(tools.NoRepository, "drafts") + "\nname: " + fmt.Sprintf(tools.NameTaken, "site")},
+		{"rename", `{"repo":"drafts","name":"Bad Name"}`, "invalid arguments:\nrepo: " + fmt.Sprintf(tools.NoRepository, "drafts") + "\nname: " + tools.InvalidName},
+		{"rename", toolsArguments(other.ID, "site"), "invalid arguments:\nrepo: " + fmt.Sprintf(tools.NoRepository, other.ID) + "\nname: " + fmt.Sprintf(tools.NameTaken, "site")},
+		{"rename", toolsArguments(other.Name, "free"), "invalid arguments:\nrepo: " + fmt.Sprintf(tools.NoRepository, "private")},
+		{"delete", toolsRepoArgument(other.ID), "invalid arguments:\nrepo: " + fmt.Sprintf(tools.NoRepository, other.ID)},
+		{"delete", toolsRepoArgument("rep_zz"), "invalid arguments:\nrepo: " + fmt.Sprintf(tools.NoRepository, "rep_zz")},
 	} {
 		mutationRefusalUnchanged(t, f, c.tool, c.args, c.text)
 	}
 	release, ok := f.Limits.TryHold(notes.ID)
 	toolsEqual(t, ok, true)
-	mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(notes.Name), "repository 'notes' is busy; try again once its git operations finish")
+	mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(notes.Name), fmt.Sprintf(tools.Busy, "notes"))
 	release()
 	mutationHoldReleased(t, f, notes.ID)
 }
@@ -303,7 +303,7 @@ func TestMutationFailingStoreRenameKeepsNamingPriority(t *testing.T) {
 	f.DB.SetFailing(true)
 	for _, ref := range []string{r.ID, r.Name, "missing", "rep_zz"} {
 		offset := len(f.events(t))
-		refusal(t, f.call(t, "rename", toolsArguments(ref, "Bad Name")), "invalid arguments:\nname: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit")
+		refusal(t, f.call(t, "rename", toolsArguments(ref, "Bad Name")), "invalid arguments:\nname: "+tools.InvalidName)
 		assertOnlyToolCalls(t, f, offset, "error")
 		toolsEqual(t, toolsSnapshot(t, f.Root), disk)
 	}
@@ -420,7 +420,7 @@ func TestMutationRenameUnavailableChangesCatalogAlone(t *testing.T) {
 	}
 }
 
-// R-ZQC9-72ZL R-ZXNN-HPFR R-ZRK5-KUQA
+// R-ZQC9-72ZL R-ZXNN-HPFR R-UVCQ-70CR
 func TestMutationDeleteOnlyTheNamedRepositoryAndReleaseHold(t *testing.T) {
 	for _, byID := range []bool{false, true} {
 		t.Run(fmt.Sprint(byID), func(t *testing.T) {
@@ -455,7 +455,7 @@ func TestMutationDeleteOnlyTheNamedRepositoryAndReleaseHold(t *testing.T) {
 			toolsEqual(t, toolsSnapshot(t, f.Root), disk)
 			mutationHoldReleased(t, f, r.ID)
 			mutationDomain(t, f, offset, "repo.deleted", r.ID)
-			mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(r.ID), "invalid arguments:\nrepo: no repository '"+r.ID+"'")
+			mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(r.ID), "invalid arguments:\nrepo: "+fmt.Sprintf(tools.NoRepository, r.ID))
 			mutationHoldReleased(t, f, r.ID)
 		})
 	}
@@ -504,7 +504,7 @@ func TestMutationDeleteUnavailableMissingBrokenAndRegularFile(t *testing.T) {
 	}
 }
 
-// R-ZRK5-KUQA
+// R-UVCQ-70CR
 func TestMutationDeleteWriteFailuresReleaseHold(t *testing.T) {
 	for _, failing := range []bool{false, true} {
 		t.Run(fmt.Sprint(failing), func(t *testing.T) {
@@ -524,7 +524,7 @@ func TestMutationDeleteWriteFailuresReleaseHold(t *testing.T) {
 				toolsMust(t, os.Chmod(f.Root, mode&^0222))
 			}
 			offset := len(f.events(t))
-			refusal(t, f.call(t, "delete", toolsRepoArgument(r.ID)), "cannot reach the repositories; try again later")
+			refusal(t, f.call(t, "delete", toolsRepoArgument(r.ID)), tools.Unreachable)
 			mutationHoldReleased(t, f, r.ID)
 			assertOnlyToolCalls(t, f, offset, "error")
 			f.DB.SetFailing(false)
@@ -539,7 +539,7 @@ func TestMutationDeleteWriteFailuresReleaseHold(t *testing.T) {
 	}
 }
 
-// R-8YQS-MEOV R-ZRK5-KUQA
+// R-UU4T-T8M2 R-UVCQ-70CR
 func TestMutationDeleteTryHoldBusyUsesCurrentNameAndLeavesOwnerState(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")
@@ -547,7 +547,7 @@ func TestMutationDeleteTryHoldBusyUsesCurrentNameAndLeavesOwnerState(t *testing.
 	release, ok := f.Limits.TryHold(r.ID)
 	toolsEqual(t, ok, true)
 	for _, ref := range []string{r.ID, r.Name} {
-		mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(ref), "repository 'notes' is busy; try again once its git operations finish")
+		mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(ref), fmt.Sprintf(tools.Busy, "notes"))
 		toolsEqual(t, f.Limits.Busy(r.ID), true)
 	}
 	release()
@@ -610,7 +610,7 @@ func mutationPipeWrite(t *testing.T, writer *io.PipeWriter, data []byte) {
 	toolsMust(t, mutationTake(t, done))
 }
 
-// R-8YQS-MEOV
+// R-UU4T-T8M2
 func TestMutationDeleteBusyFetchAndPushLeaveRealGitRunning(t *testing.T) {
 	for _, route := range []string{"git-upload-pack", "git-receive-pack"} {
 		t.Run(route, func(t *testing.T) {
@@ -667,7 +667,7 @@ func TestMutationDeleteBusyFetchAndPushLeaveRealGitRunning(t *testing.T) {
 			mutationAwaitGit(t, trace, strings.TrimPrefix(route, "git-"))
 			toolsEqual(t, f.Limits.Busy(r.ID), true)
 			for _, ref := range []string{r.Name, r.ID} {
-				mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(ref), "repository 'notes' is busy; try again once its git operations finish")
+				mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(ref), fmt.Sprintf(tools.Busy, "notes"))
 				toolsEqual(t, f.Limits.Busy(r.ID), true)
 				select {
 				case <-ended:
@@ -725,7 +725,7 @@ func mutationAwaitGit(t *testing.T, trace, service string) {
 	}
 }
 
-// R-8YQS-MEOV
+// R-UU4T-T8M2
 func TestMutationDeleteBusyMaintenanceLetsCycleFinish(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")
@@ -749,7 +749,7 @@ func TestMutationDeleteBusyMaintenanceLetsCycleFinish(t *testing.T) {
 	toolsEqual(t, mutationTake(t, entered), r.ID)
 	toolsEqual(t, f.Limits.Busy(r.ID), true)
 	for _, ref := range []string{r.Name, r.ID} {
-		mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(ref), "repository 'notes' is busy; try again once its git operations finish")
+		mutationRefusalUnchanged(t, f, "delete", toolsRepoArgument(ref), fmt.Sprintf(tools.Busy, "notes"))
 		toolsEqual(t, f.Limits.Busy(r.ID), true)
 		select {
 		case <-done:

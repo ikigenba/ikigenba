@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -11,7 +12,7 @@ import (
 
 func (cfg Config) create(ctx context.Context, caller identity.Caller, args createArgs) (repositoryObject, error) {
 	if !store.ValidName(args.Name) {
-		return repositoryObject{}, ruleRefusal(namingLine)
+		return repositoryObject{}, ruleRefusal("name: " + InvalidName)
 	}
 	var r store.Repo
 	var out repositoryObject
@@ -45,7 +46,7 @@ func (cfg Config) rename(ctx context.Context, caller identity.Caller, args renam
 		if errors.Is(err, store.ErrNotFound) {
 			return repositoryObject{}, cfg.renameMissing(ctx, caller, args, false)
 		}
-		return repositoryObject{}, ruleRefusal(namingLine)
+		return repositoryObject{}, ruleRefusal("name: " + InvalidName)
 	}
 	var out repositoryObject
 	var r, renamed store.Repo
@@ -91,13 +92,13 @@ func (cfg Config) renameMissing(ctx context.Context, caller identity.Caller, arg
 	repos, err := cfg.Store.List(ctx, caller.UserID)
 	if err != nil {
 		if !validName {
-			return ruleRefusal(namingLine)
+			return ruleRefusal("name: " + InvalidName)
 		}
 		return errUnreachable
 	}
 	lines := []string{missingLine(args.Repo)}
 	if !validName {
-		lines = append(lines, namingLine)
+		lines = append(lines, "name: "+InvalidName)
 	} else {
 		for _, r := range repos {
 			if r.Name == args.Name {
@@ -119,7 +120,7 @@ func (cfg Config) delete(ctx context.Context, caller identity.Caller, args repoA
 	}
 	release, ok := cfg.Limits.TryHold(r.ID)
 	if !ok {
-		return deleteOutput{}, errors.New("repository '" + r.Name + "' is busy; try again once its git operations finish")
+		return deleteOutput{}, fmt.Errorf(Busy, r.Name)
 	}
 	defer release()
 	if err := cfg.Store.Delete(ctx, r.ID); err != nil {

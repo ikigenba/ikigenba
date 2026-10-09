@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/events"
@@ -451,12 +452,12 @@ func TestClonePublicContract(t *testing.T) {
 	}
 }
 
-// R-SK41-8CAY R-SLBX-M41N R-TJH4-BOT3:
+// R-SK41-8CAY R-U3B1-EAAS R-TJH4-BOT3:
 // Construct the exact exported configs and serve a route and MCP discovery.
 func TestHandlerPublicContracts(t *testing.T) {
 	const name = web.ServiceName + ""
 	const description = web.Description + ""
-	if name != "repos" || description != "Git repositories for the suite's content" {
+	if name != "repos" || description == "" || strings.ContainsAny(description, "\"\\") || strings.ContainsFunc(description, unicode.IsControl) {
 		t.Fatal("service metadata changed")
 	}
 	f := newContractFixture(t)

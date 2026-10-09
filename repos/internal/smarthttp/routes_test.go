@@ -14,10 +14,11 @@ import (
 
 	"github.com/ikigenba/ikigenba/repos/internal/git"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
+	"github.com/ikigenba/ikigenba/repos/internal/smarthttp"
 )
 
 func TestResolutionPrecedesRoutingAndLimits(t *testing.T) {
-	// R-3KVL-SAXF R-3M3I-62O4 R-3NBE-JUET R-3OJA-XM5I R-3S70-2XDL
+	// R-UXSI-YJU5 R-V08B-Q3BJ R-V1G8-3V28 R-V2O4-HMSX R-3S70-2XDL
 	for _, state := range []string{"unknown", "foreign", "invalid", "id", "unavailable", "closed", "available"} {
 		t.Run(state, func(t *testing.T) {
 			f := setup(t)
@@ -52,15 +53,15 @@ func TestResolutionPrecedesRoutingAndLimits(t *testing.T) {
 						continue
 					}
 					w := f.request(method, "/"+name+".git"+rest, strings.NewReader("ignored"))
-					status, body := 404, "repository not found\n"
+					status, body := 404, smarthttp.RepoNotFound+"\n"
 					if state == "closed" {
-						status, body = 500, "cannot reach the repositories; try again later\n"
+						status, body = 500, smarthttp.Unreachable+"\n"
 					}
 					if state == "unavailable" {
-						status, body = 503, "repository unavailable\n"
+						status, body = 503, smarthttp.Unavailable+"\n"
 					}
 					if state == "available" {
-						body = "not found\n"
+						body = smarthttp.NotFound + "\n"
 					}
 					if method == "HEAD" {
 						body = ""
@@ -79,7 +80,7 @@ func TestResolutionPrecedesRoutingAndLimits(t *testing.T) {
 }
 
 func TestSmartRouteDefinition(t *testing.T) {
-	// R-CTQ4-6A8G R-3OJA-XM5I
+	// R-CTQ4-6A8G R-V2O4-HMSX
 	f := setup(t)
 	f.create("notes")
 	for _, tc := range []struct {
@@ -108,7 +109,7 @@ func TestSmartRouteDefinition(t *testing.T) {
 			same(t, w.Code, 200)
 			f.clock.take(t)
 		} else {
-			body := "not found\n"
+			body := smarthttp.NotFound + "\n"
 			if tc.method == "HEAD" {
 				body = ""
 			}

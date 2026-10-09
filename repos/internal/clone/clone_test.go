@@ -85,11 +85,9 @@ func TestOtherHeadersDoNotChangeBase(t *testing.T) {
 	}
 }
 
-const intro = "Git authenticates with your personal access token as the password; the username is ignored. Keep the token in the environment variable IKIGENBA_TOKEN and give it to git with this credential helper, which reads the variable whenever git asks:"
-const warning = "Or set GIT_ASKPASS to a program that prints $IKIGENBA_TOKEN. Never put the token in a remote's URL or on a command line, and never use credential.helper store: each writes it to disk in plain text."
 const helperSuffix = ".helper '!f() { test \"$1\" = get && printf \"username=token\\npassword=%s\\n\" \"$IKIGENBA_TOKEN\"; }; f'"
 
-// R-9626-X151 R-97A3-ASVQ
+// R-UWKM-KS3G R-97A3-ASVQ
 func TestGuidanceExactTextAndScope(t *testing.T) {
 	for _, tt := range []struct{ base, scope string }{
 		{"https://repos.sbx.ikigenba.dev", "https://*.sbx.ikigenba.dev"},
@@ -101,7 +99,7 @@ func TestGuidanceExactTextAndScope(t *testing.T) {
 		{"://host/path", "://*.host"}, {"https://REPOS.host", "https://*.REPOS.host"},
 	} {
 		g := clone.Guidance(tt.base)
-		if g.Intro != intro || g.Warning != warning {
+		if g.Intro != clone.Intro || g.Warning != clone.Warning {
 			t.Fatalf("guidance text for %q: %+v", tt.base, g)
 		}
 		if want := "git config --global credential." + tt.scope + helperSuffix; g.Helper != want {
@@ -172,6 +170,17 @@ func TestContextAndURLContracts(t *testing.T) {
 			if got := clone.URL(base, name); got != base+"/"+name+".git" {
 				t.Fatal("URL altered input")
 			}
+		}
+	}
+}
+
+// R-U6YQ-JLIV
+func TestGuidanceCopyConstants(t *testing.T) {
+	const intro string = clone.Intro
+	const warning string = clone.Warning
+	for _, value := range []string{intro, warning} {
+		if value == "" || strings.Contains(value, "\n") {
+			t.Fatalf("invalid guidance constant: %q", value)
 		}
 	}
 }

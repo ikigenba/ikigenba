@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"io/fs"
 	"net"
@@ -18,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -643,20 +641,7 @@ func contains(values []string, value string) bool {
 	return false
 }
 
-func pageCode(t *testing.T, body, id string) string {
-	t.Helper()
-	pattern := `<code\s+id="` + regexp.QuoteMeta(id) + `"[^>]*>(.*?)</code>`
-	if id == "clone-url" {
-		pattern = `<p\s+id="clone-url"[^>]*>.*?<code[^>]*>(.*?)</code>`
-	}
-	match := regexp.MustCompile("(?s)" + pattern).FindStringSubmatch(body)
-	if len(match) != 2 {
-		t.Fatalf("missing code hook %s", id)
-	}
-	return html.UnescapeString(match[1])
-}
-
-// R-C1Z1-1DA5 R-Y24S-U2EW: Observe the handler's entire output for pages,
+// R-C1Z1-1DA5 R-VCFB-JSQH: Observe the handler's entire output for pages,
 // MCP successes and refusals, all four git routes, and route/identity failures.
 func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
@@ -702,11 +687,8 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 	}
 	for _, c := range cs {
 		with := credentialHTTP(t, server.URL, http.MethodGet, "/", c.header, true, "", "")
-		if strings.Join(strings.Fields(pageCode(t, plain.Body.String(), "clone-url")), " ") != strings.Join(strings.Fields(pageCode(t, with.Body.String(), "clone-url")), " ") {
-			t.Error("landing clone address depends on Authorization")
-		}
-		if pageCode(t, plain.Body.String(), "git-helper") != pageCode(t, with.Body.String(), "git-helper") {
-			t.Error("landing helper depends on Authorization")
+		if !bytes.Equal(plain.Body.Bytes(), with.Body.Bytes()) {
+			t.Error("landing body depends on Authorization")
 		}
 		if withShow := callTool(t, toolClient(server.URL, c.header), "show", `{"repo":"stable"}`, false); !bytes.Equal(plainShow, withShow) {
 			t.Error("show structuredContent depends on Authorization")
@@ -754,7 +736,7 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 	}
 	for _, c := range cs {
 		response := credentialHTTP(t, server.URL, http.MethodGet, "/stable.git/info/refs?service=git-upload-pack", c.header, true, "", "")
-		if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "repository unavailable") {
+		if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), smarthttp.Unavailable) {
 			t.Fatal("unavailable refusal was not exercised")
 		}
 	}

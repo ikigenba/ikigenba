@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
 	"github.com/ikigenba/ikigenba/repos/internal/server"
+	"github.com/ikigenba/ikigenba/repos/internal/smarthttp"
 )
 
 // R-Q9TK-A3F3 R-QB1G-NV5S R-3TO0-YS59 R-QJKR-C9CN R-4FLE-JOQW
@@ -51,7 +52,7 @@ func TestServeGracefulPushAndImmediateQueuedDrain(t *testing.T) {
 			cancelled := time.Now()
 			f.cancel(errors.New("graceful test"))
 			rejected := finishServePush(t, second)
-			if rejected.err != nil || rejected.status != 503 || string(rejected.body) != "repos is stopping; try again later\n" || rejected.headers.Get("Retry-After") != "30" {
+			if rejected.err != nil || rejected.status != 503 || string(rejected.body) != smarthttp.Stopping+"\n" || rejected.headers.Get("Retry-After") != "30" {
 				t.Fatalf("queued drain response %+v", rejected)
 			}
 			// The queued request was refused while the first request remains in flight.

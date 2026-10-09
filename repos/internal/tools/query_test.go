@@ -65,7 +65,7 @@ func assertOnlyToolCalls(t *testing.T, f *toolsFixture, offset int, outcomes ...
 }
 
 // R-7Y5T-5AG1 R-81TI-ALO4 R-Q4HR-3JLU R-849B-255I
-// R-85H7-FWW7 R-86P3-TOMW R-ZSS1-YMGZ R-8BKP-CRLO
+// R-85H7-FWW7 R-86P3-TOMW R-USWX-FGVD R-8BKP-CRLO
 func TestQueryListAndShowReadCurrentOwnerRepositories(t *testing.T) {
 	f := newToolsFixture(t)
 	zeta := f.create(t, f.Caller.UserID, "zeta")
@@ -107,7 +107,7 @@ func TestQueryListAndShowReadCurrentOwnerRepositories(t *testing.T) {
 	toolsEqual(t, string(successObject(t, f.call(t, "list", "{}"))), `{"repos":[`+queryListing(t, f, alpha, "")+`,`+queryListing(t, f, zeta, head)+`]}`)
 }
 
-// R-80LL-WTXF R-81TI-ALO4 R-ZJ0U-WGJF R-8BKP-CRLO
+// R-URP1-1P4O R-81TI-ALO4 R-ZJ0U-WGJF R-8BKP-CRLO
 func TestQueryMissingRepositoryAndRuleVocabulary(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
@@ -118,13 +118,13 @@ func TestQueryMissingRepositoryAndRuleVocabulary(t *testing.T) {
 	calls := 0
 	for _, ref := range []string{other.Name, other.ID, "rep_ffffffffffffffff", "rep_zz", "Not Valid", "", "quoted'\nvalue"} {
 		for _, name := range []string{"show", "delete"} {
-			refusal(t, f.call(t, name, toolsRepoArgument(ref)), "invalid arguments:\nrepo: no repository '"+ref+"'")
+			refusal(t, f.call(t, name, toolsRepoArgument(ref)), "invalid arguments:\nrepo: "+fmt.Sprintf(tools.NoRepository, ref))
 			calls++
 		}
 	}
-	refusal(t, f.call(t, "create", `{"name":"Bad Name"}`), "invalid arguments:\nname: must be 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit")
-	refusal(t, f.call(t, "create", `{"name":"notes"}`), "invalid arguments:\nname: 'notes' is already one of your repositories")
-	refusal(t, f.call(t, "rename", `{"repo":"missing","name":"notes"}`), "invalid arguments:\nrepo: no repository 'missing'\nname: 'notes' is already one of your repositories")
+	refusal(t, f.call(t, "create", `{"name":"Bad Name"}`), "invalid arguments:\nname: "+tools.InvalidName)
+	refusal(t, f.call(t, "create", `{"name":"notes"}`), "invalid arguments:\nname: "+fmt.Sprintf(tools.NameTaken, "notes"))
+	refusal(t, f.call(t, "rename", `{"repo":"missing","name":"notes"}`), "invalid arguments:\nrepo: "+fmt.Sprintf(tools.NoRepository, "missing")+"\nname: "+fmt.Sprintf(tools.NameTaken, "notes"))
 	calls += 3
 	after, err := f.Store.All(toolsContext(t))
 	toolsMust(t, err)
@@ -195,7 +195,7 @@ func queryContextClient(t *testing.T, f *toolsFixture, decorate func(context.Con
 
 type queryRequestCancel struct{ cancel context.CancelFunc }
 
-// R-ZSS1-YMGZ R-8BKP-CRLO
+// R-USWX-FGVD R-8BKP-CRLO
 func TestQueryRefusesWhenHeadFailsAfterReadingRepository(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")
@@ -236,7 +236,7 @@ func TestQueryRefusesWhenHeadFailsAfterReadingRepository(t *testing.T) {
 		successObject(t, f.call(t, name, args))
 		armed.Store(true)
 		calls := gitCalls.Load()
-		refusal(t, f.call(t, name, args), "cannot reach the repositories; try again later")
+		refusal(t, f.call(t, name, args), tools.Unreachable)
 		if gitCalls.Load() <= calls {
 			t.Fatal("call did not reach the real git used by Store.Head")
 		}

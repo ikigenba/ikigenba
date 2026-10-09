@@ -69,7 +69,7 @@ func TestIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-QUJU-S70W R-QVRR-5YRL R-QY7J-XI8Z R-BK5S-SDUX
+// R-QUJU-S70W R-U9EJ-B509 R-QY7J-XI8Z R-BK5S-SDUX
 func TestExactRoutesAndNotFound(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -82,7 +82,7 @@ func TestExactRoutesAndNotFound(t *testing.T) {
 			r.Header.Set("X-Original-URI", "/")
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
-			want := "not found\n"
+			want := smarthttp.NotFound + "\n"
 			if method == "HEAD" {
 				want = ""
 			}
@@ -215,7 +215,7 @@ func webTool(t *testing.T, client *mcp.Client, caller identity.Caller, name, arg
 	return envelope.Structured
 }
 
-// R-E2V9-TR63
+// R-UAMF-OWQY
 func TestNoSiblingConnections(t *testing.T) {
 	f := newWebFixture(t)
 	dir, err := os.MkdirTemp("", "repos-web-")
@@ -277,7 +277,7 @@ func TestNoSiblingConnections(t *testing.T) {
 	}
 }
 
-// R-R4B1-UCYG R-8394-513A R-BLDP-65LM R-R6QU-LWFU R-RCUC-IR5B
+// R-UBUC-2OHN R-8394-513A R-UD28-GG8C R-R6QU-LWFU R-RCUC-IR5B
 func TestRequestTraceAcrossRoutes(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -319,10 +319,10 @@ func TestRequestTraceAcrossRoutes(t *testing.T) {
 		if len(events) != 2 {
 			t.Fatalf("simple route emitted domain event: %v", events)
 		}
-		if tc.path == "/nope" && w.Body.Len() != 10 {
+		if tc.path == "/nope" && w.Body.Len() != len(smarthttp.NotFound)+1 {
 			t.Fatal("404 byte count fixture wrong")
 		}
-		if tc.path == "/ghost.git/info/refs" && w.Body.Len() != 21 {
+		if tc.path == "/ghost.git/info/refs" && w.Body.Len() != len(smarthttp.RepoNotFound)+1 {
 			t.Fatal("unknown-repository byte count fixture wrong")
 		}
 	}
@@ -495,7 +495,7 @@ func TestGitPostCountsLengthAndChunkedBodies(t *testing.T) {
 	}
 }
 
-// R-E436-7IWS R-3JWT-WM7P R-R6QU-LWFU R-R4B1-UCYG
+// R-E436-7IWS R-3JWT-WM7P R-R6QU-LWFU R-UBUC-2OHN
 func TestDomainAndToolTraceNames(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -876,7 +876,7 @@ func TestConcurrentRequestsKeepTheirOwnCallers(t *testing.T) {
 	}
 }
 
-// R-BLDP-65LM
+// R-UD28-GG8C
 func TestSharedPathsEmitOnlyRequestTrace(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
