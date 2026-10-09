@@ -159,13 +159,13 @@ func TestDeclarationsAndValidation(t *testing.T) {
 			t.Fatal(v)
 		}
 	}
-	// R-KIFY-Q2A6
-	for _, v := range []string{"a", "0", "a-", "about-us", "mcp-notes", "api-docs", strings.Repeat("a", 64)} {
+	// R-X1BG-R406
+	for _, v := range []string{"a", "0", "a-", "about-us", "mcp-notes", "api-docs", "tools-x", strings.Repeat("a", 64)} {
 		if !store.ValidName(v) {
 			t.Fatal(v)
 		}
 	}
-	for _, v := range []string{"", "about", "mcp", "api", "Docs", " docs", "-docs", strings.Repeat("a", 65), "é", "a/b", "a_b", "a\x00"} {
+	for _, v := range []string{"", "about", "mcp", "api", "tools", "Docs", " docs", "-docs", strings.Repeat("a", 65), "é", "a/b", "a_b", "a\x00"} {
 		if store.ValidName(v) {
 			t.Fatal(v)
 		}

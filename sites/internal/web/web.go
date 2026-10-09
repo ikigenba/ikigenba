@@ -39,9 +39,14 @@ func Handler(cfg Config) http.Handler {
 		panic(err)
 	}
 	tools.Register(cfg.MCP, tools.Config{Store: cfg.Store, Cache: cfg.Cache, Limits: cfg.Limits, Telemetry: cfg.Telemetry})
+	registered := cfg.MCP.Tools()
+	pageTools := make([]pages.Tool, len(registered))
+	for i, tool := range registered {
+		pageTools[i] = pages.Tool{Name: tool.Name, Description: tool.Description}
+	}
 	sc := serving.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Cache: cfg.Cache, Telemetry: cfg.Telemetry, Rand: cfg.Rand}
 	apex, sites := serving.Apex(sc), serving.Sites(sc)
-	p := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store})
+	p := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Tools: pageTools})
 	static := page.Static()
 	endpoint := identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.MCP.ServeHTTP(w, r.WithContext(urls.NewContext(r.Context(), urls.SitesURL(r, cfg.ServicesPath))))
@@ -59,7 +64,7 @@ func Handler(cfg Config) http.Handler {
 		switch {
 		case r.URL.Path == "/mcp":
 			endpoint.ServeHTTP(w, r)
-		case r.URL.Path == "/" || r.URL.Path == "/about":
+		case r.URL.Path == "/" || r.URL.Path == "/about" || r.URL.Path == "/tools":
 			p.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/_appkit/"):
 			static.ServeHTTP(w, r)

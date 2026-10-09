@@ -52,6 +52,15 @@ type AboutData struct {
 	Description string
 }
 
+// Tool supplies a tool's name and description to the tools page.
+type Tool struct{ Name, Description string }
+
+// ToolsData supplies the banner and ordered tools to the tools page.
+type ToolsData struct {
+	Banner page.Banner
+	Tools  []Tool
+}
+
 // NoticeData supplies the footer of a notice page.
 type NoticeData struct{ Banner page.Banner }
 
@@ -61,9 +70,10 @@ type Config struct {
 	Pages        *Set
 	ServicesPath string
 	Store        *store.Store
+	Tools        []Tool
 }
 
-// Handler serves the landing and about pages to signed-in callers.
+// Handler serves the landing, about and tools pages to signed-in callers.
 func Handler(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -97,9 +107,16 @@ func Handler(cfg Config) http.Handler {
 		}
 		banner := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
 		if r.URL.Path == "/about" {
+			banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
 			cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{Banner: banner, Description: Description})
 			return
 		}
+		if r.URL.Path == "/tools" {
+			banner.Trail = []page.Level{{Name: "tools", URL: "/tools"}}
+			cfg.Pages.Write(w, r, http.StatusOK, "tools", ToolsData{Banner: banner, Tools: cfg.Tools})
+			return
+		}
+		banner.Trail = nil
 		cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: banner, SitesURL: base, Sites: rows})
 	})
 }

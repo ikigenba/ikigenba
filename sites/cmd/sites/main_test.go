@@ -152,7 +152,7 @@ func TestBinary(t *testing.T) {
 		f.stop(t, sig)
 		assertUndelivered(t, f.stderr.String(), sig, v)
 	}
-	// R-ZC7F-ATFV R-ZDFB-OL6K
+	// R-ZC7F-ATFV R-AWET-8KRE
 	emptyWork := filepath.Join(root, "empty-sites")
 	if err := os.Mkdir(emptyWork, 0700); err != nil {
 		t.Fatal(err)
@@ -475,6 +475,7 @@ func assertBinaryPage(t *testing.T, f *binaryFixture, path, display, servicesPat
 	var data any = pages.LandingData{Banner: b, SitesURL: urls.SitesURL(r, servicesPath)}
 	if path == "/about" {
 		name = "about"
+		b.Trail = []page.Level{{Name: "about", URL: "/about"}}
 		data = pages.AboutData{Banner: b, Description: pages.Description}
 	}
 	templates, err := page.Templates().ParseFS(sites.Assets(), "*.html")
