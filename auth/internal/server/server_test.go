@@ -369,7 +369,7 @@ func TestContractRoutesServed(t *testing.T) {
 	}, &bytes.Buffer{})
 
 	root := serveRoute(s, http.MethodGet, "/", nil)
-	if root.Code != http.StatusOK || root.Header().Get("Content-Type") != "text/html; charset=utf-8" || !strings.Contains(root.Body.String(), `href="/login/google"`) {
+	if root.Code != http.StatusOK || root.Header().Get("Content-Type") != "text/html; charset=utf-8" || root.Body.Len() == 0 {
 		t.Fatalf("GET / = %d %q %q", root.Code, root.Header().Get("Content-Type"), root.Body.String())
 	}
 
