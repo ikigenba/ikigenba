@@ -18,7 +18,7 @@ The requirements below state what this package does, never what SQLite does: the
 
 ## The failure seam
 
-Every service has a story about what happens when its database cannot be written. Breaking a database on purpose is hard under WAL: removing a directory's write permission no longer fails the next write on a connection that is already open. So the handle carries a switch for tests: `SetFailing(true)` makes every `Read` and `Write` on that handle fail until `SetFailing(false)`. A test stores real rows first, flips the switch, checks the service's error path, flips it back and finds the rows intact. It is meant for tests only; a service never calls it in production.
+Every service's design says what happens when its database cannot be written. Breaking a database on purpose is hard under WAL: removing a directory's write permission no longer fails the next write on a connection that is already open. So the handle carries a switch for tests: `SetFailing(true)` makes every `Read` and `Write` on that handle fail until `SetFailing(false)`. A test stores real rows first, flips the switch, checks the service's error path, flips it back and finds the rows intact. It is meant for tests only; a service never calls it in production.
 
 ## REQUIREMENTS
 
