@@ -2,7 +2,8 @@
 
 The browser sign-in flow, its Google/OIDC client, and the terms every page
 auth draws is described in. A visitor lands on `/`, which is the sign-in page when
-there is no live session and the profile when there is. `/login/google` starts
+there is no live session and the profile when there is; `/about` is the
+about page for a signed-in user and the same sign-in page for anyone else. `/login/google` starts
 a Google sign-in; `/login/google/callback` finishes it; `POST /logout` ends a
 session. All of this attaches its observable HTTP behavior to
 `internal/server`'s router (D03 owns the router itself), and it speaks to
@@ -146,7 +147,7 @@ auth's pages adopt the platform's visual design, defined in the repository's
 receives; its words, its markup, its link targets and form targets live in that
 template, never in this design. Every page auth draws is a template of auth's
 template set (D01), all of them human-authored files under `assets/`, and every
-page but D09's approve page is drawn by the template `page`, which draws the
+page but D09's approve page and the about page is drawn by the template `page`, which draws the
 sign-in card alone for a visitor who is not signed in and otherwise the banner,
 one main and the footer through `chrome`. Its data, the **auth page data**,
 carries the banner and exactly one of four parts: the sign-in data, the profile
@@ -218,12 +219,39 @@ auth page data carries the zero banner.
 appkit's design fixes what the banner and the footer show (its
 D03-page-templates). appkit's `footer` template, given the same data, writes the
 page's footer. So auth states only that the page carries the text the `banner`
-template writes for the data the call returned, the **appkit banner**, and after
+template writes for the page banner (below), the **appkit banner**, and after
 it the text the `footer` template writes for that same data, the **appkit
 footer**. A test builds the server with its own `Banner` closure and compares
-the page with `page` executed with the auth page data holding the banner its
-closure returned. The profile, D07's token-created page, D07's rejected-create
+the page with its template executed with the data holding the page banner
+built from what its closure returned. The profile, the about page, D07's token-created page, D07's rejected-create
 page, and D09's approve page are drawn with the banner.
+
+appkit's banner also draws a trail of levels after the service's mark and a
+page menu whose rows are the landing page, the tool list when the banner's
+`Tools` is set, and the about page. `Kit.Banner` returns no trail; the app
+sets one per page after the call. auth's banner is drawn from the **page
+banner**: the value the `Banner` call returned with its `Trail` replaced,
+holding exactly one level, `about` at `/about`, on the about page and none on
+every other page, so the profile is the landing row's current page and the
+about page the About row's. auth is not an MCP service, so `Tools` stays
+whatever the call returned, false for auth on a host, and auth has no tool
+list page. A test's closure returns a banner with `Tools` true, a non-empty `Home` and a
+trail of its own, and the test compares the page with the template executed
+with the page banner, so a trail auth failed to replace, or a field it
+altered, shows as a difference.
+
+The **about page** at `/about` is the template `about` executed with
+`server.AboutData`: the page banner and `server.Description`, auth's
+one-line description, a copy constant whose words the source holds and which
+the manifest publishes too (D02). It is served like the profile: `GET` and
+`HEAD` (whose body `net/http` drops on a connection), the signed-in user
+resolved from the session cookie without touching the session, any `?return`
+ignored, and nothing changed. A visitor with no live session gets exactly
+what `GET /` gives that visitor, the sign-in page drawn from the request's
+own sign-in data, so the sign-in link carries that request's `?return` as it
+would at `/`. Any other method is refused `405` with `Allow: GET, HEAD`, as
+the router refuses one at `/`. The about page offers no link of its own; the
+banner's trail is the way back.
 
 The profile at `/` is drawn from the **profile data**: the apex, the user's
 email, the workspace, the user's personal tokens as D07's token rows, an empty
@@ -315,14 +343,15 @@ were recorded.
 - R-TDT1-EEZM: For each `GET /login/google/callback` auth answers `302` having set the session cookie (R-IXO8-WV9S), auth MUST record exactly one event named `user.signed_in`, whose envelope request id is the request's request id, whose envelope user is the `ID` of the `User` that `UpsertUserOnLogin` (D04) returned for the request — the owner of the session the cookie names — and which has no attributes.
 - R-TF0X-S6QB: For each `POST /logout` auth answers `302` (R-GTFK-3N43), auth MUST record exactly one event named `user.signed_out`, whose envelope request id is the request's request id, which has no attributes, and whose envelope user is the `UserID` of the `Identity` that `LookupSessionIdentity` (D04) returns, at the time the server's clock reads while handling the request, for the session the request's `SessionCookieName` cookie names when that session is live, and empty when the request carries no such cookie or the cookie names no live session.
 - R-V5JJ-XKH4: For each `GET /login/google/callback` auth answers `400` (R-IV8G-5BSE), `200` with the cancelled page (R-V4BN-JSQF), `403` (R-U14O-MUY4), or `502` (R-TA5C-93RJ), auth MUST record exactly one event named `sign_in.refused`, whose envelope request id is the request's request id, whose envelope user is empty, and whose attributes are exactly the one key `reason` with the `string` value `unknown_state`, `cancelled`, `not_member`, or `provider_failed` respectively.
-- R-V6RG-BC7T: For a request whose path is `/`, `/login/google`, `/login/google/callback`, or `/logout`, auth MUST record no event other than its `request.started` and `request.finished` events and the events R-TBD8-MVI8, R-TDT1-EEZM, R-TF0X-S6QB, and R-V5JJ-XKH4 require of it; so a request auth answers `500` (D03), a `GET /` or `GET /login/google` whatever its answer, and a `POST /logout` answered `403` record no other event.
+- R-RUWC-RLW7: For a request whose path is `/`, `/about`, `/login/google`, `/login/google/callback`, or `/logout`, auth MUST record no event other than its `request.started` and `request.finished` events and the events R-TBD8-MVI8, R-TDT1-EEZM, R-TF0X-S6QB, and R-V5JJ-XKH4 require of it; so a request auth answers `500` (D03), a `GET /`, `GET /about` or `GET /login/google` whatever its answer, and a `POST /logout` answered `403` record no other event.
 - R-TIOM-XHYE: No event auth records — its envelope request id, envelope user, and every attribute value — MUST contain, other than where it coincides with a value a requirement of auth's design states for that field, the value of any cookie the request carries, a session id auth minted, a token secret, a user's email, an ID token's email, a token's `Name`, an authorization `code` or login `state`, a return URL, or the text after the first `?` of the request's URL or of its `X-Original-URI` header.
 - R-V7ZC-P3YI: When auth serves its own host on a space, `GET https://auth.<space>/` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and the sign-in page (R-VCUY-86XA) as its body.
 - R-3GUK-F9PN: auth's design defines an **auth page** as a response body that a requirement of auth's design states is an auth page or is drawn with the banner; every requirement of auth's design that names an auth page MUST denote that.
 - R-VAF5-GNFW: Every value auth writes into an auth page that it takes from the request, from Google, from `WORKSPACE_DOMAIN`, or from the store MUST contribute no `<` and no `>` character to the page's bytes.
 - R-3I2G-T1GC: auth's design defines the **apex name** of a request as the result of taking the request's `Host` as sent, removing a trailing `:` followed by one or more ASCII digits, and keeping the last two of the remaining text's `.`-separated labels joined by `.`, or the whole remaining text when it has fewer than two labels, so that `auth.sbx.ikigenba.dev` gives `ikigenba.dev`; every requirement of auth's design that names the apex name of a request MUST denote that.
 - R-4ZBA-OGOE: auth's design defines the **banner user** for a user as the `page.User` value, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`, whose `Email` is that user's email — the `Email` of the `store.Identity` (D04) the request's session resolves to — whose `ProfileURL` is `/`, and whose `LogoutURL` is `/logout`; every requirement of auth's design that names the banner user for a user MUST denote that.
-- R-50J7-28F3: auth's design defines the **appkit banner** of a response as the text written by executing the template named `banner` in a set that `page.Templates()` returns, with its data the `page.Banner` value that the `Banner` field of the `server.Config` passed to `server.New` (D03) returned from the call the server made to it while answering that response's request; every requirement of auth's design that names the appkit banner MUST denote that.
+- R-RL55-PFYN: auth's design defines the **page banner** of a response as the `page.Banner` value, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`, that the `Banner` field of the `server.Config` passed to `server.New` (D03) returned from the call the server made to it while answering that response's request, with its `Trail` replaced — for the about page (R-RQ0R-8IXF) by a slice holding exactly one `page.Level`, whose `Name` is `about` and whose `URL` is `/about`, and for every other response by a slice of length zero — and its other fields unaltered; every requirement of auth's design that names the page banner MUST denote that value.
+- R-RNKY-GZG1: auth's design defines the **appkit banner** of a response as the text written by executing the template named `banner` in a set that `page.Templates()` returns, with its data the response's page banner (R-RL55-PFYN); every requirement of auth's design that names the appkit banner MUST denote that.
 - R-51R3-G05S: auth's design defines the **appkit footer** of a response as the text written by executing the template named `footer` in a set that `page.Templates()` returns, with its data the same `page.Banner` value the response's appkit banner is written from; every requirement of auth's design that names the appkit footer MUST denote that.
 - R-VBN1-UF6L: auth's design defines an auth page **drawn with the banner** for a user as a response body answering a request during which the server called the `Banner` field of its `server.Config` with the banner user for that user as the argument, and whose bytes hold that call's appkit banner and, after it, that call's appkit footer; every page a requirement of auth's design states is drawn with the banner for a user MUST be so.
 - R-PT80-EZ08: While answering a request whose response body a requirement of auth's design states is drawn with the banner for a user, the server MUST call the `Banner` field of its `server.Config` exactly once, with the banner user for that user as the argument; while answering any other request it MUST NOT call it, so that the sign-in page, the cancelled page, the non-member page, a plain-text failure, a redirect, `/check`, and a request under `page.StaticPrefix` never cause a read of the services file.
@@ -342,7 +371,14 @@ were recorded.
 - R-3O5Y-PW5T: The cancelled page (R-V4BN-JSQF) MUST be an auth page, and MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `SignIn` points to the request's sign-in data (R-3JAD-6T71) for the refusal `cancelled` and the empty email, and whose other fields are their zero values, the zero `page.Banner` included.
 - R-3PDV-3NWI: The `403` body R-U14O-MUY4 requires for a non-member result — the **non-member page** — MUST be an auth page, and MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `SignIn` points to the request's sign-in data (R-3JAD-6T71) for the refusal `not_member` and the email that is the verified ID token's `Claims.Email`, and whose other fields are their zero values, the zero `page.Banner` included.
 - R-3LQ5-YCOF: auth's design defines the **profile data** of a `GET /` answered with the profile (R-VK6C-ITDG) as the `profilePageData` whose `Apex` is the request's apex name (R-3I2G-T1GC); whose `Email` is the `Email` of the `store.Identity` that `LookupSessionIdentity` (D04) resolves for the request's session; whose `Workspace` is the value of `WORKSPACE_DOMAIN`; whose `Rows` holds exactly one element for each token of `Kind` `store.TokenPersonal` among the tokens `ListTokens` (D04) returns for that identity's user, the token row (D07) of that token for the profile's draw time (D07), the element of a token `a` lying before that of a token `b` whenever `a` precedes `b` in profile order (D07); whose `Create` is the empty create data (D07); and whose `Clients` is the profile's MCP clients data (D07); every requirement of auth's design that names the profile data MUST denote that value.
-- R-3RTN-V7DW: The profile (R-VK6C-ITDG) MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `Banner` is the `page.Banner` that the server's one call of the `Banner` field of its `server.Config` while answering the request (R-PT80-EZ08) returned, whose `Profile` points to the request's profile data (R-3LQ5-YCOF), and whose `SignIn`, `Create` and `Created` are nil.
+- R-ROSU-UR6Q: The profile (R-VK6C-ITDG) MUST be exactly the text that executing the template `page` of auth's template set (D01) writes with the `authPageData` whose `Banner` is the response's page banner (R-RL55-PFYN), whose `Profile` points to the request's profile data (R-3LQ5-YCOF), and whose `SignIn`, `Create` and `Created` are nil.
+- R-RHHG-K4QK: The `internal/server` package MUST export `const Description string`, a non-empty copy constant whose words the source holds: auth's one-line description, holding no `"`, no `\` and no control character, so that it stands unescaped inside a TOML basic string.
+- R-RIPC-XWH9: The `internal/server` package MUST export `type AboutData struct { Banner page.Banner; Description string }`, with exactly these fields in this order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`.
+- R-RJX9-BO7Y: The `*Server` returned by `server.New` (D03) MUST serve the route `/about` for the methods `GET` and `HEAD`, matched on the exact `URL.Path`.
+- R-RQ0R-8IXF: A `GET /about` or `HEAD /about` with a live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body — the **about page** — that is an auth page drawn with the banner for the user `LookupSessionIdentity` resolves for that session; it MUST resolve the identity via `LookupSessionIdentity` (no touch), MUST ignore any `?return`, and MUST NOT change any state.
+- R-RR8N-MAO4: The about page (R-RQ0R-8IXF) MUST be exactly the text that executing the template `about` of auth's template set (D01) writes with the `server.AboutData` whose `Banner` is the response's page banner (R-RL55-PFYN) and whose `Description` is `server.Description`.
+- R-RSGK-02ET: A `GET /about` or `HEAD /about` with no live session MUST be answered with the same status, the same `Content-Type` value and the same body with which the same server, in the same state, answers a `GET /` with no live session whose `Host`, query and other headers are the same — the sign-in page (R-VCUY-86XA) drawn from that request's sign-in data — and MUST change no state.
+- R-RTOG-DU5I: A request whose `URL.Path` is exactly `/about` and whose method is neither `GET` nor `HEAD` — `POST`, `PUT`, `PATCH` and `DELETE` included — MUST be answered `405` with exactly one `Allow` header, whose value is exactly `GET, HEAD`, whatever cookie it carries, and MUST change no state.
 - R-3QLR-HFN7: For every request for the sign-in page whose sign-in data (R-3JAD-6T71) for the empty refusal and the empty email has a non-empty `Return` `x`, a `GET /login/google` whose URL query is exactly `return=` followed by `x` MUST record, as the return URL of the login state it creates via `CreateLoginState` (R-PPR1-WF0Y), exactly the return URL that request for the sign-in page carries, byte for byte, whatever bytes it holds; and a `GET /login/google` whose URL has no query MUST record no return URL.
 - R-7BJB-2Q3J: When `AuthCodeURL` returns a nil error during `GET /login/google` (R-TB6T-ZBSY), with the URL `u`, auth's answer MUST have the status, the `Location` and `Content-Type` header values, and the body that the standard library's `http.Redirect` writes when called with a `ResponseWriter` whose header map is empty, a request with the same method and URL, `u`, and `http.StatusFound`; so that the body is the standard library's and holds no markup of auth's own.
 - R-40CY-JLKR: The sign-in page (R-VCUY-86XA), the cancelled page (R-V4BN-JSQF) and the non-member page (R-3PDV-3NWI), their bytes read as the HTML Standard parses an HTML document, MUST each offer, among the hyperlink targets they offer, the target `/login/google` followed, when the `Return` of the sign-in data (R-3JAD-6T71) the page is drawn from is not empty, by `?return=` and that `Return`, and by nothing when that `Return` is empty, whatever other targets the page offers.
