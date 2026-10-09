@@ -29,6 +29,12 @@ design/
                     one run: details, input, output, files, other states
     events.html     events' landing: its subscribers and its MCP tools
     cron.html       cron's landing: the space's triggers and its MCP tools
+    prompts.html    prompts' catalog: your prompts and their last runs
+    prompts-prompt.html
+                    one prompt: its fields, subscriptions and runs
+    prompts-run.html
+                    one run: details, usage and cost, answer, transcript,
+                    files, other states
     icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
@@ -193,6 +199,47 @@ service `cron`, `cron v0.1.0`.
 - Trigger status reads as a `.status` word whose `data-status` is the status:
   active is ok, paused is warn. Times are UTC to the minute in a `time`
   carrying the RFC 3339 moment; a cell with no time is empty.
+
+**prompts.html, prompts-prompt.html, prompts-run.html** — prompts at
+`prompts.acme.ikigenba.com`, prompts run by an agent over the suite's models,
+three levels deep like scripts: the catalog, one prompt, one run. Banner and
+footer as in app.html, the service `prompts` with the Tabler `prompt` glyph,
+`prompts v0.1.0`. Where a part is the same as scripts' it keeps scripts'
+hooks, words and states; what differs is listed here.
+- The catalog: `h1` prompts, a lede, the user's own prompts as
+  `table#prompt-list` of Prompt / Model / Last run / Cost / When:
+  `daily-digest` (`claude-sonnet-5`, exited 0, its cost), `triage-inbox`
+  (running, no cost yet), `summarize-crm` (exited 2), `echo` (never run). An
+  MCP tools list naming `list`, `show`, `create`, `update`, `delete`,
+  `subscribe`, `unsubscribe`, `run`, `runs`, `result`, `cancel`, and a link
+  to the about screen. State: no prompts (`div#no-prompts.empty`).
+- One prompt, `daily-digest`: breadcrumb prompts / daily-digest; a line
+  naming the model and the tool groups; `section#prompt-card`, a key/value
+  card (id, model, tools as `span#tool-groups` of one `code[data-group]` per
+  group, created, runs kept); then `section#text` (the prompt text),
+  `section#system` (the system prompt) and `section#schema` (the output
+  schema), each a `pre`; then subscriptions as scripts'; then the runs table,
+  newest first, Run / Status / Model / Started / Duration / Cost / Exit, with
+  one row per status, queued included. States: no tools (`span#no-tools`,
+  "none"), no system prompt (`div#no-system.empty`), no schema
+  (`div#no-schema.empty`), no subscriptions, no runs.
+- One run: breadcrumb prompts / daily-digest / `prr_3f9a1c2e8b7d4a60`; a
+  headline of status, start time, duration and cost; the run card (status,
+  prompt, model, started, finished, duration, trigger, user, request, usage,
+  cost, output sizes). The usage line, `dd#usage`, reads calls, tool calls,
+  input tokens with the cached ones in parentheses, output tokens and
+  reasoning tokens; the cost, `dd#cost`. Then, in this order, each with a
+  Download button: Answer (`section#stdout`, the `stdout` file, here the JSON
+  object the schema asked for), Standard error, Input (`input.json`, here the
+  delivered event), Transcript (`section#transcript`, `transcript.jsonl`, a
+  size and a download, not rendered), and Files, the `work/` folder as
+  scripts' table. States: still running (reload; usage is counted when the
+  run ends), timed out with output truncated and the usage it spent, a
+  provider failure (exited 1, the category in `stderr`), failed to start
+  (never left the queue), started by the `run` tool, files gone.
+- Run status reads as scripts' `.status` word, queued and running info.
+  Cost is US dollars to six decimal places (`$0.023714`), from the run's
+  nano-dollar count; a run that has not ended shows no cost.
 
 **login.html** — auth at `auth.acme.ikigenba.com`.
 - Sign-in: product mark, "Sign in to acme", note that access is limited to

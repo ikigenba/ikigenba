@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prompts</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+  <strong class="mark" data-service="prompts"><img src="favicon.svg" alt="">Ikigenba<span class="service"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l5 5l-5 5"/><path d="M13 17l6 0"/></svg>prompts</span></strong>
+  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+</header>
+
+<main>
+  <h1>prompts</h1>
+  <p id="summary" class="lede">Prompts run by an agent over the suite's models. An agent creates a prompt, naming a model and the text, and runs it; every run keeps its folder, its answer, its transcript and what it cost here.</p>
+
+  <section id="prompts" class="card flush" aria-labelledby="prompts-title">
+    <header>
+      <div>
+        <h2 id="prompts-title">Your prompts</h2>
+        <p>Each one is a model and the text it is given. A run is one turn: the model reads the text and the input, uses the tools the prompt allows, and its final message is the answer.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="prompt-list">
+        <thead><tr><th>Prompt</th><th>Model</th><th>Last run</th><th class="num">Cost</th><th>When</th></tr></thead>
+        <tbody>
+          <tr data-prompt="daily-digest">
+            <td class="prompt-name"><a class="prompt-link" href="prompts-prompt.html">daily-digest</a></td>
+            <td class="prompt-model"><code>claude-sonnet-5</code></td>
+            <td class="prompt-last"><span class="status" data-kind="ok">exited 0</span></td>
+            <td class="prompt-cost num">$0.023714</td>
+            <td class="prompt-when"><time datetime="2026-10-09T07:00Z">2026-10-09 07:00</time></td>
+          </tr>
+          <tr data-prompt="triage-inbox">
+            <td class="prompt-name"><a class="prompt-link" href="#">triage-inbox</a></td>
+            <td class="prompt-model"><code>claude-haiku-4-5</code></td>
+            <td class="prompt-last"><span class="status" data-kind="info">running</span></td>
+            <td class="prompt-cost num"></td>
+            <td class="prompt-when"><time datetime="2026-10-09T09:31Z">2026-10-09 09:31</time></td>
+          </tr>
+          <tr data-prompt="summarize-crm">
+            <td class="prompt-name"><a class="prompt-link" href="#">summarize-crm</a></td>
+            <td class="prompt-model"><code>gpt-5.5</code></td>
+            <td class="prompt-last"><span class="status" data-kind="warn">exited 2</span></td>
+            <td class="prompt-cost num">$0.418052</td>
+            <td class="prompt-when"><time datetime="2026-10-08T22:00Z">2026-10-08 22:00</time></td>
+          </tr>
+          <tr data-prompt="echo">
+            <td class="prompt-name"><a class="prompt-link" href="#">echo</a></td>
+            <td class="prompt-model"><code>claude-haiku-4-5</code></td>
+            <td class="prompt-last muted">never run</td>
+            <td class="prompt-cost num"></td>
+            <td class="prompt-when"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="tools-title">
+    <header><h2 id="tools-title">MCP tools</h2><p>Agents manage and run prompts with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
+    <dl id="tools" class="kv">
+      <dt data-tool="list"><code>list</code></dt><dd>The prompts you own, by name.</dd>
+      <dt data-tool="show"><code>show</code></dt><dd>One of your prompts, with its model, its text, its tools and its last run.</dd>
+      <dt data-tool="create"><code>create</code></dt><dd>Create a prompt from a model and the text it is given.</dd>
+      <dt data-tool="update"><code>update</code></dt><dd>Change the model, text, system prompt, tools or schema of one of your prompts.</dd>
+      <dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your prompts and every run it has.</dd>
+      <dt data-tool="subscribe"><code>subscribe</code></dt><dd>Run one of your prompts each time an event matching a pattern is delivered.</dd>
+      <dt data-tool="unsubscribe"><code>unsubscribe</code></dt><dd>Stop running one of your prompts on an event it is subscribed to.</dd>
+      <dt data-tool="run"><code>run</code></dt><dd>Start a run of one of your prompts and return its id and status.</dd>
+      <dt data-tool="runs"><code>runs</code></dt><dd>The runs of one of your prompts, newest first.</dd>
+      <dt data-tool="result"><code>result</code></dt><dd>One run whole: its details, its usage and cost, its answer so far, and the files it wrote.</dd>
+      <dt data-tool="cancel"><code>cancel</code></dt><dd>End one of your runs that is still queued or running.</dd>
+    </dl>
+  </section>
+  <p><a id="about-link" href="/about">About prompts</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shape this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No prompts</h3>
+      <div id="no-prompts" class="empty">
+        <h3 class="text-md">No prompts yet</h3>
+        <p>A prompt you create with the <code>create</code> tool shows up here.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>prompts v0.1.0</footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

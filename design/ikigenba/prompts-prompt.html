@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>daily-digest · prompts</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+  <strong class="mark" data-service="prompts"><img src="favicon.svg" alt="">Ikigenba<span class="service"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l5 5l-5 5"/><path d="M13 17l6 0"/></svg>prompts</span></strong>
+  <a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+  <form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+</header>
+
+<main>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <ol>
+      <li><a href="prompts.html">prompts</a></li>
+      <li aria-current="page">daily-digest</li>
+    </ol>
+  </nav>
+  <h1>daily-digest</h1>
+  <p>Runs on <code>claude-sonnet-5</code> with the tools <code>files</code> and <code>suite</code>.</p>
+
+  <section id="prompt-card" class="card" aria-labelledby="prompt-title">
+    <header><h2 id="prompt-title">Prompt</h2><p>Changed by an agent through the <code>update</code> tool.</p></header>
+    <dl id="prompt" class="kv">
+      <dt>Id</dt><dd><code>prm_4b9e2a7d1c6f3058</code></dd>
+      <dt>Model</dt><dd><code>claude-sonnet-5</code></dd>
+      <dt>Tools</dt><dd><span id="tool-groups" class="cluster"><code data-group="files">files</code><code data-group="suite">suite</code></span></dd>
+      <dt>Created</dt><dd><time datetime="2026-09-28T16:40Z">2026-09-28 16:40 UTC</time></dd>
+      <dt>Runs kept</dt><dd>7 · the newest 10 are kept past 15 days</dd>
+    </dl>
+  </section>
+
+  <section id="text" class="card" aria-labelledby="text-title">
+    <header><h2 id="text-title">Text</h2><p>The first user message of every run. The run's input follows it after an empty line, unless the input is <code>{}</code>.</p></header>
+<pre><code>Read yesterday's events from telemetry for the sales and support channels.
+Write a digest of what changed, grouped by customer, to digest.md in your
+working directory, then answer with its first paragraph.</code></pre>
+  </section>
+
+  <section id="system" class="card" aria-labelledby="system-title">
+    <header><h2 id="system-title">System prompt</h2></header>
+<pre><code>You write for a small team that reads the digest over coffee. Be brief, name
+customers by their account name, and never guess at a number.</code></pre>
+  </section>
+
+  <section id="schema" class="card" aria-labelledby="schema-title">
+    <header><h2 id="schema-title">Output schema</h2><p>The answer is an object this schema accepts, written as JSON.</p></header>
+<pre><code>{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "customers": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["summary", "customers"]
+}</code></pre>
+  </section>
+
+  <section id="subscriptions" class="card" aria-labelledby="subscriptions-title">
+    <header><h2 id="subscriptions-title">Subscriptions</h2><p>The events that start this prompt, set by an agent.</p></header>
+    <ul id="subscription-list">
+      <li data-event="cron.daily_digest.fired"><code>cron.daily_digest.fired</code></li>
+      <li data-event="crm.contact_updated"><code>crm.contact_updated</code></li>
+    </ul>
+  </section>
+
+  <section id="runs" class="card flush" aria-labelledby="runs-title">
+    <header>
+      <div>
+        <h2 id="runs-title">Runs</h2>
+        <p>Newest first. A run still running shows its progress when the page is reloaded.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="run-list">
+        <thead><tr><th>Run</th><th>Status</th><th>Model</th><th>Started</th><th>Duration</th><th class="num">Cost</th><th class="num">Exit</th></tr></thead>
+        <tbody>
+          <tr data-run="prr_8a2c6e1f9b3d5074">
+            <td class="run-id"><a class="run-link" href="#"><code>prr_8a2c6e1f9b3d5074</code></a></td>
+            <td class="run-status"><span class="status" data-kind="info">queued</span></td>
+            <td class="run-model"><code>claude-sonnet-5</code></td>
+            <td class="run-started"><time datetime="2026-10-09T09:31Z">2026-10-09 09:31</time></td>
+            <td class="run-duration"></td>
+            <td class="run-cost num"></td>
+            <td class="run-exit num"></td>
+          </tr>
+          <tr data-run="prr_3f9a1c2e8b7d4a60">
+            <td class="run-id"><a class="run-link" href="prompts-run.html"><code>prr_3f9a1c2e8b7d4a60</code></a></td>
+            <td class="run-status"><span class="status" data-kind="ok">exited 0</span></td>
+            <td class="run-model"><code>claude-sonnet-5</code></td>
+            <td class="run-started"><time datetime="2026-10-09T07:00Z">2026-10-09 07:00</time></td>
+            <td class="run-duration">41s</td>
+            <td class="run-cost num">$0.023714</td>
+            <td class="run-exit num">0</td>
+          </tr>
+          <tr data-run="prr_c71d0b5e4a2f9386">
+            <td class="run-id"><a class="run-link" href="#"><code>prr_c71d0b5e4a2f9386</code></a></td>
+            <td class="run-status"><span class="status" data-kind="warn">exited 1</span></td>
+            <td class="run-model"><code>claude-sonnet-5</code></td>
+            <td class="run-started"><time datetime="2026-10-08T07:00Z">2026-10-08 07:00</time></td>
+            <td class="run-duration">3s</td>
+            <td class="run-cost num">$0.000000</td>
+            <td class="run-exit num">1</td>
+          </tr>
+          <tr data-run="prr_5e8b3d7a1c0f6294">
+            <td class="run-id"><a class="run-link" href="#"><code>prr_5e8b3d7a1c0f6294</code></a></td>
+            <td class="run-status"><span class="status" data-kind="warn">timed out</span></td>
+            <td class="run-model"><code>claude-sonnet-5</code></td>
+            <td class="run-started"><time datetime="2026-10-07T07:00Z">2026-10-07 07:00</time></td>
+            <td class="run-duration">10m 0s</td>
+            <td class="run-cost num">$0.311208</td>
+            <td class="run-exit num"></td>
+          </tr>
+          <tr data-run="prr_19f6a4d2c8e3b705">
+            <td class="run-id"><a class="run-link" href="#"><code>prr_19f6a4d2c8e3b705</code></a></td>
+            <td class="run-status"><span class="status" data-kind="warn">killed</span></td>
+            <td class="run-model"><code>claude-opus-5</code></td>
+            <td class="run-started"><time datetime="2026-10-06T07:00Z">2026-10-06 07:00</time></td>
+            <td class="run-duration">3m 41s</td>
+            <td class="run-cost num">$0.142590</td>
+            <td class="run-exit num"></td>
+          </tr>
+          <tr data-run="prr_d4a7e2c9f1b8630a">
+            <td class="run-id"><a class="run-link" href="#"><code>prr_d4a7e2c9f1b8630a</code></a></td>
+            <td class="run-status"><span class="status" data-kind="err">failed</span></td>
+            <td class="run-model"><code>claude-opus-5</code></td>
+            <td class="run-started"><time datetime="2026-10-05T07:00Z">2026-10-05 07:00</time></td>
+            <td class="run-duration"></td>
+            <td class="run-cost num"></td>
+            <td class="run-exit num"></td>
+          </tr>
+          <tr data-run="prr_72b0c8f5e3d1a946">
+            <td class="run-id"><a class="run-link" href="#"><code>prr_72b0c8f5e3d1a946</code></a></td>
+            <td class="run-status"><span class="status" data-kind="ok">exited 0</span></td>
+            <td class="run-model"><code>claude-opus-5</code></td>
+            <td class="run-started"><time datetime="2026-10-04T07:00Z">2026-10-04 07:00</time></td>
+            <td class="run-duration">52s</td>
+            <td class="run-cost num">$0.097316</td>
+            <td class="run-exit num">0</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shapes this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No tools</h3>
+      <div class="card">
+        <p>Runs on <code>claude-haiku-4-5</code> with no tools.</p>
+        <dl class="kv">
+          <dt>Tools</dt><dd><span id="no-tools" class="muted">none</span></dd>
+        </dl>
+      </div>
+      <h3 class="text-md">No system prompt</h3>
+      <div id="no-system" class="empty">
+        <p>This prompt has no system prompt.</p>
+      </div>
+      <h3 class="text-md">No schema</h3>
+      <div id="no-schema" class="empty">
+        <p>This prompt has no output schema; its answer is the model's final message as written.</p>
+      </div>
+      <h3 class="text-md">No subscriptions</h3>
+      <div id="no-subscriptions" class="empty">
+        <p>This prompt is subscribed to no events.</p>
+      </div>
+      <h3 class="text-md">No runs</h3>
+      <div class="empty">
+        <h3 class="text-md">No runs yet</h3>
+        <p>Runs started with the <code>run</code> tool show up here, newest first.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>prompts v0.1.0</footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>
