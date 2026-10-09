@@ -1,6 +1,6 @@
-{{/* The landing page at GET /: what the service is, the space's sites, and
-     the tools that manage them. Shown only to a signed-in user. Data:
-     .Banner (a page.Banner, for banner and footer); .SitesURL
+{{/* The landing page at GET /: what the service is and the space's
+     sites. Shown only to a signed-in user. Data: .Banner (a page.Banner,
+     for banner and footer); .SitesURL
      (<sites-url>: the services file's sites url less one trailing "/", else
      <scheme>://<Host>); .Sites, the sites the caller may see (every listed
      site, and the caller's own unlisted ones), sorted by name, each with
@@ -16,11 +16,7 @@
      span.status[data-status=published] (text "published") or
      span.status[data-status=unpublished] (text "not published"), and
      td.site-owner holding span.badge[data-kind=mine] (text "yours") only
-     when .Mine; a section with h2 "MCP tools" and dl#tools.kv holding one
-     dt[data-tool=<name>] per MCP tool, in the order list, show, create,
-     publish, update, delete, apex, each holding the tool's name in a code
-     element and followed by a dd holding the first line of its description;
-     p#site-url whose code element holds "<.SitesURL>/<slug>/";
+     when .Mine; p#site-url whose code element holds "<.SitesURL>/<slug>/";
      a#about-link whose href is "/about". No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -46,18 +42,6 @@
 {{end}}</tbody>
 </table>
 </div>{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
-</section>
-<section class="card">
-<header><h2>MCP tools</h2><p>Agents manage sites with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>.</p></header>
-<dl id="tools" class="kv">
-<dt data-tool="list"><code>list</code></dt><dd>The sites you own, by name.</dd>
-<dt data-tool="show"><code>show</code></dt><dd>One of your sites, with its URL, its repository, and what is published.</dd>
-<dt data-tool="create"><code>create</code></dt><dd>Create a site from one of your repositories and return it; publish it to make it live.</dd>
-<dt data-tool="publish"><code>publish</code></dt><dd>Publish one of your sites at a commit of its repository: the ref it tracks, or a ref or commit you name.</dd>
-<dt data-tool="update"><code>update</code></dt><dd>Change one of your sites' visibility, whether it is listed, or the ref it tracks.</dd>
-<dt data-tool="delete"><code>delete</code></dt><dd>Delete one of your sites; its repository is untouched.</dd>
-<dt data-tool="apex"><code>apex</code></dt><dd>Show, set or clear the site the space's apex domain redirects to.</dd>
-</dl>
 </section>
 <p><a id="about-link" href="/about">About sites</a></p>
 </main>
