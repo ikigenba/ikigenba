@@ -3,10 +3,12 @@
      so no breadcrumb. Shown only to a signed-in user. Data: .Banner (a
      page.Banner, for banner and footer); .Subscribers, one row per
      subscriber, each with .Service (the subscribing service's name),
-     .Status (the status word: "ok", "paused" or "gone"), .Kind (the theme
-     kind it shows as: ok is "ok", paused is "warn", gone is "info"),
-     .Reason (for a paused subscriber, the event it is stuck on and the error
-     it answered, as text; empty otherwise), .Cursor (the last event it was
+     .Status (the status word: "ok", "paused" or "gone"; the template shows
+     ok as kind "ok", paused as "warn" and gone as "info"), .Reason (nil
+     unless the subscriber is stuck on an event; otherwise a pointer to a
+     struct with .Name, the name of the event it is stuck on, .Seq, an int64,
+     that event's sequence number, and .Error, the error it answered),
+     .Cursor (the last event it was
      delivered, as text), .Lag (how many events it is behind, as text), and
      .Since (a time.Time, when it entered its status; shown in UTC as
      "2006-01-02 15:04", and as RFC 3339 UTC in the datetime attribute).
@@ -16,8 +18,9 @@
      with headers Service, Status, Cursor, Lag, Since and one
      tr[data-subscriber=<service>] per subscriber holding
      td.subscriber-service (text .Service), td.subscriber-status holding
-     span.status[data-kind=<.Kind>][data-status=<.Status>] (text .Status)
-     followed, when .Reason is not empty, by span.muted (text .Reason),
+     span.status[data-kind=<kind of .Status>][data-status=<.Status>] (text
+     .Status) followed, when .Reason is not nil, by span.muted (text "at
+     <Reason.Name> <Reason.Seq>: <Reason.Error>"),
      td.subscriber-cursor (text .Cursor), td.subscriber-lag (text .Lag), and
      td.subscriber-since holding time[datetime=<.Since, RFC 3339 UTC>] (text
      .Since as shown); a section with h2 "MCP tools" and dl#tools.kv holding
@@ -42,7 +45,7 @@
 <tbody>
 {{range .Subscribers}}<tr data-subscriber="{{.Service}}">
 <td class="subscriber-service">{{.Service}}</td>
-<td class="subscriber-status"><span class="status" data-status="{{.Status}}" data-kind="{{.Kind}}">{{.Status}}</span>{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</td>
+<td class="subscriber-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "ok"}}ok{{else if eq .Status "paused"}}warn{{else if eq .Status "gone"}}info{{end}}">{{.Status}}</span>{{with .Reason}} <span class="muted">at {{.Name}} {{.Seq}}: {{.Error}}</span>{{end}}</td>
 <td class="subscriber-cursor">{{.Cursor}}</td>
 <td class="subscriber-lag">{{.Lag}}</td>
 <td class="subscriber-since"><time datetime="{{.Since.UTC.Format "2006-01-02T15:04:05Z07:00"}}">{{.Since.UTC.Format "2006-01-02 15:04"}}</time></td>
