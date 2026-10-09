@@ -25,7 +25,8 @@
      .StderrSize and .TranscriptSize (each a size, the bytes kept, zero when
      the file does not exist: .Number, the scaled number as shown, "812" or
      "1.2", and .Unit, "byte", "kilobyte" or "megabyte"), .Truncated (bool:
-     the run's output was cut, whichever stream), .Failure (nil unless the
+     the run's output was cut, whichever stream), .StdoutTruncated and
+     .StderrTruncated (bool: that stream was cut), .Failure (nil unless the
      run failed to start; else .Reason, the store's reason value:
      "queue_abandoned" or "start_failed") and .FilesGone (bool: the run's
      folder is no longer kept); .Stdout, .Stderr and .Input (each nil when
@@ -72,8 +73,8 @@
      <.OutputTokens> output tokens · <.ReasoningTokens> reasoning tokens"
      when .Usage is set, else dd#usage.muted with text "counted when the run
      ends"), dt "Cost" (dd#cost, the cost; only when .Usage is set) and dt
-     "Output" (dd "stdout <size> · stderr <size> · transcript <size>", never
-     "(truncated)"); unless .FilesGone, in this order, section#stdout,
+     "Output" (dd "stdout <size> · stderr <size> · transcript <size>", each
+     stream's size followed by " (truncated)" when that stream was cut); unless .FilesGone, in this order, section#stdout,
      section#stderr and section#input, each present only when its file
      exists, with h2 "Answer", "Standard error" or "Input", a p naming the
      file (code "stdout", "stderr" or "input.json") and its size,
@@ -123,7 +124,7 @@
 {{with .Usage}}<dt>Usage</dt><dd id="usage">{{.Calls}} {{if eq .Calls "1"}}call{{else}}calls{{end}} · {{.ToolCalls}} {{if eq .ToolCalls "1"}}tool call{{else}}tool calls{{end}} · {{.InputTokens}} {{if eq .InputTokens "1"}}input token{{else}}input tokens{{end}} ({{.CachedTokens}} cached) · {{.OutputTokens}} {{if eq .OutputTokens "1"}}output token{{else}}output tokens{{end}} · {{.ReasoningTokens}} {{if eq .ReasoningTokens "1"}}reasoning token{{else}}reasoning tokens{{end}}</dd>
 <dt>Cost</dt><dd id="cost">${{.Cost}}</dd>
 {{else}}<dt>Usage</dt><dd id="usage" class="muted">counted when the run ends</dd>
-{{end}}<dt>Output</dt><dd>stdout {{template "file-size" .StdoutSize}} · stderr {{template "file-size" .StderrSize}} · transcript {{template "file-size" .TranscriptSize}}</dd>
+{{end}}<dt>Output</dt><dd>stdout {{template "file-size" .StdoutSize}}{{if .StdoutTruncated}} (truncated){{end}} · stderr {{template "file-size" .StderrSize}}{{if .StderrTruncated}} (truncated){{end}} · transcript {{template "file-size" .TranscriptSize}}</dd>
 </dl>
 </section>
 {{end}}{{if not .Run.FilesGone}}{{with .Stdout}}<section id="stdout" class="card" aria-labelledby="stdout-title">
