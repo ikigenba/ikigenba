@@ -53,11 +53,12 @@ written outside the run and read-only to it.
 
 `assets/` holds sites' markup: the Go `html/template` files `landing.html`,
 the landing page (template `landing`), `about.html`, the about screen
-(template `about`), `notfound.html`, the not-found page (template
-`notfound`), and `unavailable.html`, the page shown while a site's published
+(template `about`), `tools.html`, the tools page (template `tools`),
+`notfound.html`, the not-found page (template `notfound`), and
+`unavailable.html`, the page shown while a site's published
 commit cannot be served (template `unavailable`). Each opens with a comment
 naming the data it receives and, for people and the stylesheet, the hooks
-it carries. The landing and about pages carry appkit's banner and are shown
+it carries. The landing, about and tools pages carry appkit's banner and are shown
 only to a signed-in user; the not-found and unavailable pages may be shown
 to a guest, so they carry the footer only and never the banner. They follow
 the repository's `design/` and are an input to the spec: the user or the
