@@ -1,0 +1,11 @@
+{{/* The failure page (D06), answered 400 to a request on the configured
+     callback path that ends the wait without a code: a state mismatch, a
+     provider error= redirect, or neither code nor error. Template "failure"
+     receives a value with .Description (the error description, written as
+     escaped text). An empty .Description shows the template's own
+     fallback, "The login could not be completed.", in the same p.
+     Self-contained (R-GOTE-M2TF): no theme, chrome or reference to any
+     further resource. Hooks: title "Login failed"; body holding p "Login
+     failed. Go back to your terminal." then a p with text .Description or
+     the fallback. */}}
+{{define "failure"}}<!doctype html><html><head><meta charset="utf-8"><title>Login failed</title></head><body><p>Login failed. Go back to your terminal.</p><p>{{with .Description}}{{.}}{{else}}The login could not be completed.{{end}}</p></body></html>{{end}}

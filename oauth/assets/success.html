@@ -1,0 +1,7 @@
+{{/* The success page (D06), answered 200 to a request on the configured
+     callback path whose state matches and which carries a non-empty code.
+     Template "success" receives no data. Self-contained (R-GOTE-M2TF): no
+     theme, chrome or reference to any further resource. Hooks: title
+     "Login complete"; body holding one p "Login complete. Go back to your
+     terminal." */}}
+{{define "success"}}<!doctype html><html><head><meta charset="utf-8"><title>Login complete</title></head><body><p>Login complete. Go back to your terminal.</p></body></html>{{end}}
