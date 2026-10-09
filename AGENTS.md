@@ -14,6 +14,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `scripts` runs Python scripts kept in `repos` on behalf of agents and keeps each run's input, output and files.
 - `events` is the suite's internal event bus: services emit events to it and it delivers them to the services that accept them.
 - `cron` keeps triggers, each a slug and a cron schedule, and emits an event on the bus each time one fires; agents subscribe scripts to those events.
+- `prompts` runs prompts kept in its catalog on behalf of agents, each run one agentkit session over the suite's models, and keeps each run's input, answer, transcript and files.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
 Shared library:
@@ -28,7 +29,7 @@ Develop, deploy, operate:
 - `opsctl` is the operator's CLI on a host; it bootstraps and manages that one deployment.
 - `idgen` mints the `R-XXXX-XXXX` requirement ids the specs use.
 
-Agent runtime, used by no service yet; a future `prompts` service will link it:
+Agent runtime, which `prompts` links:
 
 - `agentkit` is a Go library over LLM chat APIs with an agentic tool loop.
 - `toolkit` is agentkit's standard local tools: Bash, Read, Write, Edit, Glob and Grep.
