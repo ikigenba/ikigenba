@@ -4,7 +4,7 @@ agentkit is a Go library over LLM chat APIs with an agentic tool loop. A vendor 
 
 ## Layout
 
-- `specs/` is the contract: `design/`, and `_data/` (see Static data).
+- `specs/` is the contract: `design/`, and `_data/` (see Static data). agentkit is a library and has no stories.
 - The module root is the `agentkit` package; `retry/` is its one subpackage.
 - `testdata/` holds the tests' own fixtures: request, schema and SSE files per wire.
 - `docs/` holds probe notes; nothing reads them.
