@@ -1,17 +1,20 @@
-{{/* The landing page at GET /: every service on the space, as tiles. The
-     root of the hierarchy. Shown only to a signed-in user. Data: .Banner (a page.Banner, for banner and footer); .Services (a slice of page.Service, each with .Name, .URL, .Icon, .Enabled and .Current).
-     Hooks: title "home"; h1 with text "Services"; p#summary.lede (text
-     "Every service on this space. Pick one to open it."); then, when
-     .Services is empty, div#no-services.empty holding h3 "No services yet"
-     and a p (text "A service installed on this space shows up here."), or
-     main > nav.services#service-list labelled "Services" holding a ul with
-     one li per service, in the order given, each an a holding .Icon
+{{/* The landing page at GET /: every service on the space, as tiles,
+     application services over core services. The root of the hierarchy.
+     Shown only to a signed-in user. Data: .Banner (a page.Banner, for
+     banner and footer); .Application and .Core (each a slice of tiles, each
+     with .Name, .URL, .Icon, an HTML value, and .Enabled).
+     Hooks: title "home"; h1 with text "Services", no lede; then, when
+     .Application is not empty, section#application-services, and when
+     .Core is not empty, section#core-services, each holding
+     div.section-head > div > h2 (text "Application Services" or "Core
+     Services") and nav.services labelled with that heading holding a ul
+     with one li per tile, in the order given, each an a holding .Icon
      verbatim then .Name: with href .URL when .Enabled, else
-     aria-disabled="true" and title "<.Name> is unavailable" and no href;
-     aria-current="page" when .Current. The tiles' look is the stylesheet's
-     main > nav.services rules, the launcher's. No search field. No script
-     but appkit's /_appkit/feedback.js (and the launcher's, which the banner
-     carries). */}}
+     aria-disabled="true" and title "<.Name> is unavailable" and no href.
+     No aria-current. When both are empty, div#no-services.empty holding h3
+     "No services yet" and a p (text "A service installed on this space
+     shows up here."). The tiles' look is the stylesheet's nav.services
+     rules. No search field. No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>home</title></head>
@@ -19,16 +22,35 @@
 {{template "banner" .Banner}}
 <main>
 <h1>Services</h1>
-<p id="summary" class="lede">Every service on this space. Pick one to open it.</p>
-{{if .Services}}<nav class="services" id="service-list" aria-label="Services">
+{{if .Application}}<section id="application-services">
+<div class="section-head">
+<div>
+<h2>Application Services</h2>
+</div>
+</div>
+<nav class="services" aria-label="Application Services">
 <ul>
-{{range .Services}}<li><a{{if .Enabled}} href="{{.URL}}"{{else}} aria-disabled="true" title="{{.Name}} is unavailable"{{end}}{{if .Current}} aria-current="page"{{end}}>{{.Icon}}{{.Name}}</a></li>
+{{range .Application}}<li><a{{if .Enabled}} href="{{.URL}}"{{else}} aria-disabled="true" title="{{.Name}} is unavailable"{{end}}>{{.Icon}}{{.Name}}</a></li>
 {{end}}</ul>
-</nav>{{else}}<div id="no-services" class="empty">
+</nav>
+</section>
+{{end}}{{if .Core}}<section id="core-services">
+<div class="section-head">
+<div>
+<h2>Core Services</h2>
+</div>
+</div>
+<nav class="services" aria-label="Core Services">
+<ul>
+{{range .Core}}<li><a{{if .Enabled}} href="{{.URL}}"{{else}} aria-disabled="true" title="{{.Name}} is unavailable"{{end}}>{{.Icon}}{{.Name}}</a></li>
+{{end}}</ul>
+</nav>
+</section>
+{{end}}{{if not (or .Application .Core)}}<div id="no-services" class="empty">
 <h3 class="text-md">No services yet</h3>
 <p>A service installed on this space shows up here.</p>
-</div>{{end}}
-</main>
+</div>
+{{end}}</main>
 {{template "footer" .Banner}}
 </body>
 </html>
