@@ -174,10 +174,10 @@ func (b *binaryRun) tool(t *testing.T, name string, args json.RawMessage) map[st
 	return result
 }
 
-func aboutPage(t *testing.T, display string) string {
+func aboutPage(t *testing.T, id version.Identity) string {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	banner := page.New(pages.ServiceName, display).Banner(page.User{Email: "mg@example.com", ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"})
+	banner := page.New(pages.ServiceName, id).Banner(page.User{Email: "mg@example.com", ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"})
 	banner.Trail = []page.Level{pages.AboutLevel}
 	ts, err := page.Templates().ParseFS(webhooks.Assets(), "*.html")
 	if err != nil {
@@ -191,12 +191,13 @@ func aboutPage(t *testing.T, display string) string {
 }
 
 // TestBinary is the module's only test that builds and executes a process.
-// R-XB0S-06R3 R-XC8O-DYHS R-XDGK-RQ8H R-XEOH-5HZ6 R-XFWD-J9PV
+// R-KAU4-T533 R-KD9X-KOKH R-XC8O-DYHS R-XDGK-RQ8H R-KGXM-PZSK R-KJDF-HJ9Y R-XFWD-J9PV
 func TestBinary(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	t.Setenv(version.CommitVariable, "abcdef1234567890abcdef1234567890abcdef12")
 	t.Setenv(version.ReleaseVariable, "binary-test-release")
-	display := version.Display()
+	id := version.Read()
+	display := id.String()
 	env := []string{version.CommitVariable + "=abcdef1234567890abcdef1234567890abcdef12", version.ReleaseVariable + "=binary-test-release"}
 	bin := filepath.Join(t.TempDir(), "webhooks")
 	build := exec.Command("go", "build")
@@ -242,7 +243,7 @@ func TestBinary(t *testing.T) {
 		if err != nil || !info.Mode().IsRegular() {
 			t.Fatalf("database %v %v", info, err)
 		}
-		if about := b.page(t, "/about"); about != aboutPage(t, display) || !strings.Contains(about, display) {
+		if about := b.page(t, "/about"); about != aboutPage(t, id) {
 			t.Fatal("about differs from template")
 		}
 		result := b.tool(t, "list", nil)
@@ -273,7 +274,7 @@ func TestBinary(t *testing.T) {
 	}
 	// An unset identity reaches the about screen and the server info as the empty string.
 	emptyRun := startBinary(t, bin, t.TempDir(), []string{})
-	if emptyRun.page(t, "/about") != aboutPage(t, "") {
+	if emptyRun.page(t, "/about") != aboutPage(t, version.Identity{}) {
 		t.Fatal("empty display about")
 	}
 	emptyInfo := emptyRun.tool(t, "list", nil)["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"]

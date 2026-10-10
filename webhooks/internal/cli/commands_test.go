@@ -65,10 +65,6 @@ func TestCommandConstants(t *testing.T) {
 	var _ uint8 = cli.ExitUsage
 	var _ uint8 = cli.ExitSuccess
 	var _ uint8 = cli.ExitServerFailed
-	// R-XIC6-AT79
-	if !strings.Contains(cli.Manifest, "description = \""+pages.Description+"\"\n") {
-		t.Fatal("description")
-	}
 	// R-XN7R-TW61
 	for name, want := range map[string]string{"manifest.toml": cli.Manifest, "nginx.conf": cli.NginxConf} {
 		b, err := fs.ReadFile(webhooks.Etc(), name)
@@ -220,8 +216,8 @@ func TestFixedCommandText(t *testing.T) {
 	if cli.Usage != "Usage: webhooks [command]\n\nAccept deliveries from senders outside the suite at /in/<slug> and emit\neach as an event on the suite's event bus, with MCP tools at /mcp and a\npage of webhooks at /, on the socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n" {
 		t.Fatal("Usage differs")
 	}
-	// R-XIC6-AT79
-	if cli.Manifest != "app = \"webhooks\"\ndescription = \""+pages.Description+"\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nWEBHOOKS_RETENTION_DAYS = \"2\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/webhooks.db\"\n\n[resources]\nmemory_max = \"128M\"\n" {
+	// R-KLT8-92RC
+	if cli.Manifest != "app = \"webhooks\"\ndescription = \""+pages.Description+"\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nWEBHOOKS_RETENTION_DAYS = \"2\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/webhooks.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n" {
 		t.Fatal("Manifest differs")
 	}
 	// R-XKRZ-2CON

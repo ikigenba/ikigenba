@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/webhooks"
 	"github.com/ikigenba/ikigenba/webhooks/internal/ingress"
 	"github.com/ikigenba/ikigenba/webhooks/internal/pages"
@@ -63,7 +64,7 @@ func setup(t *testing.T) *fixture {
 		w.Shutdown(ctx, "test complete")
 	})
 	// R-XY6V-9TUA
-	f.cfg = web.Config{Banner: page.New(pages.ServiceName, "test display").Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test display", Telemetry: w}), ServicesPath: "", Store: f.st, Telemetry: w, Events: em}
+	f.cfg = web.Config{Banner: page.New(pages.ServiceName, version.Identity{Release: "test display"}).Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test display", Telemetry: w}), ServicesPath: "", Store: f.st, Telemetry: w, Events: em}
 	f.h = web.Handler(f.cfg)
 	return f
 }

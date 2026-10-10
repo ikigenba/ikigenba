@@ -15,7 +15,7 @@ import (
 const Usage = "Usage: webhooks [command]\n\nAccept deliveries from senders outside the suite at /in/<slug> and emit\neach as an event on the suite's event bus, with MCP tools at /mcp and a\npage of webhooks at /, on the socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 
 // Manifest is the published command text.
-const Manifest = "app = \"webhooks\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nWEBHOOKS_RETENTION_DAYS = \"2\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/webhooks.db\"\n\n[resources]\nmemory_max = \"128M\"\n"
+const Manifest = "app = \"webhooks\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[env]\nWEBHOOKS_RETENTION_DAYS = \"2\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/webhooks.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
 
 // NginxConf is the published command text.
 const NginxConf = "client_max_body_size 2m;\nlocation = /events { return 404; }\nlocation = /declarations { return 404; }\n"

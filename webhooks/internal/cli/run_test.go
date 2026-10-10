@@ -26,6 +26,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/webhooks"
 	"github.com/ikigenba/ikigenba/webhooks/internal/cli"
 	"github.com/ikigenba/ikigenba/webhooks/internal/pages"
@@ -185,7 +186,7 @@ func newRunHarness(t *testing.T, dir string) *runHarness {
 		},
 		Unsetenv: func(k string) error { h.unsets = append(h.unsets, k); return nil },
 		Inherit:  func(fd uintptr) (net.Listener, error) { h.inherits = append(h.inherits, fd); return ln, nil },
-		Banner:   page.New(pages.ServiceName, "injected-code-identity").Banner,
+		Banner:   page.New(pages.ServiceName, version.Identity{Release: "injected-code-identity"}).Banner,
 		MCP: func(w *telemetry.Writer) *mcp.Server {
 			h.mcpCalls++
 			return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "injected-code-identity", Telemetry: w})

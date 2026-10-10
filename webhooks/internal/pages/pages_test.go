@@ -81,7 +81,7 @@ func TestPublicNamesAndTemplateExecution(t *testing.T) {
 	write := s.Write
 	_ = pages.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, Pages: s, ServicesPath: "", Store: (*store.Store)(nil)}
 	row := pages.WebhookRow{ID: "whk_example", Slug: "slug", Scheme: "bearer", URL: "https://x.test/in/slug", Owner: "o@example.test", Mine: true, LastReceived: "stamp", LastReceivedText: "minute"}
-	b := page.Banner{Service: "webhooks", Version: "test-display", Email: "a<&@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"}
+	b := page.Banner{Service: "webhooks", Release: "test-release", Commit: "test-commit", Email: "a<&@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"}
 	data := []struct {
 		name       string
 		zero, full any
@@ -139,7 +139,7 @@ func setup(t *testing.T, populated bool) *fixture {
 		random[i] = byte(i * 7)
 	}
 	st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: bytes.NewReader(random)})
-	f := &fixture{db: d, store: st, banner: page.Banner{Service: "webhooks", Version: "test-display"}, path: filepath.Join(dir, "services.json")}
+	f := &fixture{db: d, store: st, banner: page.Banner{Service: "webhooks", Release: "test-release", Commit: "test-commit"}, path: filepath.Join(dir, "services.json")}
 	if populated {
 		for _, draft := range []store.Draft{
 			{Slug: "n8n_invoice", Scheme: store.Bearer, OwnerID: "u_grace", OwnerEmail: "grace@example.test"},
