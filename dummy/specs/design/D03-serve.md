@@ -4,7 +4,7 @@ The serve path: what happens between `cli.Run` being called with no
 arguments and the process being gone. `D01-layout-and-run-seam` declares the
 names this design behaves through: `cli.Process` with its `Pid`, `Unsetenv`,
 `Inherit`, `Banner`, `MCP`, `Telemetry`, `Gate`, `Rand`, `Dir` and `Now`,
-and the display string `main` reads,
+and the identity `main` reads with its display string,
 `dummy.Migrations`, `cli.Gate`,
 `cli.Run`, the exit codes, `server.Serve` and `server.DrainError`. `D02-cli` decides that an empty `Args`
 means serve and that nothing else touches the environment; `D04-panel`
@@ -51,15 +51,16 @@ of its own. The environment opsctl gives an app also carries
 `/run/ikigenba/services.json`; on a laptop it is normally unset. An app reads
 it once, at start, through appkit's `page.New` and `mcp.NewServer`, and never
 fails to start over it: unset, empty, or naming a file that is missing or
-unreadable, the app starts, serves, and says nothing about it; its pages then
-carry no launcher and its MCP endpoint gives no instructions
+unreadable, the app starts, serves, and says nothing about it; its banner
+then carries no icon and its MCP endpoint gives no instructions
 (`D01-layout-and-run-seam` explains why that read happens in `main` and cannot
 fail). The same environment may carry `IKIGENBA_COMMIT` and
 `IKIGENBA_RELEASE`, the code the host is running; an app reads them once, at
-start, through appkit's `version.Display` in `main`, and shows the display
-string it returns as its version in its `service.started`, its pages' footer
-and its MCP `serverInfo`. Neither is ever a reason not to start: with neither
-set the string is empty and the app serves all the same. The telemetry
+start, through appkit's `version.Read` in `main`, and shows the identity it
+returns: its display string as the version in its `service.started` and its
+MCP `serverInfo`, and its release and commit in its pages' footer. Neither is
+ever a reason not to start: with neither set the release, the commit and the
+display string are empty and the app serves all the same. The telemetry
 writer's socket sink reads the variable again for every
 event it sends, to find the services-file entry named `telemetry`; a
 process's environment does not change, so it names the same file, and a file

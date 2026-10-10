@@ -27,13 +27,13 @@ reaches it only through its published packages and their documented
 contracts, and uses six of them:
 
 - `page` (`github.com/ikigenba/ikigenba/appkit/page`) — the page chrome:
-  `page.New(service, version)` makes a `*page.Kit` whose `Banner(page.User)
-  page.Banner` method yields the data the banner and footer are drawn from;
-  `page.Templates()` is a fresh template set defining `banner`, `launcher`,
-  `footer` and `preload`, into which dummy parses its own templates;
-  `page.Static()` serves the shared stylesheet, fonts, licences, launcher
-  script, feedback script and favicon under `page.StaticPrefix`
-  (`/_appkit/`).
+  `page.New(service, id)` makes a `*page.Kit` from a service name and a
+  `version.Identity`, whose `Banner(page.User) page.Banner` method yields the
+  data the banner and footer are drawn from, the identity's `Release` and
+  `Commit` included; `page.Templates()` is a fresh template set defining
+  `banner`, `footer` and `preload`, into which dummy parses its own
+  templates; `page.Static()` serves the shared stylesheet, fonts, licences,
+  feedback script and favicon under `page.StaticPrefix` (`/_appkit/`).
 - `identity` (`github.com/ikigenba/ikigenba/appkit/identity`) —
   `identity.Require(next)` wraps dummy's whole handler, so every request
   reaches dummy's routes and `/mcp` only with an `X-User-Id`, and is otherwise
@@ -66,15 +66,17 @@ contracts, and uses six of them:
   appkit's contract (its D15 and D16); dummy restates none of it and its
   tests re-prove none of it.
 - `version` (`github.com/ikigenba/ikigenba/appkit/version`) — the code
-  identity the host gives every app: `version.Display()` reads
+  identity the host gives every app: `version.Read()` reads
   `IKIGENBA_COMMIT` (`version.CommitVariable`) and `IKIGENBA_RELEASE`
   (`version.ReleaseVariable`) from the process environment at the time of the
-  call and returns the **display string** built from them, the empty string
-  when neither is set (its D21). dummy carries no version of its own: nothing
-  in its source or its build names one.
+  call and returns them as a `version.Identity`, a release and a short
+  commit, either of which may be empty; its `String()` method is the
+  **display string** built from them, the empty string when neither is set;
+  and `version.Display()` returns exactly `version.Read().String()` (its
+  D21). dummy carries no version of its own: nothing in its source or its
+  build names one.
 
-appkit owns the banner's, the footer's and the launcher's markup, the
-launcher's script, the feedback script, the favicon, the stylesheet, the
+appkit owns the banner's and the footer's markup, the feedback script, the favicon, the stylesheet, the
 fonts and their licences, the MCP transport, the reading of the services file, the database
 handle, how migrations are applied and recorded and what `db status` prints
 of them, and the event envelope, its delivery and the framework events (`service.started`,
@@ -86,14 +88,16 @@ dummy.
 
 ## The reads of the environment, all in main
 
-`version.Display` reads `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` from the real
+`version.Read` reads `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` from the real
 process environment, and `main` calls it exactly once, first, and holds the
-result: that value is the version dummy shows everywhere it shows one, and
-the one it hands every constructor below and `Run`. So one start reads the
-two variables once, and `--version`, which is a run
-of its own, reads them once too. Nothing below `main` calls `version.Display`;
-`Run` receives the string as `Process.Version`, so an in-process test hands
-it any string it likes, the empty string included, and sets no variable.
+identity it returns: that identity, and the display string its `String`
+method makes of it, are the version dummy shows everywhere it shows one. The
+kit is handed the identity, and every other constructor below and `Run` the
+display string. So one start reads the two variables once, and `--version`,
+which is a run of its own, reads them once too. Nothing below `main` calls
+`version.Read` or `version.Display`; `Run` receives `id.String()` as
+`Process.Version`, so an in-process test hands it any string it likes, the
+empty string included, and sets no variable.
 This is the one shape every app copies: one call in `main`, its result passed
 down, the app's name being the only thing that differs.
 
@@ -113,7 +117,8 @@ never stop dummy starting. `mcp.NewServer` panics only on an empty name or a
 nil `Telemetry`; dummy's name is the constant `panel.ServiceName`, and its
 `Telemetry` is the writer `main` builds below, never nil.
 
-`main` builds, with `v` the display string it read:
+`main` builds, with `id` the identity `version.Read()` returned and `v` its
+display string, `id.String()`:
 
 - the gate, `cli.NewGate(telemetry.NewSocketSink())`, and passes it as
   `Process.Gate`;
@@ -121,7 +126,7 @@ nil `Telemetry`; dummy's name is the constant `panel.ServiceName`, and its
   Version: v, Sink: gate, Stderr: os.Stderr})`, over that gate, so
   events go to the telemetry service through it, and the real clock, pause
   and random source, and passes it as `Process.Telemetry`;
-- the kit, `page.New(panel.ServiceName, v)`, and passes its `Banner`
+- the kit, `page.New(panel.ServiceName, id)`, and passes its `Banner`
   method as `Process.Banner`;
 - the server, `mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName,
   Version: v, Telemetry: w})`, over that same writer, with
@@ -186,16 +191,17 @@ services file, which opsctl copies from dummy's manifest. The description is
 therefore written once, in the manifest, and no description string exists in
 Go. `ServiceName` is the one declaration of the name, which is why
 `cmd/dummy` imports `internal/panel` as well as `internal/cli`, and the
-display string `main` reads is the one value of the version, the one
-`--version` prints. The footer every page ends with (`D04-panel`) shows the
-name and that string, and every MCP result on the 2026-07-28 revision names
-them in its `serverInfo`, so both name the code that is answering. The server writes nothing to standard error:
+identity `main` reads is the one value of the version: its display string is
+the one `--version` prints. The footer every page ends with (`D04-panel`)
+shows the identity's release and commit, and every MCP result on the
+2026-07-28 revision names the name and the display string in its
+`serverInfo`, so both name the code that is answering. The server writes nothing to standard error:
 a tool that panics is a `tool.called` event with the outcome `panicked`.
 
 What crosses the seam is not the kit but a function, the banner source,
 `func(page.User) page.Banner`. A test passes a closure of its own that returns
-whatever banner data the case needs, a launcher's services included, without a
-services file and without touching the environment. The MCP server does cross
+whatever banner data the case needs, without a services file and without
+touching the environment. The MCP server does cross
 the seam as a value, because it has to: a server has no form a test could
 fake, and the handler must register dummy's tools on it and mount it. A test
 makes its own with `mcp.NewServer` after setting `IKIGENBA_SERVICES` with
@@ -205,20 +211,20 @@ unchanged and never calls either itself.
 That `main` hands appkit and `Run` the right name and version and the right
 `Instructions` is wiring, proved by the one exec'ing test against the running
 binary. The test composes `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` into the
-child's environment, both non-empty, and computes the display string it
-expects by calling `version.Display` itself after setting the same two
-values with `testing.T.Setenv`, so the expectation rests on appkit's promise
-and no test spells a version; it also runs `--version` with neither variable
+child's environment, both non-empty, and computes the identity and the
+display string it expects by calling `version.Read` and `version.Display`
+itself after setting the same two values with `testing.T.Setenv`, so the
+expectation rests on appkit's promise and no test spells a version; it also runs `--version` with neither variable
 in the child's environment and expects one empty line. The page the serving
 child answers carries exactly the banner and exactly the footer
 that appkit's templates draw for the data a kit made with `ServiceName` and
-that display string over the same services file returns, which the test
+that identity over the same services file returns, which the test
 computes by making such a kit itself after setting `IKIGENBA_SERVICES` as
 dummy's `AGENTS.md` allows, so the comparison rests only on what appkit
 promises for `page.New`, `Kit.Banner` and the two templates, never on how
 appkit's markup is written. Over a services file that lists dummy with an
-icon, that kit marks dummy's entry current and puts its icon in the mark, so
-the same comparison shows the icon the services file gives dummy; an
+icon, that kit puts that icon in the banner, so the same comparison shows
+the icon the services file gives dummy; an
 `mcp.Client` call to `list_widgets` over the socket succeeds and names the
 name and that display string in its `serverInfo`; and a `server/discover` request answers
 with dummy's description from the services file, read when the request is
@@ -344,7 +350,8 @@ is fixed there byte for byte.
 dummy's tree in the suite release holds exactly three members —
 `bin/dummy`, `etc/manifest.toml` and `share/icon.svg`. `share/icon.svg` is
 dummy's icon, an SVG image a human draws, and its presence in the package is
-what lists dummy in the platform's launcher on a space. It is a human-authored
+what gives dummy's entry in the host's services file its icon, which appkit's
+banner draws for dummy. It is a human-authored
 input like `assets/`, never written by the build run. `etc/manifest.toml` is
 not: the build run writes it, holding exactly the text of the `Manifest`
 constant. The database is not in the package either: dummy creates it on its
@@ -378,7 +385,7 @@ away the two guarantees `D03-serve` states of the gate; and an `MCP` that
 already has tools registered or has already served is not one `Run` can serve
 with, since the handler registers dummy's tools on it (`D04-panel`). Nothing
 below `main` reads `os.Args`, the real environment, the real pid or the real
-streams, changes the real environment, calls `version.Display`, `page.New` or
+streams, changes the real environment, calls `version.Read`, `version.Display`, `page.New` or
 `mcp.NewServer`, or installs a signal handler, so a test that drives `Run` sees the whole
 program's behaviour and nothing leaks past it. The one writer below the seam
 that could reach the real standard error on its own, the HTTP server's
@@ -431,9 +438,10 @@ handler answers is `D04-panel` and the designs it leads to.
 ## REQUIREMENTS
 
 - R-M1JO-5KOP: dummy's design defines the **display string** of a run of the `dummy` binary, and every requirement in dummy's design that names the display string of a run MUST denote that string, as the string that appkit's `version.Display`, from the package `github.com/ikigenba/ikigenba/appkit/version`, returns when called in a process in whose environment each of the variables `version.CommitVariable` and `version.ReleaseVariable` name is set to the same value as in the environment that run of the binary was started with, or is unset when it was unset there.
+- R-R8FF-T14M: dummy's design defines the **identity** of a run of the `dummy` binary, and every requirement in dummy's design that names the identity of a run MUST denote that value, as the `version.Identity` that appkit's `version.Read`, from the package `github.com/ikigenba/ikigenba/appkit/version`, returns when called in a process in whose environment each of the variables `version.CommitVariable` and `version.ReleaseVariable` name is set to the same value as in the environment that run of the binary was started with, or is unset when it was unset there.
 - R-M2RK-JCFE: The `dummy` binary MUST behave as `cli.Run` does when given the binary's arguments after the program name, the process's environment, its process id, its standard output and standard error, and as `Version` the display string of that run of the binary (R-M1JO-5KOP), with an empty `Dir` and a nil `Now`, and MUST exit with the value `Run` returns.
 - R-K1I1-7X3J: When the `dummy` binary is serving and receives `SIGTERM` or `SIGINT`, it MUST stop as `Run` does when its context is cancelled with a cause whose `Error` method returns `SIGTERM` or `SIGINT` respectively.
-- R-VN0V-44AG: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file, the body of its answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST contain the text that executing the template `banner` of a set `page.Templates()` returns writes for `b`, and the text that executing the template `footer` of such a set writes for `b`, where `b` is the `page.Banner` that the `Banner` method of the `Kit` `page.New(panel.ServiceName, d)` returns, `d` being the display string of that run of the binary (R-M1JO-5KOP), in a process whose `IKIGENBA_SERVICES` has the same value, returns for the banner user (`D04-panel` R-YV2Y-1CAU) of that request while the services file holds what it held when the request was answered.
+- R-R9NC-6SVB: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file, the body of its answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST contain the text that executing the template `banner` of a set `page.Templates()` returns writes for `b`, and the text that executing the template `footer` of such a set writes for `b`, where `b` is the `page.Banner` that the `Banner` method of the `Kit` `page.New(panel.ServiceName, id)` returns, `id` being the identity of that run of the binary (R-R8FF-T14M), in a process whose `IKIGENBA_SERVICES` has the same value, returns for the banner user (`D04-panel` R-YV2Y-1CAU) of that request while the services file holds what it held when the request was answered.
 - R-M57D-AVWS: When the `dummy` binary is serving, a `CallTool` call for the tool `list_widgets` with nil `args`, made by an appkit `mcp.Client` whose requests reach the socket the binary serves on with the URL path `/mcp`, on behalf of an `identity.Caller` whose `UserID` is not empty, MUST return a nil error and a `Result` whose `IsError` is false and whose `MarshalJSON` output is an object with a member `_meta` whose member `io.modelcontextprotocol/serverInfo` is exactly the JSON object `{"name":<n>,"version":<v>}`, where `<n>` is the value of `panel.ServiceName` (`D04-panel`) and `<v>` the display string of that run of the binary (R-M1JO-5KOP), each as a JSON string.
 - R-E3SQ-JFOR: When the `dummy` binary is serving with `IKIGENBA_SERVICES` naming a services file, a `server/discover` request POSTed over the socket the binary serves on to the URL path `/mcp` with a non-empty `X-User-Id` header, `Content-Type: application/json`, `MCP-Protocol-Version` and `Mcp-Method` headers equal to `mcp.ProtocolVersion` and `server/discover`, and a body whose `params._meta` holds `io.modelcontextprotocol/protocolVersion` equal to `mcp.ProtocolVersion` and `io.modelcontextprotocol/clientCapabilities` equal to `{}`, MUST be answered with status 200 and a JSON-RPC result whose `instructions` member is exactly the `Description` of the entry that appkit's `List.Find` returns for `panel.ServiceName` in what `services.Read` returns for that file at the time the request is answered, whenever that `Description` is not empty, so that rewriting the file's description between two such requests changes the second answer.
 - R-E68J-AZ65: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset, a `server/discover` request as R-E3SQ-JFOR describes it MUST be answered with status 200 and a JSON-RPC result that has no `instructions` member.
