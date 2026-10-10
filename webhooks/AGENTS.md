@@ -22,13 +22,14 @@ directory and its environment from `/opt/webhooks/etc/env`; a developer runs
 the same binary from the checkout. The module path is
 `github.com/ikigenba/ikigenba/webhooks`. It requires appkit
 (`github.com/ikigenba/ikigenba/appkit`) and uses appkit's packages `page`
-(the banner, launcher and footer, and the shared static files under
+(the banner and footer, and the shared static files under
 `/_appkit/`), `identity` (the caller nginx authenticated: optional on the
 pages and the ingress, required at `/mcp`), `mcp` (the server mounted at
 `/mcp`, and the client the tests drive it with), `telemetry` (the event
 contract, the request middleware, and the writer webhooks' events go
 through), `db` (the database's handle and its migrations), `services` (the
-services file), `version` (the display string) and `events` (the event bus).
+services file), `version` (the identity and its display string) and `events`
+(the event bus).
 The contract is the documents in `specs/design/`. This file restates none of
 it. webhooks is an app, so it has no stories: its intent is the decisions
 document that delivered it, or what was agreed in conversation, together with
@@ -70,10 +71,11 @@ template that cannot show a state the design names, is an issue: the run files
 it in `specs/issues/` and never edits the asset to close it.
 
 webhooks holds no copy of the stylesheet, fonts, or licences; appkit's `page`
-package embeds and serves them. `share/icon.svg` is webhooks' icon in the service
-launcher: a Tabler outline from `design/ikigenba/icons/tabler/`, without its
+package embeds and serves them. `share/icon.svg` is webhooks' icon, shown in the
+banner's trail and on home: a Tabler outline from
+`design/ikigenba/icons/tabler/`, without its
 class, width, height, or invisible bounding path, as `design/README.md` asks of
-a launcher icon. The build run never writes it. `devctl build` packs it beside
+a service icon. The build run never writes it. `devctl build` packs it beside
 `bin/` and `etc/`.
 
 ## Toolchain
@@ -206,9 +208,11 @@ through a webhooks constructor, first sets that variable with
 `testing.T.Setenv` to a services file it wrote or to the empty string, so the
 developer's environment never decides a result. It is the only variable an
 in-process test sets for webhooks' own code. The exec'ing test also sets
-`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with `testing.T.Setenv`, only to
-compute the expected display string by calling appkit's `version.Display()`
-under the same two values it composes into the child's environment. Any test
+`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with `testing.T.Setenv`, so it may call
+appkit's `version.Read()` and `version.Display()` under the same two values it
+composes into the child's
+environment; the commit it sets is longer than seven characters, so a `main`
+that skipped shortening would fail. Any test
 that sets a variable with `testing.T.Setenv` does not call `t.Parallel`.
 
 **Identity comes from headers the test sets.** appkit's `identity.Require`
@@ -232,8 +236,8 @@ raw HTTP requests to `/in/<slug>` on the handler it built, with the headers
 and body it chooses, signing a body itself with the standard library's
 `crypto/hmac` where the scheme asks for a signature.
 
-**No test runs the page's scripts.** The pages carry appkit's launcher script
-when there are services, and every page carries appkit's feedback script.
+**No test runs the page's scripts.** Every page carries appkit's feedback
+script.
 The gates have no browser and no JavaScript engine, and adding one is an
 external dependency no one has approved, so a test asserts what a response
 body carries and never what a script would do with it.
@@ -257,14 +261,16 @@ socket in a short temporary directory, passes it as `exec.Cmd.ExtraFiles[0]`
 child runs in a test-owned temporary working directory, where it creates
 `state/webhooks.db`. Its environment is one the test composes, never the
 developer's, with non-empty `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`; the test
-computes the display string it expects with `version.Display()` after setting
+computes the release and commit it expects with `version.Read()` and the display
+string with `version.Display()` after setting
 the same two values with `t.Setenv`, so no test spells a version. Separately
 it runs `--version` with neither variable in the child's environment and
 expects exactly one empty line. The test waits for `READY=1`, makes the
 requests design names for the binary, over the socket, then stops the child
 with `SIGTERM`, and in a second run with `SIGINT`, asserting what design
-states. The binary's `--version` output, the pages' banner and footer, the MCP
-`serverInfo` and `service.started` all carry that display string. Any other
+states. The binary's `--version` output, the MCP `serverInfo` and
+`service.started` all carry that display string, and the pages' footer the
+release and commit. Any other
 test that builds, execs, waits on, or signals a process is a bug.
 
 ## Live tests

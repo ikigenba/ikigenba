@@ -30,7 +30,7 @@ checkout. The module path is `github.com/ikigenba/ikigenba/prompts`. It
 requires appkit (`github.com/ikigenba/ikigenba/appkit`), agentkit
 (`github.com/ikigenba/ikigenba/agentkit`) and toolkit
 (`github.com/ikigenba/ikigenba/toolkit`), and uses appkit's packages `page`
-(the banner, launcher and footer, and the shared static files under
+(the banner and footer, and the shared static files under
 `/_appkit/`), `identity` (the caller nginx authenticated, required on every
 route), `mcp` (the server mounted at `/mcp`, the client the tests drive it
 with, and the client the child reaches the gateway with), `telemetry` (the
@@ -95,10 +95,10 @@ author's, and the tools describe themselves. Source carries no framing text
 for a run.
 
 prompts holds no copy of the stylesheet, fonts, or licences; appkit's `page`
-package embeds and serves them. `share/icon.svg` is prompts' icon in the
-service launcher: the Tabler outline `prompt` from
+package embeds and serves them. `share/icon.svg` is prompts' icon, shown in the
+banner's trail and on home: the Tabler outline `prompt` from
 `design/ikigenba/icons/tabler/`, without its class, width, height, or
-invisible bounding path, as `design/README.md` asks of a launcher icon. The
+invisible bounding path, as `design/README.md` asks of a service icon. The
 build run never writes it. `devctl build` packs it beside `bin/` and `etc/`.
 
 ## Toolchain
@@ -287,9 +287,11 @@ through a prompts constructor, first sets that variable with
 `testing.T.Setenv` to a services file it wrote or to the empty string, so the
 developer's environment never decides a result. It is the only variable an
 in-process test sets for prompts' own code. The exec'ing test also sets
-`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with `testing.T.Setenv`, only to
-compute the expected display string by calling appkit's `version.Display()`
-under the same two values it composes into the child's environment. Any test
+`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with `testing.T.Setenv`, so it may call
+appkit's `version.Read()` and `version.Display()` under the same two values it
+composes into the child's
+environment; the commit it sets is longer than seven characters, so a `main`
+that skipped shortening would fail. Any test
 that sets a variable with `testing.T.Setenv` does not call `t.Parallel`.
 
 **Identity comes from headers the test sets.** appkit's `identity.Require`
@@ -309,8 +311,8 @@ Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns.
 prompts' tests never re-prove appkit's transport, agentkit's loop or
 toolkit's tools.
 
-**No test runs the page's scripts.** The pages carry appkit's launcher script
-when there are services, and every page carries appkit's feedback script.
+**No test runs the page's scripts.** Every page carries appkit's feedback
+script.
 The gates have no browser and no JavaScript engine, and adding one is an
 external dependency no one has approved, so a test asserts what a response
 body carries and never what a script would do with it. A run's answer,
@@ -340,14 +342,16 @@ child runs in a test-owned temporary working directory, where it creates
 environment is one the test composes, never the developer's: a `PATH` the
 test chose, the five provider keys set to values of the test's own, and
 non-empty `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`; the test computes the
-display string it expects with `version.Display()` after setting the same two
+release and commit it expects with `version.Read()` and the display string with
+`version.Display()` after setting the same two
 values with `t.Setenv`, so no test spells a version. Separately it runs
 `--version` with neither variable in the child's environment and expects
 exactly one empty line. The test waits for `READY=1`, makes the requests
 design names for the binary, over the socket, then stops the child with
 `SIGTERM`, and in a second run with `SIGINT`, asserting what design states.
-The binary's `--version` output, the pages' banner and footer, the MCP
-`serverInfo` and `service.started` all carry that display string. Any other
+The binary's `--version` output, the MCP `serverInfo` and `service.started` all
+carry that display string, and the pages' footer the release and commit. Any
+other
 test that builds, execs, waits on, or signals a process other than the
 runner's child or `bash` is a bug.
 

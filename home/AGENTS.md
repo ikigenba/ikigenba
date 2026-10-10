@@ -5,7 +5,7 @@ An app of the Ikigenba platform: the suite's front door, served at
 One Go binary serves on the listening socket it is passed as descriptor 3
 (`/run/ikigenba/home.sock` on a host), behind the host's nginx. home shows
 every service on the space: at `/` it serves a landing page of the services
-the host's services file names, as tiles under the launcher's rules, and links
+the host's services file names, as tiles, and links
 to an about screen at `/about`. It is the home the banner's product mark links
 to on every app's pages. It holds no state, keeps no database, offers no MCP
 tools and records no events of its own beyond appkit's request and service
@@ -15,10 +15,10 @@ host it runs as `/opt/home/bin/home` with `/opt/home` as its working directory
 and its environment from `/opt/home/etc/env`; a developer runs the same binary
 from the checkout. The module path is `github.com/ikigenba/ikigenba/home`. It
 requires appkit (`github.com/ikigenba/ikigenba/appkit`) and uses appkit's
-packages `page` (the banner, launcher and footer, the services the launcher
-draws, and the shared static files under `/_appkit/`), `services` (the services
-file, read afresh for auth's links), `version` (the display string `main`
-reads), `identity` (the caller
+packages `page` (the banner and footer, and the shared static files under
+`/_appkit/`), `services` (the services
+file, read afresh for auth's links), `version` (the identity `main` reads),
+`identity` (the caller
 nginx authenticated, required on every route), and `telemetry` (the event
 contract, the request middleware, and the writer home's events go through).
 The contract is the documents in `specs/design/`. This file restates none of
@@ -38,7 +38,8 @@ to it.
 ## Layout
 
 - `specs/` is the contract: `design/`.
-- `assets/` is the page markup, and `share/icon.svg` the launcher icon. The
+- `assets/` is the page markup, and `share/icon.svg` the service's icon, shown
+in the banner's trail and on home. The
   build run never writes them; the user or the delivering agent changes them.
 - The root package, in the directory holding `go.mod`, embeds `assets/` and
   `etc/`. `cmd/home` is the binary. `internal/` is everything else, one
@@ -70,10 +71,11 @@ template that cannot show a state the design names, is an issue: the run files
 it in `specs/issues/` and never edits the asset to close it.
 
 home holds no copy of the stylesheet, fonts, or licences; appkit's `page`
-package embeds and serves them. `share/icon.svg` is home's icon in the service
-launcher: the Tabler outline `home` from `design/ikigenba/icons/tabler/`,
+package embeds and serves them. `share/icon.svg` is home's icon, shown in the
+banner's trail and on home: the Tabler outline `home` from
+`design/ikigenba/icons/tabler/`,
 without its class, width, height, or invisible bounding path, as
-`design/README.md` asks of a launcher icon. The build run never writes it.
+`design/README.md` asks of a service icon. The build run never writes it.
 `devctl build` packs it beside `bin/` and `etc/`.
 
 ## Toolchain
@@ -186,9 +188,11 @@ through a home constructor, first sets that variable with
 `testing.T.Setenv` to a services file it wrote or to the empty string, so the
 developer's environment never decides a result. It is the only variable an
 in-process test sets for home's own code. The exec'ing test also sets
-`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with `testing.T.Setenv`, only to
-compute the expected display string by calling appkit's `version.Display()`
-under the same two values it composes into the child's environment. Any test
+`IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with `testing.T.Setenv`, so it may call
+appkit's `version.Read()` and `version.Display()` under the same two values it
+composes into the child's
+environment; the commit it sets is longer than seven characters, so a `main`
+that skipped shortening would fail. Any test
 that sets a variable with `testing.T.Setenv` does not call `t.Parallel`.
 
 **Identity comes from headers the test sets.** appkit's `identity.Require`
@@ -199,8 +203,8 @@ header. A test sets the identity headers to be a signed-in user, or omits
 depend on them. What appkit's middleware and writer do is appkit's contract;
 home's tests prove only that its handlers are wired to them, by use.
 
-**No test runs the page's scripts.** The pages carry appkit's launcher script
-when there are services, and every page carries appkit's feedback script.
+**No test runs the page's scripts.** Every page carries appkit's feedback
+script.
 The gates have no browser and no JavaScript engine, and adding one is an
 external dependency no one has approved, so a test asserts what a response
 body carries and never what a script would do with it.
@@ -223,15 +227,17 @@ socket in a short temporary directory, passes it as `exec.Cmd.ExtraFiles[0]`
 `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. The
 child runs in a test-owned temporary working directory. Its environment is one
 the test composes, never the developer's, with non-empty `IKIGENBA_COMMIT` and
-`IKIGENBA_RELEASE`; the test computes the display string it expects with
-`version.Display()` after setting the same two values with `t.Setenv`, so no
+`IKIGENBA_RELEASE`; the test computes the release and commit it expects with
+`version.Read()` and the display string with `version.Display()` after setting
+the same two values with `t.Setenv`, so no
 test spells a version. Separately it runs `--version` with neither variable in
 the child's environment and expects exactly one empty line. For each serving run
 the test waits for `READY=1`, makes the requests design names for that run
 over the socket, and stops the child with a signal, `SIGTERM` in one run and
 `SIGINT` in another, asserting what design states; design decides how many
-serving runs there are and what each one's environment holds. The binary's `--version` output, the pages'
-banner and footer, and `service.started` all carry that display string. Any
+serving runs there are and what each one's environment holds. The binary's
+`--version` output and `service.started` all carry that display string, and the
+pages' footer the release and commit. Any
 other test that builds, execs, waits on, or signals a process is a bug.
 
 ## Gates
