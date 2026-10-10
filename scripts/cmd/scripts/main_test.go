@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"io/fs"
 	"net"
@@ -28,6 +27,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/scripts"
@@ -48,13 +48,14 @@ func binaryMust(t *testing.T, err error) {
 }
 
 func TestBinary(t *testing.T) {
-	// R-GT3J-X5ZI R-K2VG-GMF3 R-L44O-3JLM R-ZSUI-V2UF R-ZU2F-8UL4
+	// R-GT3J-X5ZI R-K2VG-GMF3 R-L44O-3JLM R-2373-U0GZ R-24F0-7S7O
 	// R-GWR9-2H7L R-K8YY-DH4K R-KA6U-R8V9 R-LSIN-QYFI
-	// R-GXZ5-G8YA R-BODX-EEGV R-OWYV-ML7F
+	// R-GXZ5-G8YA R-BODX-EEGV R-IU2H-3517
 	t.Setenv(services.Variable, "")
-	// R-I5VJ-7ZNA
+	// R-I5VJ-7ZNA R-21Z7-G8QA
 	t.Setenv(version.CommitVariable, strings.Repeat("c604e32", 6)[:40])
 	t.Setenv(version.ReleaseVariable, "142")
+	id := version.Read()
 	display := version.Display()
 	root := t.TempDir()
 	t.Cleanup(func() {
@@ -231,12 +232,13 @@ func TestBinary(t *testing.T) {
 		}
 		return v["structuredContent"].(map[string]any)
 	}
+	email := "mg@example.com"
 	request := func(path, method, body string) (int, string) {
 		req, e := http.NewRequest(method, "http://scripts.example"+path, strings.NewReader(body))
 		binaryMust(t, e)
 		req.Host = "scripts.sbx.ikigenba.dev"
 		req.Header.Set("X-User-Id", "owner")
-		req.Header.Set("X-User-Email", "mg@example.com")
+		req.Header.Set("X-User-Email", email)
 		req.Header.Set("X-Forwarded-Proto", "https")
 		if method == http.MethodPost {
 			req.Header.Set("Content-Type", "application/json")
@@ -318,12 +320,20 @@ func TestBinary(t *testing.T) {
 		t.Fatal("runs nonempty")
 	}
 	_, body := request("/", http.MethodGet, "")
-	if !strings.Contains(body, html.EscapeString(display)) {
-		t.Fatal("missing display", body)
+	banner := page.New(pages.ServiceName, id).Banner(page.User{Email: email, ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"})
+	var footer bytes.Buffer
+	binaryMust(t, page.Templates().ExecuteTemplate(&footer, "footer", banner))
+	if !strings.Contains(body, footer.String()) {
+		t.Fatal("missing identity footer", body)
 	}
 	_, body = request("/about", http.MethodGet, "")
-	if !strings.Contains(body, html.EscapeString(display)) {
-		t.Fatal("missing display", body)
+	templates, e := page.Templates().ParseFS(scripts.Assets(), "*.html")
+	binaryMust(t, e)
+	banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
+	var about bytes.Buffer
+	binaryMust(t, templates.ExecuteTemplate(&about, "about", pages.AboutData{Banner: banner, Description: pages.Description}))
+	if body != about.String() {
+		t.Fatalf("about identity mismatch: %s", body)
 	}
 	discover(nil)
 	call("create", map[string]any{"name": "alpha", "repo": "rep_0102030405060708"})
@@ -391,8 +401,8 @@ func TestBinary(t *testing.T) {
 		}
 	}
 	serviceEntries := []map[string]any{}
-	for _, name := range []string{"auth", "dummy", "scripts"} {
-		icon := "<svg></svg>"
+	for _, name := range []string{"auth", "home", "scripts"} {
+		icon := fmt.Sprintf(`<svg><path d="M%d 0"/></svg>`, len(serviceEntries)+1)
 		if name == pages.ServiceName {
 			icon = binaryScriptsIcon
 		}
@@ -401,18 +411,26 @@ func TestBinary(t *testing.T) {
 	writeServices(serviceEntries)
 	c, out, errOut = start(servicePath)
 	_, body = request("/", http.MethodGet, "")
-	// R-OWYV-ML7F
+	// R-IU2H-3517
 	for _, value := range []string{"mg@example.com", serviceEntries[0]["url"].(string) + "/", serviceEntries[0]["url"].(string) + "/logout", serviceEntries[1]["url"].(string)} {
 		if !strings.Contains(body, value) {
 			t.Fatalf("missing supplied value %q", value)
 		}
 	}
+	if !strings.Contains(body, binaryScriptsIcon) {
+		t.Fatal("missing script icon", body)
+	}
+	authURL := serviceEntries[0]["url"].(string)
+	if strings.Count(body, authURL+"/") <= strings.Count(body, authURL+"/logout") {
+		t.Fatal("missing profile link", body)
+	}
 	oldURL := serviceEntries[1]["url"].(string)
-	newURL := "https://dummy.updated.example"
+	newURL := "https://home.updated.example"
 	serviceEntries[1]["url"] = newURL
 	writeServices(serviceEntries)
+	email = "ops@example.com"
 	_, body = request("/", http.MethodGet, "")
-	if !strings.Contains(body, newURL) || strings.Contains(body, oldURL) {
+	if !strings.Contains(body, newURL) || !strings.Contains(body, email) || strings.Contains(body, oldURL) || strings.Contains(body, "mg@example.com") {
 		t.Fatal("services update missing", body)
 	}
 	stop(c, syscall.SIGTERM, out, errOut, false)

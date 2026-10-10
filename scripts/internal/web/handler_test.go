@@ -83,7 +83,9 @@ func makeFixture(t *testing.T, sink telemetry.Sink) *fixture {
 	lim := limits.New(settings.Defaults(), limits.Clock{After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
 	src := source.New(source.Config{Repos: filepath.Join(t.TempDir(), "repos"), Limits: lim})
 	core := runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Store: st, Source: src, Writer: writer, Runs: t.TempDir(), Now: now, Rand: rand, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})
-	f.cfg = web.Config{func(_ page.User) page.Banner { return page.Banner{Service: pages.ServiceName, Version: "fixture"} }, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "fixture", Telemetry: writer}), "", st, src, core, lim, writer}
+	f.cfg = web.Config{func(_ page.User) page.Banner {
+		return page.Banner{Service: pages.ServiceName, Release: "fixture-release", Commit: "fixture-commit"}
+	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "fixture", Telemetry: writer}), "", st, src, core, lim, writer}
 	f.h = web.Handler(f.cfg)
 	return f
 }
@@ -405,7 +407,7 @@ func TestServicesSocketNotContacted(t *testing.T) {
 	}
 }
 
-// R-CBDU-XW5S R-CCLR-BNWH R-CDTN-PFN6 R-ZAMF-KHQB R-ZBUB-Y9H0 R-CF1K-37DV R-CG9G-GZ4K R-CHHC-UQV9 R-ZGPX-HCFS R-OY6S-0CY4
+// R-YDE9-WZA9 R-CCLR-BNWH R-CDTN-PFN6 R-ZAMF-KHQB R-ZBUB-Y9H0 R-CF1K-37DV R-YEM6-AR0Y R-YFU2-OIRN R-ZGPX-HCFS R-YH1Z-2AIC
 func TestSharedStaticFiles(t *testing.T) {
 	f := makeFixture(t, nil)
 	g := makeFixture(t, nil)
@@ -497,7 +499,7 @@ func TestSharedStaticFiles(t *testing.T) {
 			}
 		}
 	}
-	paths := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css"}
+	paths := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/launcher.js", "/_appkit/nope.css"}
 	for name := range files {
 		paths = append(paths, page.StaticPrefix+name+"/", page.StaticPrefix+name+"/x", page.StaticPrefix+strings.ToUpper(name))
 	}
@@ -517,10 +519,10 @@ func TestSharedStaticFiles(t *testing.T) {
 	}
 }
 
-// R-CA5Y-K4F3
+// R-YC6D-J7JK
 func sharedFiles(t *testing.T, h http.Handler) map[string]string {
 	t.Helper()
-	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
+	files := map[string]string{"theme.css": "text/css; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8"}
 	css := serve(h, "GET", "/_appkit/theme.css", "owner", "", "request")
 	if css.Code != 200 {
 		t.Fatalf("font discovery: status %d", css.Code)
@@ -803,7 +805,7 @@ func missingPage(t *testing.T, cfg web.Config) string {
 func TestToolsPageMatchesMCPCatalog(t *testing.T) {
 	f := makeFixture(t, nil)
 	f.cfg.Banner = func(u page.User) page.Banner {
-		return page.Banner{Service: "fixture-service", Version: "fixture-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}}
+		return page.Banner{Service: "fixture-service", Release: "fixture-release", Commit: "fixture-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}}
 	}
 	// Handler registers on the server supplied to the page handler.
 	f.cfg.MCP = mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "fixture", Telemetry: f.cfg.Telemetry})

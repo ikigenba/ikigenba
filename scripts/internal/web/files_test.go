@@ -63,7 +63,7 @@ func fileSetup(t *testing.T) *fileFixture {
 	}
 	dir := t.TempDir()
 	core := runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Runs: dir})
-	f := &fileFixture{t: t, pages: set, banner: page.Banner{Service: "distinct-files-banner", Version: "fixture", Email: "banner@example.test", ProfileURL: "/fixture-profile", LogoutURL: "/fixture-logout"}, dir: dir, st: st, db: d, core: core, run: r, folder: core.Folder(r)}
+	f := &fileFixture{t: t, pages: set, banner: page.Banner{Service: "distinct-files-banner", Release: "fixture-release", Commit: "fixture-commit", Email: "banner@example.test", ProfileURL: "/fixture-profile", LogoutURL: "/fixture-logout"}, dir: dir, st: st, db: d, core: core, run: r, folder: core.Folder(r)}
 	// R-ZJ5Q-8VX6 R-ZKDM-MNNV R-ZMTF-E759
 	f.handler = identity.Require(web.Files(web.FilesConfig{func(u page.User) page.Banner {
 		if !reflect.DeepEqual(u, page.User{}) {

@@ -74,6 +74,9 @@ slice = "apps"
 memory_max = "896M"
 go_memory_limit = "128M"
 delegate = true
+
+[home]
+group = "core"
 `
 
 func command(args []string, dir, version string, stdout, stderr io.Writer) (bool, int) {

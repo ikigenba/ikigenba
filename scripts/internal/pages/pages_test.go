@@ -24,6 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/scripts"
 	"github.com/ikigenba/ikigenba/scripts/internal/git"
 	"github.com/ikigenba/ikigenba/scripts/internal/limits"
@@ -36,7 +37,8 @@ import (
 )
 
 var fixedTime = time.Date(2026, 10, 5, 9, 31, 40, 0, time.FixedZone("test", 3600))
-var fixedBanner = page.Banner{Service: pages.ServiceName, Version: "test", Icon: template.HTML("fixture-icon"), Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}, Services: []page.Service{{Name: "fixture-sibling", URL: "https://fixture-sibling.test", Enabled: true}}}
+var fixedIdentity = version.Identity{Release: "fixture-release", Commit: "fixture-commit"}
+var fixedBanner = page.Banner{Service: pages.ServiceName, Release: fixedIdentity.Release, Commit: fixedIdentity.Commit, Icon: template.HTML("fixture-icon"), Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}}
 
 func templates(t *testing.T) *template.Template {
 	t.Helper()
@@ -186,7 +188,7 @@ func setup(t *testing.T) *fixture {
 	if out, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("git config: %v %s", e, out)
 	}
-	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: fixedBanner.Version, Sink: &telemetry.Capture{}, Stderr: io.Discard, Now: func() time.Time { return fixedTime }, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 1024)), Sleep: func(context.Context, time.Duration) {}})
+	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: fixedIdentity.String(), Sink: &telemetry.Capture{}, Stderr: io.Discard, Now: func() time.Time { return fixedTime }, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 1024)), Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() { w.Shutdown(context.Background(), "done") })
 	f.writer = w
 	core := runs.New(runs.Config{MaxActive: 100, MaxQueued: 100, Store: s, Source: src, Writer: w, Runs: filepath.Join(dir, "runs"), ScriptSeconds: 1, OutputMaxBytes: 1, KeepDays: 30, KeepCount: 10, Now: func() time.Time { return fixedTime }, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Rand: bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8})})
@@ -203,7 +205,7 @@ func setup(t *testing.T) *fixture {
 		b.ProfileURL = u.ProfileURL
 		b.LogoutURL = u.LogoutURL
 		return b
-	}, Pages: set, Store: s, Source: src, Runs: core, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: fixedBanner.Version, Telemetry: w}), KeepDays: 30, KeepCount: 10, TreeMaxBytes: 1229, OperationSeconds: 12}
+	}, Pages: set, Store: s, Source: src, Runs: core, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: fixedIdentity.String(), Telemetry: w}), KeepDays: 30, KeepCount: 10, TreeMaxBytes: 1229, OperationSeconds: 12}
 	tools.Register(f.cfg.MCP, tools.Config{Store: s, Source: src, Runs: core, Telemetry: w})
 	f.handler = identity.Require(pages.Handler(f.cfg))
 	return f
@@ -1057,7 +1059,7 @@ func withTrail(b page.Banner, trail ...page.Level) page.Banner {
 // R-SB5Q-4S5Q R-SCDM-IJWF R-S3UB-U5PK R-S9XT-R0F1
 func TestToolsPageUsesCurrentServerAndOwnTrail(t *testing.T) {
 	f := setup(t)
-	original := page.Banner{Service: "fixture-service", Version: "fixture-version", Icon: template.HTML("fixture-icon"), Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}, Services: []page.Service{{Name: "fixture-sibling", URL: "https://fixture-sibling.test", Enabled: true}}}
+	original := page.Banner{Service: "fixture-service", Release: "fixture-release", Commit: "fixture-commit", Icon: template.HTML("fixture-icon"), Home: "https://fixture-home.test", Tools: true, Trail: []page.Level{{Name: "stale", URL: "/stale"}}}
 	f.cfg.Banner = func(user page.User) page.Banner {
 		b := original
 		b.Email = user.Email

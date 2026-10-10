@@ -20,7 +20,8 @@ import (
 )
 
 func main() {
-	display := version.Display()
+	id := version.Read()
+	display := id.String()
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
@@ -38,7 +39,7 @@ func main() {
 	code := cli.Run(ctx, cli.Process{
 		Version: display, Cgroup: controlGroup(), Args: os.Args[1:], LookupEnv: os.LookupEnv, Environ: os.Environ,
 		Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
-		Banner: page.New(pages.ServiceName, display).Banner,
+		Banner: page.New(pages.ServiceName, id).Banner,
 		MCP: func(w *telemetry.Writer) *mcp.Server {
 			return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: display, Telemetry: w})
 		}, After: time.After, ScriptAfter: time.After,

@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/scripts/internal/cli"
 	"github.com/ikigenba/ikigenba/scripts/internal/pages"
 	"github.com/ikigenba/ikigenba/scripts/internal/runner"
@@ -136,7 +137,7 @@ func newHarness(t *testing.T) *runHarness {
 		h.timers <- ch
 		h.durations <- d
 		return ch
-	}, Banner: page.New(pages.ServiceName, testVersion).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
+	}, Banner: page.New(pages.ServiceName, version.Identity{Release: testVersion}).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: testVersion, Telemetry: w})
 	}}
 	h.http = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
