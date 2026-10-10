@@ -5,9 +5,9 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 ## Layout
 
 - `specs/` is the contract: `design/`.
-- `page` is the chrome every app shows a signed-in user: the banner, launcher and footer templates, and the shared stylesheet, fonts, launcher script, button feedback script and favicon served from one fixed path prefix. `page/assets/` is its markup and static files (see Assets).
+- `page` is the chrome every app shows a signed-in user: the banner, footer and preload templates, and the shared stylesheet, fonts, button feedback script and favicon served from one fixed path prefix. `page/assets/` is its markup and static files (see Assets).
 - `services` is the one reader of the host's services file (`IKIGENBA_SERVICES`, owned by opsctl).
-- `version` is the identity the host gives an app in its environment (`IKIGENBA_COMMIT`, `IKIGENBA_RELEASE`) and the display string built from it.
+- `version` is the identity the host gives an app in its environment (`IKIGENBA_COMMIT`, `IKIGENBA_RELEASE`), read into an `Identity` with `Read` and displayed by `String`; `page.New` takes it and the footer shows the release then the commit.
 - `identity` is the caller nginx authenticated (`X-User-Id`, `X-User-Email`, `X-Request-Id`): the middleware that requires it, and forwarding it on a call to a sibling service.
 - `mcp` is the Model Context Protocol: the server a service mounts at `/mcp` with its tools, and the client the gateway and service tests use.
 - `telemetry` is the suite's event trail: the event contract, the writer that queues and delivers a service's events, its sinks, the wire to the telemetry service, and the request middleware and sibling client that record every request and sibling call.
@@ -16,7 +16,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 
 ## Assets
 
-`page/assets/` sits inside the `page` package directory because Go's `embed` reaches only files at or below the embedding package. It holds the banner template (`banner.html`), the launcher script (`launcher.js`), the button feedback script (`feedback.js`), the favicon (`favicon.svg`, served at `/_appkit/favicon.svg` as image/svg+xml), and copies of the repository's `design/` files: the stylesheet, fonts and their licences. The build run never writes it; the user or the delivering agent changes it, and the session that changes `design/` refreshes the copies. The copied stylesheet replaces the Google Fonts import with `@font-face` rules for the files beside it, and its header names the `design/` commit it came from, so that commit lands first. Package `page` embeds `page/assets/` and never writes markup of its own.
+`page/assets/` sits inside the `page` package directory because Go's `embed` reaches only files at or below the embedding package. It holds the banner template (`banner.html`, which also defines the footer and preload templates), the button feedback script (`feedback.js`), the favicon (`favicon.svg`, served at `/_appkit/favicon.svg` as image/svg+xml), and copies of the repository's `design/` files: the stylesheet, fonts and their licences. The build run never writes it; the user or the delivering agent changes it, and the session that changes `design/` refreshes the copies. The copied stylesheet replaces the Google Fonts import with `@font-face` rules for the files beside it, and its header names the `design/` commit it came from, so that commit lands first. Package `page` embeds `page/assets/` and never writes markup of its own.
 
 ## Toolchain
 
