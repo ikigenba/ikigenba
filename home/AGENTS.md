@@ -72,7 +72,7 @@ it in `specs/issues/` and never edits the asset to close it.
 
 home holds no copy of the stylesheet, fonts, or licences; appkit's `page`
 package embeds and serves them. `share/icon.svg` is home's icon, shown in the
-banner's trail and on home: the Tabler outline `home` from
+banner's trail and on home: the Tabler outline `grid-dots` from
 `design/ikigenba/icons/tabler/`,
 without its class, width, height, or invisible bounding path, as
 `design/README.md` asks of a service icon. The build run never writes it.
