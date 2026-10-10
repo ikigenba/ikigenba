@@ -25,6 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	cron "github.com/ikigenba/ikigenba/cron"
 	"github.com/ikigenba/ikigenba/cron/internal/pages"
 	"github.com/ikigenba/ikigenba/cron/internal/scheduler"
@@ -91,7 +92,7 @@ func setupSinks(t *testing.T, ts telemetry.Sink, es events.Sink) *fixture {
 		em.Shutdown(ctx)
 		w.Shutdown(ctx, "test complete")
 	})
-	f.cfg = web.Config{Banner: page.New(pages.ServiceName, "test display").Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test display", Telemetry: w}), ServicesPath: "", Store: st, Scheduler: sch, Telemetry: w, Events: em}
+	f.cfg = web.Config{Banner: page.New(pages.ServiceName, version.Identity{Release: "test release", Commit: "test commit"}).Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test display", Telemetry: w}), ServicesPath: "", Store: st, Scheduler: sch, Telemetry: w, Events: em}
 	f.h = web.Handler(f.cfg)
 	return f
 }

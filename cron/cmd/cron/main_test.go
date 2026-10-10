@@ -192,10 +192,10 @@ func (b *binaryRun) tool(t *testing.T, name string, args json.RawMessage) map[st
 	}
 	return result
 }
-func binaryPage(t *testing.T, name, display, servicesPath, authBase string) string {
+func binaryPage(t *testing.T, name string, id version.Identity, servicesPath, authBase string) string {
 	t.Helper()
 	t.Setenv(services.Variable, servicesPath)
-	banner := page.New(pages.ServiceName, display).Banner(page.User{Email: "mg@example.com", ProfileURL: authBase + "/", LogoutURL: authBase + "/logout"})
+	banner := page.New(pages.ServiceName, id).Banner(page.User{Email: "mg@example.com", ProfileURL: authBase + "/", LogoutURL: authBase + "/logout"})
 	ts := page.Templates()
 	var data any = banner
 	if name != "footer" {
@@ -252,13 +252,14 @@ func rpcResult(t *testing.T, b *binaryRun, method, protocol string) map[string]a
 }
 
 // TestBinary is the module's only test that builds and executes a process.
-// R-8FB6-MZVW R-8GJ3-0RML R-8HQZ-EJDA R-8IYV-SB3Z R-3NY2-4C7B R-Z9RX-5C6T
+// R-8FB6-MZVW R-8GJ3-0RML R-8HQZ-EJDA R-8IYV-SB3Z R-TV9I-6CZE R-6J1F-SEJY R-6K9C-66AN
 // R-8MMK-XMC2 R-8NUH-BE2R R-8QAA-2XK5 R-8RI6-GPAU R-PD6S-T4SE R-PEEP-6WJ3
-// R-4B45-DZAI R-4CC1-RR17
+// R-4OWD-OMRA R-4Q4A-2EHZ
 func TestBinary(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	t.Setenv(version.CommitVariable, "abcdef1234567890abcdef1234567890abcdef12")
 	t.Setenv(version.ReleaseVariable, "binary-test-release")
+	id := version.Read()
 	display := version.Display()
 	env := []string{version.CommitVariable + "=abcdef1234567890abcdef1234567890abcdef12", version.ReleaseVariable + "=binary-test-release"}
 	bin := filepath.Join(t.TempDir(), "cron")
@@ -304,12 +305,12 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("database %v %v", info, err)
 		}
 		landing := string(b.request(t, "/", "GET", nil, nil))
-		footer := binaryPage(t, "footer", display, "", "https://auth.sbx.ikigenba.dev")
+		footer := binaryPage(t, "footer", id, "", "https://auth.sbx.ikigenba.dev")
 		if !strings.Contains(landing, footer) {
 			t.Fatal("footer differs from template")
 		}
 		about := string(b.request(t, "/about", "GET", nil, nil))
-		if about != binaryPage(t, "about", display, "", "https://auth.sbx.ikigenba.dev") {
+		if about != binaryPage(t, "about", id, "", "https://auth.sbx.ikigenba.dev") {
 			t.Fatal("about differs from template")
 		}
 		result := b.tool(t, "list", nil)
@@ -357,23 +358,27 @@ func TestBinary(t *testing.T) {
 	}
 
 	// Unset identity is also propagated to served pages and MCP.
+	t.Setenv(version.CommitVariable, "")
+	t.Setenv(version.ReleaseVariable, "")
+	emptyID := version.Read()
+	emptyDisplay := version.Display()
 	emptyRun := startBinary(t, bin, t.TempDir(), []string{})
 	emptyLanding := string(emptyRun.request(t, "/", "GET", nil, nil))
-	if !strings.Contains(emptyLanding, binaryPage(t, "footer", "", "", "https://auth.sbx.ikigenba.dev")) {
+	if !strings.Contains(emptyLanding, binaryPage(t, "footer", emptyID, "", "https://auth.sbx.ikigenba.dev")) {
 		t.Fatal("empty display footer")
 	}
 	emptyAbout := string(emptyRun.request(t, "/about", "GET", nil, nil))
-	if emptyAbout != binaryPage(t, "about", "", "", "https://auth.sbx.ikigenba.dev") {
+	if emptyAbout != binaryPage(t, "about", emptyID, "", "https://auth.sbx.ikigenba.dev") {
 		t.Fatal("empty display about")
 	}
 	emptyInfo := emptyRun.tool(t, "list", nil)["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"]
-	if !reflect.DeepEqual(emptyInfo, map[string]any{"name": pages.ServiceName, "version": ""}) {
+	if !reflect.DeepEqual(emptyInfo, map[string]any{"name": pages.ServiceName, "version": emptyDisplay}) {
 		t.Fatal(emptyInfo)
 	}
 	emptyRun.stop(t, syscall.SIGTERM, false)
 	// Services-driven discovery and page chrome update without a restart.
 	servicesPath := filepath.Join(t.TempDir(), "services.json")
-	entries := []map[string]any{entry("auth", "https://auth.alternate.example", "auth", "/unused/auth"), entry("dummy", "https://dummy.example", "dummy", "/unused/dummy"), entry("cron", "https://cron.example", "published cron description", "/unused/cron")}
+	entries := []map[string]any{entry("auth", "https://auth.alternate.example", "auth", "/unused/auth"), entry("home", "https://home.example", "home", "/unused/home"), entry("cron", "https://cron.example", "published cron description", "/unused/cron")}
 	writeServices(t, servicesPath, entries)
 	b := startBinary(t, bin, t.TempDir(), append(append([]string{}, env...), services.Variable+"="+servicesPath))
 	checkInstructions := func(want string) {
@@ -400,14 +405,14 @@ func TestBinary(t *testing.T) {
 	}
 	checkInstructions("published cron description")
 	body := string(b.request(t, "/", "GET", nil, nil))
-	if body != binaryPage(t, "landing", display, servicesPath, "https://auth.alternate.example") {
+	if body != binaryPage(t, "landing", id, servicesPath, "https://auth.alternate.example") {
 		t.Fatal("services landing differs from template")
 	}
 	entries[1]["enabled"] = false
 	entries[2]["description"] = "changed published description"
 	writeServices(t, servicesPath, entries)
 	changed := string(b.request(t, "/", "GET", nil, nil))
-	if changed == body || changed != binaryPage(t, "landing", display, servicesPath, "https://auth.alternate.example") {
+	if changed == body || changed != binaryPage(t, "landing", id, servicesPath, "https://auth.alternate.example") {
 		t.Fatal("rewritten services landing differs")
 	}
 	checkInstructions("changed published description")
@@ -423,7 +428,7 @@ func TestBinary(t *testing.T) {
 	}
 	checkInstructions("")
 	missing := string(b.request(t, "/", "GET", nil, nil))
-	if missing != binaryPage(t, "landing", display, servicesPath, "https://auth.sbx.ikigenba.dev") {
+	if missing != binaryPage(t, "landing", id, servicesPath, "https://auth.sbx.ikigenba.dev") {
 		t.Fatal("missing services landing differs from template")
 	}
 	entries[2]["description"] = ""

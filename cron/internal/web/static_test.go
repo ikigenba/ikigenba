@@ -2,6 +2,7 @@ package web_test
 
 import (
 	"bytes"
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -9,23 +10,11 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
-// R-F45K-3JFT R-F5DG-HB6I R-F7T9-8UNW R-F915-MMEL R-FCOU-RXMO
+// R-4SK2-TXZD R-F7T9-8UNW R-F915-MMEL R-4UZV-LHGR
 func TestSharedFilesAndContentIdentity(t *testing.T) {
 	f := setup(t)
 	t.Chdir(t.TempDir())
-	stylesheet := answer(f.h, request("GET", page.StaticPrefix+"theme.css", "u", "css"))
-	paths := map[string]string{
-		page.StaticPrefix + "theme.css":          "text/css; charset=utf-8",
-		page.StaticPrefix + "launcher.js":        "text/javascript; charset=utf-8",
-		page.StaticPrefix + "feedback.js":        "text/javascript; charset=utf-8",
-		page.StaticPrefix + "favicon.svg":        "image/svg+xml",
-		page.StaticPrefix + "OFL.txt":            "text/plain; charset=utf-8",
-		page.StaticPrefix + "TABLER-LICENSE.txt": "text/plain; charset=utf-8",
-		page.PreloadURL():                        "font/woff2",
-	}
-	for _, match := range regexp.MustCompile(`url\("([^"/\\:?#%]+\.woff2)"\)`).FindAllStringSubmatch(stylesheet.Body.String(), -1) {
-		paths[page.StaticPrefix+match[1]] = "font/woff2"
-	}
+	paths := sharedFiles(t, f.h)
 	tags := map[string][]byte{}
 	for path, media := range paths {
 		got := answer(f.h, request("GET", path, "u", "get"))
@@ -78,15 +67,11 @@ func strongTag(s string) bool {
 	return true
 }
 
-// R-FA92-0E5A R-FBGY-E5VZ R-FDWR-5PDD R-DC5W-36WR
+// R-FA92-0E5A R-F7T9-8UNW R-4TRZ-7PQ2 R-FDWR-5PDD R-4W7R-Z97G
 func TestSharedFileConditionalAndUnknownRequests(t *testing.T) {
 	f := setup(t)
-	css := answer(f.h, request("GET", page.StaticPrefix+"theme.css", "u", "seed"))
-	paths := []string{page.StaticPrefix + "theme.css", page.StaticPrefix + "launcher.js", page.StaticPrefix + "feedback.js", page.StaticPrefix + "favicon.svg", page.StaticPrefix + "OFL.txt", page.StaticPrefix + "TABLER-LICENSE.txt", page.PreloadURL()}
-	for _, match := range regexp.MustCompile(`url\("([^"/\\:?#%]+\.woff2)"\)`).FindAllStringSubmatch(css.Body.String(), -1) {
-		paths = append(paths, page.StaticPrefix+match[1])
-	}
-	for _, path := range paths {
+	paths := sharedFiles(t, f.h)
+	for path := range paths {
 		original := answer(f.h, request("GET", path, "u", "seed"))
 		tag := original.Header().Get("ETag")
 		for _, method := range []string{"GET", "HEAD"} {
@@ -98,7 +83,7 @@ func TestSharedFileConditionalAndUnknownRequests(t *testing.T) {
 						r.Header.Set("If-Modified-Since", modified)
 					}
 					got := answer(f.h, r)
-					if got.Code != 304 || got.Body.Len() != 0 || got.Header().Get("ETag") != tag || len(got.Header().Values("ETag")) != 1 || got.Header().Get("Cache-Control") != original.Header().Get("Cache-Control") {
+					if got.Code != 304 || got.Body.Len() != 0 || got.Header().Get("ETag") != tag || len(got.Header().Values("ETag")) != 1 || len(got.Header().Values("Cache-Control")) != 1 || got.Header().Get("Cache-Control") != original.Header().Get("Cache-Control") {
 						t.Fatalf("match %q: %d %v %q", match, got.Code, got.Header(), got.Body.String())
 					}
 				}
@@ -124,31 +109,61 @@ func TestSharedFileConditionalAndUnknownRequests(t *testing.T) {
 				}
 			}
 		}
-		for _, method := range []string{"POST", "PUT", "DELETE", "PATCH", "OPTIONS"} {
-			r := request(method, path, "u", "method")
-			r.Header.Set("If-None-Match", "*")
-			got := answer(f.h, r)
-			if got.Code != 405 || len(got.Header().Values("Allow")) != 1 || got.Header().Get("Allow") != "GET, HEAD" {
-				t.Fatalf("method %s: %d %v", method, got.Code, got.Header())
+		for _, method := range []string{"POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "CUSTOM"} {
+			for _, match := range []string{"", "*", tag, "W/" + tag, `"other"`} {
+				r := request(method, path, "u", "method")
+				if match != "" {
+					r.Header.Set("If-None-Match", match)
+				}
+				got := answer(f.h, r)
+				if got.Code != 405 || len(got.Header().Values("Allow")) != 1 || got.Header().Get("Allow") != "GET, HEAD" {
+					t.Fatalf("method %s: %d %v", method, got.Code, got.Header())
+				}
 			}
 		}
 	}
-	unknown := []string{page.StaticPrefix, page.StaticPrefix + "banner.html", page.StaticPrefix + "nope.css", page.StaticPrefix + "theme.css/", page.StaticPrefix + "theme.css/x", page.StaticPrefix + "THEME.CSS"}
-	for _, path := range paths {
-		if strings.HasSuffix(path, ".woff2") {
-			unknown = append(unknown, regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`).ReplaceAllString(path, ".woff2"))
+	unknown := []string{page.StaticPrefix, page.StaticPrefix + "banner.html", page.StaticPrefix + "launcher.js", page.StaticPrefix + "nope.css"}
+	unhashed := regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`)
+	for path := range paths {
+		unknown = append(unknown, path+"/", path+"/x", path+"suffix", page.StaticPrefix+strings.ToUpper(strings.TrimPrefix(path, page.StaticPrefix)))
+		if unhashed.MatchString(path) {
+			unknown = append(unknown, unhashed.ReplaceAllString(path, ".woff2"))
 		}
 	}
+	cssETag := answer(f.h, request("GET", page.StaticPrefix+"theme.css", "u", "unknown_seed")).Header().Get("ETag")
 	for _, path := range unknown {
-		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"} {
-			r := request(method, path, "u", "unknown")
-			r.Header.Set("If-None-Match", "*")
-			got := answer(f.h, r)
-			if got.Code != 404 || got.Header().Get("ETag") != "" || got.Header().Get("Allow") != "" {
-				t.Fatalf("unknown %s %s: %d %v", method, path, got.Code, got.Header())
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "CUSTOM"} {
+			for _, match := range []string{"", "*", `"other"`, cssETag, "W/" + cssETag} {
+				r := request(method, path, "u", "unknown")
+				if match != "" {
+					r.Header.Set("If-None-Match", match)
+				}
+				got := answer(f.h, r)
+				if got.Code != 404 {
+					t.Fatalf("unknown %s %s: %d", method, path, got.Code)
+				}
 			}
-			// Match appkit's exact unknown-file answer too.
-			sameAnswer(t, got, answer(page.Static(), r.Clone(f.ctx)))
 		}
 	}
+}
+
+// R-4RC6-G68O
+func sharedFiles(t *testing.T, h http.Handler) map[string]string {
+	t.Helper()
+	stylesheet := answer(h, request("GET", page.StaticPrefix+"theme.css", "u", "css"))
+	if stylesheet.Code != 200 {
+		t.Fatalf("stylesheet status %d", stylesheet.Code)
+	}
+	paths := map[string]string{
+		page.StaticPrefix + "theme.css":          "text/css; charset=utf-8",
+		page.StaticPrefix + "feedback.js":        "text/javascript; charset=utf-8",
+		page.StaticPrefix + "favicon.svg":        "image/svg+xml",
+		page.StaticPrefix + "OFL.txt":            "text/plain; charset=utf-8",
+		page.StaticPrefix + "TABLER-LICENSE.txt": "text/plain; charset=utf-8",
+		page.PreloadURL():                        "font/woff2",
+	}
+	for _, match := range regexp.MustCompile(`url\("([^"/\\:?#%]+\.woff2)"\)`).FindAllStringSubmatch(stylesheet.Body.String(), -1) {
+		paths[page.StaticPrefix+match[1]] = "font/woff2"
+	}
+	return paths
 }

@@ -3,7 +3,7 @@ module github.com/ikigenba/ikigenba/cron
 go 1.26.5
 
 require (
-	github.com/ikigenba/ikigenba/appkit v0.20.0
+	github.com/ikigenba/ikigenba/appkit v0.22.0
 	github.com/robfig/cron/v3 v3.0.1
 )
 

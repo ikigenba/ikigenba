@@ -88,7 +88,7 @@ func TestPublicDataAndTemplateExecution(t *testing.T) {
 	equal(t, row.ID, "crn_example")
 	equal(t, row.Mine, true)
 	equal(t, row.NextText, "nextminute")
-	b := page.Banner{Service: "cron", Version: "test-display", Email: "a<&@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"}
+	b := page.Banner{Service: "cron", Release: "test-release", Commit: "test-commit", Email: "a<&@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"}
 	data := []struct {
 		name       string
 		zero, full any
@@ -157,7 +157,7 @@ func setup(t *testing.T, populated bool) *fixture {
 		random[i] = byte(i)
 	}
 	st := store.New(d, store.Config{Now: func() time.Time { return now.Add(-24 * time.Hour) }, Rand: bytes.NewReader(random)})
-	f := &fixture{db: d, store: st, banner: page.Banner{Service: "cron", Version: "test-display", Home: "/sentinel-home", Tools: true, Email: "source@example.test", ProfileURL: "/sentinel-profile", LogoutURL: "/sentinel-logout", Trail: []page.Level{{Name: "source", URL: "/source"}}}, path: filepath.Join(dir, "services.json")}
+	f := &fixture{db: d, store: st, banner: page.Banner{Service: "cron", Release: "test-release", Commit: "test-commit", Home: "/sentinel-home", Tools: true, Email: "source@example.test", ProfileURL: "/sentinel-profile", LogoutURL: "/sentinel-logout", Trail: []page.Level{{Name: "source", URL: "/source"}}}, path: filepath.Join(dir, "services.json")}
 	if populated {
 		for _, draft := range []store.Draft{
 			{Slug: "weekly_digest", When: "@weekly", OwnerID: "u_7f3a9c21", OwnerEmail: "mira@example.test"},
@@ -442,8 +442,9 @@ func TestConcurrentPages(t *testing.T) {
 }
 
 func TestLandingPrivateData(t *testing.T) {
-	// R-E4SH-06XO R-ET6G-NLRK
+	// R-4NOH-AV0L R-ET6G-NLRK
 	f := setup(t, true)
+	f.banner.Home = "https://home.example.test/"
 	body := answer(f.cfg, request("GET", "/", "viewer", "viewer@example.test", "cron.example.test", "https")).Body.String()
 	equal(t, body, rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: expectedRows(f, "viewer")}))
 	for _, x := range f.triggers {

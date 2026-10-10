@@ -27,6 +27,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	cron "github.com/ikigenba/ikigenba/cron"
 	"github.com/ikigenba/ikigenba/cron/internal/cli"
 	"github.com/ikigenba/ikigenba/cron/internal/pages"
@@ -158,7 +159,7 @@ func newRunHarness(t *testing.T, dir string) *runHarness {
 	h.ctx, h.cancel = context.WithCancelCause(context.Background())
 	env := map[string]string{"LISTEN_PID": "321", "LISTEN_FDS": "1", "NOTIFY_SOCKET": a}
 	h.p = cli.Process{Pid: 321, Dir: dir, Version: "injected-code-identity", Stdout: h.out, Stderr: h.err, Now: h.clock.Now, After: h.clock.After, Rand: runBytes(0x5a), Sink: h.tc, EventSink: h.ec,
-		LookupEnv: func(k string) (string, bool) { h.keys = append(h.keys, k); v, ok := env[k]; return v, ok }, Unsetenv: func(k string) error { h.unsets = append(h.unsets, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) { h.inherits = append(h.inherits, fd); return ln, nil }, Banner: page.New(pages.ServiceName, "injected-code-identity").Banner,
+		LookupEnv: func(k string) (string, bool) { h.keys = append(h.keys, k); v, ok := env[k]; return v, ok }, Unsetenv: func(k string) error { h.unsets = append(h.unsets, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) { h.inherits = append(h.inherits, fd); return ln, nil }, Banner: page.New(pages.ServiceName, version.Identity{Release: "injected-code-identity"}).Banner,
 		MCP: func(w *telemetry.Writer) *mcp.Server {
 			h.mcpCalls++
 			h.writerReady <- w

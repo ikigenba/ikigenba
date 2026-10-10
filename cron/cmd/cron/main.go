@@ -19,8 +19,9 @@ import (
 func main() { os.Exit(runMain()) }
 
 func runMain() int {
-	display := version.Display()
-	kit := page.New(pages.ServiceName, display)
+	id := version.Read()
+	display := id.String()
+	kit := page.New(pages.ServiceName, id)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	signals := make(chan os.Signal, 1)
