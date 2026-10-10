@@ -17,6 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	appEvents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/events"
 	"github.com/ikigenba/ikigenba/events/internal/pages"
 	"github.com/ikigenba/ikigenba/events/internal/store"
@@ -86,9 +87,9 @@ func TestExactTemplateAnswers(t *testing.T) {
 	must(t, st.Advance(ctx, "scripts", 1))
 	must(t, st.Pause(ctx, "sites", 1, "publish <failed>&"))
 	must(t, st.Forget(ctx, "gone"))
-	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test-build").Banner, Store: st})
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, version.Identity{Release: "test-build", Commit: "fixture-commit"}).Banner, Store: st})
 	var _ web.Pages = p
-	b := page.Banner{Service: appEvents.ServiceName, Version: "test-build", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
+	b := page.Banner{Service: appEvents.ServiceName, Release: "test-build", Commit: "fixture-commit", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
 	subs, err := st.Subscribers(ctx)
 	must(t, err)
 	rows := []pages.SubscriberRow{}
@@ -121,7 +122,7 @@ func TestExactTemplateAnswers(t *testing.T) {
 	const description = pages.Description
 	type copyText string
 	_ = copyText(description)
-	notice := pages.NoticeData{Banner: page.Banner{Service: appEvents.ServiceName, Version: "test-build"}}
+	notice := pages.NoticeData{Banner: page.Banner{Service: appEvents.ServiceName, Release: "test-build", Commit: "fixture-commit"}}
 	for _, failing := range []bool{false, true} {
 		d.SetFailing(failing)
 		for _, method := range []string{"GET", "HEAD"} {
@@ -144,18 +145,17 @@ func TestExactTemplateAnswers(t *testing.T) {
 			}
 		}
 	}
-	nilStore := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test-build").Banner})
+	nilStore := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, version.Identity{Release: "test-build", Commit: "fixture-commit"}).Banner})
 	check(t, invoke(nilStore.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}))
 	check(t, invoke(nilStore.NotFound, "POST"), 404, expected(t, "notfound", notice))
 }
 
-// R-DTMC-EEL1 R-DSEG-0MUC
 // R-QTD5-LLQ0 R-QUL1-ZDGP R-QX0U-QWY3
 func TestBannerRefreshAndFallback(t *testing.T) {
 	_, st, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
 	t.Setenv("IKIGENBA_SERVICES", path)
-	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, ServicesPath: path, Store: st})
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, version.Identity{Release: "test", Commit: "fixture-commit"}).Banner, ServicesPath: path, Store: st})
 	for _, host := range []string{"events.space.test:443", "EvEnTs.space.test", "space.test"} {
 		for _, proto := range []string{"http", "https", "HTTPS", "https, http", ""} {
 			r := httptest.NewRequest("GET", "/", nil)
@@ -168,34 +168,30 @@ func TestBannerRefreshAndFallback(t *testing.T) {
 			if scheme != "http" && scheme != "https" {
 				scheme = "https"
 			}
-			b := page.Banner{Service: "events", Version: "test", Email: "email", ProfileURL: scheme + "://auth.space.test/", LogoutURL: scheme + "://auth.space.test/logout"}
+			b := page.Banner{Service: "events", Release: "test", Commit: "fixture-commit", Email: "email", ProfileURL: scheme + "://auth.space.test/", LogoutURL: scheme + "://auth.space.test/logout"}
 			if w.Body.String() != expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}) {
 				t.Fatal(host, proto)
 			}
 		}
 	}
-	write := func(enabled bool) {
-		t.Helper()
-		value := `{"services":[{"name":"other","url":"https://other.test","description":"other","socket":"","enabled":` + strconv.FormatBool(enabled) + `,"mcp":false,"icon":"fixture-icon"},{"name":"auth","url":"https://accounts.test","description":"auth","socket":"","enabled":true,"mcp":false},{"name":"events","url":"https://events.test","description":"events","socket":"","enabled":true,"mcp":true,"icon":"fixture-icon"}]}`
+	for _, authURL := range []string{"https://accounts.test", "http://updated.test"} {
+		value := `{"services":[{"name":"auth","url":"` + authURL + `","description":"auth","socket":"","enabled":true,"mcp":false}]}`
 		must(t, os.WriteFile(path, []byte(value), 0600))
-	}
-	for _, enabled := range []bool{true, false} {
-		write(enabled)
-		b := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://accounts.test/", LogoutURL: "https://accounts.test/logout", Icon: template.HTML("fixture-icon"), Tools: true, Services: []page.Service{{Name: "other", URL: "https://other.test", Icon: template.HTML("fixture-icon"), Enabled: enabled}, {Name: "events", URL: "https://events.test", Icon: template.HTML("fixture-icon"), Enabled: true, Current: true}}}
+		b := page.Banner{Service: "events", Release: "test", Commit: "fixture-commit", Email: "<person>&@example.test", ProfileURL: authURL + "/", LogoutURL: authURL + "/logout"}
 		check(t, invoke(p.Landing, "GET"), 200, expected(t, "landing", pages.LandingData{Banner: b}))
 		check(t, invoke(p.Tools, "GET"), 200, expected(t, "tools", pages.ToolsData{Banner: withTrail(b, "tools")}))
 		check(t, invoke(p.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}))
 	}
 	must(t, os.WriteFile(path, []byte(`broken`), 0600))
-	b := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
+	b := page.Banner{Service: "events", Release: "test", Commit: "fixture-commit", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
 	check(t, invoke(p.About, "GET"), 200, expected(t, "about", pages.AboutData{Banner: withTrail(b, "about"), Description: pages.Description}))
 }
 
 // R-DW25-5Y2F
 func TestConcurrentPages(t *testing.T) {
 	_, st, _ := fixture(t)
-	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, "test").Banner, Store: st})
-	banner := page.Banner{Service: "events", Version: "test", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
+	p := pages.New(pages.Config{Banner: page.New(appEvents.ServiceName, version.Identity{Release: "test", Commit: "fixture-commit"}).Banner, Store: st})
+	banner := page.Banner{Service: "events", Release: "test", Commit: "fixture-commit", Email: "<person>&@example.test", ProfileURL: "https://auth.space.test/", LogoutURL: "https://auth.space.test/logout"}
 	cases := []struct {
 		handler func(http.ResponseWriter, *http.Request)
 		status  int
@@ -204,7 +200,7 @@ func TestConcurrentPages(t *testing.T) {
 		{p.Landing, 200, expected(t, "landing", pages.LandingData{Banner: banner})},
 		{p.Tools, 200, expected(t, "tools", pages.ToolsData{Banner: withTrail(banner, "tools")})},
 		{p.About, 200, expected(t, "about", pages.AboutData{Banner: withTrail(banner, "about"), Description: pages.Description})},
-		{p.NotFound, 404, expected(t, "notfound", pages.NoticeData{Banner: page.Banner{Service: "events", Version: "test"}})},
+		{p.NotFound, 404, expected(t, "notfound", pages.NoticeData{Banner: page.Banner{Service: "events", Release: "test", Commit: "fixture-commit"}})},
 	}
 	var wg sync.WaitGroup
 	for range 20 {
@@ -220,17 +216,16 @@ func TestConcurrentPages(t *testing.T) {
 	wg.Wait()
 }
 
-// R-DIN8-YGWS R-DNIU-HJVK R-DTMC-EEL1 R-FYW1-OYY4
+// R-DIN8-YGWS R-DNIU-HJVK R-FYW1-OYY4
 func TestBannerSourcePerAnswer(t *testing.T) {
 	d, st, _ := fixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
 	must(t, os.WriteFile(path, []byte(`{"services":[{"name":"auth","url":"https://accounts.test","description":"auth","socket":"","enabled":true,"mcp":false},{"name":"path-only","url":"https://path.test","description":"path","socket":"","enabled":true,"mcp":false,"icon":"fixture-icon"}]}`), 0600))
 	var users []page.User
 	returned := page.Banner{
-		Service: "supplied-service", Version: "construction", Tools: true, Trail: []page.Level{{Name: "source-trail", URL: "/source-trail"}},
+		Service: "supplied-service", Release: "construction", Commit: "source-commit", Tools: true, Trail: []page.Level{{Name: "source-trail", URL: "/source-trail"}},
 		Email: "supplied-email", ProfileURL: "https://supplied.test/profile", LogoutURL: "https://supplied.test/out",
-		Icon:     template.HTML("own-icon"),
-		Services: []page.Service{{Name: "source-only", URL: "https://source.test", Icon: template.HTML("launcher-icon"), Enabled: true}},
+		Icon: template.HTML("own-icon"), Home: "https://supplied-home.test",
 	}
 	source := func(u page.User) page.Banner {
 		users = append(users, u)
@@ -255,7 +250,7 @@ func TestBannerSourcePerAnswer(t *testing.T) {
 					name, status = "unavailable", 503
 				}
 				answer++
-				returned.Version = "answer-" + strconv.Itoa(answer)
+				returned.Release = "answer-" + strconv.Itoa(answer)
 				before := len(users)
 				out := invoke(route.handler, method)
 				wantUser := page.User{}
@@ -302,9 +297,8 @@ func withTrail(b page.Banner, name string) page.Banner {
 // R-DL31-Q0E6 R-DMAY-3S4V R-IVTH-IZYR R-IZH6-OB6U
 func TestToolsTemplateAnswers(t *testing.T) {
 	d, st, _ := fixture(t)
-	banner := page.Banner{Service: "tools-fixture", Version: "tools-build", Tools: true,
-		Trail:    []page.Level{{Name: "source-place", URL: "/source-place"}},
-		Services: []page.Service{{Name: "supplied-launcher", URL: "https://launcher.test", Enabled: true, Icon: "fixture-icon"}}}
+	banner := page.Banner{Service: "tools-fixture", Release: "tools-build", Commit: "tools-commit", Tools: true,
+		Trail: []page.Level{{Name: "source-place", URL: "/source-place"}}, Home: "https://supplied-home.test"}
 	for _, tools := range [][]pages.Tool{nil, {}, {{"zeta<&", "first description <&"}, {"alpha", "second description"}}} {
 		for _, store := range []*store.Store{st, nil} {
 			p := pages.New(pages.Config{func(page.User) page.Banner { return banner }, "", store, tools})
@@ -339,5 +333,52 @@ func TestToolsTemplateAnswers(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// R-6P5N-K74Q
+func TestBannerServiceRefreshPerPage(t *testing.T) {
+	_, st, _ := fixture(t)
+	for _, route := range []string{"landing", "tools", "about"} {
+		t.Run(route, func(t *testing.T) {
+			banner := page.Banner{Service: "first-service", Release: "fixture-release", Commit: "fixture-commit"}
+			calls := 0
+			p := pages.New(pages.Config{Banner: func(page.User) page.Banner {
+				calls++
+				return banner
+			}, Store: st})
+			var previous string
+			for _, service := range []string{"first-service", "second-service"} {
+				banner.Service = service
+				var handler func(http.ResponseWriter, *http.Request)
+				var data any
+				path := "/"
+				switch route {
+				case "landing":
+					handler, data = p.Landing, pages.LandingData{Banner: withTrail(banner, "")}
+				case "tools":
+					path = "/tools"
+					handler, data = p.Tools, pages.ToolsData{Banner: withTrail(banner, "tools")}
+				case "about":
+					path = "/about"
+					handler, data = p.About, pages.AboutData{Banner: withTrail(banner, "about"), Description: pages.Description}
+				}
+				before := calls
+				r := httptest.NewRequest("GET", path, nil)
+				out := httptest.NewRecorder()
+				out.Header().Add("Existing", "one")
+				out.Header().Add("Existing", "two")
+				handler(out, r)
+				want := expected(t, route, data)
+				if calls == before {
+					t.Fatal("request did not call banner source")
+				}
+				if previous != "" && want == previous {
+					t.Fatal("template cannot distinguish supplied services")
+				}
+				check(t, out, 200, want)
+				previous = want
+			}
+		})
 	}
 }

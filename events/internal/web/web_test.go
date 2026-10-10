@@ -237,10 +237,10 @@ func TestMCPDelegation(t *testing.T) {
 	}
 }
 
-// R-E5ST-IR1Y
+// R-6J25-NCF9
 func sharedFiles(t *testing.T, h http.Handler) map[string]string {
 	t.Helper()
-	files := map[string]string{"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8", "favicon.svg": "image/svg+xml"}
+	files := map[string]string{"theme.css": "text/css; charset=utf-8", "feedback.js": "text/javascript; charset=utf-8", "OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8", "favicon.svg": "image/svg+xml"}
 	css := request(h, "GET", page.StaticPrefix+"theme.css", "u")
 	if css.Code != http.StatusOK {
 		t.Fatalf("stylesheet discovery: status %d", css.Code)
@@ -255,7 +255,7 @@ func sharedFiles(t *testing.T, h http.Handler) map[string]string {
 	return files
 }
 
-// R-EO3B-9B6D R-F55W-M3K3 R-FM8H-YVXT R-G4IZ-PG28 R-GKDO-OGP9 R-H1GA-192Z R-HIIV-E1GP R-DDFI-KB8W R-DENE-Y2ZL
+// R-6KA2-145Y R-F55W-M3K3 R-FM8H-YVXT R-6LHY-EVWN R-GKDO-OGP9 R-H1GA-192Z R-6NXR-6FE1 R-DDFI-KB8W R-DENE-Y2ZL
 func TestSharedFiles(t *testing.T) {
 	h, p, _, _, _ := fixture(t)
 	secondHandler, secondPages, _, _, _ := fixture(t)

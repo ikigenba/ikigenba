@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,17 +19,23 @@ import (
 	"testing"
 	"time"
 
+	appEvents "github.com/ikigenba/ikigenba/appkit/events"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/events/internal/cli"
+	"github.com/ikigenba/ikigenba/events/internal/pages"
 )
 
-// R-9K3A-GTGR R-G9V5-4WMD R-06XG-JBD4 R-6KA0-OOQW R-6LHX-2GHL R-9NQZ-M4OU
-// R-6NXP-TZYZ R-6P5M-7RPO R-6QDI-LJGD R-C0NJ-9HL4 R-SNHY-K1JR
+// R-9K3A-GTGR R-6E6K-49GH R-6FEG-I176 R-06XG-JBD4 R-6KA0-OOQW R-6LHX-2GHL R-9NQZ-M4OU
+// R-6NXP-TZYZ R-6P5M-7RPO R-6QDI-LJGD R-C0NJ-9HL4 R-5MS9-KEY1
 func TestBinaryWiring(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
 	commit, release := "0123456789abcdef0123456789abcdef01234567", "test-release"
 	t.Setenv(version.CommitVariable, commit)
 	t.Setenv(version.ReleaseVariable, release)
+	id := version.Read()
 	display := version.Display()
 	identityEnv := []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 	binary := filepath.Join(t.TempDir(), "events")
@@ -151,13 +158,13 @@ func TestBinaryWiring(t *testing.T) {
 			entries := []any{entry}
 			ownIcon := "events-icon-fixture"
 			if start.eventsIcon {
-				entries = append(entries, map[string]any{"name": "events", "enabled": true, "socket": socket, "url": "https://events.space.test", "description": "events", "mcp": true, "icon": ownIcon})
+				entries = append(entries, map[string]any{"name": "events", "enabled": false, "socket": "", "url": "", "description": "", "mcp": true, "icon": ownIcon})
 			}
-			services, err := json.Marshal(map[string]any{"services": entries})
+			serviceFile, err := json.Marshal(map[string]any{"services": entries})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(servicesPath, services, 0600); err != nil {
+			if err := os.WriteFile(servicesPath, serviceFile, 0600); err != nil {
 				t.Fatal(err)
 			}
 			working := t.TempDir()
@@ -216,18 +223,45 @@ func TestBinaryWiring(t *testing.T) {
 				return string(body)
 			}
 			about := get("/about")
-			if !strings.Contains(about, display) {
-				t.Fatal("main did not supply display string", about)
+			t.Setenv(services.Variable, servicesPath)
+			kit := page.New(appEvents.ServiceName, id)
+			pg := pages.New(pages.Config{Banner: kit.Banner, ServicesPath: servicesPath})
+			expected := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "http://events.space.test/about", nil)
+			request.Header.Set("X-User-Id", "binary-user")
+			pg.About(expected, request)
+			if expected.Code != http.StatusOK || about != expected.Body.String() {
+				t.Fatal("main did not supply identity and banner", about, expected.Body.String())
 			}
-			if signal == syscall.SIGINT || start.eventsIcon {
-				landing := get("/")
-				icon := "telemetry-icon-fixture"
-				if start.eventsIcon {
-					icon = ownIcon
-				}
-				if !strings.Contains(landing, icon) {
-					t.Fatal("main did not supply service icon", landing)
-				}
+			discoverBody := `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"` + mcp.ProtocolVersion + `","io.modelcontextprotocol/clientCapabilities":{}}}}`
+			discover, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://events.space.test/mcp", strings.NewReader(discoverBody))
+			if err != nil {
+				t.Fatal(err)
+			}
+			discover.Header.Set("X-User-Id", "binary-user")
+			discover.Header.Set("Content-Type", "application/json")
+			discover.Header.Set("MCP-Protocol-Version", mcp.ProtocolVersion)
+			discover.Header.Set("Mcp-Method", "server/discover")
+			answer, err := client.Do(discover)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result struct {
+				Result struct {
+					Meta map[string]json.RawMessage `json:"_meta"`
+				} `json:"result"`
+			}
+			decodeErr := json.NewDecoder(answer.Body).Decode(&result)
+			closeErr := answer.Body.Close()
+			if answer.StatusCode != http.StatusOK || decodeErr != nil || closeErr != nil {
+				t.Fatalf("discover: status %d decode %v close %v", answer.StatusCode, decodeErr, closeErr)
+			}
+			var serverInfo map[string]string
+			if err := json.Unmarshal(result.Result.Meta["io.modelcontextprotocol/serverInfo"], &serverInfo); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(serverInfo, map[string]string{"name": appEvents.ServiceName, "version": display}) {
+				t.Fatal("binary MCP identity", serverInfo)
 			}
 			info, err := os.Stat(filepath.Join(working, "state", "events.db"))
 			if err != nil || !info.Mode().IsRegular() {

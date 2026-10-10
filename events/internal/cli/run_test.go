@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/events"
 	"github.com/ikigenba/ikigenba/events/internal/cli"
 	"github.com/ikigenba/ikigenba/events/internal/pages"
@@ -111,7 +112,7 @@ func startRun(t *testing.T, dir string, env map[string]string, customize ...func
 	}
 	t.Setenv(services.Variable, env[services.Variable])
 	if f.p.Banner == nil {
-		f.p.Banner = page.New(appEvents.ServiceName, f.p.Version).Banner
+		f.p.Banner = page.New(appEvents.ServiceName, version.Identity{Release: f.p.Version, Commit: "run-commit"}).Banner
 	}
 	go func() { f.done <- cli.Run(ctx, f.p) }()
 	if err := notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
@@ -191,7 +192,6 @@ func call(t *testing.T, f *runFixture, name string, args any, id string) mcp.Res
 
 // R-G8N8-R4VO R-ZX69-H5FK R-09D9-AUUI R-BTC4-YV4Y R-BY7Q-HY3Q R-BZFM-VPUF
 // R-IH24-NGU5 R-96IT-4P0M R-97QP-IGRB R-C6R1-6CAL R-9XI6-OAME R-ZTTZ-Z2G4
-// R-IY9A-AJG5
 // R-ZW9S-QLXI R-CBMM-PF9D R-ZXHP-4DO7 R-CAEQ-BNIO R-9ZXZ-FU3S
 // R-CK5X-DTG8 R-A15V-TLUH R-A2DS-7DL6 R-E0E3-6NDU
 func TestRunWiring(t *testing.T) {
@@ -220,10 +220,7 @@ func TestRunWiring(t *testing.T) {
 			if resp.StatusCode != 200 {
 				t.Fatal(body(t, resp))
 			}
-			landing := body(t, resp)
-			if servicePath == "valid" && !strings.Contains(landing, "launcher-sibling") {
-				t.Fatal(landing)
-			}
+			_ = body(t, resp)
 			tools, err := f.mcp().ListTools(context.Background(), identity.Caller{UserID: "user", RequestID: "list"})
 			if err != nil {
 				t.Fatal(err)
@@ -494,7 +491,7 @@ func TestRunEventTrail(t *testing.T) {
 func TestEmptyRunVersion(t *testing.T) {
 	f := startRun(t, t.TempDir(), map[string]string{}, func(f *runFixture) { f.p.Version = "" })
 	about := body(t, f.request(t, "GET", "/about", "", "empty-about"))
-	if want := runTemplate(t, "about", pages.AboutData{Banner: page.Banner{Service: appEvents.ServiceName, Trail: []page.Level{{Name: "about", URL: "/about"}}, Email: "private-email", ProfileURL: "https://auth.test/", LogoutURL: "https://auth.test/logout"}, Description: pages.Description}); about != want {
+	if want := runTemplate(t, "about", pages.AboutData{Banner: page.Banner{Service: appEvents.ServiceName, Trail: []page.Level{{Name: "about", URL: "/about"}}, Email: "private-email", ProfileURL: "https://auth.test/", LogoutURL: "https://auth.test/logout", Commit: "run-commit"}, Description: pages.Description}); about != want {
 		t.Fatal("empty version template", about)
 	}
 	r := f.request(t, "POST", "/mcp", `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`, "empty-discover")
@@ -532,10 +529,9 @@ func checkServerInfo(t *testing.T, body, display string) {
 	}
 }
 
-// R-IY9A-AJG5 R-G8N8-R4VO
+// R-B2WL-CQEE R-G8N8-R4VO
 func TestRunSuppliedBanner(t *testing.T) {
-	supplied := page.Banner{Service: "provided-service", Version: "provided-version", Tools: true, Trail: []page.Level{{Name: "source-place", URL: "/source-place"}},
-		Services: []page.Service{{Name: "provided-launcher", URL: "https://provided.test", Enabled: true, Icon: "launcher-icon-fixture"}}}
+	supplied := page.Banner{Service: "provided-service", Release: "provided-release", Commit: "provided-commit", Tools: true, Trail: []page.Level{{Name: "source-place", URL: "/source-place"}}}
 	f := startRun(t, t.TempDir(), map[string]string{}, func(f *runFixture) {
 		banner := func(_ page.User) page.Banner {
 			return supplied
@@ -545,12 +541,8 @@ func TestRunSuppliedBanner(t *testing.T) {
 		f.p = cli.Process{p.Args, p.LookupEnv, p.Unsetenv, p.Pid, p.Stdout, p.Stderr, p.Version, banner, p.Inherit, p.Now, p.Sleep, p.SweepAfter, p.RefreshAfter, p.AskAfter, p.TimeoutAfter, p.BackoffAfter, p.Rand, p.Dir, p.Sink}
 	})
 	about := body(t, f.request(t, "GET", "/about", "", "provided-about"))
-	if !strings.Contains(about, "provided-service") || !strings.Contains(about, "provided-version") {
+	if !strings.Contains(about, "provided-service") || !strings.Contains(about, "provided-release") {
 		t.Fatal("run did not use supplied banner", about)
-	}
-	landing := body(t, f.request(t, "GET", "/", "", "provided-landing"))
-	if !strings.Contains(landing, "provided-launcher") {
-		t.Fatal("run did not use supplied launcher", landing)
 	}
 	listed, err := f.mcp().ListTools(context.Background(), identity.Caller{UserID: "user", RequestID: "provided-list"})
 	if err != nil {

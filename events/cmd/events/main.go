@@ -34,7 +34,8 @@ func run() int {
 		case <-ctx.Done():
 		}
 	}()
-	v := version.Display()
-	kit := page.New(events.ServiceName, v)
+	id := version.Read()
+	v := id.String()
+	kit := page.New(events.ServiceName, id)
 	return cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Banner: kit.Banner, Sink: telemetry.NewSocketSink()})
 }
