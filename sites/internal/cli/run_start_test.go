@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/cache"
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
@@ -99,7 +100,7 @@ func newStartFixture(t *testing.T) *startFixture {
 	}
 	t.Cleanup(func() { _ = f.notify.Close() })
 	f.env["NOTIFY_SOCKET"] = f.notify.LocalAddr().String()
-	f.p = cli.Process{Version: "test display", Dir: dir, Pid: 123, Stdout: &f.out, Stderr: &f.err, Rand: startRand{}, Now: func() time.Time { return time.Date(2020, 1, 2, 3, 4, 5, 123456789, time.FixedZone("test", 3600)) }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Sink: &f.capture, Banner: page.New(pages.ServiceName, "test display").Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
+	f.p = cli.Process{Version: "test display", Dir: dir, Pid: 123, Stdout: &f.out, Stderr: &f.err, Rand: startRand{}, Now: func() time.Time { return time.Date(2020, 1, 2, 3, 4, 5, 123456789, time.FixedZone("test", 3600)) }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Sink: &f.capture, Banner: page.New(pages.ServiceName, version.Identity{Release: "test display"}).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test display", Telemetry: w})
 	}, LookupEnv: func(k string) (string, bool) {
 		f.mu.Lock()

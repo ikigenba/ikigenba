@@ -34,12 +34,18 @@ const binarySitesIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg
 
 // R-W4OI-ROHH R-W74B-J7YV R-YX1P-GMHL R-YY9L-UE8A
 // R-WAS0-OJ6Y R-Z357-DH72 R-R02K-R24N R-WBZX-2AXN R-W7MM-ZP1J
-// R-WILQ-FMPS
+// R-WILQ-FMPS R-MCTV-AGJI
 func TestBinary(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
 	t.Setenv(version.CommitVariable, "abcdef0123456789-dirty")
 	t.Setenv(version.ReleaseVariable, "release fixture")
+	id := version.Read()
 	v := version.Display()
+	t.Setenv(version.CommitVariable, "")
+	t.Setenv(version.ReleaseVariable, "")
+	emptyID := version.Read()
+	t.Setenv(version.CommitVariable, "abcdef0123456789-dirty")
+	t.Setenv(version.ReleaseVariable, "release fixture")
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -147,23 +153,23 @@ func TestBinary(t *testing.T) {
 		if !reflect.DeepEqual(meta, map[string]any{"name": pages.ServiceName, "version": v}) {
 			t.Fatalf("server info: %v", meta)
 		}
-		assertBinaryPage(t, f, "/about", v, "")
+		assertBinaryPage(t, f, "/about", id, "")
 		f.instructions(t, false, "")
 		f.stop(t, sig)
 		assertUndelivered(t, f.stderr.String(), sig, v)
 	}
-	// R-ZC7F-ATFV R-AWET-8KRE
+	// R-ME1R-O8A7 R-MF9O-200W
 	emptyWork := filepath.Join(root, "empty-sites")
 	if err := os.Mkdir(emptyWork, 0700); err != nil {
 		t.Fatal(err)
 	}
 	fVersion := startBinary(t, binary, emptyWork, env)
-	assertBinaryPage(t, fVersion, "/", v, "")
-	assertBinaryPage(t, fVersion, "/about", v, "")
+	assertBinaryPage(t, fVersion, "/", id, "")
+	assertBinaryPage(t, fVersion, "/about", id, "")
 	fVersion.stop(t, syscall.SIGTERM)
 	fEmpty := startBinary(t, binary, emptyWork, emptyEnv)
-	assertBinaryPage(t, fEmpty, "/", "", "")
-	assertBinaryPage(t, fEmpty, "/about", "", "")
+	assertBinaryPage(t, fEmpty, "/", emptyID, "")
+	assertBinaryPage(t, fEmpty, "/about", emptyID, "")
 	emptyList := fEmpty.call(t, "list", "")
 	if !reflect.DeepEqual(emptyList["_meta"].(map[string]any)["io.modelcontextprotocol/serverInfo"], map[string]any{"name": pages.ServiceName, "version": ""}) {
 		t.Fatal(emptyList)
@@ -174,21 +180,22 @@ func TestBinary(t *testing.T) {
 	services := filepath.Join(root, "services.json")
 	writeServices := func(disabled bool, description string) {
 		t.Helper()
-		data := fmt.Sprintf(`{"services":[{"name":"auth","url":"https://account.example.test","description":"Auth","socket":"/unused","enabled":true,"mcp":false,"icon":"<svg></svg>"},{"name":"dummy","url":"https://dummy.example.test","description":"Dummy","socket":"/unused","enabled":%t,"mcp":false,"icon":"<svg></svg>"},{"name":"sites","url":"https://sites.example.test","description":%q,"socket":"/unused","enabled":true,"mcp":true,"icon":%q}]}`, !disabled, description, binarySitesIcon)
+		data := fmt.Sprintf(`{"services":[{"name":"auth","url":"https://account.example.test","description":"Auth","socket":"/unused","enabled":true,"mcp":false,"icon":"<svg></svg>"},{"name":"home","url":"https://home.example.test","description":"Home","socket":"/unused","enabled":%t,"mcp":false,"icon":"<svg></svg>"},{"name":"sites","url":"https://sites.example.test","description":%q,"socket":"/unused","enabled":true,"mcp":true,"icon":%q}]}`, !disabled, description, binarySitesIcon)
 		if e := os.WriteFile(services, []byte(data), 0600); e != nil {
 			t.Fatal(e)
 		}
 	}
 	writeServices(false, "First description")
 	f := startBinary(t, binary, emptyWork, append(append([]string{}, env...), "IKIGENBA_SERVICES="+services))
-	// R-Z8JQ-5I7S
-	beforeBody := assertBinaryPage(t, f, "/", v, services)
+	// R-MK59-L2ZO
+	beforeBody := assertBinaryPage(t, f, "/", id, services)
 	f.instructions(t, true, "First description")
-	writeServices(true, "Changed description")
-	afterBody := assertBinaryPage(t, f, "/", v, services)
+	writeServices(true, "First description")
+	afterBody := assertBinaryPage(t, f, "/", id, services)
 	if beforeBody == afterBody {
 		t.Fatal("services rewrite did not reach the page")
 	}
+	writeServices(true, "Changed description")
 	f.instructions(t, true, "Changed description")
 	// Each broken or absent entry form is observed by the same live server.
 	for _, data := range []string{`invalid`, `{"services":[]}`} {
@@ -461,7 +468,7 @@ func assertLifecycle(t *testing.T, events []map[string]any, sig syscall.Signal, 
 	}
 }
 
-func assertBinaryPage(t *testing.T, f *binaryFixture, path, display, servicesPath string) string {
+func assertBinaryPage(t *testing.T, f *binaryFixture, path string, id version.Identity, servicesPath string) string {
 	t.Helper()
 	t.Setenv("IKIGENBA_SERVICES", servicesPath)
 	r, err := http.NewRequest("GET", "http://sites.sbx.ikigenba.dev"+path, nil)
@@ -470,7 +477,7 @@ func assertBinaryPage(t *testing.T, f *binaryFixture, path, display, servicesPat
 	}
 	r.Header.Set("X-User-Email", "mg@example.com")
 	r.Header.Set("X-Forwarded-Proto", "https")
-	b := page.New(pages.ServiceName, display).Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, servicesPath), LogoutURL: urls.AuthLogout(r, servicesPath)})
+	b := page.New(pages.ServiceName, id).Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, servicesPath), LogoutURL: urls.AuthLogout(r, servicesPath)})
 	name := "landing"
 	var data any = pages.LandingData{Banner: b, SitesURL: urls.SitesURL(r, servicesPath)}
 	if path == "/about" {

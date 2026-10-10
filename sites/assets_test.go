@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
 )
 
-// R-AV6W-UT0P R-XRL4-GF9Z R-XST0-U70O R-XU0X-7YRD
+// R-AV6W-UT0P R-MGHK-FRRL R-XST0-U70O R-XU0X-7YRD
 func TestEmbeddedFiles(t *testing.T) {
 	assets, etc := sites.Assets(), sites.Etc()
 	read := func(f fs.FS, names []string) map[string][]byte {

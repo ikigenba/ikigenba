@@ -12,8 +12,8 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 )
 
-// R-8ED5-8WC1 R-8GSY-0FTF R-8J8Q-RZAT R-DMWP-R6AY R-F04K-TWPO
-// R-8MWF-XAIW R-8PC8-OU0A R-8SZX-U58D R-F506-CZOG R-Z9RM-J9YH
+// R-MML2-CMH2 R-8GSY-0FTF R-8J8Q-RZAT R-DMWP-R6AY R-F04K-TWPO
+// R-8MWF-XAIW R-MP0V-45YG R-MQ8R-HXP5 R-F506-CZOG R-MRGN-VPFU
 func TestSharedFiles(t *testing.T) {
 	f := fresh(t)
 	other := fresh(t)
@@ -105,11 +105,25 @@ func TestSharedFiles(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/feedback.js/", "/_appkit/feedback.js/x", "/_appkit/FEEDBACK.JS", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/FAVICON.SVG"} {
-		for _, method := range []string{"GET", "HEAD", "POST"} {
-			r := f.get(t, method, path, "sites", "", map[string]string{"If-None-Match": "*"})
-			if r.Code != 404 || r.Body.String() == notfoundBody(t, f) {
-				t.Fatalf("unknown static %s %s %d", method, path, r.Code)
+	unknownPaths := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/launcher.js", "/_appkit/nope.css"}
+	for name := range files {
+		path := page.StaticPrefix + name
+		unknownPaths = append(unknownPaths, path+"/", path+"/x", page.StaticPrefix+strings.ToUpper(name))
+	}
+	notfound := notfoundBody(t, f)
+	for _, path := range unknownPaths {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
+			for _, validator := range []string{"", "*", `W/"stale"`} {
+				for _, identity := range identities {
+					headers := map[string]string{"If-None-Match": validator}
+					for key, value := range identity {
+						headers[key] = value
+					}
+					r := f.get(t, method, path, "sites", "", headers)
+					if r.Code != 404 || r.Body.String() == notfound {
+						t.Fatalf("unknown static %s %s %d", method, path, r.Code)
+					}
+				}
 			}
 		}
 	}
@@ -122,11 +136,11 @@ func sharedCacheHeaders(t *testing.T, headers http.Header, tag, cache string) {
 	}
 }
 
-// R-8BXC-HCUN
+// R-MLD5-YUQD
 func sharedFiles(t *testing.T, f *fixture) map[string]string {
 	t.Helper()
 	files := map[string]string{
-		"theme.css": "text/css; charset=utf-8", "launcher.js": "text/javascript; charset=utf-8",
+		"theme.css":   "text/css; charset=utf-8",
 		"feedback.js": "text/javascript; charset=utf-8", "favicon.svg": "image/svg+xml",
 		"OFL.txt": "text/plain; charset=utf-8", "TABLER-LICENSE.txt": "text/plain; charset=utf-8",
 	}

@@ -112,7 +112,7 @@ func answer(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 }
 
 func banner(u page.User) page.Banner {
-	return page.Banner{Service: "sites", Version: "test-build+local", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Tools: true, Trail: []page.Level{{Name: "source-level", URL: "/source-level"}}}
+	return page.Banner{Service: "sites", Release: "test-build+local", Commit: "test-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Tools: true, Trail: []page.Level{{Name: "source-level", URL: "/source-level"}}}
 }
 
 func config(t *testing.T, s *store.Store) pages.Config {

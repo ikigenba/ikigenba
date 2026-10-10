@@ -29,8 +29,9 @@ func main() {
 		}
 		cancel(errors.New(reason))
 	}()
-	v := version.Display()
-	kit := page.New(pages.ServiceName, v)
+	id := version.Read()
+	v := id.String()
+	kit := page.New(pages.ServiceName, id)
 	os.Exit(cli.Run(ctx, cli.Process{
 		Args: os.Args[1:], Version: v, LookupEnv: os.LookupEnv, Environ: os.Environ,
 		Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
