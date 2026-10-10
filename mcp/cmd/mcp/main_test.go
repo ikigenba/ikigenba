@@ -32,12 +32,13 @@ import (
 const binaryMCPIcon = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`
 
 // The sole process test proves main's process, constructor and signal wiring.
-// R-MD9R-TB45 R-MEHO-72UU R-UVBH-CZPM R-ZUQ4-V6AY R-ZAUY-NVX7
+// R-MD9R-TB45 R-MEHO-72UU R-UVBH-CZPM R-K5T8-HQLW R-K714-VICL R-K891-9A3A
 // R-MGXG-YMC8 R-MI5D-CE2X R-MJD9-Q5TM R-MLT2-HPB0 R-MN0Y-VH1P R-WSTR-5WZ7
 func TestBinary(t *testing.T) {
 	commit, release := "0123456789abcdef0123456789abcdef01234567", "workgroup"
 	t.Setenv(version.CommitVariable, commit)
 	t.Setenv(version.ReleaseVariable, release)
+	id := version.Read()
 	display := version.Display()
 	if display == "" || len(display) > 64 || strings.Trim(display, " \t\n\r\f\v") != display {
 		t.Fatalf("invalid display fixture %q", display)
@@ -160,6 +161,18 @@ func TestBinary(t *testing.T) {
 	if err != nil || len(entries) != 2 || !entries[0].HasIcon || !entries[1].HasIcon || string(entries[1].Icon) != binaryMCPIcon {
 		t.Fatalf("services fixture: %v %v", entries, err)
 	}
+	singleFile := filepath.Join(directory, "single.json")
+	singleRaw, err := json.Marshal(map[string]any{"services": []map[string]any{{"name": "alpha", "url": "https://alpha.example.test", "description": "Alpha", "socket": backendSocket, "enabled": true, "mcp": true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(singleFile, singleRaw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	singleEntries, err := services.Read(singleFile)
+	if err != nil || len(singleEntries) != 1 || singleEntries[0].Name != "alpha" || !singleEntries[0].MCP || !singleEntries[0].Enabled {
+		t.Fatalf("single-service fixture: %v %v", singleEntries, err)
+	}
 	caller := identity.Caller{UserID: "user", RequestID: "binarytrace"}
 	backendClient := appkitmcp.NewClient(appkitmcp.ClientConfig{Endpoint: "http://backend/mcp", HTTPClient: binaryHTTP(backendSocket)})
 	expected, err := backendClient.CallTool(context.Background(), caller, "read", json.RawMessage(`{}`))
@@ -188,7 +201,7 @@ func TestBinary(t *testing.T) {
 	if err = os.WriteFile(trailFile, trailRaw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	for run, sig := range []os.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGTERM, syscall.SIGINT} {
+	for run, sig := range []os.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGTERM, syscall.SIGINT, syscall.SIGTERM} {
 		socket := filepath.Join(directory, "gateway"+string(rune('0'+run))+".sock")
 		listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
 		if err != nil {
@@ -211,8 +224,11 @@ func TestBinary(t *testing.T) {
 		if run == 0 {
 			child.Env = append(child.Env, services.Variable+"="+file)
 		}
-		if run >= 2 {
+		if run == 2 || run == 3 {
 			child.Env = append(child.Env, services.Variable+"="+trailFile)
+		}
+		if run == 4 {
+			child.Env = append(child.Env, services.Variable+"="+singleFile)
 		}
 		child.ExtraFiles = []*os.File{inherited}
 		var stdout, stderr bytes.Buffer
@@ -245,7 +261,8 @@ func TestBinary(t *testing.T) {
 			t.Fatalf("readiness %q", buf[:n])
 		}
 		httpClient := binaryHTTP(socket)
-		if run < 2 {
+		switch run {
+		case 0, 1:
 			request, err := http.NewRequest(http.MethodGet, "http://gateway/", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -265,7 +282,7 @@ func TestBinary(t *testing.T) {
 			}
 			if run == 0 {
 				t.Setenv(services.Variable, file)
-				kit := page.New(gateway.ServiceName, display)
+				kit := page.New(gateway.ServiceName, id)
 				templates, err := page.Templates().ParseFS(assets.Assets(), "*.html")
 				if err != nil {
 					t.Fatal(err)
@@ -278,8 +295,8 @@ func TestBinary(t *testing.T) {
 				if string(body) != expected.String() {
 					t.Fatalf("binary page differs from template: %s", body)
 				}
-			} else if !bytes.Contains(body, []byte(display)) {
-				t.Fatalf("display absent: %s", body)
+			} else if !bytes.Contains(body, []byte(id.Release)) || !bytes.Contains(body, []byte(id.Commit)) {
+				t.Fatalf("code identity absent: %s", body)
 			}
 
 			client := appkitmcp.NewClient(appkitmcp.ClientConfig{Endpoint: "http://gateway/mcp", HTTPClient: httpClient})
@@ -293,18 +310,6 @@ func TestBinary(t *testing.T) {
 				t.Fatalf("serverInfo: %v", value)
 			}
 			if run == 0 {
-				structured, ok := value["structuredContent"].(map[string]any)
-				if !ok {
-					t.Fatalf("services content: %v", value)
-				}
-				list, ok := structured["services"].([]any)
-				if !ok || len(list) != 1 {
-					t.Fatalf("services list: %v", structured)
-				}
-				service, ok := list[0].(map[string]any)
-				if !ok || service["name"] != "alpha" || service["available"] != true {
-					t.Fatalf("service: %v", list)
-				}
 				requestMu.Lock()
 				backendRequests = nil
 				requestMu.Unlock()
@@ -340,7 +345,7 @@ func TestBinary(t *testing.T) {
 					t.Fatalf("call answer: %v", binaryResult(t, result))
 				}
 			}
-		} else if run == 2 {
+		case 2:
 			client := appkitmcp.NewClient(appkitmcp.ClientConfig{Endpoint: "http://gateway/mcp", HTTPClient: httpClient})
 			result, callErr := client.CallTool(context.Background(), caller, "call", json.RawMessage(`{"service":"alpha","tool":"read"}`))
 			if callErr != nil || result.IsError() {
@@ -348,6 +353,29 @@ func TestBinary(t *testing.T) {
 			}
 			if !reflect.DeepEqual(binaryResult(t, result)["structuredContent"], expectedJSON["structuredContent"]) {
 				t.Fatal("call content differs")
+			}
+		case 4:
+			client := appkitmcp.NewClient(appkitmcp.ClientConfig{Endpoint: "http://gateway/mcp", HTTPClient: httpClient})
+			result, callErr := client.CallTool(context.Background(), caller, "services", nil)
+			if callErr != nil || result.IsError() {
+				t.Fatalf("single-service call: %v %v", result, callErr)
+			}
+			value := binaryResult(t, result)
+			meta, ok := value["_meta"].(map[string]any)
+			if !ok || !reflect.DeepEqual(meta["io.modelcontextprotocol/serverInfo"], map[string]any{"name": gateway.ServiceName, "version": display}) {
+				t.Fatalf("single-service serverInfo: %v", value)
+			}
+			structured, ok := value["structuredContent"].(map[string]any)
+			if !ok {
+				t.Fatalf("services content: %v", value)
+			}
+			list, ok := structured["services"].([]any)
+			if !ok || len(list) != 1 {
+				t.Fatalf("services list: %v", structured)
+			}
+			service, ok := list[0].(map[string]any)
+			if !ok || service["name"] != singleEntries[0].Name || service["available"] != true {
+				t.Fatalf("service: %v", list)
 			}
 		}
 
@@ -366,7 +394,7 @@ func TestBinary(t *testing.T) {
 		if stdout.Len() != 0 {
 			t.Fatal(stdout.String())
 		}
-		if run >= 2 {
+		if run == 2 || run == 3 {
 			if stderr.Len() != 0 {
 				t.Fatal(stderr.String())
 			}

@@ -29,7 +29,7 @@ func pageConfig(t *testing.T, path string, banner func(page.User) page.Banner) g
 }
 
 func basicBanner(u page.User) page.Banner {
-	return page.Banner{Service: gateway.ServiceName, Version: "test", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	return page.Banner{Service: gateway.ServiceName, Release: "test-release", Commit: "test-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 }
 
 func servicesFile(t *testing.T, entries []map[string]any) string {

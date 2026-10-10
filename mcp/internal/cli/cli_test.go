@@ -44,7 +44,7 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// R-ZC2V-1NNW R-V9Y9-Y8LY R-X2KY-82WR R-VCE2-PS3C
+// R-EG99-I4T4 R-V9Y9-Y8LY R-X2KY-82WR R-VCE2-PS3C
 func TestConstants(t *testing.T) {
 	const manifest = cli.Manifest
 	const usage = cli.Usage
@@ -52,7 +52,7 @@ func TestConstants(t *testing.T) {
 	if a != 0 || b != 1 || c != 2 {
 		t.Fatal(a, b, c)
 	}
-	if !regexp.MustCompile(`\Aapp = "mcp"\ndescription = "[^"\\\p{Cc}]+"\ndefault = false\nmcp = false\nguests = true\nsecrets = \[\]\n\n\[resources\]\nmemory_max = "128M"\n\z`).MatchString(manifest) {
+	if !regexp.MustCompile(`\Aapp = "mcp"\ndescription = "[^"\\\p{Cc}]+"\ndefault = false\nmcp = false\nguests = true\nsecrets = \[\]\n\n\[resources\]\nmemory_max = "128M"\n\n\[home\]\ngroup = "core"\n\z`).MatchString(manifest) {
 		t.Fatal(manifest)
 	}
 

@@ -52,9 +52,8 @@ func TestAboutExactlyRendersRequestData(t *testing.T) {
 				for _, email := range []string{"", " supplied<&>@example.test "} {
 					var users []page.User
 					original := page.Banner{
-						Service: "supplied-service", Icon: "supplied-icon", Version: "supplied-version", Email: "source@example.test",
+						Service: "supplied-service", Icon: "supplied-icon", Release: "supplied-release", Commit: "supplied-commit", Email: "source@example.test",
 						ProfileURL: "https://profile.test/", LogoutURL: "https://profile.test/logout", Home: "https://home.test/", Tools: true, Trail: trail,
-						Services: []page.Service{{Name: "supplied-launcher", URL: "https://launcher.test/", Icon: "supplied-launcher-icon", Enabled: true, Current: true}},
 					}
 					answering := false
 					cfg := pageConfig(t, path, func(u page.User) page.Banner {
