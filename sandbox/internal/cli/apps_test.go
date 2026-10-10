@@ -118,7 +118,7 @@ func (f *appFixture) read(rel string) string {
 }
 func appManifest(app string) string { return "app = " + strconv.Quote(app) + "\n" }
 
-// R-AUCL-BZBE R-UE7I-W0Z0 R-UFFF-9SPP R-RKQQ-LM3W R-UP6M-BYN9 R-UNYP-Y6WK R-GH7Y-57L5 R-VDKL-ZDH5
+// R-AUCL-BZBE R-UE7I-W0Z0 R-UFFF-9SPP R-RKQQ-LM3W R-UP6M-BYN9 R-UNYP-Y6WK R-4TW1-D0GL R-VDKL-ZDH5
 func TestAppsDiscovery(t *testing.T) {
 	f := newAppFixture(t)
 	for _, a := range []string{"dummy", "auth"} {
@@ -203,10 +203,10 @@ func TestAppNames(t *testing.T) {
 	}
 }
 
-// R-UXPX-0CU4 R-UYXT-E4KT R-V05P-RWBI R-GJNQ-WR2J R-V2LI-JFSW R-AY0A-HAJH
+// R-UXPX-0CU4 R-UYXT-E4KT R-V05P-RWBI R-4WBU-4JXZ R-V2LI-JFSW R-AY0A-HAJH
 func TestManifestRefusals(t *testing.T) {
 	cases := []struct{ body, want string }{{"app = \"dummy\n", "line 1 (last key \"app\"): strings cannot contain newlines"}, {"port = 8080\napp = \"demo\"\n", "'port' is not allowed; the sandbox gives the app its socket"}, {"port = \"8080\"\n", "'port' is not allowed; the sandbox gives the app its socket"}, {"", "'app' is missing"}, {"app = \"demo\"\n", "app 'demo' does not match its directory 'dummy'"}, {"app = \"\"\n", "app '' does not match its directory 'dummy'"}, {"app = \"de\\nmo\"\n", "app 'de\\x0amo' does not match its directory 'dummy'"}}
-	for _, c := range []struct{ k, v, kind string }{{"app", "5", "a string"}, {"description", "5", "a string"}, {"default", "1", "a boolean"}, {"mcp", "\"yes\"", "a boolean"}, {"guests", "\"yes\"", "a boolean"}, {"secrets", "\"A\"", "an array of strings"}, {"secrets", "[1]", "an array of strings"}, {"env", "\"x\"", "a table of strings"}, {"env", "{X = 4}", "a table of strings"}, {"resources", "5", "a table"}, {"resources", "\"x\"", "a table"}} {
+	for _, c := range []struct{ k, v, kind string }{{"app", "5", "a string"}, {"description", "5", "a string"}, {"default", "1", "a boolean"}, {"mcp", "\"yes\"", "a boolean"}, {"guests", "\"yes\"", "a boolean"}, {"secrets", "\"A\"", "an array of strings"}, {"secrets", "[1]", "an array of strings"}, {"env", "\"x\"", "a table of strings"}, {"env", "{X = 4}", "a table of strings"}, {"resources", "5", "a table"}, {"resources", "\"x\"", "a table"}, {"home", "\"core\"", "a table"}} {
 		body := appManifest("dummy")
 		if c.k == "app" {
 			body = ""
@@ -341,7 +341,7 @@ func appTOMLString(s string) string {
 	return q
 }
 
-// R-JPRC-2RK8 R-VCCP-LLQG
+// R-4V3X-QS7A R-VCCP-LLQG
 func TestManifestPrecedence(t *testing.T) {
 	cases := []struct {
 		body, want string
@@ -358,6 +358,10 @@ func TestManifestPrecedence(t *testing.T) {
 		{"app=\"dummy\"\nenv=1\nresources=1\n", "'env' must be a table of strings"},
 		{"app=\"demo\"\nresources=1\n", "'resources' must be a table"},
 		{"resources=1\n", "'resources' must be a table"},
+		{"app=\"dummy\"\nresources=5\nhome=\"core\"\n", "'resources' must be a table"},
+		{"app=\"demo\"\nhome=\"core\"\n", "'home' must be a table"},
+		{"app=\"dummy\"\n[resources]\ncpu_weight=0\n[home]\ngroup=\"apps\"\n", "'resources.cpu_weight' must be a whole number from 1 to 10000"},
+		{"app=\"dummy\"\nmcp=true\n[home]\ngroup=\"apps\"\n", "'home.group' must be \"core\" or \"application\""},
 		{"app=\"dummy\"\nmcp=true\n[env]\nIKIGENBA_X=\"x\"\n[resources]\ncpu_weight=0\n", "'IKIGENBA_X' is set by the sandbox"},
 		{"app=\"dummy\"\nmcp=true\n[resources]\ncpu_weight=0\n", "'resources.cpu_weight' must be a whole number from 1 to 10000"},
 	} {
@@ -395,13 +399,13 @@ func TestManifestPrecedence(t *testing.T) {
 	f.refuse("dummy: etc/manifest.toml: app 'demo' does not match its directory 'dummy'")
 }
 
-// R-GH7Y-57L5
+// R-4TW1-D0GL
 func TestManifestReadKeys(t *testing.T) {
 	f := newAppFixture(t)
 	f.manifest("dummy", appManifest("dummy"))
 	f.success()
 	beforeEnv, beforeServices := f.read("env/dummy.env"), f.read("services.json")
-	f.manifest("dummy", appManifest("dummy")+"description=\"\"\ndefault=false\nmcp=false\nguests=false\nsecrets=[]\nenv={}\nresources={}\n")
+	f.manifest("dummy", appManifest("dummy")+"description=\"\"\ndefault=false\nmcp=false\nguests=false\nsecrets=[]\nenv={}\nresources={}\nhome={}\n")
 	f.success()
 	if f.read("env/dummy.env") != beforeEnv || f.read("services.json") != beforeServices {
 		t.Fatal("absent keys did not use empty defaults")
@@ -576,7 +580,7 @@ func TestGuestsDoNotChangeDeployment(t *testing.T) {
 	}
 }
 
-// R-JPRC-2RK8 R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
+// R-4V3X-QS7A R-UGNB-NKGE R-O6IF-77MM R-O7QB-KZDB R-O8Y7-YR40 R-OA64-CIUP R-OBE0-QALE R-U4C7-PY0T
 func TestAppIcons(t *testing.T) {
 	for _, emptyShare := range []bool{false, true} {
 		f := newAppFixture(t)
@@ -793,7 +797,7 @@ func TestAppSecretEnvironment(t *testing.T) {
 	}
 }
 
-// R-VESI-D57U R-O2UQ-1WEJ R-R23U-IUXG R-B43S-E58Y R-R3BQ-WMO5 R-W0QP-90KC R-O5AI-TFVX
+// R-VESI-D57U R-O2UQ-1WEJ R-R23U-IUXG R-B43S-E58Y R-R3BQ-WMO5 R-W0QP-90KC R-MFOP-UHMV
 func TestAppDeploymentFiles(t *testing.T) {
 	for _, def := range []bool{false, true} {
 		f := newAppFixture(t)
@@ -814,7 +818,7 @@ func TestAppDeploymentFiles(t *testing.T) {
 		if got := f.read("env/dummy.env"); got != "DRAIN_SECONDS=\"5\"\n"+base("dummy") {
 			t.Fatalf("dummy env %q", got)
 		}
-		want := "{\n  \"services\": [\n    { \"name\": \"auth\", \"url\": \"http://auth.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/auth.sock\", \"enabled\": true, \"mcp\": false },\n    { \"name\": \"dummy\", \"url\": \"http://dummy.wip.localhost:7400\", \"description\": \"Demo widgets to list and create\", \"socket\": \"/run/user/1000/sandbox/7400/dummy.sock\", \"enabled\": true, \"mcp\": true, \"icon\": \"<svg xmlns=\\\"http://www.w3.org/2000/svg\\\" viewBox=\\\"0 0 24 24\\\"><circle cx=\\\"12\\\" cy=\\\"12\\\" r=\\\"10\\\"/></svg>\\n\" }\n  ]\n}\n"
+		want := "{\n  \"services\": [\n    { \"name\": \"auth\", \"url\": \"http://auth.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/auth.sock\", \"enabled\": true, \"mcp\": false, \"group\": \"application\" },\n    { \"name\": \"dummy\", \"url\": \"http://dummy.wip.localhost:7400\", \"description\": \"Demo widgets to list and create\", \"socket\": \"/run/user/1000/sandbox/7400/dummy.sock\", \"enabled\": true, \"mcp\": true, \"icon\": \"<svg xmlns=\\\"http://www.w3.org/2000/svg\\\" viewBox=\\\"0 0 24 24\\\"><circle cx=\\\"12\\\" cy=\\\"12\\\" r=\\\"10\\\"/></svg>\\n\", \"group\": \"application\" }\n  ]\n}\n"
 		if got := f.read("services.json"); got != want {
 			t.Fatalf("services differs\ngot %s\nwant %s", got, want)
 		}

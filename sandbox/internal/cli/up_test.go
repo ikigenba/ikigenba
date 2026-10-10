@@ -212,10 +212,10 @@ func upSnapshot(t *testing.T, root string) map[string]string {
 func TestUpSuccessfulDeployment(t *testing.T) {
 	// R-RGOI-M8C3 R-RHWF-002S R-XXC9-Z9PP R-XYK6-D1GE R-Y0ZZ-4KXS
 	// R-Y4NO-9W5V R-U16K-JJPF R-RQFP-OE9N R-RRNM-260C R-ZFIX-V9WF
-	// R-YRTR-JJ92 R-R5RJ-O65J R-YU9K-B2QG R-YVHG-OUH5 R-Z2SU-ZGXB R-IJUW-KM7L
+	// R-YRTR-JJ92 R-MGWM-89DK R-YU9K-B2QG R-YVHG-OUH5 R-Z2SU-ZGXB R-IJUW-KM7L
 	// R-Z58N-R0EP R-R6ZG-1XW8 R-YGUO-3LKT R-S1ET-4BXW R-RP7T-AMIY
 	f := newUpFixture(t, "dummy", "auth")
-	f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app=\"auth\"\nsecrets=[\"GOOGLE_CLIENT_SECRET\"]\n[env]\nWORKSPACE_DOMAIN=\"example.test\"\n", 0644)
+	f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app=\"auth\"\nsecrets=[\"GOOGLE_CLIENT_SECRET\"]\n[env]\nWORKSPACE_DOMAIN=\"example.test\"\n[home]\ngroup=\"core\"\n", 0644)
 	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_SECRET": "desktop-secret"}
 	f.exec = func(c seam.Cmd) (seam.Result, error) {
 		if c.Path == "go" {
@@ -264,7 +264,7 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 					t.Fatal("service mismatch")
 				}
 			}
-			wantServices := "{\n  \"services\": [\n    { \"name\": \"auth\", \"url\": \"http://auth.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/auth.sock\", \"enabled\": true, \"mcp\": false },\n    { \"name\": \"dummy\", \"url\": \"http://dummy.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/dummy.sock\", \"enabled\": true, \"mcp\": false }\n  ]\n}\n"
+			wantServices := "{\n  \"services\": [\n    { \"name\": \"auth\", \"url\": \"http://auth.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/auth.sock\", \"enabled\": true, \"mcp\": false, \"group\": \"core\" },\n    { \"name\": \"dummy\", \"url\": \"http://dummy.wip.localhost:7400\", \"description\": \"\", \"socket\": \"/run/user/1000/sandbox/7400/dummy.sock\", \"enabled\": true, \"mcp\": false, \"group\": \"application\" }\n  ]\n}\n"
 			if upRead(t, filepath.Join(f.data, "services.json")) != wantServices {
 				t.Fatal("services mismatch")
 			}
@@ -723,7 +723,7 @@ func TestUpIgnoresFragmentContents(t *testing.T) {
 }
 
 func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
-	// R-JQZ8-GJAX
+	// R-5631-6PVJ
 	for _, fault := range []string{"earlier-icon", "later-manifest", "icon-before-defaults"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newUpFixture(t, "auth", "dummy")
@@ -749,7 +749,7 @@ func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
 }
 
 func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
-	// R-JQZ8-GJAX R-S969-SQY1
+	// R-5631-6PVJ R-S969-SQY1
 	for _, known := range []bool{false, true} {
 		for _, fault := range []string{"noapps", "manifest", "icon", "defaults", "badvalue", "secrets", "clash", "ports"} {
 			if known && fault == "ports" {

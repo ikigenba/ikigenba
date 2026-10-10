@@ -32,6 +32,7 @@ type appInfo struct {
 	HasIcon      bool
 	Placement    string
 	Delegate     bool
+	HomeGroup    string
 }
 
 func appOSReason(err error) string {
@@ -133,7 +134,7 @@ func readManifest(worktree string, a *appInfo) error {
 	if _, ok := m["port"]; ok {
 		return manifestError(a.Name, "'port' is not allowed; the sandbox gives the app its socket")
 	}
-	types := []struct{ k, kind string }{{"app", "a string"}, {"description", "a string"}, {"default", "a boolean"}, {"mcp", "a boolean"}, {"guests", "a boolean"}, {"secrets", "an array of strings"}, {"env", "a table of strings"}, {"resources", "a table"}}
+	types := []struct{ k, kind string }{{"app", "a string"}, {"description", "a string"}, {"default", "a boolean"}, {"mcp", "a boolean"}, {"guests", "a boolean"}, {"secrets", "an array of strings"}, {"env", "a table of strings"}, {"resources", "a table"}, {"home", "a table"}}
 	for _, item := range types {
 		v, ok := m[item.k]
 		if !ok {
@@ -163,7 +164,7 @@ func readManifest(worktree string, a *appInfo) error {
 					}
 				}
 			}
-		case "resources":
+		case "resources", "home":
 			_, valid = v.(map[string]any)
 		}
 		if !valid {
@@ -239,10 +240,38 @@ func readManifest(worktree string, a *appInfo) error {
 		}
 		a.Delegate, _ = resources["delegate"].(bool)
 	}
+	a.HomeGroup = "application"
+	if home, ok := m["home"].(map[string]any); ok {
+		if err := checkHome(a.Name, home); err != nil {
+			return err
+		}
+		if home["group"] == "core" {
+			a.HomeGroup = "core"
+		}
+	}
 	if a.MCP && strings.TrimFunc(a.Description, unicode.IsSpace) == "" {
 		return manifestError(a.Name, "'mcp' is true but 'description' is empty; an MCP service must say what it offers")
 	}
 	return readAppIcon(worktree, a)
+}
+
+func checkHome(name string, home map[string]any) error {
+	if group, present := home["group"]; present {
+		if group != "core" && group != "application" {
+			return manifestError(name, `'home.group' must be "core" or "application"`)
+		}
+	}
+	var unknown []string
+	for key := range home {
+		if key != "group" {
+			unknown = append(unknown, key)
+		}
+	}
+	sort.Strings(unknown)
+	if len(unknown) > 0 {
+		return manifestError(name, fmt.Sprintf("'home.%s' is not allowed; the only home key is group", appPrinted(unknown[0])))
+	}
+	return nil
 }
 
 func checkResources(name string, resources map[string]any) error {
@@ -472,7 +501,7 @@ func renderServices(name string, port, euid int, apps []appInfo) []byte {
 		if a.HasIcon {
 			fmt.Fprintf(&b, ", \"icon\": %s", appJSONString(string(a.Icon)))
 		}
-		b.WriteString(" }")
+		fmt.Fprintf(&b, ", \"group\": %s }", appJSONString(a.HomeGroup))
 		if i+1 < len(apps) {
 			b.WriteByte(',')
 		}
