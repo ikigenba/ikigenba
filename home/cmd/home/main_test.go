@@ -27,7 +27,7 @@ import (
 	"github.com/ikigenba/ikigenba/home/internal/pages"
 )
 
-// R-4F8J-SIHA R-5EYJ-OKRS R-6ZWW-V2U2 R-3Y5Y-FQ3K R-40LR-79KY R-41TN-L1BN R-72CP-MMBG
+// R-4F8J-SIHA R-DEQD-NREG R-DFYA-1J55 R-6ZWW-V2U2 R-DH66-FAVU R-JS5F-FUNC R-41TN-L1BN R-72CP-MMBG
 func TestBinary(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "home")
 	build := exec.Command("go")
@@ -40,6 +40,7 @@ func TestBinary(t *testing.T) {
 	t.Setenv(version.CommitVariable, commit)
 	t.Setenv(version.ReleaseVariable, release)
 	display := version.Display()
+	id := version.Read()
 	env := []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 	for _, tc := range []struct {
 		args     []string
@@ -71,16 +72,16 @@ func TestBinary(t *testing.T) {
 	var banner page.Banner
 	for _, configured := range []bool{true, false} {
 		childEnv := env
-		expectedDisplay := display
+		expectedIdentity := id
 		if !configured {
 			childEnv = []string{}
 			t.Setenv(version.CommitVariable, "")
 			t.Setenv(version.ReleaseVariable, "")
-			expectedDisplay = version.Display()
+			expectedIdentity = version.Read()
 		}
 		child = startChild(t, binary, childEnv)
 		actual = child.get(t, "/about")
-		banner = page.New(pages.ServiceName, expectedDisplay).Banner(page.User{Email: "mg@example.com", ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"})
+		banner = page.New(pages.ServiceName, expectedIdentity).Banner(page.User{Email: "mg@example.com", ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"})
 		banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
 		if want := render(t, "about", pages.AboutData{Banner: banner, Description: pages.Description}); actual != want {
 			t.Fatal("binary about does not match its banner template")
@@ -98,9 +99,25 @@ func TestBinary(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		writeTiles(t, servicePath, enabled)
 		actual = child.get(t, "/")
-		banner = page.New(pages.ServiceName, display).Banner(page.User{Email: "mg@example.com", ProfileURL: "https://accounts.example.test/", LogoutURL: "https://accounts.example.test/logout"})
+		banner = page.New(pages.ServiceName, id).Banner(page.User{Email: "mg@example.com", ProfileURL: "https://accounts.example.test/", LogoutURL: "https://accounts.example.test/logout"})
 		banner.Trail = nil
-		if want := render(t, "landing", pages.LandingData{Banner: banner, Services: banner.Services}); actual != want {
+		entries, err := services.Read(servicePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := pages.LandingData{Banner: banner}
+		for _, entry := range entries {
+			if entry.Name == pages.ServiceName || !entry.HasIcon {
+				continue
+			}
+			tile := pages.Tile{Name: entry.Name, URL: entry.URL, Icon: entry.Icon, Enabled: entry.Enabled}
+			if entry.Group == "core" {
+				data.Core = append(data.Core, tile)
+			} else {
+				data.Application = append(data.Application, tile)
+			}
+		}
+		if want := render(t, "landing", data); actual != want {
 			t.Fatal("binary landing does not match current services template")
 		}
 		if enabled {
@@ -200,12 +217,22 @@ func writeServices(t *testing.T, path string, entries []map[string]any) {
 func writeTiles(t *testing.T, path string, enabled bool) {
 	t.Helper()
 	var entries []map[string]any
-	for _, name := range []string{"auth", "home", "cron"} {
+	for _, name := range []string{"cron", "home", "auth", "sites", "scripts", "events"} {
 		url := "https://" + name + ".example.test"
 		if name == "auth" {
 			url = "https://accounts.example.test"
 		}
-		entries = append(entries, map[string]any{"name": name, "url": url, "description": "fixture " + name, "socket": "/fixture/" + name + ".sock", "enabled": name != "cron" || enabled, "mcp": false, "icon": "<svg></svg>"})
+		entry := map[string]any{"name": name, "url": url, "description": "fixture " + name, "socket": "/fixture/" + name + ".sock", "enabled": name != "cron" || enabled, "mcp": false}
+		if name != "events" {
+			entry["icon"] = "<svg></svg>"
+		}
+		switch name {
+		case "cron", "home", "auth", "events":
+			entry["group"] = "core"
+		case "scripts":
+			entry["group"] = "application"
+		}
+		entries = append(entries, entry)
 	}
 	writeServices(t, path, entries)
 }

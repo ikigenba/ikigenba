@@ -17,8 +17,8 @@ import (
 func main() { os.Exit(run()) }
 
 func run() int {
-	v := version.Display()
-	kit := page.New(pages.ServiceName, v)
+	id := version.Read()
+	kit := page.New(pages.ServiceName, id)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	signals := make(chan os.Signal, 1)
@@ -38,6 +38,6 @@ func run() int {
 	return cli.Run(ctx, cli.Process{
 		Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv,
 		Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
-		Version: v, Banner: kit.Banner,
+		Version: id.String(), Banner: kit.Banner,
 	})
 }

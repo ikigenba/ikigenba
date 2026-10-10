@@ -25,7 +25,7 @@ const (
 	ExitServerFailed = 1
 	ExitUsage        = 2
 	Usage            = "Usage: home [command]\n\nServe the space's front door, a page of every service at /, on the\nsocket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
-	Manifest         = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n"
+	Manifest         = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
 )
 
 // Process supplies the process resources and environment used by Run.

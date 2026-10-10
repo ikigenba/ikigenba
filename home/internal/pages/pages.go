@@ -20,10 +20,17 @@ const ServiceName = "home"
 // Description is home's one-line description.
 const Description string = "Every service on this space"
 
+// Tile carries one listed service to the landing template.
+type Tile struct {
+	Name, URL string
+	Icon      template.HTML
+	Enabled   bool
+}
+
 // LandingData supplies the landing template.
 type LandingData struct {
-	Banner   page.Banner
-	Services []page.Service
+	Banner            page.Banner
+	Application, Core []Tile
 }
 
 // AboutData supplies the about template.
@@ -63,12 +70,25 @@ func Handler(cfg Config) http.Handler {
 				name = "about"
 			}
 		}
-		b := cfg.Banner(bannerUser(r, cfg.ServicesPath))
+		list, _ := services.Read(cfg.ServicesPath)
+		b := cfg.Banner(bannerUser(r, list))
 		b.Trail = nil
 		var data any = NoticeData{Banner: b}
 		switch name {
 		case "landing":
-			data = LandingData{Banner: b, Services: b.Services}
+			landing := LandingData{Banner: b}
+			for _, e := range list {
+				if !e.HasIcon || e.Name == ServiceName {
+					continue
+				}
+				tile := Tile{Name: e.Name, URL: e.URL, Icon: e.Icon, Enabled: e.Enabled}
+				if e.Group == "core" {
+					landing.Core = append(landing.Core, tile)
+				} else {
+					landing.Application = append(landing.Application, tile)
+				}
+			}
+			data = landing
 		case "about":
 			b.Trail = []page.Level{{Name: "about", URL: "/about"}}
 			data = AboutData{Banner: b, Description: Description}
@@ -86,12 +106,10 @@ func Handler(cfg Config) http.Handler {
 	return telemetry.Middleware(cfg.Telemetry, identity.Require(h))
 }
 
-func bannerUser(r *http.Request, path string) page.User {
+func bannerUser(r *http.Request, list services.List) page.User {
 	base := ""
-	if list, err := services.Read(path); err == nil {
-		if auth, ok := list.Find("auth"); ok {
-			base = auth.URL
-		}
+	if auth, ok := list.Find("auth"); ok {
+		base = auth.URL
 	}
 	if base == "" {
 		scheme := r.Header.Get("X-Forwarded-Proto")

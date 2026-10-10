@@ -59,7 +59,7 @@ func (w *writes) last() string {
 	return w.calls[len(w.calls)-1]
 }
 
-// R-7AW0-B0IB R-5FTJ-9MQ4 R-5I9C-167I R-4SNF-ZZMX
+// R-7AW0-B0IB R-JTDB-TME1 R-5I9C-167I R-4SNF-ZZMX
 func TestConstants(t *testing.T) {
 	const declaredUsage = Usage
 	const declaredManifest = Manifest
@@ -87,7 +87,7 @@ func TestConstants(t *testing.T) {
 	if pages.Description == "" {
 		t.Fatal("empty description")
 	}
-	want = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n"
+	want = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
 	if declaredManifest != want {
 		t.Fatalf("manifest %q", Manifest)
 	}
@@ -310,7 +310,7 @@ func startRun(t *testing.T, modify func(*Process)) *runFixture {
 		}
 		return ln, nil
 	}, Banner: func(u page.User) page.Banner {
-		return page.Banner{Service: pages.ServiceName, Version: "banner display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		return page.Banner{Service: pages.ServiceName, Release: "banner display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}}
 	if modify != nil {
 		modify(&p)
@@ -401,7 +401,7 @@ func TestServeAndStop(t *testing.T) {
 				// The same handler configured directly must produce exactly the same answer.
 				reference := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: &telemetry.Capture{}, Stderr: io.Discard})
 				h := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner {
-					return page.Banner{Service: pages.ServiceName, Version: "banner display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+					return page.Banner{Service: pages.ServiceName, Release: "banner display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 				}, ServicesPath: func() string {
 					if present {
 						return path
@@ -711,7 +711,7 @@ func TestDrainFinishes(t *testing.T) {
 			p.Banner = func(page.User) page.Banner {
 				close(entered)
 				<-release
-				return page.Banner{Service: pages.ServiceName, Version: "full answer marker"}
+				return page.Banner{Service: pages.ServiceName, Release: "full answer marker"}
 			}
 		})
 		body := make(chan string, 1)
