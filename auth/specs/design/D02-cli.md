@@ -18,8 +18,10 @@ name; its description, which is `server.Description` (D05), the line the
 about page shows and the host publishes in its services file, so the two
 cannot drift; that it is not the host's default app, the secrets it needs, its
 Workspace domain, and its SQLite database; its `[resources]` table places it
-among the platform's core services and caps its memory at 128M. It declares no
-port: auth serves on the socket the host passes it, and a manifest carrying `port` is refused by
+among the platform's core services and caps its memory at 128M; and, last, its
+`[home]` table, whose only line is `group = "core"`, names the group home's
+landing page shows auth under, as opsctl's and sandbox's manifest rules
+define. It declares no port: auth serves on the socket the host passes it, and a manifest carrying `port` is refused by
 `devctl build` and by opsctl. The domain `michaelgreenly.dev` and the database
 path are data the manifest fixes, not release versions.
 
@@ -115,7 +117,7 @@ identity; auth writes no version literal.
     1  failure
     2  usage error
   ```
-- R-RG9K-6CZV: The app manifest MUST be exactly the following text, and nothing else (a trailing newline follows the last line), where `<description>` stands for exactly the text of the `internal/server` package's `Description` (D05):
+- R-6M7B-8W67: The app manifest MUST be exactly the following text, and nothing else (a trailing newline follows the last line), where `<description>` stands for exactly the text of the `internal/server` package's `Description` (D05):
   ```
   app = "auth"
   description = "<description>"
@@ -132,6 +134,9 @@ identity; auth writes no version literal.
   [resources]
   slice = "core"
   memory_max = "128M"
+
+  [home]
+  group = "core"
   ```
 - R-OYUS-DBTQ: Invoking auth with no command MUST serve the auth service (the serving behavior is D03's contract); it MUST NOT print the usage text or the manifest.
 - R-8IPU-AMS5: The `auth` executable run with exactly the argument `--version` MUST write the display string of that run of the executable (D01, R-8CMC-DS2O), followed by a single newline, to stdout, write nothing to stderr, and exit `0`, so that a run whose environment sets neither `IKIGENBA_COMMIT` nor `IKIGENBA_RELEASE` writes exactly one newline.
@@ -179,6 +184,9 @@ path = "state/auth.db"
 [resources]
 slice = "core"
 memory_max = "128M"
+
+[home]
+group = "core"
 
 $ auth --help
 Usage: auth [command]
