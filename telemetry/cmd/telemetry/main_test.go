@@ -33,9 +33,10 @@ const binaryTelemetryIcon = "fixture-icon"
 
 // TestBinary is the one process test: all command and host wiring is exercised here.
 func TestBinary(t *testing.T) {
-	// R-T7M6-XWRQ R-T8U3-BOIF
+	// R-T7M6-XWRQ R-T8U3-BOIF R-0LTR-CR1G
 	t.Setenv(version.CommitVariable, strings.Repeat("a", 40))
 	t.Setenv(version.ReleaseVariable, "host release label")
+	id := version.Read()
 	display := version.Display()
 	displayEnv := []string{version.CommitVariable + "=" + strings.Repeat("a", 40), version.ReleaseVariable + "=host release label"}
 	processContext, cancelProcesses := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -139,7 +140,7 @@ func TestBinary(t *testing.T) {
 	servicesFile := filepath.Join(workingDir, "services.json")
 	writeServices := func(description string) {
 		entries := map[string]any{"services": []any{map[string]any{
-			"name": web.ServiceName, "url": "http://telemetry.test", "description": description,
+			"name": web.ServiceName, "group": "platform", "url": "http://telemetry.test", "description": description,
 			"socket": "telemetry.sock", "enabled": true, "mcp": true, "icon": binaryTelemetryIcon,
 		}}}
 		data, marshalErr := json.Marshal(entries)
@@ -248,11 +249,11 @@ func TestBinary(t *testing.T) {
 	}
 
 	first, stopFirst := launch("first", false)
-	// R-93HS-ZPX4
+	// R-0PHG-I29J
 	landing := binaryRequest(t, first, http.MethodGet, "/", nil, nil, http.StatusOK)
-	assertBinaryBanner(t, landing, display, "")
+	assertBinaryBanner(t, landing, id, "")
 	var footer bytes.Buffer
-	if err := page.Templates().ExecuteTemplate(&footer, "footer", page.Banner{Service: web.ServiceName, Version: display}); err != nil {
+	if err := page.Templates().ExecuteTemplate(&footer, "footer", page.Banner{Release: id.Release, Commit: id.Commit}); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(landing, footer.Bytes()) {
@@ -297,9 +298,9 @@ func TestBinary(t *testing.T) {
 	writeServices("first published description")
 	second, stopSecond := launch("second", true)
 	assertBinaryStop(t, second, "SIGTERM")
-	// R-929W-LY6F
+	// R-0O9K-4AIU
 	landing = binaryRequest(t, second, http.MethodGet, "/", nil, nil, http.StatusOK)
-	assertBinaryBanner(t, landing, display, servicesFile)
+	assertBinaryBanner(t, landing, id, servicesFile)
 	// R-TTRI-KNS8
 	for _, description := range []string{"first published description", "updated published description"} {
 		writeServices(description)
@@ -324,11 +325,11 @@ func TestBinary(t *testing.T) {
 	}
 }
 
-// R-929W-LY6F: observe the kit's banner through the binary's page response.
-func assertBinaryBanner(t *testing.T, body []byte, display, servicesPath string) {
+// R-0O9K-4AIU: observe the kit's banner through the binary's page response.
+func assertBinaryBanner(t *testing.T, body []byte, id version.Identity, servicesPath string) {
 	t.Helper()
 	t.Setenv(services.Variable, servicesPath)
-	banner := page.New(web.ServiceName, display).Banner(page.User{
+	banner := page.New(web.ServiceName, id).Banner(page.User{
 		ProfileURL: "https://auth.test/", LogoutURL: "https://auth.test/logout",
 	})
 	var expected bytes.Buffer

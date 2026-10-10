@@ -15,12 +15,11 @@ import (
 
 type sharedFile struct{ name, content string }
 
-// R-UN6O-IW13: discover font paths through the public stylesheet and preload API.
+// R-0RX9-9LQX: discover font paths through the public stylesheet and preload API.
 func sharedFiles(t *testing.T, h http.Handler) []sharedFile {
 	t.Helper()
 	files := []sharedFile{
 		{"theme.css", "text/css; charset=utf-8"},
-		{"launcher.js", "text/javascript; charset=utf-8"},
 		{"feedback.js", "text/javascript; charset=utf-8"},
 		{"favicon.svg", "image/svg+xml"},
 		{"OFL.txt", "text/plain; charset=utf-8"},
@@ -48,7 +47,7 @@ func sharedFiles(t *testing.T, h http.Handler) []sharedFile {
 }
 
 func TestSharedFiles(t *testing.T) {
-	// R-UPMH-AFIH R-UQUD-O796 R-US2A-1YZV R-QVUQ-PAYP R-QZIF-UM6S R-UTA6-FQQK R-UUI2-TIH9 R-UVPZ-7A7Y R-R4E1-DP5K R-R5LX-RGW9
+	// R-0UD2-158B R-UQUD-O796 R-US2A-1YZV R-QVUQ-PAYP R-QZIF-UM6S R-UTA6-FQQK R-UUI2-TIH9 R-0VKY-EWZ0 R-R4E1-DP5K R-R5LX-RGW9
 	f := newFixture(t)
 	second := web.Handler(freshServer(t, f, f.cfg))
 	static := page.Static()
@@ -142,7 +141,7 @@ func TestSharedFiles(t *testing.T) {
 			equalResponse(t, out, want)
 		}
 	}
-	invalid := []string{page.StaticPrefix, page.StaticPrefix + "banner.html", page.StaticPrefix + "nope.css"}
+	invalid := []string{page.StaticPrefix, page.StaticPrefix + "banner.html", page.StaticPrefix + "nope.css", page.StaticPrefix + "launcher.js"}
 	for _, tc := range files {
 		invalid = append(invalid, page.StaticPrefix+tc.name+"/", page.StaticPrefix+tc.name+"/x", page.StaticPrefix+strings.ToUpper(tc.name))
 	}

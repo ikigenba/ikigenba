@@ -17,7 +17,8 @@ import (
 )
 
 func main() {
-	v := version.Display()
+	id := version.Read()
+	v := id.String()
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
@@ -32,7 +33,7 @@ func main() {
 		case <-ctx.Done():
 		}
 	}()
-	kit := page.New(web.ServiceName, v)
+	kit := page.New(web.ServiceName, id)
 	code := cli.Run(ctx, cli.Process{
 		Args: os.Args[1:], LookupEnv: os.LookupEnv, Pid: os.Getpid(),
 		Stdout: os.Stdout, Stderr: os.Stderr, Unsetenv: os.Unsetenv,

@@ -49,12 +49,16 @@ func assertEmpty(t *testing.T, dir string) {
 	}
 }
 
-// R-94PP-DHNT R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
-func TestDeclarations(t *testing.T) {
+// R-0QPC-VU08
+func TestManifest(t *testing.T) {
 	const manifest = cli.Manifest
-	if manifest != "app = \"telemetry\"\ndescription = \""+web.Description+"\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n" {
-		t.Fatal("manifest")
+	if want := "app = \"telemetry\"\ndescription = \"" + web.Description + "\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n\n[home]\ngroup = \"core\"\n"; manifest != want {
+		t.Fatalf("manifest: got %q, want %q", manifest, want)
 	}
+}
+
+// R-U76E-S4XV R-U8EB-5WOK R-UAU3-XG5Y R-QXCY-WVJI
+func TestDeclarations(t *testing.T) {
 	const nginx = cli.NginxConf
 	if nginx != "location = /ingest { return 404; }\n" {
 		t.Fatal("nginx")

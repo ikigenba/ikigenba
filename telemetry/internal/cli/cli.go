@@ -18,7 +18,7 @@ import (
 )
 
 // Manifest describes the application's host configuration.
-const Manifest = "app = \"telemetry\"\ndescription = \"" + web.Description + "\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n"
+const Manifest = "app = \"telemetry\"\ndescription = \"" + web.Description + "\"\ndefault = false\nmcp = true\nsecrets = []\n\n[env]\nRETENTION_DAYS = \"15\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/telemetry.db\"\n\n[resources]\nslice = \"core\"\nmemory_max = \"256M\"\n\n[home]\ngroup = \"core\"\n"
 
 // NginxConf prevents public access to the sibling ingest endpoint.
 const NginxConf = "location = /ingest { return 404; }\n"

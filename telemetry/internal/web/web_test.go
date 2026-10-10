@@ -50,7 +50,7 @@ func newFixture(t *testing.T) *fixture {
 	stderr := new(bytes.Buffer)
 	w := at.New(at.Config{Service: web.ServiceName, Sink: c, Stderr: stderr, Now: func() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{0x41}, 65536))})
 	cfg := web.Config{Banner: func(u page.User) page.Banner {
-		return page.Banner{Service: web.ServiceName, Version: "test-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		return page.Banner{Service: web.ServiceName, Release: "test-release", Commit: "test-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "test-version", Telemetry: w}), Store: s, Telemetry: w}
 	f := &fixture{s: s, w: w, c: c, stderr: stderr, cfg: cfg, database: database}
 	f.h = web.Handler(cfg)
@@ -113,7 +113,7 @@ func TestIdentityBeforeRouting(t *testing.T) {
 	}
 }
 func TestExactPathsAnd404(t *testing.T) {
-	// R-DJ8X-PQAF R-98DE-ISVW R-DKGU-3I14 R-RHSX-L6B7
+	// R-DJ8X-PQAF R-98DE-ISVW R-0T55-NDHM R-RHSX-L6B7
 	f := newFixture(t)
 	for _, path := range []string{"/mcp/", "/mcp/a", "/ingest/", "/ingest/a", "/about/", "/tools/", "/_appkit", "/assets/", "/assets/a", "/logout", "/index.html", "//", "/nope", "/nope/", "/x/../", "/x/./", "/_APPKIT/feedback.js", "/_APPKIT/favicon.svg", "/favicon.svg", "/_appkit-extra/favicon.svg"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CUSTOM"} {

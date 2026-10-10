@@ -696,7 +696,7 @@ func decodeEvent(t *testing.T, line string) telemetry.Event {
 func TestRunConstructorInputsAndFrozenServicesPath(t *testing.T) {
 	r := runtimeFor(t, map[string]string{"DRAIN_SECONDS": "99999999999999999999999999999999999999999999999999999999999999999999999"})
 	servicesPath := filepath.Join(t.TempDir(), "services.json")
-	if err := os.WriteFile(servicesPath, []byte(`{"services":[{"name":"auth","url":"https://auth.custom","description":"auth","socket":"/unused","enabled":true,"mcp":false}]}`), 0600); err != nil {
+	if err := os.WriteFile(servicesPath, []byte(`{"services":[{"name":"auth","group":"platform","url":"https://auth.custom","description":"auth","socket":"/unused","enabled":true,"mcp":false}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	originalLookup := r.p.LookupEnv
@@ -725,7 +725,7 @@ func TestRunConstructorInputsAndFrozenServicesPath(t *testing.T) {
 		usersMu.Lock()
 		users = append(users, u)
 		usersMu.Unlock()
-		return page.Banner{Service: "injected-banner", Version: r.p.Version, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		return page.Banner{Service: "injected-banner", Release: "injected-release", Commit: "injected-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
 	r.start()
 	r.ready(t)

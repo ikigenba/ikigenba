@@ -15,7 +15,7 @@ func TestPageTemplateSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := page.Banner{Service: "chosen-service", Version: "chosen-version"}
+	b := page.Banner{Service: "chosen-service", Release: "chosen-release", Commit: "chosen-commit"}
 	for _, name := range []string{"landing", "about", "tools"} {
 		if templates.Lookup(name) == nil {
 			t.Fatal("missing template", name)

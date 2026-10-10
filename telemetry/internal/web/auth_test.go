@@ -29,10 +29,9 @@ func TestPageRenderingAndMethods(t *testing.T) {
 	f.cfg.Banner = func(u page.User) page.Banner {
 		calls++
 		user = u
-		return page.Banner{Service: "chosen-service<&", Icon: template.HTML("supplied-icon"), Version: "chosen-version<&", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL,
+		return page.Banner{Service: "chosen-service<&", Icon: template.HTML("supplied-icon"), Release: "chosen-release<&", Commit: "chosen-commit<&", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL,
 			Home: "https://home.example/?q=<&", Tools: true,
-			Services: []page.Service{{Name: "supplied-service<&", URL: "https://service.example/?q=<&", Enabled: true, Current: true}},
-			Trail:    []page.Level{{Name: "discarded-trail", URL: "/discarded"}, {Name: "discarded-child", URL: "/discarded/child"}}}
+			Trail: []page.Level{{Name: "discarded-trail", URL: "/discarded"}, {Name: "discarded-child", URL: "/discarded/child"}}}
 	}
 	cfg := freshServer(t, f, f.cfg)
 	h := web.Handler(cfg)
@@ -139,7 +138,7 @@ func TestAuthOriginsReadPerRequest(t *testing.T) {
 	var got page.User
 	f.cfg.Banner = func(u page.User) page.Banner {
 		got = u
-		return page.Banner{Service: web.ServiceName, Version: "test-version"}
+		return page.Banner{Service: web.ServiceName, Release: "test-release", Commit: "test-commit"}
 	}
 	f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")
 	h := web.Handler(freshServer(t, f, f.cfg))
@@ -158,7 +157,7 @@ func TestAuthOriginsReadPerRequest(t *testing.T) {
 		}
 	}
 	for _, origin := range []string{"http://auth.custom/path/", "https://another.example", ""} {
-		body := `{"services":[{"name":"auth","url":"` + origin + `","description":"auth","socket":"/unused","enabled":true,"mcp":false}]}`
+		body := `{"services":[{"name":"auth","group":"platform","url":"` + origin + `","description":"auth","socket":"/unused","enabled":true,"mcp":false}]}`
 		if err := os.WriteFile(f.cfg.ServicesPath, []byte(body), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +203,7 @@ func TestPagesDoNotConnectToServices(t *testing.T) {
 		}
 	}()
 	f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")
-	body := `{"services":[{"name":"auth","url":"https://auth.example","description":"auth","socket":"` + path + `","enabled":true,"mcp":false}]}`
+	body := `{"services":[{"name":"auth","group":"platform","url":"https://auth.example","description":"auth","socket":"` + path + `","enabled":true,"mcp":false}]}`
 	if err := os.WriteFile(f.cfg.ServicesPath, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
