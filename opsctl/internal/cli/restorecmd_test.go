@@ -297,7 +297,7 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	if len(commands) != len(wantCommands)+1 || !reflect.DeepEqual(commands[:len(wantCommands)], wantCommands) || !strings.HasPrefix(commands[len(wantCommands)], "chown root:ikigenba "+filepath.Join(root, "var/lib/ikigenba")+" "+filepath.Join(root, "var/lib/ikigenba/.services-")) {
 		t.Fatalf("commands = %v; nginx callback must use Write without test/reload", commands)
 	}
-	if got, err := rootFS.ReadFile("var/lib/ikigenba/services.json"); err != nil || string(got) != "{\n  \"services\": [\n    { \"name\": \"notes\", \"url\": \"https://notes.host.example.test\", \"description\": \"\", \"socket\": \"/run/ikigenba/notes.sock\", \"enabled\": true, \"mcp\": false }\n  ]\n}\n" {
+	if got, err := rootFS.ReadFile("var/lib/ikigenba/services.json"); err != nil || string(got) != "{\n  \"services\": [\n    { \"name\": \"notes\", \"url\": \"https://notes.host.example.test\", \"description\": \"\", \"socket\": \"/run/ikigenba/notes.sock\", \"enabled\": true, \"mcp\": false, \"group\": \"application\" }\n  ]\n}\n" {
 		t.Fatalf("services file = %q, %v", got, err)
 	}
 	if got, err := rootFS.ReadFile("var/lib/ikigenba/sentinel"); err != nil || string(got) != "untouched sibling" {

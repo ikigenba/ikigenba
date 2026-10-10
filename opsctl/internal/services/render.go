@@ -20,6 +20,7 @@ type entry struct {
 	URL         string
 	Description string
 	Socket      string
+	Group       string
 	Icon        string
 	Enabled     bool
 	MCP         bool
@@ -86,6 +87,7 @@ func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry
 			Name: service.Name, URL: "https://" + service.Name + "." + hostName,
 			Description: service.Manifest.Description, Socket: "/run/ikigenba/" + service.Name + ".sock",
 			Icon: string(icon), HasIcon: hasIcon, Enabled: !disabled, MCP: service.Manifest.MCP,
+			Group: service.Manifest.Home.Group,
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
@@ -125,6 +127,8 @@ func encodeEntries(entries []entry) []byte {
 			output.WriteString(", \"icon\": ")
 			writeJSONString(&output, item.Icon)
 		}
+		output.WriteString(", \"group\": ")
+		writeJSONString(&output, item.Group)
 		output.WriteString(" }")
 	}
 	if len(entries) != 0 {

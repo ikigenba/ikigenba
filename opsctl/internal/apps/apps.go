@@ -44,6 +44,11 @@ type Resources struct {
 	OOMPolicy     string
 }
 
+// Home holds the group used by the home page.
+type Home struct {
+	Group string
+}
+
 // Manifest describes the capabilities declared by an installed app.
 type Manifest struct {
 	App         string
@@ -55,6 +60,7 @@ type Manifest struct {
 	Env         map[string]string
 	Database    *Database
 	Resources   Resources
+	Home        Home
 }
 
 // Timeouts are the space-wide drain and systemd stop periods in seconds.

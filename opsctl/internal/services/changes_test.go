@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// R-YM99-KIOJ
+// R-UKL2-EMYF
 func TestWriteClassifiesEntryMemberDifferences(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -23,6 +23,9 @@ func TestWriteClassifiesEntryMemberDifferences(t *testing.T) {
 		{name: "url", change: func(p map[string]any) { p["url"] = "old" }, want: Updated},
 		{name: "description", change: func(p map[string]any) { p["description"] = "old" }, want: Updated},
 		{name: "socket", change: func(p map[string]any) { p["socket"] = "old" }, want: Updated},
+		{name: "group changed", change: func(p map[string]any) { p["group"] = "core" }, want: Updated},
+		{name: "group absent before upgrade", change: func(p map[string]any) { delete(p, "group") }, want: Updated},
+		{name: "group number", change: func(p map[string]any) { p["group"] = 17 }, want: Updated},
 		{name: "mcp", change: func(p map[string]any) { p["mcp"] = true }, want: Updated},
 		{name: "icon", change: func(p map[string]any) { p["icon"] = "old" }, want: Updated},
 		{name: "icon gained", change: func(p map[string]any) { delete(p, "icon") }, want: Updated},
@@ -30,8 +33,8 @@ func TestWriteClassifiesEntryMemberDifferences(t *testing.T) {
 		{name: "nonstring icon absent", noIcon: true, change: func(p map[string]any) { p["icon"] = []any{1} }, want: Unchanged},
 		{name: "nonstring icon gained", change: func(p map[string]any) { p["icon"] = false }, want: Updated},
 		{name: "enabled invalid", change: func(p map[string]any) { p["enabled"] = "true" }, want: Updated},
-		{name: "disabled overrides changes", disabled: true, change: func(p map[string]any) { p["description"] = "old"; p["mcp"] = true }, want: Disabled},
-		{name: "enabled overrides changes", change: func(p map[string]any) { p["enabled"] = false; p["socket"] = "old" }, want: Enabled},
+		{name: "disabled overrides changes", disabled: true, change: func(p map[string]any) { p["description"] = "old"; p["mcp"] = true; delete(p, "group") }, want: Disabled},
+		{name: "enabled overrides changes", change: func(p map[string]any) { p["enabled"] = false; p["socket"] = "old"; delete(p, "group") }, want: Enabled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := perAppRoot(t)
@@ -41,7 +44,7 @@ func TestWriteClassifiesEntryMemberDifferences(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			prior := map[string]any{"name": "running", "url": "https://running.example.test", "description": "", "socket": "/run/ikigenba/running.sock", "enabled": true, "mcp": false, "icon": "<svg/>\n"}
+			prior := map[string]any{"name": "running", "url": "https://running.example.test", "description": "", "socket": "/run/ikigenba/running.sock", "enabled": true, "mcp": false, "icon": "<svg/>\n", "group": "application"}
 			if test.change != nil {
 				test.change(prior)
 			}
@@ -66,12 +69,12 @@ func TestWriteClassifiesEntryMemberDifferences(t *testing.T) {
 			}
 		})
 	}
-	for _, member := range []string{"url", "description", "socket", "enabled", "mcp"} {
+	for _, member := range []string{"url", "description", "socket", "enabled", "mcp", "group"} {
 		for _, value := range []string{"missing", "null", "object"} {
 			t.Run(member+" "+value, func(t *testing.T) {
 				root := perAppRoot(t)
 				renderFixture(t, root, "running", "app = \"running\"\n", true, nil)
-				prior := map[string]any{"name": "running", "url": "https://running.example.test", "description": "", "socket": "/run/ikigenba/running.sock", "enabled": true, "mcp": false}
+				prior := map[string]any{"name": "running", "url": "https://running.example.test", "description": "", "socket": "/run/ikigenba/running.sock", "enabled": true, "mcp": false, "group": "application"}
 				switch value {
 				case "missing":
 					delete(prior, member)

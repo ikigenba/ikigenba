@@ -502,7 +502,7 @@ func TestWriteExecutesOnlyAccountAndOwnershipCommands(t *testing.T) {
 }
 
 func TestWriteReturnsChangesFromPublishedEntries(t *testing.T) {
-	// R-YM99-KIOJ
+	// R-UKL2-EMYF
 	root := perAppRoot(t)
 	writeLauncher(t, root, "running")
 	file := servicesFile(root)

@@ -650,7 +650,7 @@ func TestActivateGeneratedConfigurationsAndReloads(t *testing.T) {
 			}
 		}
 		servicesBytes := f.read("run/ikigenba/services.json")
-		wantServices := "{\n  \"services\": [\n    { \"name\": \"dummy\", \"url\": \"https://dummy.sbx.example.test\", \"description\": \"\", \"socket\": \"/run/ikigenba/dummy.sock\", \"enabled\": true, \"mcp\": false }\n  ]\n}\n"
+		wantServices := "{\n  \"services\": [\n    { \"name\": \"dummy\", \"url\": \"https://dummy.sbx.example.test\", \"description\": \"\", \"socket\": \"/run/ikigenba/dummy.sock\", \"enabled\": true, \"mcp\": false, \"group\": \"application\" }\n  ]\n}\n"
 		if servicesBytes != wantServices {
 			t.Fatalf("services %q", servicesBytes)
 		}

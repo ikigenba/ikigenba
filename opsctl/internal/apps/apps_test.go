@@ -35,7 +35,7 @@ func TestDatabaseFields(t *testing.T) {
 	}
 }
 
-// R-RGBS-29LX
+// R-U8E2-KXJH
 func TestManifestFields(t *testing.T) {
 	database := &apps.Database{Engine: "sqlite", Path: "state/app.db"}
 	manifest := apps.Manifest{
@@ -48,6 +48,7 @@ func TestManifestFields(t *testing.T) {
 		Env:         map[string]string{"MODE": "production"},
 		Database:    database,
 		Resources:   apps.Resources{Slice: "core", CPUWeight: 100, MemoryMax: 1048576, GoMemoryLimit: 786432},
+		Home:        apps.Home{Group: "core"},
 	}
 	var (
 		app         string
@@ -59,11 +60,13 @@ func TestManifestFields(t *testing.T) {
 		env         map[string]string
 		db          *apps.Database
 		resources   apps.Resources
+		home        apps.Home
 	)
 	app, description, mcp, isDefault, secrets, env, db = manifest.App, manifest.Description, manifest.MCP, manifest.Default, manifest.Secrets, manifest.Env, manifest.Database
 	guests = manifest.Guests
+	home = manifest.Home
 	resources = manifest.Resources
-	if app != "notes" || description != "Offers notes tools" || !mcp || !guests || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database || resources != (apps.Resources{Slice: "core", CPUWeight: 100, MemoryMax: 1048576, GoMemoryLimit: 786432}) {
+	if home.Group != "core" || app != "notes" || description != "Offers notes tools" || !mcp || !guests || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database || resources != (apps.Resources{Slice: "core", CPUWeight: 100, MemoryMax: 1048576, GoMemoryLimit: 786432}) {
 		t.Fatalf("Manifest = %#v", manifest)
 	}
 }
@@ -231,7 +234,7 @@ func TestParseManifestRejectsMalformedTOMLWithoutPartialResult(t *testing.T) {
 	}
 }
 
-// R-ZATO-AEFN R-RIRK-TT3B R-XSFU-AXFW
+// R-U9LY-YPA6 R-UATV-CH0V R-XSFU-AXFW
 func TestParseManifestMapsFieldsAndSuppliesEmptyCollections(t *testing.T) {
 	data := []byte(`app = "crm"
 description = "  Offers CRM tools  "
@@ -254,6 +257,9 @@ slice = "core"
 go_memory_limit = "256M"
 delegate = true
 oom_policy = "continue"
+
+[home]
+group = "core"
 `)
 	manifest, err := apps.ParseManifest(data)
 	if err != nil {
@@ -268,6 +274,7 @@ oom_policy = "continue"
 		Secrets:     []string{"CRM_API_KEY", "CRM_API_SECRET"},
 		Env:         map[string]string{"OUTBOX_RETENTION_DAYS": "7"},
 		Resources:   apps.Resources{Slice: "core", CPUWeight: 100, MemoryMax: 536870912, GoMemoryLimit: 268435456, Delegate: true, OOMPolicy: "continue"},
+		Home:        apps.Home{Group: "core"},
 		Database: &apps.Database{
 			Engine: "sqlite",
 			Path:   "state/crm.db",
@@ -281,7 +288,7 @@ oom_policy = "continue"
 	if err != nil {
 		t.Fatalf("ParseManifest(empty) returned error: %v", err)
 	}
-	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Guests || minimal.Default || minimal.Database != nil || minimal.Resources != (apps.Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100}) {
+	if minimal.Home.Group != "application" || minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Guests || minimal.Default || minimal.Database != nil || minimal.Resources != (apps.Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100}) {
 		t.Fatalf("ParseManifest(empty) did not retain scalar zero values: %#v", minimal)
 	}
 	if minimal.Secrets == nil || len(minimal.Secrets) != 0 || minimal.Env == nil || len(minimal.Env) != 0 {
@@ -299,6 +306,7 @@ database.engine = '''sqlite'''
 database.path = """
 state/crm.db"""
 resources = { cpu_weight = 100, memory_max = "512M", slice = "core", go_memory_limit = "256M", delegate = true, oom_policy = "continue" }
+home = { group = "core" }
 `)
 	decoded, err := apps.ParseManifest(equivalent)
 	if err != nil {
@@ -423,7 +431,7 @@ resources = { cpu_weight = 100, memory_max = "512M", slice = "core", go_memory_l
 	}
 }
 
-// R-RIRK-TT3B R-ZATO-AEFN R-XSFU-AXFW R-T3KI-BFH2
+// R-UATV-CH0V R-U9LY-YPA6 R-XSFU-AXFW R-T3KI-BFH2
 func TestParseManifestValidatesRecognizedFieldsAndIgnoresOthers(t *testing.T) {
 	valid := []byte(`title = """unrelated
 title"""
@@ -477,7 +485,7 @@ MODE = "production"
 			}
 		}
 	}
-	for _, data := range []string{"[[env]]", "[[database]]", "[[resources]]"} {
+	for _, data := range []string{"[[env]]", "[[database]]", "[[resources]]", "[[home]]"} {
 		manifest, err := apps.ParseManifest([]byte(data))
 		if err == nil {
 			t.Errorf("ParseManifest(%q) accepted recognized table root as an array table", data)
@@ -495,6 +503,8 @@ MODE = "production"
 		name string
 		data string
 	}{
+		{name: "home type", data: "home = 3"},
+		{name: "home array", data: "home = []"},
 		{name: "resources type", data: "resources = 3"},
 		{name: "resources array", data: "resources = []"},
 		{name: "description type", data: "description = 3"},

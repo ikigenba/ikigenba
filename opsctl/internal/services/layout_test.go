@@ -37,7 +37,7 @@ func releasedServicesRoot(t *testing.T) string {
 	return root
 }
 
-// R-96EY-4QOE R-97MU-IIF3 R-98UQ-WA5S R-9A2N-A1WH R-9BAJ-NTN6
+// R-96EY-4QOE R-97MU-IIF3 R-98UQ-WA5S R-9A2N-A1WH R-UGXD-9BQC
 // R-9EY8-T4V9 R-9ILX-YG3C R-BZML-VP81
 func TestWriteAndApplyLayoutPathsAndEntries(t *testing.T) {
 	for _, layout := range []string{"fresh", "per-app", "released"} {

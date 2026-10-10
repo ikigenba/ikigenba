@@ -7,7 +7,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 )
 
-// R-ZATO-AEFN R-RIRK-TT3B
+// R-U9LY-YPA6 R-UATV-CH0V
 func TestManifestGuestsIsOptionalBoolean(t *testing.T) {
 	for _, test := range []struct {
 		data string

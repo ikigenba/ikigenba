@@ -7,7 +7,7 @@ import (
 )
 
 func TestSQLiteEngineExactErrorAndPrecedence(t *testing.T) {
-	// R-CY8B-LAGH
+	// R-7GNM-Y6H2
 	//
 	const engineError = "'database.engine' must be \"sqlite\""
 	for _, database := range []string{
@@ -20,7 +20,7 @@ func TestSQLiteEngineExactErrorAndPrecedence(t *testing.T) {
 		"database = {engine = {}, path = \"state/db\"}\n",
 		"database = {}\n",
 	} {
-		for _, faults := range []string{"", "mcp = true\n", "[resources]\ncpu_weight = 0\n", "[resources]\nmemory_max = \"bad\"\n", "[resources]\nslice = \"edge\"\n", "[resources]\ngo_memory_limit = \"bad\"\n", "[resources]\nmemory_max = \"256M\"\ngo_memory_limit = \"512M\"\n", "[resources]\ndelegate = 1\n", "[resources]\noom_policy = \"stop\"\n", "[resources]\nunknown = 0\n"} {
+		for _, faults := range []string{"", "mcp = true\n", "[resources]\ncpu_weight = 0\n", "[resources]\nmemory_max = \"bad\"\n", "[resources]\nslice = \"edge\"\n", "[resources]\ngo_memory_limit = \"bad\"\n", "[resources]\nmemory_max = \"256M\"\ngo_memory_limit = \"512M\"\n", "[resources]\ndelegate = 1\n", "[resources]\noom_policy = \"stop\"\n", "[resources]\nunknown = 0\n", "[home]\ngroup = \"apps\"\n", "[home]\ntitle = \"Mail\"\n"} {
 			// Put root fields ahead of table headers without changing the faults' scopes.
 			document := database + faults
 			if faults == "mcp = true\n" {

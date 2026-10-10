@@ -23,7 +23,7 @@ func TestResourcesFields(t *testing.T) {
 	}
 }
 
-// R-ZATO-AEFN
+// R-U9LY-YPA6
 func TestParseManifestPartialResourcesHaveDefaults(t *testing.T) {
 	defaults := apps.Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100}
 	for _, test := range []struct {
@@ -179,7 +179,7 @@ func TestParseManifestUnknownResources(t *testing.T) {
 	}
 }
 
-// R-ZKKV-CKD7 R-XSFU-AXFW
+// R-UFPG-VJZN R-XSFU-AXFW
 func TestParseManifestResourceErrorOrder(t *testing.T) {
 	for _, test := range []struct{ data, offending string }{
 		{"slice = 'edge'\nmemory_max = '512MB'", "slice"},

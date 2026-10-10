@@ -71,7 +71,7 @@ func previousEntries(data []byte) map[string]map[string]any {
 func sameEntry(prior map[string]any, item entry) bool {
 	fields := map[string]any{
 		"url": item.URL, "description": item.Description, "socket": item.Socket,
-		"enabled": item.Enabled, "mcp": item.MCP,
+		"enabled": item.Enabled, "mcp": item.MCP, "group": item.Group,
 	}
 	for name, value := range fields {
 		if !reflect.DeepEqual(prior[name], value) {

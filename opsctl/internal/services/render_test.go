@@ -110,6 +110,7 @@ type publishedEntry struct {
 	URL         string `json:"url"`
 	Description string `json:"description"`
 	Socket      string `json:"socket"`
+	Group       string `json:"group"`
 	Icon        string `json:"icon"`
 	Enabled     bool   `json:"enabled"`
 	MCP         bool   `json:"mcp"`
@@ -160,21 +161,21 @@ func TestRenderSelectsExactlyListedServices(t *testing.T) {
 	}
 }
 
-// R-9BAJ-NTN6
+// R-UGXD-9BQC
 func TestRenderEntryValuesIncludeDefaultAndApex(t *testing.T) {
 	root := perAppRoot(t)
 	icon := []byte("<svg>full</svg>\r\n")
-	renderFixture(t, root, "alpha", "app = \"alpha\"\ndefault = true\ndescription = \"  A full description ☃  \"\nmcp = true\n", true, icon)
-	renderFixture(t, root, "apex", "app = \"apex\"\n", true, nil) // app named by host.apex
-	renderFixture(t, root, "empty-icon", "app = \"empty-icon\"\n", true, []byte{})
+	renderFixture(t, root, "alpha", "app = \"alpha\"\ndefault = true\ndescription = \"  A full description ☃  \"\nmcp = true\n[home]\ngroup = \"core\"\n", true, icon)
+	renderFixture(t, root, "apex", "app = \"apex\"\n[home]\ngroup = \"application\"\n", true, nil) // app named by host.apex
+	renderFixture(t, root, "empty-icon", "app = \"empty-icon\"\n[home]\n", true, []byte{})
 	_, err := Write(context.Background(), renderWriteEnv(t, root, map[string]bool{"apex": true}, nil), "box.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []publishedEntry{
-		{Name: "alpha", URL: "https://alpha.box.example.com", Description: "  A full description ☃  ", Socket: "/run/ikigenba/alpha.sock", Icon: string(icon), Enabled: true, MCP: true},
-		{Name: "apex", URL: "https://apex.box.example.com", Socket: "/run/ikigenba/apex.sock", Enabled: false},
-		{Name: "empty-icon", URL: "https://empty-icon.box.example.com", Socket: "/run/ikigenba/empty-icon.sock", Enabled: true},
+		{Name: "alpha", URL: "https://alpha.box.example.com", Description: "  A full description ☃  ", Socket: "/run/ikigenba/alpha.sock", Icon: string(icon), Enabled: true, MCP: true, Group: "core"},
+		{Name: "apex", URL: "https://apex.box.example.com", Socket: "/run/ikigenba/apex.sock", Enabled: false, Group: "application"},
+		{Name: "empty-icon", URL: "https://empty-icon.box.example.com", Socket: "/run/ikigenba/empty-icon.sock", Enabled: true, Group: "application"},
 	}
 	if got := publishedServices(t, root); !reflect.DeepEqual(got, want) {
 		t.Fatalf("published entries = %#v, want %#v", got, want)
@@ -205,7 +206,7 @@ func TestRenderEntryValuesIncludeDefaultAndApex(t *testing.T) {
 
 }
 
-// R-YILK-F7GG
+// R-UJD6-0V7Q
 func TestRenderExactLayoutAndBytewiseOrder(t *testing.T) {
 	root := perAppRoot(t)
 	env := renderWriteEnv(t, root, map[string]bool{"zeta": true}, nil)
@@ -216,15 +217,15 @@ func TestRenderExactLayoutAndBytewiseOrder(t *testing.T) {
 	if string(empty) != "{\n  \"services\": []\n}\n" {
 		t.Fatalf("empty published file = %q", empty)
 	}
-	renderFixture(t, root, "zeta", "app = \"zeta\"\ndescription = \"Z\"\nmcp = true\n", true, nil)
+	renderFixture(t, root, "zeta", "app = \"zeta\"\ndescription = \"Z\"\nmcp = true\n[home]\ngroup = \"core\"\n", true, nil)
 	renderFixture(t, root, "alpha", "app = \"alpha\"\n", true, []byte("a"))
 	if _, err := Write(context.Background(), env, "box.example"); err != nil {
 		t.Fatal(err)
 	}
 	got := readPublishedServices(t, root)
 	want := "{\n  \"services\": [\n" +
-		"    { \"name\": \"alpha\", \"url\": \"https://alpha.box.example\", \"description\": \"\", \"socket\": \"/run/ikigenba/alpha.sock\", \"enabled\": true, \"mcp\": false, \"icon\": \"a\" },\n" +
-		"    { \"name\": \"zeta\", \"url\": \"https://zeta.box.example\", \"description\": \"Z\", \"socket\": \"/run/ikigenba/zeta.sock\", \"enabled\": false, \"mcp\": true }\n" +
+		"    { \"name\": \"alpha\", \"url\": \"https://alpha.box.example\", \"description\": \"\", \"socket\": \"/run/ikigenba/alpha.sock\", \"enabled\": true, \"mcp\": false, \"icon\": \"a\", \"group\": \"application\" },\n" +
+		"    { \"name\": \"zeta\", \"url\": \"https://zeta.box.example\", \"description\": \"Z\", \"socket\": \"/run/ikigenba/zeta.sock\", \"enabled\": false, \"mcp\": true, \"group\": \"core\" }\n" +
 		"  ]\n}\n"
 	if string(got) != want {
 		t.Fatalf("render = %q, want %q", got, want)

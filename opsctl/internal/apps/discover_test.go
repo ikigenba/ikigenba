@@ -182,6 +182,7 @@ func TestServiceModelUsesHostLocalInputs(t *testing.T) {
 		Env:       map[string]string{},
 		Database:  &apps.Database{Engine: "sqlite", Path: "state/notes.db"},
 		Resources: apps.Resources{Slice: "apps", MemoryMax: 134217728, GoMemoryLimit: 100663296, CPUWeight: 100},
+		Home:      apps.Home{Group: "application"},
 	}
 	writeManifest(t, root, "notes", string(manifestData))
 	mkdirAll(t, filepath.Join(root, "opt", "notes", "state"))

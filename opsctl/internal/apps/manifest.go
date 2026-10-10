@@ -51,6 +51,7 @@ type manifestDecoder struct {
 	identityOnly      bool
 	databasePathError error
 	resources         map[string]tomlValue
+	home              map[string]tomlValue
 }
 
 const portError = "'port' is not allowed; the host gives the app its socket"
@@ -182,6 +183,11 @@ func (decoder *manifestDecoder) manifest() (Manifest, error) {
 		return Manifest{}, err
 	}
 	decoder.result.Resources = resources
+	home, err := parseHome(decoder.home)
+	if err != nil {
+		return Manifest{}, err
+	}
+	decoder.result.Home = home
 	if decoder.result.MCP && strings.TrimSpace(decoder.result.Description) == "" {
 		return Manifest{}, errors.New("'mcp' is true but 'description' is empty; an MCP service must say what it offers")
 	}
@@ -238,6 +244,13 @@ func (decoder *manifestDecoder) decodeTable() error {
 		case "database":
 			if arrayTable {
 				return decoder.errorf("database must be a table")
+			}
+		case "home":
+			if len(keys) == 1 && arrayTable {
+				return decoder.errorf("home must be a table")
+			}
+			if len(keys) > 1 {
+				decoder.setHome(keys[1], tomlValue{kind: tomlTable})
 			}
 		case "resources":
 			if len(keys) == 1 && arrayTable {
@@ -340,6 +353,13 @@ func (decoder *manifestDecoder) rememberError(err error) {
 }
 
 func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
+	if len(path) > 1 && path[0] == "home" {
+		if len(path) > 2 {
+			value = tomlValue{kind: tomlTable}
+		}
+		decoder.setHome(path[1], value)
+		return nil
+	}
 	if len(path) > 1 && path[0] == "resources" {
 		if len(path) > 2 {
 			value = tomlValue{kind: tomlTable}
@@ -422,6 +442,13 @@ func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
 					return err
 				}
 			}
+		case "home":
+			if value.kind != tomlTable {
+				return decoder.errorf("home must be a table")
+			}
+			for key, item := range value.table {
+				decoder.setHome(key, item)
+			}
 		case "resources":
 			if value.kind != tomlTable {
 				return decoder.errorf("resources must be a table")
@@ -460,6 +487,34 @@ func (decoder *manifestDecoder) setResource(key string, value tomlValue) {
 		decoder.resources = make(map[string]tomlValue)
 	}
 	decoder.resources[key] = value
+}
+
+func (decoder *manifestDecoder) setHome(key string, value tomlValue) {
+	if decoder.home == nil {
+		decoder.home = make(map[string]tomlValue)
+	}
+	decoder.home[key] = value
+}
+
+func parseHome(values map[string]tomlValue) (Home, error) {
+	result := Home{Group: "application"}
+	if value, exists := values["group"]; exists {
+		if value.kind != tomlString || value.text != "core" && value.text != "application" {
+			return Home{}, errors.New("'home.group' must be \"core\" or \"application\"")
+		}
+		result.Group = value.text
+	}
+	var unknown []string
+	for key := range values {
+		if key != "group" {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return Home{}, fmt.Errorf("'home.%s' is not allowed; the only home key is group", unknown[0])
+	}
+	return result, nil
 }
 
 func defaultResources() Resources {
