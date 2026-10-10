@@ -13,7 +13,7 @@ import (
 
 type sharedFile struct{ name, contentType string }
 
-// R-Y5IB-5Y4Y
+// R-RC34-YCCP
 func sharedFiles(t *testing.T, h http.Handler) []sharedFile {
 	t.Helper()
 	if page.StaticPrefix != "/_appkit/" {
@@ -21,7 +21,6 @@ func sharedFiles(t *testing.T, h http.Handler) []sharedFile {
 	}
 	files := []sharedFile{
 		{"theme.css", "text/css; charset=utf-8"},
-		{"launcher.js", "text/javascript; charset=utf-8"},
 		{"feedback.js", "text/javascript; charset=utf-8"},
 		{"favicon.svg", "image/svg+xml"},
 		{"OFL.txt", "text/plain; charset=utf-8"},
@@ -92,7 +91,7 @@ func TestSharedStaticDelegation(t *testing.T) {
 	}
 }
 
-// R-Y6Q7-JPVN R-Y960-B9D1 R-YADW-P13Q R-M9E7-IAKV
+// R-RDB1-C43E R-Y960-B9D1 R-YADW-P13Q R-M9E7-IAKV
 func TestSharedStaticContentAndCache(t *testing.T) {
 	first, second := staticTestHandler(t), staticTestHandler(t)
 	for _, file := range sharedFiles(t, first) {
@@ -199,7 +198,7 @@ func TestSharedStaticMissingPaths(t *testing.T) {
 	}
 }
 
-// R-Y7Y3-XHMC
+// R-REIX-PVU3
 func TestSharedStaticHead(t *testing.T) {
 	h := staticTestHandler(t)
 	for _, file := range sharedFiles(t, h) {

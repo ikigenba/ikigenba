@@ -338,23 +338,21 @@ func TestPageResponsesNeverSetCookie(t *testing.T) {
 	}
 }
 
-func pageTestEchoingBanner(services []page.Service) func(page.User) page.Banner {
+func pageTestEchoingBanner() func(page.User) page.Banner {
 	return func(u page.User) page.Banner {
-		return page.Banner{Service: panel.ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Services: services}
+		return page.Banner{Service: panel.ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
 }
 
-func pageTestBanner(u page.User) page.Banner { return pageTestEchoingBanner(nil)(u) }
+func pageTestBanner(u page.User) page.Banner { return pageTestEchoingBanner()(u) }
 
-// R-HWWB-NEUV
+// R-RAV8-KKM0
 func TestPageEchoingBannerSource(t *testing.T) {
-	for _, services := range [][]page.Service{nil, {}, {{Name: "other", URL: "/other", Enabled: true}}} {
-		source := pageTestEchoingBanner(services)
-		for _, user := range []page.User{{}, {Email: "reader@example.test", ProfileURL: "/profile", LogoutURL: "/logout"}} {
-			want := page.Banner{Service: panel.ServiceName, Email: user.Email, ProfileURL: user.ProfileURL, LogoutURL: user.LogoutURL, Services: services}
-			if got := source(user); !reflect.DeepEqual(got, want) {
-				t.Fatalf("echoing source: %#v, want %#v", got, want)
-			}
+	source := pageTestEchoingBanner()
+	for _, user := range []page.User{{}, {Email: "reader@example.test", ProfileURL: "/profile", LogoutURL: "/logout"}} {
+		want := page.Banner{Service: panel.ServiceName, Email: user.Email, ProfileURL: user.ProfileURL, LogoutURL: user.LogoutURL}
+		if got := source(user); !reflect.DeepEqual(got, want) {
+			t.Fatalf("echoing source: %#v, want %#v", got, want)
 		}
 	}
 }

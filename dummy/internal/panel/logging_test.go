@@ -219,19 +219,58 @@ func TestPanelPanicTrail(t *testing.T) {
 	}
 }
 
-// R-CQ7U-JXPU
+// R-PIJD-MG5W
 func TestPanelKeepsWidgetIDsOutOfBodies(t *testing.T) {
-	for _, tc := range []struct{ method, path, body string }{{"GET", "/widgets", ""}, {"GET", "/widgets/table", ""}, {"POST", "/widgets", "name=new&count=bad&status=active"}, {"GET", "/missing", ""}} {
-		t.Run(tc.path+tc.method, func(t *testing.T) {
-			store := panelTestStore(t)
-			h := coreHandler(t, store, pageTestBanner, io.Discard)
-			response := formRequest(h, tc.method, tc.path, "application/x-www-form-urlencoded", tc.body)
-			for _, w := range panelStoreAll(t, store) {
-				if strings.Contains(response.Body.String(), w.ID) {
-					t.Fatalf("body shows widget id %q", w.ID)
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/widgets", ""}, {"HEAD", "/widgets", ""},
+		{"GET", "/widgets/table", ""}, {"HEAD", "/widgets/table", ""},
+		{"POST", "/widgets", "name=new&count=bad&status=active"},
+		{"POST", "/widgets", "name=new&count=2&status=active"},
+		{"GET", "/about", ""}, {"GET", "/tools", ""},
+		{"GET", "/missing", ""}, {"PUT", "/widgets", ""},
+		{"GET", page.StaticPrefix + "theme.css", ""},
+		{"GET", page.StaticPrefix + "missing", ""},
+	} {
+		for _, echo := range []string{"none", "name", "request", "banner"} {
+			t.Run(tc.path+tc.method+echo, func(t *testing.T) {
+				store := panelTestStore(t)
+				id := panelStoreAll(t, store)[0].ID
+				var allowed []string
+				source := pageTestBanner
+				r := pageTestRequest(tc.method, tc.path)
+				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				r.Body = io.NopCloser(strings.NewReader(tc.body))
+				switch echo {
+				case "name":
+					tableTestCreate(t, store, "echo "+id)
+					allowed = append(allowed, "echo "+id)
+				case "request":
+					r.Header.Set("X-User-Email", id+"@example.test")
+					allowed = append(allowed, r.Header.Get("X-User-Email"))
+				case "banner":
+					source = func(u page.User) page.Banner {
+						banner := pageTestBanner(u)
+						banner.Release, banner.Commit = id, id
+						banner.Trail = []page.Level{{Name: id, URL: "/" + id}}
+						return banner
+					}
+					allowed = append(allowed, id)
 				}
-			}
-		})
+				before := panelStoreAll(t, store)
+				response := pageTestResponse(coreHandler(t, store, source, io.Discard), r)
+				widgets := before
+				widgets = append(widgets, panelStoreAll(t, store)...)
+				for _, w := range widgets {
+					permitted := false
+					for _, value := range allowed {
+						permitted = permitted || strings.Contains(value, w.ID)
+					}
+					if !permitted && strings.Contains(response.Body.String(), w.ID) {
+						t.Fatalf("body shows widget id %q", w.ID)
+					}
+				}
+			})
+		}
 	}
 }
 

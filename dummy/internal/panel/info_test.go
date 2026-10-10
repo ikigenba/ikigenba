@@ -28,7 +28,7 @@ func TestInformationDeclarations(t *testing.T) {
 			t.Fatalf("description contains forbidden code point %U", char)
 		}
 	}
-	banner := page.Banner{Service: "supplied-service", Version: "supplied-version"}
+	banner := page.Banner{Service: "supplied-service", Release: "supplied-release", Commit: "supplied-commit"}
 	about := panel.AboutData(struct {
 		Banner      page.Banner
 		Description string
@@ -45,7 +45,7 @@ func TestInformationDeclarations(t *testing.T) {
 
 // R-Y3ZX-UCGU
 func TestInformationTemplatesExecute(t *testing.T) {
-	banner := page.Banner{Service: "fixture-service", Version: "fixture-version", Email: "fixture@example.test", Services: []page.Service{{Name: "fixture-sibling", URL: "/fixture", Enabled: true}}}
+	banner := page.Banner{Service: "fixture-service", Release: "fixture-release", Commit: "fixture-commit", Email: "fixture@example.test"}
 	for _, data := range []panel.AboutData{{}, {Banner: banner, Description: "fixture description <&>"}} {
 		renderPanelTemplate(t, "about", data)
 	}
@@ -63,7 +63,7 @@ func TestInformationPagesUseBannerAndRegisteredTools(t *testing.T) {
 	calls := 0
 	banner := func(u page.User) page.Banner {
 		calls++
-		drawn = page.Banner{Service: "fixture-service", Version: "fixture-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Services: []page.Service{{Name: "fixture-sibling", URL: "/sibling", Enabled: true}}, Trail: []page.Level{{Name: "discarded", URL: "/discarded"}, {Name: "also discarded", URL: "/other"}}}
+		drawn = page.Banner{Service: "fixture-service", Release: "fixture-release", Commit: "fixture-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Trail: []page.Level{{Name: "discarded", URL: "/discarded"}, {Name: "also discarded", URL: "/other"}}}
 		return drawn
 	}
 	h := panel.Handler(panelTestStore(t), banner, srv, writer)
@@ -146,7 +146,7 @@ func TestInformationPagesIndependentOfStore(t *testing.T) {
 				tableTestCreate(t, store, name)
 			}
 		}
-		h := coreHandler(t, store, pageTestEchoingBanner(nil), io.Discard)
+		h := coreHandler(t, store, pageTestEchoingBanner(), io.Discard)
 		for _, path := range []string{"/about", "/tools"} {
 			for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
 				before := panelStoreAll(t, store)

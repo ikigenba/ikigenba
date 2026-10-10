@@ -28,11 +28,12 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-M1JO-5KOP R-M2RK-JCFE R-K1I1-7X3J R-M6F9-ONNH R-M7N6-2FE6 R-M8V2-G74V R-K7LJ-4RT0 R-MA2Y-TYVK
+// R-M1JO-5KOP R-R8FF-T14M R-M2RK-JCFE R-K1I1-7X3J R-M6F9-ONNH R-M7N6-2FE6 R-M8V2-G74V R-K7LJ-4RT0 R-MA2Y-TYVK
 func TestMainWiring(t *testing.T) {
 	commit, release := "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "test-release"
 	t.Setenv(version.CommitVariable, commit)
 	t.Setenv(version.ReleaseVariable, release)
+	id := version.Read()
 	display := version.Display()
 	env := []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 	root := mainProjectRoot(t)
@@ -67,7 +68,7 @@ func TestMainWiring(t *testing.T) {
 
 	for _, sig := range []os.Signal{syscall.SIGTERM, os.Interrupt} {
 		t.Run(sig.String(), func(t *testing.T) {
-			serveAndSignal(t, binary, sig, env, display)
+			serveAndSignal(t, binary, sig, env, id, display)
 		})
 	}
 }
@@ -102,7 +103,7 @@ func runBinary(t *testing.T, binary string, args, env []string) (string, string,
 }
 
 // R-DPQ2-9T5Q R-5ZTA-PV8G
-func serveAndSignal(t *testing.T, binary string, sig os.Signal, env []string, display string) {
+func serveAndSignal(t *testing.T, binary string, sig os.Signal, env []string, id version.Identity, display string) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "dummy-exec-")
 	if err != nil {
@@ -223,10 +224,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal, env []string, di
 			servicesValue = servicesPath
 		}
 		t.Setenv(services.Variable, servicesValue)
-		banner := page.New(panel.ServiceName, display).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")})
-		if sig == syscall.SIGTERM && string(banner.Icon) != mainServiceIcon {
-			t.Fatalf("banner icon = %q, want services file icon %q", banner.Icon, mainServiceIcon)
-		}
+		banner := page.New(panel.ServiceName, id).Banner(page.User{Email: "user@example.test", ProfileURL: panel.ProfileURL(req.Host, ""), LogoutURL: panel.LogoutURL(req.Host, "")})
 		assertAppkitFrame(t, string(body), banner)
 		assertMCPWiring(t, client, display)
 		if sig == syscall.SIGTERM {
@@ -326,7 +324,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal, env []string, di
 	}
 }
 
-// R-VN0V-44AG
+// R-R9NC-6SVB
 func assertAppkitFrame(t *testing.T, body string, banner page.Banner) {
 	t.Helper()
 	for _, name := range []string{"banner", "footer"} {

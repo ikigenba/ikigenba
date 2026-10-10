@@ -89,7 +89,7 @@ func TestUnreachableWidgetsAnswers(t *testing.T) {
 // R-GP8U-OXW1
 func TestUnreachableLeavesOtherRoutesUnchanged(t *testing.T) {
 	store, handle := panelDatabaseStore(t)
-	h := coreHandler(t, store, pageTestEchoingBanner(nil), &strings.Builder{})
+	h := coreHandler(t, store, pageTestEchoingBanner(), &strings.Builder{})
 	cases := []struct{ method, path, media, body string }{
 		{"GET", "/", "", ""}, {"HEAD", "/", "", ""}, {"POST", "/", "", ""},
 		{"PUT", "/widgets", "", ""}, {"POST", "/widgets/table", "", ""},

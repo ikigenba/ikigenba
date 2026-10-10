@@ -17,8 +17,9 @@ import (
 )
 
 func main() {
-	display := version.Display()
-	kit := page.New(panel.ServiceName, display)
+	id := version.Read()
+	display := id.String()
+	kit := page.New(panel.ServiceName, id)
 	gate := cli.NewGate(telemetry.NewSocketSink())
 	writer := telemetry.New(telemetry.Config{Service: panel.ServiceName, Version: display, Sink: gate, Stderr: os.Stderr})
 	srv := mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Version: display, Telemetry: writer})
