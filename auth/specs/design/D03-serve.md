@@ -62,7 +62,8 @@ explains why that read happens there and cannot fail), and auth's own code
 never reads it; each banner reads the file through appkit's `services.Read`,
 in the format opsctl publishes. Unset, empty, not a clean path, or naming a
 file that is missing, unreadable or malformed, auth starts, serves its
-pages without a launcher, and says nothing about it.
+pages with a banner that has no icon, no home link and no tools, and says
+nothing about it.
 
 Two more variables are optional and independent of each other, and a host
 sets neither: `IKIGENBA_PUBLIC_URL`, auth's own public origin, and
@@ -325,7 +326,7 @@ Inside it, the server divides every request by its path before anything else. A 
 beginning with `/_appkit/`, `page.StaticPrefix`, is handed unchanged to
 the handler `page.Static()` returns, ahead of every route of auth's own:
 that handler compares the whole `URL.Path` itself, so nothing is stripped, and
-what it answers — the nine shared files, their 404s and 405s — is D08's. No
+what it answers — the eight shared files, their 404s and 405s — is D08's. No
 identity is decided and the store is never called for such a request, so a
 failed store changes nothing there, which is why the store-failure rule below
 names only the routes D05, D06, D07 and D09 define. Every other path goes to auth's

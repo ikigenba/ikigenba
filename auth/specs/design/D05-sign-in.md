@@ -157,8 +157,8 @@ comparing the bytes with the answer, never by looking for a word or a tag.
 Every page auth draws is an **auth page**; auth's plain-text failures and its
 redirects are not pages.
 
-The shared files a page links, the stylesheet, the fonts, the launcher's and the
-button feedback scripts, and the favicon, are appkit's, served by auth under
+The shared files a page links, the stylesheet, the fonts, the button
+feedback script, and the favicon, are appkit's, served by auth under
 `/_appkit/` through `page.Static()`; the asset-serving design (D08) owns that,
 and the rule that no page refers to another origin. A browser that asks for
 `/favicon.ico` gets auth's ordinary 404. What a script does in a browser is
@@ -204,21 +204,22 @@ markup: it is the platform's, the same for every app, shipped by appkit as the
 template named `banner` in the set `page.Templates()` returns. auth decides what
 goes into it and where it goes; appkit decides how it is drawn. The data comes
 from the `Banner` function in `server.Config` (D03): in the running binary the
-`Banner` method of the kit `main` made with `page.New("auth", v)`, `v` being the
-display string `main` reads (D01), which adds the service's name, the display
-string `--version` prints, and the launcher's services and the service's own
-icon, read afresh from the host's services file on every call; in a test, a
+`Banner` method of the kit `main` made with `page.New("auth", id)`, `id` being
+the identity `main` reads (D01), which adds the service's name, the
+identity's release and commit, and the service's own icon, the space's home
+link and the service's tools flag, read afresh from the host's services file
+on every call; in a test, a
 closure returning whatever the case needs. auth calls it once per page it draws
 with the banner, with the **banner user**: the signed-in user's email, `/` as
 the profile URL, and `/logout` as the sign-out target, both relative, because
 auth is its own profile and its own sign-out, on its own origin. auth never
 calls it for anything else, so a page for a visitor who is not signed in never
-has a banner or a launcher and never causes a read of the services file; its
+has a banner and never causes a read of the services file; its
 auth page data carries the zero banner.
 
 appkit's design fixes what the banner and the footer show (its
 D03-page-templates). appkit's `footer` template, given the same data, writes the
-page's footer. So auth states only that the page carries the text the `banner`
+page's footer, the banner's release and then its commit. So auth states only that the page carries the text the `banner`
 template writes for the page banner (below), the **appkit banner**, and after
 it the text the `footer` template writes for that same data, the **appkit
 footer**. A test builds the server with its own `Banner` closure and compares

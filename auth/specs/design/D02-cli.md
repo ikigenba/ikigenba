@@ -69,9 +69,9 @@ socket, and only `db status` reads the database, so `auth --version` succeeds wi
 fails as an unknown command whatever the environment holds; `Run` touches none
 of the environment, the inherited descriptor or systemd's notification socket
 unless `Args` is empty. The environment reads that happen before `Run` are
-appkit's: `main` reads the display string with `version.Display` and builds
-the banner kit with `page.New`, which captures `IKIGENBA_SERVICES`, before it
-calls `Run` whatever the arguments (D01), and neither read can fail or change
+appkit's: `main` reads the identity with `version.Read`, keeps its display
+string for `Run`, and builds the banner kit with `page.New`, which captures
+`IKIGENBA_SERVICES`, before it calls `Run` whatever the arguments (D01), and neither read can fail or change
 a command's outcome other than the text `--version` prints; `Run` never calls
 the banner source for a command (D03). A command serves nothing, so it records
 no event either: the trail is what auth records while it serves, and `Run`
@@ -88,8 +88,8 @@ empty, so a caller that reads
 the streams separately sees a product or a complaint, never a mixture. Every
 diagnostic is one write to stderr, so a two-line diagnostic lands whole even
 when another writer such as journald interleaves with the same stream. The
-version `--version` reports is `Process.Version`, the display string `main`
-read (D01), and a newline, which is one empty line when the host set no
+version `--version` reports is `Process.Version`, the display string of the
+identity `main` read (D01), and a newline, which is one empty line when the host set no
 identity; auth writes no version literal.
 
 ## REQUIREMENTS
