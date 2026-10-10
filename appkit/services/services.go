@@ -19,6 +19,7 @@ type Entry struct {
 	Enabled, MCP                   bool
 	Icon                           template.HTML
 	HasIcon                        bool
+	Group                          string
 }
 
 // List holds services in their published order.
@@ -97,6 +98,11 @@ func decodeEntry(raw json.RawMessage) (Entry, bool) {
 	}
 	icon := fields["icon"]
 	entry.HasIcon = len(icon) > 0 && icon[0] == '"' && json.Unmarshal(icon, &entry.Icon) == nil
+	entry.Group = "application"
+	var group string
+	if decodeString(fields["group"], &group) && group == "core" {
+		entry.Group = group
+	}
 	return entry, true
 }
 

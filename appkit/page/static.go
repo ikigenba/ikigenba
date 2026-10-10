@@ -32,7 +32,6 @@ var servedAssets, preloadPath = prepareAssets()
 func prepareAssets() (map[string]browserAsset, string) {
 	files := map[string]string{
 		"theme.css":                  "text/css; charset=utf-8",
-		"launcher.js":                "text/javascript; charset=utf-8",
 		"feedback.js":                "text/javascript; charset=utf-8",
 		"favicon.svg":                "image/svg+xml",
 		"InterVariable.woff2":        "font/woff2",

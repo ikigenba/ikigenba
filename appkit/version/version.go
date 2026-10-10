@@ -12,12 +12,18 @@ const CommitVariable = "IKIGENBA_COMMIT"
 // ReleaseVariable names the environment variable holding the release label.
 const ReleaseVariable = "IKIGENBA_RELEASE"
 
-// Display reads the host's current code identity and formats it for display.
-func Display() string {
+// Identity holds the release label and short commit supplied by the host.
+type Identity struct {
+	Release string
+	Commit  string
+}
+
+// Read reads the host's current code identity, shortening its commit.
+func Read() Identity {
 	commit := os.Getenv(CommitVariable)
 	release := os.Getenv(ReleaseVariable)
 	if commit == "" {
-		return release
+		return Identity{Release: release}
 	}
 
 	dirty := strings.HasSuffix(commit, "-dirty")
@@ -29,8 +35,21 @@ func Display() string {
 	if dirty {
 		short += "-dirty"
 	}
-	if release == "" {
-		return short
+	return Identity{Release: release, Commit: short}
+}
+
+// String formats the identity's values without altering them.
+func (id Identity) String() string {
+	if id.Commit == "" {
+		return id.Release
 	}
-	return release + " (" + short + ")"
+	if id.Release == "" {
+		return id.Commit
+	}
+	return id.Release + " (" + id.Commit + ")"
+}
+
+// Display reads the host's current code identity and formats it for display.
+func Display() string {
+	return Read().String()
 }

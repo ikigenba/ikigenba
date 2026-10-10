@@ -8,11 +8,11 @@ import (
 )
 
 func TestEntryFields(t *testing.T) {
-	// R-GZJJ-CAL0
+	// R-SGLC-TV3B
 	var icon template.HTML = "icon"
 	entry := services.Entry{
 		Name: "name", URL: "url", Description: "description", Socket: "socket",
-		Enabled: true, MCP: false, Icon: icon, HasIcon: true,
+		Enabled: true, MCP: false, Icon: icon, HasIcon: true, Group: "group",
 	}
 	// Assignment to this unnamed struct checks the exact field types and order.
 	var shape struct {
@@ -20,8 +20,9 @@ func TestEntryFields(t *testing.T) {
 		Enabled, MCP                   bool
 		Icon                           template.HTML
 		HasIcon                        bool
+		Group                          string
 	} = entry
-	if shape.Name != "name" || shape.URL != "url" || shape.Description != "description" || shape.Socket != "socket" || !shape.Enabled || shape.MCP || shape.Icon != icon || !shape.HasIcon {
+	if shape.Name != "name" || shape.URL != "url" || shape.Description != "description" || shape.Socket != "socket" || !shape.Enabled || shape.MCP || shape.Icon != icon || !shape.HasIcon || shape.Group != "group" {
 		t.Fatalf("entry fields: %#v", entry)
 	}
 }

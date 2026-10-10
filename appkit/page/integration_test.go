@@ -11,10 +11,9 @@ import (
 func TestEmbeddedAssetsIgnoreWorkingDirectory(t *testing.T) {
 	staticNames := []string{
 		"InterVariable-Italic.woff2", "InterVariable.woff2", "JetBrainsMono.woff2",
-		"OFL.txt", "TABLER-LICENSE.txt", "launcher.js", "theme.css",
+		"OFL.txt", "TABLER-LICENSE.txt", "theme.css", "feedback.js", "favicon.svg",
 	}
-	banner := Banner{Service: "dummy", Email: "user@example.test", ProfileURL: "/profile", LogoutURL: "/logout",
-		Services: []Service{{Name: "dummy", URL: "/", Enabled: true, Current: true}}}
+	banner := Banner{Service: "dummy", Email: "user@example.test", ProfileURL: "/profile", LogoutURL: "/logout"}
 	render := func() []byte {
 		var output bytes.Buffer
 		if executeErr := Templates().ExecuteTemplate(&output, "banner", banner); executeErr != nil {

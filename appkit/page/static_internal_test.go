@@ -9,8 +9,8 @@ import (
 )
 
 func TestStaticEntityTagsAreQuotedSHA256Digests(t *testing.T) {
-	// R-4ZCS-H8X1
-	for _, name := range []string{"theme.css", "launcher.js", "feedback.js", "favicon.svg", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
+	// R-JSCV-7XZD
+	for _, name := range []string{"theme.css", "feedback.js", "favicon.svg", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
 		content := staticServedBytes(t, name)
 		want := fmt.Sprintf(`"%x"`, sha256.Sum256(content))
 		for range 2 {

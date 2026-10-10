@@ -226,7 +226,8 @@ func TestReadDecodedOrder(t *testing.T) {
 		t.Fatalf("list length = %d", len(list))
 	}
 	for i, entry := range list {
-		if entry != want[i] {
+		if entry.Name != want[i].Name || entry.URL != want[i].URL || entry.Description != want[i].Description ||
+			entry.Socket != want[i].Socket || entry.Enabled != want[i].Enabled || entry.MCP != want[i].MCP {
 			t.Fatalf("entry %d = %#v, want %#v", i, entry, want[i])
 		}
 	}
@@ -267,20 +268,58 @@ func TestEmptyList(t *testing.T) {
 	}
 }
 
+func TestReadGroups(t *testing.T) {
+	// R-SHT9-7MU0
+	for _, group := range []struct {
+		value string
+		want  string
+	}{
+		{`"core"`, "core"},
+		{`"c\u006fre"`, "core"},
+		{`"application"`, "application"},
+		{`""`, "application"},
+		{`"Core"`, "application"},
+		{`"CORE"`, "application"},
+		{`" core"`, "application"},
+		{`"core "`, "application"},
+		{`"future"`, "application"},
+		{`null`, "application"},
+		{`true`, "application"},
+		{`false`, "application"},
+		{`0`, "application"},
+		{`[]`, "application"},
+		{`{}`, "application"},
+		{"", "application"},
+	} {
+		t.Run(group.value, func(t *testing.T) {
+			entry := validEntry
+			if group.value != "" {
+				entry = strings.TrimSuffix(entry, "}") + `,"group":` + group.value + `}`
+			}
+			list := readFile(t, `{"services":[`+entry+`]}`)
+			if len(list) != 1 || list[0].Group != group.want {
+				t.Fatalf("group %s: %#v, want %q", group.value, list, group.want)
+			}
+		})
+	}
+}
+
 func TestUnknownMembers(t *testing.T) {
-	// R-BDOL-XYI2
-	baseline := readFile(t, `{"services":[`+validEntry+`]}`)
-	for _, extra := range []string{`null`, `true`, `1`, `"extra"`, `[]`, `{"nested":{"services":false}}`} {
-		entry := strings.TrimSuffix(validEntry, "}") + `,"unknown":` + extra + `}`
-		list := readFile(t, `{"unknown":`+extra+`,"services":[`+entry+`]}`)
-		if len(list) != 1 || list[0] != baseline[0] {
-			t.Fatalf("unknown member %s changed list: %#v", extra, list)
+	// R-SJ15-LEKP
+	for _, known := range []string{validEntry, strings.TrimSuffix(validEntry, "}") + `,"icon":"icon","group":"core"}`} {
+		baseline := readFile(t, `{"services":[`+known+`]}`)
+		for _, extra := range []string{`null`, `true`, `false`, `1`, `"extra"`, `[]`, `{"nested":{"services":false,"group":"application","icon":null}}`} {
+			entry := strings.TrimSuffix(known, "}") + `,"unknown":` + extra + `}`
+			list := readFile(t, `{"unknown":`+extra+`,"services":[`+entry+`]}`)
+			if len(list) != 1 || list[0] != baseline[0] {
+				t.Fatalf("unknown member %s changed list: %#v", extra, list)
+			}
 		}
 	}
 }
 
 func TestCaseSensitiveMembers(t *testing.T) {
-	// R-K2UL-J1DF
+	// R-SK91-Z6BE
 	if list, err := services.Read(fixture(t, `{"Services":[]}`)); list != nil || err == nil {
 		t.Fatalf("Services recognized: %#v, %v", list, err)
 	}
@@ -288,11 +327,18 @@ func TestCaseSensitiveMembers(t *testing.T) {
 		upper := strings.ToUpper(key[:1]) + key[1:]
 		assertSkipped(t, strings.Replace(validEntry, `"`+key+`":`, `"`+upper+`":`, 1))
 	}
-	entry := strings.TrimSuffix(validEntry, "}") + `,"Icon":"ignored","Name":"ignored","URL":false,"Description":null,"Socket":0,"Enabled":false,"MCP":true}`
+	entry := strings.TrimSuffix(validEntry, "}") + `,"Icon":"ignored","Name":"ignored","URL":false,"Description":null,"Socket":0,"Enabled":false,"MCP":true,"Group":"core"}`
 	list := readFile(t, `{"Services":false,"services":[`+entry+`]}`)
 	baseline := readFile(t, `{"services":[`+validEntry+`]}`)
 	if len(list) != 1 || list[0] != baseline[0] {
 		t.Fatalf("case variants changed entry: %#v", list)
+	}
+	for _, key := range []string{"Group", "GROUP", "gRoup"} {
+		entry := strings.TrimSuffix(validEntry, "}") + `,"group":"core","` + key + `":"application"}`
+		list := readFile(t, `{"services":[`+entry+`]}`)
+		if len(list) != 1 || list[0].Group != "core" {
+			t.Fatalf("case variant %s replaced group: %#v", key, list)
+		}
 	}
 }
 
@@ -308,7 +354,9 @@ func TestLastDuplicateMember(t *testing.T) {
 	entry := strings.TrimSuffix(validEntry, "}") + `,"name":"last","url":"last-url","description":"last-description","socket":"last-socket","enabled":false,"mcp":true,"icon":null,"icon":"last-icon"}`
 	list = readFile(t, `{"services":[`+entry+`]}`)
 	want := services.Entry{Name: "last", URL: "last-url", Description: "last-description", Socket: "last-socket", MCP: true, Icon: "last-icon", HasIcon: true}
-	if len(list) != 1 || list[0] != want {
+	if len(list) != 1 || list[0].Name != want.Name || list[0].URL != want.URL || list[0].Description != want.Description ||
+		list[0].Socket != want.Socket || list[0].Enabled != want.Enabled || list[0].MCP != want.MCP ||
+		list[0].Icon != want.Icon || list[0].HasIcon != want.HasIcon {
 		t.Fatalf("last entry members: %#v", list)
 	}
 	for _, key := range []string{"name", "url", "description", "socket", "enabled", "mcp"} {
@@ -317,6 +365,20 @@ func TestLastDuplicateMember(t *testing.T) {
 	list = readFile(t, `{"services":[`+strings.TrimSuffix(validEntry, "}")+`,"icon":"first","icon":null}]}`)
 	if len(list) != 1 || list[0].HasIcon || list[0].Icon != "" {
 		t.Fatalf("last null icon: %#v", list)
+	}
+	for _, group := range []struct {
+		members string
+		want    string
+	}{
+		{`,"group":"application","group":"core"`, "core"},
+		{`,"group":"core","group":"application"`, "application"},
+		{`,"group":"core","group":null`, "application"},
+	} {
+		entry := strings.TrimSuffix(validEntry, "}") + group.members + `}`
+		list := readFile(t, `{"services":[`+entry+`]}`)
+		if len(list) != 1 || list[0].Group != group.want {
+			t.Fatalf("last group %s: %#v", group.members, list)
+		}
 	}
 }
 

@@ -76,7 +76,7 @@ func TestPublicAPIWorkingDirectoryIndependence(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(dir, "assets"), 0700); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"banner.html", "theme.css", "launcher.js"} {
+		for _, name := range []string{"banner.html", "theme.css", "feedback.js"} {
 			if err := os.WriteFile(filepath.Join(dir, "assets", name), []byte(fmt.Sprintf("unrelated cwd %d", i)), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -123,6 +123,9 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 		for _, release := range []string{"", "host-label"} {
 			t.Setenv(version.CommitVariable, commit)
 			t.Setenv(version.ReleaseVariable, release)
+			id := version.Read()
+			note("version.Read", id)
+			note("Identity.String", id.String())
 			note("version.Display", version.Display())
 		}
 	}
@@ -146,12 +149,12 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 	user := page.User{Email: "person@example.com", ProfileURL: "/profile", LogoutURL: "/logout"}
 	for _, p := range []string{path, bad, filepath.Join(root, "missing"), ""} {
 		t.Setenv(services.Variable, p)
-		kit := page.New("sample", "consumer-version")
+		kit := page.New("sample", version.Identity{Release: "consumer-release", Commit: "consumer-commit"})
 		banner := kit.Banner(user)
 		note("New/Banner", banner)
 		if includePageExtra {
 			templates := page.Templates()
-			for _, name := range []string{"banner", "launcher", "footer"} {
+			for _, name := range []string{"banner", "footer", "preload"} {
 				var output bytes.Buffer
 				err := templates.ExecuteTemplate(&output, name, banner)
 				note("Templates "+name, output.String(), err)
@@ -159,7 +162,8 @@ func contractExercise(t *testing.T, root string, includePageExtra bool) []string
 		}
 	}
 	if includePageExtra {
-		for _, name := range []string{"theme.css", "launcher.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt", "missing"} {
+		note("PreloadURL", page.PreloadURL())
+		for _, name := range []string{"theme.css", "feedback.js", "favicon.svg", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt", "missing"} {
 			for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 				rec := httptest.NewRecorder()
 				page.Static().ServeHTTP(rec, httptest.NewRequest(method, page.StaticPrefix+name, nil))

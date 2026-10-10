@@ -11,6 +11,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/version"
 )
 
 func writeEntries(t *testing.T, path string, entries []map[string]any) {
@@ -38,37 +39,35 @@ func iconEntry(name, url, icon string, enabled bool) map[string]any {
 }
 
 func TestPublicSurface(t *testing.T) {
-	// R-HLTX-LS8Q R-HT5B-WEOW R-HUD8-A6FL R-F4AI-AQ0A R-F5IE-OHQZ R-HY0X-FHNO
+	// R-HLTX-LS8Q R-HT5B-WEOW R-IZ3A-1G6P R-F5IE-OHQZ R-J0B6-F7XE
 	t.Setenv(services.Variable, "")
 	user := page.User{"email", "/profile", "/logout"}
 	if user.Email != "email" || user.ProfileURL != "/profile" || user.LogoutURL != "/logout" {
 		t.Fatal("User fields or order")
 	}
 	icon := template.HTML("<svg/>")
-	service := page.Service{"app", "/app", icon, true, false}
-	if service.Name != "app" || service.URL != "/app" || service.Icon != icon || !service.Enabled || service.Current {
-		t.Fatal("Service fields or order")
-	}
 	level := page.Level{"section", "/section"}
 	if level.Name != "section" || level.URL != "/section" {
 		t.Fatal("Level fields or order")
 	}
-	banner := page.Banner{"app", icon, "build", user.Email, user.ProfileURL, user.LogoutURL, []page.Service{service}, "/home", true, []page.Level{level}}
-	if banner.Service != "app" || banner.Icon != icon || banner.Version != "build" || banner.Email != user.Email || banner.ProfileURL != user.ProfileURL || banner.LogoutURL != user.LogoutURL || banner.Services[0] != service || banner.Home != "/home" || !banner.Tools || banner.Trail[0] != level {
+	banner := page.Banner{"app", icon, "release-value", "commit-value", user.Email, user.ProfileURL, user.LogoutURL, "/home", true, []page.Level{level}}
+	if banner.Service != "app" || banner.Icon != icon || banner.Release != "release-value" || banner.Commit != "commit-value" || banner.Email != user.Email || banner.ProfileURL != user.ProfileURL || banner.LogoutURL != user.LogoutURL || banner.Home != "/home" || !banner.Tools || banner.Trail[0] != level {
 		t.Fatal("Banner fields or order")
 	}
 	useBanner := func(bannerOf func(page.User) page.Banner) { _ = bannerOf(user) }
-	useKit := func(newKit func(string, string) *page.Kit) { useBanner(newKit("app", "build").Banner) }
+	useKit := func(newKit func(string, version.Identity) *page.Kit) {
+		useBanner(newKit("app", version.Identity{Release: "build"}).Banner)
+	}
 	useKit(page.New)
 }
 
 func TestBannerUnalteredValues(t *testing.T) {
-	// R-I0GQ-7152
+	// R-J1J2-SZO3
 	t.Setenv(services.Variable, "")
 	u := page.User{Email: "  person+tag@example.test ", ProfileURL: "?profile=<>&", LogoutURL: "../exit?x=1"}
-	version := " release+build/<>& \n"
-	got := page.New(" App ", version).Banner(u)
-	if got.Service != " App " || got.Version != version || got.Email != u.Email || got.ProfileURL != u.ProfileURL || got.LogoutURL != u.LogoutURL {
+	id := version.Identity{Release: " release+build/<>& \n", Commit: " commit/<>& \n"}
+	got := page.New(" App ", id).Banner(u)
+	if got.Service != " App " || got.Release != id.Release || got.Commit != id.Commit || got.Email != u.Email || got.ProfileURL != u.ProfileURL || got.LogoutURL != u.LogoutURL {
 		t.Fatalf("values altered: %+v", got)
 	}
 }
@@ -76,85 +75,59 @@ func TestBannerUnalteredValues(t *testing.T) {
 func TestEnvironmentSnapshot(t *testing.T) {
 	// R-HZ8T-T9ED
 	first, second := filepath.Join(t.TempDir(), "first"), filepath.Join(t.TempDir(), "second")
-	writeEntries(t, first, []map[string]any{iconEntry("first", "/", "", true)})
-	writeEntries(t, second, []map[string]any{iconEntry("second", "/", "", true)})
+	writeEntries(t, first, []map[string]any{iconEntry("app", "/", "first", true)})
+	writeEntries(t, second, []map[string]any{iconEntry("app", "/", "second", true)})
 	t.Setenv(services.Variable, first)
-	kit := page.New("app", "build")
+	kit := page.New("app", version.Identity{Release: "build"})
 	for _, path := range []string{second, ""} {
 		t.Setenv(services.Variable, path)
-		if got := kit.Banner(page.User{}).Services; len(got) != 1 || got[0].Name != "first" {
+		if got := kit.Banner(page.User{}).Icon; got != "first" {
 			t.Fatalf("snapshot changed: %+v", got)
 		}
 	}
 	if err := os.Unsetenv(services.Variable); err != nil {
 		t.Fatal(err)
 	}
-	if got := kit.Banner(page.User{}).Services; len(got) != 1 || got[0].Name != "first" {
+	if got := kit.Banner(page.User{}).Icon; got != "first" {
 		t.Fatalf("unset changed snapshot: %+v", got)
 	}
-	unset := page.New("app", "build")
+	unset := page.New("app", version.Identity{Release: "build"})
 	t.Setenv(services.Variable, "")
-	empty := page.New("app", "build")
+	empty := page.New("app", version.Identity{Release: "build"})
 	t.Setenv(services.Variable, second)
 	for _, noPath := range []*page.Kit{unset, empty} {
-		if len(noPath.Banner(page.User{}).Services) != 0 {
+		if noPath.Banner(page.User{}).Icon != "" {
 			t.Fatal("later setting changed captured empty path")
 		}
 	}
 }
 
 func TestBannerReadsEachCall(t *testing.T) {
-	// R-I1OM-KSVR
+	// R-J2QZ-6RES
 	dir := t.TempDir()
 	t.Chdir(dir)
 	t.Setenv(services.Variable, "services.json")
-	kit := page.New("app", "build")
-	if len(kit.Banner(page.User{}).Services) != 0 {
+	kit := page.New("app", version.Identity{Release: "build"})
+	if kit.Banner(page.User{}).Icon != "" {
 		t.Fatal("missing file yielded services")
 	}
 	path := filepath.Join(dir, "services.json")
 	for _, name := range []string{"appeared", "changed"} {
-		writeEntries(t, path, []map[string]any{iconEntry(name, "/", "", true)})
-		if got := kit.Banner(page.User{}).Services; len(got) != 1 || got[0].Name != name {
+		writeEntries(t, path, []map[string]any{iconEntry("app", "/", name, true)})
+		if got := kit.Banner(page.User{}).Icon; string(got) != name {
 			t.Fatalf("file change not reflected: %+v", got)
 		}
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if len(kit.Banner(page.User{}).Services) != 0 {
+	if kit.Banner(page.User{}).Icon != "" {
 		t.Fatal("removed file retained services")
 	}
 }
 
-func TestBannerFiltersAndMapsReaderEntries(t *testing.T) {
-	// R-6XQZ-7ZFT
-	path := filepath.Join(t.TempDir(), "services.json")
-	badIcon := entry("bad-icon", "/", true)
-	badIcon["icon"] = false
-	legacy := map[string]any{"name": "old", "url": "/", "icon": "old", "enabled": true}
-	writeEntries(t, path, []map[string]any{
-		iconEntry("app", "/a?x=1&y=2", "<svg>\n&\"é</svg>", false),
-		entry("without-icon", "/", true), badIcon, legacy,
-		iconEntry("APP", "", "", true),
-		iconEntry("app", "different", "other", true),
-		iconEntry(" ", "", "", false),
-	})
-	t.Setenv(services.Variable, path)
-	got := page.New("app", "build").Banner(page.User{}).Services
-	want := []page.Service{
-		{Name: "app", URL: "/a?x=1&y=2", Icon: template.HTML("<svg>\n&\"é</svg>"), Current: true},
-		{Name: "APP", Enabled: true},
-		{Name: "app", URL: "different", Icon: "other", Enabled: true, Current: true},
-		{Name: " "},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("services = %+v; want %+v", got, want)
-	}
-}
-
 func TestBannerFallbackAndNoPanic(t *testing.T) {
-	// R-I44F-CCD5 R-I5CB-Q43U
+	// R-J6EO-C2MV R-I5CB-Q43U
 	path := filepath.Join(t.TempDir(), "services.json")
 	for _, content := range []string{
 		"", "{", "\xff", "\xef\xbb\xbf{}", "{} {}", "[]", "null",
@@ -166,34 +139,34 @@ func TestBannerFallbackAndNoPanic(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Setenv(services.Variable, path)
-		if got := page.New("app", "build").Banner(page.User{}).Services; len(got) != 0 {
+		if got := page.New("app", version.Identity{Release: "build"}).Banner(page.User{}).Icon; got != "" {
 			t.Fatalf("content %q yielded %+v", content, got)
 		}
 	}
 	for _, unreadable := range []string{"", filepath.Join(t.TempDir(), "absent"), t.TempDir(), path + "/"} {
 		t.Setenv(services.Variable, unreadable)
-		if len(page.New("app", "build").Banner(page.User{}).Services) != 0 {
+		if page.New("app", version.Identity{Release: "build"}).Banner(page.User{}).Icon != "" {
 			t.Fatalf("path %q yielded services", unreadable)
 		}
 	}
 	if err := os.Unsetenv(services.Variable); err != nil {
 		t.Fatal(err)
 	}
-	if len(page.New("app", "build").Banner(page.User{}).Services) != 0 {
+	if page.New("app", version.Identity{Release: "build"}).Banner(page.User{}).Icon != "" {
 		t.Fatal("unset variable yielded services")
 	}
 }
 
 func TestZeroKit(t *testing.T) {
-	// R-I6K8-3VUJ
+	// R-J7MK-PUDK R-J6EO-C2MV
 	t.Setenv(services.Variable, "")
 	if err := os.Unsetenv(services.Variable); err != nil {
 		t.Fatal(err)
 	}
 	u := page.User{Email: "email", ProfileURL: "profile", LogoutURL: "logout"}
 	var zero page.Kit
-	got, want := zero.Banner(u), page.New("", "").Banner(u)
-	if !reflect.DeepEqual(got, want) || got.Service != "" || got.Version != "" || len(got.Services) != 0 {
+	got, want := zero.Banner(u), page.New("", version.Identity{}).Banner(u)
+	if !reflect.DeepEqual(got, want) || got.Service != "" || got.Release != "" || got.Commit != "" || got.Icon != "" {
 		t.Fatalf("zero Kit: %+v versus %+v", got, want)
 	}
 }
@@ -203,7 +176,7 @@ func TestConcurrentBanner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")
 	writeEntries(t, path, []map[string]any{iconEntry("app", "/", "<svg/>", true)})
 	t.Setenv(services.Variable, path)
-	kit := page.New("app", "build")
+	kit := page.New("app", version.Identity{Release: "build"})
 	want := kit.Banner(page.User{Email: "person"})
 	results := make(chan page.Banner, 64)
 	var workers sync.WaitGroup
@@ -220,16 +193,17 @@ func TestConcurrentBanner(t *testing.T) {
 }
 
 func TestBannerCurrentIcon(t *testing.T) {
-	// R-SHIJ-UIIT
+	// R-J3YV-KJ5H
 	path := filepath.Join(t.TempDir(), "services.json")
 	t.Setenv(services.Variable, path)
-	kit := page.New("app", "build")
+	kit := page.New("app", version.Identity{Release: "build"})
 	for _, test := range []struct {
 		name    string
 		entries []map[string]any
 		want    template.HTML
 	}{
-		{"first current after other services", []map[string]any{iconEntry("other", "/", "other", true), entry("app", "/", true), iconEntry("app", "/", "<svg>\n&amp;é</svg>", false), iconEntry("app", "/", "second", true)}, "<svg>\n&amp;é</svg>"},
+		{"first match lacks icon", []map[string]any{iconEntry("other", "/", "other", true), entry("app", "/", true), iconEntry("app", "/", "later", false)}, ""},
+		{"disabled first match", []map[string]any{iconEntry("other", "/", "other", true), iconEntry("app", "/", "<svg>\n&amp;é</svg>", false), iconEntry("app", "/", "second", true)}, "<svg>\n&amp;é</svg>"},
 		{"empty first current icon", []map[string]any{iconEntry("app", "/", "", true), iconEntry("app", "/", "second", true)}, ""},
 		{"name matching is exact", []map[string]any{iconEntry("APP", "/", "other", true)}, ""},
 		{"current lacks icon", []map[string]any{entry("app", "/", true), iconEntry("other", "/", "other", true)}, ""},
@@ -249,13 +223,13 @@ func TestBannerCurrentIcon(t *testing.T) {
 		t.Fatalf("missing file Icon = %q", got)
 	}
 	t.Setenv(services.Variable, "")
-	if got := page.New("app", "build").Banner(page.User{}).Icon; got != "" {
+	if got := page.New("app", version.Identity{Release: "build"}).Banner(page.User{}).Icon; got != "" {
 		t.Fatalf("empty path Icon = %q", got)
 	}
 	if err := os.Unsetenv(services.Variable); err != nil {
 		t.Fatal(err)
 	}
-	if got := page.New("app", "build").Banner(page.User{}).Icon; got != "" {
+	if got := page.New("app", version.Identity{Release: "build"}).Banner(page.User{}).Icon; got != "" {
 		t.Fatalf("unset path Icon = %q", got)
 	}
 }
@@ -264,7 +238,7 @@ func TestBannerHome(t *testing.T) {
 	// R-F6QB-29HO
 	path := filepath.Join(t.TempDir(), "services.json")
 	t.Setenv(services.Variable, path)
-	kit := page.New("app", "build")
+	kit := page.New("app", version.Identity{Release: "build"})
 	url := "  /front?x=1&y=<value>\n"
 	for _, enabled := range []bool{false, true} {
 		for _, hasIcon := range []bool{false, true} {
@@ -300,7 +274,7 @@ func TestBannerTools(t *testing.T) {
 	// R-F7Y7-G18D
 	path := filepath.Join(t.TempDir(), "services.json")
 	t.Setenv(services.Variable, path)
-	kit := page.New("app", "build")
+	kit := page.New("app", version.Identity{Release: "build"})
 	for _, mcp := range []bool{false, true} {
 		for _, enabled := range []bool{false, true} {
 			for _, hasIcon := range []bool{false, true} {
@@ -335,24 +309,24 @@ func TestBannerHomeAndToolsFallback(t *testing.T) {
 	app["mcp"] = true
 	writeEntries(t, path, []map[string]any{entry("home", "/home", true), app})
 	t.Setenv(services.Variable, "")
-	empty := page.New("app", "build")
+	empty := page.New("app", version.Identity{Release: "build"})
 	if err := os.Unsetenv(services.Variable); err != nil {
 		t.Fatal(err)
 	}
-	unset := page.New("app", "build")
+	unset := page.New("app", version.Identity{Release: "build"})
 	t.Setenv(services.Variable, path)
 	var zero page.Kit
 	kits := []*page.Kit{empty, unset, &zero}
 	for _, badPath := range []string{filepath.Join(t.TempDir(), "missing"), t.TempDir(), path + "/"} {
 		t.Setenv(services.Variable, badPath)
-		kits = append(kits, page.New("app", "build"))
+		kits = append(kits, page.New("app", version.Identity{Release: "build"}))
 	}
 	brokenPath := filepath.Join(t.TempDir(), "broken.json")
 	if err := os.WriteFile(brokenPath, []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(services.Variable, brokenPath)
-	kits = append(kits, page.New("app", "build"))
+	kits = append(kits, page.New("app", version.Identity{Release: "build"}))
 	for _, kit := range kits {
 		got := kit.Banner(page.User{})
 		if got.Home != "" || got.Tools {
@@ -365,7 +339,7 @@ func TestBannerHomeAndToolsReadEachCall(t *testing.T) {
 	// R-FAE0-7KPR
 	path := filepath.Join(t.TempDir(), "services.json")
 	t.Setenv(services.Variable, path)
-	kit := page.New("app", "build")
+	kit := page.New("app", version.Identity{Release: "build"})
 	check := func(home string, tools bool) {
 		t.Helper()
 		got := kit.Banner(page.User{})
@@ -398,7 +372,7 @@ func TestBannerStartsWithEmptyTrail(t *testing.T) {
 	// R-FBLW-LCGG
 	path := filepath.Join(t.TempDir(), "services.json")
 	t.Setenv(services.Variable, path)
-	kit := page.New("app", "build")
+	kit := page.New("app", version.Identity{Release: "build"})
 	for _, entries := range [][]map[string]any{nil, {entry("home", "/home", true)}, {iconEntry("app", "/app", "icon", true)}} {
 		writeEntries(t, path, entries)
 		got := kit.Banner(page.User{})

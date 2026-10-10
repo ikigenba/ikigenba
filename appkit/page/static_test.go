@@ -16,7 +16,6 @@ var staticFiles = []struct {
 	contentType string
 }{
 	{"theme.css", "text/css; charset=utf-8"},
-	{"launcher.js", "text/javascript; charset=utf-8"},
 	{"feedback.js", "text/javascript; charset=utf-8"},
 	{"favicon.svg", "image/svg+xml"},
 	{"InterVariable.woff2", "font/woff2"},
@@ -103,7 +102,7 @@ func TestStaticFactory(t *testing.T) {
 }
 
 func TestStaticGETBytes(t *testing.T) {
-	// R-4S1E-6MGV
+	// R-JPX2-GEHZ
 	handler := Static()
 	for _, file := range staticFiles {
 		t.Run(file.name, func(t *testing.T) {
@@ -127,7 +126,7 @@ func TestStaticGETBytes(t *testing.T) {
 }
 
 func TestStaticContentTypes(t *testing.T) {
-	// R-4T9A-KE7K
+	// R-JR4Y-U68O
 	handler := Static()
 	for _, file := range staticFiles {
 		etag := staticResponse(handler, http.MethodGet, staticPath(t, file.name)).Header().Get("ETag")
@@ -169,7 +168,7 @@ func TestStaticHEAD(t *testing.T) {
 
 func TestStaticUnknownPaths(t *testing.T) {
 	// R-J9L0-CJKR
-	paths := []string{StaticPrefix, StaticPrefix + "banner.html", "/", "/_appkit", "/_appkit/missing", "/_appkit/assets/theme.css"}
+	paths := []string{StaticPrefix, StaticPrefix + "banner.html", StaticPrefix + "launcher.js", "/", "/_appkit", "/_appkit/missing", "/_appkit/assets/theme.css"}
 	for _, file := range staticFiles {
 		paths = append(paths,
 			staticPath(t, file.name)+"/",

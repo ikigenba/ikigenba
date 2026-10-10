@@ -19,10 +19,7 @@ func templateExecute(t *testing.T, set *template.Template, name string, data any
 }
 
 func templateFixture() Banner {
-	return Banner{Service: "notes", Icon: template.HTML("fixture-icon<>&banner"), Email: "member@example.test", ProfileURL: "/profile", LogoutURL: "/logout", Services: []Service{
-		{Name: "notes", URL: "/notes", Icon: template.HTML("fixture-icon<>&notes"), Enabled: true, Current: true},
-		{Name: "calendar", URL: "/calendar", Icon: template.HTML("fixture-icon<>&calendar"), Enabled: false},
-	}}
+	return Banner{Service: "notes", Icon: template.HTML("fixture-icon<>&banner"), Release: "consumer-release", Commit: "consumer-commit", Email: "member@example.test", ProfileURL: "/profile", LogoutURL: "/logout"}
 }
 
 func TestTemplatesSignature(t *testing.T) {
@@ -33,7 +30,7 @@ func TestTemplatesSignature(t *testing.T) {
 }
 
 func TestTemplatesEmbeddedDefinitions(t *testing.T) {
-	// R-55GA-E3MI
+	// R-J8UH-3M49
 	markup, err := assetsFS.ReadFile("assets/banner.html")
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +43,7 @@ func TestTemplatesEmbeddedDefinitions(t *testing.T) {
 	if actual == nil {
 		t.Fatal("nil set")
 	}
-	for _, name := range []string{"banner", "launcher", "footer", "preload"} {
+	for _, name := range []string{"banner", "footer", "preload"} {
 		if actual.Lookup(name) == nil {
 			t.Fatalf("missing %s", name)
 		}
@@ -59,9 +56,9 @@ func TestTemplatesEmbeddedDefinitions(t *testing.T) {
 }
 
 func TestTemplatesNames(t *testing.T) {
-	// R-56O6-RVD7
+	// R-JA2D-HDUY
 	set := Templates()
-	allowed := []string{"appkit", "banner", "launcher", "footer", "preload"}
+	allowed := []string{"appkit", "banner", "footer", "preload"}
 	// R-YHYW-CTC1
 	if set.Name() != "appkit" {
 		t.Fatalf("root name %q", set.Name())
@@ -81,7 +78,7 @@ func TestTemplatesIndependent(t *testing.T) {
 	}
 	data := templateFixture()
 	baseline := templateExecute(t, second, "banner", data)
-	if _, err := first.Parse(`{{define "consumer"}}custom{{end}}{{define "banner"}}changed{{end}}{{define "launcher"}}other{{end}}`); err != nil {
+	if _, err := first.Parse(`{{define "consumer"}}custom{{end}}{{define "banner"}}changed{{end}}`); err != nil {
 		t.Fatal(err)
 	}
 	templateExecute(t, first, "banner", data)
@@ -101,10 +98,10 @@ func TestTemplatesIndependent(t *testing.T) {
 }
 
 func TestTemplatesConsumerParse(t *testing.T) {
-	// R-57W3-5N3W
-	const page = `{{define "page"}}{{template "banner" .}}{{template "launcher" .}}{{template "footer" .}}{{template "preload"}}{{end}}`
+	// R-JBA9-V5LN
+	const page = `{{define "page"}}{{template "banner" .}}{{template "footer" .}}{{template "preload"}}{{end}}`
 	data := templateFixture()
-	want := templateExecute(t, Templates(), "banner", data) + templateExecute(t, Templates(), "launcher", data) + templateExecute(t, Templates(), "footer", data) + templateExecute(t, Templates(), "preload", nil)
+	want := templateExecute(t, Templates(), "banner", data) + templateExecute(t, Templates(), "footer", data) + templateExecute(t, Templates(), "preload", nil)
 	for _, mode := range []string{"Parse", "ParseFS"} {
 		t.Run(mode, func(t *testing.T) {
 			set := Templates()
@@ -118,23 +115,9 @@ func TestTemplatesConsumerParse(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got := templateExecute(t, set, "page", data); got != want {
-				t.Fatal("consumer did not render banner, launcher, footer, and preload")
+				t.Fatal("consumer did not render banner, footer, and preload")
 			}
 		})
-	}
-}
-
-func TestBannerInvokesLauncherOnce(t *testing.T) {
-	// R-IL70-P4QV
-	data := templateFixture()
-	data.Version = "consumer-build"
-	set := Templates()
-	if _, err := set.Parse(`{{define "launcher"}}sentinel:{{.Service}}/{{.Version}}/{{.Email}}/{{.ProfileURL}}/{{.LogoutURL}}{{range .Services}}/{{.Name}}/{{.URL}}/{{.Enabled}}/{{.Current}}/{{.Icon}}{{end}}:end{{end}}`); err != nil {
-		t.Fatal(err)
-	}
-	launcher := templateExecute(t, set, "launcher", data)
-	if got := templateExecute(t, set, "banner", data); strings.Count(got, launcher) != 1 {
-		t.Fatal("launcher must execute once with identical data")
 	}
 }
 
@@ -174,109 +157,85 @@ func templateText(t *testing.T, value string) string {
 }
 
 func TestBannerValues(t *testing.T) {
-	// R-CHNB-5CO9 R-CIV7-J4EY R-CK33-WW5N R-CLB0-ANWC
-	for _, services := range [][]Service{nil, templateFixture().Services} {
-		data := templateFixture()
-		data.Services = services
-		data.Service = "consumer<service>&\"'"
-		data.Email = "consumer<email>&\"'"
-		output := templateExecute(t, Templates(), "banner", data)
-		templateContains(t, output, templateText(t, data.Service), string(data.Icon), data.ProfileURL, templateText(t, data.Email), data.LogoutURL)
-	}
-}
-
-func TestBannerScript(t *testing.T) {
-	// R-CMIW-OFN1
+	// R-JDQ2-MP31 R-CIV7-J4EY R-JEXZ-0GTQ R-JG5V-E8KF
 	data := templateFixture()
-	if output := templateExecute(t, Templates(), "banner", data); strings.Count(output, StaticPrefix+"launcher.js") != 1 {
-		t.Fatal("launcher script URL must occur once")
-	}
-}
-
-func TestBannerEmptyServices(t *testing.T) {
-	// R-CNQT-27DQ
-	for _, services := range [][]Service{nil, {}} {
-		data := templateFixture()
-		data.Services = services
-		output := templateExecute(t, Templates(), "banner", data)
-		launcher := templateExecute(t, Templates(), "launcher", data)
-		if strings.Contains(output, launcher) || strings.Contains(output, StaticPrefix+"launcher.js") {
-			t.Fatal("empty services emitted launcher output or script URL")
-		}
-		templateContains(t, output, data.Service, string(data.Icon), data.ProfileURL, data.Email, data.LogoutURL)
-	}
-}
-
-func TestLauncherValues(t *testing.T) {
-	// R-COYP-FZ4F R-IZTT-ADN7 R-CQ6L-TQV4 R-CREI-7ILT
-	for _, current := range []bool{false, true} {
-		data := Banner{Services: []Service{
-			{Name: "first<name>&\"'", Icon: template.HTML("first<icon>&"), URL: "/first-consumer", Enabled: true, Current: current},
-			{Name: "second<name>&\"'", Icon: template.HTML("second<icon>&"), URL: "/second-consumer", Current: current},
-			{Name: "third<name>&\"'", Icon: template.HTML("third<icon>&"), URL: "/third-consumer", Enabled: true, Current: current},
-		}}
-		output := templateExecute(t, Templates(), "launcher", data)
-		remaining := output
-		for _, service := range data.Services {
-			var found bool
-			_, remaining, found = strings.Cut(remaining, string(service.Icon))
-			if !found {
-				t.Fatal("missing unaltered icon in service order")
-			}
-			_, remaining, found = strings.Cut(remaining, templateText(t, service.Name))
-			if !found {
-				t.Fatal("missing escaped name after icon")
-			}
-			if strings.Contains(output, service.URL) != service.Enabled {
-				t.Fatalf("URL presence differs from enabled state: %+v", service)
-			}
-		}
-	}
+	data.Service = "consumer<service>&\"'"
+	data.Email = "consumer<email>&\"'"
+	output := templateExecute(t, Templates(), "banner", data)
+	templateContains(t, output, templateText(t, data.Service), string(data.Icon), data.ProfileURL, templateText(t, data.Email), data.LogoutURL)
 }
 
 func TestTemplatesAutoescaping(t *testing.T) {
-	// R-CSME-LACI
+	// R-JCI6-8XCC
 	const special = "<> &\"'+\x00"
-	for _, url := range []string{"https://consumer.test/path?q=one&next=two", "javascript:consumer(1)"} {
-		data := Banner{Service: "service" + special, Version: "version" + special, Email: "email" + special, ProfileURL: url, LogoutURL: url,
-			Services: []Service{{Name: "enabled" + special, URL: url, Enabled: true}, {Name: "disabled" + special, URL: "/not-emitted"}}}
+	for _, url := range []string{"https://consumer.test/path?q=one&next=two", "https://consumer.test/path?q=<>\"'", "javascript:consumer(1)"} {
+		data := Banner{Service: "service" + special, Release: "release" + special, Commit: "commit" + special, Email: "email" + special, ProfileURL: url, LogoutURL: url}
 		banner := templateExecute(t, Templates(), "banner", data)
-		launcher := templateExecute(t, Templates(), "launcher", data)
 		footer := templateExecute(t, Templates(), "footer", data)
 		templateContains(t, banner, templateText(t, data.Service), templateText(t, data.Email))
-		for _, service := range data.Services {
-			templateContains(t, launcher, templateText(t, service.Name))
-		}
-		templateContains(t, footer, templateText(t, data.Service), templateText(t, data.Version))
+		templateContains(t, footer, templateText(t, data.Release), templateText(t, data.Commit))
 		wantURL := templateText(t, url)
 		if strings.HasPrefix(url, "javascript:") {
 			wantURL = "#ZgotmplZ"
-			if strings.Contains(banner, url) || strings.Contains(launcher, url) {
-				t.Fatal("unsafe URL emitted")
-			}
+		} else if strings.Contains(url, "<>") {
+			wantURL = "https://consumer.test/path?q=%3c%3e%22%27"
 		}
-		for _, field := range []string{"ProfileURL", "LogoutURL", "ServiceURL"} {
-			one := Banner{Services: []Service{{Enabled: true}}}
+		for _, field := range []string{"ProfileURL", "LogoutURL"} {
+			one := Banner{}
 			switch field {
 			case "ProfileURL":
 				one.ProfileURL = url
 			case "LogoutURL":
 				one.LogoutURL = url
-			case "ServiceURL":
-				one.Services[0].URL = url
 			}
-			templateContains(t, templateExecute(t, Templates(), "banner", one), wantURL)
+			output := templateExecute(t, Templates(), "banner", one)
+			templateContains(t, output, wantURL)
+			if strings.Contains(output, url) {
+				t.Fatal("URL requiring escaping emitted unchanged")
+			}
 		}
 	}
 }
 
-func TestFooter(t *testing.T) {
-	// R-CTUA-Z237
-	data := Banner{Service: "consumer<service>&\"'", Version: "consumer<version>&\"'"}
+func TestFooterValues(t *testing.T) {
+	// R-JL1G-XBJ7
+	for _, release := range []string{"", "consumer<release>&\"'"} {
+		for _, commit := range []string{"", "consumer<commit>&\"'"} {
+			data := Banner{Release: release, Commit: commit}
+			output := templateExecute(t, Templates(), "footer", data)
+			for _, value := range []string{release, commit} {
+				if value != "" {
+					templateContains(t, output, templateText(t, value))
+				}
+			}
+		}
+	}
+}
+
+func TestFooterValueOrder(t *testing.T) {
+	// R-JM9D-B39W
+	data := Banner{Release: "consumer-release.value", Commit: "consumer-commit.value"}
+	baseline := templateExecute(t, Templates(), "footer", Banner{})
+	if strings.Contains(baseline, data.Release) || strings.Contains(baseline, data.Commit) || strings.Contains(data.Release, data.Commit) || strings.Contains(data.Commit, data.Release) {
+		t.Fatal("fixture fails ordering preconditions")
+	}
 	output := templateExecute(t, Templates(), "footer", data)
-	_, remaining, found := strings.Cut(output, templateText(t, data.Service))
-	if !found || !strings.Contains(remaining, templateText(t, data.Version)) {
-		t.Fatal("footer must emit escaped service then version")
+	release, commit := strings.Index(output, data.Release), strings.Index(output, data.Commit)
+	if release < 0 || commit <= release {
+		t.Fatal("footer must emit release then commit")
+	}
+}
+
+func TestFooterOtherFieldsDoNotAffectOutput(t *testing.T) {
+	// R-JNH9-OV0L
+	for _, release := range []string{"", "consumer-release"} {
+		for _, commit := range []string{"", "consumer-commit"} {
+			first := Banner{Release: release, Commit: commit}
+			second := Banner{Service: "consumer-service", Icon: template.HTML("consumer-icon<>&"), Release: release, Commit: commit, Email: "consumer-email", ProfileURL: "/consumer-profile", LogoutURL: "/consumer-logout", Home: "/consumer-home", Tools: true, Trail: []Level{{Name: "consumer-level", URL: "/consumer-level"}}}
+			if templateExecute(t, Templates(), "footer", first) != templateExecute(t, Templates(), "footer", second) {
+				t.Fatal("other Banner fields affect footer")
+			}
+		}
 	}
 }
 

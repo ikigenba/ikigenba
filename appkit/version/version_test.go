@@ -108,6 +108,87 @@ func TestNoIdentity(t *testing.T) {
 	}
 }
 
+// R-SMOU-QPSS: The positional literal uses exactly the two declared fields in order.
+// R-SP4N-I9A6: String has the declared value-receiver signature.
+// R-EDZL-0G9N: String formats each combination using both values unaltered.
+func TestIdentityString(t *testing.T) {
+	formats := []func(version.Identity) string{(version.Identity).String}
+	cases := []struct {
+		name string
+		id   version.Identity
+		want string
+	}{
+		{name: "both", id: version.Identity{" label (custom) ", "abcdef0123456789-dirty"}, want: " label (custom)  (abcdef0123456789-dirty)"},
+		{name: "commit only", id: version.Identity{"", "甲乙丙丁戊己庚辛-dirty"}, want: "甲乙丙丁戊己庚辛-dirty"},
+		{name: "release only", id: version.Identity{" label (custom) ", ""}, want: " label (custom) "},
+		{name: "empty", id: version.Identity{"", ""}, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formats[0](tc.id); got != tc.want {
+				t.Fatalf("Identity.String() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// R-SNWR-4HJH: Read is callable with the declared signature.
+// R-SQCJ-W10V: Read carries the current label and shortened commit separately.
+// R-EF7H-E80C: Display equals Read().String() for each current environment.
+func TestReadIdentityAndDisplay(t *testing.T) {
+	readers := []func() version.Identity{version.Read}
+	cases := []struct {
+		name        string
+		commit      string
+		short       string
+		commitUnset bool
+	}{
+		{name: "empty"},
+		{name: "unset", commitUnset: true},
+		{name: "long", commit: "abcdef0123456789", short: "abcdef0"},
+		{name: "seven", commit: "abcdef0", short: "abcdef0"},
+		{name: "short", commit: "abc", short: "abc"},
+		{name: "unicode", commit: "甲乙丙丁戊己庚辛", short: "甲乙丙丁戊己庚"},
+		{name: "dirty long", commit: "abcdef0123456789-dirty", short: "abcdef0-dirty"},
+		{name: "dirty short", commit: "abc-dirty", short: "abc-dirty"},
+		{name: "dirty unicode", commit: "甲乙丙丁戊己庚辛-dirty", short: "甲乙丙丁戊己庚-dirty"},
+		{name: "dirty empty prefix", commit: "-dirty", short: "-dirty"},
+		{name: "one suffix removed", commit: "-dirty-dirty", short: "-dirty-dirty"},
+		{name: "internal dirty", commit: "a-dirty-extra", short: "a-dirty"},
+		{name: "case preserved", commit: "ABCDEF012345", short: "ABCDEF0"},
+		{name: "whitespace preserved", commit: " a b ", short: " a b "},
+	}
+	for _, tc := range cases {
+		for _, release := range []struct {
+			name  string
+			value string
+			unset bool
+		}{
+			{name: "empty"},
+			{name: "unset", unset: true},
+			{name: "label", value: " label (custom) "},
+		} {
+			t.Run(tc.name+" release "+release.name, func(t *testing.T) {
+				t.Setenv(version.CommitVariable, tc.commit)
+				if tc.commitUnset {
+					setEmptyEnv(t, version.CommitVariable, true)
+				}
+				t.Setenv(version.ReleaseVariable, release.value)
+				if release.unset {
+					setEmptyEnv(t, version.ReleaseVariable, true)
+				}
+				want := version.Identity{Release: release.value, Commit: tc.short}
+				if got := readers[0](); got != want {
+					t.Fatalf("Read() = %#v, want %#v", got, want)
+				}
+				if got := version.Display(); got != readers[0]().String() {
+					t.Fatalf("Display() = %q, want Read().String() = %q", got, readers[0]().String())
+				}
+			})
+		}
+	}
+}
+
 func setEmptyEnv(t *testing.T, name string, unset bool) {
 	t.Helper()
 	// Setenv registers restoration before Unsetenv changes the current state.

@@ -123,7 +123,7 @@ func TestBreadcrumbLastURLAbsent(t *testing.T) {
 }
 
 func TestBreadcrumbMenuRoutes(t *testing.T) {
-	// R-FIXA-VYWM R-FLD3-NIE0 R-FML0-1A4P
+	// R-JILO-5S1T R-FLD3-NIE0 R-JJTK-JJSI
 	for _, trail := range [][]page.Level{
 		nil, {}, {{Name: "current", URL: "/about"}},
 		{{Name: "current", URL: "/tools"}},
@@ -132,19 +132,17 @@ func TestBreadcrumbMenuRoutes(t *testing.T) {
 	} {
 		for _, tools := range []bool{false, true} {
 			for _, home := range []string{"", "/consumer-home"} {
-				for _, services := range [][]page.Service{nil, {{Name: "consumer-service", URL: "/consumer-service", Enabled: true}}} {
-					data := page.Banner{Tools: tools, Home: home, Services: services, Trail: trail}
-					output := renderBreadcrumb(t, data)
-					if !strings.Contains(output, "/about") {
-						t.Fatalf("about route absent for %+v", data)
-					}
-					containsToolsValue := false
-					for _, level := range trail {
-						containsToolsValue = containsToolsValue || strings.Contains(level.Name, "/tools") || strings.Contains(level.URL, "/tools")
-					}
-					if (tools || !containsToolsValue) && strings.Contains(output, "/tools") != tools {
-						t.Fatalf("tools route presence differs from Tools for %+v", data)
-					}
+				data := page.Banner{Tools: tools, Home: home, Trail: trail}
+				output := renderBreadcrumb(t, data)
+				if !strings.Contains(output, "/about") {
+					t.Fatalf("about route absent for %+v", data)
+				}
+				containsToolsValue := false
+				for _, level := range trail {
+					containsToolsValue = containsToolsValue || strings.Contains(level.Name, "/tools") || strings.Contains(level.URL, "/tools")
+				}
+				if (tools || !containsToolsValue) && strings.Contains(output, "/tools") != tools {
+					t.Fatalf("tools route presence differs from Tools for %+v", data)
 				}
 			}
 		}
