@@ -105,7 +105,8 @@ run never writes it. `devctl build` packs it beside
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit at `v0.20.0` (see Adopting appkit below). It and the modules it
+  - appkit at `v0.22.0`, whose `page.Banner` has no service launcher and
+    carries `Release` and `Commit` (see Adopting appkit below). It and the modules it
     pulls in are sites' only dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
@@ -122,10 +123,10 @@ among them — needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.20.0`, fetched
+appkit is required only at a published release, here `v0.22.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@v0.20.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.22.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
