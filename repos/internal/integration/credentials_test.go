@@ -29,6 +29,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/repos"
 	"github.com/ikigenba/ikigenba/repos/internal/cli"
 	repogit "github.com/ikigenba/ikigenba/repos/internal/git"
@@ -491,7 +492,7 @@ func TestRunDoesNotExportCredentials(t *testing.T) {
 					Stdout: io.Discard, Stderr: &stderr, Inherit: func(uintptr) (net.Listener, error) { return ln, nil },
 					Now: now, After: credentialAfter, Sleep: sleep,
 					Rand: &deterministicBytes{}, Dir: dir, Sink: sink, EventSink: busSink,
-					Banner: page.New(web.ServiceName, "fixture-display").Banner,
+					Banner: page.New(web.ServiceName, version.Identity{Release: "fixture-display"}).Banner,
 					MCP: func(w *telemetry.Writer) *mcp.Server {
 						return mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "fixture-display", Telemetry: w})
 					},
@@ -673,7 +674,7 @@ func TestHandlerResponsesAndCloneGuidanceIgnoreCredentials(t *testing.T) {
 	defer w.Shutdown(context.Background(), "test complete")
 	l := limits.New(settings.Defaults(), limits.Clock{Now: credentialClock, After: credentialAfter})
 	bus := credentialEmitter(t, w)
-	handler := web.Handler(web.Config{Banner: page.New(web.ServiceName, "fixture-display").Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "fixture-display", Telemetry: w}), ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus})
+	handler := web.Handler(web.Config{Banner: page.New(web.ServiceName, version.Identity{Release: "fixture-display"}).Banner, MCP: mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "fixture-display", Telemetry: w}), ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus})
 	server := httptest.NewServer(a.wrap(handler))
 	defer server.Close()
 	exerciseCredentials(t, server.URL, cs, a)
@@ -789,7 +790,7 @@ func credentialLimitRefusals(t *testing.T, cs []credential, a *inspection, s *st
 		l := limits.New(cfg, limits.Clock{Now: credentialClock, After: after})
 		bus := credentialEmitter(t, w)
 		server := httptest.NewServer(a.wrap(web.Handler(web.Config{
-			Banner:       page.New(web.ServiceName, "fixture-display").Banner,
+			Banner:       page.New(web.ServiceName, version.Identity{Release: "fixture-display"}).Banner,
 			MCP:          mcp.NewServer(mcp.ServerConfig{Name: web.ServiceName, Version: "fixture-display", Telemetry: w}),
 			ServicesPath: services, Store: s, Git: g, Limits: l, Telemetry: w, Events: bus,
 		})))

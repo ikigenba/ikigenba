@@ -463,7 +463,7 @@ func TestHandlerPublicContracts(t *testing.T) {
 	f := newContractFixture(t)
 	mcpServer := mcp.NewServer(mcp.ServerConfig{Name: name, Version: "fixture-display", Telemetry: f.writer})
 	h := web.Handler(web.Config{Banner: func(u page.User) page.Banner {
-		return page.Banner{Service: name, Version: "fixture-display", Email: u.Email}
+		return page.Banner{Service: name, Release: "fixture-display", Commit: "fixture-commit", Email: u.Email}
 	}, MCP: mcpServer, ServicesPath: filepath.Join(f.dir, "services.json"), Store: f.store, Git: f.git, Limits: f.limits, Telemetry: f.writer, Events: f.bus})
 	r := httptest.NewRequest(http.MethodGet, "http://fixture.test/", nil)
 	r.Header.Set("X-User-Id", "owner")

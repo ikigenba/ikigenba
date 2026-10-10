@@ -29,7 +29,7 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
 )
 
-// R-X6G6-SIIW
+// R-5F94-DJ0A
 func TestIdentityBeforeEveryRoute(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -73,7 +73,7 @@ func TestIdentityBeforeEveryRoute(t *testing.T) {
 	}
 }
 
-// R-QUJU-S70W R-U9EJ-B509 R-QY7J-XI8Z R-T6YM-LH8X
+// R-QUJU-S70W R-U9EJ-B509 R-QY7J-XI8Z R-5GH0-RAQZ
 func TestExactRoutesAndNotFound(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -139,7 +139,7 @@ func TestMCPRegistrationAndCloneContext(t *testing.T) {
 	path := filepath.Join(f.dir, "services.json")
 	f.cfg.ServicesPath = path
 	webServices(t, path, `{"services":[{"name":"repos","enabled":true,"mcp":true,"url":"https://first.example","description":"Fixture repositories","socket":""}]}`)
-	assertWebListedServices(t, path, services.List{{Name: "repos", Enabled: true, MCP: true, URL: "https://first.example", Description: "Fixture repositories"}})
+	assertWebListedServices(t, path, services.List{{Name: "repos", Enabled: true, MCP: true, URL: "https://first.example", Description: "Fixture repositories", Group: "application"}})
 	srv := httptest.NewServer(Handler(f.cfg))
 	t.Cleanup(srv.Close)
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: srv.Client()})
@@ -176,7 +176,7 @@ func TestMCPRegistrationAndCloneContext(t *testing.T) {
 		t.Fatalf("create clone context: %v", created)
 	}
 	webServices(t, path, `{"services":[{"name":"repos","enabled":true,"mcp":true,"url":"https://second.example/","description":"Fixture repositories","socket":""}]}`)
-	assertWebListedServices(t, path, services.List{{Name: "repos", Enabled: true, MCP: true, URL: "https://second.example/", Description: "Fixture repositories"}})
+	assertWebListedServices(t, path, services.List{{Name: "repos", Enabled: true, MCP: true, URL: "https://second.example/", Description: "Fixture repositories", Group: "application"}})
 	shown := webTool(t, client, caller, "show", `{"repo":"notes"}`)
 	if shown["clone_url"] != "https://second.example/notes.git" {
 		t.Fatalf("refreshed show clone context: %v", shown)
@@ -243,8 +243,8 @@ func TestNoSiblingConnections(t *testing.T) {
 	}
 	webServices(t, f.cfg.ServicesPath, string(data))
 	assertWebListedServices(t, f.cfg.ServicesPath, services.List{
-		{Name: "repos", Enabled: true, MCP: true, URL: "https://repos.example", Description: "Fixture repositories", Socket: socket},
-		{Name: "dummy", Enabled: true, MCP: false, URL: "https://dummy.example", Description: "Fixture sibling", Socket: socket},
+		{Name: "repos", Enabled: true, MCP: true, URL: "https://repos.example", Description: "Fixture repositories", Group: "application", Socket: socket},
+		{Name: "dummy", Enabled: true, MCP: false, URL: "https://dummy.example", Description: "Fixture sibling", Group: "application", Socket: socket},
 	})
 	srv := httptest.NewServer(Handler(f.cfg))
 	t.Cleanup(srv.Close)
@@ -281,7 +281,7 @@ func TestNoSiblingConnections(t *testing.T) {
 	}
 }
 
-// R-UBUC-2OHN R-T86I-Z8ZM R-T9EF-D0QB R-R6QU-LWFU R-RCUC-IR5B
+// R-UBUC-2OHN R-T86I-Z8ZM R-5HOX-52HO R-R6QU-LWFU R-RCUC-IR5B
 func TestRequestTraceAcrossRoutes(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -884,11 +884,11 @@ func TestConcurrentRequestsKeepTheirOwnCallers(t *testing.T) {
 	}
 }
 
-// R-T9EF-D0QB
+// R-5HOX-52HO
 func TestSharedPathsEmitOnlyRequestTrace(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
-	paths := []string{"/", "/about", "/tools", "/nope", "/tools/", "/mcp/", "/notes", "/notes/info/refs", "/_appkit/", "/_appkit/nope", "/_appkit/theme.css/x"}
+	paths := []string{"/", "/about", "/tools", "/nope", "/tools/", "/mcp/", "/notes", "/notes/info/refs", "/_appkit/", "/_appkit/launcher.js", "/_appkit/nope", "/_appkit/theme.css/x"}
 	for name := range webSharedFiles(t, h) {
 		paths = append(paths, page.StaticPrefix+name)
 	}

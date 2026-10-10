@@ -11,12 +11,11 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
-// R-B96P-CG6O
+// R-5ADI-UG1I
 func webSharedFiles(t *testing.T, h http.Handler) map[string]string {
 	t.Helper()
 	files := map[string]string{
 		"theme.css":          "text/css; charset=utf-8",
-		"launcher.js":        "text/javascript; charset=utf-8",
 		"feedback.js":        "text/javascript; charset=utf-8",
 		"favicon.svg":        "image/svg+xml",
 		"OFL.txt":            "text/plain; charset=utf-8",
@@ -40,7 +39,7 @@ func webSharedFiles(t *testing.T, h http.Handler) map[string]string {
 func TestStaticDelegation(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
-	paths := []string{"/_appkit/", "/_appkit/nope", "/_appkit/THEME.CSS", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/FEEDBACK.JS", "/_appkit/feedback.js/", "/%5fappkit/%66eedback.js", "/%5fappkit/%66avicon.svg", "/_appkit/FAVICON.SVG", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/../feedback.js"}
+	paths := []string{"/_appkit/", "/_appkit/launcher.js", "/_appkit/nope", "/_appkit/THEME.CSS", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/FEEDBACK.JS", "/_appkit/feedback.js/", "/%5fappkit/%66eedback.js", "/%5fappkit/%66avicon.svg", "/_appkit/FAVICON.SVG", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/../feedback.js"}
 	for name := range webSharedFiles(t, h) {
 		paths = append(paths, page.StaticPrefix+name)
 	}
@@ -61,7 +60,7 @@ func TestStaticDelegation(t *testing.T) {
 	}
 }
 
-// R-BAEL-Q7XD R-BBMI-3ZO2 R-BCUE-HRER R-7AGT-S3X1 R-BGI3-N2MU
+// R-5BLF-87S7 R-BBMI-3ZO2 R-BCUE-HRER R-7AGT-S3X1 R-5E17-ZR9L
 func TestSharedFilesAndHead(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -112,7 +111,7 @@ func assertWebETag(t *testing.T, h http.Header, mime string) {
 	}
 }
 
-// R-BE2A-VJ5G R-BFA7-9AW5
+// R-BE2A-VJ5G R-5CTB-LZIW
 func TestSharedRevalidation(t *testing.T) {
 	f := newWebFixture(t)
 	h := Handler(f.cfg)
@@ -172,7 +171,7 @@ func TestStaticRefusals(t *testing.T) {
 				}
 			}
 		}
-		for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/FAVICON.SVG"} {
+		for _, path := range []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/launcher.js", "/_appkit/nope.css", "/_appkit/theme.css/", "/_appkit/theme.css/x", "/_appkit/THEME.CSS", "/_appkit/favicon.svg/", "/_appkit/favicon.svg/x", "/_appkit/FAVICON.SVG"} {
 			for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 				r := httptest.NewRequest(method, path, nil)
 				r.Header.Set("X-User-Id", "user")

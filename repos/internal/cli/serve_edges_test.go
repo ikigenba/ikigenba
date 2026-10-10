@@ -248,7 +248,7 @@ func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 		if u.Email != "caller@example.test" {
 			t.Errorf("banner user %+v", u)
 		}
-		return page.Banner{Service: "injected-banner", Version: "fixture-display", Email: u.Email}
+		return page.Banner{Service: "injected-banner", Release: "fixture-display", Commit: "fixture-commit", Email: u.Email}
 	}
 	f.p.MCP = func(w *telemetry.Writer) *mcp.Server {
 		f.mcpCalls.Add(1)
@@ -271,7 +271,7 @@ func TestServeUsesInjectedBannerAndMCPServerResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != 200 || !strings.Contains(string(body), "injected-banner fixture-display") || f.bannerCalls.Load() != 1 {
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "injected-banner") || !strings.Contains(string(body), "fixture-display") || !strings.Contains(string(body), "fixture-commit") || f.bannerCalls.Load() != 1 {
 		t.Fatalf("injected banner not rendered: %d %s", resp.StatusCode, body)
 	}
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://" + f.listener.Addr().String() + "/mcp", HTTPClient: f.client()})

@@ -107,7 +107,7 @@ func newWebFixture(t *testing.T) *webFixture {
 	f.cfg = Config{Store: s, Git: g, Limits: limits.New(settings.Defaults(), limits.Clock{Now: now, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }})}
 	f.cfg.Banner = func(u page.User) page.Banner {
 		f.bannerCalls.Add(1)
-		return page.Banner{Service: ServiceName, Version: "fixture-version", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		return page.Banner{Service: ServiceName, Release: "fixture-release", Commit: "fixture-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
 	f.setWriter(t, f.capture, random, now)
 	f.busCapture, f.busStderr = &events.Capture{}, &webBuffer{}

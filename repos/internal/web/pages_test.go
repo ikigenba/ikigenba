@@ -163,9 +163,9 @@ func TestPageExactTemplateRendering(t *testing.T) {
 	calls := 0
 	f.cfg.Banner = func(u page.User) page.Banner {
 		calls++
-		renderedBanner = page.Banner{Service: "service <&> \"label\"", Version: fmt.Sprintf("render-%d", calls), Home: "https://home.render.test/", Tools: true, Trail: []page.Level{{Name: "old-first", URL: "/old-first"}, {Name: "old-second", URL: "/old-second"}}, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		renderedBanner = page.Banner{Service: "service <&> \"label\"", Release: fmt.Sprintf("render-%d", calls), Commit: fmt.Sprintf("commit-%d", calls), Home: "https://home.render.test/", Tools: true, Trail: []page.Level{{Name: "old-first", URL: "/old-first"}, {Name: "old-second", URL: "/old-second"}}, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 		if calls%2 == 0 {
-			renderedBanner.Services = []page.Service{{Name: "fixture <service>", URL: "https://launcher.example.test/?a=1&b=2", Icon: template.HTML(`<svg><path d="M1 2"/></svg>`), Enabled: true, Current: true}}
+			renderedBanner.Icon = template.HTML(`<svg><path d="M1 2"/></svg>`)
 		}
 		return renderedBanner
 	}
@@ -387,7 +387,7 @@ func TestPagesAndSharedFilesIgnoreFailingCatalogAndRemovedRepositories(t *testin
 // including tools added after handler construction and after an earlier request.
 func TestToolsPageMatchesMCPListAndLateRegistration(t *testing.T) {
 	f := newWebFixture(t)
-	banner := page.Banner{Service: "fixture-tools-service", Version: "fixture-tools-version", Email: "fixture@example.test", Home: "https://home.fixture.test/", Tools: true, Trail: []page.Level{{Name: "replace-me", URL: "/replace-me"}}}
+	banner := page.Banner{Service: "fixture-tools-service", Release: "fixture-tools-release", Commit: "fixture-tools-commit", Email: "fixture@example.test", Home: "https://home.fixture.test/", Tools: true, Trail: []page.Level{{Name: "replace-me", URL: "/replace-me"}}}
 	f.cfg.Banner = func(page.User) page.Banner { return banner }
 	h := Handler(f.cfg)
 	srv := httptest.NewServer(h)

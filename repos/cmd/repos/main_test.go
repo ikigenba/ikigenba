@@ -41,6 +41,9 @@ func TestBinary(t *testing.T) {
 	// R-KDXP-VNUC: expected display is computed through the published API.
 	t.Setenv(version.CommitVariable, "0123456789abcdef0123456789abcdef01234567")
 	t.Setenv(version.ReleaseVariable, "release fixture")
+	t.Setenv(services.Variable, "")
+	// R-55HX-BD2Q: page expectations use the identity read under the child's values.
+	id := version.Read()
 	git, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -128,10 +131,14 @@ func TestBinary(t *testing.T) {
 	if response.StatusCode != 200 || response.Header.Get("Content-Type") != "application/x-git-upload-pack-advertisement" {
 		t.Fatalf("advertisement: %d %v", response.StatusCode, response.Header)
 	}
-	// R-U235-0IK3: the page carries the injected display string.
+	// R-57XQ-2WK4: the page carries the footer rendered with the run's identity.
 	_, bodyWithoutServices := first.request(t, http.MethodGet, "/", nil)
-	if !strings.Contains(bodyWithoutServices, version.Display()) {
-		t.Fatal("page lacks display string")
+	var expectedFooter bytes.Buffer
+	if err := page.Templates().ExecuteTemplate(&expectedFooter, "footer", page.New(web.ServiceName, id).Banner(page.User{})); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(bodyWithoutServices, expectedFooter.String()) {
+		t.Fatal("page lacks rendered footer")
 	}
 	// R-S1TJ-HS6J: absent services produce no discovery instructions.
 	if _, found := first.discover(t)["instructions"]; found {
@@ -165,10 +172,10 @@ func TestBinary(t *testing.T) {
 	}
 	second.stop(t, syscall.SIGINT, false)
 
-	launcherDir := t.TempDir()
-	servicePath := filepath.Join(launcherDir, "services.json")
+	servicesDir := t.TempDir()
+	servicePath := filepath.Join(servicesDir, "services.json")
 	listed := []map[string]any{}
-	for _, name := range []string{"auth", "dummy", "repos"} {
+	for _, name := range []string{"auth", "home", "repos"} {
 		icon := `<svg></svg>`
 		if name == web.ServiceName {
 			icon = binaryReposIcon
@@ -178,22 +185,22 @@ func TestBinary(t *testing.T) {
 	writeBinaryServices(t, servicePath, listed)
 	list, err := services.Read(servicePath)
 	if err != nil || len(list) != 3 {
-		t.Fatalf("launcher fixture: %v %v", list, err)
+		t.Fatalf("services fixture: %v %v", list, err)
 	}
-	for i, name := range []string{"auth", "dummy", "repos"} {
+	for i, name := range []string{"auth", "home", "repos"} {
 		if list[i].Name != name || !list[i].Enabled || list[i].URL != "https://"+name+".example.test" || string(list[i].Icon) != listed[i]["icon"] {
-			t.Fatal("invalid launcher fixture")
+			t.Fatal("invalid services fixture")
 		}
 	}
-	launcher := startBinary(t, binary, launcherDir, append(append([]string{}, env...), services.Variable+"="+servicePath))
-	_, body := launcher.request(t, http.MethodGet, "/", nil)
-	// R-UEA4-U7Z1: compare the binary's page with its kit and template.
+	withServices := startBinary(t, binary, servicesDir, append(append([]string{}, env...), services.Variable+"="+servicePath))
+	_, body := withServices.request(t, http.MethodGet, "/", nil)
+	// R-595M-GOAT: compare the binary's page with its identity kit and template.
 	t.Setenv(services.Variable, servicePath)
 	request, err := http.NewRequest(http.MethodGet, "http://repos.example.test/", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	banner := page.New(web.ServiceName, version.Display()).Banner(page.User{ProfileURL: list[0].URL + "/", LogoutURL: list[0].URL + "/logout"})
+	banner := page.New(web.ServiceName, id).Banner(page.User{ProfileURL: list[0].URL + "/", LogoutURL: list[0].URL + "/logout"})
 	base := clone.Base(request, servicePath)
 	templates, err := page.Templates().ParseFS(repos.Assets(), "*.html")
 	if err != nil {
@@ -218,14 +225,14 @@ func TestBinary(t *testing.T) {
 			t.Fatal("repos service missing")
 		}
 		var got string
-		if err := json.Unmarshal(launcher.discover(t)["instructions"], &got); err != nil {
+		if err := json.Unmarshal(withServices.discover(t)["instructions"], &got); err != nil {
 			t.Fatal(err)
 		}
 		if got != entry.Description {
 			t.Fatalf("instructions %q want %q", got, entry.Description)
 		}
 	}
-	launcher.stop(t, syscall.SIGTERM, false)
+	withServices.stop(t, syscall.SIGTERM, false)
 
 	// R-KK17-SIJT: first/last delivered lifecycle events and silent clean exit.
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {

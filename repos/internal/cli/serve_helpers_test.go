@@ -199,7 +199,7 @@ func newServeFixture(t *testing.T, knownGit ...string) *serveFixture {
 		},
 		Banner: func(u page.User) page.Banner {
 			f.bannerCalls.Add(1)
-			return page.Banner{Service: web.ServiceName, Version: f.p.Version, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+			return page.Banner{Service: web.ServiceName, Release: f.p.Version, Commit: "fixture-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 		},
 		MCP: func(w *telemetry.Writer) *mcp.Server {
 			f.mcpCalls.Add(1)

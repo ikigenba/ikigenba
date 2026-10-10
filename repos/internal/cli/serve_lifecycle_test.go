@@ -55,7 +55,7 @@ func TestServePersistentStoreAndInjectedWiring(t *testing.T) {
 		t.Fatalf("create %v", created)
 	}
 	status, _, body := f.request(t, "/", "page")
-	if status != 200 || !bytes.Contains(body, []byte(web.ServiceName+" "+f.p.Version)) || f.bannerCalls.Load() != 1 {
+	if status != 200 || !bytes.Contains(body, []byte(web.ServiceName)) || !bytes.Contains(body, []byte(f.p.Version)) || !bytes.Contains(body, []byte("fixture-commit")) || f.bannerCalls.Load() != 1 {
 		t.Fatalf("page status %d banner calls %d body %s", status, f.bannerCalls.Load(), body)
 	}
 	status, headers, _ := f.request(t, "/alpha.git/info/refs?service=git-upload-pack", "fetch")
