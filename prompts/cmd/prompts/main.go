@@ -20,8 +20,9 @@ import (
 )
 
 func main() {
-	v := version.Display()
-	kit := page.New(pages.ServiceName, v)
+	id := version.Read()
+	v := id.String()
+	kit := page.New(pages.ServiceName, id)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)

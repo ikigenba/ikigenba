@@ -72,7 +72,7 @@ func setup(t *testing.T) *fixture {
 	return f
 }
 func bannerValue(u page.User) page.Banner {
-	return page.Banner{Service: pages.ServiceName, Version: "fixture-display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Trail: []page.Level{{Name: "source-fixture", URL: "/source-fixture/"}}, Home: "https://home.fixture/", Tools: true}
+	return page.Banner{Service: pages.ServiceName, Release: "fixture-release", Commit: "fixture-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Trail: []page.Level{{Name: "source-fixture", URL: "/source-fixture/"}}, Home: "https://home.fixture/", Tools: true}
 }
 func request(method, path, owner string) *http.Request {
 	r := httptest.NewRequest(method, path, nil)

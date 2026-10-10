@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"io"
 	"net"
 	"net/http"
@@ -22,6 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/agentkit"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
@@ -60,11 +60,12 @@ func binaryWait[T any](t *testing.T, ch <-chan T) T {
 	}
 }
 
-// R-DCE0-UB40 R-MDHX-L3A4 R-MEPT-YV0T R-MFXQ-CMRI R-MH5M-QEI7 R-MIDJ-468W R-MKTB-VPQA R-MM18-9HGZ R-MN94-N97O R-MOH1-10YD R-MPOX-ESP2 R-MQWT-SKFR R-HHBT-L6RK R-91VP-25Q6
+// R-MDHX-L3A4 R-MEPT-YV0T R-MFXQ-CMRI R-MH5M-QEI7 R-MIDJ-468W R-LZF8-6HY0 R-M0N4-K9OP R-M1V0-Y1FE R-5O4C-7YOX R-MN94-N97O R-MOH1-10YD R-MPOX-ESP2 R-MQWT-SKFR R-HHBT-L6RK R-91VP-25Q6
 func TestBinaryWiring(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	t.Setenv(version.CommitVariable, "abcdef1234567890")
 	t.Setenv(version.ReleaseVariable, "fixture-release")
+	id := version.Read()
 	display := version.Display()
 	root := t.TempDir()
 	binary := filepath.Join(root, "prompts")
@@ -218,7 +219,10 @@ func TestBinaryWiring(t *testing.T) {
 	get := func(path string) string {
 		t.Helper()
 		req, _ := http.NewRequest("GET", "http://backend"+path, nil)
+		req.Host = "prompts.sbx.ikigenba.dev"
+		req.Header.Set("X-Forwarded-Proto", "https")
 		req.Header.Set("X-User-Id", "binary-user")
+		req.Header.Set("X-User-Email", "mg@example.com")
 		r, e := httpc.Do(req)
 		if e != nil {
 			t.Fatal(e)
@@ -306,10 +310,24 @@ func TestBinaryWiring(t *testing.T) {
 		t.Fatal(entries, e)
 	}
 	call("create", map[string]any{"name": "alpha", "model": binaryModel(t), "prompt": "supplied"})
-	for _, path := range []string{"/", "/about"} {
-		if !strings.Contains(get(path), html.EscapeString(display)) {
-			t.Fatal("page lacks supplied display", path)
-		}
+	kit := page.New(pages.ServiceName, id)
+	var footer bytes.Buffer
+	if e := page.Templates().ExecuteTemplate(&footer, "footer", kit.Banner(page.User{})); e != nil {
+		t.Fatal(e)
+	}
+	if !strings.Contains(get("/"), footer.String()) {
+		t.Fatal("landing lacks identity footer")
+	}
+	banner := kit.Banner(page.User{Email: "mg@example.com", ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"})
+	banner.Trail = []page.Level{{Name: "about", URL: "/about"}}
+	set, e := pages.Load()
+	if e != nil {
+		t.Fatal(e)
+	}
+	wantAbout := httptest.NewRecorder()
+	set.Write(wantAbout, httptest.NewRequest("GET", "/about", nil), http.StatusOK, "about", pages.AboutData{Banner: banner, Description: pages.Description})
+	if got := get("/about"); got != wantAbout.Body.String() {
+		t.Fatalf("about differs from identity template: %q", got)
 	}
 	r := call("list", nil)
 	b, _ := r.MarshalJSON()
@@ -365,7 +383,7 @@ func TestBinaryWiring(t *testing.T) {
 	}
 	// The banner reads the file again on the next request.
 	bannerEntries := []map[string]any{}
-	for _, pair := range [][2]string{{"auth", "https://auth.fixture.example"}, {"dummy", "https://dummy.fixture.example"}, {"prompts", "https://prompts.fixture.example"}} {
+	for _, pair := range [][2]string{{"auth", "https://auth.fixture.example"}, {"home", "https://home.fixture.example"}, {"prompts", "https://prompts.fixture.example"}} {
 		e := entry(pair[0], "supplied description", "")
 		e["url"] = pair[1]
 		e["icon"] = "<svg></svg>"
@@ -391,7 +409,7 @@ func TestBinaryWiring(t *testing.T) {
 		return string(b)
 	}
 	body := bannerGet()
-	for _, value := range []string{"mg@example.com", "https://auth.fixture.example/", "https://auth.fixture.example/logout", "https://dummy.fixture.example"} {
+	for _, value := range []string{"mg@example.com", "https://auth.fixture.example/", "https://auth.fixture.example/logout", "https://home.fixture.example"} {
 		if !strings.Contains(body, value) {
 			t.Fatal("banner lacks supplied value", value)
 		}
@@ -399,7 +417,7 @@ func TestBinaryWiring(t *testing.T) {
 	bannerEntries[1]["url"] = "https://changed.fixture.example"
 	writeServices(bannerEntries)
 	body = bannerGet()
-	if !strings.Contains(body, "https://changed.fixture.example") || strings.Contains(body, "https://dummy.fixture.example") {
+	if !strings.Contains(body, "https://changed.fixture.example") || strings.Contains(body, "https://home.fixture.example") {
 		t.Fatal("banner did not reread services")
 	}
 	for _, content := range []string{`{"services":[]}`, `invalid services`} {

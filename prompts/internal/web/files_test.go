@@ -74,7 +74,7 @@ func setup(t *testing.T) *fixture {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.calls = append(f.calls, u)
-		return page.Banner{Service: pages.ServiceName, Version: "fixture"}
+		return page.Banner{Service: pages.ServiceName, Release: "fixture-release", Commit: "fixture-commit"}
 	}, set, s, core}
 	return f
 }
@@ -130,7 +130,7 @@ func missingBody(t *testing.T) string {
 		t.Fatal(e)
 	}
 	var b bytes.Buffer
-	if e := set.ExecuteTemplate(&b, "notfound", pages.NoticeData{Banner: page.Banner{Service: pages.ServiceName, Version: "fixture"}}); e != nil {
+	if e := set.ExecuteTemplate(&b, "notfound", pages.NoticeData{Banner: page.Banner{Service: pages.ServiceName, Release: "fixture-release", Commit: "fixture-commit"}}); e != nil {
 		t.Fatal(e)
 	}
 	return b.String()

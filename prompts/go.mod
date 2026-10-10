@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/ikigenba/ikigenba/agentkit v0.14.0
-	github.com/ikigenba/ikigenba/appkit v0.21.0
+	github.com/ikigenba/ikigenba/appkit v0.22.0
 	github.com/ikigenba/ikigenba/toolkit v0.3.0
 	golang.org/x/sys v0.47.0
 )

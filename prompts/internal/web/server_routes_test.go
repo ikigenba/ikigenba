@@ -670,7 +670,7 @@ func TestRoutesToolsDiscoveryPage(t *testing.T) {
 	if len(infos) != len(names) {
 		t.Fatalf("discovered %d tools", len(infos))
 	}
-	data := pages.ToolsData{Banner: page.Banner{Service: pages.ServiceName, Version: "fixture", Trail: []page.Level{{Name: "tools", URL: "/tools"}}}}
+	data := pages.ToolsData{Banner: page.Banner{Service: pages.ServiceName, Release: "fixture-release", Commit: "fixture-commit", Trail: []page.Level{{Name: "tools", URL: "/tools"}}}}
 	for i, info := range infos {
 		if info.Name != names[i] {
 			t.Fatalf("tool %d: %q", i, info.Name)

@@ -21,7 +21,7 @@ func invoke(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 }
 func staticPaths(t *testing.T, h http.Handler) map[string]string {
 	t.Helper()
-	paths := map[string]string{page.StaticPrefix + "theme.css": "text/css; charset=utf-8", page.StaticPrefix + "launcher.js": "text/javascript; charset=utf-8", page.StaticPrefix + "feedback.js": "text/javascript; charset=utf-8", page.StaticPrefix + "favicon.svg": "image/svg+xml", page.StaticPrefix + "OFL.txt": "text/plain; charset=utf-8", page.StaticPrefix + "TABLER-LICENSE.txt": "text/plain; charset=utf-8", page.PreloadURL(): "font/woff2"}
+	paths := map[string]string{page.StaticPrefix + "theme.css": "text/css; charset=utf-8", page.StaticPrefix + "feedback.js": "text/javascript; charset=utf-8", page.StaticPrefix + "favicon.svg": "image/svg+xml", page.StaticPrefix + "OFL.txt": "text/plain; charset=utf-8", page.StaticPrefix + "TABLER-LICENSE.txt": "text/plain; charset=utf-8", page.PreloadURL(): "font/woff2"}
 	w := invoke(h, req("GET", page.StaticPrefix+"theme.css"))
 	equal(t, w.Code, 200)
 	re := regexp.MustCompile(`url\("([^/\\:"?#%]+\.woff2)"\)`)
@@ -42,7 +42,7 @@ func strong(tag string) bool {
 	return true
 }
 
-// R-DDLX-82UP R-DETT-LULE R-DG1P-ZMC3 R-DH9M-DE2S R-DIHI-R5TH R-DJPF-4XK6 R-DND4-A8S9
+// R-U51T-R2F6 R-U69Q-4U5V R-DG1P-ZMC3 R-DH9M-DE2S R-DIHI-R5TH R-DJPF-4XK6 R-U8PI-WDN9
 func TestSharedFiles(t *testing.T) {
 	f := setup(t)
 	h := fullHandler(f)
@@ -99,7 +99,7 @@ func TestSharedFiles(t *testing.T) {
 	}
 }
 
-// R-DKXB-IPAV R-DM57-WH1K
+// R-DKXB-IPAV R-U7HM-ILWK
 func TestSharedConditional(t *testing.T) {
 	f := setup(t)
 	h := fullHandler(f)
@@ -142,12 +142,12 @@ func TestSharedConditional(t *testing.T) {
 	}
 }
 
-// R-DOL0-O0IY R-DPSX-1S9N R-DR0T-FK0C
+// R-DOL0-O0IY R-U9XF-A5DY R-DR0T-FK0C
 func TestSharedRefusals(t *testing.T) {
 	f := setup(t)
 	h := fullHandler(f)
 	paths := staticPaths(t, h)
-	invalid := []string{page.StaticPrefix, page.StaticPrefix + "banner.html", page.StaticPrefix + "nope.css", page.StaticPrefix + "theme.css/", page.StaticPrefix + "theme.css/x", page.StaticPrefix + "THEME.CSS"}
+	invalid := []string{page.StaticPrefix, page.StaticPrefix + "banner.html", page.StaticPrefix + "launcher.js", page.StaticPrefix + "nope.css", page.StaticPrefix + "theme.css/", page.StaticPrefix + "theme.css/x", page.StaticPrefix + "THEME.CSS"}
 	hash := regexp.MustCompile(`\.[0-9a-fA-F]+\.woff2$`)
 	for path, typ := range paths {
 		if typ == "font/woff2" && hash.MatchString(path) {
@@ -202,7 +202,7 @@ func TestRunFileRouteDefinition(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if e := set.ExecuteTemplate(&expected, "unavailable", pages.NoticeData{Banner: page.Banner{Service: pages.ServiceName, Version: "fixture"}}); e != nil {
+		if e := set.ExecuteTemplate(&expected, "unavailable", pages.NoticeData{Banner: page.Banner{Service: pages.ServiceName, Release: "fixture-release", Commit: "fixture-commit"}}); e != nil {
 			t.Fatal(e)
 		}
 		equal(t, w.Body.String(), expected.String())

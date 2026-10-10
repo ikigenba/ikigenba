@@ -12,6 +12,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/prompts"
 	"github.com/ikigenba/ikigenba/prompts/internal/pages"
 	"github.com/ikigenba/ikigenba/prompts/internal/store"
@@ -132,13 +133,19 @@ func TestPartials(t *testing.T) {
 	}
 }
 
-// R-YH0G-IBX1 R-BA05-IAVN R-BB81-W2MC R-BEVR-1DUF R-BG3N-F5L4 R-BHBJ-SXBT
+// R-U3TX-DAOH R-BA05-IAVN R-BB81-W2MC R-BEVR-1DUF R-BG3N-F5L4 R-BHBJ-SXBT
 // R-BIJG-6P2I R-BJRC-KGT7 R-BNF1-PS1A R-BOMY-3JRZ R-BPUU-HBIO R-BR2Q-V39D
 // R-BSAN-8V02 R-BUQG-0EHG R-BVYC-E685
 func TestAllTemplateStates(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	set := templates(t)
-	banners := []page.Banner{{}, page.New(pages.ServiceName, "display-fixture").Banner(page.User{Email: "reader@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})}
+	banners := []page.Banner{{}}
+	for _, release := range []string{"", "fixture-release"} {
+		for _, commit := range []string{"", "fixture-commit"} {
+			id := version.Identity{Release: release, Commit: commit}
+			banners = append(banners, page.New(pages.ServiceName, id).Banner(page.User{Email: "reader@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"}))
+		}
+	}
 	for _, banner := range banners {
 		for variant := 0; variant < 4; variant++ {
 			d := pages.LandingData{Banner: banner}

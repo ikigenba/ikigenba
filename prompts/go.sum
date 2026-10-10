@@ -18,6 +18,8 @@ github.com/ikigenba/ikigenba/appkit v0.20.0 h1:iNMnuL67wYEGAICcK17E0fMc7mEidyFLZ
 github.com/ikigenba/ikigenba/appkit v0.20.0/go.mod h1:mtzrkbEtQsW51jjUBavA/X78DKF/UcEYw+gFqSpwXBA=
 github.com/ikigenba/ikigenba/appkit v0.21.0 h1:lYSbf1uIp+uAYtanjnDl0/QI1Peo3jnKOzi2jYg2sJw=
 github.com/ikigenba/ikigenba/appkit v0.21.0/go.mod h1:mtzrkbEtQsW51jjUBavA/X78DKF/UcEYw+gFqSpwXBA=
+github.com/ikigenba/ikigenba/appkit v0.22.0 h1:wcFo4qjmmUQ093tIT5EmrqVJqt0ipmMU7C1uNC2dyvk=
+github.com/ikigenba/ikigenba/appkit v0.22.0/go.mod h1:mtzrkbEtQsW51jjUBavA/X78DKF/UcEYw+gFqSpwXBA=
 github.com/ikigenba/ikigenba/toolkit v0.3.0 h1:915hAHyB+ggj/IlThaS800lz2TEJLPq4xBMsymVKd20=
 github.com/ikigenba/ikigenba/toolkit v0.3.0/go.mod h1:dEGYPpnPkT3RF2A/Hyf7opTa2feHH6si+Sk6AZQgcLQ=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=

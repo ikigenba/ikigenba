@@ -164,7 +164,7 @@ func TestUsageErrors(t *testing.T) {
 	}
 }
 
-// R-X2ZB-OU17 R-X478-2LRW R-XDYF-4RPG R-XBIM-D882 R-XF6B-IJG5 R-X7UX-7WZZ R-X92T-LOQO R-XAAP-ZGHD
+// R-X2ZB-OU17 R-DDR3-LA3F R-XDYF-4RPG R-XBIM-D882 R-XF6B-IJG5 R-X7UX-7WZZ R-X92T-LOQO R-XAAP-ZGHD
 func TestContracts(t *testing.T) {
 	const usage = cli.Usage + ""
 	const manifest = cli.Manifest + ""
@@ -185,7 +185,7 @@ func TestContracts(t *testing.T) {
 	for _, host := range []agentkit.Host{agentkit.HostAnthropic, agentkit.HostOpenAI, agentkit.HostGemini, agentkit.HostXAI, agentkit.HostOpenRouter} {
 		keys = append(keys, strconv.Quote(agent.KeyVariable(host)))
 	}
-	wantManifest := "app = \"prompts\"\ndescription = " + strconv.Quote(pages.Description) + "\ndefault = false\nmcp = true\nguests = false\nsecrets = [" + strings.Join(keys, ", ") + "]\n\n" + env + "\n[database]\nengine = \"sqlite\"\npath = \"state/prompts.db\"\n\n[resources]\nslice = \"apps\"\nmemory_max = \"896M\"\ngo_memory_limit = \"128M\"\ndelegate = true\n"
+	wantManifest := "app = \"prompts\"\ndescription = " + strconv.Quote(pages.Description) + "\ndefault = false\nmcp = true\nguests = false\nsecrets = [" + strings.Join(keys, ", ") + "]\n\n" + env + "\n[database]\nengine = \"sqlite\"\npath = \"state/prompts.db\"\n\n[resources]\nslice = \"apps\"\nmemory_max = \"896M\"\ngo_memory_limit = \"128M\"\ndelegate = true\n\n[home]\ngroup = \"core\"\n"
 	if manifest != wantManifest {
 		t.Fatalf("manifest mismatch: %s", cli.Manifest)
 	}

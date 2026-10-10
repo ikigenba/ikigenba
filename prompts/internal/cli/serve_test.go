@@ -31,6 +31,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/appkit/version"
 	prompts "github.com/ikigenba/ikigenba/prompts"
 	"github.com/ikigenba/ikigenba/prompts/internal/agent"
 	"github.com/ikigenba/ikigenba/prompts/internal/cli"
@@ -193,7 +194,7 @@ func newServeFixture(t *testing.T) *serveFixture {
 	if e = os.WriteFile(filepath.Join(cg, "cgroup.procs"), []byte("73\n"), 0600); e != nil {
 		t.Fatal(e)
 	}
-	kit := page.New(pages.ServiceName, "fixture-code")
+	kit := page.New(pages.ServiceName, version.Identity{Release: "fixture-code"})
 	f.p = cli.Process{Pid: 73, Dir: root, Cgroup: cg, Version: "fixture-code", Stdout: f.out, Stderr: f.err, Now: func() time.Time { return serveTime }, Rand: serveRandom(), Sink: f.capture, ScriptAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Sleep: func(context.Context, time.Duration) {}, Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			t.Errorf("wrong descriptor %d", fd)
