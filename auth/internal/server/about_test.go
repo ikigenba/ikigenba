@@ -22,7 +22,7 @@ func TestDescriptionAndAboutData(t *testing.T) {
 	if description == "" || strings.ContainsAny(description, "\"\\") || strings.ContainsFunc(description, unicode.IsControl) {
 		t.Fatalf("description is not a TOML basic-string value: %q", description)
 	}
-	banner := page.Banner{Service: "provided service", Version: "provided version"}
+	banner := page.Banner{Service: "provided service", Release: "provided release", Commit: "provided commit"}
 	data := AboutData{banner, description}
 	if !reflect.DeepEqual(data.Banner, banner) || data.Description != description {
 		t.Fatalf("about data=%+v", data)
@@ -95,7 +95,7 @@ func TestAboutLiveSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.now = f.now.Add(10 * time.Minute)
-	returned := page.Banner{Service: "provided <& service", Version: "provided <& version", Email: "returned@work.example", ProfileURL: "/provided-profile", LogoutURL: "/provided-logout", Trail: []page.Level{{Name: "incoming", URL: "/incoming"}}}
+	returned := page.Banner{Service: "provided <& service", Release: "provided <& release", Commit: "provided <& commit", Home: "https://home.example/", Tools: true, Email: "returned@work.example", ProfileURL: "/provided-profile", LogoutURL: "/provided-logout", Trail: []page.Level{{Name: "incoming", URL: "/incoming"}}}
 	original := returned.Trail[0]
 	calls := []page.User{}
 	f.trail.server.cfg.Banner = func(u page.User) page.Banner { calls = append(calls, u); return returned }

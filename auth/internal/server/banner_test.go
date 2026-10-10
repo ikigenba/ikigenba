@@ -46,26 +46,17 @@ func assertPageBanner(t *testing.T, body string, data page.Banner) {
 
 func TestPagesUseReturnedBannerOnce(t *testing.T) {
 	// R-4ZBA-OGOE R-RL55-PFYN R-RNKY-GZG1 R-51R3-G05S R-VBN1-UF6L R-PT80-EZ08
-	for _, services := range [][]page.Service{nil, {
-		{Name: "auth", URL: "https://auth.example/", Icon: template.HTML("fixture-icon-one"), Enabled: true, Current: true},
-	}, {
-		{Name: "Outside & secret", URL: "https://other.example/", Icon: template.HTML("fixture-icon-two"), Enabled: true},
-		{Name: "auth", URL: "https://auth.example/", Enabled: true, Current: true},
-	}} {
+	for _, icon := range []template.HTML{"", "fixture-icon-one", "fixture-icon-two"} {
 		st := openTokenTestStore(t)
 		user, session := tokenTestIdentity(t, st, "banner")
 		calls := []page.User{}
-		returned := page.Banner{Service: "returned service", Version: "fixture<& version", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services, Trail: []page.Level{{Name: "incoming", URL: "/incoming"}}}
-		for _, service := range services {
-			if service.Current {
-				returned.Icon = service.Icon
-			}
-		}
+		returned := page.Banner{Service: "returned service", Icon: icon, Release: "fixture<& release", Commit: "fixture<& commit", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Home: "https://home.example/", Tools: true, Trail: []page.Level{{Name: "incoming", URL: "/incoming"}}}
 		srv := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(u page.User) page.Banner { calls = append(calls, u); return returned }})
 		requests := []*http.Request{tokenProfileRequest(session.ID), tokenRequest("/tokens", session.ID, url.Values{"name": {""}, "expires": {"bad"}}), tokenRequest("/tokens", session.ID, url.Values{"name": {"banner token"}, "expires": {"never"}}), tokenProfileRequest(session.ID)}
 		for i, req := range requests {
 			returned.Service = []string{"profile", "rejected", "created", "refreshed"}[i] + " <& service"
-			returned.Version = []string{"first", "second", "third", "fourth"}[i] + " <& version"
+			returned.Release = []string{"first", "second", "third", "fourth"}[i] + " <& release"
+			returned.Commit = []string{"one", "two", "three", "four"}[i] + " <& commit"
 			calls = nil
 			w := httptest.NewRecorder()
 			srv.ServeHTTP(w, req)

@@ -17,8 +17,8 @@ import (
 )
 
 func main() {
-	display := version.Display()
-	kit := page.New("auth", display)
+	id := version.Read()
+	kit := page.New("auth", id)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
@@ -37,7 +37,7 @@ func main() {
 		Pid:        os.Getpid(),
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
-		Version:    display,
+		Version:    id.String(),
 		Now:        time.Now,
 		Rand:       rand.Reader,
 		OIDCIssuer: "https://accounts.google.com",

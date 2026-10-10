@@ -46,7 +46,7 @@ func TestTemplateDataShapesAndStates(t *testing.T) {
 	signIn := signInPageData{"fixture.test", "", "encoded", "destination.test", "auth.fixture.test:443", "workspace.test", "email@fixture.test"}
 	profile := profilePageData{"fixture.test", "email@fixture.test", "workspace.test", nil, tokenCreateData{Expiry: "90d"}, mcpClientsData{}}
 	_ = authPageData{page.Banner{}, &signIn, &profile, nil, nil}
-	// R-RCLV-11RS R-RDTR-ETIH R-RF1N-SL96
+	// R-RCLV-11RS R-RDTR-ETIH R-0IMN-62KH
 	set := expectedAuthTemplates(t)
 	for _, name := range []string{"page", "chrome", "signIn", "alert", "profile", "tokenList", "tokenTime", "tokenLastUsed", "tokenNever", "elapsed", "tokenCreate", "plusIcon", "tokenCreated", "copyIcon", "mcp-clients", "approve", "about", "value"} {
 		if set.Lookup(name) == nil {
@@ -99,7 +99,7 @@ func TestTemplateDataShapesAndStates(t *testing.T) {
 	}
 	execute("about", AboutData{})
 	execute("about", AboutData{
-		Banner:      page.Banner{Service: "fixture-service", Version: "fixture-version", Trail: []page.Level{{Name: "fixture-level", URL: "/fixture-level"}}},
+		Banner:      page.Banner{Service: "fixture-service", Release: "fixture-release", Commit: "fixture-commit", Trail: []page.Level{{Name: "fixture-level", URL: "/fixture-level"}}},
 		Description: "fixture-description",
 	})
 	// D09's declared approve data is compatible with the same set.

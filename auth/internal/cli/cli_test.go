@@ -68,6 +68,9 @@ path = "state/auth.db"
 [resources]
 slice = "core"
 memory_max = "128M"
+
+[home]
+group = "core"
 `
 
 const wantSocketHint = "\n\nrun it under systemd, with a listening socket passed in\n"
@@ -115,7 +118,7 @@ func TestCommands(t *testing.T) {
 	}{
 		{[]string{"--version"}, "test display\n", "", 0},                                                // R-8JXQ-OEIU
 		{[]string{"--help"}, wantUsage, "", 0},                                                          // R-P1AL-4VB4 R-7J5A-6LXS
-		{[]string{"manifest"}, wantManifest, "", 0},                                                     // R-P2IH-IN1T R-RG9K-6CZV
+		{[]string{"manifest"}, wantManifest, "", 0},                                                     // R-P2IH-IN1T R-6M7B-8W67
 		{[]string{"bogus"}, "", "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", 2},    // R-7KD6-KDOH R-P8LZ-FHRA
 		{[]string{"--bogus"}, "", "auth: unknown option '--bogus'\n\nsee 'auth --help' for usage\n", 2}, // R-P7E3-1Q0L
 		{[]string{"manifest", "extra"}, "", "auth: unknown command 'extra'\n\nsee 'auth --help' for usage\n", 2},

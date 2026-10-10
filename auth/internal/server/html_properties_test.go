@@ -111,7 +111,7 @@ func TestTokenPageReferenceProperties(t *testing.T) {
 	// R-8157-3WO4: every personal and client row offers the action paths built from its ID and Enabled.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "property")
-	banner := page.Banner{Service: "auth", Email: user.Email, ProfileURL: "/", LogoutURL: "/logout", Services: []page.Service{{Name: "fixture service", URL: "https://outside.test/service", Enabled: true}}}
+	banner := page.Banner{Service: "auth", Email: user.Email, ProfileURL: "/", LogoutURL: "/logout", Home: "https://outside.test/home", Tools: true}
 	server := newTestServer(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(page.User) page.Banner { return banner }})
 	// Empty lists exercise their distinct template branches before populated rows.
 	body := referenceResponse(t, server, tokenProfileRequest(session.ID), 200)
@@ -174,7 +174,7 @@ func TestApprovePageReferenceProperties(t *testing.T) {
 	// R-3XX5-S23D R-7ZXA-Q4XF: the D09 approve page also has only shared resource and own-origin navigation targets.
 	for _, publicURL := range []string{"", "http://auth.wip.localhost:7400"} {
 		fixture := newOAuthFixture(t, publicURL)
-		banner := page.Banner{Service: "auth", Email: fixture.user.Email, ProfileURL: "/", LogoutURL: "/logout", Services: []page.Service{{Name: "external service", URL: "https://outside.test/service", Enabled: true}}}
+		banner := page.Banner{Service: "auth", Email: fixture.user.Email, ProfileURL: "/", LogoutURL: "/logout", Home: "https://outside.test/home", Tools: true}
 		fixture.trail.server.cfg.Banner = func(page.User) page.Banner { return banner }
 		for _, name := range []string{"fixture <&\" client", "https://outside.test/not-a-resource"} {
 			client := fixture.client(t, name, oauthCallback)

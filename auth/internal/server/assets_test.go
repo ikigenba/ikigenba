@@ -20,7 +20,6 @@ func sharedAssetFiles(t *testing.T, s *Server) map[string]string {
 	t.Helper()
 	files := map[string]string{
 		"theme.css":          "text/css; charset=utf-8",
-		"launcher.js":        "text/javascript; charset=utf-8",
 		"feedback.js":        "text/javascript; charset=utf-8",
 		"favicon.svg":        "image/svg+xml",
 		"OFL.txt":            "text/plain; charset=utf-8",
@@ -111,7 +110,7 @@ func assertStrongAssetTag(t *testing.T, w *httptest.ResponseRecorder) string {
 }
 
 func TestSharedAssetRepresentations(t *testing.T) {
-	// R-SFI8-2AZ2: the nine shared files are nonempty and have their specified types.
+	// R-0L2F-XM1V: the eight shared files are nonempty and have their specified types.
 	// R-SGQ4-G2PR: 200 and 304 carry one strong tag and file-specific cache policy.
 	// R-1GDL-HS81: the body and tag are stable within and across servers.
 	// R-1HLH-VJYQ: HEAD has the GET representation headers and no body.
@@ -151,7 +150,7 @@ func TestSharedAssetRepresentations(t *testing.T) {
 
 func TestSharedAssetConditionalRequests(t *testing.T) {
 	// R-SHY0-TUGG: matching well-formed lists or * yield empty 304 for GET and HEAD.
-	// R-SJ5X-7M75: nonmatching well-formed lists yield the GET representation.
+	// R-0MAC-BDSK: nonmatching well-formed lists yield the GET representation.
 	s := newTestServer(t, Config{})
 	for name, contentType := range sharedAssetFiles(t, s) {
 		target := page.StaticPrefix + name
@@ -184,7 +183,7 @@ func TestSharedAssetConditionalRequests(t *testing.T) {
 }
 
 func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
-	// R-SBUI-WZQZ: decoded byte-exact prefix, fixed names and CSS font names define the paths.
+	// R-0JUJ-JUB6: decoded byte-exact prefix, fixed names and CSS font names define the paths.
 	// R-55ES-LBDV: every appkit path delegates unchanged, including unspecified header behavior.
 	// R-2U35-R9SL: unsupported methods on files yield 405 and Allow.
 	// R-SKDT-LDXU: non-file appkit paths yield 404 for any method or condition.
@@ -193,7 +192,7 @@ func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
 	if page.StaticPrefix != "/_appkit/" {
 		t.Fatalf("shared asset prefix = %q, want /_appkit/", page.StaticPrefix)
 	}
-	missing := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/InterVariable.woff2", "/_appkit/InterVariable-Italic.woff2", "/_appkit/JetBrainsMono.woff2", "/_appkit/missing", "/_appkit/THEME.CSS", "/_appkit/theme.cssX", "/_appkit/theme.css/child", "/_appkit//theme.css", "/_appkit/./theme.css", "/_appkit/../theme.css", "/_appkit/%2ftheme.css"}
+	missing := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/launcher.js", "/_appkit/InterVariable.woff2", "/_appkit/InterVariable-Italic.woff2", "/_appkit/JetBrainsMono.woff2", "/_appkit/missing", "/_appkit/THEME.CSS", "/_appkit/theme.cssX", "/_appkit/theme.css/child", "/_appkit//theme.css", "/_appkit/./theme.css", "/_appkit/../theme.css", "/_appkit/%2ftheme.css"}
 	for name := range sharedAssetFiles(t, s) {
 		missing = append(missing, page.StaticPrefix+strings.ToUpper(name), page.StaticPrefix+name+"extra", page.StaticPrefix+name+"/child")
 	}

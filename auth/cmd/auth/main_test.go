@@ -32,7 +32,7 @@ import (
 func TestMainWiring(t *testing.T) {
 	// R-3WNI-4FXO
 	// R-P2IH-IN1T R-7KD6-KDOH
-	// R-RG9K-6CZV
+	// R-6M7B-8W67
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
 	// R-LPHC-TKY0: the serve cases run the binary bare with the Google settings
@@ -45,6 +45,8 @@ func TestMainWiring(t *testing.T) {
 	commit, release := "0123456789abcdef0123456789abcdef01234567", "wiring-fixture"
 	t.Setenv(version.CommitVariable, commit)
 	t.Setenv(version.ReleaseVariable, release)
+	// R-0EYY-0RCE: use the same environment to obtain the run identity.
+	id := version.Read()
 	display := version.Display()
 	identityEnv := []string{version.CommitVariable + "=" + commit, version.ReleaseVariable + "=" + release}
 
@@ -73,7 +75,7 @@ func TestMainWiring(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		for _, ahead := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/ahead=%t", sig, ahead), func(t *testing.T) {
-				assertSocketActivated(t, binary, sig, ahead, identityEnv, display)
+				assertSocketActivated(t, binary, sig, ahead, identityEnv, id, display)
 			})
 		}
 	}
@@ -109,6 +111,9 @@ path = "state/auth.db"
 [resources]
 slice = "core"
 memory_max = "128M"
+
+[home]
+group = "core"
 `
 
 func googleEnv() []string {
@@ -142,7 +147,7 @@ func childCode(t *testing.T, err error) int {
 	return exit.ExitCode()
 }
 
-func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahead bool, identityEnv []string, display string) {
+func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahead bool, identityEnv []string, id version.Identity, display string) {
 	t.Helper()
 	shortDir, err := os.MkdirTemp("", "auth-socket-")
 	if err != nil {
@@ -186,7 +191,9 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 	firstSocket := serveTrail(t, shortDir, "first.sock", first)
 	secondSocket := serveTrail(t, shortDir, "second.sock", second)
 	services := filepath.Join(shortDir, "services.json")
-	writeServices(t, services, firstSocket)
+	firstIcon := `<svg viewBox="0 0 24 24"><path d="M1 1h2v2H1z"/></svg>`
+	secondIcon := `<svg viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg>`
+	writeServices(t, services, firstSocket, firstIcon)
 	cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+services)
 	var sessionID string
 	wantStderr := ""
@@ -265,10 +272,10 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 	}
 	first.wait(t, "service.started")
 	if sessionID != "" {
-		writeServices(t, services, secondSocket)
+		writeServices(t, services, secondSocket, secondIcon)
 		// R-GNC2-6SEM: main leaves Inherit nil; the response comes from
 		// the listening socket supplied as descriptor 3.
-		// R-IM0T-8EME: the cgo-free executable serves the live session from
+		// R-0HEQ-SATS: the cgo-free executable serves the live session from
 		// a working directory containing only state/auth.db.
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -293,13 +300,17 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal, ahea
 		if err != nil {
 			t.Fatal(err)
 		}
-		// R-IKSW-UMVP: the embedded footer uses the run's display string.
+		// R-0G6U-EJ33: the footer receives the run's release and short commit.
 		var footer bytes.Buffer
-		if err := page.Templates().ExecuteTemplate(&footer, "footer", page.Banner{Service: "auth", Version: display}); err != nil {
+		if err := page.Templates().ExecuteTemplate(&footer, "footer", page.Banner{Service: "auth", Release: id.Release, Commit: id.Commit}); err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Contains(body, footer.Bytes()) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
-			t.Fatal("main page omits supplied banner values or expected footer")
+		if !bytes.Contains(body, footer.Bytes()) || !bytes.Contains(body, []byte(id.Release)) || !bytes.Contains(body, []byte(id.Commit)) {
+			t.Fatal("main page omits supplied identity or expected footer")
+		}
+		// R-3XM6-MIPN: the current services file supplies the auth icon.
+		if !bytes.Contains(body, []byte(secondIcon)) {
+			t.Fatal("main page omits current auth icon")
 		}
 	}
 
@@ -435,12 +446,11 @@ func serveTrail(t *testing.T, dir, name string, sink *wiringSink) string {
 	t.Cleanup(func() { _ = server.Close() })
 	return path
 }
-func writeServices(t *testing.T, path, socket string) {
+func writeServices(t *testing.T, path, socket, icon string) {
 	t.Helper()
 	services := map[string]any{"services": []map[string]any{
 		{"name": "telemetry", "url": "/", "description": "Trail", "socket": socket, "enabled": true, "mcp": false},
-		{"name": "auth", "url": "http://auth/", "description": "Identity", "socket": "/run/auth.sock", "enabled": true, "mcp": false, "icon": "<svg viewBox=\"0 0 24 24\"><path d=\"M1 1h2v2H1z\"/></svg>"},
-		{"name": "Wiring probe", "url": "https://probe.example.test/", "description": "Main wiring fixture", "socket": "/run/probe.sock", "enabled": true, "mcp": false, "icon": "<svg viewBox=\"0 0 24 24\"><path d=\"M3 3h18v18H3z\"/></svg>"},
+		{"name": "auth", "url": "http://auth/", "description": "Identity", "socket": "/run/auth.sock", "enabled": true, "mcp": false, "icon": icon},
 	}}
 	data, err := json.Marshal(services)
 	if err != nil {
