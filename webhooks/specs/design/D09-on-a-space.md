@@ -4,7 +4,7 @@ What webhooks contributes when it runs on a space and in a sandbox, and the one 
 
 ## What ships
 
-The release file has four members: `bin/webhooks`, `etc/manifest.toml`, `etc/nginx.conf` and `share/icon.svg`, the last Tabler's `webhook` outline, human-authored. The manifest's lines carry what a space asks of it (`D02-cli`): `guests = true`, so the host's nginx passes `location /` without a credential through auth's `/check/open` while `/mcp`, `/api` and the git paths still require one; `mcp = true`; `[env]` with `WEBHOOKS_RETENTION_DAYS = "2"`; `[database]` naming `state/webhooks.db`, which the host keeps and replicates; and `[resources]`. The fragment raises nginx's body limit at webhooks' name above the ingress's cap and answers `/events` and `/declarations` 404.
+The release file has four members: `bin/webhooks`, `etc/manifest.toml`, `etc/nginx.conf` and `share/icon.svg`, the last Tabler's `webhook` outline, human-authored. The manifest's lines carry what a space asks of it (`D02-cli`): `guests = true`, so the host's nginx passes `location /` without a credential through auth's `/check/open` while `/mcp`, `/api` and the git paths still require one; `mcp = true`; `[env]` with `WEBHOOKS_RETENTION_DAYS = "2"`; `[database]` naming `state/webhooks.db`, which the host keeps and replicates; `[resources]`; and `[home]`, which puts webhooks in the `core` group of home's landing page. The fragment raises nginx's body limit at webhooks' name above the ingress's cap and answers `/events` and `/declarations` 404.
 
 ## On a space
 
