@@ -2,15 +2,15 @@
      description, in the document auth's other pages are drawn in (head as
      page.html's). Shown only to a signed-in user. Data: .Banner (a
      page.Banner, for banner and footer; its .Service is the name and its
-     .Version the version shown); .Description (the service's one-line
+     .Release and .Commit give the version row); .Description (the service's one-line
      description, the manifest's). Hooks: title "About auth"; the head
      links appkit's preload, /_appkit/theme.css, /_appkit/favicon.svg and
      /_appkit/feedback.js (deferred) and nothing from another origin; the
      banner right after <body>; h1 with text "About auth"; dl#about.kv
      holding dt "Name" then dd#about-name (.Banner.Service), dt "Version"
-     then dd#about-version (.Banner.Version, present even when empty), and
+     then dd#about-version (.Banner.Release and .Banner.Commit, present even when empty), and
      dt "Description" then dd#about-description (.Description); the footer
      right before </body>. No link of the page's own: the banner's trail is
      the way back. No section of another page's, no h2. No script but
      appkit's /_appkit/feedback.js. */}}
-{{define "about"}}<!DOCTYPE html><html><head><title>About auth</title>{{template "preload"}}<link rel="stylesheet" href="/_appkit/theme.css"><link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg"><script src="/_appkit/feedback.js" defer></script><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{template "banner" .Banner}}<main><h1>About auth</h1><section class="card"><dl id="about" class="kv"><dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd><dt>Version</dt><dd id="about-version">{{.Banner.Version}}</dd><dt>Description</dt><dd id="about-description">{{.Description}}</dd></dl></section></main>{{template "footer" .Banner}}</body></html>{{end}}
+{{define "about"}}<!DOCTYPE html><html><head><title>About auth</title>{{template "preload"}}<link rel="stylesheet" href="/_appkit/theme.css"><link rel="icon" type="image/svg+xml" href="/_appkit/favicon.svg"><script src="/_appkit/feedback.js" defer></script><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{template "banner" .Banner}}<main><h1>About auth</h1><section class="card"><dl id="about" class="kv"><dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd><dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd><dt>Description</dt><dd id="about-description">{{.Description}}</dd></dl></section></main>{{template "footer" .Banner}}</body></html>{{end}}

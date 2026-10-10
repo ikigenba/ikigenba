@@ -1,10 +1,10 @@
 {{/* The about screen at GET /about: the service's name, version and
      description. Shown only to a signed-in user. Data: .Banner (a
      page.Banner, for banner and footer; its .Service is the name and its
-     .Version the version shown); .Description (the service's one-line
+     .Release and .Commit give the version row); .Description (the service's one-line
      description, the manifest's). Hooks: h1 with text "About scripts";
      dl#about.kv holding dt "Name" then dd#about-name (.Banner.Service), dt
-     "Version" then dd#about-version (.Banner.Version), and dt "Description"
+     "Version" then dd#about-version (.Banner.Release and .Banner.Commit), and dt "Description"
      then dd#about-description (.Description). No script but appkit's /_appkit/feedback.js. */}}
 {{define "about"}}<!doctype html>
 <html lang="en">
@@ -16,7 +16,7 @@
 <section class="card">
 <dl id="about" class="kv">
 <dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
-<dt>Version</dt><dd id="about-version">{{.Banner.Version}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
 <dt>Description</dt><dd id="about-description">{{.Description}}</dd>
 </dl>
 </section>
