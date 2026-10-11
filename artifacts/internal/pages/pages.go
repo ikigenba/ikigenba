@@ -19,7 +19,7 @@ import (
 const ServiceName = "artifacts"
 
 // Description is the service's one-line summary.
-const Description string = "Keep files agents and services share"
+const Description = "Binary files agents and services share"
 
 // ToolsLevel names the catalog child page.
 var ToolsLevel = page.Level{Name: "tools", URL: "/tools"}

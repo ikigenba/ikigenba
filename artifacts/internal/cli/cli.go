@@ -37,7 +37,7 @@ const (
 )
 
 // Usage is the command help.
-const Usage = "Usage: artifacts [command]\n\nKeep files agents and services share, each put and fetched by path at\n/files/<path>, with MCP tools at /mcp and a page of artifacts at /, on\nthe socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
+const Usage = "Usage: artifacts [command]\n\nBinary files agents and services share, each put and fetched by path at\n/files/<path>, with MCP tools at /mcp and a page of artifacts at /, on\nthe socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 
 // Manifest describes the app to its host.
 const Manifest = "app = \"artifacts\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nARTIFACT_MAX_BYTES = \"1073741824\"\nIMPORT_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/artifacts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"

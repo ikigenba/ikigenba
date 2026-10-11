@@ -1,5 +1,5 @@
 app = "artifacts"
-description = "Keep files agents and services share"
+description = "Binary files agents and services share"
 default = false
 mcp = true
 guests = false

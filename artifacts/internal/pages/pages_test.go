@@ -115,8 +115,10 @@ func put(t *testing.T, s *store.Store, path string, exp time.Time) store.Artifac
 }
 
 func TestPublicDataAndTemplates(t *testing.T) {
-	// R-MR5L-3CA6 R-MSDH-H40V R-MUTA-8NI9 R-MW16-MF8Y R-MX93-06ZN
-	if pages.ServiceName != "artifacts" || pages.Description == "" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
+	const _ string = pages.ServiceName
+	const _ string = pages.Description
+	// R-NQFY-7UB1 R-MSDH-H40V R-MUTA-8NI9 R-MW16-MF8Y R-MX93-06ZN
+	if pages.ServiceName != "artifacts" || pages.Description != "Binary files agents and services share" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
 		t.Fatal("service identity or levels")
 	}
 	s, err := pages.Load()

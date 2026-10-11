@@ -18,7 +18,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/artifacts"
 	"github.com/ikigenba/ikigenba/artifacts/internal/cli"
-	"github.com/ikigenba/ikigenba/artifacts/internal/pages"
 )
 
 type commandOutput struct {
@@ -28,12 +27,14 @@ type commandOutput struct {
 
 func (w *commandOutput) Write(b []byte) (int, error) { w.calls++; return w.Buffer.Write(b) }
 
-// R-ZLR1-YQYS R-ZO6U-QAG6 R-ZPER-426V R-ZQMN-HTXK
+// R-NO05-GATN R-NP81-U2KC R-ZPER-426V R-ZQMN-HTXK
 func TestCommandConstants(t *testing.T) {
-	if cli.Usage != "Usage: artifacts [command]\n\nKeep files agents and services share, each put and fetched by path at\n/files/<path>, with MCP tools at /mcp and a page of artifacts at /, on\nthe socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n" {
+	const _ string = cli.Usage
+	const _ string = cli.Manifest
+	if cli.Usage != "Usage: artifacts [command]\n\nBinary files agents and services share, each put and fetched by path at\n/files/<path>, with MCP tools at /mcp and a page of artifacts at /, on\nthe socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n" {
 		t.Fatal(cli.Usage)
 	}
-	if cli.Manifest != "app = \"artifacts\"\ndescription = \""+pages.Description+"\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nARTIFACT_MAX_BYTES = \"1073741824\"\nIMPORT_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/artifacts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n" {
+	if cli.Manifest != "app = \"artifacts\"\ndescription = \"Binary files agents and services share\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nARTIFACT_MAX_BYTES = \"1073741824\"\nIMPORT_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/artifacts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n" {
 		t.Fatal(cli.Manifest)
 	}
 	if cli.NginxConf != "client_max_body_size    0;\nproxy_request_buffering off;\nproxy_http_version      1.1;\nproxy_buffering         on;\nproxy_read_timeout      3600s;\nproxy_send_timeout      3600s;\nlocation = /events { return 404; }\nlocation = /declarations { return 404; }\n" {

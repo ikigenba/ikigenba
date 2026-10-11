@@ -37,6 +37,7 @@ type fixture struct {
 	logs   *telemetry.Capture
 	bus    *events.Capture
 	handle *db.DB
+	blobs  string
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -58,7 +59,7 @@ func newFixture(t *testing.T) *fixture {
 	em := events.New(events.Config{Service: pages.ServiceName, Sink: bus, Telemetry: w, Emits: trail.Emits(), Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x54}, 65536)), Stderr: io.Discard})
 	f := &fixture{cfg: web.Config{Banner: func(u page.User) page.Banner {
 		return page.Banner{Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
-	}, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), Store: store.New(d, blobs, store.Config{Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x55}, 65536))}), Telemetry: w, Events: em, Settings: settings.Defaults(), Now: now, ImportAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}, logs: logs, bus: bus, handle: d}
+	}, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), Store: store.New(d, blobs, store.Config{Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x55}, 65536))}), Telemetry: w, Events: em, Settings: settings.Defaults(), Now: now, ImportAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}, logs: logs, bus: bus, handle: d, blobs: blobs}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -372,5 +373,136 @@ func TestEveryRouteRequestPair(t *testing.T) {
 				t.Fatal(path, logged)
 			}
 		}
+	}
+}
+
+// R-0JNJ-ENLI
+func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
+	f := newFixture(t)
+	a, _, err := f.cfg.Store.Put(context.Background(), store.Draft{Path: "existing.bin", OwnerID: "owner-chosen", Max: 64}, strings.NewReader("retained fixture bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.cfg.Store.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobNames := func() []string {
+		entries, err := os.ReadDir(f.blobs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		return names
+	}
+	beforeBlobs := blobNames()
+	f.handle.SetFailing(true)
+	h := web.Handler(f.cfg)
+	checkEvents := func(start int, tool bool) {
+		t.Helper()
+		f.flush(t)
+		events := f.logs.Events()[start:]
+		want := map[string]int{"request.started": 1, "request.finished": 1}
+		if tool {
+			want["tool.called"] = 1
+		}
+		for _, event := range events {
+			want[event.Name]--
+		}
+		for name, count := range want {
+			if count != 0 {
+				t.Fatalf("event count for %s differs by %d: %#v", name, count, events)
+			}
+		}
+		if len(f.bus.Events()) != 0 {
+			t.Fatal("outage emitted bus event", f.bus.Events())
+		}
+	}
+	for _, path := range []string{"/files/existing.bin", "/files/missing.bin", "/", "/" + a.ID} {
+		methods := []string{"GET", "HEAD"}
+		if strings.HasPrefix(path, "/files/") {
+			methods = append(methods, "PUT", "DELETE")
+		}
+		for _, method := range methods {
+			for _, expiry := range []string{"", f.cfg.Now().Add(-time.Second).Format(time.RFC3339)} {
+				if method != "PUT" && expiry != "" {
+					continue
+				}
+				start := len(f.logs.Events())
+				r := request(method, path, "", true)
+				body := &countedBody{}
+				r.Body = body
+				if expiry != "" {
+					r.Header.Set("X-Artifact-Expires", expiry)
+				}
+				w := answer(h, r)
+				want := store.Unreachable + "\n"
+				if method == "HEAD" {
+					want = ""
+				}
+				if w.Code != 503 || w.Body.String() != want || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+					t.Fatalf("%s %s: %d %v %q", method, path, w.Code, w.Header(), w.Body.String())
+				}
+				if body.reads != 0 {
+					t.Fatal("outage read body")
+				}
+				checkEvents(start, false)
+			}
+		}
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: srv.Client()})
+	for _, c := range []struct {
+		name string
+		args any
+	}{{"list", tools.ListArgs{}}, {"show", tools.PathArgs{Path: "existing.bin"}}, {"show", tools.PathArgs{Path: "missing.bin"}}, {"delete", tools.PathArgs{Path: "existing.bin"}}, {"delete", tools.PathArgs{Path: "missing.bin"}}} {
+		start := len(f.logs.Events())
+		raw, err := json.Marshal(c.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		result, err := client.CallTool(ctx, identity.Caller{UserID: "owner-chosen"}, c.name, raw)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var reply struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		wire, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = json.Unmarshal(wire, &reply); err != nil {
+			t.Fatal(err)
+		}
+		if !result.IsError() || len(reply.Content) != 1 || reply.Content[0].Text != store.Unreachable {
+			t.Fatalf("tool outage: %s", wire)
+		}
+		checkEvents(start, true)
+	}
+	f.handle.SetFailing(false)
+	if !reflect.DeepEqual(beforeBlobs, blobNames()) {
+		t.Fatal("outage changed blob directory")
+	}
+	after, err := f.cfg.Store.List(context.Background())
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("outage changed records", before, after, err)
+	}
+	_, file, err := f.cfg.Store.Open(context.Background(), a.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(file)
+	_ = file.Close()
+	if err != nil || string(data) != "retained fixture bytes" {
+		t.Fatal("outage changed bytes", string(data), err)
 	}
 }
