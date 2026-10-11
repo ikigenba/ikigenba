@@ -1,0 +1,52 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one
+     level about at /about. Shown only to a signed-in user; a guest is sent
+     to sign in. Data: .Banner (a page.Banner, for banner and footer; its
+     .Service is the name and its .Release and .Commit give the version
+     row); .Description (the service's one-line description, the
+     manifest's). Hooks: title "About gdrive"; h1 with text "About gdrive";
+     dl#about.kv holding dt "Name" then dd#about-name (.Banner.Service), dt
+     "Version" then dd#about-version (.Banner.Release and .Banner.Commit,
+     present even when empty), and dt "Description" then
+     dd#about-description (.Description); then section#how.card with h2
+     "How it works" and four p: "gdrive moves files between Google Drive
+     and artifacts for your agents. An agent finds a file with search, list
+     or show, then pull copies it into an artifact, and push copies an
+     artifact into Drive."; "pull and push record a transfer and answer at
+     once. The bytes move on this host in the background, streamed between
+     Drive and artifacts as you, and transfer shows the outcome. When it is
+     done, the artifact's url is where a shell fetches the result."; "No
+     byte and no credential passes through the agent: the tools answer
+     references and records only, and gdrive gets a short-lived Google
+     token from connections on the host."; "Connect Google at connections
+     first. Until you do, or while the connection needs reconnecting, every
+     tool refuses with the link to connect, for the agent to hand you."
+     (search, list, show, pull, push, transfer and url each in a code
+     element). No section of the landing page's. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About gdrive</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About gdrive</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>gdrive moves files between Google Drive and artifacts for your agents. An agent finds a file with <code>search</code>, <code>list</code> or <code>show</code>, then <code>pull</code> copies it into an artifact, and <code>push</code> copies an artifact into Drive.</p>
+<p><code>pull</code> and <code>push</code> record a transfer and answer at once. The bytes move on this host in the background, streamed between Drive and artifacts as you, and <code>transfer</code> shows the outcome. When it is done, the artifact's <code>url</code> is where a shell fetches the result.</p>
+<p>No byte and no credential passes through the agent: the tools answer references and records only, and gdrive gets a short-lived Google token from connections on the host.</p>
+<p>Connect Google at connections first. Until you do, or while the connection needs reconnecting, every tool refuses with the link to connect, for the agent to hand you.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gdrive</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="gdrive.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10l-6 10l-3 -5l6 -10l3 5"/><path d="M9 15h12l-3 5h-12"/><path d="M15 15l-6 -10h6l6 10l-6 0"/></svg>gdrive</a><button class="menu" type="button" popovertarget="pages" aria-label="gdrive pages" title="gdrive pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="gdrive pages"><ul><li><a href="gdrive.html" aria-current="page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10l-6 10l-3 -5l6 -10l3 5"/><path d="M9 15h12l-3 5h-12"/><path d="M15 15l-6 -10h6l6 10l-6 0"/></svg>gdrive<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg></a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
+</header>
+
+<main>
+  <h1>gdrive</h1>
+  <p id="summary" class="lede">Google Drive files, pulled into artifacts and pushed from them for your agents. Each transfer moves the bytes on this host; no byte and no credential passes through the agent.</p>
+
+  <section id="transfers" class="card flush" aria-labelledby="transfers-title">
+    <header>
+      <div>
+        <h2 id="transfers-title">Transfers</h2>
+        <p>Yours alone, newest first: no one else sees them.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="transfer-list">
+        <thead><tr><th>Transfer</th><th>Direction</th><th>Status</th><th>Drive file</th><th>Artifact</th><th class="num">Bytes</th><th>Started</th><th>Finished</th></tr></thead>
+        <tbody>
+          <tr data-transfer="xfr_9c41e07b2d5a8f36">
+            <td class="transfer-id"><a class="transfer-link" href="gdrive-transfer.html"><code>xfr_9c41e07b2d5a8f36</code></a></td>
+            <td class="transfer-direction">push</td>
+            <td class="transfer-status"><span class="status" data-status="running" data-kind="info">running</span></td>
+            <td class="transfer-name">board-deck.pdf</td>
+            <td class="transfer-path"><a class="artifact-link" href="https://artifacts.acme.ikigenba.com/art_7b3e0c9a4d1f6825"><code>reports/2026-10/board-deck.pdf</code></a></td>
+            <td class="transfer-bytes num">16777216</td>
+            <td class="transfer-started"><time datetime="2026-10-11T15:02:11Z">2026-10-11 15:02</time></td>
+            <td class="transfer-finished"></td>
+          </tr>
+          <tr data-transfer="xfr_2b8d5f1a9e6c0473">
+            <td class="transfer-id"><a class="transfer-link" href="gdrive-transfer.html"><code>xfr_2b8d5f1a9e6c0473</code></a></td>
+            <td class="transfer-direction">pull</td>
+            <td class="transfer-status"><span class="status" data-status="queued" data-kind="info">queued</span></td>
+            <td class="transfer-name">Customer list</td>
+            <td class="transfer-path"><code>datasets/customers.xlsx</code></td>
+            <td class="transfer-bytes num">0</td>
+            <td class="transfer-started"><time datetime="2026-10-11T15:01:47Z">2026-10-11 15:01</time></td>
+            <td class="transfer-finished"></td>
+          </tr>
+          <tr data-transfer="xfr_e5a07c3d81f94b26">
+            <td class="transfer-id"><a class="transfer-link" href="gdrive-transfer.html"><code>xfr_e5a07c3d81f94b26</code></a></td>
+            <td class="transfer-direction">pull</td>
+            <td class="transfer-status"><span class="status" data-status="done" data-kind="ok">done</span></td>
+            <td class="transfer-name"><a class="drive-link" href="https://docs.google.com/document/d/1Qx3R7mVb2KpL9sTnW4eYcA8dHfJ0uZo/edit">Q3 report</a></td>
+            <td class="transfer-path"><a class="artifact-link" href="https://artifacts.acme.ikigenba.com/art_3c9e1a7f5b2d8046"><code>reports/2026-10/q3-report.docx</code></a></td>
+            <td class="transfer-bytes num">48211</td>
+            <td class="transfer-started"><time datetime="2026-10-11T14:40:03Z">2026-10-11 14:40</time></td>
+            <td class="transfer-finished"><time datetime="2026-10-11T14:40:05Z">2026-10-11 14:40</time></td>
+          </tr>
+          <tr data-transfer="xfr_71f3a9c05d2e8b64">
+            <td class="transfer-id"><a class="transfer-link" href="gdrive-transfer.html"><code>xfr_71f3a9c05d2e8b64</code></a></td>
+            <td class="transfer-direction">pull</td>
+            <td class="transfer-status"><span class="status" data-status="failed" data-kind="err">failed</span> <span class="muted">reconnect</span></td>
+            <td class="transfer-name">invoices-2026-09.zip</td>
+            <td class="transfer-path"><code>finance/invoices-2026-09.zip</code></td>
+            <td class="transfer-bytes num">12582912</td>
+            <td class="transfer-started"><time datetime="2026-10-11T13:15:22Z">2026-10-11 13:15</time></td>
+            <td class="transfer-finished"><time datetime="2026-10-11T13:16:09Z">2026-10-11 13:16</time></td>
+          </tr>
+          <tr data-transfer="xfr_0d6b2e8f4a1c9735">
+            <td class="transfer-id"><a class="transfer-link" href="gdrive-transfer.html"><code>xfr_0d6b2e8f4a1c9735</code></a></td>
+            <td class="transfer-direction">push</td>
+            <td class="transfer-status"><span class="status" data-status="failed" data-kind="err">failed</span> <span class="muted">interrupted</span></td>
+            <td class="transfer-name">standup.txt</td>
+            <td class="transfer-path"><a class="artifact-link" href="https://artifacts.acme.ikigenba.com/art_9a2f6d0b8e3c5174"><code>notes/standup.txt</code></a></td>
+            <td class="transfer-bytes num">0</td>
+            <td class="transfer-started"><time datetime="2026-10-11T11:02:40Z">2026-10-11 11:02</time></td>
+            <td class="transfer-finished"><time datetime="2026-10-11T11:20:31Z">2026-10-11 11:20</time></td>
+          </tr>
+          <tr data-transfer="xfr_a48c1f6e2b7d9053">
+            <td class="transfer-id"><a class="transfer-link" href="gdrive-transfer.html"><code>xfr_a48c1f6e2b7d9053</code></a></td>
+            <td class="transfer-direction">push</td>
+            <td class="transfer-status"><span class="status" data-status="done" data-kind="ok">done</span></td>
+            <td class="transfer-name"><a class="drive-link" href="https://drive.google.com/file/d/1mZ8kT4wQ2vR6nY0pL3sX9cB5hJ7dF1gE/view">digest.pdf</a></td>
+            <td class="transfer-path"><a class="artifact-link" href="https://artifacts.acme.ikigenba.com/art_5d2a9f7c1e8b4063"><code>reports/2026-10/digest.pdf</code></a></td>
+            <td class="transfer-bytes num">482113</td>
+            <td class="transfer-started"><time datetime="2026-10-11T09:30:14Z">2026-10-11 09:30</time></td>
+            <td class="transfer-finished"><time datetime="2026-10-11T09:30:16Z">2026-10-11 09:30</time></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p><a id="about-link" href="/about">About gdrive</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shape this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No transfers</h3>
+      <div class="card flush">
+        <div id="no-transfers" class="empty">
+          <h3 class="text-md">No transfers yet</h3>
+          <p>A file an agent pulls from Drive with the <code>pull</code> tool, or pushes to Drive with <code>push</code>, shows up here as a transfer.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>release-7 <span>(85e082b)</span></footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

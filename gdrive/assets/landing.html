@@ -1,0 +1,87 @@
+{{/* The landing page at GET /: what the service is and the caller's own
+     transfers, newest first. The root of the hierarchy: .Banner's .Trail is
+     empty, so the banner's breadcrumb holds only the service. Shown only to
+     a signed-in user; a guest is sent to sign in. Never shows another
+     user's transfer, a token or a byte of a file. Read-only: no form but
+     the banner's sign out. Data: .Banner (a page.Banner, for banner and
+     footer); .Transfers, the caller's transfers, newest first by started,
+     each with .ID (its xfr_ id, "xfr_" and 16 hex), .Direction ("pull" or
+     "push", as stored), .Status ("queued", "running", "done" or "failed",
+     as stored), .Reason (the failure reason as stored, one of "not_found",
+     "forbidden", "too_large", "reconnect", "provider", "artifacts" or
+     "interrupted"; empty unless .Status is "failed"), .Name (the Drive
+     file's name), .Link (the Drive file's webViewLink; empty when the
+     record has none), .Path (the artifact's path under /files/, no leading
+     slash), .ArtifactPage (the artifact's page on artifacts, the
+     artifacts URL then "/" and the artifact id the record holds; empty
+     when the record holds no artifact id), .URL (the artifact's absolute
+     /files/<path> URL on artifacts' host; empty until done), .Bytes (int64,
+     the bytes moved so far, final when done), .Started and .StartedText
+     (RFC 3339 UTC to the second, and UTC to the minute, "2026-10-05
+     09:00"), and .Finished and .FinishedText (likewise; both empty while
+     queued or running). Bytes are shown as the plain integer, never a
+     humanised size. Status and reason words are shown as stored; the
+     status's kind is chosen here: "queued" and "running" info, "done" ok,
+     "failed" err. Hooks: title "gdrive"; h1 with text "gdrive";
+     p#summary.lede (text "Google Drive files, pulled into artifacts and
+     pushed from them for your agents. Each transfer moves the bytes on this
+     host; no byte and no credential passes through the agent."); section#transfers
+     with h2 "Transfers" and a p in its header (text "Yours alone, newest
+     first: no one else sees them."), then either, when .Transfers is
+     empty, div#no-transfers.empty holding h3 "No transfers yet" and a p
+     (text "A file an agent pulls from Drive with the pull tool, or pushes
+     to Drive with push, shows up here as a transfer.", pull and push each
+     in a code element), or table#transfer-list whose th read Transfer,
+     Direction, Status, Drive file, Artifact, Bytes, Started, Finished, with
+     one tr[data-transfer=<.ID>] per transfer holding td.transfer-id >
+     a.transfer-link (href "/<.ID>", .ID in a code element);
+     td.transfer-direction (.Direction); td.transfer-status holding
+     span.status[data-status=<.Status>][data-kind=<kind>] (text .Status),
+     followed, when .Reason is not empty, by a space and span.muted (text
+     .Reason); td.transfer-name holding a.drive-link (href .Link, text
+     .Name) when .Link is not empty, else .Name; td.transfer-path holding
+     a.artifact-link (href .ArtifactPage, .Path in a code element) when
+     .ArtifactPage is not empty, else that link with href .URL when .URL is
+     not empty, else .Path in a code element; td.transfer-bytes.num
+     (.Bytes); td.transfer-started holding time[datetime=<.Started>] (text
+     .StartedText); and td.transfer-finished holding, only when .Finished
+     is not empty, time[datetime=<.Finished>] (text .FinishedText); a
+     #about-link (text "About gdrive") whose href is "/about". No script
+     but appkit's /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>gdrive</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>gdrive</h1>
+<p id="summary" class="lede">Google Drive files, pulled into artifacts and pushed from them for your agents. Each transfer moves the bytes on this host; no byte and no credential passes through the agent.</p>
+<section id="transfers" class="card flush" aria-labelledby="transfers-title">
+<header><div><h2 id="transfers-title">Transfers</h2><p>Yours alone, newest first: no one else sees them.</p></div></header>
+{{if .Transfers}}<div class="table-scroll">
+<table id="transfer-list">
+<thead><tr><th>Transfer</th><th>Direction</th><th>Status</th><th>Drive file</th><th>Artifact</th><th class="num">Bytes</th><th>Started</th><th>Finished</th></tr></thead>
+<tbody>
+{{range .Transfers}}<tr data-transfer="{{.ID}}">
+<td class="transfer-id"><a class="transfer-link" href="/{{.ID}}"><code>{{.ID}}</code></a></td>
+<td class="transfer-direction">{{.Direction}}</td>
+<td class="transfer-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span>{{if .Reason}} <span class="muted">{{.Reason}}</span>{{end}}</td>
+<td class="transfer-name">{{if .Link}}<a class="drive-link" href="{{.Link}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</td>
+<td class="transfer-path">{{if .ArtifactPage}}<a class="artifact-link" href="{{.ArtifactPage}}"><code>{{.Path}}</code></a>{{else if .URL}}<a class="artifact-link" href="{{.URL}}"><code>{{.Path}}</code></a>{{else}}<code>{{.Path}}</code>{{end}}</td>
+<td class="transfer-bytes num">{{.Bytes}}</td>
+<td class="transfer-started"><time datetime="{{.Started}}">{{.StartedText}}</time></td>
+<td class="transfer-finished">{{if .Finished}}<time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-transfers" class="empty">
+<h3 class="text-md">No transfers yet</h3>
+<p>A file an agent pulls from Drive with the <code>pull</code> tool, or pushes to Drive with <code>push</code>, shows up here as a transfer.</p>
+</div>{{end}}
+</section>
+<p><a id="about-link" href="/about">About gdrive</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

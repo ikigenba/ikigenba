@@ -42,6 +42,10 @@ design/
     connections.html
                     connections' landing: your connections, one per
                     provider, and the notice a failed connect answers
+    gdrive.html     gdrive's landing: your transfers between Google Drive
+                    and artifacts
+    gdrive-transfer.html
+                    one transfer: its record in full, running and failed
     webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles,
                     application services over core services
@@ -288,6 +292,46 @@ user's own connections.
   `a#back` to the landing. It never shows a code, token or state value.
 - Times are UTC to the minute in a `time` carrying the RFC 3339 moment; a
   cell with no time is empty.
+
+**gdrive.html, gdrive-transfer.html** — gdrive at `gdrive.acme.ikigenba.com`,
+the Google Drive connector: `pull` copies a Drive file into an artifact and
+`push` copies an artifact into Drive, each recording a transfer that moves the
+bytes on the host; no tool carries bytes or a credential. Two levels: the
+landing page and one transfer. Banner and footer as in app.html, the service
+`gdrive` with the Tabler `brand-google-drive` icon (added to `icons/tabler/`
+on 2026-10-11 for this app). Every page is for a signed-in user and shows only
+the user's own transfers; no form but sign out.
+- The landing: `h1` gdrive, a lede, `section#transfers` whose header says the
+  transfers are the user's alone, newest first, then `table#transfer-list` of
+  Transfer / Direction / Status / Drive file / Artifact / Bytes / Started /
+  Finished, one row per transfer, `tr[data-transfer=<id>]`: a push running,
+  a pull queued, a pull of a Google Doc done, a pull failed `reconnect`, a
+  push failed `interrupted`, a push done. The id links to the transfer's page
+  `/<id>`; the Drive file's name links to its Drive `link` when the record
+  has one; the artifact path links to the artifact's page on artifacts, by
+  the artifact id the record holds, else to its `/files/<path>` URL, else is
+  plain. A failed row's reason follows its status, muted. A link to the
+  about screen. Its tools (`drives`, `list`, `search`, `show`, `pull`,
+  `push`, `transfers`, `transfer`) are on its tools page. State: no
+  transfers (`div#no-transfers.empty`).
+- One transfer, `xfr_e5a07c3d81f94b26`, a pull of the Google Doc "Q3 report"
+  exported to `.docx`: the trail gdrive / the id, the id as the level's name
+  and the `h1`; `p#headline` with the status and the started and finished
+  times; `section#transfer-card`, its header saying which way the bytes
+  went, and `dl#transfer.kv`: ID, Direction, Status, Reason (failed only),
+  Drive file, Name, Kind, Path, Content type, Format (exported only), Bytes,
+  Started, Finished (once finished), URL (done only), Link (when held).
+  States: queued or running (`div#running.alert.quiet`, "Queued" or
+  "Running", and a Reload button), failed (`div#failure.alert` of kind err,
+  "The transfer failed", the reason's sentence chosen from the reason word,
+  and a line that nothing was changed). An unknown id, a pruned one or
+  another user's is the not-found page.
+- Transfer status reads as a `.status` word, as stored, carrying
+  `data-status` and `data-kind`: queued and running are info, done is ok,
+  failed is err. Direction, kind and reason words are shown as stored.
+- Bytes are the plain integer, the count moved so far. Times are UTC in a
+  `time` carrying the RFC 3339 moment: to the minute in the table, where a
+  cell with no time is empty, to the second with `UTC` on the transfer page.
 
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's
