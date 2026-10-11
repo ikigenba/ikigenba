@@ -12,9 +12,10 @@
      "How it works" and four p: "Artifacts are files kept by path. An agent
      or a service puts a file with an HTTP PUT to /files/<path> and gets it
      back with a GET, using curl and the caller's bearer token." (/files/<path>
-     in a code element); "The MCP tools carry metadata only: list, show,
-     delete and import. The bytes never travel through the gateway." (each
-     tool name in a code element); "Everyone signed in can read every
+     in a code element); "The MCP tools carry metadata only: import answers
+     the URL and the headers to put a file, show and list answer the URL to
+     get one, and delete removes one. The bytes never travel through the
+     gateway." (each tool name in a code element); "Everyone signed in can read every
      artifact. Only an artifact's owner can replace it or delete it.";
      "A PUT that carries an X-Artifact-Expires header sets when the artifact
      expires; once that time passes, the next hourly sweep removes it.
@@ -38,7 +39,7 @@
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
 <p>Artifacts are files kept by path. An agent or a service puts a file with an HTTP PUT to <code>/files/&lt;path&gt;</code> and gets it back with a GET, using curl and the caller's bearer token.</p>
-<p>The MCP tools carry metadata only: <code>list</code>, <code>show</code>, <code>delete</code> and <code>import</code>. The bytes never travel through the gateway.</p>
+<p>The MCP tools carry metadata only: <code>import</code> answers the URL and the headers to put a file, <code>show</code> and <code>list</code> answer the URL to get one, and <code>delete</code> removes one. The bytes never travel through the gateway.</p>
 <p>Everyone signed in can read every artifact. Only an artifact's owner can replace it or delete it.</p>
 <p>A PUT that carries an <code>X-Artifact-Expires</code> header sets when the artifact expires; once that time passes, the next hourly sweep removes it. Without one it is kept until it is deleted.</p>
 </section>

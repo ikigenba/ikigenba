@@ -18,8 +18,8 @@
      artifact here."); section#artifacts with h2 "Artifacts" and either,
      when .Artifacts is empty, div#no-artifacts.empty holding h3 "No
      artifacts yet" and a p (text "A file an agent puts under /files/ with
-     curl, or brings in with the import tool, shows up here.", /files/ and
-     import each in a code element), or, in the section's header,
+     an HTTP PUT shows up here; the import tool answers where and how to
+     put one.", /files/ and import each in a code element), or, in the section's header,
      p#total (text "<.TotalBytes> bytes held in all.") and
      table#artifact-list whose th read Path, Bytes, Content type, Owner,
      Modified, Expires, with one tr[data-artifact=<.ID>] per artifact
@@ -57,7 +57,7 @@
 </table>
 </div>{{else}}<div id="no-artifacts" class="empty">
 <h3 class="text-md">No artifacts yet</h3>
-<p>A file an agent puts under <code>/files/</code> with curl, or brings in with the <code>import</code> tool, shows up here.</p>
+<p>A file an agent puts under <code>/files/</code> with an HTTP PUT shows up here; the <code>import</code> tool answers where and how to put one.</p>
 </div>{{end}}
 </section>
 <p><a id="about-link" href="/about">About artifacts</a></p>
