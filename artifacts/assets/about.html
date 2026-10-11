@@ -17,8 +17,9 @@
      tool name in a code element); "Everyone signed in can read every
      artifact. Only an artifact's owner can replace it or delete it.";
      "A PUT that carries an X-Artifact-Expires header sets when the artifact
-     expires; once that time passes it is gone. Without one it is kept until
-     it is deleted." (X-Artifact-Expires in a code element). No section of
+     expires; once that time passes, the next hourly sweep removes it.
+     Without one it is kept until it is deleted." (X-Artifact-Expires in a
+     code element). No section of
      the landing page's. No script but appkit's /_appkit/feedback.js. */}}
 {{define "about"}}<!doctype html>
 <html lang="en">
@@ -39,7 +40,7 @@
 <p>Artifacts are files kept by path. An agent or a service puts a file with an HTTP PUT to <code>/files/&lt;path&gt;</code> and gets it back with a GET, using curl and the caller's bearer token.</p>
 <p>The MCP tools carry metadata only: <code>list</code>, <code>show</code>, <code>delete</code> and <code>import</code>. The bytes never travel through the gateway.</p>
 <p>Everyone signed in can read every artifact. Only an artifact's owner can replace it or delete it.</p>
-<p>A PUT that carries an <code>X-Artifact-Expires</code> header sets when the artifact expires; once that time passes it is gone. Without one it is kept until it is deleted.</p>
+<p>A PUT that carries an <code>X-Artifact-Expires</code> header sets when the artifact expires; once that time passes, the next hourly sweep removes it. Without one it is kept until it is deleted.</p>
 </section>
 </main>
 {{template "footer" .Banner}}
