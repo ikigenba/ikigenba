@@ -88,10 +88,14 @@ func renderNginxConfig(data, worktree, name string, port, euid int, apps []appIn
 	authOrigin := fmt.Sprintf("http://auth.%s.localhost:%d", name, port)
 	mcpMetadata := fmt.Sprintf("http://mcp.%s.localhost:%d/.well-known/oauth-protected-resource", name, port)
 	if hasAuth {
+		b.WriteString("  map $arg_state $sandbox_callback_origin {\n")
+		directive("    ", "default", authOrigin)
+		directive("    ", `~^([a-z0-9-]+)\.`, fmt.Sprintf("http://$1.%s.localhost:%d", name, port))
+		b.WriteString("  }\n")
 		b.WriteString("  server {\n")
 		directive("    ", "listen", listen)
 		directive("    ", "server_name", "localhost")
-		directive("    ", "return", "302", nginxWord(authOrigin+"$request_uri"))
+		directive("    ", "return", "302", "$sandbox_callback_origin$request_uri")
 		b.WriteString("  }\n")
 	}
 	forward := func(userID, email string) {

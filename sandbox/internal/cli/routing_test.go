@@ -192,7 +192,7 @@ func routingHeaders(t *testing.T, loc nginxNode, id, email string) {
 
 func TestRoutingRuntimeAndContexts(t *testing.T) {
 	// R-SWXP-LN7R R-4O92-QDQB R-XKZH-R9GD R-SY5L-ZEYG
-	// R-C2Q5-AOTH R-YRNZ-58EO R-4QOV-HX7P R-4T4O-9GP3
+	// R-YRNZ-58EO R-4QOV-HX7P R-4T4O-9GP3
 	// R-4UCK-N8FS R-4VKH-106H R-4WSD-ERX6
 	data := "/tmp/a b%c$d/ikigenba/sandbox/wip"
 	config := string(renderNginxConfig(data, "/checkout", "wip", 7001, 1234, []appInfo{{Name: "auth"}, {Name: "dummy"}}))
@@ -204,7 +204,6 @@ func TestRoutingRuntimeAndContexts(t *testing.T) {
 		t.Fatal("events is not empty")
 	}
 	http := routingFind(t, nodes, "http")
-	routingKeys(t, http.children, "access_log", "client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path", "server_names_hash_bucket_size", "map", "map", "map", "map", "map", "map", "map", "upstream", "upstream", "server", "server", "server", "server")
 	routingFind(t, http.children, "access_log", "off")
 	routingFind(t, http.children, "server_names_hash_bucket_size", "256")
 	for _, pair := range [][2]string{{"client_body_temp_path", "client_body"}, {"proxy_temp_path", "proxy"}, {"fastcgi_temp_path", "fastcgi"}, {"uwsgi_temp_path", "uwsgi"}, {"scgi_temp_path", "scgi"}} {
@@ -240,7 +239,7 @@ func TestRoutingRuntimeAndContexts(t *testing.T) {
 }
 
 func TestRoutingServersAndUngated(t *testing.T) {
-	// R-4Y09-SJNV R-T0LE-QYFU R-T1TB-4Q6J R-RN6J-D5LA
+	// R-4Y09-SJNV R-T0LE-QYFU R-T1TB-4Q6J R-OPFV-ANMB
 	// R-ROEF-QXBZ R-52VV-BMMN R-T5H0-A1EM R-RLYM-ZDUL
 	// R-56JK-GXUQ R-T94P-FCMP R-C55Y-28AV R-ZQTT-AQ8C R-5A79-M92T R-GPR8-TLS0
 	for _, auth := range []bool{false, true} {
@@ -300,7 +299,7 @@ func TestRoutingServersAndUngated(t *testing.T) {
 					if auth {
 						local := routingServer(t, http, "localhost")
 						routingKeys(t, local.children, "listen", "server_name", "return")
-						routingFind(t, local.children, "return", "302", "http://auth.wip.localhost:7400$request_uri")
+						routingFind(t, local.children, "return", "302", "$sandbox_callback_origin$request_uri")
 					} else {
 						for _, n := range http.children {
 							for _, d := range n.children {
@@ -365,6 +364,70 @@ func TestRoutingServersAndUngated(t *testing.T) {
 					routingHeaders(t, loc, "", "")
 				})
 			}
+		}
+	}
+}
+
+func TestRoutingCallbackMapAndHTTPContext(t *testing.T) {
+	// R-OQNR-OFD0 R-SCBY-XQLV R-OT3K-FYUE
+	for _, setting := range []struct {
+		name string
+		port int
+	}{
+		{"wip", 7400}, {"dev-2", 7411},
+	} {
+		for _, apps := range [][]appInfo{
+			nil, {{Name: "dummy"}}, {{Name: "auth"}}, {{Name: "dummy"}, {Name: "auth"}, {Name: "sites"}},
+		} {
+			t.Run(fmt.Sprintf("%s/apps=%v", setting.name, apps), func(t *testing.T) {
+				nodes := parseRoutingConfig(t, string(renderNginxConfig("/data", "/checkout", setting.name, setting.port, 1234, apps)))
+				http := routingFind(t, nodes, "http")
+				keys := []string{"access_log", "client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path", "server_names_hash_bucket_size", "server"}
+				for _, args := range [][]string{
+					{"$http_origin", "$sandbox_cors_origin"},
+					{"$sandbox_cors_origin", "$sandbox_cors_credentials"},
+					{"$sandbox_cors_origin", "$sandbox_upstream_origin"},
+					{"$request_method $sandbox_cors_credentials", "$sandbox_cors_methods"},
+					{"$request_method $sandbox_cors_credentials", "$sandbox_cors_headers"},
+					{"$request_method $sandbox_cors_credentials", "$sandbox_cors_max_age"},
+					{"$request_method $sandbox_cors_credentials", "$sandbox_cors_expose"},
+				} {
+					keys = append(keys, "map")
+					routingFind(t, http.children, append([]string{"map"}, args...)...)
+				}
+				hasAuth := false
+				for _, app := range apps {
+					hasAuth = hasAuth || app.Name == "auth"
+					keys = append(keys, "upstream", "server")
+					routingFind(t, http.children, "upstream", "app_"+app.Name)
+					routingServer(t, http, app.Name+"."+setting.name+".localhost")
+				}
+				var callbackMaps []nginxNode
+				var inspect func([]nginxNode)
+				inspect = func(children []nginxNode) {
+					for _, node := range children {
+						if node.words[0] == "map" && len(node.words) >= 3 && node.words[2] == "$sandbox_callback_origin" {
+							callbackMaps = append(callbackMaps, node)
+						}
+						inspect(node.children)
+					}
+				}
+				inspect(nodes)
+				if hasAuth {
+					keys = append(keys, "map", "server")
+					if len(callbackMaps) != 1 {
+						t.Fatalf("callback maps: got %d, want 1", len(callbackMaps))
+					}
+					callback := routingFind(t, http.children, "map", "$arg_state", "$sandbox_callback_origin")
+					routingKeys(t, callback.children, "default", `~^([a-z0-9-]+)\.`)
+					routingFind(t, callback.children, "default", fmt.Sprintf("http://auth.%s.localhost:%d", setting.name, setting.port))
+					routingFind(t, callback.children, `~^([a-z0-9-]+)\.`, fmt.Sprintf("http://$1.%s.localhost:%d", setting.name, setting.port))
+					routingServer(t, http, "localhost")
+				} else if len(callbackMaps) != 0 {
+					t.Fatalf("callback map without auth: %+v", callbackMaps)
+				}
+				routingKeys(t, http.children, keys...)
+			})
 		}
 	}
 }
