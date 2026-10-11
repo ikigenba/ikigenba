@@ -1,0 +1,360 @@
+package pages_test
+
+import (
+	"bytes"
+	"context"
+	"html/template"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/gdrive"
+	"github.com/ikigenba/ikigenba/gdrive/internal/pages"
+	"github.com/ikigenba/ikigenba/gdrive/internal/store"
+	"github.com/ikigenba/ikigenba/gdrive/internal/tools"
+)
+
+func fixedBanner(u page.User) page.Banner {
+	return page.Banner{Service: pages.ServiceName, Release: "sample-release", Commit: "abcdefg", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Trail: []page.Level{{Name: "discard", URL: "/discard"}}}
+}
+func templates(t *testing.T) *template.Template {
+	t.Helper()
+	ts, e := page.Templates().ParseFS(gdrive.Assets(), "*.html")
+	if e != nil {
+		t.Fatal(e)
+	}
+	return ts
+}
+func render(t *testing.T, name string, data any) string {
+	t.Helper()
+	var b bytes.Buffer
+	if e := templates(t).ExecuteTemplate(&b, name, data); e != nil {
+		t.Fatal(e)
+	}
+	return b.String()
+}
+func req(h http.Handler, method, path string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, "https://gdrive.example.test"+path, nil)
+	r.Header.Set("X-User-Id", "alice")
+	r.Header.Set("X-User-Email", "alice@example.test")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+func pageStore(t *testing.T) (*store.Store, *db.DB) {
+	t.Helper()
+	now := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
+	d, e := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "gdrive.db"), Migrations: gdrive.Migrations(), Now: func() time.Time { return now }})
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	return store.New(d, store.Config{Rand: &sequence{n: 150}, Now: func() time.Time { return now }}), d
+}
+func TestTemplateSurface(t *testing.T) {
+	// R-BBSQ-YUAM R-BD0N-CM1B R-BE8J-QDS0 R-L6YB-IMUK R-BGOC-HX9E
+	if pages.ServiceName != "gdrive" || pages.Description != "Google Drive files, pulled into and pushed from artifacts" || pages.MinuteLayout != "2006-01-02 15:04" || pages.SecondLayout != "2006-01-02 15:04:05 UTC" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
+		t.Fatal("constants")
+	}
+	t.Chdir(t.TempDir())
+	s, e := pages.Load()
+	if e != nil {
+		t.Fatal(e)
+	}
+	cases := []struct {
+		name string
+		data any
+	}{{"landing", pages.LandingData{Transfers: []pages.TransferRow{}}}, {"tools", pages.ToolsData{Tools: []pages.ToolRow{{Name: "fixture-tool", Description: "fixture-description"}}}}, {"about", pages.AboutData{Description: pages.Description}}, {"notfound", pages.NotFoundData{}}}
+	statuses := []string{store.StatusQueued, store.StatusRunning, store.StatusDone, store.StatusFailed}
+	reasons := []string{store.ReasonNotFound, store.ReasonForbidden, store.ReasonTooLarge, store.ReasonReconnect, store.ReasonProvider, store.ReasonArtifacts, store.ReasonInterrupted}
+	for _, status := range statuses {
+		cases = append(cases, struct {
+			name string
+			data any
+		}{"landing", pages.LandingData{Transfers: []pages.TransferRow{{ID: "fixture-id", Status: status, Direction: store.DirectionPull}}}})
+		for _, direction := range []string{store.DirectionPull, store.DirectionPush} {
+			for _, set := range []bool{false, true} {
+				v := pages.TransferView{ID: "fixture-id", Direction: direction, Status: status}
+				if set {
+					v.Format = "fixture-format"
+					v.Finished = "fixture-finished"
+					v.URL = "https://artifact.example.test"
+					v.Link = "https://drive.example.test"
+					v.ArtifactPage = "https://artifact.example.test/page"
+				}
+				cases = append(cases, struct {
+					name string
+					data any
+				}{"transfer", pages.TransferData{Transfer: v}})
+			}
+		}
+	}
+	for _, reason := range reasons {
+		cases = append(cases, struct {
+			name string
+			data any
+		}{"transfer", pages.TransferData{Transfer: pages.TransferView{Status: store.StatusFailed, Reason: reason}}})
+	}
+	for _, c := range cases {
+		for _, method := range []string{"GET", "HEAD"} {
+			w := httptest.NewRecorder()
+			s.Write(w, httptest.NewRequest(method, "/", nil), 207, c.name, c.data)
+			want := render(t, c.name, c.data)
+			if method == "HEAD" {
+				want = ""
+			}
+			if w.Code != 207 || w.Body.String() != want || len(w.Header().Values("Content-Type")) != 1 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+				t.Fatalf("%s %s response mismatch", method, c.name)
+			}
+		}
+	}
+}
+func TestPagesRoutesAndData(t *testing.T) {
+	// R-BHW8-VP03 R-78WB-LOZ9 R-7A47-ZGPY R-7BC4-D8GN R-BNZQ-SJPK R-7DRX-4RY1 R-BQFJ-K36Y R-BRNF-XUXN R-BVB5-365Q R-BWJ1-GXWF R-BU38-PEF1 R-BXQX-UPN4 R-BYYU-8HDT R-C06Q-M94I R-BJ45-9GQS R-L867-WEL9 R-L9E4-A6BY
+	st, d := pageStore(t)
+	s, e := pages.Load()
+	if e != nil {
+		t.Fatal(e)
+	}
+	p := filepath.Join(t.TempDir(), "services.json")
+	writeServices := func(base string) {
+		t.Helper()
+		if e := os.WriteFile(p, []byte(`{"services":[{"name":"artifacts","url":"`+base+`","description":"","socket":"","enabled":true,"mcp":true},{"name":"auth","url":"https://login.example.test/","description":"","socket":"","enabled":true,"mcp":true}]}`), 0600); e != nil {
+			t.Fatal(e)
+		}
+	}
+	writeServices("https://artifact.example.test/")
+	cfg := pages.Config{Banner: fixedBanner, Pages: s, ServicesPath: p, Store: st}
+	h := identity.Require(pages.Handler(cfg))
+	ctx := context.Background()
+	b := fixedBanner(page.User{Email: "alice@example.test", ProfileURL: "https://login.example.test/", LogoutURL: "https://login.example.test/logout"})
+	b.Trail = nil
+	if got := req(h, "GET", "/"); got.Code != 200 || got.Body.String() != render(t, "landing", pages.LandingData{Banner: b, Transfers: []pages.TransferRow{}}) {
+		t.Fatal("empty landing")
+	}
+	original, e := st.Add(ctx, store.Transfer{UserID: "alice", Direction: store.DirectionPull, Status: store.StatusRunning, File: "file-fixture", Name: "fixture-name", Kind: "file", Path: "fixture/path", ContentType: "text/plain"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	done, e := st.Finish(ctx, original.ID, store.Ending{Status: store.StatusDone, Bytes: 41, File: "file-fixture", Name: "fixture-name", URL: "https://artifact.example.test/files/fixture/path", Link: "https://drive.example.test/file", ArtifactID: "art_1234567890abcdef"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	other, e := st.Add(ctx, store.Transfer{UserID: "bob", Direction: store.DirectionPush, Status: store.StatusQueued, Path: "private/path", Name: "private-fixture"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	wantRow := pages.TransferRow{ID: done.ID, Direction: done.Direction, Status: done.Status, Reason: done.Reason, Name: done.Name, Link: done.Link, Path: done.Path, ArtifactPage: "https://artifact.example.test/" + done.ArtifactID, URL: done.URL, Bytes: done.Bytes, Started: done.Started.UTC().Format(time.RFC3339), StartedText: done.Started.UTC().Format(pages.MinuteLayout), Finished: done.Finished.UTC().Format(time.RFC3339), FinishedText: done.Finished.UTC().Format(pages.MinuteLayout)}
+	got := req(h, "GET", "/")
+	if got.Body.String() != render(t, "landing", pages.LandingData{Banner: b, Transfers: []pages.TransferRow{wantRow}}) {
+		t.Fatal("landing row data")
+	}
+	tb := b
+	tb.Trail = []page.Level{{Name: done.ID, URL: "/" + done.ID}}
+	wantView := pages.TransferView{ID: done.ID, Direction: done.Direction, Status: done.Status, Reason: done.Reason, File: done.File, Name: done.Name, Kind: done.Kind, Path: done.Path, ArtifactPage: wantRow.ArtifactPage, ContentType: done.ContentType, Format: done.Format, Bytes: done.Bytes, Started: wantRow.Started, StartedText: done.Started.UTC().Format(pages.SecondLayout), Finished: wantRow.Finished, FinishedText: done.Finished.UTC().Format(pages.SecondLayout), URL: done.URL, Link: done.Link}
+	if got := req(h, "GET", "/"+done.ID); got.Code != 200 || got.Body.String() != render(t, "transfer", pages.TransferData{Banner: tb, Transfer: wantView}) {
+		t.Fatal("transfer view")
+	}
+	for _, base := range []string{"https://changed.example.test/", ""} {
+		writeServices(base)
+		wantView.ArtifactPage = ""
+		if base != "" {
+			wantView.ArtifactPage = base + done.ArtifactID
+		}
+		if req(h, "GET", "/"+done.ID).Body.String() != render(t, "transfer", pages.TransferData{Banner: tb, Transfer: wantView}) {
+			t.Fatal("live services")
+		}
+	}
+	toolRows := []pages.ToolRow{}
+	for _, entry := range tools.Catalog() {
+		toolRows = append(toolRows, pages.ToolRow{Name: entry.Name, Description: entry.Description})
+	}
+	toolsBanner := b
+	toolsBanner.Trail = []page.Level{pages.ToolsLevel}
+	aboutBanner := b
+	aboutBanner.Trail = []page.Level{pages.AboutLevel}
+	for _, c := range []struct {
+		path, name string
+		data       any
+	}{{"/tools", "tools", pages.ToolsData{Banner: toolsBanner, Tools: toolRows}}, {"/about", "about", pages.AboutData{Banner: aboutBanner, Description: pages.Description}}} {
+		if got := req(h, "GET", c.path); got.Code != 200 || got.Body.String() != render(t, c.name, c.data) {
+			t.Fatal(c.path)
+		}
+	}
+	nfBanner := fixedBanner(page.User{Email: "alice@example.test", ProfileURL: "https://login.example.test/", LogoutURL: "https://login.example.test/logout"})
+	nf := render(t, "notfound", pages.NotFoundData{Banner: nfBanner})
+	paths := []string{"/nope", "/xfr_0000000000000000", "/" + other.ID, "/" + done.ID[:4] + strings.ToUpper(done.ID[4:]), "/" + done.ID[:len(done.ID)-1], "/" + done.ID + "a", "/" + done.ID + "/", "/%78" + done.ID[1:]}
+	for _, path := range paths {
+		if got := req(h, "GET", path); got.Code != 404 || got.Body.String() != nf {
+			t.Fatalf("notfound %s", path)
+		}
+	}
+	_, e = st.Finish(ctx, other.ID, store.Ending{Status: store.StatusFailed, Reason: store.ReasonInterrupted})
+	if e != nil {
+		t.Fatal(e)
+	}
+	newer, err := st.Add(ctx, store.Transfer{UserID: "alice", Direction: store.DirectionPull, Status: store.StatusRunning, Path: "newer/path"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Finish(ctx, newer.ID, store.Ending{Status: store.StatusDone}); err != nil {
+		t.Fatal(err)
+	}
+	if _, e = st.Prune(ctx, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), 1, 1); e != nil {
+		t.Fatal(e)
+	}
+	if got := req(h, "GET", "/"+done.ID); got.Code != 404 || got.Body.String() != nf {
+		t.Fatal("pruned")
+	}
+	d.SetFailing(true)
+	for _, path := range []string{"/", "/tools", "/about", "/" + done.ID} {
+		if got := req(h, "POST", path); got.Code != 405 || got.Header().Get("Allow") != "GET, HEAD" || got.Body.Len() != 0 {
+			t.Fatal("method", path)
+		}
+	}
+	for _, path := range []string{"/", "/" + done.ID} {
+		for _, method := range []string{"GET", "HEAD"} {
+			got := req(h, method, path)
+			want := store.Unreachable + "\n"
+			if method == "HEAD" {
+				want = ""
+			}
+			if got.Code != 503 || got.Body.String() != want || got.Header().Get("Content-Type") != "text/plain; charset=utf-8" || len(got.Header().Values("Content-Type")) != 1 {
+				t.Fatal("unavailable", path)
+			}
+		}
+	}
+	for _, path := range []string{"/tools", "/about", "/nope", "/%78" + done.ID[1:], "/" + done.ID + "/"} {
+		get := req(h, "GET", path)
+		head := req(h, "HEAD", path)
+		if head.Code != get.Code || head.Header().Get("Content-Type") != get.Header().Get("Content-Type") || head.Body.Len() != 0 || get.Header().Get("Set-Cookie") != "" {
+			t.Fatal("head", path)
+		}
+	}
+	if got := req(h, "DELETE", "/nope"); got.Code != 404 || got.Body.String() != nf {
+		t.Fatal("unknown method")
+	}
+	d.SetFailing(false)
+	if ts, e := st.List(ctx, "alice"); e != nil || len(ts) != 1 {
+		t.Fatal("pages changed transfers")
+	}
+	cfg.ServicesPath = ""
+	var seen page.User
+	cfg.Banner = func(u page.User) page.Banner { seen = u; return fixedBanner(u) }
+	r := httptest.NewRequest("GET", "https://gdrive.sbx.ikigenba.dev:443/about", nil)
+	r.Header.Set("X-User-Id", "alice")
+	r.Header.Set("X-User-Email", "fixture-email")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	identity.Require(pages.Handler(cfg)).ServeHTTP(httptest.NewRecorder(), r)
+	if seen != (page.User{Email: "fixture-email", ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"}) {
+		t.Fatal(seen)
+	}
+}
+
+type sequence struct{ n byte }
+
+func (s *sequence) Read(p []byte) (int, error) {
+	for i := range p {
+		s.n++
+		p[i] = s.n
+	}
+	return len(p), nil
+}
+
+func TestTransferStateProjectionAndReadOnly(t *testing.T) {
+	// R-7A47-ZGPY R-7BC4-D8GN R-7DRX-4RY1 R-L9E4-A6BY R-L867-WEL9
+	_, d := pageStore(t)
+	now := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("fixture", 3600))
+	st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: &sequence{n: 150}})
+	ctx := context.Background()
+	queued, e := st.Add(ctx, store.Transfer{UserID: "alice", Direction: store.DirectionPush, Status: store.StatusQueued, File: "queued-file", Name: "queued-name", Kind: "file", Path: "queued/path", ContentType: "text/plain"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	now = now.Add(time.Hour)
+	failed, e := st.Add(ctx, store.Transfer{UserID: "alice", Direction: store.DirectionPull, Status: store.StatusRunning, File: "failed-file", Name: "failed-name", Kind: "document", Path: "failed/path", ContentType: "application/pdf", Format: "application/pdf"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	failed, e = st.Finish(ctx, failed.ID, store.Ending{Status: store.StatusFailed, Reason: store.ReasonReconnect, Bytes: 19})
+	if e != nil {
+		t.Fatal(e)
+	}
+	done, e := st.Add(ctx, store.Transfer{UserID: "alice", Direction: store.DirectionPull, Status: store.StatusRunning, File: "done-file", Name: "done-name", Kind: "drawing", Path: "done/path", ContentType: "image/png", Format: "image/png"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	done, e = st.Finish(ctx, done.ID, store.Ending{Status: store.StatusDone, Bytes: 27, URL: "https://artifact.example.test/files/done/path", Link: "https://drive.example.test/done"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	now = now.Add(time.Hour)
+	running, e := st.Add(ctx, store.Transfer{UserID: "alice", Direction: store.DirectionPull, Status: store.StatusRunning, File: "running-file", Name: "running-name", Kind: "file", Path: "running/path", ContentType: "text/plain"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if done.ID <= failed.ID {
+		t.Fatal("fixture tie order")
+	}
+	before, e := st.List(ctx, "alice")
+	if e != nil {
+		t.Fatal(e)
+	}
+	s, e := pages.Load()
+	if e != nil {
+		t.Fatal(e)
+	}
+	h := identity.Require(pages.Handler(pages.Config{Banner: fixedBanner, Pages: s, Store: st}))
+	b := fixedBanner(page.User{Email: "alice@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
+	b.Trail = nil
+	rows := []pages.TransferRow{}
+	for _, tf := range []store.Transfer{running, done, failed, queued} {
+		row := pages.TransferRow{ID: tf.ID, Direction: tf.Direction, Status: tf.Status, Reason: tf.Reason, Name: tf.Name, Link: tf.Link, Path: tf.Path, URL: tf.URL, Bytes: tf.Bytes, Started: tf.Started.UTC().Format(time.RFC3339), StartedText: tf.Started.UTC().Format(pages.MinuteLayout)}
+		view := pages.TransferView{ID: tf.ID, Direction: tf.Direction, Status: tf.Status, Reason: tf.Reason, File: tf.File, Name: tf.Name, Kind: tf.Kind, Path: tf.Path, ContentType: tf.ContentType, Format: tf.Format, Bytes: tf.Bytes, Started: tf.Started.UTC().Format(time.RFC3339), StartedText: tf.Started.UTC().Format(pages.SecondLayout), URL: tf.URL, Link: tf.Link}
+		if !tf.Finished.IsZero() {
+			row.Finished = tf.Finished.UTC().Format(time.RFC3339)
+			row.FinishedText = tf.Finished.UTC().Format(pages.MinuteLayout)
+			view.Finished = tf.Finished.UTC().Format(time.RFC3339)
+			view.FinishedText = tf.Finished.UTC().Format(pages.SecondLayout)
+		}
+		rows = append(rows, row)
+		tb := b
+		tb.Trail = []page.Level{{Name: tf.ID, URL: "/" + tf.ID}}
+		get := req(h, "GET", "/"+tf.ID)
+		if get.Code != 200 || get.Body.String() != render(t, "transfer", pages.TransferData{Banner: tb, Transfer: view}) {
+			t.Fatal("state projection", tf.Status)
+		}
+		head := req(h, "HEAD", "/"+tf.ID)
+		if head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 || get.Header().Get("Set-Cookie") != "" {
+			t.Fatal("transfer HEAD", tf.Status)
+		}
+	}
+	get := req(h, "GET", "/")
+	if get.Code != 200 || get.Body.String() != render(t, "landing", pages.LandingData{Banner: b, Transfers: rows}) {
+		t.Fatal("multiple rows in store order")
+	}
+	head := req(h, "HEAD", "/")
+	if head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 {
+		t.Fatal("landing HEAD")
+	}
+	for _, path := range []string{"/", "/about", "/tools", "/" + done.ID, "/unknown"} {
+		for _, method := range []string{"GET", "HEAD", "POST"} {
+			if req(h, method, path).Header().Get("Set-Cookie") != "" {
+				t.Fatal("cookie", method, path)
+			}
+		}
+	}
+	after, e := st.List(ctx, "alice")
+	if e != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("pages changed records", before, after, e)
+	}
+}
