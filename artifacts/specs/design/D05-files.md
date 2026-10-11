@@ -4,7 +4,7 @@ The bytes on the wire: `internal/files`, which answers every request for `/files
 
 ## The address
 
-An artifact's address is artifacts' **base** followed by `/files/` and its path. The base is the `URL` of the services file's entry `artifacts`, without a trailing `/`; with no such entry, the request's forwarded scheme (`https` unless `X-Forwarded-Proto` says `http`) and its `Host`. Through the MCP gateway a request's `Host` is the gateway's backend name, so on a host and in a sandbox the services file decides, as in webhooks. `urls` also builds auth's address, which the pages put in the banner (`D06-pages`), and carries the base on a context to the tools (`D03-serve`, `D08-tools`).
+An artifact's address is artifacts' **base** followed by `/files/` and its path. The base is the `URL` of the services file's entry `artifacts`, without a trailing `/`; with no such entry, the request's forwarded scheme (`https` unless `X-Forwarded-Proto` says `http`) and its `Host`. Through the MCP gateway a request's `Host` is the gateway's backend name, so on a host and in a sandbox the services file decides, as in webhooks. `urls` also builds auth's address, which the pages put in the banner (`D06-pages`), and carries the base on a context to the tools (`D03-serve`, `D08-tools`). `urls.Configured` is the base with no request fallback, the services file's entry alone, or the empty string with none: `import`'s plan is built on it (`D09-import`), so with no entry its `url` is `/files/<path>` alone.
 
 ## The path on the wire
 

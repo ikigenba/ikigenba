@@ -4,7 +4,7 @@ The artifact events: the three kinds of event artifacts emits on the suite's eve
 
 ## The three artifact events
 
-An artifact's life is told by `artifact.created`, `artifact.replaced` and `artifact.deleted`. Each is made by the one change that makes it: a `PUT /files/<path>` or an `import` that creates the path or replaces its bytes (`D05-files`, `D09-import`), a `DELETE /files/<path>` or a `delete` call (`D05-files`, `D08-tools`), and the deletions a sweep of expired artifacts makes (`D03-serve`). Each event carries four attributes, in this order in its declaration: `artifact`, the artifact's id; `path`; `bytes`, the count of its bytes as an integer; and `content_type`, as stored. Nothing else travels: no byte of a body, in whole or part, no email, no hash and no request header. A consumer that wants the bytes fetches `/files/<path>` with its own credential.
+An artifact's life is told by `artifact.created`, `artifact.replaced` and `artifact.deleted`. Each is made by the one change that makes it: a `PUT /files/<path>` that creates the path or replaces its bytes (`D05-files`), a `DELETE /files/<path>` or a `delete` call (`D05-files`, `D08-tools`), and the deletions a sweep of expired artifacts makes (`D03-serve`). Each event carries four attributes, in this order in its declaration: `artifact`, the artifact's id; `path`; `bytes`, the count of its bytes as an integer; and `content_type`, as stored. Nothing else travels: no byte of a body, in whole or part, no email, no hash and no request header. A consumer that wants the bytes fetches `/files/<path>` with its own credential.
 
 Every artifact event goes two ways at once, under the same name, attributes, request id and user: recorded in the trail through the run's writer, and emitted on the bus through the run's emitter. It takes the context of the change: for a request, its request id, its caller and the event cause `events.Middleware` read from it; for a swept artifact, its owner, an empty request id and no cause (`D03-serve`).
 
@@ -14,7 +14,7 @@ A record the start's reconcile removes because its file is gone (`D03-serve`, `D
 
 ## When an event is made
 
-An event is made after the change it tells of is committed, never before, and never for a change that did not happen: a refused or failed put, delete or import makes none. A crash between the commit and the emit loses the event while the change stands. This is the window every sibling accepts, since appkit's emitter keeps no outbox; it is stated, not prevented.
+An event is made after the change it tells of is committed, never before, and never for a change that did not happen: a refused or failed put or delete makes none, and an `import`, which changes nothing (`D09-import`), makes none either. A crash between the commit and the emit loses the event while the change stands. This is the window every sibling accepts, since appkit's emitter keeps no outbox; it is stated, not prevented.
 
 ## The declarations
 
