@@ -1,0 +1,68 @@
+{{/* The landing page at GET /: what the service is, every artifact in the
+     space and the bytes they hold. The root of the hierarchy: .Banner's
+     .Trail is empty, so the banner's breadcrumb holds only the service.
+     Shown only to a signed-in user; a guest is sent to sign in. Read-only:
+     no form but the banner's sign out. Data: .Banner (a page.Banner, for
+     banner and footer); .Artifacts, every artifact in the space (whoever
+     owns it), sorted by path, each with .ID (its art_ id, "art_" and 16
+     hex), .Path (its path under /files/, no leading slash), .Bytes (int64,
+     its size in bytes), .ContentType (its content type, as stored), .Owner
+     (the owner's email), .Modified and .ModifiedText (RFC 3339 UTC to the
+     second, and UTC to the minute, "2026-10-05 09:00"), and .Expires and
+     .ExpiresText (likewise; both empty when it never expires); .TotalBytes
+     (int64, the sum of .Bytes over every artifact in the space). Bytes are
+     shown as the plain integer, never a humanised size. Hooks: title
+     "artifacts"; h1 with text "artifacts"; p#summary.lede (text "Binary
+     files agents and services share. An agent puts a file at a path with
+     curl and reads it back the same way; everyone signed in can read every
+     artifact here."); section#artifacts with h2 "Artifacts" and either,
+     when .Artifacts is empty, div#no-artifacts.empty holding h3 "No
+     artifacts yet" and a p (text "A file an agent puts under /files/ with
+     curl, or brings in with the import tool, shows up here.", /files/ and
+     import each in a code element), or, in the section's header,
+     p#total (text "<.TotalBytes> bytes held in all.") and
+     table#artifact-list whose th read Path, Bytes, Content type, Owner,
+     Modified, Expires, with one tr[data-artifact=<.ID>] per artifact
+     holding td.artifact-path > a.artifact-link (href "/<.ID>", .Path in a
+     code element), td.artifact-bytes.num (.Bytes), td.artifact-type
+     (.ContentType in a code element), td.artifact-owner (.Owner),
+     td.artifact-modified holding time[datetime=<.Modified>] (text
+     .ModifiedText), and td.artifact-expires holding, only when .Expires is
+     not empty, time[datetime=<.Expires>] (text .ExpiresText); a
+     #about-link (text "About artifacts") whose href is "/about". No script
+     but appkit's /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>artifacts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>artifacts</h1>
+<p id="summary" class="lede">Binary files agents and services share. An agent puts a file at a path with curl and reads it back the same way; everyone signed in can read every artifact here.</p>
+<section id="artifacts" class="card flush" aria-labelledby="artifacts-title">
+<header><div><h2 id="artifacts-title">Artifacts</h2>{{if .Artifacts}}<p id="total">{{.TotalBytes}} bytes held in all.</p>{{end}}</div></header>
+{{if .Artifacts}}<div class="table-scroll">
+<table id="artifact-list">
+<thead><tr><th>Path</th><th class="num">Bytes</th><th>Content type</th><th>Owner</th><th>Modified</th><th>Expires</th></tr></thead>
+<tbody>
+{{range .Artifacts}}<tr data-artifact="{{.ID}}">
+<td class="artifact-path"><a class="artifact-link" href="/{{.ID}}"><code>{{.Path}}</code></a></td>
+<td class="artifact-bytes num">{{.Bytes}}</td>
+<td class="artifact-type"><code>{{.ContentType}}</code></td>
+<td class="artifact-owner">{{.Owner}}</td>
+<td class="artifact-modified"><time datetime="{{.Modified}}">{{.ModifiedText}}</time></td>
+<td class="artifact-expires">{{if .Expires}}<time datetime="{{.Expires}}">{{.ExpiresText}}</time>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-artifacts" class="empty">
+<h3 class="text-md">No artifacts yet</h3>
+<p>A file an agent puts under <code>/files/</code> with curl, or brings in with the <code>import</code> tool, shows up here.</p>
+</div>{{end}}
+</section>
+<p><a id="about-link" href="/about">About artifacts</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

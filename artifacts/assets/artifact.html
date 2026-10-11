@@ -1,0 +1,60 @@
+{{/* One artifact at GET /<id>: its metadata in full and a download of its
+     bytes. Shown only to a signed-in user, whoever owns the artifact; a
+     guest is sent to sign in. An id that names no artifact is the
+     not-found page. Read-only: no form but the banner's sign out, no
+     delete control. One level below the root: .Banner's .Trail is the one
+     level <.Artifact.Path> at /<.Artifact.ID>. Data: .Banner (a
+     page.Banner, for banner and footer); .Artifact, with .ID (its art_ id,
+     "art_" and 16 hex), .Path (its path under /files/, no leading slash),
+     .URL (the absolute /files/<path> URL on artifacts' host, where its
+     bytes are got), .Bytes (int64, its size in bytes), .ContentType (its
+     content type, as stored), .SHA256 (the sha256 of its bytes, 64
+     lowercase hex), .Owner (the owner's email), .Created and .CreatedText
+     (RFC 3339 UTC to the second, and the same as shown, "2006-01-02
+     15:04:05 UTC"), .Modified and .ModifiedText (likewise), and .Expires
+     and .ExpiresText (likewise; both empty when it never expires). Bytes
+     are shown as the plain integer, never a humanised size. Hooks: title
+     "<.Path> · artifacts"; h1 with text .Artifact.Path;
+     section#artifact-card with h2 "Artifact", a p in its header naming
+     .ContentType (in a code element) and "<.Bytes> bytes", and
+     a#download.button[download] (href .URL, text "Download"); then
+     dl#artifact.kv holding, in this order, dt "ID" then dd#artifact-id
+     (.ID in a code element), dt "Path" then dd#artifact-path (.Path in a
+     code element), dt "URL" then dd#artifact-url (.URL in a code element),
+     dt "Bytes" then dd#artifact-bytes (.Bytes), dt "Content type" then
+     dd#artifact-type (.ContentType in a code element), dt "SHA-256" then
+     dd#artifact-sha256 (.SHA256 in a code element), dt "Owner" then
+     dd#artifact-owner (.Owner), dt "Created" then dd#artifact-created
+     holding time[datetime=<.Created>] (text .CreatedText), dt "Modified"
+     then dd#artifact-modified holding time[datetime=<.Modified>] (text
+     .ModifiedText), and dt "Expires" then dd#artifact-expires holding
+     time[datetime=<.Expires>] (text .ExpiresText) or, when .Expires is
+     empty, dd#artifact-expires.muted with text "never". No script but
+     appkit's /_appkit/feedback.js. */}}
+{{define "artifact"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Artifact.Path}} · artifacts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Artifact}}<h1>{{.Path}}</h1>
+<section id="artifact-card" class="card" aria-labelledby="artifact-title">
+<header><h2 id="artifact-title">Artifact</h2><p><code>{{.ContentType}}</code>, {{.Bytes}} bytes</p><div class="actions"><a id="download" class="button secondary small" href="{{.URL}}" download><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg>Download</a></div></header>
+<dl id="artifact" class="kv">
+<dt>ID</dt><dd id="artifact-id"><code>{{.ID}}</code></dd>
+<dt>Path</dt><dd id="artifact-path"><code>{{.Path}}</code></dd>
+<dt>URL</dt><dd id="artifact-url"><code>{{.URL}}</code></dd>
+<dt>Bytes</dt><dd id="artifact-bytes">{{.Bytes}}</dd>
+<dt>Content type</dt><dd id="artifact-type"><code>{{.ContentType}}</code></dd>
+<dt>SHA-256</dt><dd id="artifact-sha256"><code>{{.SHA256}}</code></dd>
+<dt>Owner</dt><dd id="artifact-owner">{{.Owner}}</dd>
+<dt>Created</dt><dd id="artifact-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+<dt>Modified</dt><dd id="artifact-modified"><time datetime="{{.Modified}}">{{.ModifiedText}}</time></dd>
+<dt>Expires</dt>{{if .Expires}}<dd id="artifact-expires"><time datetime="{{.Expires}}">{{.ExpiresText}}</time></dd>{{else}}<dd id="artifact-expires" class="muted">never</dd>{{end}}
+</dl>
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

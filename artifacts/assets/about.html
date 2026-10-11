@@ -1,0 +1,48 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one level
+     about at /about. Shown only to a signed-in user;
+     a guest is sent to sign in. Data: .Banner (a
+     page.Banner, for banner and footer; its .Service is the name and its
+     .Release and .Commit give the version row); .Description (the service's one-line
+     description, the manifest's). Hooks: title "About artifacts"; h1 with text
+     "About artifacts"; dl#about.kv holding dt "Name" then dd#about-name
+     (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release and .Banner.Commit,
+     present even when empty), and dt "Description" then
+     dd#about-description (.Description); then section#how.card with h2
+     "How it works" and four p: "Artifacts are files kept by path. An agent
+     or a service puts a file with an HTTP PUT to /files/<path> and gets it
+     back with a GET, using curl and the caller's bearer token." (/files/<path>
+     in a code element); "The MCP tools carry metadata only: list, show,
+     delete and import. The bytes never travel through the gateway." (each
+     tool name in a code element); "Everyone signed in can read every
+     artifact. Only an artifact's owner can replace it or delete it.";
+     "A PUT that carries an X-Artifact-Expires header sets when the artifact
+     expires; once that time passes it is gone. Without one it is kept until
+     it is deleted." (X-Artifact-Expires in a code element). No section of
+     the landing page's. No script but appkit's /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About artifacts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About artifacts</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>Artifacts are files kept by path. An agent or a service puts a file with an HTTP PUT to <code>/files/&lt;path&gt;</code> and gets it back with a GET, using curl and the caller's bearer token.</p>
+<p>The MCP tools carry metadata only: <code>list</code>, <code>show</code>, <code>delete</code> and <code>import</code>. The bytes never travel through the gateway.</p>
+<p>Everyone signed in can read every artifact. Only an artifact's owner can replace it or delete it.</p>
+<p>A PUT that carries an <code>X-Artifact-Expires</code> header sets when the artifact expires; once that time passes it is gone. Without one it is kept until it is deleted.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
