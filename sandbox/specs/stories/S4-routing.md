@@ -117,7 +117,7 @@ Postconditions:
 
 ## Google sends a browser back to the bare localhost address
 
-Google accepts a sign-in redirect to `http://localhost:<port>/...` but never to a name under `localhost`, so auth asks Google to send the browser back to `http://localhost:7400`, the origin it finds in `IKIGENBA_CALLBACK_URL`. In a sandbox that holds `auth`, nginx answers every request whose host is bare `localhost:7400`, whatever its path, by sending the browser on to the same path and query at auth's own name.
+Google accepts a sign-in redirect to `http://localhost:<port>/...` but never to a name under `localhost`, so an app that sends a browser to Google asks Google to send it back to `http://localhost:7400`, the origin it finds in `IKIGENBA_CALLBACK_URL`, and auth does so to sign a user in. In a sandbox that holds `auth`, nginx answers every request whose host is bare `localhost:7400`, whatever its path, by sending the browser on to the same path and query at auth's own name, unless the request's `state` query parameter names another app (below).
 
 Request:
 
@@ -145,6 +145,37 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No app received the request, and no `/check` subrequest was made; the browser's next request goes to auth.
+
+## Google sends a browser back to the bare localhost address for another app
+
+An app other than auth that sends a browser to Google begins its `state` value with its own name and a dot, such as `connections.7Kq2`, so the browser comes back to it. When the `state` query parameter of a request for bare `localhost:7400` begins with a name shaped as an app's name is, lowercase letters, digits and `-`, followed by a dot, nginx sends the browser on to the same path and query at that app's own name, `<app>.wip.localhost:7400`. nginx reads the name from `state` alone and keeps no list of apps, so a name the checkout holds no app for is sent on just the same, and its own name answers 404 as a host the sandbox does not serve. A `state` that does not begin so, or no `state`, sends the browser to auth as above.
+
+Request:
+
+```
+$ curl -si 'http://localhost:7400/google/callback?code=4/0Ab&state=connections.7Kq2'
+```
+
+```
+$ curl -si 'http://localhost:7400/google/callback?code=4/0Ab&state=other'
+```
+
+Response:
+
+```
+HTTP/1.1 302 Moved Temporarily
+Location: http://connections.wip.localhost:7400/google/callback?code=4/0Ab&state=connections.7Kq2
+```
+
+Status 302. For the second form `Location` is `http://auth.wip.localhost:7400/google/callback?code=4/0Ab&state=other`. The body is not fixed.
+
+Preconditions:
+
+- `wip` is up with `auth`, `connections` and `dummy`.
+
+Postconditions:
+
+- Nothing has changed. No app received the request, and no `/check` subrequest was made; the browser's next request goes to connections for the first form and to auth for the second.
 
 ## A browser that has not signed in reaches an app
 
@@ -1163,7 +1194,7 @@ Postconditions:
 
 ## A browser asks for the bare localhost address in a sandbox without auth
 
-Bare `localhost:7400` exists only to hand a browser back from Google to auth. A sandbox without `auth` has no sign-in to return to, so nginx answers that host as it answers a host the sandbox does not serve, whatever the path.
+Bare `localhost:7400` exists only to hand a browser back from Google, and only in a sandbox that holds `auth`. A sandbox without `auth` has no sign-in to return to, so nginx answers that host as it answers a host the sandbox does not serve, whatever the path.
 
 Request:
 
