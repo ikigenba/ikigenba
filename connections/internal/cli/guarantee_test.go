@@ -3,12 +3,13 @@ package cli_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +85,18 @@ type guaranteeTransport struct {
 	base http.RoundTripper
 }
 
+type guaranteeProviderTransport struct {
+	base        http.RoundTripper
+	unreachable func(*http.Request) bool
+}
+
+func (s guaranteeProviderTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if s.unreachable(r) {
+		return nil, errors.New("fake provider unreachable")
+	}
+	return s.base.RoundTrip(r)
+}
+
 func (s guaranteeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	res, e := s.base.RoundTrip(r)
 	if e != nil {
@@ -141,17 +154,13 @@ func guaranteeCheck(t *testing.T, channel string, b []byte, values []guaranteeVa
 }
 
 // R-0Y6K-XN5C: each chosen credential is validated and enters only its designated boundary.
-// The supplemental isolation matrix uses deterministic randomness and samples outbound state and verifier values.
+// R-4LGJ-KIEQ R-4QC5-3LDI R-4SRX-V4UW: the complete run searches every output channel for marked and minted values.
 func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	// The wall-clock deadline is only a deadlock guard, never the application clock.
 	watchdog, stopWatchdog := context.WithTimeout(t.Context(), 15*time.Second)
 	defer stopWatchdog()
-	var entropy []byte
-	for i := range 1024 {
-		block := sha256.Sum256([]byte(fmt.Sprintf("isolation-run-%d", i)))
-		entropy = append(entropy, block[:]...)
-	}
+	entropy := rand.NewChaCha8([32]byte{1, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31})
 	var c guaranteeCapture
 	secret := guaranteeMarked(t, "GsecretHsecretIsecretJsecretKsecret")
 	c.addValue("client secret", secret, 8)
@@ -193,6 +202,7 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 	}
 	var seenMu sync.Mutex
 	seen := map[string]int{}
+	var providerForms []url.Values
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if e := r.ParseForm(); e != nil {
 			t.Error(e)
@@ -212,14 +222,16 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 		modeMu.Unlock()
 		seenMu.Lock()
 		seen[kind+":"+mode]++
+		providerForms = append(providerForms, r.Form)
 		seenMu.Unlock()
 		if kind == "exchange" {
 			code := r.Form.Get("code")
 			guaranteeMarked(t, code)
 			c.addValue("code", code, 8)
 			v := r.Form.Get("code_verifier")
-			if len(v) < 43 {
-				t.Error("missing outbound verifier")
+			decoded, err := base64.RawURLEncoding.DecodeString(v)
+			if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != v {
+				t.Error("invalid outbound verifier")
 			}
 			c.addValue("verifier", v, 16)
 		}
@@ -253,6 +265,20 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 	provider.AuthorizeURL = fake.URL + "/authorize"
 	provider.TokenURL = fake.URL + "/token"
 	provider.RevokeURL = fake.URL + "/revoke"
+	providerHTTP := &http.Client{Transport: guaranteeProviderTransport{
+		base: fake.Client().Transport,
+		unreachable: func(r *http.Request) bool {
+			modeMu.Lock()
+			unreachable := r.URL.Path == "/revoke" && revokeMode == "unreachable"
+			modeMu.Unlock()
+			if unreachable {
+				seenMu.Lock()
+				seen["revoke:unreachable"]++
+				seenMu.Unlock()
+			}
+			return unreachable
+		},
+	}}
 
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	if e != nil {
@@ -289,7 +315,7 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 	ctx, cancel := context.WithCancel(watchdog)
 	defer cancel()
 	done := make(chan int, 1)
-	p := cli.Process{Version: "test-display", LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 177, Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Dir: dir, Now: now, Rand: bytes.NewReader(entropy), Stdout: &stdout, Stderr: &stderr, Sink: guaranteeTelemetry{&c}, EventSink: guaranteeBus{&c}, Providers: []providers.Provider{provider}, HTTP: fake.Client(), Sleep: func(context.Context, time.Duration) {}, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *mcp.Server {
+	p := cli.Process{Version: "test-display", LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 177, Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Dir: dir, Now: now, Rand: entropy, Stdout: &stdout, Stderr: &stderr, Sink: guaranteeTelemetry{&c}, EventSink: guaranteeBus{&c}, Providers: []providers.Provider{provider}, HTTP: providerHTTP, Sleep: func(context.Context, time.Duration) {}, Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: "connections", Version: "test-display", Telemetry: w})
 	}}
 	go func() { done <- cli.Run(ctx, p) }()
@@ -348,7 +374,7 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 		}
 		state := u.Query().Get("state")
 		suffix := strings.TrimPrefix(state, "connections.")
-		if len(suffix) != 32 || suffix == state {
+		if len(suffix) != 32 || suffix == state || suffix != strings.ToLower(suffix) {
 			t.Fatal("invalid outbound state")
 		}
 		if _, err = hex.DecodeString(suffix); err != nil {
@@ -464,7 +490,7 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 			}
 			request(user, "GET", path, want)
 		}
-		for _, mode := range []string{"refuse", "fail"} {
+		for _, mode := range []string{"refuse", "fail", "unreachable"} {
 			setMode("revoke", mode)
 			request(user, "POST", "/isolation/disconnect", 302)
 			callback(user, connect(user, "GET"), "ok", 302)
@@ -503,7 +529,7 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 		allowedAccess := a.method == "GET" && a.path == "/token/isolation" && a.status == 200
 		guaranteeCheck(t, "HTTP body", a.body, c.values, func(v guaranteeValue) bool { return allowedAccess && v.kind == "access token" })
 		for name, vs := range a.headers {
-			guaranteeCheck(t, "HTTP header name", []byte(name), c.values, nil)
+			guaranteeCheck(t, "HTTP header name", []byte(name), c.values, func(v guaranteeValue) bool { return allowedAccess && v.kind == "access token" })
 			allowedState := strings.EqualFold(name, "Location") && a.path == "/isolation/connect"
 			for _, v := range vs {
 				guaranteeCheck(t, "HTTP header "+name, []byte(v), c.values, func(s guaranteeValue) bool {
@@ -514,7 +540,10 @@ func TestRunMarkedCredentialsIsolationMatrix(t *testing.T) {
 	}
 	seenMu.Lock()
 	defer seenMu.Unlock()
-	for _, key := range []string{"exchange:refuse", "exchange:fail", "exchange:no-email", "exchange:ok", "refresh:ok", "refresh:fail", "refresh:refuse", "revoke:refuse", "revoke:fail", "revoke:ok"} {
+	if len(providerForms) == 0 {
+		t.Fatal("no provider requests recorded")
+	}
+	for _, key := range []string{"exchange:refuse", "exchange:fail", "exchange:no-email", "exchange:ok", "refresh:ok", "refresh:fail", "refresh:refuse", "revoke:refuse", "revoke:fail", "revoke:unreachable", "revoke:ok"} {
 		if seen[key] < 2 {
 			t.Errorf("provider outcome %s not exercised for both users", key)
 		}

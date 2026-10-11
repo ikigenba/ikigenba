@@ -3,7 +3,6 @@ package broker
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -67,12 +66,6 @@ type Broker struct{ cfg Config }
 
 // New provides the declared connection contract.
 func New(cfg Config) *Broker {
-	if cfg.Now == nil {
-		cfg.Now = time.Now
-	}
-	if cfg.Rand == nil {
-		cfg.Rand = rand.Reader
-	}
 	return &Broker{cfg: cfg}
 }
 

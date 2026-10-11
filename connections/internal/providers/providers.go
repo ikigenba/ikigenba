@@ -210,7 +210,7 @@ func decodeToken(body []byte, exchange bool) (tokenResponse, bool) {
 		return tokenResponse{}, false
 	}
 	r, ok := new(big.Rat).SetString(number.String())
-	if !ok || !r.IsInt() || r.Sign() <= 0 || !r.Num().IsInt64() {
+	if !ok || !r.IsInt() || r.Sign() <= 0 || r.Num().Cmp(big.NewInt(31536000)) > 0 {
 		return tokenResponse{}, false
 	}
 	t.seconds = r.Num().Int64()

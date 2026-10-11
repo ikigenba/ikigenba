@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -263,28 +262,15 @@ func TestIDTokenAccount(t *testing.T) {
 	}
 }
 
-// R-A3R7-TNRU R-AH64-14XH
-func TestLargeExpiryAndRevocationBody(t *testing.T) {
-	now := time.Unix(1800000000, 123)
-	id := jwt(`{"email":"e","sub":"s"}`)
-	response := fmt.Sprintf(`{"access_token":"access","refresh_token":"refresh","expires_in":10000000000,"id_token":%q}`, id)
-	c := providers.Client{Provider: providers.Table()[0], Now: func() time.Time { return now }, HTTP: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(response)), Header: make(http.Header), Request: r}, nil
-	})}}
-	for _, call := range []func() (providers.Grant, error){func() (providers.Grant, error) {
-		return c.Exchange(context.Background(), "code", "verifier", "https://callback.test")
-	}, func() (providers.Grant, error) { return c.Refresh(context.Background(), "refresh") }} {
-		g, e := call()
-		if e != nil {
-			t.Fatal(e)
-		}
-		if g.Expires.Unix() != now.Unix()+10000000000 || g.Expires.Location() != time.UTC || g.Expires.Nanosecond() != 0 {
-			t.Fatal(g.Expires)
-		}
-	}
-	c.HTTP = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+// R-A3R7-TNRU
+func TestRevocationUnreadableBody(t *testing.T) {
+	p := providers.Table()[0]
+	p.AuthorizeURL = "https://provider.invalid/authorize"
+	p.TokenURL = "https://provider.invalid/token"
+	p.RevokeURL = "https://provider.invalid/revoke"
+	c := providers.Client{Provider: p, HTTP: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: errorBody{}, Header: make(http.Header), Request: r}, nil
-	})}
+	})}}
 	if e := c.Revoke(context.Background(), "token"); e != nil {
 		t.Fatal(e)
 	}

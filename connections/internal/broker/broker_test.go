@@ -97,14 +97,19 @@ func (f *fixture) seed(t *testing.T, expiry time.Time) store.Connection {
 	return c
 }
 func TestBegin(t *testing.T) {
-	// R-RKIP-GM3O R-RLQL-UDUD R-RO6E-LXBR R-RPEA-ZP2G
+	// R-G8HF-MKJM R-RKIP-GM3O R-RLQL-UDUD R-RO6E-LXBR R-RPEA-ZP2G
 	f := setup(t)
 	rnd := &recordReader{data: append(bytes.Repeat([]byte{90}, 16), bytes.Repeat([]byte{91}, 32)...)}
 	f.cfg.Rand = rnd
 	duplicate := f.cfg.Clients[0]
 	duplicate.Provider.AuthorizeURL = "https://second.example/authorize"
 	f.cfg.Clients = append(f.cfg.Clients, duplicate)
-	f.b = broker.New(f.cfg)
+	f.b = broker.New(broker.Config{
+		Clients: f.cfg.Clients, Store: f.cfg.Store,
+		Telemetry: f.cfg.Telemetry, Events: f.cfg.Events,
+		CallbackURL: f.cfg.CallbackURL, ServicesPath: f.cfg.ServicesPath,
+		Now: f.cfg.Now, Rand: f.cfg.Rand,
+	})
 	loc, err := f.b.Begin(f.ctx, "google")
 	if err != nil {
 		t.Fatal(err)
