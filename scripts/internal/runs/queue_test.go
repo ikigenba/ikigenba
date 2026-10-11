@@ -2,12 +2,14 @@ package runs_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -95,19 +97,62 @@ func TestUnavailableAndDistinctAdmissionSentinels(t *testing.T) {
 	}
 }
 
-// R-Y6JQ-6E61 R-Y7RM-K5WQ R-Y8ZI-XXNF R-Y0G8-9JGK R-XQP1-7DJ0
+// R-Y6JQ-6E61 R-Y7RM-K5WQ R-2HEF-XKXE R-H8VG-SDE9 R-XQP1-7DJ0
 func TestQueueStartsFIFOWithTimersAndTrailOrder(t *testing.T) {
-	h := queuedHarness(t)
+	script := `import os,json,stat
+root=os.environ['IKIGENBA_RUN_DIR']
+streams={name:{'regular':stat.S_ISREG(os.stat(os.path.join(root,name)).st_mode),'size':os.stat(os.path.join(root,name)).st_size} for name in ['stdout','stderr']}
+with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
+ json.dump({'env':open('/proc/self/environ','rb').read().decode().split('\u0000')[:-1],'entries':sorted(os.listdir(root)),'cwd':os.getcwd(),'streams':streams},f)
+` + waitScript
+	h := fixture(t, script)
+	h.cfg.MaxActive = 1
+	h.cfg.MaxQueued = 8
+	h.cfg.KeepCount = 20
+	h.cfg.Cgroup = t.TempDir()
+	originalAfter := h.cfg.ScriptAfter
+	h.cfg.ScriptAfter = func(d time.Duration) <-chan time.Time {
+		groups, err := os.ReadDir(h.cfg.Cgroup)
+		if err != nil || len(groups) != 1 {
+			t.Error("timer called before process group exists", groups, err)
+		} else {
+			pid, err := os.ReadFile(filepath.Join(h.cfg.Cgroup, groups[0].Name(), "cgroup.procs"))
+			if err != nil {
+				t.Error("timer called before process started", err)
+			} else {
+				processID, err := strconv.Atoi(string(pid))
+				if err != nil || processID <= 0 {
+					t.Error("timer called without valid process id", string(pid), err)
+				} else {
+					proc, err := os.OpenRoot("/proc")
+					if err != nil {
+						t.Error(err)
+					} else {
+						if _, err := proc.Stat(strconv.Itoa(processID)); err != nil {
+							t.Error("timer called without live process", err)
+						}
+						if err := proc.Close(); err != nil {
+							t.Error(err)
+						}
+					}
+				}
+			}
+		}
+		return originalAfter(d)
+	}
+	h.core = runs.New(h.cfg)
 	a := h.run(nil)
-	b := h.run([]byte(`{"queued":true}`))
+	caller := identity.Caller{UserID: "queue-user", Email: "queue@example.test", RequestID: "queue-request"}
+	b, err := h.core.Run(context.Background(), h.sc, runs.Request{Input: []byte(`{"queued":true}`), Caller: caller, Cause: events.Cause{ID: "queue-event", Depth: 2}})
+	must(t, err)
 	c := h.run(nil)
 	assertQueued(t, h, b)
 	assertQueued(t, h, c)
 	if string(read(t, filepath.Join(h.core.Folder(b), runs.InputFile))) != `{"queued":true}` {
 		t.Fatal("input")
 	}
-	if len(h.timers) != 1 {
-		t.Fatal("queued timer", len(h.timers))
+	if len(h.timers) != 1 || len(h.durations) != 1 {
+		t.Fatal("queued timer", len(h.timers), len(h.durations))
 	}
 	originalStarted := b.Started
 	h.setNow(h.readNow().Add(3 * time.Second))
@@ -128,16 +173,55 @@ func TestQueueStartsFIFOWithTimersAndTrailOrder(t *testing.T) {
 	if got := entries(t, h.core.Folder(b)); !reflect.DeepEqual(got, []string{runs.InputFile, runs.OutDir, runs.StderrFile, runs.StdoutFile, runs.TreeDir}) {
 		t.Fatal(got)
 	}
+	probe := filepath.Join(h.core.Folder(b), runs.OutDir, "probe.json")
+	until(t, func() bool { return fileExists(probe) && json.Valid(read(t, probe)) })
+	var observed struct {
+		Env, Entries []string
+		Cwd          string
+		Streams      map[string]struct {
+			Regular bool
+			Size    int64
+		}
+	}
+	must(t, json.Unmarshal(read(t, probe), &observed))
+	folder := h.core.Folder(b)
+	if !reflect.DeepEqual(observed.Entries, []string{runs.InputFile, runs.OutDir, runs.StderrFile, runs.StdoutFile, runs.TreeDir}) || observed.Cwd != filepath.Join(folder, runs.TreeDir) {
+		t.Fatal(observed)
+	}
+	for _, name := range []string{runs.StdoutFile, runs.StderrFile} {
+		stream, ok := observed.Streams[name]
+		if !ok || !stream.Regular || stream.Size != 0 {
+			t.Fatal("streams not empty regular files at process start", observed.Streams)
+		}
+	}
+	env := map[string]string{}
+	for _, entry := range observed.Env {
+		key, value, _ := strings.Cut(entry, "=")
+		if _, ok := env[key]; ok {
+			t.Fatal("duplicate environment", key)
+		}
+		env[key] = value
+	}
+	want := map[string]string{"PATH": h.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": b.ID, "IKIGENBA_SCRIPT": h.sc.ID, "IKIGENBA_SHA": b.SHA, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_OUT_DIR": filepath.Join(folder, runs.OutDir), "IKIGENBA_INPUT": filepath.Join(folder, runs.InputFile), "IKIGENBA_USER_ID": caller.UserID, "IKIGENBA_USER_EMAIL": caller.Email, "IKIGENBA_REQUEST_ID": caller.RequestID, "IKIGENBA_EVENT_ID": "queue-event", "IKIGENBA_EVENT_DEPTH": "2", "IKIGENBA_SERVICES": h.cfg.Services}
+	if !reflect.DeepEqual(env, want) {
+		t.Fatal(env)
+	}
+	assertQueued(t, h, c)
 	finishA, startB := -1, -1
+	startsB := 0
 	for i, e := range h.sink.capture.Events() {
 		if e.Name == "run.finished" && e.Attrs["run"] == a.ID {
 			finishA = i
 		}
 		if e.Name == "run.started" && e.Attrs["run"] == b.ID {
 			startB = i
+			startsB++
+			if e.User != b.User || e.RequestID != b.RequestID || !reflect.DeepEqual(e.Attrs, runs.StartedAttrs(h.record(b.ID))) {
+				t.Fatal(e)
+			}
 		}
 	}
-	if finishA < 0 || startB <= finishA {
+	if finishA < 0 || startB <= finishA || startsB != 1 {
 		t.Fatal("event order", finishA, startB)
 	}
 	h.setNow(h.readNow().Add(2 * time.Second))
@@ -149,6 +233,14 @@ func TestQueueStartsFIFOWithTimersAndTrailOrder(t *testing.T) {
 	until(t, func() bool { return h.record(c.ID).Status == store.StatusRunning })
 	h.release(c)
 	h.finished(c.ID)
+	if h.record(b.ID).Status != store.StatusExited || h.record(b.ID).ExitCode != 0 || len(h.timers) != 3 || len(h.durations) != 3 {
+		t.Fatal("queued process ending or timers")
+	}
+	for range 3 {
+		if d := <-h.durations; d != time.Duration(h.cfg.ScriptSeconds)*time.Second {
+			t.Fatal(d)
+		}
+	}
 }
 
 // R-YS9J-DYLL R-0OJW-T44H

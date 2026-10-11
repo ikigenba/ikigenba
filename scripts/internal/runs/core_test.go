@@ -253,9 +253,11 @@ func entries(t *testing.T, dir string) []string {
 
 // R-XPH4-TLSB R-S1VT-Y8H4 R-TTQP-KZQZ R-TUYL-YRHO R-TW6I-CJ8D R-TXEE-QAZ2
 // R-S33Q-C07T R-UREI-OYCM R-U4PT-0XF8 R-U75L-SGWM R-U8DI-68NB R-U9LE-K0E0
-// R-S978-8UXA R-UC17-BJVE R-UFOW-GV3H R-V2DM-4W0V R-J746-MBVK R-VG9V-XZCB R-VI8B-3WNW
+// R-DSC1-OACD R-UC17-BJVE R-UFOW-GV3H R-V2DM-4W0V R-J746-MBVK R-VG9V-XZCB R-VI8B-3WNW
 func TestRunFolderEnvironmentAndLifetime(t *testing.T) {
-	script := `import os, json
+	for _, email := range []string{"owner@example.test", ""} {
+		t.Run(email, func(t *testing.T) {
+			script := `import os, json
 root=os.environ['IKIGENBA_RUN_DIR']
 initial_out=sorted(os.listdir(os.environ['IKIGENBA_OUT_DIR']))
 with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
@@ -264,105 +266,112 @@ os.makedirs(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'charts'))
 open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'charts','sales.svg'),'w').write('opaque')
 while not os.path.exists(os.path.join(root,'release')): pass
 `
-	h := fixture(t, script)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	raw := []byte(" { \"a\": 1 } \n")
-	r, e := h.core.Run(ctx, h.sc, runs.Request{Input: raw, Caller: identity.Caller{UserID: "owner", RequestID: "request"}})
-	must(t, e)
-	if r.Status != store.StatusRunning || !store.ValidRunID(r.ID) || r.Script != h.sc.ID || r.SHA != h.sha || r.Ref != "main" || r.User != "owner" || r.RequestID != "request" || r.Trigger != store.TriggerManual || r.Event != "" || r.Started != h.readNow().UTC().Truncate(time.Second) {
-		t.Fatalf("record: %+v", r)
-	}
-	if got := h.record(r.ID); !reflect.DeepEqual(got, r) {
-		t.Fatalf("catalog: %+v", got)
-	}
-	folder := h.core.Folder(r)
-	if folder != filepath.Join(h.cfg.Runs, r.Script, r.ID) {
-		t.Fatal(folder)
-	}
-	probe := filepath.Join(folder, runs.OutDir, "probe.json")
-	until(t, func() bool {
-		root, e := os.OpenRoot(filepath.Dir(probe))
-		if e != nil {
-			return false
-		}
-		defer func() { _ = root.Close() }()
-		b, _ := root.ReadFile(filepath.Base(probe))
-		return json.Valid(b)
-	})
-	var p struct {
-		Env, Entries, Out []string
-		Input, Cwd        string
-	}
-	must(t, json.Unmarshal(read(t, probe), &p))
-	expected := []string{"input.json", "out", "stderr", "stdout", "tree"}
-	if !reflect.DeepEqual(p.Entries, expected) || p.Input != string(raw) || len(p.Out) != 0 || p.Cwd != filepath.Join(folder, runs.TreeDir) {
-		t.Fatalf("probe %+v", p)
-	}
-	env := map[string]string{}
-	for _, v := range p.Env {
-		k, x, _ := strings.Cut(v, "=")
-		if _, ok := env[k]; ok {
-			t.Fatal("duplicate env")
-		}
-		env[k] = x
-	}
-	want := map[string]string{"PATH": h.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_SCRIPT": h.sc.ID, "IKIGENBA_SHA": h.sha, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_OUT_DIR": filepath.Join(folder, runs.OutDir), "IKIGENBA_INPUT": filepath.Join(folder, runs.InputFile), "IKIGENBA_USER_ID": "owner", "IKIGENBA_REQUEST_ID": "request", "IKIGENBA_EVENT_ID": "", "IKIGENBA_EVENT_DEPTH": "0", "IKIGENBA_SERVICES": h.cfg.Services}
-	if !reflect.DeepEqual(env, want) {
-		t.Fatalf("env %v", env)
-	}
-	must(t, filepath.WalkDir(filepath.Join(folder, runs.TreeDir), func(path string, d os.DirEntry, e error) error {
-		if e != nil {
-			return e
-		}
-		s, e := d.Info()
-		if e == nil && s.Mode().Perm()&0222 != 0 {
-			t.Errorf("writable %s", path)
-		}
-		return e
-	}))
-	if string(read(t, filepath.Join(folder, runs.OutDir, "charts", "sales.svg"))) != "opaque" {
-		t.Fatal("out")
-	}
-	cancel()
-	if h.record(r.ID).Status != store.StatusRunning {
-		t.Fatal("caller ended run")
-	}
-	t1 := h.readNow().Add(2*time.Second + 1500*time.Microsecond)
-	h.setNow(t1)
-	h.release(r)
-	ev := h.finished(r.ID)
-	ended := h.record(r.ID)
-	if ended.Status != store.StatusExited || ended.ExitCode != 0 || ended.Finished != t1.UTC().Truncate(time.Second) || ev.User != "owner" || ev.RequestID != "request" || ev.Attrs["duration_us"] != int64(2001500) {
-		t.Fatalf("ended %+v event %+v", ended, ev)
-	}
-	var started, finished int
-	for _, ev := range h.sink.capture.Events() {
-		if ev.Attrs["run"] == r.ID {
-			switch ev.Name {
-			case "run.started":
-				started++
-			case "run.finished":
-				finished++
-			default:
-				t.Fatal(ev)
+			h := fixture(t, script)
+			if email == "" {
+				h.cfg.Services = ""
+				h.core = runs.New(h.cfg)
 			}
-		}
-	}
-	if started != 1 || finished != 1 {
-		t.Fatal(started, finished)
-	}
-	if runs.InputFile != "input.json" || runs.TreeDir != "tree" || runs.OutDir != "out" || runs.StdoutFile != "stdout" || runs.StderrFile != "stderr" {
-		t.Fatal("names")
-	}
-	for _, sentinel := range []error{store.ErrNotFound, store.ErrEnded, limits.ErrHalted, context.Canceled} {
-		if errors.Is(fmt.Errorf("wrapped: %w", runs.ErrDraining), sentinel) {
-			t.Fatal("sentinel overlap")
-		}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			raw := []byte(" { \"a\": 1 } \n")
+			r, e := h.core.Run(ctx, h.sc, runs.Request{Input: raw, Caller: identity.Caller{UserID: "owner", Email: email, RequestID: "request"}})
+			must(t, e)
+			if r.Status != store.StatusRunning || !store.ValidRunID(r.ID) || r.Script != h.sc.ID || r.SHA != h.sha || r.Ref != "main" || r.User != "owner" || r.RequestID != "request" || r.Trigger != store.TriggerManual || r.Event != "" || r.Started != h.readNow().UTC().Truncate(time.Second) {
+				t.Fatalf("record: %+v", r)
+			}
+			if got := h.record(r.ID); !reflect.DeepEqual(got, r) {
+				t.Fatalf("catalog: %+v", got)
+			}
+			folder := h.core.Folder(r)
+			if folder != filepath.Join(h.cfg.Runs, r.Script, r.ID) {
+				t.Fatal(folder)
+			}
+			probe := filepath.Join(folder, runs.OutDir, "probe.json")
+			until(t, func() bool {
+				root, e := os.OpenRoot(filepath.Dir(probe))
+				if e != nil {
+					return false
+				}
+				defer func() { _ = root.Close() }()
+				b, _ := root.ReadFile(filepath.Base(probe))
+				return json.Valid(b)
+			})
+			var p struct {
+				Env, Entries, Out []string
+				Input, Cwd        string
+			}
+			must(t, json.Unmarshal(read(t, probe), &p))
+			expected := []string{"input.json", "out", "stderr", "stdout", "tree"}
+			if !reflect.DeepEqual(p.Entries, expected) || p.Input != string(raw) || len(p.Out) != 0 || p.Cwd != filepath.Join(folder, runs.TreeDir) {
+				t.Fatalf("probe %+v", p)
+			}
+			env := map[string]string{}
+			for _, v := range p.Env {
+				k, x, _ := strings.Cut(v, "=")
+				if _, ok := env[k]; ok {
+					t.Fatal("duplicate env")
+				}
+				env[k] = x
+			}
+			want := map[string]string{"PATH": h.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_SCRIPT": h.sc.ID, "IKIGENBA_SHA": h.sha, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_OUT_DIR": filepath.Join(folder, runs.OutDir), "IKIGENBA_INPUT": filepath.Join(folder, runs.InputFile), "IKIGENBA_USER_ID": "owner", "IKIGENBA_USER_EMAIL": email, "IKIGENBA_REQUEST_ID": "request", "IKIGENBA_EVENT_ID": "", "IKIGENBA_EVENT_DEPTH": "0", "IKIGENBA_SERVICES": h.cfg.Services}
+			if !reflect.DeepEqual(env, want) {
+				t.Fatalf("env %v", env)
+			}
+			must(t, filepath.WalkDir(filepath.Join(folder, runs.TreeDir), func(path string, d os.DirEntry, e error) error {
+				if e != nil {
+					return e
+				}
+				s, e := d.Info()
+				if e == nil && s.Mode().Perm()&0222 != 0 {
+					t.Errorf("writable %s", path)
+				}
+				return e
+			}))
+			if string(read(t, filepath.Join(folder, runs.OutDir, "charts", "sales.svg"))) != "opaque" {
+				t.Fatal("out")
+			}
+			cancel()
+			if h.record(r.ID).Status != store.StatusRunning {
+				t.Fatal("caller ended run")
+			}
+			t1 := h.readNow().Add(2*time.Second + 1500*time.Microsecond)
+			h.setNow(t1)
+			h.release(r)
+			ev := h.finished(r.ID)
+			ended := h.record(r.ID)
+			if ended.Status != store.StatusExited || ended.ExitCode != 0 || ended.Finished != t1.UTC().Truncate(time.Second) || ev.User != "owner" || ev.RequestID != "request" || ev.Attrs["duration_us"] != int64(2001500) {
+				t.Fatalf("ended %+v event %+v", ended, ev)
+			}
+			var started, finished int
+			for _, ev := range h.sink.capture.Events() {
+				if ev.Attrs["run"] == r.ID {
+					switch ev.Name {
+					case "run.started":
+						started++
+					case "run.finished":
+						finished++
+					default:
+						t.Fatal(ev)
+					}
+				}
+			}
+			if started != 1 || finished != 1 {
+				t.Fatal(started, finished)
+			}
+			if runs.InputFile != "input.json" || runs.TreeDir != "tree" || runs.OutDir != "out" || runs.StdoutFile != "stdout" || runs.StderrFile != "stderr" {
+				t.Fatal("names")
+			}
+			for _, sentinel := range []error{store.ErrNotFound, store.ErrEnded, limits.ErrHalted, context.Canceled} {
+				if errors.Is(fmt.Errorf("wrapped: %w", runs.ErrDraining), sentinel) {
+					t.Fatal("sentinel overlap")
+				}
+			}
+
+		})
 	}
 }
 
-// R-UD93-PBM3 R-UEH0-33CS R-UGWS-UMU6 R-Y0G8-9JGK R-XGH6-DUYX
+// R-UD93-PBM3 R-UEH0-33CS R-UGWS-UMU6 R-H8VG-SDE9 R-XGH6-DUYX
 func TestOutputBoundsExitAndTimer(t *testing.T) {
 	for _, tc := range []struct {
 		name, script string
@@ -446,7 +455,7 @@ while not os.path.exists(os.path.join(os.environ['IKIGENBA_RUN_DIR'],'release'))
 }
 func fileExists(path string) bool { s, e := os.Stat(path); return e == nil && s.Mode().IsRegular() }
 
-// R-XCTH-8JQU R-JD7O-J6L1 R-XRWX-L59P R-V797-NYZN R-V8H4-1QQC R-JEFK-WYBQ R-JFNH-AQ2F R-VFSI-CD6I R-XWSJ-488H
+// R-H8VG-SDE9 R-XCTH-8JQU R-JD7O-J6L1 R-XRWX-L59P R-V797-NYZN R-V8H4-1QQC R-JEFK-WYBQ R-JFNH-AQ2F R-VFSI-CD6I R-XWSJ-488H
 func TestTimeoutCancelAndDrainKill(t *testing.T) {
 	for _, mode := range []string{"timeout", "cancel", "drain"} {
 		t.Run(mode, func(t *testing.T) {
@@ -521,7 +530,7 @@ func processGone(pid string) bool {
 	return ok && strings.HasPrefix(tail, "Z ")
 }
 
-// R-S4BM-PRYI R-S5JJ-3JP7 R-UWA4-81BE R-UXI0-LT23 R-S7ZB-V36L R-UZ7A-L6YL R-UWRH-TNH7
+// R-H8VG-SDE9 R-S4BM-PRYI R-S5JJ-3JP7 R-UWA4-81BE R-UXI0-LT23 R-S7ZB-V36L R-UZ7A-L6YL R-UWRH-TNH7
 func TestFailedRunsAndFolders(t *testing.T) {
 	for _, mode := range []string{"missing-ref", "missing-repo", "large-tree", "start-failed", "git-error"} {
 		t.Run(mode, func(t *testing.T) {

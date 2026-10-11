@@ -161,7 +161,7 @@ func TestDeliveryFullQueueRefusesBeforeAnyPreparation(t *testing.T) {
 	h.finished(queued.ID)
 }
 
-// R-SBN1-0EEO R-T4WM-6W7C R-0ZJ0-91SQ R-SHQI-X945 R-SIYF-B0UU R-10QW-MTJF
+// R-SBN1-0EEO R-T4WM-6W7C R-0ZJ0-91SQ R-SHQI-X945 R-DVZQ-TLKG R-10QW-MTJF
 func TestDeliveryCanonicalRunsAndTrail(t *testing.T) {
 	script := `import os,json
 with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
@@ -188,6 +188,8 @@ with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
 	req := httptest.NewRequest("POST", "/events", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-Id", "delivery-request")
+	req.Header.Set("X-User-Id", "delivery-user")
+	req.Header.Set("X-User-Email", "delivery@example.test")
 	handler := events.Handlers{"*": h.core.Deliver}
 	rec := httptest.NewRecorder()
 	telemetry.Middleware(h.cfg.Writer, events.DeliveryHandler(handler)).ServeHTTP(rec, req)
@@ -239,7 +241,7 @@ with open(os.path.join(os.environ['IKIGENBA_OUT_DIR'],'probe.json'),'w') as f:
 			env[k] = v
 		}
 		folder := h.core.Folder(r)
-		want := map[string]string{"PATH": h.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_SCRIPT": sc.ID, "IKIGENBA_SHA": r.SHA, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_OUT_DIR": filepath.Join(folder, runs.OutDir), "IKIGENBA_INPUT": filepath.Join(folder, runs.InputFile), "IKIGENBA_USER_ID": sc.Owner, "IKIGENBA_REQUEST_ID": "delivery-request", "IKIGENBA_EVENT_ID": ev.ID, "IKIGENBA_EVENT_DEPTH": "2", "IKIGENBA_SERVICES": h.cfg.Services}
+		want := map[string]string{"PATH": h.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_SCRIPT": sc.ID, "IKIGENBA_SHA": r.SHA, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_OUT_DIR": filepath.Join(folder, runs.OutDir), "IKIGENBA_INPUT": filepath.Join(folder, runs.InputFile), "IKIGENBA_USER_ID": sc.Owner, "IKIGENBA_USER_EMAIL": "", "IKIGENBA_REQUEST_ID": "delivery-request", "IKIGENBA_EVENT_ID": ev.ID, "IKIGENBA_EVENT_DEPTH": "2", "IKIGENBA_SERVICES": h.cfg.Services}
 		if !reflect.DeepEqual(env, want) {
 			t.Fatal(env)
 		}

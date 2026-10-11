@@ -76,6 +76,7 @@ type queued struct {
 	record  store.Run
 	started time.Time
 	depth   int
+	email   string
 }
 type active struct {
 	mu       sync.Mutex
@@ -364,7 +365,7 @@ func (c *Core) run(ctx context.Context, sc store.Script, req Request, delivery b
 		} else {
 			c.starting++
 			c.mu.Unlock()
-			proc, out, errOut, runErr = c.launch(callCtx, r, req.Cause.Depth)
+			proc, out, errOut, runErr = c.launch(callCtx, r, req.Cause.Depth, req.Caller.Email)
 			if proc != nil {
 				timer = c.cfg.ScriptAfter(seconds(c.cfg.ScriptSeconds))
 			}
@@ -414,7 +415,7 @@ func (c *Core) run(ctx context.Context, sc store.Script, req Request, delivery b
 		c.emit(r, "run.started", 0)
 		go c.watch(context.WithoutCancel(ctx), a, timer)
 	case r.Status == store.StatusQueued:
-		c.queue = append(c.queue, &queued{record: r, started: started, depth: req.Cause.Depth})
+		c.queue = append(c.queue, &queued{record: r, started: started, depth: req.Cause.Depth, email: req.Caller.Email})
 	default:
 		_ = c.Prune(context.Background())
 		c.emit(r, "run.finished", finished.Sub(started))
@@ -423,7 +424,7 @@ func (c *Core) run(ctx context.Context, sc store.Script, req Request, delivery b
 }
 
 // launch makes streams only for a process that can start.
-func (c *Core) launch(ctx context.Context, r store.Run, depth int) (*runner.Process, *headWriter, *headWriter, error) {
+func (c *Core) launch(ctx context.Context, r store.Run, depth int, email string) (*runner.Process, *headWriter, *headWriter, error) {
 	dir := c.Folder(r)
 	out, e := newHead(filepath.Join(dir, StdoutFile), c.cfg.OutputMaxBytes)
 	if e != nil {
@@ -441,7 +442,7 @@ func (c *Core) launch(ctx context.Context, r store.Run, depth int) (*runner.Proc
 		errOut.close()
 		return nil, nil, nil, e
 	}
-	env := []string{"PATH=" + c.cfg.Path, "HOME=" + abs, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + r.ID, "IKIGENBA_SCRIPT=" + r.Script, "IKIGENBA_SHA=" + r.SHA, "IKIGENBA_RUN_DIR=" + abs, "IKIGENBA_OUT_DIR=" + filepath.Join(abs, OutDir), "IKIGENBA_INPUT=" + filepath.Join(abs, InputFile), "IKIGENBA_USER_ID=" + r.User, "IKIGENBA_REQUEST_ID=" + r.RequestID, "IKIGENBA_EVENT_ID=" + r.Event, "IKIGENBA_EVENT_DEPTH=" + strconv.Itoa(depth), "IKIGENBA_SERVICES=" + c.cfg.Services}
+	env := []string{"PATH=" + c.cfg.Path, "HOME=" + abs, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + r.ID, "IKIGENBA_SCRIPT=" + r.Script, "IKIGENBA_SHA=" + r.SHA, "IKIGENBA_RUN_DIR=" + abs, "IKIGENBA_OUT_DIR=" + filepath.Join(abs, OutDir), "IKIGENBA_INPUT=" + filepath.Join(abs, InputFile), "IKIGENBA_USER_ID=" + r.User, "IKIGENBA_USER_EMAIL=" + email, "IKIGENBA_REQUEST_ID=" + r.RequestID, "IKIGENBA_EVENT_ID=" + r.Event, "IKIGENBA_EVENT_DEPTH=" + strconv.Itoa(depth), "IKIGENBA_SERVICES=" + c.cfg.Services}
 	group := ""
 	if c.cfg.Cgroup != "" {
 		group = filepath.Join(c.cfg.Cgroup, r.ID)
@@ -476,7 +477,7 @@ func (c *Core) promote() {
 	for !c.draining && len(c.queue) > 0 && int64(len(c.active))+c.starting < c.cfg.MaxActive {
 		q := c.queue[0]
 		c.queue = c.queue[1:]
-		proc, out, errOut, e := c.launch(context.Background(), q.record, q.depth)
+		proc, out, errOut, e := c.launch(context.Background(), q.record, q.depth, q.email)
 		if e != nil {
 			_, _ = c.finishQueued(context.Background(), q, store.StatusFailed, store.ReasonStartFailed, true)
 			continue
