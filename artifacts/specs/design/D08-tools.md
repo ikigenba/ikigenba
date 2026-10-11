@@ -1,0 +1,44 @@
+# D08-tools
+
+The four MCP tools agents reach artifacts by through the MCP gateway: `internal/tools`. No tool accepts or returns an artifact's bytes; that is the point of the service. Every signed-in user lists and shows every artifact; only the owner deletes one, and anyone else is refused by name. The bytes are put and got at `/files/<path>` with curl (`D05-files`); `import` (`D09-import`) is the one tool that moves bytes, and it moves them server-side, from a sibling's socket into the store, without the caller touching them.
+
+## The tools
+
+- `list` takes nothing and answers every artifact, sorted by path, each as the metadata object without `created`, under `artifacts`.
+- `show` takes `path` and answers the artifact's metadata object (`files.Metadata`, `D05-files`), whoever owns it.
+- `delete` takes `path`, deletes the artifact, owner only, and answers `{"deleted":true,"id":"art_…"}`. It records and emits `artifact.deleted` as the caller (`D07-trail`).
+- `import` takes `url`, `path` and an optional `expires`, fetches the URL from the sibling service it names and stores the body at the path as a PUT would, and answers the metadata object (`D09-import`).
+
+The metadata object is `files.Describe` of the artifact and artifacts' own address, which the route table puts on the request's context (`D03-serve`): the services file's entry `artifacts`, or, with none, the forwarded scheme and the request's `Host`. Through the gateway the request's `Host` is the gateway's backend name, so on a host and in a sandbox the services file's entry decides the `url`.
+
+## Refusals
+
+A path that breaks the rule (`store.ValidPath`) is refused with `tools.InvalidPath`; a valid path no artifact has with `tools.NoArtifact`; a `delete` by someone other than the owner with `tools.NotOwner`; and the database with `store.Unreachable`. `import`'s own refusals are `D09-import`'s. A refusal is an MCP error result whose text is the copy function's answer, which appkit makes of a handler's error (`ErrorResult(err.Error())`), so a refusal is an error whose `Error` is that answer.
+
+## Recorded decisions
+
+- An invalid path is its own refusal, not "no such artifact" as webhooks refuses an invalid slug: the files surface tells the two apart (400 and 404, decisions document 4), and the tools say the same thing.
+- A non-owner's `delete` is refused as not the owner, not as an artifact that does not exist as webhooks does: every user can see every artifact, so hiding its existence would hide nothing (decisions document 8).
+- `delete` is `mcp.Destructive`, `list` and `show` `mcp.Read`. `import` is `mcp.Destructive` as well, not `mcp.Additive`: it replaces an existing artifact's bytes in place when the caller owns the path, and appkit's effects make a tool that may overwrite data destructive, as webhooks' `rotate` is.
+- `Listed` is its own type, the metadata object less `created`, as webhooks' `ListedWebhook` is; `Metadata` is `files`', declared once (`D05-files`) and answered by `show` and `import` as it is.
+- `Config` carries `Max` and `Now` for `import`: the cap is `ARTIFACT_MAX_BYTES` and the expiry check is made before the sibling is asked (`D09-import`). The other three tools use neither.
+
+## Consumer tasks
+
+`D03-serve` registers the tools on the server it mounts at `/mcp` with `tools.Register(srv, tools.Config{Store: st, Telemetry: w, Events: em, Max: s.ArtifactMaxBytes, Now: p.Now, Fetch: fetch.Config{ServicesPath: path, Telemetry: w, Limit: s.Import(), After: p.ImportAfter}})`. The tools page reads `tools.Catalog()` and `tools.FirstLine` (`D06-pages`). A test builds a store over its own database, an `mcp.Server` with a capturing writer, an emitter over `events.Capture`, registers the tools, serves the server inside `identity.Require` behind a handler that puts a base on the context with `urls.NewContext`, and calls `mcp.Client.CallTool` with `tools.ListArgs{}`, `tools.PathArgs{Path: p}` and `tools.ImportArgs{URL: u, Path: p}` encoded as JSON, decoding a success result's structured content into `tools.ArtifactList`, `files.Metadata` or `tools.Deleted` and comparing a refusal's text with `tools.NoArtifact(p)`, `tools.InvalidPath(p)`, `tools.NotOwner(p)` or `store.Unreachable`.
+
+## REQUIREMENTS
+
+- R-ND3R-Z7MO: The `internal/tools` package, imported from the path `github.com/ikigenba/ikigenba/artifacts/internal/tools` with the package name `tools`, MUST export `type Config struct { Store *store.Store; Telemetry *telemetry.Writer; Events *events.Emitter; Max int64; Now func() time.Time; Fetch fetch.Config }`, `func Register(srv *mcp.Server, cfg Config)`, `type Entry struct { Name, Description string }`, `func Catalog() []Entry` and `func FirstLine(description string) string`, where `mcp`, `telemetry` and `events` are appkit's packages of those names and `store` and `fetch` are artifacts' `internal/store` and `internal/fetch`; a nil `Now` meaning `time.Now`.
+- R-NEBO-CZDD: The `internal/tools` package MUST export the argument types `type ListArgs struct{}`, `type PathArgs struct { Path string }` and `type ImportArgs struct { URL, Path string; Expires *string }`, whose properties are `path` (required), `url` (required) and `expires` (optional).
+- R-NFJK-QR42: The `internal/tools` package MUST export the result types `type Listed struct { ID, Path string; Bytes int64; ContentType, SHA256, Owner, Modified string; Expires *string; URL string }`, `type ArtifactList struct { Artifacts []Listed }` and `type Deleted struct { Deleted bool; ID string }`, whose JSON members are `id`, `path`, `bytes`, `content_type`, `sha256`, `owner`, `modified`, `expires` (absent when nil), `url`, `artifacts` and `deleted`.
+- R-PYGZ-0J9L: artifacts' design defines a call **refused with** a string `x` as a `tools/call` answered with a result whose `IsError()` method reports true, whose `content` is exactly one text block whose text is `x`, and which has no `structuredContent`; every requirement of artifacts' design that says a tool call is refused with a string MUST denote that answer.
+- R-NGRH-4IUR: The `internal/tools` package MUST export the copy functions `func NoArtifact(path string) string`, `func InvalidPath(path string) string` and `func NotOwner(path string) string`, each answering a non-empty string that contains its argument.
+- R-NHZD-IALG: `tools.Catalog` MUST return the four entries `list`, `show`, `delete` and `import`, in that order, each with a non-empty `Description`; and `tools.FirstLine` MUST return its argument up to, not including, its first newline, or all of it when it has none.
+- R-NJ79-W2C5: After `Register(srv, cfg)`, a `ListTools` call through appkit's `mcp.Client` MUST return exactly four tools, in the order and with the names and descriptions of `tools.Catalog()`, registered with the effect `mcp.Read` for `list` and `show` and `mcp.Destructive` for `delete` and `import`, as the annotations appkit derives from each effect show.
+- R-NKF6-9U2U: A `list` call MUST answer a success result whose structured content is an `ArtifactList` holding one `Listed` per artifact `store.List` returns, of every owner, in that order, each with the members of what `files.Describe` returns for that artifact and the base on the call's context (`urls.FromContext`) but `created`, and `artifacts` an empty array when there is none.
+- R-NLN2-NLTJ: A `show` call whose `path` is an artifact's `Path` MUST answer a success result whose structured content is exactly what `files.Describe` returns for that artifact, of any owner, and the base on the call's context, so that its `url` is `urls.File` of that base and the path.
+- R-NMUZ-1DK8: A `show` or `delete` call MUST be refused with `tools.InvalidPath(path)` when `store.ValidPath(path)` is false, and with `tools.NoArtifact(path)` when the path is valid and no artifact has it, changing nothing and emitting nothing.
+- R-NO2V-F5AX: A `delete` call by the artifact's owner, the caller whose `UserID` is the artifact's `OwnerID`, MUST answer a success result whose structured content is exactly `{"deleted":true,"id":<id>}`, the artifact's id, after which a `show` of its path MUST be refused with `tools.NoArtifact(path)`; and it MUST record and emit `artifact.deleted` for that artifact as `trail.Record` does under the call's context, once.
+- R-NPAR-SX1M: A `delete` call for an artifact whose `OwnerID` is not the caller's `UserID` MUST be refused with `tools.NotOwner(path)`, leaving the artifact and its bytes unchanged and emitting nothing.
+- R-NQIO-6OSB: Every `list`, `show` or `delete` call whose arguments pass the checks above, answered while the store cannot be read or written, MUST be refused with `store.Unreachable`, changing nothing and emitting nothing.
