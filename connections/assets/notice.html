@@ -1,0 +1,44 @@
+{{/* The notice page, answered to a signed-in user when GET
+     /<provider>/callback refuses the callback or the connect fails, naming
+     the failure in words; design names its status. It stays at the root:
+     .Banner's .Trail is empty. Never shows a code, a token, a verifier or a
+     state value: its data carries none, only the provider's display name
+     and the kind of failure, which the template turns into words. Data:
+     .Banner (a page.Banner, for banner and footer); .DisplayName (the
+     provider's display name, "Google"); .Failure, one of "missing" (the
+     callback carried no state), "unknown" (the state matches no pending
+     connect request), "expired" (the pending request's ten minutes had
+     passed), "foreign" (the pending request belongs to another signed-in
+     user), "denied" (the provider answered the callback with an error, the
+     person declining included), "exchange" (the provider refused or failed
+     the code exchange) or "account" (the provider's answer named no
+     account). Hooks: title "Not connected · connections"; h1 with text
+     "Not connected"; div#notice.alert[data-kind=err][role=alert] holding
+     strong "<.DisplayName> was not connected" and p#failure with the
+     failure's words: "missing" "The provider sent you back without the
+     state this app gave it, so the request could not be matched.";
+     "unknown" "The provider sent you back with a request this app does not
+     know. It may already have been used."; "expired" "The request expired:
+     it is good for ten minutes."; "foreign" "The request was started by
+     another sign-in, so it was not completed for you."; "denied"
+     "<.DisplayName> did not grant access."; "exchange" "<.DisplayName>
+     refused to complete the connection."; "account" "<.DisplayName> did not
+     say which account was connected."; then a p (text "Your connections
+     are unchanged. Start again from the list.") and a#back (text "Back to
+     your connections") whose href is "/". No form but the banner's sign
+     out. No script but appkit's /_appkit/feedback.js. */}}
+{{define "notice"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>Not connected · connections</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>Not connected</h1>
+<div id="notice" class="alert" data-kind="err" role="alert"><strong>{{.DisplayName}} was not connected</strong><p id="failure">{{if eq .Failure "missing"}}The provider sent you back without the state this app gave it, so the request could not be matched.{{else if eq .Failure "unknown"}}The provider sent you back with a request this app does not know. It may already have been used.{{else if eq .Failure "expired"}}The request expired: it is good for ten minutes.{{else if eq .Failure "foreign"}}The request was started by another sign-in, so it was not completed for you.{{else if eq .Failure "denied"}}{{.DisplayName}} did not grant access.{{else if eq .Failure "exchange"}}{{.DisplayName}} refused to complete the connection.{{else if eq .Failure "account"}}{{.DisplayName}} did not say which account was connected.{{end}}</p></div>
+<p>Your connections are unchanged. Start again from the list.</p>
+<p><a id="back" href="/">Back to your connections</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

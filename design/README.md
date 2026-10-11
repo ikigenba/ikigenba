@@ -39,6 +39,9 @@ design/
     artifacts.html  artifacts' landing: every artifact and the bytes held
     artifacts-artifact.html
                     one artifact: its metadata in full and a download
+    connections.html
+                    connections' landing: your connections, one per
+                    provider, and the notice a failed connect answers
     webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles,
                     application services over core services
@@ -253,6 +256,38 @@ out, no delete control.
   and the card. Times are UTC in a `time` carrying the RFC 3339 moment: to
   the minute in the table, where a cell with no time is empty, to the second
   with `UTC` on the artifact page.
+
+**connections.html** — connections at `connections.acme.ikigenba.com`, an
+OAuth broker: a person connects an account at an outside provider once, the
+broker keeps the grant, and the suite's connectors on the host get
+short-lived tokens from it; no tool returns a credential. One level: the
+landing page, plus the notice a refused or failed connect answers. Banner and
+footer as in app.html, the service `connections` with the Tabler
+`plug-connected` icon. Every page is for a signed-in user and shows only the
+user's own connections.
+- The landing: `h1` connections, a lede, `section#connections` whose header
+  says the connections are the user's alone, then `table#connection-list`
+  of Provider / Status / Account / Scopes / Connected and an actions column,
+  one row per provider the broker knows, `tr[data-provider=<name>]`: Google,
+  connected as `ada@acme.dev` with its five scopes, each a `code`, since
+  `2026-10-11 14:22`, with `Reconnect` and `Disconnect`; and a link to the
+  about screen. Its tools (`list`, `connect`, `disconnect`) are on its tools
+  page. States: not connected (no account, scopes or time; `Connect`),
+  broken (the muted words "needs reconnecting" after the status;
+  `Reconnect` and `Disconnect`).
+- Each control is a `form.inline` posting to `/<provider>/connect` or
+  `/<provider>/disconnect` with a small button in `td.row-actions`, as the
+  profile's token rows: `Connect` secondary, `Reconnect` and `Disconnect`
+  ghost.
+- Connection status reads as a `.status` word carrying `data-status`, the
+  list tool's status, and `data-kind`: connected is ok, broken is warn, not
+  connected has no kind.
+- The notice page stays at the root: `h1` Not connected, `div#notice.alert`
+  of kind err naming the provider and the failure in words (here the
+  request expired), a line that the connections are unchanged, and
+  `a#back` to the landing. It never shows a code, token or state value.
+- Times are UTC to the minute in a `time` carrying the RFC 3339 moment; a
+  cell with no time is empty.
 
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's

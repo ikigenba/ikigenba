@@ -1,0 +1,72 @@
+{{/* The landing page at GET /: what the service is and the caller's own
+     connections, one row per provider the broker knows, with a control
+     that acts on each. The root of the hierarchy: .Banner's .Trail is
+     empty, so the banner's breadcrumb holds only the service. Shown only to
+     a signed-in user; a guest is sent to sign in. Never shows another
+     user's connection, a token, a code or a secret. Data: .Banner (a
+     page.Banner, for banner and footer); .Connections, one item per
+     provider the broker knows, in the provider table's order, each with
+     .Name (the provider's URL and tool word, "google"), .DisplayName (its
+     display name, "Google"), .Status ("connected", "broken" or
+     "not_connected", as the list tool answers it: "broken" when the
+     provider refused a refresh or the granted scopes lack one the provider's
+     list names), and, when .Status is not "not_connected", .Account (the
+     connected account's email), .Scopes (the granted scopes, a slice of
+     strings in the order stored), and .Connected and .ConnectedText (the
+     connection's created time, RFC 3339 UTC to the second, and UTC to the
+     minute, "2026-10-05 09:00"); all four empty when "not_connected".
+     Hooks: title "connections"; h1 with text "connections"; p#summary.lede
+     (text "Accounts at outside providers, connected for the suite's
+     connectors. Connect an account once; connectors on this host get
+     short-lived tokens for it, and no tool ever returns a credential.");
+     section#connections with h2 "Connections" and a p in its header (text
+     "Yours alone: no one else sees or uses them."), then
+     table#connection-list whose th read Provider, Status, Account, Scopes,
+     Connected and an empty th, with one tr[data-provider=<.Name>] per item
+     holding td.connection-provider (.DisplayName); td.connection-status
+     holding span.status[data-status=<.Status>] reading "connected"
+     (data-kind ok), "broken" (data-kind warn) followed by span.muted "needs
+     reconnecting", or "not connected" (no data-kind); td.connection-account
+     (.Account); td.connection-scopes holding one code per scope, separated
+     by spaces; td.connection-connected holding, only when .Connected is not
+     empty, time[datetime=<.Connected>] (text .ConnectedText); and
+     td.row-actions holding, when "not_connected",
+     form.inline[method=post][action=/<.Name>/connect] with
+     button.secondary.small[type=submit] "Connect", and otherwise that form
+     with button.ghost.small[type=submit] "Reconnect" followed by
+     form.inline[method=post][action=/<.Name>/disconnect] with
+     button.ghost.small[type=submit] "Disconnect"; a #about-link (text
+     "About connections") whose href is "/about". No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>connections</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>connections</h1>
+<p id="summary" class="lede">Accounts at outside providers, connected for the suite's connectors. Connect an account once; connectors on this host get short-lived tokens for it, and no tool ever returns a credential.</p>
+<section id="connections" class="card flush" aria-labelledby="connections-title">
+<header><div><h2 id="connections-title">Connections</h2><p>Yours alone: no one else sees or uses them.</p></div></header>
+<div class="table-scroll">
+<table id="connection-list">
+<thead><tr><th>Provider</th><th>Status</th><th>Account</th><th>Scopes</th><th>Connected</th><th></th></tr></thead>
+<tbody>
+{{range .Connections}}<tr data-provider="{{.Name}}">
+<td class="connection-provider">{{.DisplayName}}</td>
+<td class="connection-status">{{if eq .Status "connected"}}<span class="status" data-status="connected" data-kind="ok">connected</span>{{else if eq .Status "broken"}}<span class="status" data-status="broken" data-kind="warn">broken</span> <span class="muted">needs reconnecting</span>{{else}}<span class="status" data-status="not_connected">not connected</span>{{end}}</td>
+<td class="connection-account">{{.Account}}</td>
+<td class="connection-scopes">{{range $i, $s := .Scopes}}{{if $i}} {{end}}<code>{{$s}}</code>{{end}}</td>
+<td class="connection-connected">{{if .Connected}}<time datetime="{{.Connected}}">{{.ConnectedText}}</time>{{end}}</td>
+<td class="row-actions">{{if eq .Status "not_connected"}}<form class="inline" method="post" action="/{{.Name}}/connect"><button class="secondary small" type="submit">Connect</button></form>{{else}}<form class="inline" method="post" action="/{{.Name}}/connect"><button class="ghost small" type="submit">Reconnect</button></form><form class="inline" method="post" action="/{{.Name}}/disconnect"><button class="ghost small" type="submit">Disconnect</button></form>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+</section>
+<p><a id="about-link" href="/about">About connections</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

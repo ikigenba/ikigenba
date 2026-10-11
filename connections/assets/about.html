@@ -1,0 +1,51 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one level
+     about at /about. Shown only to a signed-in user;
+     a guest is sent to sign in. Data: .Banner (a
+     page.Banner, for banner and footer; its .Service is the name and its
+     .Release and .Commit give the version row); .Description (the service's one-line
+     description, the manifest's). Hooks: title "About connections"; h1 with
+     text "About connections"; dl#about.kv holding dt "Name" then
+     dd#about-name (.Banner.Service), dt "Version" then dd#about-version
+     (.Banner.Release and .Banner.Commit, present even when empty), and dt
+     "Description" then dd#about-description (.Description); then
+     section#how.card with h2 "How it works" and four p: "connections is an
+     OAuth broker. A person connects an account at an outside provider once,
+     from this page or from a link an agent hands them, and the broker keeps
+     the grant against their user."; "The suite's connectors on this host ask
+     the broker for a short-lived access token for the person they act for,
+     and it refreshes the token with the provider when it is about to expire.
+     The token never leaves the host."; "No tool ever returns a credential:
+     list answers each provider and whether you are connected, connect
+     answers the link a person opens to connect, and disconnect revokes the
+     grant at the provider and removes it." (each tool name in a code
+     element); "A connection is private to the person who made it, one per
+     provider. One the provider stops honouring shows as broken until it is
+     reconnected.". No section of the landing page's. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About connections</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About connections</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>connections is an OAuth broker. A person connects an account at an outside provider once, from this page or from a link an agent hands them, and the broker keeps the grant against their user.</p>
+<p>The suite's connectors on this host ask the broker for a short-lived access token for the person they act for, and it refreshes the token with the provider when it is about to expire. The token never leaves the host.</p>
+<p>No tool ever returns a credential: <code>list</code> answers each provider and whether you are connected, <code>connect</code> answers the link a person opens to connect, and <code>disconnect</code> revokes the grant at the provider and removes it.</p>
+<p>A connection is private to the person who made it, one per provider. One the provider stops honouring shows as broken until it is reconnected.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
