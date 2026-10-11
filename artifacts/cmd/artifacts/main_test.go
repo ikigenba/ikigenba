@@ -266,6 +266,9 @@ func TestBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	// R-XO1A-6QM3: the binary leaves Inherit, Now and Rand nil; serving
+	// through its passed descriptor and observing its ids and timestamps
+	// exercises those defaults without using the test process's resources.
 	before := time.Now()
 	first := startBinary(t, binary, dir, append(append([]string{}, env...), services.Variable+"="+servicesPath))
 	for _, path := range []string{"state/artifacts.db", "state/blobs"} {
@@ -311,6 +314,19 @@ func TestBinary(t *testing.T) {
 	result, err = client.CallTool(context.Background(), caller, "import", json.RawMessage(`{"path":"import.bin","url":"https://scripts.sbx.ikigenba.dev/source"}`))
 	if err != nil || result.IsError() {
 		t.Fatalf("default import timer: %v %v", result, err)
+	}
+	imported, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var importAnswer struct {
+		Metadata files.Metadata `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(imported, &importAnswer); err != nil {
+		t.Fatal(err)
+	}
+	if !store.ValidID(importAnswer.Metadata.ID) || importAnswer.Metadata.ID == meta.ID {
+		t.Fatalf("default random ids %q and %q", meta.ID, importAnswer.Metadata.ID)
 	}
 	first.stop(t, syscall.SIGTERM)
 	if first.err.String() != "" {

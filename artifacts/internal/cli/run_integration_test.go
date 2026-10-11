@@ -902,7 +902,7 @@ func (s *startBarrier) Deliver(ctx context.Context, e telemetry.Event) error {
 	return s.capture.Deliver(ctx, e)
 }
 
-// : nil sinks deliver over their documented services sockets.
+// R-XO1A-6QM3: nil sinks deliver over their documented services sockets.
 func TestRunDefaultSocketSinks(t *testing.T) {
 	var mu sync.Mutex
 	var trailEvents []telemetry.Event

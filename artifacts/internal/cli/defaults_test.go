@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -9,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/artifacts/internal/cli"
 	"github.com/ikigenba/ikigenba/artifacts/internal/files"
+	"github.com/ikigenba/ikigenba/artifacts/internal/store"
 	"github.com/ikigenba/ikigenba/artifacts/internal/tools"
 )
 
-// Nil Unsetenv, empty Dir and injected clock use.
+// R-XO1A-6QM3: nil Unsetenv, empty Dir and injected clock use.
 func TestRunDefaultDirectoryAndInjectedClock(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -78,7 +81,7 @@ func TestRunDefaultDirectoryAndInjectedClock(t *testing.T) {
 	}
 }
 
-// Import expiry and metadata also use the supplied clock.
+// R-XO1A-6QM3: import expiry and metadata also use the supplied clock.
 func TestRunImportInjectedClock(t *testing.T) {
 	path, url := serveSibling(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("imported body")) }))
 	r := newRun(t, t.TempDir())
@@ -117,5 +120,54 @@ func TestRunImportInjectedClock(t *testing.T) {
 	bus := r.bus.Events()
 	if len(bus) != 1 || !bus[0].Time.Equal(now) {
 		t.Fatalf("import bus clock %#v", bus)
+	}
+}
+
+// R-XO1A-6QM3: startup and subsequent sweep comparisons use Now,
+// independently of the timestamp delivered by the injected timer.
+func TestRunInjectedSweepClock(t *testing.T) {
+	dir := t.TempDir()
+	r := newRun(t, dir)
+	initial := r.p.Now()
+	seedRun(t, dir, initial.Add(-time.Hour), func(_ *db.DB, st *store.Store) {
+		for _, expiry := range []struct {
+			path string
+			at   time.Time
+		}{{"expired.bin", initial}, {"future.bin", initial.Add(time.Minute)}} {
+			_, _, err := st.Put(context.Background(), store.Draft{Path: expiry.path, OwnerID: "owner", OwnerEmail: "owner@example.test", Expires: expiry.at, Max: 99}, strings.NewReader(expiry.path))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	r.start()
+	status, _ := r.request("GET", "/files/expired.bin", "owner", nil, nil)
+	expectStatus(t, status, 404)
+	status, _ = r.request("GET", "/files/future.bin", "owner", nil, nil)
+	expectStatus(t, status, 200)
+	wait := readWait(t, r.waits)
+	later := initial.Add(time.Minute)
+	r.now.Store(later.Unix())
+	wait.fire <- initial.Add(-time.Hour)
+	_ = readWait(t, r.waits)
+	status, _ = r.request("GET", "/files/future.bin", "owner", nil, nil)
+	expectStatus(t, status, 404)
+	if r.stop() != cli.ExitSuccess {
+		t.Fatal("stop failed")
+	}
+	for _, event := range r.trail.Events() {
+		want := later
+		if event.Name == "service.started" || event.Name == "artifact.deleted" && event.Attrs["path"] == "expired.bin" {
+			want = initial
+		}
+		if event.Name == "service.started" || event.Name == "artifact.deleted" || event.Name == "service.stopping" {
+			if !event.Time.Equal(want) {
+				t.Errorf("sweep telemetry clock %#v want %v", event, want)
+			}
+		}
+	}
+	bus := r.bus.Events()
+	if len(bus) != 2 || !bus[0].Time.Equal(initial) || !bus[1].Time.Equal(later) {
+		t.Fatalf("sweep bus clocks %#v", bus)
 	}
 }
