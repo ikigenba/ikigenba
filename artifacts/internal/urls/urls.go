@@ -34,6 +34,12 @@ func serviceURL(path, name string) (string, bool) {
 	return strings.TrimRight(entry.URL, "/"), ok
 }
 
+// Configured returns the published artifacts URL without a request fallback.
+func Configured(servicesPath string) string {
+	base, _ := serviceURL(servicesPath, Service)
+	return base
+}
+
 // Base returns the published artifacts URL or the request origin.
 func Base(r *http.Request, servicesPath string) string {
 	if base, ok := serviceURL(servicesPath, Service); ok {

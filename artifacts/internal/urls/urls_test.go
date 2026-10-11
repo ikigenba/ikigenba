@@ -73,3 +73,38 @@ func TestAddresses(t *testing.T) {
 		}
 	}
 }
+
+// R-05Q2-1GZY R-06XY-F8QN
+func TestConfigured(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "services.json")
+	for _, tc := range []struct{ data, want string }{
+		{`{"services":[{"name":"artifacts","url":"https://published.example.test","description":"","socket":"","enabled":true,"mcp":true}]}`, "https://published.example.test"},
+		{`{"services":[{"name":"artifacts","url":"https://published.example.test/","description":"","socket":"","enabled":true,"mcp":true}]}`, "https://published.example.test"},
+		{`{"services":[{"name":"auth","url":"https://identity.example.test/","description":"","socket":"","enabled":true,"mcp":false}]}`, ""},
+		{"broken", ""},
+	} {
+		if err := os.WriteFile(file, []byte(tc.data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if got := urls.Configured(file); got != tc.want {
+			t.Fatalf("Configured(%q) = %q, want %q", tc.data, got, tc.want)
+		}
+		if tc.want != "" {
+			for _, host := range []string{"gateway.example.test", "artifacts.example.test:8123"} {
+				for _, scheme := range []string{"http", "https"} {
+					r := httptest.NewRequest("GET", "/", nil)
+					r.Host = host
+					r.Header.Set("X-Forwarded-Proto", scheme)
+					if got := urls.Base(r, file); got != urls.Configured(file) {
+						t.Fatalf("request changed configured URL: %q", got)
+					}
+				}
+			}
+		}
+	}
+	for _, path := range []string{"", filepath.Join(t.TempDir(), "missing")} {
+		if got := urls.Configured(path); got != "" {
+			t.Fatalf("unreadable services: %q", got)
+		}
+	}
+}

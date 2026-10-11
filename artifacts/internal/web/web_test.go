@@ -255,7 +255,7 @@ func TestPagesAndStaticRouting(t *testing.T) {
 	}
 }
 
-// R-Z1GX-OIEC
+// R-H2EC-Z8Z3
 func TestMCPRouting(t *testing.T) {
 	f := newFixture(t)
 	h := web.Handler(f.cfg)
@@ -273,7 +273,7 @@ func TestMCPRouting(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	catalog := tools.Catalog()
+	catalog := tools.Catalog("")
 	if len(infos) != len(catalog) {
 		t.Fatal(infos)
 	}
@@ -505,4 +505,66 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 	if err != nil || string(data) != "retained fixture bytes" {
 		t.Fatal("outage changed bytes", string(data), err)
 	}
+}
+
+// R-085U-T0HC R-H2EC-Z8Z3
+func TestConfiguredToolDescriptions(t *testing.T) {
+	for _, tc := range []struct{ name, entryURL, base string }{
+		{"configured", "https://published.example.test", "https://published.example.test"},
+		{"trailing slash", "https://published.example.test/", "https://published.example.test"},
+		{"no entry", "", ""},
+		{"missing file", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")
+			if tc.name != "missing file" {
+				entries := []map[string]any{}
+				if tc.entryURL != "" {
+					entries = append(entries, map[string]any{"name": urls.Service, "url": tc.entryURL, "description": "", "socket": "", "enabled": true, "mcp": true})
+				}
+				data, err := json.Marshal(map[string]any{"services": entries})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = os.WriteFile(f.cfg.ServicesPath, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			srv := httptest.NewServer(web.Handler(f.cfg))
+			defer srv.Close()
+			catalog := tools.Catalog(tc.base)
+			caller := identity.Caller{UserID: "caller-chosen", Email: "caller@example", RequestID: "request-chosen"}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			for _, origin := range []struct{ host, scheme string }{{"gateway.example.test", "https"}, {"different.example.test:8123", "http"}} {
+				client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: &http.Client{Transport: originTransport{origin.host, origin.scheme}}})
+				infos, err := client.ListTools(ctx, caller)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(infos) != len(catalog) {
+					t.Fatal(infos)
+				}
+				for i, info := range infos {
+					if info.Name != catalog[i].Name || info.Description != catalog[i].Description || !strings.Contains(info.Description, tc.base+"/files/") || strings.Contains(info.Description, "//files/") || (tc.base == "" && strings.Contains(info.Description, "://")) {
+						t.Fatalf("unexpected description: %#v", info)
+					}
+				}
+				// Changing the services file after construction must not register
+				// the tools again or change their descriptions on a later request.
+				if err = os.WriteFile(f.cfg.ServicesPath, []byte(`{"services":[{"name":"artifacts","url":"https://later.example.test/","description":"","socket":"","enabled":true,"mcp":true}]}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+type originTransport struct{ host, scheme string }
+
+func (tr originTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r.Host = tr.host
+	r.Header.Set("X-Forwarded-Proto", tr.scheme)
+	return http.DefaultTransport.RoundTrip(r)
 }

@@ -22,6 +22,7 @@ import (
 
 // Config describes the artifact service contract.
 type Config struct {
+	Base      string
 	Store     *store.Store
 	Telemetry *telemetry.Writer
 	Events    *events.Emitter
@@ -34,7 +35,9 @@ type Config struct {
 type Entry struct{ Name, Description string }
 
 // BytesGuide explains how callers put and fetch artifact bytes over HTTP.
-const BytesGuide string = "No tool carries bytes. To put a file, send an HTTP PUT with the file as the body to /files/<path> on the artifacts host, with your bearer token in the Authorization header: 201 means created, 200 means replaced. The Content-Type header is stored and served back, and an optional X-Artifact-Expires header holding an RFC 3339 instant sets when the artifact expires. To fetch the bytes, send an authenticated GET to the same URL, which is the url field that show and list answer. Use import only for a file another service on this space already serves at a URL."
+func BytesGuide(base string) string {
+	return "No tool carries bytes. To put a file, send an HTTP PUT with the file as the body to " + base + "/files/<path>, with your bearer token in the Authorization header: 201 means created, 200 means replaced. The Content-Type header is stored and served back, and an optional X-Artifact-Expires header holding an RFC 3339 instant sets when the artifact expires. To fetch the bytes, send an authenticated GET to the same URL, which is the url field that show and list answer. Use import only for a file another service on this space already serves at a URL."
+}
 
 // ListArgs describes the artifact service contract.
 type ListArgs struct{}
@@ -109,12 +112,12 @@ func FetchFailed(n int) string { return fmt.Sprintf("Sibling answered status %d"
 func TooLarge(n int64) string { return fmt.Sprintf("Artifact exceeds %d bytes", n) }
 
 // Catalog implements the artifact service contract.
-func Catalog() []Entry {
+func Catalog(base string) []Entry {
 	return []Entry{
-		{"list", "List every artifact's metadata." + "\n\n" + BytesGuide},
-		{"show", "Show an artifact's metadata." + "\n\n" + BytesGuide},
-		{"delete", "Delete an artifact you own." + "\n\n" + BytesGuide},
-		{"import", "Import a sibling service's file." + "\n\n" + BytesGuide},
+		{"list", "List every artifact's metadata." + "\n\n" + BytesGuide(base)},
+		{"show", "Show an artifact's metadata." + "\n\n" + BytesGuide(base)},
+		{"delete", "Delete an artifact you own." + "\n\n" + BytesGuide(base)},
+		{"import", "Import a sibling service's file." + "\n\n" + BytesGuide(base)},
 	}
 }
 
@@ -138,7 +141,7 @@ func Register(srv *mcp.Server, cfg Config) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	c := Catalog()
+	c := Catalog(cfg.Base)
 	addTool(srv, mcp.Tool[ListArgs, ArtifactList]{Name: c[0].Name, Description: c[0].Description, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, _ ListArgs) (ArtifactList, error) {
 		out := ArtifactList{Artifacts: make([]Listed, 0)}
 		all, err := cfg.Store.List(ctx)

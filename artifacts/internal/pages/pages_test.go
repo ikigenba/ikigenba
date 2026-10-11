@@ -250,14 +250,14 @@ func TestCanonicalArtifactAddresses(t *testing.T) {
 	}
 }
 func TestToolsAboutAndNotFoundWithoutStore(t *testing.T) {
-	// R-N3CK-X1P4 R-N5SD-OL6I R-N4KH-ATFT
+	// R-HAXN-NN5Y R-N5SD-OL6I R-N4KH-ATFT
 	cfg, _ := fixture(t)
 	cfg.Store = nil
 	r := request(http.MethodGet, "/tools")
 	b := banner(r, cfg.ServicesPath)
 	b.Trail = []page.Level{pages.ToolsLevel}
 	d := pages.ToolsData{Banner: b}
-	for _, e := range tools.Catalog() {
+	for _, e := range tools.Catalog("") {
 		d.Tools = append(d.Tools, pages.ToolRow{Name: e.Name, Description: tools.FirstLine(e.Description)})
 	}
 	checkPage(t, cfg, r, 200, "tools", d)

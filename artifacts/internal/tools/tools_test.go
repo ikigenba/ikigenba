@@ -83,7 +83,7 @@ func setup(t *testing.T, fc fetch.Config, limit int64, clocks ...func() time.Tim
 	em := events.New(events.Config{Service: "artifacts", Sink: ec, Emits: trail.Emits(), Now: clock, Rand: &random{}, Stderr: io.Discard})
 	t.Cleanup(func() { em.Shutdown(context.Background()); w.Shutdown(context.Background(), "test") })
 	fc.Telemetry = w
-	cfg := tools.Config{Store: store.New(d, blobs, store.Config{Now: clock, Rand: &random{}}), Telemetry: w, Events: em, Max: limit, Now: toolClock, Fetch: fc}
+	cfg := tools.Config{Base: base, Store: store.New(d, blobs, store.Config{Now: clock, Rand: &random{}}), Telemetry: w, Events: em, Max: limit, Now: toolClock, Fetch: fc}
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "artifacts", Telemetry: w})
 	tools.Register(srv, cfg)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -204,28 +204,36 @@ func (f *fixture) snapshot(t *testing.T) string {
 	return string(v)
 }
 
-// R-M0A9-5KIF R-Z876-HU2X
+// R-H4U5-QSGH R-H622-4K76 R-H79Y-IBXV
 func TestCatalogDescriptions(t *testing.T) {
-	const guide string = tools.BytesGuide
-	if guide == "" || strings.Contains(guide, "\n") {
-		t.Fatal("byte guide must be a non-empty paragraph without newlines")
-	}
-	catalog := tools.Catalog()
 	names := []string{"list", "show", "delete", "import"}
-	if len(catalog) != len(names) {
-		t.Fatalf("catalog has %d entries, want %d", len(catalog), len(names))
-	}
-	firstLines := make(map[string]bool)
-	for i, entry := range catalog {
-		first, _, _ := strings.Cut(entry.Description, "\n")
-		if entry.Name != names[i] || first == "" || firstLines[first] || entry.Description != first+"\n\n"+guide || tools.FirstLine(entry.Description) != first {
-			t.Fatalf("invalid catalog entry %d: %#v", i, entry)
+	var originalFirstLines []string
+	for _, base := range []string{"", "https://artifacts.example.test", "http://chosen.example:8123"} {
+		guide := tools.BytesGuide(base)
+		if guide == "" || strings.Contains(guide, "\n") || !strings.Contains(guide, base+"/files/") || (base == "" && strings.Contains(guide, "://")) {
+			t.Fatalf("invalid byte guide for %q: %q", base, guide)
 		}
-		firstLines[first] = true
+		catalog := tools.Catalog(base)
+		if len(catalog) != len(names) {
+			t.Fatalf("catalog has %d entries, want %d", len(catalog), len(names))
+		}
+		firstLines := make(map[string]bool)
+		for i, entry := range catalog {
+			first, _, _ := strings.Cut(entry.Description, "\n")
+			if entry.Name != names[i] || first == "" || firstLines[first] || entry.Description != first+"\n\n"+guide || tools.FirstLine(entry.Description) != first {
+				t.Fatalf("invalid catalog entry %d: %#v", i, entry)
+			}
+			firstLines[first] = true
+			if base == "" {
+				originalFirstLines = append(originalFirstLines, first)
+			} else if first != originalFirstLines[i] {
+				t.Fatalf("base changed first line for %s", entry.Name)
+			}
+		}
 	}
 }
 
-// R-Z876-HU2X
+// R-H79Y-IBXV
 func TestFirstLine(t *testing.T) {
 	for _, tc := range []struct{ description, want string }{
 		{"", ""},
@@ -241,10 +249,10 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// R-ND3R-Z7MO R-NEBO-CZDD R-NFJK-QR42 R-NGRH-4IUR R-NJ79-W2C5 R-TY44-J0F8
+// R-H3M9-D0PS R-NEBO-CZDD R-NFJK-QR42 R-NGRH-4IUR R-H8HU-W3OK R-TY44-J0F8
 func TestPublicContracts(t *testing.T) {
 	f := setup(t, fetch.Config{}, 100)
-	catalog := tools.Catalog()
+	catalog := tools.Catalog(f.cfg.Base)
 	infos, e := f.client.ListTools(context.Background(), owner)
 	if e != nil {
 		t.Fatal(e)
@@ -697,7 +705,7 @@ func TestImportDefaultContentTypeAndExactCap(t *testing.T) {
 	}
 }
 
-// R-ND3R-Z7MO
+// R-H3M9-D0PS
 func TestDefaultImportClock(t *testing.T) {
 	f := setup(t, fetch.Config{}, 100, nil)
 	past := time.Time{}.Format(time.RFC3339)
