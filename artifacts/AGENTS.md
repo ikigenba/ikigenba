@@ -14,8 +14,9 @@ whose expiry has passed once before it is ready and then hourly. Its manifest
 sets `guests = false`: nginx lets no request without a credential through, to
 the pages, to `/files/` and to `/mcp` alike. At `/mcp` it offers four MCP
 tools, which agents reach through the MCP gateway: `list`, `show`, `delete`
-and `import`, the last copying a file a sibling service holds, fetched over
-that sibling's socket as the caller. At `/` it serves a page of every
+and `import`. The tools carry metadata only: `import` moves no bytes and
+answers an upload plan, where and how to `PUT` the file, which the agent
+follows itself. At `/` it serves a page of every
 artifact, with a page per artifact at `/<id>`, a tools page at `/tools` and
 an about screen at `/about`. On a host it runs as `bin/artifacts` of its
 release with `/var/opt/ikigenba/artifacts` as its working directory and its
@@ -27,8 +28,7 @@ binary from the checkout. The module path is
 `/_appkit/`), `identity` (the caller nginx authenticated, required on every
 route but the event bus's two), `mcp` (the server mounted at `/mcp`, and the
 client the tests drive it with), `telemetry` (the event contract, the request
-middleware, the writer artifacts' events go through, and the sibling client
-`import` fetches with), `db` (the database's handle and its migrations),
+middleware and the writer artifacts' events go through), `db` (the database's handle and its migrations),
 `services` (the services file), `version` (the identity and its display
 string) and `events` (the event bus).
 The contract is the documents in `specs/design/`. This file restates none of
@@ -136,7 +136,7 @@ enter the test side of the grep.
 **No id-shaped literal in a fixture.** The grep cannot tell a requirement tag
 from any other string of that shape: such a literal anywhere in a `*_test.go`
 file counts as a covered id. artifacts echoes back what callers give it —
-paths, bodies, content types, expiry headers, import URLs — so a test that
+paths, bodies, content types, expiry headers, the services file's URL — so a test that
 sends an id-shaped value lands one in the test file. No fixture carries one:
 not a path, a body, a tool argument, a header value, a URL, a services file
 entry, an event's payload, or an expected body.
@@ -157,8 +157,7 @@ These rules govern the unit tests: everything `go test ./...` runs.
 **The run seam carries the process.** artifacts binds nothing itself; it serves
 on the listener it is passed. Arguments, environment lookup and removal, the
 pid, the inherited listener, the output streams, the clock, the sweeper's
-timer, the import's timer, the random source and the working directory come
-in through the run seam design declares
+timer, the random source and the working directory come in through the run seam design declares
 (`cli.Run` with `cli.Process`), and tests inject them. A `Run`-level test sets
 the version string to one of its own and `Dir` to a temporary directory of its
 own, so the database and the blob directory land there and never in the
@@ -200,13 +199,11 @@ locking) and never appkit's `db` contract (opening, migrations, transactions,
 no body is held whole is carried by the streaming requirements design names,
 never by inspecting a heap.
 
-**Sweeps and bounds are driven, not waited out.** The expiry sweep and the
-import's time bound are proved through the injected clock and the two timers
-design names, never by waiting real seconds. A sweep runs because the test
-advances its `Now` and delivers on the channel its `After` returned, which
-tells the test each wait as it begins; the sweep before ready runs without
-one. An import's bound ends because the test delivers on the channel its
-`ImportAfter` returned; the two timers never share a channel. A client that
+**Sweeps are driven, not waited out.** The expiry sweep is proved through
+the injected clock and the timer design names, never by waiting real
+seconds. A sweep runs because the test advances its `Now` and delivers on the
+channel its `After` returned, which tells the test each wait as it begins;
+the sweep before ready runs without one. A client that
 goes away is a request the test cancels, a connection it closes, or a body
 reader of its own that fails mid-body. A test that sleeps to
 age a wait is a bug. A test waits for something it started to finish with a
@@ -260,14 +257,13 @@ past a small `ARTIFACT_MAX_BYTES`, one with no `Content-Length`). It proves a
 `httptest.ResponseRecorder` for the same request, and lists the blob
 directory after each call.
 
-**Siblings are the test's own.** `import` reaches a sibling only through
-the services file. A test writes a services file into its own temporary
-directory whose entry names a Unix socket in a short temporary directory, on
-which it serves a stand-in sibling, and hands its path to the `fetch` or
-tools config, or names it in `IKIGENBA_SERVICES` through the `LookupEnv` it
-gives `Run`. The stand-in records what it received, the identity headers
-included, and answers the status, headers and body the test chooses,
-cutting the body off where the test needs it.
+**The plan's base is the test's own.** `import`'s `url` is built on the
+base its config carries, never on the request's `Host`. A test that registers
+the tools chooses that base, and the tools page's `tools.Catalog()` takes
+none. A test through `web.Handler` writes a services file into its own
+temporary directory whose entry `artifacts` names a URL, or none, and hands
+its path in the config, or names it in `IKIGENBA_SERVICES` through the
+`LookupEnv` it gives `Run`.
 
 **No test runs the page's scripts.** Every page carries appkit's feedback
 script.
@@ -309,9 +305,8 @@ test that builds, execs, waits on, or signals a process is a bug.
 ## Live tests
 
 artifacts calls no external service: its callers are browsers, agents and
-sibling services on the same host, and `import` fetches only from siblings,
-all of which the unit tests stand in for, so it
-has no live tests. Should a design ever call for one, it is a
+sibling services on the same host, all of which the unit tests stand in
+for, so it has no live tests. Should a design ever call for one, it is a
 `*_live_test.go` file guarded by `//go:build live` with test functions named
 `TestLive*`; it proves lightly that the whole is glued together, carries the
 requirement id it proves, reads its credentials from the environment, fails
@@ -372,5 +367,5 @@ artifacts ships in the suite release: `devctl build <sha|tag>` builds it with
 every other app, its part of the release holding `bin/artifacts`, `etc/` and
 `share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys that release.
 The host must run events, which artifacts emits to, and its services file
-must name the siblings `import` fetches from. The host's backup archives
+must name artifacts itself, with the `url` `import`'s plan is built on. The host's backup archives
 `state/` whole, so `artifacts.db` and `state/blobs/` are taken together.
