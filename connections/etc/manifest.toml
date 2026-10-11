@@ -1,0 +1,16 @@
+app = "connections"
+description = "Accounts at outside providers, connected for the suite's connectors"
+default = false
+mcp = true
+guests = false
+secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+
+[database]
+engine = "sqlite"
+path = "state/connections.db"
+
+[resources]
+memory_max = "128M"
+
+[home]
+group = "core"
