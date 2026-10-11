@@ -1,7 +1,6 @@
 package runs
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -465,30 +464,51 @@ func TestDeliveryMatchesWholeWordsOnce(t *testing.T) {
 	testEqual(t, len(deliveryRuns(t, f, f.p)), 1)
 }
 
-// R-IZ2I-YDFH
+// R-6D3S-TYVK
 func TestDeliveryEnvironment(t *testing.T) {
-	f, ctx, d := deliveryFixture(t)
-	bash, e := exec.LookPath("bash")
-	if e != nil {
-		t.Fatal(e)
-	}
-	f.cfg.Path = filepath.Dir(bash)
-	tools := []string{agent.GroupBash}
-	p, _, e := f.s.Update(ctx, f.p.ID, store.Change{Tools: &tools})
-	if e != nil {
-		t.Fatal(e)
-	}
-	f.p = p
-	f.cfg.BaseURL = provider(t, func(w http.ResponseWriter, _ *http.Request) {
-		toolAnswer(w, "Bash", map[string]any{"command": "printf '%s|%s|%s|%s' \"$IKIGENBA_USER_ID\" \"$IKIGENBA_REQUEST_ID\" \"$IKIGENBA_EVENT_ID\" \"$IKIGENBA_EVENT_DEPTH\""})
-	}).URL
-	f.rebuild()
-	testEqual(t, f.c.Deliver(ctx, d), events.OK())
-	r := deliveryRuns(t, f, f.p)[0]
-	f.event(t, "run.finished", r.ID)
-	transcript := testRead(t, filepath.Join(f.c.Folder(r), TranscriptFile))
-	if !bytes.Contains(transcript, []byte(f.p.Owner+"|delivery-request|"+d.Event.ID+"|2")) {
-		t.Fatalf("environment result missing: %s", transcript)
+	for _, email := range []string{"owner@example.test", ""} {
+		t.Run(fmt.Sprint(email != ""), func(t *testing.T) {
+			f, ctx, d := deliveryFixture(t)
+			bash, e := exec.LookPath("bash")
+			if e != nil {
+				t.Fatal(e)
+			}
+			f.cfg.Path = filepath.Dir(bash)
+			if e = f.s.Delete(ctx, f.p.ID); e != nil {
+				t.Fatal(e)
+			}
+			p, e := f.s.Create(ctx, store.Draft{Owner: f.p.Owner, OwnerEmail: email, Name: f.p.Name, Model: f.p.Model, Prompt: f.p.Prompt, Tools: []string{agent.GroupBash}})
+			if e != nil {
+				t.Fatal(e)
+			}
+			f.p = p
+			if _, e = f.s.Subscribe(ctx, p.ID, d.Event.Name); e != nil {
+				t.Fatal(e)
+			}
+			round := 0
+			f.cfg.BaseURL = provider(t, func(w http.ResponseWriter, _ *http.Request) {
+				round++
+				if round == 1 {
+					toolAnswer(w, "Bash", map[string]any{"command": `printf '%s|%s|%s|%s|%s' "$IKIGENBA_USER_ID" "$IKIGENBA_USER_EMAIL" "$IKIGENBA_REQUEST_ID" "$IKIGENBA_EVENT_ID" "$IKIGENBA_EVENT_DEPTH"`})
+				} else {
+					answer(w, "done")
+				}
+			}).URL
+			f.rebuild()
+			testEqual(t, f.c.Deliver(ctx, d), events.OK())
+			r := deliveryRuns(t, f, f.p)[0]
+			f.event(t, "run.finished", r.ID)
+			want := p.Owner + "|" + email + "|delivery-request|" + d.Event.ID + "|2"
+			found := false
+			for _, record := range readRecords(t, filepath.Join(f.c.Folder(r), TranscriptFile)) {
+				if record.ToolResult != nil && record.ToolResult.Content == want {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("environment tool result missing: %q", want)
+			}
+		})
 	}
 }
 

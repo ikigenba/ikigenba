@@ -423,7 +423,7 @@ func (c *Core) launch(ctx context.Context, l *liveRun, input []byte) error {
 	}
 	l.out = &headWriter{file: out, limit: c.cfg.OutputMaxBytes}
 	l.err = &headWriter{file: errFile, limit: c.cfg.OutputMaxBytes}
-	env := []string{"PATH=" + c.cfg.Path, "HOME=" + folder, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + r.ID, "IKIGENBA_PROMPT=" + p.ID, "IKIGENBA_RUN_DIR=" + folder, "IKIGENBA_WORK_DIR=" + filepath.Join(folder, WorkDir), "IKIGENBA_INPUT=" + filepath.Join(folder, InputFile), "IKIGENBA_USER_ID=" + req.Caller.UserID, "IKIGENBA_REQUEST_ID=" + req.Caller.RequestID, "IKIGENBA_EVENT_ID=" + req.Cause.ID, "IKIGENBA_EVENT_DEPTH=" + strconv.Itoa(req.Cause.Depth), "IKIGENBA_SERVICES=" + c.cfg.Services}
+	env := []string{"PATH=" + c.cfg.Path, "HOME=" + folder, "LANG=C.UTF-8", "IKIGENBA_RUN_ID=" + r.ID, "IKIGENBA_PROMPT=" + p.ID, "IKIGENBA_RUN_DIR=" + folder, "IKIGENBA_WORK_DIR=" + filepath.Join(folder, WorkDir), "IKIGENBA_INPUT=" + filepath.Join(folder, InputFile), "IKIGENBA_USER_ID=" + req.Caller.UserID, "IKIGENBA_USER_EMAIL=" + req.Caller.Email, "IKIGENBA_REQUEST_ID=" + req.Caller.RequestID, "IKIGENBA_EVENT_ID=" + req.Cause.ID, "IKIGENBA_EVENT_DEPTH=" + strconv.Itoa(req.Cause.Depth), "IKIGENBA_SERVICES=" + c.cfg.Services}
 	group := ""
 	if c.cfg.Cgroup != "" {
 		group = filepath.Join(c.cfg.Cgroup, r.ID)

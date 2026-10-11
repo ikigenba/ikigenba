@@ -323,7 +323,7 @@ func TestCoreAnswerAndBound(t *testing.T) {
 	}
 }
 
-// R-F2QE-4MBQ R-F566-W5T4 R-O59H-E0EY R-EYEO-8L0I R-12NB-6QBT R-OA52-X3DQ R-OBCZ-AV4F R-FTK6-JKN0 R-107I-F6UF R-0RO7-QSNK R-PO4Y-LOS7
+// R-F2QE-4MBQ R-F566-W5T4 R-O59H-E0EY R-69G3-ONNH R-F2GV-AOSY R-12NB-6QBT R-OA52-X3DQ R-OBCZ-AV4F R-FTK6-JKN0 R-107I-F6UF R-0RO7-QSNK R-PO4Y-LOS7
 func TestCoreQueueFIFO(t *testing.T) {
 	f := newCoreFixture(t)
 	f.cfg.MaxActive = 1
@@ -338,7 +338,9 @@ func TestCoreQueueFIFO(t *testing.T) {
 	if a.Status != store.StatusRunning {
 		t.Fatal(a)
 	}
-	b := f.start(t, f.p, f.request())
+	queuedReq := f.request()
+	queuedReq.Caller = identity.Caller{UserID: "bob", Email: "bob@example.test", RequestID: "queued-request"}
+	b := f.start(t, f.p, queuedReq)
 	bad := f.request()
 	bad.Input = []byte("{x")
 	invalid := f.start(t, f.p, bad)
@@ -378,7 +380,24 @@ func TestCoreQueueFIFO(t *testing.T) {
 	release <- struct{}{}
 	f.event(t, "run.finished", a.ID)
 	testReceive(t, entered)
-	f.event(t, "run.started", b.ID)
+	startedB := f.event(t, "run.started", b.ID)
+	storedB, e := f.s.RunByID(context.Background(), b.ID)
+	if e != nil || storedB.Status != store.StatusRunning {
+		t.Fatal(storedB, e)
+	}
+	testEqual(t, startedB.Attrs, StartedAttrs(storedB))
+	testEqual(t, startedB.User, Caller(storedB).UserID)
+	testEqual(t, startedB.RequestID, Caller(storedB).RequestID)
+	storedC, e := f.s.RunByID(context.Background(), following.ID)
+	if e != nil || storedC.Status != store.StatusQueued {
+		t.Fatal(storedC, e)
+	}
+	for _, name := range []string{StdoutFile, StderrFile} {
+		info, e := os.Stat(filepath.Join(f.c.Folder(b), name))
+		if e != nil || !info.Mode().IsRegular() || info.Size() != 0 {
+			t.Fatal(info, e)
+		}
+	}
 	if len(f.timers) != 2 {
 		t.Fatal("started run did not receive exactly one timer", len(f.timers))
 	}
@@ -431,12 +450,21 @@ func TestCoreQueueFIFO(t *testing.T) {
 	testEqual(t, seen[a.ID], []string{"run.started", "run.finished"})
 	testEqual(t, seen[b.ID], []string{"run.started", "run.finished"})
 	testEqual(t, seen[following.ID], []string{"run.started", "run.finished"})
+	indices := map[string]int{}
+	for i, event := range events {
+		if id, ok := event.Attrs["prompt_run"].(string); ok {
+			indices[id+event.Name] = i
+		}
+	}
+	if indices[b.ID+"run.started"] <= indices[a.ID+"run.finished"] || indices[following.ID+"run.started"] <= indices[b.ID+"run.finished"] {
+		t.Fatal("queued starts did not follow preceding finishes", indices)
+	}
 	for _, id := range []string{invalid.ID, cancelled.ID, direct.ID} {
 		testEqual(t, seen[id], []string{"run.finished"})
 	}
 }
 
-// R-M97H-3GOR R-FJSZ-HEPG R-FUS2-XCDP R-PT0K-4RQZ R-P8A9-MO56
+// R-F2GV-AOSY R-FJSZ-HEPG R-FUS2-XCDP R-PT0K-4RQZ R-P8A9-MO56
 func TestCoreKillAndTimeout(t *testing.T) {
 	for _, mode := range []string{"cancel", "timer", "race"} {
 		t.Run(mode, func(t *testing.T) {
@@ -640,7 +668,7 @@ func readRecords(t *testing.T, path string) []agentkit.LogRecord {
 	return records
 }
 
-// R-9FUZ-3PNN R-OL46-D11Z R-GY3K-6WJA R-OORV-ICA2 R-OPZR-W40R R-MQKN-6C2I R-OXB6-6QGX
+// R-9FUZ-3PNN R-OL46-D11Z R-65SE-JCFE R-OORV-ICA2 R-OPZR-W40R R-MQKN-6C2I R-OXB6-6QGX
 func TestCoreEnvironmentSpecAndWork(t *testing.T) {
 	f := newCoreFixture(t)
 	bash, e := exec.LookPath("bash")
@@ -735,7 +763,7 @@ func TestCoreEnvironmentSpecAndWork(t *testing.T) {
 		}
 		env[parts[0]] = parts[1]
 	}
-	testEqual(t, env, map[string]string{"PATH": f.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_PROMPT": p.ID, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_WORK_DIR": filepath.Join(folder, WorkDir), "IKIGENBA_INPUT": filepath.Join(folder, InputFile), "IKIGENBA_USER_ID": req.Caller.UserID, "IKIGENBA_REQUEST_ID": req.Caller.RequestID, "IKIGENBA_EVENT_ID": req.Cause.ID, "IKIGENBA_EVENT_DEPTH": "2", "IKIGENBA_SERVICES": servicesPath})
+	testEqual(t, env, map[string]string{"PATH": f.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_PROMPT": p.ID, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_WORK_DIR": filepath.Join(folder, WorkDir), "IKIGENBA_INPUT": filepath.Join(folder, InputFile), "IKIGENBA_USER_ID": req.Caller.UserID, "IKIGENBA_USER_EMAIL": req.Caller.Email, "IKIGENBA_REQUEST_ID": req.Caller.RequestID, "IKIGENBA_EVENT_ID": req.Cause.ID, "IKIGENBA_EVENT_DEPTH": "2", "IKIGENBA_SERVICES": servicesPath})
 	group := filepath.Join(f.cfg.Cgroup, r.ID)
 	testEqual(t, strings.TrimSpace(string(testRead(t, filepath.Join(group, "cgroup.procs")))), string(testRead(t, filepath.Join(folder, WorkDir, "pid"))))
 	testEqual(t, strings.TrimSpace(string(testRead(t, filepath.Join(group, "memory.max")))), strconv.FormatInt(f.cfg.RunMemoryMaxBytes, 10))
@@ -1309,7 +1337,7 @@ func TestFailedEndingsPruneBeforeEvent(t *testing.T) {
 	}
 }
 
-// R-GY3K-6WJA R-OORV-ICA2 R-OPZR-W40R R-EYEO-8L0I R-M97H-3GOR
+// R-65SE-JCFE R-OORV-ICA2 R-OPZR-W40R R-69G3-ONNH R-F2GV-AOSY
 func TestQueuedSnapshotManualRelativeRun(t *testing.T) {
 	f := newCoreFixture(t)
 	bash, e := exec.LookPath("bash")
@@ -1440,7 +1468,7 @@ func TestQueuedSnapshotManualRelativeRun(t *testing.T) {
 		}
 		env[parts[0]] = parts[1]
 	}
-	testEqual(t, env, map[string]string{"PATH": f.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": queued.ID, "IKIGENBA_PROMPT": p.ID, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_WORK_DIR": filepath.Join(folder, WorkDir), "IKIGENBA_INPUT": filepath.Join(folder, InputFile), "IKIGENBA_USER_ID": req.Caller.UserID, "IKIGENBA_REQUEST_ID": req.Caller.RequestID, "IKIGENBA_EVENT_ID": "", "IKIGENBA_EVENT_DEPTH": "0", "IKIGENBA_SERVICES": f.cfg.Services})
+	testEqual(t, env, map[string]string{"PATH": f.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": queued.ID, "IKIGENBA_PROMPT": p.ID, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_WORK_DIR": filepath.Join(folder, WorkDir), "IKIGENBA_INPUT": filepath.Join(folder, InputFile), "IKIGENBA_USER_ID": req.Caller.UserID, "IKIGENBA_USER_EMAIL": req.Caller.Email, "IKIGENBA_REQUEST_ID": req.Caller.RequestID, "IKIGENBA_EVENT_ID": "", "IKIGENBA_EVENT_DEPTH": "0", "IKIGENBA_SERVICES": f.cfg.Services})
 	records := readRecords(t, filepath.Join(folder, TranscriptFile))
 	testEqual(t, records[0].Conversation.Limits.MaxToolCalls, math.MaxInt)
 	testEqual(t, records[0].Conversation.Output.Schema, json.RawMessage(schema))
@@ -1485,5 +1513,67 @@ func TestQueuedSnapshotManualRelativeRun(t *testing.T) {
 	}
 	if finishIndex < 0 || startIndex <= finishIndex {
 		t.Fatal("queue start did not follow preceding finish", finishIndex, startIndex)
+	}
+}
+
+// R-65SE-JCFE
+func TestCoreExactBashEnvironment(t *testing.T) {
+	bash, e := exec.LookPath("bash")
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, email := range []string{"runner@example.test", ""} {
+		t.Run(fmt.Sprint(email != ""), func(t *testing.T) {
+			f := newCoreFixture(t)
+			f.cfg.Path = filepath.Dir(bash)
+			if email != "" {
+				f.cfg.Services = filepath.Join(t.TempDir(), "services.json")
+			}
+			round := 0
+			f.cfg.BaseURL = provider(t, func(w http.ResponseWriter, _ *http.Request) {
+				round++
+				if round == 1 {
+					toolAnswer(w, "Bash", map[string]any{"command": `cat /proc/$$/environ > "$IKIGENBA_WORK_DIR/env"; :`})
+				} else {
+					answer(w, "done")
+				}
+			}).URL
+			f.rebuild()
+			p := f.p
+			p.Tools = []string{agent.GroupBash}
+			req := f.request()
+			req.Caller.Email = email
+			if email != "" {
+				req.Cause = events.Cause{ID: "evt_0123456789abcdef", Depth: 2}
+			}
+			r := f.start(t, p, req)
+			f.event(t, "run.finished", r.ID)
+			folder, e := filepath.Abs(f.c.Folder(r))
+			if e != nil {
+				t.Fatal(e)
+			}
+			env := map[string]string{}
+			for _, item := range bytes.Split(testRead(t, filepath.Join(folder, WorkDir, "env")), []byte{0}) {
+				if len(item) == 0 {
+					continue
+				}
+				parts := strings.SplitN(string(item), "=", 2)
+				if len(parts) != 2 {
+					t.Fatal(string(item))
+				}
+				if _, duplicate := env[parts[0]]; duplicate {
+					t.Fatal("duplicate environment variable", parts[0])
+				}
+				env[parts[0]] = parts[1]
+			}
+			testEqual(t, env, map[string]string{"PATH": f.cfg.Path, "HOME": folder, "LANG": "C.UTF-8", "IKIGENBA_RUN_ID": r.ID, "IKIGENBA_PROMPT": p.ID, "IKIGENBA_RUN_DIR": folder, "IKIGENBA_WORK_DIR": filepath.Join(folder, WorkDir), "IKIGENBA_INPUT": filepath.Join(folder, InputFile), "IKIGENBA_USER_ID": req.Caller.UserID, "IKIGENBA_USER_EMAIL": email, "IKIGENBA_REQUEST_ID": req.Caller.RequestID, "IKIGENBA_EVENT_ID": req.Cause.ID, "IKIGENBA_EVENT_DEPTH": strconv.Itoa(req.Cause.Depth), "IKIGENBA_SERVICES": f.cfg.Services})
+			for _, value := range env {
+				for _, key := range f.cfg.Keys {
+					if strings.Contains(value, key) {
+						t.Fatal("provider key in environment")
+					}
+				}
+			}
+		})
 	}
 }
