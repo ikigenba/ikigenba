@@ -368,34 +368,9 @@ temporary directory.
 
 ## Deploy
 
-Deploy machinery, `devctl build` and `devctl deploy`, is hand-maintained
-infrastructure outside the spec system: the build run never reads, edits, or
-tests it.
-
-artifacts is an app, not a self-installing CLI: `devctl` builds it into a tarball
-named by the commit and pushes it to a space's host, where `opsctl install`
-installs it. There is no version to set, no tag to mint and no `--version`
-check. Until devctl is next released, use the `devctl` the worktree builds: run
-`make build` in `devctl/`, then run the commands below from the repository
-root. The host must run events, which artifacts emits to, and its services
-file must name the siblings `import` fetches from.
-
-1. Commit the change on the branch you are on (push only when asked); the
-   working tree must be clean.
-2. `devctl/bin/devctl build artifacts` writes `artifacts/dist/artifacts-<sha>.tar.xz`,
-   `<sha>` being the 40 lowercase hex digits of `HEAD`. It holds `bin/artifacts`,
-   `etc/`, and `share/icon.svg`; it refuses a dirty tree and a binary whose
-   `manifest` disagrees with the committed `etc/manifest.toml`.
-3. `devctl/bin/devctl deploy <space> artifacts/dist/artifacts-<sha>.tar.xz` uploads the
-   tarball to the space's `deploy/` prefix and runs `opsctl install` over ssh;
-   the host fetches it, writes `etc/env` (the manifest's `[env]` defaults and
-   the space's `DRAIN_SECONDS`), replaces the release, publishes
-   `ikigenba-artifacts.socket` (the Unix socket `/run/ikigenba/artifacts.sock`)
-   and the `Type=notify` `ikigenba-artifacts.service`, bounded by the manifest's
-   `[resources]`, regenerates the host's nginx and litestream configuration,
-   and restarts the service alone. The database and the blobs are kept across releases.
-
-`artifacts --version` prints the host's display string for the code it runs, built
-by the `String()` of what appkit's `version.Read()` returns from `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`.
-The host does not yet set either variable, so a deployed artifacts prints an empty
-line until it does.
+artifacts ships in the suite release: `devctl build <sha|tag>` builds it with
+every other app, its part of the release holding `bin/artifacts`, `etc/` and
+`share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys that release.
+The host must run events, which artifacts emits to, and its services file
+must name the siblings `import` fetches from. The host's backup archives
+`state/` whole, so `artifacts.db` and `state/blobs/` are taken together.
