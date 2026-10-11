@@ -7,7 +7,6 @@ secrets = []
 
 [env]
 ARTIFACT_MAX_BYTES = "1073741824"
-IMPORT_SECONDS = "600"
 
 [database]
 engine = "sqlite"

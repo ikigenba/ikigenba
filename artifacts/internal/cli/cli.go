@@ -40,31 +40,30 @@ const (
 const Usage = "Usage: artifacts [command]\n\nBinary files agents and services share, each put and fetched by path at\n/files/<path>, with MCP tools at /mcp and a page of artifacts at /, on\nthe socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 
 // Manifest describes the app to its host.
-const Manifest = "app = \"artifacts\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nARTIFACT_MAX_BYTES = \"1073741824\"\nIMPORT_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/artifacts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
+const Manifest = "app = \"artifacts\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nARTIFACT_MAX_BYTES = \"1073741824\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/artifacts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
 
 // NginxConf configures streaming transfers at the public name.
 const NginxConf = "client_max_body_size    0;\nproxy_request_buffering off;\nproxy_http_version      1.1;\nproxy_buffering         on;\nproxy_read_timeout      3600s;\nproxy_send_timeout      3600s;\nlocation = /events { return 404; }\nlocation = /declarations { return 404; }\n"
 
 // Process supplies the runtime resources and deterministic seams.
 type Process struct {
-	Args        []string
-	LookupEnv   func(string) (string, bool)
-	Unsetenv    func(string) error
-	Pid         int
-	Stdout      io.Writer
-	Stderr      io.Writer
-	Version     string
-	Inherit     func(uintptr) (net.Listener, error)
-	Now         func() time.Time
-	Sleep       func(context.Context, time.Duration)
-	After       func(time.Duration) <-chan time.Time
-	ImportAfter func(time.Duration) <-chan time.Time
-	Rand        io.Reader
-	Dir         string
-	Sink        telemetry.Sink
-	EventSink   events.Sink
-	Banner      func(page.User) page.Banner
-	MCP         func(*telemetry.Writer) *mcp.Server
+	Args      []string
+	LookupEnv func(string) (string, bool)
+	Unsetenv  func(string) error
+	Pid       int
+	Stdout    io.Writer
+	Stderr    io.Writer
+	Version   string
+	Inherit   func(uintptr) (net.Listener, error)
+	Now       func() time.Time
+	Sleep     func(context.Context, time.Duration)
+	After     func(time.Duration) <-chan time.Time
+	Rand      io.Reader
+	Dir       string
+	Sink      telemetry.Sink
+	EventSink events.Sink
+	Banner    func(page.User) page.Banner
+	MCP       func(*telemetry.Writer) *mcp.Server
 }
 type lockedReader struct {
 	mu sync.Mutex
@@ -149,9 +148,6 @@ func Run(ctx context.Context, p Process) int {
 	if p.After == nil {
 		p.After = time.After
 	}
-	if p.ImportAfter == nil {
-		p.ImportAfter = time.After
-	}
 	if p.Rand == nil {
 		p.Rand = rand.Reader
 	}
@@ -185,7 +181,7 @@ func Run(ctx context.Context, p Process) int {
 	}
 	sw := sweeper.Start(ctx, sweeper.Config{Store: st, Now: p.Now, After: p.After, Telemetry: w, Events: em})
 	path, _ := p.LookupEnv("IKIGENBA_SERVICES")
-	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Telemetry: w, Events: em, Settings: s, Now: p.Now, ImportAfter: p.ImportAfter})
+	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Telemetry: w, Events: em, Settings: s, Now: p.Now})
 	notify, _ := p.LookupEnv("NOTIFY_SOCKET")
 	if notify != "" {
 		if strings.HasPrefix(notify, "@") {

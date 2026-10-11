@@ -1,4 +1,4 @@
-// Package tools exposes artifact metadata and sibling imports over MCP.
+// Package tools exposes artifact metadata and upload plans over MCP.
 package tools
 
 import (
@@ -13,7 +13,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
-	"github.com/ikigenba/ikigenba/artifacts/internal/fetch"
 	"github.com/ikigenba/ikigenba/artifacts/internal/files"
 	"github.com/ikigenba/ikigenba/artifacts/internal/store"
 	"github.com/ikigenba/ikigenba/artifacts/internal/trail"
@@ -26,17 +25,34 @@ type Config struct {
 	Store     *store.Store
 	Telemetry *telemetry.Writer
 	Events    *events.Emitter
-	Max       int64
 	Now       func() time.Time
-	Fetch     fetch.Config
 }
 
 // Entry describes the artifact service contract.
 type Entry struct{ Name, Description string }
 
 // BytesGuide explains how callers put and fetch artifact bytes over HTTP.
-func BytesGuide(base string) string {
-	return "No tool carries bytes. To put a file, send an HTTP PUT with the file as the body to " + base + "/files/<path>, with your bearer token in the Authorization header: 201 means created, 200 means replaced. The Content-Type header is stored and served back, and an optional X-Artifact-Expires header holding an RFC 3339 instant sets when the artifact expires. To fetch the bytes, send an authenticated GET to the same URL, which is the url field that show and list answer. Use import only for a file another service on this space already serves at a URL."
+const BytesGuide string = "No tool carries bytes: import answers the URL and instructions to put a file, and show and list answer the url to fetch one."
+
+// BearerPlaceholder stands for the caller's own bearer token.
+const BearerPlaceholder string = "Bearer <your token>"
+
+// ImportInstructions explains how to follow an upload plan.
+const ImportInstructions string = "Send the file as the request body. 201 means created, 200 means replaced. GET the same URL to read it back."
+
+// Plan describes the HTTP upload a caller performs.
+type Plan struct {
+	URL          string      `json:"url"`
+	Method       string      `json:"method"`
+	Headers      PlanHeaders `json:"headers"`
+	Instructions string      `json:"instructions"`
+}
+
+// PlanHeaders names the HTTP headers to send with the file.
+type PlanHeaders struct {
+	Authorization string  `json:"Authorization"`
+	ContentType   string  `json:"Content-Type"`
+	Expires       *string `json:"X-Artifact-Expires,omitempty"`
 }
 
 // ListArgs describes the artifact service contract.
@@ -49,9 +65,9 @@ type PathArgs struct {
 
 // ImportArgs describes the artifact service contract.
 type ImportArgs struct {
-	URL     string  `json:"url" mcp:"required"`
-	Path    string  `json:"path" mcp:"required"`
-	Expires *string `json:"expires"`
+	Path        string  `json:"path" mcp:"required"`
+	ContentType *string `json:"content_type"`
+	Expires     *string `json:"expires"`
 }
 
 // Listed describes the artifact service contract.
@@ -93,31 +109,13 @@ func InvalidExpiry(s string) string { return fmt.Sprintf("Invalid expiry: %s", s
 // PastExpiry implements the artifact service contract.
 func PastExpiry(s string) string { return fmt.Sprintf("Expiry is not in the future: %s", s) }
 
-// NotOnSpace implements the artifact service contract.
-func NotOnSpace(s string) string { return fmt.Sprintf("URL is not on this space: %s", s) }
-
-// FetchUnanswered implements the artifact service contract.
-func FetchUnanswered(s string) string { return fmt.Sprintf("Sibling did not answer: %s", s) }
-
-// FetchTimedOut implements the artifact service contract.
-func FetchTimedOut(s string) string { return fmt.Sprintf("Fetch timed out: %s", s) }
-
-// FetchCutOff implements the artifact service contract.
-func FetchCutOff(s string) string { return fmt.Sprintf("Sibling body was cut off: %s", s) }
-
-// FetchFailed implements the artifact service contract.
-func FetchFailed(n int) string { return fmt.Sprintf("Sibling answered status %d", n) }
-
-// TooLarge implements the artifact service contract.
-func TooLarge(n int64) string { return fmt.Sprintf("Artifact exceeds %d bytes", n) }
-
 // Catalog implements the artifact service contract.
-func Catalog(base string) []Entry {
+func Catalog() []Entry {
 	return []Entry{
-		{"list", "List every artifact's metadata." + "\n\n" + BytesGuide(base)},
-		{"show", "Show an artifact's metadata." + "\n\n" + BytesGuide(base)},
-		{"delete", "Delete an artifact you own." + "\n\n" + BytesGuide(base)},
-		{"import", "Import a sibling service's file." + "\n\n" + BytesGuide(base)},
+		{"list", "List every artifact's metadata." + "\n\n" + BytesGuide},
+		{"show", "Show an artifact's metadata." + "\n\n" + BytesGuide},
+		{"delete", "Delete an artifact you own." + "\n\n" + BytesGuide},
+		{"import", "Plan an artifact upload." + "\n\n" + BytesGuide},
 	}
 }
 
@@ -141,7 +139,7 @@ func Register(srv *mcp.Server, cfg Config) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	c := Catalog(cfg.Base)
+	c := Catalog()
 	addTool(srv, mcp.Tool[ListArgs, ArtifactList]{Name: c[0].Name, Description: c[0].Description, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, _ ListArgs) (ArtifactList, error) {
 		out := ArtifactList{Artifacts: make([]Listed, 0)}
 		all, err := cfg.Store.List(ctx)
@@ -177,28 +175,23 @@ func Register(srv *mcp.Server, cfg Config) {
 		trail.Record(ctx, cfg.Telemetry, cfg.Events, trail.Deleted, a)
 		return Deleted{Deleted: true, ID: a.ID}, nil
 	}})
-	addTool(srv, mcp.Tool[ImportArgs, files.Metadata]{Name: c[3].Name, Description: c[3].Description, Effect: mcp.Destructive, Handler: func(ctx context.Context, c identity.Caller, in ImportArgs) (files.Metadata, error) {
+	addTool(srv, mcp.Tool[ImportArgs, Plan]{Name: c[3].Name, Description: c[3].Description, Effect: mcp.Read, Handler: func(ctx context.Context, c identity.Caller, in ImportArgs) (Plan, error) {
 		return importArtifact(ctx, cfg, c, in)
 	}})
 }
-func importArtifact(ctx context.Context, cfg Config, c identity.Caller, in ImportArgs) (files.Metadata, error) {
-	fail := func(s string) (files.Metadata, error) { return files.Metadata{}, errors.New(s) }
+func importArtifact(ctx context.Context, cfg Config, c identity.Caller, in ImportArgs) (Plan, error) {
+	fail := func(s string) (Plan, error) { return Plan{}, errors.New(s) }
 	if !store.ValidPath(in.Path) {
 		return fail(InvalidPath(in.Path))
 	}
-	var exp time.Time
 	if in.Expires != nil {
-		var err error
-		exp, err = time.Parse(time.RFC3339, *in.Expires)
+		exp, err := time.Parse(time.RFC3339, *in.Expires)
 		if err != nil {
 			return fail(InvalidExpiry(*in.Expires))
 		}
 		if !exp.Truncate(time.Second).After(cfg.Now().Truncate(time.Second)) {
 			return fail(PastExpiry(*in.Expires))
 		}
-	}
-	if _, err := fetch.Target(cfg.Fetch.ServicesPath, in.URL); err != nil {
-		return fail(NotOnSpace(in.URL))
 	}
 	a, err := cfg.Store.Get(ctx, in.Path)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -207,43 +200,11 @@ func importArtifact(ctx context.Context, cfg Config, c identity.Caller, in Impor
 	if err == nil && a.OwnerID != c.UserID {
 		return fail(NotOwner(in.Path))
 	}
-	res, err := fetch.Get(ctx, cfg.Fetch, in.URL)
-	if err != nil {
-		var status *fetch.StatusError
-		switch {
-		case errors.Is(err, fetch.ErrNotOnSpace):
-			return fail(NotOnSpace(in.URL))
-		case errors.Is(err, fetch.ErrTimedOut):
-			return fail(FetchTimedOut(in.URL))
-		case errors.As(err, &status):
-			return fail(FetchFailed(status.Code))
-		default:
-			return fail(FetchUnanswered(in.URL))
-		}
+	ct := store.DefaultContentType
+	if in.ContentType != nil && *in.ContentType != "" {
+		ct = *in.ContentType
 	}
-	defer func() { _ = res.Body.Close() }()
-	a, created, err := cfg.Store.Put(ctx, store.Draft{Path: in.Path, ContentType: res.ContentType, Expires: exp, OwnerID: c.UserID, OwnerEmail: c.Email, Max: cfg.Max}, res.Body)
-	if err != nil {
-		switch {
-		case errors.Is(err, fetch.ErrTimedOut):
-			return fail(FetchTimedOut(in.URL))
-		case errors.Is(err, store.ErrTooLarge):
-			return fail(TooLarge(cfg.Max))
-		case errors.Is(err, store.ErrForbidden):
-			return fail(NotOwner(in.Path))
-		case errors.Is(err, store.ErrBody):
-			return fail(FetchCutOff(in.URL))
-		default:
-			return fail(store.Unreachable)
-		}
-	}
-	name := trail.Replaced
-	if created {
-		name = trail.Created
-	}
-	trail.Record(ctx, cfg.Telemetry, cfg.Events, name, a)
-	base, _ := urls.FromContext(ctx)
-	return files.Describe(a, base), nil
+	return Plan{URL: urls.File(cfg.Base, in.Path), Method: "PUT", Headers: PlanHeaders{Authorization: BearerPlaceholder, ContentType: ct, Expires: in.Expires}, Instructions: ImportInstructions}, nil
 }
 
 func addTool[In, Out any](srv *mcp.Server, tool mcp.Tool[In, Out]) {

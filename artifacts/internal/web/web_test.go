@@ -59,7 +59,7 @@ func newFixture(t *testing.T) *fixture {
 	em := events.New(events.Config{Service: pages.ServiceName, Sink: bus, Telemetry: w, Emits: trail.Emits(), Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x54}, 65536)), Stderr: io.Discard})
 	f := &fixture{cfg: web.Config{Banner: func(u page.User) page.Banner {
 		return page.Banner{Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
-	}, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), Store: store.New(d, blobs, store.Config{Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x55}, 65536))}), Telemetry: w, Events: em, Settings: settings.Defaults(), Now: now, ImportAfter: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}, logs: logs, bus: bus, handle: d, blobs: blobs}
+	}, MCP: mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), Store: store.New(d, blobs, store.Config{Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x55}, 65536))}), Telemetry: w, Events: em, Settings: settings.Defaults(), Now: now}, logs: logs, bus: bus, handle: d, blobs: blobs}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -103,10 +103,10 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-YZ14-WYWY
+// R-UF10-O94L
 func TestAPI(t *testing.T) {
 	f := newFixture(t)
-	cfg := web.Config{Banner: f.cfg.Banner, MCP: f.cfg.MCP, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Telemetry: f.cfg.Telemetry, Events: f.cfg.Events, Settings: f.cfg.Settings, Now: f.cfg.Now, ImportAfter: f.cfg.ImportAfter}
+	cfg := web.Config{Banner: f.cfg.Banner, MCP: f.cfg.MCP, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Telemetry: f.cfg.Telemetry, Events: f.cfg.Events, Settings: f.cfg.Settings, Now: f.cfg.Now}
 	if h := web.Handler(cfg); h == nil {
 		t.Fatal("nil handler")
 	}
@@ -255,7 +255,7 @@ func TestPagesAndStaticRouting(t *testing.T) {
 	}
 }
 
-// R-H2EC-Z8Z3
+// R-UG8X-20VA
 func TestMCPRouting(t *testing.T) {
 	f := newFixture(t)
 	h := web.Handler(f.cfg)
@@ -273,7 +273,7 @@ func TestMCPRouting(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	catalog := tools.Catalog("")
+	catalog := tools.Catalog()
 	if len(infos) != len(catalog) {
 		t.Fatal(infos)
 	}
@@ -507,8 +507,8 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 	}
 }
 
-// R-085U-T0HC R-H2EC-Z8Z3
-func TestConfiguredToolDescriptions(t *testing.T) {
+// R-UUVP-N9RM R-UG8X-20VA
+func TestConfiguredImportPlans(t *testing.T) {
 	for _, tc := range []struct{ name, entryURL, base string }{
 		{"configured", "https://published.example.test", "https://published.example.test"},
 		{"trailing slash", "https://published.example.test/", "https://published.example.test"},
@@ -533,7 +533,7 @@ func TestConfiguredToolDescriptions(t *testing.T) {
 			}
 			srv := httptest.NewServer(web.Handler(f.cfg))
 			defer srv.Close()
-			catalog := tools.Catalog(tc.base)
+			catalog := tools.Catalog()
 			caller := identity.Caller{UserID: "caller-chosen", Email: "caller@example", RequestID: "request-chosen"}
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
@@ -547,12 +547,27 @@ func TestConfiguredToolDescriptions(t *testing.T) {
 					t.Fatal(infos)
 				}
 				for i, info := range infos {
-					if info.Name != catalog[i].Name || info.Description != catalog[i].Description || !strings.Contains(info.Description, tc.base+"/files/") || strings.Contains(info.Description, "//files/") || (tc.base == "" && strings.Contains(info.Description, "://")) {
-						t.Fatalf("unexpected description: %#v", info)
+					if info.Name != catalog[i].Name || info.Description != catalog[i].Description {
+						t.Fatalf("unexpected catalog: %#v", info)
 					}
 				}
+				args, err := json.Marshal(tools.ImportArgs{Path: "plan.bin"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := client.CallTool(ctx, caller, "import", args)
+				if err != nil || result.IsError() {
+					t.Fatal(result, err)
+				}
+				var plan tools.Plan
+				if err = json.Unmarshal(structured(t, result), &plan); err != nil {
+					t.Fatal(err)
+				}
+				if plan.URL != tc.base+"/files/plan.bin" {
+					t.Fatalf("plan base: %#v", plan)
+				}
 				// Changing the services file after construction must not register
-				// the tools again or change their descriptions on a later request.
+				// the tools again or change the configured plan base on a later request.
 				if err = os.WriteFile(f.cfg.ServicesPath, []byte(`{"services":[{"name":"artifacts","url":"https://later.example.test/","description":"","socket":"","enabled":true,"mcp":true}]}`), 0600); err != nil {
 					t.Fatal(err)
 				}

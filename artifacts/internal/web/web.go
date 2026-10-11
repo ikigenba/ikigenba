@@ -11,7 +11,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
-	"github.com/ikigenba/ikigenba/artifacts/internal/fetch"
 	"github.com/ikigenba/ikigenba/artifacts/internal/files"
 	"github.com/ikigenba/ikigenba/artifacts/internal/pages"
 	"github.com/ikigenba/ikigenba/artifacts/internal/settings"
@@ -30,7 +29,6 @@ type Config struct {
 	Events       *events.Emitter
 	Settings     settings.Settings
 	Now          func() time.Time
-	ImportAfter  func(time.Duration) <-chan time.Time
 }
 
 // Handler registers the tools and builds the authenticated route table.
@@ -41,7 +39,7 @@ func Handler(cfg Config) http.Handler {
 	}
 	ph := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store})
 	fh := events.Middleware(files.Handler(files.Config{Store: cfg.Store, Max: cfg.Settings.ArtifactMaxBytes, ServicesPath: cfg.ServicesPath, Telemetry: cfg.Telemetry, Events: cfg.Events}))
-	tools.Register(cfg.MCP, tools.Config{Base: urls.Configured(cfg.ServicesPath), Store: cfg.Store, Telemetry: cfg.Telemetry, Events: cfg.Events, Max: cfg.Settings.ArtifactMaxBytes, Now: cfg.Now, Fetch: fetch.Config{ServicesPath: cfg.ServicesPath, Telemetry: cfg.Telemetry, Limit: cfg.Settings.Import(), After: cfg.ImportAfter}})
+	tools.Register(cfg.MCP, tools.Config{Base: urls.Configured(cfg.ServicesPath), Store: cfg.Store, Telemetry: cfg.Telemetry, Events: cfg.Events, Now: cfg.Now})
 	mh := events.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.MCP.ServeHTTP(w, r.WithContext(urls.NewContext(r.Context(), urls.Base(r, cfg.ServicesPath))))
 	}))

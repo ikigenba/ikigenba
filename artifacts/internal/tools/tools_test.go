@@ -4,16 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
-	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,7 +19,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/artifacts"
-	"github.com/ikigenba/ikigenba/artifacts/internal/fetch"
 	"github.com/ikigenba/ikigenba/artifacts/internal/files"
 	"github.com/ikigenba/ikigenba/artifacts/internal/store"
 	"github.com/ikigenba/ikigenba/artifacts/internal/tools"
@@ -56,7 +51,7 @@ type fixture struct {
 	ec     *events.Capture
 }
 
-func setup(t *testing.T, fc fetch.Config, limit int64, clocks ...func() time.Time) *fixture {
+func setup(t *testing.T, configuredBase string, clocks ...func() time.Time) *fixture {
 	t.Helper()
 	t.Setenv("IKIGENBA_SERVICES", "")
 	clock := func() time.Time { return now }
@@ -82,8 +77,7 @@ func setup(t *testing.T, fc fetch.Config, limit int64, clocks ...func() time.Tim
 	w := telemetry.New(telemetry.Config{Service: "artifacts", Sink: tc, Now: clock, Rand: &random{}, Stderr: io.Discard})
 	em := events.New(events.Config{Service: "artifacts", Sink: ec, Emits: trail.Emits(), Now: clock, Rand: &random{}, Stderr: io.Discard})
 	t.Cleanup(func() { em.Shutdown(context.Background()); w.Shutdown(context.Background(), "test") })
-	fc.Telemetry = w
-	cfg := tools.Config{Base: base, Store: store.New(d, blobs, store.Config{Now: clock, Rand: &random{}}), Telemetry: w, Events: em, Max: limit, Now: toolClock, Fetch: fc}
+	cfg := tools.Config{Base: configuredBase, Store: store.New(d, blobs, store.Config{Now: clock, Rand: &random{}}), Telemetry: w, Events: em, Now: toolClock}
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "artifacts", Telemetry: w})
 	tools.Register(srv, cfg)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -204,132 +198,129 @@ func (f *fixture) snapshot(t *testing.T) string {
 	return string(v)
 }
 
-// R-H4U5-QSGH R-H622-4K76 R-H79Y-IBXV
+// R-UMCE-YVKR R-UNKB-CNBG
 func TestCatalogDescriptions(t *testing.T) {
 	names := []string{"list", "show", "delete", "import"}
-	var originalFirstLines []string
-	for _, base := range []string{"", "https://artifacts.example.test", "http://chosen.example:8123"} {
-		guide := tools.BytesGuide(base)
-		if guide == "" || strings.Contains(guide, "\n") || !strings.Contains(guide, base+"/files/") || (base == "" && strings.Contains(guide, "://")) {
-			t.Fatalf("invalid byte guide for %q: %q", base, guide)
+	guide := tools.BytesGuide
+	if guide == "" || strings.Contains(guide, "\n") {
+		t.Fatal(guide)
+	}
+	catalog := tools.Catalog()
+	if len(catalog) != len(names) {
+		t.Fatal(catalog)
+	}
+	firstLines := make(map[string]bool)
+	for i, entry := range catalog {
+		first, _, _ := strings.Cut(entry.Description, "\n")
+		if entry.Name != names[i] || first == "" || firstLines[first] || entry.Description != first+"\n\n"+guide || tools.FirstLine(entry.Description) != first {
+			t.Fatal(entry)
 		}
-		catalog := tools.Catalog(base)
-		if len(catalog) != len(names) {
-			t.Fatalf("catalog has %d entries, want %d", len(catalog), len(names))
-		}
-		firstLines := make(map[string]bool)
-		for i, entry := range catalog {
-			first, _, _ := strings.Cut(entry.Description, "\n")
-			if entry.Name != names[i] || first == "" || firstLines[first] || entry.Description != first+"\n\n"+guide || tools.FirstLine(entry.Description) != first {
-				t.Fatalf("invalid catalog entry %d: %#v", i, entry)
-			}
-			firstLines[first] = true
-			if base == "" {
-				originalFirstLines = append(originalFirstLines, first)
-			} else if first != originalFirstLines[i] {
-				t.Fatalf("base changed first line for %s", entry.Name)
-			}
-		}
+		firstLines[first] = true
 	}
 }
 
-// R-H79Y-IBXV
+// R-UNKB-CNBG
 func TestFirstLine(t *testing.T) {
-	for _, tc := range []struct{ description, want string }{
-		{"", ""},
-		{"one", "one"},
-		{"one\ntwo", "one"},
-		{"\nrest", ""},
-		{"one\n\ntwo\nthree", "one"},
-		{"one\n", "one"},
-	} {
+	for _, tc := range []struct{ description, want string }{{"", ""}, {"one", "one"}, {"one\ntwo", "one"}, {"\nrest", ""}, {"one\n\ntwo\nthree", "one"}, {"one\n", "one"}} {
 		if got := tools.FirstLine(tc.description); got != tc.want {
-			t.Fatalf("FirstLine(%q) = %q, want %q", tc.description, got, tc.want)
+			t.Fatal(got, tc.want)
 		}
 	}
 }
 
-// R-H3M9-D0PS R-NEBO-CZDD R-NFJK-QR42 R-NGRH-4IUR R-H8HU-W3OK R-TY44-J0F8
+// R-UJWM-7C3D R-UL4I-L3U2 R-UOS7-QF25 R-NFJK-QR42 R-NGRH-4IUR
 func TestPublicContracts(t *testing.T) {
-	f := setup(t, fetch.Config{}, 100)
-	catalog := tools.Catalog(f.cfg.Base)
-	infos, e := f.client.ListTools(context.Background(), owner)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if len(infos) != 4 || len(catalog) != 4 {
-		t.Fatal(infos)
-	}
-	for i, name := range []string{"list", "show", "delete", "import"} {
-		if infos[i].Name != name || catalog[i].Name != name || catalog[i].Description == "" || infos[i].Description != catalog[i].Description {
+	for _, configuredBase := range []string{"", base, "http://chosen.example:8123"} {
+		f := setup(t, configuredBase)
+		catalog := tools.Catalog()
+		infos, e := f.client.ListTools(context.Background(), owner)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if len(infos) != 4 {
 			t.Fatal(infos)
 		}
-		effect := mcp.Read
-		if i >= 2 {
-			effect = mcp.Destructive
-		}
-		if infos[i].Effect() != effect {
-			t.Fatal(infos[i])
+		for i, info := range infos {
+			if info.Name != catalog[i].Name || info.Description != catalog[i].Description {
+				t.Fatal(info)
+			}
+			effect := mcp.Read
+			if i == 2 {
+				effect = mcp.Destructive
+			}
+			if info.Effect() != effect {
+				t.Fatal(info)
+			}
+			var schema struct {
+				Type       string
+				Required   []string
+				Properties map[string]struct{ Type string }
+			}
+			if e = json.Unmarshal(info.InputSchema, &schema); e != nil {
+				t.Fatal(e)
+			}
+			properties := map[string]struct{ Type string }{}
+			required := map[string]bool{}
+			if i > 0 {
+				properties["path"] = struct{ Type string }{"string"}
+				required["path"] = true
+			}
+			if i == 3 {
+				properties["content_type"] = struct{ Type string }{"string"}
+				properties["expires"] = struct{ Type string }{"string"}
+			}
+			gotRequired := map[string]bool{}
+			for _, name := range schema.Required {
+				gotRequired[name] = true
+			}
+			if schema.Type != "object" || len(schema.Properties) != len(properties) || !reflect.DeepEqual(gotRequired, required) {
+				t.Fatal(info.Name, schema)
+			}
+			for name, want := range properties {
+				if schema.Properties[name] != want {
+					t.Fatal(info.Name, schema)
+				}
+			}
 		}
 	}
-	for _, fn := range []func(string) string{tools.NoArtifact, tools.InvalidPath, tools.NotOwner, tools.InvalidExpiry, tools.PastExpiry, tools.NotOnSpace, tools.FetchUnanswered, tools.FetchTimedOut, tools.FetchCutOff} {
+	for _, fn := range []func(string) string{tools.NoArtifact, tools.InvalidPath, tools.NotOwner} {
 		if !strings.Contains(fn("fixture"), "fixture") {
 			t.Fatal("missing copy argument")
 		}
 	}
-	if !strings.Contains(tools.FetchFailed(409), strconv.Itoa(409)) || !strings.Contains(tools.TooLarge(123), "123") {
-		t.Fatal("missing numeric argument")
+
+	listed := tools.Listed{ID: "fixture-id", Path: "fixture-path", Bytes: 2, ContentType: "fixture-type", SHA256: "fixture-hash", Owner: "fixture-owner", Modified: "fixture-modified", URL: "fixture-url"}
+	expected := map[string]any{"id": "fixture-id", "path": "fixture-path", "bytes": float64(2), "content_type": "fixture-type", "sha256": "fixture-hash", "owner": "fixture-owner", "modified": "fixture-modified", "url": "fixture-url"}
+	assertJSONShape(t, listed, expected)
+	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{listed}}, map[string]any{"artifacts": []any{expected}})
+	expiry := "fixture-expiry"
+	listed.Expires = &expiry
+	expected["expires"] = expiry
+	assertJSONShape(t, listed, expected)
+	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{listed}}, map[string]any{"artifacts": []any{expected}})
+	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{}}, map[string]any{"artifacts": []any{}})
+	assertJSONShape(t, tools.Deleted{Deleted: true, ID: "fixture-deleted"}, map[string]any{"deleted": true, "id": "fixture-deleted"})
+
+}
+
+func assertJSONShape(t *testing.T, value any, expected map[string]any) {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i, info := range infos {
-		var schema struct {
-			Type       string
-			Required   []string
-			Properties map[string]struct{ Type string }
-		}
-		if e = json.Unmarshal(info.InputSchema, &schema); e != nil {
-			t.Fatal(e)
-		}
-		wantProperties := map[string]struct{ Type string }{}
-		required := map[string]bool{}
-		if i > 0 {
-			wantProperties["path"] = struct{ Type string }{"string"}
-			required["path"] = true
-		}
-		if i == 3 {
-			wantProperties["url"] = struct{ Type string }{"string"}
-			wantProperties["expires"] = struct{ Type string }{"string"}
-			required["url"] = true
-		}
-		gotRequired := map[string]bool{}
-		for _, name := range schema.Required {
-			gotRequired[name] = true
-		}
-		if schema.Type != "object" || len(schema.Properties) != len(wantProperties) || !reflect.DeepEqual(gotRequired, required) {
-			t.Fatal(info.Name, schema)
-		}
-		for name, want := range wantProperties {
-			if schema.Properties[name] != want {
-				t.Fatal(info.Name, schema)
-			}
-		}
+	var got map[string]any
+	if err = json.Unmarshal(encoded, &got); err != nil {
+		t.Fatal(err)
 	}
-	b, _ := json.Marshal(tools.ImportArgs{URL: "url", Path: "path"})
-	var args map[string]any
-	_ = json.Unmarshal(b, &args)
-	if args["url"] != "url" || args["path"] != "path" {
-		t.Fatal(args)
-	}
-	b, _ = json.Marshal(tools.Listed{ID: "i", Path: "p", Bytes: 2, ContentType: "ct", SHA256: "hash", Owner: "mail", Modified: "date", URL: "url"})
-	var fields map[string]any
-	_ = json.Unmarshal(b, &fields)
-	if len(fields) != 8 || fields["bytes"] != float64(2) || fields["created"] != nil {
-		t.Fatal(fields)
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("JSON shape: got %s, want %#v", encoded, expected)
 	}
 }
 
 // R-NKF6-9U2U R-NLN2-NLTJ
 func TestListShow(t *testing.T) {
-	f := setup(t, fetch.Config{}, 100)
+	f := setup(t, base)
 	var list tools.ArtifactList
 	structured(t, f.call(t, owner, "list", tools.ListArgs{}), &list)
 	if list.Artifacts == nil || len(list.Artifacts) != 0 {
@@ -355,7 +346,7 @@ func TestListShow(t *testing.T) {
 
 // R-NMUZ-1DK8 R-NO2V-F5AX R-NPAR-SX1M R-NQIO-6OSB
 func TestDeleteAndRefusals(t *testing.T) {
-	f := setup(t, fetch.Config{}, 100)
+	f := setup(t, base)
 	a := f.put(t, "keep", owner)
 	snap := f.snapshot(t)
 	for _, name := range []string{"show", "delete"} {
@@ -404,93 +395,6 @@ func TestDeleteAndRefusals(t *testing.T) {
 	}
 	assertLifecycle(t, f, trail.Deleted, a, 0)
 }
-func sibling(t *testing.T, h http.HandlerFunc) fetch.Config {
-	t.Helper()
-	dir, e := os.MkdirTemp("", "import-")
-	if e != nil {
-		t.Fatal(e)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	socket := filepath.Join(dir, "s")
-	l, e := net.Listen("unix", socket)
-	if e != nil {
-		t.Fatal(e)
-	}
-	s := &http.Server{Handler: h, ReadHeaderTimeout: time.Second}
-	go func() { _ = s.Serve(l) }()
-	t.Cleanup(func() { _ = s.Close() })
-	p := filepath.Join(t.TempDir(), "services.json")
-	b, _ := json.Marshal(map[string]any{"services": []map[string]any{{"name": "scripts", "url": "http://scripts.test", "socket": socket, "description": "fixture", "enabled": true, "mcp": true}}})
-	if e = os.WriteFile(p, b, 0600); e != nil {
-		t.Fatal(e)
-	}
-	return fetch.Config{ServicesPath: p, Limit: time.Minute, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
-}
-
-const source = "http://scripts.test/output"
-
-// R-O7L9-JH61 R-O8T5-X8WQ
-func TestImportCreateReplace(t *testing.T) {
-	var phase atomic.Int64
-	var seconds atomic.Int64
-	payloads := []string{"imported body", "replacement contents", "final"}
-	types := []string{"custom/import", "custom/replaced", "custom/final"}
-	fc := sibling(t, func(w http.ResponseWriter, _ *http.Request) {
-		i := phase.Load()
-		w.Header().Set("Content-Type", types[i])
-		_, _ = io.WriteString(w, payloads[i])
-	})
-	f := setup(t, fc, 100, func() time.Time { return now.Add(time.Duration(seconds.Load()) * time.Second) })
-	expiry := now.Add(time.Hour).Format(time.RFC3339)
-	newExpiry := now.Add(2 * time.Hour).Format(time.RFC3339)
-	var first files.Metadata
-	var previous store.Artifact
-	for i, exp := range []*string{&expiry, &newExpiry, nil} {
-		phase.Store(int64(i))
-		seconds.Store(int64(i) * 60)
-		var got files.Metadata
-		structured(t, f.call(t, owner, "import", tools.ImportArgs{URL: source, Path: "new", Expires: exp}), &got)
-		a, e := f.cfg.Store.Get(context.Background(), "new")
-		if e != nil {
-			t.Fatal(e)
-		}
-		if a.OwnerID != owner.UserID || a.OwnerEmail != owner.Email || a.ContentType != types[i] || a.Bytes != int64(len(payloads[i])) || !reflect.DeepEqual(got, files.Describe(a, base)) || !a.Modified.Equal(now.Add(time.Duration(i)*time.Minute)) {
-			t.Fatal(a, got)
-		}
-		if exp != nil {
-			want, _ := time.Parse(time.RFC3339, *exp)
-			if !a.Expires.Equal(want) {
-				t.Fatal(a)
-			}
-		} else if !a.Expires.IsZero() {
-			t.Fatal(a)
-		}
-		if i == 0 {
-			first = got
-		} else if got.ID != first.ID || got.Created != first.Created || a.SHA256 == previous.SHA256 {
-			t.Fatal(a, previous)
-		}
-		_, blob, e := f.cfg.Store.Open(context.Background(), a.Path)
-		if e != nil {
-			t.Fatal(e)
-		}
-		b, e := io.ReadAll(blob)
-		_ = blob.Close()
-		if e != nil || string(b) != payloads[i] {
-			t.Fatal(string(b), e)
-		}
-		es := f.events(t)
-		name := trail.Replaced
-		if i == 0 {
-			name = trail.Created
-		}
-		if len(es) != i+1 {
-			t.Fatal(es)
-		}
-		assertLifecycle(t, f, name, a, i)
-		previous = a
-	}
-}
 func assertLifecycle(t *testing.T, f *fixture, name string, a store.Artifact, index int) {
 	t.Helper()
 	es := f.events(t)
@@ -514,200 +418,142 @@ func assertLifecycle(t *testing.T, f *fixture, name string, a store.Artifact, in
 	}
 }
 
-// R-P1XO-NJT5 R-OCGV-2K4T
-func TestImportChecksPrecedence(t *testing.T) {
-	requests := make(chan struct{}, 10)
-	fc := sibling(t, func(w http.ResponseWriter, _ *http.Request) { requests <- struct{}{}; _, _ = io.WriteString(w, "body") })
-	f := setup(t, fc, 100)
-	f.put(t, "owned", other)
-	snap := f.snapshot(t)
-	bad := "bad"
-	past := now.Add(900 * time.Millisecond).Format(time.RFC3339Nano)
-	for _, tc := range []struct {
-		args    tools.ImportArgs
-		want    string
-		failing bool
-	}{{tools.ImportArgs{URL: "outside", Path: "a//b", Expires: &bad}, tools.InvalidPath("a//b"), true}, {tools.ImportArgs{URL: "outside", Path: "owned", Expires: &bad}, tools.InvalidExpiry(bad), true}, {tools.ImportArgs{URL: "outside", Path: "owned", Expires: &past}, tools.PastExpiry(past), true}, {tools.ImportArgs{URL: "outside", Path: "owned"}, tools.NotOnSpace("outside"), true}, {tools.ImportArgs{URL: source, Path: "owned"}, store.Unreachable, true}, {tools.ImportArgs{URL: source, Path: "owned"}, tools.NotOwner("owned"), false}} {
-		f.db.SetFailing(tc.failing)
-		refused(t, f.call(t, owner, "import", tc.args), tc.want)
-		f.db.SetFailing(false)
-		if f.snapshot(t) != snap || len(f.events(t)) != 0 {
-			t.Fatal("changed on refusal")
+// R-UR80-HYJJ R-TS19-97NI
+func TestImportCopy(t *testing.T) {
+	if tools.BearerPlaceholder == "" || strings.Contains(tools.BearerPlaceholder, "\n") || tools.ImportInstructions == "" {
+		t.Fatal("empty or invalid copy")
+	}
+	for _, value := range []string{"", "fixture", "expires\ninput"} {
+		seen := map[string]bool{store.Unreachable: true}
+		for _, fn := range []func(string) string{tools.InvalidPath, tools.NotOwner, tools.InvalidExpiry, tools.PastExpiry} {
+			text := fn(value)
+			if text == "" || !strings.Contains(text, value) || seen[text] {
+				t.Fatal(text)
+			}
+			seen[text] = true
 		}
 	}
-	select {
-	case <-requests:
-		t.Fatal("precheck made request")
-	default:
-	}
 }
 
-// R-OB8Y-OSE4 R-OCGV-2K4T R-P1XO-NJT5
-func TestImportFetchRefusals(t *testing.T) {
-	for _, kind := range []string{"status", "cutoff", "large", "timeout", "unanswered", "db-put", "race-owner"} {
-		t.Run(kind, func(t *testing.T) {
-			timer := make(chan time.Time, 1)
-			var f *fixture
-			fc := sibling(t, func(w http.ResponseWriter, r *http.Request) {
-				switch kind {
-				case "status":
-					w.WriteHeader(302)
-				case "cutoff":
-					c, _, e := w.(http.Hijacker).Hijack()
-					if e != nil {
-						t.Error(e)
-						return
-					}
-					_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nshort")
-					_ = c.Close()
-				case "unanswered":
-					c, _, e := w.(http.Hijacker).Hijack()
-					if e != nil {
-						t.Error(e)
-						return
-					}
-					_ = c.Close()
-				case "timeout":
-					w.Header().Set("Content-Length", "9")
-					w.WriteHeader(200)
-					w.(http.Flusher).Flush()
-					timer <- time.Time{}
-					<-r.Context().Done()
-				case "db-put":
-					f.db.SetFailing(true)
-					_, _ = io.WriteString(w, "body")
-				case "race-owner":
-					w.Header().Set("Content-Length", "4")
-					_, _ = io.WriteString(w, "bo")
-					w.(http.Flusher).Flush()
-					ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-					defer cancel()
-					for {
-						entries, e := os.ReadDir(f.blobs)
-						if e != nil {
-							t.Error(e)
-							return
-						}
-						streaming := false
-						for _, entry := range entries {
-							info, e := entry.Info()
-							if e == nil && info.Size() == 2 {
-								streaming = true
-							}
-						}
-						if streaming {
-							break
-						}
-						select {
-						case <-ctx.Done():
-							t.Error("import did not stream prefix")
-							return
-						default:
-							runtime.Gosched()
-						}
-					}
-					f.put(t, "race", other)
-					_, _ = io.WriteString(w, "dy")
-				default:
-					_, _ = io.WriteString(w, "oversized")
-				}
-			})
-			fc.After = func(time.Duration) <-chan time.Time { return timer }
-			limit := int64(100)
-			if kind == "large" {
-				limit = 4
-			}
-			f = setup(t, fc, limit)
-			a := f.put(t, "keep", owner)
-			original := a
-			snap := f.snapshot(t)
-			path := a.Path
-			if kind == "race-owner" {
-				path = "race"
-			}
-			want := tools.TooLarge(4)
-			switch kind {
-			case "status":
-				want = tools.FetchFailed(302)
-			case "cutoff":
-				want = tools.FetchCutOff(source)
+func importUnchanged(t *testing.T, f *fixture, args tools.ImportArgs, failing bool) mcp.Result {
+	t.Helper()
+	before := f.snapshot(t)
+	if e := f.cfg.Telemetry.Flush(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.cfg.Events.Flush(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	recorded := len(f.tc.Events())
+	emitted := len(f.ec.Events())
+	f.db.SetFailing(failing)
+	result := f.call(t, owner, "import", args)
+	f.db.SetFailing(false)
+	if f.snapshot(t) != before {
+		t.Fatal("import changed store or blobs")
+	}
+	if e := f.cfg.Telemetry.Flush(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.cfg.Events.Flush(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	es := f.tc.Events()[recorded:]
+	if len(es) != 1 || es[0].Name != "tool.called" || len(f.ec.Events()) != emitted {
+		t.Fatal(es, f.ec.Events()[emitted:])
+	}
+	return result
+}
 
-			case "timeout":
-				want = tools.FetchTimedOut(source)
-			case "unanswered":
-				want = tools.FetchUnanswered(source)
-			case "db-put":
-				want = store.Unreachable
-			case "race-owner":
-				want = tools.NotOwner(path)
-			}
-			refused(t, f.call(t, owner, "import", tools.ImportArgs{URL: source, Path: path}), want)
-			f.db.SetFailing(false)
-			if kind != "race-owner" && f.snapshot(t) != snap {
-				t.Fatal("refusal changed state")
-			}
-			if kind == "race-owner" {
-				a, e := f.cfg.Store.Get(context.Background(), "race")
-				if e != nil || a.OwnerID != other.UserID || a.ContentType != store.DefaultContentType || !a.Expires.Equal(now.Add(24*time.Hour)) {
-					t.Fatal(a, e)
+// R-TQTC-VFWT R-USFW-VQA8 R-UTNT-9I0X R-UXBI-ET90 R-UL4I-L3U2
+func TestImportPlans(t *testing.T) {
+	expiry := now.Add(time.Hour).In(time.FixedZone("fixture", -7*3600)).Add(123 * time.Millisecond).Format(time.RFC3339Nano)
+	contentType := "application/fixture; spacing=  verbatim"
+	empty := ""
+	boundary := now.Add(1100 * time.Millisecond).Format(time.RFC3339Nano)
+	for _, configuredBase := range []string{"", base} {
+		f := setup(t, configuredBase, func() time.Time { return now.Add(900 * time.Millisecond) })
+		a := f.put(t, "owned", owner)
+		for _, path := range []string{"reports/q3.pdf", a.Path} {
+			for _, input := range []tools.ImportArgs{{Path: path}, {Path: path, ContentType: &empty}, {Path: path, ContentType: &contentType, Expires: &expiry}, {Path: path, Expires: &boundary}} {
+				result := importUnchanged(t, f, input, false)
+				var got tools.Plan
+				structured(t, result, &got)
+				ct := store.DefaultContentType
+				if input.ContentType != nil && *input.ContentType != "" {
+					ct = *input.ContentType
 				}
-				_, blob, e := f.cfg.Store.Open(context.Background(), "race")
+				want := tools.Plan{URL: configuredBase + "/files/" + path, Method: "PUT", Headers: tools.PlanHeaders{Authorization: tools.BearerPlaceholder, ContentType: ct, Expires: input.Expires}, Instructions: tools.ImportInstructions}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatal(got, want)
+				}
+				encoded, e := json.Marshal(got)
 				if e != nil {
 					t.Fatal(e)
 				}
-				b, e := io.ReadAll(blob)
-				_ = blob.Close()
-				if e != nil || string(b) != "seed bytes" {
-					t.Fatal(string(b), e)
+				urlJSON, _ := json.Marshal(want.URL)
+				authorizationJSON, _ := json.Marshal(tools.BearerPlaceholder)
+				ctJSON, _ := json.Marshal(ct)
+				instructionsJSON, _ := json.Marshal(tools.ImportInstructions)
+				wantJSON := `{"url":` + string(urlJSON) + `,"method":"PUT","headers":{"Authorization":` + string(authorizationJSON) + `,"Content-Type":` + string(ctJSON)
+				if input.Expires != nil {
+					expiryJSON, _ := json.Marshal(*input.Expires)
+					wantJSON += `,"X-Artifact-Expires":` + string(expiryJSON)
 				}
-				entries, e := os.ReadDir(f.blobs)
-				if e != nil || len(entries) != 2 {
-					t.Fatal(entries, e)
+				wantJSON += `},"instructions":` + string(instructionsJSON) + `}`
+				if string(encoded) != wantJSON {
+					t.Fatal(string(encoded), wantJSON)
 				}
-				keep, e := f.cfg.Store.Get(context.Background(), "keep")
-				if e != nil || !reflect.DeepEqual(keep, original) {
-					t.Fatal(keep, e)
+				wire, _ := json.Marshal(result)
+				var envelope struct {
+					Structured json.RawMessage `json:"structuredContent"`
 				}
-				_, keepBlob, e := f.cfg.Store.Open(context.Background(), "keep")
-				if e != nil {
-					t.Fatal(e)
+				if e = json.Unmarshal(wire, &envelope); e != nil || string(envelope.Structured) != wantJSON {
+					t.Fatal(string(wire), e)
 				}
-				keepBytes, e := io.ReadAll(keepBlob)
-				_ = keepBlob.Close()
-				if e != nil || string(keepBytes) != "seed bytes" {
-					t.Fatal(string(keepBytes), e)
+				if path == a.Path {
+					var shown files.Metadata
+					structured(t, f.call(t, owner, "show", tools.PathArgs{Path: path}), &shown)
+					if !reflect.DeepEqual(shown, files.Describe(a, base)) {
+						t.Fatal(shown)
+					}
+				} else {
+					refused(t, f.call(t, owner, "show", tools.PathArgs{Path: path}), tools.NoArtifact(path))
 				}
 			}
-			if len(f.events(t)) != 0 {
-				t.Fatal("refusal emitted event")
-			}
-			for _, e := range f.tc.Events() {
-				if strings.HasPrefix(e.Name, "artifact.") {
-					t.Fatal(e)
-				}
-			}
-		})
+		}
 	}
 }
 
-// R-O7L9-JH61 R-OCGV-2K4T
-func TestImportDefaultContentTypeAndExactCap(t *testing.T) {
-	fc := sibling(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header()["Content-Type"] = nil
-		_, _ = io.WriteString(w, "body")
-	})
-	f := setup(t, fc, 4)
-	var got files.Metadata
-	structured(t, f.call(t, owner, "import", tools.ImportArgs{URL: source, Path: "exact"}), &got)
-	a, e := f.cfg.Store.Get(context.Background(), "exact")
-	if e != nil || a.ContentType != store.DefaultContentType || a.Bytes != 4 || !a.Expires.IsZero() || !reflect.DeepEqual(got, files.Describe(a, base)) {
-		t.Fatal(a, e, got)
+// R-UW3M-11IB R-UXBI-ET90
+func TestImportRefusalsAndPrecedence(t *testing.T) {
+	f := setup(t, base, func() time.Time { return now.Add(900 * time.Millisecond) })
+	f.put(t, "owned", other)
+	bad, empty := "bad", ""
+	past := now.Add(-time.Second).Format(time.RFC3339)
+	equalSecond := now.Add(999 * time.Millisecond).Format(time.RFC3339Nano)
+	future := now.Add(time.Hour).Format(time.RFC3339)
+	for _, tc := range []struct {
+		args    tools.ImportArgs
+		failing bool
+		want    string
+	}{
+		{tools.ImportArgs{Path: "a//b", Expires: &bad}, true, tools.InvalidPath("a//b")},
+		{tools.ImportArgs{Path: "owned", Expires: &bad}, true, tools.InvalidExpiry(bad)},
+		{tools.ImportArgs{Path: "owned", Expires: &empty}, true, tools.InvalidExpiry(empty)},
+		{tools.ImportArgs{Path: "owned", Expires: &past}, true, tools.PastExpiry(past)},
+		{tools.ImportArgs{Path: "owned", Expires: &equalSecond}, true, tools.PastExpiry(equalSecond)},
+		{tools.ImportArgs{Path: "owned", Expires: &future}, true, store.Unreachable},
+		{tools.ImportArgs{Path: "absent"}, true, store.Unreachable},
+		{tools.ImportArgs{Path: "owned", Expires: &future}, false, tools.NotOwner("owned")},
+	} {
+		refused(t, importUnchanged(t, f, tc.args, tc.failing), tc.want)
 	}
 }
 
-// R-H3M9-D0PS
+// R-UJWM-7C3D
 func TestDefaultImportClock(t *testing.T) {
-	f := setup(t, fetch.Config{}, 100, nil)
+	f := setup(t, base, nil)
 	past := time.Time{}.Format(time.RFC3339)
-	refused(t, f.call(t, owner, "import", tools.ImportArgs{URL: "outside", Path: "valid", Expires: &past}), tools.PastExpiry(past))
+	refused(t, importUnchanged(t, f, tools.ImportArgs{Path: "valid", Expires: &past}, false), tools.PastExpiry(past))
 }

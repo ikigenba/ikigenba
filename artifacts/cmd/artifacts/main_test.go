@@ -216,10 +216,6 @@ func TestBinary(t *testing.T) {
 	var bus []events.Event
 	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() { _ = r.Body.Close() }()
-		if r.URL.Path == "/source" {
-			_, _ = w.Write([]byte("import bytes"))
-			return
-		}
 		mu.Lock()
 		defer mu.Unlock()
 		switch r.URL.Path {
@@ -255,7 +251,7 @@ func TestBinary(t *testing.T) {
 	})
 	servicesPath := filepath.Join(t.TempDir(), "services.json")
 	entries := []map[string]any{}
-	for _, name := range []string{"telemetry", "events", "scripts"} {
+	for _, name := range []string{"telemetry", "events"} {
 		entries = append(entries, map[string]any{"name": name, "url": "https://" + name + ".sbx.ikigenba.dev", "socket": sinkPath, "description": "test sink", "enabled": true, "mcp": false})
 	}
 	document, err := json.Marshal(map[string]any{"services": entries})
@@ -311,22 +307,16 @@ func TestBinary(t *testing.T) {
 	if !reflect.DeepEqual(answer.Meta["io.modelcontextprotocol/serverInfo"], map[string]any{"name": pages.ServiceName, "version": display}) {
 		t.Fatalf("serverInfo %s", raw)
 	}
-	result, err = client.CallTool(context.Background(), caller, "import", json.RawMessage(`{"path":"import.bin","url":"https://scripts.sbx.ikigenba.dev/source"}`))
-	if err != nil || result.IsError() {
-		t.Fatalf("default import timer: %v %v", result, err)
+	status, data = binaryRequest(t, first, "PUT", "/files/second.bin", bytes.NewReader(payload))
+	if status != 201 {
+		t.Fatalf("second PUT %d %s", status, data)
 	}
-	imported, err := json.Marshal(result)
-	if err != nil {
+	var secondMeta files.Metadata
+	if err := json.Unmarshal(data, &secondMeta); err != nil {
 		t.Fatal(err)
 	}
-	var importAnswer struct {
-		Metadata files.Metadata `json:"structuredContent"`
-	}
-	if err := json.Unmarshal(imported, &importAnswer); err != nil {
-		t.Fatal(err)
-	}
-	if !store.ValidID(importAnswer.Metadata.ID) || importAnswer.Metadata.ID == meta.ID {
-		t.Fatalf("default random ids %q and %q", meta.ID, importAnswer.Metadata.ID)
+	if !store.ValidID(secondMeta.ID) || secondMeta.ID == meta.ID {
+		t.Fatalf("default random ids %q and %q", meta.ID, secondMeta.ID)
 	}
 	first.stop(t, syscall.SIGTERM)
 	if first.err.String() != "" {

@@ -7,48 +7,26 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/artifacts/internal/cli"
 	"github.com/ikigenba/ikigenba/artifacts/internal/tools"
 )
 
-// R-OJS9-D6KZ R-P35L-1BJU R-OIKC-ZEUA R-0IFN-0VUT
+// R-OJS9-D6KZ R-UYJE-SKZP R-UZRB-6CQE R-0IFN-0VUT
 func TestRunMarkedBodiesAndSilentStreams(t *testing.T) {
 	bodies := []string{
 		"GhjKlmNopQrStuVwxYz01234", "ZyxWvuTsrQpoNmlKjhG98765",
 		"PqrStuVwxYzGhjKlmNop6789", "UvwXyzGhiJklMnoPqrStu012",
-		"MnoPqrStuVwxYzGhjKlm3456", "KlmNopQrsTuvWxyZghIj7890",
-		"XyzGhjKlmNopQrsTuvWxy456",
+		"MnoPqrStuVwxYzGhjKlm3456",
 	}
 	bodies[2] += bodies[2]
-	bodies[5] += bodies[5]
-	servicesPath, url := serveSibling(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		switch req.URL.RawQuery {
-		case "over":
-			_, _ = io.WriteString(w, bodies[5])
-		case "cut":
-			w.Header().Set("Content-Length", strconv.Itoa(len(bodies[6])+10))
-			_, _ = io.WriteString(w, bodies[6])
-		default:
-			_, _ = io.WriteString(w, bodies[4])
-		}
-	}))
 	r := newRun(t, t.TempDir())
 	r.p.Rand = &exclusiveRandom{}
-	r.env[services.Variable] = servicesPath
 	r.env["ARTIFACT_MAX_BYTES"] = "32"
-	serviceDoc, err := os.ReadFile(filepath.Clean(servicesPath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	inputs, err := json.Marshal([]any{r.env, r.p.Dir, r.p.Version, string(serviceDoc), url, url + "?over", url + "?cut", "item.bin", "import.bin", "over.bin", "cut.bin", "failed.bin", "owner", "other", "owner@example.test", "other@example.test", "caller-request", "https", "artifacts", "bytes=2-12", r.p.Now().Add(-time.Second).Format(time.RFC3339)})
+	inputs, err := json.Marshal([]any{r.env, r.p.Dir, r.p.Version, "item.bin", "tool-delete.bin", "over.bin", "past.bin", "failed.bin", "owner", "other", "owner@example.test", "other@example.test", "caller-request", "https", "artifacts", "bytes=2-12", r.p.Now().Add(-time.Second).Format(time.RFC3339), tools.ImportArgs{Path: "item.bin"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,23 +83,13 @@ func TestRunMarkedBodiesAndSilentStreams(t *testing.T) {
 		status, _ := r.request("PUT", "/files/"+c.path, c.user, strings.NewReader(c.body), c.headers)
 		expectStatus(t, status, c.status)
 	}
-	var results []any
-	for _, c := range []struct {
-		path, query string
-		fails       bool
-	}{{"import.bin", "", false}, {"over.bin", "?over", true}, {"cut.bin", "?cut", true}} {
-		result := r.call("import", map[string]any{"path": c.path, "url": url + c.query})
-		if result.IsError() != c.fails {
-			t.Fatalf("import %s error=%v", c.path, result.IsError())
-		}
-		if c.query == "?over" && resultText(t, result) != tools.TooLarge(32) {
-			t.Fatal("import was not refused for its cap", resultText(t, result))
-		}
-		if c.query == "?cut" && resultText(t, result) != tools.FetchCutOff(url+c.query) {
-			t.Fatal("import was not refused for its cut-off body", resultText(t, result))
-		}
-		results = append(results, result)
+	plan := r.call("import", tools.ImportArgs{Path: "item.bin"})
+	if plan.IsError() {
+		t.Fatal("import plan failed", resultText(t, plan))
 	}
+	results := []any{plan}
+	status, _ := r.request("PUT", "/files/tool-delete.bin", "owner", strings.NewReader(bodies[4]), nil)
+	expectStatus(t, status, 201)
 	for _, c := range []struct {
 		name string
 		args any
@@ -138,9 +106,9 @@ func TestRunMarkedBodiesAndSilentStreams(t *testing.T) {
 		expectStatus(t, status, 200)
 		pages = append(pages, body)
 	}
-	status, _ := r.request("DELETE", "/files/item.bin", "owner", nil, nil)
+	status, _ = r.request("DELETE", "/files/item.bin", "owner", nil, nil)
 	expectStatus(t, status, 204)
-	result := r.call("delete", map[string]any{"path": "import.bin"})
+	result := r.call("delete", map[string]any{"path": "tool-delete.bin"})
 	if result.IsError() {
 		t.Fatal("delete failed")
 	}

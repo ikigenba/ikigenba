@@ -3,7 +3,6 @@ package cli_test
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"reflect"
 	"strings"
@@ -81,45 +80,21 @@ func TestRunDefaultDirectoryAndInjectedClock(t *testing.T) {
 	}
 }
 
-// R-XO1A-6QM3: import expiry and metadata also use the supplied clock.
+// R-XO1A-6QM3: import plans compare expiry against the supplied clock.
 func TestRunImportInjectedClock(t *testing.T) {
-	path, url := serveSibling(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("imported body")) }))
 	r := newRun(t, t.TempDir())
-	r.env["IKIGENBA_SERVICES"] = path
 	r.start()
 	now := r.p.Now()
-	result := r.call("import", map[string]any{"path": "expired.bin", "url": "https://scripts.space.test/output", "expires": now.Format(time.RFC3339)})
+	result := r.call("import", map[string]any{"path": "expired.bin", "expires": now.Format(time.RFC3339)})
 	if !result.IsError() || resultText(t, result) != tools.PastExpiry(now.Format(time.RFC3339)) {
 		t.Fatalf("expiry equal to injected clock accepted: %v", result)
 	}
-	result = r.call("import", map[string]any{"path": "future.bin", "url": url, "expires": now.Add(time.Minute).Format(time.RFC3339)})
+	result = r.call("import", map[string]any{"path": "future.bin", "expires": now.Add(time.Minute).Format(time.RFC3339)})
 	if result.IsError() {
 		t.Fatalf("future expiry refused %s", resultText(t, result))
 	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var answer struct {
-		Metadata files.Metadata `json:"structuredContent"`
-	}
-	if err := json.Unmarshal(raw, &answer); err != nil {
-		t.Fatal(err)
-	}
-	if answer.Metadata.Created != now.Format(time.RFC3339) || answer.Metadata.Modified != now.Format(time.RFC3339) {
-		t.Fatalf("import clock %#v", answer.Metadata)
-	}
 	if r.stop() != cli.ExitSuccess {
 		t.Fatal("stop failed")
-	}
-	for _, event := range r.trail.Events() {
-		if !event.Time.Equal(now) {
-			t.Errorf("import telemetry clock %#v", event)
-		}
-	}
-	bus := r.bus.Events()
-	if len(bus) != 1 || !bus[0].Time.Equal(now) {
-		t.Fatalf("import bus clock %#v", bus)
 	}
 }
 

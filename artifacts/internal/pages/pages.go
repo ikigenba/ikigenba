@@ -156,7 +156,7 @@ func Handler(cfg Config) http.Handler {
 		case "/tools":
 			banner.Trail = []page.Level{ToolsLevel}
 			data := ToolsData{Banner: banner}
-			for _, e := range tools.Catalog("") {
+			for _, e := range tools.Catalog() {
 				data.Tools = append(data.Tools, ToolRow{Name: e.Name, Description: tools.FirstLine(e.Description)})
 			}
 			cfg.Pages.Write(w, r, http.StatusOK, "tools", data)

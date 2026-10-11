@@ -35,7 +35,6 @@ import (
 	"github.com/ikigenba/ikigenba/artifacts/internal/settings"
 	"github.com/ikigenba/ikigenba/artifacts/internal/store"
 	"github.com/ikigenba/ikigenba/artifacts/internal/sweeper"
-	"github.com/ikigenba/ikigenba/artifacts/internal/tools"
 )
 
 // runHarness carries every process input; readiness is the systemd datagram.
@@ -53,7 +52,6 @@ type runHarness struct {
 	trail           telemetry.Capture
 	bus             events.Capture
 	waits           chan timerWait
-	imports         chan timerWait
 	cancel          context.CancelCauseFunc
 	result          chan int
 	client          *http.Client
@@ -112,7 +110,7 @@ func newRun(t *testing.T, dir string) *runHarness {
 	if e != nil {
 		t.Fatal(e)
 	}
-	r := &runHarness{t: t, env: map[string]string{"LISTEN_PID": "321", "LISTEN_FDS": "1", "NOTIFY_SOCKET": notify.LocalAddr().String()}, ln: ln, notify: notify, waits: make(chan timerWait, 32), imports: make(chan timerWait, 32), result: make(chan int, 1)}
+	r := &runHarness{t: t, env: map[string]string{"LISTEN_PID": "321", "LISTEN_FDS": "1", "NOTIFY_SOCKET": notify.LocalAddr().String()}, ln: ln, notify: notify, waits: make(chan timerWait, 32), result: make(chan int, 1)}
 	r.now.Store(time.Date(2031, 4, 5, 6, 7, 8, 0, time.UTC).Unix())
 	r.p = cli.Process{Dir: dir, Pid: 321, Stdout: &r.stdout, Stderr: &r.stderr, Version: "test-run-display", LookupEnv: func(k string) (string, bool) { r.keys = append(r.keys, k); v, ok := r.env[k]; return v, ok }, Unsetenv: func(k string) error { r.unset = append(r.unset, k); delete(r.env, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) {
 		r.inherited++
@@ -123,10 +121,6 @@ func newRun(t *testing.T, dir string) *runHarness {
 	}, Now: func() time.Time { return time.Unix(r.now.Load(), 0).UTC() }, Sleep: func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, After: func(d time.Duration) <-chan time.Time {
 		w := timerWait{d, make(chan time.Time, 1)}
 		r.waits <- w
-		return w.fire
-	}, ImportAfter: func(d time.Duration) <-chan time.Time {
-		w := timerWait{d, make(chan time.Time, 1)}
-		r.imports <- w
 		return w.fire
 	}, Rand: repeatingByte(0x5a), Sink: &r.trail, EventSink: &r.bus, Banner: func(u page.User) page.Banner { return page.Banner{Service: pages.ServiceName, Email: u.Email} }, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test-run-display", Telemetry: w})
@@ -244,7 +238,7 @@ func blobs(t *testing.T, dir string) []string {
 	return names
 }
 
-// R-FYGI-17O7 R-YSHG-S964 R-Z8C5-R9T5 R-Z9K2-51JU R-DGR0-TF4I
+// R-U2U0-UJPN R-YSHG-S964 R-Z8C5-R9T5 R-UBDB-IXWI R-DGR0-TF4I
 // R-ZBZU-WL18 R-DSY0-N4JG
 func TestRunProcessAndCapturedLifecycle(t *testing.T) {
 	dir := t.TempDir()
@@ -276,7 +270,7 @@ func TestRunProcessAndCapturedLifecycle(t *testing.T) {
 	if r.inherited != 1 || !reflect.DeepEqual(r.unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
 		t.Fatalf("inherit=%d unset=%v", r.inherited, r.unset)
 	}
-	allowed := map[string]bool{"DRAIN_SECONDS": true, "ARTIFACT_MAX_BYTES": true, "IMPORT_SECONDS": true, "IKIGENBA_SERVICES": true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true}
+	allowed := map[string]bool{"DRAIN_SECONDS": true, "ARTIFACT_MAX_BYTES": true, "IKIGENBA_SERVICES": true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true}
 	counts := map[string]int{}
 	for _, k := range r.keys {
 		if !allowed[k] {
@@ -284,7 +278,7 @@ func TestRunProcessAndCapturedLifecycle(t *testing.T) {
 		}
 		counts[k]++
 	}
-	for _, k := range []string{"DRAIN_SECONDS", "ARTIFACT_MAX_BYTES", "IMPORT_SECONDS", "IKIGENBA_SERVICES"} {
+	for _, k := range []string{"DRAIN_SECONDS", "ARTIFACT_MAX_BYTES", "IKIGENBA_SERVICES"} {
 		if counts[k] != 1 {
 			t.Errorf("%s looked up %d times", k, counts[k])
 		}
@@ -758,103 +752,6 @@ func resultText(t *testing.T, r mcp.Result) string {
 		t.Fatalf("result %s", b)
 	}
 	return v.Content[0].Text
-}
-
-// R-OEWN-U3M7
-func TestRunImportTimerAndIdentity(t *testing.T) {
-	headers := make(chan http.Header, 1)
-	release := make(chan struct{})
-	defer close(release)
-	servicesPath, url := serveSibling(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		headers <- req.Header.Clone()
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("prefix"))
-		w.(http.Flusher).Flush()
-		select {
-		case <-release:
-		case <-req.Context().Done():
-		}
-	}))
-	r := newRun(t, t.TempDir())
-	r.env[services.Variable] = servicesPath
-	r.env["IMPORT_SECONDS"] = "17"
-	r.start()
-	before := blobs(t, r.p.Dir)
-	done := make(chan mcp.Result, 1)
-	go func() { done <- r.call("import", map[string]any{"path": "import.bin", "url": url}) }()
-	wait := readWait(t, r.imports)
-	if wait.duration != 17*time.Second {
-		t.Fatalf("import wait %v", wait.duration)
-	}
-	select {
-	case h := <-headers:
-		if h.Get("X-User-Id") != "owner" || h.Get("X-User-Email") != "owner@example.test" {
-			t.Fatalf("identity %v", h)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("sibling not called")
-	}
-	wait.fire <- r.p.Now()
-	select {
-	case result := <-done:
-		if !result.IsError() || resultText(t, result) != tools.FetchTimedOut(url) {
-			t.Fatalf("result %s", resultText(t, result))
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("import did not end")
-	}
-	if !reflect.DeepEqual(blobs(t, r.p.Dir), before) {
-		t.Fatal("failed import changed blobs")
-	}
-	if len(r.imports) != 0 {
-		t.Fatal("extra import timer")
-	}
-	if r.stop() != cli.ExitSuccess {
-		t.Fatal("stop failed")
-	}
-}
-
-// R-OG4K-7VCW
-func TestRunImportCap(t *testing.T) {
-	servicesPath, url := serveSibling(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		body := "12345678"
-		if req.URL.RawQuery == "over" {
-			body += "9"
-		}
-		_, _ = io.WriteString(w, body)
-	}))
-	r := newRun(t, t.TempDir())
-	r.env[services.Variable] = servicesPath
-	r.env["ARTIFACT_MAX_BYTES"] = "8"
-	r.start()
-	over := r.call("import", map[string]any{"path": "over.bin", "url": url + "?over"})
-	if !over.IsError() || resultText(t, over) != tools.TooLarge(8) {
-		t.Fatalf("over result %s", resultText(t, over))
-	}
-	exact := r.call("import", map[string]any{"path": "exact.bin", "url": url})
-	if exact.IsError() {
-		t.Fatalf("exact result %s", resultText(t, exact))
-	}
-	raw, _ := json.Marshal(exact)
-	var obj struct {
-		Structured struct {
-			Bytes int64 `json:"bytes"`
-		} `json:"structuredContent"`
-	}
-	if e := json.Unmarshal(raw, &obj); e != nil {
-		t.Fatal(e)
-	}
-	if obj.Structured.Bytes != 8 {
-		t.Fatalf("metadata %s", raw)
-	}
-	s, b := r.request("GET", "/files/exact.bin", "owner", nil, nil)
-	expectStatus(t, s, 200)
-	if string(b) != "12345678" {
-		t.Fatalf("body %q", b)
-	}
-	if r.stop() != cli.ExitSuccess {
-		t.Fatal("stop failed")
-	}
 }
 
 // R-DU5X-0WA5

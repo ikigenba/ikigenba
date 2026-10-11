@@ -8,7 +8,7 @@ import (
 )
 
 // Settings holds the startup limits.
-type Settings struct{ DrainSeconds, ArtifactMaxBytes, ImportSeconds int64 }
+type Settings struct{ DrainSeconds, ArtifactMaxBytes int64 }
 
 // Error identifies an invalid setting.
 type Error struct{ Name, Value, Unit string }
@@ -18,7 +18,7 @@ func (e *Error) Error() string {
 }
 
 // Defaults returns the limits used for absent values.
-func Defaults() Settings { return Settings{5, 1073741824, 600} }
+func Defaults() Settings { return Settings{5, 1073741824} }
 
 // Read validates each value in startup order.
 func Read(lookup func(string) (string, bool)) (Settings, error) {
@@ -26,7 +26,7 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 	for _, item := range []struct {
 		name, unit string
 		target     *int64
-	}{{"DRAIN_SECONDS", "seconds", &s.DrainSeconds}, {"ARTIFACT_MAX_BYTES", "bytes", &s.ArtifactMaxBytes}, {"IMPORT_SECONDS", "seconds", &s.ImportSeconds}} {
+	}{{"DRAIN_SECONDS", "seconds", &s.DrainSeconds}, {"ARTIFACT_MAX_BYTES", "bytes", &s.ArtifactMaxBytes}} {
 		value, ok := lookup(item.name)
 		if !ok || value == "" {
 			continue
@@ -57,6 +57,3 @@ func duration(seconds int64) time.Duration {
 
 // Drain returns the bounded shutdown duration.
 func (s Settings) Drain() time.Duration { return duration(s.DrainSeconds) }
-
-// Import returns the bounded import duration.
-func (s Settings) Import() time.Duration { return duration(s.ImportSeconds) }

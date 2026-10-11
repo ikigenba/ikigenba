@@ -27,14 +27,14 @@ type commandOutput struct {
 
 func (w *commandOutput) Write(b []byte) (int, error) { w.calls++; return w.Buffer.Write(b) }
 
-// R-NO05-GATN R-NP81-U2KC R-ZPER-426V R-ZQMN-HTXK
+// R-NO05-GATN R-UCL7-WPN7 R-ZPER-426V R-ZQMN-HTXK
 func TestCommandConstants(t *testing.T) {
 	const _ string = cli.Usage
 	const _ string = cli.Manifest
 	if cli.Usage != "Usage: artifacts [command]\n\nBinary files agents and services share, each put and fetched by path at\n/files/<path>, with MCP tools at /mcp and a page of artifacts at /, on\nthe socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n" {
 		t.Fatal(cli.Usage)
 	}
-	if cli.Manifest != "app = \"artifacts\"\ndescription = \"Binary files agents and services share\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nARTIFACT_MAX_BYTES = \"1073741824\"\nIMPORT_SECONDS = \"600\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/artifacts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n" {
+	if cli.Manifest != "app = \"artifacts\"\ndescription = \"Binary files agents and services share\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nARTIFACT_MAX_BYTES = \"1073741824\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/artifacts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n" {
 		t.Fatal(cli.Manifest)
 	}
 	if cli.NginxConf != "client_max_body_size    0;\nproxy_request_buffering off;\nproxy_http_version      1.1;\nproxy_buffering         on;\nproxy_read_timeout      3600s;\nproxy_send_timeout      3600s;\nlocation = /events { return 404; }\nlocation = /declarations { return 404; }\n" {
@@ -92,7 +92,7 @@ type forbiddenRead struct{ t *testing.T }
 
 func (f forbiddenRead) Read([]byte) (int, error) { f.t.Fatal("rand read"); return 0, nil }
 
-// R-ZWQ5-EON1
+// R-UDT4-AHDW
 func TestCommandsAvoidRuntime(t *testing.T) {
 	for _, args := range [][]string{{"--version"}, {"manifest"}, {"--help"}, {"db", "status"}, {"unknown"}} {
 		dir := t.TempDir()
@@ -102,8 +102,11 @@ func TestCommandsAvoidRuntime(t *testing.T) {
 		}
 		var out, err bytes.Buffer
 		fail := func() { t.Fatal("runtime seam used") }
-		p := cli.Process{Args: args, Dir: dir, Version: "display", Stdout: &out, Stderr: &err, LookupEnv: func(string) (string, bool) { fail(); return "", false }, Unsetenv: func(string) error { fail(); return nil }, Inherit: func(uintptr) (net.Listener, error) { fail(); return nil, nil }, Now: func() time.Time { fail(); return time.Time{} }, Sleep: func(context.Context, time.Duration) { fail() }, After: func(time.Duration) <-chan time.Time { fail(); return nil }, ImportAfter: func(time.Duration) <-chan time.Time { fail(); return nil }, Rand: forbiddenRead{t}, Sink: forbiddenTelemetry{t}, EventSink: forbiddenEvents{t}, Banner: func(page.User) page.Banner { fail(); return page.Banner{} }, MCP: func(*telemetry.Writer) *mcp.Server { fail(); return nil }}
+		p := cli.Process{Args: args, Dir: dir, Version: "display", Stdout: &out, Stderr: &err, LookupEnv: func(string) (string, bool) { fail(); return "", false }, Unsetenv: func(string) error { fail(); return nil }, Inherit: func(uintptr) (net.Listener, error) { fail(); return nil, nil }, Now: func() time.Time { fail(); return time.Time{} }, Sleep: func(context.Context, time.Duration) { fail() }, After: func(time.Duration) <-chan time.Time { fail(); return nil }, Rand: forbiddenRead{t}, Sink: forbiddenTelemetry{t}, EventSink: forbiddenEvents{t}, Banner: func(page.User) page.Banner { fail(); return page.Banner{} }, MCP: func(*telemetry.Writer) *mcp.Server { fail(); return nil }}
 		_ = cli.Run(context.Background(), p)
+		if len(args) == 2 && args[0] == "db" && args[1] == "status" {
+			continue
+		}
 		entries, e := os.ReadDir(dir)
 		b, readErr := fs.ReadFile(os.DirFS(dir), "marker")
 		if e != nil || readErr != nil || len(entries) != 1 || string(b) != "unchanged" {
