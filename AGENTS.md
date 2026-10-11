@@ -17,6 +17,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `home` is the suite's front door: a grid of every service on the space, served at the space host.
 - `webhooks` keeps webhooks, each a slug with a minted secret, and turns each authenticated delivery from outside into an event on the bus; agents subscribe scripts to those events and fetch the body.
 - `prompts` runs prompts kept in its catalog on behalf of agents, each run one agentkit session over the suite's models, and keeps each run's input, answer, transcript and files.
+- `artifacts` is the suite's store for binary files agents and services share: each is kept by path, its bytes put and got over HTTP and its metadata reached over MCP.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
 Shared library:
