@@ -36,6 +36,9 @@ design/
     prompts-run.html
                     one run: details, usage and cost, answer, transcript,
                     files, other states
+    artifacts.html  artifacts' landing: every artifact and the bytes held
+    artifacts-artifact.html
+                    one artifact: its metadata in full and a download
     webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles,
                     application services over core services
@@ -220,6 +223,36 @@ service `cron`.
 - Trigger status reads as a `.status` word whose `data-status` is the status:
   active is ok, paused is warn. Times are UTC to the minute in a `time`
   carrying the RFC 3339 moment; a cell with no time is empty.
+
+**artifacts.html, artifacts-artifact.html** — artifacts at
+`artifacts.acme.ikigenba.com`, binary files agents and services share, kept
+by path: an agent puts and gets the bytes at `/files/<path>` with curl, and
+the MCP tools carry metadata only. Two levels: the landing page and one
+artifact. Banner and footer as in app.html, the service `artifacts` with the
+Tabler `archive` icon. Every page is for a signed-in user; no form but sign
+out, no delete control.
+- The landing: `h1` artifacts, a lede, `section#artifacts` whose header
+  carries `p#total`, the bytes held across every artifact, then every
+  artifact in the space, whoever owns it, sorted by path, as
+  `table#artifact-list` of Path / Bytes / Content type / Owner / Modified /
+  Expires: `datasets/customers.csv` (`grace@acme.dev`, never expires),
+  `reports/2026-10/digest.pdf` (the user's, expires `2026-11-08 07:01`),
+  `screenshots/home.png`; each path links to the artifact's page `/<id>`;
+  and a link to the about screen. Its tools (`list`, `show`, `delete`,
+  `import`) are on its tools page. State: no artifacts
+  (`div#no-artifacts.empty`).
+- One artifact, `reports/2026-10/digest.pdf`: the trail artifacts /
+  `reports/2026-10/digest.pdf`, the path as the level's name and the `h1`;
+  `section#artifact-card`, its header naming the content type and the bytes
+  with a Download button (`a#download`, to the artifact's `/files/<path>`
+  URL), and `dl#artifact.kv`: ID, Path, URL, Bytes, Content type, SHA-256,
+  Owner (an email), Created, Modified, Expires. State: never expires (the
+  Expires value is the muted word `never`). An unknown id is the not-found
+  page.
+- Bytes are the plain integer, never a humanised size, in rows, the total
+  and the card. Times are UTC in a `time` carrying the RFC 3339 moment: to
+  the minute in the table, where a cell with no time is empty, to the second
+  with `UTC` on the artifact page.
 
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's
