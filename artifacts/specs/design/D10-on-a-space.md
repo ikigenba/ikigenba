@@ -21,7 +21,7 @@ artifacts on a space is the same binary serving on the same terms as under a tes
 | `artifact.created`, `artifact.replaced` and `artifact.deleted` taken by the events app and delivered to subscribed scripts | `D07-trail`; the broker: events; the run: scripts |
 | expired artifacts gone once before ready and then hourly | the sweeper (`D03-serve`, `D04-store`) |
 | a backup holds the database and the blobs together | opsctl's service backup, which archives `state/` whole, so `artifacts.db` and `state/blobs/` are taken in one archive |
-| the database is replicated | Litestream, under opsctl, replicates `state/artifacts.db` only; a database restored from the replica may name blobs the directory lacks or miss blobs it holds, which `Reconcile` removes at start, recording each removed artifact as `artifact.deleted` (`D04-store`, `D07-trail`) |
+| the database is replicated | Litestream, under opsctl, replicates `state/artifacts.db` only; a database restored from the replica may name blobs the directory lacks or miss blobs it holds, which `Reconcile` removes at start, recording each removed artifact in the trail alone as `artifact.orphaned` (`D04-store`, `D07-trail`) |
 
 ## In a sandbox
 
