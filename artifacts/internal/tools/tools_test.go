@@ -204,7 +204,44 @@ func (f *fixture) snapshot(t *testing.T) string {
 	return string(v)
 }
 
-// R-ND3R-Z7MO R-NEBO-CZDD R-NFJK-QR42 R-NGRH-4IUR R-NHZD-IALG R-NJ79-W2C5 R-TY44-J0F8
+// R-M0A9-5KIF R-Z876-HU2X
+func TestCatalogDescriptions(t *testing.T) {
+	const guide string = tools.BytesGuide
+	if guide == "" || strings.Contains(guide, "\n") {
+		t.Fatal("byte guide must be a non-empty paragraph without newlines")
+	}
+	catalog := tools.Catalog()
+	names := []string{"list", "show", "delete", "import"}
+	if len(catalog) != len(names) {
+		t.Fatalf("catalog has %d entries, want %d", len(catalog), len(names))
+	}
+	firstLines := make(map[string]bool)
+	for i, entry := range catalog {
+		first, _, _ := strings.Cut(entry.Description, "\n")
+		if entry.Name != names[i] || first == "" || firstLines[first] || entry.Description != first+"\n\n"+guide || tools.FirstLine(entry.Description) != first {
+			t.Fatalf("invalid catalog entry %d: %#v", i, entry)
+		}
+		firstLines[first] = true
+	}
+}
+
+// R-Z876-HU2X
+func TestFirstLine(t *testing.T) {
+	for _, tc := range []struct{ description, want string }{
+		{"", ""},
+		{"one", "one"},
+		{"one\ntwo", "one"},
+		{"\nrest", ""},
+		{"one\n\ntwo\nthree", "one"},
+		{"one\n", "one"},
+	} {
+		if got := tools.FirstLine(tc.description); got != tc.want {
+			t.Fatalf("FirstLine(%q) = %q, want %q", tc.description, got, tc.want)
+		}
+	}
+}
+
+// R-ND3R-Z7MO R-NEBO-CZDD R-NFJK-QR42 R-NGRH-4IUR R-NJ79-W2C5 R-TY44-J0F8
 func TestPublicContracts(t *testing.T) {
 	f := setup(t, fetch.Config{}, 100)
 	catalog := tools.Catalog()
@@ -225,12 +262,6 @@ func TestPublicContracts(t *testing.T) {
 		}
 		if infos[i].Effect() != effect {
 			t.Fatal(infos[i])
-		}
-	}
-	for _, s := range []string{"", "one", "one\ntwo", "\nrest"} {
-		want, _, _ := strings.Cut(s, "\n")
-		if tools.FirstLine(s) != want {
-			t.Fatal(s)
 		}
 	}
 	for _, fn := range []func(string) string{tools.NoArtifact, tools.InvalidPath, tools.NotOwner, tools.InvalidExpiry, tools.PastExpiry, tools.NotOnSpace, tools.FetchUnanswered, tools.FetchTimedOut, tools.FetchCutOff} {
