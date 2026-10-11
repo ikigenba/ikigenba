@@ -376,7 +376,24 @@ func TestEveryRouteRequestPair(t *testing.T) {
 	}
 }
 
-// R-0JNJ-ENLI
+type outageBody struct {
+	reader *strings.Reader
+	reads  int
+	bytes  int
+	eof    bool
+}
+
+func (b *outageBody) Read(p []byte) (int, error) {
+	b.reads++
+	n, err := b.reader.Read(p)
+	b.bytes += n
+	b.eof = b.eof || err == io.EOF
+	return n, err
+}
+
+func (*outageBody) Close() error { return nil }
+
+// R-MVXY-S377 R-MSA9-MRZ4
 func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 	f := newFixture(t)
 	a, _, err := f.cfg.Store.Put(context.Background(), store.Draft{Path: "existing.bin", OwnerID: "owner-chosen", Max: 64}, strings.NewReader("retained fixture bytes"))
@@ -421,7 +438,7 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 			t.Fatal("outage emitted bus event", f.bus.Events())
 		}
 	}
-	for _, path := range []string{"/files/existing.bin", "/files/missing.bin", "/", "/" + a.ID} {
+	for _, path := range []string{"/files/existing.bin", "/files/missing.bin", "/", "/" + a.ID, "/art_6666666666666666"} {
 		methods := []string{"GET", "HEAD"}
 		if strings.HasPrefix(path, "/files/") {
 			methods = append(methods, "PUT", "DELETE")
@@ -433,7 +450,8 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 				}
 				start := len(f.logs.Events())
 				r := request(method, path, "", true)
-				body := &countedBody{}
+				const payload = "outage request bytes"
+				body := &outageBody{reader: strings.NewReader(payload)}
 				r.Body = body
 				if expiry != "" {
 					r.Header.Set("X-Artifact-Expires", expiry)
@@ -443,10 +461,14 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 				if method == "HEAD" {
 					want = ""
 				}
-				if w.Code != 503 || w.Body.String() != want || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+				if w.Code != 503 || w.Body.String() != want || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) {
 					t.Fatalf("%s %s: %d %v %q", method, path, w.Code, w.Header(), w.Body.String())
 				}
-				if body.reads != 0 {
+				if method == "PUT" {
+					if body.bytes != len(payload) || !body.eof {
+						t.Fatal("outage PUT did not drain body", body.bytes, body.eof)
+					}
+				} else if body.reads != 0 {
 					t.Fatal("outage read body")
 				}
 				checkEvents(start, false)
@@ -473,6 +495,7 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 		}
 		var reply struct {
 			Content []struct {
+				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
 		}
@@ -483,7 +506,7 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 		if err = json.Unmarshal(wire, &reply); err != nil {
 			t.Fatal(err)
 		}
-		if !result.IsError() || len(reply.Content) != 1 || reply.Content[0].Text != store.Unreachable {
+		if !result.IsError() || len(reply.Content) != 1 || reply.Content[0].Type != "text" || reply.Content[0].Text != store.Unreachable || len(structured(t, result)) != 0 {
 			t.Fatalf("tool outage: %s", wire)
 		}
 		checkEvents(start, true)

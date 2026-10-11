@@ -44,6 +44,7 @@ func (r *repeatReader) Read(p []byte) (int, error) {
 type bodyReader struct {
 	reader io.Reader
 	read   int
+	ended  bool
 	hook   func()
 }
 
@@ -54,12 +55,54 @@ func (b *bodyReader) Read(p []byte) (int, error) {
 	}
 	n, err := b.reader.Read(p)
 	b.read += n
+	b.ended = err != nil
 	return n, err
 }
 
 type failedReader struct{}
 
 func (failedReader) Read([]byte) (int, error) { return 0, errors.New("client stopped") }
+
+type terminalReader struct {
+	data  string
+	err   error
+	ended bool
+}
+
+func (b *terminalReader) Read(p []byte) (int, error) {
+	if b.ended {
+		panic("read after terminal body result")
+	}
+	n := copy(p, b.data)
+	b.data = b.data[n:]
+	if b.data == "" {
+		b.ended = true
+		return n, b.err
+	}
+	return n, nil
+}
+
+type refusalWriter struct {
+	*httptest.ResponseRecorder
+	t    *testing.T
+	body *bodyReader
+	max  int64
+}
+
+func (w *refusalWriter) check() {
+	w.t.Helper()
+	if !w.body.ended && int64(w.body.read) <= w.max {
+		w.t.Fatalf("answer written before body ended or exceeded cap: %d bytes", w.body.read)
+	}
+}
+func (w *refusalWriter) WriteHeader(status int) {
+	w.check()
+	w.ResponseRecorder.WriteHeader(status)
+}
+func (w *refusalWriter) Write(p []byte) (int, error) {
+	w.check()
+	return w.ResponseRecorder.Write(p)
+}
 
 type fixture struct {
 	st     *store.Store
@@ -105,6 +148,12 @@ func setup(t *testing.T, limit int64) *fixture {
 }
 func (f *fixture) request(t *testing.T, method, target, user string, body io.Reader, headers http.Header) *httptest.ResponseRecorder {
 	t.Helper()
+	w := httptest.NewRecorder()
+	f.requestWriter(t, method, target, user, body, headers, w)
+	return w
+}
+func (f *fixture) requestWriter(t *testing.T, method, target, user string, body io.Reader, headers http.Header, w http.ResponseWriter) {
+	t.Helper()
 	r := httptest.NewRequest(method, target, body)
 	r.Host = "artifacts.example:7401"
 	r.Header = headers.Clone()
@@ -123,9 +172,7 @@ func (f *fixture) request(t *testing.T, method, target, user string, body io.Rea
 	r.Header.Set("X-Request-Id", "request-example")
 	r.Header.Set("X-Forwarded-Proto", "http")
 	r = r.WithContext(events.NewContext(r.Context(), events.Cause{ID: "evt_0123456789abcdef", Depth: 2}))
-	w := httptest.NewRecorder()
 	identity.Require(files.Handler(f.cfg)).ServeHTTP(w, r)
-	return w
 }
 func (f *fixture) snapshot(t *testing.T) map[string]string {
 	t.Helper()
@@ -281,7 +328,7 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
-// R-CG61-CAVO R-CHDX-Q2MD R-CILU-3UD2 R-CJTQ-HM3R R-CR54-S8JX R-CSD1-60AM R-CTKX-JS1B R-CYGJ-2V03 R-R8FJ-KDNG
+// R-CG61-CAVO R-CHDX-Q2MD R-CILU-3UD2 R-MKYV-C5IY R-MNEO-3P0C R-MOMK-HGR1 R-MPUG-V8HQ R-CYGJ-2V03 R-MUQ2-EBGI R-D248-8686
 func TestPreflightRefusals(t *testing.T) {
 	f := setup(t, 4)
 	metadata(t, f.request(t, "PUT", "/files/owned", "owner", strings.NewReader("old"), nil), f.get(t, "owned"), 201)
@@ -322,7 +369,7 @@ func TestPreflightRefusals(t *testing.T) {
 			if user == "" {
 				user = "owner"
 			}
-			body := &bodyReader{reader: strings.NewReader("too-large-secret")}
+			body := &bodyReader{reader: strings.NewReader("body")}
 			f.d.SetFailing(c.failing)
 			w := f.request(t, c.method, c.target, user, body, c.headers)
 			f.d.SetFailing(false)
@@ -333,8 +380,12 @@ func TestPreflightRefusals(t *testing.T) {
 			} else {
 				refusal(t, w, c.method, c.status, c.line)
 			}
-			if body.read != 0 || f.get(t, "owned") != original || !reflect.DeepEqual(f.snapshot(t), snapshot) {
-				t.Fatal("preflight changed state or read body")
+			wantRead := 0
+			if c.method == "PUT" {
+				wantRead = 4
+			}
+			if body.read != wantRead || f.get(t, "owned") != original || !reflect.DeepEqual(f.snapshot(t), snapshot) {
+				t.Fatal("refusal changed state or read unexpected body bytes")
 			}
 			f.flush(t)
 			if len(f.tc.Events()) != eventCount || len(f.ec.Events()) != eventCount {
@@ -350,7 +401,7 @@ func TestPreflightRefusals(t *testing.T) {
 	}
 }
 
-// R-CUST-XJS0 R-P164-T44K R-CW0Q-BBIP R-R77N-6LWR R-R8FJ-KDNG R-D248-8686
+// R-CUST-XJS0 R-P164-T44K R-CW0Q-BBIP R-MR2D-908F R-MUQ2-EBGI R-D248-8686
 func TestBodyAndStoreFailures(t *testing.T) {
 	f := setup(t, 4)
 	f.request(t, "PUT", "/files/owned", "owner", strings.NewReader("old"), nil)
@@ -391,11 +442,15 @@ func TestBodyAndStoreFailures(t *testing.T) {
 		refusal(t, w, method, 503, store.Unreachable)
 		f.noEvents(t, eventCount)
 		f.d.SetFailing(false)
-		if b.read != 0 || !reflect.DeepEqual(f.snapshot(t), snapshot) {
-			t.Fatal("failing handle read or changed body")
+		wantRead := 0
+		if method == "PUT" {
+			wantRead = 4
+		}
+		if b.read != wantRead || !reflect.DeepEqual(f.snapshot(t), snapshot) {
+			t.Fatal("failing handle read unexpected body bytes or changed state")
 		}
 	}
-	b := &bodyReader{reader: strings.NewReader("abc"), hook: func() { f.d.SetFailing(true) }}
+	b := &bodyReader{reader: &terminalReader{data: "abc", err: io.EOF}, hook: func() { f.d.SetFailing(true) }}
 	w := f.request(t, "PUT", "/files/owned", "owner", b, nil)
 	refusal(t, w, "PUT", 503, store.Unreachable)
 	f.noEvents(t, eventCount)
@@ -438,6 +493,173 @@ func TestBodyAndStoreFailures(t *testing.T) {
 	f.noEvents(t, eventCount)
 	if _, err := os.Stat(missing); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
+	}
+}
+
+// R-MSA9-MRZ4 R-MTI6-0JPT R-MUQ2-EBGI
+func TestRefusedPutDrain(t *testing.T) {
+	const mib = 1 << 20
+	conditions := []struct {
+		name, target, user string
+		headers            http.Header
+		status             int
+		line               string
+		failing            bool
+	}{
+		{name: "path", target: "/files/a//b", status: 400, line: files.InvalidPath, headers: http.Header{files.ExpiresHeader: {"malformed"}}},
+		{name: "expiry", target: "/files/new", status: 400, line: files.InvalidExpires, headers: http.Header{files.ExpiresHeader: {"malformed"}}},
+		{name: "past", target: "/files/owned", user: "other", status: 400, line: files.PastExpiry, headers: http.Header{files.ExpiresHeader: {"2020-01-01T00:00:00Z"}}},
+		{name: "owner", target: "/files/owned", user: "other", status: 403, line: files.Forbidden},
+		{name: "database", target: "/files/owned", user: "other", status: 503, line: store.Unreachable, headers: http.Header{files.ExpiresHeader: {"2020-01-01T00:00:00Z"}}, failing: true},
+	}
+	variants := []struct {
+		name     string
+		max      int64
+		size     int
+		terminal error
+		sameRead bool
+	}{
+		{name: "large-refusal", max: 4 * mib, size: mib, terminal: io.EOF},
+		{name: "exact", max: mib, size: mib, terminal: io.EOF},
+		{name: "failed", max: mib, size: 300 * 1024, terminal: errors.New("client failed"), sameRead: true},
+		{name: "eof-with-bytes", max: mib, size: 300 * 1024, terminal: io.EOF, sameRead: true},
+		{name: "oversized", max: mib, size: mib + 32, terminal: io.EOF},
+		{name: "over-with-error", max: mib, size: mib + 1, terminal: errors.New("client failed"), sameRead: true},
+		{name: "unlimited", max: math.MaxInt64, size: mib, terminal: io.EOF},
+		{name: "zero-cap", max: 0, size: 1, terminal: io.EOF},
+	}
+	for _, c := range conditions {
+		for _, v := range variants {
+			for _, knownLength := range []bool{false, true} {
+				t.Run(c.name+"/"+v.name+"/"+strconv.FormatBool(knownLength), func(t *testing.T) {
+					f := setup(t, v.max)
+					// Seed independently of the handler's cap, including its zero-cap case.
+					_, _, err := f.st.Put(context.Background(), store.Draft{Path: "owned", OwnerID: "owner", OwnerEmail: "owner@example.test", Max: 3}, strings.NewReader("old"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					before, err := f.st.List(context.Background())
+					if err != nil {
+						t.Fatal(err)
+					}
+					blobs := f.snapshot(t)
+					payload := strings.Repeat("b", v.size)
+					reader := io.MultiReader(strings.NewReader(payload), &terminalReader{err: v.terminal})
+					if v.sameRead {
+						reader = &terminalReader{data: payload, err: v.terminal}
+					}
+					body := &bodyReader{reader: reader}
+					headers := c.headers.Clone()
+					if headers == nil {
+						headers = make(http.Header)
+					}
+					if knownLength {
+						headers.Set("Content-Length", strconv.Itoa(v.size))
+					}
+					user := c.user
+					if user == "" {
+						user = "owner"
+					}
+					f.d.SetFailing(c.failing)
+					w := &refusalWriter{ResponseRecorder: httptest.NewRecorder(), t: t, body: body, max: v.max}
+					f.requestWriter(t, "PUT", c.target, user, body, headers, w)
+					f.d.SetFailing(false)
+					status, line, wantRead := c.status, c.line, v.size
+					if int64(v.size) > v.max {
+						status, line, wantRead = 413, files.TooLarge, int(v.max+1)
+						if w.Header().Get("Connection") != "close" {
+							t.Fatal(w.Header())
+						}
+					} else if !body.ended {
+						t.Fatal("body did not reach terminal read")
+					}
+					refusal(t, w.ResponseRecorder, "PUT", status, line)
+					if body.read != wantRead {
+						t.Fatalf("read %d bytes, want %d", body.read, wantRead)
+					}
+					after, err := f.st.List(context.Background())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(after, before) || !reflect.DeepEqual(f.snapshot(t), blobs) {
+						t.Fatal("refusal changed store or blobs")
+					}
+				})
+			}
+		}
+	}
+}
+
+// R-MSA9-MRZ4 R-MR2D-908F R-MTI6-0JPT R-MUQ2-EBGI
+func TestRefusedPutAfterPartialStoreRead(t *testing.T) {
+	for _, size := range []int{4, 20} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			f := setup(t, 4)
+			before := f.snapshot(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			// Cancel during a successful partial read, so Put returns before EOF.
+			body := &bodyReader{reader: io.MultiReader(strings.NewReader("ab"), strings.NewReader(strings.Repeat("c", size-2))), hook: cancel}
+			r := httptest.NewRequest("PUT", "/files/new", body).WithContext(ctx)
+			r.Header.Set("X-User-Id", "owner")
+			r.Header.Set("X-User-Email", "owner@example.test")
+			w := &refusalWriter{ResponseRecorder: httptest.NewRecorder(), t: t, body: body, max: 4}
+			identity.Require(files.Handler(f.cfg)).ServeHTTP(w, r)
+			status, line, wantRead := 503, store.Unreachable, size
+			if size > 4 {
+				status, line, wantRead = 413, files.TooLarge, 5
+				if w.Header().Get("Connection") != "close" {
+					t.Fatal(w.Header())
+				}
+			}
+			refusal(t, w.ResponseRecorder, "PUT", status, line)
+			if body.read != wantRead {
+				t.Fatalf("aggregate read %d, want %d", body.read, wantRead)
+			}
+			all, err := f.st.List(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(all) != 0 || !reflect.DeepEqual(f.snapshot(t), before) {
+				t.Fatal("failed store call changed state")
+			}
+		})
+	}
+}
+
+// R-MSA9-MRZ4 R-MR2D-908F R-MTI6-0JPT
+func TestRefusedPutMissingBlobDirectory(t *testing.T) {
+	for _, size := range []int{3, 20} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			f := setup(t, 4)
+			before := f.snapshot(t)
+			missing := filepath.Join(t.TempDir(), "missing")
+			f.cfg.Store = store.New(f.d, missing, store.Config{Now: func() time.Time { return f.now }, Rand: &repeatReader{}})
+			body := &bodyReader{reader: &terminalReader{data: strings.Repeat("b", size), err: io.EOF}}
+			w := &refusalWriter{ResponseRecorder: httptest.NewRecorder(), t: t, body: body, max: 4}
+			f.requestWriter(t, "PUT", "/files/new", "owner", body, nil, w)
+			status, line, wantRead := 503, store.Unreachable, size
+			if size > 4 {
+				status, line, wantRead = 413, files.TooLarge, 5
+				if w.Header().Get("Connection") != "close" {
+					t.Fatal(w.Header())
+				}
+			}
+			refusal(t, w.ResponseRecorder, "PUT", status, line)
+			if body.read != wantRead {
+				t.Fatalf("read %d, want %d", body.read, wantRead)
+			}
+			all, err := f.st.List(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(all) != 0 || !reflect.DeepEqual(f.snapshot(t), before) {
+				t.Fatal("missing blob directory refusal changed state")
+			}
+			if _, err := os.Stat(missing); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

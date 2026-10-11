@@ -4,6 +4,8 @@ package files
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"math"
 	"net/http"
 	"path"
 	"strings"
@@ -70,6 +72,36 @@ func refusal(w http.ResponseWriter, r *http.Request, status int, line string) {
 	}
 }
 
+// uploadBody keeps the store's reads and a refusal's drain under one bound.
+type uploadBody struct {
+	reader    io.Reader
+	remaining int64
+	ended     bool
+	tooLarge  bool
+}
+
+func (b *uploadBody) Read(p []byte) (int, error) {
+	if b.ended || b.tooLarge {
+		return 0, io.EOF
+	}
+	if b.remaining < math.MaxInt64 && int64(len(p)) > b.remaining+1 {
+		p = p[:b.remaining+1]
+	}
+	n, err := b.reader.Read(p)
+	if int64(n) > b.remaining {
+		b.tooLarge = true
+	} else {
+		b.remaining -= int64(n)
+	}
+	b.ended = err != nil
+	return n, err
+}
+
+func (b *uploadBody) drain() bool {
+	_, _ = io.Copy(io.Discard, b)
+	return b.tooLarge
+}
+
 func failure(w http.ResponseWriter, r *http.Request, err error) {
 	status, line := http.StatusServiceUnavailable, store.Unreachable
 	switch {
@@ -93,6 +125,17 @@ func failure(w http.ResponseWriter, r *http.Request, err error) {
 // Handler serves artifact bytes and metadata.
 func Handler(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body *uploadBody
+		if r.Method == http.MethodPut {
+			body = &uploadBody{reader: r.Body, remaining: max(cfg.Max, 0)}
+		}
+		reject := func(status int, line string) {
+			if body != nil && body.drain() {
+				status, line = http.StatusRequestEntityTooLarge, TooLarge
+				w.Header().Set("Connection", "close")
+			}
+			refusal(w, r, status, line)
+		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete:
 		default:
@@ -102,7 +145,7 @@ func Handler(cfg Config) http.Handler {
 		}
 		p := strings.TrimPrefix(r.URL.EscapedPath(), urls.FilesPrefix)
 		if !store.ValidPath(p) {
-			refusal(w, r, http.StatusBadRequest, InvalidPath)
+			reject(http.StatusBadRequest, InvalidPath)
 			return
 		}
 		switch r.Method {
@@ -112,18 +155,21 @@ func Handler(cfg Config) http.Handler {
 			if len(values) > 0 {
 				var err error
 				if len(values) != 1 {
-					refusal(w, r, http.StatusBadRequest, InvalidExpires)
+					reject(http.StatusBadRequest, InvalidExpires)
 					return
 				}
 				exp, err = time.Parse(time.RFC3339, values[0])
 				if err != nil {
-					refusal(w, r, http.StatusBadRequest, InvalidExpires)
+					reject(http.StatusBadRequest, InvalidExpires)
 					return
 				}
 			}
 			caller, _ := identity.FromContext(r.Context())
-			a, created, err := cfg.Store.Put(r.Context(), store.Draft{Path: p, ContentType: r.Header.Get("Content-Type"), OwnerID: caller.UserID, OwnerEmail: caller.Email, Expires: exp, Max: cfg.Max}, r.Body)
+			a, created, err := cfg.Store.Put(r.Context(), store.Draft{Path: p, ContentType: r.Header.Get("Content-Type"), OwnerID: caller.UserID, OwnerEmail: caller.Email, Expires: exp, Max: cfg.Max}, body)
 			if err != nil {
+				if body.drain() {
+					err = store.ErrTooLarge
+				}
 				failure(w, r, err)
 				return
 			}

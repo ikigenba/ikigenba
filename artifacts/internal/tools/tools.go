@@ -32,7 +32,7 @@ type Config struct {
 type Entry struct{ Name, Description string }
 
 // BytesGuide explains how callers put and fetch artifact bytes over HTTP.
-const BytesGuide string = "No tool carries bytes: import answers the URL and instructions to put a file, and show and list answer the url to fetch one."
+const BytesGuide string = "No tool carries bytes: import answers the URL and the instructions to put a file, and show and list answer the url to fetch one."
 
 // BearerPlaceholder stands for the caller's own bearer token.
 const BearerPlaceholder string = "Bearer <your token>"
