@@ -1,6 +1,6 @@
 # appkit
 
-appkit holds what every app shares: page chrome, identity, the MCP server and client, telemetry, the database open path, and the clients a connector uses to reach artifacts and connections. It is a Go library with one concern per package and no package privileged; the module root exports nothing. As a library it has no stories: the design is the record. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
+appkit holds what every app shares: page chrome, identity, the MCP server and client, telemetry, the database open path, the clients a connector uses to reach artifacts and connections, and the client a service reads scrapes' runs and rows with. It is a Go library with one concern per package and no package privileged; the module root exports nothing. As a library it has no stories: the design is the record. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -14,6 +14,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `db` is a service's SQLite database: opening it, reading and writing it through transactions, the failure seam its tests use, and its migrations and their status.
 - `artifacts` is the client over the artifacts service's socket: `Put`, `Get` and `Head` on `/files/<path>`, the metadata object as appkit's type, and the typed errors artifacts' statuses map to.
 - `connections` is the client over the connections service's socket: `Token` for a provider's access token, and the typed errors its refusals map to, the reconnect one carrying its URL.
+- `scrapes` is the client over the scrapes service's socket: `Current`, `Record` and `Rows` on its sibling read path, the run record and row as appkit's types, and the typed errors its refusals map to.
 - The build run writes the Go source and the tests. `page/assets/`, `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets

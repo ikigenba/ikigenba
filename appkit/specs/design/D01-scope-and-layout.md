@@ -16,8 +16,9 @@ The library is a set of packages, each holding one concern small enough to hold 
 - `version` — the identity the host gives an app in its environment, `version.Identity`, and the one display string built from it that the app passes wherever it passes its version (D21).
 - `artifacts` — the client a service keeps and fetches binary files with in the artifacts app, over its unix socket: put a stream at a path, get one, and head one for its metadata (D22).
 - `connections` — the client a connector takes a short-lived access token for an outside provider with from the connections app, over its unix socket (D23).
+- `scrapes` — the client a service reads a scrapes run and its rows with from the scrapes app, over its unix socket: a scraper's current run, a run's record, and its rows as a stream (D24).
 
-Dependencies point one way: `page` uses `services` and `version`; `telemetry` uses `identity` and `services`; `mcp` and `events` use `identity`, `services`, and `telemetry`; `artifacts` and `connections` use `services` and `telemetry`, and `identity` through the context; `identity`, `services`, `db`, and `version` use no other appkit package. Which package imports which is not observable, so this is guidance, not a requirement.
+Dependencies point one way: `page` uses `services` and `version`; `telemetry` uses `identity` and `services`; `mcp` and `events` use `identity`, `services`, and `telemetry`; `artifacts`, `connections` and `scrapes` use `services` and `telemetry`, and `identity` through the context; `identity`, `services`, `db`, and `version` use no other appkit package. Which package imports which is not observable, so this is guidance, not a requirement.
 
 ## Assets
 
@@ -57,6 +58,8 @@ Services react to each other's changes through the event bus. A producer builds 
 
 A connector moves files between the suite and an outside provider. It reads the services file, finds the `artifacts` and `connections` entries, and in its handler setup builds an `artifacts.Client` and a `connections.Client` with `artifacts.NewClient` and `connections.NewClient`, each `ClientConfig` naming the entry and its telemetry writer. Each handler calls `connections.Client.Token` with its request context for the provider's access token before a transfer, and `artifacts.Client.Head`, `Get` or `Put` with the same context to stream the bytes, so both calls carry the caller and are recorded as `sibling.called` (D22, D23).
 
+A service reads public records a scraper collected. It reads the services file, finds the `scrapes` entry, and in its handler setup builds a `scrapes.Client` with `scrapes.NewClient`, its `ClientConfig` naming the entry and its telemetry writer. Its handler calls `Client.Current` with its request context for a scraper's current run, or `Client.Record` for a run it was told of, then `Client.Rows` with the run's id and a function that takes each row as it arrives, and compares the rows it counted with the run's `Rows`; every call carries the caller and is recorded as `sibling.called` (D24).
+
 A service's own test drives its MCP tools end to end: it builds the server with a writer over a `*telemetry.Capture`, serves it wrapped in `identity.Require` from a test server, and calls a tool through the `mcp` client with an `identity.Caller` it makes up.
 
 ## REQUIREMENTS
@@ -69,7 +72,8 @@ A service's own test drives its MCP tools end to end: it builds the server with 
 - R-NNUH-KZA9: Package `db` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/db`, and its package name MUST be `db`.
 - R-ZXVA-I2PY: Package `artifacts` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/artifacts`, and its package name MUST be `artifacts`.
 - R-ZZ36-VUGN: Package `connections` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/connections`, and its package name MUST be `connections`.
+- R-DYKJ-8TZ7: Package `scrapes` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit/scrapes`, and its package name MUST be `scrapes`.
 - R-XNGM-IWEW: An exported function or method of packages `page`, `services`, `identity`, `mcp`, `telemetry`, `db`, or `version` MUST NOT write to the process's standard output, to its standard error, or through the standard library `log` package's default logger, except through an `io.Writer` the consumer passed to that function or method, to the value it belongs to, or to the function that built that value.
 - R-XOOI-WO5L: Every exported function and method of packages `services`, `identity`, `mcp`, `telemetry`, `db`, and `version`, and `page.New` and `Kit.Banner`, MUST behave identically whatever the process working directory is, apart from how a relative path the consumer supplies resolves.
-- R-00B3-9M7C: An exported function or method of packages `artifacts` or `connections` MUST NOT write to the process's standard output, to its standard error, or through the standard library `log` package's default logger, except as the `*telemetry.Writer` the consumer supplied writes to the `Stderr` its own `Config` names.
-- R-01IZ-NDY1: Every exported function and method of packages `artifacts` and `connections` MUST behave identically whatever the process working directory is, apart from how a relative socket path in the `services.Entry` the consumer supplies resolves.
+- R-DZSF-MLPW: An exported function or method of packages `artifacts`, `connections` or `scrapes` MUST NOT write to the process's standard output, to its standard error, or through the standard library `log` package's default logger, except as the `*telemetry.Writer` the consumer supplied writes to the `Stderr` its own `Config` names.
+- R-E10C-0DGL: Every exported function and method of packages `artifacts`, `connections` and `scrapes` MUST behave identically whatever the process working directory is, apart from how a relative socket path in the `services.Entry` the consumer supplies resolves.
