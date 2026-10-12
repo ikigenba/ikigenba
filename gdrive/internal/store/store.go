@@ -3,7 +3,6 @@ package store
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -72,12 +71,6 @@ type Store struct {
 
 // New builds a store without opening or creating a database.
 func New(d *db.DB, cfg Config) *Store {
-	if cfg.Now == nil {
-		cfg.Now = time.Now
-	}
-	if cfg.Rand == nil {
-		cfg.Rand = rand.Reader
-	}
 	return &Store{d: d, cfg: cfg}
 }
 

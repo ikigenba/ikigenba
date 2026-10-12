@@ -132,10 +132,9 @@ func invariant(t *testing.T, v store.Transfer) {
 	}
 }
 
-// R-RXC7-L5N2 R-6MY4-PTMR R-S3FP-I0CJ R-SWPA-OI57
+// R-RXC7-L5N2 R-R5HK-ZURZ R-S3FP-I0CJ R-SWPA-OI57
 func TestEmptyAndAPI(t *testing.T) {
 	f := setup(t)
-	_ = store.New(f.d, store.Config{})
 	for _, u := range []string{"", "alice", "bob"} {
 		l, err := f.st.List(background, u)
 		if err != nil || l == nil || len(l) != 0 {
@@ -274,7 +273,7 @@ func TestInvalidDrafts(t *testing.T) {
 	}
 }
 
-// R-SBZ0-6EJE R-SEES-XY0S R-6O61-3LDG R-SU9H-WYNT
+// R-SBZ0-6EJE R-SEES-XY0S R-6O61-3LDG R-SU9H-WYNT R-6MY4-PTMR
 func TestTransitionsPersist(t *testing.T) {
 	f := setup(t)
 	other := f.add(store.StatusRunning, "bob")

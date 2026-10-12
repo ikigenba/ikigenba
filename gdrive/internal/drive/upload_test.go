@@ -20,7 +20,7 @@ import (
 )
 
 func TestUploadProtocol(t *testing.T) {
-	// R-PMVY-BRZN R-JSYF-U1G3 R-PPBR-3BH1 R-PRRJ-UUYF R-PSZG-8MP4 R-PU7C-MEFT
+	// R-PMVY-BRZN R-RBL2-WPHG R-PPBR-3BH1 R-PRRJ-UUYF R-PSZG-8MP4 R-PU7C-MEFT
 	for _, existing := range []bool{false, true} {
 		for _, named := range []bool{false, true} {
 			for _, size := range []int{0, 7, drive.PushChunk + 3} {

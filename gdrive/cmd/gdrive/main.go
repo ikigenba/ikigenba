@@ -3,7 +3,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -37,7 +39,11 @@ func run() int {
 		case <-ctx.Done():
 		}
 	}()
-	return cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Banner: page.New(pages.ServiceName, id).Banner, After: time.After, MCP: func(w *telemetry.Writer) *mcp.Server {
+	return cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Banner: page.New(pages.ServiceName, id).Banner, Inherit: func(fd uintptr) (net.Listener, error) {
+		f := os.NewFile(fd, "gdrive-listener")
+		defer func() { _ = f.Close() }()
+		return net.FileListener(f)
+	}, Now: time.Now, Rand: rand.Reader, After: time.After, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: v, Telemetry: w})
 	}})
 }

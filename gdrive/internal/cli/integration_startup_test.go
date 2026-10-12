@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/gdrive"
 	"github.com/ikigenba/ikigenba/gdrive/internal/cli"
@@ -173,6 +175,89 @@ func (f *startupFixture) page(t *testing.T, id string) int {
 	defer func() { _ = res.Body.Close() }()
 	_, _ = io.Copy(io.Discard, res.Body)
 	return res.StatusCode
+}
+
+// R-R49O-M31A
+func TestRunNilDefaultsAndWorkingDirectory(t *testing.T) {
+	f := newStartupFixture(t)
+	dir := f.p.Dir
+	t.Chdir(dir)
+	now := f.clock.now()
+	f.clock.set(now.Add(-time.Hour))
+	d, st := startupOpen(t, dir, f.clock.now)
+	tr, err := st.Add(context.Background(), store.Transfer{Direction: store.DirectionPull, Status: store.StatusRunning, Path: "destination", UserID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.set(now)
+	short := integrationSocketDir(t)
+	trace := &telemetry.Capture{}
+	bus := &events.Capture{}
+	ts := integrationUnix(t, short, "telemetry", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != telemetry.IngestPath {
+			t.Error(r.URL.Path)
+		}
+		telemetry.IngestHandler(trace).ServeHTTP(w, r)
+	}))
+	bs := integrationUnix(t, short, "events", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var event events.Event
+		if r.Method != http.MethodPost || r.URL.Path != events.EmitPath {
+			t.Error("unexpected bus request", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if err := bus.Deliver(r.Context(), event); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	path := integrationServices(t, short, integrationEntry("telemetry", ts, ""), integrationEntry("events", bs, ""))
+	t.Setenv(services.Variable, path)
+	f.env[services.Variable] = path
+	f.env["LISTEN_FDNAMES"] = "fixture-listener"
+	f.p.Unsetenv = nil
+	f.p.Dir = ""
+	f.p.Sink = nil
+	f.p.EventSink = nil
+	ready := startupReadyAtAccept(t, f)
+	cancel, done := f.start(t)
+	if err := startupAwait(t, ready); err != nil {
+		t.Fatal(err)
+	}
+	if status := f.page(t, tr.ID); status != http.StatusOK {
+		t.Fatal("transfer page status", status)
+	}
+	startupStop(t, f, cancel, done)
+	for key, want := range map[string]string{"LISTEN_PID": "713", "LISTEN_FDS": "1", "LISTEN_FDNAMES": "fixture-listener"} {
+		if f.env[key] != want {
+			t.Errorf("nil Unsetenv changed %s", key)
+		}
+	}
+	d, st = startupOpen(t, dir, f.clock.now)
+	defer func() { _ = d.Close() }()
+	got, err := st.Get(context.Background(), "owner", tr.ID)
+	if err != nil || got.Finished != now || got.Started != tr.Started {
+		t.Fatalf("working-directory record and clock: %+v %v", got, err)
+	}
+	times := trace.Events()
+	if len(times) == 0 {
+		t.Fatal("nil Sink delivered no telemetry")
+	}
+	for _, event := range times {
+		if event.Time != now {
+			t.Errorf("telemetry time %v want %v", event.Time, now)
+		}
+	}
+	emitted := bus.Events()
+	if len(emitted) != 1 || emitted[0].Time != now || emitted[0].Name != "transfer.finished" {
+		t.Fatalf("nil EventSink and clock: %+v", emitted)
+	}
 }
 
 // R-RA64-BIJV
@@ -511,7 +596,7 @@ func TestStartupPrunesBeforeReadiness(t *testing.T) {
 	}
 }
 
-// R-ASAC-UIFI R-R0EX-9CMB
+// R-ASAC-UIFI R-R0EX-9CMB R-R49O-M31A
 func TestStartupSweepUsesInjectedTimeAndRearms(t *testing.T) {
 	f := newStartupFixture(t)
 	f.env["TRANSFER_KEEP_COUNT"] = "1"

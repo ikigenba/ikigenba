@@ -223,7 +223,26 @@ func integrationResponse(r *http.Request, body string) *http.Response {
 	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}
 }
 
-// R-QQNQ-76OR R-QRVM-KYFG R-RBE0-PAAK R-RCLX-3219 R-RDTT-GTRY
+// R-R49O-M31A
+func TestRunPullExpiryUsesInjectedClock(t *testing.T) {
+	d := integrationSocketDir(t)
+	cs := integrationUnix(t, d, "connections", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "fake-token", "expires": "2040-01-01T00:00:00Z", "account": "account", "scopes": []string{}})
+	}))
+	path := integrationServices(t, d, integrationEntry("connections", cs, ""))
+	r := integrationNew(t, path, forbiddenTransport{t})
+	r.p.Now = func() time.Time { return time.Date(2035, 6, 7, 8, 9, 10, 0, time.UTC) }
+	r.start(t)
+	result := r.call(t, "pull", `{"file":"source","path":"destination","expires":"2035-06-07T08:09:10Z"}`)
+	if !result.IsError() || !strings.Contains(integrationJSON(t, result), "expires: ") {
+		t.Fatalf("expiry did not compare the injected clock: %+v", result)
+	}
+	if code := r.stop(t); code != cli.ExitSuccess {
+		t.Fatal(code, r.err.String())
+	}
+}
+
+// R-QQNQ-76OR R-QRVM-KYFG R-R49O-M31A R-RBE0-PAAK R-RCLX-3219 R-RDTT-GTRY
 // R-JFJJ-MKAG R-JGRG-0C15 R-JHZC-E3RU R-JJ78-RVIJ R-KYF0-U8NP R-KTJF-B5OX R-KVZ8-2P6B
 // R-0797-D6VO R-08H3-QYMD R-L5QF-4V3V R-L3AM-DBMH R-L4II-R3D6 R-5J13-EJ5I
 // R-JKF5-5N98 R-JLN1-JEZX

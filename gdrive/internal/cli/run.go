@@ -3,12 +3,10 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -96,28 +94,15 @@ func Run(ctx context.Context, p Process) int {
 			_ = p.Unsetenv(k)
 		}
 	}
-	if p.Inherit == nil {
-		p.Inherit = func(fd uintptr) (net.Listener, error) {
-			f := os.NewFile(fd, "gdrive-listener")
-			defer func() { _ = f.Close() }()
-			return net.FileListener(f)
-		}
-	}
 	ln, err := p.Inherit(3)
 	if err != nil {
 		diagnostic(p, err.Error())
 		return ExitServerFailed
 	}
 	defer func() { _ = ln.Close() }()
-	if p.Now == nil {
-		p.Now = time.Now
-	}
 	rawNow := p.Now
 	var clockMu sync.Mutex
 	p.Now = func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return rawNow() }
-	if p.Rand == nil {
-		p.Rand = rand.Reader
-	}
 	p.Rand = &lockedReader{r: p.Rand}
 	if p.After == nil {
 		p.After = time.After

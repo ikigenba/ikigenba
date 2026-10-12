@@ -81,7 +81,7 @@ func classify(t *testing.T, err, want error) {
 	}
 }
 func TestListSearchAndReduction(t *testing.T) {
-	// R-I6AM-J0M8 R-IETX-7ET3 R-JVE8-LKXH R-JRQJ-G9PE R-IR0X-1481 R-IS8T-EVYQ R-ITGP-SNPF R-JQIN-2HYP R-IVWI-K76T
+	// R-I6AM-J0M8 R-IETX-7ET3 R-JVE8-LKXH R-JRQJ-G9PE R-IR0X-1481 R-IS8T-EVYQ R-ITGP-SNPF R-RAD6-IXQR R-IVWI-K76T
 	for _, search := range []bool{false, true} {
 		for _, optional := range []bool{false, true} {
 			t.Run(fmt.Sprintf("search=%t/optional=%t", search, optional), func(t *testing.T) {
@@ -177,7 +177,7 @@ func TestListSearchAndReduction(t *testing.T) {
 	}
 }
 func TestShow(t *testing.T) {
-	// R-IYCB-BQO7 R-LBTX-1PTC R-K2PM-W7DN
+	// R-IYCB-BQO7 R-LBTX-1PTC R-K2PM-W7DN R-PJ89-6GRK R-LGPI-KSS4
 	for _, details := range []string{`{"targetId":"target-id","targetMimeType":"application/vnd.google-apps.document"}`, `{}`, `null`, `"wrong"`} {
 		c := fake(t, func(w http.ResponseWriter, r *http.Request) {
 			if root(w, r) {
@@ -249,8 +249,8 @@ func TestDrives(t *testing.T) {
 	}
 }
 func TestRootAndEmptyID(t *testing.T) {
-	// R-JZ1X-QW5K R-K09U-4NW9 R-IDM0-TN2E
-	for _, body := range []string{`{}`, `{"id":""}`, `[]`, `{"id":3}`} {
+	// R-R7XD-RE9D R-K09U-4NW9 R-IDM0-TN2E
+	for _, body := range []string{`{}`, `{"id":""}`, `[]`, `{"id":3}`, `{"id":null}`, `null`, `bad`, `{"id":true}`} {
 		for _, method := range []string{"list", "search", "show", "upload"} {
 			var calls atomic.Int32
 			c := fake(t, func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); reply(w, body) })
@@ -271,10 +271,19 @@ func TestRootAndEmptyID(t *testing.T) {
 			}
 		}
 	}
-	for _, status := range []int{403, 404, 500} {
-		c := fake(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) })
-		_, err := c.List(context.Background(), token, "", "")
-		classify(t, err, drive.ErrProvider)
+	for _, status := range []int{302, 400, 401, 403, 404, 429, 500, 503} {
+		for _, method := range []string{"list", "search", "show", "upload"} {
+			var calls atomic.Int32
+			c := fake(t, func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(status)
+				reply(w, `{"id":"valid-but-failed"}`)
+			})
+			classify(t, callDrive(c, token, method), drive.ErrProvider)
+			if calls.Load() != 1 {
+				t.Fatalf("%s/%d sent %d requests", method, status, calls.Load())
+			}
+		}
 	}
 	c := fake(t, func(_ http.ResponseWriter, _ *http.Request) { t.Error("empty id made request") })
 	_, e := c.Show(context.Background(), token, "")
@@ -289,7 +298,7 @@ type transportFunc func(*http.Request) (*http.Response, error)
 
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func TestFailures(t *testing.T) {
-	// R-JU6C-7T6S R-J5NP-MD4D R-J6VM-04V2 R-J83I-DWLR R-JBR7-J7TU
+	// R-R95A-5602 R-J5NP-MD4D R-J6VM-04V2 R-J83I-DWLR R-JBR7-J7TU
 	methods := []string{"drives", "list", "search", "show", "media", "export", "upload"}
 	call := func(c *drive.Client, ctx context.Context, method string) error {
 		switch method {
