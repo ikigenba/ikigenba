@@ -38,9 +38,9 @@ func startScrape(t *testing.T, f *runFixture, c identity.Caller) map[string]any 
 func cronDelivery(name, id string) string {
 	return `{"id":"` + id + `","time":"2024-02-03T04:05:06.000000Z","service":"cron","event":"` + name + `","request_id":"fixture-origin","user":"","attrs":{"trigger":"scrape_fmcsa","when":"fixture","scheduled":"fixture"},"cause":"evt_ffffffffffffffff","depth":2,"seq":1,"received":"2024-02-03T04:05:06.000000Z","attempt":1}`
 }
-func deliverCron(t *testing.T, f *runFixture, name, id, outcome string) {
+func deliverCron(t *testing.T, f *runFixture, id, outcome string) {
 	t.Helper()
-	r := f.request("POST", "/events", cronDelivery(name, id), false)
+	r := f.request("POST", "/events", cronDelivery("cron.scrape_fmcsa.fired", id), false)
 	var v map[string]any
 	err := json.NewDecoder(r.Body).Decode(&v)
 	wantStatus := http.StatusOK
@@ -121,7 +121,7 @@ func TestRunPairedEvents(t *testing.T) {
 func TestRunCronEventCause(t *testing.T) {
 	f := startRun(t, runOptions{})
 	const eventID = "evt_aaaaaaaaaaaaaaaa"
-	deliverCron(t, f, "cron.scrape_fmcsa.fired", eventID, "ok")
+	deliverCron(t, f, eventID, "ok")
 	id := currentRun(t, f)
 	if done := f.awaitRun(id); done["status"] != store.StatusDone {
 		t.Fatal(done)
@@ -166,9 +166,14 @@ func TestRunReadRequestsAndRefusalsHaveNoRunEventsOrSiblingCalls(t *testing.T) {
 	if r := f.call(fixtureCaller, "scrape", map[string]any{"scraper": "bogus"}); !r.IsError() {
 		t.Fatal("unknown scraper accepted")
 	}
-	deliverCron(t, f, "cron.scrape_bogus.fired", "evt_bbbbbbbbbbbbbbbb", "skip")
+	if r := f.request("POST", "/events", cronDelivery("cron.scrape_bogus.fired", "evt_bbbbbbbbbbbbbbbb"), false); r.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown delivery status %d", r.StatusCode)
+	}
+	if rs := resultJSON(t, f.call(fixtureCaller, "runs", map[string]any{}))["runs"].([]any); len(rs) != 1 || runID(t, rs[0].(map[string]any)) != id {
+		t.Fatalf("unknown delivery recorded a run: %v", rs)
+	}
 	const deliveryID = "evt_cccccccccccccccc"
-	deliverCron(t, f, "cron.scrape_fmcsa.fired", deliveryID, "ok")
+	deliverCron(t, f, deliveryID, "ok")
 	second := currentRun(t, f)
 	if second == id {
 		t.Fatal("delivery did not record another run")
@@ -176,7 +181,7 @@ func TestRunReadRequestsAndRefusalsHaveNoRunEventsOrSiblingCalls(t *testing.T) {
 	if done := f.awaitRun(second); done["status"] != store.StatusDone {
 		t.Fatal(done)
 	}
-	deliverCron(t, f, "cron.scrape_fmcsa.fired", deliveryID, "skip")
+	deliverCron(t, f, deliveryID, "skip")
 	if f.stop() != cli.ExitSuccess {
 		t.Fatal("stop failed")
 	}
@@ -339,7 +344,7 @@ func TestRunErrorDeliveryAndRefusedScrapeEmitNoRunEvents(t *testing.T) {
 	if r := f.call(fixtureCaller, "scrape", map[string]any{"scraper": "fmcsa"}); !r.IsError() {
 		t.Fatal("colliding run accepted")
 	}
-	deliverCron(t, f, "cron.scrape_fmcsa.fired", "evt_dddddddddddddddd", "error")
+	deliverCron(t, f, "evt_dddddddddddddddd", "error")
 	if f.stop() != cli.ExitSuccess {
 		t.Fatal("stop failed")
 	}

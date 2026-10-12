@@ -337,7 +337,7 @@ func trailDB(t *testing.T, dir string) (*store.Store, *db.DB) {
 	return store.New(d, store.Config{Now: trailTime, Rand: &trailRandom{}}), d
 }
 
-// R-EMWC-BNS8 R-EPC5-379M R-UB8G-HTUT
+// R-EMWC-BNS8 R-2RE9-N96G R-UB8G-HTUT
 func TestRunTrailSourceAndDelivery(t *testing.T) {
 	src := &trailSource{}
 	f := startTrail(t, "", src, false)
@@ -346,7 +346,7 @@ func TestRunTrailSourceAndDelivery(t *testing.T) {
 	first := src.count()
 	ignoredStatus, _ := f.delivery("cron.scrape_bogus.fired", "ignored-delivery")
 	deliveryStatus, _ := f.delivery("cron.scrape_fmcsa.fired", "cron-delivery")
-	if ignoredStatus != 200 || deliveryStatus != 200 {
+	if ignoredStatus != 404 || deliveryStatus != 200 {
 		t.Fatalf("delivery status %d/%d", ignoredStatus, deliveryStatus)
 	}
 	deliveryID := ""

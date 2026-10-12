@@ -159,15 +159,59 @@ func refused(t *testing.T, f *fixture, name, word string) {
 	}
 }
 
-// R-1N2Z-J4T9
+// R-2IUY-YUZL
 func TestWords(t *testing.T) {
 	for _, w := range []string{runs.RefusalNotFound, runs.RefusalBusy, runs.RefusalNoRun, runs.RefusalStopping, runs.RefusalUnavailable} {
 		if (&runs.Refusal{Word: w}).Error() != w {
 			t.Fatal(w)
 		}
 	}
-	if !reflect.DeepEqual([]string{runs.RefusalNotFound, runs.RefusalBusy, runs.RefusalNoRun, runs.RefusalStopping, runs.RefusalUnavailable}, []string{"not_found", "busy", "no_run", "stopping", "unavailable"}) || runs.TriggerPrefix != "scrape_" || runs.Accepts != "cron.*.fired" || runs.Stopping == "" || strings.Contains(runs.Stopping, "\n") {
+	if !reflect.DeepEqual([]string{runs.RefusalNotFound, runs.RefusalBusy, runs.RefusalNoRun, runs.RefusalStopping, runs.RefusalUnavailable}, []string{"not_found", "busy", "no_run", "stopping", "unavailable"}) || runs.TriggerPrefix != "scrape_" || runs.Stopping == "" || strings.Contains(runs.Stopping, "\n") {
 		t.Fatal("constants")
+	}
+}
+
+// R-2K2V-CMQA
+func TestFiredEvent(t *testing.T) {
+	for _, name := range []string{"fmcsa", "other", "", "scrape_fmcsa", "a.b", "*", " name ", "name\n"} {
+		if got, want := runs.FiredEvent(name), "cron.scrape_"+name+".fired"; got != want {
+			t.Fatalf("FiredEvent(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// R-2LAR-QEGZ
+func TestHandlerNames(t *testing.T) {
+	for _, names := range [][]string{{}, {"fmcsa"}, {"fmcsa", "other"}, {"fmcsa", "fmcsa", "other"}} {
+		var list []source.Scraper
+		want := make(map[string]bool)
+		for _, name := range names {
+			list = append(list, fake{name, func(context.Context, func([]source.Row) error) error { return nil }})
+			want[runs.FiredEvent(name)] = true
+		}
+		f := setup(t, list...)
+		h := f.e.Handlers()
+		if len(h) != len(want) {
+			t.Fatalf("handlers for %v: %v", names, h)
+		}
+		for name, handler := range h {
+			if !want[name] || handler == nil {
+				t.Fatalf("unexpected handler %q", name)
+			}
+			d := events.Delivery{Event: events.Event{ID: "delivery-" + name, Name: name}}
+			if got := handler(context.Background(), d); got != events.OK() {
+				t.Fatalf("handler %q: %+v", name, got)
+			}
+			scraper := strings.TrimSuffix(strings.TrimPrefix(name, "cron."+runs.TriggerPrefix), ".fired")
+			list, err := f.st.ListRuns(context.Background(), scraper, 0, 10)
+			if err != nil || len(list) != 1 || list[0].Delivery != d.Event.ID || list[0].Trigger != runs.TriggerPrefix+scraper {
+				t.Fatalf("handler %q recorded %+v: %v", name, list, err)
+			}
+			ended(t, f.st, list[0].ID)
+			if got := handler(context.Background(), d); got != events.Skip() {
+				t.Fatalf("handler %q redelivery: %+v", name, got)
+			}
+		}
 	}
 }
 
@@ -321,27 +365,38 @@ func TestFailures(t *testing.T) {
 	}
 }
 
-// R-245K-VX6Z R-25DH-9OXO R-26LD-NGOD R-27TA-18F2 R-2916-F05R R-2A92-SRWG
+// R-2LAR-QEGZ R-25DH-9OXO R-26LD-NGOD R-27TA-18F2 R-2916-F05R R-2A92-SRWG
 func TestDelivery(t *testing.T) {
+	for _, viaHandler := range []bool{false, true} {
+		t.Run(map[bool]string{false: "direct", true: "handler"}[viaHandler], func(t *testing.T) {
+			testDelivery(t, viaHandler)
+		})
+	}
+}
+
+func testDelivery(t *testing.T, viaHandler bool) {
 	entered := make(chan context.Context, 1)
 	release := make(chan struct{})
 	f := setup(t, fake{"fake", func(ctx context.Context, _ func([]source.Row) error) error { entered <- ctx; <-release; return nil }})
-	h := f.e.Handlers()
-	if len(h) != 1 || h[runs.Accepts] == nil {
-		t.Fatal(h)
+	deliver := f.e.Deliver
+	if viaHandler {
+		deliver = f.e.Handlers()[runs.FiredEvent("fake")]
+		if deliver == nil {
+			t.Fatal("missing scraper handler")
+		}
 	}
 	for _, name := range []string{"cron.scrape_bogus.fired", "cron.nightly.fired", "cron.scrape-fake.fired", "cron.scrape_fake.created", "cron.scrape_fake.more.fired", "other.scrape_fake.fired"} {
-		if got := h[runs.Accepts](context.Background(), events.Delivery{Event: events.Event{ID: "evt_0101010101010101", Name: name}}); got != events.Skip() {
+		if got := deliver(context.Background(), events.Delivery{Event: events.Event{ID: "evt_0101010101010101", Name: name}}); got != events.Skip() {
 			t.Fatal(name, got)
 		}
 	}
-	if f.e.Deliver(context.Background(), events.Delivery{Event: events.Event{Name: "cron.scrape_fake.fired"}}) != events.Skip() {
+	if deliver(context.Background(), events.Delivery{Event: events.Event{Name: "cron.scrape_fake.fired"}}) != events.Skip() {
 		t.Fatal("empty delivery accepted")
 	}
 	ctx, cancel := context.WithCancel(identity.NewContext(events.NewContext(context.Background(), events.Cause{ID: "evt_0101010101010101", Depth: 4}), caller()))
 	cancel()
 	d := events.Delivery{Event: events.Event{ID: "evt_0101010101010101", Name: "cron.scrape_fake.fired", User: "owner", RequestID: "bus-request"}, Attempt: 1}
-	if f.e.Deliver(ctx, d) != events.OK() {
+	if deliver(ctx, d) != events.OK() {
 		t.Fatal("delivery refused")
 	}
 	work := receive(t, entered)
@@ -357,26 +412,26 @@ func TestDelivery(t *testing.T) {
 	if err != nil || rr.Trigger != "scrape_fake" || rr.Delivery != d.Event.ID || rr.UserEmail != "" || rr.RequestID != caller().RequestID {
 		t.Fatal(rr, err)
 	}
-	if f.e.Deliver(ctx, d) != events.Skip() {
+	if deliver(ctx, d) != events.Skip() {
 		t.Fatal("redelivery running")
 	}
 	other := d
 	other.Event.ID = "evt_0202020202020202"
-	if f.e.Deliver(ctx, other) != events.Skip() {
+	if deliver(ctx, other) != events.Skip() {
 		t.Fatal("busy")
 	}
 	close(release)
 	ended(t, f.st, rr.ID)
-	if f.e.Deliver(ctx, d) != events.Skip() {
+	if deliver(ctx, d) != events.Skip() {
 		t.Fatal("redelivery ended")
 	}
 	f.d.SetFailing(true)
-	if f.e.Deliver(ctx, other) != events.Fail(store.Unreachable) {
+	if deliver(ctx, other) != events.Fail(store.Unreachable) {
 		t.Fatal("database outcome")
 	}
 	f.d.SetFailing(false)
 	f.e.Drain(context.Background())
-	if f.e.Deliver(ctx, events.Delivery{}) != events.Fail(runs.Stopping) {
+	if deliver(ctx, events.Delivery{}) != events.Fail(runs.Stopping) {
 		t.Fatal("stopping precedence")
 	}
 	f.flush(t)

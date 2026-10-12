@@ -385,37 +385,92 @@ func post(h http.Handler, body string) *httptest.ResponseRecorder {
 	return w
 }
 
-// R-DW2J-WPGY R-DXAG-AH7N R-2SJK-JC0V
+// R-2NQK-HXYD R-2OYG-VPP2 R-2MIO-467O
 func TestBusRoutes(t *testing.T) {
 	f := setup(t)
-	for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
+	for _, method := range []string{"GET", "HEAD", "POST", "DELETE", "OPTIONS", "PATCH"} {
 		for _, user := range []string{"", "user-test"} {
-			g := request(f.h, method, "/declarations", user)
-			want := request(events.DeclarationsHandler(f.cfg.Events, f.cfg.Runs.Handlers()), method, "/declarations", user)
+			g := request(f.h, method, "/declarations?fixture=query", user)
+			want := request(events.DeclarationsHandler(f.cfg.Events, f.cfg.Runs.Handlers()), method, "/declarations?fixture=query", user)
 			if g.Code != want.Code || !reflect.DeepEqual(g.Header(), want.Header()) || g.Body.String() != want.Body.String() {
 				t.Fatal("declarations route differs")
 			}
 		}
 	}
-	expected := `{"emits":[{"event":"scrape.finished","attrs":["scraper","run","status","reason","rows","new","changed","unchanged","gone"]},{"event":"scrape.started","attrs":["scraper","run"]}],"accepts":["cron.*.fired"]}`
+	expected := `{"emits":[{"event":"scrape.finished","attrs":["scraper","run","status","reason","rows","new","changed","unchanged","gone"]},{"event":"scrape.started","attrs":["scraper","run"]}],"accepts":["cron.scrape_fmcsa.fired"]}`
 	assertResponse(t, request(f.h, "GET", "/declarations", ""), 200, "application/json", expected)
-	for _, body := range []string{"invalid", delivery("repo.pushed", "evt_dddddddddddddddd"), delivery("cron.scrape_bogus.fired", "evt_cccccccccccccccc")} {
+	assertResponse(t, request(events.DeclarationsHandler(f.cfg.Events, f.cfg.Runs.Handlers()), "GET", "/declarations", ""), 200, "application/json", expected)
+	for i, body := range []string{"invalid", delivery("repo.pushed", "evt_dddddddddddddddd"), delivery("cron.scrape_bogus.fired", "evt_cccccccccccccccc")} {
 		g := post(f.h, body)
 		want := post(events.DeliveryHandler(f.cfg.Runs.Handlers()), body)
-		if g.Code != want.Code || g.Body.String() != want.Body.String() || !reflect.DeepEqual(g.Header(), want.Header()) {
+		if g.Code != []int{400, 404, 404}[i] || g.Code != want.Code || g.Body.String() != want.Body.String() || !reflect.DeepEqual(g.Header(), want.Header()) {
 			t.Fatal("delivery route differs")
 		}
 	}
-	if g := request(f.h, "GET", "/events", ""); g.Code != 405 {
-		t.Fatal("events GET")
+	rs, err := f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+	if err != nil || len(rs) != 0 || f.fake.calls.Load() != 0 {
+		t.Fatalf("rejected deliveries started work: %+v %v", rs, err)
+	}
+	for _, method := range []string{"GET", "HEAD", "DELETE", "OPTIONS", "PATCH"} {
+		if g := request(f.h, method, "/events", ""); g.Code != 405 {
+			t.Fatalf("events %s: %d", method, g.Code)
+		}
 	}
 	g := post(f.h, delivery("cron.scrape_fmcsa.fired", "evt_bbbbbbbbbbbbbbbb"))
 	if g.Code != 200 || g.Body.String() != `{"outcome":"ok"}` {
 		t.Fatalf("delivery %d %s", g.Code, g.Body.String())
 	}
-	rs, err := f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
-	if err != nil || len(rs) != 1 || rs[0].Trigger != "scrape_fmcsa" || rs[0].Delivery != "evt_bbbbbbbbbbbbbbbb" || rs[0].RequestID != "delivery-request" || rs[0].UserID != "" {
+	rs, err = f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+	if err != nil || len(rs) != 1 || rs[0].Scraper != "fmcsa" || rs[0].Trigger != "scrape_fmcsa" || rs[0].Delivery != "evt_bbbbbbbbbbbbbbbb" || rs[0].RequestID != "delivery-request" || rs[0].UserID != "" {
 		t.Fatalf("delivery run %+v %v", rs, err)
+	}
+}
+
+// R-2NQK-HXYD R-2OYG-VPP2
+func TestBusRoutesWithHeadersAndBodies(t *testing.T) {
+	for _, path := range []string{"/events", "/declarations"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "DELETE", "OPTIONS", "PATCH"} {
+			for _, user := range []string{"absent", "", "user-test"} {
+				t.Run(path+"/"+method+"/"+user, func(t *testing.T) {
+					f, reference := setup(t), setup(t)
+					serve := func(h http.Handler, withCaller bool) *httptest.ResponseRecorder {
+						r := httptest.NewRequest(method, path+"?fixture=query", strings.NewReader(delivery("cron.scrape_fmcsa.fired", "evt_eeeeeeeeeeeeeeee")))
+						c := identity.Caller{Email: "fixture@example.invalid", RequestID: "matrix-request"}
+						if user != "absent" {
+							r.Header.Set("X-User-Id", user)
+							c.UserID = user
+						}
+						r.Header.Set("X-User-Email", c.Email)
+						r.Header.Set("X-Request-Id", c.RequestID)
+						r.Header.Set("Content-Type", "application/json")
+						if withCaller {
+							r = r.WithContext(identity.NewContext(r.Context(), c))
+						}
+						w := httptest.NewRecorder()
+						h.ServeHTTP(w, r)
+						return w
+					}
+					target := events.DeclarationsHandler(reference.cfg.Events, reference.cfg.Runs.Handlers())
+					if path == "/events" {
+						target = events.DeliveryHandler(reference.cfg.Runs.Handlers())
+					}
+					got, want := serve(f.h, false), serve(target, true)
+					if got.Code != want.Code || got.Body.String() != want.Body.String() || !reflect.DeepEqual(got.Header(), want.Header()) {
+						t.Fatalf("bus response differs: %d %s versus %d %s", got.Code, got.Body.String(), want.Code, want.Body.String())
+					}
+					if path == "/events" && method == "POST" {
+						rs, err := f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+						wantUser := user
+						if user == "absent" {
+							wantUser = ""
+						}
+						if err != nil || len(rs) != 1 || rs[0].UserID != wantUser || rs[0].RequestID != "matrix-request" {
+							t.Fatalf("delivery caller %+v %v", rs, err)
+						}
+					}
+				})
+			}
+		}
 	}
 }
 

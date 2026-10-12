@@ -38,7 +38,6 @@ const (
 	RefusalStopping    = "stopping"
 	RefusalUnavailable = "unavailable"
 	TriggerPrefix      = "scrape_"
-	Accepts            = "cron.*.fired"
 	Stopping           = "The service is stopping."
 )
 
@@ -138,8 +137,17 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	return events.OK()
 }
 
-// Handlers returns the accepted event patterns.
-func (e *Engine) Handlers() events.Handlers { return events.Handlers{Accepts: e.Deliver} }
+// FiredEvent returns the exact cron event name for a scraper.
+func FiredEvent(scraper string) string { return "cron." + TriggerPrefix + scraper + ".fired" }
+
+// Handlers returns one accepted event name per registered scraper.
+func (e *Engine) Handlers() events.Handlers {
+	handlers := make(events.Handlers)
+	for _, name := range e.cfg.Scrapers.Names() {
+		handlers[FiredEvent(name)] = e.Deliver
+	}
+	return handlers
+}
 
 // launch is called with mu held, keeping start and stop ordered.
 func (e *Engine) launch(ctx context.Context, sc source.Scraper, r store.Run) {
