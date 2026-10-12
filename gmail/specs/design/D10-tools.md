@@ -36,7 +36,7 @@ A Gmail answer in a read tool is refused as its kind: unknown is `not_found` (an
 
 ## Reconciliation
 
-A draft sent or deleted by the person in Gmail is learned when a tool touches an `open` record and Gmail answers its draft id unknown (decision 10, root rulings A5, A6, A13 and A18). `draft`, `push`, `send` and `discard` reconcile, through the drafts service's `Get`, `Attachable`, `Send` and `Discard`, which `D07-drafts` declares with the probe, the marks, the events and the answers; the tools relay what those methods answer. In short: `draft` answers the record as it now stands; `push` and `send` are refused `not_open` whichever way it ended; `discard` answers a draft reconciled to `discarded` as its success and is refused `not_open` for one reconciled to `sent`. `drafts` makes no Gmail call and answers what is stored.
+A draft sent or deleted by the person in Gmail is learned when a tool touches an `open` record and Gmail answers its draft id unknown (decision 10, root rulings A5, A6, A13, A18 and A19). `draft`, `push`, `send` and `discard` reconcile, through the drafts service's `Get`, `Attachable`, `Send` and `Discard`, which `D07-drafts` declares with the probe, the marks, the events and the answers; the tools relay what those methods answer. In short: `draft` answers the record as it now stands; `push` and `send` are refused `not_open` whichever way it ended; `discard` answers a draft reconciled to `discarded` as its success and is refused `not_open` for one reconciled to `sent`. `drafts` makes no Gmail call and answers what is stored.
 
 ## Descriptions
 
