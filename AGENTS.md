@@ -20,6 +20,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `artifacts` is the suite's store for binary files agents and services share: each is kept by path, its bytes put and got over HTTP and its metadata reached over MCP.
 - `connections` is the suite's OAuth broker: a person connects an account at an outside provider once, it keeps the grant, and it hands short-lived access tokens to the suite's connectors on the host; no tool ever returns a credential.
 - `gdrive` is the suite's Google Drive connector: agents pull Drive files into artifacts and push artifacts into Drive, each transfer recorded and its bytes moved on the host.
+- `gmail` is the suite's Gmail connector: agents search and read mail as text, pull attachments into artifacts, compose drafts, push artifacts onto them and send, each transfer recorded and its bytes moved on the host.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
 Shared library:

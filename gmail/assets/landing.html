@@ -8,7 +8,8 @@
      footer); .Drafts, the caller's drafts, newest first by created, each
      with .ID (its drf_ id, "drf_" and 16 hex), .Status ("open", "sent" or
      "discarded", as stored), .Subject (the subject line; may be empty),
-     .To (the To addresses, a slice of strings, in order), .AttachmentCount
+     .To, .Cc and .Bcc (the To, Cc and Bcc addresses, each a slice of
+     strings, in order), .AttachmentCount
      (int, the attachments on the draft), .Link (the draft's place in
      Gmail: "https://mail.google.com/mail/u/0/#drafts/<message id>" while
      open, "https://mail.google.com/mail/u/0/#all/<message id>" once sent;
@@ -21,7 +22,7 @@
      failure reason as stored, one of "not_found", "forbidden",
      "too_large", "reconnect", "provider", "artifacts" or "interrupted";
      empty unless .Status is "failed"), .Name (the attachment's file name,
-     or the .eml name of a whole-message pull), .Link (the message's place
+     or the message's subject for a whole-message pull), .Link (the message's place
      in Gmail, "https://mail.google.com/mail/u/0/#all/<message id>" for a
      pull, and the draft's for a push; empty unless done), .Path (the
      artifact's path under /files/, no leading slash), .ArtifactPage (the
@@ -55,7 +56,8 @@
      td.draft-subject holding a.gmail-link (href .Link) when .Link is not
      empty, its content .Subject, or, when .Subject is empty, span.muted
      (text "(no subject)"); the same content without the link when .Link is
-     empty; td.draft-to (the .To addresses joined by ", ");
+     empty; td.draft-to (every recipient, the .To addresses then the .Cc
+     then the .Bcc, joined by ", ");
      td.draft-attachments.num (.AttachmentCount); td.draft-created holding
      time[datetime=<.Created>] (text .CreatedText); and td.draft-sent
      holding, only when .Sent is not empty, time[datetime=<.Sent>] (text
@@ -101,7 +103,7 @@
 <td class="draft-id"><a class="draft-link" href="/drafts/{{.ID}}"><code>{{.ID}}</code></a></td>
 <td class="draft-status"><span class="status" data-status="{{.Status}}"{{if eq .Status "open"}} data-kind="info"{{else if eq .Status "sent"}} data-kind="ok"{{end}}>{{.Status}}</span></td>
 <td class="draft-subject">{{if .Link}}<a class="gmail-link" href="{{.Link}}">{{if .Subject}}{{.Subject}}{{else}}<span class="muted">(no subject)</span>{{end}}</a>{{else}}{{if .Subject}}{{.Subject}}{{else}}<span class="muted">(no subject)</span>{{end}}{{end}}</td>
-<td class="draft-to">{{range $i, $a := .To}}{{if $i}}, {{end}}{{$a}}{{end}}</td>
+<td class="draft-to">{{$sep := ""}}{{range .To}}{{$sep}}{{.}}{{$sep = ", "}}{{end}}{{range .Cc}}{{$sep}}{{.}}{{$sep = ", "}}{{end}}{{range .Bcc}}{{$sep}}{{.}}{{$sep = ", "}}{{end}}</td>
 <td class="draft-attachments num">{{.AttachmentCount}}</td>
 <td class="draft-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
 <td class="draft-sent">{{if .Sent}}<time datetime="{{.Sent}}">{{.SentText}}</time>{{end}}</td>

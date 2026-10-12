@@ -8,9 +8,10 @@
      discard, drafts, draft, transfers and transfer. Hooks: title "tools ·
      gmail"; h1 with text "Tools"; p#summary.lede (text "Agents search and
      read your Gmail, pull attachments into artifacts, and compose and send
-     drafts with these tools, through the MCP gateway's call and mutate. No
-     tool carries attachment bytes or a credential: pull and push record a
-     transfer that moves them on the host.", call, mutate, pull and push
+     drafts with these tools, through the MCP gateway's call and mutate.
+     Mail text is answered to the agent; no tool carries attachment bytes,
+     a raw message or a credential: pull and push record a transfer that
+     moves them on the host.", call, mutate, pull and push
      each in a code element); a section.card holding dl#tools.kv with one
      dt[data-tool=<.Name>] per tool, in the order of .Tools, holding .Name
      in a code element and followed by a dd holding .Description. No script
@@ -22,7 +23,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>Tools</h1>
-<p id="summary" class="lede">Agents search and read your Gmail, pull attachments into artifacts, and compose and send drafts with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>. No tool carries attachment bytes or a credential: <code>pull</code> and <code>push</code> record a transfer that moves them on the host.</p>
+<p id="summary" class="lede">Agents search and read your Gmail, pull attachments into artifacts, and compose and send drafts with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>. Mail text is answered to the agent; no tool carries attachment bytes, a raw message or a credential: <code>pull</code> and <code>push</code> record a transfer that moves them on the host.</p>
 <section class="card">
 <dl id="tools" class="kv">
 {{range .Tools}}<dt data-tool="{{.Name}}"><code>{{.Name}}</code></dt><dd>{{.Description}}</dd>

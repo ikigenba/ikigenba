@@ -20,9 +20,9 @@
      .Modified and .ModifiedText (likewise; always set), .Sent and .SentText
      (likewise; both empty unless sent), and .Attachments, in the order
      attached, each with .Path (the artifact's path under /files/, no
-     leading slash), .ArtifactPage (the artifact's page on artifacts, the
-     artifacts URL then "/" and the artifact id the record holds; empty
-     when the record holds no artifact id), .Name (the file name the
+     leading slash), .ArtifactPage (the artifact's address on artifacts,
+     the artifacts URL then "/files/" and .Path; empty when no artifacts
+     URL is known), .Name (the file name the
      attachment carries), .ContentType and .Bytes (int64). Bytes are shown
      as the plain integer, never a humanised size. Status words are shown
      as stored; the status's kind is chosen here: "open" info, "sent" ok,
