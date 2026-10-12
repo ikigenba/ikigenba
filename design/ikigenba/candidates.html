@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>candidates</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="candidates.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227"/></svg>candidates</a><button class="menu" type="button" popovertarget="pages" aria-label="candidates pages" title="candidates pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="candidates pages"><ul><li><a href="candidates.html" aria-current="page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227"/></svg>candidates<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg></a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
+</header>
+<main>
+  <h1>candidates</h1>
+  <p id="summary" class="lede">Candidate businesses resolved from the records scrapes collects, one per business with every record that describes it as evidence, judged against the fit test and ranked for review.</p>
+
+  <section id="shortlist" class="card flush" aria-labelledby="shortlist-title">
+    <header>
+      <div>
+        <h2 id="shortlist-title">Shortlist</h2>
+        <p>Candidates within 120 minutes' drive of Sandstone, with a fleet, a high estimate of at least $10,000,000 or none, fresh evidence and no exclusion, ranked by score: the estimate's point times its effective confidence. The first 30; the <code>shortlist</code> tool takes other filters.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="shortlist-list">
+        <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Minutes</th><th>Class</th><th class="num">Low</th><th class="num">High</th><th class="num">Confidence</th><th class="num">Score</th></tr></thead>
+        <tbody>
+          <tr data-candidate="cand_a3f19c0e7b6d4258">
+            <td class="candidate-rank num">1</td>
+            <td class="candidate-name"><a class="candidate-link" href="candidates-candidate.html">NORTHLAND BULK CARRIERS INC</a></td>
+            <td class="candidate-city">Duluth</td>
+            <td class="candidate-state">MN</td>
+            <td class="candidate-minutes num">71</td>
+            <td class="candidate-class"><code>for_hire</code></td>
+            <td class="candidate-low num">$14,400,000</td>
+            <td class="candidate-high num">$24,000,000</td>
+            <td class="candidate-confidence num">0.70</td>
+            <td class="candidate-score num">$13,440,000</td>
+          </tr>
+          <tr data-candidate="cand_4b9e1f07c2d83a65">
+            <td class="candidate-rank num">2</td>
+            <td class="candidate-name"><a class="candidate-link" href="candidates-candidate.html">ST CROIX VALLEY TRANSPORT LLC</a></td>
+            <td class="candidate-city">Hudson</td>
+            <td class="candidate-state">WI</td>
+            <td class="candidate-minutes num">84</td>
+            <td class="candidate-class"><code>for_hire</code></td>
+            <td class="candidate-low num">$7,800,000</td>
+            <td class="candidate-high num">$13,000,000</td>
+            <td class="candidate-confidence num">0.70</td>
+            <td class="candidate-score num">$7,280,000</td>
+          </tr>
+          <tr data-candidate="cand_0c6e2d9b5f71a843">
+            <td class="candidate-rank num">3</td>
+            <td class="candidate-name"><a class="candidate-link" href="candidates-candidate.html">GREAT RIVER PETROLEUM TRANSPORT INC</a></td>
+            <td class="candidate-city">Superior</td>
+            <td class="candidate-state">WI</td>
+            <td class="candidate-minutes num">68</td>
+            <td class="candidate-class"><code>mixed</code></td>
+            <td class="candidate-low num">$6,150,000</td>
+            <td class="candidate-high num"></td>
+            <td class="candidate-confidence num">0.50</td>
+            <td class="candidate-score num">$3,075,000</td>
+          </tr>
+          <tr data-candidate="cand_d27f84a1c9e03b56">
+            <td class="candidate-rank num">4</td>
+            <td class="candidate-name"><a class="candidate-link" href="candidates-candidate.html">ARROWHEAD REFRIGERATED EXPRESS LLC</a></td>
+            <td class="candidate-city">Cloquet</td>
+            <td class="candidate-state">MN</td>
+            <td class="candidate-minutes num">58</td>
+            <td class="candidate-class"><code>for_hire</code></td>
+            <td class="candidate-low num">$9,600,000</td>
+            <td class="candidate-high num">$16,000,000</td>
+            <td class="candidate-confidence num">0.21</td>
+            <td class="candidate-score num">$2,624,000</td>
+          </tr>
+          <tr data-candidate="cand_71b5e3f0a8d24c96">
+            <td class="candidate-rank num">5</td>
+            <td class="candidate-name"><a class="candidate-link" href="candidates-candidate.html">PINE CITY READY MIX INC</a></td>
+            <td class="candidate-city">Pine City</td>
+            <td class="candidate-state">MN</td>
+            <td class="candidate-minutes num">22</td>
+            <td class="candidate-class"><code>private</code></td>
+            <td class="candidate-low num">$7,200,000</td>
+            <td class="candidate-high num"></td>
+            <td class="candidate-confidence num">0.30</td>
+            <td class="candidate-score num">$2,160,000</td>
+          </tr>
+          <tr data-candidate="cand_e95a0c37d1b8f264">
+            <td class="candidate-rank num">6</td>
+            <td class="candidate-name"><a class="candidate-link" href="candidates-candidate.html">CHISAGO LAKES EXCAVATING INC</a></td>
+            <td class="candidate-city">North Branch</td>
+            <td class="candidate-state">MN</td>
+            <td class="candidate-minutes num">41</td>
+            <td class="candidate-class"><code>private</code></td>
+            <td class="candidate-low num">$4,950,000</td>
+            <td class="candidate-high num"></td>
+            <td class="candidate-confidence num">0.30</td>
+            <td class="candidate-score num">$1,485,000</td>
+          </tr>
+          <tr data-candidate="cand_38c1f9d6b0e5a27d">
+            <td class="candidate-rank num">7</td>
+            <td class="candidate-name"><a class="candidate-link" href="candidates-candidate.html">MOOSE LAKE FARM SUPPLY CO</a></td>
+            <td class="candidate-city">Moose Lake</td>
+            <td class="candidate-state">MN</td>
+            <td class="candidate-minutes num">24</td>
+            <td class="candidate-class"><code>unknown</code></td>
+            <td class="candidate-low num">$1,800,000</td>
+            <td class="candidate-high num"></td>
+            <td class="candidate-confidence num">0.20</td>
+            <td class="candidate-score num">$360,000</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="passes" class="card flush" aria-labelledby="passes-title">
+    <header>
+      <div>
+        <h2 id="passes-title">Passes</h2>
+        <p>Every kept pass, newest first. A pass resolves a scrapes run's records into candidates and re-scores the candidates they touch.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="pass-list">
+        <thead><tr><th>Pass</th><th>Trigger</th><th>Status</th><th>Started</th><th>Finished</th><th class="num">Rows</th><th class="num">Created</th><th class="num">Rescored</th></tr></thead>
+        <tbody>
+          <tr data-pass="pass_e81c4a6f0d29b375">
+            <td class="pass-id"><a class="pass-link" href="candidates-pass.html"><code>pass_e81c4a6f0d29b375</code></a></td>
+            <td class="pass-trigger"><code>rebuild</code></td>
+            <td class="pass-status"><span class="status" data-status="running" data-kind="info">running</span></td>
+            <td class="pass-started"><time datetime="2026-10-12T14:20:07Z">2026-10-12 14:20</time></td>
+            <td class="pass-finished"></td>
+            <td class="pass-rows num">0</td>
+            <td class="pass-created num">0</td>
+            <td class="pass-rescored num">0</td>
+          </tr>
+          <tr data-pass="pass_5d0b93e7a14c62f8">
+            <td class="pass-id"><a class="pass-link" href="candidates-pass.html"><code>pass_5d0b93e7a14c62f8</code></a></td>
+            <td class="pass-trigger"><code>rebuild</code></td>
+            <td class="pass-status"><span class="status" data-status="failed" data-kind="err">failed</span> <span class="muted">scrapes</span></td>
+            <td class="pass-started"><time datetime="2026-10-09T10:12:44Z">2026-10-09 10:12</time></td>
+            <td class="pass-finished"><time datetime="2026-10-09T10:12:45Z">2026-10-09 10:12</time></td>
+            <td class="pass-rows num">0</td>
+            <td class="pass-created num">0</td>
+            <td class="pass-rescored num">0</td>
+          </tr>
+          <tr data-pass="pass_9a27f6c1e3b40d58">
+            <td class="pass-id"><a class="pass-link" href="candidates-pass.html"><code>pass_9a27f6c1e3b40d58</code></a></td>
+            <td class="pass-trigger"><code>run_7c2e9f41a0b3d856</code></td>
+            <td class="pass-status"><span class="status" data-status="done" data-kind="ok">done</span></td>
+            <td class="pass-started"><time datetime="2026-10-02T06:02:05Z">2026-10-02 06:02</time></td>
+            <td class="pass-finished"><time datetime="2026-10-02T06:02:19Z">2026-10-02 06:02</time></td>
+            <td class="pass-rows num">16712</td>
+            <td class="pass-created num">29</td>
+            <td class="pass-rescored num">466</td>
+          </tr>
+          <tr data-pass="pass_2f6d8b04a9c1e735">
+            <td class="pass-id"><a class="pass-link" href="candidates-pass.html"><code>pass_2f6d8b04a9c1e735</code></a></td>
+            <td class="pass-trigger"><code>run_3a81d6e0c59f2b47</code></td>
+            <td class="pass-status"><span class="status" data-status="done" data-kind="ok">done</span></td>
+            <td class="pass-started"><time datetime="2026-09-02T06:01:50Z">2026-09-02 06:01</time></td>
+            <td class="pass-finished"><time datetime="2026-09-02T06:02:31Z">2026-09-02 06:02</time></td>
+            <td class="pass-rows num">16708</td>
+            <td class="pass-created num">15912</td>
+            <td class="pass-rescored num">15912</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p><a id="about-link" href="/about">About candidates</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shapes this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">An empty shortlist</h3>
+      <div class="card flush">
+        <div id="no-shortlist" class="empty">
+          <h3 class="text-md">No candidates on the shortlist</h3>
+          <p>A candidate shows here once a pass has resolved scrapes' records into it and it passes the fit test.</p>
+        </div>
+      </div>
+
+      <h3 class="text-md">No passes</h3>
+      <div class="card flush">
+        <div id="no-passes" class="empty">
+          <h3 class="text-md">No passes yet</h3>
+          <p>A pass starts when scrapes finishes a run, or when an agent calls the <code>rebuild</code> tool, and shows up here.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>release-17 <span>(8c3d0f2)</span></footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one
+     level about at /about. Shown only to a signed-in user; a guest is sent
+     to sign in. Data: .Banner (a page.Banner, for banner and footer; its
+     .Service is the name and its .Release and .Commit give the version
+     row); .Description (the service's one-line description, the
+     manifest's). Hooks: title "About candidates"; h1 with text "About
+     candidates"; dl#about.kv holding dt "Name" then dd#about-name
+     (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
+     and .Banner.Commit, present even when empty), and dt "Description"
+     then dd#about-description (.Description); then section#how.card with
+     h2 "How it works" and five p: "candidates turns the records scrapes
+     collects into candidate businesses, one per real business with every
+     record that describes it attached as evidence. A record attaches by
+     its source key, else by its normalized name with its state and ZIP;
+     when in doubt it starts a new candidate rather than join the wrong
+     one."; "Each candidate is judged against the fit test: within 120
+     minutes' drive of Sandstone, a fleet, and ten million dollars or more
+     flowing through it. Each source gives a size estimate with a
+     confidence; the score is the estimate's point times that confidence,
+     weighed down as the newest filing ages past two years, to nothing at
+     five."; "A pass starts when scrapes finishes a run: it resolves the
+     run's records, marks gone the records the run no longer holds, and
+     re-scores the candidates they touch. rebuild starts one over every
+     scraper's current run and recomputes everything but the candidates
+     and the rulings."; "shortlist ranks the candidates that pass the fit
+     test; candidates finds them by name, ZIP or phone, and candidate
+     answers one with its evidence. decide records the owner's rulings,
+     merge, split, not_same, exclude and include, which every pass
+     reapplies and none overwrites. passes and pass show the passes.";
+     "Candidates belong to no one: every signed-in user sees every
+     candidate, pass and ruling." (rebuild, shortlist, candidates,
+     candidate, decide, merge, split, not_same, exclude, include, passes
+     and pass each in a code element). No section of the landing page's.
+     No script but appkit's /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About candidates</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About candidates</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>candidates turns the records scrapes collects into candidate businesses, one per real business with every record that describes it attached as evidence. A record attaches by its source key, else by its normalized name with its state and ZIP; when in doubt it starts a new candidate rather than join the wrong one.</p>
+<p>Each candidate is judged against the fit test: within 120 minutes' drive of Sandstone, a fleet, and ten million dollars or more flowing through it. Each source gives a size estimate with a confidence; the score is the estimate's point times that confidence, weighed down as the newest filing ages past two years, to nothing at five.</p>
+<p>A pass starts when scrapes finishes a run: it resolves the run's records, marks gone the records the run no longer holds, and re-scores the candidates they touch. <code>rebuild</code> starts one over every scraper's current run and recomputes everything but the candidates and the rulings.</p>
+<p><code>shortlist</code> ranks the candidates that pass the fit test; <code>candidates</code> finds them by name, ZIP or phone, and <code>candidate</code> answers one with its evidence. <code>decide</code> records the owner's rulings, <code>merge</code>, <code>split</code>, <code>not_same</code>, <code>exclude</code> and <code>include</code>, which every pass reapplies and none overwrites. <code>passes</code> and <code>pass</code> show the passes.</p>
+<p>Candidates belong to no one: every signed-in user sees every candidate, pass and ruling.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

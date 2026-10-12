@@ -61,6 +61,13 @@ design/
     scrapes-row.html
                     one row: its envelope and its raw record, two levels
                     down the trail
+    candidates.html candidates' landing: the shortlist, ranked, then
+                    every kept pass
+    candidates-candidate.html
+                    one candidate: its fields, assessment, estimates,
+                    evidence and rulings; merged, excluded and stale
+    candidates-pass.html
+                    one pass: its record, running and failed
     webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles,
                     application services over core services
@@ -462,6 +469,84 @@ for Minnesota and Wisconsin, with made-up carriers.
   the plain integer. Times are UTC in a `time` carrying the RFC 3339 moment:
   to the minute on the landing, where a cell with no time is empty, to the
   second with `UTC` on the run and row pages.
+
+**candidates.html, candidates-candidate.html, candidates-pass.html** —
+candidates at `candidates.acme.ikigenba.com`, the funnel's judgment over
+scrapes' evidence: a pass resolves each scrapes run's records into
+candidate businesses, one per business with every record that describes it
+attached as a link, and scores each against the fit test (in range, a
+fleet, ten million dollars or more) into a ranked shortlist; the owner rules
+on candidates with `decide`. Candidates belong to no one: every signed-in
+user sees every candidate, pass and ruling. Three levels: the landing page,
+one candidate at `/candidates/<id>`, and one pass at `/passes/<id>`. Banner
+and footer as in app.html, the service `candidates` with the Tabler
+`filter` icon (added to `icons/tabler/` on 2026-10-12 for this app). No
+form but sign out. The sample data is made-up carriers from FMCSA's census
+for Minnesota and Wisconsin.
+- The landing: `h1` candidates, a lede, then `section#shortlist` whose
+  header names the default filters, with `table#shortlist-list` of Rank /
+  Name / City / State / Minutes / Class / Low / High / Confidence / Score,
+  the first 30 ranked by score, `tr[data-candidate=<id>]`, each name
+  linking to `/candidates/<id>`; High is empty when no source gives one,
+  Confidence and Score are the effective ones at the request. No phone or
+  email shows on this page. Then `section#passes` with `table#pass-list`
+  of Pass / Trigger / Status / Started / Finished / Rows / Created /
+  Rescored, every kept pass newest first, `tr[data-pass=<id>]`: a running
+  rebuild, a rebuild failed `scrapes`, two done by a scrapes run. Every
+  pass id links to `/passes/<id>`; Trigger is the run id or `rebuild`. A
+  failed row's reason follows its status, muted. A link to the about
+  screen. Its tools (`shortlist`, `candidates`, `candidate`, `passes`,
+  `pass`, `rebuild`, `decide`) are on its tools page. States: an empty
+  shortlist (`div#no-shortlist.empty`), no passes (`div#no-passes.empty`).
+- One candidate, `cand_4b9e1f07c2d83a65`, a for-hire carrier at Hudson, WI,
+  with two records, one moved onto it by a merge: the trail candidates /
+  the id, the id as the `h1`; `p#headline` with the name, the status and
+  when it was updated, plus a `.badge` excluded when excluded;
+  `section#candidate-card` with `dl#candidate.kv`: ID, Status, Merged into
+  (merged only), then each when set Name, Names, Street, City, State, Zip,
+  County, Phone, Email, People (one `div[data-person]` each), Class and
+  Cargo (one `code[data-cargo]` per tag), then Created and Updated.
+  `section#assessment-card` with `dl#assessment.kv`: Fleet, Drive minutes,
+  Low, High, Confidence, Newest filing, Freshness, Effective confidence,
+  Point, Score, Score before freshness, Excluded (one `div[data-exclusion]`
+  per reason, its detail muted), Rules, Scored. `section#estimates` with
+  one `dl.kv[data-estimate=<source>]` per source, its facts in a nested
+  `dl.kv` with `dt[data-fact]`, each value as JSON. `section#links`
+  (Evidence) with `table#link-list` of Scraper / Source ID / Name / City /
+  Zip / Reason / Confidence / Filed / First seen / Last seen / Gone,
+  `tr[data-link=<scraper>:<source_id>]`, each source id linking to its row
+  at scrapes, `/runs/<run>/rows/<source_id>`. `section#rulings` with
+  `table#ruling-list` of Kind / With / Records / By / When / Why, newest
+  first, `tr[data-ruling=<kind>]`. States: merged (`div#merged.alert.quiet`
+  of kind info, "Merged", linking to the survivor; the record and the
+  rulings only), a gone record (`.badge` gone of kind warn) and a split's
+  moved records, excluded (`div#excluded.alert.quiet` of kind warn and the
+  reasons in the assessment), stale (`div#stale.alert.quiet` of kind warn,
+  freshness and effective confidence 0), a ZIP not in the table and no
+  high estimate (muted words), not scored (`div#no-assessment.empty`), no
+  estimates (`div#no-estimates.empty`), no rulings (`div#no-rulings.empty`).
+  An unknown id is the not-found page.
+- One pass, `pass_9a27f6c1e3b40d58`, done over a scrapes run: the trail
+  candidates / the id, the id as the `h1`; `p#headline` with the status and
+  the started and finished times; `section#pass-card` with `dl#pass.kv`:
+  ID, Trigger (the run id linking to its page at scrapes, or `rebuild`),
+  Status, Reason (failed only), Started by (the caller's email for a
+  rebuild, else scrapes), Started, Finished (once finished), Rows, New,
+  Changed, Unchanged, Gone, Created, Linked, Rescored, Unranged. States:
+  running (`div#running.alert.quiet`, "Running", a Reload button), failed
+  (`div#failure.alert` of kind err, "The pass failed", the reason's
+  sentence chosen from `scrapes`, `interrupted` or `store`, and a line that
+  what it wrote stays). An unknown id or a pruned one is the not-found
+  page.
+- Candidate status reads as a `.status` word, as stored: active is ok,
+  merged is info; pass status as scrapes' run status: running info, done
+  ok, failed err. Class tags, cargo tags, reasons, ruling kinds, ids and
+  county codes are shown as stored. Dollars are whole with a `$` and
+  thousands commas; confidences and freshness have two decimals; counts
+  and minutes are the plain integer. Filing dates are `YYYY-MM-DD` in a
+  `time`. Times are UTC in a `time` carrying the RFC 3339 moment: to the
+  minute on the landing and in tables, to the second with `UTC` in the
+  candidate's and the pass's records.
 
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's

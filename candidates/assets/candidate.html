@@ -1,0 +1,290 @@
+{{/* One candidate at GET /candidates/<id>: its display fields and tags,
+     its assessment with the effective numbers at the request, each
+     estimate with the facts it used, each link to a scrapes record with
+     its last seen and gone, and the owner's rulings on it. A merged
+     candidate's page says what it merged into and links there, with its
+     record and its rulings and no evidence. Shown to any signed-in user; a
+     guest is sent to sign in; an unknown id is the not-found page.
+     Read-only: no form but the banner's sign out; rulings are made with
+     the decide tool. One level below the root: .Banner's .Trail is the one
+     level <.Candidate.ID> at /candidates/<.Candidate.ID>. Data: .Banner (a
+     page.Banner, for banner and footer); .Candidate, with .ID (its cand_
+     id, "cand_" and 16 hex), .Status ("active" or "merged", as stored),
+     .MergedInto (the cand_ id it was merged into; empty unless .Status is
+     "merged"), .Name (its display name; empty when merged), .Names (every
+     name any link uses, .Name first, a slice of strings), .Street, .City,
+     .State, .Zip, .County (as stored, "MN-115"), .Phone (ten digits, as
+     stored) and .Email (each empty when its freshest evidence gives none,
+     and all empty when merged), .People (each with .Name and .Role, as the
+     source gives them; may be empty), .Class (its class tag, "private",
+     "for_hire", "mixed" or "unknown"; empty when merged), .Cargo (its
+     cargo tags, a slice of strings; may be empty), .Created and
+     .CreatedText (RFC 3339 UTC to the second, and the same as shown,
+     "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise);
+     .Assessment (nil when merged or not yet scored; else the last pass's
+     assessment with the effective numbers at the request), with .Fleet
+     (bool, the fleet pass), .Minutes (drive minutes from the origin as
+     text, "84"; empty when its ZIP is not in the table), .Low (the
+     combined low as shown, "$7,800,000"), .High (the combined high as
+     shown; empty when no source gives one), .Confidence (the stored
+     combined confidence, two decimals, "0.70"), .Filed and .FiledText (the
+     newest filing date among its links not gone, "2025-03-18", both the
+     same; empty when it has none), .Freshness (that filing's weight at the
+     request, two decimals, "1.00"), .Effective (the effective confidence
+     at the request, two decimals), .Stale (bool, true when .Effective is
+     zero), .Point (the point estimate as shown), .Base (the score before
+     freshness, as stored, as shown), .Score (the score at the request, as
+     shown), .Excluded (bool), .Exclusions (each with .Reason, the
+     exclusion's word as stored, such as "government_class",
+     "government_name" or "ruling", and .Detail, the class word or name
+     pattern that matched, empty for a ruling), .Rules (int, the rules
+     version) and .Scored and .ScoredText (when it was scored, the
+     timestamp forms above); .Estimates, one per source with evidence on it
+     in source name order, empty when merged, each with .Source (the source's
+     name, "fmcsa"), .Low, .High, .Confidence, .Filed and .FiledText (as
+     the assessment's, for this source), .Formula (int, the rules version
+     it was made under) and .Facts (the facts it used, in key order, each
+     with .Key and .Value, the value as compact JSON text such as "52" or
+     "\"AUTHORIZED FOR HIRE\""); .Links, every link, empty when merged,
+     those not gone first, then by newest filing, each with .Scraper (the
+     scraper's name), .SourceID (the record's id at the source), .Run (the
+     run_ id it was last seen in), .RowPage (the URL of that row's page at
+     scrapes, "<scrapes URL>/runs/<.Run>/rows/<.SourceID>" built on the
+     services entry; empty when the entry has none), .Name, .City and .Zip
+     (as last seen), .Reason ("source_key", "match_key" or "decision", as
+     stored), .Confidence (two decimals), .Filed and .FiledText (the
+     filing date its source read; empty when none), .FirstSeen and
+     .FirstSeenText and .LastSeen and .LastSeenText (RFC 3339 UTC to the
+     second, and UTC to the minute, "2026-10-05 09:00") and .Gone (bool);
+     .Rulings, every ruling naming this candidate, newest first, each with
+     .Kind ("merge", "split", "not_same", "exclude" or "include", as
+     stored), .Other (the other candidate's cand_ id: the other side of a
+     merge or not_same, the new candidate of a split; empty for exclude and
+     include), .Keys (the source keys a split moved, "fmcsa:1039480", a
+     slice of strings; empty for other kinds), .By (the email of who made
+     it; empty when none), .User (their user id), .At and .AtText (when it
+     was made, RFC 3339 UTC to the second, and UTC to the minute) and .Why
+     (the sentence given). Words and tags are shown as stored; the
+     candidate status's kind is chosen here: "active" ok, "merged" info.
+     Hooks: title "<.Candidate.ID> · candidates"; h1 with text .ID;
+     p#headline.cluster holding, when .Name is set, .Name and a space, then
+     span.status[data-status=<.Status>][data-kind=<kind>] (text .Status),
+     then, when .Assessment.Excluded, a space and span.badge[data-kind=warn]
+     (text "excluded"), then a space and span.muted holding "updated" and
+     time[datetime=<.Updated>] (text .UpdatedText). When .Status is
+     "merged": div#merged.alert.quiet[data-kind=info] holding strong
+     "Merged" and p#merged-into (text "This candidate was merged into
+     <.MergedInto>. Its evidence, estimates and assessment are there now.",
+     .MergedInto as a.candidate-link, href "/candidates/<.MergedInto>",
+     holding .MergedInto in a code element). When .Assessment.Excluded:
+     div#excluded.alert.quiet[data-kind=warn] holding strong "Excluded" and
+     a p (text "An excluded candidate is never on the shortlist. Its
+     reasons are in the assessment; an include ruling reverses it.",
+     include in a code element). When .Assessment.Stale:
+     div#stale.alert.quiet[data-kind=warn] holding strong "Stale evidence"
+     and a p (text "Its newest filing among the links not gone is five
+     years old or more, or it has none, so its effective confidence is 0
+     and it is off the shortlist until a source shows it alive.").
+     section#candidate-card with h2 "Candidate" and a p in its header (text
+     "Display fields from its freshest evidence: the link not gone with
+     the newest filing."), then dl#candidate.kv holding, in this order, dt
+     "ID" then dd#candidate-id (.ID in a code element), dt "Status" then
+     dd#candidate-status (the status span), dt "Merged into" then
+     dd#candidate-merged (the a.candidate-link above) only when merged,
+     then, each only when set, dt "Name" then dd#candidate-name, dt "Names"
+     then dd#candidate-names (.Names joined by " · "), dt "Street" then
+     dd#candidate-street, dt "City" then dd#candidate-city, dt "State" then
+     dd#candidate-state, dt "Zip" then dd#candidate-zip, dt "County" then
+     dd#candidate-county (in a code element), dt "Phone" then
+     dd#candidate-phone, dt "Email" then dd#candidate-email, dt "People"
+     then dd#candidate-people (one div[data-person] per person, .Name, a
+     space, and span.muted with .Role), dt "Class" then dd#candidate-class
+     (in a code element) and dt "Cargo" then dd#candidate-cargo (one
+     code[data-cargo=<tag>] per tag, separated by spaces); then dt
+     "Created" then dd#candidate-created and dt "Updated" then
+     dd#candidate-updated (each a time[datetime] with the text form). Only
+     when .Status is "active": section#assessment-card with h2 "Assessment"
+     and a p in its header (text "The combined estimate and the fit test as
+     the last pass scored them. Freshness, effective confidence and score
+     are computed as the page loads, from the newest filing's age."), then
+     either, when .Assessment is nil, div#no-assessment.empty holding h3
+     "Not scored yet" and a p (text "A pass scores a candidate after it
+     resolves the records that touch it."), or dl#assessment.kv holding,
+     in this order, dt "Fleet" then dd#assessment-fleet ("yes" or "no"),
+     dt "Drive minutes" then dd#assessment-minutes (.Minutes, or when
+     empty span.muted "not in the ZIP table"), dt "Low" then
+     dd#assessment-low, dt "High" then dd#assessment-high (.High, or when
+     empty span.muted "none: a floor only"), dt "Confidence" then
+     dd#assessment-confidence, dt "Newest filing" then dd#assessment-filed
+     (time[datetime=<.Filed>] with .FiledText, or when empty span.muted
+     "none"), dt "Freshness" then dd#assessment-freshness, dt "Effective
+     confidence" then dd#assessment-effective, dt "Point" then
+     dd#assessment-point, dt "Score" then dd#assessment-score, dt "Score
+     before freshness" then dd#assessment-base, dt "Excluded" then
+     dd#assessment-excluded ("no", or one div[data-exclusion=<.Reason>] per
+     exclusion holding .Reason in a code element and, when .Detail is set,
+     a space and span.muted with .Detail), dt "Rules" then
+     dd#assessment-rules (the version) and dt "Scored" then
+     dd#assessment-scored (a time[datetime] with the text form). Then
+     section#estimates with h2 "Estimates" and a p in its header (text "One
+     per source with evidence on this candidate, with the facts it used,
+     copied from the source's record."), then either, when .Estimates is
+     empty, div#no-estimates.empty holding h3 "No estimates" and a p (text
+     "No source gives a size for this candidate."), or one
+     dl.kv[data-estimate=<.Source>] per estimate holding dt "Source" then a
+     dd (.Source in a code element), dt "Low", dt "High" (span.muted "none:
+     a floor only" when empty), dt "Confidence", dt "Filed" (the time, or
+     span.muted "none"), dt "Rules" (.Formula) and dt "Facts" then a dd
+     holding dl.kv with one dt[data-fact=<.Key>] per fact (.Key in a code
+     element) followed by a dd (.Value in a code element). Then
+     section#links with h2 "Evidence" and a p in its header (text "Each
+     record attached to this candidate, linked to its row in scrapes. A
+     gone record was absent from its scraper's latest run; it still counts
+     for identity and no longer for the score."), then table#link-list
+     whose th read Scraper, Source ID, Name, City, Zip, Reason, Confidence,
+     Filed, First seen, Last seen, Gone, with one
+     tr[data-link=<.Scraper>:<.SourceID>] per link holding td.link-scraper
+     (.Scraper in a code element), td.link-source (a.row-link, href
+     .RowPage, holding .SourceID in a code element, when .RowPage is set,
+     else the code element alone), td.link-name, td.link-city, td.link-zip,
+     td.link-reason (.Reason in a code element), td.link-confidence.num,
+     td.link-filed (time with .FiledText, empty when none), td.link-first
+     and td.link-last (each a time with the text form), and td.link-gone
+     holding, only when .Gone, span.badge[data-kind=warn] (text "gone").
+     Then, for active and merged alike, section#rulings with h2 "Rulings"
+     and a p in its header (text "The owner's rulings on this candidate,
+     newest first, each with who made it, when and why. Every pass
+     reapplies them."), then either, when .Rulings is empty,
+     div#no-rulings.empty holding h3 "No rulings" and a p (text "Rulings
+     are made by hand with the decide tool: merge, split, not_same,
+     exclude or include.", each name in a code element), or
+     table#ruling-list whose th read Kind, With, Records, By, When, Why,
+     with one tr[data-ruling=<.Kind>] per ruling holding td.ruling-kind
+     (.Kind in a code element), td.ruling-other (a.candidate-link, href
+     "/candidates/<.Other>", .Other in a code element, when .Other is
+     set), td.ruling-keys (each of .Keys in a code element, separated by
+     spaces), td.ruling-by (.By, or .User in a code element when .By is
+     empty), td.ruling-at (time[datetime=<.At>] with .AtText) and
+     td.ruling-why (.Why). No script but appkit's /_appkit/feedback.js. */}}
+{{define "candidate"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Candidate.ID}} · candidates</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{$a := .Assessment}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{with .Candidate}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
+{{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
+{{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>An excluded candidate is never on the shortlist. Its reasons are in the assessment; an <code>include</code> ruling reverses it.</p></div>
+{{end}}{{if $a.Stale}}<div id="stale" class="alert quiet" data-kind="warn"><strong>Stale evidence</strong><p>Its newest filing among the links not gone is five years old or more, or it has none, so its effective confidence is 0 and it is off the shortlist until a source shows it alive.</p></div>
+{{end}}{{end}}<section id="candidate-card" class="card" aria-labelledby="candidate-title">
+<header><h2 id="candidate-title">Candidate</h2><p>Display fields from its freshest evidence: the link not gone with the newest filing.</p></header>
+<dl id="candidate" class="kv">
+<dt>ID</dt><dd id="candidate-id"><code>{{.ID}}</code></dd>
+<dt>Status</dt><dd id="candidate-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span></dd>
+{{if eq .Status "merged"}}<dt>Merged into</dt><dd id="candidate-merged"><a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a></dd>
+{{end}}{{if .Name}}<dt>Name</dt><dd id="candidate-name">{{.Name}}</dd>
+{{end}}{{if .Names}}<dt>Names</dt><dd id="candidate-names">{{range $i, $n := .Names}}{{if $i}} · {{end}}{{$n}}{{end}}</dd>
+{{end}}{{if .Street}}<dt>Street</dt><dd id="candidate-street">{{.Street}}</dd>
+{{end}}{{if .City}}<dt>City</dt><dd id="candidate-city">{{.City}}</dd>
+{{end}}{{if .State}}<dt>State</dt><dd id="candidate-state">{{.State}}</dd>
+{{end}}{{if .Zip}}<dt>Zip</dt><dd id="candidate-zip">{{.Zip}}</dd>
+{{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
+{{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}</dd>
+{{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}</dd>
+{{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span></div>{{end}}</dd>
+{{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
+{{end}}{{if .Cargo}}<dt>Cargo</dt><dd id="candidate-cargo">{{range $i, $c := .Cargo}}{{if $i}} {{end}}<code data-cargo="{{$c}}">{{$c}}</code>{{end}}</dd>
+{{end}}<dt>Created</dt><dd id="candidate-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+<dt>Updated</dt><dd id="candidate-updated"><time datetime="{{.Updated}}">{{.UpdatedText}}</time></dd>
+</dl>
+</section>
+{{if eq .Status "active"}}<section id="assessment-card" class="card" aria-labelledby="assessment-title">
+<header><h2 id="assessment-title">Assessment</h2><p>The combined estimate and the fit test as the last pass scored them. Freshness, effective confidence and score are computed as the page loads, from the newest filing's age.</p></header>
+{{with $a}}<dl id="assessment" class="kv">
+<dt>Fleet</dt><dd id="assessment-fleet">{{if .Fleet}}yes{{else}}no{{end}}</dd>
+<dt>Drive minutes</dt><dd id="assessment-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">not in the ZIP table</span>{{end}}</dd>
+<dt>Low</dt><dd id="assessment-low">{{.Low}}</dd>
+<dt>High</dt><dd id="assessment-high">{{if .High}}{{.High}}{{else}}<span class="muted">none: a floor only</span>{{end}}</dd>
+<dt>Confidence</dt><dd id="assessment-confidence">{{.Confidence}}</dd>
+<dt>Newest filing</dt><dd id="assessment-filed">{{if .Filed}}<time datetime="{{.Filed}}">{{.FiledText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Freshness</dt><dd id="assessment-freshness">{{.Freshness}}</dd>
+<dt>Effective confidence</dt><dd id="assessment-effective">{{.Effective}}</dd>
+<dt>Point</dt><dd id="assessment-point">{{.Point}}</dd>
+<dt>Score</dt><dd id="assessment-score">{{.Score}}</dd>
+<dt>Score before freshness</dt><dd id="assessment-base">{{.Base}}</dd>
+<dt>Excluded</dt><dd id="assessment-excluded">{{if .Exclusions}}{{range .Exclusions}}<div data-exclusion="{{.Reason}}"><code>{{.Reason}}</code>{{if .Detail}} <span class="muted">{{.Detail}}</span>{{end}}</div>{{end}}{{else}}no{{end}}</dd>
+<dt>Rules</dt><dd id="assessment-rules">{{.Rules}}</dd>
+<dt>Scored</dt><dd id="assessment-scored"><time datetime="{{.Scored}}">{{.ScoredText}}</time></dd>
+</dl>{{else}}<div id="no-assessment" class="empty">
+<h3 class="text-md">Not scored yet</h3>
+<p>A pass scores a candidate after it resolves the records that touch it.</p>
+</div>{{end}}
+</section>
+<section id="estimates" class="card" aria-labelledby="estimates-title">
+<header><h2 id="estimates-title">Estimates</h2><p>One per source with evidence on this candidate, with the facts it used, copied from the source's record.</p></header>
+{{range $estimates}}<dl class="kv" data-estimate="{{.Source}}">
+<dt>Source</dt><dd><code>{{.Source}}</code></dd>
+<dt>Low</dt><dd>{{.Low}}</dd>
+<dt>High</dt><dd>{{if .High}}{{.High}}{{else}}<span class="muted">none: a floor only</span>{{end}}</dd>
+<dt>Confidence</dt><dd>{{.Confidence}}</dd>
+<dt>Filed</dt><dd>{{if .Filed}}<time datetime="{{.Filed}}">{{.FiledText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Rules</dt><dd>{{.Formula}}</dd>
+<dt>Facts</dt><dd><dl class="kv">
+{{range .Facts}}<dt data-fact="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>
+{{end}}</dl></dd>
+</dl>
+{{else}}<div id="no-estimates" class="empty">
+<h3 class="text-md">No estimates</h3>
+<p>No source gives a size for this candidate.</p>
+</div>
+{{end}}</section>
+<section id="links" class="card flush" aria-labelledby="links-title">
+<header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the score.</p></div></header>
+<div class="table-scroll">
+<table id="link-list">
+<thead><tr><th>Scraper</th><th>Source ID</th><th>Name</th><th>City</th><th>Zip</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>
+<tbody>
+{{range $links}}<tr data-link="{{.Scraper}}:{{.SourceID}}">
+<td class="link-scraper"><code>{{.Scraper}}</code></td>
+<td class="link-source">{{if .RowPage}}<a class="row-link" href="{{.RowPage}}"><code>{{.SourceID}}</code></a>{{else}}<code>{{.SourceID}}</code>{{end}}</td>
+<td class="link-name">{{.Name}}</td>
+<td class="link-city">{{.City}}</td>
+<td class="link-zip">{{.Zip}}</td>
+<td class="link-reason"><code>{{.Reason}}</code></td>
+<td class="link-confidence num">{{.Confidence}}</td>
+<td class="link-filed">{{if .Filed}}<time datetime="{{.Filed}}">{{.FiledText}}</time>{{end}}</td>
+<td class="link-first"><time datetime="{{.FirstSeen}}">{{.FirstSeenText}}</time></td>
+<td class="link-last"><time datetime="{{.LastSeen}}">{{.LastSeenText}}</time></td>
+<td class="link-gone">{{if .Gone}}<span class="badge" data-kind="warn">gone</span>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+</section>
+{{end}}<section id="rulings" class="card flush" aria-labelledby="rulings-title">
+<header><div><h2 id="rulings-title">Rulings</h2><p>The owner's rulings on this candidate, newest first, each with who made it, when and why. Every pass reapplies them.</p></div></header>
+{{if $rulings}}<div class="table-scroll">
+<table id="ruling-list">
+<thead><tr><th>Kind</th><th>With</th><th>Records</th><th>By</th><th>When</th><th>Why</th></tr></thead>
+<tbody>
+{{range $rulings}}<tr data-ruling="{{.Kind}}">
+<td class="ruling-kind"><code>{{.Kind}}</code></td>
+<td class="ruling-other">{{if .Other}}<a class="candidate-link" href="/candidates/{{.Other}}"><code>{{.Other}}</code></a>{{end}}</td>
+<td class="ruling-keys">{{range $i, $k := .Keys}}{{if $i}} {{end}}<code>{{$k}}</code>{{end}}</td>
+<td class="ruling-by">{{if .By}}{{.By}}{{else}}<code>{{.User}}</code>{{end}}</td>
+<td class="ruling-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
+<td class="ruling-why">{{.Why}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-rulings" class="empty">
+<h3 class="text-md">No rulings</h3>
+<p>Rulings are made by hand with the <code>decide</code> tool: <code>merge</code>, <code>split</code>, <code>not_same</code>, <code>exclude</code> or <code>include</code>.</p>
+</div>{{end}}
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

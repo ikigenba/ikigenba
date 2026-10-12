@@ -1,0 +1,96 @@
+{{/* One pass at GET /passes/<id>: its record in full and, when it failed,
+     the reason in words. Shown to any signed-in user; a guest is sent to
+     sign in; an unknown id or a pruned one is the not-found page. The page
+     does not stream: a pass still running shows the record as it stands
+     when the page is loaded. Read-only: no form but the banner's sign out.
+     One level below the root: .Banner's .Trail is the one level
+     <.Pass.ID> at /passes/<.Pass.ID>. Data: .Banner (a page.Banner, for
+     banner and footer); .Pass, with .ID (its pass_ id, "pass_" and 16
+     hex), .Trigger (the run_ id of the scrapes run a delivery named, or
+     "rebuild"), .RunPage (the URL of that run's page at scrapes,
+     "<scrapes URL>/runs/<.Trigger>" built on the services entry; empty for
+     a rebuild or when the entry has none), .Status ("running", "done" or
+     "failed", as stored), .Reason (the failure reason as stored, one of
+     "scrapes", "interrupted" or "store"; empty unless .Status is
+     "failed"), .StartedBy (the email of the caller whose rebuild started
+     the pass; empty when a delivery did), .Started and .StartedText (RFC
+     3339 UTC to the second, and the same as shown, "2006-01-02 15:04:05
+     UTC"), .Finished and .FinishedText (likewise; both empty while
+     running), and .Rows, .New, .Changed, .Unchanged, .Gone, .Created,
+     .Linked, .Rescored and .Unranged (ints, as the record holds them).
+     Counts are shown as the plain integer. Status and reason words are
+     shown as stored; the status's kind is chosen here: "running" info,
+     "done" ok, "failed" err; the failure's sentence is chosen from
+     .Reason. Hooks: title "<.ID> · candidates"; h1 with text .ID;
+     p#headline.cluster holding span.status[data-status=<.Status>]
+     [data-kind=<kind>] (text .Status), a space, and span.muted holding
+     "started" and time[datetime=<.Started>] (text .StartedText), then,
+     when .Finished is set, " · finished" and time[datetime=<.Finished>]
+     (text .FinishedText); when .Status is "running",
+     div#running.alert.quiet[data-kind=info] (strong#notice "Running", then
+     p "The page does not stream. Reload it to see the outcome.") and
+     a#reload.button (href "/passes/<.ID>", text "Reload"); when .Status is
+     "failed", div#failure.alert[data-kind=err][role=alert] holding strong
+     "The pass failed", p#failure-reason with the reason's sentence:
+     "scrapes" "Reading the run from scrapes failed, or its rows did not
+     match the count its record holds."; "interrupted" "candidates stopped
+     or restarted while the pass was running, and it does not resume
+     one."; "store" "The database failed while the pass was storing its
+     work."; then a p (text "What the pass wrote before it failed stays;
+     the next pass or a rebuild repairs it.", rebuild in a code element);
+     section#pass-card with h2 "Pass" and a p in its header (text "Rows,
+     new, changed, unchanged and gone count the run's records against what
+     candidates held; created, linked, rescored and unranged count
+     candidates."); then dl#pass.kv holding, in this order, dt "ID" then
+     dd#pass-id (.ID in a code element), dt "Trigger" then dd#pass-trigger
+     (a.run-link, href .RunPage, holding .Trigger in a code element, when
+     .RunPage is set, else .Trigger in a code element), dt "Status" then
+     dd#pass-status (the status span), dt "Reason" then dd#pass-reason
+     (.Reason in a code element) only when .Reason is set, dt "Started by"
+     then dd#pass-by (.StartedBy when set, else "scrapes"), dt "Started"
+     then dd#pass-started holding time[datetime=<.Started>] (text
+     .StartedText), dt "Finished" then dd#pass-finished holding
+     time[datetime=<.Finished>] (text .FinishedText) only when .Finished is
+     set, dt "Rows" then dd#pass-rows, dt "New" then dd#pass-new, dt
+     "Changed" then dd#pass-changed, dt "Unchanged" then dd#pass-unchanged,
+     dt "Gone" then dd#pass-gone, dt "Created" then dd#pass-created, dt
+     "Linked" then dd#pass-linked, dt "Rescored" then dd#pass-rescored and
+     dt "Unranged" then dd#pass-unranged (each the count). No script but
+     appkit's /_appkit/feedback.js. */}}
+{{define "pass"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Pass.ID}} · candidates</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Pass}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
+{{if eq .Status "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">Running</strong><p>The page does not stream. Reload it to see the outcome.</p></div>
+<p><a id="reload" class="button secondary small" href="/passes/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
+{{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p id="failure-reason">{{if eq .Reason "scrapes"}}Reading the run from scrapes failed, or its rows did not match the count its record holds.{{else if eq .Reason "interrupted"}}candidates stopped or restarted while the pass was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the pass was storing its work.{{end}}</p><p>What the pass wrote before it failed stays; the next pass or a <code>rebuild</code> repairs it.</p></div>
+{{end}}<section id="pass-card" class="card" aria-labelledby="pass-title">
+<header><h2 id="pass-title">Pass</h2><p>Rows, new, changed, unchanged and gone count the run's records against what candidates held; created, linked, rescored and unranged count candidates.</p></header>
+<dl id="pass" class="kv">
+<dt>ID</dt><dd id="pass-id"><code>{{.ID}}</code></dd>
+<dt>Trigger</dt><dd id="pass-trigger">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Trigger}}</code></a>{{else}}<code>{{.Trigger}}</code>{{end}}</dd>
+<dt>Status</dt><dd id="pass-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
+{{if .Reason}}<dt>Reason</dt><dd id="pass-reason"><code>{{.Reason}}</code></dd>
+{{end}}<dt>Started by</dt><dd id="pass-by">{{if .StartedBy}}{{.StartedBy}}{{else}}scrapes{{end}}</dd>
+<dt>Started</dt><dd id="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
+{{if .Finished}}<dt>Finished</dt><dd id="pass-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
+{{end}}<dt>Rows</dt><dd id="pass-rows">{{.Rows}}</dd>
+<dt>New</dt><dd id="pass-new">{{.New}}</dd>
+<dt>Changed</dt><dd id="pass-changed">{{.Changed}}</dd>
+<dt>Unchanged</dt><dd id="pass-unchanged">{{.Unchanged}}</dd>
+<dt>Gone</dt><dd id="pass-gone">{{.Gone}}</dd>
+<dt>Created</dt><dd id="pass-created">{{.Created}}</dd>
+<dt>Linked</dt><dd id="pass-linked">{{.Linked}}</dd>
+<dt>Rescored</dt><dd id="pass-rescored">{{.Rescored}}</dd>
+<dt>Unranged</dt><dd id="pass-unranged">{{.Unranged}}</dd>
+</dl>
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
