@@ -146,8 +146,8 @@ no `go.work`, no local module cache stands in for it.
 The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
-`internal/sources`, `internal/fmcsa`, `internal/passes`, `internal/trail`,
-`internal/urls`, `internal/tools` and `internal/pages`).
+`internal/sources`, `internal/fmcsa`, `internal/scoring`, `internal/passes`,
+`internal/trail`, `internal/urls`, `internal/tools` and `internal/pages`).
 This is the file set the canonical gap greps for requirement ids:
 
 ```
