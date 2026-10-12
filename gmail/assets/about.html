@@ -1,0 +1,58 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one
+     level about at /about. Shown only to a signed-in user; a guest is sent
+     to sign in. Data: .Banner (a page.Banner, for banner and footer; its
+     .Service is the name and its .Release and .Commit give the version
+     row); .Description (the service's one-line description, the
+     manifest's). Hooks: title "About gmail"; h1 with text "About gmail";
+     dl#about.kv holding dt "Name" then dd#about-name (.Banner.Service), dt
+     "Version" then dd#about-version (.Banner.Release and .Banner.Commit,
+     present even when empty), and dt "Description" then
+     dd#about-description (.Description); then section#how.card with h2
+     "How it works" and five p: "gmail lets your agents work with your
+     Gmail. An agent finds mail with search, reads it with thread and show,
+     and sees your labels with labels; the text of a message reaches it in
+     the tools' answers."; "pull copies an attachment, or the whole message
+     as an .eml file, into an artifact. compose writes a draft, a reply when
+     asked, push attaches an artifact to it, and send sends it or discard
+     deletes it. drafts and draft show the drafts it wrote."; "pull and
+     push record a transfer and answer at once. The bytes move on this host
+     in the background, streamed between Gmail and artifacts as you, and
+     transfer shows the outcome. When a pull is done, the artifact's url is
+     where a shell fetches the result."; "No attachment byte, raw message
+     or credential passes through the agent, and gmail never marks,
+     labels, archives or trashes your mail: it reads mail and writes
+     drafts, and gets a short-lived Google token from connections on the
+     host."; "Connect Google at connections first. Until you do, or while
+     the connection needs reconnecting, every tool refuses with the link to
+     connect, for the agent to hand you." (search, thread, show, labels,
+     pull, compose, push, send, discard, drafts, draft, transfer, url and
+     .eml each in a code element). No section of the landing page's. No
+     script but appkit's /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About gmail</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About gmail</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>gmail lets your agents work with your Gmail. An agent finds mail with <code>search</code>, reads it with <code>thread</code> and <code>show</code>, and sees your labels with <code>labels</code>; the text of a message reaches it in the tools' answers.</p>
+<p><code>pull</code> copies an attachment, or the whole message as an <code>.eml</code> file, into an artifact. <code>compose</code> writes a draft, a reply when asked, <code>push</code> attaches an artifact to it, and <code>send</code> sends it or <code>discard</code> deletes it. <code>drafts</code> and <code>draft</code> show the drafts it wrote.</p>
+<p><code>pull</code> and <code>push</code> record a transfer and answer at once. The bytes move on this host in the background, streamed between Gmail and artifacts as you, and <code>transfer</code> shows the outcome. When a pull is done, the artifact's <code>url</code> is where a shell fetches the result.</p>
+<p>No attachment byte, raw message or credential passes through the agent, and gmail never marks, labels, archives or trashes your mail: it reads mail and writes drafts, and gets a short-lived Google token from connections on the host.</p>
+<p>Connect Google at connections first. Until you do, or while the connection needs reconnecting, every tool refuses with the link to connect, for the agent to hand you.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

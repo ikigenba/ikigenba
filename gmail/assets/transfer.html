@@ -1,0 +1,120 @@
+{{/* One transfer at GET /transfers/<id>: its record in full and, when it
+     failed, its reason in words. Shown only to the signed-in user who made
+     it; a guest is sent to sign in; an unknown id, a pruned one or another
+     user's is the not-found page. The page does not stream: a transfer
+     still queued or running shows the record as it stands when the page is
+     loaded. Read-only: no form but the banner's sign out. Never shows a
+     token or a byte of the file. One level below the root: .Banner's
+     .Trail is the one level <.Transfer.ID> at /transfers/<.Transfer.ID>.
+     Data: .Banner (a page.Banner, for banner and footer); .Transfer, with
+     .ID (its xfr_ id, "xfr_" and 16 hex), .Direction ("pull" or "push", as
+     stored), .Status ("queued", "running", "done" or "failed", as stored),
+     .Reason (the failure reason as stored, one of "not_found",
+     "forbidden", "too_large", "reconnect", "provider", "artifacts" or
+     "interrupted"; empty unless .Status is "failed"), .Message (the Gmail
+     message id: the source message of a pull, the draft's message for a
+     push), .Attachment (the attachment's part id, such as "2" or "1.3";
+     empty for a whole-message pull and for a push), .Draft (the drf_ id of
+     the draft a push attaches to; empty for a pull), .Name (the
+     attachment's file name, or the .eml name of a whole-message pull),
+     .Path (the artifact's path under /files/, no leading slash),
+     .ArtifactPage (the artifact's page on artifacts, the artifacts URL
+     then "/" and the artifact id the record holds; empty when the record
+     holds no artifact id), .ContentType (the content type the bytes move
+     as), .Bytes (int64, the bytes moved so far, final when done), .Started
+     and .StartedText (RFC 3339 UTC to the second, and the same as shown,
+     "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText (likewise;
+     both empty while queued or running), .URL (the artifact's absolute
+     /files/<path> URL on artifacts' host; empty unless done) and .Link
+     (the message's place in Gmail,
+     "https://mail.google.com/mail/u/0/#all/<.Message>" for a pull, and
+     the draft's, "https://mail.google.com/mail/u/0/#drafts/<.Message>",
+     for a push; empty unless done). Bytes are shown as the plain integer,
+     never a humanised size. Status, reason and direction words are shown
+     as stored; the status's kind is chosen here: "queued" and "running"
+     info, "done" ok, "failed" err; the notice's first word is "Queued" or
+     "Running", from .Status; the header's sentence is chosen from
+     .Direction; the failure's sentence is chosen from .Reason. Hooks:
+     title "<.ID> · gmail"; h1 with text .ID; p#headline.cluster holding
+     span.status[data-status=<.Status>][data-kind=<kind>] (text .Status), a
+     space, and span.muted holding "started" and time[datetime=<.Started>]
+     (text .StartedText), then, when .Finished is set, " · finished" and
+     time[datetime=<.Finished>] (text .FinishedText); when .Status is
+     "queued" or "running", div#running.alert.quiet[data-kind=info]
+     (strong#notice, the notice word, then p "The page does not stream.
+     Reload it to see the outcome.") and a#reload.button (href
+     "/transfers/<.ID>", text "Reload"); when .Status is "failed",
+     div#failure.alert[data-kind=err][role=alert] holding strong "The
+     transfer failed", p#failure-reason with the reason's sentence:
+     "not_found" "The message, the attachment, the draft or the artifact
+     was no longer there when the transfer reached it."; "forbidden" "Gmail
+     or artifacts refused to let the transfer read or write the file.";
+     "too_large" "The file was larger than artifacts accepts, or larger
+     than Gmail allows on a draft."; "reconnect" "The Google connection
+     stopped working during the transfer; reconnect Google at connections,
+     then try again."; "provider" "Gmail failed the request."; "artifacts"
+     "artifacts could not be reached, or gave an answer gmail could not
+     read."; "interrupted" "gmail stopped while the transfer was queued or
+     running, and it does not resume one."; then a p (text "Nothing was
+     changed: a failed transfer leaves no new artifact and no new
+     attachment on a draft, and one that was already there stands.");
+     section#transfer-card with h2 "Transfer" and a p in its header, "From
+     Gmail into artifacts." when .Direction is "pull", else "From artifacts
+     onto a Gmail draft."; then dl#transfer.kv holding, in this order, dt
+     "ID" then dd#transfer-id (.ID in a code element), dt "Direction" then
+     dd#transfer-direction (.Direction), dt "Status" then
+     dd#transfer-status (the status span), dt "Reason" then
+     dd#transfer-reason (.Reason in a code element) only when .Reason is
+     set, dt "Message" then dd#transfer-message (.Message in a code
+     element), dt "Attachment" then dd#transfer-attachment (.Attachment in
+     a code element) only when .Attachment is set, dt "Draft" then
+     dd#transfer-draft (a.draft-link, href "/drafts/<.Draft>", .Draft in a
+     code element) only when .Draft is set, dt "Name" then dd#transfer-name
+     (a.gmail-link, href .Link, text .Name, when .Link is set, else .Name),
+     dt "Path" then dd#transfer-path (a.artifact-link, href .ArtifactPage,
+     .Path in a code element, when .ArtifactPage is set, else .Path in a
+     code element), dt "Content type" then dd#transfer-type (.ContentType
+     in a code element), dt "Bytes" then dd#transfer-bytes (.Bytes), dt
+     "Started" then dd#transfer-started holding time[datetime=<.Started>]
+     (text .StartedText), dt "Finished" then dd#transfer-finished holding
+     time[datetime=<.Finished>] (text .FinishedText) only when .Finished is
+     set, dt "URL" then dd#transfer-url (.URL in a code element) only when
+     .URL is set, and dt "Link" then dd#transfer-link (.Link in a code
+     element) only when .Link is set. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "transfer"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Transfer.ID}} · gmail</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Transfer}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
+{{if eq .Status "queued" "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">{{if eq .Status "queued"}}Queued{{else}}Running{{end}}</strong><p>The page does not stream. Reload it to see the outcome.</p></div>
+<p><a id="reload" class="button secondary small" href="/transfers/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
+{{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The transfer failed</strong><p id="failure-reason">{{if eq .Reason "not_found"}}The message, the attachment, the draft or the artifact was no longer there when the transfer reached it.{{else if eq .Reason "forbidden"}}Gmail or artifacts refused to let the transfer read or write the file.{{else if eq .Reason "too_large"}}The file was larger than artifacts accepts, or larger than Gmail allows on a draft.{{else if eq .Reason "reconnect"}}The Google connection stopped working during the transfer; reconnect Google at connections, then try again.{{else if eq .Reason "provider"}}Gmail failed the request.{{else if eq .Reason "artifacts"}}artifacts could not be reached, or gave an answer gmail could not read.{{else if eq .Reason "interrupted"}}gmail stopped while the transfer was queued or running, and it does not resume one.{{end}}</p><p>Nothing was changed: a failed transfer leaves no new artifact and no new attachment on a draft, and one that was already there stands.</p></div>
+{{end}}<section id="transfer-card" class="card" aria-labelledby="transfer-title">
+<header><h2 id="transfer-title">Transfer</h2><p>{{if eq .Direction "pull"}}From Gmail into artifacts.{{else}}From artifacts onto a Gmail draft.{{end}}</p></header>
+<dl id="transfer" class="kv">
+<dt>ID</dt><dd id="transfer-id"><code>{{.ID}}</code></dd>
+<dt>Direction</dt><dd id="transfer-direction">{{.Direction}}</dd>
+<dt>Status</dt><dd id="transfer-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
+{{if .Reason}}<dt>Reason</dt><dd id="transfer-reason"><code>{{.Reason}}</code></dd>
+{{end}}<dt>Message</dt><dd id="transfer-message"><code>{{.Message}}</code></dd>
+{{if .Attachment}}<dt>Attachment</dt><dd id="transfer-attachment"><code>{{.Attachment}}</code></dd>
+{{end}}{{if .Draft}}<dt>Draft</dt><dd id="transfer-draft"><a class="draft-link" href="/drafts/{{.Draft}}"><code>{{.Draft}}</code></a></dd>
+{{end}}<dt>Name</dt><dd id="transfer-name">{{if .Link}}<a class="gmail-link" href="{{.Link}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</dd>
+<dt>Path</dt><dd id="transfer-path">{{if .ArtifactPage}}<a class="artifact-link" href="{{.ArtifactPage}}"><code>{{.Path}}</code></a>{{else}}<code>{{.Path}}</code>{{end}}</dd>
+<dt>Content type</dt><dd id="transfer-type"><code>{{.ContentType}}</code></dd>
+<dt>Bytes</dt><dd id="transfer-bytes">{{.Bytes}}</dd>
+<dt>Started</dt><dd id="transfer-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
+{{if .Finished}}<dt>Finished</dt><dd id="transfer-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
+{{end}}{{if .URL}}<dt>URL</dt><dd id="transfer-url"><code>{{.URL}}</code></dd>
+{{end}}{{if .Link}}<dt>Link</dt><dd id="transfer-link"><code>{{.Link}}</code></dd>
+{{end}}</dl>
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

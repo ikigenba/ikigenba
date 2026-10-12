@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gmail</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="gmail.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20h3a1 1 0 0 0 1 -1v-14a1 1 0 0 0 -1 -1h-3v16"/><path d="M5 20h3v-16h-3a1 1 0 0 0 -1 1v14a1 1 0 0 0 1 1"/><path d="M16 4l-4 4l-4 -4"/><path d="M4 6.5l8 7.5l8 -7.5"/></svg>gmail</a><button class="menu" type="button" popovertarget="pages" aria-label="gmail pages" title="gmail pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="gmail pages"><ul><li><a href="gmail.html" aria-current="page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20h3a1 1 0 0 0 1 -1v-14a1 1 0 0 0 -1 -1h-3v16"/><path d="M5 20h3v-16h-3a1 1 0 0 0 -1 1v14a1 1 0 0 0 1 1"/><path d="M16 4l-4 4l-4 -4"/><path d="M4 6.5l8 7.5l8 -7.5"/></svg>gmail<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg></a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
+</header>
+
+<main>
+  <h1>gmail</h1>
+  <p id="summary" class="lede">Gmail for your agents: messages read, attachments pulled into artifacts, drafts composed and sent. Mail text reaches the agent through its tools; attachment bytes and credentials move on this host as transfers and never pass through the agent.</p>
+
+  <section id="drafts" class="card flush" aria-labelledby="drafts-title">
+    <header>
+      <div>
+        <h2 id="drafts-title">Drafts</h2>
+        <p>The drafts your agents composed, yours alone, newest first: no one else sees them.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="draft-list">
+        <thead><tr><th>Draft</th><th>Status</th><th>Subject</th><th>To</th><th class="num">Attachments</th><th>Created</th><th>Sent</th></tr></thead>
+        <tbody>
+          <tr data-draft="drf_4c1e8a7b30f95d62">
+            <td class="draft-id"><a class="draft-link" href="gmail-draft.html"><code>drf_4c1e8a7b30f95d62</code></a></td>
+            <td class="draft-status"><span class="status" data-status="open" data-kind="info">open</span></td>
+            <td class="draft-subject"><a class="gmail-link" href="https://mail.google.com/mail/u/0/#drafts/192a7f3c0e5b8d41">Re: September invoice</a></td>
+            <td class="draft-to">alice@example.com, bob@example.com</td>
+            <td class="draft-attachments num">2</td>
+            <td class="draft-created"><time datetime="2026-10-12T14:20:31Z">2026-10-12 14:20</time></td>
+            <td class="draft-sent"></td>
+          </tr>
+          <tr data-draft="drf_9e2b70d4a1c83f56">
+            <td class="draft-id"><a class="draft-link" href="gmail-draft.html"><code>drf_9e2b70d4a1c83f56</code></a></td>
+            <td class="draft-status"><span class="status" data-status="sent" data-kind="ok">sent</span></td>
+            <td class="draft-subject"><a class="gmail-link" href="https://mail.google.com/mail/u/0/#all/1929e04b7d2a6c18">Weekly status, 2026-10-09</a></td>
+            <td class="draft-to">team@example.com</td>
+            <td class="draft-attachments num">1</td>
+            <td class="draft-created"><time datetime="2026-10-09T16:02:12Z">2026-10-09 16:02</time></td>
+            <td class="draft-sent"><time datetime="2026-10-09T16:05:47Z">2026-10-09 16:05</time></td>
+          </tr>
+          <tr data-draft="drf_07f5c3e9b2d16a84">
+            <td class="draft-id"><a class="draft-link" href="gmail-draft.html"><code>drf_07f5c3e9b2d16a84</code></a></td>
+            <td class="draft-status"><span class="status" data-status="discarded">discarded</span></td>
+            <td class="draft-subject">Lunch on Friday?</td>
+            <td class="draft-to">carol@example.com</td>
+            <td class="draft-attachments num">0</td>
+            <td class="draft-created"><time datetime="2026-10-08T10:41:05Z">2026-10-08 10:41</time></td>
+            <td class="draft-sent"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="transfers" class="card flush" aria-labelledby="transfers-title">
+    <header>
+      <div>
+        <h2 id="transfers-title">Transfers</h2>
+        <p>Attachments and messages pulled into artifacts, and artifacts pushed onto drafts, yours alone, newest first.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="transfer-list">
+        <thead><tr><th>Transfer</th><th>Direction</th><th>Status</th><th>Name</th><th>Artifact</th><th class="num">Bytes</th><th>Started</th><th>Finished</th></tr></thead>
+        <tbody>
+          <tr data-transfer="xfr_5d82c1f07a3e9b46">
+            <td class="transfer-id"><a class="transfer-link" href="gmail-transfer.html"><code>xfr_5d82c1f07a3e9b46</code></a></td>
+            <td class="transfer-direction">push</td>
+            <td class="transfer-status"><span class="status" data-status="running" data-kind="info">running</span></td>
+            <td class="transfer-name">statement-2026-09.pdf</td>
+            <td class="transfer-path"><a class="artifact-link" href="https://artifacts.acme.ikigenba.com/art_6e1b9d3f0a7c2485"><code>finance/statement-2026-09.pdf</code></a></td>
+            <td class="transfer-bytes num">1048576</td>
+            <td class="transfer-started"><time datetime="2026-10-12T14:21:09Z">2026-10-12 14:21</time></td>
+            <td class="transfer-finished"></td>
+          </tr>
+          <tr data-transfer="xfr_b37e0a1d9c64f258">
+            <td class="transfer-id"><a class="transfer-link" href="gmail-transfer.html"><code>xfr_b37e0a1d9c64f258</code></a></td>
+            <td class="transfer-direction">pull</td>
+            <td class="transfer-status"><span class="status" data-status="done" data-kind="ok">done</span></td>
+            <td class="transfer-name"><a class="gmail-link" href="https://mail.google.com/mail/u/0/#all/1928c5e9a04f7b13">invoice-0917.pdf</a></td>
+            <td class="transfer-path"><a class="artifact-link" href="https://artifacts.acme.ikigenba.com/art_2f8a4c6e1d9b3057"><code>finance/invoice-0917.pdf</code></a></td>
+            <td class="transfer-bytes num">88412</td>
+            <td class="transfer-started"><time datetime="2026-10-12T14:12:40Z">2026-10-12 14:12</time></td>
+            <td class="transfer-finished"><time datetime="2026-10-12T14:12:41Z">2026-10-12 14:12</time></td>
+          </tr>
+          <tr data-transfer="xfr_c09a6e2f4b1d8735">
+            <td class="transfer-id"><a class="transfer-link" href="gmail-transfer.html"><code>xfr_c09a6e2f4b1d8735</code></a></td>
+            <td class="transfer-direction">pull</td>
+            <td class="transfer-status"><span class="status" data-status="queued" data-kind="info">queued</span></td>
+            <td class="transfer-name">contract-renewal.eml</td>
+            <td class="transfer-path"><code>mail/contract-renewal.eml</code></td>
+            <td class="transfer-bytes num">0</td>
+            <td class="transfer-started"><time datetime="2026-10-12T14:10:02Z">2026-10-12 14:10</time></td>
+            <td class="transfer-finished"></td>
+          </tr>
+          <tr data-transfer="xfr_8f14d7b2e6a05c93">
+            <td class="transfer-id"><a class="transfer-link" href="gmail-transfer.html"><code>xfr_8f14d7b2e6a05c93</code></a></td>
+            <td class="transfer-direction">pull</td>
+            <td class="transfer-status"><span class="status" data-status="failed" data-kind="err">failed</span> <span class="muted">too_large</span></td>
+            <td class="transfer-name">site-photos.eml</td>
+            <td class="transfer-path"><code>projects/site-photos.eml</code></td>
+            <td class="transfer-bytes num">0</td>
+            <td class="transfer-started"><time datetime="2026-10-11T17:30:55Z">2026-10-11 17:30</time></td>
+            <td class="transfer-finished"><time datetime="2026-10-11T17:30:56Z">2026-10-11 17:30</time></td>
+          </tr>
+          <tr data-transfer="xfr_e2a95b0c7d3f1648">
+            <td class="transfer-id"><a class="transfer-link" href="gmail-transfer.html"><code>xfr_e2a95b0c7d3f1648</code></a></td>
+            <td class="transfer-direction">push</td>
+            <td class="transfer-status"><span class="status" data-status="done" data-kind="ok">done</span></td>
+            <td class="transfer-name"><a class="gmail-link" href="https://mail.google.com/mail/u/0/#drafts/1929e04b7d2a6c18">status-2026-10-09.pdf</a></td>
+            <td class="transfer-path"><a class="artifact-link" href="https://artifacts.acme.ikigenba.com/art_a3d7f1c95e0b2864"><code>reports/2026-10/status-2026-10-09.pdf</code></a></td>
+            <td class="transfer-bytes num">215880</td>
+            <td class="transfer-started"><time datetime="2026-10-09T16:03:20Z">2026-10-09 16:03</time></td>
+            <td class="transfer-finished"><time datetime="2026-10-09T16:03:21Z">2026-10-09 16:03</time></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p><a id="about-link" href="/about">About gmail</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shapes this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No drafts</h3>
+      <div class="card flush">
+        <div id="no-drafts" class="empty">
+          <h3 class="text-md">No drafts yet</h3>
+          <p>A draft an agent writes with the <code>compose</code> tool shows up here, and stays as a record once it is sent or discarded.</p>
+        </div>
+      </div>
+
+      <h3 class="text-md">No transfers</h3>
+      <div class="card flush">
+        <div id="no-transfers" class="empty">
+          <h3 class="text-md">No transfers yet</h3>
+          <p>An attachment or message an agent pulls into artifacts with the <code>pull</code> tool, or an artifact it attaches to a draft with <code>push</code>, shows up here as a transfer.</p>
+        </div>
+      </div>
+
+      <h3 class="text-md">A draft with no subject</h3>
+      <div class="card flush">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Draft</th><th>Status</th><th>Subject</th><th>To</th><th class="num">Attachments</th><th>Created</th><th>Sent</th></tr></thead>
+            <tbody>
+              <tr data-draft="drf_31b6f8e0c2a59d47">
+                <td class="draft-id"><a class="draft-link" href="gmail-draft.html"><code>drf_31b6f8e0c2a59d47</code></a></td>
+                <td class="draft-status"><span class="status" data-status="open" data-kind="info">open</span></td>
+                <td class="draft-subject"><a class="gmail-link" href="https://mail.google.com/mail/u/0/#drafts/192a80d16b3e4f27"><span class="muted">(no subject)</span></a></td>
+                <td class="draft-to">dave@example.com</td>
+                <td class="draft-attachments num">0</td>
+                <td class="draft-created"><time datetime="2026-10-12T09:15:44Z">2026-10-12 09:15</time></td>
+                <td class="draft-sent"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>release-7 <span>(85e082b)</span></footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

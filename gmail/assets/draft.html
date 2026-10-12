@@ -1,0 +1,122 @@
+{{/* One draft at GET /drafts/<id>: its record in full and its
+     attachments. Shown only to the signed-in user whose agent composed it;
+     a guest is sent to sign in; an unknown id, a pruned one or another
+     user's is the not-found page. Read-only: no form but the banner's sign
+     out. Never shows the draft's body text, a token or a byte of an
+     attachment. One level below the root: .Banner's .Trail is the one
+     level <.Draft.ID> at /drafts/<.Draft.ID>. Data: .Banner (a page.Banner,
+     for banner and footer); .Draft, with .ID (its drf_ id, "drf_" and 16
+     hex), .Status ("open", "sent" or "discarded", as stored), .GmailDraft
+     (the Gmail draft id; empty unless .Status is "open"), .Message (the
+     Gmail message id of the draft, the sent message's once sent), .Thread
+     (the Gmail thread id), .To, .Cc and .Bcc (the addresses, each a slice
+     of strings, in order; .Cc and .Bcc may be empty), .Subject (the
+     subject line; may be empty), .InReplyTo (the Gmail message id the
+     draft replies to; empty unless it is a reply), .Link (the draft's
+     place in Gmail: "https://mail.google.com/mail/u/0/#drafts/<.Message>"
+     while open, "https://mail.google.com/mail/u/0/#all/<.Message>" once
+     sent; empty once discarded), .Created and .CreatedText (RFC 3339 UTC
+     to the second, and the same as shown, "2006-01-02 15:04:05 UTC"),
+     .Modified and .ModifiedText (likewise; always set), .Sent and .SentText
+     (likewise; both empty unless sent), and .Attachments, in the order
+     attached, each with .Path (the artifact's path under /files/, no
+     leading slash), .ArtifactPage (the artifact's page on artifacts, the
+     artifacts URL then "/" and the artifact id the record holds; empty
+     when the record holds no artifact id), .Name (the file name the
+     attachment carries), .ContentType and .Bytes (int64). Bytes are shown
+     as the plain integer, never a humanised size. Status words are shown
+     as stored; the status's kind is chosen here: "open" info, "sent" ok,
+     "discarded" no data-kind at all; the header's sentence is chosen from
+     .Status. Addresses are joined by ", ". Hooks: title "<.ID> · gmail";
+     h1 with text .ID; p#headline.cluster holding
+     span.status[data-status=<.Status>] with [data-kind=<kind>] unless
+     discarded (text .Status), a space, and span.muted holding "created"
+     and time[datetime=<.Created>] (text .CreatedText), " · modified" and
+     time[datetime=<.Modified>] (text .ModifiedText), then, when .Sent is
+     set, " · sent" and time[datetime=<.Sent>] (text .SentText);
+     section#draft-card with h2 "Draft" and a p in its header: "Open in
+     Gmail: an agent may still change it, send it or discard it. Its text
+     is kept in Gmail, never here." when open, "Sent from Gmail. Its text
+     is kept in Gmail, never here." when sent, "Discarded: deleted from
+     Gmail unsent. This record stands." when discarded; then dl#draft.kv
+     holding, in this order, dt "ID" then dd#draft-id (.ID in a code
+     element), dt "Status" then dd#draft-status (the status span), dt
+     "Gmail draft" then dd#draft-gmail (.GmailDraft in a code element) only
+     when .GmailDraft is set, dt "Message" then dd#draft-message (.Message
+     in a code element), dt "Thread" then dd#draft-thread (.Thread in a
+     code element), dt "To" then dd#draft-to (.To joined), dt "Cc" then
+     dd#draft-cc (.Cc joined) only when .Cc is not empty, dt "Bcc" then
+     dd#draft-bcc (.Bcc joined) only when .Bcc is not empty, dt "Subject"
+     then dd#draft-subject (.Subject, or span.muted with text "(no
+     subject)" when it is empty), dt "In reply to" then dd#draft-reply
+     (.InReplyTo in a code element) only when .InReplyTo is set, dt "Link"
+     then dd#draft-link (a.gmail-link, href .Link, .Link in a code element)
+     only when .Link is set, dt "Created" then dd#draft-created holding
+     time[datetime=<.Created>] (text .CreatedText), dt "Modified" then
+     dd#draft-modified holding time[datetime=<.Modified>] (text
+     .ModifiedText), and dt "Sent" then dd#draft-sent holding
+     time[datetime=<.Sent>] (text .SentText) only when .Sent is set. Then
+     section#attachments with h2 "Attachments" and a p in its header (text
+     "Artifacts pushed onto the draft, in the order they were attached."),
+     then either, when .Attachments is empty, div#no-attachments.empty
+     holding h3 "No attachments" and a p (text "An artifact an agent
+     attaches to this draft with the push tool shows up here.", push in a
+     code element), or table#attachment-list whose th read Artifact, Name,
+     Content type, Bytes, with one tr[data-attachment=<.Path>] per
+     attachment holding td.attachment-path (a.artifact-link, href
+     .ArtifactPage, .Path in a code element, when .ArtifactPage is set,
+     else .Path in a code element), td.attachment-name (.Name),
+     td.attachment-type (.ContentType in a code element) and
+     td.attachment-bytes.num (.Bytes). No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "draft"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Draft.ID}} · gmail</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Draft}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster"><span class="status" data-status="{{.Status}}"{{if eq .Status "open"}} data-kind="info"{{else if eq .Status "sent"}} data-kind="ok"{{end}}>{{.Status}}</span> <span class="muted">created <time datetime="{{.Created}}">{{.CreatedText}}</time> · modified <time datetime="{{.Modified}}">{{.ModifiedText}}</time>{{if .Sent}} · sent <time datetime="{{.Sent}}">{{.SentText}}</time>{{end}}</span></p>
+<section id="draft-card" class="card" aria-labelledby="draft-title">
+<header><h2 id="draft-title">Draft</h2><p>{{if eq .Status "open"}}Open in Gmail: an agent may still change it, send it or discard it. Its text is kept in Gmail, never here.{{else if eq .Status "sent"}}Sent from Gmail. Its text is kept in Gmail, never here.{{else}}Discarded: deleted from Gmail unsent. This record stands.{{end}}</p></header>
+<dl id="draft" class="kv">
+<dt>ID</dt><dd id="draft-id"><code>{{.ID}}</code></dd>
+<dt>Status</dt><dd id="draft-status"><span class="status" data-status="{{.Status}}"{{if eq .Status "open"}} data-kind="info"{{else if eq .Status "sent"}} data-kind="ok"{{end}}>{{.Status}}</span></dd>
+{{if .GmailDraft}}<dt>Gmail draft</dt><dd id="draft-gmail"><code>{{.GmailDraft}}</code></dd>
+{{end}}<dt>Message</dt><dd id="draft-message"><code>{{.Message}}</code></dd>
+<dt>Thread</dt><dd id="draft-thread"><code>{{.Thread}}</code></dd>
+<dt>To</dt><dd id="draft-to">{{range $i, $a := .To}}{{if $i}}, {{end}}{{$a}}{{end}}</dd>
+{{if .Cc}}<dt>Cc</dt><dd id="draft-cc">{{range $i, $a := .Cc}}{{if $i}}, {{end}}{{$a}}{{end}}</dd>
+{{end}}{{if .Bcc}}<dt>Bcc</dt><dd id="draft-bcc">{{range $i, $a := .Bcc}}{{if $i}}, {{end}}{{$a}}{{end}}</dd>
+{{end}}<dt>Subject</dt><dd id="draft-subject">{{if .Subject}}{{.Subject}}{{else}}<span class="muted">(no subject)</span>{{end}}</dd>
+{{if .InReplyTo}}<dt>In reply to</dt><dd id="draft-reply"><code>{{.InReplyTo}}</code></dd>
+{{end}}{{if .Link}}<dt>Link</dt><dd id="draft-link"><a class="gmail-link" href="{{.Link}}"><code>{{.Link}}</code></a></dd>
+{{end}}<dt>Created</dt><dd id="draft-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+<dt>Modified</dt><dd id="draft-modified"><time datetime="{{.Modified}}">{{.ModifiedText}}</time></dd>
+{{if .Sent}}<dt>Sent</dt><dd id="draft-sent"><time datetime="{{.Sent}}">{{.SentText}}</time></dd>
+{{end}}</dl>
+</section>
+<section id="attachments" class="card flush" aria-labelledby="attachments-title">
+<header><div><h2 id="attachments-title">Attachments</h2><p>Artifacts pushed onto the draft, in the order they were attached.</p></div></header>
+{{if .Attachments}}<div class="table-scroll">
+<table id="attachment-list">
+<thead><tr><th>Artifact</th><th>Name</th><th>Content type</th><th class="num">Bytes</th></tr></thead>
+<tbody>
+{{range .Attachments}}<tr data-attachment="{{.Path}}">
+<td class="attachment-path">{{if .ArtifactPage}}<a class="artifact-link" href="{{.ArtifactPage}}"><code>{{.Path}}</code></a>{{else}}<code>{{.Path}}</code>{{end}}</td>
+<td class="attachment-name">{{.Name}}</td>
+<td class="attachment-type"><code>{{.ContentType}}</code></td>
+<td class="attachment-bytes num">{{.Bytes}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-attachments" class="empty">
+<h3 class="text-md">No attachments</h3>
+<p>An artifact an agent attaches to this draft with the <code>push</code> tool shows up here.</p>
+</div>{{end}}
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

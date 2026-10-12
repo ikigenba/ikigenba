@@ -1,0 +1,144 @@
+{{/* The landing page at GET /: what the service is, the caller's own
+     drafts and the caller's own transfers, each newest first. The root of
+     the hierarchy: .Banner's .Trail is empty, so the banner's breadcrumb
+     holds only the service. Shown only to a signed-in user; a guest is sent
+     to sign in. Never shows another user's draft or transfer, a draft's
+     body text, a token or a byte of a file. Read-only: no form but the
+     banner's sign out. Data: .Banner (a page.Banner, for banner and
+     footer); .Drafts, the caller's drafts, newest first by created, each
+     with .ID (its drf_ id, "drf_" and 16 hex), .Status ("open", "sent" or
+     "discarded", as stored), .Subject (the subject line; may be empty),
+     .To (the To addresses, a slice of strings, in order), .AttachmentCount
+     (int, the attachments on the draft), .Link (the draft's place in
+     Gmail: "https://mail.google.com/mail/u/0/#drafts/<message id>" while
+     open, "https://mail.google.com/mail/u/0/#all/<message id>" once sent;
+     empty once discarded), .Created and .CreatedText (RFC 3339 UTC to the
+     second, and UTC to the minute, "2026-10-05 09:00"), and .Sent and
+     .SentText (likewise; both empty unless sent); .Transfers, the caller's
+     transfers, newest first by started, each with .ID (its xfr_ id, "xfr_"
+     and 16 hex), .Direction ("pull" or "push", as stored), .Status
+     ("queued", "running", "done" or "failed", as stored), .Reason (the
+     failure reason as stored, one of "not_found", "forbidden",
+     "too_large", "reconnect", "provider", "artifacts" or "interrupted";
+     empty unless .Status is "failed"), .Name (the attachment's file name,
+     or the .eml name of a whole-message pull), .Link (the message's place
+     in Gmail, "https://mail.google.com/mail/u/0/#all/<message id>" for a
+     pull, and the draft's for a push; empty unless done), .Path (the
+     artifact's path under /files/, no leading slash), .ArtifactPage (the
+     artifact's page on artifacts, the artifacts URL then "/" and the
+     artifact id the record holds; empty when the record holds no artifact
+     id), .URL (the artifact's absolute /files/<path> URL on artifacts'
+     host; empty until done), .Bytes (int64, the bytes moved so far, final
+     when done), .Started and .StartedText (RFC 3339 UTC to the second, and
+     UTC to the minute, "2026-10-05 09:00"), and .Finished and
+     .FinishedText (likewise; both empty while queued or running). Counts
+     and bytes are shown as the plain integer, never a humanised size.
+     Status, direction and reason words are shown as stored; the status's
+     kind is chosen here: a draft's "open" info, "sent" ok, "discarded" no
+     data-kind at all; a transfer's "queued" and "running" info, "done" ok,
+     "failed" err. Hooks: title "gmail"; h1 with text "gmail";
+     p#summary.lede (text "Gmail for your agents: messages read,
+     attachments pulled into artifacts, drafts composed and sent. Mail text
+     reaches the agent through its tools; attachment bytes and credentials
+     move on this host as transfers and never pass through the agent.");
+     section#drafts with h2 "Drafts" and a p in its header (text "The
+     drafts your agents composed, yours alone, newest first: no one else
+     sees them."), then either, when .Drafts is empty, div#no-drafts.empty
+     holding h3 "No drafts yet" and a p (text "A draft an agent writes with
+     the compose tool shows up here, and stays as a record once it is sent
+     or discarded.", compose in a code element), or table#draft-list whose
+     th read Draft, Status, Subject, To, Attachments, Created, Sent, with
+     one tr[data-draft=<.ID>] per draft holding td.draft-id >
+     a.draft-link (href "/drafts/<.ID>", .ID in a code element);
+     td.draft-status holding span.status[data-status=<.Status>] with
+     [data-kind=<kind>] unless .Status is "discarded" (text .Status);
+     td.draft-subject holding a.gmail-link (href .Link) when .Link is not
+     empty, its content .Subject, or, when .Subject is empty, span.muted
+     (text "(no subject)"); the same content without the link when .Link is
+     empty; td.draft-to (the .To addresses joined by ", ");
+     td.draft-attachments.num (.AttachmentCount); td.draft-created holding
+     time[datetime=<.Created>] (text .CreatedText); and td.draft-sent
+     holding, only when .Sent is not empty, time[datetime=<.Sent>] (text
+     .SentText). Then section#transfers with h2 "Transfers" and a p in its
+     header (text "Attachments and messages pulled into artifacts, and
+     artifacts pushed onto drafts, yours alone, newest first."), then
+     either, when .Transfers is empty, div#no-transfers.empty holding h3
+     "No transfers yet" and a p (text "An attachment or message an agent
+     pulls into artifacts with the pull tool, or an artifact it attaches to
+     a draft with push, shows up here as a transfer.", pull and push each
+     in a code element), or table#transfer-list whose th read Transfer,
+     Direction, Status, Name, Artifact, Bytes, Started, Finished, with one
+     tr[data-transfer=<.ID>] per transfer holding td.transfer-id >
+     a.transfer-link (href "/transfers/<.ID>", .ID in a code element);
+     td.transfer-direction (.Direction); td.transfer-status holding
+     span.status[data-status=<.Status>][data-kind=<kind>] (text .Status),
+     followed, when .Reason is not empty, by a space and span.muted (text
+     .Reason); td.transfer-name holding a.gmail-link (href .Link, text
+     .Name) when .Link is not empty, else .Name; td.transfer-path holding
+     a.artifact-link (href .ArtifactPage, .Path in a code element) when
+     .ArtifactPage is not empty, else that link with href .URL when .URL is
+     not empty, else .Path in a code element; td.transfer-bytes.num
+     (.Bytes); td.transfer-started holding time[datetime=<.Started>] (text
+     .StartedText); and td.transfer-finished holding, only when .Finished
+     is not empty, time[datetime=<.Finished>] (text .FinishedText); a
+     #about-link (text "About gmail") whose href is "/about". No script
+     but appkit's /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>gmail</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>gmail</h1>
+<p id="summary" class="lede">Gmail for your agents: messages read, attachments pulled into artifacts, drafts composed and sent. Mail text reaches the agent through its tools; attachment bytes and credentials move on this host as transfers and never pass through the agent.</p>
+<section id="drafts" class="card flush" aria-labelledby="drafts-title">
+<header><div><h2 id="drafts-title">Drafts</h2><p>The drafts your agents composed, yours alone, newest first: no one else sees them.</p></div></header>
+{{if .Drafts}}<div class="table-scroll">
+<table id="draft-list">
+<thead><tr><th>Draft</th><th>Status</th><th>Subject</th><th>To</th><th class="num">Attachments</th><th>Created</th><th>Sent</th></tr></thead>
+<tbody>
+{{range .Drafts}}<tr data-draft="{{.ID}}">
+<td class="draft-id"><a class="draft-link" href="/drafts/{{.ID}}"><code>{{.ID}}</code></a></td>
+<td class="draft-status"><span class="status" data-status="{{.Status}}"{{if eq .Status "open"}} data-kind="info"{{else if eq .Status "sent"}} data-kind="ok"{{end}}>{{.Status}}</span></td>
+<td class="draft-subject">{{if .Link}}<a class="gmail-link" href="{{.Link}}">{{if .Subject}}{{.Subject}}{{else}}<span class="muted">(no subject)</span>{{end}}</a>{{else}}{{if .Subject}}{{.Subject}}{{else}}<span class="muted">(no subject)</span>{{end}}{{end}}</td>
+<td class="draft-to">{{range $i, $a := .To}}{{if $i}}, {{end}}{{$a}}{{end}}</td>
+<td class="draft-attachments num">{{.AttachmentCount}}</td>
+<td class="draft-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
+<td class="draft-sent">{{if .Sent}}<time datetime="{{.Sent}}">{{.SentText}}</time>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-drafts" class="empty">
+<h3 class="text-md">No drafts yet</h3>
+<p>A draft an agent writes with the <code>compose</code> tool shows up here, and stays as a record once it is sent or discarded.</p>
+</div>{{end}}
+</section>
+<section id="transfers" class="card flush" aria-labelledby="transfers-title">
+<header><div><h2 id="transfers-title">Transfers</h2><p>Attachments and messages pulled into artifacts, and artifacts pushed onto drafts, yours alone, newest first.</p></div></header>
+{{if .Transfers}}<div class="table-scroll">
+<table id="transfer-list">
+<thead><tr><th>Transfer</th><th>Direction</th><th>Status</th><th>Name</th><th>Artifact</th><th class="num">Bytes</th><th>Started</th><th>Finished</th></tr></thead>
+<tbody>
+{{range .Transfers}}<tr data-transfer="{{.ID}}">
+<td class="transfer-id"><a class="transfer-link" href="/transfers/{{.ID}}"><code>{{.ID}}</code></a></td>
+<td class="transfer-direction">{{.Direction}}</td>
+<td class="transfer-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span>{{if .Reason}} <span class="muted">{{.Reason}}</span>{{end}}</td>
+<td class="transfer-name">{{if .Link}}<a class="gmail-link" href="{{.Link}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</td>
+<td class="transfer-path">{{if .ArtifactPage}}<a class="artifact-link" href="{{.ArtifactPage}}"><code>{{.Path}}</code></a>{{else if .URL}}<a class="artifact-link" href="{{.URL}}"><code>{{.Path}}</code></a>{{else}}<code>{{.Path}}</code>{{end}}</td>
+<td class="transfer-bytes num">{{.Bytes}}</td>
+<td class="transfer-started"><time datetime="{{.Started}}">{{.StartedText}}</time></td>
+<td class="transfer-finished">{{if .Finished}}<time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-transfers" class="empty">
+<h3 class="text-md">No transfers yet</h3>
+<p>An attachment or message an agent pulls into artifacts with the <code>pull</code> tool, or an artifact it attaches to a draft with <code>push</code>, shows up here as a transfer.</p>
+</div>{{end}}
+</section>
+<p><a id="about-link" href="/about">About gmail</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

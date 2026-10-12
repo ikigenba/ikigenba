@@ -46,6 +46,13 @@ design/
                     and artifacts
     gdrive-transfer.html
                     one transfer: its record in full, running and failed
+    gmail.html      gmail's landing: your drafts, and your transfers
+                    between Gmail and artifacts
+    gmail-draft.html
+                    one draft: its record and attachments, sent and
+                    discarded
+    gmail-transfer.html
+                    one transfer: its record in full, running and failed
     webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles,
                     application services over core services
@@ -332,6 +339,64 @@ the user's own transfers; no form but sign out.
 - Bytes are the plain integer, the count moved so far. Times are UTC in a
   `time` carrying the RFC 3339 moment: to the minute in the table, where a
   cell with no time is empty, to the second with `UTC` on the transfer page.
+
+**gmail.html, gmail-draft.html, gmail-transfer.html** — gmail at
+`gmail.acme.ikigenba.com`, the Gmail connector: its tools search, read and
+show messages and threads, `compose` a draft (optionally a reply), `send` or
+`discard` it; `pull` copies an attachment, or the whole message as `.eml`,
+into an artifact and `push` attaches an artifact to a draft, each recording a
+transfer that moves the bytes on the host. Mail text reaches the agent through
+tool answers; no tool carries attachment bytes, a raw message or a credential,
+and nothing marks, labels, archives or trashes mail. Two levels: the landing
+page, and one draft at `/drafts/<id>` or one transfer at `/transfers/<id>`.
+Banner and footer as in app.html, the service `gmail` with the Tabler
+`brand-gmail` icon (added to `icons/tabler/` on 2026-10-12 for this app).
+Every page is for a signed-in user and shows only the user's own drafts and
+transfers; no form but sign out.
+- The landing: `h1` gmail, a lede, then two sections, each with a header
+  saying its rows are the user's alone, newest first. `section#drafts` holds
+  `table#draft-list` of Draft / Status / Subject / To / Attachments / Created
+  / Sent, one row per draft, `tr[data-draft=<id>]`: one open with two
+  attachments, one sent, one discarded. The id links to the draft's page
+  `/drafts/<id>`; the subject links to the draft in Gmail by the record's
+  `link` when it has one (an open draft's `#drafts/<message id>`, a sent
+  one's `#all/<message id>`, none once discarded); an empty subject reads
+  `(no subject)`, muted. `section#transfers` holds `table#transfer-list` of
+  Transfer / Direction / Status / Name / Artifact / Bytes / Started /
+  Finished, one row per transfer, `tr[data-transfer=<id>]`: a push running,
+  a pull of an attachment done, a whole-message pull queued, a pull failed
+  `too_large`, a push done. The id links to `/transfers/<id>`; the name links
+  to the Gmail `link` when the record has one; the artifact path links as in
+  gdrive. A failed row's reason follows its status, muted. A link to the
+  about screen. Its tools (`search`, `thread`, `show`, `labels`, `pull`,
+  `compose`, `push`, `send`, `discard`, `drafts`, `draft`, `transfers`,
+  `transfer`) are on its tools page. States: no drafts
+  (`div#no-drafts.empty`), no transfers (`div#no-transfers.empty`), a draft
+  with no subject.
+- One draft, `drf_4c1e8a7b30f95d62`, an open reply with two attachments: the
+  trail gmail / the id, the id as the level's name and the `h1`;
+  `p#headline` with the status and the created, modified and sent times;
+  `section#draft-card`, its header saying what the status means and that
+  the text stays in Gmail, and `dl#draft.kv`: ID, Status, Gmail draft (open
+  only), Message, Thread, To, Cc (when set), Bcc (when set), Subject, In
+  reply to (a reply only), Link (when held), Created, Modified, Sent (once
+  sent); then `section#attachments` with `table#attachment-list` of Artifact
+  / Name / Content type / Bytes, the path linking to artifacts as on the
+  landing. State: no attachments (`div#no-attachments.empty`). The draft's
+  body text is never shown. An unknown id, a pruned one or another user's is
+  the not-found page.
+- One transfer, `xfr_b37e0a1d9c64f258`, a pull of attachment part `2` of a
+  message: as gdrive's transfer page, with the mail references in place of
+  the Drive file: ID, Direction, Status, Reason (failed only), Message,
+  Attachment (a part pulled only), Draft (a push only, linking to
+  `/drafts/<id>`), Name, Path, Content type, Bytes, Started, Finished (once
+  finished), URL (done only), Link (when held). Running and failed states as
+  gdrive's, the reason's sentence in Gmail's terms. Not-found as for a draft.
+- Draft status reads as a `.status` word, as stored, carrying `data-status`
+  and `data-kind`: open is info, sent is ok, discarded has no kind.
+  Transfer status, direction and reason words, bytes and times as in gdrive;
+  draft times are to the minute in the table and to the second with `UTC` on
+  the draft page.
 
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's
