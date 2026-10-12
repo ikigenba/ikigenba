@@ -1,0 +1,128 @@
+{{/* One run at GET /runs/<id>: its record in full, when it failed the
+     reason in words, and when it is done the first page of its rows. Shown
+     to any signed-in user; a guest is sent to sign in; an unknown id or a
+     pruned one is the not-found page. The page does not stream: a run
+     still running shows the record as it stands when the page is loaded,
+     and no rows. Read-only: no form but the banner's sign out. One level
+     below the root: .Banner's .Trail is the one level <.Run.ID> at
+     /runs/<.Run.ID>. Data: .Banner (a page.Banner, for banner and footer);
+     .Run, with .ID (its run_ id, "run_" and 16 hex), .Scraper (the
+     scraper's name, such as "fmcsa"), .Status ("running", "done" or
+     "failed", as stored), .Reason (the failure reason as stored, one of
+     "source", "interrupted" or "store"; empty unless .Status is "failed"),
+     .StartedBy (the email of the caller whose tool call started the run;
+     empty when a cron delivery did), .Trigger (the slug of the cron
+     trigger whose fire started the run; empty when a tool call did),
+     .Started and .StartedText (RFC 3339 UTC to the second, and the same as
+     shown, "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText
+     (likewise; both empty while running), and .Rows, .New, .Changed,
+     .Unchanged and .Gone (ints, as the record holds them); .Rows, the
+     first page of the run's rows, the rows tool's first page, in source_id
+     order, empty unless .Run.Status is "done", each with .SourceID (the
+     row's source_id, such as "1023916"), .Name (the business as the source
+     spells it), .City, .State and .County (the address's parts; each may
+     be empty); and .Next (int, the page the rows tool's next names, the
+     number to pass as its page for the rows after these; 0 when there are
+     none). Counts are shown as the plain integer. Status and reason words
+     are shown as stored; the status's kind is chosen here: "running" info,
+     "done" ok, "failed" err; the failure's sentence is chosen from
+     .Reason. Hooks: title "<.ID> · scrapes"; h1 with text .ID;
+     p#headline.cluster holding span.status[data-status=<.Status>]
+     [data-kind=<kind>] (text .Status), a space, and span.muted holding
+     "started" and time[datetime=<.Started>] (text .StartedText), then,
+     when .Finished is set, " · finished" and time[datetime=<.Finished>]
+     (text .FinishedText); when .Status is "running",
+     div#running.alert.quiet[data-kind=info] (strong#notice "Running", then
+     p "The page does not stream. Reload it to see the outcome; the rows
+     show once the run is done.") and a#reload.button (href
+     "/runs/<.ID>", text "Reload"); when .Status is "failed",
+     div#failure.alert[data-kind=err][role=alert] holding strong "The run
+     failed", p#failure-reason with the reason's sentence: "source" "The
+     source gave an answer the scraper could not read or keep, or no
+     answer after its retries."; "interrupted" "scrapes stopped or
+     restarted while the run was running, and it does not resume one.";
+     "store" "The database failed while the run was storing its rows.";
+     then a p (text "A failed run keeps no rows. The scraper's current run
+     is still its last done one."); section#run-card with h2 "Run" and a p
+     in its header (text "A run of <.Scraper>. New, changed, unchanged and
+     gone count against its run before; gone are source ids that run held
+     and this one does not."); then dl#run.kv holding, in this order, dt
+     "ID" then dd#run-id (.ID in a code element), dt "Scraper" then
+     dd#run-scraper (.Scraper in a code element), dt "Status" then
+     dd#run-status (the status span), dt "Reason" then dd#run-reason
+     (.Reason in a code element) only when .Reason is set, dt "Started by"
+     then dd#run-by ("cron" and a space then .Trigger in a code element
+     when .Trigger is set, else .StartedBy), dt "Started" then
+     dd#run-started holding time[datetime=<.Started>] (text .StartedText),
+     dt "Finished" then dd#run-finished holding time[datetime=<.Finished>]
+     (text .FinishedText) only when .Finished is set, dt "Rows" then
+     dd#run-rows, dt "New" then dd#run-new, dt "Changed" then
+     dd#run-changed, dt "Unchanged" then dd#run-unchanged and dt "Gone" then
+     dd#run-gone (each the count). Then, only when .Status is "done",
+     section#rows with h2 "Rows" and a p in its header (text "The first
+     page, in source id order, each row as the source spelled it."), then
+     either, when .Rows is empty, div#no-rows.empty holding h3 "No rows"
+     and a p (text "The source answered no record inside the scraper's
+     scope."), or table#row-list whose th read Source ID, Name, City,
+     State, County, with one tr[data-row=<.SourceID>] per row holding
+     td.row-id > a.row-link (href "/runs/<.Run.ID>/rows/<.SourceID>",
+     .SourceID in a code element), td.row-name (.Name), td.row-city
+     (.City), td.row-state (.State) and td.row-county (.County in a code
+     element when set); then, when .Next is not 0, p#next (text "More rows
+     follow: call rows with run <.Run.ID> and page <.Next>.", rows, run,
+     .Run.ID, page and .Next each in a code element). No script but
+     appkit's /_appkit/feedback.js. */}}
+{{define "run"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Run.ID}} · scrapes</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{$next := .Next}}{{$rows := .Rows}}{{with .Run}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
+{{if eq .Status "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">Running</strong><p>The page does not stream. Reload it to see the outcome; the rows show once the run is done.</p></div>
+<p><a id="reload" class="button secondary small" href="/runs/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
+{{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The run failed</strong><p id="failure-reason">{{if eq .Reason "source"}}The source gave an answer the scraper could not read or keep, or no answer after its retries.{{else if eq .Reason "interrupted"}}scrapes stopped or restarted while the run was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the run was storing its rows.{{end}}</p><p>A failed run keeps no rows. The scraper's current run is still its last done one.</p></div>
+{{end}}<section id="run-card" class="card" aria-labelledby="run-title">
+<header><h2 id="run-title">Run</h2><p>A run of {{.Scraper}}. New, changed, unchanged and gone count against its run before; gone are source ids that run held and this one does not.</p></header>
+<dl id="run" class="kv">
+<dt>ID</dt><dd id="run-id"><code>{{.ID}}</code></dd>
+<dt>Scraper</dt><dd id="run-scraper"><code>{{.Scraper}}</code></dd>
+<dt>Status</dt><dd id="run-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
+{{if .Reason}}<dt>Reason</dt><dd id="run-reason"><code>{{.Reason}}</code></dd>
+{{end}}<dt>Started by</dt><dd id="run-by">{{if .Trigger}}cron <code>{{.Trigger}}</code>{{else}}{{.StartedBy}}{{end}}</dd>
+<dt>Started</dt><dd id="run-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
+{{if .Finished}}<dt>Finished</dt><dd id="run-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
+{{end}}<dt>Rows</dt><dd id="run-rows">{{.Rows}}</dd>
+<dt>New</dt><dd id="run-new">{{.New}}</dd>
+<dt>Changed</dt><dd id="run-changed">{{.Changed}}</dd>
+<dt>Unchanged</dt><dd id="run-unchanged">{{.Unchanged}}</dd>
+<dt>Gone</dt><dd id="run-gone">{{.Gone}}</dd>
+</dl>
+</section>
+{{if eq .Status "done"}}{{$id := .ID}}<section id="rows" class="card flush" aria-labelledby="rows-title">
+<header><div><h2 id="rows-title">Rows</h2><p>The first page, in source id order, each row as the source spelled it.</p></div></header>
+{{if $rows}}<div class="table-scroll">
+<table id="row-list">
+<thead><tr><th>Source ID</th><th>Name</th><th>City</th><th>State</th><th>County</th></tr></thead>
+<tbody>
+{{range $rows}}<tr data-row="{{.SourceID}}">
+<td class="row-id"><a class="row-link" href="/runs/{{$id}}/rows/{{.SourceID}}"><code>{{.SourceID}}</code></a></td>
+<td class="row-name">{{.Name}}</td>
+<td class="row-city">{{.City}}</td>
+<td class="row-state">{{.State}}</td>
+<td class="row-county">{{if .County}}<code>{{.County}}</code>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-rows" class="empty">
+<h3 class="text-md">No rows</h3>
+<p>The source answered no record inside the scraper's scope.</p>
+</div>{{end}}
+</section>
+{{if $next}}<p id="next">More rows follow: call <code>rows</code> with <code>run</code> <code>{{$id}}</code> and <code>page</code> <code>{{$next}}</code>.</p>
+{{end}}{{end}}{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

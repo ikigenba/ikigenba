@@ -53,6 +53,14 @@ design/
                     discarded
     gmail-transfer.html
                     one transfer: its record in full, running and failed
+    scrapes.html    scrapes' landing: each scraper's current and running
+                    run, then every kept run
+    scrapes-run.html
+                    one run: its record, its first page of rows, running
+                    and failed
+    scrapes-row.html
+                    one row: its envelope and its raw record, two levels
+                    down the trail
     webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles,
                     application services over core services
@@ -397,6 +405,63 @@ transfers; no form but sign out.
   Transfer status, direction and reason words, bytes and times as in gdrive;
   draft times are to the minute in the table and to the second with `UTC` on
   the draft page.
+
+**scrapes.html, scrapes-run.html, scrapes-row.html** — scrapes at
+`scrapes.acme.ikigenba.com`, the funnel's evidence store: each scraper walks
+one public source and keeps every record it answers as a row of a run, the
+raw record beside a common envelope (name, names, address, people, facts).
+`scrape` starts a run, as does a fire of the cron trigger `scrape-<scraper>`;
+the run lands in the background. Runs belong to no one: every signed-in user
+sees every run and row. Three levels: the landing page, one run at
+`/runs/<id>`, and one row at `/runs/<id>/rows/<source_id>`. Banner and
+footer as in app.html, the service `scrapes` with the Tabler
+`database-import` icon (added to `icons/tabler/` on 2026-10-12 for this
+app). No form but sign out. The sample data is FMCSA's motor carrier census
+for Minnesota and Wisconsin, with made-up carriers.
+- The landing: `h1` scrapes, a lede, then `section#scrapers` with
+  `table#scraper-list` of Scraper / Current / Status / Started / Finished /
+  Rows / New / Changed / Gone / Running, one row per registered scraper,
+  `tr[data-scraper=<name>]`: `fmcsa` with its current run, the latest done,
+  and a run in progress in Running. Then `section#runs` with
+  `table#run-list` of Run / Scraper / Status / Started by / Started /
+  Finished / Rows, every kept run newest first, `tr[data-run=<id>]`: one
+  running, one failed `source`, two done by the trigger. Every run id links
+  to `/runs/<id>`; Started by is the caller's email, or `cron` and the
+  trigger's slug. A failed row's reason follows its status, muted. A link to
+  the about screen. Its tools (`scrapers`, `scrape`, `runs`, `run`, `rows`,
+  `row`) are on its tools page. States: a scraper with no run yet (its run
+  cells empty), no runs (`div#no-runs.empty`).
+- One run, `run_7c2e9f41a0b3d856`, done by the trigger: the trail scrapes /
+  the id, the id as the level's name and the `h1`; `p#headline` with the
+  status and the started and finished times; `section#run-card`, its header
+  saying what new, changed, unchanged and gone count against, and
+  `dl#run.kv`: ID, Scraper, Status, Reason (failed only), Started by,
+  Started, Finished (once finished), Rows, New, Changed, Unchanged, Gone.
+  When done, `section#rows` with `table#row-list` of Source ID / Name / City
+  / State / County, the first page in source id order,
+  `tr[data-row=<source_id>]`, each id linking to its row's page; then, when
+  more follow, `p#next` naming the `rows` call and the `page` to pass, with
+  no link. States: running (`div#running.alert.quiet`, "Running", a Reload
+  button, no rows), failed (`div#failure.alert` of kind err, "The run
+  failed", the reason's sentence chosen from `source`, `interrupted` or
+  `store`, and a line that a failed run keeps no rows), done with no rows
+  (`div#no-rows.empty`). An unknown id or a pruned one is the not-found
+  page.
+- One row, `1023916` of that run, a carrier at Sandstone: the trail scrapes
+  / the run id / the source id, the source id as the `h1`; `p#headline` with
+  the name, the scraper and when it was collected; `section#row-card` with
+  `dl#row.kv`: Source ID, Scraper, Run (linking to the run), Collected,
+  Digest, Name, Names, then each when set Street, City, State, Zip, County,
+  Latitude, Longitude, People (one `div[data-person]` each, the role muted)
+  and Facts (`dl#facts.kv`, `dt[data-fact=<key>]`, each value as JSON); then
+  `section#raw-card` with `pre#raw`, the raw record as formatted JSON. An
+  unknown run or row, or a pruned run, is the not-found page.
+- Run status reads as a `.status` word, as stored, carrying `data-status`
+  and `data-kind`: running is info, done is ok, failed is err. Reason words,
+  scraper names, source ids and county codes are shown as stored; counts are
+  the plain integer. Times are UTC in a `time` carrying the RFC 3339 moment:
+  to the minute on the landing, where a cell with no time is empty, to the
+  second with `UTC` on the run and row pages.
 
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's

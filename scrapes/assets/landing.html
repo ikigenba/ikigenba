@@ -1,0 +1,135 @@
+{{/* The landing page at GET /: what the service is, each registered
+     scraper with its current run and any running run, then every kept run
+     across scrapers, newest first. The root of the hierarchy: .Banner's
+     .Trail is empty, so the banner's breadcrumb holds only the service.
+     Shown only to a signed-in user; a guest is sent to sign in. Every
+     signed-in user sees every run: runs belong to no one. Never shows a
+     row's name, address, phone or email. Read-only: no form but the
+     banner's sign out. Data: .Banner (a page.Banner, for banner and
+     footer); .Scrapers, every registered scraper in name order, each with
+     .Name (the scraper's name, such as "fmcsa"), .Current (nil when the
+     scraper has no done run; else its latest done run, with .ID (its run_
+     id, "run_" and 16 hex), .Status ("done", as stored), .Started and
+     .StartedText (RFC 3339 UTC to the second, and UTC to the minute,
+     "2026-10-05 09:00"), .Finished and .FinishedText (likewise), and
+     .Rows, .New, .Changed and .Gone (ints, as the record holds them)) and
+     .Running (nil when no run of the scraper is running; else that run,
+     with .ID); .Runs, every kept run across scrapers, newest first by
+     started, each with .ID, .Scraper (the scraper's name), .Status
+     ("running", "done" or "failed", as stored), .Reason (the failure
+     reason as stored, one of "source", "interrupted" or "store"; empty
+     unless .Status is "failed"), .StartedBy (the email of the caller whose
+     tool call started the run; empty when a cron delivery did), .Trigger
+     (the slug of the cron trigger whose fire started the run; empty when a
+     tool call did), .Started and .StartedText, .Finished and .FinishedText
+     (the same forms; both empty while running) and .Rows (int, as the
+     record holds it). Counts are shown as the plain integer. Status and
+     reason words are shown as stored; the status's kind is chosen here:
+     "running" info, "done" ok, "failed" err. Hooks: title "scrapes"; h1
+     with text "scrapes"; p#summary.lede (text "Public records about
+     businesses in range, collected per source as rows per run. Each run
+     keeps every record its source answered, raw beside a common envelope,
+     for agents to read through their tools."); section#scrapers with h2
+     "Scrapers" and a p in its header (text "Each source scrapes collects
+     from, with its current run, the latest done, and any run in
+     progress. New, changed and gone count against the run before."), then
+     table#scraper-list whose th read Scraper, Current, Status, Started,
+     Finished, Rows, New, Changed, Gone, Running, with one
+     tr[data-scraper=<.Name>] per scraper holding td.scraper-name (.Name in
+     a code element); then, when .Current is set, td.scraper-current >
+     a.run-link (href "/runs/<.Current.ID>", .Current.ID in a code
+     element), td.scraper-status holding
+     span.status[data-status=<.Current.Status>][data-kind=<kind>] (text
+     .Current.Status), td.scraper-started holding
+     time[datetime=<.Current.Started>] (text .Current.StartedText),
+     td.scraper-finished holding time[datetime=<.Current.Finished>] (text
+     .Current.FinishedText), td.scraper-rows.num, td.scraper-new.num,
+     td.scraper-changed.num and td.scraper-gone.num (.Current.Rows, .New,
+     .Changed, .Gone), and, when .Current is nil, the same eight td empty;
+     and td.scraper-running holding, only when .Running is set, a.run-link
+     (href "/runs/<.Running.ID>", .Running.ID in a code element). Then
+     section#runs with h2 "Runs" and a p in its header (text "Every kept
+     run across scrapers, newest first."), then either, when .Runs is
+     empty, div#no-runs.empty holding h3 "No runs yet" and a p (text "A run
+     starts when an agent calls the scrape tool, or when the cron trigger
+     scrape-<scraper> fires, and shows up here.", scrape and
+     scrape-<scraper> each in a code element), or table#run-list whose th
+     read Run, Scraper, Status, Started by, Started, Finished, Rows, with one
+     tr[data-run=<.ID>] per run holding td.run-id > a.run-link (href
+     "/runs/<.ID>", .ID in a code element); td.run-scraper (.Scraper in a
+     code element); td.run-status holding
+     span.status[data-status=<.Status>][data-kind=<kind>] (text .Status),
+     followed, when .Reason is not empty, by a space and span.muted (text
+     .Reason); td.run-by holding, when .Trigger is set, "cron" and a space
+     then .Trigger in a code element, else .StartedBy; td.run-started
+     holding time[datetime=<.Started>] (text .StartedText); td.run-finished
+     holding, only when .Finished is not empty, time[datetime=<.Finished>]
+     (text .FinishedText); and td.run-rows.num (.Rows); a #about-link (text
+     "About scrapes") whose href is "/about". No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>scrapes</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>scrapes</h1>
+<p id="summary" class="lede">Public records about businesses in range, collected per source as rows per run. Each run keeps every record its source answered, raw beside a common envelope, for agents to read through their tools.</p>
+<section id="scrapers" class="card flush" aria-labelledby="scrapers-title">
+<header><div><h2 id="scrapers-title">Scrapers</h2><p>Each source scrapes collects from, with its current run, the latest done, and any run in progress. New, changed and gone count against the run before.</p></div></header>
+<div class="table-scroll">
+<table id="scraper-list">
+<thead><tr><th>Scraper</th><th>Current</th><th>Status</th><th>Started</th><th>Finished</th><th class="num">Rows</th><th class="num">New</th><th class="num">Changed</th><th class="num">Gone</th><th>Running</th></tr></thead>
+<tbody>
+{{range .Scrapers}}<tr data-scraper="{{.Name}}">
+<td class="scraper-name"><code>{{.Name}}</code></td>
+{{with .Current}}<td class="scraper-current"><a class="run-link" href="/runs/{{.ID}}"><code>{{.ID}}</code></a></td>
+<td class="scraper-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></td>
+<td class="scraper-started"><time datetime="{{.Started}}">{{.StartedText}}</time></td>
+<td class="scraper-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></td>
+<td class="scraper-rows num">{{.Rows}}</td>
+<td class="scraper-new num">{{.New}}</td>
+<td class="scraper-changed num">{{.Changed}}</td>
+<td class="scraper-gone num">{{.Gone}}</td>
+{{else}}<td class="scraper-current"></td>
+<td class="scraper-status"></td>
+<td class="scraper-started"></td>
+<td class="scraper-finished"></td>
+<td class="scraper-rows num"></td>
+<td class="scraper-new num"></td>
+<td class="scraper-changed num"></td>
+<td class="scraper-gone num"></td>
+{{end}}<td class="scraper-running">{{with .Running}}<a class="run-link" href="/runs/{{.ID}}"><code>{{.ID}}</code></a>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+</section>
+<section id="runs" class="card flush" aria-labelledby="runs-title">
+<header><div><h2 id="runs-title">Runs</h2><p>Every kept run across scrapers, newest first.</p></div></header>
+{{if .Runs}}<div class="table-scroll">
+<table id="run-list">
+<thead><tr><th>Run</th><th>Scraper</th><th>Status</th><th>Started by</th><th>Started</th><th>Finished</th><th class="num">Rows</th></tr></thead>
+<tbody>
+{{range .Runs}}<tr data-run="{{.ID}}">
+<td class="run-id"><a class="run-link" href="/runs/{{.ID}}"><code>{{.ID}}</code></a></td>
+<td class="run-scraper"><code>{{.Scraper}}</code></td>
+<td class="run-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span>{{if .Reason}} <span class="muted">{{.Reason}}</span>{{end}}</td>
+<td class="run-by">{{if .Trigger}}cron <code>{{.Trigger}}</code>{{else}}{{.StartedBy}}{{end}}</td>
+<td class="run-started"><time datetime="{{.Started}}">{{.StartedText}}</time></td>
+<td class="run-finished">{{if .Finished}}<time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</td>
+<td class="run-rows num">{{.Rows}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-runs" class="empty">
+<h3 class="text-md">No runs yet</h3>
+<p>A run starts when an agent calls the <code>scrape</code> tool, or when the cron trigger <code>scrape-&lt;scraper&gt;</code> fires, and shows up here.</p>
+</div>{{end}}
+</section>
+<p><a id="about-link" href="/about">About scrapes</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

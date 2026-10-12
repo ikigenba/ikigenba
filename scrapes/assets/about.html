@@ -1,0 +1,55 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one
+     level about at /about. Shown only to a signed-in user; a guest is sent
+     to sign in. Data: .Banner (a page.Banner, for banner and footer; its
+     .Service is the name and its .Release and .Commit give the version
+     row); .Description (the service's one-line description, the
+     manifest's). Hooks: title "About scrapes"; h1 with text "About
+     scrapes"; dl#about.kv holding dt "Name" then dd#about-name
+     (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
+     and .Banner.Commit, present even when empty), and dt "Description"
+     then dd#about-description (.Description); then section#how.card with
+     h2 "How it works" and four p: "scrapes collects public records about
+     businesses in range. Each scraper knows one source: where it is, how
+     it pages and how a record becomes a row. A run keeps every record its
+     source answers inside the scraper's scope, the raw record beside a
+     common envelope of name, names, address, people and facts."; "scrape
+     starts a run now and answers at once; the run lands in the
+     background, one per scraper at a time. A cron trigger named
+     scrape-<scraper> starts one each time it fires; create it and change
+     its schedule in cron."; "scrapers shows each scraper's current run,
+     the latest done. runs and run show the runs, rows pages a run's rows
+     and row answers one with its raw record. A run has rows only once it
+     is done, and counts new, changed, unchanged and gone against the run
+     before it; older runs are pruned."; "Runs belong to no one: every
+     signed-in user sees every run and row. A sibling service reads a whole
+     run as JSON lines at /runs/<id>/rows." (scrape, scrape-<scraper>,
+     scrapers, runs, run, rows, row and /runs/<id>/rows each in a code
+     element). No section of the landing page's. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About scrapes</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About scrapes</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>scrapes collects public records about businesses in range. Each scraper knows one source: where it is, how it pages and how a record becomes a row. A run keeps every record its source answers inside the scraper's scope, the raw record beside a common envelope of name, names, address, people and facts.</p>
+<p><code>scrape</code> starts a run now and answers at once; the run lands in the background, one per scraper at a time. A cron trigger named <code>scrape-&lt;scraper&gt;</code> starts one each time it fires; create it and change its schedule in cron.</p>
+<p><code>scrapers</code> shows each scraper's current run, the latest done. <code>runs</code> and <code>run</code> show the runs, <code>rows</code> pages a run's rows and <code>row</code> answers one with its raw record. A run has rows only once it is done, and counts new, changed, unchanged and gone against the run before it; older runs are pruned.</p>
+<p>Runs belong to no one: every signed-in user sees every run and row. A sibling service reads a whole run as JSON lines at <code>/runs/&lt;id&gt;/rows</code>.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

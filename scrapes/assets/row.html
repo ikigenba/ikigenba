@@ -1,0 +1,90 @@
+{{/* One row at GET /runs/<id>/rows/<source_id>: its envelope as a table
+     and its raw record as formatted JSON. Shown to any signed-in user; a
+     guest is sent to sign in; an unknown run, a pruned one, a run with no
+     such row, or a run not done is the not-found page. Read-only: no form
+     but the banner's sign out. Two levels below the root: .Banner's .Trail
+     is <.Row.Run> at /runs/<.Row.Run> then <.Row.SourceID> at
+     /runs/<.Row.Run>/rows/<.Row.SourceID>. Data: .Banner (a page.Banner,
+     for banner and footer); .Row, with .Scraper (the scraper's name, such
+     as "fmcsa"), .Run (the run_ id of its run), .SourceID (the record's id
+     at the source, stable across runs, such as "1023916"), .Collected and
+     .CollectedText (when the record was received: RFC 3339 UTC to the
+     second, and the same as shown, "2006-01-02 15:04:05 UTC"), .Digest (64
+     hex, the SHA-256 of the raw record's bytes as the source sent them),
+     .Name (the business as the source spells it), .Names (every name the
+     record uses, .Name first, a slice of strings), .Street, .City, .State,
+     .Zip and .County (the address's parts, each empty when the source
+     gives none), .Lat and .Lon (WGS84 degrees as text; both empty when the
+     source gives no point), .People (each with .Name and .Role, as the
+     source gives them; may be empty), .Facts (the source-specific facts in
+     key order, each with .Key and .Value, the value as compact JSON text
+     such as "14", "\"A\"", "true", "null" or "[\"bldgmat\",\"logpole\"]";
+     may be empty) and .Raw (the raw record as JSON, indented two spaces,
+     its members in the order the source sent them). Hooks: title
+     "<.SourceID> · scrapes"; h1 with text .SourceID; p#headline.cluster
+     holding .Name, a space, and span.muted holding
+     "from" and .Scraper in a code element, " · collected" and
+     time[datetime=<.Collected>] (text .CollectedText); section#row-card
+     with h2 "Row" and a p in its header (text "The common envelope the
+     scraper filled from the record, as the source spelled it."); then
+     dl#row.kv holding, in this order, dt "Source ID" then dd#row-source
+     (.SourceID in a code element), dt "Scraper" then dd#row-scraper
+     (.Scraper in a code element), dt "Run" then dd#row-run (a.run-link,
+     href "/runs/<.Run>", .Run in a code element), dt "Collected" then
+     dd#row-collected holding time[datetime=<.Collected>] (text
+     .CollectedText), dt "Digest" then dd#row-digest (.Digest in a code
+     element), dt "Name" then dd#row-name (.Name), dt "Names" then
+     dd#row-names (.Names joined by " · "), then, each only when set, dt
+     "Street" then dd#row-street, dt "City" then dd#row-city, dt "State"
+     then dd#row-state, dt "Zip" then dd#row-zip, dt "County" then
+     dd#row-county (.County in a code element), dt "Latitude" then
+     dd#row-lat and dt "Longitude" then dd#row-lon; then, only when .People
+     is not empty, dt "People" then dd#row-people holding one
+     div[data-person] per person (.Name, a space, and span.muted with
+     .Role); then, only when .Facts is not empty, dt "Facts" then
+     dd#row-facts holding dl#facts.kv with one dt[data-fact=<.Key>] per
+     fact (.Key in a code element) followed by a dd (.Value in a code
+     element). Then section#raw-card with h2 "Raw record" and a p in its
+     header (text "The record exactly as the source sent it, formatted."),
+     then pre#raw holding a code element with .Raw. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "row"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Row.SourceID}} · scrapes</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Row}}<h1>{{.SourceID}}</h1>
+<p id="headline" class="cluster">{{.Name}} <span class="muted">from <code>{{.Scraper}}</code> · collected <time datetime="{{.Collected}}">{{.CollectedText}}</time></span></p>
+<section id="row-card" class="card" aria-labelledby="row-title">
+<header><h2 id="row-title">Row</h2><p>The common envelope the scraper filled from the record, as the source spelled it.</p></header>
+<dl id="row" class="kv">
+<dt>Source ID</dt><dd id="row-source"><code>{{.SourceID}}</code></dd>
+<dt>Scraper</dt><dd id="row-scraper"><code>{{.Scraper}}</code></dd>
+<dt>Run</dt><dd id="row-run"><a class="run-link" href="/runs/{{.Run}}"><code>{{.Run}}</code></a></dd>
+<dt>Collected</dt><dd id="row-collected"><time datetime="{{.Collected}}">{{.CollectedText}}</time></dd>
+<dt>Digest</dt><dd id="row-digest"><code>{{.Digest}}</code></dd>
+<dt>Name</dt><dd id="row-name">{{.Name}}</dd>
+<dt>Names</dt><dd id="row-names">{{range $i, $n := .Names}}{{if $i}} · {{end}}{{$n}}{{end}}</dd>
+{{if .Street}}<dt>Street</dt><dd id="row-street">{{.Street}}</dd>
+{{end}}{{if .City}}<dt>City</dt><dd id="row-city">{{.City}}</dd>
+{{end}}{{if .State}}<dt>State</dt><dd id="row-state">{{.State}}</dd>
+{{end}}{{if .Zip}}<dt>Zip</dt><dd id="row-zip">{{.Zip}}</dd>
+{{end}}{{if .County}}<dt>County</dt><dd id="row-county"><code>{{.County}}</code></dd>
+{{end}}{{if .Lat}}<dt>Latitude</dt><dd id="row-lat">{{.Lat}}</dd>
+{{end}}{{if .Lon}}<dt>Longitude</dt><dd id="row-lon">{{.Lon}}</dd>
+{{end}}{{if .People}}<dt>People</dt><dd id="row-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span></div>{{end}}</dd>
+{{end}}{{if .Facts}}<dt>Facts</dt><dd id="row-facts"><dl id="facts" class="kv">
+{{range .Facts}}<dt data-fact="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>
+{{end}}</dl></dd>
+{{end}}</dl>
+</section>
+<section id="raw-card" class="card" aria-labelledby="raw-title">
+<header><h2 id="raw-title">Raw record</h2><p>The record exactly as the source sent it, formatted.</p></header>
+<pre id="raw"><code>{{.Raw}}</code></pre>
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
