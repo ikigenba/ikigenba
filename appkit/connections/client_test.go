@@ -442,7 +442,7 @@ func TestConcurrentCalls(t *testing.T) {
 	}
 }
 
-// R-00B3-9M7C R-01IZ-NDY1
+// R-DZSF-MLPW R-E10C-0DGL
 func TestProcessIndependence(t *testing.T) {
 	stdout, stderr := os.Stdout, os.Stderr
 	readOut, writeOut, err := os.Pipe()
