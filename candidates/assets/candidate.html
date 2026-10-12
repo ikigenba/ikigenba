@@ -121,10 +121,10 @@
      confidence" then dd#assessment-effective, dt "Point" then
      dd#assessment-point, dt "Score" then dd#assessment-score, dt "Score
      before freshness" then dd#assessment-base, dt "Excluded" then
-     dd#assessment-excluded ("no", or one div[data-exclusion=<.Reason>] per
-     exclusion holding .Reason in a code element and, when .Detail is set,
-     a space and span.muted with .Detail), dt "Rules" then
-     dd#assessment-rules (the version) and dt "Scored" then
+     dd#assessment-excluded ("no" unless .Assessment.Excluded, then one
+     div[data-exclusion=<.Reason>] per exclusion holding .Reason in a code
+     element and, when .Detail is set, a space and span.muted with .Detail),
+     dt "Rules" then dd#assessment-rules (the version) and dt "Scored" then
      dd#assessment-scored (a time[datetime] with the text form). Then
      section#estimates with h2 "Estimates" and a p in its header (text "One
      per source with evidence on this candidate, with the facts it used,
@@ -213,7 +213,7 @@
 <dt>Point</dt><dd id="assessment-point">{{.Point}}</dd>
 <dt>Score</dt><dd id="assessment-score">{{.Score}}</dd>
 <dt>Score before freshness</dt><dd id="assessment-base">{{.Base}}</dd>
-<dt>Excluded</dt><dd id="assessment-excluded">{{if .Exclusions}}{{range .Exclusions}}<div data-exclusion="{{.Reason}}"><code>{{.Reason}}</code>{{if .Detail}} <span class="muted">{{.Detail}}</span>{{end}}</div>{{end}}{{else}}no{{end}}</dd>
+<dt>Excluded</dt><dd id="assessment-excluded">{{if .Excluded}}{{range .Exclusions}}<div data-exclusion="{{.Reason}}"><code>{{.Reason}}</code>{{if .Detail}} <span class="muted">{{.Detail}}</span>{{end}}</div>{{end}}{{else}}no{{end}}</dd>
 <dt>Rules</dt><dd id="assessment-rules">{{.Rules}}</dd>
 <dt>Scored</dt><dd id="assessment-scored"><time datetime="{{.Scored}}">{{.ScoredText}}</time></dd>
 </dl>{{else}}<div id="no-assessment" class="empty">

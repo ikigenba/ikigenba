@@ -12,16 +12,16 @@
      a rebuild or when the entry has none), .Status ("running", "done" or
      "failed", as stored), .Reason (the failure reason as stored, one of
      "scrapes", "interrupted" or "store"; empty unless .Status is
-     "failed"), .StartedBy (the email of the caller whose rebuild started
-     the pass; empty when a delivery did), .Started and .StartedText (RFC
-     3339 UTC to the second, and the same as shown, "2006-01-02 15:04:05
-     UTC"), .Finished and .FinishedText (likewise; both empty while
-     running), and .Rows, .New, .Changed, .Unchanged, .Gone, .Created,
-     .Linked, .Rescored and .Unranged (ints, as the record holds them).
-     Counts are shown as the plain integer. Status and reason words are
-     shown as stored; the status's kind is chosen here: "running" info,
-     "done" ok, "failed" err; the failure's sentence is chosen from
-     .Reason. Hooks: title "<.ID> · candidates"; h1 with text .ID;
+     "failed"), .StartedBy (the starter's email, or the starter's user id
+     when the email is empty; the starter is a rebuild's caller), .Started
+     and .StartedText (RFC 3339 UTC to the second, and the same as shown,
+     "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText (likewise;
+     both empty while running), and .Rows, .New, .Changed, .Unchanged,
+     .Gone, .Created, .Linked, .Rescored and .Unranged (ints, as the record
+     holds them). Counts are shown as the plain integer. Status and reason
+     words are shown as stored; the status's kind is chosen here:
+     "running" info, "done" ok, "failed" err; the failure's sentence is
+     chosen from .Reason. Hooks: title "<.ID> · candidates"; h1 with text .ID;
      p#headline.cluster holding span.status[data-status=<.Status>]
      [data-kind=<kind>] (text .Status), a space, and span.muted holding
      "started" and time[datetime=<.Started>] (text .StartedText), then,
@@ -47,12 +47,13 @@
      .RunPage is set, else .Trigger in a code element), dt "Status" then
      dd#pass-status (the status span), dt "Reason" then dd#pass-reason
      (.Reason in a code element) only when .Reason is set, dt "Started by"
-     then dd#pass-by (.StartedBy when set, else "scrapes"), dt "Started"
-     then dd#pass-started holding time[datetime=<.Started>] (text
-     .StartedText), dt "Finished" then dd#pass-finished holding
-     time[datetime=<.Finished>] (text .FinishedText) only when .Finished is
-     set, dt "Rows" then dd#pass-rows, dt "New" then dd#pass-new, dt
-     "Changed" then dd#pass-changed, dt "Unchanged" then dd#pass-unchanged,
+     then dd#pass-by ("scrapes" when .Trigger is not "rebuild", else
+     .StartedBy), dt "Started" then dd#pass-started holding
+     time[datetime=<.Started>] (text .StartedText), dt "Finished" then
+     dd#pass-finished holding time[datetime=<.Finished>] (text
+     .FinishedText) only when .Finished is set, dt "Rows" then
+     dd#pass-rows, dt "New" then dd#pass-new, dt "Changed" then
+     dd#pass-changed, dt "Unchanged" then dd#pass-unchanged,
      dt "Gone" then dd#pass-gone, dt "Created" then dd#pass-created, dt
      "Linked" then dd#pass-linked, dt "Rescored" then dd#pass-rescored and
      dt "Unranged" then dd#pass-unranged (each the count). No script but
@@ -75,7 +76,7 @@
 <dt>Trigger</dt><dd id="pass-trigger">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Trigger}}</code></a>{{else}}<code>{{.Trigger}}</code>{{end}}</dd>
 <dt>Status</dt><dd id="pass-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
 {{if .Reason}}<dt>Reason</dt><dd id="pass-reason"><code>{{.Reason}}</code></dd>
-{{end}}<dt>Started by</dt><dd id="pass-by">{{if .StartedBy}}{{.StartedBy}}{{else}}scrapes{{end}}</dd>
+{{end}}<dt>Started by</dt><dd id="pass-by">{{if ne .Trigger "rebuild"}}scrapes{{else}}{{.StartedBy}}{{end}}</dd>
 <dt>Started</dt><dd id="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
 {{if .Finished}}<dt>Finished</dt><dd id="pass-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
 {{end}}<dt>Rows</dt><dd id="pass-rows">{{.Rows}}</dd>
