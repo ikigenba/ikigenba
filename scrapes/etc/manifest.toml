@@ -1,0 +1,22 @@
+app = "scrapes"
+description = "Public records about businesses in range, collected per source as rows per run"
+default = false
+mcp = true
+guests = false
+secrets = []
+
+[env]
+SCRAPE_KEEP_RUNS = "2"
+FMCSA_STATES = "MN,WI"
+FMCSA_MIN_POWER_UNITS = "5"
+FMCSA_STATUS = "A"
+
+[database]
+engine = "sqlite"
+path = "state/scrapes.db"
+
+[resources]
+memory_max = "256M"
+
+[home]
+group = "application"

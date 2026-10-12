@@ -1,0 +1,524 @@
+package pages
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"html/template"
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	app "github.com/ikigenba/ikigenba/scrapes"
+	"github.com/ikigenba/ikigenba/scrapes/internal/scrapers"
+	"github.com/ikigenba/ikigenba/scrapes/internal/source"
+	"github.com/ikigenba/ikigenba/scrapes/internal/store"
+	"github.com/ikigenba/ikigenba/scrapes/internal/tools"
+)
+
+func templates(t *testing.T) *template.Template {
+	t.Helper()
+	s, err := page.Templates().ParseFS(app.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+func rendered(t *testing.T, name string, d any) string {
+	t.Helper()
+	var b bytes.Buffer
+	if err := templates(t).ExecuteTemplate(&b, name, d); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+func banner(u page.User) page.Banner {
+	return page.Banner{Service: ServiceName, Release: "test-release", Commit: "test-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Home: "https://home.example.test", Tools: true, Trail: []page.Level{{Name: "prior", URL: "/prior"}}}
+}
+func request(h http.Handler, method, path, user string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, path, nil)
+	r.Host = "scrapes.sbx.ikigenba.dev:443"
+	r.Header.Set("X-Forwarded-Proto", "https")
+	r.Header.Set("X-User-Id", user)
+	r.Header.Set("X-User-Email", "reader@example.test")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+func baseBanner() page.Banner {
+	return banner(page.User{Email: "reader@example.test", ProfileURL: "https://auth.sbx.ikigenba.dev/", LogoutURL: "https://auth.sbx.ikigenba.dev/logout"})
+}
+func assertBody(t *testing.T, w *httptest.ResponseRecorder, status int, name string, d any) {
+	t.Helper()
+	if w.Code != status || w.Body.String() != rendered(t, name, d) {
+		t.Fatalf("%s response mismatch: status %d want %d; body length %d", name, w.Code, status, w.Body.Len())
+	}
+	if got := w.Header().Values("Content-Type"); !reflect.DeepEqual(got, []string{"text/html; charset=utf-8"}) {
+		t.Fatal(got)
+	}
+}
+
+type fake struct {
+	name  string
+	calls *int
+}
+
+func (f fake) Name() string                                           { return f.name }
+func (f fake) Scrape(context.Context, func([]source.Row) error) error { *f.calls++; return nil }
+
+type sequence struct{ n byte }
+
+func (s *sequence) Read(p []byte) (int, error) {
+	s.n++
+	for i := range p {
+		p[i] = s.n + byte(i)
+	}
+	return len(p), nil
+}
+
+type fixture struct {
+	st     *store.Store
+	handle *db.DB
+	cfg    Config
+	h      http.Handler
+	now    *time.Time
+	calls  *int
+}
+
+func setup(t *testing.T) fixture {
+	t.Helper()
+	now := time.Date(2026, 10, 5, 9, 0, 7, 123, time.FixedZone("test", 3600))
+	ctx := context.Background()
+	handle, err := db.Open(ctx, db.Config{Path: filepath.Join(t.TempDir(), "scrapes.db"), Migrations: app.Migrations(), Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := handle.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	st := store.New(handle, store.Config{Now: func() time.Time { return now }, Rand: &sequence{n: 0x99}})
+	set, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := new(int)
+	cfg := Config{Banner: banner, Pages: set, Store: st, Scrapers: scrapers.New(fake{"zeta", calls}, fake{"alpha", calls})}
+	return fixture{st, handle, cfg, identity.Require(Handler(cfg)), &now, calls}
+}
+func (f fixture) add(t *testing.T, name, trigger string) store.Run {
+	t.Helper()
+	*f.now = f.now.Add(time.Second)
+	delivery := ""
+	if trigger != "" {
+		delivery = f.now.Format(time.RFC3339Nano)
+	}
+	r, err := f.st.AddRun(context.Background(), store.Run{Scraper: name, UserID: "owner", UserEmail: "owner@example.test", Trigger: trigger, Delivery: delivery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+func (f fixture) finish(t *testing.T, r store.Run, rows []source.Row) store.Run {
+	t.Helper()
+	if err := f.st.PutRows(context.Background(), r.ID, rows); err != nil {
+		t.Fatal(err)
+	}
+	*f.now = f.now.Add(time.Second)
+	r, err := f.st.FinishRun(context.Background(), r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+func expectedRun(r store.Run, layout string) RunView {
+	by := r.UserEmail
+	if r.Trigger != "" {
+		by = ""
+	}
+	finished, text := "", ""
+	if !r.Finished.IsZero() {
+		finished = r.Finished.UTC().Format(time.RFC3339)
+		text = r.Finished.UTC().Format(layout)
+	}
+	return RunView{r.ID, r.Scraper, r.Status, r.Reason, by, r.Trigger, r.Started.UTC().Format(time.RFC3339), r.Started.UTC().Format(layout), finished, text, r.Rows, r.New, r.Changed, r.Unchanged, r.Gone}
+}
+func expectedLanding(r store.Run) RunRow {
+	v := expectedRun(r, MinuteLayout)
+	return RunRow{v.ID, v.Scraper, v.Status, v.Reason, v.StartedBy, v.Trigger, v.Started, v.StartedText, v.Finished, v.FinishedText, v.Rows}
+}
+func expectedCurrent(r store.Run) *CurrentRun {
+	v := expectedRun(r, MinuteLayout)
+	return &CurrentRun{v.ID, v.Status, v.Started, v.StartedText, v.Finished, v.FinishedText, v.Rows, v.New, v.Changed, v.Gone}
+}
+
+// R-F2ZB-26W9 R-F477-FYMY R-FQ5E-BTZG R-FRDA-PLQ5
+// R-F5F3-TQDN R-F6N0-7I4C R-F7UW-L9V1 R-F92S-Z1LQ R-FAAP-CTCF
+// R-FBIL-QL34 R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-FHM3-NFSL
+// R-FIU0-17JA R-FK1W-EZ9Z R-FL9S-SR0O R-FMHP-6IRD R-FNPL-KAI2 R-FOXH-Y28R
+func TestLoadAndWrite(t *testing.T) {
+	t.Chdir(t.TempDir())
+	s, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ServiceName != "scrapes" || RunsShown != 100 || MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || Description == "" || ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
+		t.Fatal("constants")
+	}
+	manifest, err := fs.ReadFile(app.Etc(), "manifest.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestDescription := ""
+	for _, line := range strings.Split(string(manifest), "\n") {
+		key, value, found := strings.Cut(line, "=")
+		if found && strings.TrimSpace(key) == "description" {
+			manifestDescription, err = strconv.Unquote(strings.TrimSpace(value))
+			if err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if manifestDescription == "" || Description != manifestDescription {
+		t.Fatal("description differs from embedded manifest")
+	}
+	b := baseBanner()
+	cases := []struct {
+		name string
+		data any
+	}{{"landing", LandingData{b, []ScraperRow{}, []RunRow{}}}, {"tools", ToolsData{b, []ToolRow{{"test-tool", "test-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}, {"row", RowData{b, RowView{}}}, {"row", RowData{b, RowView{"test-scraper", "test-run", "test-source", "collected", "collected-text", "digest", "test-name", []string{"one", "two"}, "street", "city", "state", "zip", "county", "lat", "lon", []PersonRow{{"person", "role"}}, []FactRow{{"key", "value"}}, "raw"}}}}
+	for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
+		for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
+			for _, full := range []bool{false, true} {
+				r := RunView{ID: "fixture", Status: status, Reason: reason}
+				rows := []RowLine{}
+				next := int64(0)
+				current := (*CurrentRun)(nil)
+				running := (*RunningRun)(nil)
+				if full {
+					r.Trigger = "test-trigger"
+					r.Finished = "test-finished"
+					r.FinishedText = "test-text"
+					rows = []RowLine{{"source", "name", "city", "state", "county"}}
+					next = 1
+					current = &CurrentRun{"fixture", status, "started", "start-text", "finished", "finish-text", 1, 2, 3, 4}
+					running = &RunningRun{"running"}
+				}
+				cases = append(cases, struct {
+					name string
+					data any
+				}{"run", RunData{b, r, rows, next}}, struct {
+					name string
+					data any
+				}{"landing", LandingData{b, []ScraperRow{{"scraper", current, running}}, []RunRow{{"fixture", "scraper", status, reason, "caller", r.Trigger, "started", "started-text", r.Finished, r.FinishedText, 7}}}})
+			}
+		}
+	}
+	for _, tc := range cases {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			w := httptest.NewRecorder()
+			w.Header().Add("Content-Type", "prior")
+			s.Write(w, httptest.NewRequest(method, "/", nil), 201, tc.name, tc.data)
+			if w.Code != 201 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"}) {
+				t.Fatal(w.Result().Header)
+			}
+			want := rendered(t, tc.name, tc.data)
+			if method == http.MethodHead {
+				want = ""
+			}
+			if w.Body.String() != want {
+				t.Fatal(tc.name, method)
+			}
+		}
+	}
+}
+
+// R-FSL7-3DGU R-FV0Z-UWY8 R-FXGS-MGFM R-G8FW-2E3V
+func TestLanding(t *testing.T) {
+	f := setup(t)
+	b := baseBanner()
+	b.Trail = nil
+	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", LandingData{b, []ScraperRow{{Name: "alpha"}, {Name: "zeta"}}, []RunRow{}})
+	done := f.finish(t, f.add(t, "alpha", ""), nil)
+	failed := f.add(t, "zeta", "cron-slug")
+	var err error
+	failed, err = f.st.FailRun(context.Background(), failed.ID, store.ReasonSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := f.add(t, "alpha", "")
+	d := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(done), &RunningRun{running.ID}}, {Name: "zeta"}}, []RunRow{expectedLanding(running), expectedLanding(failed), expectedLanding(done)}}
+	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", d)
+}
+
+// R-EWZO-7RYL R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
+func TestRunPages(t *testing.T) {
+	f := setup(t)
+	for _, count := range []int{0, 25, 30} {
+		r := f.add(t, "alpha", "")
+		rows := []source.Row{}
+		lines := []RowLine{}
+		for i := count - 1; i >= 0; i-- {
+			id := fmt.Sprintf("%03d", i)
+			rows = append(rows, source.Row{SourceID: id, Name: "name-" + id, Names: []string{"name-" + id}, Address: source.Address{City: "city-" + id, State: "state", County: "county"}, Facts: []byte(`{}`), Raw: []byte(`{}`)})
+		}
+		r = f.finish(t, r, rows)
+		for i := 0; i < count && i < 25; i++ {
+			id := fmt.Sprintf("%03d", i)
+			lines = append(lines, RowLine{id, "name-" + id, "city-" + id, "state", "county"})
+		}
+		next := int64(0)
+		if count > 25 {
+			next = 1
+		}
+		b := baseBanner()
+		b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
+		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), lines, next})
+	}
+	for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
+		r := f.add(t, "alpha", "test-trigger")
+		if reason != "" {
+			var err error
+			r, err = f.st.FailRun(context.Background(), r.ID, reason)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		b := baseBanner()
+		b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
+		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), []RowLine{}, 0})
+		if reason == "" {
+			f.finish(t, r, nil)
+		}
+	}
+}
+
+// R-EY7K-LJPA R-EPO9-X5IF R-FZWL-DZX0
+func TestRowPage(t *testing.T) {
+	f := setup(t)
+	r := f.add(t, "alpha", "")
+	lat, lon := 46.25, -123.125
+	w := source.Row{SourceID: "part/with space%?", Collected: *f.now, Digest: source.Digest([]byte(`{"first":"one","second":"two"}`)), Name: "test-company", Names: []string{"test-company", "test-alias"}, Address: source.Address{Street: "test-street", City: "test-city", State: "test-state", Zip: "test-zip", County: "test-county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "test-person", Role: "test-role"}}, Facts: []byte(`{"z": null, "a": ["one", "two"], "m": "14"}`), Raw: []byte(`{"first":"one","second":"two"}`)}
+	r = f.finish(t, r, []source.Row{w})
+	got, err := f.st.GetRow(context.Background(), r.ID, w.SourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := RowView{r.Scraper, r.ID, w.SourceID, got.Collected.UTC().Format(time.RFC3339), got.Collected.UTC().Format(SecondLayout), got.Digest, w.Name, w.Names, "test-street", "test-city", "test-state", "test-zip", "test-county", "46.25", "-123.125", []PersonRow{{"test-person", "test-role"}}, []FactRow{{"a", `["one","two"]`}, {"m", `"14"`}, {"z", "null"}}, "{\n  \"first\": \"one\",\n  \"second\": \"two\"\n}"}
+	p := "/runs/" + r.ID + "/rows/" + url.PathEscape(w.SourceID)
+	b := baseBanner()
+	b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}, {Name: w.SourceID, URL: p}}
+	assertBody(t, request(f.h, "GET", p, "user"), 200, "row", RowData{b, v})
+}
+
+// R-G603-AUMH R-G77Z-OMD6 R-G9NS-G5UK R-GAVO-TXL9 R-GDBH-LH2N
+// R-EVRR-U07W R-G4S6-X2VS R-G3KA-JB53
+func TestRoutesMethodsAndFailures(t *testing.T) {
+	f := setup(t)
+	r := f.add(t, "alpha", "")
+	id := r.ID
+	paths := []string{"/runs/" + strings.ToUpper(id[4:]), "/runs/run_" + strings.ToUpper(id[4:]), "/runs/" + id[:len(id)-1], "/runs/" + id + "0", "/runs/" + id + "/", "/runs/%72" + id[1:], "/" + id, "/runs", "/runs/", "/runs/" + id + "/rows/", "/runs/" + id + "/rows/1/2", "/runs/" + id[:len(id)-1] + "/rows/1", "/unknown"}
+	b := baseBanner()
+	nf := NotFoundData{b}
+	// Running rows and absent runs share the complete not-found response.
+	baseline := request(f.h, "GET", "/unknown", "user")
+	for _, p := range []string{"/runs/run_0000000000000000", "/runs/" + id + "/rows/missing"} {
+		got := request(f.h, "GET", p, "user")
+		if got.Code != baseline.Code || !reflect.DeepEqual(got.Header(), baseline.Header()) || got.Body.String() != baseline.Body.String() {
+			t.Fatal("notfound mismatch", p)
+		}
+	}
+	done := f.finish(t, r, nil)
+	newer := f.finish(t, f.add(t, "alpha", ""), nil)
+	_ = newer
+	if _, err := f.st.PruneRuns(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	assertBody(t, request(f.h, "GET", "/runs/"+done.ID, "user"), 404, "notfound", nf)
+	assertBody(t, request(f.h, "GET", "/runs/"+done.ID+"/rows/missing", "user"), 404, "notfound", nf)
+	assertBody(t, request(f.h, "GET", "/runs/"+newer.ID+"/rows/missing", "user"), 404, "notfound", nf)
+	failed := f.add(t, "zeta", "")
+	if _, err := f.st.FailRun(context.Background(), failed.ID, store.ReasonSource); err != nil {
+		t.Fatal(err)
+	}
+	assertBody(t, request(f.h, "GET", "/runs/"+failed.ID+"/rows/missing", "user"), 404, "notfound", nf)
+	f.handle.SetFailing(true)
+	for _, p := range paths {
+		for _, method := range []string{"GET", "POST"} {
+			assertBody(t, request(f.h, method, p, "user"), 404, "notfound", nf)
+		}
+	}
+	toolsData := ToolsData{Banner: b, Tools: []ToolRow{}}
+	toolsData.Banner.Trail = []page.Level{ToolsLevel}
+	for _, e := range tools.Catalog() {
+		toolsData.Tools = append(toolsData.Tools, ToolRow{e.Name, e.Description})
+	}
+	ab := b
+	ab.Trail = []page.Level{AboutLevel}
+	assertBody(t, request(f.h, "GET", "/tools", "user"), 200, "tools", toolsData)
+	assertBody(t, request(f.h, "GET", "/about", "user"), 200, "about", AboutData{ab, Description})
+	for _, p := range []string{"/", "/tools", "/about", "/runs/" + id, "/runs/" + id + "/rows/missing"} {
+		for _, method := range []string{"POST", "PUT", "DELETE", "OPTIONS"} {
+			got := request(f.h, method, p, "user")
+			if got.Code != 405 || got.Header().Get("Allow") != "GET, HEAD" || got.Body.Len() != 0 {
+				t.Fatal(p, method, got.Code)
+			}
+		}
+	}
+	for _, p := range []string{"/", "/runs/" + id, "/runs/" + id + "/rows/missing"} {
+		got := request(f.h, "GET", p, "user")
+		if got.Code != 503 || got.Body.String() != store.Unreachable+"\n" || got.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+			t.Fatal(p, got.Code, got.Body.String())
+		}
+	}
+	for _, failing := range []bool{true, false} {
+		f.handle.SetFailing(failing)
+		for _, p := range []string{"/", "/tools", "/about", "/unknown", "/runs/" + id, "/runs/" + id + "/rows/missing"} {
+			get, head := request(f.h, "GET", p, "user"), request(f.h, "HEAD", p, "user")
+			if head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 {
+				t.Fatal("HEAD mismatch", p)
+			}
+		}
+	}
+}
+
+// R-GEJD-Z8TC R-GFRA-D0K1 R-GGZ6-QSAQ
+func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	r := f.add(t, "alpha", "")
+	secrets := []string{"private-business", "private-alias", "private-street", "private-city", "private-state", "private-zip", "private-county", "private-person", "private-phone", "private-email"}
+	w := source.Row{SourceID: "one", Name: secrets[0], Names: secrets[:2], Address: source.Address{Street: secrets[2], City: secrets[3], State: secrets[4], Zip: secrets[5], County: secrets[6]}, People: []source.Person{{Name: secrets[7]}}, Facts: []byte(fmt.Sprintf(`{"phone":%q,"email":%q}`, secrets[8], secrets[9])), Raw: []byte(`{}`)}
+	r = f.finish(t, r, []source.Row{w})
+	running := f.add(t, "alpha", "")
+	*f.now = f.now.Add(48 * time.Hour)
+	beforeRuns, err := f.st.ListRuns(ctx, "", 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRows, err := f.st.ListRows(ctx, r.ID, "", 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRow, err := f.st.GetRow(ctx, r.ID, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldBanner := baseBanner()
+	oldBanner.Trail = []page.Level{{Name: running.ID, URL: "/runs/" + running.ID}}
+	assertBody(t, request(f.h, "GET", "/runs/"+running.ID, "owner"), 200, "run", RunData{oldBanner, expectedRun(running, SecondLayout), []RowLine{}, 0})
+	paths := []string{"/", "/tools", "/about", "/unknown", "/runs/" + r.ID, "/runs/" + r.ID + "/rows/one", "/runs/" + running.ID, "/runs/" + running.ID + "/rows/one"}
+	for _, p := range paths {
+		first, second := request(f.h, "GET", p, "owner"), request(f.h, "GET", p, "other")
+		if first.Code != second.Code || first.Body.String() != second.Body.String() || !reflect.DeepEqual(first.Header(), second.Header()) {
+			t.Fatal("user affected output", p)
+		}
+		if len(first.Header().Values("Set-Cookie")) != 0 {
+			t.Fatal("cookie", p)
+		}
+		if p == "/" || p == "/tools" || p == "/about" || p == "/unknown" {
+			for _, s := range secrets {
+				if strings.Contains(first.Body.String(), s) {
+					t.Fatal("private row data", p, s)
+				}
+			}
+		}
+	}
+	afterRuns, err := f.st.ListRuns(ctx, "", 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRows, err := f.st.ListRows(ctx, r.ID, "", 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRow, err := f.st.GetRow(ctx, r.ID, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRunning, err := f.st.GetRun(ctx, running.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(beforeRuns, afterRuns) || !reflect.DeepEqual(beforeRows, afterRows) || !reflect.DeepEqual(beforeRow, afterRow) || afterRunning.Status != store.StatusRunning || *f.calls != 0 {
+		t.Fatal("read mutated state or called scraper")
+	}
+}
+
+// R-FXGS-MGFM
+func TestLandingBound(t *testing.T) {
+	f := setup(t)
+	runs := []store.Run{}
+	for i := 0; i < RunsShown+3; i++ {
+		runs = append(runs, f.finish(t, f.add(t, "alpha", ""), nil))
+	}
+	b := baseBanner()
+	b.Trail = nil
+	d := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(runs[len(runs)-1]), nil}, {Name: "zeta"}}, []RunRow{}}
+	for i := len(runs) - 1; i >= len(runs)-RunsShown; i-- {
+		d.Runs = append(d.Runs, expectedLanding(runs[i]))
+	}
+	assertBody(t, request(f.h, "GET", "/", "user"), 200, "landing", d)
+}
+
+// R-FV0Z-UWY8 R-EPO9-X5IF
+func TestViewConversions(t *testing.T) {
+	tm := time.Date(2026, 10, 5, 10, 0, 7, 999, time.FixedZone("test", 3600))
+	r := store.Run{ID: "test-id", Scraper: "test-scraper", Status: store.StatusDone, Started: tm, Finished: tm.Add(3 * time.Second), Rows: 15, New: 4, Changed: 3, Unchanged: 8, Gone: 7, UserEmail: "owner@example.test"}
+	for _, trigger := range []string{"", "scrape_test"} {
+		r.Trigger = trigger
+		for _, finished := range []time.Time{{}, tm.Add(3 * time.Second)} {
+			r.Finished = finished
+			if !reflect.DeepEqual(landingRow(r), expectedLanding(r)) || !reflect.DeepEqual(runView(r), expectedRun(r, SecondLayout)) || !reflect.DeepEqual(currentView(r), *expectedCurrent(r)) {
+				t.Fatal("run conversion")
+			}
+		}
+	}
+	lat, lon := 46.25, -123.125
+	w := source.Row{Scraper: "s", Run: "r", SourceID: "id", Collected: tm, Digest: "digest", Name: "name", Names: []string{"name", "alias"}, Address: source.Address{Street: "street", City: "city", State: "state", Zip: "zip", County: "county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "person", Role: "role"}}, Facts: []byte(`{"z": null,"a": [1, 2]}`), Raw: []byte(`{"second":2,"first":1}`)}
+	expected := RowView{"s", "r", "id", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC", "digest", "name", []string{"name", "alias"}, "street", "city", "state", "zip", "county", "46.25", "-123.125", []PersonRow{{"person", "role"}}, []FactRow{{"a", "[1,2]"}, {"z", "null"}}, "{\n  \"second\": 2,\n  \"first\": 1\n}"}
+	if !reflect.DeepEqual(rowView(w), expected) || rowLine(w) != (RowLine{"id", "name", "city", "state", "county"}) {
+		t.Fatal("row conversion")
+	}
+	w.Lat = nil
+	w.Lon = nil
+	w.People = nil
+	w.Facts = nil
+	w.Address = source.Address{}
+	v := rowView(w)
+	if v.Lat != "" || v.Lon != "" || v.Street != "" || v.City != "" || v.State != "" || v.Zip != "" || v.County != "" || len(v.People) != 0 || len(v.Facts) != 0 {
+		t.Fatal("optional row conversion")
+	}
+}
+
+// R-G8FW-2E3V
+func TestBannerUserFromServices(t *testing.T) {
+	f := setup(t)
+	path := filepath.Join(t.TempDir(), "services.json")
+	if err := os.WriteFile(path, []byte(`{"services":[{"name":"auth","url":"https://identity.example.test///","description":"test","socket":"","enabled":true,"mcp":false}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := f.cfg
+	cfg.ServicesPath = path
+	var users []page.User
+	cfg.Banner = func(u page.User) page.Banner { users = append(users, u); return banner(u) }
+	h := identity.Require(Handler(cfg))
+	request(h, "GET", "/about", "owner")
+	want := page.User{Email: "reader@example.test", ProfileURL: "https://identity.example.test/", LogoutURL: "https://identity.example.test/logout"}
+	if len(users) != 1 || users[0] != want {
+		t.Fatal(users)
+	}
+}
