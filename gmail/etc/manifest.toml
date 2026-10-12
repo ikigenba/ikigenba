@@ -1,0 +1,25 @@
+app = "gmail"
+description = "Gmail messages read, attachments pulled into artifacts, drafts composed and sent"
+default = false
+mcp = true
+guests = false
+secrets = []
+
+[env]
+TRANSFER_MAX_BYTES = "52428800"
+TRANSFER_MAX_ACTIVE = "2"
+TRANSFER_MAX_QUEUED = "10"
+TRANSFER_KEEP_DAYS = "15"
+TRANSFER_KEEP_COUNT = "100"
+DRAFT_KEEP_DAYS = "15"
+DRAFT_KEEP_COUNT = "100"
+
+[database]
+engine = "sqlite"
+path = "state/gmail.db"
+
+[resources]
+memory_max = "256M"
+
+[home]
+group = "core"
