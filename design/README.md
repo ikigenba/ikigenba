@@ -410,7 +410,7 @@ transfers; no form but sign out.
 `scrapes.acme.ikigenba.com`, the funnel's evidence store: each scraper walks
 one public source and keeps every record it answers as a row of a run, the
 raw record beside a common envelope (name, names, address, people, facts).
-`scrape` starts a run, as does a fire of the cron trigger `scrape-<scraper>`;
+`scrape` starts a run, as does a fire of the cron trigger `scrape_<scraper>`;
 the run lands in the background. Runs belong to no one: every signed-in user
 sees every run and row. Three levels: the landing page, one run at
 `/runs/<id>`, and one row at `/runs/<id>/rows/<source_id>`. Banner and

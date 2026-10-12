@@ -52,8 +52,8 @@
      run across scrapers, newest first."), then either, when .Runs is
      empty, div#no-runs.empty holding h3 "No runs yet" and a p (text "A run
      starts when an agent calls the scrape tool, or when the cron trigger
-     scrape-<scraper> fires, and shows up here.", scrape and
-     scrape-<scraper> each in a code element), or table#run-list whose th
+     scrape_<scraper> fires, and shows up here.", scrape and
+     scrape_<scraper> each in a code element), or table#run-list whose th
      read Run, Scraper, Status, Started by, Started, Finished, Rows, with one
      tr[data-run=<.ID>] per run holding td.run-id > a.run-link (href
      "/runs/<.ID>", .ID in a code element); td.run-scraper (.Scraper in a
@@ -124,7 +124,7 @@
 </table>
 </div>{{else}}<div id="no-runs" class="empty">
 <h3 class="text-md">No runs yet</h3>
-<p>A run starts when an agent calls the <code>scrape</code> tool, or when the cron trigger <code>scrape-&lt;scraper&gt;</code> fires, and shows up here.</p>
+<p>A run starts when an agent calls the <code>scrape</code> tool, or when the cron trigger <code>scrape_&lt;scraper&gt;</code> fires, and shows up here.</p>
 </div>{{end}}
 </section>
 <p><a id="about-link" href="/about">About scrapes</a></p>
