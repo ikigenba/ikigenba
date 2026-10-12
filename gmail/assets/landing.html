@@ -48,7 +48,7 @@
      holding h3 "No drafts yet" and a p (text "A draft an agent writes with
      the compose tool shows up here, and stays as a record once it is sent
      or discarded.", compose in a code element), or table#draft-list whose
-     th read Draft, Status, Subject, To, Attachments, Created, Sent, with
+     th read Draft, Status, Subject, Recipients, Attachments, Created, Sent, with
      one tr[data-draft=<.ID>] per draft holding td.draft-id >
      a.draft-link (href "/drafts/<.ID>", .ID in a code element);
      td.draft-status holding span.status[data-status=<.Status>] with
@@ -97,7 +97,7 @@
 <header><div><h2 id="drafts-title">Drafts</h2><p>The drafts your agents composed, yours alone, newest first: no one else sees them.</p></div></header>
 {{if .Drafts}}<div class="table-scroll">
 <table id="draft-list">
-<thead><tr><th>Draft</th><th>Status</th><th>Subject</th><th>To</th><th class="num">Attachments</th><th>Created</th><th>Sent</th></tr></thead>
+<thead><tr><th>Draft</th><th>Status</th><th>Subject</th><th>Recipients</th><th class="num">Attachments</th><th>Created</th><th>Sent</th></tr></thead>
 <tbody>
 {{range .Drafts}}<tr data-draft="{{.ID}}">
 <td class="draft-id"><a class="draft-link" href="/drafts/{{.ID}}"><code>{{.ID}}</code></a></td>
