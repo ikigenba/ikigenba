@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,7 +68,7 @@ func nextValue(next *string) string {
 	return *next
 }
 
-// R-VECJ-YLAI R-VPBN-EIYR
+// R-DEWD-0DU8 R-DJRY-JGT0 R-DM7R-B0AE R-DDOG-MM3J
 func TestLandingPaginationParity(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
@@ -90,18 +94,24 @@ func TestLandingPaginationParity(t *testing.T) {
 					t.Fatalf("prompt %d: %+v", i, first.Prompts[i])
 				}
 			}
-			assertPage(t, serve(f.cfg, request("GET", "/?page=ignored", "alice")), 200, "landing", data)
+			for _, path := range []string{"/", "/?page=&page=bogus&limit=1&other=ignored"} {
+				assertWindow(t, f, path, "landing", data)
+			}
 			if data.Next != "" {
 				rest := catalogCall[tools.PromptList](t, client, "list", map[string]string{"page": data.Next})
 				if len(rest.Prompts) != 1 || rest.Prompts[0].Name != fmt.Sprintf("prompt-%03d", paging.DefaultLimit) || rest.Next != nil {
 					t.Fatalf("remainder: %+v", rest)
 				}
+				last := rest.Prompts[0]
+				data.Page, data.Next = data.Next, ""
+				data.Prompts = []pages.PromptRow{{Name: last.Name, URL: "/" + last.Name + "/", Model: last.Model}}
+				assertWindow(t, f, "/?page="+url.QueryEscape(data.Page)+"&page=bogus&limit=1", "landing", data)
 			}
 		})
 	}
 }
 
-// R-VGSC-Q4RW R-VJ85-HO9A R-WU9A-VKXG
+// R-DHC5-RXBM R-DKZU-X8JP R-DNFN-OS13 R-DDOG-MM3J
 func TestPromptPaginationParity(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 3} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
@@ -144,18 +154,87 @@ func TestPromptPaginationParity(t *testing.T) {
 					t.Fatalf("run %d: %+v", i, first.Runs[i])
 				}
 			}
-			assertPage(t, serve(f.cfg, request("GET", "/fixture/?page=ignored", "alice")), 200, "prompt", data)
+			for _, path := range []string{"/fixture/", "/fixture/?page=&page=bogus&limit=1&other=ignored"} {
+				assertWindow(t, f, path, "prompt", data)
+			}
 			if data.Next != "" {
 				rest := catalogCall[tools.RunList](t, client, "runs", map[string]string{"name": p.Name, "page": data.Next})
 				if len(rest.Runs) != 3 || rest.Next != nil {
 					t.Fatalf("remainder: %+v", rest)
 				}
+				data.Page, data.Next = data.Next, ""
+				data.Runs = nil
 				for i, run := range ordered[paging.DefaultLimit:] {
 					if rest.Runs[i].ID != run.ID {
 						t.Fatalf("remainder %d: %+v", i, rest.Runs[i])
 					}
+					data.Runs = append(data.Runs, expectedRow(run, p.Name))
 				}
+				assertWindow(t, f, "/fixture/?page="+url.QueryEscape(data.Page)+"&page=bogus&limit=1", "prompt", data)
 			}
 		})
+	}
+}
+
+func assertWindow(t *testing.T, f *fixture, path, template string, data any) {
+	t.Helper()
+	get := serve(f.cfg, request("GET", path, "alice"))
+	assertPage(t, get, 200, template, data)
+	head := serve(f.cfg, request("HEAD", path, "alice"))
+	if head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 {
+		t.Fatalf("HEAD %s differs: %d %v", path, head.Code, head.Header())
+	}
+}
+
+// R-DDOG-MM3J R-DONK-2JRS R-DPVG-GBIH R-D2MT-S56G R-D52M-JONU R-D6AI-XGEJ R-D8QB-OZVX
+func TestInvalidPagePrecedesCatalog(t *testing.T) {
+	f := setup(t)
+	create(t, f, "fixture", "alice")
+	create(t, f, "private", "bob")
+	list := paging.Token{Tool: "list"}.Encode("fixture")
+	runs := paging.Token{Tool: "runs"}.Encode(instant.UTC().Format(time.RFC3339), "prr_0000000000000001")
+	paths := []string{"/?page=bogus", "/?page=" + url.QueryEscape(runs), "/?page=" + url.QueryEscape(list+"x")}
+	for _, name := range []string{"fixture", "private", "nope", "about", "tools", "", "%66ixture"} {
+		for _, token := range []string{"bogus", list, runs + "x"} {
+			paths = append(paths, "/"+name+"/?page="+url.QueryEscape(token)+"&page=&limit=1&other=ignored")
+		}
+	}
+	for _, failing := range []bool{false, true} {
+		f.db.SetFailing(failing)
+		for _, cancelled := range []bool{false, true} {
+			for _, path := range paths {
+				var get *httptest.ResponseRecorder
+				for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+					r := request(method, path, "alice")
+					r.Body = io.NopCloser(strings.NewReader("fixture-body"))
+					r.Header.Set("If-None-Match", "fixture-header")
+					if cancelled {
+						ctx, cancel := context.WithCancel(r.Context())
+						cancel()
+						r = r.WithContext(ctx)
+					}
+					f.calls = nil
+					w := serve(f.cfg, r)
+					switch method {
+					case "GET":
+						assertPage(t, w, 404, "notfound", pages.NoticeData{Banner: bannerValue(page.User{})})
+						get = w
+					case "HEAD":
+						if w.Code != get.Code || !reflect.DeepEqual(w.Header(), get.Header()) || w.Body.Len() != 0 {
+							t.Fatalf("invalid HEAD %s differs", path)
+						}
+					default:
+						if w.Code != 405 || w.Body.Len() != 0 || !reflect.DeepEqual(w.Header(), http.Header{"Allow": []string{"GET, HEAD"}}) || len(f.calls) != 0 {
+							t.Fatalf("method %s %s: %d %v", method, path, w.Code, w.Header())
+						}
+					}
+					if method == "GET" || method == "HEAD" {
+						if !reflect.DeepEqual(f.calls, []page.User{{}}) || w.Header().Get("Set-Cookie") != "" || w.Header().Get("Location") != "" {
+							t.Fatalf("invalid page %s: banner %v headers %v", path, f.calls, w.Header())
+						}
+					}
+				}
+			}
+		}
 	}
 }

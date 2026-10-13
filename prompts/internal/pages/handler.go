@@ -56,12 +56,20 @@ func Handler(cfg Config) http.Handler {
 		}
 		caller, _ := identity.FromContext(r.Context())
 		if r.URL.Path == "/" {
-			ps, err := cfg.Store.List(r.Context(), caller.UserID, "", paging.DefaultLimit+1)
+			value := r.URL.Query().Get("page")
+			var after string
+			if value != "" {
+				if err := (paging.Token{Tool: "list"}).Decode(value, &after); err != nil {
+					notice(http.StatusNotFound, "notfound")
+					return
+				}
+			}
+			ps, err := cfg.Store.List(r.Context(), caller.UserID, after, paging.DefaultLimit+1)
 			if err != nil {
 				failed(err)
 				return
 			}
-			data := LandingData{Banner: banner()}
+			data := LandingData{Banner: banner(), Page: value}
 			if len(ps) > paging.DefaultLimit {
 				ps = ps[:paging.DefaultLimit]
 				data.Next = paging.Token{Tool: "list"}.Encode(ps[len(ps)-1].Name)
@@ -83,6 +91,16 @@ func Handler(cfg Config) http.Handler {
 				parts[i] = decoded
 			}
 		}
+		var value, started, id string
+		if len(parts) == 2 && parts[1] == "" {
+			value = r.URL.Query().Get("page")
+			if value != "" {
+				if err := (paging.Token{Tool: "runs"}).Decode(value, &started, &id); err != nil {
+					notice(http.StatusNotFound, "notfound")
+					return
+				}
+			}
+		}
 		p, err := cfg.Store.Find(r.Context(), caller.UserID, parts[0])
 		if err != nil {
 			failed(err)
@@ -101,7 +119,7 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if len(parts) == 2 && parts[1] == "" {
-			rs, e := cfg.Store.Runs(r.Context(), p.ID, "", "", paging.DefaultLimit+1)
+			rs, e := cfg.Store.Runs(r.Context(), p.ID, started, id, paging.DefaultLimit+1)
 			if e != nil {
 				failed(e)
 				return
@@ -111,7 +129,9 @@ func Handler(cfg Config) http.Handler {
 				failed(e)
 				return
 			}
-			cfg.Pages.Write(w, r, http.StatusOK, "prompt", promptData(p, rs, count, cfg, banner(page.Level{Name: p.Name, URL: base})))
+			data := promptData(p, rs, count, cfg, banner(page.Level{Name: p.Name, URL: base}))
+			data.Page = value
+			cfg.Pages.Write(w, r, http.StatusOK, "prompt", data)
 			return
 		}
 		if (len(parts) == 3 || len(parts) == 4 && parts[3] == "") && parts[1] == "runs" && parts[2] != "" {

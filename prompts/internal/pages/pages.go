@@ -52,6 +52,7 @@ func (s *Set) Write(w http.ResponseWriter, r *http.Request, status int, name str
 type LandingData struct {
 	Banner  page.Banner
 	Prompts []PromptRow
+	Page    string
 	Next    string
 }
 
@@ -78,6 +79,7 @@ type PromptData struct {
 	Prompt        PromptCard
 	Runs          []RunRow
 	Subscriptions []string
+	Page          string
 	Next          string
 }
 

@@ -178,8 +178,8 @@ func assertPage(t *testing.T, w *httptest.ResponseRecorder, status int, name str
 	}
 }
 
-// R-YUFC-PT2O R-YDCR-D0OY R-YEKN-QSFN R-YLW2-1EVT R-CBT1-D6V6 R-YN3Y-F6MI R-CFGQ-II39
-// R-VECJ-YLAI
+// R-YUFC-PT2O R-YDCR-D0OY R-YEKN-QSFN R-YLW2-1EVT R-CBT1-D6V6 R-CFGQ-II39
+// R-DEWD-0DU8 R-DJRY-JGT0
 func TestLanding(t *testing.T) {
 	f := setup(t)
 	assertPage(t, serve(f.cfg, request("GET", "/?fixture=query", "alice")), 200, "landing", pages.LandingData{Banner: wantBanner("alice")})
@@ -196,7 +196,7 @@ func TestLanding(t *testing.T) {
 }
 
 // R-CD0X-QYLV R-CE8U-4QCK
-// R-VGSC-Q4RW R-VJ85-HO9A
+// R-DHC5-RXBM R-DKZU-X8JP
 func TestPrompt(t *testing.T) {
 	f := setup(t)
 	p := create(t, f, "fixture", "alice")
@@ -238,11 +238,11 @@ func TestAbout(t *testing.T) {
 	f.db.SetFailing(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	assertPage(t, serve(f.cfg, request("GET", "/about?query=yes", "alice").WithContext(ctx)), 200, "about", pages.AboutData{Banner: wantBanner("alice", page.Level{Name: "about", URL: "/about"}), Description: pages.Description})
+	assertPage(t, serve(f.cfg, request("GET", "/about?query=yes&page=bogus", "alice").WithContext(ctx)), 200, "about", pages.AboutData{Banner: wantBanner("alice", page.Level{Name: "about", URL: "/about"}), Description: pages.Description})
 }
 
 // R-CMS4-T4JF R-CO01-6WA4 R-C9D8-LNDS R-CVBF-HIQA R-CWJB-VAGZ R-CXR8-927O R-CYZ4-MTYD
-// R-D071-0LP2 R-D1EX-EDFR R-D2MT-S56G R-D52M-JONU R-D6AI-XGEJ R-D8QB-OZVX
+// R-DR3C-U396 R-PRE6-V2ZY R-D2MT-S56G R-D52M-JONU R-D6AI-XGEJ R-D8QB-OZVX
 func TestRouting(t *testing.T) {
 	f := setup(t)
 	p := create(t, f, "summarize", "alice")
@@ -255,7 +255,7 @@ func TestRouting(t *testing.T) {
 		path     string
 		status   int
 		location string
-	}{{"/", 200, ""}, {"/about", 200, ""}, {"/summarize/", 200, ""}, {"/summarize?from=landing", 301, "/summarize/?from=landing"}, {"/summarize/runs/" + own.ID, 301, "/summarize/runs/" + own.ID + "/"}, {"/summarize/runs/" + own.ID + "/", 200, ""}, {"/%73ummarize", 301, "/summarize/"}, {"/%73ummarize/", 200, ""}}
+	}{{"/", 200, ""}, {"/about", 200, ""}, {"/summarize/", 200, ""}, {"/summarize?from=landing", 301, "/summarize/?from=landing"}, {"/summarize?page=bogus&limit=1", 301, "/summarize/?page=bogus&limit=1"}, {"/summarize/runs/" + own.ID, 301, "/summarize/runs/" + own.ID + "/"}, {"/summarize/runs/" + own.ID + "/", 200, ""}, {"/%73ummarize", 301, "/summarize/"}, {"/%73ummarize/", 200, ""}}
 	for _, path := range []string{"//", "/nope/", "/nope", "/Summarize/", "/about/", "/mcp/tools", "/events/", "/declarations/cron.tick.fired", "/private", "/private/", "/nope/runs/" + own.ID + "/", "/summarize/runs", "/summarize/runs/", "/summarize/other", "/summarize/other/", "/summarize/index.html", "/summarize/./", "/summarize/%2e/", "/summarize//", "/summarize/../", "/summarize/a/b/c/d"} {
 		paths = append(paths, struct {
 			path     string
@@ -323,7 +323,7 @@ func TestRouting(t *testing.T) {
 	}
 	for _, mode := range []string{"failure", "cancelled"} {
 		f.db.SetFailing(mode == "failure")
-		for _, path := range []string{"/", "//", "/summarize/", "/summarize", "/nope/", "/about/", "/summarize/other", "/summarize/runs/", "/summarize/a/b/c/d", "/summarize/runs/" + own.ID + "/"} {
+		for _, path := range []string{"/", "//", "/summarize/", "/summarize", "/nope/", "/about/", "/summarize/other", "/summarize/runs/", "/summarize/a/b/c/d", "/summarize/runs/" + own.ID + "/", "/?page=" + url.QueryEscape(paging.Token{Tool: "list"}.Encode("summarize")), "/summarize/?page=" + url.QueryEscape(paging.Token{Tool: "runs"}.Encode(instant.UTC().Format(time.RFC3339), own.ID)), "/summarize?page=bogus"} {
 			for _, method := range []string{"GET", "HEAD"} {
 				r := request(method, path, "alice")
 				if mode == "cancelled" {
@@ -494,7 +494,7 @@ func TestRunPages(t *testing.T) {
 						}
 					}
 				}
-				assertPage(t, serve(f.cfg, request("GET", base+"?arbitrary=yes", "alice")), 200, "run", d)
+				assertPage(t, serve(f.cfg, request("GET", base+"?arbitrary=yes&page=bogus", "alice")), 200, "run", d)
 				// The current model may change while the historical run keeps its model.
 				model := "updated-prompt-model"
 				if _, _, e := f.cfg.Store.Update(context.Background(), p.ID, store.Change{Model: &model}); e != nil {
@@ -609,7 +609,7 @@ func TestConcurrentHandler(t *testing.T) {
 	wg.Wait()
 }
 
-// R-VGSC-Q4RW R-VJ85-HO9A
+// R-DHC5-RXBM R-DKZU-X8JP
 func TestPromptOptionalFields(t *testing.T) {
 	f := setup(t)
 	for i, groups := range [][]string{nil, {"files"}, {"bash", "suite", "files"}} {
@@ -657,7 +657,7 @@ func TestBannerServicesRewrite(t *testing.T) {
 func TestTools(t *testing.T) {
 	f := setup(t)
 	data := pages.ToolsData{Banner: wantBanner("alice", page.Level{Name: "tools", URL: "/tools"})}
-	assertPage(t, serve(f.cfg, request("GET", "/tools?fixture=query", "alice")), 200, "tools", data)
+	assertPage(t, serve(f.cfg, request("GET", "/tools?fixture=query&page=bogus", "alice")), 200, "tools", data)
 	addTool := func(name, description string) {
 		mcp.AddTool(f.cfg.MCP, mcp.Tool[struct{}, struct{}]{Name: name, Description: description, Effect: mcp.Read, Handler: func(context.Context, identity.Caller, struct{}) (struct{}, error) { return struct{}{}, nil }})
 	}
@@ -667,7 +667,7 @@ func TestTools(t *testing.T) {
 	f.db.SetFailing(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	assertPage(t, serve(f.cfg, request("GET", "/tools?fixture=query", "alice").WithContext(ctx)), 200, "tools", data)
+	assertPage(t, serve(f.cfg, request("GET", "/tools?fixture=query&page=bogus", "alice").WithContext(ctx)), 200, "tools", data)
 	addTool("fixture_later", "later-fixture.")
 	data.Tools = append(data.Tools, pages.Tool{Name: "fixture_later", Description: "later-fixture."})
 	get := serve(f.cfg, request("GET", "/tools", "alice"))

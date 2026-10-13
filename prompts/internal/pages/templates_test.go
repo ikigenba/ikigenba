@@ -136,7 +136,7 @@ func TestPartials(t *testing.T) {
 // R-BB81-W2MC R-BG3N-F5L4 R-BHBJ-SXBT
 // R-BIJG-6P2I R-BJRC-KGT7 R-BNF1-PS1A R-BOMY-3JRZ R-BPUU-HBIO R-BR2Q-V39D
 // R-BSAN-8V02 R-BUQG-0EHG R-BVYC-E685
-// R-VMVU-MZHD
+// R-DIK2-5P2B
 func TestAllTemplateStates(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	set := templates(t)
@@ -148,7 +148,7 @@ func TestAllTemplateStates(t *testing.T) {
 		}
 	}
 	for _, banner := range banners {
-		for variant := 0; variant < 8; variant++ {
+		for variant := 0; variant < 16; variant++ {
 			d := pages.LandingData{Banner: banner}
 			if variant%4 > 0 {
 				row := pages.PromptRow{Name: "fixture", URL: "/fixture/", Model: "fixture-model"}
@@ -160,13 +160,16 @@ func TestAllTemplateStates(t *testing.T) {
 				}
 				d.Prompts = []pages.PromptRow{row}
 			}
-			if variant >= 4 {
+			if variant&4 != 0 {
+				d.Page = "fixture-page"
+			}
+			if variant&8 != 0 {
 				d.Next = "fixture-next"
 			}
 			render(t, set, "landing", d)
 		}
 		for _, n := range []int{0, 1, 3} {
-			for mask := 0; mask < 128; mask++ {
+			for mask := 0; mask < 256; mask++ {
 				d := pages.PromptData{Banner: banner, Prompt: pages.PromptCard{ID: "prompt-fixture", Name: "fixture", Model: "fixture-model", Text: "fixture-text", Created: "fixture-created", CreatedAt: "fixture-datetime", RunsKept: 1, KeepNewest: 2, KeepDays: 3}}
 				for i := 0; i < n; i++ {
 					d.Prompt.Tools = append(d.Prompt.Tools, pages.ToolGroup{Name: "fixture-group", First: i == 0, Last: i == n-1})
@@ -192,6 +195,9 @@ func TestAllTemplateStates(t *testing.T) {
 				}
 				if mask&64 != 0 {
 					d.Next = "fixture-next"
+				}
+				if mask&128 != 0 {
+					d.Page = "fixture-page"
 				}
 				render(t, set, "prompt", d)
 			}
