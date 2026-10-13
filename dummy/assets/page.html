@@ -1,3 +1,21 @@
+{{/* Every HTML document dummy sends: the widgets panel at GET /widgets
+     (and a POST /widgets the form turns back), or a failure page naming
+     what went wrong. Shown only to a signed-in user. Data: .Banner (a
+     page.Banner, for banner and footer); .Panel (bool, true for the panel,
+     false for a failure page); .Message (string, the failure's sentence;
+     empty on the panel); .Count (int, the number of widgets the table
+     shows); .Table (the table template's data, a slice of widgets); .Form
+     (the form template's data); and .Next (string, the page token
+     list_widgets's next carries for the widgets after the table's, the
+     value to pass as its page; empty when none remain). Hooks: title
+     "dummy"; on the panel, h1 with text "Widgets", p#panel-subtitle (text
+     "<.Count> widget(s) · refreshes every 5 seconds"), div.panel holding
+     the table template (table#widgets-table) and the form template, then,
+     when .Next is not empty, p#next (text "More widgets follow: call
+     list_widgets with page <.Next>.", list_widgets, page and .Next each in
+     a code element), and the script template; on a failure page, a p (text
+     .Message) and a link to /widgets (text "Back to widgets"). No other
+     script but appkit's /_appkit/feedback.js. */}}
 {{define "page"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>dummy</title></head>
@@ -10,7 +28,8 @@
 {{template "table" .Table}}
 {{template "form" .Form}}
 </div>
-{{else}}
+{{if .Next}}<p id="next">More widgets follow: call <code>list_widgets</code> with <code>page</code> <code>{{.Next}}</code>.</p>
+{{end}}{{else}}
 <p>{{.Message}}</p>
 <a href="/widgets">Back to widgets</a>
 {{end}}
