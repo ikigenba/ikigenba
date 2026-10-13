@@ -18,10 +18,10 @@ func Assets() fs.FS {
 	return f
 }
 
-//go:embed migrations/0001_trail.sql
+//go:embed migrations/0001_trail.sql migrations/0002_attrs_record.sql
 var migrations embed.FS
 
-// Migrations returns the embedded baseline database migration.
+// Migrations returns the embedded database migrations.
 func Migrations() fs.FS {
 	f, err := fs.Sub(migrations, "migrations")
 	if err != nil {

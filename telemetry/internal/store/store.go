@@ -2,15 +2,11 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"sort"
 	"strings"
 	"time"
@@ -34,13 +30,13 @@ type Filter struct {
 	Attrs            telemetry.Attrs
 }
 
-// Cursor encodes a search position.
-type Cursor string
+// Position is a record's database sort key.
+type Position struct{ TS, ID int64 }
 
 // Page is one search result.
 type Page struct {
 	Records []Record
-	Next    Cursor
+	Next    *Position
 }
 
 // CatalogEntry describes a service's events.
@@ -77,9 +73,6 @@ type Group struct {
 	Key   string
 	Count int64
 }
-
-// ErrCursor reports a malformed cursor.
-var ErrCursor = errors.New("invalid cursor")
 
 // ErrGroupBy reports an unknown grouping.
 var ErrGroupBy = errors.New("invalid grouping")
@@ -158,264 +151,286 @@ func (s *Store) Sweep(ctx context.Context, before time.Time) error {
 	}
 }
 
-type stored struct {
-	Record
-	id int64
-}
-
-func (s *Store) records(ctx context.Context) ([]stored, error) {
-	result := make([]stored, 0)
-	err := s.db.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "SELECT id,ts,svc,ev,req,user,attrs FROM records ORDER BY ts DESC,id DESC")
-		if err != nil {
-			return err
+// filterSQL expresses every selector in the database query.
+func filterSQL(f Filter) (string, []any) {
+	clauses := []string{"1=1"}
+	args := make([]any, 0)
+	add := func(clause string, value any) { clauses = append(clauses, clause); args = append(args, value) }
+	ceilMicro := func(t time.Time) int64 {
+		n := t.UnixMicro()
+		if t.Nanosecond()%1000 != 0 {
+			n++
 		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var r stored
-			var ts int64
-			var attrs string
-			if err := rows.Scan(&r.id, &ts, &r.Service, &r.Event, &r.RequestID, &r.User, &attrs); err != nil {
-				return err
+		return n
+	}
+	if f.Since != nil {
+		add("r.ts >= ?", ceilMicro(*f.Since))
+	}
+	if f.Until != nil {
+		add("r.ts < ?", ceilMicro(*f.Until))
+	}
+	for _, set := range []struct {
+		column string
+		values []string
+	}{{"svc", f.Services}, {"ev", f.Events}} {
+		if len(set.values) != 0 {
+			clauses = append(clauses, "r."+set.column+" IN ("+strings.TrimSuffix(strings.Repeat("?,", len(set.values)), ",")+")")
+			for _, value := range set.values {
+				args = append(args, value)
 			}
-			r.Time = time.UnixMicro(ts).UTC()
-			r.Attrs = json.RawMessage(attrs)
-			result = append(result, r)
 		}
-		return rows.Err()
-	})
-	return result, err
-}
-func match(r Record, f Filter) bool {
-	if f.Since != nil && r.Time.Before(*f.Since) || f.Until != nil && !r.Time.Before(*f.Until) || len(f.Services) > 0 && !contains(f.Services, r.Service) || len(f.Events) > 0 && !contains(f.Events, r.Event) || f.User != nil && *f.User != r.User || f.RequestID != nil && *f.RequestID != r.RequestID {
-		return false
 	}
-	var attrs map[string]json.RawMessage
-	if err := json.Unmarshal(r.Attrs, &attrs); err != nil {
-		return false
+	if f.User != nil {
+		add("r.user = ?", *f.User)
 	}
-	for k, v := range f.Attrs {
-		// The shared contract validates and normalizes named basic values.
-		e := telemetry.Event{Time: r.Time, Service: "filter", Name: "filter.checked", Attrs: telemetry.Attrs{k: v}}
-		data, err := e.MarshalJSON()
+	if f.RequestID != nil {
+		add("r.req = ?", *f.RequestID)
+	}
+	keys := make([]string, 0, len(f.Attrs))
+	for key := range f.Attrs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		// Event normalizes named basic types and rejects invalid attribute values.
+		e := telemetry.Event{Time: time.Unix(0, 0).UTC(), Service: "filter", Name: "filter.checked", Attrs: telemetry.Attrs{key: f.Attrs[key]}}
+		body, err := e.MarshalJSON()
 		if err != nil {
-			return false
+			clauses = append(clauses, "0")
+			continue
 		}
 		var envelope struct {
 			Attrs map[string]json.RawMessage `json:"attrs"`
 		}
-		if err := json.Unmarshal(data, &envelope); err != nil || !bytes.Equal(envelope.Attrs[k], attrs[k]) {
-			return false
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			clauses = append(clauses, "0")
+			continue
 		}
+		clauses = append(clauses, "EXISTS (SELECT 1 FROM attrs a WHERE a.record_id = r.id AND a.key = ? AND a.value = ?)")
+		args = append(args, key, string(envelope.Attrs[key]))
 	}
-	return true
-}
-func contains(values []string, value string) bool {
-	for _, v := range values {
-		if v == value {
-			return true
-		}
-	}
-	return false
-}
-func encode(ts, id int64) Cursor {
-	var position bytes.Buffer
-	// bytes.Buffer writes cannot fail.
-	_ = binary.Write(&position, binary.BigEndian, ts)
-	_ = binary.Write(&position, binary.BigEndian, id)
-	_ = binary.Write(&position, binary.BigEndian, crc32.ChecksumIEEE(position.Bytes()))
-	return Cursor(base64.RawURLEncoding.Strict().EncodeToString(position.Bytes()))
-}
-func decode(c Cursor) (int64, int64, error) {
-	b, err := base64.RawURLEncoding.Strict().DecodeString(string(c))
-	if err != nil || len(b) != 20 {
-		return 0, 0, ErrCursor
-	}
-	if binary.BigEndian.Uint32(b[16:]) != crc32.ChecksumIEEE(b[:16]) {
-		return 0, 0, ErrCursor
-	}
-	var ts, id int64
-	r := bytes.NewReader(b[:16])
-	if err := binary.Read(r, binary.BigEndian, &ts); err != nil {
-		return 0, 0, err
-	}
-	if err := binary.Read(r, binary.BigEndian, &id); err != nil {
-		return 0, 0, err
-	}
-	return ts, id, nil
+	return strings.Join(clauses, " AND "), args
 }
 
-// Search returns records in reverse chronological arrival order.
-func (s *Store) Search(ctx context.Context, f Filter, limit int, after Cursor) (Page, error) {
+func scanRecord(rows *sql.Rows) (Record, Position, error) {
+	var r Record
+	var p Position
+	var attrs string
+	err := rows.Scan(&p.ID, &p.TS, &r.Service, &r.Event, &r.RequestID, &r.User, &attrs)
+	r.Time = time.UnixMicro(p.TS).UTC()
+	r.Attrs = json.RawMessage(attrs)
+	return r, p, err
+}
+
+const recordColumns = "r.id,r.ts,r.svc,r.ev,r.req,r.user,r.attrs"
+
+// Search returns one SQL window in reverse chronological arrival order.
+func (s *Store) Search(ctx context.Context, f Filter, limit int, after *Position) (Page, error) {
 	if limit < 1 {
 		return Page{}, errors.New("limit must be positive")
 	}
-	var ts, id int64
-	var err error
-	if after != "" {
-		ts, id, err = decode(after)
-		if err != nil {
-			return Page{}, err
-		}
+	where, args := filterSQL(f)
+	if after != nil {
+		where += " AND (r.ts,r.id) < (?,?)"
+		args = append(args, after.TS, after.ID)
 	}
-	records, err := s.records(ctx)
+	// Use an int64 limit to avoid overflowing an int at its maximum.
+	window := int64(limit)
+	if window < int64(^uint64(0)>>1) {
+		window++
+	}
+	args = append(args, window)
+	p := Page{Records: make([]Record, 0)}
+	err := s.db.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, strings.Join([]string{"SELECT ", recordColumns, " FROM records r WHERE ", where, " ORDER BY r.ts DESC,r.id DESC LIMIT ?"}, ""), args...)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		var last Position
+		for rows.Next() {
+			r, pos, err := scanRecord(rows)
+			if err != nil {
+				return err
+			}
+			if len(p.Records) == limit {
+				p.Next = &last
+				break
+			}
+			p.Records = append(p.Records, r)
+			last = pos
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return Page{}, err
-	}
-	p := Page{Records: make([]Record, 0)}
-	var last stored
-	for _, r := range records {
-		if after != "" && (r.Time.UnixMicro() > ts || r.Time.UnixMicro() == ts && r.id >= id) || !match(r.Record, f) {
-			continue
-		}
-		if len(p.Records) == limit {
-			p.Next = encode(last.Time.UnixMicro(), last.id)
-			break
-		}
-		p.Records = append(p.Records, r.Record)
-		last = r
 	}
 	return p, nil
 }
 
 // Trace returns a request's records in chronological arrival order.
 func (s *Store) Trace(ctx context.Context, requestID string) ([]Record, error) {
-	records, err := s.records(ctx)
+	result := make([]Record, 0)
+	err := s.db.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, strings.Join([]string{"SELECT ", recordColumns, " FROM records r WHERE r.req = ? ORDER BY r.ts,r.id"}, ""), requestID)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			r, _, err := scanRecord(rows)
+			if err != nil {
+				return err
+			}
+			result = append(result, r)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
-	}
-	result := make([]Record, 0)
-	for i := len(records) - 1; i >= 0; i-- {
-		if records[i].RequestID == requestID {
-			result = append(result, records[i].Record)
-		}
 	}
 	return result, nil
 }
 
 // Count returns the matching population.
 func (s *Store) Count(ctx context.Context, f Filter) (int64, error) {
-	records, err := s.records(ctx)
+	where, args := filterSQL(f)
+	var total int64
+	err := s.db.Read(ctx, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, strings.Join([]string{"SELECT count(*) FROM records r WHERE ", where}, ""), args...).Scan(&total)
+	})
 	if err != nil {
 		return 0, err
 	}
-	var n int64
-	for _, r := range records {
-		if match(r.Record, f) {
-			n++
-		}
-	}
-	return n, nil
+	return total, nil
 }
 
-// Catalog summarizes services and event names.
+// Catalog summarizes services and event names using aggregate queries.
 func (s *Store) Catalog(ctx context.Context, service, event string) ([]CatalogEntry, error) {
-	records, err := s.records(ctx)
+	f := Filter{}
+	if service != "" {
+		f.Services = []string{service}
+	}
+	if event != "" {
+		f.Events = []string{event}
+	}
+	where, args := filterSQL(f)
+	result := make([]CatalogEntry, 0)
+	err := s.db.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, strings.Join([]string{"SELECT r.svc,r.ev,count(*),max(r.ts) FROM records r WHERE ", where, " GROUP BY r.svc,r.ev ORDER BY r.svc,r.ev"}, ""), args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var svc string
+			var e EventEntry
+			var ts int64
+			if err := rows.Scan(&svc, &e.Event, &e.Count, &ts); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			e.LastSeen = time.UnixMicro(ts).UTC()
+			e.Attrs = make([]string, 0)
+			if len(result) == 0 || result[len(result)-1].Service != svc {
+				result = append(result, CatalogEntry{Service: svc, Events: make([]EventEntry, 0)})
+			}
+			c := &result[len(result)-1]
+			c.Events = append(c.Events, e)
+		}
+		err = rows.Err()
+		closeErr := rows.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		rows, err = tx.QueryContext(ctx, strings.Join([]string{"SELECT DISTINCT r.svc,r.ev,a.key FROM records r JOIN attrs a ON a.record_id=r.id WHERE ", where, " ORDER BY r.svc,r.ev,a.key"}, ""), args...)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		ci, ei := 0, 0
+		for rows.Next() {
+			var svc, ev, key string
+			if err := rows.Scan(&svc, &ev, &key); err != nil {
+				return err
+			}
+			for result[ci].Service != svc {
+				ci++
+				ei = 0
+			}
+			for result[ci].Events[ei].Event != ev {
+				ei++
+			}
+			e := &result[ci].Events[ei]
+			e.Attrs = append(e.Attrs, key)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	entries := map[string]map[string]*EventEntry{}
-	keys := map[*EventEntry]map[string]bool{}
-	for _, r := range records {
-		if service != "" && r.Service != service || event != "" && r.Event != event {
-			continue
-		}
-		if entries[r.Service] == nil {
-			entries[r.Service] = map[string]*EventEntry{}
-		}
-		e := entries[r.Service][r.Event]
-		if e == nil {
-			e = &EventEntry{Event: r.Event, LastSeen: r.Time, Attrs: make([]string, 0)}
-			entries[r.Service][r.Event] = e
-			keys[e] = map[string]bool{}
-		}
-		e.Count++
-		var attrs map[string]json.RawMessage
-		if err := json.Unmarshal(r.Attrs, &attrs); err != nil {
-			return nil, err
-		}
-		for k := range attrs {
-			keys[e][k] = true
-		}
-	}
-	result := make([]CatalogEntry, 0)
-	for svc, events := range entries {
-		c := CatalogEntry{Service: svc, Events: make([]EventEntry, 0)}
-		for _, e := range events {
-			for k := range keys[e] {
-				e.Attrs = append(e.Attrs, k)
-			}
-			sort.Strings(e.Attrs)
-			c.Events = append(c.Events, *e)
-		}
-		sort.Slice(c.Events, func(i, j int) bool { return c.Events[i].Event < c.Events[j].Event })
-		result = append(result, c)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Service < result[j].Service })
 	return result, nil
 }
 
-// CountBy returns matching populations grouped by field, bucket, or attribute.
+// CountBy returns SQL aggregates grouped by field, bucket, or attribute.
 func (s *Store) CountBy(ctx context.Context, f Filter, by GroupBy) (int64, []Group, error) {
-	isTime := by == ByMinute || by == ByHour || by == ByDay
-	isAttr := strings.HasPrefix(string(by), AttrPrefix) && len(string(by)) > len(AttrPrefix)
-	if !isTime && !isAttr && by != ByService && by != ByEvent && by != ByUser && by != ByRequestID {
-		return 0, nil, ErrGroupBy
+	expression := ""
+	join := ""
+	order := "count(*) DESC,group_key ASC"
+	groupArgs := make([]any, 0)
+	switch by {
+	case ByService:
+		expression = "r.svc"
+	case ByEvent:
+		expression = "r.ev"
+	case ByUser:
+		expression = "r.user"
+	case ByRequestID:
+		expression = "r.req"
+	case ByMinute, ByHour, ByDay:
+		width := int64(time.Minute / time.Microsecond)
+		if by == ByHour {
+			width = int64(time.Hour / time.Microsecond)
+		}
+		if by == ByDay {
+			width = int64(24 * time.Hour / time.Microsecond)
+		}
+		expression = fmt.Sprintf("strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ',(r.ts-((r.ts %% %d + %d) %% %d))/1000000,'unixepoch')", width, width, width)
+		order = "group_key ASC"
+	default:
+		if !strings.HasPrefix(string(by), AttrPrefix) || len(string(by)) == len(AttrPrefix) {
+			return 0, nil, ErrGroupBy
+		}
+		expression = "CASE WHEN json_type(a.value)='text' THEN json_extract(a.value,'$') ELSE a.value END"
+		join = " JOIN attrs a ON a.record_id=r.id AND a.key=?"
+		groupArgs = append(groupArgs, strings.TrimPrefix(string(by), AttrPrefix))
 	}
-	records, err := s.records(ctx)
+	where, args := filterSQL(f)
+	result := make([]Group, 0)
+	var total int64
+	err := s.db.Read(ctx, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, strings.Join([]string{"SELECT count(*) FROM records r WHERE ", where}, ""), args...).Scan(&total); err != nil {
+			return err
+		}
+		groupArgs = append(groupArgs, args...)
+		rows, err := tx.QueryContext(ctx, strings.Join([]string{"SELECT ", expression, " AS group_key,count(*) FROM records r", join, " WHERE ", where, " GROUP BY group_key ORDER BY ", order}, ""), groupArgs...)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var g Group
+			if err := rows.Scan(&g.Key, &g.Count); err != nil {
+				return err
+			}
+			result = append(result, g)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return 0, nil, err
 	}
-	var total int64
-	groups := map[string]int64{}
-	for _, r := range records {
-		if !match(r.Record, f) {
-			continue
-		}
-		total++
-		var key string
-		switch by {
-		case ByService:
-			key = r.Service
-		case ByEvent:
-			key = r.Event
-		case ByUser:
-			key = r.User
-		case ByRequestID:
-			key = r.RequestID
-		case ByMinute:
-			key = r.Time.Truncate(time.Minute).Format("2006-01-02T15:04:05Z")
-		case ByHour:
-			key = r.Time.Truncate(time.Hour).Format("2006-01-02T15:04:05Z")
-		case ByDay:
-			key = time.Date(r.Time.Year(), r.Time.Month(), r.Time.Day(), 0, 0, 0, 0, time.UTC).Format("2006-01-02T15:04:05Z")
-		default:
-			var attrs map[string]json.RawMessage
-			if err := json.Unmarshal(r.Attrs, &attrs); err != nil {
-				return 0, nil, err
-			}
-			value, ok := attrs[strings.TrimPrefix(string(by), AttrPrefix)]
-			if !ok {
-				continue
-			}
-			key = string(value)
-			if len(value) > 0 && value[0] == '"' {
-				if err := json.Unmarshal(value, &key); err != nil {
-					return 0, nil, err
-				}
-			}
-		}
-		groups[key]++
-	}
-	result := make([]Group, 0, len(groups))
-	for k, n := range groups {
-		result = append(result, Group{k, n})
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if isTime || result[i].Count == result[j].Count {
-			return result[i].Key < result[j].Key
-		}
-		return result[i].Count > result[j].Count
-	})
 	return total, result, nil
 }

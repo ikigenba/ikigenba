@@ -16,6 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	assets "github.com/ikigenba/ikigenba/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/store"
@@ -186,9 +187,12 @@ func TestToolsList(t *testing.T) {
 		equalJSON(t, schemaWithoutDescriptions(t, info.InputSchema), []byte(`{"type":"object","properties":{"service":{"type":"string"},"event":{"type":"string"}},"additionalProperties":false}`))
 		equalJSON(t, schemaWithoutDescriptions(t, info.OutputSchema), []byte(`{"type":"object","properties":{"services":{"type":"array","items":{"type":"object","properties":{"service":{"type":"string"},"events":{"type":"array","items":{"type":"object","properties":{"event":{"type":"string"},"count":{"type":"integer"},"last_seen":{"type":"string"},"attrs":{"type":"array","items":{"type":"string"}}},"required":["event","count","last_seen","attrs"],"additionalProperties":false}}},"required":["service","events"],"additionalProperties":false}}},"required":["services"],"additionalProperties":false}`))
 	}
-	// R-9FOS-TFC2 R-9I4L-KYTG R-9JCH-YQK5
+	// R-9FOS-TFC2 R-I9E8-VP9H R-IBU1-N8QV
 	{
 		info := infos[1]
+		schemaDescription(t, info.InputSchema, "limit", paging.LimitDescription)
+		schemaDescription(t, info.InputSchema, "page", paging.PageDescription)
+		schemaDescription(t, info.OutputSchema, "next", paging.NextDescription)
 		if info.Name != "search" || info.Description == "" || info.Effect() != mcp.Read {
 			t.Fatalf("metadata: %+v", info)
 		}
@@ -196,8 +200,8 @@ func TestToolsList(t *testing.T) {
 		if a.ReadOnlyHint == nil || !*a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint || a.OpenWorldHint == nil || *a.OpenWorldHint || a.IdempotentHint != nil {
 			t.Fatalf("annotations: %+v", a)
 		}
-		equalJSON(t, schemaWithoutDescriptions(t, info.InputSchema), []byte(`{"type":"object","properties":{"since":{"type":"string"},"until":{"type":"string"},"services":{"type":"array","items":{"type":"string"}},"events":{"type":"array","items":{"type":"string"}},"user":{"type":"string"},"request_id":{"type":"string"},"attrs":{"type":"object"},"limit":{"type":"integer"},"cursor":{"type":"string"}},"additionalProperties":false}`))
-		equalJSON(t, schemaWithoutDescriptions(t, info.OutputSchema), []byte(`{"type":"object","properties":{"records":{"type":"array","items":{"type":"object","properties":{"time":{"type":"string"},"service":{"type":"string"},"event":{"type":"string"},"request_id":{"type":"string"},"user":{"type":"string"},"attrs":{"type":"object"}},"required":["time","service","event","request_id","user","attrs"],"additionalProperties":false}},"cursor":{"type":"string"}},"required":["records"],"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.InputSchema), []byte(`{"type":"object","properties":{"since":{"type":"string"},"until":{"type":"string"},"services":{"type":"array","items":{"type":"string"}},"events":{"type":"array","items":{"type":"string"}},"user":{"type":"string"},"request_id":{"type":"string"},"attrs":{"type":"object"},"limit":{"type":"integer"},"page":{"type":"string"}},"additionalProperties":false}`))
+		equalJSON(t, schemaWithoutDescriptions(t, info.OutputSchema), []byte(`{"type":"object","properties":{"records":{"type":"array","items":{"type":"object","properties":{"time":{"type":"string"},"service":{"type":"string"},"event":{"type":"string"},"request_id":{"type":"string"},"user":{"type":"string"},"attrs":{"type":"object"}},"required":["time","service","event","request_id","user","attrs"],"additionalProperties":false}},"next":{"type":"string"}},"required":["records"],"additionalProperties":false}`))
 	}
 	// R-9KKE-CIAU R-9LSA-QA1J R-9N07-41S8
 	{
@@ -258,7 +262,7 @@ func TestCatalogTraceAndReadOnly(t *testing.T) {
 	success(t, call(t, r, "count", `{}`), `{"total":1}`)
 }
 
-// R-CAKF-ZA46 R-JHOV-XQDA R-C82N-Q0KN R-A1MZ-PAOK R-CJ1R-5Y8W
+// R-CAKF-ZA46 R-IJ5F-XV71 R-C82N-Q0KN R-A1MZ-PAOK R-CJ1R-5Y8W
 func TestSearchFilterAndCount(t *testing.T) {
 	a := event("test.one", "alpha", "u", "req", 0, telemetry.Attrs{"status": int64(500), "flag": true, "text": "ok"})
 	b := event("test.two", "beta", "", "", 1, telemetry.Attrs{"status": "500", "flag": false})
@@ -301,7 +305,7 @@ func TestTopLevelNulls(t *testing.T) {
 		base := encoded(t, call(t, r, tool, `{}`))
 		args := `{"since":null,"until":null,"user":null,"request_id":null`
 		if tool == "search" {
-			args += `,"limit":null,"cursor":null}`
+			args += `,"limit":null,"page":null}`
 		} else {
 			args += `,"by":null}`
 		}
@@ -309,16 +313,16 @@ func TestTopLevelNulls(t *testing.T) {
 	}
 }
 
-// R-9T3P-0WHP R-9VJH-SFZ3 R-9WRE-67PS R-9Z76-XR76 R-A0F3-BIXV R-B7R3-CDKB
+// R-9T3P-0WHP R-IE9U-ES89 R-IFHQ-SJYY R-9Z76-XR76 R-A0F3-BIXV R-B7R3-CDKB
 func TestRefusalsAndOutcomes(t *testing.T) {
 	r := setup(t)
 	cases := []struct{ tool, args, text string }{
-		{"search", `{"since":"yesterday","until":"bad","limit":0,"cursor":"page2"}`, fmt.Sprintf(tools.BadSince, "yesterday")},
-		{"search", `{"until":"bad","limit":0,"cursor":"page2"}`, fmt.Sprintf(tools.BadUntil, "bad")},
+		{"search", `{"since":"yesterday","until":"bad","limit":0,"page":"page2"}`, fmt.Sprintf(tools.BadSince, "yesterday")},
+		{"search", `{"until":"bad","limit":0,"page":"page2"}`, fmt.Sprintf(tools.BadUntil, "bad")},
 		{"search", `{"since":""}`, fmt.Sprintf(tools.BadSince, "")},
-		{"search", `{"limit":0,"cursor":"page2"}`, fmt.Sprintf(tools.BadLimit, 0)},
-		{"search", `{"limit":501}`, fmt.Sprintf(tools.BadLimit, 501)},
-		{"search", `{"cursor":"page2"}`, tools.BadCursor},
+		{"search", `{"limit":0,"page":"page2"}`, badLimit(0)},
+		{"search", fmt.Sprintf(`{"limit":%d}`, paging.MaxLimit+1), badLimit(paging.MaxLimit + 1)},
+		{"search", `{"page":"page2"}`, paging.BadPage},
 		{"count", `{"since":"bad","until":"bad","by":"path"}`, fmt.Sprintf(tools.BadSince, "bad")},
 		{"count", `{"until":"2026-10-02 14:00","by":"path"}`, fmt.Sprintf(tools.BadUntil, "2026-10-02 14:00")},
 		{"trace", `{"request_id":null}`, "invalid arguments:\nrequest_id: expected string, got null"},
@@ -349,86 +353,66 @@ func TestRefusalsAndOutcomes(t *testing.T) {
 	}
 }
 
-// R-9XZA-JZGH R-C6UR-C8TY
-func TestPagesAndCursorPositions(t *testing.T) {
-	es := []telemetry.Event{event("test.one", "alpha", "", "r", 0, nil), event("test.two", "beta", "", "r", 0, nil), event("test.three", "alpha", "", "r", 1, nil), event("test.four", "beta", "", "r", 2, nil)}
+// R-IGPN-6BPN R-IHXJ-K3GC
+func TestPagesAndPositions(t *testing.T) {
+	es := []telemetry.Event{event("test.one", "alpha", "", "r", 0, nil), event("test.two", "beta", "", "r", 0, nil), event("test.three", "alpha", "", "r", 1, nil), event("test.four", "beta", "", "r", 2, nil), event("test.five", "alpha", "", "r", 2, nil)}
 	r := setup(t, es...)
-	var all []json.RawMessage
-	cursor := ""
-	for pageIndex := 0; pageIndex < 2; pageIndex++ {
-		args := `{"limit":2}`
-		if cursor != "" {
-			b, _ := json.Marshal(map[string]any{"limit": 2, "cursor": cursor})
-			args = string(b)
-		}
-		res := call(t, r, "search", args)
-		if res.IsError() {
-			t.Fatal(string(encoded(t, res)))
-		}
-		var env struct {
-			Structured struct {
-				Records []json.RawMessage
-				Cursor  string
-			} `json:"structuredContent"`
-		}
-		if err := json.Unmarshal(encoded(t, res), &env); err != nil {
+	token := paging.Token{Tool: "search"}
+	page := ""
+	var position *store.Position
+	for index := 0; index < 3; index++ {
+		args, _ := json.Marshal(map[string]any{"limit": 2, "page": page})
+		stored, err := r.s.Search(ctx, store.Filter{}, 2, position)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if len(env.Structured.Records) != 2 {
-			t.Fatalf("page length %s", encoded(t, res))
+		wantEvents := reverse(es)[index*2:]
+		if len(wantEvents) > 2 {
+			wantEvents = wantEvents[:2]
 		}
-		if pageIndex == 0 && env.Structured.Cursor == "" || pageIndex == 1 && env.Structured.Cursor != "" {
-			t.Fatalf("cursor %s", encoded(t, res))
+		want := recordsJSON(t, wantEvents...)
+		page = ""
+		if stored.Next != nil {
+			page = token.Encode(stored.Next.TS, stored.Next.ID)
+			encodedNext, _ := json.Marshal(page)
+			want = want[:len(want)-1] + `,"next":` + string(encodedNext) + "}"
 		}
-		want := recordsJSON(t, es[3], es[2])
-		if pageIndex == 1 {
-			want = recordsJSON(t, es[1], es[0])
-		}
-		if env.Structured.Cursor != "" {
-			encodedCursor, err := json.Marshal(env.Structured.Cursor)
+		success(t, call(t, r, "search", string(args)), want)
+		position = stored.Next
+		if index == 0 {
+			changed, _ := json.Marshal(map[string]any{"services": []string{"alpha"}, "limit": 2, "page": page})
+			continued, err := r.s.Search(ctx, store.Filter{Services: []string{"alpha"}}, 2, position)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want = want[:len(want)-1] + `,"cursor":` + string(encodedCursor) + "}"
-		}
-		success(t, res, want)
-		if pageIndex == 0 {
-			cursor = env.Structured.Cursor
-			success(t, call(t, r, "search", `{"services":["alpha"],"limit":2,"cursor":"`+cursor+`"}`), recordsJSON(t, es[0]))
-			damaged := "A" + cursor[1:]
-			if damaged == cursor {
-				damaged = "B" + cursor[1:]
+			if continued.Next != nil {
+				t.Fatal("unexpected continuation")
 			}
-			refusal(t, call(t, r, "search", `{"cursor":"`+damaged+`"}`), tools.BadCursor)
+			success(t, call(t, r, "search", string(changed)), recordsJSON(t, es[2], es[0]))
 		}
-		all = append(all, env.Structured.Records...)
 	}
-	b, err := json.Marshal(struct {
-		Records []json.RawMessage `json:"records"`
-	}{all})
-	if err != nil {
-		t.Fatal(err)
-	}
-	equalJSON(t, b, []byte(recordsJSON(t, es[3], es[2], es[1], es[0])))
-	many := make([]telemetry.Event, 51)
+	many := make([]telemetry.Event, paging.DefaultLimit+1)
 	for i := range many {
 		many[i] = event("test.item", "alpha", "", "", i, nil)
 	}
 	rr := setup(t, many...)
-	res := call(t, rr, "search", `{}`)
-	var env struct {
-		Structured struct {
-			Records []json.RawMessage
-			Cursor  string
-		} `json:"structuredContent"`
-	}
-	if err := json.Unmarshal(encoded(t, res), &env); err != nil {
+	first, err := rr.s.Search(ctx, store.Filter{}, paging.DefaultLimit, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(env.Structured.Records) != 50 || env.Structured.Cursor == "" {
-		t.Fatalf("default page %s", encoded(t, res))
+	if first.Next == nil {
+		t.Fatal("no default continuation")
 	}
-	success(t, call(t, rr, "search", `{"limit":500}`), recordsJSON(t, reverse(many)...))
+	next := token.Encode(first.Next.TS, first.Next.ID)
+	encodedNext, _ := json.Marshal(next)
+	want := recordsJSON(t, reverse(many)[:paging.DefaultLimit]...)
+	want = want[:len(want)-1] + `,"next":` + string(encodedNext) + "}"
+	for _, args := range []string{`{}`, `{"page":""}`, `{"page":null,"limit":null}`} {
+		success(t, call(t, rr, "search", args), want)
+	}
+	args, _ := json.Marshal(map[string]any{"page": next})
+	success(t, call(t, rr, "search", string(args)), recordsJSON(t, many[0]))
+	success(t, call(t, rr, "search", fmt.Sprintf(`{"limit":%d}`, paging.MaxLimit)), recordsJSON(t, reverse(many)...))
 }
 func reverse(es []telemetry.Event) []telemetry.Event {
 	out := append([]telemetry.Event{}, es...)
@@ -464,10 +448,10 @@ func TestCountGroups(t *testing.T) {
 	success(t, call(t, r, "count", `{"services":["z"],"by":"service"}`), `{"total":2,"groups":[{"key":"z","count":2}]}`)
 }
 
-// R-9RVS-N4R0 R-YQO5-O9FH
+// R-ID1Y-10HK R-YQO5-O9FH
 func TestFailedReadsAndWriterIsolation(t *testing.T) {
 	r := setup(t, event("test.one", "alpha", "", "r", 0, nil))
-	before, err := r.s.Search(ctx, store.Filter{}, 500, "")
+	before, err := r.s.Search(ctx, store.Filter{}, paging.MaxLimit, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +462,7 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 		}
 		call(t, r, tool, args)
 	}
-	after, err := r.s.Search(ctx, store.Filter{}, 500, "")
+	after, err := r.s.Search(ctx, store.Filter{}, paging.MaxLimit, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +482,7 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 		}
 	}
 	r.database.SetFailing(true)
-	for _, tc := range []struct{ name, args string }{{"catalog", `{}`}, {"search", `{}`}, {"search", `{"services":["absent"]}`}, {"search", `{"attrs":{"status":null}}`}, {"search", `{"since":"2026-10-03T00:00:00Z","until":"2026-10-02T00:00:00Z"}`}, {"count", `{}`}, {"count", `{"by":"service"}`}, {"count", `{"by":"attrs.missing"}`}, {"count", `{"attrs":{"status":null}}`}, {"trace", `{"request_id":"missing"}`}} {
+	for _, tc := range []struct{ name, args string }{{"catalog", `{}`}, {"search", `{}`}, {"search", fmt.Sprintf(`{"services":["absent"],"limit":%d,"page":%q}`, paging.MaxLimit, (paging.Token{Tool: "search"}).Encode(int64(1), int64(2)))}, {"search", `{"attrs":{"status":null}}`}, {"search", `{"since":"2026-10-03T00:00:00Z","until":"2026-10-02T00:00:00Z"}`}, {"count", `{}`}, {"count", `{"by":"service"}`}, {"count", `{"by":"attrs.missing"}`}, {"count", `{"attrs":{"status":null}}`}, {"trace", `{"request_id":"missing"}`}} {
 		before := len(r.capture.Events())
 		refusal(t, call(t, r, tc.name, tc.args), tools.ReadFailed)
 		if err := r.w.Flush(ctx); err != nil {
@@ -509,7 +493,7 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 			t.Fatalf("%s failure events: %+v", tc.name, added)
 		}
 	}
-	refusal(t, call(t, r, "search", `{"cursor":"page2"}`), tools.BadCursor)
+	refusal(t, call(t, r, "search", `{"page":"page2"}`), paging.BadPage)
 	refusal(t, call(t, r, "count", `{"by":"path"}`), fmt.Sprintf(tools.BadBy, "path"))
 	if err := r.w.Flush(ctx); err != nil {
 		t.Fatal(err)
@@ -525,7 +509,7 @@ func TestFailedReadsAndWriterIsolation(t *testing.T) {
 	}
 }
 
-// R-CAKF-ZA46 R-JHOV-XQDA R-BB5D-E7JW
+// R-CAKF-ZA46 R-IJ5F-XV71 R-BB5D-E7JW
 func TestNumberFormsAndRecordTime(t *testing.T) {
 	minusZero := json.Number("-0")
 	var negativeZero float64
@@ -604,23 +588,59 @@ func schemaWithoutDescriptions(t *testing.T, raw json.RawMessage) []byte {
 	return result
 }
 
-// R-99LA-WKML
+// R-I86C-HXIS
 func TestRefusalConstants(t *testing.T) {
 	const read string = tools.ReadFailed
-	const cursor string = tools.BadCursor
-	if read == "" || cursor == "" {
+	if read == "" {
 		t.Fatal("empty refusal")
 	}
 	const since string = tools.BadSince
 	const until string = tools.BadUntil
 	const by string = tools.BadBy
-	const limit string = tools.BadLimit
 	for _, format := range []string{since, until, by} {
 		if strings.Count(format, "%") != 1 || !strings.Contains(format, "%s") {
 			t.Fatal("string refusal format", format)
 		}
 	}
-	if strings.Count(limit, "%") != 1 || !strings.Contains(limit, "%d") {
-		t.Fatal("limit refusal format", tools.BadLimit)
+}
+
+func badLimit(value int) string {
+	_, err := paging.Window(&value)
+	return err.Error()
+}
+
+func schemaDescription(t *testing.T, raw json.RawMessage, property, want string) {
+	t.Helper()
+	var schema struct {
+		Properties map[string]struct{ Description string }
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if got := schema.Properties[property].Description; got != want {
+		t.Fatalf("%s description got %q want %q", property, got, want)
+	}
+}
+
+// R-IE9U-ES89 R-IFHQ-SJYY
+func TestPagingRefusalsBeforeRead(t *testing.T) {
+	r := setup(t)
+	token := paging.Token{Tool: "search"}
+	valid := token.Encode(int64(1), int64(2))
+	damaged := "A" + valid[1:]
+	if damaged == valid {
+		damaged = "B" + valid[1:]
+	}
+	pages := []string{"page2", damaged, token.Encode(int64(1)), token.Encode(int64(1), int64(2), int64(3)), token.Encode("1", int64(2)), (paging.Token{Tool: "catalog"}).Encode(int64(1), int64(2))}
+	for _, failing := range []bool{false, true} {
+		r.database.SetFailing(failing)
+		for _, value := range []int{-1, 0, paging.MaxLimit + 1} {
+			args, _ := json.Marshal(map[string]any{"limit": value, "page": "page2"})
+			refusal(t, call(t, r, "search", string(args)), badLimit(value))
+		}
+		for _, page := range pages {
+			args, _ := json.Marshal(map[string]any{"page": page})
+			refusal(t, call(t, r, "search", string(args)), paging.BadPage)
+		}
 	}
 }

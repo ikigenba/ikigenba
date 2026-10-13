@@ -1,16 +1,13 @@
 package store_test
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"hash/crc32"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -48,7 +45,7 @@ func put(t *testing.T, s *store.Store, e telemetry.Event) {
 		t.Fatal(err)
 	}
 }
-func page(t *testing.T, s *store.Store, f store.Filter, limit int, c store.Cursor) store.Page {
+func page(t *testing.T, s *store.Store, f store.Filter, limit int, c *store.Position) store.Page {
 	t.Helper()
 	p, err := s.Search(context.Background(), f, limit, c)
 	if err != nil {
@@ -88,16 +85,24 @@ func contractStore(t *testing.T, constructor func(*db.DB) *store.Store) *store.S
 }
 
 func TestContractAndTrail(t *testing.T) {
-	// R-QR9H-00U1 R-UN13-R5KW R-UO90-4XBL R-J0MB-S6BP R-J1U8-5Y2E R-J324-JPT3 R-J4A0-XHJS R-J5HX-B9AH R-J6PT-P116 R-J7XQ-2SRV R-J95M-GKIK
+	// R-QR9H-00U1 R-UN13-R5KW R-UO90-4XBL R-J0MB-S6BP R-J1U8-5Y2E R-HX79-1ZUJ R-J4A0-XHJS R-J5HX-B9AH R-J6PT-P116 R-HYF5-FRL8 R-HZN1-TJBX
 	// Unkeyed literals prove exact field order and count by compilation; method assignments prove signatures.
 	var sink telemetry.Sink = contractStore(t, store.New)
 	s := sink.(*store.Store)
 	_ = store.Filter{nil, nil, nil, nil, nil, nil, nil}
-	_ = store.Page{nil, store.Cursor("")}
+	_ = store.Page{nil, &store.Position{0, 0}}
 	_ = store.CatalogEntry{"", []store.EventEntry{{"", 0, time.Time{}, nil}}}
 	_ = store.Group{"", 0}
-	if store.ErrCursor == nil || store.ErrGroupBy == nil || errors.Is(store.ErrCursor, store.ErrGroupBy) {
-		t.Fatal("sentinels must be nonnil and distinct")
+	var _ interface {
+		Catalog(context.Context, string, string) ([]store.CatalogEntry, error)
+		Search(context.Context, store.Filter, int, *store.Position) (store.Page, error)
+		Count(context.Context, store.Filter) (int64, error)
+		CountBy(context.Context, store.Filter, store.GroupBy) (int64, []store.Group, error)
+		Trace(context.Context, string) ([]store.Record, error)
+	} = s
+
+	if store.ErrGroupBy == nil {
+		t.Fatal("grouping sentinel must be nonnil")
 	}
 	for by, want := range map[store.GroupBy]string{store.ByService: "service", store.ByEvent: "event", store.ByUser: "user", store.ByRequestID: "request_id", store.ByMinute: "minute", store.ByHour: "hour", store.ByDay: "day"} {
 		if string(by) != want {
@@ -117,7 +122,7 @@ func TestContractAndTrail(t *testing.T) {
 	b := a
 	b.Name = "second.record"
 	put(t, s, b)
-	got := page(t, s, store.Filter{}, 10, "")
+	got := page(t, s, store.Filter{}, 10, nil)
 	if len(got.Records) != 2 {
 		t.Fatal(got)
 	}
@@ -153,7 +158,7 @@ func TestPersistenceAndAdoption(t *testing.T) {
 	b.Name = "b.record"
 	put(t, s, a)
 	put(t, s, b)
-	before := page(t, s, store.Filter{}, 10, "")
+	before := page(t, s, store.Filter{}, 10, nil)
 	cat, err := s.Catalog(context.Background(), "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +168,7 @@ func TestPersistenceAndAdoption(t *testing.T) {
 	}
 	d = database(t, path)
 	s = store.New(d)
-	if got := page(t, s, store.Filter{}, 10, ""); !reflect.DeepEqual(got, before) {
+	if got := page(t, s, store.Filter{}, 10, nil); !reflect.DeepEqual(got, before) {
 		t.Fatal(got, before)
 	}
 	if got, err := s.Catalog(context.Background(), "", ""); err != nil || !reflect.DeepEqual(got, cat) {
@@ -212,7 +217,7 @@ func TestPersistenceAndAdoption(t *testing.T) {
 	}
 	want := before
 	want.Records = append([]store.Record{trace[2]}, before.Records...)
-	if got := page(t, s, store.Filter{}, 10, ""); !reflect.DeepEqual(got, want) {
+	if got := page(t, s, store.Filter{}, 10, nil); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
 	if n := number(t, s, store.Filter{}); n != 3 {
@@ -230,7 +235,7 @@ func TestPersistenceAndAdoption(t *testing.T) {
 }
 
 func TestSchemaAndRows(t *testing.T) {
-	// R-SBCU-LGXZ R-SCKQ-Z8OO R-SDSN-D0FD
+	// R-SBCU-LGXZ R-I22U-L2TB R-SDSN-D0FD
 	path := filepath.Join(t.TempDir(), "db")
 	d := database(t, path)
 	s := store.New(d)
@@ -282,7 +287,7 @@ func TestSchemaAndRows(t *testing.T) {
 				t.Fatal(got, want)
 			}
 		}
-		for name, want := range map[string][]string{"records_ts": {"ts"}, "records_svc_ts": {"svc", "ts"}, "records_ev_ts": {"ev", "ts"}, "records_req_ts": {"req", "ts"}, "records_user_ts": {"user", "ts"}, "attrs_key_value": {"key", "value"}} {
+		for name, want := range map[string][]string{"records_ts": {"ts"}, "records_svc_ts": {"svc", "ts"}, "records_ev_ts": {"ev", "ts"}, "records_req_ts": {"req", "ts"}, "records_user_ts": {"user", "ts"}, "attrs_key_value": {"key", "value"}, "attrs_record_key": {"record_id", "key"}} {
 			table := "records"
 			if strings.HasPrefix(name, "attrs") {
 				table = "attrs"
@@ -398,7 +403,7 @@ func TestSchemaAndRows(t *testing.T) {
 }
 
 func TestDeliveryFailureAndRecovery(t *testing.T) {
-	// R-JP0B-FL5L R-3F94-JPJZ R-CE85-4LC9 R-SA4Y-7P7A R-SF0J-QS62
+	// R-JP0B-FL5L R-3F94-JPJZ R-CE85-4LC9 R-I0UY-7B2M R-SF0J-QS62
 	d := database(t, filepath.Join(t.TempDir(), "trail.db"))
 	s := store.New(d)
 	at := time.Unix(5, 0)
@@ -424,11 +429,11 @@ func TestDeliveryFailureAndRecovery(t *testing.T) {
 	protected.Name = "protected.record"
 	protected.Time = at.Add(time.Second)
 	put(t, s, protected)
-	cursor := page(t, s, store.Filter{}, 1, "").Next
+	position := page(t, s, store.Filter{}, 1, nil).Next
 	d.SetFailing(true)
 	check := func(err error) {
 		t.Helper()
-		if err == nil || errors.Is(err, store.ErrCursor) || errors.Is(err, store.ErrGroupBy) {
+		if err == nil || errors.Is(err, store.ErrGroupBy) {
 			t.Fatal(err)
 		}
 	}
@@ -438,20 +443,18 @@ func TestDeliveryFailureAndRecovery(t *testing.T) {
 	check(s.Sweep(context.Background(), at.Add(time.Second)))
 	_, err := s.Catalog(context.Background(), "", "")
 	check(err)
-	for _, after := range []store.Cursor{"", cursor} {
+	for _, after := range []*store.Position{nil, position} {
 		_, err = s.Search(context.Background(), store.Filter{}, 1, after)
 		check(err)
 	}
+	_, err = s.Search(context.Background(), store.Filter{Attrs: telemetry.Attrs{"invalid": nil}}, 1, nil)
+	check(err)
 	_, err = s.Count(context.Background(), store.Filter{})
 	check(err)
 	_, _, err = s.CountBy(context.Background(), store.Filter{}, store.ByService)
 	check(err)
 	_, err = s.Trace(context.Background(), "req")
 	check(err)
-	_, err = s.Search(context.Background(), store.Filter{}, 1, "bad")
-	if !errors.Is(err, store.ErrCursor) {
-		t.Fatal(err)
-	}
 	_, _, err = s.CountBy(context.Background(), store.Filter{}, "bad")
 	if !errors.Is(err, store.ErrGroupBy) {
 		t.Fatal(err)
@@ -466,7 +469,7 @@ func TestDeliveryFailureAndRecovery(t *testing.T) {
 	if number(t, s, store.Filter{}) != 2 {
 		t.Fatal("changed after failure")
 	}
-	wantRecord(t, page(t, s, store.Filter{}, 10, "").Records[0], protected)
+	wantRecord(t, page(t, s, store.Filter{}, 10, nil).Records[0], protected)
 	put(t, s, e)
 	if number(t, s, store.Filter{}) != 3 {
 		t.Fatal("recovery failed")
@@ -474,7 +477,7 @@ func TestDeliveryFailureAndRecovery(t *testing.T) {
 }
 
 func TestFilteringAndPaging(t *testing.T) {
-	// R-JV3T-CFV2 R-JWBP-Q7LR R-JXJM-3ZCG R-SG8G-4JWR R-SHGC-IBNG R-SIO8-W3E5 R-K3N4-0U1X R-K62W-SDJB R-KC6E-P88S
+	// R-JV3T-CFV2 R-JWBP-Q7LR R-I3AQ-YUK0 R-I4IN-CMAP R-I5QJ-QE1E R-I6YG-45S3 R-K62W-SDJB R-KC6E-P88S
 	path := filepath.Join(t.TempDir(), "db")
 	d := database(t, path)
 	s := store.New(d)
@@ -492,6 +495,8 @@ func TestFilteringAndPaging(t *testing.T) {
 	after := at.Add(time.Second)
 	offset := at.In(time.FixedZone("other", -3600))
 	unknown := "unknown"
+	fineSince := at.Add(time.Nanosecond)
+	fineUntil := at.Add(time.Nanosecond)
 	cases := []struct {
 		f     store.Filter
 		names []string
@@ -499,6 +504,8 @@ func TestFilteringAndPaging(t *testing.T) {
 		{store.Filter{}, []string{"string", "second", "first", "earlier"}},
 		{store.Filter{Since: &offset, Until: &after}, []string{"second", "first"}},
 		{store.Filter{Since: &after, Until: &before}, []string{}},
+		{store.Filter{Since: &fineSince}, []string{"string"}},
+		{store.Filter{Until: &fineUntil}, []string{"second", "first", "earlier"}},
 		{store.Filter{Services: []string{"beta", "none"}}, []string{"earlier"}},
 		{store.Filter{Events: []string{"first.record", "second.record"}}, []string{"second", "first"}},
 		{store.Filter{User: &empty, RequestID: &empty}, []string{"earlier"}},
@@ -511,70 +518,92 @@ func TestFilteringAndPaging(t *testing.T) {
 		{store.Filter{Attrs: telemetry.Attrs{"status": map[string]int{"x": 1}}}, []string{}},
 	}
 	for _, tc := range cases {
-		p := page(t, s, tc.f, 10, "")
+		p := page(t, s, tc.f, 10, nil)
 		names := make([]string, 0)
 		for _, r := range p.Records {
 			names = append(names, strings.TrimSuffix(r.Event, ".record"))
 		}
-		if !reflect.DeepEqual(names, tc.names) || number(t, s, tc.f) != int64(len(tc.names)) || p.Next != "" {
+		if !reflect.DeepEqual(names, tc.names) || number(t, s, tc.f) != int64(len(tc.names)) || p.Next != nil {
 			t.Fatal(tc.f, names, p.Next, tc.names)
 		}
-		if again := page(t, s, tc.f, 10, ""); !reflect.DeepEqual(p, again) {
+		total, groups, err := s.CountBy(context.Background(), tc.f, store.ByEvent)
+		wantGroups := make([]store.Group, 0, len(tc.names))
+		for _, name := range tc.names {
+			wantGroups = append(wantGroups, store.Group{Key: name + ".record", Count: 1})
+		}
+		sort.Slice(wantGroups, func(i, j int) bool { return wantGroups[i].Key < wantGroups[j].Key })
+		if err != nil || total != int64(len(tc.names)) || !reflect.DeepEqual(groups, wantGroups) {
+			t.Fatal(total, groups, wantGroups, err)
+		}
+		if again := page(t, s, tc.f, 10, nil); !reflect.DeepEqual(p, again) {
 			t.Fatal("read mutated trail")
 		}
 	}
-	p := page(t, s, store.Filter{}, 2, "")
-	if p.Next == "" {
-		t.Fatal("missing cursor")
+	p := page(t, s, store.Filter{}, 2, nil)
+	if p.Next == nil {
+		t.Fatal("missing position")
 	}
-	b, err := base64.RawURLEncoding.Strict().DecodeString(string(p.Next))
-	if err != nil || len(b) != 20 {
-		t.Fatal(b, err)
-	}
-	var ts, id int64
-	r := bytes.NewReader(b[:16])
-	if err := binary.Read(r, binary.BigEndian, &ts); err != nil {
+	var wantPosition store.Position
+	if err := d.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRow("SELECT ts,id FROM records WHERE ev=?", p.Records[len(p.Records)-1].Event).Scan(&wantPosition.TS, &wantPosition.ID)
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := binary.Read(r, binary.BigEndian, &id); err != nil {
-		t.Fatal(err)
-	}
-	if ts != at.UnixMicro() || id != 3 || binary.BigEndian.Uint32(b[16:]) != crc32.ChecksumIEEE(b[:16]) {
-		t.Fatal(ts, id, b)
+	if *p.Next != wantPosition {
+		t.Fatal(p.Next, wantPosition)
 	}
 	next := page(t, s, store.Filter{}, 2, p.Next)
-	if next.Next != "" || len(next.Records) != 2 || next.Records[0].Event != "first.record" || next.Records[1].Event != "earlier.record" {
+	if next.Next != nil || len(next.Records) != 2 || next.Records[0].Event != "first.record" || next.Records[1].Event != "earlier.record" {
 		t.Fatal(next)
 	}
 	changed := page(t, s, store.Filter{Services: []string{"beta"}}, 10, p.Next)
 	if len(changed.Records) != 1 || changed.Records[0].Event != "earlier.record" {
 		t.Fatal(changed)
 	}
-	for _, bad := range []store.Cursor{"page2", p.Next + "=", p.Next[:len(p.Next)-1], p.Next + "A", store.Cursor(base64.RawURLEncoding.EncodeToString([]byte("too short")))} {
-		got, err := s.Search(context.Background(), store.Filter{}, 1, bad)
-		if !errors.Is(err, store.ErrCursor) || !reflect.DeepEqual(got, store.Page{}) {
-			t.Fatal(got, err)
-		}
-	}
-	for i := range len(p.Next) {
-		chars := []byte(p.Next)
-		if chars[i] == 'A' {
-			chars[i] = 'B'
-		} else {
-			chars[i] = 'A'
-		}
-		got, err := s.Search(context.Background(), store.Filter{}, 1, store.Cursor(chars))
-		if !errors.Is(err, store.ErrCursor) || !reflect.DeepEqual(got, store.Page{}) {
-			t.Fatalf("corruption %d: %v,%v", i, got, err)
-		}
-	}
 	for _, limit := range []int{0, -1} {
-		got, err := s.Search(context.Background(), store.Filter{}, limit, "")
-		if err == nil || errors.Is(err, store.ErrCursor) || !reflect.DeepEqual(got, store.Page{}) {
+		got, err := s.Search(context.Background(), store.Filter{Attrs: telemetry.Attrs{"bad": nil}}, limit, &store.Position{-1, -1})
+		if err == nil || !reflect.DeepEqual(got, store.Page{}) {
 			t.Fatal(got, err)
 		}
 	}
-	// A cursor persists across restart and does not need its anchor record.
+	for _, f := range []store.Filter{{}, {Services: []string{"alpha"}}, {Attrs: telemetry.Attrs{"status": 500}}} {
+		whole := page(t, s, f, 10, nil)
+		got := make([]store.Record, 0)
+		var after *store.Position
+		for steps := 0; ; steps++ {
+			if steps > len(events) {
+				t.Fatal("paging did not finish")
+			}
+			p := page(t, s, f, 1, after)
+			got = append(got, p.Records...)
+			if p.Next == nil {
+				break
+			}
+			after = p.Next
+		}
+		if !reflect.DeepEqual(got, whole.Records) {
+			t.Fatal(got, whole)
+		}
+	}
+	for _, tc := range []struct {
+		pos   store.Position
+		names []string
+	}{
+		{store.Position{at.UnixMicro(), 100}, []string{"second.record", "first.record", "earlier.record"}},
+		{store.Position{at.UnixMicro(), 0}, []string{"earlier.record"}},
+		{store.Position{at.Add(time.Second).UnixMicro() + 1, -1}, []string{"string.record", "second.record", "first.record", "earlier.record"}},
+		{store.Position{-1, -1}, []string{}},
+	} {
+		p := page(t, s, store.Filter{}, 10, &tc.pos)
+		got := make([]string, 0)
+		for _, r := range p.Records {
+			got = append(got, r.Event)
+		}
+		if !reflect.DeepEqual(got, tc.names) || p.Next != nil {
+			t.Fatal(p, tc.names)
+		}
+	}
+	// A position persists across restart and does not need its anchor record.
 	if err := d.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +622,7 @@ func TestFilteringAndPaging(t *testing.T) {
 	if err := s.Sweep(context.Background(), at.Add(time.Nanosecond)); err != nil {
 		t.Fatal(err)
 	}
-	if got := page(t, s, store.Filter{}, 10, p.Next); len(got.Records) != 0 || got.Next != "" {
+	if got := page(t, s, store.Filter{}, 10, p.Next); len(got.Records) != 0 || got.Next != nil {
 		t.Fatal(got)
 	}
 }
@@ -679,7 +708,7 @@ func TestSweepBoundaryAndBatches(t *testing.T) {
 	if err := s.Sweep(context.Background(), at); err != nil {
 		t.Fatal(err)
 	}
-	p := page(t, s, store.Filter{}, 10, "")
+	p := page(t, s, store.Filter{}, 10, nil)
 	if len(p.Records) != 2 {
 		t.Fatal(p)
 	}
@@ -688,7 +717,7 @@ func TestSweepBoundaryAndBatches(t *testing.T) {
 	if err := s.Sweep(context.Background(), at); err != nil {
 		t.Fatal(err)
 	}
-	if got := page(t, s, store.Filter{}, 10, ""); !reflect.DeepEqual(p, got) {
+	if got := page(t, s, store.Filter{}, 10, nil); !reflect.DeepEqual(p, got) {
 		t.Fatal(got)
 	}
 }
@@ -709,7 +738,7 @@ func TestConcurrentCalls(t *testing.T) {
 			if _, err := s.Catalog(context.Background(), "", ""); err != nil {
 				t.Error(err)
 			}
-			if _, err := s.Search(context.Background(), store.Filter{}, 50, ""); err != nil {
+			if _, err := s.Search(context.Background(), store.Filter{}, 50, nil); err != nil {
 				t.Error(err)
 			}
 			if _, err := s.Count(context.Background(), store.Filter{}); err != nil {
@@ -727,7 +756,7 @@ func TestConcurrentCalls(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	p := page(t, s, store.Filter{}, 50, "")
+	p := page(t, s, store.Filter{}, 50, nil)
 	if len(p.Records) != 20 {
 		t.Fatal(len(p.Records))
 	}
@@ -773,7 +802,7 @@ func TestFilterBasicNormalization(t *testing.T) {
 			other := event("different", at, telemetry.Attrs{tc.name: tc.different})
 			put(t, s, other)
 			f := store.Filter{Attrs: telemetry.Attrs{tc.name: tc.value}}
-			p := page(t, s, f, 10, "")
+			p := page(t, s, f, 10, nil)
 			if len(p.Records) != 1 {
 				t.Fatalf("filter matches %d records, want 1", len(p.Records))
 			}

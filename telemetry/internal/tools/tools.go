@@ -12,6 +12,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/telemetry/internal/store"
 )
@@ -19,17 +20,15 @@ import (
 // Refusal copy is shared with consumers and tests.
 const (
 	ReadFailed string = "cannot read the trail"
-	BadCursor  string = "cursor is not one search issued"
 	BadSince   string = "since is not an RFC 3339 time: '%s'"
 	BadUntil   string = "until is not an RFC 3339 time: '%s'"
 	BadBy      string = "by must be service, event, user, request_id, minute, hour, day, or attrs.<key>, got '%s'"
-	BadLimit   string = "limit must be between 1 and 500, got %d"
 )
 
 const timestamp = "2006-01-02T15:04:05.000000Z"
 
 const catalogDescription = "The services, the events each records, and the attribute keys each carries.\n\nWithout arguments, every service in the trail in name order, each with its events in name order, and for each event how many records it has, when the latest was recorded, and the attribute keys its records carry. Pass service or event, or both, to narrow it. Call it first to learn what search and count can filter on."
-const searchDescription = "The records that match a filter, newest first.\n\nEvery argument is optional and they combine: since and until bound the time (RFC 3339, since inclusive, until exclusive), services and events take any of the names given, user and request_id match exactly, and attrs is an object whose every pair a record must carry. limit is 1 to 500, 50 when left out. When more records match, the result carries a cursor; pass it back with the same filters for the next page."
+const searchDescription = "The records that match a filter, newest first.\n\nEvery argument is optional and they combine: since and until bound the time (RFC 3339, since inclusive, until exclusive), services and events take any of the names given, user and request_id match exactly, and attrs is an object whose every pair a record must carry. When more records match, the result carries next; pass it back as page with the same filters to continue. The limit and page properties describe the page size and continuation."
 const countDescription = "How many records match a filter, grouped by a field or a time bucket.\n\nTakes the filters of search. Without by, the total. With by, one of service, event, user, request_id, minute, hour, day, or attrs.<key>, the total and one group per value with its count."
 const traceDescription = "Every record of one request, from every service it touched, oldest first.\n\nPass the request id; the result is the records of that id from every service, in the order they happened. An id the trail does not hold gives no records, not an error."
 
@@ -53,7 +52,7 @@ type traceOutput struct {
 }
 type searchOutput struct {
 	Records []record `json:"records" mcp:"required" description:"The matching records, newest first."`
-	Cursor  *string  `json:"cursor" description:"Present when more records match: pass it back with the same filters for the next page."`
+	Next    *string  `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 type eventEntry struct {
 	Event    string   `json:"event" mcp:"required"`
@@ -84,8 +83,8 @@ type searchInput struct {
 	User      *string         `json:"user" description:"Keep records whose user is exactly this."`
 	RequestID *string         `json:"request_id" description:"Keep records whose request id is exactly this."`
 	Attrs     json.RawMessage `json:"attrs" description:"Keep records that carry every one of these keys with exactly this value; a number matches a number and a string a string."`
-	Limit     *int            `json:"limit" description:"The most records one page holds, 1 to 500; 50 when left out."`
-	Cursor    *string         `json:"cursor" description:"The cursor a previous page gave, to continue it with the same filters."`
+	Limit     *int            `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+	Page      *string         `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
 }
 type countInput struct {
 	Since     *string         `json:"since" description:"Keep records at or after this RFC 3339 time."`
@@ -121,28 +120,26 @@ func Register(srv *mcp.Server, s *store.Store) {
 		if err != nil {
 			return searchOutput{}, err
 		}
-		limit := 50
-		if in.Limit != nil {
-			limit = *in.Limit
+		limit, err := paging.Window(in.Limit)
+		if err != nil {
+			return searchOutput{}, err
 		}
-		if limit < 1 || limit > 500 {
-			return searchOutput{}, fmt.Errorf(BadLimit, limit)
+		var after *store.Position
+		token := paging.Token{Tool: "search"}
+		if in.Page != nil && *in.Page != "" {
+			after = &store.Position{}
+			if err := token.Decode(*in.Page, &after.TS, &after.ID); err != nil {
+				return searchOutput{}, err
+			}
 		}
-		var cursor store.Cursor
-		if in.Cursor != nil {
-			cursor = store.Cursor(*in.Cursor)
-		}
-		page, err := s.Search(ctx, f, limit, cursor)
-		if errors.Is(err, store.ErrCursor) {
-			return searchOutput{}, errors.New(BadCursor)
-		}
+		page, err := s.Search(ctx, f, limit, after)
 		if err != nil {
 			return searchOutput{}, errors.New(ReadFailed)
 		}
 		out := searchOutput{Records: records(page.Records)}
-		if page.Next != "" {
-			next := string(page.Next)
-			out.Cursor = &next
+		if page.Next != nil {
+			next := token.Encode(page.Next.TS, page.Next.ID)
+			out.Next = &next
 		}
 		return out, nil
 	}})

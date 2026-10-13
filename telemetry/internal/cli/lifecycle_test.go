@@ -231,7 +231,7 @@ func records(t *testing.T, source string) []store.Record {
 	handle := openDatabase(t, source)
 	s := store.New(handle)
 	defer func() { _ = handle.Close() }()
-	result, err := s.Search(context.Background(), store.Filter{}, 500, "")
+	result, err := s.Search(context.Background(), store.Filter{}, 500, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +428,7 @@ func TestRetentionSweeps(t *testing.T) {
 				h := openDatabase(t, databasePath(r.p.Dir))
 				defer func() { _ = h.Close() }()
 				s := store.New(h)
-				p, e := s.Search(context.Background(), store.Filter{Services: []string{"sibling"}}, 50, "")
+				p, e := s.Search(context.Background(), store.Filter{Services: []string{"sibling"}}, 50, nil)
 				if e != nil {
 					t.Fatal(e)
 				}

@@ -37,7 +37,11 @@ func TestDatabaseStatus(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				migrations := fstest.MapFS{"0001_trail.sql": {Data: content}, "0002_extra.sql": {Data: []byte("CREATE TABLE extra (id INTEGER);")}}
+				index, err := fs.ReadFile(root.Migrations(), "0002_attrs_record.sql")
+				if err != nil {
+					t.Fatal(err)
+				}
+				migrations := fstest.MapFS{"0001_trail.sql": {Data: content}, "0002_attrs_record.sql": {Data: index}, "0003_extra.sql": {Data: []byte("CREATE TABLE extra (id INTEGER);")}}
 				h, err := db.Open(context.Background(), db.Config{Path: path, Migrations: migrations, Now: func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }})
 				if err != nil {
 					t.Fatal(err)
@@ -150,7 +154,11 @@ func TestRunWarnsAndServesUpgradedDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	migrations := fstest.MapFS{"0001_trail.sql": {Data: baseline}, "0002_extra.sql": {Data: []byte("CREATE TABLE extra(id INTEGER);")}}
+	index, err := fs.ReadFile(root.Migrations(), "0002_attrs_record.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrations := fstest.MapFS{"0001_trail.sql": {Data: baseline}, "0002_attrs_record.sql": {Data: index}, "0003_extra.sql": {Data: []byte("CREATE TABLE extra(id INTEGER);")}}
 	h, err := db.Open(context.Background(), db.Config{Path: path, Migrations: migrations, Now: r.p.Now})
 	if err != nil {
 		t.Fatal(err)
