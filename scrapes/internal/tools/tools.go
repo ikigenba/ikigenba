@@ -26,9 +26,6 @@ type Config struct {
 // Entry names a tool and its description.
 type Entry struct{ Name, Description string }
 
-// PageSize is the number of entries returned in one page.
-const PageSize = 25
-
 // Tool descriptions and refusal sentences are stable copy.
 const (
 	DescribeScrapers  = "List scrapers and their current and running runs."
@@ -71,10 +68,11 @@ type RunArgs struct {
 
 // RowsArgs selects a run, name filter and page of rows.
 type RowsArgs struct {
-	Run     string `json:"run"`
-	Scraper string `json:"scraper"`
-	Name    string `json:"name"`
-	Page    uint32 `json:"page"`
+	Run     string  `json:"run"`
+	Scraper string  `json:"scraper"`
+	Name    string  `json:"name"`
+	Page    *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit   *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // RowArgs names one source record in a run.
@@ -104,7 +102,7 @@ type RunList struct {
 // RowList is a page of row envelopes.
 type RowList struct {
 	Rows []source.Row `json:"rows"`
-	Next *int64       `json:"next,omitempty"`
+	Next *string      `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // MarshalJSON encodes an absent list as an empty array.
@@ -180,8 +178,8 @@ func answer(v any) (mcp.Result, error) {
 }
 
 // RowsPage is shared by the rows tool and run page.
-func RowsPage(ctx context.Context, st *store.Store, runID, name string, page uint32) (RowList, error) {
-	list, err := st.ListRows(ctx, runID, name, int64(PageSize)*int64(page), PageSize+1)
+func RowsPage(ctx context.Context, st *store.Store, runID, name, after string, limit int) (RowList, error) {
+	list, err := st.ListRowsAfter(ctx, runID, name, after, limit+1)
 	if err != nil {
 		return RowList{}, err
 	}
@@ -189,10 +187,10 @@ func RowsPage(ctx context.Context, st *store.Store, runID, name string, page uin
 	if result.Rows == nil {
 		result.Rows = []source.Row{}
 	}
-	if len(list) > PageSize {
-		next := int64(page) + 1
+	if len(list) > limit {
+		next := (paging.Token{Tool: "rows"}).Encode(list[limit-1].SourceID)
 		result.Next = &next
-		result.Rows = list[:PageSize]
+		result.Rows = list[:limit]
 	}
 	return result, nil
 }
@@ -300,11 +298,21 @@ func Register(srv *mcp.Server, cfg Config) {
 		return answer(runs.RecordOf(r))
 	}})
 	mcp.AddRawTool(srv, mcp.RawTool[RowsArgs]{Name: "rows", Description: DescribeRows, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, a RowsArgs) (mcp.Result, error) {
+		size, err := paging.Window(a.Limit)
+		if err != nil {
+			return mcp.Result{}, err
+		}
+		var after string
+		if a.Page != nil && *a.Page != "" {
+			if err = (paging.Token{Tool: "rows"}).Decode(*a.Page, &after); err != nil {
+				return mcp.Result{}, errors.New(paging.BadPage)
+			}
+		}
 		id, err := resolveRows(ctx, cfg, a)
 		if err != nil {
 			return mcp.Result{}, err
 		}
-		result, err := RowsPage(ctx, cfg.Store, id, a.Name, a.Page)
+		result, err := RowsPage(ctx, cfg.Store, id, a.Name, after, size)
 		if err != nil {
 			return mcp.Result{}, storeError(err)
 		}

@@ -310,6 +310,14 @@ func (s *Store) PutRows(ctx context.Context, id string, batch []source.Row) erro
 			if e != nil {
 				return e
 			}
+			if _, e = tx.ExecContext(ctx, `DELETE FROM row_names WHERE "run"=? AND source_id=?`, id, r.SourceID); e != nil {
+				return e
+			}
+			for _, name := range r.Names {
+				if _, e = tx.ExecContext(ctx, `INSERT INTO row_names ("run",source_id,name,name_lower) VALUES (?,?,?,?)`, id, r.SourceID, name, strings.ToLower(name)); e != nil {
+					return e
+				}
+			}
 		}
 		return nil
 	})
@@ -331,6 +339,9 @@ func (s *Store) end(ctx context.Context, id, reason string) (Run, error) {
 		if reason != "" {
 			r.Status = StatusFailed
 			r.Reason = reason
+			if _, e = tx.ExecContext(ctx, `DELETE FROM row_names WHERE "run"=?`, id); e != nil {
+				return e
+			}
 			_, e = tx.ExecContext(ctx, `DELETE FROM rows WHERE "run"=?`, id)
 			if e != nil {
 				return e
@@ -416,32 +427,60 @@ func each(ctx context.Context, tx *sql.Tx, run string, fn func(source.Row) error
 	return rows.Err()
 }
 
-// ListRows reads a filtered window without raw records.
-func (s *Store) ListRows(ctx context.Context, run, name string, offset, limit int64) ([]source.Row, error) {
+// ListRowsAfter reads a bounded filtered window without raw records.
+func (s *Store) ListRowsAfter(ctx context.Context, run, name, after string, limit int) ([]source.Row, error) {
 	var out []source.Row
 	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		if offset < 0 || limit < 1 {
+		if limit < 1 {
 			return ErrUnreachable
 		}
+		r, e := readRun(ctx, tx, run)
+		if e != nil {
+			return e
+		}
 		out = []source.Row{}
-		matched := int64(0)
-		return each(ctx, tx, run, func(r source.Row) error {
-			match := name == ""
-			for _, n := range r.Names {
-				if strings.Contains(strings.ToLower(n), strings.ToLower(name)) {
-					match = true
-				}
-			}
-			if !match {
-				return nil
-			}
-			if matched >= offset && int64(len(out)) < limit {
-				r.Raw = nil
-				out = append(out, r)
-			}
-			matched++
+		if r.Status != StatusDone {
 			return nil
-		})
+		}
+		// Select no raw data: the window's memory is bounded by its envelopes.
+		const cols = `r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL`
+		const named = ` AND EXISTS (SELECT 1 FROM row_names n WHERE n."run"=r."run" AND n.source_id=r.source_id AND instr(n.name_lower,?)>0)`
+		const first = "SELECT " + cols + ` FROM "rows" r WHERE r."run"=?`
+		const positioned = first + ` AND r.source_id>?`
+		const ordered = " ORDER BY r.source_id LIMIT ?"
+		const firstRows = first + ordered
+		const namedFirstRows = first + named + ordered
+		const rowsAfter = positioned + ordered
+		const namedRowsAfter = positioned + named + ordered
+		var q string
+		var args []any
+		switch {
+		case name != "" && after != "":
+			q = namedRowsAfter
+			args = []any{run, after, strings.ToLower(name), limit}
+		case name != "":
+			q = namedFirstRows
+			args = []any{run, strings.ToLower(name), limit}
+		case after != "":
+			q = rowsAfter
+			args = []any{run, after, limit}
+		default:
+			q = firstRows
+			args = []any{run, limit}
+		}
+		rows, e := tx.QueryContext(ctx, q, args...)
+		if e != nil {
+			return e
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			row, e := scanRow(rows)
+			if e != nil {
+				return e
+			}
+			out = append(out, row)
+		}
+		return rows.Err()
 	})
 	if err != nil {
 		return nil, err
@@ -483,6 +522,9 @@ func (s *Store) PruneRuns(ctx context.Context, keep int64) ([]Run, error) {
 			ranks[key]++
 			if rank < keep {
 				continue
+			}
+			if _, e = tx.ExecContext(ctx, `DELETE FROM row_names WHERE "run"=?`, r.ID); e != nil {
+				return e
 			}
 			if _, e = tx.ExecContext(ctx, `DELETE FROM rows WHERE "run"=?`, r.ID); e != nil {
 				return e

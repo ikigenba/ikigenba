@@ -340,7 +340,7 @@ func TestRunDrainsBlockedSource(t *testing.T) {
 	if e != nil || r.Status != store.StatusFailed || r.Reason != store.ReasonInterrupted {
 		t.Fatalf("interrupted %+v %v", r, e)
 	}
-	rows, e := st.ListRows(context.Background(), id, "", 0, 10)
+	rows, e := st.ListRowsAfter(context.Background(), id, "", "", 10)
 	if e != nil || len(rows) != 0 {
 		t.Fatalf("rows %v %v", rows, e)
 	}

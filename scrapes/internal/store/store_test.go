@@ -3,14 +3,17 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
@@ -102,7 +105,7 @@ func TestVocabulary(t *testing.T) {
 	}
 }
 
-// R-0YI6-DS20 R-01RP-JWYM R-05FE-P86P
+// R-7ZYA-R23X R-01RP-JWYM R-05FE-P86P
 func TestEmptyAndRunning(t *testing.T) {
 	s, _ := fresh(t)
 	for _, name := range []string{"", "one"} {
@@ -124,7 +127,7 @@ func TestEmptyAndRunning(t *testing.T) {
 	is(t, e, store.ErrNotFound)
 	_, e = s.GetRow(ctx, "missing", "x")
 	is(t, e, store.ErrNotFound)
-	_, e = s.ListRows(ctx, "missing", "", 0, 10)
+	_, e = s.ListRowsAfter(ctx, "missing", "", "", 10)
 	is(t, e, store.ErrNotFound)
 	rs, e := s.RunningRuns(ctx)
 	if e != nil || rs == nil || len(rs) != 0 {
@@ -209,7 +212,7 @@ func TestIDCandidates(t *testing.T) {
 	is(t, e, store.ErrUnreachable)
 }
 
-// R-ZT8E-VIRR R-ZWW4-0TZU R-ZN4W-YO2A R-06NB-2ZXE R-07V7-GRO3 R-0933-UJES R-047I-BGG0
+// R-ZT8E-VIRR R-ZWW4-0TZU R-ZN4W-YO2A R-82KK-92F2 R-07V7-GRO3 R-0933-UJES R-047I-BGG0
 func TestRowsComparisonAndReads(t *testing.T) {
 	s, _ := fresh(t)
 	base := finish(t, s, add(t, s, "a"), source.Row{SourceID: "2", Digest: "b"}, source.Row{SourceID: "3", Digest: "x"}, source.Row{SourceID: "4", Digest: "d"})
@@ -222,7 +225,7 @@ func TestRowsComparisonAndReads(t *testing.T) {
 	if e := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "1", Digest: "old"}, row, {SourceID: "2", Digest: "b"}, {SourceID: "3", Digest: "c"}}); e != nil {
 		t.Fatal(e)
 	}
-	rs, e := s.ListRows(ctx, r.ID, "", 0, 10)
+	rs, e := s.ListRowsAfter(ctx, r.ID, "", "", 10)
 	if e != nil || rs == nil || len(rs) != 0 {
 		t.Fatal(rs, e)
 	}
@@ -244,12 +247,12 @@ func TestRowsComparisonAndReads(t *testing.T) {
 		t.Fatal(got, row, e)
 	}
 	for _, name := range []string{"trucking", "TRUCKING", "Trucking"} {
-		rs, e = s.ListRows(ctx, r.ID, name, 0, 1)
+		rs, e = s.ListRowsAfter(ctx, r.ID, name, "", 1)
 		if e != nil || len(rs) != 1 || rs[0].SourceID != "1" || rs[0].Raw != nil {
 			t.Fatal(rs, e)
 		}
 	}
-	rs, e = s.ListRows(ctx, r.ID, "", 1, 1)
+	rs, e = s.ListRowsAfter(ctx, r.ID, "", "1", 1)
 	if e != nil || len(rs) != 1 || rs[0].SourceID != "2" {
 		t.Fatal(rs, e)
 	}
@@ -294,9 +297,18 @@ func TestRowsComparisonAndReads(t *testing.T) {
 	}
 }
 
-// R-ZUGB-9AIG R-ZY40-ELQJ R-ZZBW-SDH8 R-0AB0-8B5H R-0DYP-DMDK
+// R-ZUGB-9AIG R-82E3-ILLB R-ZZBW-SDH8 R-7V2P-7Z55 R-0DYP-DMDK
 func TestFailureAndInvalidWrites(t *testing.T) {
-	s, _ := fresh(t)
+	path := filepath.Join(t.TempDir(), "db")
+	clock := time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("failure", -3600))
+	randomBytes := []byte{}
+	for n := byte(1); n < 20; n++ {
+		randomBytes = append(randomBytes, bytes.Repeat([]byte{n}, 8)...)
+	}
+	rnd := bytes.NewReader(randomBytes)
+	_, d := open(t, path, rnd)
+	cfg := store.Config{Now: func() time.Time { return clock }, Rand: rnd}
+	s := store.New(d, cfg)
 	r := add(t, s, "a")
 	if e := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "rejected"}, {}}); !errors.Is(e, store.ErrUnreachable) {
 		t.Fatal(e)
@@ -316,11 +328,27 @@ func TestFailureAndInvalidWrites(t *testing.T) {
 		if e := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "x"}}); e != nil {
 			t.Fatal(e)
 		}
+		clock = clock.Add(73*time.Second + 123*time.Nanosecond)
 		failed, e := s.FailRun(ctx, r.ID, reason)
-		if e != nil || failed.Status != store.StatusFailed || failed.Reason != reason || failed.Rows != 0 || failed.Finished.IsZero() {
-			t.Fatal(failed, e)
+		expected := r
+		expected.Status, expected.Reason, expected.Finished = store.StatusFailed, reason, clock.UTC().Truncate(time.Second)
+		if e != nil || failed != expected {
+			t.Fatal(failed, expected, e)
 		}
-		rows, e := s.ListRows(ctx, r.ID, "", 0, 10)
+		if e := d.Close(); e != nil {
+			t.Fatal(e)
+		}
+		_, d = open(t, path, rnd)
+		s = store.New(d, cfg)
+		stored, e := s.GetRun(ctx, r.ID)
+		if e != nil || stored != expected {
+			t.Fatal(stored, expected, e)
+		}
+		calls := 0
+		if e := s.EachRow(ctx, r.ID, func(source.Row) error { calls++; return nil }); e != nil || calls != 0 {
+			t.Fatal(calls, e)
+		}
+		rows, e := s.ListRowsAfter(ctx, r.ID, "", "", 10)
 		if e != nil || rows == nil || len(rows) != 0 {
 			t.Fatal(rows, e)
 		}
@@ -340,8 +368,8 @@ func TestFailureAndInvalidWrites(t *testing.T) {
 	is(t, e, store.ErrNotFound)
 	is(t, s.PutRows(ctx, "missing", nil), store.ErrNotFound)
 	is(t, s.PutRows(ctx, "missing", []source.Row{{}}), store.ErrUnreachable)
-	for _, args := range [][2]int64{{-1, 1}, {0, 0}} {
-		rows, e := s.ListRows(ctx, "missing", "", args[0], args[1])
+	for _, limit := range []int{-1, 0} {
+		rows, e := s.ListRowsAfter(ctx, "missing", "", "", limit)
 		is(t, e, store.ErrUnreachable)
 		if rows != nil {
 			t.Fatal(rows)
@@ -404,7 +432,7 @@ func TestOrderingAndPrune(t *testing.T) {
 	is(t, e, store.ErrNotFound)
 }
 
-// R-0F6L-RE49 R-0GEI-55UY
+// R-0F6L-RE49 R-7XIH-ZIMJ
 func TestUnavailablePrecedence(t *testing.T) {
 	s, d := fresh(t)
 	r := add(t, s, "a")
@@ -414,7 +442,7 @@ func TestUnavailablePrecedence(t *testing.T) {
 		if c == ctx {
 			d.SetFailing(true)
 		}
-		checks := []func() error{func() error { _, e := s.AddRun(c, store.Run{}); return e }, func() error { return s.PutRows(c, "missing", []source.Row{{}}) }, func() error { _, e := s.FinishRun(c, "missing"); return e }, func() error { _, e := s.FailRun(c, "missing", "bad"); return e }, func() error { _, e := s.GetRun(c, "missing"); return e }, func() error { _, e := s.ListRunsAfter(c, "", "", "", 0); return e }, func() error { _, e := s.CurrentRun(c, "a"); return e }, func() error { _, e := s.RunningRun(c, "a"); return e }, func() error { _, e := s.RunningRuns(c); return e }, func() error { _, e := s.GetRow(c, "missing", "x"); return e }, func() error { _, e := s.ListRows(c, "missing", "", -1, 0); return e }, func() error { return s.EachRow(c, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(c, 0); return e }}
+		checks := []func() error{func() error { _, e := s.AddRun(c, store.Run{}); return e }, func() error { return s.PutRows(c, "missing", []source.Row{{}}) }, func() error { _, e := s.FinishRun(c, "missing"); return e }, func() error { _, e := s.FailRun(c, "missing", "bad"); return e }, func() error { _, e := s.GetRun(c, "missing"); return e }, func() error { _, e := s.ListRunsAfter(c, "", "", "", 0); return e }, func() error { _, e := s.CurrentRun(c, "a"); return e }, func() error { _, e := s.RunningRun(c, "a"); return e }, func() error { _, e := s.RunningRuns(c); return e }, func() error { _, e := s.GetRow(c, "missing", "x"); return e }, func() error { _, e := s.ListRowsAfter(c, "missing", "", "", 0); return e }, func() error { return s.EachRow(c, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(c, 0); return e }}
 		for _, call := range checks {
 			e := call()
 			is(t, e, store.ErrUnreachable)
@@ -492,7 +520,7 @@ func TestConcurrentOperations(t *testing.T) {
 	wg.Wait()
 }
 
-// R-ZT8E-VIRR R-ZWW4-0TZU R-ZY40-ELQJ R-0BIW-M2W6
+// R-ZT8E-VIRR R-ZWW4-0TZU R-82E3-ILLB R-0BIW-M2W6
 func TestRowsAndOutcomesPersist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	s, d := open(t, path, nil)
@@ -502,7 +530,11 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 	}
 	raw := source.Row{SourceID: "record", Names: []string{"fixture"}, Facts: []byte(" {} "), Raw: []byte(" {\"key\":1} ")}
 	done := finish(t, s, r, raw)
-	failed, e := s.FailRun(ctx, add(t, s, "a").ID, store.ReasonInterrupted)
+	partial := add(t, s, "a")
+	if err := s.PutRows(ctx, partial.ID, []source.Row{{SourceID: "partial", Names: []string{"discarded"}}}); err != nil {
+		t.Fatal(err)
+	}
+	failed, e := s.FailRun(ctx, partial.ID, store.ReasonInterrupted)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -523,6 +555,17 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 		if e != nil || actual != want {
 			t.Fatal(actual, want, e)
 		}
+	}
+	rows, e := s.ListRowsAfter(ctx, failed.ID, "discarded", "", 25)
+	if e != nil || rows == nil || len(rows) != 0 {
+		t.Fatal(rows, e)
+	}
+	if _, e := s.GetRow(ctx, failed.ID, "partial"); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal(e)
+	}
+	calls := 0
+	if e := s.EachRow(ctx, failed.ID, func(source.Row) error { calls++; return nil }); e != nil || calls != 0 {
+		t.Fatal(calls, e)
 	}
 	if _, e = s.AddRun(ctx, store.Run{Scraper: "b", Trigger: "job", Delivery: "delivery"}); !errors.Is(e, store.ErrDelivered) {
 		t.Fatal(e)
@@ -545,7 +588,7 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 	}
 }
 
-// R-ZN4W-YO2A R-047I-BGG0 R-ZWW4-0TZU R-06NB-2ZXE
+// R-ZN4W-YO2A R-047I-BGG0 R-ZWW4-0TZU R-82KK-92F2
 func TestStartOrderAndBaseline(t *testing.T) {
 	s, _ := fresh(t)
 	a := finish(t, s, add(t, s, "a"), source.Row{SourceID: "x", Digest: "first"})
@@ -554,11 +597,11 @@ func TestStartOrderAndBaseline(t *testing.T) {
 	if c.Unchanged != 1 || c.New != 0 || c.Changed != 0 {
 		t.Fatal(c)
 	}
-	rows, e := s.ListRows(ctx, b.ID, "TRUCKING", 0, 10)
+	rows, e := s.ListRowsAfter(ctx, b.ID, "TRUCKING", "", 10)
 	if e != nil || len(rows) != 0 {
 		t.Fatal(rows, e)
 	}
-	rows, e = s.ListRows(ctx, b.ID, "", 99, 1)
+	rows, e = s.ListRowsAfter(ctx, b.ID, "", "z", 1)
 	if e != nil || rows == nil || len(rows) != 0 {
 		t.Fatal(rows, e)
 	}
@@ -591,7 +634,7 @@ func TestStartOrderAndBaseline(t *testing.T) {
 	}
 }
 
-// R-ZQSM-3ZAD R-ZS0I-HR12 R-0GEI-55UY
+// R-ZQSM-3ZAD R-ZS0I-HR12 R-7XIH-ZIMJ
 func TestRandomPrecedenceAndReadCounts(t *testing.T) {
 	rnd := bytes.NewReader(bytes.Repeat([]byte{0x5a}, 16))
 	s, _ := open(t, filepath.Join(t.TempDir(), "db"), rnd)
@@ -679,7 +722,7 @@ func TestRunsAfterWindows(t *testing.T) {
 	}
 }
 
-// R-0W2D-M8KM
+// R-7Q73-OW6D
 func TestStoreMethodSignatures(t *testing.T) {
 	s, _ := fresh(t)
 	var methods interface {
@@ -692,7 +735,7 @@ func TestStoreMethodSignatures(t *testing.T) {
 		CurrentRun(context.Context, string) (store.Run, error)
 		RunningRun(context.Context, string) (store.Run, error)
 		RunningRuns(context.Context) ([]store.Run, error)
-		ListRows(context.Context, string, string, int64, int64) ([]source.Row, error)
+		ListRowsAfter(context.Context, string, string, string, int) ([]source.Row, error)
 		GetRow(context.Context, string, string) (source.Row, error)
 		EachRow(context.Context, string, func(source.Row) error) error
 		PruneRuns(context.Context, int64) ([]store.Run, error)
@@ -722,7 +765,7 @@ func TestStoreMethodSignatures(t *testing.T) {
 	if _, err := methods.ListRunsAfter(ctx, "a", "", "", 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := methods.ListRows(ctx, r.ID, "", 0, 1); err != nil {
+	if _, err := methods.ListRowsAfter(ctx, r.ID, "", "", 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := methods.GetRow(ctx, r.ID, "row"); err != nil {
@@ -740,5 +783,191 @@ func TestStoreMethodSignatures(t *testing.T) {
 	}
 	if _, err := methods.PruneRuns(ctx, 1); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// R-82KK-92F2
+func TestRowsAfterNamesAndWindows(t *testing.T) {
+	s, _ := fresh(t)
+	rows := []source.Row{
+		{SourceID: "a", Names: []string{"ACME TRUCKING INC", "ACME TRUCKING"}},
+		{SourceID: "b", Names: []string{"ACME TRUCK", "TRUCK ING LLC"}},
+		{SourceID: "c", Names: []string{"CAFÉ CARRIERS"}},
+		{SourceID: "d", Names: []string{"A_B FREIGHT"}},
+		{SourceID: "e", Names: []string{"AXB FREIGHT"}},
+		{SourceID: "f", Names: []string{"50% OFF MOVERS"}},
+		{SourceID: "g", Names: []string{"500 OFF MOVERS"}},
+		{SourceID: "h", Names: []string{`BACK\SLASH LLC`}},
+		{SourceID: "i", Names: []string{"FIRST", "SECOND"}},
+		{SourceID: "j", Names: []string{"O'BRIEN CARRIERS"}},
+	}
+	r := finish(t, s, add(t, s, "names"), rows...)
+	for _, tc := range []struct {
+		name string
+		ids  []string
+	}{
+		{"TRUCKING", []string{"a"}}, {"trucking", []string{"a"}}, {"Trucking", []string{"a"}},
+		{"É", []string{"c"}}, {"A_B", []string{"d"}}, {"50%", []string{"f"}}, {`\`, []string{"h"}},
+		{"FIRST\nSECOND", []string{}}, {strings.Repeat("x", 60000), []string{}},
+		{"O'BRIEN", []string{"j"}}, {"' OR 1=1 --", []string{}},
+	} {
+		got, err := s.ListRowsAfter(ctx, r.ID, tc.name, "", 25)
+		if err != nil || got == nil || len(got) != len(tc.ids) {
+			t.Fatal(tc.name, got, err)
+		}
+		for i, row := range got {
+			expected, err := s.GetRow(ctx, r.ID, tc.ids[i])
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected.Raw = nil
+			if !reflect.DeepEqual(row, expected) {
+				t.Fatal(row, expected)
+			}
+		}
+	}
+	rows = nil
+	for i := 29; i >= 0; i-- {
+		rows = append(rows, source.Row{SourceID: fmt.Sprintf("%02d", i), Names: []string{"matched", "MATCHED"}, Raw: []byte(`{"fixture":true}`)})
+	}
+	rows = append(rows, source.Row{SourceID: "00a", Names: []string{"other"}})
+	r = finish(t, s, add(t, s, "windows"), rows...)
+	after := ""
+	index := 0
+	for _, count := range []int{25, 5, 0} {
+		got, err := s.ListRowsAfter(ctx, r.ID, "matched", after, 25)
+		if err != nil || got == nil || len(got) != count {
+			t.Fatal(got, err)
+		}
+		for _, row := range got {
+			if row.SourceID <= after || row.SourceID != fmt.Sprintf("%02d", index) || row.Raw != nil {
+				t.Fatal(row, after)
+			}
+			expected, err := s.GetRow(ctx, r.ID, row.SourceID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected.Raw = nil
+			if !reflect.DeepEqual(row, expected) {
+				t.Fatal(row, expected)
+			}
+			after = row.SourceID
+			index++
+		}
+	}
+	got, err := s.ListRowsAfter(ctx, r.ID, "", "00", 2)
+	if err != nil || len(got) != 2 || got[0].SourceID != "00a" || got[1].SourceID != "01" {
+		t.Fatal(got, err)
+	}
+}
+
+// R-9IJW-5V8T
+func TestReplacedNamesPersist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db")
+	s, d := open(t, path, nil)
+	r := add(t, s, "a")
+	if err := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "same", Names: []string{"ACME TRUCKING INC"}}, {SourceID: "same", Names: []string{"TEMP HAULING"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "same", Names: []string{"BETA HAULING"}}}); err != nil {
+		t.Fatal(err)
+	}
+	finish(t, s, r)
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = open(t, path, nil)
+	for _, tc := range []struct {
+		name  string
+		count int
+	}{{"hauling", 1}, {"trucking", 0}, {"temp", 0}} {
+		got, err := s.ListRowsAfter(ctx, r.ID, tc.name, "", 25)
+		if err != nil || got == nil || len(got) != tc.count {
+			t.Fatal(got, err)
+		}
+		if tc.count == 1 && got[0].SourceID != "same" {
+			t.Fatal(got)
+		}
+	}
+}
+
+// R-7V2P-7Z55
+func TestRowsAfterRunState(t *testing.T) {
+	s, _ := fresh(t)
+	running := add(t, s, "a")
+	failed, err := s.FailRun(ctx, add(t, s, "b").ID, store.ReasonSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range []string{"missing", running.ID, failed.ID} {
+		for _, limit := range []int{-1, 0} {
+			got, err := s.ListRowsAfter(ctx, run, "anything", "position", limit)
+			if got != nil || !errors.Is(err, store.ErrUnreachable) {
+				t.Fatal(got, err)
+			}
+		}
+		got, err := s.ListRowsAfter(ctx, run, "anything", "position", 1)
+		if run == "missing" {
+			if got != nil || !errors.Is(err, store.ErrNotFound) {
+				t.Fatal(got, err)
+			}
+		} else if err != nil || got == nil || len(got) != 0 {
+			t.Fatal(got, err)
+		}
+	}
+}
+
+func TestRowsNamesBackfillOnUpgrade(t *testing.T) {
+	migrations := fstest.MapFS{}
+	for _, name := range []string{"0001_runs.sql", "0002_rows.sql", "0003_list_indexes.sql"} {
+		data, err := fs.ReadFile(scrapes.Migrations(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		migrations[name] = &fstest.MapFile{Data: data}
+	}
+	path := filepath.Join(t.TempDir(), "db")
+	clock := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
+	d, err := db.Open(ctx, db.Config{Path: path, Migrations: migrations, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := d.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	s := store.New(d, store.Config{Now: clock, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 8))})
+	r := add(t, s, "legacy")
+	err = d.Write(ctx, func(tx *sql.Tx) error {
+		for _, fixture := range []struct{ id, names string }{{"a", `["ACME TRUCKING","ACME TRUCKING INC"]`}, {"b", `[]`}, {"c", `["CAFÉ CARRIERS"]`}} {
+			_, err := tx.ExecContext(ctx, `INSERT INTO "rows" ("run",source_id,scraper,collected,digest,name,names,names_lower,street,city,state,zip,county,people) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, r.ID, fixture.id, r.Scraper, clock().Format(time.RFC3339), "fixture", "fixture", fixture.names, "unused", "", "", "", "", "", "[]")
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finish(t, s, r)
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = open(t, path, nil)
+	for _, tc := range []struct {
+		name string
+		ids  []string
+	}{{"trucking", []string{"a"}}, {"caf", []string{"c"}}, {"É", []string{}}, {"", []string{"a", "b", "c"}}} {
+		got, err := s.ListRowsAfter(ctx, r.ID, tc.name, "", 25)
+		if err != nil || got == nil || len(got) != len(tc.ids) {
+			t.Fatal(got, err)
+		}
+		for i, row := range got {
+			if row.SourceID != tc.ids[i] {
+				t.Fatal(got, tc.ids)
+			}
+		}
 	}
 }

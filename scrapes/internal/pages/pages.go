@@ -111,7 +111,7 @@ type RunData struct {
 	Banner page.Banner
 	Run    RunView
 	Rows   []RowLine
-	Next   int64
+	Next   string
 }
 
 // RunView holds the complete visible run record.
@@ -312,7 +312,7 @@ func Handler(cfg Config) http.Handler {
 			b.Trail = []page.Level{{Name: id, URL: "/runs/" + id}}
 			d := RunData{Banner: b, Run: runView(x), Rows: []RowLine{}}
 			if x.Status == store.StatusDone {
-				rows, err := tools.RowsPage(ctx, cfg.Store, id, "", 0)
+				rows, err := tools.RowsPage(ctx, cfg.Store, id, "", "", paging.DefaultLimit)
 				if err != nil {
 					refusal()
 					return

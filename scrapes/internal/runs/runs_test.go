@@ -310,7 +310,7 @@ func TestDatabaseStartFailure(t *testing.T) {
 	}
 }
 
-// R-6NB3-34EM R-21PS-4DPL
+// R-88HL-FGAS R-21PS-4DPL
 func TestFailures(t *testing.T) {
 	for _, mode := range []string{"source", "store", "ending"} {
 		t.Run(mode, func(t *testing.T) {
@@ -440,7 +440,7 @@ func testDelivery(t *testing.T, viaHandler bool) {
 	}
 }
 
-// R-6OIZ-GW5B
+// R-8AXE-6ZS6
 func TestRecover(t *testing.T) {
 	f := setup(t)
 	for _, name := range []string{"first", "second"} {
@@ -690,7 +690,7 @@ func TestBatchStoredBeforeReturn(t *testing.T) {
 	}
 }
 
-// R-6NB3-34EM
+// R-88HL-FGAS
 func TestInterruptedPrecedence(t *testing.T) {
 	for _, batchFailure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "source", true: "batch"}[batchFailure], func(t *testing.T) {
@@ -719,11 +719,14 @@ func TestInterruptedPrecedence(t *testing.T) {
 			if err != nil || done.Status != store.StatusFailed || done.Reason != store.ReasonInterrupted {
 				t.Fatal(done, err)
 			}
+			if _, err := f.st.GetRow(context.Background(), r.ID, "one"); !errors.Is(err, store.ErrNotFound) {
+				t.Fatal(err)
+			}
 		})
 	}
 }
 
-// R-6NB3-34EM
+// R-88HL-FGAS
 func TestFMCSASourceFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
 	defer srv.Close()

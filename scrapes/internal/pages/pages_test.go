@@ -169,9 +169,9 @@ func expectedCurrent(r store.Run) *CurrentRun {
 	return &CurrentRun{v.ID, v.Status, v.Started, v.StartedText, v.Finished, v.FinishedText, v.Rows, v.New, v.Changed, v.Gone}
 }
 
-// R-0MB6-K2N2 R-F477-FYMY R-0PYV-PDV5 R-FRDA-PLQ5
+// R-0MB6-K2N2 R-F477-FYMY R-8FSZ-Q2QY R-FRDA-PLQ5
 // R-0OQZ-BM4G R-F6N0-7I4C R-F7UW-L9V1 R-F92S-Z1LQ R-FAAP-CTCF
-// R-FBIL-QL34 R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-FHM3-NFSL
+// R-8DD6-YJ9K R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-FHM3-NFSL
 // R-FIU0-17JA R-FK1W-EZ9Z R-FL9S-SR0O R-FMHP-6IRD R-FNPL-KAI2 R-FOXH-Y28R
 func TestLoadAndWrite(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -210,7 +210,7 @@ func TestLoadAndWrite(t *testing.T) {
 			for _, full := range []bool{false, true} {
 				r := RunView{ID: "fixture", Status: status, Reason: reason}
 				rows := []RowLine{}
-				next := int64(0)
+				next := ""
 				landingNext := ""
 				current := (*CurrentRun)(nil)
 				running := (*RunningRun)(nil)
@@ -219,7 +219,7 @@ func TestLoadAndWrite(t *testing.T) {
 					r.Finished = "test-finished"
 					r.FinishedText = "test-text"
 					rows = []RowLine{{"source", "name", "city", "state", "county"}}
-					next = 1
+					next = "test-page-token"
 					landingNext = "test-page-token"
 					current = &CurrentRun{"fixture", status, "started", "start-text", "finished", "finish-text", 1, 2, 3, 4}
 					running = &RunningRun{"running"}
@@ -271,10 +271,11 @@ func TestLanding(t *testing.T) {
 	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", d)
 }
 
-// R-0TMK-UP38 R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
+// R-8I8S-HM8C R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
 func TestRunPages(t *testing.T) {
 	f := setup(t)
-	for _, count := range []int{0, 25, 30} {
+	callRows := rowsTool(t, f)
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 5} {
 		r := f.add(t, "alpha", "")
 		rows := []source.Row{}
 		lines := []RowLine{}
@@ -283,17 +284,40 @@ func TestRunPages(t *testing.T) {
 			rows = append(rows, source.Row{SourceID: id, Name: "name-" + id, Names: []string{"name-" + id}, Address: source.Address{City: "city-" + id, State: "state", County: "county"}, Facts: []byte(`{}`), Raw: []byte(`{}`)})
 		}
 		r = f.finish(t, r, rows)
-		for i := 0; i < count && i < 25; i++ {
+		for i := 0; i < count && i < paging.DefaultLimit; i++ {
 			id := fmt.Sprintf("%03d", i)
 			lines = append(lines, RowLine{id, "name-" + id, "city-" + id, "state", "county"})
 		}
-		next := int64(0)
-		if count > 25 {
-			next = 1
+		next := ""
+		if count > paging.DefaultLimit {
+			next = paging.Token{Tool: "rows"}.Encode(lines[len(lines)-1].SourceID)
 		}
 		b := baseBanner()
 		b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
 		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), lines, next})
+		first := callRows(r.ID, "")
+		toolLines := []RowLine{}
+		for _, row := range first.Rows {
+			toolLines = append(toolLines, RowLine{row.SourceID, row.Name, row.Address.City, row.Address.State, row.Address.County})
+		}
+		toolNext := ""
+		if first.Next != nil {
+			toolNext = *first.Next
+		}
+		if !reflect.DeepEqual(toolLines, lines) || toolNext != next {
+			t.Fatal("run page differs from rows tool")
+		}
+		if next != "" {
+			last := callRows(r.ID, next)
+			if len(last.Rows) != count-paging.DefaultLimit || last.Next != nil {
+				t.Fatal("cursor did not return remaining rows")
+			}
+			for i, row := range last.Rows {
+				if row.SourceID != fmt.Sprintf("%03d", paging.DefaultLimit+i) {
+					t.Fatal("remaining rows out of order")
+				}
+			}
+		}
 	}
 	for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
 		r := f.add(t, "alpha", "test-trigger")
@@ -306,7 +330,7 @@ func TestRunPages(t *testing.T) {
 		}
 		b := baseBanner()
 		b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
-		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), []RowLine{}, 0})
+		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), []RowLine{}, ""})
 		if reason == "" {
 			f.finish(t, r, nil)
 		}
@@ -402,7 +426,7 @@ func TestRoutesMethodsAndFailures(t *testing.T) {
 	}
 }
 
-// R-0UUH-8GTX R-GFRA-D0K1 R-GGZ6-QSAQ
+// R-8LWH-MXGF R-GFRA-D0K1 R-GGZ6-QSAQ
 func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -420,7 +444,7 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeRows, err := f.st.ListRows(ctx, r.ID, "", 0, 1000)
+	beforeRows, err := f.st.ListRowsAfter(ctx, r.ID, "", "", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +454,7 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	}
 	oldBanner := baseBanner()
 	oldBanner.Trail = []page.Level{{Name: running.ID, URL: "/runs/" + running.ID}}
-	assertBody(t, request(f.h, "GET", "/runs/"+running.ID, "owner"), 200, "run", RunData{oldBanner, expectedRun(running, SecondLayout), []RowLine{}, 0})
+	assertBody(t, request(f.h, "GET", "/runs/"+running.ID, "owner"), 200, "run", RunData{oldBanner, expectedRun(running, SecondLayout), []RowLine{}, ""})
 	paths := []string{"/", "/tools", "/about", "/unknown", "/runs/" + r.ID, "/runs/" + r.ID + "/rows/one", "/runs/" + running.ID, "/runs/" + running.ID + "/rows/one"}
 	for _, p := range paths {
 		first, second := request(f.h, "GET", p, "owner"), request(f.h, "GET", p, "other")
@@ -456,7 +480,7 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	afterRows, err := f.st.ListRows(ctx, r.ID, "", 0, 1000)
+	afterRows, err := f.st.ListRowsAfter(ctx, r.ID, "", "", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,5 +629,53 @@ func TestBannerUserFromServices(t *testing.T) {
 	want := page.User{Email: "reader@example.test", ProfileURL: "https://identity.example.test/", LogoutURL: "https://identity.example.test/logout"}
 	if len(users) != 1 || users[0] != want {
 		t.Fatal(users)
+	}
+}
+
+func rowsTool(t *testing.T, f fixture) func(string, string) tools.RowList {
+	t.Helper()
+	writer := telemetry.New(telemetry.Config{Service: ServiceName, Version: "test", Sink: &telemetry.Capture{}, Now: func() time.Time { return *f.now }, Rand: bytes.NewReader(make([]byte, 65536)), Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
+	t.Cleanup(func() { writer.Shutdown(context.Background(), "test") })
+	srv := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: "test", Telemetry: writer})
+	tools.Register(srv, tools.Config{Store: f.st, Scrapers: f.cfg.Scrapers})
+	server := httptest.NewServer(identity.Require(srv))
+	t.Cleanup(server.Close)
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL, HTTPClient: server.Client(), Name: "test", Version: "test"})
+	return func(run, token string) tools.RowList {
+		t.Helper()
+		args := map[string]string{"run": run}
+		if token != "" {
+			args["page"] = token
+		}
+		encodedArgs, err := json.Marshal(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := client.CallTool(t.Context(), identity.Caller{UserID: "test-user"}, "rows", encodedArgs)
+		if err != nil || result.IsError() {
+			t.Fatalf("rows: %v %+v", err, result)
+		}
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire struct {
+			Structured struct {
+				Rows []struct {
+					SourceID string         `json:"source_id"`
+					Name     string         `json:"name"`
+					Address  source.Address `json:"address"`
+				} `json:"rows"`
+				Next *string `json:"next"`
+			} `json:"structuredContent"`
+		}
+		if err := json.Unmarshal(encoded, &wire); err != nil {
+			t.Fatal(err)
+		}
+		decoded := tools.RowList{Rows: []source.Row{}, Next: wire.Structured.Next}
+		for _, row := range wire.Structured.Rows {
+			decoded.Rows = append(decoded.Rows, source.Row{SourceID: row.SourceID, Name: row.Name, Address: row.Address})
+		}
+		return decoded
 	}
 }

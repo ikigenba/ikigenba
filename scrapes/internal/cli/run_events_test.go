@@ -280,7 +280,7 @@ func TestRunSinkFailuresDoNotChangeResults(t *testing.T) {
 	}
 }
 
-// R-F1RE-OF5K
+// R-9L9K-Q9YK
 func TestRunAssembledRowsPaginationAndRawRecord(t *testing.T) {
 	records := make([]map[string]any, 30)
 	ids := make([]string, 30)
@@ -301,8 +301,9 @@ func TestRunAssembledRowsPaginationAndRawRecord(t *testing.T) {
 		t.Fatal(done)
 	}
 	sort.Strings(ids)
+	var token any
 	for page := 0; page < 2; page++ {
-		v := resultJSON(t, f.call(fixtureCaller, "rows", map[string]any{"scraper": "fmcsa", "page": page}))
+		v := resultJSON(t, f.call(fixtureCaller, "rows", map[string]any{"scraper": "fmcsa", "page": token}))
 		rs := v["rows"].([]any)
 		want := ids[:25]
 		if page == 1 {
@@ -321,9 +322,10 @@ func TestRunAssembledRowsPaginationAndRawRecord(t *testing.T) {
 			}
 		}
 		next, ok := v["next"]
-		if page == 0 && next != float64(1) || page == 1 && ok {
+		if page == 0 && (next == nil || next == "") || page == 1 && ok {
 			t.Fatalf("page %d next %v present %v", page, next, ok)
 		}
+		token = next
 	}
 	chosen := records[17]
 	v := resultJSON(t, f.call(fixtureCaller, "row", map[string]any{"run": id, "source_id": chosen["dot_number"]}))
