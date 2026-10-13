@@ -61,8 +61,8 @@
      dd#run-rows, dt "New" then dd#run-new, dt "Changed" then
      dd#run-changed, dt "Unchanged" then dd#run-unchanged and dt "Gone" then
      dd#run-gone (each the count). Then, only when .Status is "done",
-     section#rows with h2 "Rows" and a p in its header (text "The first
-     page, in source id order, each row as the source spelled it."), then
+     section#rows with h2 "Rows" and a p in its header (text "This
+     window, in source id order, each row as the source spelled it."), then
      either, when .Rows is empty, div#no-rows.empty holding h3 "No rows"
      and a p (text "The source answered no record inside the scraper's
      scope."), or table#row-list whose th read Source ID, Name, City,
@@ -109,7 +109,7 @@
 </dl>
 </section>
 {{if eq .Status "done"}}{{$id := .ID}}<section id="rows" class="card flush" aria-labelledby="rows-title">
-<header><div><h2 id="rows-title">Rows</h2><p>The first page, in source id order, each row as the source spelled it.</p></div></header>
+<header><div><h2 id="rows-title">Rows</h2><p>This window, in source id order, each row as the source spelled it.</p></div></header>
 {{if $rows}}<div class="table-scroll">
 <table id="row-list">
 <thead><tr><th>Source ID</th><th>Name</th><th>City</th><th>State</th><th>County</th></tr></thead>
