@@ -17,13 +17,13 @@
      shown, "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText
      (likewise; both empty while running), and .Rows, .New, .Changed,
      .Unchanged and .Gone (ints, as the record holds them); .Rows, the
-     first page of the run's rows, the rows tool's first page, in source_id
-     order, empty unless .Run.Status is "done", each with .SourceID (the
-     row's source_id, such as "1023916"), .Name (the business as the source
+     first page of the run's rows by source id, the rows tool's first page,
+     empty unless .Run.Status is "done", each with .SourceID (the row's
+     source_id, such as "1023916"), .Name (the business as the source
      spells it), .City, .State and .County (the address's parts; each may
-     be empty); and .Next (int, the page the rows tool's next names, the
-     number to pass as its page for the rows after these; 0 when there are
-     none). Counts are shown as the plain integer. Status and reason words
+     be empty); and .Next (string, the page token the rows tool's next
+     carries for the rows after these, the value to pass as its page; empty
+     when none remain or the run is not done). Counts are shown as the plain integer. Status and reason words
      are shown as stored; the status's kind is chosen here: "running" info,
      "done" ok, "failed" err; the failure's sentence is chosen from
      .Reason. Hooks: title "<.ID> · scrapes"; h1 with text .ID;
@@ -68,9 +68,10 @@
      td.row-id > a.row-link (href "/runs/<.Run.ID>/rows/<.SourceID>",
      .SourceID in a code element), td.row-name (.Name), td.row-city
      (.City), td.row-state (.State) and td.row-county (.County in a code
-     element when set); then, when .Next is not 0, p#next (text "More rows
-     follow: call rows with run <.Run.ID> and page <.Next>.", rows, run,
-     .Run.ID, page and .Next each in a code element). No script but
+     element when set); then, when .Next is not empty, p#next (text "More
+     rows follow: call rows with run <.Run.ID> and page <.Next>.", .Next
+     being the token; rows, run, .Run.ID, page and .Next each in a code
+     element). No script but
      appkit's /_appkit/feedback.js. */}}
 {{define "run"}}<!doctype html>
 <html lang="en">
