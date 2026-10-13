@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/sites/internal/git"
 	"github.com/ikigenba/ikigenba/sites/internal/limits"
@@ -68,12 +69,28 @@ func (cfg Config) gitError(ctx context.Context, err error) error {
 func (cfg Config) emit(ctx context.Context, name string, attrs telemetry.Attrs) {
 	cfg.Telemetry.Emit(ctx, name, attrs)
 }
-func (cfg Config) list(ctx context.Context, c identity.Caller, _ ListArgs) (SiteList, error) {
-	ss, err := cfg.Store.List(ctx, c.UserID)
+func (cfg Config) list(ctx context.Context, c identity.Caller, a ListArgs) (SiteList, error) {
+	n, err := paging.Window(a.Limit)
+	if err != nil {
+		return SiteList{}, err
+	}
+	token := paging.Token{Tool: "list"}
+	var after string
+	if a.Page != nil && *a.Page != "" {
+		if err := token.Decode(*a.Page, &after); err != nil {
+			return SiteList{}, errors.New(paging.BadPage)
+		}
+	}
+	ss, err := cfg.Store.List(ctx, c.UserID, after, n+1)
 	if err != nil {
 		return SiteList{}, catalogError(err)
 	}
-	out := SiteList{Sites: make([]ListedSite, 0, len(ss))}
+	out := SiteList{Sites: make([]ListedSite, 0, min(n, len(ss)))}
+	if len(ss) > n {
+		next := token.Encode(ss[n-1].Name)
+		out.Next = &next
+		ss = ss[:n]
+	}
 	for _, s := range ss {
 		o := siteObject(ctx, s)
 		out.Sites = append(out.Sites, ListedSite{ID: o.ID, Name: o.Name, Slug: o.Slug, URL: o.URL, Visibility: o.Visibility, Listed: o.Listed, Commit: o.Commit})

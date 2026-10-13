@@ -15,7 +15,7 @@ import (
 )
 
 func TestAdoptWholeSecondUTCCatalog(t *testing.T) {
-	// R-RIWA-WS33
+	// R-4FCV-HU6X
 	created := time.Date(2026, 10, 1, 12, 34, 56, 0, time.UTC)
 	records := []store.Site{
 		{ID: "sit_0000000000000001", Name: "docs", Slug: "docs", Owner: "alice", Repo: "repository-a", Ref: "main", Visibility: store.Public, Listed: true, Commit: strings.Repeat("a", 40), Created: created, Published: created.Add(time.Hour)},
@@ -82,7 +82,7 @@ func TestAdoptWholeSecondUTCCatalog(t *testing.T) {
 						want[x.ID] = x
 					}
 				}
-				got, err := s.List(ctx, owner)
+				got, err := s.List(ctx, owner, "", 10000)
 				if err != nil {
 					t.Fatal(err)
 				}

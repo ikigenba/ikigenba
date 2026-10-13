@@ -7,6 +7,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/store"
 	"github.com/ikigenba/ikigenba/sites/internal/urls"
@@ -38,6 +39,7 @@ type LandingData struct {
 	Banner   page.Banner
 	SitesURL string
 	Sites    []SiteRow
+	Next     bool
 }
 
 // SiteRow exposes only the site's public presentation fields.
@@ -89,8 +91,9 @@ func Handler(cfg Config) http.Handler {
 		}
 		var rows []SiteRow
 		var base string
+		var next bool
 		if r.URL.Path == "/" {
-			xs, err := cfg.Store.Visible(r.Context(), caller.UserID)
+			xs, err := cfg.Store.Visible(r.Context(), caller.UserID, paging.DefaultLimit+1)
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -98,6 +101,10 @@ func Handler(cfg Config) http.Handler {
 					_, _ = io.WriteString(w, store.Unreachable+"\n")
 				}
 				return
+			}
+			next = len(xs) > paging.DefaultLimit
+			if next {
+				xs = xs[:paging.DefaultLimit]
 			}
 			base = urls.SitesURL(r, cfg.ServicesPath)
 			rows = make([]SiteRow, 0, len(xs))
@@ -117,6 +124,6 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		banner.Trail = nil
-		cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: banner, SitesURL: base, Sites: rows})
+		cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: banner, SitesURL: base, Sites: rows, Next: next})
 	})
 }

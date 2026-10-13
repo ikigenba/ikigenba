@@ -3,12 +3,15 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/sites"
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 	"github.com/ikigenba/ikigenba/sites/internal/store"
@@ -58,9 +62,9 @@ func catalog(t *testing.T) *store.Store {
 
 func catalogHandle(t *testing.T) (*store.Store, *db.DB) {
 	t.Helper()
-	random := make([]byte, 1024)
-	for i := range random {
-		random[i] = byte(i)
+	random := make([]byte, (2*paging.DefaultLimit+10)*16)
+	for i := 0; i < len(random); i += 8 {
+		binary.LittleEndian.PutUint64(random[i:], uint64(i/8))
 	}
 	handle, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "catalog.db"), Migrations: sites.Migrations(), Now: func() time.Time { return time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC) }})
 	if err != nil {
@@ -120,7 +124,7 @@ func config(t *testing.T, s *store.Store) pages.Config {
 	return pages.Config{Banner: banner, Pages: load(t), Store: s}
 }
 
-// R-CP7E-TIAG R-CQFB-7A15 R-CSV3-YTIJ R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
+// R-CP7E-TIAG R-CQFB-7A15 R-4RJV-BJLV R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
 // R-D06I-9FYP R-X3R9-INHK R-X4Z5-WF89 R-X7EY-NYPN R-X8MV-1QGC
 // R-X9UR-FI71 R-XB2N-T9XQ R-XCAK-71OF
 func TestTemplateSetAndWrite(t *testing.T) {
@@ -134,8 +138,8 @@ func TestTemplateSetAndWrite(t *testing.T) {
 		name string
 		data any
 	}{
-		{"landing", pages.LandingData{b, "https://example.test/<\"&", []pages.SiteRow{row}}},
-		{"landing", pages.LandingData{b, "https://example.test/", nil}},
+		{"landing", pages.LandingData{b, "https://example.test/<\"&", []pages.SiteRow{row}, true}},
+		{"landing", pages.LandingData{b, "https://example.test/", nil, false}},
 		{"about", pages.AboutData{b, "description<\"&"}},
 		{"tools", pages.ToolsData{b, []pages.Tool{{"tool<\"&", "description<\"&"}, {"second-tool", "second description"}}}},
 		{"tools", pages.ToolsData{b, nil}},
@@ -178,7 +182,7 @@ func TestTemplateSetAndWrite(t *testing.T) {
 	}
 }
 
-// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-XDIG-KTF4 R-XEQC-YL5T R-XFY9-CCWI
+// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-6F6E-HD12 R-XEQC-YL5T R-XFY9-CCWI
 // R-XYS0-IJJL R-DCDI-35DN R-DJOW-DRTT
 func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	s := catalog(t)
@@ -215,7 +219,7 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 						b.Trail = nil
 						name = "landing"
 						base := urls.SitesURL(r, servicesPath)
-						xs, err := s.Visible(r.Context(), user)
+						xs, err := s.Visible(r.Context(), user, paging.DefaultLimit+1)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -247,6 +251,58 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// R-6F6E-HD12 R-XYS0-IJJL
+func TestLandingFirstPage(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			s := catalog(t)
+			ctx := context.Background()
+			for _, name := range []string{"a-hidden-before", "z-hidden-after"} {
+				if _, err := s.Create(ctx, store.Draft{Owner: "bob", Name: name, Repo: "hidden-repository", Ref: "main", Visibility: store.Public}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var visible []store.Site
+			for i := count - 1; i >= 0; i-- {
+				d := store.Draft{Owner: "alice", Name: fmt.Sprintf("site-%06d", i), Repo: fmt.Sprintf("repository-%06d", i), Ref: "main", Visibility: store.Private, Listed: i%3 != 0}
+				if i%3 == 1 {
+					d.Owner = "bob"
+					d.Visibility = store.Public
+				}
+				x, err := s.Create(ctx, d)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if i%2 == 0 {
+					x, err = s.Publish(ctx, x.ID, strings.Repeat("b", 40))
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				visible = append(visible, x)
+			}
+			slices.Reverse(visible)
+			cfg := config(t, s)
+			h := identity.Optional(pages.Handler(cfg))
+			for _, target := range []string{"/", "/?page=2&limit=1"} {
+				r := request("GET", target, "alice", "alice@example.test")
+				base := urls.SitesURL(r, cfg.ServicesPath)
+				rows := make([]pages.SiteRow, 0, min(count, paging.DefaultLimit))
+				for _, x := range visible[:min(count, paging.DefaultLimit)] {
+					rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice"})
+				}
+				b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
+				b.Trail = nil
+				data := pages.LandingData{Banner: b, SitesURL: base, Sites: rows, Next: count > paging.DefaultLimit}
+				w := answer(h, r)
+				if w.Code != http.StatusOK || !reflect.DeepEqual(w.Header()["Content-Type"], []string{"text/html; charset=utf-8"}) || w.Body.String() != execute(t, templateSet(t), "landing", data) {
+					t.Fatalf("landing with %d visible sites at %s differs from first-page template", count, target)
+				}
+			}
+		})
 	}
 }
 

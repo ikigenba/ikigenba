@@ -17,7 +17,10 @@ type Config struct {
 }
 
 // ListArgs requests the caller's sites.
-type ListArgs struct{}
+type ListArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
 
 // ShowArgs names the caller's site.
 type ShowArgs struct {
@@ -87,6 +90,7 @@ type ListedSite struct {
 // SiteList holds an ordered listing.
 type SiteList struct {
 	Sites []ListedSite `json:"sites" mcp:"required"`
+	Next  *string      `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Deleted identifies the removed record.

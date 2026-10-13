@@ -207,7 +207,7 @@ func TestCreateDefaultsAndOverrides(t *testing.T) {
 			if s.Owner != "alice" || s.Repo != repo || s.Ref != wantRef || s.Visibility != wantVisibility || s.Listed != wantListed || s.Commit != "" || o.ID != s.ID || o.Ref != s.Ref || o.Visibility != s.Visibility || o.Listed != s.Listed || o.Commit != nil || o.Published != nil {
 				t.Fatalf("unexpected site %+v object %+v", s, o)
 			}
-			sites, err := h.cfg.Store.Visible(context.Background(), "alice")
+			sites, err := h.cfg.Store.Visible(context.Background(), "alice", int(^uint(0)>>1))
 			if err != nil || len(sites) != 2 {
 				t.Fatalf("catalog %+v %v", sites, err)
 			}

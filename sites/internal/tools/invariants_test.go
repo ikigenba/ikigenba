@@ -90,7 +90,7 @@ func storeSnapshot(t *testing.T, s *store.Store) catalogState {
 	t.Helper()
 	out := catalogState{Records: map[string][]store.Site{}}
 	for _, owner := range []string{"alice", "bob"} {
-		rows, e := s.List(context.Background(), owner)
+		rows, e := s.List(context.Background(), owner, "", int(^uint(0)>>1))
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -159,7 +159,7 @@ func assertToolTrail(t *testing.T, h *harness, start int, tool, outcome string, 
 }
 
 func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
-	// R-ZY5M-6OSD R-01TB-C00G
+	// R-ZY5M-6OSD R-566N-WSI7
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)
 	h.db.SetFailing(true)
@@ -323,7 +323,7 @@ func TestCreateLeavesRepositoryUnchanged(t *testing.T) {
 }
 
 func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
-	// R-01TB-C00G R-9FGR-O8O7
+	// R-566N-WSI7 R-9FGR-O8O7
 	for _, visibility := range []string{"public", "secret"} {
 		t.Run(visibility, func(t *testing.T) {
 			h := newHarness(t)

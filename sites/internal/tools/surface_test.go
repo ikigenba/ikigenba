@@ -59,10 +59,6 @@ func TestAdvertisedSurface(t *testing.T) {
 			t.Fatalf("empty description for %s", info.Name)
 		}
 	}
-	// R-MKP3-M7AW
-	if string(infos[0].InputSchema) != "{\"type\":\"object\",\"additionalProperties\":false}" {
-		t.Fatalf("list inputSchema: %s", infos[0].InputSchema)
-	}
 	// R-ZN6I-QR44
 	if schemaWithoutCopy(t, infos[1].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("show inputSchema: %s", infos[1].InputSchema)
@@ -99,24 +95,19 @@ func TestAdvertisedSurface(t *testing.T) {
 	if string(infos[4].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
 		t.Fatalf("update outputSchema: %s", infos[4].OutputSchema)
 	}
-	// R-MUGA-OD8G
-	if string(infos[0].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"sites\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"visibility\",\"listed\"],\"additionalProperties\":false}}},\"required\":[\"sites\"],\"additionalProperties\":false}" {
-		t.Fatalf("list outputSchema: %s", infos[0].OutputSchema)
-	}
 	// R-MVO7-24Z5
 	if string(infos[5].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"deleted\":{\"type\":\"boolean\"},\"id\":{\"type\":\"string\"}},\"required\":[\"deleted\",\"id\"],\"additionalProperties\":false}" {
 		t.Fatalf("delete outputSchema: %s", infos[5].OutputSchema)
 	}
 }
 
-// R-LV37-L0QB R-LWB3-YSH0 R-LXJ0-CK7P R-LYQW-QBYE R-LZYT-43P3 R-M16P-HVFS R-M2EL-VN6H
+// R-LWB3-YSH0 R-LXJ0-CK7P R-LYQW-QBYE R-LZYT-43P3 R-M16P-HVFS R-M2EL-VN6H
 func TestArgumentDeclarations(t *testing.T) {
 	ref, vis, yes := "preview", "private", true
 	cases := []struct {
 		v    any
 		want string
 	}{
-		{tools.ListArgs{}, `{}`},
 		{tools.ShowArgs{Name: "blog"}, `{"name":"blog"}`},
 		{tools.DeleteArgs{Name: "blog"}, `{"name":"blog"}`},
 		{tools.CreateArgs{Name: "blog", Repo: "repository", Ref: &ref, Visibility: &vis, Listed: &yes}, `{"name":"blog","repo":"repository","ref":"preview","visibility":"private","listed":true}`},
@@ -132,7 +123,7 @@ func TestArgumentDeclarations(t *testing.T) {
 	}
 }
 
-// R-M3MI-9EX6 R-M4UE-N6NV R-M62B-0YEK R-M7A7-EQ59
+// R-M3MI-9EX6 R-M4UE-N6NV R-4WFG-UMKN R-M7A7-EQ59
 func TestResultDeclarations(t *testing.T) {
 	commit, published := "sha", "date"
 	s := tools.Site{ID: "id", Name: "name", Slug: "slug", URL: "url", Repo: "repo", Ref: "ref", Visibility: "public", Listed: true, Commit: &commit, Created: "created", Published: &published}
@@ -145,9 +136,10 @@ func TestResultDeclarations(t *testing.T) {
 	if err := json.Unmarshal(b, &decoded); err != nil || !reflect.DeepEqual(decoded, s) {
 		t.Fatal(decoded, err)
 	}
-	l := tools.SiteList{Sites: []tools.ListedSite{{ID: s.ID, Name: s.Name, Slug: s.Slug, URL: s.URL, Visibility: s.Visibility, Listed: s.Listed, Commit: s.Commit}}}
+	next := "continuation"
+	l := tools.SiteList{Next: &next, Sites: []tools.ListedSite{{ID: s.ID, Name: s.Name, Slug: s.Slug, URL: s.URL, Visibility: s.Visibility, Listed: s.Listed, Commit: s.Commit}}}
 	b, _ = json.Marshal(l)
-	if string(b) != `{"sites":[{"id":"id","name":"name","slug":"slug","url":"url","visibility":"public","listed":true,"commit":"sha"}]}` {
+	if string(b) != `{"sites":[{"id":"id","name":"name","slug":"slug","url":"url","visibility":"public","listed":true,"commit":"sha"}],"next":"continuation"}` {
 		t.Fatalf("list %s", b)
 	}
 	var dl tools.SiteList
@@ -160,7 +152,7 @@ func TestResultDeclarations(t *testing.T) {
 	}
 }
 
-// R-NIUA-BS2C R-NK26-PJT1 R-N0JS-L7XX R-ZTA0-NLTL R-FC07-11HE R-QSR6-GFOH R-OK16-82FU
+// R-6DYI-3LAD R-NK26-PJT1 R-N0JS-L7XX R-ZTA0-NLTL R-FC07-11HE R-QSR6-GFOH R-OK16-82FU
 func TestReadCalls(t *testing.T) {
 	h := newHarness(t)
 	z := h.add(t, "alice", "zulu", false)
@@ -230,7 +222,7 @@ func TestReadCallsLeaveStateAndListingIndependent(t *testing.T) {
 		t.Helper()
 		var all []store.Site
 		for _, owner := range []string{"alice", "bob"} {
-			sites, err := h.cfg.Store.List(context.Background(), owner)
+			sites, err := h.cfg.Store.List(context.Background(), owner, "", int(^uint(0)>>1))
 			if err != nil {
 				t.Fatal(err)
 			}

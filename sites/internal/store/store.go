@@ -128,49 +128,33 @@ type apexResult struct {
 	set  bool
 }
 
-func (s *Store) all(ctx context.Context, tx *sql.Tx) ([]Site, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT payload FROM sites ORDER BY name COLLATE BINARY")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	out := make([]Site, 0)
-	for rows.Next() {
-		var payload string
-		var x Site
-		if err = rows.Scan(&payload); err != nil {
-			return nil, err
-		}
-		if err = json.Unmarshal([]byte(payload), &x); err != nil {
-			return nil, err
-		}
-		x.Created = x.Created.UTC()
-		x.Published = x.Published.UTC()
-		out = append(out, x)
-	}
-	return out, rows.Err()
+func decode(payload string) (Site, error) {
+	var x Site
+	err := json.Unmarshal([]byte(payload), &x)
+	x.Created = x.Created.UTC()
+	x.Published = x.Published.UTC()
+	return x, err
 }
-func (s *Store) byID(ctx context.Context, tx *sql.Tx, id string) (Site, error) {
+func readOne(ctx context.Context, tx *sql.Tx, query string, args ...any) (Site, error) {
 	var payload string
-	err := tx.QueryRowContext(ctx, "SELECT payload FROM sites WHERE id=?", id).Scan(&payload)
+	err := tx.QueryRowContext(ctx, query, args...).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Site{}, ErrNotFound
 	}
 	if err != nil {
 		return Site{}, err
 	}
-	var x Site
-	err = json.Unmarshal([]byte(payload), &x)
-	x.Created = x.Created.UTC()
-	x.Published = x.Published.UTC()
-	return x, err
+	return decode(payload)
+}
+func (s *Store) byID(ctx context.Context, tx *sql.Tx, id string) (Site, error) {
+	return readOne(ctx, tx, "SELECT payload FROM sites WHERE id=?", id)
 }
 func (s *Store) save(ctx context.Context, tx *sql.Tx, x Site) error {
 	b, err := json.Marshal(x)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", x.ID, x.Name, x.Slug, x.Owner, string(b))
+	_, err = tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload,listed) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, listed=excluded.listed", x.ID, x.Name, x.Slug, x.Owner, string(b), x.Listed)
 	return err
 }
 func (s *Store) apexID(ctx context.Context, tx *sql.Tx) (string, error) {
@@ -181,57 +165,71 @@ func (s *Store) apexID(ctx context.Context, tx *sql.Tx) (string, error) {
 	}
 	return id, err
 }
-func (s *Store) selectOne(ctx context.Context, tx *sql.Tx, match func(Site) bool) (Site, error) {
-	xs, err := s.all(ctx, tx)
-	if err != nil {
-		return Site{}, err
-	}
-	for _, x := range xs {
-		if match(x) {
-			return x, nil
-		}
-	}
-	return Site{}, ErrNotFound
-}
 
 // Find finds an owner's site by name.
 func (s *Store) Find(ctx context.Context, owner, name string) (Site, error) {
 	return transact(ctx, s.db.Read, func(tx *sql.Tx) (Site, error) {
-		return s.selectOne(ctx, tx, func(x Site) bool { return x.Owner == owner && x.Name == name })
+		return readOne(ctx, tx, "SELECT payload FROM sites WHERE owner=? AND name=?", owner, name)
 	})
 }
 
 // BySlug finds a site by its exact serving slug.
 func (s *Store) BySlug(ctx context.Context, slug string) (Site, error) {
 	return transact(ctx, s.db.Read, func(tx *sql.Tx) (Site, error) {
-		return s.selectOne(ctx, tx, func(x Site) bool { return x.Slug == slug })
+		return readOne(ctx, tx, "SELECT payload FROM sites WHERE slug=?", slug)
 	})
 }
-func (s *Store) list(ctx context.Context, tx *sql.Tx, match func(Site) bool) ([]Site, error) {
-	xs, err := s.all(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Site, 0)
-	for _, x := range xs {
-		if match(x) {
+
+// List lists a bounded window of one owner's sites in name order.
+func (s *Store) List(ctx context.Context, owner, after string, n int) ([]Site, error) {
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) ([]Site, error) {
+		if n < 1 {
+			n = 0
+		}
+		rows, err := tx.QueryContext(ctx, "SELECT payload FROM sites WHERE owner=? AND name > ? ORDER BY name LIMIT ?", owner, after, n)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		out := make([]Site, 0)
+		for rows.Next() {
+			var payload string
+			if err := rows.Scan(&payload); err != nil {
+				return nil, err
+			}
+			x, err := decode(payload)
+			if err != nil {
+				return nil, err
+			}
 			out = append(out, x)
 		}
-	}
-	return out, nil
-}
-
-// List lists one owner's sites in name order.
-func (s *Store) List(ctx context.Context, owner string) ([]Site, error) {
-	return transact(ctx, s.db.Read, func(tx *sql.Tx) ([]Site, error) {
-		return s.list(ctx, tx, func(x Site) bool { return x.Owner == owner })
+		return out, rows.Err()
 	})
 }
 
-// Visible lists all listed sites and the user's own unlisted sites.
-func (s *Store) Visible(ctx context.Context, user string) ([]Site, error) {
+// Visible lists at most n listed sites and the user's own unlisted sites.
+func (s *Store) Visible(ctx context.Context, user string, n int) ([]Site, error) {
 	return transact(ctx, s.db.Read, func(tx *sql.Tx) ([]Site, error) {
-		return s.list(ctx, tx, func(x Site) bool { return x.Listed || x.Owner == user })
+		rows, err := tx.QueryContext(ctx, "SELECT owner, payload FROM sites ORDER BY name")
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		out := make([]Site, 0)
+		for len(out) < n && rows.Next() {
+			var owner, payload string
+			if err := rows.Scan(&owner, &payload); err != nil {
+				return nil, err
+			}
+			x, err := decode(payload)
+			if err != nil {
+				return nil, err
+			}
+			if x.Listed || owner == user {
+				out = append(out, x)
+			}
+		}
+		return out, rows.Err()
 	})
 }
 func (s *Store) taken(ctx context.Context, tx *sql.Tx, name string) (bool, error) {
@@ -349,10 +347,8 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Site, []string
 			x.Ref = *c.Ref
 			changed = append(changed, "ref")
 		}
-		if len(changed) > 0 {
-			if err = s.save(ctx, tx, x); err != nil {
-				return updateResult{}, err
-			}
+		if err = s.save(ctx, tx, x); err != nil {
+			return updateResult{}, err
 		}
 		return updateResult{x, changed}, nil
 	})

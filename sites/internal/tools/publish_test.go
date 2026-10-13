@@ -270,7 +270,7 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 }
 
 func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
-	// R-01TB-C00G R-9FGR-O8O7
+	// R-566N-WSI7 R-9FGR-O8O7
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			h := newHarness(t)

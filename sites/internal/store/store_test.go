@@ -89,7 +89,7 @@ func checkErr(t *testing.T, e, w error) {
 	}
 }
 
-// R-19Q1-XPV3
+// R-4HSO-9DOB
 func catalog(t *testing.T, e error) {
 	t.Helper()
 	if e == nil || errors.Is(e, store.ErrNotFound) || errors.Is(e, store.ErrNameTaken) || errors.Is(e, store.ErrNotPublic) {
@@ -105,11 +105,11 @@ type content struct {
 
 func snapshot(t *testing.T, s *store.Store) content {
 	t.Helper()
-	a, e := s.List(ctx, "alice")
+	a, e := s.List(ctx, "alice", "", 10000)
 	if e != nil {
 		t.Fatal(e)
 	}
-	b, e := s.List(ctx, "bob")
+	b, e := s.List(ctx, "bob", "", 10000)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -183,12 +183,16 @@ func TestDeclarationsAndValidation(t *testing.T) {
 func assertEmpty(t *testing.T, s *store.Store) {
 	t.Helper()
 	for _, owner := range []string{"alice", "bob", ""} {
-		xs, e := s.List(ctx, owner)
-		equal(t, e, nil)
-		equal(t, xs, []store.Site{})
-		xs, e = s.Visible(ctx, owner)
-		equal(t, e, nil)
-		equal(t, xs, []store.Site{})
+		for _, n := range []int{-1, 0, 1, 10000} {
+			for _, after := range []string{"", "-", "docs", string([]byte{255})} {
+				xs, e := s.List(ctx, owner, after, n)
+				equal(t, e, nil)
+				equal(t, xs, []store.Site{})
+			}
+			xs, e := s.Visible(ctx, owner, n)
+			equal(t, e, nil)
+			equal(t, xs, []store.Site{})
+		}
 	}
 	for _, name := range []string{"orphan", "docs", ""} {
 		taken, e := s.Taken(ctx, name)
@@ -329,7 +333,7 @@ func TestRandomCandidates(t *testing.T) {
 }
 
 func TestReadSelection(t *testing.T) {
-	// R-162C-SEN0 R-1T8G-21Q7 R-1UGC-FTGW R-1VO8-TL7L R-1WW5-7CYA R-1Y41-L4OZ
+	// R-4GKR-VLXM R-1T8G-21Q7 R-1UGC-FTGW R-4K8H-0X5P R-4LGD-EOWE R-4MO9-SGN3 R-1Y41-L4OZ
 	s := open(t, store.Config{})
 	a := create(t, s, draft("z-last"))
 	d := draft("a-hidden")
@@ -361,19 +365,19 @@ func TestReadSelection(t *testing.T) {
 		equal(t, got, store.Site{})
 		checkErr(t, e, store.ErrNotFound)
 	}
-	xs, e := s.List(ctx, "alice")
+	xs, e := s.List(ctx, "alice", "", 10000)
 	equal(t, e, nil)
 	equal(t, xs, []store.Site{b, a})
-	xs, e = s.List(ctx, "nobody")
+	xs, e = s.List(ctx, "nobody", "", 10000)
 	equal(t, e, nil)
 	equal(t, xs, []store.Site{})
-	xs, e = s.Visible(ctx, "alice")
+	xs, e = s.Visible(ctx, "alice", 10000)
 	equal(t, e, nil)
 	equal(t, xs, []store.Site{b, c, a})
-	xs, e = s.Visible(ctx, "bob")
+	xs, e = s.Visible(ctx, "bob", 10000)
 	equal(t, e, nil)
 	equal(t, xs, []store.Site{c, secret, a})
-	xs, e = s.Visible(ctx, "")
+	xs, e = s.Visible(ctx, "", 10000)
 	equal(t, e, nil)
 	equal(t, xs, []store.Site{c, a})
 	for _, name := range []string{a.Name, b.Name, b.Slug, secret.Slug} {
@@ -387,7 +391,7 @@ func TestReadSelection(t *testing.T) {
 }
 
 func TestPublishUpdateAndApex(t *testing.T) {
-	// R-17A9-66DP R-18I5-JY4E R-1ZBX-YWFO R-20JU-CO6D R-22ZN-47NR R-247J-HZEG R-2AB1-EU3X R-2BIX-SLUM R-AOGI-TUZD R-2CQU-6DLB
+	// R-17A9-66DP R-18I5-JY4E R-1ZBX-YWFO R-20JU-CO6D R-22ZN-47NR R-247J-HZEG R-2AB1-EU3X R-2BIX-SLUM R-4QBY-XRV6 R-2CQU-6DLB
 	now := stamp
 	s := open(t, store.Config{Now: func() time.Time { return now }})
 	x := create(t, s, draft("docs"))
@@ -434,10 +438,10 @@ func TestPublishUpdateAndApex(t *testing.T) {
 		a, e = s.BySlug(ctx, x.Slug)
 		equal(t, e, nil)
 		equal(t, a, x)
-		xs, e := s.List(ctx, "alice")
+		xs, e := s.List(ctx, "alice", "", 10000)
 		equal(t, e, nil)
 		equal(t, xs[0], x)
-		xs, e = s.Visible(ctx, "alice")
+		xs, e = s.Visible(ctx, "alice", 10000)
 		equal(t, e, nil)
 		equal(t, xs[0], x)
 		a, set, e := s.Apex(ctx)
@@ -578,8 +582,8 @@ func assertDeleted(t *testing.T, s *store.Store, dead store.Site) {
 func calls(c context.Context, s *store.Store, id string) []error {
 	_, a := s.Find(c, "alice", "docs")
 	_, b := s.BySlug(c, "docs")
-	_, d := s.List(c, "alice")
-	_, e := s.Visible(c, "alice")
+	_, d := s.List(c, "alice", "", 10000)
+	_, e := s.Visible(c, "alice", 10000)
 	_, f := s.Taken(c, "docs")
 	_, g := s.Create(c, draft("new"))
 	_, h := s.Publish(c, id, strings.Repeat("a", 40))
@@ -588,7 +592,11 @@ func calls(c context.Context, s *store.Store, id string) []error {
 	_, _, k := s.Apex(c)
 	_, l := s.SetApex(c, id)
 	m := s.ClearApex(c)
-	return []error{a, b, d, e, f, g, h, i, j, k, l, m}
+	_, zeroList := s.List(c, "alice", "", 0)
+	_, negativeList := s.List(c, "alice", "", -1)
+	_, zeroVisible := s.Visible(c, "alice", 0)
+	_, negativeVisible := s.Visible(c, "alice", -1)
+	return []error{a, b, d, e, f, g, h, i, j, k, l, m, zeroList, negativeList, zeroVisible, negativeVisible}
 }
 func TestContextCloseAndPrecedence(t *testing.T) {
 	// R-XFGT-M0TW R-2HMF-PGK3 R-X5PM-JUWC
@@ -656,7 +664,7 @@ func TestConcurrentCreates(t *testing.T) {
 		}
 	}
 	equal(t, wins, 1)
-	xs, e := s.List(ctx, "alice")
+	xs, e := s.List(ctx, "alice", "", 10000)
 	equal(t, e, nil)
 	equal(t, len(xs), 1)
 	// In either serialized order, a candidate slug cannot become another site's name.
@@ -679,9 +687,9 @@ func TestConcurrentCreates(t *testing.T) {
 		}
 	})
 	wg.Wait()
-	a, e := q.List(ctx, "alice")
+	a, e := q.List(ctx, "alice", "", 10000)
 	equal(t, e, nil)
-	b, e := q.List(ctx, "bob")
+	b, e := q.List(ctx, "bob", "", 10000)
 	equal(t, e, nil)
 	for _, x := range a {
 		for _, y := range b {
@@ -735,14 +743,14 @@ func TestConcurrentAtomicPublish(t *testing.T) {
 					t.Error(e)
 				}
 				assertPair(t, a)
-				xs, e := s.List(ctx, x.Owner)
+				xs, e := s.List(ctx, x.Owner, "", 10000)
 				if e != nil {
 					t.Error(e)
 				}
 				for _, a := range xs {
 					assertPair(t, a)
 				}
-				xs, e = s.Visible(ctx, x.Owner)
+				xs, e = s.Visible(ctx, x.Owner, 10000)
 				if e != nil {
 					t.Error(e)
 				}
@@ -850,7 +858,7 @@ func TestAdoptEarlierCatalog(t *testing.T) {
 			equal(t, d.Close(), nil)
 			s, _ := openAt(t, path, store.Config{})
 			for _, x := range []store.Site{a, b} {
-				xs, err := s.List(ctx, x.Owner)
+				xs, err := s.List(ctx, x.Owner, "", 10000)
 				equal(t, err, nil)
 				equal(t, len(xs), 1)
 				got := xs[0]
@@ -866,7 +874,7 @@ func TestAdoptEarlierCatalog(t *testing.T) {
 				got.Created, got.Published = x.Created, x.Published
 				equal(t, got, x)
 			}
-			xs, err := s.List(ctx, "nobody")
+			xs, err := s.List(ctx, "nobody", "", 10000)
 			equal(t, err, nil)
 			equal(t, len(xs), 0)
 			got, set, err := s.Apex(ctx)
@@ -888,7 +896,7 @@ func TestAdoptEarlierCatalog(t *testing.T) {
 }
 
 func TestEmptyCatalogIgnoresOtherFiles(t *testing.T) {
-	// R-WON1-72IM
+	// R-4J0K-N5F0
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "orphan"), []byte("unrelated site content"), 0600); err != nil {
 		t.Fatal(err)
