@@ -2,14 +2,15 @@
      sites. Shown only to a signed-in user. Data: .Banner (a page.Banner,
      for banner and footer); .SitesURL
      (<sites-url>: the services file's sites url less one trailing "/", else
-     <scheme>://<Host>); .Sites, the first page of the sites the caller may see (every
-     listed site, and the caller's own unlisted ones) by name, each with
+     <scheme>://<Host>); .Sites, one window of the sites the caller may see (every
+     listed site, and the caller's own unlisted ones) by name, the window
+     .Page names, each with
      .Slug, .Name, .URL ("<.SitesURL>/<slug>/"), .Visibility ("public" or
      "private"), .Listed (bool), .Published (bool: a commit is published) and
-     .Mine (bool: the caller owns it); .Next (bool: true when more visible
-     sites follow the page, false when none remain; a bool naming no tool,
-     as auth's profile does, because sites' list tool answers the caller's
-     own sites, a different set). Hooks: h1 with text "sites";
+     .Mine (bool: the caller owns it); .Page (string, this window's own page
+     token, the ?page= the request carried; empty on the first window);
+     .Next (string, the page token for the window after this one; empty
+     when none remain). Hooks: h1 with text "sites";
      p#summary; section#sites with h2 "Sites" and either p#no-sites (text
      "No sites yet.") when .Sites is empty, or table#site-list with one
      tr[data-site=<slug>] per site holding td.site-name > a.site-link (href
@@ -19,8 +20,14 @@
      span.status[data-status=published] (text "published") or
      span.status[data-status=unpublished] (text "not published"), and
      td.site-owner holding span.badge[data-kind=mine] (text "yours") only
-     when .Mine, then, when .Next, p#next (text "More sites follow; the ones
-     not shown sort after these by name."); p#site-url whose code element holds "<.SitesURL>/<slug>/";
+     when .Mine; then, when .Sites is not empty or .Page is not empty,
+     nav.paging#paging (aria-label "Pages") whose children are, in order,
+     First (on the first window, .Page empty, a span with
+     aria-current="page" and text "First"; otherwise a link to / with text
+     "First") and, only when .Next is not empty, Next (a link to
+     /?page=<.Next> with text "Next"); on the first window with no sites
+     there is no nav, while an emptied later window still offers First;
+     p#site-url whose code element holds "<.SitesURL>/<slug>/";
      a#about-link whose href is "/about". No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -45,8 +52,9 @@
 </tr>
 {{end}}</tbody>
 </table>
-</div>{{if .Next}}<p id="next">More sites follow; the ones not shown sort after these by name.</p>{{end}}{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
-</section>
+</div>{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
+{{if or .Sites .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{end}}</section>
 <p><a id="about-link" href="/about">About sites</a></p>
 </main>
 {{template "footer" .Banner}}
