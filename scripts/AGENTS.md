@@ -217,7 +217,7 @@ server was built over, before a call or from a hook design names, never by
 corrupting the file, removing permissions or closing the store. The one
 exception is the test of a failed `Recover` through `Run`, where the store is
 `Run`'s own: from a hook design names it opens a second handle of its own on
-the same file with `db.Open` and `scripts.Migrations()`, drops the `catalog`
+the same file with `db.Open` and `scripts.Migrations()`, drops the `runs`
 table inside that handle's `Write`, and closes it. A disk failure on the runs
 directory is still produced by removing a permission from the test's own
 directory, as design names. Tests prove scripts' use of the catalog, its
