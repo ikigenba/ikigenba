@@ -81,7 +81,7 @@ func classify(t *testing.T, err, want error) {
 	}
 }
 func TestListSearchAndReduction(t *testing.T) {
-	// R-I6AM-J0M8 R-IETX-7ET3 R-JVE8-LKXH R-JRQJ-G9PE R-IR0X-1481 R-IS8T-EVYQ R-ITGP-SNPF R-RAD6-IXQR R-IVWI-K76T
+	// R-I6AM-J0M8 R-JVE8-LKXH R-JRQJ-G9PE R-IR0X-1481 R-RAD6-IXQR R-IVWI-K76T
 	for _, search := range []bool{false, true} {
 		for _, optional := range []bool{false, true} {
 			t.Run(fmt.Sprintf("search=%t/optional=%t", search, optional), func(t *testing.T) {
@@ -89,6 +89,7 @@ func TestListSearchAndReduction(t *testing.T) {
 				folder := ""
 				page := ""
 				text := ""
+				size := 31
 				shared := ""
 				if optional {
 					folder = "it's a\\b"
@@ -128,7 +129,7 @@ func TestListSearchAndReduction(t *testing.T) {
 					} else if q.Get("orderBy") != "folder,name" {
 						t.Error("list order")
 					}
-					if q.Get("q") != want || q.Get("pageSize") != "50" || q.Get("pageToken") != page || q.Has("pageToken") != optional || q.Get("includeItemsFromAllDrives") != "true" || q.Get("fields") != "nextPageToken,files(id,name,mimeType,size,modifiedTime,parents,driveId,webViewLink)" {
+					if q.Get("q") != want || q.Get("pageSize") != fmt.Sprint(size) || q.Get("pageToken") != page || q.Has("pageToken") != optional || q.Get("includeItemsFromAllDrives") != "true" || q.Get("fields") != "nextPageToken,files(id,name,mimeType,size,modifiedTime,parents,driveId,webViewLink)" {
 						t.Errorf("query %v", q)
 					}
 					corpora := "allDrives"
@@ -144,9 +145,9 @@ func TestListSearchAndReduction(t *testing.T) {
 				var p drive.Page
 				var err error
 				if search {
-					p, err = c.Search(context.Background(), token, drive.Query{Text: text, Folder: folder, Drive: shared, Page: page})
+					p, err = c.Search(context.Background(), token, drive.Query{Text: text, Folder: folder, Drive: shared, Page: page, Size: size})
 				} else {
-					p, err = c.List(context.Background(), token, folder, page)
+					p, err = c.List(context.Background(), token, folder, page, size)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -171,7 +172,7 @@ func TestListSearchAndReduction(t *testing.T) {
 			reply(w, `{"files":[]}`)
 		}
 	})
-	p, err := c.List(context.Background(), token, "", "")
+	p, err := c.List(context.Background(), token, "", "", 31)
 	if err != nil || p.Files == nil || len(p.Files) != 0 || p.Next != "" {
 		t.Fatal(p, err)
 	}
@@ -257,7 +258,7 @@ func TestRootAndEmptyID(t *testing.T) {
 			var err error
 			switch method {
 			case "list":
-				_, err = c.List(context.Background(), token, "", "")
+				_, err = c.List(context.Background(), token, "", "", 31)
 			case "search":
 				_, err = c.Search(context.Background(), token, drive.Query{})
 			case "show":
@@ -309,7 +310,7 @@ func TestFailures(t *testing.T) {
 			}
 			return e
 		case "list":
-			v, e := c.List(ctx, token, "", "")
+			v, e := c.List(ctx, token, "", "", 31)
 			if e != nil && !reflect.DeepEqual(v, drive.Page{}) {
 				t.Fatal(v)
 			}
@@ -602,7 +603,7 @@ func TestTelemetryAndDefaultHTTPRouting(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}, Telemetry: writer})
-	if _, err := c.List(ctx, token, "", ""); err != nil {
+	if _, err := c.List(ctx, token, "", "", 31); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Search(ctx, token, drive.Query{}); err != nil {
@@ -656,7 +657,7 @@ func TestMalformedResources(t *testing.T) {
 			case "show":
 				_, err = c.Show(context.Background(), token, "file")
 			case "list":
-				_, err = c.List(context.Background(), token, "", "")
+				_, err = c.List(context.Background(), token, "", "", 31)
 			case "search":
 				_, err = c.Search(context.Background(), token, drive.Query{})
 			}
@@ -697,5 +698,131 @@ func TestTelemetryFailureAndNegativeDuration(t *testing.T) {
 			t.Fatal(events)
 		}
 		writer.Shutdown(context.Background(), "test")
+	}
+}
+
+func TestClientMethodSignatures(t *testing.T) {
+	// R-Y9E8-FWP1
+	cfg := drive.Config{HTTP: &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("unused transport")
+	})}}
+	c := drive.NewClient(cfg)
+	signatures := struct {
+		newClient func(drive.Config) *drive.Client
+		drives    func(context.Context, string) ([]drive.Drive, error)
+		list      func(context.Context, string, string, string, int) (drive.Page, error)
+		search    func(context.Context, string, drive.Query) (drive.Page, error)
+		show      func(context.Context, string, string) (drive.File, error)
+		media     func(context.Context, string, string) (io.ReadCloser, error)
+		export    func(context.Context, string, string, string) (io.ReadCloser, error)
+		upload    func(context.Context, string, drive.Upload, io.Reader) (drive.File, error)
+	}{drive.NewClient, c.Drives, c.List, c.Search, c.Show, c.Media, c.Export, c.Upload}
+	if signatures.newClient(cfg) == nil || signatures.drives == nil || signatures.list == nil || signatures.search == nil || signatures.show == nil || signatures.media == nil || signatures.export == nil || signatures.upload == nil {
+		t.Fatal("missing constructor or method")
+	}
+}
+
+func TestListRequestParameters(t *testing.T) {
+	// R-YAM4-TOFQ
+	for _, folder := range []string{"", "it's a\\b"} {
+		for _, page := range []string{"", "opaque+/% token"} {
+			for _, size := range []int{-3, 0, 1, 37, 500, 1001} {
+				var calls atomic.Int32
+				c := fake(t, func(w http.ResponseWriter, r *http.Request) {
+					calls.Add(1)
+					if root(w, r) {
+						return
+					}
+					q := r.URL.Query()
+					quoted := "'root'"
+					if folder != "" {
+						quoted = "'it\\'s a\\\\b'"
+					}
+					if r.Method != http.MethodGet || r.URL.Path != "/drive/v3/files" {
+						t.Error("list endpoint", r.Method, r.URL)
+					}
+					for key, value := range map[string]string{"q": quoted + " in parents and trashed = false", "orderBy": "folder,name", "pageSize": fmt.Sprint(size), "corpora": "allDrives"} {
+						if len(q[key]) != 1 || q.Get(key) != value {
+							t.Error("list parameter", key, q[key])
+						}
+					}
+					if page == "" {
+						if q.Has("pageToken") {
+							t.Error("unexpected page token", q)
+						}
+					} else if len(q["pageToken"]) != 1 || q.Get("pageToken") != page {
+						t.Error("page token", q)
+					}
+					reply(w, `{"files":[]}`)
+				})
+				if _, err := c.List(context.Background(), token, folder, page, size); err != nil {
+					t.Fatal(err)
+				}
+				if calls.Load() != 2 {
+					t.Fatal("request count", calls.Load())
+				}
+			}
+		}
+	}
+}
+
+func TestSearchRequestParameters(t *testing.T) {
+	// R-YBU1-7G6F
+	for _, text := range []string{"", "it's a\\b"} {
+		for _, folder := range []string{"", "it's a\\b"} {
+			for _, shared := range []string{"", "shared-drive"} {
+				for _, page := range []string{"", "opaque+/% token"} {
+					for _, size := range []int{-3, 0, 1, 37, 500, 1001} {
+						query := drive.Query{Text: text, Folder: folder, Drive: shared, Page: page, Size: size}
+						var calls atomic.Int32
+						c := fake(t, func(w http.ResponseWriter, r *http.Request) {
+							calls.Add(1)
+							if root(w, r) {
+								return
+							}
+							q := r.URL.Query()
+							want := "trashed = false"
+							if text != "" {
+								want = "fullText contains 'it\\'s a\\\\b' and " + want
+							}
+							if folder != "" {
+								want += " and 'it\\'s a\\\\b' in parents"
+							}
+							corpora := "allDrives"
+							if shared != "" {
+								corpora = "drive"
+							}
+							if r.Method != http.MethodGet || r.URL.Path != "/drive/v3/files" {
+								t.Error("search endpoint", r.Method, r.URL)
+							}
+							for key, value := range map[string]string{"q": want, "pageSize": fmt.Sprint(size), "corpora": corpora} {
+								if len(q[key]) != 1 || q.Get(key) != value {
+									t.Error("search parameter", key, q[key])
+								}
+							}
+							for key, value := range map[string]string{"pageToken": page, "driveId": shared} {
+								if value == "" {
+									if q.Has(key) {
+										t.Error("unexpected search parameter", key, q)
+									}
+								} else if len(q[key]) != 1 || q.Get(key) != value {
+									t.Error("search parameter", key, q[key])
+								}
+							}
+							if q.Has("orderBy") {
+								t.Error("search sorted", q)
+							}
+							reply(w, `{"files":[]}`)
+						})
+						if _, err := c.Search(context.Background(), token, query); err != nil {
+							t.Fatal(err)
+						}
+						if calls.Load() != 2 {
+							t.Fatal("request count", calls.Load())
+						}
+					}
+				}
+			}
+		}
 	}
 }

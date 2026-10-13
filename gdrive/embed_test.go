@@ -8,7 +8,7 @@ import (
 	"github.com/ikigenba/ikigenba/gdrive"
 )
 
-// R-QN01-1VGO R-QO7X-FN7D R-QPFT-TEY2
+// R-QN01-1VGO R-QO7X-FN7D R-YWKB-PJS8
 func TestEmbeddedInputs(t *testing.T) {
 	t.Chdir(t.TempDir())
 	for _, c := range []struct {
@@ -17,7 +17,7 @@ func TestEmbeddedInputs(t *testing.T) {
 	}{
 		{gdrive.Assets, []string{"about.html", "landing.html", "notfound.html", "tools.html", "transfer.html"}},
 		{gdrive.Etc, []string{"manifest.toml", "nginx.conf"}},
-		{gdrive.Migrations, []string{"0001_transfers.sql"}},
+		{gdrive.Migrations, []string{"0001_transfers.sql", "0002_transfers_user_started_id.sql"}},
 	} {
 		for range 2 {
 			f := c.fs()
@@ -41,5 +41,24 @@ func TestEmbeddedInputs(t *testing.T) {
 				t.Fatalf("names %v", names)
 			}
 		}
+	}
+}
+
+// R-YVCF-BS1J
+func TestTransferWindowMigration(t *testing.T) {
+	f := gdrive.Migrations()
+	info, err := fs.Stat(f, "0002_transfers_user_started_id.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Fatal("migration is not a regular file")
+	}
+	got, err := fs.ReadFile(f, "0002_transfers_user_started_id.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "CREATE INDEX transfers_user_started_id ON transfers(user_id, started, id);\n" {
+		t.Fatalf("migration bytes %q", got)
 	}
 }

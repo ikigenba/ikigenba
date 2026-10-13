@@ -56,7 +56,7 @@ func TestKindsAndFormats(t *testing.T) {
 	}
 }
 func TestObjectJSON(t *testing.T) {
-	// R-IB68-23L0 R-ICE4-FVBP R-IM5B-I199 R-IND7-VSZY
+	// R-IB68-23L0 R-Y86C-24YC R-IM5B-I199 R-IND7-VSZY
 	zero := int64(0)
 	stamp := time.Date(2032, 1, 2, 3, 4, 5, 0, time.UTC)
 	f := drive.File{"file-id", "name", drive.KindFile, "text/plain", &zero, stamp, "folder-id", "drive-id", "link", &drive.Target{"target-id", drive.KindDocument}}
@@ -89,15 +89,18 @@ func TestObjectJSON(t *testing.T) {
 		t.Fatalf("drive json %s", b)
 	}
 	p := drive.Page{[]drive.File{f}, "next"}
-	q := drive.Query{"text", "folder", "drive", "page"}
+	q := drive.Query{"text", "folder", "drive", "page", 31}
 	u := drive.Upload{"file", "name", "folder", "type", 3}
-	if p.Next != "next" || q.Page != "page" || u.Bytes != 3 {
+	if !reflect.DeepEqual(p.Files, []drive.File{f}) || p.Next != "next" || q.Text != "text" || q.Folder != "folder" || q.Drive != "drive" || q.Page != "page" || q.Size != 31 || u.File != "file" || u.Name != "name" || u.Folder != "folder" || u.ContentType != "type" || u.Bytes != 3 {
 		t.Fatal("public types")
 	}
 }
 func TestConstants(t *testing.T) {
-	// R-I7II-WSCX R-I8QF-AK3M R-PGSG-EXA6
-	if drive.DefaultBaseURL != "https://www.googleapis.com" || drive.PageSize != 50 || drive.PushChunk != 8<<20 || drive.ExportCap != 10_000_000 || drive.Called != "drive.called" {
+	// R-Y6YF-OD7N R-I8QF-AK3M R-PGSG-EXA6
+	const defaultBaseURL = drive.DefaultBaseURL
+	const pushChunk = drive.PushChunk
+	const called = drive.Called
+	if defaultBaseURL != "https://www.googleapis.com" || pushChunk != 8<<20 || drive.ExportCap != 10_000_000 || called != "drive.called" {
 		t.Fatal("constants")
 	}
 	got := []string{drive.EndpointList, drive.EndpointGet, drive.EndpointMedia, drive.EndpointExport, drive.EndpointDrives, drive.EndpointCreate, drive.EndpointUpdate, drive.EndpointChunk}

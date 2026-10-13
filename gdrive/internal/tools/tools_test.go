@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/gdrive"
@@ -62,6 +64,7 @@ type fixture struct {
 	tokenBody                 string
 	driveStatus               int
 	fileMime                  string
+	fileNext                  string
 	client                    *mcp.Client
 	engine                    *transfers.Engine
 }
@@ -87,7 +90,7 @@ func socket(t *testing.T, name string, h http.Handler) services.Entry {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	f := &fixture{tokenStatus: 200, tokenBody: `{"access_token":"secret-fixture","expires":"2030-01-01T00:00:00Z","account":"fixture-account","scopes":[]}`, driveStatus: 200, fileMime: "text/plain", cap: &telemetry.Capture{}, bus: &events.Capture{}}
+	f := &fixture{tokenStatus: 200, tokenBody: `{"access_token":"secret-fixture","expires":"2030-01-01T00:00:00Z","account":"fixture-account","scopes":[]}`, driveStatus: 200, fileNext: "next-fixture", fileMime: "text/plain", cap: &telemetry.Capture{}, bus: &events.Capture{}}
 	f.w = telemetry.New(telemetry.Config{Service: "gdrive", Sink: f.cap, Stderr: io.Discard, Now: func() time.Time { return clock }, Rand: &sequence{}})
 	t.Cleanup(func() { f.w.Shutdown(context.Background(), "finished") })
 	f.em = events.New(events.Config{Service: "gdrive", Sink: f.bus, Stderr: io.Discard, Telemetry: f.w, Now: func() time.Time { return clock }, Rand: &sequence{}, Emits: trail.Emits()})
@@ -146,7 +149,7 @@ func newFixture(t *testing.T) *fixture {
 		case "/drive/v3/files/root":
 			_, _ = io.WriteString(w, `{"id":"root-fixture"}`)
 		case "/drive/v3/files":
-			_, _ = io.WriteString(w, `{"files":[{"id":"file-fixture","name":"fixture-name","mimeType":"text/plain","size":"3","modifiedTime":"2026-10-11T12:00:07Z","webViewLink":"https://drive.example.test/file"}],"nextPageToken":"next-fixture"}`)
+			_, _ = io.WriteString(w, `{"files":[{"id":"file-fixture","name":"fixture-name","mimeType":"text/plain","size":"3","modifiedTime":"2026-10-11T12:00:07Z","webViewLink":"https://drive.example.test/file"}],"nextPageToken":"`+f.fileNext+`"}`)
 		default:
 			_, _ = io.WriteString(w, `{"id":"file-fixture","name":"fixture-name","mimeType":"`+f.fileMime+`","size":"3","modifiedTime":"2026-10-11T12:00:07Z","webViewLink":"https://drive.example.test/file"}`)
 		}
@@ -244,7 +247,7 @@ func refused(t *testing.T, r mcp.Result, word, sentence, u string) {
 	}
 }
 func TestCatalogSchemasAndCopy(t *testing.T) {
-	// R-0DCP-A1L5 R-0EKL-NTBU R-7EZT-IJOQ R-0OBS-PZ9E R-0PJP-3R03
+	// R-0DCP-A1L5 R-YD1X-L7X4 R-7EZT-IJOQ R-0OBS-PZ9E R-0PJP-3R03
 	f := newFixture(t)
 	infos, e := f.client.ListTools(context.Background(), caller)
 	if e != nil {
@@ -256,8 +259,8 @@ func TestCatalogSchemasAndCopy(t *testing.T) {
 		t.Fatal("catalog length")
 	}
 	seen := map[string]bool{}
-	inputs := []any{NoArgs{}, ListArgs{}, SearchArgs{Query: ""}, ShowArgs{File: ""}, PullArgs{File: "", Path: ""}, PushArgs{Path: ""}, NoArgs{}, TransferArgs{Transfer: ""}}
-	properties := [][]string{{}, {"folder", "page"}, {"query", "folder", "drive", "page"}, {"file"}, {"file", "path", "format", "expires"}, {"path", "folder", "name", "file"}, {}, {"transfer"}}
+	inputs := []any{NoArgs{}, ListArgs{}, SearchArgs{Query: ""}, ShowArgs{File: ""}, PullArgs{File: "", Path: ""}, PushArgs{Path: ""}, TransfersArgs{}, TransferArgs{Transfer: ""}}
+	properties := [][]string{{}, {"folder", "page", "limit"}, {"query", "folder", "drive", "page", "limit"}, {"file"}, {"file", "path", "format", "expires"}, {"path", "folder", "name", "file"}, {"page", "limit"}, {"transfer"}}
 	required := [][]string{{}, {}, {"query"}, {"file"}, {"file", "path"}, {"path"}, {}, {"transfer"}}
 	for i, info := range infos {
 		entry := entries[i]
@@ -309,11 +312,11 @@ func TestCatalogSchemasAndCopy(t *testing.T) {
 	}
 }
 func TestJSONRecords(t *testing.T) {
-	// R-KONT-S2Q5 R-0H0E-FCT8 R-0I8A-T4JX
+	// R-YE9T-YZNT R-YFHQ-CREI R-0I8A-T4JX
 	for _, c := range []struct {
 		v    any
 		want string
-	}{{DriveList{}, `{"drives":[]}`}, {DriveList{[]drive.Drive{}}, `{"drives":[]}`}, {FileList{}, `{"files":[]}`}, {FileList{Next: "fixture-page"}, `{"files":[],"next":"fixture-page"}`}} {
+	}{{DriveList{}, `{"drives":[]}`}, {DriveList{[]drive.Drive{}}, `{"drives":[]}`}, {FileList{}, `{"files":[]}`}, {FileList{Files: []drive.File{}}, `{"files":[]}`}, {FileList{Next: stringPointer("")}, `{"files":[],"next":""}`}, {FileList{Next: stringPointer("fixture-page")}, `{"files":[],"next":"fixture-page"}`}} {
 		b, e := json.Marshal(c.v)
 		if e != nil || string(b) != c.want {
 			t.Fatal(string(b), e)
@@ -358,7 +361,7 @@ func TestJSONRecords(t *testing.T) {
 		last = i
 	}
 	success(t, res, RecordOf(ts))
-	success(t, call(t, f, "transfers", NoArgs{}), TransferList{[]Record{RecordOf(ts)}})
+	success(t, call(t, f, "transfers", NoArgs{}), TransferList{[]Record{RecordOf(ts)}, nil})
 	exported, e := f.st.Add(context.Background(), store.Transfer{Direction: store.DirectionPull, Status: store.StatusRunning, Path: "exported/path", UserID: caller.UserID, File: "doc-fixture", Name: "exported-fixture", Kind: "document", ContentType: "application/pdf", Format: "application/pdf"})
 	if e != nil {
 		t.Fatal(e)
@@ -384,7 +387,7 @@ func TestJSONRecords(t *testing.T) {
 
 }
 func TestDriveReads(t *testing.T) {
-	// R-0N3W-C7IP R-0UFA-MTYV R-0VN7-0LPK R-0WV3-EDG9 R-0Y2Z-S56Y R-KPVQ-5UGU R-KNFX-EAZG R-KR3M-JM7J
+	// R-0N3W-C7IP R-0UFA-MTYV R-M79P-28HF R-M8HL-G084 R-0Y2Z-S56Y R-KPVQ-5UGU R-KNFX-EAZG R-KR3M-JM7J
 	f := newFixture(t)
 	n := int64(3)
 	file := drive.File{ID: "file-fixture", Name: "fixture-name", Kind: drive.KindFile, MimeType: "text/plain", Bytes: &n, Modified: clock, Link: "https://drive.example.test/file"}
@@ -392,10 +395,10 @@ func TestDriveReads(t *testing.T) {
 	success(t, call(t, f, "show", ShowArgs{"file-fixture"}), file)
 	folder, cursor, driveID, text := "folder-fixture", "page-fixture", "drive-fixture", "quote's \\ content"
 	for _, a := range []ListArgs{{}, {Folder: &folder, Page: &cursor}, {Folder: stringPointer(""), Page: stringPointer("")}} {
-		success(t, call(t, f, "list", a), FileList{[]drive.File{file}, "next-fixture"})
+		success(t, call(t, f, "list", a), FileList{[]drive.File{file}, stringPointer("next-fixture")})
 	}
 	for _, a := range []SearchArgs{{Query: ""}, {Query: text, Folder: &folder, Drive: &driveID, Page: &cursor}, {Query: "", Folder: stringPointer(""), Drive: stringPointer(""), Page: stringPointer("")}} {
-		success(t, call(t, f, "search", a), FileList{[]drive.File{file}, "next-fixture"})
+		success(t, call(t, f, "search", a), FileList{[]drive.File{file}, stringPointer("next-fixture")})
 	}
 	f.mu.Lock()
 	before := len(f.requests)
@@ -478,10 +481,10 @@ func TestConnectionAndDriveRefusals(t *testing.T) {
 	}
 }
 func TestTransferTools(t *testing.T) {
-	// R-0ZAW-5WXN R-10IS-JOOC R-7HFM-A364 R-11QO-XGF1 R-7INI-NUWT R-146H-OZWF R-7JVF-1MNI R-KSBI-XDY8
+	// R-0ZAW-5WXN R-10IS-JOOC R-7HFM-A364 R-MDD6-Z36W R-MFSZ-QMOA R-146H-OZWF R-7JVF-1MNI R-KSBI-XDY8
 	f := newFixture(t)
 	ctx := context.Background()
-	success(t, call(t, f, "transfers", NoArgs{}), TransferList{[]Record{}})
+	success(t, call(t, f, "transfers", NoArgs{}), TransferList{[]Record{}, nil})
 	expiry := clock.Add(time.Hour).Format(time.RFC3339)
 	r := call(t, f, "pull", PullArgs{File: "file-fixture", Path: "fixture/pull", Expires: &expiry})
 	if r.IsError() {
@@ -524,13 +527,13 @@ func TestTransferTools(t *testing.T) {
 	for _, tf := range ts {
 		rs = append(rs, RecordOf(tf))
 	}
-	success(t, call(t, f, "transfers", NoArgs{}), TransferList{rs})
+	success(t, call(t, f, "transfers", NoArgs{}), TransferList{rs, nil})
 	success(t, call(t, f, "transfer", TransferArgs{ts[1].ID}), RecordOf(ts[1]))
 	other, e := f.st.Add(ctx, store.Transfer{Direction: store.DirectionPull, Status: store.StatusRunning, Path: "private/path", UserID: "bob"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	success(t, call(t, f, "transfers", NoArgs{}), TransferList{rs})
+	success(t, call(t, f, "transfers", NoArgs{}), TransferList{rs, nil})
 	for _, id := range []string{"", "wrong", "xfr_0000000000000000", other.ID} {
 		refused(t, call(t, f, "transfer", TransferArgs{id}), "not_found", RefuseNotFound, "")
 	}
@@ -589,7 +592,7 @@ func omitNull(v any) {
 }
 
 func TestOptionalTransferArgumentsAndSchemaRefusal(t *testing.T) {
-	// R-0EKL-NTBU R-0ZAW-5WXN R-10IS-JOOC R-7G7P-WBFF
+	// R-YD1X-L7X4 R-0ZAW-5WXN R-10IS-JOOC R-7G7P-WBFF
 	f := newFixture(t)
 	f.fileMime = "application/vnd.google-apps.document"
 	format := drive.DefaultFormat(drive.KindDocument)
@@ -680,4 +683,245 @@ func observeSideEffects(t *testing.T, f *fixture) sideEffects {
 		}
 	}
 	return sideEffects{Alice: alice, Bob: bob, AliceError: aerr != nil, BobError: berr != nil, Artifacts: artifacts, Trail: count, Bus: len(f.bus.Events())}
+}
+
+func TestPagingSchemas(t *testing.T) {
+	// R-YGPM-QJ57 R-YD1X-L7X4
+	f := newFixture(t)
+	infos, err := f.client.ListTools(context.Background(), caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, info := range infos {
+		if info.Name != "list" && info.Name != "search" && info.Name != "transfers" {
+			continue
+		}
+		var schema struct {
+			Properties map[string]struct{ Type, Description string }
+		}
+		if err := json.Unmarshal(info.InputSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []struct{ name, typ, description string }{{"page", "string", paging.PageDescription}, {"limit", "integer", paging.LimitDescription}} {
+			prop := schema.Properties[field.name]
+			if prop.Type != field.typ || prop.Description != field.description {
+				t.Fatalf("%s.%s: %+v", info.Name, field.name, prop)
+			}
+		}
+		order := []string{"folder", "page", "limit"}
+		if info.Name == "search" {
+			order = []string{"query", "folder", "drive", "page", "limit"}
+		}
+		if info.Name == "transfers" {
+			order = []string{"page", "limit"}
+		}
+		last := -1
+		for _, name := range order {
+			at := bytes.Index(info.InputSchema, []byte(`"`+name+`":`))
+			if at <= last {
+				t.Fatal("property order", info.Name, string(info.InputSchema))
+			}
+			last = at
+		}
+		if info.Name == "transfers" {
+			var out struct {
+				Properties map[string]struct{ Type, Description string }
+				Required   []string
+			}
+			if err := json.Unmarshal(info.OutputSchema, &out); err != nil {
+				t.Fatal(err)
+			}
+			if out.Properties["next"].Type != "string" || out.Properties["next"].Description != paging.NextDescription || slices.Contains(out.Required, "next") {
+				t.Fatal("next schema", string(info.OutputSchema))
+			}
+		}
+	}
+}
+
+func TestDrivePagingWindows(t *testing.T) {
+	// R-M79P-28HF R-M8HL-G084 R-M9PH-TRYT
+	for _, name := range []string{"list", "search"} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			for _, limit := range []any{nil, paging.MaxLimit, 1, 7} {
+				for _, next := range []string{"opaque +/= token", ""} {
+					f.mu.Lock()
+					f.fileNext = next
+					f.mu.Unlock()
+					args := map[string]any{"limit": limit}
+					if name == "search" {
+						args["query"] = ""
+					}
+					res := call(t, f, name, args)
+					if res.IsError() {
+						t.Fatal(res)
+					}
+					_, sc := resultWire(t, res)
+					var got struct {
+						Files []drive.File
+						Next  *string
+					}
+					if err := json.Unmarshal(sc, &got); err != nil {
+						t.Fatal(err)
+					}
+					if len(got.Files) != 1 || (next == "" && got.Next != nil) || (next != "" && (got.Next == nil || *got.Next != next)) {
+						t.Fatal("page result", string(sc))
+					}
+					f.mu.Lock()
+					request := f.requests[len(f.requests)-1]
+					f.mu.Unlock()
+					size := paging.DefaultLimit
+					if limit != nil {
+						size = limit.(int)
+					}
+					if request.URL.Query().Get("pageSize") != strconv.Itoa(size) {
+						t.Fatal("size", request.URL)
+					}
+					success(t, res, FileList{got.Files, got.Next})
+				}
+			}
+			// Absent limit follows the same default window as null.
+			args := map[string]any{}
+			if name == "search" {
+				args["query"] = ""
+			}
+			res := call(t, f, name, args)
+			if res.IsError() {
+				t.Fatal(res)
+			}
+			f.mu.Lock()
+			request := f.requests[len(f.requests)-1]
+			f.mu.Unlock()
+			if request.URL.Query().Get("pageSize") != strconv.Itoa(paging.DefaultLimit) {
+				t.Fatal("default size")
+			}
+			for _, limit := range []int{-1, 0, paging.MaxLimit + 1} {
+				f.mu.Lock()
+				before := len(f.requests)
+				f.mu.Unlock()
+				_, err := paging.Window(&limit)
+				args := map[string]any{"folder": "bad-folder", "page": "bad-page", "limit": limit}
+				if name == "search" {
+					args["query"] = ""
+				}
+				pagingRefused(t, call(t, f, name, args), err.Error())
+				f.mu.Lock()
+				after := len(f.requests)
+				f.mu.Unlock()
+				if before != after {
+					t.Fatal("invalid limit reached Drive")
+				}
+			}
+		})
+	}
+}
+func pagingRefused(t *testing.T, r mcp.Result, text string) {
+	t.Helper()
+	blocks, sc := resultWire(t, r)
+	if !r.IsError() || len(blocks) != 1 || blocks[0].Type != "text" || blocks[0].Text != text || len(sc) != 0 {
+		t.Fatalf("paging refusal: %+v %s want %q", blocks, sc, text)
+	}
+}
+func TestTransferPagingRefusals(t *testing.T) {
+	// R-MAXE-7JPI R-MC5A-LBG7
+	f := newFixture(t)
+	token := paging.Token{Tool: "transfers"}
+	stamp, id := clock.UTC().Format(time.RFC3339), "xfr_0123456789abcdef"
+	valid := token.Encode(stamp, id)
+	altered := "A" + valid[1:]
+	if altered == valid {
+		altered = "B" + valid[1:]
+	}
+	pages := []string{"invented", (paging.Token{Tool: "list"}).Encode(stamp, id), token.Encode(stamp), token.Encode("2026-10-05T09:00:00+02:00", id), token.Encode("2026-10-05T09:00:00.5Z", id), token.Encode("invalid-time", id), token.Encode(stamp, "run_0123456789abcdef"), altered}
+	for _, failing := range []bool{false, true} {
+		f.d.SetFailing(failing)
+		for _, page := range append(pages, valid) {
+			for _, limit := range []int{-1, 0, paging.MaxLimit + 1} {
+				_, err := paging.Window(&limit)
+				pagingRefused(t, call(t, f, "transfers", TransfersArgs{&page, &limit}), err.Error())
+			}
+		}
+		for _, page := range pages {
+			for _, limit := range []*int{nil, intPointer(1), intPointer(paging.MaxLimit)} {
+				pagingRefused(t, call(t, f, "transfers", TransfersArgs{&page, limit}), paging.BadPage)
+			}
+		}
+	}
+	f.d.SetFailing(false)
+	success(t, call(t, f, "transfers", map[string]any{"limit": nil}), TransferList{[]Record{}, nil})
+}
+func intPointer(n int) *int { return &n }
+func TestTransferPagingTraversal(t *testing.T) {
+	// R-MDD6-Z36W R-MEL3-CUXL R-MFSZ-QMOA R-YFHQ-CREI
+	f := newFixture(t)
+	ctx := context.Background()
+	started := clock
+	seeder := store.New(f.d, store.Config{Now: func() time.Time { return started }, Rand: &sequence{n: 150}})
+	for i := 0; i < paging.DefaultLimit+2; i++ {
+		started = clock.Add(time.Duration(i/9) * time.Second)
+		user := caller.UserID
+		if i == 3 {
+			user = "bob"
+		}
+		_, err := seeder.Add(ctx, store.Transfer{UserID: user, Direction: store.DirectionPull, Status: store.StatusQueued, Path: strconv.Itoa(i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := f.st.List(ctx, caller.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []int{1, 7, paging.DefaultLimit, paging.MaxLimit} {
+		var page *string
+		offset := 0
+		for {
+			res := call(t, f, "transfers", TransfersArgs{page, &size})
+			_, sc := resultWire(t, res)
+			var got TransferList
+			if err := json.Unmarshal(sc, &got); err != nil {
+				t.Fatal(err)
+			}
+			end := min(offset+size, len(all))
+			records := make([]Record, 0, end-offset)
+			for _, tf := range all[offset:end] {
+				records = append(records, RecordOf(tf))
+			}
+			var next *string
+			if end < len(all) {
+				last := all[end-1]
+				next = stringPointer((paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID))
+			}
+			success(t, res, TransferList{records, next})
+			if next != nil {
+				if bytes.Index(sc, []byte(`"next":`)) < bytes.Index(sc, []byte(`"transfers":`)) {
+					t.Fatal("transfer list order", string(sc))
+				}
+			}
+			offset = end
+			if got.Next == nil {
+				break
+			}
+			page = got.Next
+		}
+		if offset != len(all) {
+			t.Fatal("incomplete traversal")
+		}
+	}
+	for _, args := range []any{TransfersArgs{}, map[string]any{"limit": nil}, TransfersArgs{Page: stringPointer("")}} {
+		records := make([]Record, paging.DefaultLimit)
+		for i, tf := range all[:paging.DefaultLimit] {
+			records[i] = RecordOf(tf)
+		}
+		last := all[paging.DefaultLimit-1]
+		next := stringPointer((paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID))
+		success(t, call(t, f, "transfers", args), TransferList{records, next})
+	}
+	last := all[len(all)-1]
+	page := (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+	success(t, call(t, f, "transfers", TransfersArgs{Page: &page}), TransferList{[]Record{}, nil})
+	f.d.SetFailing(true)
+	for _, args := range []TransfersArgs{{}, {Page: &page}, {Limit: intPointer(paging.MaxLimit)}} {
+		refused(t, call(t, f, "transfers", args), "unavailable", RefuseUnavailable, "")
+	}
 }

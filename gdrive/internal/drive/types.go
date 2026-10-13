@@ -13,7 +13,6 @@ import (
 // REST limits, event names and endpoint identifiers.
 const (
 	DefaultBaseURL = "https://www.googleapis.com"
-	PageSize       = 50
 	PushChunk      = 8 << 20
 	ExportCap      = 10_000_000
 	Called         = "drive.called"
@@ -82,7 +81,10 @@ type Page struct {
 }
 
 // Query selects a search scope and continuation.
-type Query struct{ Text, Folder, Drive, Page string }
+type Query struct {
+	Text, Folder, Drive, Page string
+	Size                      int
+}
 
 // Upload describes a create or replacement upload.
 type Upload struct {

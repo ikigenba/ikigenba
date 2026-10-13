@@ -179,7 +179,7 @@ func quote(s string) string {
 }
 
 // List returns one folder page in provider order.
-func (c *Client) List(ctx context.Context, token, folder, page string) (Page, error) {
+func (c *Client) List(ctx context.Context, token, folder, page string, size int) (Page, error) {
 	root, err := c.root(ctx, token)
 	if err != nil {
 		return Page{}, err
@@ -188,7 +188,7 @@ func (c *Client) List(ctx context.Context, token, folder, page string) (Page, er
 		folder = "root"
 	}
 	q := url.Values{"q": {quote(folder) + " in parents and trashed = false"}, "orderBy": {"folder,name"}, "corpora": {"allDrives"}}
-	return c.files(ctx, token, root, page, q)
+	return c.files(ctx, token, root, page, size, q)
 }
 
 // Search returns one page matching the requested scope.
@@ -209,11 +209,11 @@ func (c *Client) Search(ctx context.Context, token string, query Query) (Page, e
 		q.Set("corpora", "drive")
 		q.Set("driveId", query.Drive)
 	}
-	return c.files(ctx, token, root, query.Page, q)
+	return c.files(ctx, token, root, query.Page, query.Size, q)
 }
-func (c *Client) files(ctx context.Context, token, root, page string, q url.Values) (Page, error) {
+func (c *Client) files(ctx context.Context, token, root, page string, size int, q url.Values) (Page, error) {
 	q.Set("fields", "nextPageToken,files("+fileFields+")")
-	q.Set("pageSize", strconv.Itoa(PageSize))
+	q.Set("pageSize", strconv.Itoa(size))
 	q.Set("includeItemsFromAllDrives", "true")
 	if page != "" {
 		q.Set("pageToken", page)

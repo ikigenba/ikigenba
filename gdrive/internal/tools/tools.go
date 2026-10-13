@@ -9,6 +9,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/gdrive/internal/drive"
 	"github.com/ikigenba/ikigenba/gdrive/internal/store"
 	"github.com/ikigenba/ikigenba/gdrive/internal/transfers"
@@ -66,7 +67,8 @@ type NoArgs struct{}
 // ListArgs selects a folder and an opaque page token.
 type ListArgs struct {
 	Folder *string `json:"folder"`
-	Page   *string `json:"page"`
+	Page   *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit  *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // SearchArgs selects the search text, scope and page.
@@ -74,7 +76,14 @@ type SearchArgs struct {
 	Query  string  `json:"query" mcp:"required"`
 	Folder *string `json:"folder"`
 	Drive  *string `json:"drive"`
-	Page   *string `json:"page"`
+	Page   *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit  *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
+
+// TransfersArgs selects a transfer continuation and window.
+type TransfersArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // ShowArgs names the Drive file to inspect.
@@ -119,7 +128,7 @@ func (d DriveList) MarshalJSON() ([]byte, error) {
 // FileList is a file-page tool result.
 type FileList struct {
 	Files []drive.File
-	Next  string
+	Next  *string
 }
 
 // MarshalJSON encodes an empty collection as an array.
@@ -129,7 +138,7 @@ func (f FileList) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(struct {
 		Files []drive.File `json:"files"`
-		Next  string       `json:"next,omitempty"`
+		Next  *string      `json:"next,omitempty"`
 	}{f.Files, f.Next})
 }
 
@@ -155,6 +164,7 @@ type Record struct {
 // TransferList is a list of public transfer records.
 type TransferList struct {
 	Transfers []Record `json:"transfers"`
+	Next      *string  `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 func ptr(s string) *string {
@@ -230,22 +240,30 @@ func Register(srv *mcp.Server, cfg Config) {
 		if e != nil {
 			return mcp.Result{}, engineError(e)
 		}
-		pg, e := cfg.Drive.List(ctx, token, val(a.Folder), val(a.Page))
+		size, e := paging.Window(a.Limit)
+		if e != nil {
+			return mcp.Result{}, e
+		}
+		pg, e := cfg.Drive.List(ctx, token, val(a.Folder), val(a.Page), size)
 		if e != nil {
 			return mcp.Result{}, driveError(e)
 		}
-		return raw(FileList{pg.Files, pg.Next})
+		return raw(FileList{pg.Files, ptr(pg.Next)})
 	}})
 	mcp.AddRawTool(srv, mcp.RawTool[SearchArgs]{Name: "search", Description: desc(2), Effect: mcp.Read, Handler: func(ctx context.Context, c identity.Caller, a SearchArgs) (mcp.Result, error) {
 		token, e := cfg.Transfers.Token(ctx, c)
 		if e != nil {
 			return mcp.Result{}, engineError(e)
 		}
-		pg, e := cfg.Drive.Search(ctx, token, drive.Query{Text: a.Query, Folder: val(a.Folder), Drive: val(a.Drive), Page: val(a.Page)})
+		size, e := paging.Window(a.Limit)
+		if e != nil {
+			return mcp.Result{}, e
+		}
+		pg, e := cfg.Drive.Search(ctx, token, drive.Query{Size: size, Text: a.Query, Folder: val(a.Folder), Drive: val(a.Drive), Page: val(a.Page)})
 		if e != nil {
 			return mcp.Result{}, driveError(e)
 		}
-		return raw(FileList{pg.Files, pg.Next})
+		return raw(FileList{pg.Files, ptr(pg.Next)})
 	}})
 	mcp.AddRawTool(srv, mcp.RawTool[ShowArgs]{Name: "show", Description: desc(3), Effect: mcp.Read, Handler: func(ctx context.Context, c identity.Caller, a ShowArgs) (mcp.Result, error) {
 		token, e := cfg.Transfers.Token(ctx, c)
@@ -272,16 +290,37 @@ func Register(srv *mcp.Server, cfg Config) {
 		}
 		return RecordOf(t), nil
 	}})
-	mcp.AddTool(srv, mcp.Tool[NoArgs, TransferList]{Name: "transfers", Description: desc(6), Effect: mcp.Read, Handler: func(ctx context.Context, c identity.Caller, _ NoArgs) (TransferList, error) {
-		ts, e := cfg.Store.List(ctx, c.UserID)
+	mcp.AddTool(srv, mcp.Tool[TransfersArgs, TransferList]{Name: "transfers", Description: desc(6), Effect: mcp.Read, Handler: func(ctx context.Context, c identity.Caller, a TransfersArgs) (TransferList, error) {
+		size, e := paging.Window(a.Limit)
+		if e != nil {
+			return TransferList{}, e
+		}
+		var started time.Time
+		var stamp, id string
+		if val(a.Page) != "" {
+			if e := (paging.Token{Tool: "transfers"}).Decode(*a.Page, &stamp, &id); e != nil {
+				return TransferList{}, paging.ErrToken
+			}
+			started, e = time.Parse(time.RFC3339, stamp)
+			if e != nil || started.UTC().Format(time.RFC3339) != stamp || !store.ValidID(id) {
+				return TransferList{}, paging.ErrToken
+			}
+		}
+		ts, e := cfg.Store.ListAfter(ctx, c.UserID, started, id, size+1)
 		if e != nil {
 			return TransferList{}, refusal("unavailable", "")
+		}
+		var next *string
+		if len(ts) > size {
+			ts = ts[:size]
+			last := ts[len(ts)-1]
+			next = ptr((paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID))
 		}
 		rs := make([]Record, 0, len(ts))
 		for _, t := range ts {
 			rs = append(rs, RecordOf(t))
 		}
-		return TransferList{rs}, nil
+		return TransferList{rs, next}, nil
 	}})
 	mcp.AddTool(srv, mcp.Tool[TransferArgs, Record]{Name: "transfer", Description: desc(7), Effect: mcp.Read, Handler: func(ctx context.Context, c identity.Caller, a TransferArgs) (Record, error) {
 		if !store.ValidID(a.Transfer) {

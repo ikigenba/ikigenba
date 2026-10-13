@@ -304,6 +304,32 @@ func (s *Store) List(ctx context.Context, userID string) ([]Transfer, error) {
 	return out, nil
 }
 
+// ListAfter reads a bounded window of a user's transfers after a key.
+func (s *Store) ListAfter(ctx context.Context, userID string, started time.Time, id string, n int) ([]Transfer, error) {
+	var out []Transfer
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		if n < 1 {
+			out = []Transfer{}
+			return nil
+		}
+		query := "SELECT " + columns + " FROM transfers WHERE user_id=?"
+		args := []any{userID}
+		if id != "" {
+			query += " AND (started,id)<(?,?)"
+			args = append(args, started.UTC().Format(time.RFC3339), id)
+		}
+		query += " ORDER BY started DESC,id DESC LIMIT ?"
+		args = append(args, n)
+		var err error
+		out, err = rows(ctx, tx, query, args...)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Unfinished reads queued and running transfers oldest first.
 func (s *Store) Unfinished(ctx context.Context) ([]Transfer, error) {
 	var out []Transfer

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/gdrive"
 	"github.com/ikigenba/ikigenba/gdrive/internal/store"
@@ -73,6 +74,7 @@ type Config struct {
 type LandingData struct {
 	Banner    page.Banner
 	Transfers []TransferRow
+	Next      string
 }
 
 // TransferRow contains the public fields shown in a landing row.
@@ -169,17 +171,23 @@ func Handler(cfg Config) http.Handler {
 		}
 		switch {
 		case p == "/":
-			ts, e := cfg.Store.List(r.Context(), c.UserID)
+			ts, e := cfg.Store.ListAfter(r.Context(), c.UserID, time.Time{}, "", paging.DefaultLimit+1)
 			if e != nil {
 				unavailable()
 				return
+			}
+			next := ""
+			if len(ts) > paging.DefaultLimit {
+				ts = ts[:paging.DefaultLimit]
+				last := ts[len(ts)-1]
+				next = (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
 			}
 			rs := make([]TransferRow, 0, len(ts))
 			for _, t := range ts {
 				rs = append(rs, row(t, cfg.ServicesPath))
 			}
 			b.Trail = nil
-			cfg.Pages.Write(w, r, 200, "landing", LandingData{b, rs})
+			cfg.Pages.Write(w, r, 200, "landing", LandingData{b, rs, next})
 		case p == "/tools":
 			rs := make([]ToolRow, 0, 8)
 			for _, t := range tools.Catalog() {

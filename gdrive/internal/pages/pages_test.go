@@ -3,19 +3,25 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"html/template"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/gdrive"
 	"github.com/ikigenba/ikigenba/gdrive/internal/pages"
 	"github.com/ikigenba/ikigenba/gdrive/internal/store"
@@ -61,7 +67,7 @@ func pageStore(t *testing.T) (*store.Store, *db.DB) {
 	return store.New(d, store.Config{Rand: &sequence{n: 150}, Now: func() time.Time { return now }}), d
 }
 func TestTemplateSurface(t *testing.T) {
-	// R-BBSQ-YUAM R-BD0N-CM1B R-BE8J-QDS0 R-L6YB-IMUK R-BGOC-HX9E
+	// R-BBSQ-YUAM R-BD0N-CM1B R-YXS8-3BIX R-L6YB-IMUK R-BGOC-HX9E
 	if pages.ServiceName != "gdrive" || pages.Description != "Google Drive files, pulled into and pushed from artifacts" || pages.MinuteLayout != "2006-01-02 15:04" || pages.SecondLayout != "2006-01-02 15:04:05 UTC" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
 		t.Fatal("constants")
 	}
@@ -119,7 +125,7 @@ func TestTemplateSurface(t *testing.T) {
 	}
 }
 func TestPagesRoutesAndData(t *testing.T) {
-	// R-BHW8-VP03 R-78WB-LOZ9 R-7A47-ZGPY R-7BC4-D8GN R-BNZQ-SJPK R-7DRX-4RY1 R-BQFJ-K36Y R-BRNF-XUXN R-BVB5-365Q R-BWJ1-GXWF R-BU38-PEF1 R-BXQX-UPN4 R-BYYU-8HDT R-C06Q-M94I R-BJ45-9GQS R-L867-WEL9 R-L9E4-A6BY
+	// R-BHW8-VP03 R-78WB-LOZ9 R-7A47-ZGPY R-YZ04-H39M R-BNZQ-SJPK R-7DRX-4RY1 R-BQFJ-K36Y R-BRNF-XUXN R-BVB5-365Q R-BWJ1-GXWF R-BU38-PEF1 R-BXQX-UPN4 R-BYYU-8HDT R-C06Q-M94I R-BJ45-9GQS R-L867-WEL9 R-L9E4-A6BY
 	st, d := pageStore(t)
 	s, e := pages.Load()
 	if e != nil {
@@ -271,7 +277,7 @@ func (s *sequence) Read(p []byte) (int, error) {
 }
 
 func TestTransferStateProjectionAndReadOnly(t *testing.T) {
-	// R-7A47-ZGPY R-7BC4-D8GN R-7DRX-4RY1 R-L9E4-A6BY R-L867-WEL9
+	// R-7A47-ZGPY R-YZ04-H39M R-7DRX-4RY1 R-L9E4-A6BY R-L867-WEL9
 	_, d := pageStore(t)
 	now := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("fixture", 3600))
 	st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: &sequence{n: 150}})
@@ -356,5 +362,65 @@ func TestTransferStateProjectionAndReadOnly(t *testing.T) {
 	after, e := st.List(ctx, "alice")
 	if e != nil || !reflect.DeepEqual(before, after) {
 		t.Fatal("pages changed records", before, after, e)
+	}
+}
+
+func TestLandingFirstPage(t *testing.T) {
+	// R-YZ04-H39M R-YXS8-3BIX
+	st, _ := pageStore(t)
+	set, err := pages.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for i := 0; i < paging.DefaultLimit+2; i++ {
+		user := "alice"
+		if i == 3 {
+			user = "bob"
+		}
+		_, err := st.Add(ctx, store.Transfer{UserID: user, Direction: store.DirectionPull, Status: store.StatusQueued, Name: "file-" + strconv.Itoa(i), Path: "path/" + strconv.Itoa(i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := st.List(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]pages.TransferRow, 0, paging.DefaultLimit)
+	for _, tf := range all[:paging.DefaultLimit] {
+		rows = append(rows, pages.TransferRow{ID: tf.ID, Direction: tf.Direction, Status: tf.Status, Name: tf.Name, Path: tf.Path, Started: tf.Started.UTC().Format(time.RFC3339), StartedText: tf.Started.UTC().Format(pages.MinuteLayout)})
+	}
+	last := all[paging.DefaultLimit-1]
+	next := (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+	b := fixedBanner(page.User{Email: "alice@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
+	b.Trail = nil
+	want := pages.LandingData{b, rows, next}
+	handler := identity.Require(pages.Handler(pages.Config{Banner: fixedBanner, Pages: set, Store: st}))
+	got := req(handler, "GET", "/")
+	if got.Code != 200 || got.Body.String() != render(t, "landing", want) {
+		t.Fatal("first landing page")
+	}
+	writer := telemetry.New(telemetry.Config{Service: "gdrive", Sink: &telemetry.Capture{}, Stderr: io.Discard, Now: func() time.Time { return last.Started }, Rand: &sequence{}})
+	t.Cleanup(func() { writer.Shutdown(ctx, "finished") })
+	srv := mcp.NewServer(mcp.ServerConfig{Name: "gdrive", Telemetry: writer})
+	tools.Register(srv, tools.Config{Store: st})
+	hs := httptest.NewServer(identity.Require(srv))
+	t.Cleanup(hs.Close)
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: hs.URL + "/mcp", HTTPClient: hs.Client()})
+	result, err := client.CallTool(ctx, identity.Caller{UserID: "alice"}, "transfers", json.RawMessage(`{}`))
+	if err != nil || result.IsError() {
+		t.Fatal("transfers", err, result)
+	}
+	wire, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct{ StructuredContent tools.TransferList }
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.StructuredContent.Next == nil || *decoded.StructuredContent.Next != want.Next {
+		t.Fatal("landing/tool next mismatch")
 	}
 }

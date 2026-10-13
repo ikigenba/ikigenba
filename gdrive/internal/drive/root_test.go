@@ -17,7 +17,7 @@ func callDrive(c *drive.Client, accessToken, method string) error {
 	ctx := context.Background()
 	switch method {
 	case "list":
-		_, err := c.List(ctx, accessToken, "explicit-folder", "page")
+		_, err := c.List(ctx, accessToken, "explicit-folder", "page", 31)
 		return err
 	case "search":
 		_, err := c.Search(ctx, accessToken, drive.Query{Folder: "explicit-folder", Drive: "shared-drive", Page: "page"})
@@ -155,7 +155,7 @@ func TestReductionUsesRootOfSameCall(t *testing.T) {
 					case "list", "search":
 						var page drive.Page
 						if method == "list" {
-							page, err = c.List(context.Background(), token, "", "")
+							page, err = c.List(context.Background(), token, "", "", 31)
 						} else {
 							page, err = c.Search(context.Background(), token, drive.Query{})
 						}
