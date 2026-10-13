@@ -2,12 +2,15 @@
      the space. The root of the hierarchy: .Banner's .Trail is empty, so the
      banner's breadcrumb holds only the service. Shown only to a signed-in
      user; a guest is sent to sign in. Data: .Banner (a page.Banner, for
-     banner and footer); .Webhooks, every webhook in the space (whoever owns
-     it), sorted by slug, each with .ID, .Slug, .Scheme ("bearer" or
+     banner and footer); .Webhooks, the first page of webhooks in the space
+     (whoever owns them), sorted by slug, each with .ID, .Slug, .Scheme ("bearer" or
      "github-hmac"), .URL (the address a sender posts to), .Owner (the
      owner's email), .Mine (bool: the caller owns it), .LastReceived and
      .LastReceivedText (RFC 3339 UTC to the second, and UTC to the minute,
-     "2026-10-05 09:00"; both empty until its first delivery). Hooks: title
+     "2026-10-05 09:00"; both empty until its first delivery); and .Next
+     (string, the page token list's next carries for the webhooks after
+     these, the value to pass as its page; empty when none remain). Hooks:
+     title
      "webhooks"; h1 with text "webhooks"; p#summary (text "Webhooks that turn
      an authenticated delivery from outside into an event on the suite's
      event bus."); section#webhooks with h2 "Webhooks" and either, when
@@ -20,7 +23,9 @@
      td.webhook-url (.URL in a code element), td.webhook-owner (.Owner, then,
      only when .Mine, a space and span.badge[data-kind=mine] with text
      "yours"), and td.webhook-last holding, only when .LastReceived is not
-     empty, time[datetime=<.LastReceived>] (text .LastReceivedText); a
+     empty, time[datetime=<.LastReceived>] (text .LastReceivedText), then,
+     when .Next is not empty, p#next (text "More webhooks follow: call list
+     with page <.Next>.", list, page and .Next each in a code element); a
      #about-link (text "About webhooks") whose href is "/about". No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
@@ -47,7 +52,9 @@
 </tr>
 {{end}}</tbody>
 </table>
-</div>{{else}}<div id="no-webhooks" class="empty">
+</div>
+{{if .Next}}<p id="next">More webhooks follow: call <code>list</code> with <code>page</code> <code>{{.Next}}</code>.</p>
+{{end}}{{else}}<div id="no-webhooks" class="empty">
 <h3 class="text-md">No webhooks yet</h3>
 <p>A webhook an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
