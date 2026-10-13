@@ -2,16 +2,18 @@
      space. The root of the hierarchy: .Banner's .Trail is empty, so the
      banner's breadcrumb holds only the service. Shown only to a signed-in
      user. Data: .Banner (a page.Banner, for banner and footer); .Triggers,
-     the first page of triggers in the space (whoever owns them), sorted by
+     one window of triggers in the space (whoever owns them), sorted by
      slug, each with
      .ID, .Slug, .When (the schedule as sent), .Owner (the owner's email),
      .Status ("active" or "paused"), .Mine (bool: the caller owns it),
      .LastFired and .LastFiredText (RFC 3339 UTC to the second, and UTC to
      the minute, "2026-10-05 09:00"; both empty when it never fired), .Next
      and .NextText (the same forms; both empty when it has no next); and
-     the page's own .Next (string, the page token list's next carries for
-     the triggers after these, the value to pass as its page; empty when
-     none remain), distinct from each trigger's .Next. Hooks:
+     the page's own .Page (string, this window's own page token, the
+     ?page= the request carried; empty on the first window) and .Next
+     (string, the page token for the window after this one; empty when
+     none remain), distinct from each trigger's .Next. .Triggers is the
+     window of triggers .Page names. Hooks:
      title "cron"; h1 with text "cron"; p#summary (text "Triggers that emit
      events on the suite's event bus on a schedule."); section#triggers with
      h2 "Triggers" and either, when .Triggers is empty,
@@ -26,9 +28,12 @@
      .Status), td.trigger-last holding, only when .LastFired is not empty,
      time[datetime=<.LastFired>] (text .LastFiredText), and td.trigger-next
      holding, only when .Next is not empty, time[datetime=<.Next>] (text
-     .NextText), then, when the page's .Next is not empty, p#next (text
-     "More triggers follow: call list with page <.Next>.", list, page and
-     .Next each in a code element); a#about-link (text "About cron") whose href is "/about". No
+     .NextText), then nav.paging#paging (aria-label "Pages") whose
+     children are, in order, First (on the first window, .Page empty, a
+     span with aria-current="page" and text "First"; otherwise a link to /
+     with text "First") and, only when the page's .Next is not empty, Next
+     (a link to /?page=<.Next> with text "Next"); with no triggers there is
+     no nav; a#about-link (text "About cron") whose href is "/about". No
      script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -56,8 +61,8 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .Next}}<p id="next">More triggers follow: call <code>list</code> with <code>page</code> <code>{{.Next}}</code>.</p>
-{{end}}{{else}}<div id="no-triggers" class="empty">
+<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{else}}<div id="no-triggers" class="empty">
 <h3 class="text-md">No triggers yet</h3>
 <p>A trigger an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
