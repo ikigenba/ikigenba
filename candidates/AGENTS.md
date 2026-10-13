@@ -202,10 +202,11 @@ call `t.Parallel`. A test learns that the server is ready the way systemd
 does: it binds a Unix datagram socket in a short temporary directory
 (`os.MkdirTemp("", ...)`, since a Unix socket path is limited to 108 bytes
 and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for
-`READY=1` with a deadline that fails the test. Drain tests are the one place
-a test waits on the clock, because the drain deadline is the behavior, and
-they keep that wait to a few seconds. The gates run offline as an ordinary
-user, with no systemd.
+`READY=1` with a deadline that fails the test. A test waits on the clock in
+two places only, because there the deadline is the behavior: a drain test,
+which keeps that wait to a few seconds, and a test that a pass reaches `done`
+within the deadline a requirement states. The gates run offline as an
+ordinary user, with no systemd.
 
 **The siblings are faked on loopback.** No test reaches scrapes. A
 `Run`-level test writes a services file whose `scrapes` entry names a Unix
