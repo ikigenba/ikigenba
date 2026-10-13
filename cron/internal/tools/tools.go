@@ -9,6 +9,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/cron/internal/scheduler"
 	"github.com/ikigenba/ikigenba/cron/internal/store"
 )
@@ -19,8 +20,11 @@ type Config struct {
 	Scheduler *scheduler.Scheduler
 }
 
-// ListArgs has no arguments.
-type ListArgs struct{}
+// ListArgs selects a page of triggers.
+type ListArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
 
 // ShowArgs names a trigger.
 type ShowArgs struct {
@@ -80,6 +84,7 @@ type ListedTrigger struct {
 // TriggerList holds triggers in slug order.
 type TriggerList struct {
 	Triggers []ListedTrigger `json:"triggers"`
+	Next     *string         `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Deleted confirms removal.
@@ -138,12 +143,28 @@ func (h handlers) object(x store.Trigger) Trigger {
 	}
 	return t
 }
-func (h handlers) list(ctx context.Context, _ identity.Caller, _ ListArgs) (TriggerList, error) {
-	xs, err := h.cfg.Store.List(ctx)
+func (h handlers) list(ctx context.Context, _ identity.Caller, a ListArgs) (TriggerList, error) {
+	n, err := paging.Window(a.Limit)
+	if err != nil {
+		return TriggerList{}, err
+	}
+	var after string
+	token := paging.Token{Tool: "list"}
+	if a.Page != nil && *a.Page != "" {
+		if err := token.Decode(*a.Page, &after); err != nil {
+			return TriggerList{}, errors.New(paging.BadPage)
+		}
+	}
+	xs, err := h.cfg.Store.ListAfter(ctx, after, n+1)
 	if err != nil {
 		return TriggerList{}, answerError(err, "", "")
 	}
-	result := TriggerList{Triggers: make([]ListedTrigger, 0, len(xs))}
+	result := TriggerList{Triggers: make([]ListedTrigger, 0, min(len(xs), n))}
+	if len(xs) > n {
+		next := token.Encode(xs[n-1].Slug)
+		result.Next = &next
+		xs = xs[:n]
+	}
 	for _, x := range xs {
 		v := h.object(x)
 		result.Triggers = append(result.Triggers, ListedTrigger{ID: v.ID, Slug: v.Slug, When: v.When, Owner: v.Owner, Status: v.Status, LastFired: v.LastFired, Next: v.Next})
@@ -221,7 +242,7 @@ func (h handlers) delete(ctx context.Context, c identity.Caller, a DeleteArgs) (
 	return Deleted{Deleted: true, ID: x.ID}, nil
 }
 
-const listDescription = "Every trigger in the space, by slug.\n\nTakes no arguments. Every user's triggers are listed, not only yours. Each trigger has its id, slug, when (its schedule, as it was given), owner (the email of the user who created it), status (active or paused), last_fired (the slot it last fired for; absent when it has never fired), and next (the next slot it fires; absent while paused). Times are UTC. Use show for one trigger's created time."
+const listDescription = "A page of triggers in the space, by slug.\n\nPass next back as page to continue, and limit to choose the page size. Every user's triggers are listed, not only yours. Each trigger has its id, slug, when (its schedule, as it was given), owner (the email of the user who created it), status (active or paused), last_fired (the slot it last fired for; absent when it has never fired), and next (the next slot it fires; absent while paused). Times are UTC. Use show for one trigger's created time."
 
 const showDescription = "One trigger, with its schedule, its owner, and when it last fired and fires next.\n\nPass slug, the trigger's slug; any user's trigger can be shown. The result has its id, slug, when (its schedule, as it was given), owner (the email of the user who created it), status (active or paused), created, last_fired (the slot it last fired for; absent when it has never fired), and next (the next slot it fires; absent while paused). Times are UTC."
 

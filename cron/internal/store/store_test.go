@@ -555,3 +555,63 @@ func stamp(t *testing.T, value string) time.Time {
 	}
 	return v
 }
+
+func TestListAfter(t *testing.T) {
+	// R-MHT6-L5WU R-MJ12-YXNJ R-MK8Z-CPE8
+	d, s := fixture(t)
+	ctx := context.Background()
+	empty, err := s.ListAfter(ctx, "", 2)
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("empty window: %v %v", empty, err)
+	}
+	for i, name := range []string{"weekly_digest", "nightly_backup", "month_end", "hourly"} {
+		draft := draft(name)
+		draft.OwnerID = fmt.Sprintf("owner%d", i)
+		draft.OwnerEmail = fmt.Sprintf("person%d@example.test", i)
+		x, err := s.Create(ctx, draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i%2 == 0 {
+			if _, err := s.SetLastFired(ctx, x.ID, instant.Add(time.Duration(i)*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SetStatus(ctx, x.ID, store.Paused); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	all := content(t, s)
+	for _, c := range []struct {
+		after         string
+		n, start, end int
+	}{
+		{"", 2, 0, 2}, {"month_end", 2, 2, 4}, {"month", 10, 1, 4}, {"Zebra", 1, 0, 1},
+		{"weekly_digest", 5, 4, 4}, {"", 0, 0, 0}, {"", -3, 0, 0}, {"", 4, 0, 4}, {"", 9, 0, 4},
+	} {
+		got, err := s.ListAfter(ctx, c.after, c.n)
+		if err != nil || got == nil {
+			t.Fatalf("window: %v %v", got, err)
+		}
+		same(t, got, all[c.start:c.end])
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	for _, failing := range []bool{false, true} {
+		d.SetFailing(failing)
+		for _, n := range []int{-1, 0, 2} {
+			_, err := s.ListAfter(cancelled, "", n)
+			if !errors.Is(err, context.Canceled) || !errors.Is(err, store.ErrUnreachable) {
+				t.Fatal(err)
+			}
+			if failing {
+				_, err = s.ListAfter(ctx, "", n)
+				if !errors.Is(err, store.ErrUnreachable) {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	d.SetFailing(false)
+	same(t, content(t, s), all)
+}

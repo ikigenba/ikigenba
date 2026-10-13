@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	cron "github.com/ikigenba/ikigenba/cron"
 	"github.com/ikigenba/ikigenba/cron/internal/scheduler"
@@ -30,6 +31,7 @@ type Set struct{ templates *template.Template }
 type LandingData struct {
 	Banner   page.Banner
 	Triggers []TriggerRow
+	Next     string
 }
 
 // TriggerRow contains the public display fields of one trigger.
@@ -148,7 +150,7 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if path == "/" {
-			entries, err := cfg.Store.List(r.Context())
+			entries, err := cfg.Store.ListAfter(r.Context(), "", paging.DefaultLimit+1)
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -157,7 +159,12 @@ func Handler(cfg Config) http.Handler {
 				}
 				return
 			}
-			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Triggers: make([]TriggerRow, 0, len(entries))}
+			next := ""
+			if len(entries) > paging.DefaultLimit {
+				next = (paging.Token{Tool: "list"}).Encode(entries[paging.DefaultLimit-1].Slug)
+				entries = entries[:paging.DefaultLimit]
+			}
+			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Triggers: make([]TriggerRow, 0, len(entries)), Next: next}
 			data.Banner.Trail = nil
 			caller, _ := identity.FromContext(r.Context())
 			for _, t := range entries {

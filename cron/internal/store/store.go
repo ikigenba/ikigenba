@@ -179,6 +179,33 @@ func (s *Store) List(ctx context.Context) ([]Trigger, error) {
 	return result, nil
 }
 
+// ListAfter returns at most n triggers after a byte-wise slug position.
+func (s *Store) ListAfter(ctx context.Context, after string, n int) ([]Trigger, error) {
+	result := make([]Trigger, 0)
+	if n < 1 {
+		n = 0
+	}
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT "+columns+" FROM triggers WHERE slug COLLATE BINARY > ? ORDER BY slug COLLATE BINARY LIMIT ?", after, n)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			t, err := scan(rows)
+			if err != nil {
+				return err
+			}
+			result = append(result, t)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // Get finds a trigger by its exact slug.
 func (s *Store) Get(ctx context.Context, slug string) (Trigger, error) {
 	var result Trigger

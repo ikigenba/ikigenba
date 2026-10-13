@@ -25,6 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
@@ -696,7 +697,7 @@ func TestRunServicesFileDoesNotRefuseStart(t *testing.T) {
 	}
 }
 
-// R-3QDU-VVOP
+// R-HZHV-8V60
 func TestRunLoadsActiveAndPausedSlotsWithoutFiring(t *testing.T) {
 	dir := t.TempDir()
 	clock := newRunClock()
@@ -704,9 +705,9 @@ func TestRunLoadsActiveAndPausedSlotsWithoutFiring(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	data := make([]byte, 128)
+	data := make([]byte, 8*(paging.DefaultLimit+5))
 	for i := range data {
-		data[i] = byte(i)
+		data[i] = byte(i / 8)
 	}
 	st := store.New(d, store.Config{Now: clock.Now, Rand: bytes.NewReader(data)})
 	for _, a := range []struct{ slug, when, last, status string }{{"hourly", "@hourly", "2026-10-05T09:00:00Z", store.Active}, {"month_end", "@monthly", "", store.Active}, {"nightly_backup", "30 2 * * *", "2026-10-05T02:30:00Z", store.Active}, {"weekly_digest", "0 8 * * 1", "2026-09-28T08:00:00Z", store.Paused}} {
@@ -723,6 +724,17 @@ func TestRunLoadsActiveAndPausedSlotsWithoutFiring(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for i := range paging.DefaultLimit + 1 {
+		v, err := st.Create(t.Context(), store.Draft{Slug: fmt.Sprintf("padding_%03d", i), When: "@hourly", OwnerID: "owner", OwnerEmail: "owner@example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i%2 == 0 {
+			if _, err = st.SetStatus(t.Context(), v.ID, store.Paused); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if e = d.Close(); e != nil {
 		t.Fatal(e)
 	}
@@ -730,16 +742,46 @@ func TestRunLoadsActiveAndPausedSlotsWithoutFiring(t *testing.T) {
 		h := newRunHarness(t, dir)
 		h.clock.advance(runTime(at))
 		h.start()
-		var raw struct{ Triggers []map[string]json.RawMessage }
-		runContent(t, h.call("list", nil), &raw)
+		var triggers []map[string]json.RawMessage
+		pageToken := ""
+		for {
+			var answer struct {
+				Triggers []map[string]json.RawMessage
+				Next     string
+			}
+			args := map[string]string{}
+			if pageToken != "" {
+				args["page"] = pageToken
+			}
+			runContent(t, h.call("list", args), &answer)
+			triggers = append(triggers, answer.Triggers...)
+			if len(answer.Triggers) == 0 && answer.Next != "" {
+				t.Fatal("paging made no progress")
+			}
+			if len(triggers) > paging.DefaultLimit+5 {
+				t.Fatal("paging did not terminate")
+			}
+			if answer.Next == "" {
+				break
+			}
+			pageToken = answer.Next
+		}
 		expected := map[string]string{"hourly": "2026-10-05T10:00:00Z", "month_end": "2026-11-01T00:00:00Z", "nightly_backup": "2026-10-06T02:30:00Z", "weekly_digest": ""}
 		if at == "2026-10-05T12:10:00Z" {
 			expected["hourly"] = "2026-10-05T13:00:00Z"
 		}
-		if len(raw.Triggers) != 4 {
-			t.Fatalf("loaded %+v", raw)
+		for i := range paging.DefaultLimit + 1 {
+			next := ""
+			if i%2 != 0 {
+				next = expected["hourly"]
+			}
+			expected[fmt.Sprintf("padding_%03d", i)] = next
 		}
-		for _, r := range raw.Triggers {
+		if len(triggers) != len(expected) {
+			t.Fatalf("loaded %d triggers, want %d", len(triggers), len(expected))
+		}
+		seen := make(map[string]bool)
+		for _, r := range triggers {
 			var slug, next, last string
 			if e = json.Unmarshal(r["slug"], &slug); e != nil {
 				t.Fatal(e)
@@ -749,7 +791,17 @@ func TestRunLoadsActiveAndPausedSlotsWithoutFiring(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
-			if next != expected[slug] {
+			want, exists := expected[slug]
+			if !exists || seen[slug] {
+				t.Fatalf("unexpected or duplicate trigger %q", slug)
+			}
+			seen[slug] = true
+			if want == "" {
+				if _, present := r["next"]; present {
+					t.Fatalf("paused trigger %q has next", slug)
+				}
+			}
+			if next != want {
 				t.Fatalf("%s next=%q expected %q", slug, next, expected[slug])
 			}
 			if slug == "hourly" {

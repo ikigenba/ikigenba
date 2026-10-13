@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	cron "github.com/ikigenba/ikigenba/cron"
 	"github.com/ikigenba/ikigenba/cron/internal/scheduler"
@@ -205,7 +207,11 @@ func success(t *testing.T, r map[string]json.RawMessage, out any) {
 		}
 		assertKeys(t, r["structuredContent"], keys)
 	case *tools.TriggerList:
-		assertKeys(t, r["structuredContent"], []string{"triggers"})
+		keys := []string{"triggers"}
+		if v.Next != nil {
+			keys = append(keys, "next")
+		}
+		assertKeys(t, r["structuredContent"], keys)
 		var objects struct{ Triggers []json.RawMessage }
 		if e := json.Unmarshal(r["structuredContent"], &objects); e != nil {
 			t.Fatal(e)
@@ -295,9 +301,9 @@ func (f *fixture) unchanged(name string, args any, want string) {
 	}
 }
 
-// R-K4NS-JWTO R-4JNG-2DHD R-4KVC-G582 R-4M38-TWYR R-4NB5-7OPG R-4OJ1-LGG5 R-4PQX-Z86U
-// R-KMYA-AGY3 R-4TEN-4JEX R-4UMJ-IB5M R-4VUF-W2WB R-4YA8-NMDP R-4ZI5-1E4E R-50Q1-F5V3 R-51XX-SXLS
-// R-KWPH-CMVN R-KZ5A-46D1 R-L0D6-HY3Q R-L1L2-VPUF
+// R-MLGV-QH4X R-4JNG-2DHD R-4KVC-G582 R-4M38-TWYR R-4NB5-7OPG R-4OJ1-LGG5 R-4PQX-Z86U
+// R-KMYA-AGY3 R-MNWO-I0MB R-4UMJ-IB5M R-4VUF-W2WB R-4YA8-NMDP R-4ZI5-1E4E R-50Q1-F5V3 R-51XX-SXLS
+// R-KWPH-CMVN R-MP4K-VSD0 R-L0D6-HY3Q R-L1L2-VPUF
 func TestInventory(t *testing.T) {
 	f := setup(t, true)
 	expected := []struct {
@@ -305,7 +311,7 @@ func TestInventory(t *testing.T) {
 		effect              mcp.Effect
 		args                any
 	}{
-		{"list", `{"type":"object","additionalProperties":false}`, `{"type":"object","properties":{"triggers":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}}},"additionalProperties":false}`, mcp.Read, tools.ListArgs{}},
+		{"list", `{"type":"object","properties":{"page":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":false}`, `{"type":"object","properties":{"triggers":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}},"next":{"type":"string","description":` + strconv.Quote(paging.NextDescription) + `}},"additionalProperties":false}`, mcp.Read, tools.ListArgs{}},
 		{"show", `{"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Read, tools.ShowArgs{Slug: "hourly"}},
 		{"create", `{"type":"object","properties":{"slug":{"type":"string"},"when":{"type":"string"}},"required":["slug","when"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.CreateArgs{Slug: "crm_sync", When: "*/15 * * * *"}},
 		{"update", `{"type":"object","properties":{"slug":{"type":"string"},"when":{"type":"string"}},"required":["slug","when"],"additionalProperties":false}`, `{"type":"object","properties":{"id":{"type":"string"},"slug":{"type":"string"},"when":{"type":"string"},"owner":{"type":"string"},"status":{"type":"string"},"created":{"type":"string"},"last_fired":{"type":"string"},"next":{"type":"string"}},"additionalProperties":false}`, mcp.Additive, tools.UpdateArgs{Slug: "hourly", When: "@daily"}},
@@ -333,7 +339,11 @@ func TestInventory(t *testing.T) {
 			wantArgs := `{"slug":"hourly"}`
 			switch x.name {
 			case "list":
-				wantArgs = `{}`
+				wantArgs = `{"page":null,"limit":null}`
+				wantInput := `{"type":"object","properties":{"page":{"type":"string","description":` + strconv.Quote(paging.PageDescription) + `},"limit":{"type":"integer","description":` + strconv.Quote(paging.LimitDescription) + `}},"additionalProperties":false}`
+				if string(info.InputSchema) != wantInput {
+					t.Fatalf("paging input: %s", info.InputSchema)
+				}
 			case "create":
 				wantArgs = `{"slug":"crm_sync","when":"*/15 * * * *"}`
 			case "update":
@@ -389,8 +399,8 @@ func TestInventory(t *testing.T) {
 	}
 }
 
-// R-KEEZ-M2R8 R-KFMV-ZUHX R-KGUS-DM8M R-KI2O-RDZB R-KLQD-WP7E
-// R-D2F3-OMM4 R-581F-PSB9 R-599C-3K1Y
+// R-KEEZ-M2R8 R-KFMV-ZUHX R-MMOS-48VM R-KI2O-RDZB R-KLQD-WP7E
+// R-D2F3-OMM4 R-MSSA-13L3 R-599C-3K1Y
 func TestReadResults(t *testing.T) {
 	f := setup(t, true)
 	before := f.content()
@@ -493,7 +503,7 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// R-56TJ-C0KK R-D177-AUVF
+// R-MV82-SN2H R-D177-AUVF
 func TestFailingDatabaseAndRandom(t *testing.T) {
 	f := setup(t, true)
 	before, ns := f.content(), f.nexts()
@@ -533,6 +543,7 @@ func TestFailingDatabaseAndRandom(t *testing.T) {
 		refusal(t, f.call(name, a), tools.NoTrigger("CRM_Sync"))
 	}
 	refusal(t, f.call("create", tools.CreateArgs{Slug: "crm-sync", When: "bogus"}), tools.InvalidSlug("crm-sync"))
+	refusal(t, f.call("list", map[string]any{"page": paging.Token{Tool: "list"}.Encode("hourly")}), store.Unreachable)
 	f.d.SetFailing(false)
 	f.flush()
 	if !reflect.DeepEqual(before, f.content()) || !reflect.DeepEqual(ns, f.nexts()) || len(f.ec.Events()) != en {
@@ -835,11 +846,11 @@ func TestUnknownTool(t *testing.T) {
 	}
 }
 
-// R-L6GO-EST7
+// R-HY9Y-V3FB
 func TestAbsentArguments(t *testing.T) {
 	f := setup(t, true)
 	for _, name := range []string{"list", "show", "create", "update", "pause", "resume", "delete"} {
-		with := f.call(name, tools.ListArgs{})
+		with := f.call(name, map[string]any{})
 		without := f.rawMissing(name)
 		delete(with, "_meta")
 		delete(without, "_meta")
@@ -971,4 +982,150 @@ func schemaWithoutCopy(t *testing.T, raw json.RawMessage) string {
 	}
 	// Remove only the descriptions, retaining object member order for comparison.
 	return string(regexp.MustCompile(`,"description":"(?:[^"\\]|\\.)*"`).ReplaceAll(raw, nil))
+}
+
+func TestListPaging(t *testing.T) {
+	// R-MSSA-13L3 R-MU06-EVBS R-MMOS-48VM R-MLGV-QH4X
+	f := setup(t, true)
+	var full tools.TriggerList
+	success(t, f.call("list", map[string]any{}), &full)
+	if full.Next != nil {
+		t.Fatal("small list has next")
+	}
+	for _, caller := range []string{"owner", "other"} {
+		f.caller.UserID = caller
+		for _, args := range []map[string]any{{}, {"page": nil}, {"page": ""}, {"limit": nil}, {"page": "", "limit": nil}, {"limit": paging.MaxLimit}} {
+			var got tools.TriggerList
+			success(t, f.call("list", args), &got)
+			if !reflect.DeepEqual(got, full) {
+				t.Fatalf("first page: %+v", got)
+			}
+		}
+		for _, limit := range []int{1, 2, 3, 4} {
+			var seen []tools.ListedTrigger
+			var page *string
+			for {
+				var got tools.TriggerList
+				success(t, f.call("list", tools.ListArgs{Page: page, Limit: &limit}), &got)
+				start := len(seen)
+				end := min(start+limit, len(full.Triggers))
+				if !reflect.DeepEqual(got.Triggers, full.Triggers[start:end]) {
+					t.Fatal("page entries", got)
+				}
+				seen = append(seen, got.Triggers...)
+				if end == len(full.Triggers) {
+					if got.Next != nil {
+						t.Fatal("final page has next")
+					}
+					break
+				}
+				want := paging.Token{Tool: "list"}.Encode(full.Triggers[end-1].Slug)
+				if got.Next == nil || *got.Next != want {
+					t.Fatal("continuation", got.Next, want)
+				}
+				page = got.Next
+			}
+			if !reflect.DeepEqual(seen, full.Triggers) {
+				t.Fatal("walk repeated or skipped")
+			}
+		}
+	}
+	for _, c := range []struct {
+		key   string
+		start int
+	}{{"month_end", 2}, {"month", 1}, {"Zebra", 0}, {"weekly_digest", 4}} {
+		page := paging.Token{Tool: "list"}.Encode(c.key)
+		var got tools.TriggerList
+		success(t, f.call("list", tools.ListArgs{Page: &page}), &got)
+		if got.Next != nil || got.Triggers == nil || !reflect.DeepEqual(got.Triggers, full.Triggers[c.start:]) {
+			t.Fatal("key position", got)
+		}
+	}
+	limit := 2
+	page := paging.Token{Tool: "list"}.Encode("month_end")
+	b, err := json.Marshal(tools.ListArgs{Page: &page, Limit: &limit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"page":` + strconv.Quote(page) + `,"limit":2}`
+	if string(b) != want {
+		t.Fatal("argument fields", string(b), want)
+	}
+}
+
+func TestDefaultListWindow(t *testing.T) {
+	// R-MSSA-13L3 R-MU06-EVBS
+	f := setup(t, false)
+	for i := 0; i < paging.DefaultLimit; i++ {
+		_, err := f.st.Create(f.ctx, store.Draft{Slug: fmt.Sprintf("trigger_%04d", i), When: "@hourly", OwnerID: fmt.Sprintf("owner%d", i%2), OwnerEmail: "someone@example.test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var full tools.TriggerList
+	success(t, f.call("list", map[string]any{}), &full)
+	if len(full.Triggers) != paging.DefaultLimit || full.Next != nil {
+		t.Fatal("exact default window", full)
+	}
+	last, err := f.st.Create(f.ctx, store.Draft{Slug: fmt.Sprintf("trigger_%04d", paging.DefaultLimit), When: "@hourly", OwnerID: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first tools.TriggerList
+	success(t, f.call("list", map[string]any{}), &first)
+	want := paging.Token{Tool: "list"}.Encode(full.Triggers[paging.DefaultLimit-1].Slug)
+	if !reflect.DeepEqual(first.Triggers, full.Triggers) || first.Next == nil || *first.Next != want {
+		t.Fatal("default boundary", first)
+	}
+	var second tools.TriggerList
+	success(t, f.call("list", tools.ListArgs{Page: first.Next}), &second)
+	if len(second.Triggers) != 1 || second.Triggers[0].Slug != last.Slug || second.Next != nil {
+		t.Fatal("default continuation", second)
+	}
+}
+
+func TestPagingRefusals(t *testing.T) {
+	// R-MQCH-9K3P R-MRKD-NBUE R-MV82-SN2H
+	f := setup(t, true)
+	before, nexts := f.content(), f.nexts()
+	f.flush()
+	tn, en := len(f.tc.Events()), len(f.ec.Events())
+	for _, caller := range []string{"owner", "other"} {
+		f.caller.UserID = caller
+		for _, failing := range []bool{false, true} {
+			f.d.SetFailing(failing)
+			for _, limit := range []int{-1, 0, paging.MaxLimit + 1} {
+				_, err := paging.Window(&limit)
+				if err == nil {
+					t.Fatal("test limit accepted")
+				}
+				for _, page := range []any{nil, "", "bogus", paging.Token{Tool: "list"}.Encode("hourly")} {
+					refusal(t, f.call("list", map[string]any{"page": page, "limit": limit}), err.Error())
+				}
+			}
+			for _, page := range []string{"bogus", paging.Token{Tool: "list"}.Encode(int64(3)), paging.Token{Tool: "show"}.Encode("hourly")} {
+				for _, limit := range []any{nil, 1, paging.MaxLimit} {
+					refusal(t, f.call("list", map[string]any{"page": page, "limit": limit}), paging.BadPage)
+				}
+				refusal(t, f.call("list", map[string]any{"page": page}), paging.BadPage)
+			}
+			f.d.SetFailing(false)
+		}
+	}
+	f.flush()
+	if !reflect.DeepEqual(before, f.content()) || !reflect.DeepEqual(nexts, f.nexts()) || len(f.ec.Events()) != en {
+		t.Fatal("paging refusals changed state")
+	}
+	for _, event := range f.tc.Events()[tn:] {
+		if strings.HasPrefix(event.Name, "cron.") {
+			t.Fatal("paging refusal lifecycle")
+		}
+		if event.Name == "tool.called" {
+			for _, key := range []string{"page", "limit", "arguments"} {
+				if _, ok := event.Attrs[key]; ok {
+					t.Fatal("paging argument in trail", key)
+				}
+			}
+		}
+	}
 }

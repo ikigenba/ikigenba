@@ -3,6 +3,7 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	cron "github.com/ikigenba/ikigenba/cron"
@@ -83,7 +85,7 @@ func TestPublicDataAndTemplateExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	write := s.Write
-	// R-CZBV-ZZQ2 R-D1RO-RJ7G R-D2ZL-5AY5 R-D47H-J2OU
+	// R-MWFZ-6ET6 R-D1RO-RJ7G R-D2ZL-5AY5 R-D47H-J2OU
 	row := pages.TriggerRow{"crn_example", "slug", "@hourly", "owner@example.test", "active", true, "stamp", "minute", "next", "nextminute"}
 	equal(t, row.ID, "crn_example")
 	equal(t, row.Mine, true)
@@ -93,12 +95,13 @@ func TestPublicDataAndTemplateExecution(t *testing.T) {
 		name       string
 		zero, full any
 	}{
-		{"landing", pages.LandingData{}, pages.LandingData{b, []pages.TriggerRow{row}}},
+		{"landing", pages.LandingData{}, pages.LandingData{b, []pages.TriggerRow{row}, "supplied-next"}},
 		{"about", pages.AboutData{}, pages.AboutData{b, "<description>"}},
 		// R-ZQUI-I4KJ R-ZS2E-VWB8
 		{"tools", pages.ToolsData{}, pages.ToolsData{b, []pages.Tool{{"example", "<description>"}}}},
 		{"notfound", pages.NoticeData{}, pages.NoticeData{b}},
 	}
+	equal(t, data[0].full.(pages.LandingData).Next, "supplied-next")
 	ts := templates(t)
 	// R-ZDFM-ANEW R-ZENI-OF5L R-ZFVF-26WA R-ZH3B-FYMZ
 	for _, d := range data {
@@ -152,9 +155,9 @@ func setup(t *testing.T, populated bool) *fixture {
 			t.Error(err)
 		}
 	})
-	random := make([]byte, 1024)
+	random := make([]byte, 8*(2*paging.DefaultLimit+1))
 	for i := range random {
-		random[i] = byte(i)
+		random[i] = byte(i / 8)
 	}
 	st := store.New(d, store.Config{Now: func() time.Time { return now.Add(-24 * time.Hour) }, Rand: bytes.NewReader(random)})
 	f := &fixture{db: d, store: st, banner: page.Banner{Service: "cron", Release: "test-release", Commit: "test-commit", Home: "/sentinel-home", Tools: true, Email: "source@example.test", ProfileURL: "/sentinel-profile", LogoutURL: "/sentinel-logout", Trail: []page.Level{{Name: "source", URL: "/source"}}}, path: filepath.Join(dir, "services.json")}
@@ -232,9 +235,9 @@ func expectedBanner(f *fixture, path string) page.Banner {
 	return b
 }
 func expectedRows(f *fixture, user string) []pages.TriggerRow {
-	// R-DK26-I3BV R-DLA2-VV2K
+	// R-DK26-I3BV R-MYVR-XYAK
 	rows := make([]pages.TriggerRow, 0, len(f.triggers))
-	for _, x := range f.triggers {
+	for _, x := range f.triggers[:min(len(f.triggers), paging.DefaultLimit)] {
 		r := pages.TriggerRow{ID: x.ID, Slug: x.Slug, When: x.When, Owner: x.OwnerEmail, Status: x.Status, Mine: x.OwnerID == user}
 		if !x.LastFired.IsZero() {
 			r.LastFired = x.LastFired.UTC().Format(time.RFC3339)
@@ -249,7 +252,7 @@ func expectedRows(f *fixture, user string) []pages.TriggerRow {
 	return rows
 }
 func TestLandingAndAboutExactBodies(t *testing.T) {
-	// R-ZPMM-4CTU R-ZKR0-L9V2
+	// R-HTED-C0GJ R-ZKR0-L9V2
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
 			f := setup(t, populated)
@@ -336,8 +339,14 @@ func TestBannerUserAndFreshServices(t *testing.T) {
 	}
 }
 func TestRoutesMethodsFailuresAndReadOnly(t *testing.T) {
-	// R-ZLYW-Z1LR R-ZOEP-QL35 R-ZN6T-CTCG R-49W9-07JT R-DTTD-K99F R-CRFL-L3AY R-CSNH-YV1N
+	// R-ZLYW-Z1LR R-HVU6-3JXX R-ZN6T-CTCG R-HUM9-PS78 R-DTTD-K99F R-CRFL-L3AY R-CSNH-YV1N
 	f := setup(t, true)
+	handler := identity.Require(pages.Handler(f.cfg))
+	serve := func(r *http.Request) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
 	ts := templates(t)
 	before := append([]store.Trigger(nil), f.triggers...)
 	next := map[string]time.Time{}
@@ -350,7 +359,7 @@ func TestRoutesMethodsFailuresAndReadOnly(t *testing.T) {
 			var healthy *httptest.ResponseRecorder
 			for _, failing := range []bool{false, true} {
 				f.db.SetFailing(failing)
-				w := answer(f.cfg, request(method, path+"?anything=yes", "viewer", "viewer@example.test", "cron.example.test", "https"))
+				w := serve(request(method, path+"?anything=yes", "viewer", "viewer@example.test", "cron.example.test", "https"))
 				equal(t, w.Header().Values("Set-Cookie"), []string(nil))
 				equal(t, w.Header().Values("Location"), []string(nil))
 				switch {
@@ -387,7 +396,7 @@ func TestRoutesMethodsFailuresAndReadOnly(t *testing.T) {
 					equal(t, w.Body.String(), healthy.Body.String())
 				}
 				if method == "HEAD" {
-					get := answer(f.cfg, request("GET", path+"?anything=yes", "viewer", "viewer@example.test", "cron.example.test", "https"))
+					get := serve(request("GET", path+"?anything=yes", "viewer", "viewer@example.test", "cron.example.test", "https"))
 					equal(t, w.Code, get.Code)
 					equal(t, w.Header(), get.Header())
 					equal(t, w.Body.String(), "")
@@ -442,7 +451,7 @@ func TestConcurrentPages(t *testing.T) {
 }
 
 func TestLandingPrivateData(t *testing.T) {
-	// R-4NOH-AV0L R-ET6G-NLRK
+	// R-486E-6HN2 R-ET6G-NLRK
 	f := setup(t, true)
 	f.banner.Home = "https://home.example.test/"
 	body := answer(f.cfg, request("GET", "/", "viewer", "viewer@example.test", "cron.example.test", "https")).Body.String()
@@ -491,6 +500,92 @@ func TestToolsExactBodiesAndFreshRegistration(t *testing.T) {
 					equal(t, user, page.User{Email: "supplied<&@example.test", ProfileURL: "http://auth.example.test/", LogoutURL: "http://auth.example.test/logout"})
 				}
 			}
+		}
+	}
+}
+
+func TestLandingFirstPageMatchesList(t *testing.T) {
+	// R-MYVR-XYAK R-HTED-C0GJ R-HX22-HBOM
+	for _, count := range []int{paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2*paging.DefaultLimit + 1} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			f := setup(t, false)
+			for i := count - 1; i >= 0; i-- {
+				_, err := f.scheduler.Create(t.Context(), store.Draft{Slug: fmt.Sprintf("trigger_%03d", i), When: "@hourly", OwnerID: "owner", OwnerEmail: "owner@example.test"})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			var err error
+			f.triggers, err = f.store.List(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(identity.Require(f.cfg.MCP))
+			defer server.Close()
+			client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL})
+			result, err := client.CallTool(t.Context(), identity.Caller{UserID: "viewer", Email: "viewer@example.test", RequestID: "page-list"}, "list", json.RawMessage(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			require(t, !result.IsError(), "list refused")
+			raw, err := result.MarshalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var envelope struct {
+				StructuredContent struct {
+					Triggers []struct{ Slug string }
+					Next     string
+				}
+			}
+			if err = json.Unmarshal(raw, &envelope); err != nil {
+				t.Fatal(err)
+			}
+			rows := expectedRows(f, "viewer")
+			slugs := make([]string, len(rows))
+			for i, row := range rows {
+				slugs[i] = row.Slug
+			}
+			listed := make([]string, len(envelope.StructuredContent.Triggers))
+			for i, row := range envelope.StructuredContent.Triggers {
+				listed[i] = row.Slug
+			}
+			equal(t, slugs, listed)
+			next := ""
+			if count > paging.DefaultLimit {
+				next = (paging.Token{Tool: "list"}).Encode(f.triggers[paging.DefaultLimit-1].Slug)
+			}
+			equal(t, envelope.StructuredContent.Next, next)
+			for _, query := range []string{"", "?page=bogus&limit=1", "?page=" + next} {
+				w := answer(f.cfg, request("GET", "/"+query, "viewer", "viewer@example.test", "cron.example.test", "https"))
+				equal(t, w.Code, 200)
+				equal(t, w.Header(), http.Header{"Content-Type": []string{"text/html; charset=utf-8"}})
+				equal(t, w.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: rows, Next: envelope.StructuredContent.Next}))
+			}
+		})
+	}
+}
+
+func TestLandingCancelledRead(t *testing.T) {
+	// R-HUM9-PS78 R-HVU6-3JXX
+	f := setup(t, true)
+	handler := identity.Require(pages.Handler(f.cfg))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var get *httptest.ResponseRecorder
+	for _, method := range []string{"GET", "HEAD"} {
+		r := request(method, "/", "viewer", "viewer@example.test", "cron.example.test", "https").WithContext(ctx)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		equal(t, w.Code, 503)
+		equal(t, w.Header(), http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}})
+		if method == "GET" {
+			equal(t, w.Body.String(), store.Unreachable+"\n")
+			get = w
+		} else {
+			equal(t, w.Code, get.Code)
+			equal(t, w.Header(), get.Header())
+			equal(t, w.Body.String(), "")
 		}
 	}
 }
