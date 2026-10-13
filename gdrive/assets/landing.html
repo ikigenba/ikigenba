@@ -4,8 +4,8 @@
      a signed-in user; a guest is sent to sign in. Never shows another
      user's transfer, a token or a byte of a file. Read-only: no form but
      the banner's sign out. Data: .Banner (a page.Banner, for banner and
-     footer); .Transfers, the caller's transfers, newest first by started,
-     each with .ID (its xfr_ id, "xfr_" and 16 hex), .Direction ("pull" or
+     footer); .Transfers, the first page of the caller's transfers, newest
+     first by started, each with .ID (its xfr_ id, "xfr_" and 16 hex), .Direction ("pull" or
      "push", as stored), .Status ("queued", "running", "done" or "failed",
      as stored), .Reason (the failure reason as stored, one of "not_found",
      "forbidden", "too_large", "reconnect", "provider", "artifacts" or
@@ -19,7 +19,9 @@
      the bytes moved so far, final when done), .Started and .StartedText
      (RFC 3339 UTC to the second, and UTC to the minute, "2026-10-05
      09:00"), and .Finished and .FinishedText (likewise; both empty while
-     queued or running). Bytes are shown as the plain integer, never a
+     queued or running); and .Next (string, the page token transfers's
+     next carries for the transfers after these, the value to pass as its
+     page; empty when none remain). Bytes are shown as the plain integer, never a
      humanised size. Status and reason words are shown as stored; the
      status's kind is chosen here: "queued" and "running" info, "done" ok,
      "failed" err. Hooks: title "gdrive"; h1 with text "gdrive";
@@ -45,8 +47,10 @@
      not empty, else .Path in a code element; td.transfer-bytes.num
      (.Bytes); td.transfer-started holding time[datetime=<.Started>] (text
      .StartedText); and td.transfer-finished holding, only when .Finished
-     is not empty, time[datetime=<.Finished>] (text .FinishedText); a
-     #about-link (text "About gdrive") whose href is "/about". No script
+     is not empty, time[datetime=<.Finished>] (text .FinishedText), then,
+     when .Next is not empty, p#next (text "More transfers follow: call
+     transfers with page <.Next>.", transfers, page and .Next each in a
+     code element); a #about-link (text "About gdrive") whose href is "/about". No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -74,7 +78,9 @@
 </tr>
 {{end}}</tbody>
 </table>
-</div>{{else}}<div id="no-transfers" class="empty">
+</div>
+{{if .Next}}<p id="next">More transfers follow: call <code>transfers</code> with <code>page</code> <code>{{.Next}}</code>.</p>
+{{end}}{{else}}<div id="no-transfers" class="empty">
 <h3 class="text-md">No transfers yet</h3>
 <p>A file an agent pulls from Drive with the <code>pull</code> tool, or pushes to Drive with <code>push</code>, shows up here as a transfer.</p>
 </div>{{end}}
