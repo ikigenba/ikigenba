@@ -75,8 +75,10 @@ type Config struct {
 type LandingData struct {
 	Banner        page.Banner
 	Drafts        []DraftRow
+	DraftsPage    string
 	DraftsNext    string
 	Transfers     []TransferRow
+	TransfersPage string
 	TransfersNext string
 }
 
@@ -216,18 +218,33 @@ func Handler(cfg Config) http.Handler {
 		c, _ := identity.FromContext(r.Context())
 		switch {
 		case p == "/":
-			ds, err := cfg.Store.ListDraftsAfter(r.Context(), c.UserID, "", "", paging.DefaultLimit+1)
+			draftsPage := r.URL.Query().Get("drafts_page")
+			transfersPage := r.URL.Query().Get("transfers_page")
+			var created, draftPosition, started, transferPosition string
+			if draftsPage != "" {
+				if err := (paging.Token{Tool: "drafts"}).Decode(draftsPage, &created, &draftPosition); err != nil {
+					notfound()
+					return
+				}
+			}
+			if transfersPage != "" {
+				if err := (paging.Token{Tool: "transfers"}).Decode(transfersPage, &started, &transferPosition); err != nil {
+					notfound()
+					return
+				}
+			}
+			ds, err := cfg.Store.ListDraftsAfter(r.Context(), c.UserID, created, draftPosition, paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
-			ts, err := cfg.Store.ListTransfersAfter(r.Context(), c.UserID, "", "", paging.DefaultLimit+1)
+			ts, err := cfg.Store.ListTransfersAfter(r.Context(), c.UserID, started, transferPosition, paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
 			b.Trail = nil
-			d := LandingData{Banner: b, Drafts: []DraftRow{}, Transfers: []TransferRow{}}
+			d := LandingData{Banner: b, Drafts: []DraftRow{}, DraftsPage: draftsPage, Transfers: []TransferRow{}, TransfersPage: transfersPage}
 			if len(ds) > paging.DefaultLimit {
 				ds = ds[:paging.DefaultLimit]
 				last := ds[len(ds)-1]

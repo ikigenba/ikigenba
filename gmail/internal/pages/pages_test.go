@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,8 +20,11 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	app "github.com/ikigenba/ikigenba/gmail"
 	"github.com/ikigenba/ikigenba/gmail/internal/store"
 	"github.com/ikigenba/ikigenba/gmail/internal/tools"
@@ -86,7 +91,7 @@ func load(t *testing.T) *Set {
 	return s
 }
 
-// R-W1L5-PYP4 R-W2T2-3QFT R-3DHY-CY0T R-W58U-V9X7 R-W6GR-91NW
+// R-W1L5-PYP4 R-W2T2-3QFT R-9GJB-KBPG R-W58U-V9X7 R-W6GR-91NW
 func TestLoadAndWrite(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if ServiceName != "gmail" || MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || Description == "" || ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
@@ -115,7 +120,7 @@ func TestLoadAndWrite(t *testing.T) {
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, []DraftRow{}, "", []TransferRow{}, ""}}, {"tools", ToolsData{b, []ToolRow{{"chosen-tool", "chosen-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}}
+	}{{"landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""}}, {"tools", ToolsData{b, []ToolRow{{"chosen-tool", "chosen-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}}
 	for _, status := range []string{store.DraftOpen, store.DraftSent, store.DraftDiscarded} {
 		for _, filled := range []bool{false, true} {
 			v := DraftView{ID: "drf_1111111111111111", Status: status, To: []string{}, Cc: []string{}, Bcc: []string{}, Attachments: []AttachmentRow{}}
@@ -143,7 +148,7 @@ func TestLoadAndWrite(t *testing.T) {
 			}{"draft", DraftData{b, v}}, struct {
 				name string
 				data any
-			}{"landing", LandingData{b, []DraftRow{{ID: v.ID, Status: status, Subject: v.Subject, To: v.To, Cc: v.Cc, Bcc: v.Bcc, AttachmentCount: len(v.Attachments), Link: v.Link, Created: v.Created, CreatedText: v.CreatedText, Sent: v.Sent, SentText: v.SentText}}, "", []TransferRow{}, ""}})
+			}{"landing", LandingData{b, []DraftRow{{ID: v.ID, Status: status, Subject: v.Subject, To: v.To, Cc: v.Cc, Bcc: v.Bcc, AttachmentCount: len(v.Attachments), Link: v.Link, Created: v.Created, CreatedText: v.CreatedText, Sent: v.Sent, SentText: v.SentText}}, "", "", []TransferRow{}, "", ""}})
 		}
 	}
 	for _, status := range []string{store.StatusQueued, store.StatusRunning, store.StatusDone, store.StatusFailed} {
@@ -173,7 +178,7 @@ func TestLoadAndWrite(t *testing.T) {
 					}{"transfer", TransferData{b, v}}, struct {
 						name string
 						data any
-					}{"landing", LandingData{b, []DraftRow{}, "", []TransferRow{{ID: v.ID, Direction: dir, Status: status, Reason: reason, Name: v.Name, Link: v.Link, Path: v.Path, ArtifactPage: v.ArtifactPage, URL: v.URL, Bytes: v.Bytes, Started: v.Started, StartedText: v.StartedText, Finished: v.Finished, FinishedText: v.FinishedText}}, ""}})
+					}{"landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{{ID: v.ID, Direction: dir, Status: status, Reason: reason, Name: v.Name, Link: v.Link, Path: v.Path, ArtifactPage: v.ArtifactPage, URL: v.URL, Bytes: v.Bytes, Started: v.Started, StartedText: v.StartedText, Finished: v.Finished, FinishedText: v.FinishedText}}, "", ""}})
 				}
 			}
 		}
@@ -193,7 +198,7 @@ func TestLoadAndWrite(t *testing.T) {
 	}
 }
 
-// R-W7ON-MTEL R-3EPU-QPRI R-DTYQ-Z6E4 R-WHFU-OZC5 R-WOR8-ZLSB
+// R-W7ON-MTEL R-9IZ4-BV6U R-DTYQ-Z6E4 R-WHFU-OZC5 R-WOR8-ZLSB
 // R-WBCC-S4MO R-DRIY-7MWQ R-WA4G-ECVZ R-WUUQ-WGHS
 func TestOwnerRecords(t *testing.T) {
 	st, _, now := fixture(t)
@@ -235,8 +240,8 @@ func TestOwnerRecords(t *testing.T) {
 	b.Trail = nil
 	dr := DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: 1, Link: d.Link, Created: now().Format(time.RFC3339), CreatedText: now().Format(MinuteLayout)}
 	xr := TransferRow{ID: x.ID, Direction: x.Direction, Status: x.Status, Name: x.Name, Link: x.Link, Path: x.Path, ArtifactPage: "https://artifacts.example.test/" + x.ArtifactID, URL: x.URL, Bytes: 71, Started: now().Format(time.RFC3339), StartedText: now().Format(MinuteLayout), Finished: now().Format(time.RFC3339), FinishedText: now().Format(MinuteLayout)}
-	check(t, request(h, "GET", "/", "owner"), 200, "landing", LandingData{b, []DraftRow{dr}, "", []TransferRow{xr}, ""})
-	check(t, request(h, "GET", "/", "empty"), 200, "landing", LandingData{b, []DraftRow{}, "", []TransferRow{}, ""})
+	check(t, request(h, "GET", "/", "owner"), 200, "landing", LandingData{b, []DraftRow{dr}, "", "", []TransferRow{xr}, "", ""})
+	check(t, request(h, "GET", "/", "empty"), 200, "landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""})
 	dv := DraftView{ID: d.ID, Status: d.Status, GmailDraft: d.GmailDraft, Message: d.Message, Thread: d.Thread, To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, InReplyTo: d.ReplyTo, Link: d.Link, Created: now().Format(time.RFC3339), CreatedText: now().Format(SecondLayout), Modified: now().Format(time.RFC3339), ModifiedText: now().Format(SecondLayout), Attachments: []AttachmentRow{{"out/a.pdf", "https://artifacts.example.test/files/out/a.pdf", "chosen-attachment", "application/pdf", 29}}}
 	b.Trail = []page.Level{{Name: d.ID, URL: "/drafts/" + d.ID}}
 	check(t, request(h, "GET", "/drafts/"+d.ID, "owner"), 200, "draft", DraftData{b, dv})
@@ -278,7 +283,7 @@ func TestOwnerRecords(t *testing.T) {
 	}
 }
 
-// R-3EPU-QPRI R-3DHY-CY0T
+// R-9IZ4-BV6U R-9GJB-KBPG
 func TestLandingFirstPages(t *testing.T) {
 	for _, counts := range [][2]int{{0, 0}, {paging.DefaultLimit, paging.DefaultLimit}, {paging.DefaultLimit + 1, 0}, {0, paging.DefaultLimit + 1}, {paging.DefaultLimit + 1, paging.DefaultLimit + 1}} {
 		t.Run(strconv.Itoa(counts[0])+"/"+strconv.Itoa(counts[1]), func(t *testing.T) {
@@ -318,7 +323,7 @@ func TestLandingFirstPages(t *testing.T) {
 			}
 			b := expectedBanner()
 			b.Trail = nil
-			data := LandingData{b, []DraftRow{}, "", []TransferRow{}, ""}
+			data := LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""}
 			for _, d := range ds[:min(len(ds), paging.DefaultLimit)] {
 				data.Drafts = append(data.Drafts, DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: len(d.Attachments), Link: d.Link, Created: d.Created.UTC().Format(time.RFC3339), CreatedText: d.Created.UTC().Format(MinuteLayout)})
 			}
@@ -335,12 +340,12 @@ func TestLandingFirstPages(t *testing.T) {
 			}
 			h := identity.Require(Handler(Config{Banner: banner, Pages: load(t), Store: st}))
 			check(t, request(h, http.MethodGet, "/", "owner"), http.StatusOK, "landing", data)
-			check(t, request(h, http.MethodGet, "/", "empty"), http.StatusOK, "landing", LandingData{b, []DraftRow{}, "", []TransferRow{}, ""})
+			check(t, request(h, http.MethodGet, "/", "empty"), http.StatusOK, "landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""})
 		})
 	}
 }
 
-// R-3EPU-QPRI
+// R-9IZ4-BV6U
 func TestLandingEmptySlices(t *testing.T) {
 	st, _, _ := fixture(t)
 	var captured *LandingData
@@ -355,13 +360,13 @@ func TestLandingEmptySlices(t *testing.T) {
 	if w.Code != http.StatusOK || captured == nil {
 		t.Fatal("landing data was not captured", w.Code)
 	}
-	if captured.Drafts == nil || len(captured.Drafts) != 0 || captured.Transfers == nil || len(captured.Transfers) != 0 || captured.DraftsNext != "" || captured.TransfersNext != "" {
+	if captured.DraftsPage != "" || captured.TransfersPage != "" || captured.Drafts == nil || len(captured.Drafts) != 0 || captured.Transfers == nil || len(captured.Transfers) != 0 || captured.DraftsNext != "" || captured.TransfersNext != "" {
 		t.Fatal("empty landing lists or tokens", captured)
 	}
 }
 
 // R-WF01-XFUR R-WINR-2R2U R-WJVN-GITJ R-WMBG-82AX R-WPZ5-DDJ0
-// R-WSEY-4X0E R-WTMU-IOR3 R-W8WK-0L5A R-WL3J-UAK8 R-WNJC-LU1M
+// R-9NUP-UY5M R-WTMU-IOR3 R-W8WK-0L5A R-WL3J-UAK8 R-WNJC-LU1M
 func TestRoutingMethodsAndFailure(t *testing.T) {
 	st, d, _ := fixture(t)
 	ctx := context.Background()
@@ -472,7 +477,7 @@ func TestMailPrivacy(t *testing.T) {
 	}
 }
 
-// R-3DHY-CY0T R-WBCC-S4MO R-DRIY-7MWQ R-WA4G-ECVZ
+// R-9GJB-KBPG R-WBCC-S4MO R-DRIY-7MWQ R-WA4G-ECVZ
 func TestDataConversions(t *testing.T) {
 	z := time.Date(2026, 10, 5, 11, 0, 7, 0, time.FixedZone("offset", 2*60*60))
 	short, long := z.UTC().Format(time.RFC3339), z.UTC().Format(SecondLayout)
@@ -531,8 +536,8 @@ func TestDataConversions(t *testing.T) {
 		}
 	}
 	// Positional construction checks the remaining page contracts' exact field order.
-	landing := LandingData{page.Banner{}, []DraftRow{}, "chosen-drafts-token", []TransferRow{}, "chosen-transfers-token"}
-	if landing.DraftsNext != "chosen-drafts-token" || landing.TransfersNext != "chosen-transfers-token" {
+	landing := LandingData{page.Banner{}, []DraftRow{}, "chosen-drafts-page", "chosen-drafts-token", []TransferRow{}, "chosen-transfers-page", "chosen-transfers-token"}
+	if landing.DraftsPage != "chosen-drafts-page" || landing.TransfersPage != "chosen-transfers-page" || landing.DraftsNext != "chosen-drafts-token" || landing.TransfersNext != "chosen-transfers-token" {
 		t.Fatal("landing token field order")
 	}
 	_ = DraftData{page.Banner{}, dv}
@@ -543,7 +548,7 @@ func TestDataConversions(t *testing.T) {
 	_ = Config{banner, load(t), "", nil}
 }
 
-// R-3EPU-QPRI R-WINR-2R2U R-WUUQ-WGHS
+// R-9IZ4-BV6U R-WINR-2R2U R-WUUQ-WGHS
 func TestStoredStatesOrderAndPrunedRecords(t *testing.T) {
 	st, _, now := fixture(t)
 	ctx := context.Background()
@@ -593,7 +598,7 @@ func TestStoredStatesOrderAndPrunedRecords(t *testing.T) {
 	}
 	b := expectedBanner()
 	b.Trail = nil
-	data := LandingData{b, []DraftRow{}, "", []TransferRow{}, ""}
+	data := LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""}
 	for _, d := range ds {
 		r := DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: len(d.Attachments), Link: d.Link, Created: now().Format(time.RFC3339), CreatedText: now().Format(MinuteLayout)}
 		if d.Status == store.DraftSent {
@@ -633,6 +638,238 @@ func TestStoredStatesOrderAndPrunedRecords(t *testing.T) {
 		got := request(h, "GET", p, "owner")
 		if got.Code != want.Code || !reflect.DeepEqual(got.Header(), want.Header()) || got.Body.String() != want.Body.String() {
 			t.Fatal("pruned record answer", p)
+		}
+	}
+}
+
+func listClient(t *testing.T, st *store.Store, clock func() time.Time) *mcp.Client {
+	t.Helper()
+	t.Setenv(services.Variable, "")
+	writer := telemetry.New(telemetry.Config{Service: ServiceName, Sink: &telemetry.Capture{}, Now: clock, Rand: bytes.NewReader(make([]byte, 4096)), Sleep: func(context.Context, time.Duration) {}})
+	t.Cleanup(func() { writer.Shutdown(context.Background(), "test") })
+	srv := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Telemetry: writer})
+	tools.Register(srv, tools.Config{Store: st})
+	h := httptest.NewServer(identity.Require(srv))
+	t.Cleanup(h.Close)
+	return mcp.NewClient(mcp.ClientConfig{Endpoint: h.URL, HTTPClient: h.Client()})
+}
+
+func callList(t *testing.T, client *mcp.Client, name, token string, out any) {
+	t.Helper()
+	args := map[string]string{}
+	if token != "" {
+		args["page"] = token
+	}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "owner"}, name, raw)
+	if err != nil || result.IsError() {
+		t.Fatal("list call", name, err, result)
+	}
+	wire, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Structured json.RawMessage `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(wire, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(envelope.Structured, out); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// R-9HR7-Y3G5 R-9IZ4-BV6U R-9K70-PMXJ R-9LEX-3EO8
+func TestLandingWindows(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1, 2*paging.DefaultLimit + 3} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			_, database, clock := fixture(t)
+			seq := make([]byte, (2*count+4)*8)
+			for i := 0; i < len(seq)/8; i++ {
+				binary.BigEndian.PutUint64(seq[i*8:], uint64(i+1))
+			}
+			now := clock()
+			st := store.New(database, store.Config{Now: func() time.Time { return now }, Rand: bytes.NewReader(seq)})
+			ctx := context.Background()
+			for _, user := range []string{"owner", "other"} {
+				n := count
+				if user == "other" {
+					n = 1
+				}
+				for i := 0; i < n; i++ {
+					now = clock().Add(time.Duration(i/2) * time.Second)
+					if _, err := st.AddDraft(ctx, store.Draft{UserID: user, GmailDraft: user + "-draft-" + strconv.Itoa(i), Message: user + "-message-" + strconv.Itoa(i), Subject: user + "-subject-" + strconv.Itoa(i), To: []string{user + "-recipient"}}); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := st.AddTransfer(ctx, store.Transfer{UserID: user, Direction: store.DirectionPull, Status: store.StatusQueued, Message: user + "-message-" + strconv.Itoa(i), Name: user + "-name-" + strconv.Itoa(i), Path: "out/" + strconv.Itoa(i)}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			client := listClient(t, st, clock)
+			h := identity.Require(Handler(Config{Banner: banner, Pages: load(t), Store: st}))
+			var captured LandingData
+			tpl := template.Must(template.New("landing").Funcs(template.FuncMap{"capture": func(data LandingData) string { captured = data; return "" }}).Parse("{{capture .}}"))
+			captureHandler := identity.Require(Handler(Config{Banner: banner, Pages: &Set{templates: tpl}, Store: st}))
+			get := func(path string) LandingData {
+				t.Helper()
+				if w := request(captureHandler, http.MethodGet, path, "owner"); w.Code != http.StatusOK {
+					t.Fatal("capture status", w.Code)
+				}
+				check(t, request(h, http.MethodGet, path, "owner"), http.StatusOK, "landing", captured)
+				return captured
+			}
+			path := func(d, x string) string {
+				return "/?" + url.Values{"drafts_page": {d}, "transfers_page": {x}}.Encode()
+			}
+			drafts, err := st.ListDrafts(ctx, "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			transfers, err := st.ListTransfers(ctx, "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var dp, xp string
+			for offset := 0; ; offset += paging.DefaultLimit {
+				data := get(path(dp, xp))
+				b := expectedBanner()
+				b.Trail = nil
+				want := LandingData{b, []DraftRow{}, dp, "", []TransferRow{}, xp, ""}
+				end := min(offset+paging.DefaultLimit, count)
+				for _, d := range drafts[offset:end] {
+					want.Drafts = append(want.Drafts, DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: len(d.Attachments), Link: d.Link, Created: d.Created.UTC().Format(time.RFC3339), CreatedText: d.Created.UTC().Format(MinuteLayout)})
+				}
+				for _, x := range transfers[offset:end] {
+					want.Transfers = append(want.Transfers, TransferRow{ID: x.ID, Direction: x.Direction, Status: x.Status, Name: x.Name, Path: x.Path, Started: x.Started.UTC().Format(time.RFC3339), StartedText: x.Started.UTC().Format(MinuteLayout)})
+				}
+				if end < count {
+					d, x := drafts[end-1], transfers[end-1]
+					want.DraftsNext = (paging.Token{Tool: "drafts"}).Encode(d.Created.UTC().Format(time.RFC3339), d.ID)
+					want.TransfersNext = (paging.Token{Tool: "transfers"}).Encode(x.Started.UTC().Format(time.RFC3339), x.ID)
+				}
+				if !reflect.DeepEqual(data, want) {
+					t.Fatalf("window at %d: got %+v want %+v", offset, data, want)
+				}
+				var dl tools.DraftList
+				var xl tools.TransferList
+				callList(t, client, "drafts", dp, &dl)
+				callList(t, client, "transfers", xp, &xl)
+				if len(dl.Drafts) != len(data.Drafts) || len(xl.Transfers) != len(data.Transfers) {
+					t.Fatal("tool window lengths")
+				}
+				for i, d := range dl.Drafts {
+					if d.ID != data.Drafts[i].ID {
+						t.Fatal("draft tool order")
+					}
+				}
+				for i, x := range xl.Transfers {
+					if x.ID != data.Transfers[i].ID {
+						t.Fatal("transfer tool order")
+					}
+				}
+				next := func(p *string) string {
+					if p == nil {
+						return ""
+					}
+					return *p
+				}
+				if next(dl.Next) != data.DraftsNext || next(xl.Next) != data.TransfersNext {
+					t.Fatal("tool next tokens")
+				}
+				// Each name uses its first value; unrelated query parameters do not alter data.
+				if got := get(path(dp, xp) + "&drafts_page=bogus&transfers_page=bogus&page=bogus&limit=1&offset=99"); !reflect.DeepEqual(got, data) {
+					t.Fatal("query values changed window")
+				}
+				if data.DraftsNext == "" {
+					break
+				}
+				dOnly := get(path(data.DraftsNext, xp))
+				xOnly := get(path(dp, data.TransfersNext))
+				both := get(path(data.DraftsNext, data.TransfersNext))
+				if !reflect.DeepEqual(dOnly.Drafts, both.Drafts) || dOnly.DraftsPage != both.DraftsPage || dOnly.DraftsNext != both.DraftsNext || !reflect.DeepEqual(xOnly.Transfers, both.Transfers) || xOnly.TransfersPage != both.TransfersPage || xOnly.TransfersNext != both.TransfersNext || !reflect.DeepEqual(dOnly.Transfers, data.Transfers) || dOnly.TransfersPage != data.TransfersPage || dOnly.TransfersNext != data.TransfersNext || !reflect.DeepEqual(xOnly.Drafts, data.Drafts) || xOnly.DraftsPage != data.DraftsPage || xOnly.DraftsNext != data.DraftsNext {
+					t.Fatal("list navigation was not independent")
+				}
+				dp, xp = data.DraftsNext, data.TransfersNext
+			}
+		})
+	}
+}
+
+// R-9HR7-Y3G5 R-9MMT-H6EX R-9NUP-UY5M
+func TestLandingTokenFailures(t *testing.T) {
+	_, database, clock := fixture(t)
+	seq := make([]byte, (2*paging.DefaultLimit+4)*8)
+	for i := 0; i < len(seq)/8; i++ {
+		binary.BigEndian.PutUint64(seq[i*8:], uint64(i+1))
+	}
+	st := store.New(database, store.Config{Now: clock, Rand: bytes.NewReader(seq)})
+	for i := 0; i <= paging.DefaultLimit; i++ {
+		if _, err := st.AddDraft(context.Background(), store.Draft{UserID: "owner", GmailDraft: "provider-" + strconv.Itoa(i), Message: "message"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.AddTransfer(context.Background(), store.Transfer{UserID: "owner", Direction: store.DirectionPull, Status: store.StatusQueued, Message: "message", Path: "out/file"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	client := listClient(t, st, clock)
+	var drafts tools.DraftList
+	var transfers tools.TransferList
+	callList(t, client, "drafts", "", &drafts)
+	callList(t, client, "transfers", "", &transfers)
+	if drafts.Next == nil || transfers.Next == nil {
+		t.Fatal("tool next tokens absent")
+	}
+	dp, xp := *drafts.Next, *transfers.Next
+	h := identity.Require(Handler(Config{Banner: banner, Pages: load(t), Store: st}))
+	invalid := []url.Values{
+		{"drafts_page": {"bogus"}}, {"transfers_page": {"bogus"}},
+		{"drafts_page": {"bogus"}, "transfers_page": {"bogus"}},
+		{"drafts_page": {dp}, "transfers_page": {"bogus"}},
+		{"drafts_page": {"bogus", dp}}, {"transfers_page": {"bogus", xp}},
+	}
+	var a, b string
+	if err := (paging.Token{Tool: "drafts"}).Decode(xp, &a, &b); err != nil {
+		invalid = append(invalid, url.Values{"drafts_page": {xp}})
+	}
+	if err := (paging.Token{Tool: "transfers"}).Decode(dp, &a, &b); err != nil {
+		invalid = append(invalid, url.Values{"transfers_page": {dp}})
+	}
+	for _, failing := range []bool{false, true} {
+		database.SetFailing(failing)
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			want := request(h, method, "/missing", "owner")
+			for _, query := range invalid {
+				query.Set("page", dp)
+				query.Set("limit", "1")
+				w := request(h, method, "/?"+query.Encode(), "owner")
+				if w.Code != want.Code || !reflect.DeepEqual(w.Header(), want.Header()) || w.Body.String() != want.Body.String() {
+					t.Fatalf("invalid token: failing=%v method=%s query=%v status=%d", failing, method, query, w.Code)
+				}
+			}
+			if failing {
+				for _, query := range []url.Values{
+					{}, {"drafts_page": {"", "bogus"}, "transfers_page": {"", "bogus"}},
+					{"drafts_page": {dp}}, {"transfers_page": {xp}},
+					{"drafts_page": {dp, "bogus"}, "transfers_page": {xp, "bogus"}},
+				} {
+					w := request(h, method, "/?"+query.Encode(), "owner")
+					body := store.Unreachable + "\n"
+					if method == http.MethodHead {
+						body = ""
+					}
+					if w.Code != http.StatusServiceUnavailable || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) || w.Body.String() != body {
+						t.Fatal("valid token outage", method, query, w.Code)
+					}
+				}
+			}
+		}
+		if w := request(h, http.MethodPost, "/?drafts_page=bogus", "owner"); w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "GET, HEAD" || w.Body.Len() != 0 {
+			t.Fatal("method before token", failing, w.Code)
 		}
 	}
 }

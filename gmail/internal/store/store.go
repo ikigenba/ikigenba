@@ -337,7 +337,12 @@ func (s *Store) ListTransfers(ctx context.Context, userID string) ([]Transfer, e
 func (s *Store) ListTransfersAfter(ctx context.Context, userID, started, id string, n int) ([]Transfer, error) {
 	var out []Transfer
 	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		query, args := listWindow(transferCols, "transfers", "started", userID, started, id, n)
+		query := "SELECT " + transferCols + " FROM transfers WHERE user_id=? ORDER BY started DESC,id DESC LIMIT ?"
+		args := []any{userID, max(n, 0)}
+		if started != "" || id != "" {
+			query = "SELECT " + transferCols + " FROM transfers WHERE user_id=? AND (started,id) < (?,?) ORDER BY started DESC,id DESC LIMIT ?"
+			args = []any{userID, started, id, max(n, 0)}
+		}
 		var err error
 		out, err = queryTransfers(ctx, tx, query, args...)
 		return err
@@ -358,20 +363,6 @@ func (s *Store) HasActivePush(ctx context.Context, userID, draft string) (bool, 
 		return err
 	})
 	return active, err
-}
-
-func listWindow(cols, table, column, userID, position, id string, n int) (string, []any) {
-	if n < 1 {
-		n = 0
-	}
-	query := "SELECT " + cols + " FROM " + table + " WHERE user_id=?"
-	args := []any{userID}
-	if position != "" || id != "" {
-		query += " AND (" + column + ",id) < (?,?)"
-		args = append(args, position, id)
-	}
-	query += " ORDER BY " + column + " DESC,id DESC LIMIT ?"
-	return query, append(args, n)
 }
 
 // UnfinishedTransfers reads all unfinished transfers oldest first.
@@ -623,7 +614,12 @@ func (s *Store) ListDrafts(ctx context.Context, userID string) ([]Draft, error) 
 func (s *Store) ListDraftsAfter(ctx context.Context, userID, created, id string, n int) ([]Draft, error) {
 	var out []Draft
 	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		query, args := listWindow(draftCols, "drafts", "created", userID, created, id, n)
+		query := "SELECT " + draftCols + " FROM drafts WHERE user_id=? ORDER BY created DESC,id DESC LIMIT ?"
+		args := []any{userID, max(n, 0)}
+		if created != "" || id != "" {
+			query = "SELECT " + draftCols + " FROM drafts WHERE user_id=? AND (created,id) < (?,?) ORDER BY created DESC,id DESC LIMIT ?"
+			args = []any{userID, created, id, max(n, 0)}
+		}
 		var err error
 		out, err = queryDrafts(ctx, tx, query, args...)
 		return err
