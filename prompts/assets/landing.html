@@ -2,8 +2,8 @@
      with their last runs. The root of the hierarchy: .Banner's .Trail is
      empty, so the banner's breadcrumb holds only the service. Shown only to
      a signed-in user. Data:
-     .Banner (a page.Banner, for banner and footer); .Prompts, the first
-     page of the caller's own prompts (never another user's) by name, each
+     .Banner (a page.Banner, for banner and footer); .Prompts, one
+     window of the caller's own prompts (never another user's) by name, each
      with .Name,
      .URL ("/<name>/"), .Model (the model's name in agentkit's catalog), and
      .LastRun (nil when the prompt has never run; else .Status, the store's
@@ -11,8 +11,10 @@
      US dollars to six decimal places, "0.023714", from its cost_nanos;
      empty while the run is queued or running), .Started, the start time as
      shown, "2006-01-02 15:04", and .StartedAt, the same as RFC 3339 UTC);
-     .Next (string, the page token list's next carries for the prompts
-     after these, the value to pass as its page; empty when none remain).
+     .Page (string, this window's own page token, the ?page= the request
+     carried; empty on the first window) and .Next (string, the page token
+     for the window after this one; empty when none remain). .Prompts is
+     the window of prompts .Page names.
      Status words and kinds, chosen here from .Status and .ExitCode by the
      run-status template (defined in run.html): "queued" and "running"
      info; "exited <.ExitCode>" ok when .ExitCode is 0, else warn; "timed
@@ -27,9 +29,14 @@
      run", td.prompt-cost.num (text the cost, empty when never run or when
      .Cost is empty), and td.prompt-when holding
      time[datetime=<.LastRun.StartedAt>] (text .LastRun.Started), empty when
-     never run, then, when .Next is not empty, p#next (text "More prompts
-     follow: call list with page <.Next>.", list, page and .Next each in a
-     code element); a#about-link whose href is "/about".
+     never run; then nav.paging#paging (aria-label "Pages") whose children
+     are, in order, First (on the first window, .Page empty, a span with
+     aria-current="page" and text "First"; otherwise a link to / with text
+     "First") and, only when .Next is not empty, Next (a link to
+     /?page=<.Next> with text "Next"); the nav shows when .Prompts is not
+     empty or .Page is not empty, after the card (section#prompts), so an
+     emptied later window still offers First; on the first window with no
+     prompts there is no nav; a#about-link whose href is "/about".
      No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -58,12 +65,13 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .Next}}<p id="next">More prompts follow: call <code>list</code> with <code>page</code> <code>{{.Next}}</code>.</p>{{end}}{{else}}<div id="no-prompts" class="empty">
+{{else}}<div id="no-prompts" class="empty">
 <h3 class="text-md">No prompts yet</h3>
 <p>A prompt you create with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
 </section>
-<p><a id="about-link" href="/about">About prompts</a></p>
+{{if or .Prompts .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{end}}<p><a id="about-link" href="/about">About prompts</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
