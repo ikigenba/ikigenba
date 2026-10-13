@@ -957,7 +957,7 @@ func TestCachedAnswersPreserveEntireTreeAndCatalog(t *testing.T) {
 	_, err := f.s.SetApex(context.Background(), f.site.ID)
 	must(t, err)
 	beforeTree := treeSnapshot(t, f.root)
-	before, err := f.s.Visible(context.Background(), "u_fixture", int(^uint(0)>>1))
+	before, err := f.s.Visible(context.Background(), "u_fixture", "", int(^uint(0)>>1))
 	must(t, err)
 	apex, set, err := f.s.Apex(context.Background())
 	must(t, err)
@@ -1000,7 +1000,7 @@ func TestCachedAnswersPreserveEntireTreeAndCatalog(t *testing.T) {
 	for _, method := range []string{"POST", "GET", "HEAD"} {
 		f.answer(f.req(method, "/hello", ""), true)
 	}
-	after, err := f.s.Visible(context.Background(), "u_fixture", int(^uint(0)>>1))
+	after, err := f.s.Visible(context.Background(), "u_fixture", "", int(^uint(0)>>1))
 	must(t, err)
 	afterApex, afterSet, err := f.s.Apex(context.Background())
 	must(t, err)

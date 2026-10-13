@@ -39,7 +39,8 @@ type LandingData struct {
 	Banner   page.Banner
 	SitesURL string
 	Sites    []SiteRow
-	Next     bool
+	Page     string
+	Next     string
 }
 
 // SiteRow exposes only the site's public presentation fields.
@@ -91,9 +92,19 @@ func Handler(cfg Config) http.Handler {
 		}
 		var rows []SiteRow
 		var base string
-		var next bool
+		var next string
+		var current string
 		if r.URL.Path == "/" {
-			xs, err := cfg.Store.Visible(r.Context(), caller.UserID, paging.DefaultLimit+1)
+			current = r.URL.Query().Get("page")
+			var after string
+			if current != "" {
+				if err := (paging.Token{Tool: "sites"}).Decode(current, &after); err != nil {
+					w.Header().Set("Cache-Control", "no-cache")
+					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(page.User{})})
+					return
+				}
+			}
+			xs, err := cfg.Store.Visible(r.Context(), caller.UserID, after, paging.DefaultLimit+1)
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -102,9 +113,9 @@ func Handler(cfg Config) http.Handler {
 				}
 				return
 			}
-			next = len(xs) > paging.DefaultLimit
-			if next {
+			if len(xs) > paging.DefaultLimit {
 				xs = xs[:paging.DefaultLimit]
+				next = (paging.Token{Tool: "sites"}).Encode(xs[len(xs)-1].Name)
 			}
 			base = urls.SitesURL(r, cfg.ServicesPath)
 			rows = make([]SiteRow, 0, len(xs))
@@ -124,6 +135,6 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		banner.Trail = nil
-		cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: banner, SitesURL: base, Sites: rows, Next: next})
+		cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: banner, SitesURL: base, Sites: rows, Page: current, Next: next})
 	})
 }

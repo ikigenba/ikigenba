@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/sites/internal/pages"
 	"github.com/ikigenba/ikigenba/sites/internal/serving"
@@ -122,7 +123,7 @@ func TestToolRegistration(t *testing.T) {
 	}
 }
 
-// R-XQFX-1YI5 R-XMS7-WNA2
+// R-YG7J-8UCK R-XMS7-WNA2
 func TestCatalogRefusalAndRecovery(t *testing.T) {
 	f := fresh(t)
 	f.add(t, "private", "private")
@@ -131,9 +132,9 @@ func TestCatalogRefusalAndRecovery(t *testing.T) {
 	f.db.SetFailing(true)
 	for _, host := range []string{"sites", "ikigenba.dev"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE", "OPTIONS", "CUSTOM"} {
-			for _, path := range []string{"/", "/blog", "/blog/", "/private/", "/mcp", "/about"} {
+			for _, path := range []string{"/", "/?page=&page=bogus", "/?page=" + (paging.Token{Tool: "sites"}).Encode("between-sites"), "/blog", "/blog/", "/private/", "/mcp", "/about"} {
 				for _, user := range []string{"", "user"} {
-					if host == "sites" && (path == "/mcp" || path == "/about" || method != "GET" && method != "HEAD" || path == "/" && user == "") {
+					if host == "sites" && (path == "/mcp" || path == "/about" || method != "GET" && method != "HEAD" || strings.SplitN(path, "?", 2)[0] == "/" && user == "") {
 						continue
 					}
 					r := f.get(t, method, path, host, user, nil)
@@ -142,6 +143,11 @@ func TestCatalogRefusalAndRecovery(t *testing.T) {
 					}
 				}
 			}
+		}
+	}
+	for _, method := range []string{"GET", "HEAD"} {
+		if r := f.get(t, method, "/?page=bogus", "sites", "user", nil); r.Code != http.StatusNotFound || r.Header().Get("Cache-Control") != "no-cache" || r.Header().Get("ETag") != "" || r.Header().Get("Location") != "" {
+			t.Fatalf("invalid token during catalog failure: %d %v", r.Code, r.Header())
 		}
 	}
 	if r := f.get(t, "GET", "/about", "sites", "user", nil); r.Code != 200 || r.Body.String() != baseline.Body.String() || !reflect.DeepEqual(r.Header(), baseline.Header()) {

@@ -1,10 +1,12 @@
 package store_test
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/json"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -16,7 +18,7 @@ import (
 )
 
 func TestListWindows(t *testing.T) {
-	// R-4K8H-0X5P R-4GKR-VLXM
+	// R-4K8H-0X5P
 	s := open(t, store.Config{})
 	var records []store.Site
 	for _, name := range []string{"aa", "a1", "a-b", "z"} {
@@ -47,10 +49,10 @@ func TestListWindows(t *testing.T) {
 }
 
 func TestVisibleWindows(t *testing.T) {
-	// R-CX0H-I4CR R-CY8D-VW3G
+	// R-CX0H-I4CR R-YINC-0DTY
 	s := open(t, store.Config{})
 	var rows []store.Site
-	for i, name := range []string{"a-b", "a1", "aa", "b", "c", "d", "e", "f"} {
+	for i, name := range []string{"e", "aa", "f", "a-b", "c", "a1", "d", "b"} {
 		d := draft(name)
 		if i%2 != 0 {
 			d.Owner = "bob"
@@ -61,18 +63,21 @@ func TestVisibleWindows(t *testing.T) {
 		}
 		rows = append(rows, create(t, s, d))
 	}
+	slices.SortFunc(rows, func(a, b store.Site) int { return cmp.Compare(a.Name, b.Name) })
 	for _, user := range []string{"alice", "bob", "", "nobody"} {
-		want := []store.Site{}
-		for _, x := range rows {
-			if x.Listed || x.Owner == user {
-				want = append(want, x)
+		for _, after := range []string{"", "-", "a-b", "a0", "a1", "aa", "b", "c", "d", "e", "f", "z", string([]byte{255}), "a' OR 1=1 --"} {
+			want := []store.Site{}
+			for _, x := range rows {
+				if (x.Listed || x.Owner == user) && x.Name > after {
+					want = append(want, x)
+				}
 			}
-		}
-		for _, n := range []int{-2, 0, 1, 2, len(want), len(want) + 1} {
-			end := min(max(n, 0), len(want))
-			got, err := s.Visible(ctx, user, n)
-			equal(t, err, nil)
-			equal(t, got, want[:end])
+			for _, n := range []int{-2, 0, 1, 2, len(want), len(want) + 1} {
+				end := min(max(n, 0), len(want))
+				got, err := s.Visible(ctx, user, after, n)
+				equal(t, err, nil)
+				equal(t, got, want[:end])
+			}
 		}
 	}
 }
@@ -125,7 +130,7 @@ func TestListedBackfill(t *testing.T) {
 }
 
 func TestSecondListedBackfill(t *testing.T) {
-	// R-D0O6-NFKU R-CX0H-I4CR R-CY8D-VW3G
+	// R-D0O6-NFKU R-CX0H-I4CR R-YINC-0DTY
 	previous := fstest.MapFS{}
 	for _, name := range []string{"0001_catalog.sql", "0002_listed.sql"} {
 		contents, err := fs.ReadFile(sites.Migrations(), name)
@@ -198,7 +203,7 @@ func TestSecondListedBackfill(t *testing.T) {
 				want = append(want, r.site)
 			}
 		}
-		got, err := s.Visible(ctx, user, len(rows)+1)
+		got, err := s.Visible(ctx, user, "", len(rows)+1)
 		equal(t, err, nil)
 		equal(t, got, want)
 	}
@@ -259,7 +264,7 @@ func TestStoredListedAndPayload(t *testing.T) {
 }
 
 func TestColumnListingAndPayloadRecord(t *testing.T) {
-	// R-CZGA-9NU5 R-4NW6-68DS R-V51S-AZ1A
+	// R-YJV8-E5KN R-4NW6-68DS R-V51S-AZ1A
 	for _, listed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unlisted", true: "listed"}[listed], func(t *testing.T) {
 			s, d := openAt(t, filepath.Join(t.TempDir(), "sites.db"), store.Config{})
@@ -288,7 +293,7 @@ func TestColumnListingAndPayloadRecord(t *testing.T) {
 			equal(t, err, nil)
 			equal(t, rows, []store.Site{x})
 			for _, user := range []string{x.Owner, "other"} {
-				rows, err = s.Visible(ctx, user, 8)
+				rows, err = s.Visible(ctx, user, "", 8)
 				equal(t, err, nil)
 				want := []store.Site{}
 				if !listed || user == x.Owner {
@@ -337,13 +342,13 @@ func TestReadsDecodeOnlyTheirWindow(t *testing.T) {
 	rows, err := s.List(ctx, x.Owner, "", 1)
 	equal(t, err, nil)
 	equal(t, rows, []store.Site{x})
-	rows, err = s.Visible(ctx, "other", 1)
+	rows, err = s.Visible(ctx, "other", "", 1)
 	equal(t, err, nil)
 	equal(t, rows, []store.Site{x})
 }
 
 func TestVisibleDecodesOnlyVisibleWindow(t *testing.T) {
-	// R-CX0H-I4CR R-CY8D-VW3G
+	// R-CX0H-I4CR R-YINC-0DTY
 	s, d := openAt(t, filepath.Join(t.TempDir(), "sites.db"), store.Config{})
 	x := create(t, s, draft("a"))
 	err := d.Write(ctx, func(tx *sql.Tx) error {
@@ -361,7 +366,34 @@ func TestVisibleDecodesOnlyVisibleWindow(t *testing.T) {
 		if n == 1 {
 			want = append(want, x)
 		}
-		got, err := s.Visible(ctx, "other", n)
+		got, err := s.Visible(ctx, "other", "", n)
+		equal(t, err, nil)
+		equal(t, got, want)
+	}
+}
+
+func TestVisibleDecodesOnlyLaterWindow(t *testing.T) {
+	// R-CX0H-I4CR R-YINC-0DTY
+	s, d := openAt(t, filepath.Join(t.TempDir(), "sites.db"), store.Config{})
+	x := create(t, s, draft("m"))
+	err := d.Write(ctx, func(tx *sql.Tx) error {
+		for _, row := range []struct {
+			name, owner string
+			listed      bool
+		}{{"a", "bob", true}, {"b", "alice", false}, {"z", "bob", true}} {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload,listed) VALUES(?,?,?,?,?,?)", row.name, row.name, row.name, row.owner, "invalid-json", row.listed); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	equal(t, err, nil)
+	for _, n := range []int{-1, 0, 1} {
+		want := []store.Site{}
+		if n == 1 {
+			want = append(want, x)
+		}
+		got, err := s.Visible(ctx, "alice", "c", n)
 		equal(t, err, nil)
 		equal(t, got, want)
 	}

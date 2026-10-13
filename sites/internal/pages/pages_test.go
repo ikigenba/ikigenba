@@ -124,7 +124,7 @@ func config(t *testing.T, s *store.Store) pages.Config {
 	return pages.Config{Banner: banner, Pages: load(t), Store: s}
 }
 
-// R-CP7E-TIAG R-CQFB-7A15 R-4RJV-BJLV R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
+// R-CP7E-TIAG R-CQFB-7A15 R-YBBX-PRDS R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
 // R-D06I-9FYP R-X3R9-INHK R-X4Z5-WF89 R-X7EY-NYPN R-X8MV-1QGC
 // R-X9UR-FI71 R-XB2N-T9XQ R-XCAK-71OF
 func TestTemplateSetAndWrite(t *testing.T) {
@@ -138,8 +138,8 @@ func TestTemplateSetAndWrite(t *testing.T) {
 		name string
 		data any
 	}{
-		{"landing", pages.LandingData{b, "https://example.test/<\"&", []pages.SiteRow{row}, true}},
-		{"landing", pages.LandingData{b, "https://example.test/", nil, false}},
+		{"landing", pages.LandingData{b, "https://example.test/<\"&", []pages.SiteRow{row}, "current<&", "next<&"}},
+		{"landing", pages.LandingData{b, "https://example.test/", nil, "", ""}},
 		{"about", pages.AboutData{b, "description<\"&"}},
 		{"tools", pages.ToolsData{b, []pages.Tool{{"tool<\"&", "description<\"&"}, {"second-tool", "second description"}}}},
 		{"tools", pages.ToolsData{b, nil}},
@@ -182,8 +182,8 @@ func TestTemplateSetAndWrite(t *testing.T) {
 	}
 }
 
-// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-6F6E-HD12 R-XEQC-YL5T R-XFY9-CCWI
-// R-XYS0-IJJL R-DCDI-35DN R-DJOW-DRTT
+// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-YCJU-3J4H R-XEQC-YL5T R-XFY9-CCWI
+// R-YDRQ-HAV6 R-DCDI-35DN R-DJOW-DRTT
 func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	s := catalog(t)
 	fixtureSites(t, s)
@@ -219,7 +219,7 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 						b.Trail = nil
 						name = "landing"
 						base := urls.SitesURL(r, servicesPath)
-						xs, err := s.Visible(r.Context(), user, paging.DefaultLimit+1)
+						xs, err := s.Visible(r.Context(), user, "", paging.DefaultLimit+1)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -254,8 +254,8 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	}
 }
 
-// R-6F6E-HD12 R-XYS0-IJJL
-func TestLandingFirstPage(t *testing.T) {
+// R-Y8W4-Y7WE R-YA41-BZN3 R-YCJU-3J4H R-YDRQ-HAV6
+func TestLandingWindows(t *testing.T) {
 	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			s := catalog(t)
@@ -287,22 +287,75 @@ func TestLandingFirstPage(t *testing.T) {
 			slices.Reverse(visible)
 			cfg := config(t, s)
 			h := identity.Optional(pages.Handler(cfg))
-			for _, target := range []string{"/", "/?page=2&limit=1"} {
-				r := request("GET", target, "alice", "alice@example.test")
-				base := urls.SitesURL(r, cfg.ServicesPath)
-				rows := make([]pages.SiteRow, 0, min(count, paging.DefaultLimit))
-				for _, x := range visible[:min(count, paging.DefaultLimit)] {
-					rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice"})
-				}
-				b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
-				b.Trail = nil
-				data := pages.LandingData{Banner: b, SitesURL: base, Sites: rows, Next: count > paging.DefaultLimit}
-				w := answer(h, r)
-				if w.Code != http.StatusOK || !reflect.DeepEqual(w.Header()["Content-Type"], []string{"text/html; charset=utf-8"}) || w.Body.String() != execute(t, templateSet(t), "landing", data) {
-					t.Fatalf("landing with %d visible sites at %s differs from first-page template", count, target)
+			token := paging.Token{Tool: "sites"}
+			positions := []string{"", token.Encode(""), token.Encode("site-000000"), token.Encode("site-000000-extra"), token.Encode("zz-after-all")}
+			if count > paging.DefaultLimit {
+				positions = append(positions, token.Encode(visible[paging.DefaultLimit-1].Name))
+			}
+			for _, current := range positions {
+				for _, suffix := range []string{"", "&limit=1&unrelated=ignored&page=bogus"} {
+					r := request("GET", "/?page="+current+suffix, "alice", "alice@example.test")
+					var after string
+					if current != "" {
+						if err := token.Decode(current, &after); err != nil {
+							t.Fatal(err)
+						}
+					}
+					remaining := slices.DeleteFunc(slices.Clone(visible), func(x store.Site) bool { return x.Name <= after })
+					window := remaining[:min(len(remaining), paging.DefaultLimit)]
+					next := ""
+					if len(remaining) > paging.DefaultLimit {
+						next = token.Encode(window[len(window)-1].Name)
+					}
+					base := urls.SitesURL(r, cfg.ServicesPath)
+					rows := make([]pages.SiteRow, 0, len(window))
+					for _, x := range window {
+						rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice"})
+					}
+					b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
+					b.Trail = nil
+					data := pages.LandingData{Banner: b, SitesURL: base, Sites: rows, Page: current, Next: next}
+					w := answer(h, r)
+					if w.Code != http.StatusOK || !reflect.DeepEqual(w.Header()["Content-Type"], []string{"text/html; charset=utf-8"}) || w.Body.String() != execute(t, templateSet(t), "landing", data) {
+						t.Fatalf("landing with %d visible sites at %s differs from window template", count, r.URL)
+					}
 				}
 			}
 		})
+	}
+}
+
+// R-Y8W4-Y7WE R-YEZM-V2LV
+func TestLandingUndecodablePage(t *testing.T) {
+	s, handle := catalogHandle(t)
+	cfg := config(t, s)
+	var users []page.User
+	cfg.Banner = func(u page.User) page.Banner { users = append(users, u); return banner(u) }
+	h := identity.Optional(pages.Handler(cfg))
+	foreign := (paging.Token{Tool: "list"}).Encode("site-position")
+	var decoded string
+	if err := (paging.Token{Tool: "sites"}).Decode(foreign, &decoded); err == nil {
+		t.Fatal("fixture must be rejected under the landing token binding")
+	}
+	wrongShape := (paging.Token{Tool: "sites"}).Encode(int64(123))
+	for _, failing := range []bool{false, true} {
+		handle.SetFailing(failing)
+		for _, current := range []string{"bogus", foreign, wrongShape} {
+			for _, method := range []string{"GET", "HEAD"} {
+				r := request(method, "/?ignored=x&page="+current+"&page=", "alice", "ignored@example.test")
+				users = nil
+				got := answer(h, r)
+				want := httptest.NewRecorder()
+				want.Header().Set("Cache-Control", "no-cache")
+				cfg.Pages.Write(want, r, http.StatusNotFound, "notfound", pages.NoticeData{Banner: banner(page.User{})})
+				if got.Code != want.Code || !reflect.DeepEqual(got.Header(), want.Header()) || got.Body.String() != want.Body.String() {
+					t.Fatalf("invalid page %q failing=%v method=%s: status %d headers %v", current, failing, method, got.Code, got.Header())
+				}
+				if !reflect.DeepEqual(users, []page.User{{}}) {
+					t.Fatalf("notice banner users: %#v", users)
+				}
+			}
+		}
 	}
 }
 
@@ -313,7 +366,7 @@ func TestMethodsGuestsAndFailingCatalog(t *testing.T) {
 	cfg := config(t, s)
 	cfg.Banner = func(u page.User) page.Banner { calls++; return banner(u) }
 	h := identity.Optional(pages.Handler(cfg))
-	for _, target := range []string{"/?from=launcher", "/about?from=launcher", "/tools?from=launcher"} {
+	for _, target := range []string{"/?from=launcher", "/?page=bogus", "/about?from=launcher", "/tools?from=launcher"} {
 		for _, user := range []string{"", "alice"} {
 			get := answer(h, request("GET", target, user, "present@example.test"))
 			head := answer(h, request("HEAD", target, user, "present@example.test"))
@@ -324,7 +377,7 @@ func TestMethodsGuestsAndFailingCatalog(t *testing.T) {
 	}
 	var before []*httptest.ResponseRecorder
 	var rs []*http.Request
-	for _, target := range []string{"/?from=launcher", "/about?from=launcher", "/tools?from=launcher"} {
+	for _, target := range []string{"/?from=launcher", "/?page=bogus", "/about?from=launcher", "/tools?from=launcher"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CUSTOM"} {
 			for _, user := range []string{"", "alice"} {
 				if target != "/tools?from=launcher" && user != "" && (method == "GET" || method == "HEAD") {

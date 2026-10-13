@@ -207,13 +207,13 @@ func (s *Store) List(ctx context.Context, owner, after string, n int) ([]Site, e
 	})
 }
 
-// Visible lists at most n listed sites and the user's own unlisted sites.
-func (s *Store) Visible(ctx context.Context, user string, n int) ([]Site, error) {
+// Visible lists a bounded window of listed sites and the user's own unlisted sites.
+func (s *Store) Visible(ctx context.Context, user, after string, n int) ([]Site, error) {
 	return transact(ctx, s.db.Read, func(tx *sql.Tx) ([]Site, error) {
 		if n < 1 {
 			n = 0
 		}
-		rows, err := tx.QueryContext(ctx, "SELECT name, payload FROM sites WHERE listed=1 UNION ALL SELECT name, payload FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 ORDER BY name LIMIT ?", user, n)
+		rows, err := tx.QueryContext(ctx, "SELECT name, payload FROM sites WHERE listed=1 AND name > ? UNION ALL SELECT name, payload FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 AND name > ? ORDER BY name LIMIT ?", after, user, after, n)
 		if err != nil {
 			return nil, err
 		}
