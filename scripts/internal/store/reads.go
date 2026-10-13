@@ -142,14 +142,14 @@ func (c *catalog) load(ctx context.Context) error {
 		c.subscriptions[sc.ID] = sc.Subscriptions
 		sc.Last = nil
 		sc.Subscriptions = nil
-		c.data.Scripts[sc.ID] = sc
+		c.scripts[sc.ID] = sc
 	}
 	rr, err := c.readRunsSQL(ctx, "SELECT "+runColumns+" FROM runs")
 	if err != nil {
 		return err
 	}
 	for _, r := range rr {
-		c.data.Runs[r.ID] = r
+		c.records[r.ID] = r
 	}
 	return nil
 }

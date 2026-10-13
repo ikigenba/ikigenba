@@ -2,11 +2,9 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/gob"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -94,10 +92,6 @@ type Ending struct {
 	Truncated                bool
 	Reason                   string
 }
-type content struct {
-	Scripts map[string]Script
-	Runs    map[string]Run
-}
 
 // Store provides catalog operations over a caller-owned handle.
 type Store struct {
@@ -109,7 +103,8 @@ type Store struct {
 type catalog struct {
 	tx            *sql.Tx
 	cfg           Config
-	data          content
+	scripts       map[string]Script
+	records       map[string]Run
 	subscriptions map[string][]Subscription
 }
 
@@ -203,7 +198,7 @@ func (s *Store) transaction(ctx context.Context, write bool, fn func(*catalog) e
 	}
 	var operationErr error
 	err := call(ctx, func(tx *sql.Tx) error {
-		c := &catalog{tx: tx, cfg: s.cfg, data: content{Scripts: map[string]Script{}, Runs: map[string]Run{}}}
+		c := &catalog{tx: tx, cfg: s.cfg, scripts: map[string]Script{}, records: map[string]Run{}}
 		if write {
 			if err := c.load(ctx); err != nil {
 				return err
@@ -224,34 +219,27 @@ func (s *Store) transaction(ctx context.Context, write bool, fn func(*catalog) e
 	return errCatalog
 }
 
-func (s *catalog) save(ctx context.Context, c content) error {
-	var encoded bytes.Buffer
-	if err := gob.NewEncoder(&encoded).Encode(c); err != nil {
+func (s *catalog) save(ctx context.Context, scripts map[string]Script, runs map[string]Run) error {
+	if err := s.persist(ctx, scripts, runs); err != nil {
 		return err
 	}
-	_, err := s.tx.ExecContext(ctx, "INSERT INTO catalog(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", encoded.Bytes())
-	if err != nil {
-		return err
-	}
-	if err = s.persist(ctx, c); err != nil {
-		return err
-	}
-	s.data = c
+	s.scripts, s.records = scripts, runs
 	return nil
 }
-func (s *catalog) copy() content {
-	c := content{Scripts: map[string]Script{}, Runs: map[string]Run{}}
-	for id, r := range s.data.Scripts {
-		c.Scripts[id] = r
+func (s *catalog) copy() (map[string]Script, map[string]Run) {
+	scripts := map[string]Script{}
+	runs := map[string]Run{}
+	for id, r := range s.scripts {
+		scripts[id] = r
 	}
-	for id, r := range s.data.Runs {
-		c.Runs[id] = r
+	for id, r := range s.records {
+		runs[id] = r
 	}
-	return c
+	return scripts, runs
 }
 func (s *catalog) runs(script string) []Run {
 	out := []Run{}
-	for _, r := range s.data.Runs {
+	for _, r := range s.records {
 		if r.Script == script {
 			out = append(out, r)
 		}
@@ -276,7 +264,7 @@ func (s *catalog) script(sc Script) Script {
 }
 
 func (s *catalog) taken(name string) bool {
-	for _, sc := range s.data.Scripts {
+	for _, sc := range s.scripts {
 		if sc.Name == name {
 			return true
 		}
@@ -301,13 +289,13 @@ func (s *catalog) create(ctx context.Context, d Draft) (Script, error) {
 		if err != nil {
 			return Script{}, errors.New(err.Error())
 		}
-		if _, ok := s.data.Scripts[id]; ok {
+		if _, ok := s.scripts[id]; ok {
 			continue
 		}
 		sc := Script{ID: id, Name: d.Name, Owner: d.Owner, Repo: d.Repo, Ref: d.Ref, Created: created}
-		c := s.copy()
-		c.Scripts[id] = sc
-		if err = s.save(ctx, c); err != nil {
+		scripts, runs := s.copy()
+		scripts[id] = sc
+		if err = s.save(ctx, scripts, runs); err != nil {
 			return Script{}, err
 		}
 		return s.script(sc), nil
@@ -320,15 +308,15 @@ func (s *catalog) setRef(ctx context.Context, id, ref string) (Script, bool, err
 	if ref == "" {
 		return Script{}, false, errors.New("empty ref")
 	}
-	sc, ok := s.data.Scripts[id]
+	sc, ok := s.scripts[id]
 	if !ok {
 		return Script{}, false, ErrNotFound
 	}
 	changed := sc.Ref != ref
 	sc.Ref = ref
-	c := s.copy()
-	c.Scripts[id] = sc
-	if err := s.save(ctx, c); err != nil {
+	scripts, runs := s.copy()
+	scripts[id] = sc
+	if err := s.save(ctx, scripts, runs); err != nil {
 		return Script{}, false, err
 	}
 	return s.script(sc), changed, nil
@@ -336,14 +324,14 @@ func (s *catalog) setRef(ctx context.Context, id, ref string) (Script, bool, err
 
 // Delete removes a script and all of its runs atomically.
 func (s *catalog) delete(ctx context.Context, id string) error {
-	if _, ok := s.data.Scripts[id]; !ok {
+	if _, ok := s.scripts[id]; !ok {
 		return ErrNotFound
 	}
-	c := s.copy()
-	delete(c.Scripts, id)
-	for key, r := range c.Runs {
+	scripts, runs := s.copy()
+	delete(scripts, id)
+	for key, r := range runs {
 		if r.Script == id {
-			delete(c.Runs, key)
+			delete(runs, key)
 		}
 	}
 	for _, query := range []string{"DELETE FROM subscriptions WHERE script=?", "DELETE FROM event_runs WHERE script=?"} {
@@ -351,7 +339,7 @@ func (s *catalog) delete(ctx context.Context, id string) error {
 			return err
 		}
 	}
-	return s.save(ctx, c)
+	return s.save(ctx, scripts, runs)
 }
 func validReason(r string) bool {
 	switch r {
@@ -378,11 +366,11 @@ func validEnding(e Ending) bool {
 
 // AddRun records a newly running or failed run.
 func (s *catalog) addRun(ctx context.Context, r Run) (Run, error) {
-	_, duplicate := s.data.Runs[r.ID]
+	_, duplicate := s.records[r.ID]
 	if !validRun(r) || duplicate {
 		return Run{}, errors.New("invalid run")
 	}
-	if _, ok := s.data.Scripts[r.Script]; !ok {
+	if _, ok := s.scripts[r.Script]; !ok {
 		return Run{}, ErrNotFound
 	}
 	if r.Trigger == TriggerEvent {
@@ -399,9 +387,9 @@ func (s *catalog) addRun(ctx context.Context, r Run) (Run, error) {
 	}
 	r.Started = normalize(r.Started)
 	r.Finished = normalize(r.Finished)
-	c := s.copy()
-	c.Runs[r.ID] = r
-	if err := s.save(ctx, c); err != nil {
+	scripts, runs := s.copy()
+	runs[r.ID] = r
+	if err := s.save(ctx, scripts, runs); err != nil {
 		return Run{}, err
 	}
 	return r, nil
@@ -412,7 +400,7 @@ func (s *catalog) finishRun(ctx context.Context, id string, e Ending) (Run, erro
 	if !validEnding(e) {
 		return Run{}, errors.New("invalid ending")
 	}
-	r, ok := s.data.Runs[id]
+	r, ok := s.records[id]
 	if !ok {
 		return Run{}, ErrNotFound
 	}
@@ -432,9 +420,9 @@ func (s *catalog) finishRun(ctx context.Context, id string, e Ending) (Run, erro
 	r.StderrBytes = e.StderrBytes
 	r.Truncated = e.Truncated
 	r.Reason = e.Reason
-	c := s.copy()
-	c.Runs[id] = r
-	if err := s.save(ctx, c); err != nil {
+	scripts, runs := s.copy()
+	runs[id] = r
+	if err := s.save(ctx, scripts, runs); err != nil {
 		return Run{}, err
 	}
 	return r, nil
@@ -442,12 +430,12 @@ func (s *catalog) finishRun(ctx context.Context, id string, e Ending) (Run, erro
 
 // DeleteRun removes a single run record.
 func (s *catalog) deleteRun(ctx context.Context, id string) error {
-	if _, ok := s.data.Runs[id]; !ok {
+	if _, ok := s.records[id]; !ok {
 		return ErrNotFound
 	}
-	c := s.copy()
-	delete(c.Runs, id)
-	return s.save(ctx, c)
+	scripts, runs := s.copy()
+	delete(runs, id)
+	return s.save(ctx, scripts, runs)
 }
 
 // Find performs a catalog operation through the supplied handle.
@@ -642,7 +630,7 @@ func (s *Store) SetRef(ctx context.Context, id, ref string) (Script, bool, error
 func (s *Store) StartRun(ctx context.Context, id string) (Run, error) {
 	var out Run
 	err := s.transaction(ctx, true, func(c *catalog) error {
-		r, ok := c.data.Runs[id]
+		r, ok := c.records[id]
 		if !ok {
 			return ErrNotFound
 		}
@@ -650,9 +638,9 @@ func (s *Store) StartRun(ctx context.Context, id string) (Run, error) {
 			return ErrEnded
 		}
 		r.Status = StatusRunning
-		data := c.copy()
-		data.Runs[id] = r
-		if err := c.save(ctx, data); err != nil {
+		scripts, runs := c.copy()
+		runs[id] = r
+		if err := c.save(ctx, scripts, runs); err != nil {
 			return err
 		}
 		out = r

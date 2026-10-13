@@ -123,34 +123,28 @@ func assertMirror(t *testing.T, s *store.Store) {
 	}))
 }
 
-// R-EE5D-1U9Q R-EFD9-FM0F
+// R-EE5D-1U9Q
 func TestTableMirrorEveryWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "scripts.db")
 	s := open(t, path)
 	assertMirror(t, s)
 	sc := create(t, s, "alice", "alpha")
 	assertMirror(t, s)
-	assertRecord(t, s)
 	create(t, s, "bob", "beta")
 	assertMirror(t, s)
-	assertRecord(t, s)
 	_, _, err := s.SetRef(ctx, sc.ID, "other")
 	must(t, err)
 	assertMirror(t, s)
-	assertRecord(t, s)
 	r := run(sc, 1)
 	r.Status = store.StatusQueued
 	r = add(t, s, r)
 	assertMirror(t, s)
-	assertRecord(t, s)
 	_, err = s.StartRun(ctx, r.ID)
 	must(t, err)
 	assertMirror(t, s)
-	assertRecord(t, s)
 	_, err = s.FinishRun(ctx, r.ID, store.Ending{Status: store.StatusExited, ExitCode: 17, Finished: stamp.Add(time.Minute), StdoutBytes: 12, StderrBytes: 7, Truncated: true})
 	must(t, err)
 	assertMirror(t, s)
-	assertRecord(t, s)
 	r = run(sc, 2)
 	r.Status = store.StatusFailed
 	r.SHA = ""
@@ -158,13 +152,11 @@ func TestTableMirrorEveryWrite(t *testing.T) {
 	r.Finished = stamp.Add(time.Minute)
 	add(t, s, r)
 	assertMirror(t, s)
-	assertRecord(t, s)
 	r = run(sc, 3)
 	r.Trigger = store.TriggerEvent
 	r.Event = "delivery-one"
 	add(t, s, r)
 	assertMirror(t, s)
-	assertRecord(t, s)
 	before := tableRows(t, handle(s), "scripts")
 	beforeRuns := tableRows(t, handle(s), "runs")
 	_, err = s.Subscribe(ctx, sc.ID, "cron.*.fired")
@@ -177,28 +169,24 @@ func TestTableMirrorEveryWrite(t *testing.T) {
 	equal(t, tableRows(t, handle(s), "runs"), beforeRuns)
 	must(t, s.DeleteRun(ctx, r.ID))
 	assertMirror(t, s)
-	assertRecord(t, s)
 	delivered, err := s.Delivered(ctx, sc.ID, r.Event)
 	must(t, err)
 	equal(t, delivered, true)
 	assertMirror(t, s)
-	assertRecord(t, s)
 	for i, status := range []string{store.StatusKilled, store.StatusTimedOut} {
 		r := add(t, s, run(sc, 10+i))
 		_, err := s.FinishRun(ctx, r.ID, store.Ending{Status: status, Finished: stamp.Add(time.Minute)})
 		must(t, err)
 		assertMirror(t, s)
-		assertRecord(t, s)
 	}
 	other := open(t, path)
 	assertMirror(t, other)
 	must(t, s.Delete(ctx, sc.ID))
 	assertMirror(t, s)
-	assertRecord(t, s)
 	assertMirror(t, other)
 }
 
-// R-HUME-X6YO
+// R-X16O-9NPO
 func TestMirrorUnchangedOnErrors(t *testing.T) {
 	s := open(t, "")
 	sc := create(t, s, "alice", "alpha")
@@ -206,10 +194,6 @@ func TestMirrorUnchangedOnErrors(t *testing.T) {
 	// An inconsistent mirror must remain byte-for-value unchanged on refusals.
 	must(t, handle(s).Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, "UPDATE scripts SET ref='stale'; DELETE FROM runs")
-		return err
-	}))
-	must(t, handle(s).Write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "UPDATE catalog SET value=?", []byte("stale stored form"))
 		return err
 	}))
 	before := tableRows(t, handle(s), "scripts")
@@ -226,11 +210,6 @@ func TestMirrorUnchangedOnErrors(t *testing.T) {
 		func(c context.Context) error { _, err := s.Unsubscribe(c, sc.ID, "cron.*.fired"); return err },
 	}
 	check := func() {
-		var got []byte
-		must(t, handle(s).Read(ctx, func(tx *sql.Tx) error {
-			return tx.QueryRowContext(ctx, "SELECT value FROM catalog WHERE id=1").Scan(&got)
-		}))
-		equal(t, got, []byte("stale stored form"))
 		equal(t, tableRows(t, handle(s), "scripts"), before)
 		equal(t, tableRows(t, handle(s), "runs"), beforeRuns)
 	}
@@ -259,7 +238,7 @@ func TestMirrorUnchangedOnErrors(t *testing.T) {
 	}
 	handle(s).SetFailing(false)
 	check()
-	// A refused table insert also rolls back the compatibility value write.
+	// A refused table insert changes neither table.
 	must(t, handle(s).Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, "CREATE TRIGGER refuse_mirror BEFORE INSERT ON scripts BEGIN SELECT RAISE(ABORT,'test refusal'); END")
 		return err

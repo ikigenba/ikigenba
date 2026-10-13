@@ -24,7 +24,7 @@ func (s *Store) subscription(ctx context.Context, id, event string, add bool) (S
 		if !ValidEvent(event) {
 			return errors.New("invalid event")
 		}
-		sc, ok := c.data.Scripts[id]
+		sc, ok := c.scripts[id]
 		if !ok {
 			return ErrNotFound
 		}

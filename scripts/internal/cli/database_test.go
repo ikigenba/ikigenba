@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
@@ -94,28 +95,31 @@ func TestDatabaseStatusResolvesEmptyDirAgainstWorkingDirectory(t *testing.T) {
 	}
 }
 
-// R-EK8U-YOZ7 R-ZV2S-V0UF R-I1XT-7TEU
+// R-AI7X-YOIR R-ZV2S-V0UF R-X4UD-EYXR
 func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 	for _, kind := range []string{"absent", "empty-state", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
+			mustCLI(t, os.MkdirAll(h.p.Dir, 0700))
+			mustCLI(t, os.WriteFile(filepath.Join(h.p.Dir, "keep"), []byte("unchanged"), 0600))
 			path := filepath.Join(h.p.Dir, "state", "scripts.db")
 			if kind == "empty-state" {
 				mustCLI(t, os.MkdirAll(filepath.Dir(path), 0700))
 			}
+			beforeCatalog := map[int64]string{}
 			if kind == "legacy" {
-				handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: h.p.Now})
+				handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: fstest.MapFS{}, Now: h.p.Now})
 				mustCLI(t, err)
-				catalog := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
-				_, err = catalog.Create(context.Background(), store.Draft{Owner: "owner", Name: "kept", Repo: "rep_0102030405060708", Ref: "main"})
-				mustCLI(t, err)
+				beforeCatalog[1] = "earlier stored bytes\x00\xff"
 				mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
-					for _, statement := range []string{"DROP TABLE schema_migrations", "DROP TABLE subscriptions", "DROP TABLE event_runs", "DROP TABLE scripts", "DROP TABLE runs"} {
-						if _, err := tx.Exec(statement); err != nil {
-							return err
-						}
+					if _, err := tx.Exec("CREATE TABLE catalog (id INTEGER PRIMARY KEY CHECK(id=1), value BLOB NOT NULL)"); err != nil {
+						return err
 					}
-					return nil
+					if _, err := tx.Exec("INSERT INTO catalog (id, value) VALUES (1, ?)", []byte(beforeCatalog[1])); err != nil {
+						return err
+					}
+					_, err := tx.Exec("DROP TABLE schema_migrations")
+					return err
 				}))
 				mustCLI(t, handle.Close())
 			}
@@ -125,11 +129,18 @@ func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 			mustCLI(t, handle.Close())
 			var expected bytes.Buffer
 			mustCLI(t, db.Status(context.Background(), db.Config{Path: oracle, Migrations: scripts.Migrations()}, &expected))
+			outside := outsideSnapshot(t, h.root, filepath.Join(h.p.Dir, "state"), h.p.Cgroup)
 			h.start()
 			var actual bytes.Buffer
 			mustCLI(t, db.Status(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations()}, &actual))
 			if actual.String() != expected.String() {
 				t.Fatalf("startup migrations %q; expected %q", actual.String(), expected.String())
+			}
+			if !reflect.DeepEqual(outside, outsideSnapshot(t, h.root, filepath.Join(h.p.Dir, "state"), h.p.Cgroup)) {
+				t.Fatal("startup changed files outside process directory")
+			}
+			if actual := startupCatalogRows(t, path, h.p.Now); !reflect.DeepEqual(actual, beforeCatalog) {
+				t.Fatalf("startup changed stored value: %v; want %v", actual, beforeCatalog)
 			}
 			entries, err := os.ReadDir(filepath.Join(h.p.Dir, "state"))
 			mustCLI(t, err)
@@ -412,7 +423,7 @@ func (l *startupListener) Accept() (net.Conn, error) {
 	return nil, errors.New("unexpected accept")
 }
 
-// R-I1XT-7TEU
+// R-X4UD-EYXR
 func TestStartupLeavesSettledRecordsAndFoldersUntouched(t *testing.T) {
 	h := newHarness(t)
 	script, records := seedCatalog(t, h)
@@ -424,17 +435,27 @@ func TestStartupLeavesSettledRecordsAndFoldersUntouched(t *testing.T) {
 	mustCLI(t, err)
 	beforeRecords, err := catalog.Runs(context.Background(), script.ID, "", "", 100)
 	mustCLI(t, err)
-	// The retired startup rebuild would erase the rows when the stored value is absent.
+	// Stale stored bytes must neither replace the tables nor be rewritten at start.
 	mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
-		_, err := tx.Exec("DELETE FROM catalog")
+		_, err := tx.Exec("INSERT OR REPLACE INTO catalog (id, value) VALUES (1, ?)", []byte("stale stored bytes\x00\xff"))
 		return err
 	}))
 	mustCLI(t, handle.Close())
 	beforeFiles := outsideSnapshot(t, filepath.Join(h.p.Dir, "state", "runs"))
+	inside := outsideSnapshot(t, h.p.Dir, path, path+"-journal", path+"-wal", path+"-shm")
 	outside := outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)
 	trace := filepath.Join(h.root, "startup-git-trace")
 	h.set("GIT_TRACE2_EVENT", trace)
 	h.start()
+	if actual := startupCatalogRows(t, path, h.p.Now); !reflect.DeepEqual(actual, map[int64]string{1: "stale stored bytes\x00\xff"}) {
+		t.Fatalf("startup changed stored value: %v", actual)
+	}
+	if !reflect.DeepEqual(beforeFiles, outsideSnapshot(t, filepath.Join(h.p.Dir, "state", "runs"))) || !reflect.DeepEqual(outside, outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)) {
+		t.Fatal("startup changed settled files")
+	}
+	if !reflect.DeepEqual(inside, outsideSnapshot(t, h.p.Dir, path, path+"-journal", path+"-wal", path+"-shm")) {
+		t.Fatal("startup changed other files in process directory")
+	}
 	for _, record := range beforeRecords {
 		result := h.call("result", map[string]any{"run": record.ID})
 		if result["status"] != record.Status || result["exit_code"] != float64(record.ExitCode) {
@@ -457,4 +478,29 @@ func TestStartupLeavesSettledRecordsAndFoldersUntouched(t *testing.T) {
 	if h.stdout.String() != "" || h.stderr.String() != "" {
 		t.Fatalf("startup streams %q %q", h.stdout.String(), h.stderr.String())
 	}
+}
+
+func startupCatalogRows(t *testing.T, path string, now func() time.Time) map[int64]string {
+	t.Helper()
+	handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: now})
+	mustCLI(t, err)
+	defer func() { _ = handle.Close() }()
+	result := map[int64]string{}
+	mustCLI(t, handle.Read(context.Background(), func(tx *sql.Tx) error {
+		rows, err := tx.Query("SELECT id, value FROM catalog")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id int64
+			var value []byte
+			if err := rows.Scan(&id, &value); err != nil {
+				return err
+			}
+			result[id] = string(value)
+		}
+		return rows.Err()
+	}))
+	return result
 }

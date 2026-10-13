@@ -5,23 +5,23 @@ import (
 	"time"
 )
 
-func (s *catalog) persist(ctx context.Context, c content) error {
-	for id := range s.data.Runs {
-		if _, ok := c.Runs[id]; !ok {
+func (s *catalog) persist(ctx context.Context, scripts map[string]Script, runs map[string]Run) error {
+	for id := range s.records {
+		if _, ok := runs[id]; !ok {
 			if _, err := s.tx.ExecContext(ctx, "DELETE FROM runs WHERE id=?", id); err != nil {
 				return err
 			}
 		}
 	}
-	for id := range s.data.Scripts {
-		if _, ok := c.Scripts[id]; !ok {
+	for id := range s.scripts {
+		if _, ok := scripts[id]; !ok {
 			if _, err := s.tx.ExecContext(ctx, "DELETE FROM scripts WHERE id=?", id); err != nil {
 				return err
 			}
 		}
 	}
-	for id, sc := range c.Scripts {
-		old, ok := s.data.Scripts[id]
+	for id, sc := range scripts {
+		old, ok := s.scripts[id]
 		if !ok {
 			if _, err := s.tx.ExecContext(ctx, "INSERT INTO scripts(id,name,owner,repo,ref,created) VALUES(?,?,?,?,?,?)", sc.ID, sc.Name, sc.Owner, sc.Repo, sc.Ref, sc.Created.UTC().Format(time.RFC3339)); err != nil {
 				return err
@@ -32,8 +32,8 @@ func (s *catalog) persist(ctx context.Context, c content) error {
 			}
 		}
 	}
-	for id, r := range c.Runs {
-		old, ok := s.data.Runs[id]
+	for id, r := range runs {
+		old, ok := s.records[id]
 		if ok && old == r {
 			continue
 		}

@@ -229,7 +229,7 @@ func TestStateFailures(t *testing.T) {
 	}
 }
 
-// R-ZV2S-V0UF R-I1XT-7TEU R-B63F-NUCG R-WNGS-KWCF R-HOSX-V79K R-L2WR-PRUX R-K58H-2BO4 R-H8Y8-W6MJ
+// R-ZV2S-V0UF R-X4UD-EYXR R-B63F-NUCG R-WNGS-KWCF R-HOSX-V79K R-L2WR-PRUX R-K58H-2BO4 R-H8Y8-W6MJ
 func TestReadyInitialStateAndLifecycle(t *testing.T) {
 	for _, servicesPath := range []string{"", "absent", "malformed"} {
 		t.Run(servicesPath, func(t *testing.T) {
@@ -702,7 +702,7 @@ func TestRecoveryCatalogFailureRefusesStartup(t *testing.T) {
 			once.Do(func() {
 				handle, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return h.now }})
 				mustCLI(t, e)
-				mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error { _, err := tx.Exec("DROP TABLE catalog"); return err }))
+				mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error { _, err := tx.Exec("DROP TABLE runs"); return err }))
 				mustCLI(t, handle.Close())
 			})
 		}

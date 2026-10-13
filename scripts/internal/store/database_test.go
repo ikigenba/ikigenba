@@ -3,7 +3,6 @@ package store_test
 import (
 	"bytes"
 	"database/sql"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -82,7 +81,7 @@ func TestNewStoreOverHandle(t *testing.T) {
 	equal(t, got, sc)
 }
 
-// R-EGL5-TDR4 R-EHT2-75HT R-EJ0Y-KX8I
+// R-ADCC-FLJZ R-AEK8-TDAO R-AFS5-751D
 func TestUpgradeBaselineCatalog(t *testing.T) {
 	for _, migrationCount := range []int{0, 1, 2} {
 		for _, records := range []bool{false, true} {
@@ -98,13 +97,7 @@ func TestUpgradeBaselineCatalog(t *testing.T) {
 				must(t, err)
 				sc := store.Script{ID: "scr_0000000000000001", Name: "alpha", Owner: "alice", Repo: "repo", Ref: "main", Created: stamp.UTC().Truncate(time.Second)}
 				r := run(sc, 1)
-				var encoded bytes.Buffer
-				if records {
-					must(t, gob.NewEncoder(&encoded).Encode(struct {
-						Scripts map[string]store.Script
-						Runs    map[string]store.Run
-					}{map[string]store.Script{sc.ID: sc}, map[string]store.Run{r.ID: r}}))
-				}
+				encoded := []byte{0, 255, 7, 128, 0}
 				must(t, legacy.Write(ctx, func(tx *sql.Tx) error {
 					if migrationCount == 0 {
 						if _, err := tx.ExecContext(ctx, "CREATE TABLE catalog (id INTEGER PRIMARY KEY CHECK(id=1),value BLOB NOT NULL); DROP TABLE schema_migrations"); err != nil {
@@ -114,7 +107,7 @@ func TestUpgradeBaselineCatalog(t *testing.T) {
 					if !records {
 						return nil
 					}
-					_, err := tx.ExecContext(ctx, "INSERT INTO catalog(id,value) VALUES(1,?)", encoded.Bytes())
+					_, err := tx.ExecContext(ctx, "INSERT INTO catalog(id,value) VALUES(1,?)", encoded)
 					return err
 				}))
 				must(t, legacy.Close())
@@ -141,7 +134,7 @@ func TestUpgradeBaselineCatalog(t *testing.T) {
 					err = tx.QueryRowContext(ctx, "SELECT value FROM catalog WHERE id=1").Scan(&got)
 					if records {
 						must(t, err)
-						equal(t, got, encoded.Bytes())
+						equal(t, got, encoded)
 					} else {
 						equal(t, errors.Is(err, sql.ErrNoRows), true)
 					}

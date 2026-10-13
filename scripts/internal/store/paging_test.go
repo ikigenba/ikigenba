@@ -1,9 +1,8 @@
 package store_test
 
 import (
-	"bytes"
 	"database/sql"
-	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -106,47 +105,7 @@ func TestWindowsAndCount(t *testing.T) {
 	equal(t, content(t, s), before)
 }
 
-// R-HDJT-KEKY R-EFD9-FM0F
-func assertRecord(t *testing.T, s *store.Store) {
-	t.Helper()
-	var encoded []byte
-	must(t, handle(s).Read(ctx, func(tx *sql.Tx) error {
-		return tx.QueryRowContext(ctx, "SELECT value FROM catalog WHERE id=1").Scan(&encoded)
-	}))
-	var stored struct {
-		Scripts map[string]store.Script
-		Runs    map[string]store.Run
-	}
-	must(t, gob.NewDecoder(bytes.NewReader(encoded)).Decode(&stored))
-	scripts, runs := 0, 0
-	for _, owner := range []string{"alice", "bob"} {
-		ss, err := s.List(ctx, owner, "", 10000)
-		must(t, err)
-		for _, sc := range ss {
-			scripts++
-			got, ok := stored.Scripts[sc.ID]
-			equal(t, ok, true)
-			equal(t, []string{got.ID, got.Name, got.Owner, got.Repo, got.Ref}, []string{sc.ID, sc.Name, sc.Owner, sc.Repo, sc.Ref})
-			equal(t, got.Created.Equal(sc.Created), true)
-			rr, err := s.Runs(ctx, sc.ID, "", "", 10000)
-			must(t, err)
-			for _, r := range rr {
-				runs++
-				got, ok := stored.Runs[r.ID]
-				equal(t, ok, true)
-				equal(t, got.Started.Equal(r.Started), true)
-				equal(t, got.Finished.Equal(r.Finished), true)
-				got.Started = r.Started
-				got.Finished = r.Finished
-				equal(t, got, r)
-			}
-		}
-	}
-	equal(t, len(stored.Scripts), scripts)
-	equal(t, len(stored.Runs), runs)
-}
-
-// R-EBPK-AASC R-EE5D-1U9Q R-EFD9-FM0F
+// R-WZYR-VVYZ R-EE5D-1U9Q
 func TestCatalogBlobDoesNotControlReadsOrWrites(t *testing.T) {
 	for _, replacement := range []bool{false, true} {
 		t.Run(fmt.Sprint(replacement), func(t *testing.T) {
@@ -179,14 +138,14 @@ func TestCatalogBlobDoesNotControlReadsOrWrites(t *testing.T) {
 						return err
 					}
 					phantom := store.Script{ID: "scr_ffffffffffffffff", Name: "phantom", Owner: "alice", Repo: "repo", Ref: "main", Created: stamp}
-					var encoded bytes.Buffer
-					if err := gob.NewEncoder(&encoded).Encode(struct {
+					encoded, err := json.Marshal(struct {
 						Scripts map[string]store.Script
 						Runs    map[string]store.Run
-					}{map[string]store.Script{phantom.ID: phantom}, map[string]store.Run{}}); err != nil {
+					}{map[string]store.Script{phantom.ID: phantom}, map[string]store.Run{}})
+					if err != nil {
 						return err
 					}
-					_, err := tx.ExecContext(ctx, "INSERT INTO catalog VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", encoded.Bytes())
+					_, err = tx.ExecContext(ctx, "INSERT INTO catalog VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", encoded)
 					return err
 				}))
 			}
@@ -251,28 +210,27 @@ func TestCatalogBlobDoesNotControlReadsOrWrites(t *testing.T) {
 			poison()
 			_, err = s.Create(ctx, store.Draft{Owner: "alice", Name: "phantom", Repo: "repo", Ref: "main"})
 			must(t, err)
-			assertRecord(t, s)
+			assertMirror(t, s)
 			poison()
 			_, _, err = s.SetRef(ctx, sc.ID, "other")
 			must(t, err)
-			assertRecord(t, s)
+			assertMirror(t, s)
 			poison()
 			newRun := add(t, s, run(other, 9))
-			assertRecord(t, s)
+			assertMirror(t, s)
 			poison()
 			_, err = s.StartRun(ctx, queued.ID)
 			must(t, err)
-			assertRecord(t, s)
+			assertMirror(t, s)
 			poison()
 			_, err = s.FinishRun(ctx, running.ID, store.Ending{Status: store.StatusExited, Finished: stamp.Add(time.Minute)})
 			must(t, err)
-			assertRecord(t, s)
+			assertMirror(t, s)
 			poison()
 			must(t, s.DeleteRun(ctx, newRun.ID))
-			assertRecord(t, s)
+			assertMirror(t, s)
 			poison()
 			must(t, s.Delete(ctx, sc.ID))
-			assertRecord(t, s)
 			assertMirror(t, s)
 			delivered, err = s.Delivered(ctx, sc.ID, event.Event)
 			must(t, err)
