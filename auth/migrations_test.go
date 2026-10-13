@@ -11,8 +11,8 @@ import (
 var _ func() fs.FS = auth.Migrations
 
 func TestEmbeddedMigrationsIgnoreWorkingDirectory(t *testing.T) {
-	// R-G55N-V09H
-	// R-G6DK-8S06
+	// R-90W4-ICU8
+	// R-9240-W4KX
 	files := auth.Migrations()
 	entries, err := fs.ReadDir(files, ".")
 	if err != nil {
@@ -35,7 +35,7 @@ func TestEmbeddedMigrationsIgnoreWorkingDirectory(t *testing.T) {
 		}
 		contents[entry.Name()] = string(b)
 	}
-	if !reflect.DeepEqual(names, []string{"0001_baseline.sql", "0002_token_id_prefix.sql", "0003_mcp_clients.sql"}) {
+	if !reflect.DeepEqual(names, []string{"0001_baseline.sql", "0002_token_id_prefix.sql", "0003_mcp_clients.sql", "0004_token_profile_order.sql"}) {
 		t.Fatalf("migrations: %v", names)
 	}
 	t.Chdir(t.TempDir())

@@ -24,6 +24,7 @@ type signInPageData struct {
 type profilePageData struct {
 	Apex, Email, Workspace string
 	Rows                   []tokenRowData
+	Next                   bool
 	Create                 tokenCreateData
 	Clients                mcpClientsData
 }

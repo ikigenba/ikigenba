@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed migrations/0001_baseline.sql migrations/0002_token_id_prefix.sql migrations/0003_mcp_clients.sql
+//go:embed migrations/0001_baseline.sql migrations/0002_token_id_prefix.sql migrations/0003_mcp_clients.sql migrations/0004_token_profile_order.sql
 var migrations embed.FS
 
 // Migrations returns the embedded migrations independently of the working directory.

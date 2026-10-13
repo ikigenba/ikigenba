@@ -42,7 +42,7 @@ func oauthTokenRequest(t *testing.T, f *oauthFixture, p url.Values) (*httptest.R
 }
 
 func TestOAuthTokenOrderedErrorsAndConsumption(t *testing.T) {
-	// R-B2VH-NE8X R-G1EQ-MZIO R-G2MN-0R9D: all error classes consume a presented stored code, with ordered validation, no-store, and replay refusal.
+	// R-B2VH-NE8X R-AB8B-1N0M R-ACG7-FERB: all error classes consume a presented stored code, with ordered validation, no-store, and replay refusal.
 	cases := []struct {
 		name, want string
 		change     func(*oauthFixture, url.Values)
@@ -168,7 +168,7 @@ func TestOAuthTokenOrderedErrorsAndConsumption(t *testing.T) {
 }
 
 func TestOAuthTokenMintResponseAndPersistence(t *testing.T) {
-	// R-G3UJ-EJ02 R-5YR1-776P R-64UJ-41W6: successful exchanges return the exact bearer object, add one unchanged-history token, and record one correctly attributed mint.
+	// R-AA0E-NV9X R-A8SI-A3J8 R-64UJ-41W6: successful exchanges return the exact bearer object, add one unchanged-history token, and record one correctly attributed mint.
 	for _, publicURL := range []string{"", "http://auth.wip.localhost:7400"} {
 		for _, resource := range []string{"", "https://mcp.sbx.ikigenba.dev/other", "HTTPS://MCP.sbx.ikigenba.dev", "https://mcp.sbx.ikigenba.dev"} {
 			f := newOAuthFixture(t, publicURL)
@@ -176,7 +176,12 @@ func TestOAuthTokenMintResponseAndPersistence(t *testing.T) {
 			if _, _, err := f.st.CreateToken(f.user.ID, "Existing", store.ExpiryNever, f.now); err != nil {
 				t.Fatal(err)
 			}
-			before, err := f.st.ListTokens(f.user.ID)
+			beforePersonal, err := f.st.ListTokens(f.user.ID, store.TokenPersonal, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mintProfileClient(t, f.st, f.user.ID, "Existing MCP", f.now)
+			before, err := f.st.ListTokens(f.user.ID, store.TokenClient, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -212,7 +217,11 @@ func TestOAuthTokenMintResponseAndPersistence(t *testing.T) {
 					t.Fatalf("secret character %q", ch)
 				}
 			}
-			after, err := f.st.ListTokens(f.user.ID)
+			afterPersonal, err := f.st.ListTokens(f.user.ID, store.TokenPersonal, 100)
+			if err != nil || !reflect.DeepEqual(beforePersonal, afterPersonal) {
+				t.Fatalf("personal history changed: %#v %v", afterPersonal, err)
+			}
+			after, err := f.st.ListTokens(f.user.ID, store.TokenClient, 100)
 			if err != nil {
 				t.Fatal(err)
 			}

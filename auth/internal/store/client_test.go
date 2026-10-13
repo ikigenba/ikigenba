@@ -148,7 +148,7 @@ func TestClientAndCodeExactRecordsAndPersistence(t *testing.T) {
 
 func TestClientTokenExactValuesAndMissingClient(t *testing.T) {
 	// R-G0A2-BXAP
-	// R-G2PV-3GS3
+	// R-9MUB-E86Q
 	st, c, code, tok, secret := clientFixture(t)
 	now := tokenTestNow().Add(time.Minute)
 	random := tokenSequentialBytes(112)
@@ -158,12 +158,26 @@ func TestClientTokenExactValuesAndMissingClient(t *testing.T) {
 		t.Fatalf("token: %#v secret %q want %#v", tok, secret, want)
 	}
 	before := allTokenStates(t, st)
+	lists := map[TokenKind][]Token{}
+	for _, kind := range []TokenKind{TokenPersonal, TokenClient} {
+		list, err := st.ListTokens(code.UserID, kind, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lists[kind] = list
+	}
 	code.ClientID = "missing"
 	if got, secret, err := st.CreateClientToken(code, "host", now); !errors.Is(err, ErrNotFound) || got != (Token{}) || secret != "" {
 		t.Fatalf("missing client: %#v %q %v", got, secret, err)
 	}
 	if !reflect.DeepEqual(before, allTokenStates(t, st)) {
 		t.Fatal("missing client created token")
+	}
+	for kind, want := range lists {
+		got, err := st.ListTokens(code.UserID, kind, 100)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("missing client changed %s list: %#v,%v", kind, got, err)
+		}
 	}
 }
 
@@ -277,7 +291,7 @@ func TestAuthorizationCodeCleanupAndConsumption(t *testing.T) {
 func TestClientTokenHostAndMutationScopes(t *testing.T) {
 	// R-FJ7G-Z4WZ
 	// R-FKFD-CWNO
-	// R-G3XR-H8IS
+	// R-9LMF-0GG1
 	// R-FMRY-1QMC
 	// R-FNZU-FID1
 	// R-FO32-I7VR
@@ -342,7 +356,14 @@ func TestClientTokenHostAndMutationScopes(t *testing.T) {
 	if err := st.RevokeToken("owner", tok.ID); err != nil {
 		t.Fatal(err)
 	}
-	listed, err := st.ListTokens("owner")
+	if _, err := st.FindToken("owner", tok.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked token found: %v", err)
+	}
+	clients, err := st.ListTokens("owner", TokenClient, 100)
+	if err != nil || len(clients) != 0 {
+		t.Fatalf("revoked client list: %#v,%v", clients, err)
+	}
+	listed, err := st.ListTokens("owner", TokenPersonal, 100)
 	if err != nil || len(listed) != 1 || listed[0].ID != personal.ID {
 		t.Fatalf("revoke list %#v %v", listed, err)
 	}

@@ -1010,7 +1010,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			if got := signInUserRows(t, st); len(got) != len(beforeUser) || got[0] != beforeUser[0] {
 				t.Fatalf("logout changed user: %#v, want %#v", got, beforeUser)
 			}
-			if tokens, err := st.ListTokens(user.ID); err != nil || len(tokens) != 1 || !reflect.DeepEqual(tokens[0], token) {
+			if tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100); err != nil || len(tokens) != 1 || !reflect.DeepEqual(tokens[0], token) {
 				t.Fatalf("logout changed token/user: %#v %v", tokens, err)
 			}
 			jar.SetCookies(requestURL, good.Result().Cookies())

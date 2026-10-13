@@ -71,17 +71,19 @@ func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {
 	action := r.PathValue("action")
 	event := ""
 	if action == "enable" || action == "disable" {
-		tokens, lookupErr := s.st.ListTokens(identity.UserID)
+		token, lookupErr := s.st.FindToken(identity.UserID, r.PathValue("id"))
+		if errors.Is(lookupErr, store.ErrNotFound) || (lookupErr == nil && token.Kind != store.TokenPersonal) {
+			writeTokenError(w, http.StatusNotFound, "not found")
+			return
+		}
 		if lookupErr != nil {
 			s.writeServerError(w, r, lookupErr)
 			return
 		}
-		for _, token := range tokens {
-			if token.ID == r.PathValue("id") && token.Enabled != (action == "enable") {
-				event = "token.enabled"
-				if action == "disable" {
-					event = "token.disabled"
-				}
+		if token.Enabled != (action == "enable") {
+			event = "token.enabled"
+			if action == "disable" {
+				event = "token.disabled"
 			}
 		}
 	}

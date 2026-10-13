@@ -68,7 +68,7 @@ func TestCancelledAndNonmemberPageValues(t *testing.T) {
 }
 
 func TestProfilePageValues(t *testing.T) {
-	// R-3LQ5-YCOF R-ROSU-UR6Q R-VK6C-ITDG
+	// R-9PA4-5RO4 R-9QI0-JJET R-VK6C-ITDG
 	st := openSignInStore(t)
 	user, session := tokenTestIdentity(t, st, "profile-values")
 	workspace, host := "fixture-workspace.test", "auth.sbx.ikigenba.dev"

@@ -62,17 +62,18 @@ func (s *Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (
 	return token, secret, err
 }
 
-// ListTokens returns the user's tokens, newest created_at first, then id.
-func (s *Store) ListTokens(userID string) ([]Token, error) {
+// ListTokens returns an owner's bounded window of one kind in profile order.
+func (s *Store) ListTokens(userID string, kind TokenKind, n int) ([]Token, error) {
 	var tokens []Token
 	err := s.db.Read(context.Background(), func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(
 			context.Background(),
 			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
 		 FROM tokens
-		 WHERE user_id = ?
-		 ORDER BY created_at DESC, id ASC`,
-			userID,
+		 WHERE user_id = ? AND kind = ?
+		 ORDER BY last_used_at DESC, created_at DESC, id
+		 LIMIT ?`,
+			userID, kind, max(n, 0),
 		)
 		if err != nil {
 			return fmt.Errorf("list tokens: %w", err)
@@ -97,6 +98,28 @@ func (s *Store) ListTokens(userID string) ([]Token, error) {
 		return nil, err
 	}
 	return tokens, err
+}
+
+// FindToken reads either kind of token scoped to its owner.
+func (s *Store) FindToken(userID, tokenID string) (Token, error) {
+	var token Token
+	err := s.db.Read(context.Background(), func(tx *sql.Tx) error {
+		var err error
+		token, err = scanToken(tx.QueryRowContext(context.Background(),
+			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+    FROM tokens WHERE user_id = ? AND id = ?`, userID, tokenID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("find token: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return Token{}, err
+	}
+	return token, nil
 }
 
 // SetTokenEnabled sets enabled on the user's token, or returns ErrNotFound.

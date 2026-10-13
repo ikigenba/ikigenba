@@ -108,7 +108,7 @@ func TestSignInPageReferenceProperties(t *testing.T) {
 func TestTokenPageReferenceProperties(t *testing.T) {
 	// R-3XX5-S23D R-7ZXA-Q4XF: profile, rejected and created pages obey reference properties.
 	// R-41KU-XDBG: both profile and rejected-create offer POST /tokens.
-	// R-8157-3WO4: every personal and client row offers the action paths built from its ID and Enabled.
+	// R-A7KL-WBSJ: every personal and client row offers the action paths built from its ID and Enabled.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "property")
 	banner := page.Banner{Service: "auth", Email: user.Email, ProfileURL: "/", LogoutURL: "/logout", Home: "https://outside.test/home", Tools: true}
@@ -187,7 +187,7 @@ func TestApprovePageReferenceProperties(t *testing.T) {
 }
 
 func TestAuthReferencesAcrossDeclaredDataBranches(t *testing.T) {
-	// R-3XX5-S23D R-7ZXA-Q4XF R-8157-3WO4: named-template data covers all relative-time and row branches.
+	// R-3XX5-S23D R-7ZXA-Q4XF R-A7KL-WBSJ: named-template data covers all relative-time and row branches.
 	banner := testPageBanner(page.User{Email: "fixture@example.test", ProfileURL: "/", LogoutURL: "/logout"})
 	for _, elapsed := range []elapsedData{{Unit: "now"}, {Unit: "minute", Count: 1}, {Unit: "minute", Count: 2}, {Unit: "hour", Count: 1}, {Unit: "hour", Count: 2}, {Unit: "day", Count: 1}, {Unit: "day", Count: 2}} {
 		for _, enabled := range []bool{false, true} {

@@ -19,8 +19,8 @@ import (
 
 var (
 	_ func(*Store, string, string, Expiry, time.Time) (Token, string, error) = (*Store).CreateToken
-	// R-4TKS-G8YF
-	_ func(*Store, string) ([]Token, error) = (*Store).ListTokens
+	// R-95RQ-1FT0
+	_ func(*Store, string, TokenKind, int) ([]Token, error) = (*Store).ListTokens
 	// R-4X8H-LK6I
 	_ func(*Store, string, string, bool) error = (*Store).SetTokenEnabled
 	// R-4YGD-ZBX7
@@ -160,30 +160,87 @@ func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 	}
 }
 
-func TestListTokensOwnerScopeExactFieldsAndOrder(t *testing.T) {
-	// R-5PA6-EA8H
+func TestListTokensOwnerKindWindowAndProfileOrder(t *testing.T) {
+	// R-987I-SZAE
+	// R-99FF-6R13
 	st := openTokenTestStore(t, bytes.NewReader(nil))
 	now := tokenTestNow()
 	insertTokenUser(t, st, "owner", "owner@example.com", now)
 	insertTokenUser(t, st, "other", "other@example.com", now)
-	lastUsed := now.Add(-time.Hour)
-	expires := now.Add(24 * time.Hour)
-	insertToken(t, st, Token{ID: "older", UserID: "owner", Name: "older name", Hash: idcodec.HashSecret("older-secret"), Enabled: false, CreatedAt: now.Add(-time.Hour), ExpiresAt: &expires, LastUsedAt: &lastUsed})
-	insertToken(t, st, Token{ID: "newer-b", UserID: "owner", Name: "newer b", Hash: idcodec.HashSecret("newer-b-secret"), Enabled: true, CreatedAt: now})
-	insertToken(t, st, Token{ID: "newer-a", UserID: "owner", Name: "newer a", Hash: idcodec.HashSecret("newer-a-secret"), Enabled: true, CreatedAt: now})
-	insertToken(t, st, Token{ID: "foreign", UserID: "other", Name: "foreign", Hash: idcodec.HashSecret("foreign-secret"), Enabled: true, CreatedAt: now.Add(time.Hour)})
+	// All ordering branches: last use, creation tie breaker, byte order,
+	// and never-used tokens, even when created after the used ones.
+	order := []struct {
+		suffix  string
+		created time.Time
+		used    *time.Time
+	}{
+		{"recent", now.Add(-4 * time.Hour), tokenTimePointer(now)},
+		{"tie-A", now.Add(-2 * time.Hour), tokenTimePointer(now.Add(-time.Hour))},
+		{"tie-a", now.Add(-2 * time.Hour), tokenTimePointer(now.Add(-time.Hour))},
+		{"tie-older", now.Add(-3 * time.Hour), tokenTimePointer(now.Add(-time.Hour))},
+		{"unused-A", now.Add(time.Hour), nil},
+		{"unused-a", now.Add(time.Hour), nil},
+		{"unused-older", now, nil},
+	}
+	wants := map[TokenKind][]Token{}
+	for _, kind := range []TokenKind{TokenPersonal, TokenClient} {
+		for i, row := range order {
+			tok := Token{ID: string(kind) + row.suffix, UserID: "owner", Name: row.suffix,
+				Hash: idcodec.HashSecret(string(kind) + row.suffix), Kind: kind, Enabled: i%2 == 0,
+				CreatedAt: row.created, LastUsedAt: row.used}
+			if i%2 == 1 {
+				tok.ExpiresAt = tokenTimePointer(now.Add(-time.Hour))
+			}
+			if kind == TokenClient {
+				tok.Host = "mcp.test"
+			}
+			insertToken(t, st, tok)
+			wants[kind] = append(wants[kind], tok)
+		}
+		insertToken(t, st, Token{ID: string(kind) + "foreign", UserID: "other", Kind: kind, Hash: idcodec.HashSecret(string(kind) + "foreign"), CreatedAt: now.Add(2 * time.Hour), LastUsedAt: tokenTimePointer(now.Add(time.Hour))})
+	}
+	before := domainRows(t, st)
+	for _, kind := range []TokenKind{TokenPersonal, TokenClient} {
+		for _, n := range []int{-3, 0, 1, 3, len(order), len(order) + 1, 100} {
+			got, err := st.ListTokens("owner", kind, n)
+			want := wants[kind][:min(max(n, 0), len(order))]
+			if err != nil || len(got) != len(want) || (len(want) > 0 && !reflect.DeepEqual(got, want)) {
+				t.Fatalf("ListTokens(%q,%d) = %#v,%v; want %#v", kind, n, got, err, want)
+			}
+		}
+		got, err := st.ListTokens("missing-owner", kind, 100)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("missing owner = %#v,%v", got, err)
+		}
+	}
+	if after := domainRows(t, st); !reflect.DeepEqual(before, after) {
+		t.Fatal("list changed rows")
+	}
+}
 
-	got, err := st.ListTokens("owner")
-	if err != nil {
-		t.Fatalf("ListTokens() error = %v", err)
-	}
-	want := []Token{readToken(t, st, "newer-a"), readToken(t, st, "newer-b"), readToken(t, st, "older")}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListTokens() = %#v, want %#v", got, want)
-	}
-	empty, err := st.ListTokens("missing-owner")
-	if err != nil || len(empty) != 0 || empty == nil {
-		t.Fatalf("ListTokens(missing) = %#v, %v; want non-nil empty slice", empty, err)
+func TestFindTokenOwnerScopeBothKindsAndNoMutation(t *testing.T) {
+	// R-96ZM-F7JP
+	// R-9ANB-KIRS
+	st := openTokenTestStore(t, bytes.NewReader(nil))
+	now := tokenTestNow()
+	insertTokenUser(t, st, "owner", "owner@example.com", now)
+	insertTokenUser(t, st, "other", "other@example.com", now)
+	for _, kind := range []TokenKind{TokenPersonal, TokenClient} {
+		tok := Token{ID: string(kind), UserID: "owner", Kind: kind, Name: "stored name", Hash: idcodec.HashSecret(string(kind)), Host: "stored.host", Enabled: false, CreatedAt: now.Add(-time.Hour), ExpiresAt: tokenTimePointer(now.Add(-time.Minute)), LastUsedAt: tokenTimePointer(now)}
+		insertToken(t, st, tok)
+		before := domainRows(t, st)
+		got, err := st.FindToken("owner", tok.ID)
+		if err != nil || !reflect.DeepEqual(got, tok) {
+			t.Fatalf("FindToken = %#v,%v; want %#v", got, err, tok)
+		}
+		for _, args := range [][2]string{{"other", tok.ID}, {"owner", "unknown"}} {
+			if _, err := st.FindToken(args[0], args[1]); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("FindToken(%v) = %v", args, err)
+			}
+		}
+		if after := domainRows(t, st); !reflect.DeepEqual(before, after) {
+			t.Fatal("find changed rows")
+		}
 	}
 }
 
@@ -383,11 +440,14 @@ func insertTokenUser(t *testing.T, st *Store, id, email string, lastGoogleLogin 
 
 func insertToken(t *testing.T, st *Store, token Token) {
 	t.Helper()
+	if token.Kind == "" {
+		token.Kind = TokenPersonal
+	}
 	if err := st.db.Write(context.Background(), func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(
 			context.Background(),
-			`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			token.ID,
 			token.UserID,
 			token.Name,
@@ -396,6 +456,7 @@ func insertToken(t *testing.T, st *Store, token Token) {
 			token.CreatedAt.UnixNano(),
 			nullableUnixNano(token.ExpiresAt),
 			nullableUnixNano(token.LastUsedAt),
+			token.Kind, token.Host,
 		)
 		return err
 	}); err != nil {

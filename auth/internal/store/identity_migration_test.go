@@ -62,16 +62,16 @@ func TestIdentitiesNameOnlyHonoredTokens(t *testing.T) {
 }
 
 func TestOpenMigratesBareTokenIDsWithoutChangingRecords(t *testing.T) {
+	// R-9EB0-PTZV
+	// R-9FIX-3LQK
 	testMigrationPreservesRecords(t, true)
 }
 func TestOpenMigratesVersionTwoWithoutChangingRecords(t *testing.T) {
-	// R-F70H-5FI1
-	// R-F88D-J78Q
+	// R-9GQT-HDH9
+	// R-9HYP-V57Y
 	testMigrationPreservesRecords(t, false)
 }
 func testMigrationPreservesRecords(t *testing.T, bare bool) {
-	// R-F4KO-DW0N
-	// R-F5SK-RNRC
 	path := filepath.Join(t.TempDir(), "auth.db")
 	st, err := newTestStore(t, path, bytes.NewReader(sequentialStoreBytes(240)))
 	if err != nil {
@@ -132,10 +132,13 @@ func testMigrationPreservesRecords(t *testing.T, bare bool) {
 			t.Fatalf("migration changed domain rows: before %#v, after %#v", before, after)
 		}
 		for _, want := range tokens {
-			if got := readToken(t, st, want.ID); !reflect.DeepEqual(got, want) {
+			if got, err := st.FindToken(user.ID, want.ID); err != nil || !reflect.DeepEqual(got, want) {
 				t.Fatalf("reopened token = %#v, want unchanged %#v", got, want)
 			}
 			bare := strings.TrimPrefix(want.ID, idcodec.TokenIDPrefix)
+			if _, err := st.FindToken(user.ID, bare); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("bare id still found: %v", err)
+			}
 			if err := st.SetTokenEnabled(user.ID, bare, true); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("bare id %q still names a token: %v", bare, err)
 			}
@@ -143,7 +146,7 @@ func testMigrationPreservesRecords(t *testing.T, bare bool) {
 				t.Fatalf("bare id %q still deletes a token: %v", bare, err)
 			}
 		}
-		listed, err := st.ListTokens(user.ID)
+		listed, err := st.ListTokens(user.ID, TokenPersonal, 100)
 		if err != nil || len(listed) != len(tokens) {
 			t.Fatalf("ListTokens() = %#v, %v; want four tokens", listed, err)
 		}

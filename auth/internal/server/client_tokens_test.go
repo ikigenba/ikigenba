@@ -36,7 +36,7 @@ func mintProfileClient(t *testing.T, st *store.Store, owner, name string, approv
 }
 
 func TestClientProfileTemplateAndData(t *testing.T) {
-	// R-7RE0-1QQK R-3LQ5-YCOF R-ROSU-UR6Q R-3T1K-8Z4L: canonical rich profile data and template output.
+	// R-9QI0-JJET R-9PA4-5RO4 R-9SXT-B2W7 R-3T1K-8Z4L: canonical rich profile data and template output.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "client-profile")
 	other, _ := tokenTestIdentity(t, st, "foreign-client")
@@ -117,15 +117,18 @@ func TestClientProfileTemplateAndData(t *testing.T) {
 }
 
 func TestClientTokenRevokeEffectsAndTrail(t *testing.T) {
-	// R-5MHA-TLI6 R-5OX3-L4ZK: revoke removes only that approval and records one id-only event.
+	// R-9XTE-U5UZ R-A54T-4SB5: revoke removes only that approval and records one id-only event.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "revoke")
 	target, secret := mintProfileClient(t, st, user.ID, "same client", tokenTestNow)
+	other, _ := tokenTestIdentity(t, st, "foreign-revoke")
+	foreign, _ := mintProfileClient(t, st, other.ID, "foreign approval", tokenTestNow)
 	mintProfileClient(t, st, user.ID, "same client", tokenTestNow)
-	if _, _, err := st.CreateToken(user.ID, "personal", store.ExpiryNever, tokenTestNow); err != nil {
+	personal, _, err := st.CreateToken(user.ID, "personal", store.ExpiryNever, tokenTestNow)
+	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := st.ListTokens(user.ID)
+	before, err := st.ListTokens(user.ID, store.TokenClient, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,11 +140,11 @@ func TestClientTokenRevokeEffectsAndTrail(t *testing.T) {
 		t.Fatalf("revoke=%d %v", w.Code, w.Header())
 	}
 	assertTokenDomainTrail(t, events, user.ID, "token.revoked", target.ID)
-	after, err := st.ListTokens(user.ID)
+	after, err := st.ListTokens(user.ID, store.TokenClient, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var want []store.Token
+	want := make([]store.Token, 0)
 	for _, token := range before {
 		if token.ID != target.ID {
 			want = append(want, token)
@@ -150,13 +153,22 @@ func TestClientTokenRevokeEffectsAndTrail(t *testing.T) {
 	if !reflect.DeepEqual(after, want) {
 		t.Fatalf("remaining tokens changed: %#v want %#v", after, want)
 	}
+	if got, err := st.FindToken(user.ID, personal.ID); err != nil || !reflect.DeepEqual(got, personal) {
+		t.Fatalf("revoke changed personal token: %#v %v", got, err)
+	}
+	if got, err := st.FindToken(other.ID, foreign.ID); err != nil || !reflect.DeepEqual(got, foreign) {
+		t.Fatalf("revoke changed foreign token: %#v %v", got, err)
+	}
+	if _, err = st.FindToken(user.ID, target.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("revoked token still found: %v", err)
+	}
 	if _, err = st.LookupTokenIdentity(secret, "mcp.green.example", tokenTestNow); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("revoked identity=%v", err)
 	}
 }
 
 func TestTokenActionsEnforceKindsOwnersAndOrigin(t *testing.T) {
-	// R-5DY0-57BB R-5NP7-7D8V R-5F5W-IZ20 R-5GDS-WQSP R-5K1I-220S
+	// R-9VDM-2MDL R-9Z1B-7XLO R-5F5W-IZ20 R-A097-LPCD R-A6CP-IK1U
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "actor")
 	other, _ := tokenTestIdentity(t, st, "other-actor")
@@ -170,8 +182,7 @@ func TestTokenActionsEnforceKindsOwnersAndOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, _ := st.ListTokens(user.ID)
-	otherBefore, _ := st.ListTokens(other.ID)
+	originals := []store.Token{client, foreign, personal, foreignPersonal}
 	f := newTrail(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }}, nil)
 	for _, action := range []string{"enable", "disable", "delete", "revoke"} {
 		ids := []string{"tok_00000000000000000000000000", foreignPersonal.ID, client.ID}
@@ -192,10 +203,11 @@ func TestTokenActionsEnforceKindsOwnersAndOrigin(t *testing.T) {
 			assertTokenDomainTrail(t, events, user.ID, "", "")
 		}
 	}
-	after, _ := st.ListTokens(user.ID)
-	otherAfter, _ := st.ListTokens(other.ID)
-	if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(otherBefore, otherAfter) {
-		t.Fatal("refusal changed token")
+	for _, before := range originals {
+		after, err := st.FindToken(before.UserID, before.ID)
+		if err != nil || !reflect.DeepEqual(before, after) {
+			t.Fatalf("refusal changed token: %#v %v", after, err)
+		}
 	}
 }
 
@@ -230,7 +242,7 @@ func assertTokenDomainTrail(t *testing.T, events []telemetry.Event, user, name, 
 }
 
 func TestPersonalTokenActionsTrailChangesOnly(t *testing.T) {
-	// R-5HLP-AIJE R-5ITL-OAA3 R-5K1I-220S: personal toggles record only state changes; delete one event.
+	// R-5HLP-AIJE R-A3WW-R0KG R-A6CP-IK1U: personal toggles record only state changes; delete one event.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "personal-trail")
 	token, _, err := st.CreateToken(user.ID, "personal", store.ExpiryNever, tokenTestNow)
@@ -249,7 +261,7 @@ func TestPersonalTokenActionsTrailChangesOnly(t *testing.T) {
 }
 
 func TestClientRevokeFailingStoreHasNoTokenTrail(t *testing.T) {
-	// R-5K1I-220S: a failed store changes no token and adds no domain event.
+	// R-A6CP-IK1U: a failed store changes no token and adds no domain event.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "failure")
 	client, _ := mintProfileClient(t, st, user.ID, "client", tokenTestNow)
@@ -262,7 +274,7 @@ func TestClientRevokeFailingStoreHasNoTokenTrail(t *testing.T) {
 }
 
 func TestRejectedTokenCreationHasNoTokenTrail(t *testing.T) {
-	// R-5K1I-220S: rejected create submissions, origin refusals and failed-store requests have only request events.
+	// R-A6CP-IK1U: rejected create submissions, origin refusals and failed-store requests have only request events.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "create-refusal")
 	f := newTrail(t, Config{Store: st, Now: func() time.Time { return tokenTestNow }}, nil)
@@ -279,7 +291,7 @@ func TestRejectedTokenCreationHasNoTokenTrail(t *testing.T) {
 		assertTokenPlainResult(t, w, 403)
 		assertTokenDomainTrail(t, events, user.ID, "", "")
 	}
-	tokens, err := st.ListTokens(user.ID)
+	tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
 	if err != nil || len(tokens) != 0 {
 		t.Fatalf("refused creates=%#v %v", tokens, err)
 	}

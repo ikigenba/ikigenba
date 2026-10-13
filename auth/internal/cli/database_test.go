@@ -274,7 +274,7 @@ func TestDatabaseReadyMigrationClock(t *testing.T) {
 				}
 			}
 			if kind == "legacy" {
-				changeDatabase(t, p, "DROP TABLE schema_migrations; DROP TABLE clients; DROP TABLE auth_codes; ALTER TABLE tokens DROP COLUMN kind; ALTER TABLE tokens DROP COLUMN host")
+				changeDatabase(t, p, "DROP INDEX tokens_profile_idx; DROP TABLE schema_migrations; DROP TABLE clients; DROP TABLE auth_codes; ALTER TABLE tokens DROP COLUMN kind; ALTER TABLE tokens DROP COLUMN host")
 			}
 			if kind == "applied" {
 				changeDatabase(t, p, "")

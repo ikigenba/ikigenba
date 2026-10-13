@@ -71,7 +71,7 @@ func TestOwnOriginControlsEveryTokenRoute(t *testing.T) {
 					target = "/tokens"
 					form = url.Values{"name": {"new"}, "expires": {"never"}}
 				}
-				before, err := st.ListTokens(user.ID)
+				before, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -84,7 +84,7 @@ func TestOwnOriginControlsEveryTokenRoute(t *testing.T) {
 					if w.Code != http.StatusForbidden {
 						t.Fatalf("rejected origin %q = %d", origin, w.Code)
 					}
-					after, err := st.ListTokens(user.ID)
+					after, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
 					if err != nil || !reflect.DeepEqual(after, before) {
 						t.Fatalf("rejected origin changed tokens: %#v %v", after, err)
 					}
@@ -140,7 +140,7 @@ func TestLogoutConfiguredOriginsAndRejectedShapes(t *testing.T) {
 			}
 			before := profileStateSnapshot(t, st)
 			beforeUsers := signInUserRows(t, st)
-			beforeTokens, err := st.ListTokens(user.ID)
+			beforeTokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,7 +164,7 @@ func TestLogoutConfiguredOriginsAndRejectedShapes(t *testing.T) {
 				if _, err := st.LookupSessionIdentity(session.ID, signInNow); !errors.Is(err, store.ErrNotFound) {
 					t.Fatalf("session remains: %v", err)
 				}
-				afterTokens, err := st.ListTokens(user.ID)
+				afterTokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
 				if err != nil || !reflect.DeepEqual(beforeTokens, afterTokens) || !reflect.DeepEqual(beforeUsers, signInUserRows(t, st)) {
 					t.Fatalf("logout changed user/tokens: %#v %v", afterTokens, err)
 				}

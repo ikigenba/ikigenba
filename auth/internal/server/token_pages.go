@@ -1,11 +1,11 @@
 package server
 
 import (
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
@@ -40,17 +40,17 @@ type elapsedData struct {
 	Count int64
 }
 
-func (s *Server) tokenRows(userID string, drawTime time.Time) ([]tokenRowData, error) {
-	tokens, err := s.st.ListTokens(userID)
+func (s *Server) tokenRows(userID string, drawTime time.Time) ([]tokenRowData, bool, error) {
+	tokens, err := s.st.ListTokens(userID, store.TokenPersonal, paging.DefaultLimit+1)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	sort.SliceStable(tokens, func(i, j int) bool { return tokenPrecedes(tokens[i], tokens[j]) })
+	next := len(tokens) > paging.DefaultLimit
+	if next {
+		tokens = tokens[:paging.DefaultLimit]
+	}
 	rows := make([]tokenRowData, 0, len(tokens))
 	for _, token := range tokens {
-		if token.Kind != store.TokenPersonal {
-			continue
-		}
 		row := tokenRowData{ID: token.ID, Name: token.Name, Created: tokenTime(token.CreatedAt), Enabled: token.Enabled}
 		if token.LastUsedAt != nil {
 			row.LastUsed = &tokenLastUsedData{Datetime: tokenDatetime(*token.LastUsedAt), Title: tokenMinute(*token.LastUsedAt), Elapsed: tokenElapsedData(drawTime.Sub(*token.LastUsedAt))}
@@ -61,7 +61,7 @@ func (s *Server) tokenRows(userID string, drawTime time.Time) ([]tokenRowData, e
 		}
 		rows = append(rows, row)
 	}
-	return rows, nil
+	return rows, next, nil
 }
 
 func tokenDatetime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05Z") }
@@ -95,7 +95,10 @@ func tokenCreateValues(name, expiry string, rejected bool) tokenCreateData {
 }
 
 // mcpClientsData is the exact input of the human-authored mcp-clients template.
-type mcpClientsData struct{ Clients []mcpClientData }
+type mcpClientsData struct {
+	Clients     []mcpClientData
+	ClientsNext bool
+}
 type mcpClientData struct {
 	ID, Name, Approved, ApprovedText, LastUsed, LastUsedTitle string
 	LastUsedElapsed                                           elapsedData
@@ -104,16 +107,16 @@ type mcpClientData struct {
 }
 
 func (s *Server) profileClients(userID string, drawTime time.Time) (mcpClientsData, error) {
-	tokens, err := s.st.ListTokens(userID)
+	tokens, err := s.st.ListTokens(userID, store.TokenClient, paging.DefaultLimit+1)
 	if err != nil {
 		return mcpClientsData{}, err
 	}
-	sort.SliceStable(tokens, func(i, j int) bool { return tokenPrecedes(tokens[i], tokens[j]) })
-	data := mcpClientsData{Clients: make([]mcpClientData, 0)}
+	next := len(tokens) > paging.DefaultLimit
+	if next {
+		tokens = tokens[:paging.DefaultLimit]
+	}
+	data := mcpClientsData{Clients: make([]mcpClientData, 0, len(tokens)), ClientsNext: next}
 	for _, token := range tokens {
-		if token.Kind != store.TokenClient {
-			continue
-		}
 		row := mcpClientData{ID: token.ID, Name: token.Name, Approved: tokenDatetime(token.CreatedAt), ApprovedText: tokenMinute(token.CreatedAt)}
 		if token.LastUsedAt != nil {
 			row.LastUsed = tokenDatetime(*token.LastUsedAt)
@@ -128,17 +131,4 @@ func (s *Server) profileClients(userID string, drawTime time.Time) (mcpClientsDa
 		data.Clients = append(data.Clients, row)
 	}
 	return data, nil
-}
-
-func tokenPrecedes(a, b store.Token) bool {
-	if a.LastUsedAt == nil && b.LastUsedAt != nil {
-		return false
-	}
-	if a.LastUsedAt != nil && b.LastUsedAt == nil {
-		return true
-	}
-	if a.LastUsedAt != nil && !a.LastUsedAt.Equal(*b.LastUsedAt) {
-		return a.LastUsedAt.After(*b.LastUsedAt)
-	}
-	return a.CreatedAt.After(b.CreatedAt)
 }
