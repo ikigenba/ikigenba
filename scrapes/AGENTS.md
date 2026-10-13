@@ -47,7 +47,7 @@ its templates under `assets/`, and the design is the record.
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
 `go.sum`, the migrations under `migrations/` (`0001_runs.sql`,
-`0002_rows.sql` and `0003_list_indexes.sql`), which the root package embeds, and everything under `etc/`
+`0002_rows.sql`, `0003_list_indexes.sql` and `0004_row_names.sql`), which the root package embeds, and everything under `etc/`
 (`etc/manifest.toml` and the nginx fragment `etc/nginx.conf`). The delivery
 that created scrapes seeded `go.mod` and `go.sum` on appkit; the build run
 owns them from then on and changes them as design says. It never writes
