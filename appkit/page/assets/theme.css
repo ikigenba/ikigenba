@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit 89a0b03. The design lab's
+   Copied from design/ikigenba/theme.css at commit be27cf49. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -503,6 +503,17 @@ dl.kv > :nth-last-child(-n+2) { border-bottom: 0; }
 }
 .tabs a:hover { color: var(--fg); text-decoration: none; }
 .tabs a[aria-current] { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* paging: nav.paging labelled Pages, below a list. First always, a link or,
+   on the first window, a span with aria-current="page"; then Next, a link,
+   only when more entries follow. */
+nav.paging { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s4); font-size: var(--text-sm); }
+nav.paging > a, nav.paging > span {
+  padding: 3px 10px; line-height: 20px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface);
+}
+nav.paging > a { color: var(--fg); }
+nav.paging > a:hover { background: var(--subtle); text-decoration: none; }
+nav.paging > [aria-current] { color: var(--muted); background: var(--subtle); border-color: var(--line-soft); }
 
 
 /* --------------------------------------------------------------- layouts */
