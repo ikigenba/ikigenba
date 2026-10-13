@@ -107,8 +107,8 @@ a service icon. The build run never writes it. `devctl build` packs it beside
   one requirement below, set by the delivery that created gmail; the
   build run sets any other and its `go.sum` lines, and moves to another
   release only when this file names one:
-  - appkit `v0.25.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.25.0`: a release that
+  - appkit `v0.26.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.26.0`: a release that
     exports the `db`, `paging` and `version` packages, the `artifacts` and
     `connections` clients of those siblings' sockets, and whose
     `page.Banner` carries the trail, the home link and the tools flag the
@@ -128,10 +128,10 @@ external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.25.0`, fetched
+appkit is required only at a published release, here `v0.26.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); it is set with
-`go get github.com/ikigenba/ikigenba/appkit@v0.25.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.26.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
