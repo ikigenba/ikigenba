@@ -32,8 +32,8 @@
      (.ContentType in a code element), td.artifact-owner (.Owner),
      td.artifact-modified holding time[datetime=<.Modified>] (text
      .ModifiedText), and td.artifact-expires holding, only when .Expires is
-     not empty, time[datetime=<.Expires>] (text .ExpiresText); then, still
-     in the section and shown when .Artifacts is not empty or .Page is not
+     not empty, time[datetime=<.Expires>] (text .ExpiresText); then, after
+     the card (the section's close) and shown when .Artifacts is not empty or .Page is not
      empty (so an emptied later window still offers First; the first
      window with no artifacts has no nav), nav.paging#paging (aria-label
      "Pages") whose children are, in order, First (on the first window,
@@ -71,9 +71,9 @@
 <h3 class="text-md">No artifacts yet</h3>
 <p>A file an agent puts under <code>/files/</code> with an HTTP PUT shows up here; the <code>import</code> tool answers where and how to put one.</p>
 </div>{{end}}
+</section>
 {{if or .Artifacts .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
-{{end}}</section>
-<p><a id="about-link" href="/about">About artifacts</a></p>
+{{end}}<p><a id="about-link" href="/about">About artifacts</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
