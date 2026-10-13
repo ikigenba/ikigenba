@@ -22,6 +22,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `gdrive` is the suite's Google Drive connector: agents pull Drive files into artifacts and push artifacts into Drive, each transfer recorded and its bytes moved on the host.
 - `gmail` is the suite's Gmail connector: agents search and read mail as text, pull attachments into artifacts, compose drafts, push artifacts onto them and send, each transfer recorded and its bytes moved on the host.
 - `scrapes` is the suite's public-records collector: scrapers turn public records into rows, a common envelope plus the raw record, kept per run; agents start runs, cron schedules them, and siblings read a run's rows over the socket.
+- `candidates` is the suite's candidate resolver: it turns the rows `scrapes` collects into candidate businesses with their evidence and a shortlist ranked against the fit test; a finished scrape starts a pass over the bus, agents start one with `rebuild`, and the owner rules on merges, splits and exclusions.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
 Shared library:
