@@ -7,7 +7,7 @@
     refreshing = true;
     try {
       const headers = etag ? {"If-None-Match": etag} : {};
-      const response = await fetch("/widgets/table", {headers});
+      const response = await fetch("/widgets/table" + location.search, {headers});
       if (response.status === 304) return;
       if (!response.ok) return;
       const markup = await response.text();

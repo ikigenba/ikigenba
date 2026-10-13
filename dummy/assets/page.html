@@ -12,12 +12,13 @@
      text "Widgets", p#panel-subtitle (text "<.Count> widget(s) · refreshes
      every 5 seconds"), div.panel holding the table template
      (table#widgets-table) and the form template, then, when .Count is not
-     zero, nav.paging#paging (aria-label "Pages") whose children are, in
-     order, First (on the first window, .Page empty, a span with
+     zero or .Page is not empty, nav.paging#paging (aria-label "Pages")
+     whose children are, in order, First (on the first window, .Page empty, a span with
      aria-current="page" and text "First"; otherwise a link to /widgets with
      text "First") and, only when .Next is not empty, Next (a link to
-     /widgets?page=<.Next> with text "Next"); with no widgets there is no
-     nav. Then the script template, which polls the fragment
+     /widgets?page=<.Next> with text "Next"); on the first window with
+     no widgets there is no nav, while an emptied later window still offers
+     First. Then the script template, which polls the fragment
      /widgets/table with the page's own query string, so a later window
      refreshes in place; the poll swaps the table alone, never the nav. On
      a failure page, a p (text .Message) and a link to /widgets (text "Back
@@ -34,7 +35,7 @@
 {{template "table" .Table}}
 {{template "form" .Form}}
 </div>
-{{if .Count}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/widgets">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/widgets?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Count .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/widgets">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/widgets?page={{.Next}}">Next</a>{{end}}</nav>
 {{end}}{{else}}
 <p>{{.Message}}</p>
 <a href="/widgets">Back to widgets</a>
