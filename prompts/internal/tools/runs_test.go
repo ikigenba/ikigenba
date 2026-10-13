@@ -197,7 +197,7 @@ func TestDeletedType(t *testing.T) {
 	}
 }
 
-// R-BVTX-0VNT R-BX1T-ENEI R-C1XE-XQDA R-C35B-BI3Z R-C80W-UL2R R-C0PI-JYML R-BZHM-66VW
+// R-BVTX-0VNT R-BX1T-ENEI R-C1XE-XQDA R-C35B-BI3Z R-C80W-UL2R R-C0PI-JYML R-V4LC-WFCY
 func TestRunResultsAndQueuedCancel(t *testing.T) {
 	f := runSetup(t, nil)
 	p := f.seedRun(t, "daily")
@@ -214,7 +214,7 @@ func TestRunResultsAndQueuedCancel(t *testing.T) {
 	}
 	f.entered(t)
 	r := f.record(t, a.ID)
-	all, err := f.st.Runs(context.Background(), p.ID)
+	all, err := f.st.Runs(context.Background(), p.ID, "", "", 1000)
 	if err != nil || len(all) != 1 {
 		t.Fatal(all, err)
 	}
@@ -296,7 +296,7 @@ func TestRunResultsAndQueuedCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	listed := decode[tools.RunList](t, f.call(t, "runs", `{"name":"daily"}`))
-	records, err := f.st.Runs(context.Background(), p.ID)
+	records, err := f.st.Runs(context.Background(), p.ID, "", "", 1000)
 	if err != nil || len(records) != len(listed.Runs) {
 		t.Fatal(records, listed, err)
 	}
@@ -731,7 +731,7 @@ func TestRunDiskFailureRefusal(t *testing.T) {
 	})
 	refused(t, f.call(t, "run", `{"name":"daily"}`), store.Unreachable)
 	requestID := fmt.Sprintf("call-%d", f.n)
-	rs, err := f.st.Runs(context.Background(), p.ID)
+	rs, err := f.st.Runs(context.Background(), p.ID, "", "", 1000)
 	if err != nil || len(rs) != 0 {
 		t.Fatal(rs, err)
 	}

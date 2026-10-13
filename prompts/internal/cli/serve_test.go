@@ -1169,7 +1169,7 @@ func TestServeCutsOffRunBeforeItsRecord(t *testing.T) {
 	_ = serveWait(t, callDone)
 	d, st := serveCatalog(t, f.p.Dir)
 	defer func() { _ = d.Close() }()
-	rs, e := st.Runs(context.Background(), p.ID)
+	rs, e := st.Runs(context.Background(), p.ID, "", "", 100)
 	if e != nil || len(rs) != 0 {
 		t.Fatal("recorded blocked run", rs, e)
 	}
@@ -1268,7 +1268,7 @@ func TestServeRefusesLateRunAndDelivery(t *testing.T) {
 			}
 			d, st := serveCatalog(t, f.p.Dir)
 			defer func() { _ = d.Close() }()
-			rs, e := st.Runs(context.Background(), p.ID)
+			rs, e := st.Runs(context.Background(), p.ID, "", "", 100)
 			if e != nil || len(rs) != 1 || rs[0].ID != first.ID {
 				t.Fatal("late admission", rs, e)
 			}

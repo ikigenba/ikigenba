@@ -234,7 +234,7 @@ func TestRoutesEvents(t *testing.T) {
 		if w.Code != 200 || out["outcome"] != want {
 			t.Fatalf("delivery: %d %v", w.Code, out)
 		}
-		records, e := q.cfg.Store.Runs(context.Background(), p.ID)
+		records, e := q.cfg.Store.Runs(context.Background(), p.ID, "", "", 100)
 		if e != nil {
 			t.Fatal(e)
 		}

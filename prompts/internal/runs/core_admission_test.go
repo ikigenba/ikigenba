@@ -90,7 +90,7 @@ func admissionQuiet(t *testing.T, f *coreFixture) {
 			t.Fatal(e)
 		}
 	}
-	rs, e := f.s.Runs(context.Background(), f.p.ID)
+	rs, e := f.s.Runs(context.Background(), f.p.ID, "", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -338,7 +338,7 @@ func TestAdmissionDeliveredBeforeQueue(t *testing.T) {
 		}
 		beforeEvents := len(f.sink.capture.Events())
 		beforeBytes := random.bytes.Load()
-		beforeRecords, err := f.s.Runs(context.Background(), f.p.ID)
+		beforeRecords, err := f.s.Runs(context.Background(), f.p.ID, "", "", 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -352,7 +352,7 @@ func TestAdmissionDeliveredBeforeQueue(t *testing.T) {
 			t.Fatal(err)
 		}
 		testEqual(t, len(f.sink.capture.Events()), beforeEvents)
-		afterRecords, err := f.s.Runs(context.Background(), f.p.ID)
+		afterRecords, err := f.s.Runs(context.Background(), f.p.ID, "", "", 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -379,7 +379,7 @@ func TestAdmissionDeliveredAddRace(t *testing.T) {
 	if errors.Is(res.err, ErrCutOff) || errors.Is(res.err, ErrDraining) {
 		t.Fatal(res.err)
 	}
-	rs, e := f.s.Runs(context.Background(), f.p.ID)
+	rs, e := f.s.Runs(context.Background(), f.p.ID, "", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -552,7 +552,7 @@ func TestAdmissionDrainDeadline(t *testing.T) {
 	if e := f.w.Flush(context.Background()); e != nil {
 		t.Fatal(e)
 	}
-	rs, e := f.s.Runs(context.Background(), f.p.ID)
+	rs, e := f.s.Runs(context.Background(), f.p.ID, "", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}

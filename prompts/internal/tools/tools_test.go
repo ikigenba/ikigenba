@@ -181,7 +181,7 @@ func TestCopyFormats(t *testing.T) {
 	}
 }
 
-// R-92M9-9X46 R-93U5-NOUV R-9522-1GLK R-97HU-T02Y R-99XN-KJKC R-9B5J-YBB1 R-9CDG-C31Q R-9DLC-PUSF R-9ET9-3MJ4 R-9G15-HE9T
+// R-TU96-D56K R-U0CO-9ZW1 R-9522-1GLK R-U2SH-1JDF R-99XN-KJKC R-9B5J-YBB1 R-9CDG-C31Q R-TXWV-IGEN R-9ET9-3MJ4 R-9G15-HE9T
 func TestArgumentTypes(t *testing.T) {
 	text := "system"
 	groups := []string{"files"}
@@ -190,10 +190,10 @@ func TestArgumentTypes(t *testing.T) {
 		v    any
 		want string
 	}{
-		{tools.ListArgs{}, `{}`}, {tools.ShowArgs{Name: "daily"}, `{"name":"daily"}`},
+		{tools.ListArgs{}, `{"page":null,"limit":null}`}, {tools.ShowArgs{Name: "daily"}, `{"name":"daily"}`},
 		{tools.CreateArgs{Name: "daily", Model: "chosen", Prompt: "body", System: &text, Tools: &groups, Schema: raw}, `{"name":"daily","model":"chosen","prompt":"body","system":"system","tools":["files"],"schema":{}}`},
 		{tools.DeleteArgs{Name: "daily"}, `{"name":"daily"}`}, {tools.SubscribeArgs{Name: "daily", Event: "cron.*.fired"}, `{"name":"daily","event":"cron.*.fired"}`}, {tools.UnsubscribeArgs{Name: "daily", Event: "repo.pushed"}, `{"name":"daily","event":"repo.pushed"}`},
-		{tools.RunArgs{Name: "daily", Input: raw}, `{"name":"daily","input":{}}`}, {tools.RunsArgs{Name: "daily"}, `{"name":"daily"}`}, {tools.ResultArgs{Run: "run-value"}, `{"run":"run-value"}`}, {tools.CancelArgs{Run: "run-value"}, `{"run":"run-value"}`},
+		{tools.RunArgs{Name: "daily", Input: raw}, `{"name":"daily","input":{}}`}, {tools.RunsArgs{Name: "daily"}, `{"name":"daily","page":null,"limit":null}`}, {tools.ResultArgs{Run: "run-value"}, `{"run":"run-value"}`}, {tools.CancelArgs{Run: "run-value"}, `{"run":"run-value"}`},
 	}
 	for _, r := range rows {
 		b, err := json.Marshal(r.v)
@@ -237,14 +237,14 @@ func TestDiscovery(t *testing.T) {
 		byName[info.Name] = info
 	}
 	rows := []struct{ name, kind, want string }{
-		// R-A82U-A4BS
-		{"list", "inputSchema", `{"type":"object","additionalProperties":false}`},
-		// R-A9AQ-NW2H
+		// R-UA3V-C5TL
+		{"list", "inputSchema", `{"type":"object","properties":{"page":{"type":"string","description":"description"},"limit":{"type":"integer","description":"description"}},"additionalProperties":false}`},
+		// R-UCJO-3PAZ
 		{"show", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"}},"required":["name"],"additionalProperties":false}`},
-		// R-A9AQ-NW2H
+		// R-UCJO-3PAZ
 		{"delete", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"}},"required":["name"],"additionalProperties":false}`},
-		// R-A9AQ-NW2H
-		{"runs", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"}},"required":["name"],"additionalProperties":false}`},
+		// R-UG7D-90J2
+		{"runs", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"},"page":{"type":"string","description":"description"},"limit":{"type":"integer","description":"description"}},"required":["name"],"additionalProperties":false}`},
 		// R-AAIN-1NT6
 		{"create", "inputSchema", `{"type":"object","properties":{"name":{"type":"string","description":"description"},"model":{"type":"string","description":"description"},"prompt":{"type":"string","description":"description"},"system":{"type":"string","description":"description"},"tools":{"type":"array","items":{"type":"string"},"description":"description"},"schema":{"type":"object","description":"description"}},"required":["name","model","prompt"],"additionalProperties":false}`},
 		// R-MGTG-464Y
@@ -269,16 +269,16 @@ func TestDiscovery(t *testing.T) {
 		{"subscribe", "outputSchema", `{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"model":{"type":"string"},"prompt":{"type":"string"},"system":{"type":"string"},"tools":{"type":"array","items":{"type":"string"}},"schema":{"type":"object"},"created":{"type":"string"},"subscriptions":{"type":"array","items":{"type":"object","properties":{"event":{"type":"string"},"created":{"type":"string"}},"required":["event","created"],"additionalProperties":false}},"last_run":{"type":"object","properties":{"id":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"}},"required":["id","status","started"],"additionalProperties":false}},"required":["id","name","model","prompt","system","tools","created","subscriptions"],"additionalProperties":false}`},
 		// R-AJ1X-Q201
 		{"unsubscribe", "outputSchema", `{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"model":{"type":"string"},"prompt":{"type":"string"},"system":{"type":"string"},"tools":{"type":"array","items":{"type":"string"}},"schema":{"type":"object"},"created":{"type":"string"},"subscriptions":{"type":"array","items":{"type":"object","properties":{"event":{"type":"string"},"created":{"type":"string"}},"required":["event","created"],"additionalProperties":false}},"last_run":{"type":"object","properties":{"id":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"}},"required":["id","status","started"],"additionalProperties":false}},"required":["id","name","model","prompt","system","tools","created","subscriptions"],"additionalProperties":false}`},
-		// R-AK9U-3TQQ
-		{"list", "outputSchema", `{"type":"object","properties":{"prompts":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"model":{"type":"string"},"tools":{"type":"array","items":{"type":"string"}},"subscriptions":{"type":"integer"},"last_run":{"type":"object","properties":{"id":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"}},"required":["id","status","started"],"additionalProperties":false}},"required":["id","name","model","tools","subscriptions"],"additionalProperties":false}}},"required":["prompts"],"additionalProperties":false}`},
+		// R-UIN6-0K0G
+		{"list", "outputSchema", `{"type":"object","properties":{"prompts":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"model":{"type":"string"},"tools":{"type":"array","items":{"type":"string"}},"subscriptions":{"type":"integer"},"last_run":{"type":"object","properties":{"id":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"}},"required":["id","status","started"],"additionalProperties":false}},"required":["id","name","model","tools","subscriptions"],"additionalProperties":false}},"next":{"type":"string","description":"description"}},"required":["prompts"],"additionalProperties":false}`},
 		// R-ALHQ-HLHF
 		{"delete", "outputSchema", `{"type":"object","properties":{"deleted":{"type":"boolean"},"id":{"type":"string"}},"required":["deleted","id"],"additionalProperties":false}`},
 		// R-AMPM-VD84
 		{"run", "outputSchema", `{"type":"object","properties":{"id":{"type":"string"},"status":{"type":"string"},"reason":{"type":"string"}},"required":["id","status"],"additionalProperties":false}`},
 		// R-ANXJ-94YT
 		{"cancel", "outputSchema", `{"type":"object","properties":{"id":{"type":"string"},"model":{"type":"string"},"trigger":{"type":"string"},"event":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"},"finished":{"type":"string"},"truncated":{"type":"boolean"},"reason":{"type":"string"},"calls":{"type":"integer"},"tool_calls":{"type":"integer"},"input_tokens":{"type":"integer"},"cached_tokens":{"type":"integer"},"output_tokens":{"type":"integer"},"reasoning_tokens":{"type":"integer"},"cost_nanos":{"type":"integer"}},"required":["id","model","trigger","status","started","truncated"],"additionalProperties":false}`},
-		// R-AP5F-MWPI
-		{"runs", "outputSchema", `{"type":"object","properties":{"runs":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"model":{"type":"string"},"trigger":{"type":"string"},"event":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"},"finished":{"type":"string"},"truncated":{"type":"boolean"},"reason":{"type":"string"},"calls":{"type":"integer"},"tool_calls":{"type":"integer"},"input_tokens":{"type":"integer"},"cached_tokens":{"type":"integer"},"output_tokens":{"type":"integer"},"reasoning_tokens":{"type":"integer"},"cost_nanos":{"type":"integer"}},"required":["id","model","trigger","status","started","truncated"],"additionalProperties":false}}},"required":["runs"],"additionalProperties":false}`},
+		// R-UL2Y-S3HU
+		{"runs", "outputSchema", `{"type":"object","properties":{"runs":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"model":{"type":"string"},"trigger":{"type":"string"},"event":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"},"finished":{"type":"string"},"truncated":{"type":"boolean"},"reason":{"type":"string"},"calls":{"type":"integer"},"tool_calls":{"type":"integer"},"input_tokens":{"type":"integer"},"cached_tokens":{"type":"integer"},"output_tokens":{"type":"integer"},"reasoning_tokens":{"type":"integer"},"cost_nanos":{"type":"integer"}},"required":["id","model","trigger","status","started","truncated"],"additionalProperties":false}},"next":{"type":"string","description":"description"}},"required":["runs"],"additionalProperties":false}`},
 		// R-AQDC-0OG7
 		{"result", "outputSchema", `{"type":"object","properties":{"id":{"type":"string"},"prompt":{"type":"string"},"model":{"type":"string"},"user":{"type":"string"},"request_id":{"type":"string"},"trigger":{"type":"string"},"event":{"type":"string"},"status":{"type":"string"},"exit_code":{"type":"integer"},"started":{"type":"string"},"finished":{"type":"string"},"stdout_bytes":{"type":"integer"},"stderr_bytes":{"type":"integer"},"truncated":{"type":"boolean"},"reason":{"type":"string"},"calls":{"type":"integer"},"tool_calls":{"type":"integer"},"input_tokens":{"type":"integer"},"cached_tokens":{"type":"integer"},"output_tokens":{"type":"integer"},"reasoning_tokens":{"type":"integer"},"cost_nanos":{"type":"integer"},"stdout":{"type":"string"},"stderr":{"type":"string"},"transcript_bytes":{"type":"integer"},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"size":{"type":"integer"}},"required":["path","size"],"additionalProperties":false}},"files_gone":{"type":"boolean"}},"required":["id","prompt","model","user","request_id","trigger","status","started","stdout_bytes","stderr_bytes","truncated"],"additionalProperties":false}`},
 	}
@@ -301,8 +301,8 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 
-// R-B680-ZP38 R-B7FX-DGTX R-BFZ8-1V0S R-MI1C-HXVN R-AV8X-JREZ R-B504-LXCJ
-// R-9JOU-MPHW R-9KWR-0H8L R-9UNY-2N65
+// R-UX9Y-LSWS R-B7FX-DGTX R-BFZ8-1V0S R-MI1C-HXVN R-AV8X-JREZ R-B504-LXCJ
+// R-9JOU-MPHW R-U589-T2UT R-9UNY-2N65
 func TestCatalogSuccess(t *testing.T) {
 	f := setup(t)
 	defer assertNoRunFiles(t, f)
@@ -357,7 +357,7 @@ func TestCatalogSuccess(t *testing.T) {
 		t.Fatal(nullable)
 	}
 	for _, id := range []string{p.ID, q.ID, other.ID, nullable.ID} {
-		rs, err := f.st.Runs(context.Background(), id)
+		rs, err := f.st.Runs(context.Background(), id, "", "", 1000)
 		if err != nil || len(rs) != 0 {
 			t.Fatalf("unexpected runs %v %v", rs, err)
 		}
@@ -408,7 +408,7 @@ func TestMutationRefusals(t *testing.T) {
 			t.Fatalf("refusal emitted mutation event %v", e)
 		}
 	}
-	all, err := f.st.List(context.Background(), f.caller.UserID)
+	all, err := f.st.List(context.Background(), f.caller.UserID, "", 1000)
 	if err != nil || len(all) != 1 {
 		t.Fatalf("refusal changed catalog %v %v", all, err)
 	}
@@ -471,13 +471,13 @@ func TestSubscriptions(t *testing.T) {
 	if len(resubscribed.Subscriptions) != 1 || resubscribed.Subscriptions[0].Created != expectedCreated || resubscribed.Subscriptions[0].Created == again.Subscriptions[0].Created {
 		t.Fatal(resubscribed)
 	}
-	rs, err := f.st.Runs(context.Background(), p.ID)
+	rs, err := f.st.Runs(context.Background(), p.ID, "", "", 1000)
 	if err != nil || len(rs) != 0 {
 		t.Fatalf("subscription made run %v %v", rs, err)
 	}
 }
 
-// R-B04J-2UDR R-A378-R1D0 R-0KCT-G67E
+// R-USED-2PY0 R-A378-R1D0 R-0KCT-G67E
 func TestCatalogFailure(t *testing.T) {
 	f := setup(t)
 	p := f.seed(t, "daily")
@@ -544,7 +544,7 @@ func TestDiscoveryStable(t *testing.T) {
 			t.Fatalf("discovery/unknown emitted %v", e)
 		}
 	}
-	ps, err := f.st.List(context.Background(), "owner")
+	ps, err := f.st.List(context.Background(), "owner", "", 1000)
 	if err != nil || len(ps) != 0 {
 		t.Fatalf("discovery changed catalog %v %v", ps, err)
 	}
@@ -603,7 +603,7 @@ func TestInvalidArguments(t *testing.T) {
 			t.Fatalf("%s: %d tool events", rid, count)
 		}
 	}
-	ps, err := f.st.List(context.Background(), "owner")
+	ps, err := f.st.List(context.Background(), "owner", "", 1000)
 	if err != nil || len(ps) != 0 {
 		t.Fatalf("invalid arguments changed catalog %v %v", ps, err)
 	}
@@ -647,7 +647,7 @@ func TestAbsentArguments(t *testing.T) {
 }
 
 // R-9YBN-7YE8 R-9ZJJ-LQ4X R-A0RF-ZHVM R-9X3Q-U6NJ R-9VVU-GEWU
-// R-9H91-V60I R-9OKG-5SGO R-9PSC-JK7D R-9NCJ-S0PZ R-B3S8-85LU
+// R-9H91-V60I R-U7O2-KMC7 R-9PSC-JK7D R-9NCJ-S0PZ R-B3S8-85LU
 func TestRunResultFiles(t *testing.T) {
 	f := setup(t)
 	p := f.seed(t, "daily")
@@ -773,7 +773,7 @@ func TestTakenAcrossOwnersAndConcurrentCreates(t *testing.T) {
 	if success != 1 {
 		t.Fatalf("got %d successful concurrent creates", success)
 	}
-	ps, err := f.st.List(context.Background(), f.caller.UserID)
+	ps, err := f.st.List(context.Background(), f.caller.UserID, "", 1000)
 	if err != nil || len(ps) != 1 || ps[0].Name != "shared" {
 		t.Fatalf("catalog %v %v", ps, err)
 	}

@@ -8,9 +8,11 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/prompts/internal/runs"
 	"github.com/ikigenba/ikigenba/prompts/internal/store"
 	"github.com/ikigenba/ikigenba/prompts/internal/urls"
@@ -54,12 +56,16 @@ func Handler(cfg Config) http.Handler {
 		}
 		caller, _ := identity.FromContext(r.Context())
 		if r.URL.Path == "/" {
-			ps, err := cfg.Store.List(r.Context(), caller.UserID)
+			ps, err := cfg.Store.List(r.Context(), caller.UserID, "", paging.DefaultLimit+1)
 			if err != nil {
 				failed(err)
 				return
 			}
 			data := LandingData{Banner: banner()}
+			if len(ps) > paging.DefaultLimit {
+				ps = ps[:paging.DefaultLimit]
+				data.Next = paging.Token{Tool: "list"}.Encode(ps[len(ps)-1].Name)
+			}
 			for _, p := range ps {
 				row := PromptRow{Name: p.Name, URL: "/" + p.Name + "/", Model: p.Model}
 				if p.Last != nil {
@@ -95,12 +101,17 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if len(parts) == 2 && parts[1] == "" {
-			rs, e := cfg.Store.Runs(r.Context(), p.ID)
+			rs, e := cfg.Store.Runs(r.Context(), p.ID, "", "", paging.DefaultLimit+1)
 			if e != nil {
 				failed(e)
 				return
 			}
-			cfg.Pages.Write(w, r, http.StatusOK, "prompt", promptData(p, rs, cfg, banner(page.Level{Name: p.Name, URL: base})))
+			count, e := cfg.Store.RunCount(r.Context(), p.ID)
+			if e != nil {
+				failed(e)
+				return
+			}
+			cfg.Pages.Write(w, r, http.StatusOK, "prompt", promptData(p, rs, count, cfg, banner(page.Level{Name: p.Name, URL: base})))
 			return
 		}
 		if (len(parts) == 3 || len(parts) == 4 && parts[3] == "") && parts[1] == "runs" && parts[2] != "" {
@@ -124,8 +135,13 @@ func Handler(cfg Config) http.Handler {
 	})
 }
 
-func promptData(p store.Prompt, rs []store.Run, cfg Config, b page.Banner) PromptData {
-	d := PromptData{Banner: b, Prompt: PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(CardLayout), CreatedAt: datetime(p.Created), RunsKept: len(rs), KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
+func promptData(p store.Prompt, rs []store.Run, count int, cfg Config, b page.Banner) PromptData {
+	d := PromptData{Banner: b, Prompt: PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(CardLayout), CreatedAt: datetime(p.Created), RunsKept: count, KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
+	if len(rs) > paging.DefaultLimit {
+		rs = rs[:paging.DefaultLimit]
+		last := rs[len(rs)-1]
+		d.Next = paging.Token{Tool: "runs"}.Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+	}
 	for i, s := range p.Tools {
 		d.Prompt.Tools = append(d.Prompt.Tools, ToolGroup{Name: s, First: i == 0, Last: i == len(p.Tools)-1})
 	}

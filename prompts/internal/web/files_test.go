@@ -369,11 +369,11 @@ func TestFilesReadOnlyBannerAndConcurrency(t *testing.T) {
 	}
 	before := snapshot(t, f.root)
 	externalBefore := snapshot(t, filepath.Dir(external))
-	catalog, e := f.cfg.Store.List(context.Background(), "alice")
+	catalog, e := f.cfg.Store.List(context.Background(), "alice", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}
-	records, e := f.cfg.Store.Runs(context.Background(), p.ID)
+	records, e := f.cfg.Store.Runs(context.Background(), p.ID, "", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -417,12 +417,12 @@ func TestFilesReadOnlyBannerAndConcurrency(t *testing.T) {
 	wg.Wait()
 	equal(t, snapshot(t, f.root), before)
 	equal(t, snapshot(t, filepath.Dir(external)), externalBefore)
-	after, e := f.cfg.Store.List(context.Background(), "alice")
+	after, e := f.cfg.Store.List(context.Background(), "alice", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}
 	equal(t, after, catalog)
-	rs, e := f.cfg.Store.Runs(context.Background(), p.ID)
+	rs, e := f.cfg.Store.Runs(context.Background(), p.ID, "", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}

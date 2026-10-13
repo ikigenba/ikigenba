@@ -11,15 +11,17 @@ import (
 	"github.com/ikigenba/ikigenba/prompts/internal/store"
 )
 
-// R-B8S9-4J4Y R-B7KC-QRE9 R-BA05-IAVN R-BB81-W2MC R-BCFY-9UD1 R-BDNU-NM3Q
-// R-BEVR-1DUF R-BG3N-F5L4 R-BHBJ-SXBT R-BIJG-6P2I R-BJRC-KGT7 R-BKZ8-Y8JW
+// R-B8S9-4J4Y R-B7KC-QRE9 R-BB81-W2MC R-BCFY-9UD1 R-BDNU-NM3Q
+// R-BG3N-F5L4 R-BHBJ-SXBT R-BIJG-6P2I R-BJRC-KGT7 R-BKZ8-Y8JW
 // R-BNF1-PS1A R-BOMY-3JRZ R-BPUU-HBIO R-BR2Q-V39D R-BSAN-8V02 R-BTIJ-MMQR
 // R-BUQG-0EHG R-BVYC-E685 R-YDCR-D0OY R-YEKN-QSFN
+// R-V9GY-FIBQ R-VBWR-71T4
 // Converting each contract shape checks field names, types, and order by use.
 func TestDataShapes(t *testing.T) {
 	_ = pages.LandingData(struct {
 		Banner  page.Banner
 		Prompts []pages.PromptRow
+		Next    string
 	}{})
 	_ = pages.PromptRow(struct {
 		Name, URL, Model string
@@ -37,6 +39,7 @@ func TestDataShapes(t *testing.T) {
 		Prompt        pages.PromptCard
 		Runs          []pages.RunRow
 		Subscriptions []string
+		Next          string
 	}{})
 	_ = pages.PromptCard(struct {
 		ID, Name, Model                          string

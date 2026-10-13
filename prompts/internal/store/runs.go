@@ -3,9 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math"
-	"slices"
-	"strings"
 	"time"
 )
 
@@ -60,18 +59,26 @@ func runArgs(r Run) []any {
 
 // AddRun records a new run and its event delivery if applicable.
 func (s *Store) AddRun(ctx context.Context, r Run) (out Run, err error) {
-	err = s.write(ctx, func(tx *sql.Tx, c catalog) error {
+	err = s.write(ctx, func(tx *sql.Tx) error {
 		if !validRun(r) {
 			return errInvalid
 		}
-		if _, ok := c.runs[r.ID]; ok {
+		occupied, e := exists(tx, "SELECT 1 FROM runs WHERE id=?", r.ID)
+		if e != nil {
+			return e
+		}
+		if occupied {
 			return errInvalid
 		}
-		if _, ok := c.prompts[r.Prompt]; !ok {
-			return ErrNotFound
+		if e = requirePrompt(tx, r.Prompt); e != nil {
+			return e
 		}
 		if r.Trigger == TriggerEvent {
-			if c.delivered[[2]string{r.Prompt, r.Event}] {
+			delivered, e := exists(tx, "SELECT 1 FROM event_runs WHERE prompt=? AND event=?", r.Prompt, r.Event)
+			if e != nil {
+				return e
+			}
+			if delivered {
 				return ErrDelivered
 			}
 			if _, e := tx.Exec("INSERT INTO event_runs VALUES (?,?)", r.Prompt, r.Event); e != nil {
@@ -82,7 +89,7 @@ func (s *Store) AddRun(ctx context.Context, r Run) (out Run, err error) {
 		if !r.Finished.IsZero() {
 			r.Finished = stamp(r.Finished)
 		}
-		_, e := tx.Exec("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", runArgs(r)...)
+		_, e = tx.Exec("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", runArgs(r)...)
 		out = r
 		return e
 	})
@@ -94,10 +101,10 @@ func (s *Store) AddRun(ctx context.Context, r Run) (out Run, err error) {
 
 // StartRun moves a queued run to running.
 func (s *Store) StartRun(ctx context.Context, id string) (out Run, err error) {
-	err = s.write(ctx, func(tx *sql.Tx, c catalog) error {
-		r, ok := c.runs[id]
-		if !ok {
-			return ErrNotFound
+	err = s.write(ctx, func(tx *sql.Tx) error {
+		r, err := queryRun(tx, "SELECT "+runColumns+" FROM runs WHERE id=?", id)
+		if err != nil {
+			return err
 		}
 		if r.Status != StatusQueued {
 			return ErrEnded
@@ -115,13 +122,13 @@ func (s *Store) StartRun(ctx context.Context, id string) (out Run, err error) {
 
 // FinishRun ends a queued or running run exactly once.
 func (s *Store) FinishRun(ctx context.Context, id string, e Ending) (out Run, err error) {
-	err = s.write(ctx, func(tx *sql.Tx, c catalog) error {
+	err = s.write(ctx, func(tx *sql.Tx) error {
 		if !validEnding(e) {
 			return errInvalid
 		}
-		r, ok := c.runs[id]
-		if !ok {
-			return ErrNotFound
+		r, err := queryRun(tx, "SELECT "+runColumns+" FROM runs WHERE id=?", id)
+		if err != nil {
+			return err
 		}
 		if r.Status != StatusRunning && r.Status != StatusQueued {
 			return ErrEnded
@@ -140,7 +147,7 @@ func (s *Store) FinishRun(ctx context.Context, id string, e Ending) (out Run, er
 		r.Usage = e.Usage
 		args := runArgs(r)[7:]
 		args = append(args, id)
-		_, err := tx.Exec("UPDATE runs SET status=?,exit_code=?,started=?,finished=?,stdout_bytes=?,stderr_bytes=?,stdout_truncated=?,stderr_truncated=?,reason=?,calls=?,tool_calls=?,input_tokens=?,cached_tokens=?,output_tokens=?,reasoning_tokens=?,cost_nanos=? WHERE id=?", args...)
+		_, err = tx.Exec("UPDATE runs SET status=?,exit_code=?,started=?,finished=?,stdout_bytes=?,stderr_bytes=?,stdout_truncated=?,stderr_truncated=?,reason=?,calls=?,tool_calls=?,input_tokens=?,cached_tokens=?,output_tokens=?,reasoning_tokens=?,cost_nanos=? WHERE id=?", args...)
 		out = r
 		return err
 	})
@@ -150,51 +157,102 @@ func (s *Store) FinishRun(ctx context.Context, id string, e Ending) (out Run, er
 	return
 }
 
+func scanRun(row scanner) (r Run, err error) {
+	var started string
+	var finished sql.NullString
+	err = row.Scan(&r.ID, &r.Prompt, &r.Model, &r.User, &r.RequestID, &r.Trigger, &r.Event, &r.Status, &r.ExitCode, &started, &finished, &r.StdoutBytes, &r.StderrBytes, &r.StdoutTruncated, &r.StderrTruncated, &r.Reason, &r.Usage.Calls, &r.Usage.ToolCalls, &r.Usage.InputTokens, &r.Usage.CachedTokens, &r.Usage.OutputTokens, &r.Usage.ReasoningTokens, &r.Usage.CostNanos)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Run{}, ErrNotFound
+	}
+	if err != nil {
+		return
+	}
+	r.Started, err = time.Parse(time.RFC3339, started)
+	if err == nil && finished.Valid {
+		r.Finished, err = time.Parse(time.RFC3339, finished.String)
+	}
+	return
+}
+func queryRun(tx *sql.Tx, query string, args ...any) (Run, error) {
+	return scanRun(tx.QueryRow(query, args...))
+}
+func queryRuns(tx *sql.Tx, query string, args ...any) ([]Run, error) {
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	rs := []Run{}
+	for rows.Next() {
+		r, e := scanRun(rows)
+		if e != nil {
+			err = e
+			break
+		}
+		rs = append(rs, r)
+	}
+	if err = errors.Join(err, rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
+	return rs, nil
+}
+
 // RunByID finds a run of any owner.
 func (s *Store) RunByID(ctx context.Context, id string) (r Run, err error) {
-	err = s.read(ctx, func(c catalog) error {
-		var ok bool
-		r, ok = c.runs[id]
-		if !ok {
-			return ErrNotFound
-		}
-		return nil
+	err = s.read(ctx, func(tx *sql.Tx) error {
+		r, err = queryRun(tx, "SELECT "+runColumns+" FROM runs WHERE id=?", id)
+		return err
 	})
 	return
 }
 
 // FindRun finds a run belonging to the given owner.
 func (s *Store) FindRun(ctx context.Context, owner, id string) (r Run, err error) {
-	err = s.read(ctx, func(c catalog) error {
-		v, ok := c.runs[id]
-		if !ok || owner == "" || c.prompts[v.Prompt].Owner != owner {
+	err = s.read(ctx, func(tx *sql.Tx) error {
+		if owner == "" {
 			return ErrNotFound
 		}
-		r = v
-		return nil
+		r, err = queryRun(tx, "SELECT "+runColumns+" FROM runs WHERE id=? AND EXISTS (SELECT 1 FROM prompts WHERE prompts.id=runs.prompt AND owner_id=?)", id, owner)
+		return err
 	})
 	return
 }
 
-// Runs lists a prompt's runs newest first.
-func (s *Store) Runs(ctx context.Context, prompt string) (rs []Run, err error) {
-	err = s.read(ctx, func(c catalog) error { rs = c.promptRuns(prompt); return nil })
-	return
-}
-func (s *Store) status(ctx context.Context, status string) (rs []Run, err error) {
-	rs = []Run{}
-	err = s.read(ctx, func(c catalog) error {
-		for _, r := range c.runs {
-			if r.Status == status {
-				rs = append(rs, r)
-			}
+// Runs lists a bounded window of a prompt's runs newest first.
+func (s *Store) Runs(ctx context.Context, prompt, started, id string, n int) (rs []Run, err error) {
+	err = s.read(ctx, func(tx *sql.Tx) error {
+		if n < 1 {
+			rs = []Run{}
+			return nil
 		}
-		slices.SortFunc(rs, func(a, b Run) int { return strings.Compare(a.ID, b.ID) })
-		return nil
+		query := "SELECT " + runColumns + " FROM runs WHERE prompt=?"
+		args := []any{prompt}
+		if id != "" {
+			query += " AND (started,id)<(?,?)"
+			args = append(args, started, id)
+		}
+		query += " ORDER BY started DESC,id DESC LIMIT ?"
+		args = append(args, n)
+		rs, err = queryRuns(tx, query, args...)
+		return err
 	})
 	if err != nil {
 		rs = nil
 	}
+	return
+}
+
+// RunCount returns the total number of a prompt's runs.
+func (s *Store) RunCount(ctx context.Context, prompt string) (n int, err error) {
+	err = s.read(ctx, func(tx *sql.Tx) error {
+		return tx.QueryRow("SELECT count(*) FROM runs WHERE prompt=?", prompt).Scan(&n)
+	})
+	return
+}
+func (s *Store) status(ctx context.Context, status string) (rs []Run, err error) {
+	err = s.read(ctx, func(tx *sql.Tx) error {
+		rs, err = queryRuns(tx, "SELECT "+runColumns+" FROM runs WHERE status=? ORDER BY id", status)
+		return err
+	})
 	return
 }
 
@@ -206,27 +264,22 @@ func (s *Store) Queued(ctx context.Context) ([]Run, error) { return s.status(ctx
 
 // PastKeeping lists terminal runs beyond both retention bounds.
 func (s *Store) PastKeeping(ctx context.Context, now time.Time, days, count int64) (rs []Run, err error) {
-	rs = []Run{}
-	err = s.read(ctx, func(c catalog) error {
+	err = s.read(ctx, func(tx *sql.Tx) error {
 		if days < 1 || count < 1 {
 			return errInvalid
 		}
 		if days > math.MaxInt64/int64(24*time.Hour) {
+			rs = []Run{}
 			return nil
 		}
-		ids := make([]string, 0, len(c.prompts))
-		for id := range c.prompts {
-			ids = append(ids, id)
+		// Ascending rank is equivalent to descending rank after subtracting it
+		// from the partition size, and follows the retention index directly.
+		cutoff := now.UTC().Add(-time.Duration(days) * 24 * time.Hour)
+		if cutoff.Nanosecond() != 0 {
+			cutoff = cutoff.Truncate(time.Second).Add(time.Second)
 		}
-		slices.Sort(ids)
-		for _, id := range ids {
-			for i, r := range c.promptRuns(id) {
-				if int64(i) >= count && r.Status != StatusRunning && r.Status != StatusQueued && r.Started.Before(now.Add(-time.Duration(days)*24*time.Hour)) {
-					rs = append(rs, r)
-				}
-			}
-		}
-		return nil
+		rs, err = queryRuns(tx, "SELECT "+runColumns+" FROM (SELECT "+runColumns+", count(*) OVER (PARTITION BY prompt) - row_number() OVER (PARTITION BY prompt ORDER BY started,id) AS position FROM runs) WHERE position>=? AND status NOT IN (?,?) AND started<?", count, StatusRunning, StatusQueued, cutoff.Format(time.RFC3339))
+		return err
 	})
 	if err != nil {
 		rs = nil
@@ -236,11 +289,18 @@ func (s *Store) PastKeeping(ctx context.Context, now time.Time, days, count int6
 
 // DeleteRun removes a run while preserving event delivery memory.
 func (s *Store) DeleteRun(ctx context.Context, id string) error {
-	return s.write(ctx, func(tx *sql.Tx, c catalog) error {
-		if _, ok := c.runs[id]; !ok {
+	return s.write(ctx, func(tx *sql.Tx) error {
+		result, err := tx.Exec("DELETE FROM runs WHERE id=?", id)
+		if err != nil {
+			return err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
 			return ErrNotFound
 		}
-		_, err := tx.Exec("DELETE FROM runs WHERE id=?", id)
-		return err
+		return nil
 	})
 }

@@ -36,7 +36,7 @@ func deliveryFixture(t *testing.T) (*coreFixture, context.Context, events.Delive
 }
 func deliveryRuns(t *testing.T, f *coreFixture, p store.Prompt) []store.Run {
 	t.Helper()
-	rs, e := f.s.Runs(context.Background(), p.ID)
+	rs, e := f.s.Runs(context.Background(), p.ID, "", "", 100)
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -91,11 +91,11 @@ func equal[T any](t *testing.T, a, b T) {
 }
 func content(t *testing.T, s *store.Store) []store.Prompt {
 	t.Helper()
-	a, e := s.List(ctx, "alice")
+	a, e := s.List(ctx, "alice", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
-	b, e := s.List(ctx, "bob")
+	b, e := s.List(ctx, "bob", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -182,11 +182,11 @@ func TestConstantsAndTruncation(t *testing.T) {
 	}
 }
 
-// R-UWHJ-K1QA R-VES1-ALUP R-W0Q8-6H77 R-WCX8-06M5 R-WE54-DYCU R-WBPB-MEVG
+// R-UWHJ-K1QA R-SNKO-Z689 R-SW3Z-NKF4 R-T27H-KF4L R-WE54-DYCU R-WBPB-MEVG
 func TestEmptyAndOwnership(t *testing.T) {
 	s, _, _ := setup(t)
 	for _, owner := range []string{"", "alice", "bob"} {
-		ps, e := s.List(ctx, owner)
+		ps, e := s.List(ctx, owner, "", math.MaxInt)
 		if e != nil || ps == nil || len(ps) != 0 {
 			t.Fatal(ps, e)
 		}
@@ -212,7 +212,7 @@ func TestEmptyAndOwnership(t *testing.T) {
 	if _, e = s.Create(ctx, other); e != nil {
 		t.Fatal(e)
 	}
-	ps, e := s.List(ctx, "alice")
+	ps, e := s.List(ctx, "alice", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -453,7 +453,7 @@ func TestSubscriptions(t *testing.T) {
 	}
 }
 
-// R-V1D5-34P2 R-V2L1-GWFR R-V7GM-ZZEJ R-VFZX-ODLE R-0O0I-LHFH R-VPR4-QJIY R-WXNI-IA7Y R-X03B-9TPC R-X3R0-F4XF R-X7EP-KG5I R-X8ML-Y7W7 R-X9UI-BZMW R-XB2E-PRDL R-XDI7-HAUZ R-WFD0-RQ3J
+// R-V1D5-34P2 R-V2L1-GWFR R-V7GM-ZZEJ R-SR8E-4HGC R-0O0I-LHFH R-VPR4-QJIY R-WXNI-IA7Y R-X03B-9TPC R-X3R0-F4XF R-X7EP-KG5I R-X8ML-Y7W7 R-WRTI-41G2 R-XB2E-PRDL R-XDI7-HAUZ R-T5V6-PQCO
 func TestRunTransitionsAndReads(t *testing.T) {
 	s, _, _ := setup(t)
 	p := create(t, s, "example")
@@ -461,7 +461,7 @@ func TestRunTransitionsAndReads(t *testing.T) {
 	b := add(t, s, record(p, 2, store.StatusRunning))
 	equal(t, a.Started, normalized(instant))
 	equal(t, a.Finished, time.Time{})
-	rs, e := s.Runs(ctx, p.ID)
+	rs, e := s.Runs(ctx, p.ID, "", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -508,7 +508,7 @@ func TestRunTransitionsAndReads(t *testing.T) {
 		}
 		equal(t, r, store.Run{})
 	}
-	rs, e = s.Runs(ctx, p.ID)
+	rs, e = s.Runs(ctx, p.ID, "", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -519,8 +519,8 @@ func TestRunTransitionsAndReads(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	for _, f := range []func(context.Context, string) ([]store.Run, error){s.Runs} {
-		rs, e := f(ctx, "missing")
+	for _, f := range []func(context.Context, string, string, string, int) ([]store.Run, error){s.Runs} {
+		rs, e := f(ctx, "missing", "", "", math.MaxInt)
 		if e != nil || rs == nil || len(rs) != 0 {
 			t.Fatal(rs, e)
 		}
@@ -546,7 +546,7 @@ func TestRunTransitionsAndReads(t *testing.T) {
 	}
 }
 
-// R-VM3F-L8AV R-VNBB-Z01K R-WYVE-W1YN R-X1B7-NLG1 R-X4YW-SWO4 R-VIFQ-FX2S R-MO4U-ESL4
+// R-VM3F-L8AV R-VNBB-Z01K R-WYVE-W1YN R-X1B7-NLG1 R-X4YW-SWO4 R-STO6-W0XQ R-MO4U-ESL4
 func TestInvalidTransitionsAndPrecedence(t *testing.T) {
 	s, _, _ := setup(t)
 	p := create(t, s, "example")
@@ -630,7 +630,7 @@ func TestInvalidTransitionsAndPrecedence(t *testing.T) {
 	catalogError(t, e)
 }
 
-// R-XEQ3-V2LO R-XFY0-8UCD R-XH5W-MM32 R-XIDT-0DTR R-XJLP-E5KG R-WV7P-QQQK R-WWFM-4IH9
+// R-TEEH-E4JJ R-XFY0-8UCD R-TGUA-5O0X R-XIDT-0DTR R-XJLP-E5KG R-WV7P-QQQK R-WWFM-4IH9
 func TestKeepingDeletionAndDelivery(t *testing.T) {
 	s, _, _ := setup(t)
 	p := create(t, s, "example")
@@ -654,11 +654,13 @@ func TestKeepingDeletionAndDelivery(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	slices.SortFunc(rs, func(a, b store.Run) int { return strings.Compare(b.ID, a.ID) })
 	equal(t, rs, []store.Run{runs[2], runs[1], runs[0]})
 	rs, e = s.PastKeeping(ctx, runs[2].Started.Add(3*24*time.Hour), 3, 2)
 	if e != nil {
 		t.Fatal(e)
 	}
+	slices.SortFunc(rs, func(a, b store.Run) int { return strings.Compare(b.ID, a.ID) })
 	equal(t, rs, []store.Run{runs[1], runs[0]})
 	rs, e = s.PastKeeping(ctx, now, math.MaxInt64, 1)
 	if e != nil || rs == nil || len(rs) != 0 {
@@ -786,7 +788,7 @@ func TestReopenAllContent(t *testing.T) {
 		t.Fatal(e)
 	}
 	before := content(t, s)
-	rs, e := s.Runs(ctx, p.ID)
+	rs, e := s.Runs(ctx, p.ID, "", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -795,7 +797,7 @@ func TestReopenAllContent(t *testing.T) {
 	}
 	s, _ = open(t, path, bytes.NewReader([]byte{9, 8, 7, 6, 5, 4, 3, 2}))
 	equal(t, content(t, s), before)
-	after, e := s.Runs(ctx, p.ID)
+	after, e := s.Runs(ctx, p.ID, "", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -941,7 +943,7 @@ func TestConcurrentTransactions(t *testing.T) {
 		}
 	})
 	equal(t, success, 1)
-	all, e := s.Runs(ctx, p.ID)
+	all, e := s.Runs(ctx, p.ID, "", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -965,7 +967,7 @@ func TestConcurrentTransactions(t *testing.T) {
 		}
 	})
 	wg.Wait()
-	rs, e := s.Runs(ctx, q.ID)
+	rs, e := s.Runs(ctx, q.ID, "", "", math.MaxInt)
 	if e != nil || len(rs) != 0 {
 		t.Fatal(rs, e)
 	}
@@ -977,10 +979,10 @@ func TestEveryMethodFailureAndCancellation(t *testing.T) {
 	p := create(t, s, "example")
 	r := add(t, s, record(p, 1, store.StatusRunning))
 	methods := []func(context.Context) error{
-		func(c context.Context) error { _, e := s.Find(c, p.Owner, p.Name); return e }, func(c context.Context) error { _, e := s.List(c, p.Owner); return e }, func(c context.Context) error { _, e := s.Taken(c, p.Name); return e }, func(c context.Context) error { _, e := s.Create(c, store.Draft{}); return e }, func(c context.Context) error { _, _, e := s.Update(c, p.ID, store.Change{}); return e }, func(c context.Context) error { return s.Delete(c, p.ID) }, func(c context.Context) error { _, e := s.Subscribe(c, p.ID, "bad"); return e }, func(c context.Context) error { _, e := s.Unsubscribe(c, p.ID, "bad"); return e }, func(c context.Context) error { _, e := s.Subscribers(c, "repo.pushed"); return e }, func(c context.Context) error { _, e := s.Delivered(c, p.ID, "event"); return e }, func(c context.Context) error { _, e := s.AddRun(c, store.Run{}); return e }, func(c context.Context) error { _, e := s.StartRun(c, r.ID); return e }, func(c context.Context) error { _, e := s.FinishRun(c, r.ID, store.Ending{}); return e }, func(c context.Context) error { _, e := s.FindRun(c, p.Owner, r.ID); return e }, func(c context.Context) error { _, e := s.RunByID(c, r.ID); return e }, func(c context.Context) error { _, e := s.Runs(c, p.ID); return e }, func(c context.Context) error { _, e := s.Running(c); return e }, func(c context.Context) error { _, e := s.Queued(c); return e }, func(c context.Context) error { _, e := s.PastKeeping(c, instant, 0, 0); return e }, func(c context.Context) error { return s.DeleteRun(c, r.ID) },
+		func(c context.Context) error { _, e := s.Find(c, p.Owner, p.Name); return e }, func(c context.Context) error { _, e := s.List(c, p.Owner, "", math.MaxInt); return e }, func(c context.Context) error { _, e := s.Taken(c, p.Name); return e }, func(c context.Context) error { _, e := s.Create(c, store.Draft{}); return e }, func(c context.Context) error { _, _, e := s.Update(c, p.ID, store.Change{}); return e }, func(c context.Context) error { return s.Delete(c, p.ID) }, func(c context.Context) error { _, e := s.Subscribe(c, p.ID, "bad"); return e }, func(c context.Context) error { _, e := s.Unsubscribe(c, p.ID, "bad"); return e }, func(c context.Context) error { _, e := s.Subscribers(c, "repo.pushed"); return e }, func(c context.Context) error { _, e := s.Delivered(c, p.ID, "event"); return e }, func(c context.Context) error { _, e := s.AddRun(c, store.Run{}); return e }, func(c context.Context) error { _, e := s.StartRun(c, r.ID); return e }, func(c context.Context) error { _, e := s.FinishRun(c, r.ID, store.Ending{}); return e }, func(c context.Context) error { _, e := s.FindRun(c, p.Owner, r.ID); return e }, func(c context.Context) error { _, e := s.RunByID(c, r.ID); return e }, func(c context.Context) error { _, e := s.Runs(c, p.ID, "", "", math.MaxInt); return e }, func(c context.Context) error { _, e := s.RunCount(c, p.ID); return e }, func(c context.Context) error { _, e := s.Running(c); return e }, func(c context.Context) error { _, e := s.Queued(c); return e }, func(c context.Context) error { _, e := s.PastKeeping(c, instant, 0, 0); return e }, func(c context.Context) error { return s.DeleteRun(c, r.ID) },
 	}
 	before := content(t, s)
-	beforeRuns, e := s.Runs(ctx, p.ID)
+	beforeRuns, e := s.Runs(ctx, p.ID, "", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -1002,7 +1004,7 @@ func TestEveryMethodFailureAndCancellation(t *testing.T) {
 	}
 	d.SetFailing(false)
 	equal(t, content(t, s), before)
-	after, e := s.Runs(ctx, p.ID)
+	after, e := s.Runs(ctx, p.ID, "", "", math.MaxInt)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -1220,7 +1222,7 @@ func TestCatalogGlobalListsSortIDs(t *testing.T) {
 	equal(t, ps, []store.Prompt{p, q})
 }
 
-// R-XEQ3-V2LO
+// R-TEEH-E4JJ
 func TestRetentionAcrossPrompts(t *testing.T) {
 	s, _, _ := setup(t)
 	p := create(t, s, "first-retention")
@@ -1240,7 +1242,9 @@ func TestRetentionAcrossPrompts(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	equal(t, got, []store.Run{expected[1], expected[0]})
+	slices.SortFunc(got, func(a, b store.Run) int { return strings.Compare(a.ID, b.ID) })
+	slices.SortFunc(expected, func(a, b store.Run) int { return strings.Compare(a.ID, b.ID) })
+	equal(t, got, expected)
 }
 
 // R-YAWY-LH7K: every byte obeys the name alphabet and leading-byte rule.

@@ -133,9 +133,10 @@ func TestPartials(t *testing.T) {
 	}
 }
 
-// R-U3TX-DAOH R-BA05-IAVN R-BB81-W2MC R-BEVR-1DUF R-BG3N-F5L4 R-BHBJ-SXBT
+// R-BB81-W2MC R-BG3N-F5L4 R-BHBJ-SXBT
 // R-BIJG-6P2I R-BJRC-KGT7 R-BNF1-PS1A R-BOMY-3JRZ R-BPUU-HBIO R-BR2Q-V39D
 // R-BSAN-8V02 R-BUQG-0EHG R-BVYC-E685
+// R-VMVU-MZHD
 func TestAllTemplateStates(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	set := templates(t)
@@ -147,17 +148,20 @@ func TestAllTemplateStates(t *testing.T) {
 		}
 	}
 	for _, banner := range banners {
-		for variant := 0; variant < 4; variant++ {
+		for variant := 0; variant < 8; variant++ {
 			d := pages.LandingData{Banner: banner}
-			if variant > 0 {
+			if variant%4 > 0 {
 				row := pages.PromptRow{Name: "fixture", URL: "/fixture/", Model: "fixture-model"}
-				if variant > 1 {
+				if variant%4 > 1 {
 					row.LastRun = &pages.RunRow{Status: store.StatusRunning}
-					if variant == 3 {
+					if variant%4 == 3 {
 						row.LastRun.Cost = "0.000001"
 					}
 				}
 				d.Prompts = []pages.PromptRow{row}
+			}
+			if variant >= 4 {
+				d.Next = "fixture-next"
 			}
 			render(t, set, "landing", d)
 		}
@@ -185,6 +189,9 @@ func TestAllTemplateStates(t *testing.T) {
 				}
 				if mask&8 != 0 {
 					d.Subscriptions = []string{"fixture.*"}
+				}
+				if mask&64 != 0 {
+					d.Next = "fixture-next"
 				}
 				render(t, set, "prompt", d)
 			}

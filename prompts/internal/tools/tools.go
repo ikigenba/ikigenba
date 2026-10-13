@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/agentkit"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/prompts/internal/agent"
 	"github.com/ikigenba/ikigenba/prompts/internal/runs"
@@ -91,12 +92,27 @@ func validate(model, prompt *string, groups *[]string, schema json.RawMessage) e
 	}
 	return nil
 }
-func (h handlers) list(ctx context.Context, c identity.Caller, _ ListArgs) (PromptList, error) {
-	ps, err := h.Store.List(ctx, c.UserID)
+func (h handlers) list(ctx context.Context, c identity.Caller, a ListArgs) (PromptList, error) {
+	n, err := paging.Window(a.Limit)
+	if err != nil {
+		return PromptList{}, err
+	}
+	token := paging.Token{Tool: "list"}
+	var after string
+	if a.Page != nil && *a.Page != "" {
+		if err = token.Decode(*a.Page, &after); err != nil {
+			return PromptList{}, textError(paging.BadPage)
+		}
+	}
+	ps, err := h.Store.List(ctx, c.UserID, after, n+1)
 	if err != nil {
 		return PromptList{}, catalogError(err)
 	}
-	out := PromptList{Prompts: make([]ListedPrompt, 0, len(ps))}
+	out := PromptList{Prompts: make([]ListedPrompt, 0, min(len(ps), n))}
+	if len(ps) > n {
+		ps = ps[:n]
+		out.Next = ptr(token.Encode(ps[n-1].Name))
+	}
 	for _, p := range ps {
 		v := promptObject(p)
 		out.Prompts = append(out.Prompts, ListedPrompt{ID: p.ID, Name: p.Name, Model: p.Model, Tools: v.Tools, Subscriptions: len(p.Subscriptions), LastRun: v.LastRun})
@@ -216,15 +232,31 @@ func (h handlers) run(ctx context.Context, c identity.Caller, a RunArgs) (Starte
 	return Started{ID: r.ID, Status: r.Status, Reason: e.Reason}, nil
 }
 func (h handlers) runs(ctx context.Context, c identity.Caller, a RunsArgs) (RunList, error) {
+	n, err := paging.Window(a.Limit)
+	if err != nil {
+		return RunList{}, err
+	}
+	token := paging.Token{Tool: "runs"}
+	var started, id string
+	if a.Page != nil && *a.Page != "" {
+		if err = token.Decode(*a.Page, &started, &id); err != nil {
+			return RunList{}, textError(paging.BadPage)
+		}
+	}
 	p, err := h.prompt(ctx, c, a.Name)
 	if err != nil {
 		return RunList{}, err
 	}
-	rs, err := h.Store.Runs(ctx, p.ID)
+	rs, err := h.Store.Runs(ctx, p.ID, started, id, n+1)
 	if err != nil {
 		return RunList{}, catalogError(err)
 	}
-	out := RunList{Runs: make([]RunEntry, 0, len(rs))}
+	out := RunList{Runs: make([]RunEntry, 0, min(len(rs), n))}
+	if len(rs) > n {
+		rs = rs[:n]
+		last := rs[n-1]
+		out.Next = ptr(token.Encode(timeText(last.Started), last.ID))
+	}
 	for _, r := range rs {
 		out.Runs = append(out.Runs, runEntry(r))
 	}

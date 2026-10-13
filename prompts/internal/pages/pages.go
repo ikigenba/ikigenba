@@ -52,6 +52,7 @@ func (s *Set) Write(w http.ResponseWriter, r *http.Request, status int, name str
 type LandingData struct {
 	Banner  page.Banner
 	Prompts []PromptRow
+	Next    string
 }
 
 // PromptRow is one catalog row.
@@ -77,6 +78,7 @@ type PromptData struct {
 	Prompt        PromptCard
 	Runs          []RunRow
 	Subscriptions []string
+	Next          string
 }
 
 // PromptCard is a prompt's stored fields and retention values.

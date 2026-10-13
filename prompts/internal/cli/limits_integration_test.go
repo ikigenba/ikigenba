@@ -570,7 +570,7 @@ func TestRunPrunesWithNewRetentionSettingsBeforeReady(t *testing.T) {
 	next.env["RUN_KEEP_COUNT"] = "2"
 	next.start(t)
 	d, st = serveCatalog(t, f.p.Dir)
-	remaining, e := st.Runs(context.Background(), p.ID)
+	remaining, e := st.Runs(context.Background(), p.ID, "", "", 100)
 	_ = d.Close()
 	if e != nil {
 		t.Fatal(e)

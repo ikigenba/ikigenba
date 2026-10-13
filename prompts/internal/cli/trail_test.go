@@ -777,7 +777,7 @@ func TestTrailDeliveries(t *testing.T) {
 			trailDelivery(t, f, "duplicate-delivery", eventID, "repo.pushed")
 			trailDelivery(t, f, "unmatched-delivery", "evt_fedcba9876543210", "other.event")
 			d, st := serveCatalog(t, f.p.Dir)
-			rs, e := st.Runs(context.Background(), p.ID)
+			rs, e := st.Runs(context.Background(), p.ID, "", "", 100)
 			if e != nil {
 				t.Fatal(e)
 			}

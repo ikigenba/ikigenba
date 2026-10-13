@@ -587,11 +587,17 @@ func (c *Core) Delete(ctx context.Context, prompt string) error {
 		c.mu.Unlock()
 		return e
 	}
-	rs, e := c.cfg.Store.Runs(ctx, prompt)
+	rs, e := c.cfg.Store.Running(ctx)
 	if e != nil {
 		c.mu.Unlock()
 		return e
 	}
+	queued, e := c.cfg.Store.Queued(ctx)
+	if e != nil {
+		c.mu.Unlock()
+		return e
+	}
+	rs = append(rs, queued...)
 	c.deleting[prompt] = true
 	kept := c.queue[:0]
 	for _, l := range c.queue {
@@ -619,7 +625,7 @@ func (c *Core) Delete(ctx context.Context, prompt string) error {
 		<-done
 	}
 	for _, r := range rs {
-		if r.Status == store.StatusQueued || r.Status == store.StatusRunning {
+		if r.Prompt == prompt {
 			if _, e = c.Cancel(ctx, r.ID); e != nil && !errors.Is(e, store.ErrEnded) && !errors.Is(e, store.ErrNotFound) {
 				return e
 			}

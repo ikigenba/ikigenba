@@ -8,6 +8,8 @@ import (
 
 // ListArgs is the public MCP argument type.
 type ListArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // ShowArgs is the public MCP argument type.
@@ -60,7 +62,9 @@ type RunArgs struct {
 
 // RunsArgs is the public MCP argument type.
 type RunsArgs struct {
-	Name string `json:"name" mcp:"required" description:"The name value."`
+	Name  string  `json:"name" mcp:"required" description:"The name value."`
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // ResultArgs is the public MCP argument type.
@@ -114,6 +118,7 @@ type ListedPrompt struct {
 // PromptList is the public MCP result type.
 type PromptList struct {
 	Prompts []ListedPrompt `json:"prompts" mcp:"required"`
+	Next    *string        `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Deleted is the public MCP result type.
@@ -153,6 +158,7 @@ type RunEntry struct {
 // RunList is the public MCP result type.
 type RunList struct {
 	Runs []RunEntry `json:"runs" mcp:"required"`
+	Next *string    `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // File is the public MCP result type.

@@ -24,6 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/prompts"
@@ -177,7 +178,8 @@ func assertPage(t *testing.T, w *httptest.ResponseRecorder, status int, name str
 	}
 }
 
-// R-YUFC-PT2O R-YDCR-D0OY R-YEKN-QSFN R-YLW2-1EVT R-CBT1-D6V6 R-CGOM-W9TY R-YN3Y-F6MI R-CFGQ-II39
+// R-YUFC-PT2O R-YDCR-D0OY R-YEKN-QSFN R-YLW2-1EVT R-CBT1-D6V6 R-YN3Y-F6MI R-CFGQ-II39
+// R-VECJ-YLAI
 func TestLanding(t *testing.T) {
 	f := setup(t)
 	assertPage(t, serve(f.cfg, request("GET", "/?fixture=query", "alice")), 200, "landing", pages.LandingData{Banner: wantBanner("alice")})
@@ -193,7 +195,8 @@ func TestLanding(t *testing.T) {
 	assertPage(t, serve(f.cfg, r), 200, "landing", data)
 }
 
-// R-CHWJ-A1KN R-YPJR-6Q3W R-CD0X-QYLV R-CE8U-4QCK
+// R-CD0X-QYLV R-CE8U-4QCK
+// R-VGSC-Q4RW R-VJ85-HO9A
 func TestPrompt(t *testing.T) {
 	f := setup(t)
 	p := create(t, f, "fixture", "alice")
@@ -212,7 +215,7 @@ func TestPrompt(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	rs, e := f.cfg.Store.Runs(context.Background(), p.ID)
+	rs, e := f.cfg.Store.Runs(context.Background(), p.ID, "", "", paging.MaxLimit)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -554,11 +557,11 @@ func TestReadOnly(t *testing.T) {
 	writeFixture(t, filepath.Join(f.cfg.Runs.Folder(u), runs.InputFile), []byte("fixture-input"))
 	writeFixture(t, filepath.Join(f.cfg.Runs.Folder(u), runs.WorkDir, "output"), []byte("fixture-output"))
 	before := snapshot(t, f.root)
-	ps, e := f.cfg.Store.List(context.Background(), "alice")
+	ps, e := f.cfg.Store.List(context.Background(), "alice", "", paging.MaxLimit)
 	if e != nil {
 		t.Fatal(e)
 	}
-	rs, e := f.cfg.Store.Runs(context.Background(), p.ID)
+	rs, e := f.cfg.Store.Runs(context.Background(), p.ID, "", "", paging.MaxLimit)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -571,11 +574,11 @@ func TestReadOnly(t *testing.T) {
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("run tree changed")
 	}
-	got, e := f.cfg.Store.List(context.Background(), "alice")
+	got, e := f.cfg.Store.List(context.Background(), "alice", "", paging.MaxLimit)
 	if e != nil || !reflect.DeepEqual(got, ps) {
 		t.Fatal("catalog changed", e)
 	}
-	runsAfter, e := f.cfg.Store.Runs(context.Background(), p.ID)
+	runsAfter, e := f.cfg.Store.Runs(context.Background(), p.ID, "", "", paging.MaxLimit)
 	if e != nil || !reflect.DeepEqual(runsAfter, rs) {
 		t.Fatal("runs changed", e)
 	}
@@ -606,7 +609,7 @@ func TestConcurrentHandler(t *testing.T) {
 	wg.Wait()
 }
 
-// R-CHWJ-A1KN R-YPJR-6Q3W
+// R-VGSC-Q4RW R-VJ85-HO9A
 func TestPromptOptionalFields(t *testing.T) {
 	f := setup(t)
 	for i, groups := range [][]string{nil, {"files"}, {"bash", "suite", "files"}} {
