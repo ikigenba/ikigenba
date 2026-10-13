@@ -3,17 +3,18 @@
      .Trail is empty, so the banner's breadcrumb holds only the service.
      Shown only to a signed-in user; a guest is sent to sign in. Read-only:
      no form but the banner's sign out. Data: .Banner (a page.Banner, for
-     banner and footer); .Artifacts, the first page of artifacts in the space
-     (whoever owns them), sorted by path, each with .ID (its art_ id, "art_" and 16
+     banner and footer); .Artifacts, one window of artifacts in the space
+     (whoever owns them), the window .Page names, sorted by path, each with .ID (its art_ id, "art_" and 16
      hex), .Path (its path under /files/, no leading slash), .Bytes (int64,
      its size in bytes), .ContentType (its content type, as stored), .Owner
      (the owner's email), .Modified and .ModifiedText (RFC 3339 UTC to the
      second, and UTC to the minute, "2026-10-05 09:00"), and .Expires and
      .ExpiresText (likewise; both empty when it never expires); .TotalBytes
      (int64, the sum of .Bytes over every artifact in the space, not only
-     this page); and .Next (string, the page token list's next carries for
-     the artifacts after these, the value to pass as its page; empty when
-     none remain). Bytes are
+     this window); .Page (string, this window's own page token, the ?page=
+     the request carried; empty on the first window); and .Next (string,
+     the page token for the window after this one; empty when none
+     remain). Bytes are
      shown as the plain integer, never a humanised size. Hooks: title
      "artifacts"; h1 with text "artifacts"; p#summary.lede (text "Binary
      files agents and services share. An agent puts a file at a path with
@@ -31,9 +32,14 @@
      (.ContentType in a code element), td.artifact-owner (.Owner),
      td.artifact-modified holding time[datetime=<.Modified>] (text
      .ModifiedText), and td.artifact-expires holding, only when .Expires is
-     not empty, time[datetime=<.Expires>] (text .ExpiresText), then, when
-     .Next is not empty, p#next (text "More artifacts follow: call list
-     with page <.Next>.", list, page and .Next each in a code element); a
+     not empty, time[datetime=<.Expires>] (text .ExpiresText); then, still
+     in the section and shown when .Artifacts is not empty or .Page is not
+     empty (so an emptied later window still offers First; the first
+     window with no artifacts has no nav), nav.paging#paging (aria-label
+     "Pages") whose children are, in order, First (on the first window,
+     .Page empty, a span with aria-current="page" and text "First";
+     otherwise a link to / with text "First") and, only when .Next is not
+     empty, Next (a link to /?page=<.Next> with text "Next"); a
      #about-link (text "About artifacts") whose href is "/about". No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
@@ -61,12 +67,12 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .Next}}<p id="next">More artifacts follow: call <code>list</code> with <code>page</code> <code>{{.Next}}</code>.</p>
-{{end}}{{else}}<div id="no-artifacts" class="empty">
+{{else}}<div id="no-artifacts" class="empty">
 <h3 class="text-md">No artifacts yet</h3>
 <p>A file an agent puts under <code>/files/</code> with an HTTP PUT shows up here; the <code>import</code> tool answers where and how to put one.</p>
 </div>{{end}}
-</section>
+{{if or .Artifacts .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{end}}</section>
 <p><a id="about-link" href="/about">About artifacts</a></p>
 </main>
 {{template "footer" .Banner}}
