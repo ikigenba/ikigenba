@@ -50,7 +50,7 @@ candidates reads two values at start, in this order: `DRAIN_SECONDS`, the space'
 
 ## Paths
 
-Relative to `Process.Dir` (the process's working directory when empty) the database is `state/candidates.db`, opened with `db.Open`, the root package's `Migrations()` and `Process.Now`; `state/` is created when absent. candidates writes nothing outside `Dir` and nothing under it but the database: a run's rows are streamed and handled a batch at a time (decision 1).
+Relative to `Process.Dir` (the process's working directory when empty) the database is `state/candidates.db`, opened with `db.Open`, the root package's `Migrations()` and `Process.Now`; `state/` is created when absent. candidates writes nothing outside `Dir` and nothing under it but the database: a run's rows are streamed and handled a batch at a time (decision 1), and the store reaches each record a batch needs by key, so a pass costs in proportion to its rows (`D04-store`, `D06-passes`).
 
 ## The addresses
 
