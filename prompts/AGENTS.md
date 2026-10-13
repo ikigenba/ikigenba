@@ -115,9 +115,9 @@ build run never writes it. `devctl build` packs it beside `bin/` and `etc/`.
 - the modules `go.mod` requires, in the Go module cache; `go.sum` is
   committed, and the gates themselves run offline. The build run moves to
   another release only when this file names one:
-  - appkit `v0.22.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.22.0`: a release that
-    exports the `db` and `version` packages, whose `page.Banner` carries
+  - appkit `v0.25.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.25.0`: a release that
+    exports the `db`, `paging` and `version` packages, whose `page.Banner` carries
     the trail, the home link and the tools flag the templates use, with
     `Release` and `Commit` but no service launcher, whose
     MCP server lists its registered tools, and whose `mcp.Nullable` lets a
@@ -150,7 +150,7 @@ external dependency needs approval first, the user's or a delivery's.
 ### Adopting the libraries
 
 appkit, agentkit and toolkit are required only at a published release, here
-appkit `v0.22.0`, agentkit `v0.14.0` and toolkit `v0.3.0`, fetched through the
+appkit `v0.25.0`, agentkit `v0.14.0` and toolkit `v0.3.0`, fetched through the
 ordinary module proxy and checked against the checksum database (see the root
 `AGENTS.md`), each set with `go get` as above. No `replace` directive, no
 `go.work`, no local module cache stands in for any of them. A change that
