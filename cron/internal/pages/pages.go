@@ -31,6 +31,7 @@ type Set struct{ templates *template.Template }
 type LandingData struct {
 	Banner   page.Banner
 	Triggers []TriggerRow
+	Page     string
 	Next     string
 }
 
@@ -150,7 +151,17 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if path == "/" {
-			entries, err := cfg.Store.ListAfter(r.Context(), "", paging.DefaultLimit+1)
+			p := r.URL.Query().Get("page")
+			after := ""
+			if p != "" {
+				if err := (paging.Token{Tool: "list"}).Decode(p, &after); err != nil {
+					b := cfg.Banner(bannerUser(r, cfg.ServicesPath))
+					b.Trail = nil
+					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: b})
+					return
+				}
+			}
+			entries, err := cfg.Store.ListAfter(r.Context(), after, paging.DefaultLimit+1)
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -164,7 +175,7 @@ func Handler(cfg Config) http.Handler {
 				next = (paging.Token{Tool: "list"}).Encode(entries[paging.DefaultLimit-1].Slug)
 				entries = entries[:paging.DefaultLimit]
 			}
-			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Triggers: make([]TriggerRow, 0, len(entries)), Next: next}
+			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Triggers: make([]TriggerRow, 0, len(entries)), Page: p, Next: next}
 			data.Banner.Trail = nil
 			caller, _ := identity.FromContext(r.Context())
 			for _, t := range entries {
