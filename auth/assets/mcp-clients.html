@@ -1,7 +1,7 @@
 {{/* The profile's MCP clients card (D07), drawn inside the profile's main
      after the Create a token card. Data (D07's MCP clients data): .Clients,
-     a list in profile order, the first page of MCP client tokens, most
-     recently used first, one entry per MCP client token, each with .ID
+     a list in profile order, one window of MCP client tokens, the window
+     .ClientsPage names, most recently used first, one entry per MCP client token, each with .ID
      (the tok_ id), .Name (the client's registered name, written as text),
      .Approved and .ApprovedText (the approval time as datetime and as
      YYYY-MM-DD HH:MM UTC), .LastUsed and .LastUsedTitle (both empty when
@@ -10,10 +10,19 @@
      .Count, zero when never used; it replaces the field .LastUsedText,
      which held the words),
      .Expires and .ExpiresText (the expiry as datetime and minute) and
-     .Expired (the expiry is not after the draw time); and .ClientsNext
-     (bool, at this MCP clients data level beside .Clients: true when MCP
-     clients remain beyond .Clients; false when none remain; a bool because
-     auth has no list tool and so no page token to show). Hooks:
+     .Expired (the expiry is not after the draw time); .ClientsPage
+     (string, at this MCP clients data level beside .Clients: this window's
+     own clients page token, the ?clients_page= the request carried; empty
+     on the first window); .ClientsNext (string, at this level: the page
+     token the clients nav's Next carries for the MCP clients after
+     .Clients; empty when none remain); and .TokensPage (string, at this
+     level: the tokens list's current token, the profile data's .Page, for
+     the cross-carry; empty on the tokens list's first window). Two lists
+     share the profile page, so each has its own nav and parameter,
+     nav#paging-tokens with tokens_page (profile.html) and
+     nav#paging-clients with clients_page; each nav's hrefs carry the other
+     list's current token, so paging one list never resets the other, and
+     its First drops only its own parameter. Hooks:
      section.card.flush; header with h2 "MCP clients" and p "MCP clients you
      approve act as you at the MCP gateway. Revoke one to sign it out.";
      then one div: with clients, div.table-scroll holding one table whose
@@ -23,12 +32,20 @@
      once expired a time with datetime and title reading "Expired"; and
      td.row-actions holding form.inline[method=post]
      [action=/tokens/<ID>/revoke] with button.ghost.small[type=submit]
-     "Revoke"; then, when .ClientsNext is true, p#next-clients (text "More
-     clients follow; the ones not shown are the least recently used."; its
-     id differs from the tokens card's p#next because both cards share the
-     profile page). Without clients, div.empty with h3 "No MCP clients yet" and
-     p "A client appears here once you approve it from its login." No other
-     form, button, input, select or a. */}}
+     "Revoke". Without clients, div.empty with h3 "No MCP clients yet" and
+     p "A client appears here once you approve it from its login." Then,
+     after the card (section.card.flush), nav.paging#paging-clients
+     (aria-label "Pages") whose children are, in order, First (on the first
+     window, .ClientsPage empty, a span with aria-current="page" and text
+     "First"; otherwise a link with text "First" to / when .TokensPage is
+     empty, else to /?tokens_page=<.TokensPage>) and, only when
+     .ClientsNext is not empty, Next (a link with text "Next" to
+     /?clients_page=<.ClientsNext>, followed by
+     &tokens_page=<.TokensPage> when .TokensPage is not empty); the nav
+     shows when .Clients is not empty or .ClientsPage is not empty, so an
+     emptied later window still offers First; on the first window with no
+     clients there is no nav. No other form, button, input, select or a,
+     but the nav's links. */}}
 {{define "mcp-clients"}}<section class="card flush">
 <header><h2>MCP clients</h2> <p>MCP clients you approve act as you at the MCP gateway. Revoke one to sign it out.</p></header>
 {{if .Clients}}<div class="table-scroll"><table>
@@ -37,6 +54,7 @@
 {{range .Clients}}<tr><td>{{.Name}}</td><td><time datetime="{{.Approved}}">{{.ApprovedText}}</time></td>{{if .LastUsed}}<td><time datetime="{{.LastUsed}}" title="{{.LastUsedTitle}}">{{template "elapsed" .LastUsedElapsed}}</time></td>{{else}}<td class="muted">Never</td>{{end}}{{if .Expired}}<td><time datetime="{{.Expires}}" title="{{.ExpiresText}}">Expired</time></td>{{else}}<td><time datetime="{{.Expires}}">{{.ExpiresText}}</time></td>{{end}}<td class="row-actions"><form class="inline" method="post" action="/tokens/{{.ID}}/revoke"><button class="ghost small" type="submit">Revoke</button></form></td></tr>
 {{end}}</tbody>
 </table></div>
-{{if .ClientsNext}}<p id="next-clients">More clients follow; the ones not shown are the least recently used.</p>
-{{end}}{{else}}<div class="empty"><h3>No MCP clients yet</h3> <p>A client appears here once you approve it from its login.</p></div>{{end}}
-</section>{{end}}
+{{else}}<div class="empty"><h3>No MCP clients yet</h3> <p>A client appears here once you approve it from its login.</p></div>{{end}}
+</section>
+{{if or .Clients .ClientsPage}}<nav class="paging" id="paging-clients" aria-label="Pages">{{if .ClientsPage}}<a href="/{{if .TokensPage}}?tokens_page={{.TokensPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ClientsNext}}<a href="/?clients_page={{.ClientsNext}}{{if .TokensPage}}&amp;tokens_page={{.TokensPage}}{{end}}">Next</a>{{end}}</nav>
+{{end}}{{end}}
