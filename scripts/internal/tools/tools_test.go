@@ -250,12 +250,12 @@ func TestToolMetadata(t *testing.T) {
 	h := setup(t, "print(1)\n")
 	infos, e := h.client.ListTools(context.Background(), caller())
 	must(t, e)
-	// R-490J-BUKF R-4JZM-RS8O R-4L7J-5JZD R-88D3-N1CL R-89L0-0T3A R-8ASW-EKTZ R-8C0S-SCKO R-8D8P-64BD R-XWK5-FXBJ R-XXS1-TP28 R-XYZY-7GSX R-Y07U-L8JM R-Y1FQ-Z0AB R-Y2NN-CS10 R-Y3VJ-QJRP R-Y53G-4BIE
+	// R-H8V2-2YCK R-HCIR-89KN R-4JZM-RS8O R-4L7J-5JZD R-88D3-N1CL R-HBAU-UHTY R-8ASW-EKTZ R-H7N5-P6LV R-8D8P-64BD R-XWK5-FXBJ R-HA2Y-GQ39 R-XYZY-7GSX R-Y07U-L8JM R-Y1FQ-Z0AB R-Y2NN-CS10 R-Y3VJ-QJRP R-Y53G-4BIE
 	wants := []struct {
 		name, input, output string
 		effect              mcp.Effect
 	}{
-		{"list", "{\"type\":\"object\",\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"scripts\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"integer\"},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"subscriptions\"],\"additionalProperties\":false}}},\"required\":[\"scripts\"],\"additionalProperties\":false}", mcp.Read},
+		{"list", "{\"type\":\"object\",\"properties\":{\"page\":{\"type\":\"string\",\"description\":\"fixture\"},\"limit\":{\"type\":\"integer\",\"description\":\"fixture\"}},\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"scripts\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"integer\"},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"subscriptions\"],\"additionalProperties\":false}},\"next\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"scripts\"],\"additionalProperties\":false}", mcp.Read},
 		{"show", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Read},
 		{"create", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"repo\":{\"type\":\"string\",\"description\":\"fixture\"},\"ref\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"repo\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
 		{"update", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"ref\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"ref\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
@@ -263,7 +263,7 @@ func TestToolMetadata(t *testing.T) {
 		{"subscribe", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"event\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"event\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Additive},
 		{"unsubscribe", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"event\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\",\"event\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"subscriptions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"event\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"}},\"required\":[\"event\",\"created\"],\"additionalProperties\":false}},\"last_run\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\",\"started\"],\"additionalProperties\":false}},\"required\":[\"id\",\"name\",\"repo\",\"ref\",\"created\",\"subscriptions\"],\"additionalProperties\":false}", mcp.Destructive},
 		{"run", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"ref\":{\"type\":\"string\",\"description\":\"fixture\"},\"input\":{\"type\":\"object\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"status\"],\"additionalProperties\":false}", mcp.Additive},
-		{"runs", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"runs\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"ref\",\"trigger\",\"status\",\"started\",\"truncated\"],\"additionalProperties\":false}}},\"required\":[\"runs\"],\"additionalProperties\":false}", mcp.Read},
+		{"runs", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"},\"page\":{\"type\":\"string\",\"description\":\"fixture\"},\"limit\":{\"type\":\"integer\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"runs\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"ref\",\"trigger\",\"status\",\"started\",\"truncated\"],\"additionalProperties\":false}},\"next\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"runs\"],\"additionalProperties\":false}", mcp.Read},
 		{"result", "{\"type\":\"object\",\"properties\":{\"run\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"run\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"script\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"user\":{\"type\":\"string\"},\"request_id\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"stdout_bytes\":{\"type\":\"integer\"},\"stderr_bytes\":{\"type\":\"integer\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"},\"stdout\":{\"type\":\"string\"},\"stderr\":{\"type\":\"string\"},\"files\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"size\":{\"type\":\"integer\"}},\"required\":[\"path\",\"size\"],\"additionalProperties\":false}},\"files_gone\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"script\",\"ref\",\"user\",\"request_id\",\"trigger\",\"status\",\"started\",\"stdout_bytes\",\"stderr_bytes\",\"truncated\"],\"additionalProperties\":false}", mcp.Read},
 		{"cancel", "{\"type\":\"object\",\"properties\":{\"run\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"run\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"sha\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"trigger\":{\"type\":\"string\"},\"event\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"started\":{\"type\":\"string\"},\"finished\":{\"type\":\"string\"},\"truncated\":{\"type\":\"boolean\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"id\",\"ref\",\"trigger\",\"status\",\"started\",\"truncated\"],\"additionalProperties\":false}", mcp.Destructive},
 	}
@@ -284,17 +284,17 @@ func TestToolMetadata(t *testing.T) {
 		if string(ann) != wantAnn {
 			t.Errorf("%s annotations %s", w.name, ann)
 		}
-		if g.Name != w.name || g.Description == "" || schemaWithoutCopy(t, g.InputSchema) != w.input || string(g.OutputSchema) != w.output || g.Effect() != w.effect {
+		if g.Name != w.name || g.Description == "" || schemaWithoutCopy(t, g.InputSchema) != w.input || schemaWithoutCopy(t, g.OutputSchema) != w.output || g.Effect() != w.effect {
 			t.Errorf("metadata %s: description %q; input %s; output %s; effect %v", w.name, g.Description, g.InputSchema, g.OutputSchema, g.Effect())
 		}
 	}
 }
 func TestArgumentShapes(t *testing.T) {
-	// R-2YOC-SKE1 R-XFHK-34XT R-XGPG-GWOI R-XHXC-UOF7 R-XJ59-8G5W R-XMSY-DRDZ R-XP8R-5AVD R-XQGN-J2M2 R-XROJ-WUCR
+	// R-GZ3V-0SF0 R-H0BR-EK5P R-XGPG-GWOI R-XHXC-UOF7 R-H1JN-SBWE R-XMSY-DRDZ R-H2RK-63N3 R-XQGN-J2M2 R-XROJ-WUCR
 	for _, tt := range []struct {
 		value any
 		want  string
-	}{{tools.ListArgs{}, `{}`}, {tools.ShowArgs{Name: "job"}, `{"name":"job"}`}, {tools.CreateArgs{Name: "job", Repo: "rep"}, `{"name":"job","repo":"rep","ref":null}`}, {tools.UpdateArgs{Name: "job", Ref: "next"}, `{"name":"job","ref":"next"}`}, {tools.DeleteArgs{Name: "job"}, `{"name":"job"}`}, {tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}, `{"name":"job","ref":null,"input":{}}`}, {tools.RunsArgs{Name: "job"}, `{"name":"job"}`}, {tools.ResultArgs{Run: "run"}, `{"run":"run"}`}, {tools.CancelArgs{Run: "run"}, `{"run":"run"}`}} {
+	}{{tools.ListArgs{}, `{"page":null,"limit":null}`}, {tools.ShowArgs{Name: "nightly-report"}, `{"name":"nightly-report"}`}, {tools.CreateArgs{Name: "job", Repo: "rep"}, `{"name":"job","repo":"rep","ref":null}`}, {tools.UpdateArgs{Name: "job", Ref: "next"}, `{"name":"job","ref":"next"}`}, {tools.DeleteArgs{Name: "job"}, `{"name":"job"}`}, {tools.RunArgs{Name: "job", Input: json.RawMessage(`{}`)}, `{"name":"job","ref":null,"input":{}}`}, {tools.RunsArgs{Name: "nightly-report"}, `{"name":"nightly-report","page":null,"limit":null}`}, {tools.ResultArgs{Run: "run"}, `{"run":"run"}`}, {tools.CancelArgs{Run: "run"}, `{"run":"run"}`}} {
 		b, e := json.Marshal(tt.value)
 		must(t, e)
 		if string(b) != tt.want {
@@ -303,11 +303,11 @@ func TestArgumentShapes(t *testing.T) {
 	}
 }
 func TestCatalogRefusalsAndInvalidArguments(t *testing.T) {
-	// R-XSWG-AM3G R-XVC9-25KU R-YB6Y-167V R-YCEU-EXYK R-Y7J8-VUZS
+	// R-XSWG-AM3G R-A8KH-XN66 R-A2H0-0SGP R-YCEU-EXYK R-Y7J8-VUZS
 	h := setup(t, "print(1)\n")
 	a := h.create("job")
 	must(t, os.Remove(h.trace))
-	before, e := h.st.List(context.Background(), "alice")
+	before, e := h.st.List(context.Background(), "alice", "", 1000)
 	must(t, e)
 	for i, tt := range []struct{ tool, args string }{{"list", `{"name":"job"}`}, {"show", `{"script":"job"}`}, {"create", `{"name":"new"}`}, {"create", `{"name":"new","repo":"rep_1111111111111111","ref":1,"owner":"bob"}`}, {"update", `{"name":"job"}`}, {"update", `{"name":"job","ref":2,"repo":"rep","new_name":"daily"}`}, {"delete", `{"id":"scr"}`}, {"subscribe", `{"name":"job"}`}, {"unsubscribe", `{"name":"job"}`}, {"subscribe", `{"name":"job","event":["repo.pushed"],"ref":"main"}`}, {"unsubscribe", `{"name":"job","event":["repo.pushed"],"ref":"main"}`}, {"run", `{"ref":"main"}`}, {"run", `{"name":"job","input":"text"}`}, {"run", `{"name":"job","input":["sales"]}`}, {"runs", `{"script":"job"}`}, {"result", `{"id":"run"}`}, {"result", `{"run":3}`}, {"cancel", `{"name":"job"}`}} {
 		u := caller()
@@ -346,7 +346,7 @@ func TestCatalogRefusalsAndInvalidArguments(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	after, e := h.st.List(context.Background(), "alice")
+	after, e := h.st.List(context.Background(), "alice", "", 1000)
 	must(t, e)
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("invalid args changed catalog")
@@ -424,7 +424,7 @@ func TestUnknownAndMissingArguments(t *testing.T) {
 }
 
 func TestCatalogFailsDuringGit(t *testing.T) {
-	// R-YB6Y-167V
+	// R-A2H0-0SGP
 	for _, tool := range []string{"create", "run"} {
 		t.Run(tool, func(t *testing.T) {
 			h := setup(t, "print(1)\n")
@@ -625,7 +625,7 @@ func TestListingAfterCallsDrainAndFailure(t *testing.T) {
 	}
 	job, err := h.st.Find(context.Background(), "alice", "job")
 	must(t, err)
-	records, err := h.st.Runs(context.Background(), job.ID)
+	records, err := h.st.Runs(context.Background(), job.ID, "", "", 1000)
 	must(t, err)
 	if len(records) != 1 {
 		t.Fatal(records)
@@ -718,7 +718,7 @@ func TestToolCalledPerOutcomeAndKind(t *testing.T) {
 	for _, tt := range []struct{ tool, args, kind string }{{"list", `{}`, "read"}, {"show", `{"name":"job"}`, "read"}, {"create", `{"name":"other","repo":"rep_1111111111111111"}`, "additive"}, {"update", `{"name":"job","ref":"missing"}`, "additive"}, {"run", `{"name":"job"}`, "additive"}, {"runs", `{"name":"job"}`, "read"}, {"result", "", "read"}, {"cancel", "", "destructive"}, {"delete", `{"name":"job"}`, "destructive"}} {
 		args := tt.args
 		if tt.tool == "result" || tt.tool == "cancel" {
-			ss, e := h.st.Runs(context.Background(), job.ID)
+			ss, e := h.st.Runs(context.Background(), job.ID, "", "", 1000)
 			must(t, e)
 			if len(ss) != 1 {
 				t.Fatal(ss)
@@ -949,11 +949,11 @@ func snapshot(t *testing.T, h *fixture) state {
 	t.Helper()
 	s := state{Scripts: []store.Script{}, Runs: []store.Run{}, Files: map[string]fileState{}}
 	for _, owner := range []string{"alice", "bob"} {
-		ss, e := h.st.List(context.Background(), owner)
+		ss, e := h.st.List(context.Background(), owner, "", 1000)
 		must(t, e)
 		s.Scripts = append(s.Scripts, ss...)
 		for _, sc := range ss {
-			rr, e := h.st.Runs(context.Background(), sc.ID)
+			rr, e := h.st.Runs(context.Background(), sc.ID, "", "", 1000)
 			must(t, e)
 			s.Runs = append(s.Runs, rr...)
 		}
@@ -1018,7 +1018,7 @@ func noDomain(t *testing.T, h *fixture, id string) {
 }
 
 func TestCompleteWireRecords(t *testing.T) {
-	// R-7MEW-R603 R-5O8B-E7PL R-7JZ3-ZMIP R-52A4-ICD3 R-53I0-W43S R-T179-4S0M R-5N0F-0FYW
+	// R-7MEW-R603 R-5O8B-E7PL R-7JZ3-ZMIP R-HIM9-54A4 R-53I0-W43S R-T179-4S0M R-HM9Y-AFI7
 	h := setup(t, "print(1)\n")
 	sc := h.create("wire-job")
 	ctx := context.Background()
@@ -1147,7 +1147,7 @@ func stillLive(t *testing.T, c net.Conn) {
 	}
 }
 func TestReadAndRefusedCallsPreserveLiveState(t *testing.T) {
-	// R-54PX-9VUH R-4XEI-Z9EB R-YDMQ-SPP9 R-XSWG-AM3G R-YM61-H3W4 R-0VVB-3QKN R-5N0F-0FYW R-5O8B-E7PL
+	// R-54PX-9VUH R-4XEI-Z9EB R-YDMQ-SPP9 R-XSWG-AM3G R-YM61-H3W4 R-0VVB-3QKN R-HM9Y-AFI7 R-5O8B-E7PL
 	h, sc, r, conn := paused(t)
 	for i, tt := range []struct{ tool, args string }{{"list", `{}`}, {"show", `{"name":"live-job"}`}, {"runs", `{"name":"live-job"}`}, {"result", fmt.Sprintf(`{"run":%q}`, r.ID)}} {
 		before := snapshot(t, h)
@@ -1285,10 +1285,12 @@ func TestPublicTypeShapes(t *testing.T) {
 		Runs      *runs.Core
 		Telemetry *telemetry.Writer
 	}{}, false)
-	// R-2YOC-SKE1
+	// R-GZ3V-0SF0
 	assertShape(t, tools.ListArgs{}, struct {
-	}{}, false)
-	// R-XFHK-34XT
+		Page  *string `json:"page" description:"fixture"`
+		Limit *int    `json:"limit" description:"fixture"`
+	}{}, true)
+	// R-H0BR-EK5P
 	assertShape(t, tools.ShowArgs{}, struct {
 		Name string `json:"name" mcp:"required" description:"fixture"`
 	}{}, true)
@@ -1303,7 +1305,7 @@ func TestPublicTypeShapes(t *testing.T) {
 		Name string `json:"name" mcp:"required" description:"fixture"`
 		Ref  string `json:"ref" mcp:"required" description:"fixture"`
 	}{}, true)
-	// R-XJ59-8G5W
+	// R-H1JN-SBWE
 	assertShape(t, tools.DeleteArgs{}, struct {
 		Name string `json:"name" mcp:"required" description:"fixture"`
 	}{}, true)
@@ -1313,9 +1315,11 @@ func TestPublicTypeShapes(t *testing.T) {
 		Ref   *string         `json:"ref" description:"fixture"`
 		Input json.RawMessage `json:"input" description:"fixture"`
 	}{}, true)
-	// R-XP8R-5AVD
+	// R-H2RK-63N3
 	assertShape(t, tools.RunsArgs{}, struct {
-		Name string `json:"name" mcp:"required" description:"fixture"`
+		Name  string  `json:"name" mcp:"required" description:"fixture"`
+		Page  *string `json:"page" description:"fixture"`
+		Limit *int    `json:"limit" description:"fixture"`
 	}{}, true)
 	// R-XQGN-J2M2
 	assertShape(t, tools.ResultArgs{}, struct {
@@ -1342,7 +1346,7 @@ func TestPublicTypeShapes(t *testing.T) {
 		Subscriptions []tools.Subscription `json:"subscriptions" mcp:"required"`
 		LastRun       *tools.LastRun       `json:"last_run"`
 	}{}, true)
-	// R-7GBE-UBAM
+	// R-H57C-XN4H
 	assertShape(t, tools.ListedScript{}, struct {
 		ID            string         `json:"id" mcp:"required"`
 		Name          string         `json:"name" mcp:"required"`
@@ -1353,6 +1357,7 @@ func TestPublicTypeShapes(t *testing.T) {
 	}{}, true)
 	assertShape(t, tools.ScriptList{}, struct {
 		Scripts []tools.ListedScript `json:"scripts" mcp:"required"`
+		Next    *string              `json:"next" description:"fixture"`
 	}{}, true)
 	// R-J4DJ-ROLI
 	assertShape(t, tools.Deleted{}, struct {
@@ -1366,7 +1371,7 @@ func TestPublicTypeShapes(t *testing.T) {
 		SHA    *string `json:"sha"`
 		Reason *string `json:"reason"`
 	}{}, true)
-	// R-7HJB-831B
+	// R-H6F9-BEV6
 	assertShape(t, tools.RunEntry{}, struct {
 		ID        string  `json:"id" mcp:"required"`
 		SHA       *string `json:"sha"`
@@ -1382,6 +1387,7 @@ func TestPublicTypeShapes(t *testing.T) {
 	}{}, true)
 	assertShape(t, tools.RunList{}, struct {
 		Runs []tools.RunEntry `json:"runs" mcp:"required"`
+		Next *string          `json:"next" description:"fixture"`
 	}{}, true)
 	// R-7IR7-LUS0
 	assertShape(t, tools.File{}, struct {
@@ -1413,11 +1419,11 @@ func TestPublicTypeShapes(t *testing.T) {
 }
 
 func TestCatalogReadsAfterRepositoryRemoval(t *testing.T) {
-	// R-52A4-ICD3 R-53I0-W43S R-YDMQ-SPP9
+	// R-HIM9-54A4 R-53I0-W43S R-YDMQ-SPP9
 	h := setup(t, "print(1)\n")
 	h.create("zulu")
 	h.create("alpha")
-	ss, err := h.st.List(context.Background(), "alice")
+	ss, err := h.st.List(context.Background(), "alice", "", 1000)
 	must(t, err)
 	must(t, os.RemoveAll(h.repo))
 	removeTrace(t, h)

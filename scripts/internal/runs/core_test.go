@@ -1007,13 +1007,13 @@ func TestGracefulDrainKeepsAcceptedCalls(t *testing.T) {
 	}
 	h.finished(r.ID)
 	before := len(h.sink.capture.Events())
-	rs, e := h.st.Runs(context.Background(), h.sc.ID)
+	rs, e := h.st.Runs(context.Background(), h.sc.ID, "", "", math.MaxInt)
 	must(t, e)
 	refused, e := h.core.Run(context.Background(), h.sc, runs.Request{})
 	if !errors.Is(e, runs.ErrDraining) || refused != (store.Run{}) {
 		t.Fatal(e)
 	}
-	after, e := h.st.Runs(context.Background(), h.sc.ID)
+	after, e := h.st.Runs(context.Background(), h.sc.ID, "", "", math.MaxInt)
 	must(t, e)
 	if !reflect.DeepEqual(after, rs) || len(h.sink.capture.Events()) != before {
 		t.Fatal("refusal changed state")
@@ -1187,7 +1187,7 @@ func TestDrainDeadlineCutsOffProcessBeforeCatalogAdmission(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("drain did not wait for pending call")
 	}
-	rs, e := h.st.Runs(context.Background(), h.sc.ID)
+	rs, e := h.st.Runs(context.Background(), h.sc.ID, "", "", math.MaxInt)
 	must(t, e)
 	if len(rs) != 0 {
 		t.Fatal(rs)

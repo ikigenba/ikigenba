@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -366,7 +367,7 @@ func TestServicesSocketNotContacted(t *testing.T) {
 		t.Fatal(sc, e)
 	}
 	call("run", map[string]any{"name": "report", "input": map[string]any{}})
-	records, e := cfg.Store.Runs(context.Background(), sc.ID)
+	records, e := cfg.Store.Runs(context.Background(), sc.ID, "", "", math.MaxInt)
 	if e != nil || len(records) != 1 || records[0].Status != store.StatusRunning {
 		t.Fatal(records, e)
 	}
@@ -755,7 +756,7 @@ func TestEventHandlersOutsideIdentity(t *testing.T) {
 		if !reflect.DeepEqual(outcome, map[string]string{"outcome": want}) {
 			t.Fatal(outcome)
 		}
-		rs, e := f.cfg.Store.Runs(context.Background(), sc.ID)
+		rs, e := f.cfg.Store.Runs(context.Background(), sc.ID, "", "", math.MaxInt)
 		if e != nil || len(rs) != count {
 			t.Fatal(rs, e)
 		}

@@ -229,7 +229,7 @@ func TestStateFailures(t *testing.T) {
 	}
 }
 
-// R-ZV2S-V0UF R-UI3X-YAEA R-B63F-NUCG R-WNGS-KWCF R-HOSX-V79K R-L2WR-PRUX R-K58H-2BO4 R-H8Y8-W6MJ
+// R-ZV2S-V0UF R-I1XT-7TEU R-B63F-NUCG R-WNGS-KWCF R-HOSX-V79K R-L2WR-PRUX R-K58H-2BO4 R-H8Y8-W6MJ
 func TestReadyInitialStateAndLifecycle(t *testing.T) {
 	for _, servicesPath := range []string{"", "absent", "malformed"} {
 		t.Run(servicesPath, func(t *testing.T) {
@@ -414,7 +414,7 @@ func seedCatalog(t *testing.T, h *runHarness) (store.Script, []store.Run) {
 	return sc, records
 }
 
-// R-AYS1-D7WA R-LL79-GBZC R-HDTU-F9LB R-BOZD-TYQ6
+// R-AYS1-D7WA R-LL79-GBZC R-HDTU-F9LB R-I0PW-U1O5
 func TestRecoveryAndPruningBeforeReady(t *testing.T) {
 	for _, cancelStart := range []bool{false, true} {
 		t.Run(strconv.FormatBool(cancelStart), func(t *testing.T) {
@@ -521,7 +521,7 @@ func TestAcceptFailuresAndPanicAvoidGlobalLogger(t *testing.T) {
 	}
 }
 
-// R-HTOJ-EA8C R-HW4C-5TPQ R-8FPH-7EXT R-HXC8-JLGF
+// R-HTOJ-EA8C R-HW4C-5TPQ R-HZI0-G9XG R-HXC8-JLGF
 func TestQuietServeAndLifecycleOrdering(t *testing.T) {
 	h := newHarness(t)
 	h.repository("raise SystemExit(3)\n")
@@ -692,7 +692,7 @@ func outsideSnapshot(t *testing.T, root string, excluded ...string) map[string]s
 	return result
 }
 
-// R-BNRH-G6ZH
+// R-HYA4-2I6R
 func TestRecoveryCatalogFailureRefusesStartup(t *testing.T) {
 	h := newHarness(t)
 	seedCatalog(t, h)
@@ -948,12 +948,12 @@ emptied:
 	mustCLI(t, e)
 	st := store.New(stDB, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
 	defer func() { _ = stDB.Close() }()
-	scripts, e := st.List(context.Background(), "owner")
+	scripts, e := st.List(context.Background(), "owner", "", 100)
 	mustCLI(t, e)
 	if len(scripts) != 1 || scripts[0].Name != "alpha" {
 		t.Fatalf("cutoff create persisted %v", scripts)
 	}
-	records, e := st.Runs(context.Background(), sc["id"].(string))
+	records, e := st.Runs(context.Background(), sc["id"].(string), "", "", 100)
 	mustCLI(t, e)
 	if len(records) != 0 {
 		t.Fatal(records)

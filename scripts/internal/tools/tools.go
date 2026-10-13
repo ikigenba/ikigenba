@@ -13,6 +13,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scripts/internal/limits"
 	"github.com/ikigenba/ikigenba/scripts/internal/runs"
@@ -168,12 +169,27 @@ func result(cfg Config, r store.Run) RunResult {
 	return v
 }
 func listHandler(cfg Config) func(context.Context, identity.Caller, ListArgs) (ScriptList, error) {
-	return func(ctx context.Context, u identity.Caller, _ ListArgs) (ScriptList, error) {
-		ss, e := cfg.Store.List(ctx, u.UserID)
+	return func(ctx context.Context, u identity.Caller, a ListArgs) (ScriptList, error) {
+		n, e := paging.Window(a.Limit)
+		if e != nil {
+			return ScriptList{}, e
+		}
+		var after string
+		if a.Page != nil && *a.Page != "" {
+			if e = (paging.Token{Tool: "list"}).Decode(*a.Page, &after); e != nil {
+				return ScriptList{}, e
+			}
+		}
+		ss, e := cfg.Store.List(ctx, u.UserID, after, n+1)
 		if e != nil {
 			return ScriptList{}, catalogError()
 		}
 		v := ScriptList{Scripts: []ListedScript{}}
+		if len(ss) > n {
+			ss = ss[:n]
+			next := (paging.Token{Tool: "list"}).Encode(ss[n-1].Name)
+			v.Next = &next
+		}
 		for _, s := range ss {
 			v.Scripts = append(v.Scripts, ListedScript{s.ID, s.Name, s.Repo, s.Ref, len(s.Subscriptions), lastRun(s.Last)})
 		}
@@ -332,15 +348,30 @@ func runHandler(cfg Config) func(context.Context, identity.Caller, RunArgs) (Sta
 }
 func runsHandler(cfg Config) func(context.Context, identity.Caller, RunsArgs) (RunList, error) {
 	return func(ctx context.Context, u identity.Caller, a RunsArgs) (RunList, error) {
+		n, e := paging.Window(a.Limit)
+		if e != nil {
+			return RunList{}, e
+		}
+		var started, id string
+		if a.Page != nil && *a.Page != "" {
+			if e = (paging.Token{Tool: "runs"}).Decode(*a.Page, &started, &id); e != nil {
+				return RunList{}, e
+			}
+		}
 		s, e := findScript(ctx, cfg, u, a.Name)
 		if e != nil {
 			return RunList{}, e
 		}
-		rr, e := cfg.Store.Runs(ctx, s.ID)
+		rr, e := cfg.Store.Runs(ctx, s.ID, started, id, n+1)
 		if e != nil {
 			return RunList{}, catalogError()
 		}
 		v := RunList{Runs: []RunEntry{}}
+		if len(rr) > n {
+			rr = rr[:n]
+			next := (paging.Token{Tool: "runs"}).Encode(timeText(rr[n-1].Started), rr[n-1].ID)
+			v.Next = &next
+		}
 		for _, r := range rr {
 			v.Runs = append(v.Runs, runEntry(r))
 		}
@@ -378,7 +409,7 @@ func cancelHandler(cfg Config) func(context.Context, identity.Caller, CancelArgs
 
 // Register adds the eleven typed tools in their advertised order.
 func Register(srv *mcp.Server, cfg Config) {
-	mcp.AddTool(srv, mcp.Tool[ListArgs, ScriptList]{Name: "list", Description: "The scripts you own, by name.\n\nTakes no arguments. Each script has its id, name, repo (the id of the repos repository it runs from), ref (the branch, tag, or commit a run resolves), subscriptions (how many event patterns it is subscribed to), and last_run (its newest run's id, status, exit_code when it exited, and started; absent when it has never run). Use show for one script's created time and the events it is subscribed to, and runs for all of its runs.", Effect: mcp.Read, Handler: listHandler(cfg)})
+	mcp.AddTool(srv, mcp.Tool[ListArgs, ScriptList]{Name: "list", Description: "The scripts you own, by name.\n\nPass page to continue a previous answer and limit for its maximum size. Each script has its id, name, repo (the id of the repos repository it runs from), ref (the branch, tag, or commit a run resolves), subscriptions (how many event patterns it is subscribed to), and last_run (its newest run's id, status, exit_code when it exited, and started; absent when it has never run). Use show for one script's created time and the events it is subscribed to, and runs for all of its runs.", Effect: mcp.Read, Handler: listHandler(cfg)})
 	mcp.AddTool(srv, mcp.Tool[ShowArgs, Script]{Name: "show", Description: "One of your scripts, with its repository, its ref and its last run.\n\nPass name, the script's name. The result has its id, name, repo (the id of the repos repository it runs from), ref (the branch, tag, or commit a run resolves), created, subscriptions (each event pattern it is subscribed to, with event and created, sorted by event; empty when none), and last_run (its newest run's id, status, exit_code when it exited, and started); last_run is absent when it has never run.", Effect: mcp.Read, Handler: showHandler(cfg)})
 	mcp.AddTool(srv, mcp.Tool[CreateArgs, Script]{Name: "create", Description: CreateDescription, Effect: mcp.Additive, Handler: createHandler(cfg)})
 	mcp.AddTool(srv, mcp.Tool[UpdateArgs, Script]{Name: "update", Description: "Change the ref one of your scripts runs from.\n\nPass name and ref, the branch, tag, or commit every later run resolves, under the rules of create. A run already started keeps the commit it resolved, and the script keeps its subscriptions, whose later runs use the new ref. A script's name and repository never change. The result is what show returns.", Effect: mcp.Additive, Handler: updateHandler(cfg)})
@@ -386,7 +417,7 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[SubscribeArgs, Script]{Name: "subscribe", Description: "Run one of your scripts each time an event matching a pattern is delivered.\n\nPass name, the script's name, and event, an event pattern such as repo.pushed or cron.*.fired: two or more words joined by single dots, each word either * or a lowercase letter followed by lowercase letters, digits, or single underscores between them. A * matches exactly one word of an event name, so cron.*.fired matches cron.hourly.fired but not cron.fired or cron.a.b.fired; a pattern with no * matches only that name. It need not match any event a service sends yet. Each time the suite's events app delivers to scripts an event whose name matches, the script runs as run would run it, as you, at its ref, with the whole event as its input; that run's trigger is event and its event is the event's id. An event runs a script once, however many of its subscriptions match. Subscribing a script to a pattern it is already subscribed to changes nothing. The result is what show returns.", Effect: mcp.Additive, Handler: subscribeHandler(cfg)})
 	mcp.AddTool(srv, mcp.Tool[UnsubscribeArgs, Script]{Name: "unsubscribe", Description: "Stop running one of your scripts on an event it is subscribed to.\n\nPass name and event, the pattern exactly as subscribe took it: a name the pattern matches is not the pattern. Events it matches delivered later no longer run the script, unless another of its subscriptions matches them; a run already started is not touched. A script that is not subscribed to exactly that pattern is refused. The result is what show returns.", Effect: mcp.Destructive, Handler: unsubscribeHandler(cfg)})
 	mcp.AddTool(srv, mcp.Tool[RunArgs, Started]{Name: "run", Description: "Start a run of one of your scripts and return its id, status and commit.\n\nPass name, and ref to run a branch, tag, or commit other than the one the script runs from; a ref given here is used for this run only and does not change the script's ref. Pass input, a JSON object, for the script to read from the file its IKIGENBA_INPUT variable names; {} unless given. The ref is resolved and its commit unpacked before the answer; the script then runs on its own, and run never waits for it. The result is the run's id, its status, and sha, the commit it runs; the status is running, or queued when too many runs are already running, and a queued run starts on its own when one ends. When too many runs are already queued, run is refused; try again later. A run that could not start is still a run: its status is failed, with reason (repository_missing, commit_missing, too_large, git_failed, timed_out, or start_failed), and sha when the ref resolved. Follow a run with result until its status is final; end it early with cancel.", Effect: mcp.Additive, Handler: runHandler(cfg)})
-	mcp.AddTool(srv, mcp.Tool[RunsArgs, RunList]{Name: "runs", Description: "The runs of one of your scripts, newest first.\n\nPass name, the script's name. Each run has its id, sha (the commit it ran, absent when the ref never resolved), ref, trigger (manual, or event when an event started it), event (the id of the event that started it, when trigger is event), status (queued, running, exited, killed, timed_out, or failed), exit_code (when it exited), started, finished (absent while queued or running), truncated (whether output was cut), and reason (why it never started, when it failed). Use result for one run's output and files.", Effect: mcp.Read, Handler: runsHandler(cfg)})
+	mcp.AddTool(srv, mcp.Tool[RunsArgs, RunList]{Name: "runs", Description: "The runs of one of your scripts, newest first.\n\nPass name, the script's name, page to continue a previous answer and limit for its maximum size. Each run has its id, sha (the commit it ran, absent when the ref never resolved), ref, trigger (manual, or event when an event started it), event (the id of the event that started it, when trigger is event), status (queued, running, exited, killed, timed_out, or failed), exit_code (when it exited), started, finished (absent while queued or running), truncated (whether output was cut), and reason (why it never started, when it failed). Use result for one run's output and files.", Effect: mcp.Read, Handler: runsHandler(cfg)})
 	mcp.AddTool(srv, mcp.Tool[ResultArgs, RunResult]{Name: "result", Description: "One run whole: its details, its output so far, and the files it wrote.\n\nPass run, the run's id. The result has its id, script (the script's id), sha, ref, user, request_id, trigger (manual, or event when an event started it), event (the event's id, when trigger is event), status, exit_code (when it exited), started, finished (absent while queued or running), stdout_bytes and stderr_bytes (how much of each is kept), truncated, and reason (when it failed), then stdout and stderr, the output kept so far, and files, each file the script wrote under its out folder, with its path and size. While status is queued or running, call result again until it is final. When the run's files are gone, stdout, stderr, and files are absent and files_gone is true.", Effect: mcp.Read, Handler: resultHandler(cfg)})
 	mcp.AddTool(srv, mcp.Tool[CancelArgs, RunEntry]{Name: "cancel", Description: "End one of your runs that is still queued or running.\n\nPass run, the run's id. The script's process group is killed whole, and the run is recorded killed; what it wrote so far is kept. A queued run is taken from the queue and recorded killed without ever starting. A run that has already ended is refused. The result is the run as runs lists it, with its final status and finished.", Effect: mcp.Destructive, Handler: cancelHandler(cfg)})
 }

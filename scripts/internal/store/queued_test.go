@@ -53,7 +53,7 @@ func TestQueueTransitionsAndPersistence(t *testing.T) {
 	got, err = s.FindRun(ctx, a.Owner, q.ID)
 	must(t, err)
 	equal(t, got, q)
-	runs, err := s.Runs(ctx, a.ID)
+	runs, err := s.Runs(ctx, a.ID, "", "", 10000)
 	must(t, err)
 	equal(t, runs, []store.Run{q})
 	e := store.Ending{Status: store.StatusFailed, Reason: store.ReasonQueueAbandoned, Finished: stamp.Add(time.Second)}
@@ -154,7 +154,7 @@ func TestQueueRecordAndEndingRules(t *testing.T) {
 }
 
 func TestQueuedRetentionRanks(t *testing.T) {
-	// R-9AIF-RLAA
+	// R-HNB0-MKII
 	s := open(t, "")
 	sc := create(t, s, "alice", "alpha")
 	oldest := run(sc, 1)

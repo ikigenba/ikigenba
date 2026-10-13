@@ -3,6 +3,8 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -22,6 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
@@ -63,7 +66,7 @@ func requireEqual(t *testing.T, got, want any) {
 	}
 }
 
-// R-VKHH-HQ5X R-OIC3-1CB3 R-VO56-N1E0 R-VPD3-0T4P R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7
+// R-VKHH-HQ5X R-OIC3-1CB3 R-VO56-N1E0 R-VPD3-0T4P R-HPXN-FQQA R-VRSV-SCM3 R-VT0S-64CS R-HR5J-TIGZ R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7
 // R-RWIX-JJ9E R-RYYQ-B2QS R-S06M-OUHH R-S1EJ-2M86
 func TestTemplateSetAndData(t *testing.T) {
 	const serviceName = pages.ServiceName
@@ -271,7 +274,7 @@ func writeFile(t *testing.T, p, text string) {
 	}
 }
 
-// R-RU34-RZS0 R-RVB1-5RIP R-NY3P-CSH2 R-S9XT-R0F1 R-WL2G-YUER R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-WX9G-SJTP R-S2MF-GDYV R-RSV8-E81B R-S528-7XG9 R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ
+// R-RU34-RZS0 R-RVB1-5RIP R-NY3P-CSH2 R-S9XT-R0F1 R-WL2G-YUER R-HSDG-7A7O R-HTLC-L1YD R-WW1K-ES30 R-WX9G-SJTP R-S2MF-GDYV R-RSV8-E81B R-HUT8-YTP2 R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ
 // R-CUD2-F3SC R-CZ8N-Y6R4 R-D0GK-BYHT R-D1OG-PQ8I
 func TestPageRoutesAndData(t *testing.T) {
 	var handler func(pages.Config) http.Handler
@@ -650,13 +653,13 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 	catalog := func(s *store.Store) map[string]any {
 		result := map[string]any{}
 		for _, owner := range []string{"owner", "other", "absent"} {
-			scripts, err := s.List(context.Background(), owner)
+			scripts, err := s.List(context.Background(), owner, "", 1000)
 			if err != nil {
 				t.Fatal(err)
 			}
 			result["owner:"+owner] = scripts
 			for _, script := range scripts {
-				records, err := s.Runs(context.Background(), script.ID)
+				records, err := s.Runs(context.Background(), script.ID, "", "", 1000)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -782,12 +785,13 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 
 // The anonymous conversions prove the complete ordered data contracts by use;
 // adding, removing, reordering or changing a field makes these fail to compile.
-// R-VQKZ-EKVE R-VRSV-SCM3 R-VT0S-64CS R-70GP-VANL R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-RU34-RZS0
+// R-HPXN-FQQA R-VRSV-SCM3 R-VT0S-64CS R-HR5J-TIGZ R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-RU34-RZS0
 // R-CFQ9-TUW0 R-CDAH-2BEM R-CEID-G35B R-CGY6-7MMP R-CI62-LEDE R-CJDY-Z643 R-CLTR-QPLH
 func TestDataContracts(t *testing.T) {
 	_ = struct {
 		Banner  page.Banner
 		Scripts []pages.ScriptRow
+		Next    string
 	}(pages.LandingData{})
 	_ = struct {
 		Name, URL string
@@ -809,6 +813,7 @@ func TestDataContracts(t *testing.T) {
 		Script        pages.ScriptCard
 		Runs          []pages.RunRow
 		Subscriptions []string
+		Next          string
 	}(pages.ScriptData{})
 	_ = struct {
 		ID, Name                string
@@ -976,7 +981,7 @@ func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 	}
 }
 
-// R-70GP-VANL R-72WI-MU4Z
+// R-HR5J-TIGZ R-HTLC-L1YD
 func TestScriptSubscriptions(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -1002,7 +1007,7 @@ func TestScriptSubscriptions(t *testing.T) {
 	check([]string{"repo.pushed"})
 }
 
-// R-WPY2-HXDJ R-72WI-MU4Z R-WW1K-ES30 R-S6A4-LP6Y
+// R-HSDG-7A7O R-HTLC-L1YD R-WW1K-ES30 R-S6A4-LP6Y
 func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 	f := setup(t)
 	b := withTrail(fixedBanner)
@@ -1103,4 +1108,161 @@ func TestToolsPageUsesCurrentServerAndOwnTrail(t *testing.T) {
 		check()
 	}
 	requireEqual(t, original.Trail, []page.Level{{Name: "stale", URL: "/stale"}})
+}
+
+// pageTool calls the registered server through appkit's client.
+func pageTool(t *testing.T, f *fixture, name string, args any, into any) {
+	t.Helper()
+	server := httptest.NewServer(identity.Require(f.cfg.MCP))
+	defer server.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL, HTTPClient: server.Client(), Name: "page-fixture", Version: "fixture"})
+	argument, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.CallTool(t.Context(), identity.Caller{UserID: "owner", RequestID: "page-request"}, name, argument)
+	if err != nil || result.IsError() {
+		t.Fatalf("tool %s: %v %#v", name, err, result)
+	}
+	data, err := result.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Structured json.RawMessage `json:"structuredContent"`
+	}
+	if err = json.Unmarshal(data, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(envelope.Structured, into); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func signedBanner() page.Banner {
+	b := withTrail(fixedBanner)
+	b.Email = "person@example.com"
+	b.ProfileURL = "https://auth.sbx.example/"
+	b.LogoutURL = "https://auth.sbx.example/logout"
+	return b
+}
+
+// R-HSDG-7A7O R-HW15-CLFR
+func TestLandingFirstPageAndToolContinuation(t *testing.T) {
+	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 1} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			f := setup(t)
+			var random bytes.Buffer
+			for i := 1; i <= count+1; i++ {
+				if err := binary.Write(&random, binary.BigEndian, uint64(i)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			creator := store.New(f.db, store.Config{Now: func() time.Time { return fixedTime }, Rand: &random})
+			var scripts []store.Script
+			for i := count - 1; i >= 0; i-- {
+				sc, err := creator.Create(t.Context(), store.Draft{Owner: "owner", Name: fmt.Sprintf("script-%03d", i), Repo: "rep_0102030405060708", Ref: "main"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				scripts = append([]store.Script{sc}, scripts...)
+			}
+			if _, err := creator.Create(t.Context(), store.Draft{Owner: "other", Name: "a-private", Repo: "rep_0102030405060708", Ref: "main"}); err != nil {
+				t.Fatal(err)
+			}
+			want := pages.LandingData{Banner: signedBanner()}
+			for _, sc := range scripts[:paging.DefaultLimit] {
+				want.Scripts = append(want.Scripts, pages.ScriptRow{Name: sc.Name, URL: "/" + sc.Name + "/", Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref})
+			}
+			if count > paging.DefaultLimit {
+				want.Next = (paging.Token{Tool: "list"}).Encode(want.Scripts[len(want.Scripts)-1].Name)
+			}
+			var first struct {
+				Scripts []struct{ Name string }
+				Next    string
+			}
+			pageTool(t, f, "list", map[string]any{}, &first)
+			requireEqual(t, len(first.Scripts), len(want.Scripts))
+			for i, sc := range first.Scripts {
+				requireEqual(t, sc.Name, want.Scripts[i].Name)
+			}
+			requireEqual(t, first.Next, want.Next)
+			for _, path := range []string{"/", "/?page=ignored&limit=1"} {
+				get := f.request(t.Context(), "GET", path, "owner")
+				requireEqual(t, get.Code, 200)
+				requireEqual(t, get.Body.String(), rendered(t, "landing", want))
+			}
+			if want.Next != "" {
+				var rest struct {
+					Scripts []struct{ Name string }
+					Next    string
+				}
+				pageTool(t, f, "list", map[string]any{"page": want.Next}, &rest)
+				requireEqual(t, len(rest.Scripts), 1)
+				requireEqual(t, rest.Scripts[0].Name, scripts[len(scripts)-1].Name)
+				requireEqual(t, rest.Next, "")
+			}
+		})
+	}
+}
+
+// R-HTLC-L1YD R-HUT8-YTP2 R-HX91-QD6G
+func TestScriptFirstPageCountAndToolContinuation(t *testing.T) {
+	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 3} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			f := setup(t)
+			sc := f.create(t, "owner", "alpha")
+			other := f.create(t, "owner", "beta")
+			f.add(t, other, count+10, store.StatusRunning, "", 0, 0)
+			var records []store.Run
+			for i := 1; i <= count; i++ {
+				started := fixedTime.Add(time.Duration(i) * time.Second)
+				// Tie across the first-page boundary, with descending ids deciding it.
+				if count > paging.DefaultLimit && i == 3 {
+					started = fixedTime.Add(4 * time.Second)
+				}
+				u := store.Run{ID: fmt.Sprintf("run_%016x", i), Script: sc.ID, SHA: strings.Repeat("a", 40), Ref: sc.Ref, User: sc.Owner, RequestID: "fixture-request", Trigger: store.TriggerManual, Status: store.StatusRunning, Started: started}
+				u, err := f.cfg.Store.AddRun(t.Context(), u)
+				if err != nil {
+					t.Fatal(err)
+				}
+				records = append([]store.Run{u}, records...)
+			}
+			want := pages.ScriptData{Banner: withTrail(signedBanner(), page.Level{Name: sc.Name, URL: "/alpha/"}), Script: pages.ScriptCard{ID: sc.ID, Name: sc.Name, Repo: pages.Repo{ID: sc.Repo, Name: "Repository"}, Ref: sc.Ref, Created: sc.Created.UTC().Format(pages.CardLayout), CreatedAt: sc.Created.UTC().Format(time.RFC3339), RunsKept: count, KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}}
+			for _, u := range records[:paging.DefaultLimit] {
+				want.Runs = append(want.Runs, pages.RunRow{ID: u.ID, URL: "/alpha/runs/" + u.ID + "/", Status: u.Status, Commit: u.SHA[:7], Started: u.Started.UTC().Format(pages.MinuteLayout), StartedAt: u.Started.UTC().Format(time.RFC3339)})
+			}
+			if count > paging.DefaultLimit {
+				last := records[paging.DefaultLimit-1]
+				want.Next = (paging.Token{Tool: "runs"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
+			var first struct {
+				Runs []struct{ ID string }
+				Next string
+			}
+			pageTool(t, f, "runs", map[string]any{"name": sc.Name}, &first)
+			requireEqual(t, len(first.Runs), len(want.Runs))
+			for i, u := range first.Runs {
+				requireEqual(t, u.ID, want.Runs[i].ID)
+			}
+			requireEqual(t, first.Next, want.Next)
+			for _, path := range []string{"/alpha/", "/alpha/?page=ignored&limit=1"} {
+				get := f.request(t.Context(), "GET", path, "owner")
+				requireEqual(t, get.Code, 200)
+				requireEqual(t, get.Body.String(), rendered(t, "script", want))
+			}
+			if want.Next != "" {
+				var rest struct {
+					Runs []struct{ ID string }
+					Next string
+				}
+				pageTool(t, f, "runs", map[string]any{"name": sc.Name, "page": want.Next}, &rest)
+				requireEqual(t, len(rest.Runs), 3)
+				for i, u := range rest.Runs {
+					requireEqual(t, u.ID, records[paging.DefaultLimit+i].ID)
+				}
+				requireEqual(t, rest.Next, "")
+			}
+		})
+	}
 }

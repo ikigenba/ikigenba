@@ -5,6 +5,8 @@ import "encoding/json"
 
 // ListArgs is an MCP argument.
 type ListArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // ShowArgs is an MCP argument.
@@ -51,7 +53,9 @@ type RunArgs struct {
 
 // RunsArgs is an MCP argument.
 type RunsArgs struct {
-	Name string `json:"name" mcp:"required" description:"The script's name."`
+	Name  string  `json:"name" mcp:"required" description:"The script's name."`
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // ResultArgs is an MCP argument.
@@ -102,6 +106,7 @@ type ListedScript struct {
 // ScriptList is an MCP result.
 type ScriptList struct {
 	Scripts []ListedScript `json:"scripts" mcp:"required"`
+	Next    *string        `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Deleted is an MCP result.
@@ -136,6 +141,7 @@ type RunEntry struct {
 // RunList is an MCP result.
 type RunList struct {
 	Runs []RunEntry `json:"runs" mcp:"required"`
+	Next *string    `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // File is an MCP result.

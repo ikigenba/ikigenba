@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -504,11 +505,11 @@ func TestBinary(t *testing.T) {
 	defer func() { _ = catalogDB.Close() }()
 	catalog := store.New(catalogDB, store.Config{Now: func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }, Rand: bytes.NewReader(make([]byte, 64))})
 	catalogSnapshot := func() []byte {
-		scripts, e := catalog.List(context.Background(), "owner")
+		scripts, e := catalog.List(context.Background(), "owner", "", math.MaxInt)
 		binaryMust(t, e)
 		all := map[string]any{"scripts": scripts}
 		for _, script := range scripts {
-			records, e := catalog.Runs(context.Background(), script.ID)
+			records, e := catalog.Runs(context.Background(), script.ID, "", "", math.MaxInt)
 			binaryMust(t, e)
 			all[script.ID] = records
 		}

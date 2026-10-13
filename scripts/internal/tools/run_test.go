@@ -28,7 +28,7 @@ import (
 )
 
 func TestRunRecordsAndFiles(t *testing.T) {
-	// R-IZHY-8LMQ R-J5LG-5GC7 R-7HJB-831B R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-T9QJ-T67H R-5I4T-HD04 R-5KKM-8WHI R-5N0F-0FYW R-5O8B-E7PL R-YM61-H3W4
+	// R-IZHY-8LMQ R-J5LG-5GC7 R-H6F9-BEV6 R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603 R-3PI5-7IPB R-3QQ1-LAG0 R-T9QJ-T67H R-5I4T-HD04 R-5KKM-8WHI R-HM9Y-AFI7 R-5O8B-E7PL R-YM61-H3W4
 	h := setup(t, "print(1)\n")
 	sc := h.create("job")
 	if got := string(object(t, h.call("runs", tools.RunsArgs{Name: "job"}))); got != `{"runs":[]}` {
@@ -216,7 +216,7 @@ func TestDrainAndRunFolderFailure(t *testing.T) {
 	u := caller()
 	u.RequestID = "folder-failure"
 	refusal(t, h.raw("run", `{"name":"job"}`, u), store.Unreachable)
-	rr, e := h.st.Runs(context.Background(), sc.ID)
+	rr, e := h.st.Runs(context.Background(), sc.ID, "", "", 1000)
 	must(t, e)
 	if len(rr) != 0 {
 		t.Fatal(rr)
@@ -299,7 +299,7 @@ func TestDeleteDuringPendingRun(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("pending run did not answer")
 	}
-	rr, e := h.st.Runs(context.Background(), sc.ID)
+	rr, e := h.st.Runs(context.Background(), sc.ID, "", "", 1000)
 	must(t, e)
 	if len(rr) != 0 {
 		t.Fatal(rr)
@@ -427,7 +427,7 @@ func TestStartAnswersMetadataAndDefaultInput(t *testing.T) {
 			stillLive(t, conn)
 			h.command(h.repo, "branch", "alternate", "main")
 			_ = object(t, h.call("update", tools.UpdateArgs{Name: sc.Name, Ref: "alternate"}))
-			before, e := h.st.Runs(context.Background(), sc.ID)
+			before, e := h.st.Runs(context.Background(), sc.ID, "", "", 1000)
 			must(t, e)
 			args := `{"name":"live-job"}`
 			ref := "alternate"
@@ -483,7 +483,7 @@ func TestStartAnswersMetadataAndDefaultInput(t *testing.T) {
 			} else if started.Status != store.StatusRunning || started.SHA == nil || started.Reason != nil {
 				t.Fatal(started)
 			}
-			after, e := h.st.Runs(context.Background(), sc.ID)
+			after, e := h.st.Runs(context.Background(), sc.ID, "", "", 1000)
 			must(t, e)
 			if len(after) != len(before)+1 {
 				t.Fatal("run count", before, after)

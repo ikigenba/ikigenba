@@ -94,13 +94,12 @@ func TestDatabaseStatusResolvesEmptyDirAgainstWorkingDirectory(t *testing.T) {
 	}
 }
 
-// R-3MMB-1HNE R-ZV2S-V0UF R-UI3X-YAEA
+// R-EK8U-YOZ7 R-ZV2S-V0UF R-I1XT-7TEU
 func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 	for _, kind := range []string{"absent", "empty-state", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			path := filepath.Join(h.p.Dir, "state", "scripts.db")
-			var kept store.Script
 			if kind == "empty-state" {
 				mustCLI(t, os.MkdirAll(filepath.Dir(path), 0700))
 			}
@@ -108,7 +107,7 @@ func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 				handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: h.p.Now})
 				mustCLI(t, err)
 				catalog := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
-				kept, err = catalog.Create(context.Background(), store.Draft{Owner: "owner", Name: "kept", Repo: "rep_0102030405060708", Ref: "main"})
+				_, err = catalog.Create(context.Background(), store.Draft{Owner: "owner", Name: "kept", Repo: "rep_0102030405060708", Ref: "main"})
 				mustCLI(t, err)
 				mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
 					for _, statement := range []string{"DROP TABLE schema_migrations", "DROP TABLE subscriptions", "DROP TABLE event_runs", "DROP TABLE scripts", "DROP TABLE runs"} {
@@ -152,11 +151,7 @@ func TestStartupAppliesEmbeddedBaselineAtInjectedTime(t *testing.T) {
 				t.Fatal("catalog is not a regular file")
 			}
 			list := h.call("list", nil)["scripts"].([]any)
-			if kind == "legacy" {
-				if len(list) != 1 || list[0].(map[string]any)["id"] != kept.ID || list[0].(map[string]any)["name"] != kept.Name {
-					t.Fatalf("legacy catalog lost: %v", list)
-				}
-			} else if len(list) != 0 {
+			if len(list) != 0 {
 				t.Fatalf("new catalog %v", list)
 			}
 			h.stop()
@@ -170,7 +165,7 @@ func (s observingSink) Deliver(ctx context.Context, event telemetry.Event) error
 	return s(ctx, event)
 }
 
-// R-I8BB-ZJ4O R-I9J8-DAVD
+// R-I8BB-ZJ4O R-I4DL-ZCW8
 func TestStartupServesNewerCatalogAndWarnsOnce(t *testing.T) {
 	h := newHarness(t)
 	h.set("RUN_KEEP_DAYS", "1")
@@ -302,7 +297,7 @@ func TestEarlyStartupFailuresLeaveRunRecordsUnchanged(t *testing.T) {
 	}
 }
 
-// R-HDTU-F9LB R-H5AJ-QVEG R-BOZD-TYQ6
+// R-HDTU-F9LB R-H5AJ-QVEG R-I0PW-U1O5
 func TestCancellationAfterCatalogOpenSettlesAndFlushesRecovery(t *testing.T) {
 	for _, queued := range []bool{false, true} {
 		t.Run(fmt.Sprint(queued), func(t *testing.T) {
@@ -369,8 +364,8 @@ func TestCancellationAfterCatalogOpenSettlesAndFlushesRecovery(t *testing.T) {
 	}
 }
 
-// R-BNRH-G6ZH
-func TestTableSyncFailureRefusesStartup(t *testing.T) {
+// R-HYA4-2I6R
+func TestEmptyCatalogRecoveryFailureRefusesStartup(t *testing.T) {
 	for _, cancelStart := range []bool{false, true} {
 		t.Run(fmt.Sprint(cancelStart), func(t *testing.T) {
 			h := newHarness(t)
@@ -378,14 +373,14 @@ func TestTableSyncFailureRefusesStartup(t *testing.T) {
 			handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: h.p.Now})
 			mustCLI(t, err)
 			mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
-				_, err := tx.Exec("DROP TABLE scripts")
+				_, err := tx.Exec("DROP TABLE runs")
 				return err
 			}))
 			mustCLI(t, handle.Close())
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			h.p.Banner = func(page.User) page.Banner { t.Fatal("banner after failed sync"); return page.Banner{} }
-			h.p.MCP = func(*telemetry.Writer) *mcp.Server { t.Fatal("MCP after failed sync"); return nil }
+			h.p.Banner = func(page.User) page.Banner { t.Fatal("banner after failed recovery"); return page.Banner{} }
+			h.p.MCP = func(*telemetry.Writer) *mcp.Server { t.Fatal("MCP after failed recovery"); return nil }
 			h.listener = &startupListener{Listener: h.listener, t: t}
 			lookup := h.p.LookupEnv
 			h.p.LookupEnv = func(key string) (string, bool) {
@@ -393,12 +388,12 @@ func TestTableSyncFailureRefusesStartup(t *testing.T) {
 					cancel()
 				}
 				if key == "NOTIFY_SOCKET" {
-					t.Fatal("readiness after failed sync")
+					t.Fatal("readiness after failed recovery")
 				}
 				return lookup(key)
 			}
 			if code := cli.Run(ctx, h.p); code != cli.ExitServerFailed || h.stdout.String() != "" || h.stderr.String() != "scripts: "+store.Unreachable+"\n" || len(h.stderr.snapshot()) != 1 || len(h.sink.capture.Events()) != 0 {
-				t.Fatalf("sync refusal %d %q %v", code, h.stderr.String(), h.sink.capture.Events())
+				t.Fatalf("recovery refusal %d %q %v", code, h.stderr.String(), h.sink.capture.Events())
 			}
 			if cancelStart && ctx.Err() == nil {
 				t.Fatal("cancellation hook was not called")
@@ -417,175 +412,49 @@ func (l *startupListener) Accept() (net.Conn, error) {
 	return nil, errors.New("unexpected accept")
 }
 
-// R-BQ7A-7QGV R-UI3X-YAEA
-func TestStartupCorrectsStaleTablesBeforeReadyAndAfterCancellation(t *testing.T) {
-	for _, mode := range []string{"ready", "cancel", "recover-prune"} {
-		t.Run(mode, func(t *testing.T) {
-			h := newHarness(t)
-			script, records := seedCatalog(t, h)
-			if mode == "recover-prune" {
-				h.set("RUN_KEEP_DAYS", "1")
-				h.set("RUN_KEEP_COUNT", "1")
-			} else {
-				handle, err := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
-				mustCLI(t, err)
-				catalog := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
-				_, err = catalog.FinishRun(context.Background(), records[1].ID, store.Ending{Status: store.StatusExited, ExitCode: 7, Finished: h.now, StdoutBytes: 31, StderrBytes: 17, Truncated: true})
-				mustCLI(t, err)
-				mustCLI(t, handle.Close())
-			}
-			path := filepath.Join(h.p.Dir, "state", "scripts.db")
-			handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: h.p.Now})
-			mustCLI(t, err)
-			mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
-				for _, query := range []string{"DELETE FROM runs", "UPDATE scripts SET id='scr_ffffffffffffffff', ref='stale'"} {
-					if _, err := tx.Exec(query); err != nil {
-						return err
-					}
-				}
-				return nil
-			}))
-			mustCLI(t, handle.Close())
-			before := outsideSnapshot(t, filepath.Join(h.p.Dir, "state", "runs"))
-			outside := outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)
-			trace := filepath.Join(h.root, "startup-git-trace")
-			h.set("GIT_TRACE2_EVENT", trace)
-			if mode == "cancel" {
-				mustCLI(t, os.RemoveAll(filepath.Join(h.p.Dir, "state", "runs")))
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				h.p.Now = func() time.Time {
-					if _, err := os.Stat(filepath.Join(h.p.Dir, "state", "runs")); err == nil {
-						cancel()
-					}
-					return h.now
-				}
-				if code := cli.Run(ctx, h.p); code != cli.ExitSuccess || len(h.sink.capture.Events()) != 0 {
-					t.Fatalf("canceled sync %d %v", code, h.sink.capture.Events())
-				}
-				if ctx.Err() == nil {
-					t.Fatal("cancellation hook was not called")
-				}
-			} else {
-				h.start()
-				assertCatalogTables(t, path, h.now)
-				if mode == "ready" && !reflect.DeepEqual(before, outsideSnapshot(t, filepath.Join(h.p.Dir, "state", "runs"))) {
-					t.Fatal("startup changed finished run folders")
-				}
-				h.stop()
-			}
-			assertCatalogTables(t, path, h.now)
-			if !reflect.DeepEqual(outside, outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)) {
-				t.Fatal("startup changed files outside process directory")
-			}
-			if _, err := os.Stat(trace); !os.IsNotExist(err) {
-				t.Fatalf("startup ran git: %v", err)
-			}
-			if h.stdout.String() != "" || h.stderr.String() != "" {
-				t.Fatalf("sync streams %q %q", h.stdout.String(), h.stderr.String())
-			}
-			if mode == "recover-prune" {
-				handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: func() time.Time { return h.now }})
-				mustCLI(t, err)
-				catalog := store.New(handle, store.Config{Now: func() time.Time { return h.now }})
-				kept, err := catalog.Runs(context.Background(), script.ID)
-				mustCLI(t, err)
-				mustCLI(t, handle.Close())
-				if len(kept) != 1 || kept[0].Status != store.StatusKilled {
-					t.Fatalf("settling after sync %v", kept)
-				}
-			}
-		})
+// R-I1XT-7TEU
+func TestStartupLeavesSettledRecordsAndFoldersUntouched(t *testing.T) {
+	h := newHarness(t)
+	script, records := seedCatalog(t, h)
+	path := filepath.Join(h.p.Dir, "state", "scripts.db")
+	handle, err := db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: h.p.Now})
+	mustCLI(t, err)
+	catalog := store.New(handle, store.Config{Now: h.p.Now})
+	_, err = catalog.FinishRun(context.Background(), records[1].ID, store.Ending{Status: store.StatusExited, ExitCode: 7, Finished: h.now, StdoutBytes: 31, StderrBytes: 17, Truncated: true})
+	mustCLI(t, err)
+	beforeRecords, err := catalog.Runs(context.Background(), script.ID, "", "", 100)
+	mustCLI(t, err)
+	// The retired startup rebuild would erase the rows when the stored value is absent.
+	mustCLI(t, handle.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.Exec("DELETE FROM catalog")
+		return err
+	}))
+	mustCLI(t, handle.Close())
+	beforeFiles := outsideSnapshot(t, filepath.Join(h.p.Dir, "state", "runs"))
+	outside := outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)
+	trace := filepath.Join(h.root, "startup-git-trace")
+	h.set("GIT_TRACE2_EVENT", trace)
+	h.start()
+	for _, record := range beforeRecords {
+		result := h.call("result", map[string]any{"run": record.ID})
+		if result["status"] != record.Status || result["exit_code"] != float64(record.ExitCode) {
+			t.Fatalf("startup changed result: %v; before %v", result, record)
+		}
 	}
-}
-
-func assertCatalogTables(t *testing.T, path string, now time.Time) {
-	t.Helper()
-	ctx := context.Background()
-	handle, err := db.Open(ctx, db.Config{Path: path, Migrations: scripts.Migrations(), Now: func() time.Time { return now }})
+	h.stop()
+	handle, err = db.Open(context.Background(), db.Config{Path: path, Migrations: scripts.Migrations(), Now: h.p.Now})
 	mustCLI(t, err)
 	defer func() { _ = handle.Close() }()
-	catalog := store.New(handle, store.Config{Now: func() time.Time { return now }})
-	scripts, err := catalog.List(ctx, "owner")
+	catalog = store.New(handle, store.Config{Now: h.p.Now})
+	afterRecords, err := catalog.Runs(context.Background(), script.ID, "", "", 100)
 	mustCLI(t, err)
-	wantScripts := make(map[string][]any)
-	wantRuns := make(map[string][]any)
-	for _, script := range scripts {
-		wantScripts[script.ID] = mirrorCells(script.ID, script.Name, script.Owner, script.Repo, script.Ref, script.Created.UTC().Format(time.RFC3339))
-		records, err := catalog.Runs(ctx, script.ID)
-		mustCLI(t, err)
-		for _, record := range records {
-			var finished any
-			if !record.Finished.IsZero() {
-				finished = record.Finished.UTC().Format(time.RFC3339)
-			}
-			var truncated int64
-			if record.Truncated {
-				truncated = 1
-			}
-			wantRuns[record.ID] = mirrorCells(record.ID, record.Script, record.SHA, record.Ref, record.User, record.RequestID, record.Trigger, record.Event, record.Status, int64(record.ExitCode), record.Started.UTC().Format(time.RFC3339), finished, record.StdoutBytes, record.StderrBytes, truncated, record.Reason)
-		}
+	if !reflect.DeepEqual(beforeRecords, afterRecords) || !reflect.DeepEqual(beforeFiles, outsideSnapshot(t, filepath.Join(h.p.Dir, "state", "runs"))) || !reflect.DeepEqual(outside, outsideSnapshot(t, h.root, h.p.Dir, h.p.Cgroup)) {
+		t.Fatal("startup changed settled records or files")
 	}
-	mustCLI(t, handle.Read(ctx, func(tx *sql.Tx) error {
-		for _, table := range []struct {
-			name  string
-			query string
-			want  map[string][]any
-		}{
-			{"scripts", "SELECT id, typeof(id), name, typeof(name), owner, typeof(owner), repo, typeof(repo), ref, typeof(ref), created, typeof(created) FROM scripts", wantScripts},
-			{"runs", "SELECT id, typeof(id), script, typeof(script), sha, typeof(sha), ref, typeof(ref), user, typeof(user), request_id, typeof(request_id), trigger, typeof(trigger), event, typeof(event), status, typeof(status), exit_code, typeof(exit_code), started, typeof(started), finished, typeof(finished), stdout_bytes, typeof(stdout_bytes), stderr_bytes, typeof(stderr_bytes), truncated, typeof(truncated), reason, typeof(reason) FROM runs", wantRuns},
-		} {
-			rows, err := tx.Query(table.query)
-			if err != nil {
-				return err
-			}
-			columns, err := rows.Columns()
-			if err != nil {
-				_ = rows.Close()
-				return err
-			}
-			actual := make(map[string][]any)
-			for rows.Next() {
-				cells := make([]any, len(columns))
-				pointers := make([]any, len(cells))
-				for i := range cells {
-					pointers[i] = &cells[i]
-				}
-				if err := rows.Scan(pointers...); err != nil {
-					_ = rows.Close()
-					return err
-				}
-				id, ok := cells[0].(string)
-				if !ok {
-					_ = rows.Close()
-					return fmt.Errorf("%s row id is %T", table.name, cells[0])
-				}
-				actual[id] = cells
-			}
-			err = rows.Err()
-			_ = rows.Close()
-			if err != nil {
-				return err
-			}
-			if !reflect.DeepEqual(actual, table.want) {
-				t.Fatalf("%s cells %v; expected %v", table.name, actual, table.want)
-			}
-		}
-		return nil
-	}))
-}
-
-func mirrorCells(values ...any) []any {
-	cells := make([]any, 0, len(values)*2)
-	for _, value := range values {
-		storage := "null"
-		switch value.(type) {
-		case string:
-			storage = "text"
-		case int64:
-			storage = "integer"
-		}
-		cells = append(cells, value, storage)
+	if _, err := os.Stat(trace); !os.IsNotExist(err) {
+		t.Fatalf("startup ran git: %v", err)
 	}
-	return cells
+	if h.stdout.String() != "" || h.stderr.String() != "" {
+		t.Fatalf("startup streams %q %q", h.stdout.String(), h.stderr.String())
+	}
 }

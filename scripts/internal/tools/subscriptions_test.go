@@ -72,7 +72,7 @@ func subscriptionTrail(t *testing.T, h *fixture, id, tool, outcome string) {
 }
 
 func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
-	// R-YHAF-Y0XC R-YIIC-BSO1 R-8O7S-M1ZM R-T3OP-T4GN R-8FOH-XNSR R-XVC9-25KU
+	// R-YHAF-Y0XC R-A64P-63OS R-8O7S-M1ZM R-T3OP-T4GN R-8FOH-XNSR R-A8KH-XN66
 	h, sc, _, conn := paused(t)
 	ctx := context.Background()
 	foreign, e := h.st.Create(ctx, store.Draft{Owner: "bob", Name: "foreign", Repo: sc.Repo, Ref: "main"})
@@ -119,7 +119,7 @@ func TestSubscriptionRulesAndInertRefusals(t *testing.T) {
 }
 
 func TestSubscriptionMutationsPreserveEventRun(t *testing.T) {
-	// R-0TFI-C739 R-0UNE-PYTY R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603
+	// R-0TFI-C739 R-AC87-2YE9 R-8O7S-M1ZM R-T3OP-T4GN R-7JZ3-ZMIP R-T179-4S0M R-7MEW-R603
 	h, sc, r, conn := pausedCause(t, events.Cause{ID: "evt_1122334455667788", Depth: 2})
 	ctx := context.Background()
 	other, e := h.st.Create(ctx, store.Draft{Owner: "bob", Name: "another", Repo: sc.Repo, Ref: "main"})
@@ -220,7 +220,7 @@ func TestSubscriptionMutationsPreserveEventRun(t *testing.T) {
 }
 
 func TestEventRunWireAcrossStatuses(t *testing.T) {
-	// R-7HJB-831B R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603
+	// R-H6F9-BEV6 R-7IR7-LUS0 R-T179-4S0M R-7MEW-R603
 	h := setup(t, "print(1)\n")
 	sc := h.create("event-records")
 	ctx := context.Background()

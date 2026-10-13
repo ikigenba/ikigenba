@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"math/big"
 	"regexp"
 	"sort"
 	"strings"
@@ -205,44 +204,10 @@ func (s *Store) transaction(ctx context.Context, write bool, fn func(*catalog) e
 	var operationErr error
 	err := call(ctx, func(tx *sql.Tx) error {
 		c := &catalog{tx: tx, cfg: s.cfg, data: content{Scripts: map[string]Script{}, Runs: map[string]Run{}}}
-		var encoded []byte
-		err := tx.QueryRowContext(ctx, "SELECT value FROM catalog WHERE id=1").Scan(&encoded)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err == nil {
-			if err = gob.NewDecoder(bytes.NewReader(encoded)).Decode(&c.data); err != nil {
+		if write {
+			if err := c.load(ctx); err != nil {
 				return err
 			}
-		}
-		c.subscriptions = map[string][]Subscription{}
-		rows, err := tx.QueryContext(ctx, "SELECT script,event,created FROM subscriptions ORDER BY event")
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id, event string
-			var created int64
-			if err = rows.Scan(&id, &event, &created); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			c.subscriptions[id] = append(c.subscriptions[id], Subscription{Event: event, Created: time.Unix(created, 0).UTC()})
-		}
-		err = rows.Err()
-		_ = rows.Close()
-		if err != nil {
-			return err
-		}
-		for id, sc := range c.data.Scripts {
-			sc.Created = normalize(sc.Created)
-			sc.Last = nil
-			c.data.Scripts[id] = sc
-		}
-		for id, r := range c.data.Runs {
-			r.Started = normalize(r.Started)
-			r.Finished = normalize(r.Finished)
-			c.data.Runs[id] = r
 		}
 		operationErr = fn(c)
 		return operationErr
@@ -268,7 +233,7 @@ func (s *catalog) save(ctx context.Context, c content) error {
 	if err != nil {
 		return err
 	}
-	if err = s.mirror(ctx, c); err != nil {
+	if err = s.persist(ctx, c); err != nil {
 		return err
 	}
 	s.data = c
@@ -310,32 +275,6 @@ func (s *catalog) script(sc Script) Script {
 	return sc
 }
 
-// Find reads a script by owner and name.
-func (s *catalog) find(owner, name string) (Script, error) {
-	for _, sc := range s.data.Scripts {
-		if sc.Owner == owner && sc.Name == name {
-			return s.script(sc), nil
-		}
-	}
-	return Script{}, ErrNotFound
-}
-
-// List reads an owner's scripts in name order.
-func (s *catalog) list(owner string) []Script {
-	out := []Script{}
-	for _, sc := range s.data.Scripts {
-		if sc.Owner == owner {
-			out = append(out, s.script(sc))
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
-}
-
-// Taken checks the space-wide name namespace.
-func (s *catalog) readTaken(name string) bool {
-	return s.taken(name)
-}
 func (s *catalog) taken(name string) bool {
 	for _, sc := range s.data.Scripts {
 		if sc.Name == name {
@@ -501,62 +440,6 @@ func (s *catalog) finishRun(ctx context.Context, id string, e Ending) (Run, erro
 	return r, nil
 }
 
-// FindRun reads a run belonging to the given owner.
-func (s *catalog) findRun(owner, id string) (Run, error) {
-	r, ok := s.data.Runs[id]
-	if !ok || s.data.Scripts[r.Script].Owner != owner || owner == "" {
-		return Run{}, ErrNotFound
-	}
-	return r, nil
-}
-
-// RunByID reads a run regardless of owner.
-func (s *catalog) runByID(id string) (Run, error) {
-	r, ok := s.data.Runs[id]
-	if !ok {
-		return Run{}, ErrNotFound
-	}
-	return r, nil
-}
-
-// Runs reads a script's runs newest first.
-func (s *catalog) readRuns(script string) []Run {
-	return s.runs(script)
-}
-
-// Running reads all running runs in ascending id order.
-func (s *catalog) running() []Run {
-	out := []Run{}
-	for _, r := range s.data.Runs {
-		if r.Status == StatusRunning {
-			out = append(out, r)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
-}
-
-// PastKeeping reads ended runs beyond both retention thresholds.
-func (s *catalog) pastKeeping(now time.Time, days, count int64) ([]Run, error) {
-	if days < 1 || count < 1 {
-		return nil, errors.New("invalid retention")
-	}
-	out := []Run{}
-	ids := []string{}
-	for id := range s.data.Scripts {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		for rank, r := range s.runs(id) {
-			if int64(rank) >= count && r.Status != StatusRunning && r.Status != StatusQueued && pastAge(now, r.Started, days) {
-				out = append(out, r)
-			}
-		}
-	}
-	return out, nil
-}
-
 // DeleteRun removes a single run record.
 func (s *catalog) deleteRun(ctx context.Context, id string) error {
 	if _, ok := s.data.Runs[id]; !ok {
@@ -567,20 +450,12 @@ func (s *catalog) deleteRun(ctx context.Context, id string) error {
 	return s.save(ctx, c)
 }
 
-func pastAge(now, started time.Time, days int64) bool {
-	elapsed := new(big.Int).Sub(big.NewInt(now.Unix()), big.NewInt(started.Unix()))
-	elapsed.Mul(elapsed, big.NewInt(int64(time.Second)))
-	elapsed.Add(elapsed, big.NewInt(int64(now.Nanosecond()-started.Nanosecond())))
-	threshold := new(big.Int).Mul(big.NewInt(days), big.NewInt(int64(24*time.Hour)))
-	return elapsed.Cmp(threshold) > 0
-}
-
 // Find performs a catalog operation through the supplied handle.
 func (s *Store) Find(ctx context.Context, owner, name string) (Script, error) {
 	var out Script
 	err := s.transaction(ctx, false, func(c *catalog) error {
 		var err error
-		out, err = c.find(owner, name)
+		out, err = c.readScript(ctx, "SELECT id,name,owner,repo,ref,created FROM scripts WHERE owner=? AND name=?", owner, name)
 		return err
 	})
 	if err != nil {
@@ -591,11 +466,12 @@ func (s *Store) Find(ctx context.Context, owner, name string) (Script, error) {
 }
 
 // List performs a catalog operation through the supplied handle.
-func (s *Store) List(ctx context.Context, owner string) ([]Script, error) {
+func (s *Store) List(ctx context.Context, owner, after string, n int) ([]Script, error) {
 	var out []Script
 	err := s.transaction(ctx, false, func(c *catalog) error {
-		out = c.list(owner)
-		return nil
+		var err error
+		out, err = c.readScripts(ctx, "SELECT id,name,owner,repo,ref,created FROM scripts WHERE owner=? AND name>? ORDER BY name LIMIT ?", owner, after, max(n, 0))
+		return err
 	})
 	if err != nil {
 		var zero []Script
@@ -608,8 +484,7 @@ func (s *Store) List(ctx context.Context, owner string) ([]Script, error) {
 func (s *Store) Taken(ctx context.Context, name string) (bool, error) {
 	var out bool
 	err := s.transaction(ctx, false, func(c *catalog) error {
-		out = c.readTaken(name)
-		return nil
+		return c.tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM scripts WHERE name=?)", name).Scan(&out)
 	})
 	if err != nil {
 		var zero bool
@@ -673,7 +548,7 @@ func (s *Store) FindRun(ctx context.Context, owner, id string) (Run, error) {
 	var out Run
 	err := s.transaction(ctx, false, func(c *catalog) error {
 		var err error
-		out, err = c.findRun(owner, id)
+		out, err = c.readRun(ctx, "SELECT r.id,r.script,r.sha,r.ref,r.user,r.request_id,r.trigger,r.event,r.status,r.exit_code,r.started,r.finished,r.stdout_bytes,r.stderr_bytes,r.truncated,r.reason FROM runs r JOIN scripts s ON s.id=r.script WHERE r.id=? AND s.owner=? AND s.owner<>''", id, owner)
 		return err
 	})
 	if err != nil {
@@ -688,7 +563,7 @@ func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
 	var out Run
 	err := s.transaction(ctx, false, func(c *catalog) error {
 		var err error
-		out, err = c.runByID(id)
+		out, err = c.readRun(ctx, "SELECT "+runColumns+" FROM runs WHERE id=?", id)
 		return err
 	})
 	if err != nil {
@@ -699,11 +574,12 @@ func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
 }
 
 // Runs performs a catalog operation through the supplied handle.
-func (s *Store) Runs(ctx context.Context, script string) ([]Run, error) {
+func (s *Store) Runs(ctx context.Context, script, started, id string, n int) ([]Run, error) {
 	var out []Run
 	err := s.transaction(ctx, false, func(c *catalog) error {
-		out = c.readRuns(script)
-		return nil
+		var err error
+		out, err = c.windowRuns(ctx, script, started, id, n)
+		return err
 	})
 	if err != nil {
 		var zero []Run
@@ -716,8 +592,9 @@ func (s *Store) Runs(ctx context.Context, script string) ([]Run, error) {
 func (s *Store) Running(ctx context.Context) ([]Run, error) {
 	var out []Run
 	err := s.transaction(ctx, false, func(c *catalog) error {
-		out = c.running()
-		return nil
+		var err error
+		out, err = c.readRunsSQL(ctx, "SELECT "+runColumns+" FROM runs WHERE status=? ORDER BY id", StatusRunning)
+		return err
 	})
 	if err != nil {
 		var zero []Run
@@ -731,7 +608,7 @@ func (s *Store) PastKeeping(ctx context.Context, now time.Time, days, count int6
 	var out []Run
 	err := s.transaction(ctx, false, func(c *catalog) error {
 		var err error
-		out, err = c.pastKeeping(now, days, count)
+		out, err = c.readPastKeeping(ctx, now, days, count)
 		return err
 	})
 	if err != nil {
@@ -788,14 +665,9 @@ func (s *Store) StartRun(ctx context.Context, id string) (Run, error) {
 func (s *Store) Queued(ctx context.Context) ([]Run, error) {
 	var out []Run
 	err := s.transaction(ctx, false, func(c *catalog) error {
-		out = []Run{}
-		for _, r := range c.data.Runs {
-			if r.Status == StatusQueued {
-				out = append(out, r)
-			}
-		}
-		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-		return nil
+		var err error
+		out, err = c.readRunsSQL(ctx, "SELECT "+runColumns+" FROM runs WHERE status=? ORDER BY id", StatusQueued)
+		return err
 	})
 	return out, err
 }

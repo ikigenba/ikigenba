@@ -64,15 +64,36 @@ func (s *Store) subscription(ctx context.Context, id, event string, add bool) (S
 func (s *Store) Subscribers(ctx context.Context, event string) ([]Script, error) {
 	out := []Script{}
 	err := s.transaction(ctx, false, func(c *catalog) error {
-		for id, subs := range c.subscriptions {
-			for _, sub := range subs {
-				if events.Match(sub.Event, event) {
-					if sc, ok := c.data.Scripts[id]; ok {
-						out = append(out, c.script(sc))
-					}
-					break
-				}
+		rows, err := c.tx.QueryContext(ctx, "SELECT script,event FROM subscriptions ORDER BY script,event")
+		if err != nil {
+			return err
+		}
+		ids := map[string]bool{}
+		for rows.Next() {
+			var id, pattern string
+			if err = rows.Scan(&id, &pattern); err != nil {
+				break
 			}
+			if events.Match(pattern, event) {
+				ids[id] = true
+			}
+		}
+		if err == nil {
+			err = rows.Err()
+		}
+		_ = rows.Close()
+		if err != nil {
+			return err
+		}
+		for id := range ids {
+			sc, err := c.readScript(ctx, "SELECT id,name,owner,repo,ref,created FROM scripts WHERE id=?", id)
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			out = append(out, sc)
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 		return nil

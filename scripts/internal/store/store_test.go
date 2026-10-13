@@ -93,11 +93,11 @@ func content(t *testing.T, s *store.Store) any {
 	t.Helper()
 	all := []any{}
 	for _, owner := range []string{"alice", "bob"} {
-		scripts, err := s.List(ctx, owner)
+		scripts, err := s.List(ctx, owner, "", 10000)
 		must(t, err)
 		all = append(all, scripts)
 		for _, sc := range scripts {
-			rr, err := s.Runs(ctx, sc.ID)
+			rr, err := s.Runs(ctx, sc.ID, "", "", 10000)
 			must(t, err)
 			all = append(all, rr)
 		}
@@ -198,7 +198,7 @@ func TestWordsAndNames(t *testing.T) {
 }
 
 func TestScriptsAndPersistence(t *testing.T) {
-	// R-R2IQ-UVYZ R-RMLU-90BA R-KOTN-CHRL R-R9U5-5IF5 R-XZJW-I9GQ R-Y0RS-W17F R-LD7M-ZWLH R-LFNF-RG2V R-LGVC-57TK R-LI38-IZK9 R-LJB4-WRAY R-LKJ1-AJ1N R-Y1ZP-9SY4 R-LMYU-22J1
+	// R-R2IQ-UVYZ R-RMLU-90BA R-H7GB-NJVH R-HB40-SV3K R-XZJW-I9GQ R-Y0RS-W17F R-LD7M-ZWLH R-HERP-Y6BN R-LGVC-57TK R-HIFF-3HJQ R-LJB4-WRAY R-LKJ1-AJ1N R-Y1ZP-9SY4 R-LMYU-22J1
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	z := create(t, s, "alice", "zulu")
@@ -214,10 +214,10 @@ func TestScriptsAndPersistence(t *testing.T) {
 	if a.ID == z.ID || a.ID == b.ID {
 		t.Fatal("duplicate ids")
 	}
-	list, err := s.List(ctx, "alice")
+	list, err := s.List(ctx, "alice", "", 10000)
 	must(t, err)
 	equal(t, list, []store.Script{a, z})
-	list, err = s.List(ctx, "absent")
+	list, err = s.List(ctx, "absent", "", 10000)
 	must(t, err)
 	equal(t, list, []store.Script{})
 	for _, lookup := range [][2]string{{"bob", "alpha"}, {"alice", a.ID}, {"", "alpha"}, {"alice", ""}} {
@@ -323,7 +323,7 @@ func TestCreateFailuresAndCollisions(t *testing.T) {
 	equal(t, retry.Len(), 0)
 }
 func TestRunTransitionsAndReads(t *testing.T) {
-	// R-R4YJ-MFGD R-KQ1J-Q9IA R-LUA8-COZ7 R-LVI4-QGPW R-LWQ1-48GL R-LZ5T-VRXZ R-Y5NE-F467
+	// R-R4YJ-MFGD R-H8O8-1BM6 R-LUA8-COZ7 R-LVI4-QGPW R-HFZM-BY2C R-LZ5T-VRXZ R-HKV7-V114
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	s := open(t, path)
 	a := create(t, s, "alice", "alpha")
@@ -333,10 +333,10 @@ func TestRunTransitionsAndReads(t *testing.T) {
 	r3 := run(b, 3)
 	r3.Started = stamp.Add(time.Hour)
 	r3 = add(t, s, r3)
-	rr, err := s.Runs(ctx, a.ID)
+	rr, err := s.Runs(ctx, a.ID, "", "", 10000)
 	must(t, err)
 	equal(t, rr, []store.Run{r2, r1})
-	rr, err = s.Runs(ctx, "missing")
+	rr, err = s.Runs(ctx, "missing", "", "", 10000)
 	must(t, err)
 	equal(t, rr, []store.Run{})
 	rr, err = s.Running(ctx)
@@ -484,7 +484,7 @@ func TestRunValidation(t *testing.T) {
 	equal(t, content(t, s), before)
 }
 func TestRetention(t *testing.T) {
-	// R-9AIF-RLAA R-M1LM-NBFD
+	// R-HNB0-MKII R-M1LM-NBFD
 	s := open(t, "")
 	a := create(t, s, "alice", "alpha")
 	b := create(t, s, "bob", "beta")
@@ -513,7 +513,7 @@ func TestRetention(t *testing.T) {
 		ids[0], ids[1] = ids[1], ids[0]
 	}
 	for _, id := range ids {
-		rr, err := s.Runs(ctx, id)
+		rr, err := s.Runs(ctx, id, "", "", 10000)
 		must(t, err)
 		want = append(want, rr[3:]...)
 	}
@@ -554,7 +554,7 @@ func TestConcurrentWrites(t *testing.T) {
 		}
 	}
 	equal(t, wins, 1)
-	list, err := s.List(ctx, "alice")
+	list, err := s.List(ctx, "alice", "", 10000)
 	must(t, err)
 	equal(t, len(list), 1)
 	sc := list[0]
@@ -600,7 +600,7 @@ func TestConcurrentWrites(t *testing.T) {
 			got, err := s.Find(ctx, "alice", "alpha")
 			must(t, err)
 			assertScript(got)
-			list, err := s.List(ctx, "alice")
+			list, err := s.List(ctx, "alice", "", 10000)
 			must(t, err)
 			equal(t, len(list), 1)
 			assertScript(list[0])
@@ -613,7 +613,7 @@ func TestConcurrentWrites(t *testing.T) {
 			gotRun, err = s.FindRun(ctx, "alice", r.ID)
 			must(t, err)
 			equal(t, gotRun, final)
-			rr, err := s.Runs(ctx, sc.ID)
+			rr, err := s.Runs(ctx, sc.ID, "", "", 10000)
 			must(t, err)
 			equal(t, rr, []store.Run{final})
 			rr, err = s.Running(ctx)
@@ -639,7 +639,7 @@ func TestConcurrentWrites(t *testing.T) {
 		wg.Go(func() { must(t, s.DeleteRun(ctx, id)) })
 	}
 	wg.Wait()
-	rr, err := s.Runs(ctx, sc.ID)
+	rr, err := s.Runs(ctx, sc.ID, "", "", 10000)
 	must(t, err)
 	equal(t, rr, []store.Run{final})
 	for _, id := range deletedIDs {
@@ -659,7 +659,7 @@ func TestConcurrentWrites(t *testing.T) {
 			equal(t, errors.Is(err, store.ErrNotFound), true)
 		}
 	}
-	rr, err = s.Runs(ctx, sc.ID)
+	rr, err = s.Runs(ctx, sc.ID, "", "", 10000)
 	must(t, err)
 	equal(t, rr, []store.Run{})
 }
@@ -674,7 +674,7 @@ func TestClosedAndCancelled(t *testing.T) {
 	cancel()
 	calls := func(c context.Context) []error {
 		_, a := s.Find(c, "alice", "alpha")
-		_, b := s.List(c, "alice")
+		_, b := s.List(c, "alice", "", 10000)
 		_, d := s.Taken(c, "alpha")
 		_, e := s.Create(c, store.Draft{})
 		_, _, f := s.SetRef(c, sc.ID, "")
@@ -683,11 +683,12 @@ func TestClosedAndCancelled(t *testing.T) {
 		_, i := s.FinishRun(c, r.ID, store.Ending{})
 		_, j := s.FindRun(c, "alice", r.ID)
 		_, k := s.RunByID(c, r.ID)
-		_, l := s.Runs(c, sc.ID)
+		_, l := s.Runs(c, sc.ID, "", "", 10000)
 		_, m := s.Running(c)
 		_, n := s.PastKeeping(c, stamp, 0, 0)
 		o := s.DeleteRun(c, r.ID)
-		return []error{a, b, d, e, f, g, h, i, j, k, l, m, n, o}
+		_, p := s.RunCount(c, sc.ID)
+		return []error{a, b, d, e, f, g, h, i, j, k, l, m, n, o, p}
 	}
 	for _, err := range calls(cancelled) {
 		catalog(t, err)
@@ -718,7 +719,7 @@ func TestClosedAndCancelled(t *testing.T) {
 }
 
 func TestRetentionBeyondDurationRange(t *testing.T) {
-	// R-9AIF-RLAA
+	// R-HNB0-MKII
 	s := open(t, "")
 	sc := create(t, s, "alice", "alpha")
 	old := run(sc, 1)
@@ -738,7 +739,7 @@ func TestRetentionBeyondDurationRange(t *testing.T) {
 	equal(t, got, []store.Run{})
 }
 func TestDeletingEveryStatus(t *testing.T) {
-	// R-Y1ZP-9SY4 R-LI38-IZK9
+	// R-Y1ZP-9SY4 R-HIFF-3HJQ
 	path := filepath.Join(t.TempDir(), "db")
 	s := open(t, path)
 	sc := create(t, s, "alice", "alpha")
@@ -757,12 +758,12 @@ func TestDeletingEveryStatus(t *testing.T) {
 			}
 		}
 	}
-	rr, err := s.Runs(ctx, sc.ID)
+	rr, err := s.Runs(ctx, sc.ID, "", "", 10000)
 	must(t, err)
 	got, err := s.Find(ctx, "alice", "alpha")
 	must(t, err)
 	equal(t, *got.Last, rr[0])
-	list, err := s.List(ctx, "alice")
+	list, err := s.List(ctx, "alice", "", 10000)
 	must(t, err)
 	equal(t, *list[0].Last, rr[0])
 	got, _, err = s.SetRef(ctx, sc.ID, "ref")

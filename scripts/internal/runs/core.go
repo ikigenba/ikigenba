@@ -685,12 +685,16 @@ func (c *Core) Delete(ctx context.Context, script string) error {
 	}
 
 	c.mu.Unlock()
-	rs, e := c.cfg.Store.Runs(ctx, script)
+	rs, e := c.cfg.Store.Running(ctx)
 	if e != nil {
 		return e
 	}
-	for _, r := range rs {
-		if r.Status == store.StatusRunning || r.Status == store.StatusQueued {
+	queued, e := c.cfg.Store.Queued(ctx)
+	if e != nil {
+		return e
+	}
+	for _, r := range append(rs, queued...) {
+		if r.Script == script {
 			_, e = c.Cancel(ctx, r.ID)
 			if e != nil && !errors.Is(e, store.ErrEnded) {
 				return e

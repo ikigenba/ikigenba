@@ -23,7 +23,7 @@ import (
 )
 
 func TestCatalogLifecycle(t *testing.T) {
-	// R-7F3I-GJJX R-7GBE-UBAM R-J4DJ-ROLI R-7JZ3-ZMIP R-52A4-ICD3 R-53I0-W43S R-54PX-9VUH R-0QZP-KNLV R-YEUN-6HFY R-YG2J-K96N R-0S7L-YFCK R-O7UW-EYEM R-5ATF-6QJY R-5C1B-KIAN R-5D97-YA1C R-C2RY-13RX
+	// R-7F3I-GJJX R-H57C-XN4H R-J4DJ-ROLI R-7JZ3-ZMIP R-HIM9-54A4 R-53I0-W43S R-54PX-9VUH R-0QZP-KNLV R-YEUN-6HFY R-YG2J-K96N R-0S7L-YFCK R-O7UW-EYEM R-5ATF-6QJY R-5C1B-KIAN R-5D97-YA1C R-C2RY-13RX
 	h := setup(t, "print(1)\n")
 	if got := string(object(t, h.call("list", tools.ListArgs{}))); got != `{"scripts":[]}` {
 		t.Fatal(got)
@@ -356,7 +356,7 @@ func TestCatalogDeleteNeverRanAndRepositoryGone(t *testing.T) {
 				victim, e = h.st.Find(context.Background(), "alice", s.Name)
 				must(t, e)
 			}
-			records, e := h.st.Runs(context.Background(), victim.ID)
+			records, e := h.st.Runs(context.Background(), victim.ID, "", "", 1000)
 			must(t, e)
 			before := catalogOmit(snapshot(t, h), victim.ID, true)
 			removeTrace(t, h)
@@ -411,7 +411,7 @@ func TestCatalogDeleteStopsGroupsAndPreservesOtherProcesses(t *testing.T) {
 	live, connections := startGroup(victim.Name)
 	_, otherConnections := startGroup(other.Name)
 	before := catalogOmit(snapshot(t, h), victim.ID, true)
-	records, e := h.st.Runs(ctx, victim.ID)
+	records, e := h.st.Runs(ctx, victim.ID, "", "", 1000)
 	must(t, e)
 	removeTrace(t, h)
 	reply := h.call("delete", tools.DeleteArgs{Name: victim.Name})

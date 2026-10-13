@@ -31,7 +31,7 @@ func TestEventVocabulary(t *testing.T) {
 	}
 }
 
-// R-R2IQ-UVYZ R-G2N4-WX5V R-R8M8-RQOG R-G52X-OGN9 R-RH5J-G4VB R-RJLC-7OCP R-G8QM-TRVC R-RPOU-4J26 R-RUKF-NM0Y
+// R-R2IQ-UVYZ R-G2N4-WX5V R-R8M8-RQOG R-HJNB-H9AF R-RH5J-G4VB R-RJLC-7OCP R-G8QM-TRVC R-RPOU-4J26 R-RUKF-NM0Y
 func TestSubscriptionsLifecycle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	now := stamp
@@ -117,7 +117,7 @@ func TestSubscriptionsLifecycle(t *testing.T) {
 	equal(t, got[0].ID, b.ID)
 }
 
-// R-G2N4-WX5V R-G52X-OGN9 R-RH5J-G4VB R-RJLC-7OCP R-RUKF-NM0Y
+// R-G2N4-WX5V R-HJNB-H9AF R-RH5J-G4VB R-RJLC-7OCP R-RUKF-NM0Y
 func TestPatternSubscriptionsLifecycle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog.db")
 	now := stamp
@@ -144,7 +144,7 @@ func TestPatternSubscriptionsLifecycle(t *testing.T) {
 		must(t, err)
 		equal(t, found.Subscriptions, expected)
 		equal(t, *found.Last, r)
-		listed, err := s.List(ctx, a.Owner)
+		listed, err := s.List(ctx, a.Owner, "", 10000)
 		must(t, err)
 		equal(t, listed, []store.Script{found})
 		subs, err := s.Subscribers(ctx, "cron.hourly.fired")
@@ -184,7 +184,7 @@ func TestPatternSubscriptionsLifecycle(t *testing.T) {
 	check(s)
 }
 
-// R-G8QM-TRVC R-G52X-OGN9
+// R-G8QM-TRVC R-HJNB-H9AF
 func TestSubscriberPatterns(t *testing.T) {
 	s := open(t, "")
 	a := create(t, s, "alice", "alpha")
@@ -257,7 +257,7 @@ func TestUnsubscribeComparesPatternsExactly(t *testing.T) {
 	}
 }
 
-// R-RIDF-TWM0 R-G7IQ-G04N R-G9YJ-7JM1 R-R9U5-5IF5
+// R-RIDF-TWM0 R-G7IQ-G04N R-G9YJ-7JM1 R-HB40-SV3K
 func TestSubscriptionRefusals(t *testing.T) {
 	s := open(t, "")
 	a := create(t, s, "alice", "alpha")
@@ -399,7 +399,7 @@ func TestConcurrentEventWrites(t *testing.T) {
 		}
 	}
 	equal(t, successes, 1)
-	rr, err := s.Runs(ctx, a.ID)
+	rr, err := s.Runs(ctx, a.ID, "", "", 10000)
 	must(t, err)
 	equal(t, len(rr), 1)
 }

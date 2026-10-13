@@ -138,7 +138,7 @@ func TestDeliveryTrailRetainsCatalogIdentityAcrossQueueAndEndings(t *testing.T) 
 			mustCLI(t, e)
 			defer func() { mustCLI(t, handle.Close()) }()
 			st := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
-			records, e := st.Runs(context.Background(), sc["id"].(string))
+			records, e := st.Runs(context.Background(), sc["id"].(string), "", "", 100)
 			mustCLI(t, e)
 			var r store.Run
 			eventRuns := map[string]bool{}
@@ -275,7 +275,7 @@ func TestEventFinishingBodyDuringDrainIsRefused(t *testing.T) {
 	handle, e := db.Open(context.Background(), db.Config{Path: filepath.Join(h.p.Dir, "state", "scripts.db"), Migrations: scripts.Migrations(), Now: h.p.Now})
 	mustCLI(t, e)
 	st := store.New(handle, store.Config{Now: h.p.Now, Rand: &countingRandom{}})
-	records, e := st.Runs(context.Background(), sc["id"].(string))
+	records, e := st.Runs(context.Background(), sc["id"].(string), "", "", 100)
 	mustCLI(t, e)
 	mustCLI(t, handle.Close())
 	if len(records) != len(before.([]any)) || len(records) != 1 || records[0].ID != run["id"] {

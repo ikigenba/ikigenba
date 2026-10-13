@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/scripts/internal/store"
 	"github.com/ikigenba/ikigenba/scripts/internal/urls"
 )
@@ -54,12 +56,16 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if r.URL.Path == "/" {
-			scripts, err := cfg.Store.List(ctx, owner)
+			scripts, err := cfg.Store.List(ctx, owner, "", paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
 			d := LandingData{Banner: banner(nil)}
+			if len(scripts) > paging.DefaultLimit {
+				scripts = scripts[:paging.DefaultLimit]
+				d.Next = (paging.Token{Tool: "list"}).Encode(scripts[len(scripts)-1].Name)
+			}
 			for _, sc := range scripts {
 				row := ScriptRow{Name: sc.Name, URL: "/" + sc.Name + "/", Repo: repository(ctx, cfg, sc), Ref: sc.Ref}
 				if sc.Last != nil {
@@ -91,12 +97,22 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if len(parts) == 2 && parts[1] == "" {
-			rs, err := cfg.Store.Runs(ctx, sc.ID)
+			rs, err := cfg.Store.Runs(ctx, sc.ID, "", "", paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
-			d := ScriptData{Banner: banner([]page.Level{{Name: sc.Name, URL: "/" + sc.Name + "/"}}), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format(CardLayout), CreatedAt: datetime(sc.Created), RunsKept: len(rs), KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
+			count, err := cfg.Store.RunCount(ctx, sc.ID)
+			if err != nil {
+				refusal()
+				return
+			}
+			d := ScriptData{Banner: banner([]page.Level{{Name: sc.Name, URL: "/" + sc.Name + "/"}}), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format(CardLayout), CreatedAt: datetime(sc.Created), RunsKept: count, KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
+			if len(rs) > paging.DefaultLimit {
+				rs = rs[:paging.DefaultLimit]
+				last := rs[len(rs)-1]
+				d.Next = (paging.Token{Tool: "runs"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
 			for _, u := range rs {
 				d.Runs = append(d.Runs, runRow(u, sc.Name))
 			}

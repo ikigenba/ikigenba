@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io/fs"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -357,13 +358,13 @@ func takeFileSnapshot(t *testing.T, f *fileFixture) fileSnapshot {
 	t.Helper()
 	s := fileSnapshot{Scripts: []store.Script{}, Runs: []store.Run{}, Entries: map[string]fileSnapshotEntry{}, Targets: map[string]fileSnapshotEntry{}}
 	for _, owner := range []string{"alice", "bob"} {
-		ss, e := f.st.List(context.Background(), owner)
+		ss, e := f.st.List(context.Background(), owner, "", math.MaxInt)
 		if e != nil {
 			t.Fatal(e)
 		}
 		s.Scripts = append(s.Scripts, ss...)
 		for _, sc := range ss {
-			rr, e := f.st.Runs(context.Background(), sc.ID)
+			rr, e := f.st.Runs(context.Background(), sc.ID, "", "", math.MaxInt)
 			if e != nil {
 				t.Fatal(e)
 			}

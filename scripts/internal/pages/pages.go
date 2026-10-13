@@ -49,6 +49,7 @@ func (s *Set) Write(w http.ResponseWriter, r *http.Request, status int, name str
 type LandingData struct {
 	Banner  page.Banner
 	Scripts []ScriptRow
+	Next    string
 }
 
 // ScriptRow is one catalog entry.
@@ -82,6 +83,7 @@ type ScriptData struct {
 	Script        ScriptCard
 	Runs          []RunRow
 	Subscriptions []string
+	Next          string
 }
 
 // ScriptCard is the formatted script record and retention rule.

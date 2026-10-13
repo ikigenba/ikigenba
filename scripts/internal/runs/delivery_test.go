@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -43,7 +44,7 @@ func (h *harness) sourceAfter(after func(time.Duration) <-chan time.Time) {
 }
 func runList(t *testing.T, h *harness, sc store.Script) []store.Run {
 	t.Helper()
-	rs, err := h.st.Runs(context.Background(), sc.ID)
+	rs, err := h.st.Runs(context.Background(), sc.ID, "", "", math.MaxInt)
 	must(t, err)
 	return rs
 }

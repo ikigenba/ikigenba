@@ -215,7 +215,7 @@ func TestNormalizedFinishRun(t *testing.T) {
 				got, err = s.FindRun(ctx, sc.Owner, r.ID)
 				must(t, err)
 				equal(t, got, r)
-				rr, err := s.Runs(ctx, sc.ID)
+				rr, err := s.Runs(ctx, sc.ID, "", "", 10000)
 				must(t, err)
 				equal(t, rr, []store.Run{r})
 			})
@@ -316,7 +316,7 @@ func TestEveryStoreReturnedRecord(t *testing.T) {
 			got, _, err = s.SetRef(ctx, sc.ID, sc.Ref)
 			must(t, err)
 			assertReturnedScript(t, got)
-			rr, err := s.Runs(ctx, sc.ID)
+			rr, err := s.Runs(ctx, sc.ID, "", "", 10000)
 			must(t, err)
 			for _, r := range rr {
 				assertReturnedRun(t, r)
@@ -328,7 +328,7 @@ func TestEveryStoreReturnedRecord(t *testing.T) {
 				assertReturnedRun(t, r)
 			}
 		}
-		list, err := s.List(ctx, "alice")
+		list, err := s.List(ctx, "alice", "", 10000)
 		must(t, err)
 		equal(t, len(list), len(scripts))
 		for _, sc := range list {
