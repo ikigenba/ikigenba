@@ -93,9 +93,9 @@ and `etc/`.
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.22.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.22.0`: a release that
-    exports the `db`, `events` and `version` packages and whose `page.Banner`
+  - appkit `v0.25.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.25.0`: a release that
+    exports the `db`, `events`, `paging` and `version` packages and whose `page.Banner`
     has no service launcher and carries `Release` and `Commit`. It and the modules it pulls in
     are events' only dependencies. See Adopting appkit below.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
@@ -112,10 +112,10 @@ external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.22.0`, fetched
+appkit is required only at a published release, here `v0.25.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@v0.22.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.25.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
