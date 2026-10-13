@@ -1,5 +1,6 @@
 {{/* One candidate at GET /candidates/<id>: its display fields and tags,
-     its assessment with the effective numbers at the request, each
+     its assessment with the effective numbers as of the last refresh at
+     the end of a pass, each
      estimate with the facts it used, each link to a scrapes record with
      its last seen and gone, and the owner's rulings on it. A merged
      candidate's page says what it merged into and links there, with its
@@ -22,19 +23,22 @@
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise);
      .Assessment (nil when merged or not yet scored; else the last pass's
-     assessment with the effective numbers at the request), with .Fleet
+     assessment with the effective numbers as of the last refresh at the
+     end of a pass, as stored), with .Fleet
      (bool, the fleet pass), .Minutes (drive minutes from the origin as
      text, "84"; empty when its ZIP is not in the table), .Low (the
      combined low as shown, "$7,800,000"), .High (the combined high as
      shown; empty when no source gives one), .Confidence (the stored
      combined confidence, two decimals, "0.70"), .Filed and .FiledText (the
      newest filing date among its links not gone, "2025-03-18", both the
-     same; empty when it has none), .Freshness (that filing's weight at the
-     request, two decimals, "1.00"), .Effective (the effective confidence
-     at the request, two decimals), .Stale (bool, true when .Effective is
+     same; empty when it has none), .Freshness (that filing's weight as
+     of the last refresh at the end of a pass, the stored effective
+     confidence over the stored confidence, two decimals, "1.00"),
+     .Effective (the effective confidence as of the last refresh at the end
+     of a pass, as stored, two decimals), .Stale (bool, true when .Effective is
      zero), .Point (the point estimate as shown), .Base (the score before
-     freshness, as stored, as shown), .Score (the score at the request, as
-     shown), .Excluded (bool), .Exclusions (each with .Reason, the
+     freshness, as stored, as shown), .Score (the score as of the last refresh
+     at the end of a pass, as stored, as shown), .Excluded (bool), .Exclusions (each with .Reason, the
      exclusion's word as stored, such as "government_class",
      "government_name" or "ruling", and .Detail, the class word or name
      pattern that matched, empty for a ruling), .Rules (int, the rules
@@ -106,7 +110,7 @@
      when .Status is "active": section#assessment-card with h2 "Assessment"
      and a p in its header (text "The combined estimate and the fit test as
      the last pass scored them. Freshness, effective confidence and score
-     are computed as the page loads, from the newest filing's age."), then
+     are as of the last refresh at the end of a pass."), then
      either, when .Assessment is nil, div#no-assessment.empty holding h3
      "Not scored yet" and a p (text "A pass scores a candidate after it
      resolves the records that touch it."), or dl#assessment.kv holding,
@@ -200,7 +204,7 @@
 </dl>
 </section>
 {{if eq .Status "active"}}<section id="assessment-card" class="card" aria-labelledby="assessment-title">
-<header><h2 id="assessment-title">Assessment</h2><p>The combined estimate and the fit test as the last pass scored them. Freshness, effective confidence and score are computed as the page loads, from the newest filing's age.</p></header>
+<header><h2 id="assessment-title">Assessment</h2><p>The combined estimate and the fit test as the last pass scored them. Freshness, effective confidence and score are as of the last refresh at the end of a pass.</p></header>
 {{with $a}}<dl id="assessment" class="kv">
 <dt>Fleet</dt><dd id="assessment-fleet">{{if .Fleet}}yes{{else}}no{{end}}</dd>
 <dt>Drive minutes</dt><dd id="assessment-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">not in the ZIP table</span>{{end}}</dd>
