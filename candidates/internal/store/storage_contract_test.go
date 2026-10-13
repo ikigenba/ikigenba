@@ -1,0 +1,1158 @@
+package store_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/candidates"
+	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
+	"github.com/ikigenba/ikigenba/candidates/internal/store"
+)
+
+type contractRandom struct {
+	next         byte
+	calls, total int
+	fail         bool
+}
+
+func (r *contractRandom) Read(p []byte) (int, error) {
+	r.calls++
+	if r.fail {
+		return 0, io.ErrUnexpectedEOF
+	}
+	r.total += len(p)
+	for i := range p {
+		p[i] = r.next
+	}
+	r.next++
+	return len(p), nil
+}
+
+type contractMeter struct {
+	reader   io.Reader
+	requests []int
+	total    int
+}
+
+func (r *contractMeter) Read(p []byte) (int, error) {
+	r.requests = append(r.requests, len(p))
+	n, err := r.reader.Read(p)
+	r.total += n
+	return n, err
+}
+
+type contractFixture struct {
+	t    *testing.T
+	path string
+	now  time.Time
+	rnd  io.Reader
+	d    *db.DB
+	s    *store.Store
+}
+
+// R-46NX-U922: construct the published store using its injected dependencies.
+func contractDB(t *testing.T) *contractFixture {
+	t.Helper()
+	f := &contractFixture{t: t, path: filepath.Join(t.TempDir(), "state", "candidates.db"), now: time.Date(2030, 4, 5, 6, 7, 8, 999, time.FixedZone("fixture", 3600)), rnd: &contractRandom{next: 1}}
+	f.open()
+	t.Cleanup(func() {
+		if err := f.d.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return f
+}
+func (f *contractFixture) open() {
+	f.t.Helper()
+	d, err := db.Open(context.Background(), db.Config{Path: f.path, Migrations: candidates.Migrations(), Now: func() time.Time { return f.now }})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.d = d
+	f.s = store.New(d, store.Config{Now: func() time.Time { return f.now }, Rand: f.rnd})
+}
+func (f *contractFixture) reopen() {
+	f.t.Helper()
+	if err := f.d.Close(); err != nil {
+		f.t.Fatal(err)
+	}
+	f.open()
+}
+func contractOK(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+func contractEqual[T any](t *testing.T, got, want T) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v; want %#v", got, want)
+	}
+}
+func contractError(t *testing.T, err, want error) {
+	t.Helper()
+	if !errors.Is(err, want) {
+		t.Fatalf("got %v; want %v", err, want)
+	}
+}
+func contractNewPass(t *testing.T, f *contractFixture, trigger string) store.Pass {
+	t.Helper()
+	p := store.Pass{Trigger: trigger, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	if trigger != store.TriggerRebuild {
+		p.Delivery = "delivery-" + trigger
+	}
+	out, err := f.s.AddPass(context.Background(), p)
+	contractOK(t, err)
+	return out
+}
+func contractObservation(id, name string, filed time.Time) store.Observation {
+	high := int64(20000000)
+	return store.Observation{Scraper: "source-z", SourceID: id, Digest: "digest-" + id, Reading: sources.Reading{NameKey: sources.NameKey(name), PhoneKey: "3205550101", DomainKey: "business.test", Name: name, Names: []string{name, "Trading alias"}, Street: "12 Test Road", City: "Test city", State: "MN", Zip: "55072", County: "MN-115", Phone: "320-555-0101", Email: "office@business.test", People: []sources.Person{{Name: "Pat Test", Role: "owner"}}, Class: sources.ClassForHire, Cargo: []string{"grain"}, Filed: filed, Fleet: true, Estimate: &sources.Estimate{Source: "source-z", Low: 10000000, High: &high, Confidence: 0.8, Facts: map[string]json.RawMessage{"units": json.RawMessage(`3`)}, Filed: filed, Formula: 2}}}
+}
+func contractAttach(t *testing.T, f *contractFixture, run string, obs ...store.Observation) []string {
+	t.Helper()
+	_, ids, err := f.s.Attach(context.Background(), run, false, obs)
+	contractOK(t, err)
+	return ids
+}
+
+// R-4GF4-WEZM R-4HN1-A6QB R-4IUX-NYH0
+func TestContractVocabulary(t *testing.T) {
+	got := []string{store.CandidateIDPrefix, store.PassIDPrefix, store.StatusActive, store.StatusMerged, store.StatusRunning, store.StatusDone, store.StatusFailed, store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.TriggerRebuild, store.LinkSourceKey, store.LinkMatchKey, store.LinkDecision, store.KindMerge, store.KindSplit, store.KindNotSame, store.KindExclude, store.KindInclude}
+	contractEqual(t, got, []string{"cand_", "pass_", "active", "merged", "running", "done", "failed", "scrapes", "interrupted", "store", "rebuild", "source_key", "match_key", "decision", "merge", "split", "not_same", "exclude", "include"})
+	for _, s := range []string{"", "0123456789ABCDEF", "0123456789abcde", "0123456789abcdef0", "0123456789abcdeg", "0123456789abcdeé"} {
+		if store.ValidCandidateID(store.CandidateIDPrefix+s) || store.ValidPassID(store.PassIDPrefix+s) {
+			t.Fatalf("accepted %q", s)
+		}
+	}
+	if !store.ValidCandidateID("cand_0123456789abcdef") || !store.ValidPassID("pass_0123456789abcdef") || store.ValidCandidateID("pass_0123456789abcdef") || store.ValidPassID("cand_0123456789abcdef") || store.ValidCandidateID("") || store.ValidPassID("") {
+		t.Fatal("id validation")
+	}
+	errs := []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrInvalid, store.ErrUnreachable}
+	for i, a := range errs {
+		if a == nil {
+			t.Fatal("nil error")
+		}
+		for j, b := range errs {
+			if i != j && errors.Is(a, b) {
+				t.Fatal("error identities overlap")
+			}
+		}
+	}
+	if store.Unreachable == "" || strings.ContainsAny(store.Unreachable, "\r\n") {
+		t.Fatal("copy constant must be one nonempty line")
+	}
+}
+
+// R-4K2U-1Q7P R-4DZC-4VI8 R-4F78-IN8X R-4OYF-KT6H R-4Q6B-YKX6 R-4TU1-3W59 R-4W9T-VFMN R-4ZXJ-0QUQ R-52DB-SAC4 R-5LVP-WM78
+func TestContractPassLifecyclePersistence(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	stamp := f.now.UTC().Truncate(time.Second)
+	input := store.Pass{ID: "ignored", Trigger: store.TriggerRebuild, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Rescored: 99, Unranged: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	p, err := f.s.AddPass(ctx, input)
+	contractOK(t, err)
+	want := store.Pass{ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
+	contractEqual(t, p, want)
+	f.reopen()
+	running, err := f.s.RunningPasses(ctx)
+	contractOK(t, err)
+	contractEqual(t, running, []store.Pass{p})
+	read, err := f.s.GetPass(ctx, p.ID)
+	contractOK(t, err)
+	contractEqual(t, read, p)
+	f.now = f.now.Add(time.Hour)
+	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Rescored: 8, Unranged: 9}
+	ended, err := f.s.FinishPass(ctx, p.ID, c)
+	contractOK(t, err)
+	want.Status = store.StatusDone
+	want.Finished = f.now.UTC().Truncate(time.Second)
+	want.Rows = c.Rows
+	want.New = c.New
+	want.Changed = c.Changed
+	want.Unchanged = c.Unchanged
+	want.Gone = c.Gone
+	want.Created = c.Created
+	want.Linked = c.Linked
+	want.Rescored = c.Rescored
+	want.Unranged = c.Unranged
+	contractEqual(t, ended, want)
+	f.reopen()
+	read, err = f.s.GetPass(ctx, p.ID)
+	contractOK(t, err)
+	contractEqual(t, read, want)
+	running, err = f.s.RunningPasses(ctx)
+	contractOK(t, err)
+	if running == nil || len(running) != 0 {
+		t.Fatal(running)
+	}
+	for _, reason := range []string{store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore} {
+		p = contractNewPass(t, f, "run-"+reason)
+		f.now = f.now.Add(time.Minute)
+		want = p
+		want.Status = store.StatusFailed
+		want.Reason = reason
+		want.Finished = f.now.UTC().Truncate(time.Second)
+		ended, err = f.s.FailPass(ctx, p.ID, reason)
+		contractOK(t, err)
+		contractEqual(t, ended, want)
+		f.reopen()
+		read, err = f.s.GetPass(ctx, p.ID)
+		contractOK(t, err)
+		contractEqual(t, read, want)
+	}
+	read, err = f.s.GetPass(ctx, "missing")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, read, store.Pass{})
+}
+
+// R-4RE8-CCNV R-4SM4-Q4EK R-4XHQ-97DC R-I3E6-Z7A0
+func TestContractPassRefusals(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	p := contractNewPass(t, f, "run-one")
+	rnd := f.rnd.(*contractRandom)
+	for _, input := range []store.Pass{{}, {Trigger: store.TriggerRebuild}, {Trigger: store.TriggerRebuild, UserID: "owner", Delivery: "bad"}, {Trigger: "run"}} {
+		before, beforeCalls := rnd.total, rnd.calls
+		out, err := f.s.AddPass(ctx, input)
+		contractError(t, err, store.ErrUnreachable)
+		contractEqual(t, out, store.Pass{})
+		contractEqual(t, rnd.total, before)
+		contractEqual(t, rnd.calls, beforeCalls)
+	}
+	for _, input := range []store.Pass{{Trigger: p.Trigger, Delivery: "different"}, {Trigger: "different", Delivery: p.Delivery}} {
+		out, err := f.s.AddPass(ctx, input)
+		contractError(t, err, store.ErrDelivered)
+		contractEqual(t, out, store.Pass{})
+	}
+	out, err := f.s.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "owner"})
+	contractError(t, err, store.ErrBusy)
+	contractEqual(t, out, store.Pass{})
+	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Rescored: -1}, {Unranged: -1}}
+	for _, c := range negatives {
+		for _, id := range []string{p.ID, "missing"} {
+			out, err = f.s.FinishPass(ctx, id, c)
+			contractError(t, err, store.ErrUnreachable)
+			contractEqual(t, out, store.Pass{})
+		}
+	}
+	for _, id := range []string{p.ID, "missing"} {
+		out, err = f.s.FailPass(ctx, id, "bad")
+		contractError(t, err, store.ErrUnreachable)
+		contractEqual(t, out, store.Pass{})
+	}
+	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: "malformed", Candidate: "missing"})
+	contractError(t, err, store.ErrUnreachable)
+	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: "malformed", Candidate: "missing", UserID: "owner"})
+	contractError(t, err, store.ErrInvalid)
+	read, err := f.s.GetPass(ctx, p.ID)
+	contractOK(t, err)
+	contractEqual(t, read, p)
+	out, err = f.s.FinishPass(ctx, "missing", store.Counts{})
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, out, store.Pass{})
+	out, err = f.s.FailPass(ctx, "missing", store.ReasonStore)
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, out, store.Pass{})
+	done, err := f.s.FinishPass(ctx, p.ID, store.Counts{})
+	contractOK(t, err)
+	out, err = f.s.FinishPass(ctx, p.ID, store.Counts{})
+	contractError(t, err, store.ErrEnded)
+	contractEqual(t, out, store.Pass{})
+	out, err = f.s.FailPass(ctx, p.ID, store.ReasonStore)
+	contractError(t, err, store.ErrEnded)
+	contractEqual(t, out, store.Pass{})
+	out, err = f.s.AddPass(ctx, store.Pass{Trigger: p.Trigger, Delivery: "new-delivery"})
+	contractError(t, err, store.ErrDelivered)
+	contractEqual(t, out, store.Pass{})
+	read, err = f.s.GetPass(ctx, p.ID)
+	contractOK(t, err)
+	contractEqual(t, read, done)
+}
+
+// R-5AB2-LACZ
+func TestContractIDMinting(t *testing.T) {
+	for _, kind := range []string{"pass", "candidate"} {
+		t.Run(kind, func(t *testing.T) {
+			f := contractDB(t)
+			ctx := context.Background()
+			seed := bytes.Repeat([]byte{0x5a}, 8)
+			f.rnd = bytes.NewReader(seed)
+			f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: f.rnd})
+			var first string
+			mint := func(label string) (string, error) {
+				if kind == "pass" {
+					p, err := f.s.AddPass(ctx, store.Pass{Trigger: label, Delivery: "delivery-" + label})
+					return p.ID, err
+				}
+				n, ids, err := f.s.Attach(ctx, label, false, []store.Observation{contractObservation(label, label, f.now)})
+				if err != nil {
+					contractEqual(t, n, store.Counts{})
+					if ids != nil {
+						t.Fatal(ids)
+					}
+					return "", err
+				}
+				return ids[0], nil
+			}
+			first, err := mint("one")
+			contractOK(t, err)
+			prefix := store.CandidateIDPrefix
+			if kind == "pass" {
+				prefix = store.PassIDPrefix
+				_, err = f.s.FinishPass(ctx, first, store.Counts{})
+				contractOK(t, err)
+			}
+			contractEqual(t, first, prefix+"5a5a5a5a5a5a5a5a")
+			stream := bytes.NewReader(append(bytes.Repeat([]byte{0x5a}, 8), bytes.Repeat([]byte{0x6b}, 8)...))
+			f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: stream})
+			second, err := mint("two")
+			contractOK(t, err)
+			contractEqual(t, second, prefix+"6b6b6b6b6b6b6b6b")
+			contractEqual(t, stream.Len(), 0)
+			if kind == "pass" {
+				_, err = f.s.FinishPass(ctx, second, store.Counts{})
+				contractOK(t, err)
+			}
+			originalPasses, err := f.s.ListPasses(ctx, 0, 20)
+			contractOK(t, err)
+			originalCandidates, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+			contractOK(t, err)
+			originalLinks := map[string][]store.Link{}
+			for _, c := range originalCandidates {
+				originalLinks[c.ID], err = f.s.Links(ctx, c.ID)
+				contractOK(t, err)
+			}
+			for _, data := range [][]byte{bytes.Repeat([]byte{0x5a}, 64), {}, bytes.Repeat([]byte{0x5a}, 4)} {
+				r := &contractMeter{reader: bytes.NewReader(data)}
+				f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: r})
+				id, err := mint("three")
+				contractError(t, err, store.ErrUnreachable)
+				contractEqual(t, id, "")
+				contractEqual(t, r.total, len(data))
+				wantRequests := []int{8}
+				if len(data) == 64 {
+					wantRequests = []int{8, 8, 8, 8, 8, 8, 8, 8}
+				} else if len(data) == 4 {
+					wantRequests = []int{8, 4}
+				}
+				contractEqual(t, r.requests, wantRequests)
+				afterPasses, e := f.s.ListPasses(ctx, 0, 20)
+				contractOK(t, e)
+				contractEqual(t, afterPasses, originalPasses)
+				afterCandidates, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+				contractOK(t, e)
+				contractEqual(t, afterCandidates, originalCandidates)
+				for _, c := range originalCandidates {
+					ls, e := f.s.Links(ctx, c.ID)
+					contractOK(t, e)
+					contractEqual(t, ls, originalLinks[c.ID])
+				}
+
+			}
+			if kind == "pass" {
+				ps, err := f.s.ListPasses(ctx, 0, 20)
+				contractOK(t, err)
+				contractEqual(t, len(ps), 2)
+			} else {
+				cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+				contractOK(t, err)
+				contractEqual(t, len(cs), 2)
+			}
+		})
+	}
+}
+
+// R-515F-EILF R-53L8-622T R-54T4-JTTI
+func TestContractPassWindowsAndPrune(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	var ps []store.Pass
+	for i := range 6 {
+		p := contractNewPass(t, f, fmt.Sprintf("run-%d", i))
+		var err error
+		if i%2 == 0 {
+			p, err = f.s.FinishPass(ctx, p.ID, store.Counts{Rows: int64(i)})
+		} else {
+			p, err = f.s.FailPass(ctx, p.ID, store.ReasonScrapes)
+		}
+		contractOK(t, err)
+		ps = append(ps, p)
+		if i == 2 {
+			f.now = f.now.Add(time.Hour)
+		}
+	}
+	running := contractNewPass(t, f, "running")
+	all := append(slices.Clone(ps), running)
+	slices.SortFunc(all, func(a, b store.Pass) int {
+		if a.Started.After(b.Started) {
+			return -1
+		}
+		if a.Started.Before(b.Started) {
+			return 1
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+	got, err := f.s.ListPasses(ctx, 0, 20)
+	contractOK(t, err)
+	contractEqual(t, got, all)
+	got, err = f.s.ListPasses(ctx, 1, 2)
+	contractOK(t, err)
+	contractEqual(t, got, all[1:3])
+	got, err = f.s.ListPasses(ctx, 99, 2)
+	contractOK(t, err)
+	if got == nil || len(got) != 0 {
+		t.Fatal(got)
+	}
+	for _, w := range [][2]int64{{-1, 1}, {0, 0}, {0, -1}} {
+		got, err = f.s.ListPasses(ctx, w[0], w[1])
+		contractError(t, err, store.ErrUnreachable)
+		if got != nil {
+			t.Fatal(got)
+		}
+	}
+	for _, k := range []int64{0, -1} {
+		got, err = f.s.PrunePasses(ctx, k)
+		contractError(t, err, store.ErrUnreachable)
+		if got != nil {
+			t.Fatal(got)
+		}
+	}
+	gone, err := f.s.PrunePasses(ctx, 2)
+	contractOK(t, err)
+	contractEqual(t, gone, []store.Pass{ps[1], ps[0]})
+	f.reopen()
+	for _, p := range gone {
+		_, err = f.s.GetPass(ctx, p.ID)
+		contractError(t, err, store.ErrNotFound)
+	}
+	for _, p := range ps {
+		if !slices.ContainsFunc(gone, func(q store.Pass) bool { return p.ID == q.ID }) {
+			retained, e := f.s.GetPass(ctx, p.ID)
+			contractOK(t, e)
+			contractEqual(t, retained, p)
+		}
+	}
+	left, err := f.s.RunningPasses(ctx)
+	contractOK(t, err)
+	contractEqual(t, left, []store.Pass{running})
+	_, err = f.s.FailPass(ctx, running.ID, store.ReasonInterrupted)
+	contractOK(t, err)
+	for _, p := range gone {
+		q, err := f.s.AddPass(ctx, store.Pass{Trigger: p.Trigger, Delivery: p.Delivery})
+		contractOK(t, err)
+		_, err = f.s.FinishPass(ctx, q.ID, store.Counts{})
+		contractOK(t, err)
+	}
+	gone, err = f.s.PrunePasses(ctx, 100)
+	contractOK(t, err)
+	if gone == nil || len(gone) != 0 {
+		t.Fatal(gone)
+	}
+}
+
+// R-5610-XLK7
+func TestContractZipReplacement(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	table := candidates.ZipDrive()
+	contractOK(t, f.s.ReplaceZipDrive(ctx, table))
+	f.reopen()
+	for zip, minutes := range table {
+		got, err := f.s.ZipMinutes(ctx, zip)
+		contractOK(t, err)
+		contractEqual(t, got, minutes)
+	}
+	table = map[string]int64{"00000": 0, "12345": 37}
+	contractOK(t, f.s.ReplaceZipDrive(ctx, table))
+	f.reopen()
+	for zip, minutes := range table {
+		got, err := f.s.ZipMinutes(ctx, zip)
+		contractOK(t, err)
+		contractEqual(t, got, minutes)
+	}
+	got, err := f.s.ZipMinutes(ctx, "55072")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, got, int64(0))
+	for _, bad := range []map[string]int64{{"1234": 1}, {"123456": 1}, {"abcde": 1}, {"12345": -1}} {
+		contractError(t, f.s.ReplaceZipDrive(ctx, bad), store.ErrUnreachable)
+		got, err = f.s.ZipMinutes(ctx, "12345")
+		contractOK(t, err)
+		contractEqual(t, got, int64(37))
+	}
+	for _, empty := range []map[string]int64{{}, nil} {
+		contractOK(t, f.s.ReplaceZipDrive(ctx, empty))
+		f.reopen()
+		got, err = f.s.ZipMinutes(ctx, "12345")
+		contractError(t, err, store.ErrNotFound)
+		contractEqual(t, got, int64(0))
+	}
+}
+
+// R-47VU-80SR R-493Q-LSJG R-57V9-TQVL R-4CRF-R3RJ R-4LAQ-FHYE R-4MIM-T9P3 R-578X-BDAW R-58GT-P51L R-5AWM-GOIZ R-5C4I-UG9O
+func TestContractBusinessRecordsPersistence(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	o := contractObservation("one", "ACME TRUCKING INC", f.now.UTC().Truncate(time.Second))
+	ids := contractAttach(t, f, "run-one", o)
+	id := ids[0]
+	stamp := f.now.UTC().Truncate(time.Second)
+	want := store.Candidate{ID: id, Status: store.StatusActive, Name: o.Reading.Name, Names: o.Reading.Names, Street: o.Reading.Street, City: o.Reading.City, State: o.Reading.State, Zip: o.Reading.Zip, County: o.Reading.County, Phone: o.Reading.Phone, Email: o.Reading.Email, People: o.Reading.People, Class: o.Reading.Class, Cargo: o.Reading.Cargo, Created: stamp, Updated: stamp}
+	c, err := f.s.GetCandidate(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, c, want)
+	if !store.ValidCandidateID(c.ID) {
+		t.Fatal(c.ID)
+	}
+	links, err := f.s.Links(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, links, []store.Link{{Candidate: id, Scraper: o.Scraper, SourceID: o.SourceID, Run: "run-one", Digest: o.Digest, Reading: o.Reading, Reason: store.LinkSourceKey, Confidence: 1, FirstSeen: stamp, LastSeen: stamp}})
+	es, err := f.s.Estimates(ctx, id)
+	contractOK(t, err)
+	if es == nil || len(es) != 0 {
+		t.Fatal(es)
+	}
+	rs, err := f.s.Rulings(ctx, id)
+	contractOK(t, err)
+	if rs == nil || len(rs) != 0 {
+		t.Fatal(rs)
+	}
+	a, err := f.s.GetAssessment(ctx, id)
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, a, store.Assessment{})
+	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{o.Reading.Zip: 41}))
+	_, err = f.s.Rescore(ctx, ids)
+	contractOK(t, err)
+	m := int64(41)
+	wantA := store.Assessment{Candidate: id, Fleet: true, Low: o.Reading.Estimate.Low, High: o.Reading.Estimate.High, Confidence: o.Reading.Estimate.Confidence, Filed: o.Reading.Filed, Minutes: &m, Exclusions: []sources.Exclusion{}, Base: scoring.Score(scoring.Point(o.Reading.Estimate.Low, o.Reading.Estimate.High), o.Reading.Estimate.Confidence), Rules: sources.Rules, Scored: stamp}
+	a, err = f.s.GetAssessment(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, a, wantA)
+	es, err = f.s.Estimates(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, es, []sources.Estimate{*o.Reading.Estimate})
+	f.now = f.now.Add(time.Minute)
+	r, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindInclude, Candidate: id, Why: "owner inspected", UserID: "owner", UserEmail: "owner@example.test"})
+	contractOK(t, err)
+	wantR := store.Ruling{Kind: store.KindInclude, Candidate: id, Keys: []string{}, Why: "owner inspected", UserID: "owner", UserEmail: "owner@example.test", At: f.now.UTC().Truncate(time.Second)}
+	contractEqual(t, r, wantR)
+	f.now = f.now.Add(time.Minute)
+	r2, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindExclude, Candidate: id, Why: "owner declined", UserID: "second-owner"})
+	contractOK(t, err)
+	rs, err = f.s.Rulings(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, rs, []store.Ruling{r2, r})
+	// A second source becomes a distinct estimate for the same candidate.
+	o2 := o
+	o2.Scraper = "source-a"
+	o2.SourceID = "two"
+	e := *o.Reading.Estimate
+	e.Source = o2.Scraper
+	o2.Reading.Estimate = &e
+	contractAttach(t, f, "run-two", o2)
+	_, err = f.s.RescoreAll(ctx)
+	contractOK(t, err)
+	es, err = f.s.Estimates(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, es, []sources.Estimate{e, *o.Reading.Estimate})
+	c, err = f.s.GetCandidate(ctx, id)
+	contractOK(t, err)
+	links, err = f.s.Links(ctx, id)
+	contractOK(t, err)
+	a, err = f.s.GetAssessment(ctx, id)
+	contractOK(t, err)
+	rs, err = f.s.Rulings(ctx, id)
+	contractOK(t, err)
+	f.reopen()
+	c2, err := f.s.GetCandidate(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, c2, c)
+	l2, err := f.s.Links(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, l2, links)
+	e2, err := f.s.Estimates(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, e2, es)
+	a2, err := f.s.GetAssessment(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, a2, a)
+	r3, err := f.s.Rulings(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, r3, rs)
+	other := contractAttach(t, f, "run-other", contractObservation("other", "Other business", o.Reading.Filed))[0]
+	merge, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: id, Other: other, Why: "one owner", UserID: "owner"})
+	contractOK(t, err)
+	merged, err := f.s.GetCandidate(ctx, other)
+	contractOK(t, err)
+	contractEqual(t, merged.Status, store.StatusMerged)
+	contractEqual(t, merged.MergedInto, id)
+	l2, err = f.s.Links(ctx, other)
+	contractOK(t, err)
+	if l2 == nil || len(l2) != 0 {
+		t.Fatal(l2)
+	}
+	r3, err = f.s.Rulings(ctx, other)
+	contractOK(t, err)
+	contractEqual(t, r3, []store.Ruling{merge})
+	f.reopen()
+	c2, err = f.s.GetCandidate(ctx, other)
+	contractOK(t, err)
+	contractEqual(t, c2, merged)
+}
+
+// R-59OQ-2WSA
+func TestContractLinkReadOrder(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	filed := f.now.UTC().Truncate(time.Second)
+	var obs []store.Observation
+	// These all match one business. The tie rules are deliberately independent.
+	for _, key := range []struct {
+		scraper, id string
+		filed       time.Time
+	}{{"source-b", "b", filed}, {"source-a", "b", filed}, {"source-a", "a", filed}, {"source-a", "newer-seen", filed}, {"source-c", "newer-filed", filed.Add(time.Hour)}, {"source-d", "undated", time.Time{}}, {"source-e", "gone", filed.Add(2 * time.Hour)}} {
+		o := contractObservation(key.id, "ACME", key.filed)
+		o.Scraper = key.scraper
+		obs = append(obs, o)
+	}
+	id := contractAttach(t, f, "old", obs...)[0]
+	f.now = f.now.Add(time.Minute)
+	contractAttach(t, f, "new", obs[3])
+	_, touched, err := f.s.MarkGone(ctx, "source-e", "new")
+	contractOK(t, err)
+	contractEqual(t, touched, []string{id})
+	got, err := f.s.Links(ctx, id)
+	contractOK(t, err)
+	var keys []string
+	for _, l := range got {
+		keys = append(keys, sources.SourceKey(l.Scraper, l.SourceID))
+	}
+	contractEqual(t, keys, []string{"source-c:newer-filed", "source-a:newer-seen", "source-a:a", "source-a:b", "source-b:b", "source-d:undated", "source-e:gone"})
+	if !got[len(got)-1].Gone {
+		t.Fatal("gone link must follow live evidence")
+	}
+}
+
+// R-5DCF-880D R-5H04-DJ8G
+func TestContractCandidateWindowsAndFilters(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	var ids []string
+	for _, name := range []string{"ACME TRUCKING INC", "ACME TRUCK", "TRUCK ING LLC", "Later business"} {
+		o := contractObservation(name, name, f.now.UTC().Truncate(time.Second))
+		if name == "Later business" {
+			f.now = f.now.Add(time.Hour)
+			o.Reading.Zip = "12345"
+		}
+		ids = append(ids, contractAttach(t, f, "run", o)[0])
+	}
+	got, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+	contractOK(t, err)
+	var gotIDs []string
+	for _, c := range got {
+		gotIDs = append(gotIDs, c.ID)
+	}
+	want := []string{ids[3], ids[2], ids[1], ids[0]}
+	contractEqual(t, gotIDs, want)
+	page, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 1, 2)
+	contractOK(t, err)
+	contractEqual(t, page, got[1:3])
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, 99, 2)
+	contractOK(t, err)
+	if page == nil || len(page) != 0 {
+		t.Fatal(page)
+	}
+	for _, name := range []string{"TRUCKING", "trucking", "Trucking"} {
+		page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Name: name}, 0, 20)
+		contractOK(t, err)
+		contractEqual(t, len(page), 1)
+		contractEqual(t, page[0].ID, ids[0])
+	}
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Name: "ALIAS", Zip: "12345", Phone: "1 (320) 555-0101"}, 0, 20)
+	contractOK(t, err)
+	contractEqual(t, len(page), 1)
+	contractEqual(t, page[0].ID, ids[3])
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "letters"}, 0, 20)
+	contractOK(t, err)
+	if page == nil || len(page) != 0 {
+		t.Fatal(page)
+	}
+	_, _, err = f.s.MarkGone(ctx, "source-z", "absent")
+	contractOK(t, err)
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "320.555.0101"}, 0, 20)
+	contractOK(t, err)
+	contractEqual(t, len(page), 4)
+	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids[0], Other: ids[1], Why: "same", UserID: "owner"})
+	contractOK(t, err)
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+	contractOK(t, err)
+	for _, c := range page {
+		if c.ID == ids[1] || c.Status != store.StatusActive {
+			t.Fatal(c)
+		}
+	}
+	contractEqual(t, len(page), 3)
+	for _, w := range [][2]int64{{-1, 1}, {0, 0}, {0, -1}} {
+		page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, w[0], w[1])
+		contractError(t, err, store.ErrUnreachable)
+		if page != nil {
+			t.Fatal(page)
+		}
+		ranked, e := f.s.Shortlist(ctx, store.ShortlistFilter{}, w[0], w[1])
+		contractError(t, e, store.ErrUnreachable)
+		if ranked != nil {
+			t.Fatal(ranked)
+		}
+	}
+}
+
+// R-5EKB-LZR2
+func TestContractShortlistReadsClockAndPages(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	filed := f.now.UTC().Truncate(time.Second)
+	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 30}))
+	for _, name := range []string{"A business", "B business", "C business"} {
+		contractAttach(t, f, "run", contractObservation(name, name, filed))
+	}
+	_, err := f.s.RescoreAll(ctx)
+	contractOK(t, err)
+	calls := 0
+	f.s = store.New(f.d, store.Config{Now: func() time.Time { calls++; return f.now }, Rand: f.rnd})
+	filter := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue, Class: sources.ClassForHire, Cargo: "grain"}
+	ranked, err := f.s.Shortlist(ctx, filter, 0, 20)
+	contractOK(t, err)
+	contractEqual(t, calls, 1)
+	contractEqual(t, len(ranked), 3)
+	for i, r := range ranked {
+		c, e := f.s.GetCandidate(ctx, r.Candidate.ID)
+		contractOK(t, e)
+		a, e := f.s.GetAssessment(ctx, r.Candidate.ID)
+		contractOK(t, e)
+		contractEqual(t, r, store.Ranked{Candidate: c, Assessment: a, Effective: 0.8, Score: 12000000})
+		if i > 0 && ranked[i-1].Candidate.ID >= r.Candidate.ID {
+			t.Fatal("tied ranking not id ascending")
+		}
+	}
+	page, err := f.s.Shortlist(ctx, filter, 1, 1)
+	contractOK(t, err)
+	contractEqual(t, page, ranked[1:2])
+	page, err = f.s.Shortlist(ctx, filter, 100, 1)
+	contractOK(t, err)
+	if page == nil || len(page) != 0 {
+		t.Fatal(page)
+	}
+	f.now = filed.AddDate(3, 0, 0)
+	page, err = f.s.Shortlist(ctx, filter, 0, 20)
+	contractOK(t, err)
+	for _, r := range page {
+		effective := scoring.Effective(r.Assessment.Confidence, r.Assessment.Filed, f.now)
+		contractEqual(t, r.Effective, effective)
+		contractEqual(t, r.Score, scoring.Score(scoring.Point(r.Assessment.Low, r.Assessment.High), effective))
+		for _, before := range ranked {
+			if before.Candidate.ID == r.Candidate.ID {
+				contractEqual(t, r.Assessment, before.Assessment)
+			}
+		}
+	}
+	f.now = filed.AddDate(5, 0, 0)
+	page, err = f.s.Shortlist(ctx, filter, 0, 20)
+	contractOK(t, err)
+	if page == nil || len(page) != 0 {
+		t.Fatal(page)
+	}
+}
+
+// R-5I80-RAZ5 R-58GT-P51L
+func TestContractFreshStoreAndUnknownReads(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	ps, err := f.s.ListPasses(ctx, 3, 5)
+	contractOK(t, err)
+	if ps == nil || len(ps) != 0 {
+		t.Fatal(ps)
+	}
+	ps, err = f.s.RunningPasses(ctx)
+	contractOK(t, err)
+	if ps == nil || len(ps) != 0 {
+		t.Fatal(ps)
+	}
+	cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{Name: "anything"}, 2, 3)
+	contractOK(t, err)
+	if cs == nil || len(cs) != 0 {
+		t.Fatal(cs)
+	}
+	rs, err := f.s.Shortlist(ctx, store.ShortlistFilter{}, 2, 3)
+	contractOK(t, err)
+	if rs == nil || len(rs) != 0 {
+		t.Fatal(rs)
+	}
+	p, err := f.s.GetPass(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, p, store.Pass{})
+	c, err := f.s.GetCandidate(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, c, store.Candidate{})
+	l, err := f.s.Links(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	if l != nil {
+		t.Fatal(l)
+	}
+	e, err := f.s.Estimates(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	if e != nil {
+		t.Fatal(e)
+	}
+	a, err := f.s.GetAssessment(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, a, store.Assessment{})
+	r, err := f.s.Rulings(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	if r != nil {
+		t.Fatal(r)
+	}
+	z, err := f.s.ZipMinutes(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, z, int64(0))
+}
+
+// A snapshot uses only store reads, so record preservation is checked through
+// the same surface its consumers use, including after reopening the handle.
+type contractSnapshot struct {
+	candidates  []store.Candidate
+	passes      []store.Pass
+	links       map[string][]store.Link
+	estimates   map[string][]sources.Estimate
+	assessments map[string]store.Assessment
+	rulings     map[string][]store.Ruling
+	minutes     int64
+}
+
+func contractState(t *testing.T, f *contractFixture) contractSnapshot {
+	t.Helper()
+	ctx := context.Background()
+	cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 100)
+	contractOK(t, err)
+	ps, err := f.s.ListPasses(ctx, 0, 100)
+	contractOK(t, err)
+	snap := contractSnapshot{candidates: cs, passes: ps, links: map[string][]store.Link{}, estimates: map[string][]sources.Estimate{}, assessments: map[string]store.Assessment{}, rulings: map[string][]store.Ruling{}}
+	for _, c := range cs {
+		snap.links[c.ID], err = f.s.Links(ctx, c.ID)
+		contractOK(t, err)
+		snap.estimates[c.ID], err = f.s.Estimates(ctx, c.ID)
+		contractOK(t, err)
+		snap.assessments[c.ID], err = f.s.GetAssessment(ctx, c.ID)
+		contractOK(t, err)
+		snap.rulings[c.ID], err = f.s.Rulings(ctx, c.ID)
+		contractOK(t, err)
+	}
+	snap.minutes, err = f.s.ZipMinutes(ctx, "55072")
+	contractOK(t, err)
+	return snap
+}
+func contractSeed(t *testing.T, f *contractFixture) string {
+	t.Helper()
+	ctx := context.Background()
+	id := contractAttach(t, f, "run-evidence", contractObservation("evidence", "Seed business", f.now.UTC().Truncate(time.Second)))[0]
+	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 42}))
+	_, err := f.s.RescoreAll(ctx)
+	contractOK(t, err)
+	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindInclude, Candidate: id, Why: "seed ruling", UserID: "owner"})
+	contractOK(t, err)
+	return id
+}
+
+// R-4TU1-3W59 R-4W9T-VFMN R-53L8-622T R-5610-XLK7
+func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	contractSeed(t, f)
+	before := contractState(t, f)
+	for i := range 4 {
+		p := contractNewPass(t, f, fmt.Sprintf("preserve-%d", i))
+		if i%2 == 0 {
+			_, err := f.s.FinishPass(ctx, p.ID, store.Counts{Rows: 3})
+			contractOK(t, err)
+		} else {
+			_, err := f.s.FailPass(ctx, p.ID, store.ReasonStore)
+			contractOK(t, err)
+		}
+	}
+	_, err := f.s.PrunePasses(ctx, 1)
+	contractOK(t, err)
+	after := contractState(t, f)
+	after.passes = before.passes
+	contractEqual(t, after, before)
+	zipBefore := contractState(t, f)
+	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 77}))
+	after = contractState(t, f)
+	after.minutes = zipBefore.minutes
+	contractEqual(t, after, zipBefore)
+	f.reopen()
+	after = contractState(t, f)
+	after.minutes = zipBefore.minutes
+	contractEqual(t, after, zipBefore)
+}
+
+// R-OD8H-2EDG R-I3E6-Z7A0
+func TestContractAllMethodsUnavailable(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	p := contractNewPass(t, f, "existing-run")
+	before := contractState(t, f)
+	calls := []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{"AddPass", func(c context.Context) error { _, e := f.s.AddPass(c, store.Pass{}); return e }},
+		{"FinishPass", func(c context.Context) error { _, e := f.s.FinishPass(c, p.ID, store.Counts{Rows: -1}); return e }},
+		{"FinishPassValid", func(c context.Context) error { _, e := f.s.FinishPass(c, p.ID, store.Counts{Rows: 1}); return e }},
+		{"AddPassDuplicate", func(c context.Context) error {
+			_, e := f.s.AddPass(c, store.Pass{Trigger: p.Trigger, Delivery: p.Delivery})
+			return e
+		}},
+		{"FailPass", func(c context.Context) error { _, e := f.s.FailPass(c, p.ID, "invalid"); return e }},
+		{"FailPassValid", func(c context.Context) error { _, e := f.s.FailPass(c, p.ID, store.ReasonStore); return e }},
+		{"GetPass", func(c context.Context) error { _, e := f.s.GetPass(c, "missing"); return e }},
+		{"ListPasses", func(c context.Context) error { _, e := f.s.ListPasses(c, -1, 0); return e }},
+		{"RunningPasses", func(c context.Context) error { _, e := f.s.RunningPasses(c); return e }},
+		{"PrunePasses", func(c context.Context) error { _, e := f.s.PrunePasses(c, 0); return e }},
+		{"Attach", func(c context.Context) error { _, _, e := f.s.Attach(c, "", false, nil); return e }},
+		{"AttachValid", func(c context.Context) error {
+			_, _, e := f.s.Attach(c, "changed", false, []store.Observation{contractObservation("new", "New business", f.now)})
+			return e
+		}},
+		{"MarkGone", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "", ""); return e }},
+		{"MarkGoneValid", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "source-z", "absent"); return e }},
+		{"Decide", func(c context.Context) error { _, _, e := f.s.Decide(c, store.Ruling{}); return e }},
+		{"DecideValid", func(c context.Context) error {
+			_, _, e := f.s.Decide(c, store.Ruling{Kind: store.KindExclude, Candidate: id, Why: "failure", UserID: "owner"})
+			return e
+		}},
+		{"Rescore", func(c context.Context) error { _, e := f.s.Rescore(c, []string{id}); return e }},
+		{"RescoreAll", func(c context.Context) error { _, e := f.s.RescoreAll(c); return e }},
+		{"ReplaceZipDrive", func(c context.Context) error { return f.s.ReplaceZipDrive(c, map[string]int64{"bad": -1}) }},
+		{"ReplaceZipDriveValid", func(c context.Context) error { return f.s.ReplaceZipDrive(c, nil) }},
+		{"ZipMinutes", func(c context.Context) error { _, e := f.s.ZipMinutes(c, "missing"); return e }},
+		{"GetCandidate", func(c context.Context) error { _, e := f.s.GetCandidate(c, "missing"); return e }},
+		{"Links", func(c context.Context) error { _, e := f.s.Links(c, "missing"); return e }},
+		{"Estimates", func(c context.Context) error { _, e := f.s.Estimates(c, "missing"); return e }},
+		{"GetAssessment", func(c context.Context) error { _, e := f.s.GetAssessment(c, "missing"); return e }},
+		{"Rulings", func(c context.Context) error { _, e := f.s.Rulings(c, "missing"); return e }},
+		{"ListCandidates", func(c context.Context) error { _, e := f.s.ListCandidates(c, store.CandidateFilter{}, -1, 0); return e }},
+		{"Shortlist", func(c context.Context) error { _, e := f.s.Shortlist(c, store.ShortlistFilter{}, -1, 0); return e }},
+	}
+	check := func(c context.Context, want error) {
+		t.Helper()
+		for _, call := range calls {
+			e := call.call(c)
+			contractError(t, e, store.ErrUnreachable)
+			if want != nil {
+				contractError(t, e, want)
+			}
+			for _, recordError := range []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrInvalid} {
+				if errors.Is(e, recordError) {
+					t.Fatalf("%s returned record error %v", call.name, e)
+				}
+			}
+		}
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	f.d.SetFailing(true)
+	check(canceled, context.Canceled)
+	check(ctx, nil)
+	f.d.SetFailing(false)
+	check(canceled, context.Canceled)
+	contractEqual(t, contractState(t, f), before)
+	f.reopen()
+	contractEqual(t, contractState(t, f), before)
+}
+
+// R-4YPM-MZ41 R-5N3M-ADXX
+func TestContractConcurrentStoreCalls(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	var wg sync.WaitGroup
+	results := make(chan error, 8)
+	start := make(chan struct{})
+	for i := range 8 {
+		wg.Go(func() {
+			<-start
+			_, err := f.s.AddPass(ctx, store.Pass{Trigger: fmt.Sprintf("race-%d", i), Delivery: fmt.Sprintf("event-%d", i)})
+			results <- err
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	success := 0
+	for err := range results {
+		if err == nil {
+			success++
+		} else if !errors.Is(err, store.ErrBusy) && !errors.Is(err, store.ErrDelivered) {
+			t.Fatal(err)
+		}
+	}
+	contractEqual(t, success, 1)
+	running, err := f.s.RunningPasses(ctx)
+	contractOK(t, err)
+	contractEqual(t, len(running), 1)
+	p := running[0]
+	results = make(chan error, 2)
+	start = make(chan struct{})
+	wg.Go(func() { <-start; _, e := f.s.FinishPass(ctx, p.ID, store.Counts{Rows: 5}); results <- e })
+	wg.Go(func() { <-start; _, e := f.s.FailPass(ctx, p.ID, store.ReasonStore); results <- e })
+	close(start)
+	wg.Wait()
+	close(results)
+	success = 0
+	for e := range results {
+		if e == nil {
+			success++
+		} else {
+			contractError(t, e, store.ErrEnded)
+		}
+	}
+	contractEqual(t, success, 1)
+	ended, err := f.s.GetPass(ctx, p.ID)
+	contractOK(t, err)
+	if ended.Status != store.StatusDone && ended.Status != store.StatusFailed {
+		t.Fatal(ended)
+	}
+	// Every method shares the same Store; its non-thread-safe random reader is
+	// exercised by both candidate and pass minting under the race detector.
+	calls := []func() error{
+		func() error {
+			_, e := f.s.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "owner"})
+			return e
+		},
+		func() error { _, e := f.s.FinishPass(ctx, p.ID, store.Counts{}); return e },
+		func() error { _, e := f.s.FailPass(ctx, p.ID, store.ReasonScrapes); return e },
+		func() error { _, e := f.s.GetPass(ctx, p.ID); return e },
+		func() error { _, e := f.s.ListPasses(ctx, 0, 20); return e },
+		func() error { _, e := f.s.RunningPasses(ctx); return e },
+		func() error { _, e := f.s.PrunePasses(ctx, 20); return e },
+		func() error {
+			_, _, e := f.s.Attach(ctx, "parallel-run", false, []store.Observation{contractObservation("parallel", "Parallel business", f.now.UTC().Truncate(time.Second))})
+			return e
+		},
+		func() error { _, _, e := f.s.MarkGone(ctx, "source-z", "parallel-run"); return e },
+		func() error {
+			_, _, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindInclude, Candidate: id, Why: "parallel", UserID: "owner"})
+			return e
+		},
+		func() error { _, e := f.s.Rescore(ctx, []string{id}); return e },
+		func() error { _, e := f.s.RescoreAll(ctx); return e },
+		func() error { return f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 42}) },
+		func() error { _, e := f.s.ZipMinutes(ctx, "55072"); return e },
+		func() error { _, e := f.s.GetCandidate(ctx, id); return e },
+		func() error { _, e := f.s.Links(ctx, id); return e },
+		func() error { _, e := f.s.Estimates(ctx, id); return e },
+		func() error { _, e := f.s.GetAssessment(ctx, id); return e },
+		func() error { _, e := f.s.Rulings(ctx, id); return e },
+		func() error { _, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20); return e },
+		func() error { _, e := f.s.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: 120}, 0, 20); return e },
+	}
+	start = make(chan struct{})
+	for _, call := range calls {
+		wg.Go(func() {
+			<-start
+			e := call()
+			if e != nil && !errors.Is(e, store.ErrEnded) && !errors.Is(e, store.ErrBusy) {
+				t.Error(e)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+}
+
+type contractErrorReader struct {
+	err      error
+	requests []int
+}
+
+func (r *contractErrorReader) Read(p []byte) (int, error) {
+	r.requests = append(r.requests, len(p))
+	return 0, r.err
+}
+
+// R-5AB2-LACZ R-I3E6-Z7A0
+func TestContractMintReaderRecordErrorsAreUnreachable(t *testing.T) {
+	recordErrors := []struct {
+		name string
+		err  error
+	}{
+		{"not_found", store.ErrNotFound},
+		{"busy", store.ErrBusy},
+		{"delivered", store.ErrDelivered},
+		{"ended", store.ErrEnded},
+		{"invalid", store.ErrInvalid},
+	}
+	for _, kind := range []string{"pass", "candidate"} {
+		for _, sentinel := range recordErrors {
+			for _, wrapped := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/wrapped_%t", kind, sentinel.name, wrapped), func(t *testing.T) {
+					f := contractDB(t)
+					ctx := context.Background()
+					contractSeed(t, f)
+					previous := contractNewPass(t, f, "previous-run")
+					_, err := f.s.FinishPass(ctx, previous.ID, store.Counts{Rows: 3, Created: 1})
+					contractOK(t, err)
+					before := contractState(t, f)
+					readError := sentinel.err
+					if wrapped {
+						readError = fmt.Errorf("reader failed: %w", readError)
+					}
+					rnd := &contractErrorReader{err: readError}
+					f.rnd = rnd
+					f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: rnd})
+					if kind == "pass" {
+						result, e := f.s.AddPass(ctx, store.Pass{Trigger: "new-run", Delivery: "new-delivery", UserID: "owner"})
+						err = e
+						contractEqual(t, result, store.Pass{})
+					} else {
+						// Include an update before the mint attempt to prove the failed batch
+						// cannot retain earlier writes either.
+						changed := contractObservation("evidence", "Changed seed business", f.now.UTC().Truncate(time.Second))
+						changed.Digest = "changed-digest"
+						newObservation := contractObservation("new-evidence", "New distinct business", f.now.UTC().Truncate(time.Second))
+						counts, ids, e := f.s.Attach(ctx, "new-run", false, []store.Observation{changed, newObservation})
+						err = e
+						contractEqual(t, counts, store.Counts{})
+						if ids != nil {
+							t.Fatalf("failed mint returned touched ids: %v", ids)
+						}
+					}
+					contractError(t, err, store.ErrUnreachable)
+					for _, recordError := range recordErrors {
+						if errors.Is(err, recordError.err) {
+							t.Fatalf("random failure leaked %s classification: %v", recordError.name, err)
+						}
+					}
+					contractEqual(t, rnd.requests, []int{8})
+					contractEqual(t, contractState(t, f), before)
+					f.reopen()
+					contractEqual(t, contractState(t, f), before)
+				})
+			}
+		}
+	}
+}

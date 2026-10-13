@@ -1,0 +1,2 @@
+CREATE TABLE candidates (id TEXT PRIMARY KEY, status TEXT NOT NULL, merged_into TEXT NOT NULL, name TEXT NOT NULL, names TEXT NOT NULL, names_lower TEXT NOT NULL, street TEXT NOT NULL, city TEXT NOT NULL, state TEXT NOT NULL, zip TEXT NOT NULL, county TEXT NOT NULL, phone TEXT NOT NULL, email TEXT NOT NULL, people TEXT NOT NULL, class TEXT NOT NULL, cargo TEXT NOT NULL, created TEXT NOT NULL, updated TEXT NOT NULL);
+CREATE INDEX candidates_created ON candidates(status,created);

@@ -1,0 +1,1 @@
+CREATE TABLE estimates (candidate TEXT NOT NULL, source TEXT NOT NULL, low INTEGER NOT NULL, high INTEGER, confidence REAL NOT NULL, facts TEXT NOT NULL, filed TEXT NOT NULL, formula INTEGER NOT NULL, UNIQUE(candidate,source));

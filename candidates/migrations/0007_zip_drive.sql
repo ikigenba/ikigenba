@@ -1,0 +1,1 @@
+CREATE TABLE zip_drive (zip TEXT PRIMARY KEY, minutes INTEGER NOT NULL);

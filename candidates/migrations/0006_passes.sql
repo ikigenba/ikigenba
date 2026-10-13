@@ -1,0 +1,3 @@
+CREATE TABLE passes (id TEXT PRIMARY KEY, "trigger" TEXT NOT NULL, status TEXT NOT NULL, reason TEXT NOT NULL, started TEXT NOT NULL, finished TEXT NOT NULL, "rows" INTEGER NOT NULL, "new" INTEGER NOT NULL, changed INTEGER NOT NULL, unchanged INTEGER NOT NULL, gone INTEGER NOT NULL, created INTEGER NOT NULL, linked INTEGER NOT NULL, rescored INTEGER NOT NULL, unranged INTEGER NOT NULL, user_id TEXT NOT NULL, user_email TEXT NOT NULL, request_id TEXT NOT NULL, delivery TEXT NOT NULL);
+CREATE INDEX passes_started ON passes(started);
+CREATE UNIQUE INDEX passes_delivery ON passes(delivery) WHERE delivery <> '';

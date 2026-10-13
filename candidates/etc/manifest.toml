@@ -1,0 +1,19 @@
+app = "candidates"
+description = "Candidate businesses resolved from the records scrapes collects, ranked against the fit test"
+default = false
+mcp = true
+guests = false
+secrets = []
+
+[env]
+CANDIDATES_KEEP_PASSES = "20"
+
+[database]
+engine = "sqlite"
+path = "state/candidates.db"
+
+[resources]
+memory_max = "256M"
+
+[home]
+group = "application"
