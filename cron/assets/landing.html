@@ -32,8 +32,10 @@
      children are, in order, First (on the first window, .Page empty, a
      span with aria-current="page" and text "First"; otherwise a link to /
      with text "First") and, only when the page's .Next is not empty, Next
-     (a link to /?page=<.Next> with text "Next"); with no triggers there is
-     no nav; a#about-link (text "About cron") whose href is "/about". No
+     (a link to /?page=<.Next> with text "Next"); the nav shows when
+     .Triggers is not empty or .Page is not empty, after the table or the
+     empty state, so an emptied later window still offers First; on the
+     first window with no triggers there is no nav; a#about-link (text "About cron") whose href is "/about". No
      script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -61,12 +63,12 @@
 {{end}}</tbody>
 </table>
 </div>
-<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
 {{else}}<div id="no-triggers" class="empty">
 <h3 class="text-md">No triggers yet</h3>
 <p>A trigger an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
-</section>
+{{if or .Triggers .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{end}}</section>
 <p><a id="about-link" href="/about">About cron</a></p>
 </main>
 {{template "footer" .Banner}}
