@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
@@ -153,7 +155,7 @@ func runTool(t *testing.T, run *servingRun, name string, args json.RawMessage) m
 }
 func runWidgets(t *testing.T, run *servingRun) []servedWidget {
 	t.Helper()
-	data, err := runTool(t, run, "list_widgets", nil).MarshalJSON()
+	data, err := runTool(t, run, "list_widgets", json.RawMessage(`{}`)).MarshalJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,81 +170,105 @@ func runWidgets(t *testing.T, run *servingRun) []servedWidget {
 	return result.StructuredContent.Widgets
 }
 
-// R-DPQ2-9T5Q R-JAR7-IV3N R-JD70-AEL1 R-3IAG-4LY5 R-3JIC-IDOU R-6DEP-70LM R-PBR1-XVLN R-IXZD-5HBP
+// R-DPQ2-9T5Q R-JAR7-IV3N R-JD70-AEL1 R-O0OE-SHSS R-RQ4Z-NXE7 R-RRCW-1P4W R-ROX3-A5NI R-IXZD-5HBP
 func TestRunSharesWidgetsAndPersists(t *testing.T) {
-	dir := t.TempDir()
-	var saved []servedWidget
-	for iteration := range 3 {
-		chosen := dir
-		if iteration == 2 {
-			chosen = t.TempDir()
-		}
-		run := startConfiguredRun(t, testMCP(t), func(p *Process) { p.Dir = chosen })
-		want := []servedWidget{}
-		if iteration == 1 {
-			want = saved
-		}
-		if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
-			t.Fatalf("restart widgets=%+v want %+v", got, want)
-		}
-		if iteration > 0 {
-			run.stop(t)
-			continue
-		}
-		for range 2 {
-			if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
-				t.Fatalf("initial widgets=%+v", got)
-			}
-		}
-		code, _ := run.request(t, http.MethodPost, "/widgets", "name=form-widget&count=4&status=paused", "test-user", "")
-		if code != http.StatusSeeOther {
-			t.Fatalf("form status=%d", code)
-		}
-		want = append(want, servedWidget{"wgt_0000000000000000", "form-widget", 4, "paused"})
-		if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
-			t.Fatalf("after form widgets=%+v", got)
-		}
-		created := runTool(t, run, "create_widget", json.RawMessage(`{"name":"tool-widget","count":7,"status":"retired"}`))
-		data, err := created.MarshalJSON()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var object map[string]json.RawMessage
-		if err = json.Unmarshal(data, &object); err != nil {
-			t.Fatal(err)
-		}
-		if _, present := object["isError"]; present {
-			t.Fatal("successful create has isError member")
-		}
-		code, body := run.request(t, http.MethodGet, "/widgets/table", "", "test-user", "")
-		var answer struct {
-			Widget widget.Widget `json:"structuredContent"`
-		}
-		if err = json.Unmarshal(data, &answer); err != nil {
-			t.Fatal(err)
-		}
-		widgets := []widget.Widget{{ID: want[0].ID, Name: want[0].Name, Count: want[0].Count, Status: widget.Status(want[0].Status)}, answer.Widget}
-		set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var expected bytes.Buffer
-		if err = set.ExecuteTemplate(&expected, "table", widgets); err != nil {
-			t.Fatal(err)
-		}
-		if code != http.StatusOK || body != expected.String() {
-			t.Fatalf("table differs from template: %d", code)
-		}
+	for _, total := range []int{2, paging.DefaultLimit + 1} {
+		t.Run(fmt.Sprint(total), func(t *testing.T) {
+			dir := t.TempDir()
+			var saved []servedWidget
+			for iteration := range 3 {
+				chosen := dir
+				if iteration == 2 {
+					chosen = t.TempDir()
+				}
+				run := startConfiguredRun(t, testMCP(t), func(p *Process) { p.Dir = chosen })
+				want := []servedWidget{}
+				if iteration == 1 {
+					want = saved
+				}
+				if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
+					t.Fatalf("restart widgets=%+v want %+v", got, want)
+				}
+				if iteration > 0 {
+					run.stop(t)
+					continue
+				}
+				for range 2 {
+					if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
+						t.Fatalf("initial widgets=%+v", got)
+					}
+				}
+				code, _ := run.request(t, http.MethodPost, "/widgets", "name=form-widget&count=4&status=paused", "test-user", "")
+				if code != http.StatusSeeOther {
+					t.Fatalf("form status=%d", code)
+				}
+				want = append(want, servedWidget{"wgt_0000000000000000", "form-widget", 4, "paused"})
+				if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
+					t.Fatalf("after form widgets=%+v", got)
+				}
+				created := runTool(t, run, "create_widget", json.RawMessage(`{"name":"tool-widget","count":7,"status":"retired"}`))
+				data, err := created.MarshalJSON()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var object map[string]json.RawMessage
+				if err = json.Unmarshal(data, &object); err != nil {
+					t.Fatal(err)
+				}
+				if _, present := object["isError"]; present {
+					t.Fatal("successful create has isError member")
+				}
+				code, body := run.request(t, http.MethodGet, "/widgets/table", "", "test-user", "")
+				var answer struct {
+					Widget widget.Widget `json:"structuredContent"`
+				}
+				if err = json.Unmarshal(data, &answer); err != nil {
+					t.Fatal(err)
+				}
+				widgets := []widget.Widget{{ID: want[0].ID, Name: want[0].Name, Count: want[0].Count, Status: widget.Status(want[0].Status)}, answer.Widget}
+				set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
+				if err != nil {
+					t.Fatal(err)
+				}
+				var expected bytes.Buffer
+				if err = set.ExecuteTemplate(&expected, "table", widgets); err != nil {
+					t.Fatal(err)
+				}
+				if code != http.StatusOK || body != expected.String() {
+					t.Fatalf("table differs from template: %d", code)
+				}
 
-		want = append(want, servedWidget{"wgt_0100000000000000", "tool-widget", 7, "retired"})
-		if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
-			t.Fatalf("after tool widgets=%+v", got)
-		}
-		saved = want
-		run.stop(t)
-		if run.stderr.Len() != 0 {
-			t.Errorf("stderr=%q", run.stderr.String())
-		}
+				want = append(want, servedWidget{"wgt_0100000000000000", "tool-widget", 7, "retired"})
+				if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
+					t.Fatalf("after tool widgets=%+v", got)
+				}
+				for i := 2; i < total; i++ {
+					args, err := json.Marshal(map[string]any{"name": fmt.Sprintf("extra-%d", i), "count": i, "status": string(widget.StatusActive)})
+					if err != nil {
+						t.Fatal(err)
+					}
+					data, err := runTool(t, run, "create_widget", args).MarshalJSON()
+					if err != nil {
+						t.Fatal(err)
+					}
+					var answer struct {
+						Widget servedWidget `json:"structuredContent"`
+					}
+					if err = json.Unmarshal(data, &answer); err != nil {
+						t.Fatal(err)
+					}
+					want = append(want, answer.Widget)
+				}
+				if len(want) > paging.DefaultLimit {
+					want = want[:paging.DefaultLimit]
+				}
+				saved = want
+				run.stop(t)
+				if run.stderr.Len() != 0 {
+					t.Errorf("stderr=%q", run.stderr.String())
+				}
+			}
+		})
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -78,14 +79,15 @@ func TestMessageConstants(t *testing.T) {
 	}
 }
 
-// R-KVZI-S6MW, R-ISI4-P0AR, R-EBQ5-GVM3.
+// R-QI8L-W6P7, R-ISI4-P0AR, R-EBQ5-GVM3.
 func TestPublicStructsConstructWithDeclaredFields(t *testing.T) {
 	// Each literal names its fields with values of the declared types, and each
 	// read compares a field against a value of the declared type, so this
 	// compiles only if every declared field exists with its declared type.
 	id, name, count, status := "known-id", "delta", 7, widget.StatusPaused
-	w := widget.Widget{ID: id, Name: name, Count: count, Status: status}
-	if w.ID != id || w.Name != name || w.Count != count || w.Status != status {
+	seq := int64(91)
+	w := widget.Widget{ID: id, Name: name, Count: count, Status: status, Seq: seq}
+	if w.ID != id || w.Name != name || w.Count != count || w.Status != status || w.Seq != seq {
 		t.Errorf("Widget = %+v", w)
 	}
 	rawName, rawCount, rawStatus := " delta ", "7", "paused"
@@ -262,11 +264,20 @@ func newStore(t *testing.T, source io.Reader) (*widget.Store, *db.DB) {
 }
 func all(t *testing.T, s *widget.Store) []widget.Widget {
 	t.Helper()
-	got, err := s.All(ctx)
-	if err != nil {
-		t.Fatal(err)
+	var result []widget.Widget
+	var after *int64
+	for {
+		got, err := s.List(ctx, after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result = append(result, got...)
+		if len(got) < 2 {
+			return result
+		}
+		seq := got[len(got)-1].Seq
+		after = &seq
 	}
-	return got
 }
 func create(t *testing.T, s *widget.Store, d widget.Draft) widget.Widget {
 	t.Helper()
@@ -286,18 +297,18 @@ func TestUnreachableConstant(_ *testing.T) {
 	_ = value
 }
 
-// R-E8TO-J993, R-EA1K-X0ZS, R-ENGH-4I5F, R-F1C1-I26O, R-EPW9-W1MT, R-ER46-9TDI.
+// R-E8TO-J993, R-QJGI-9YFW, R-QN47-F9NZ, R-QQRW-KKW2, R-QRZS-YCMR.
 func TestStoreEmptySnapshotsAndReopen(t *testing.T) {
 	constructor := struct {
 		call func(*db.DB, io.Reader) *widget.Store
 	}{widget.NewStore}.call
 	list := struct {
-		call func(*widget.Store, context.Context) ([]widget.Widget, error)
-	}{(*widget.Store).All}.call
+		call func(*widget.Store, context.Context, *int64, int) ([]widget.Widget, error)
+	}{(*widget.Store).List}.call
 	path := filepath.Join(t.TempDir(), "widgets.db")
 	d := openDB(t, path)
 	s := constructor(d, knownSource())
-	empty, err := list(s, ctx)
+	empty, err := list(s, ctx, nil, 2)
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("empty: %v %v", empty, err)
 	}
@@ -305,7 +316,10 @@ func TestStoreEmptySnapshotsAndReopen(t *testing.T) {
 	for _, name := range []string{"zeta", "alpha", "mu"} {
 		want = append(want, create(t, s, draft(name)))
 	}
-	snapshot := all(t, s)
+	snapshot, err := list(s, ctx, nil, len(want))
+	if err != nil {
+		t.Fatal(err)
+	}
 	snapshot[0].Name = "changed"
 	snapshot = append(snapshot, widget.Widget{Name: "extra"})
 	if len(snapshot) != len(want)+1 {
@@ -393,7 +407,7 @@ func TestMigrationSchema(t *testing.T) {
 	}
 }
 
-// R-EOOD-I9W4.
+// R-QOC3-T1EO, R-QLWB-1HXA.
 func TestAdoptExistingWidgets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "widgets.db")
 	migration := fstest.MapFS{"0001_existing.sql": &fstest.MapFile{Data: []byte(`CREATE TABLE widgets (seq INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, count INTEGER NOT NULL, status TEXT NOT NULL);`)}}
@@ -401,11 +415,11 @@ func TestAdoptExistingWidgets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []widget.Widget{{ID: "wgt_1111111111111111", Name: "first", Count: 0, Status: widget.StatusRetired}, {ID: "wgt_2222222222222222", Name: "second", Count: 9, Status: widget.StatusPaused}}
+	want := []widget.Widget{{ID: "wgt_1111111111111111", Name: "first", Count: 0, Status: widget.StatusRetired, Seq: -3}, {ID: "wgt_2222222222222222", Name: "second", Count: 9, Status: widget.StatusPaused, Seq: 6}}
 	err = d.Write(ctx, func(tx *sql.Tx) error {
 		for _, i := range []int{1, 0} {
 			w := want[i]
-			if _, err := tx.ExecContext(ctx, "INSERT INTO widgets VALUES (?, ?, ?, ?, ?)", i+5, w.ID, w.Name, w.Count, w.Status); err != nil {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO widgets VALUES (?, ?, ?, ?, ?)", w.Seq, w.ID, w.Name, w.Count, w.Status); err != nil {
 				return err
 			}
 		}
@@ -422,9 +436,15 @@ func TestAdoptExistingWidgets(t *testing.T) {
 	if !slices.Equal(all(t, s), want) {
 		t.Fatal("adoption changed rows or order")
 	}
+	w := create(t, s, draft("after-adoption"))
+	for _, prior := range want {
+		if w.Seq <= prior.Seq {
+			t.Fatalf("created position %d is not after adopted %d", w.Seq, prior.Seq)
+		}
+	}
 }
 
-// R-EB9H-ASQH, R-ECHD-OKH6, R-FIEM-UUKE, R-EURV-F4LL, R-EVZR-SWCA, R-EYFK-KFTO, R-EZNG-Y7KD, R-F0VD-BZB2, R-F239-PR1R, R-F3B6-3ISG, R-F4J2-HAJ5, R-F5QY-V29U, R-F6YV-8U0J, R-F86R-MLR8, R-F9EO-0DHX, R-FAMK-E58M.
+// R-EB9H-ASQH, R-ECHD-OKH6, R-FIEM-UUKE, R-EURV-F4LL, R-EVZR-SWCA, R-EYFK-KFTO, R-EZNG-Y7KD, R-F0VD-BZB2, R-F239-PR1R, R-F3B6-3ISG, R-F4J2-HAJ5, R-F5QY-V29U, R-QWVE-HFLJ, R-F86R-MLR8, R-QZB7-8Z2X, R-R0J3-MQTM.
 func TestCheckAndCreateRules(t *testing.T) {
 	check := struct {
 		call func(*widget.Store, context.Context, widget.Draft) (widget.FieldErrors, error)
@@ -531,7 +551,7 @@ func (r *countedSource) Read(p []byte) (int, error) {
 	return r.source.Read(p)
 }
 
-// R-4I59-DCKR, R-ESC2-NL47, R-ETJZ-1CUW, R-4GXC-ZKU2.
+// R-EN7X-KS77, R-QUFL-PW45, R-QVNI-3NUU, R-QPK0-6T5D.
 func TestFailureRecoveryAndNoDraw(t *testing.T) {
 	source := &countedSource{source: knownSource()}
 	s, d := newStore(t, source)
@@ -540,8 +560,8 @@ func TestFailureRecoveryAndNoDraw(t *testing.T) {
 	draws := slices.Clone(source.lengths)
 	for _, value := range []widget.Draft{draft("new"), {Name: "", Count: -1, Status: "bad"}, draft("kept")} {
 		d.SetFailing(true)
-		if _, err := s.All(ctx); err == nil {
-			t.Error("All succeeded while failing")
+		if _, err := s.List(ctx, nil, 2); err == nil {
+			t.Error("List succeeded while failing")
 		}
 		if _, err := s.Check(ctx, value); err == nil {
 			t.Error("Check succeeded while failing")
@@ -566,12 +586,12 @@ func TestFailureRecoveryAndNoDraw(t *testing.T) {
 		}
 	}
 	if !slices.Equal(source.lengths, draws) {
-		t.Fatal("refusal or Check or All drew ID")
+		t.Fatal("refusal or Check or List drew ID")
 	}
 	create(t, s, draft("recovered"))
 }
 
-// R-EG52-TVP9, R-4GXC-ZKU2, R-L0V4-B9LO.
+// R-EG52-TVP9, R-QPK0-6T5D, R-L0V4-B9LO.
 func TestDrawsAndPersistedCollisions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "widgets.db")
 	d := openDB(t, path)
@@ -615,7 +635,7 @@ func (r chunkSource) Read(p []byte) (int, error) {
 	return r.source.Read(p)
 }
 
-// R-EG52-TVP9, R-4GXC-ZKU2.
+// R-EG52-TVP9, R-QPK0-6T5D.
 func TestReadFullAccumulatesShortReads(t *testing.T) {
 	source := &countedSource{source: chunkSource{source: bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8})}}
 	s, _ := newStore(t, source)
@@ -688,10 +708,12 @@ func TestNilSource(t *testing.T) {
 	assertIDs(t, []widget.Widget{a, b})
 }
 
-// R-L3AX-2T32, R-GMNB-HA1B, R-FBUG-RWZB.
+// R-L3AX-2T32, R-R1R0-0IKB, R-EPNQ-CBOL.
 func TestConcurrentAcceptedCalls(t *testing.T) {
-	s, _ := newStore(t, knownSource())
 	const n = 32
+	s, d := newStore(t, knownSource())
+	seedPosition(t, d, math.MaxInt64-n)
+	before := all(t, s)
 	start := make(chan struct{})
 	results := make(chan widget.Widget, n)
 	var wg sync.WaitGroup
@@ -708,7 +730,7 @@ func TestConcurrentAcceptedCalls(t *testing.T) {
 		wg.Go(func() {
 			<-start
 			for range 4 {
-				rows, err := s.All(ctx)
+				rows, err := s.List(ctx, nil, 2)
 				if err != nil {
 					t.Error(err)
 					return
@@ -726,10 +748,15 @@ func TestConcurrentAcceptedCalls(t *testing.T) {
 	wg.Wait()
 	close(results)
 	got := all(t, s)
-	if len(got) != n {
+	if len(got) != len(before)+n {
 		t.Fatalf("count: %d", len(got))
 	}
 	assertIDs(t, got)
+	for _, w := range before {
+		if !slices.Contains(got, w) {
+			t.Errorf("lost prior %+v", w)
+		}
+	}
 	for w := range results {
 		if !slices.Contains(got, w) {
 			t.Errorf("lost %+v", w)
@@ -737,10 +764,12 @@ func TestConcurrentAcceptedCalls(t *testing.T) {
 	}
 }
 
-// R-FD2D-5OQ0, R-GMNB-HA1B.
+// R-EQVM-Q3FA, R-R1R0-0IKB.
 func TestConcurrentDuplicateCreation(t *testing.T) {
-	s, _ := newStore(t, knownSource())
 	const n = 32
+	s, d := newStore(t, knownSource())
+	seedPosition(t, d, math.MaxInt64-n)
+	before := all(t, s)
 	start := make(chan struct{})
 	results := make(chan bool, n)
 	var wg sync.WaitGroup
@@ -773,7 +802,128 @@ func TestConcurrentDuplicateCreation(t *testing.T) {
 			accepted++
 		}
 	}
-	if accepted != 1 || len(all(t, s)) != 1 {
-		t.Fatalf("accepted: %d rows: %v", accepted, all(t, s))
+	got := all(t, s)
+	if accepted != 1 || len(got) != len(before)+1 {
+		t.Fatalf("accepted: %d rows: %v", accepted, got)
+	}
+	seen := make(map[string]bool)
+	for _, w := range got {
+		if seen[w.Name] {
+			t.Fatalf("duplicate name: %q", w.Name)
+		}
+		seen[w.Name] = true
+	}
+	for _, w := range before {
+		if !slices.Contains(got, w) {
+			t.Errorf("lost prior %+v", w)
+		}
+	}
+}
+
+// R-QKOE-NQ6L, R-QLWB-1HXA.
+func TestListWindowsAndCreationPositions(t *testing.T) {
+	s, _ := newStore(t, knownSource())
+	var want []widget.Widget
+	for _, name := range []string{"zeta", "alpha", "mu", "beta", "omega"} {
+		w := create(t, s, draft(name))
+		for _, prior := range want {
+			if w.Seq <= prior.Seq {
+				t.Fatalf("created position %d is not after %d", w.Seq, prior.Seq)
+			}
+		}
+		want = append(want, w)
+	}
+	positions := []*int64{nil}
+	for _, seq := range []int64{-1 << 63, want[0].Seq - 1, want[0].Seq, want[2].Seq, want[4].Seq, 1<<63 - 1} {
+		positions = append(positions, &seq)
+	}
+	for _, after := range positions {
+		for _, n := range []int{-int(^uint(0)>>1) - 1, -1, 0, 1, 2, 5, 6, int(^uint(0) >> 1)} {
+			var expected []widget.Widget
+			for _, w := range want {
+				if n > len(expected) && (after == nil || w.Seq > *after) {
+					expected = append(expected, w)
+				}
+			}
+			got, err := s.List(ctx, after, n)
+			if err != nil || !slices.Equal(got, expected) {
+				t.Fatalf("List(%v, %d) = %+v, %v; want %+v", after, n, got, err, expected)
+			}
+		}
+	}
+}
+
+// R-QN47-F9NZ, R-EN7X-KS77, R-QUFL-PW45.
+func TestListEmptyWindowsReachDatabaseAndRecover(t *testing.T) {
+	s, d := newStore(t, knownSource())
+	for _, seq := range []int64{-1 << 63, -1, 0, 1, 1<<63 - 1} {
+		for _, after := range []*int64{nil, &seq} {
+			for _, n := range []int{-int(^uint(0)>>1) - 1, -1, 0, 1, 4, int(^uint(0) >> 1)} {
+				for _, failing := range []bool{false, true, false} {
+					d.SetFailing(failing)
+					got, err := s.List(ctx, after, n)
+					if failing {
+						if err == nil {
+							t.Fatalf("List(%v, %d) succeeded while failing", after, n)
+						}
+					} else if err != nil || len(got) != 0 {
+						t.Fatalf("List(%v, %d) = %+v, %v", after, n, got, err)
+					}
+				}
+			}
+		}
+	}
+}
+
+func seedPosition(t *testing.T, d *db.DB, seq int64) {
+	t.Helper()
+	if err := d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "INSERT INTO widgets (seq, id, name, count, status) VALUES (?, ?, ?, ?, ?)", seq, "wgt_ffffffffffffffff", "seed", 0, widget.StatusPaused)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// R-LLH8-GUB2, R-EN7X-KS77, R-QVNI-3NUU.
+func TestMaximumPositionRejectsEveryDraftButAllowsReads(t *testing.T) {
+	s, d := newStore(t, knownSource())
+	seedPosition(t, d, math.MaxInt64-1)
+	last := create(t, s, draft("last"))
+	if last.Seq != math.MaxInt64 {
+		t.Fatalf("last available position: %d", last.Seq)
+	}
+	before := all(t, s)
+	for _, value := range []widget.Draft{draft("new"), draft("seed"), {Name: "", Count: -1, Status: "bad"}, draft(strings.Repeat("x", widget.MaxNameRunes+1))} {
+		if _, _, err := s.Create(ctx, value); err == nil {
+			t.Fatal("creation succeeded without an available position")
+		}
+		if _, err := s.Check(ctx, value); err != nil {
+			t.Fatalf("Check after exhausted Create: %v", err)
+		}
+		if !slices.Equal(all(t, s), before) {
+			t.Fatal("exhausted creation changed widgets")
+		}
+	}
+}
+
+// R-EN7X-KS77.
+func TestHealthyCallsRecoverAfterCanceledContext(t *testing.T) {
+	s, _ := newStore(t, knownSource())
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, _ = s.List(canceled, nil, 2)
+	_, _ = s.Check(canceled, draft("new"))
+	_, _, _ = s.Create(canceled, draft("new"))
+	for _, value := range []widget.Draft{draft("new"), draft("new"), {Name: "", Count: -1, Status: "bad"}} {
+		if _, err := s.List(ctx, nil, 2); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Check(ctx, value); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.Create(ctx, value); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

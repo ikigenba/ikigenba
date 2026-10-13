@@ -8,6 +8,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
@@ -25,8 +26,14 @@ type widgetObject struct {
 	Status widget.Status `json:"status" mcp:"required" description:"The widget's status."`
 }
 
+type listInput struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
+
 type widgetList struct {
-	Widgets []widgetObject `json:"widgets" mcp:"required" description:"Every widget, oldest first."`
+	Widgets []widgetObject `json:"widgets" mcp:"required" description:"The widgets on this page, oldest first."`
+	Next    *string        `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 func object(w widget.Widget) widgetObject {
@@ -35,14 +42,33 @@ func object(w widget.Widget) widgetObject {
 
 // Register adds the read-only listing and additive creation tools over s.
 func Register(srv *mcp.Server, s *widget.Store, writer *telemetry.Writer) {
-	mcp.AddTool(srv, mcp.Tool[struct{}, widgetList]{
-		Name: "list_widgets", Description: "List the widgets, oldest first.", Effect: mcp.Read,
-		Handler: func(ctx context.Context, _ identity.Caller, _ struct{}) (widgetList, error) {
-			widgets, err := s.All(ctx)
+	mcp.AddTool(srv, mcp.Tool[listInput, widgetList]{
+		Name: "list_widgets", Description: "List the widgets a page at a time, oldest first.", Effect: mcp.Read,
+		Handler: func(ctx context.Context, _ identity.Caller, in listInput) (widgetList, error) {
+			limit, err := paging.Window(in.Limit)
+			if err != nil {
+				return widgetList{}, err
+			}
+			token := paging.Token{Tool: "list_widgets"}
+			var after *int64
+			if in.Page != nil && *in.Page != "" {
+				var seq int64
+				if err := token.Decode(*in.Page, &seq); err != nil {
+					return widgetList{}, errors.New(paging.BadPage)
+				}
+				after = &seq
+			}
+			widgets, err := s.List(ctx, after, limit+1)
 			if err != nil {
 				return widgetList{}, errors.New(widget.Unreachable)
 			}
-			out := widgetList{Widgets: make([]widgetObject, len(widgets))}
+			out := widgetList{}
+			if len(widgets) > limit {
+				widgets = widgets[:limit]
+				next := token.Encode(widgets[limit-1].Seq)
+				out.Next = &next
+			}
+			out.Widgets = make([]widgetObject, len(widgets))
 			for i, w := range widgets {
 				out.Widgets[i] = object(w)
 			}

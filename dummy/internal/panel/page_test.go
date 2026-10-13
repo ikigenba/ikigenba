@@ -32,6 +32,7 @@ type panelTemplateData struct {
 	Count   int
 	Table   []widget.Widget
 	Form    panel.FormView
+	Next    string
 }
 
 func pageTestRequest(method, path string) *http.Request {
@@ -430,8 +431,8 @@ func coreHandler(t *testing.T, s *widget.Store, banner func(page.User) page.Bann
 
 func coreDraft(sub widget.Submission) widget.Draft { d, _ := widget.ParseSubmission(sub); return d }
 
-// R-UTCV-ZF5P R-RG8D-DVVH R-RHG9-RNM6 R-U955-PAW6
-// R-Y5H2-05Q9 R-Y2S1-GKQ5 R-YACN-J8P1
+// R-RG8D-DVVH R-RHG9-RNM6
+// R-Y5H2-05Q9 R-Y2S1-GKQ5
 func TestPageTemplateContract(t *testing.T) {
 	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
 	if err != nil {

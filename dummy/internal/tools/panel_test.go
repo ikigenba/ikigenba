@@ -64,14 +64,14 @@ func TestToolCreationAppearsInPanel(t *testing.T) {
 		t.Fatal(err)
 	}
 	widgets := toolsStoreAll(t, s)
-	if len(widgets) == 0 || widgets[len(widgets)-1] != answer.Widget {
+	if len(widgets) == 0 || widgetJSON(t, widgets[len(widgets)-1]) != widgetJSON(t, answer.Widget) {
 		t.Fatal("result differs from final stored widget")
 	}
 	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// R-6C6S-T8UX: both surfaces show the created last row; stale validator gets 200.
+	// R-RMHA-IM64: both surfaces show the created last row; stale validator gets 200.
 	for _, path := range []string{"/widgets", "/widgets/table"} {
 		response := panelRequest(h, http.MethodGet, path, "", "")
 		if response.Code != http.StatusOK {
@@ -81,7 +81,7 @@ func TestToolCreationAppearsInPanel(t *testing.T) {
 		name, data := "table", any(widgets)
 		if path == "/widgets" {
 			name = "page"
-			data = map[string]any{"Banner": page.Banner{}, "Panel": true, "Message": "", "Count": len(widgets), "Table": widgets, "Form": panel.FormView{Statuses: widget.Statuses()}}
+			data = map[string]any{"Banner": page.Banner{}, "Panel": true, "Message": "", "Count": len(widgets), "Table": widgets, "Next": "", "Form": panel.FormView{Statuses: widget.Statuses()}}
 		}
 		if err = set.ExecuteTemplate(&expected, name, data); err != nil {
 			t.Fatal(err)
@@ -105,7 +105,7 @@ func TestFormCreationAppearsInToolList(t *testing.T) {
 		t.Fatalf("form status = %d: %s", response.Code, response.Body.String())
 	}
 	result := call(t, c, "list_widgets", nil)
-	// R-FJHY-ZGJ4: the form-created widget is the final list object.
+	// R-RL9E-4UFF: the form-created widget is the final list object.
 	raw, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)

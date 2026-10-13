@@ -3,9 +3,11 @@ package tools_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
@@ -17,6 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy"
@@ -93,11 +96,20 @@ func toolsTestStore(t *testing.T) *widget.Store {
 }
 func toolsStoreAll(t *testing.T, s *widget.Store) []widget.Widget {
 	t.Helper()
-	w, err := s.All(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	var all []widget.Widget
+	var after *int64
+	for {
+		rows, err := s.List(context.Background(), after, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) == 0 {
+			return all
+		}
+		all = append(all, rows...)
+		seq := rows[len(rows)-1].Seq
+		after = &seq
 	}
-	return w
 }
 func toolsStoreCreate(t *testing.T, s *widget.Store, d widget.Draft) (widget.Widget, widget.FieldErrors) {
 	t.Helper()
@@ -152,9 +164,9 @@ func TestAdvertisedTools(t *testing.T) {
 			t.Fatalf("effect = %v", info.Effect())
 		}
 	}
-	// R-E6PZ-OMVC.
-	jsonEqual(t, infos[0].InputSchema, `{"type":"object","additionalProperties":false}`)
-	// R-64VE-IMER R-663A-WE5G R-67B7-A5W5 R-ENSL-1F92 R-LEA0-IQRB
+	// R-RAAA-OWR6.
+	assertSchema(t, infos[0].InputSchema, map[string]any{"type": "object", "properties": map[string]any{"page": map[string]any{"type": "string", "description": paging.PageDescription}, "limit": map[string]any{"type": "integer", "description": paging.LimitDescription}}, "additionalProperties": false})
+	// R-64VE-IMER R-663A-WE5G R-RBI7-2OHV R-ENSL-1F92 R-LEA0-IQRB
 	input := schemaObject(t, infos[1].InputSchema)
 	output := schemaObject(t, infos[1].OutputSchema)
 	props := schemaObject(t, input["properties"])
@@ -189,7 +201,7 @@ func TestAdvertisedTools(t *testing.T) {
 	if json.Unmarshal(listProperty["description"], &listDescription) != nil || listDescription == "" {
 		t.Fatal("missing list description")
 	}
-	assertSchema(t, infos[0].OutputSchema, map[string]any{"type": "object", "properties": map[string]any{"widgets": map[string]any{"type": "array", "items": expectedOutput, "description": listDescription}}, "required": []string{"widgets"}, "additionalProperties": false})
+	assertSchema(t, infos[0].OutputSchema, map[string]any{"type": "object", "properties": map[string]any{"widgets": map[string]any{"type": "array", "items": expectedOutput, "description": listDescription}, "next": map[string]any{"type": "string", "description": paging.NextDescription}}, "required": []string{"widgets"}, "additionalProperties": false})
 }
 
 func widgetJSON(t *testing.T, w widget.Widget) string {
@@ -300,7 +312,7 @@ func TestListResultAndReadOnly(t *testing.T) {
 	}
 	c := clientOver(t, s)
 	before := toolsStoreAll(t, s)
-	// R-LFHW-WII0, R-HX58-GOL1, R-HYD4-UGBQ.
+	// R-LFHW-WII0, R-ZOC8-C061, R-HYD4-UGBQ.
 	for _, args := range []json.RawMessage{nil, json.RawMessage(`{}`)} {
 		assertSuccess(t, call(t, c, "list_widgets", args), listJSON(t, before))
 		if !reflect.DeepEqual(toolsStoreAll(t, s), before) {
@@ -397,44 +409,58 @@ func TestCountRange(t *testing.T) {
 }
 
 func TestConcurrentCreateSameName(t *testing.T) {
-	s := toolsTestStore(t)
-	c := clientOver(t, s)
-	before := toolsStoreAll(t, s)
 	const n = 16
-	results := make([]mcp.Result, n)
-	errors := make([]error, n)
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-	for i := range n {
-		wg.Go(func() {
-			<-start
-			results[i], errors[i] = c.CallTool(context.Background(), caller, "create_widget", json.RawMessage(`{"name":"contended","count":4,"status":"active"}`))
-		})
-	}
-	close(start)
-	wg.Wait()
-	// R-6AYW-FH48: exactly one success and one additional widget.
-	successes := 0
-	for i, result := range results {
-		if errors[i] != nil {
-			t.Fatal(errors[i])
-		}
-		if result.IsError() {
-			assertError(t, result, "invalid arguments:\nname: "+widget.NameTakenMessage)
-		} else {
-			raw, _ := json.Marshal(result)
-			var members map[string]json.RawMessage
-			if err := json.Unmarshal(raw, &members); err != nil {
+	for _, seq := range []int64{1, math.MaxInt64 - n} {
+		t.Run(fmt.Sprint(seq), func(t *testing.T) {
+			s, handle := toolsDatabaseStore(t)
+			w, errs := toolsStoreCreate(t, s, widget.Draft{Name: "existing", Count: 1, Status: widget.StatusPaused})
+			if errs.Any() {
+				t.Fatal(errs)
+			}
+			if err := handle.Write(context.Background(), func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(context.Background(), "UPDATE widgets SET seq = ? WHERE id = ?", seq, w.ID)
+				return err
+			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, exists := members["isError"]; exists {
-				t.Fatal("success has isError")
+			c := clientOver(t, s)
+			before := toolsStoreAll(t, s)
+			results := make([]mcp.Result, n)
+			errors := make([]error, n)
+			var wg sync.WaitGroup
+			start := make(chan struct{})
+			for i := range n {
+				wg.Go(func() {
+					<-start
+					results[i], errors[i] = c.CallTool(context.Background(), caller, "create_widget", json.RawMessage(`{"name":"contended","count":4,"status":"active"}`))
+				})
 			}
-			successes++
-		}
-	}
-	if successes != 1 || len(toolsStoreAll(t, s)) != len(before)+1 {
-		t.Fatalf("successes %d; widgets %d", successes, len(toolsStoreAll(t, s)))
+			close(start)
+			wg.Wait()
+			// R-LK9C-32KD: exactly one success and one additional widget.
+			successes := 0
+			for i, result := range results {
+				if errors[i] != nil {
+					t.Fatal(errors[i])
+				}
+				if result.IsError() {
+					assertError(t, result, "invalid arguments:\nname: "+widget.NameTakenMessage)
+				} else {
+					raw, _ := json.Marshal(result)
+					var members map[string]json.RawMessage
+					if err := json.Unmarshal(raw, &members); err != nil {
+						t.Fatal(err)
+					}
+					if _, exists := members["isError"]; exists {
+						t.Fatal("success has isError")
+					}
+					successes++
+				}
+			}
+			if successes != 1 || len(toolsStoreAll(t, s)) != len(before)+1 {
+				t.Fatalf("successes %d; widgets %d", successes, len(toolsStoreAll(t, s)))
+			}
+		})
 	}
 }
 

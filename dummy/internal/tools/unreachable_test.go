@@ -10,13 +10,14 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/tools"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-// R-I5OJ-52RW R-I84B-WM9A R-I9C8-ADZZ R-HYD4-UGBQ
+// R-ZQS1-3JNF R-I84B-WM9A R-ZRZX-HBE4 R-HYD4-UGBQ
 func TestUnreachableToolResultsAndTelemetry(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	store, handle := toolsDatabaseStore(t)
@@ -33,6 +34,9 @@ func TestUnreachableToolResultsAndTelemetry(t *testing.T) {
 	before := toolsStoreAll(t, store)
 	cases := []struct{ name, args string }{
 		{"list_widgets", "{}"}, {"list_widgets", ""},
+		{"list_widgets", `{"page":null,"limit":null}`},
+		{"list_widgets", `{"page":"","limit":1}`},
+		{"list_widgets", fmt.Sprintf(`{"page":%q,"limit":%d}`, paging.Token{Tool: "list_widgets"}.Encode(before[0].Seq), paging.MaxLimit)},
 		{"create_widget", `{"name":"fresh","count":3,"status":"active"}`},
 		{"create_widget", `{"name":"existing","count":-2,"status":"paused"}`},
 		{"create_widget", `{"name":"","count":-1,"status":"retired"}`},

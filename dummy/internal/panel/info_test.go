@@ -158,7 +158,7 @@ func TestInformationPagesIndependentOfStore(t *testing.T) {
 					t.Fatal("reachable information request changed store")
 				}
 				handle.SetFailing(true)
-				if _, err := store.All(context.Background()); err == nil {
+				if _, err := store.List(context.Background(), nil, 1); err == nil {
 					t.Fatal("store remains reachable")
 				}
 				unreachableRequest := request.Clone(request.Context())

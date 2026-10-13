@@ -268,7 +268,7 @@ func formTestCreate(t *testing.T, store *widget.Store, sub widget.Submission) (w
 	return widget.Widget{}, errors
 }
 
-// R-UAD2-32MV R-U955-PAW6 R-RHG9-RNM6 R-RG8D-DVVH
+// R-R7UH-XD9S R-RHG9-RNM6 R-RG8D-DVVH
 // R-IQ93-720D  R-MMT3-PRQI
 func TestFormAssetAndDeclaredView(t *testing.T) {
 	for _, sub := range []widget.Submission{
@@ -297,7 +297,7 @@ func TestFormAssetAndDeclaredView(t *testing.T) {
 	}
 }
 
-// R-MLL7-BZZT R-HTHJ-BDCY R-MMT3-PRQI
+// R-MLL7-BZZT R-LJ1F-PATO R-MMT3-PRQI
 func TestFormConcurrentCreationOutcomes(t *testing.T) {
 	store := panelTestStore(t)
 	before := panelStoreAll(t, store)

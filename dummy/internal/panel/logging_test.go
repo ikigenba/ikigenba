@@ -53,11 +53,21 @@ func panelTestStore(t *testing.T) *widget.Store {
 }
 func panelStoreAll(t *testing.T, s *widget.Store) []widget.Widget {
 	t.Helper()
-	values, err := s.All(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	var values []widget.Widget
+	var after *int64
+	const window = 7
+	for {
+		batch, err := s.List(context.Background(), after, window)
+		if err != nil {
+			t.Fatal(err)
+		}
+		values = append(values, batch...)
+		if len(batch) < window {
+			return values
+		}
+		q := batch[len(batch)-1].Seq
+		after = &q
 	}
-	return values
 }
 func panelStoreCreate(t *testing.T, s *widget.Store, d widget.Draft) (widget.Widget, widget.FieldErrors) {
 	t.Helper()

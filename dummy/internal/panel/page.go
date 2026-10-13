@@ -2,10 +2,12 @@ package panel
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -16,6 +18,7 @@ type pageData struct {
 	Count   int
 	Table   []widget.Widget
 	Form    FormView
+	Next    string
 }
 
 func (h *handler) pageData(r *http.Request) pageData {
@@ -25,7 +28,7 @@ func (h *handler) pageData(r *http.Request) pageData {
 }
 
 func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int, sub widget.Submission, errs widget.FieldErrors) {
-	widgets, err := h.store.All(r.Context())
+	widgets, next, err := h.firstPage(r.Context())
 	if err != nil {
 		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
 		return
@@ -34,6 +37,7 @@ func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int,
 	data.Panel = true
 	data.Table = widgets
 	data.Count = len(data.Table)
+	data.Next = next
 	data.Form = newFormData(sub, errs)
 	h.renderDocument(w, r, status, data)
 }
@@ -58,4 +62,17 @@ func (h *handler) renderTemplate(w http.ResponseWriter, r *http.Request, status 
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(body.Bytes())
 	}
+}
+
+func (h *handler) firstPage(ctx context.Context) ([]widget.Widget, string, error) {
+	widgets, err := h.store.List(ctx, nil, paging.DefaultLimit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(widgets) > paging.DefaultLimit {
+		widgets = widgets[:paging.DefaultLimit]
+		next = (paging.Token{Tool: "list_widgets"}).Encode(widgets[len(widgets)-1].Seq)
+	}
+	return widgets, next, nil
 }

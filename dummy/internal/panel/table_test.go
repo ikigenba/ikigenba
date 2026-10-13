@@ -59,7 +59,7 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 }
 
 func TestTableValidatorsTrackRenderedContent(t *testing.T) {
-	// R-HZFA-S3P3 R-I1V3-JN6H R-I4AW-B6NV
+	// R-HZFA-S3P3 R-I1V3-JN6H R-R6ML-JLJ3
 	store := panelTestStore(t)
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	first := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
@@ -288,7 +288,7 @@ func TestTableTransportHeadParity(t *testing.T) {
 	}
 }
 
-// R-HDMU-CCPX
+// R-R5EP-5TSE
 func TestTableUsesAssetData(t *testing.T) {
 	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
 	if err != nil {

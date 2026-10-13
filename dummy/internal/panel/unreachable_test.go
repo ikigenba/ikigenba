@@ -2,6 +2,8 @@ package panel_test
 
 import (
 	"context"
+	"database/sql"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-// R-GLL5-JMNY R-GMT1-XEEN R-GO0Y-B65C R-HKY8-MZ63
+// R-GMT1-XEEN R-GO0Y-B65C R-HKY8-MZ63
 // R-HUPF-P53N R-HOLX-SAE6 R-HHAJ-HNY0 R-GXS5-DC2W R-HR1Q-JTVK R-HS9M-XLM9
 // R-L6YM-84B5 R-CO16-H2KI
 func TestUnreachableWidgetsAnswers(t *testing.T) {
@@ -30,8 +32,8 @@ func TestUnreachableWidgetsAnswers(t *testing.T) {
 	etag := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Header().Get("ETag")
 	handle.SetFailing(true)
 	// The handle's failure seam makes each store operation unreachable.
-	if _, err := store.All(context.Background()); err == nil {
-		t.Fatal("All succeeded while failing")
+	if _, err := store.List(context.Background(), nil, 1); err == nil {
+		t.Fatal("List succeeded while failing")
 	}
 	if _, err := store.Check(context.Background(), widget.Draft{}); err == nil {
 		t.Fatal("Check succeeded while failing")
@@ -129,5 +131,78 @@ func TestUnreachableLeavesOtherRoutesUnchanged(t *testing.T) {
 				t.Fatalf("missing identity %s %s changed", method, path)
 			}
 		}
+	}
+}
+
+// R-ES3J-3V5Z R-LJ1F-PATO R-LHTJ-BJ2Z
+func TestSequenceExhaustionFormAndReachableReads(t *testing.T) {
+	store, handle := panelDatabaseStore(t)
+	ctx := context.Background()
+	last := widget.Widget{Seq: math.MaxInt64, ID: "wgt_ffffffffffffffff", Name: "last-widget", Count: 3, Status: widget.StatusActive}
+	if err := handle.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "INSERT INTO widgets (seq, id, name, count, status) VALUES (?, ?, ?, ?, ?)", last.Seq, last.ID, last.Name, last.Count, last.Status)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writer, capture, stderr := panelTestTelemetry(t, &strings.Builder{})
+	t.Setenv(services.Variable, "")
+	h := panel.Handler(store, pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: panel.ServiceName, Telemetry: writer}), writer)
+	before := panelStoreAll(t, store)
+	for _, sub := range []widget.Submission{
+		{Name: "fresh", Count: "2", Status: "active"},
+		{Name: last.Name, Count: "-1", Status: "active"},
+		{Name: last.Name, Count: "bad", Status: "active"},
+	} {
+		draft, parse := widget.ParseSubmission(sub)
+		rules, err := store.Check(ctx, draft)
+		if err != nil {
+			t.Fatalf("max-sequence Check is unreachable: %v", err)
+		}
+		request := pageTestFormRequest(sub)
+		out := pageTestResponse(h, request)
+		if !parse.Any() {
+			if out.Code != http.StatusServiceUnavailable || !reflect.DeepEqual(out.Header()["Content-Type"], []string{"text/plain; charset=utf-8"}) || out.Header().Get("ETag") != "" || out.Body.String() != widget.Unreachable+"\n" {
+				t.Fatalf("Create failure: %d %v %q", out.Code, out.Header(), out.Body.String())
+			}
+		} else {
+			if parse.Name == "" {
+				parse.Name = rules.Name
+			}
+			if parse.Count == "" {
+				parse.Count = rules.Count
+			}
+			if parse.Status == "" {
+				parse.Status = rules.Status
+			}
+			if out.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("parse-error status: %d", out.Code)
+			}
+			assertFormPage(t, out, request, before, sub, parse)
+		}
+		if !slices.Equal(panelStoreAll(t, store), before) {
+			t.Fatal("max-sequence form changed widgets")
+		}
+	}
+	request := pageTestRequest(http.MethodGet, "/widgets")
+	out := pageTestResponse(h, request)
+	data := panelTemplateData{Banner: pageTestBannerData(request), Panel: true, Count: len(before), Table: before, Form: panel.FormView{Statuses: widget.Statuses()}}
+	if out.Code != http.StatusOK || out.Body.String() != renderPanelTemplate(t, "page", data) {
+		t.Fatal("max-sequence page is not reachable")
+	}
+	table := tableTestRequest(h, http.MethodGet, "/widgets/table", tableTestIdentity(), "")
+	if table.Code != http.StatusOK || table.Body.String() != renderPanelTemplate(t, "table", before) {
+		t.Fatal("max-sequence table is not reachable")
+	}
+	if err := writer.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range capture.Events() {
+		if event.Name == "widget.created" {
+			t.Fatal("max-sequence form emitted creation")
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("telemetry stderr: %s", stderr)
 	}
 }

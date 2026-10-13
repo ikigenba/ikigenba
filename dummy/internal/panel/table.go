@@ -18,7 +18,7 @@ func (h *handler) table(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widgets, err := h.store.All(r.Context())
+	widgets, _, err := h.firstPage(r.Context())
 	if err != nil {
 		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
 		return

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,6 +61,7 @@ type Widget struct {
 	Name   string
 	Count  int
 	Status Status
+	Seq    int64
 }
 
 // Submission holds the caller's unmodified field values.
@@ -127,18 +129,27 @@ func (s *Store) nextID(ctx context.Context, tx *sql.Tx) (string, error) {
 	}
 }
 
-// All returns an independent snapshot in creation order.
-func (s *Store) All(ctx context.Context) ([]Widget, error) {
+// List returns an independent window in creation order.
+func (s *Store) List(ctx context.Context, after *int64, n int) ([]Widget, error) {
+	if n < 1 {
+		n = 0
+	}
 	var widgets []Widget
 	err := s.handle.Read(ctx, func(tx *sql.Tx) (err error) {
-		rows, err := tx.QueryContext(ctx, "SELECT id, name, count, status FROM widgets ORDER BY seq")
+		query := "SELECT id, name, count, status, seq FROM widgets ORDER BY seq LIMIT ?"
+		args := []any{n}
+		if after != nil {
+			query = "SELECT id, name, count, status, seq FROM widgets WHERE seq > ? ORDER BY seq LIMIT ?"
+			args = []any{*after, n}
+		}
+		rows, err := tx.QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
 		}
 		defer func() { err = errors.Join(err, rows.Close()) }()
 		for rows.Next() {
 			var w Widget
-			if err := rows.Scan(&w.ID, &w.Name, &w.Count, &w.Status); err != nil {
+			if err := rows.Scan(&w.ID, &w.Name, &w.Count, &w.Status, &w.Seq); err != nil {
 				return err
 			}
 			widgets = append(widgets, w)
@@ -191,6 +202,13 @@ func (s *Store) Create(ctx context.Context, d Draft) (Widget, FieldErrors, error
 	var w Widget
 	var fields FieldErrors
 	err := s.handle.Write(ctx, func(tx *sql.Tx) error {
+		var exhausted bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM widgets WHERE seq = ?)", int64(math.MaxInt64)).Scan(&exhausted); err != nil {
+			return err
+		}
+		if exhausted {
+			return errors.New(Unreachable)
+		}
 		var err error
 		fields, err = check(ctx, tx, d)
 		if err != nil || fields.Any() {
@@ -201,7 +219,11 @@ func (s *Store) Create(ctx context.Context, d Draft) (Widget, FieldErrors, error
 			return err
 		}
 		w = Widget{ID: id, Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
-		_, err = tx.ExecContext(ctx, "INSERT INTO widgets (id, name, count, status) VALUES (?, ?, ?, ?)", w.ID, w.Name, w.Count, w.Status)
+		result, err := tx.ExecContext(ctx, "INSERT INTO widgets (id, name, count, status) VALUES (?, ?, ?, ?)", w.ID, w.Name, w.Count, w.Status)
+		if err != nil {
+			return err
+		}
+		w.Seq, err = result.LastInsertId()
 		return err
 	})
 	if err != nil {

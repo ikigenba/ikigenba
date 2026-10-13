@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
@@ -27,11 +29,20 @@ func testNow() time.Time { return time.Unix(123, 0).UTC() }
 
 func futureDatabase(t *testing.T, dir string) {
 	t.Helper()
+	populatedFutureDatabase(t, dir, 2)
+}
+
+func populatedFutureDatabase(t *testing.T, dir string, total int) {
+	t.Helper()
 	baseline, err := fs.ReadFile(dummy.Migrations(), "0001_widgets.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	migrations := fstest.MapFS{"0001_widgets.sql": {Data: baseline}, "0002_future.sql": {Data: []byte("CREATE TABLE future(value TEXT); INSERT INTO widgets(id,name,count,status) VALUES('wgt_first','first',2,'active'),('wgt_second','second',3,'paused');")}}
+	statement := "CREATE TABLE future(value TEXT); INSERT INTO widgets(id,name,count,status) VALUES('wgt_first','first',2,'active'),('wgt_second','second',3,'paused');"
+	for i := 2; i < total; i++ {
+		statement += fmt.Sprintf("INSERT INTO widgets(id,name,count,status) VALUES('wgt_extra_%d','extra-%d',%d,'active');", i, i, i)
+	}
+	migrations := fstest.MapFS{"0001_widgets.sql": {Data: baseline}, "0002_future.sql": {Data: []byte(statement)}}
 	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "state", "dummy.db"), Migrations: migrations, Now: testNow})
 	if err != nil {
 		t.Fatal(err)
@@ -223,75 +234,82 @@ func TestDatabaseIsReadyBeforeNotification(t *testing.T) {
 	}
 }
 
-// R-J8BE-RBM9 R-J9JB-53CY R-JAR7-IV3N R-JD70-AEL1 R-JEEW-O6BQ R-JBZ3-WMUC
+// R-J8BE-RBM9 R-RNP6-WDWT R-JAR7-IV3N R-JD70-AEL1 R-JEEW-O6BQ R-JBZ3-WMUC
 func TestFutureDatabaseWarnsBeforeReadyAndServesPreservedWidgets(t *testing.T) {
-	dir := t.TempDir()
-	futureDatabase(t, dir)
-	cfg := db.Config{Path: filepath.Join(dir, "state", "dummy.db"), Migrations: dummy.Migrations(), Service: panel.ServiceName, Now: testNow}
-	var expectedWarning, before, after bytes.Buffer
-	cfg.Stderr = &expectedWarning
-	handle, err := db.Open(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = handle.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err = db.Status(context.Background(), cfg, &before); err != nil {
-		t.Fatal(err)
-	}
-	if expectedWarning.Len() == 0 {
-		t.Fatal("fixture produced no warning")
-	}
-	trail := testMCP(t)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = ln.Close() })
-	path, notify := readySocket(t)
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test finished")) })
-	run := &servingRun{client: &http.Client{Timeout: 5 * time.Second}, endpoint: "http://" + ln.Addr().String(), cancel: func() { cancel(errors.New("explicit run cancellation")) }, result: make(chan int, 1), trail: trail}
-	var warning beforeReadyWriter
-	warningEntered, releaseWarning := make(chan struct{}), make(chan struct{})
-	warning.before = func() { close(warningEntered); <-releaseWarning }
-	var removed []string
-	p := Process{Unsetenv: func(key string) error { removed = append(removed, key); return nil }, Version: testVersion, Dir: dir, Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(fd uintptr) (net.Listener, error) { run.fds = append(run.fds, fd); return ln, nil }, Banner: emptyBanner, MCP: trail.server, Telemetry: trail.writer, Rand: testWidgetRand(), Stdout: &run.stdout, Stderr: &warning}
-	go func() { run.result <- Run(ctx, p) }()
-	select {
-	case <-warningEntered:
-	case code := <-run.result:
-		t.Fatalf("Run returned before warning: %d", code)
-	case <-time.After(5 * time.Second):
-		t.Fatal("warning did not arrive")
-	}
-	assertNoNotification(t, notify)
-	close(releaseWarning)
-	waitReady(t, notify)
-	want := []servedWidget{{"wgt_first", "first", 2, "active"}, {"wgt_second", "second", 3, "paused"}}
-	for range 2 {
-		if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
-			t.Fatalf("widgets=%+v want=%+v", got, want)
-		}
-	}
-	if err = trail.writer.Flush(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	events := trail.capture.Events()
-	if len(events) < 2 || events[0].Name != "service.started" || events[1].Name != "request.started" {
-		t.Fatalf("events before first request=%+v", events)
-	}
-	assertNoNotification(t, notify)
-	run.stop(t)
-	if warning.calls != 1 || warning.String() != expectedWarning.String() || run.stdout.Len() != 0 || trail.stderr.Len() != 0 {
-		t.Fatalf("warning calls=%d warning=%q expected=%q stdout=%q telemetry=%q", warning.calls, warning.String(), expectedWarning.String(), run.stdout.String(), trail.stderr.String())
-	}
-	if err = db.Status(context.Background(), cfg, &after); err != nil {
-		t.Fatal(err)
-	}
-	if before.String() != after.String() {
-		t.Fatalf("migration status changed: before=%q after=%q", before.String(), after.String())
+	for _, total := range []int{2, paging.DefaultLimit + 1} {
+		t.Run(fmt.Sprint(total), func(t *testing.T) {
+			dir := t.TempDir()
+			populatedFutureDatabase(t, dir, total)
+			cfg := db.Config{Path: filepath.Join(dir, "state", "dummy.db"), Migrations: dummy.Migrations(), Service: panel.ServiceName, Now: testNow}
+			var expectedWarning, before, after bytes.Buffer
+			cfg.Stderr = &expectedWarning
+			handle, err := db.Open(context.Background(), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = handle.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err = db.Status(context.Background(), cfg, &before); err != nil {
+				t.Fatal(err)
+			}
+			if expectedWarning.Len() == 0 {
+				t.Fatal("fixture produced no warning")
+			}
+			trail := testMCP(t)
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ln.Close() })
+			path, notify := readySocket(t)
+			ctx, cancel := context.WithCancelCause(context.Background())
+			t.Cleanup(func() { cancel(errors.New("test finished")) })
+			run := &servingRun{client: &http.Client{Timeout: 5 * time.Second}, endpoint: "http://" + ln.Addr().String(), cancel: func() { cancel(errors.New("explicit run cancellation")) }, result: make(chan int, 1), trail: trail}
+			var warning beforeReadyWriter
+			warningEntered, releaseWarning := make(chan struct{}), make(chan struct{})
+			warning.before = func() { close(warningEntered); <-releaseWarning }
+			var removed []string
+			p := Process{Unsetenv: func(key string) error { removed = append(removed, key); return nil }, Version: testVersion, Dir: dir, Now: testNow, Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(fd uintptr) (net.Listener, error) { run.fds = append(run.fds, fd); return ln, nil }, Banner: emptyBanner, MCP: trail.server, Telemetry: trail.writer, Rand: testWidgetRand(), Stdout: &run.stdout, Stderr: &warning}
+			go func() { run.result <- Run(ctx, p) }()
+			select {
+			case <-warningEntered:
+			case code := <-run.result:
+				t.Fatalf("Run returned before warning: %d", code)
+			case <-time.After(5 * time.Second):
+				t.Fatal("warning did not arrive")
+			}
+			assertNoNotification(t, notify)
+			close(releaseWarning)
+			waitReady(t, notify)
+			want := []servedWidget{{"wgt_first", "first", 2, "active"}, {"wgt_second", "second", 3, "paused"}}
+			for i := 2; i < total && i < paging.DefaultLimit; i++ {
+				want = append(want, servedWidget{fmt.Sprintf("wgt_extra_%d", i), fmt.Sprintf("extra-%d", i), i, "active"})
+			}
+			for range 2 {
+				if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
+					t.Fatalf("widgets=%+v want=%+v", got, want)
+				}
+			}
+			if err = trail.writer.Flush(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			events := trail.capture.Events()
+			if len(events) < 2 || events[0].Name != "service.started" || events[1].Name != "request.started" {
+				t.Fatalf("events before first request=%+v", events)
+			}
+			assertNoNotification(t, notify)
+			run.stop(t)
+			if warning.calls != 1 || warning.String() != expectedWarning.String() || run.stdout.Len() != 0 || trail.stderr.Len() != 0 {
+				t.Fatalf("warning calls=%d warning=%q expected=%q stdout=%q telemetry=%q", warning.calls, warning.String(), expectedWarning.String(), run.stdout.String(), trail.stderr.String())
+			}
+			if err = db.Status(context.Background(), cfg, &after); err != nil {
+				t.Fatal(err)
+			}
+			if before.String() != after.String() {
+				t.Fatalf("migration status changed: before=%q after=%q", before.String(), after.String())
+			}
+		})
 	}
 }
 
