@@ -46,8 +46,8 @@ its templates under `assets/`, and the design is the record.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
-`go.sum`, the migrations under `migrations/` (`0001_runs.sql` and
-`0002_rows.sql`), which the root package embeds, and everything under `etc/`
+`go.sum`, the migrations under `migrations/` (`0001_runs.sql`,
+`0002_rows.sql` and `0003_list_indexes.sql`), which the root package embeds, and everything under `etc/`
 (`etc/manifest.toml` and the nginx fragment `etc/nginx.conf`). The delivery
 that created scrapes seeded `go.mod` and `go.sum` on appkit; the build run
 owns them from then on and changes them as design says. It never writes
@@ -101,9 +101,9 @@ a service icon. The build run never writes it. `devctl build` packs it beside
   one requirement below, set by the delivery that created scrapes; the
   build run sets any other and its `go.sum` lines, and moves to another
   release only when this file names one:
-  - appkit `v0.23.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.23.0`: a release that
-    exports the `db` and `version` packages and whose `page.Banner` carries
+  - appkit `v0.25.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.25.0`: a release that
+    exports the `db`, `paging` and `version` packages and whose `page.Banner` carries
     the trail, the home link and the tools flag the templates use, with
     `Release` and `Commit`. See Adopting appkit below. It and the modules it
     pulls in are scrapes' only dependencies.
@@ -121,10 +121,10 @@ other external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.23.0`, fetched
+appkit is required only at a published release, here `v0.25.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); it is set with
-`go get github.com/ikigenba/ikigenba/appkit@v0.23.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.25.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
