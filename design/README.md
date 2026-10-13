@@ -108,6 +108,11 @@ design/
 - Every app has an `about` page and, when it has MCP tools, a `tools` page;
   both are reached from the banner's page menu, not from a card on the
   landing page.
+- A landing or detail page that lists shows the first page only. When more
+  entries remain, a `p#next` follows the list naming the tool to call and
+  the `page` value to pass, the opaque token the tool's own `next` would
+  carry; it has no link and the page has no navigation. scrapes-run.html is
+  the worked example. Whether pages ever page themselves is deferred.
 - Every page ends with the feedback script (`ikigenba/feedback.js`), then the
   lab toolbar script (`ikigenba/lab.js`).
 
@@ -447,9 +452,9 @@ for Minnesota and Wisconsin, with made-up carriers.
   When done, `section#rows` with `table#row-list` of Source ID / Name / City
   / State / County, the first page in source id order,
   `tr[data-row=<source_id>]`, each id linking to its row's page; then, when
-  more follow, `p#next` naming the `rows` call and the `page` to pass, with
-  no link. States: running (`div#running.alert.quiet`, "Running", a Reload
-  button, no rows), failed (`div#failure.alert` of kind err, "The run
+  more follow, `p#next` naming the `rows` call, the run, and the `page`
+  token to pass (`6yGAPAqiIKZP1wGaUvHJ`), with no link. States: running
+  (`div#running.alert.quiet`, "Running", a Reload button, no rows), failed (`div#failure.alert` of kind err, "The run
   failed", the reason's sentence chosen from `source`, `interrupted` or
   `store`, and a line that a failed run keeps no rows), done with no rows
   (`div#no-rows.empty`). An unknown id or a pruned one is the not-found
