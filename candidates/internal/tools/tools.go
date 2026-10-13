@@ -10,14 +10,12 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
-
-// PageSize is the number of entries in one result page.
-const PageSize = 25
 
 // Tool descriptions and refusal sentences are public copy.
 const (
@@ -35,11 +33,10 @@ const (
 	RefuseUnavailable  string = "The service is unavailable."
 )
 
-// Config supplies the engine, database and query clock.
+// Config supplies the engine and database.
 type Config struct {
 	Passes *passes.Engine
 	Store  *store.Store
-	Now    func() time.Time
 }
 
 // Entry describes a tool for the tools page.
@@ -96,6 +93,10 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 // Register installs the seven candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
 	add(srv, "shortlist", DescribeShortlist, mcp.Read, func(ctx context.Context, _ identity.Caller, a ShortlistArgs) mcp.Result {
+		z, key, id, err := scorePosition(a.Page, a.Limit)
+		if err != nil {
+			return mcp.ErrorResult(err.Error())
+		}
 		f := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue, Class: a.Class, Cargo: a.Cargo}
 		if a.MaxMinutes != nil {
 			f.MaxMinutes = int64(*a.MaxMinutes)
@@ -103,34 +104,48 @@ func Register(srv *mcp.Server, cfg Config) {
 		if a.MinRevenue != nil {
 			f.MinRevenue = int64(*a.MinRevenue)
 		}
-		rows, err := cfg.Store.Shortlist(ctx, f, int64(PageSize)*int64(a.Page), PageSize+1)
+		rows, err := cfg.Store.Shortlist(ctx, f, key, id, z+1)
 		if err != nil {
 			return failure(err)
 		}
-		out := ShortlistPage{Shortlist: []ShortlistEntry{}, Next: next(a.Page, len(rows))}
+		out := ShortlistPage{Shortlist: []ShortlistEntry{}}
 		for i, e := range rows {
-			if i == PageSize {
+			if i == z {
 				break
 			}
 			minutes := int64(0)
 			if e.Assessment.Minutes != nil {
 				minutes = *e.Assessment.Minutes
 			}
-			out.Shortlist = append(out.Shortlist, ShortlistEntry{candidateOf(e.Candidate), minutes, e.Assessment.Low, e.Assessment.High, e.Assessment.Confidence, e.Effective, scoring.Point(e.Assessment.Low, e.Assessment.High), int64(math.Round(e.Score))})
+			out.Shortlist = append(out.Shortlist, ShortlistEntry{candidateOf(e.Candidate), minutes, e.Assessment.Low, e.Assessment.High, e.Assessment.Confidence, e.Assessment.Effective, scoring.Point(e.Assessment.Low, e.Assessment.High), int64(math.Round(e.Assessment.Score))})
+		}
+		if len(rows) > z {
+			last := rows[z-1]
+			token := paging.Token{Tool: "shortlist"}.Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+			out.Next = &token
 		}
 		return answer(out)
 	})
 	add(srv, "candidates", DescribeCandidates, mcp.Read, func(ctx context.Context, _ identity.Caller, a CandidatesArgs) mcp.Result {
-		rows, err := cfg.Store.ListCandidates(ctx, store.CandidateFilter{Name: a.Name, Zip: a.Zip, Phone: a.Phone}, int64(PageSize)*int64(a.Page), PageSize+1)
+		z, key, id, err := timePosition("candidates", a.Page, a.Limit)
+		if err != nil {
+			return mcp.ErrorResult(err.Error())
+		}
+		rows, err := cfg.Store.ListCandidates(ctx, store.CandidateFilter{Name: a.Name, Zip: a.Zip, Phone: a.Phone}, key, id, z+1)
 		if err != nil {
 			return failure(err)
 		}
-		out := CandidateList{Candidates: []Candidate{}, Next: next(a.Page, len(rows))}
+		out := CandidateList{Candidates: []Candidate{}}
 		for i, c := range rows {
-			if i == PageSize {
+			if i == z {
 				break
 			}
 			out.Candidates = append(out.Candidates, candidateOf(c))
+		}
+		if len(rows) > z {
+			last := rows[z-1]
+			token := paging.Token{Tool: "candidates"}.Encode(stamp(last.Created), last.ID)
+			out.Next = &token
 		}
 		return answer(out)
 	})
@@ -141,16 +156,25 @@ func Register(srv *mcp.Server, cfg Config) {
 		return detail(ctx, cfg, a.Candidate)
 	})
 	add(srv, "passes", DescribePasses, mcp.Read, func(ctx context.Context, _ identity.Caller, a PassesArgs) mcp.Result {
-		rows, err := cfg.Store.ListPasses(ctx, int64(PageSize)*int64(a.Page), PageSize+1)
+		z, key, id, err := timePosition("passes", a.Page, a.Limit)
+		if err != nil {
+			return mcp.ErrorResult(err.Error())
+		}
+		rows, err := cfg.Store.ListPasses(ctx, key, id, z+1)
 		if err != nil {
 			return failure(err)
 		}
-		out := PassList{Passes: []passes.Record{}, Next: next(a.Page, len(rows))}
+		out := PassList{Passes: []passes.Record{}}
 		for i, p := range rows {
-			if i == PageSize {
+			if i == z {
 				break
 			}
 			out.Passes = append(out.Passes, passes.RecordOf(p))
+		}
+		if len(rows) > z {
+			last := rows[z-1]
+			token := paging.Token{Tool: "passes"}.Encode(stamp(last.Started), last.ID)
+			out.Next = &token
 		}
 		return answer(out)
 	})
@@ -201,12 +225,28 @@ func Register(srv *mcp.Server, cfg Config) {
 		return answer(out)
 	})
 }
-func next(page uint32, n int) *int64 {
-	if n <= PageSize {
-		return nil
+func scorePosition(page *string, limit *int) (int, int64, string, error) {
+	z, err := paging.Window(limit)
+	if err != nil {
+		return 0, 0, "", err
 	}
-	v := int64(page) + 1
-	return &v
+	var key int64
+	var id string
+	if page != nil && *page != "" {
+		err = (paging.Token{Tool: "shortlist"}).Decode(*page, &key, &id)
+	}
+	return z, key, id, err
+}
+func timePosition(tool string, page *string, limit *int) (int, string, string, error) {
+	z, err := paging.Window(limit)
+	if err != nil {
+		return 0, "", "", err
+	}
+	var key, id string
+	if page != nil && *page != "" {
+		err = (paging.Token{Tool: tool}).Decode(*page, &key, &id)
+	}
+	return z, key, id, err
 }
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 func date(t time.Time) string {
@@ -235,14 +275,17 @@ func linkOf(l store.Link) Link {
 func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
-func assessmentOf(a store.Assessment, now time.Time) Assessment {
+func assessmentOf(a store.Assessment) Assessment {
 	ex := []Exclusion{}
 	for _, e := range a.Exclusions {
 		ex = append(ex, Exclusion{e.Reason, e.Detail})
 	}
-	effective := scoring.Effective(a.Confidence, a.Filed, now)
+	freshness := float64(0)
+	if a.Confidence > 0 {
+		freshness = math.Max(0, math.Min(1, a.Effective/a.Confidence))
+	}
 	point := scoring.Point(a.Low, a.High)
-	return Assessment{a.Fleet, a.Minutes, a.Low, a.High, a.Confidence, date(a.Filed), scoring.Freshness(a.Filed, now), effective, point, int64(math.Round(scoring.Score(point, effective))), int64(math.Round(a.Base)), a.Excluded, ex, a.Rules, stamp(a.Scored)}
+	return Assessment{a.Fleet, a.Minutes, a.Low, a.High, a.Confidence, date(a.Filed), freshness, a.Effective, point, int64(math.Round(a.Score)), int64(math.Round(a.Base)), a.Excluded, ex, a.Rules, stamp(a.Scored)}
 }
 func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	c, err := cfg.Store.GetCandidate(ctx, id)
@@ -258,10 +301,9 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		out.Rulings = append(out.Rulings, rulingOf(r))
 	}
 	if c.Status == store.StatusActive {
-		now := cfg.Now()
 		a, err := cfg.Store.GetAssessment(ctx, id)
 		if err == nil {
-			v := assessmentOf(a, now)
+			v := assessmentOf(a)
 			out.Assessment = &v
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return failure(err)

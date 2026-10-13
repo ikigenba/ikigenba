@@ -31,7 +31,7 @@ type column struct{ name, field string }
 var candidateColumns = columns("id:ID status:Status merged_into:MergedInto name:Name names:Names street:Street city:City state:State zip:Zip county:County phone:Phone email:Email people:People class:Class cargo:Cargo created:Created updated:Updated")
 var linkColumns = columns("candidate:Candidate scraper:Scraper source_id:SourceID run:Run digest:Digest reading:Reading reason:Reason confidence:Confidence first_seen:FirstSeen last_seen:LastSeen gone:Gone")
 var estimateColumns = columns("candidate:Candidate source:Source low:Low high:High confidence:Confidence facts:Facts filed:Filed formula:Formula")
-var assessmentColumns = columns("candidate:Candidate fleet:Fleet low:Low high:High confidence:Confidence filed:Filed minutes:Minutes exclusions:Exclusions excluded:Excluded base:Base rules:Rules scored:Scored")
+var assessmentColumns = columns("candidate:Candidate fleet:Fleet low:Low high:High confidence:Confidence filed:Filed minutes:Minutes exclusions:Exclusions excluded:Excluded base:Base effective:Effective score:Score score_key:ScoreKey rules:Rules scored:Scored")
 var rulingColumns = columns("kind:Kind candidate:Candidate other:Other keys:Keys why:Why user_id:UserID user_email:UserEmail at:At")
 var passColumns = columns("id:ID trigger:Trigger status:Status reason:Reason started:Started finished:Finished rows:Rows new:New changed:Changed unchanged:Unchanged gone:Gone created:Created linked:Linked rescored:Rescored unranged:Unranged user_id:UserID user_email:UserEmail request_id:RequestID delivery:Delivery")
 
@@ -81,6 +81,9 @@ func readRecords[T any](ctx context.Context, tx *sql.Tx, table string, cs []colu
 var timeType = reflect.TypeFor[time.Time]()
 
 func decodeValue(v reflect.Value, x any) error {
+	if x == nil && (v.Kind() == reflect.Float64 || v.Kind() == reflect.Int64) {
+		return nil
+	}
 	if v.Type() == timeType {
 		s, ok := x.(string)
 		if !ok {
@@ -275,7 +278,7 @@ func save(ctx context.Context, tx *sql.Tx, old, r *records) error {
 		if reflect.DeepEqual(old.candidates[id], c) {
 			continue
 		}
-		if err := insertRecord(ctx, tx, "candidates", candidateColumns, c, map[string]any{"names_lower": strings.ToLower(strings.Join(c.Names, "\n"))}); err != nil {
+		if err := putCandidate(ctx, tx, c); err != nil {
 			return err
 		}
 	}

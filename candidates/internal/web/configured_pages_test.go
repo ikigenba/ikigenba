@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
 )
 
-// R-4KND-J255 R-5MG9-DY4O R-7JYS-YLTJ
+// R-NWYH-IOWD R-5MG9-DY4O R-5JG5-M6IE
 func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	ctx := context.Background()
@@ -29,7 +29,7 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 	}
 	cfg.ServicesPath = path
 	hi := int64(24000000)
-	reading := sources.Reading{Name: "Chosen carrier", Names: []string{"Chosen carrier"}, Street: "Chosen street", City: "Chosen city", State: "MN", Zip: "55072", Phone: "Chosen phone", Email: "Chosen email", People: []sources.Person{{Name: "Chosen person", Role: "owner"}}, Class: sources.ClassPrivate, Cargo: []string{"chosen-cargo"}, Fleet: true, Filed: cfg.Now(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: cfg.Now(), Formula: 1, Facts: map[string]json.RawMessage{"chosen": json.RawMessage(` [ 1, 2 ] `)}}}
+	reading := sources.Reading{Name: "Chosen carrier", Names: []string{"Chosen carrier"}, Street: "Chosen street", City: "Chosen city", State: "MN", Zip: "55072", Phone: "Chosen phone", Email: "Chosen email", People: []sources.Person{{Name: "Chosen person", Role: "owner"}}, Class: sources.ClassPrivate, Cargo: []string{"chosen-cargo"}, Fleet: true, Filed: fixtureTime(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1, Facts: map[string]json.RawMessage{"chosen": json.RawMessage(` [ 1, 2 ] `)}}}
 	if err := cfg.Store.ReplaceZipDrive(ctx, candidates.ZipDrive()); err != nil {
 		t.Fatal(err)
 	}
@@ -43,8 +43,6 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 		users = append(users, u)
 		return page.Banner{Service: pages.ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
-	calls := 0
-	cfg.Now = func() time.Time { calls++; return time.Date(2032, 10, 6, 9, 0, 7, 0, time.UTC) }
 	h := web.Handler(cfg)
 	for _, scored := range []bool{false, true} {
 		if scored {
@@ -68,7 +66,7 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want.Assessment = &pages.AssessmentView{Fleet: true, Minutes: "31", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.70", Filed: "2026-10-05", FiledText: "2026-10-05", Freshness: "0.00", Effective: "0.00", Stale: true, Point: "$19,200,000", Base: "$13,440,000", Score: "$0", Exclusions: []pages.ExclusionRow{}, Rules: int64(sources.Rules), Scored: a.Scored.UTC().Format(time.RFC3339), ScoredText: a.Scored.UTC().Format(pages.SecondLayout)}
+			want.Assessment = &pages.AssessmentView{Fleet: true, Minutes: "31", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.70", Filed: "2026-10-05", FiledText: "2026-10-05", Freshness: "1.00", Effective: "0.70", Stale: false, Point: "$19,200,000", Base: "$13,440,000", Score: "$13,440,000", Exclusions: []pages.ExclusionRow{}, Rules: int64(sources.Rules), Scored: a.Scored.UTC().Format(time.RFC3339), ScoredText: a.Scored.UTC().Format(pages.SecondLayout)}
 		}
 		set, err := page.Templates().ParseFS(candidates.Assets(), "*.html")
 		if err != nil {
@@ -78,7 +76,6 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 		if err := set.ExecuteTemplate(&expected, "candidate", want); err != nil {
 			t.Fatal(err)
 		}
-		calls = 0
 		users = nil
 		r := httptest.NewRequest("GET", "https://candidates.example.test/candidates/"+id, nil)
 		r.Header.Set("X-User-Id", "reader")
@@ -87,9 +84,6 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 		h.ServeHTTP(w, r)
 		if w.Code != http.StatusOK || w.Body.String() != expected.String() {
 			t.Fatalf("scored=%v status=%d body equal=%v", scored, w.Code, w.Body.String() == expected.String())
-		}
-		if calls != 1 {
-			t.Fatalf("request clock called %d times", calls)
 		}
 		if len(users) != 1 || users[0] != (page.User{Email: "reader@example.test", ProfileURL: "https://chosen-account.example.test/", LogoutURL: "https://chosen-account.example.test/logout"}) {
 			t.Fatal(users)

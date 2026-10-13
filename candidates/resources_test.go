@@ -23,12 +23,12 @@ func TestEtc(t *testing.T) {
 	checkFiles(t, candidates.Etc, []string{"manifest.toml", "nginx.conf"})
 }
 
-// R-0TXV-YYNB
+// R-A1UN-LKYU
 func TestMigrations(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Migrations, []string{
 		"0001_candidates.sql", "0002_links.sql", "0003_estimates.sql", "0004_assessments.sql",
-		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql",
+		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql",
 	})
 }
 
@@ -101,5 +101,27 @@ func TestZipDrive(t *testing.T) {
 	}
 	if !maps.Equal(second, candidates.ZipDrive()) {
 		t.Fatal("modification changed a subsequently returned map")
+	}
+}
+
+// R-YFY0-FLH1
+func TestWindowMigrationBytes(t *testing.T) {
+	want := "ALTER TABLE assessments ADD COLUMN effective REAL;\n" +
+		"ALTER TABLE assessments ADD COLUMN score REAL;\n" +
+		"ALTER TABLE assessments ADD COLUMN score_key INTEGER;\n" +
+		"CREATE INDEX assessments_score ON assessments(score_key DESC,candidate);\n" +
+		"CREATE TABLE candidate_cargo (candidate TEXT NOT NULL, cargo TEXT NOT NULL, PRIMARY KEY(candidate,cargo)) WITHOUT ROWID;\n" +
+		"CREATE INDEX candidate_cargo_cargo ON candidate_cargo(cargo,candidate);\n" +
+		"INSERT INTO candidate_cargo(candidate,cargo) SELECT DISTINCT candidates.id, j.value FROM candidates, json_each(candidates.cargo) AS j WHERE j.type = 'text';\n" +
+		"CREATE INDEX links_phone ON links(phone_key);\n" +
+		"CREATE INDEX candidates_window ON candidates(status,created,id);\n" +
+		"CREATE INDEX passes_window ON passes(started,id);\n" +
+		"CREATE INDEX passes_trigger ON passes(\"trigger\");\n"
+	got, err := fs.ReadFile(candidates.Migrations(), "0008_windows.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Fatal("window migration differs")
 	}
 }

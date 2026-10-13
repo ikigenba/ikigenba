@@ -64,7 +64,7 @@ type ShortlistEntry struct {
 // ShortlistPage is a tool answer value.
 type ShortlistPage struct {
 	Shortlist []ShortlistEntry `json:"shortlist"`
-	Next      *int64           `json:"next,omitempty"`
+	Next      *string          `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -79,7 +79,7 @@ func (v ShortlistPage) MarshalJSON() ([]byte, error) {
 // CandidateList is a tool answer value.
 type CandidateList struct {
 	Candidates []Candidate `json:"candidates"`
-	Next       *int64      `json:"next,omitempty"`
+	Next       *string     `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -94,7 +94,7 @@ func (v CandidateList) MarshalJSON() ([]byte, error) {
 // PassList is a tool answer value.
 type PassList struct {
 	Passes []passes.Record `json:"passes"`
-	Next   *int64          `json:"next,omitempty"`
+	Next   *string         `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -275,15 +275,17 @@ type ShortlistArgs struct {
 	MinRevenue *uint32 `json:"min_revenue"`
 	Class      string  `json:"class"`
 	Cargo      string  `json:"cargo"`
-	Page       uint32  `json:"page"`
+	Page       *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit      *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // CandidatesArgs holds a tool call's arguments.
 type CandidatesArgs struct {
-	Name  string `json:"name"`
-	Zip   string `json:"zip"`
-	Phone string `json:"phone"`
-	Page  uint32 `json:"page"`
+	Name  string  `json:"name"`
+	Zip   string  `json:"zip"`
+	Phone string  `json:"phone"`
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // CandidateArgs holds a tool call's arguments.
@@ -293,7 +295,8 @@ type CandidateArgs struct {
 
 // PassesArgs holds a tool call's arguments.
 type PassesArgs struct {
-	Page uint32 `json:"page"`
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // PassArgs holds a tool call's arguments.

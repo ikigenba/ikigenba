@@ -15,7 +15,7 @@ var assets embed.FS
 //go:embed etc/manifest.toml etc/nginx.conf
 var etc embed.FS
 
-//go:embed migrations/0001_candidates.sql migrations/0002_links.sql migrations/0003_estimates.sql migrations/0004_assessments.sql migrations/0005_decisions.sql migrations/0006_passes.sql migrations/0007_zip_drive.sql
+//go:embed migrations/0001_candidates.sql migrations/0002_links.sql migrations/0003_estimates.sql migrations/0004_assessments.sql migrations/0005_decisions.sql migrations/0006_passes.sql migrations/0007_zip_drive.sql migrations/0008_windows.sql
 var migrations embed.FS
 
 //go:embed share/zip_drive.csv

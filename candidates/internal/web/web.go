@@ -4,7 +4,6 @@ package web
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -26,7 +25,6 @@ type Config struct {
 	Passes       *passes.Engine
 	Telemetry    *telemetry.Writer
 	Events       *events.Emitter
-	Now          func() time.Time
 }
 
 // Handler builds the service HTTP handler.
@@ -35,8 +33,8 @@ func Handler(cfg Config) http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	tools.Register(cfg.MCP, tools.Config{Passes: cfg.Passes, Store: cfg.Store, Now: cfg.Now})
-	ph := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Now: cfg.Now})
+	tools.Register(cfg.MCP, tools.Config{Passes: cfg.Passes, Store: cfg.Store})
+	ph := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store})
 	static := page.Static()
 	gated := identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

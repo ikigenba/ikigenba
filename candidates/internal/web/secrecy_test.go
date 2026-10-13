@@ -194,7 +194,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-MQOB-QYCO R-MRW8-4Q3D R-MT44-IHU2
+// R-67U5-9LCA R-6921-ND2Z R-6A9Y-14TO
 func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	markers, phone := secrecyMarkers(t)
@@ -233,7 +233,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 		emitter.Shutdown(context.Background())
 		writer.Shutdown(context.Background(), "fixture-stop")
 	}()
-	cfg := web.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: writer}), Store: st, Passes: engine, Telemetry: writer, Events: emitter, Now: now}
+	cfg := web.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: writer}), Store: st, Passes: engine, Telemetry: writer, Events: emitter}
 	handler := web.Handler(cfg)
 	srv := httptest.NewServer(handler)
 	defer srv.Close()

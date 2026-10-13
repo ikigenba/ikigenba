@@ -21,15 +21,16 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		call func() (any, error)
 	}{
 		{"GetPass", func() (any, error) { return f.s.GetPass(ctx, pass.ID) }},
-		{"ListPasses", func() (any, error) { return f.s.ListPasses(ctx, 0, 100) }},
+		{"FindDelivered", func() (any, error) { return f.s.FindDelivered(ctx, pass.Delivery, pass.Trigger) }},
+		{"ListPasses", func() (any, error) { return f.s.ListPasses(ctx, "", "", 100) }},
 		{"RunningPasses", func() (any, error) { return f.s.RunningPasses(ctx) }},
 		{"GetCandidate", func() (any, error) { return f.s.GetCandidate(ctx, id) }},
 		{"Links", func() (any, error) { return f.s.Links(ctx, id) }},
 		{"Estimates", func() (any, error) { return f.s.Estimates(ctx, id) }},
 		{"GetAssessment", func() (any, error) { return f.s.GetAssessment(ctx, id) }},
 		{"Rulings", func() (any, error) { return f.s.Rulings(ctx, id) }},
-		{"ListCandidates", func() (any, error) { return f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 100) }},
-		{"Shortlist", func() (any, error) { return f.s.Shortlist(ctx, shortlist, 0, 100) }},
+		{"ListCandidates", func() (any, error) { return f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100) }},
+		{"Shortlist", func() (any, error) { return f.s.Shortlist(ctx, shortlist, 0, "", 100) }},
 		{"ZipMinutes", func() (any, error) { return f.s.ZipMinutes(ctx, "55072") }},
 	}
 	before := make([]any, len(reads))

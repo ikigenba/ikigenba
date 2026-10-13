@@ -2,8 +2,6 @@
 package pages
 
 import (
-	"time"
-
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -23,9 +21,6 @@ const SecondLayout = "2006-01-02 15:04:05 UTC"
 // DateLayout supplies date layout page data.
 const DateLayout = "2006-01-02"
 
-// ShortlistShown supplies shortlist shown page data.
-const ShortlistShown = 30
-
 // ToolsLevel supplies tools level page data.
 var ToolsLevel = page.Level{Name: "tools", URL: "/tools"}
 
@@ -38,16 +33,17 @@ type Config struct {
 	Pages        *Set
 	ServicesPath string
 	Store        *store.Store
-	Now          func() time.Time
 }
 
 // LandingData supplies landing data page data.
 type LandingData struct {
-	Banner     page.Banner
-	MaxMinutes int64
-	MinRevenue string
-	Shortlist  []ShortlistRow
-	Passes     []PassRow
+	Banner        page.Banner
+	MaxMinutes    int64
+	MinRevenue    string
+	Shortlist     []ShortlistRow
+	ShortlistNext string
+	Passes        []PassRow
+	PassesNext    string
 }
 
 // ShortlistRow supplies shortlist row page data.

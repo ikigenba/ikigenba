@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -16,13 +17,18 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
+
+func fixtureTime() time.Time { return time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC) }
 
 type sequence struct{ n uint64 }
 
@@ -59,7 +65,7 @@ func pageFixture(t *testing.T) (Config, *db.DB) {
 	}
 	return Config{func(u page.User) page.Banner {
 		return page.Banner{Service: ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
-	}, set, "", s, clock}, d
+	}, set, "", s}, d
 }
 func requestPage(cfg Config, method, path, user string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "https://candidates.example.test"+path, nil)
@@ -103,7 +109,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-2GH2-BY8N R-2HOY-PPZC R-ISRR-T9KH R-51PY-VUIV
+// R-2GH2-BY8N R-58H2-68U5 R-5C4R-BK28 R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -133,7 +139,7 @@ func TestTemplateSet(t *testing.T) {
 					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "pass", data); err != nil {
 						t.Fatal(err)
 					}
-					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{Shortlist: []ShortlistRow{{Name: "name", City: "city", State: "MN", High: "value"}, {}}, Passes: []PassRow{{Status: status, Reason: reason, Trigger: trigger, Finished: finished}}}); err != nil {
+					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{ShortlistNext: finished, PassesNext: finished, Shortlist: []ShortlistRow{{Name: "name", City: "city", State: "MN", High: "value"}, {}}, Passes: []PassRow{{Status: status, Reason: reason, Trigger: trigger, Finished: finished}}}); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -150,7 +156,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-52XV-9M9K R-8LVJ-VXKV R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-5NO5-RPVD R-5OW2-5HM2 R-5Q3Y-J9CR R-5RBU-X13G R-5UZK-2CBJ
+// R-5DCN-PBSX R-5FSG-GVAB R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-5NO5-RPVD R-5OW2-5HM2 R-5Q3Y-J9CR R-5RBU-X13G R-5UZK-2CBJ
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -212,12 +218,12 @@ func TestInvalidAndMissingPaths(t *testing.T) {
 	}
 }
 
-// R-7JYS-YLTJ R-7L6P-CDK8 R-8N3G-9PBK R-5SJR-ASU5 R-5TRN-OKKU
+// R-5JG5-M6IE R-5KO1-ZY93 R-8N3G-9PBK R-5SJR-ASU5 R-5TRN-OKKU
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
 	hi := int64(24000000)
-	obs := []store.Observation{{Scraper: "fixture", SourceID: "row/a", Digest: "digest", Reading: sources.Reading{Name: "unique-business", Names: []string{"unique-business"}, Street: "unique-street", City: "unique-city", State: "MN", Zip: "55072", Phone: "unique-phone", Email: "unique-email", People: []sources.Person{{Name: "unique-person", Role: "owner"}}, Class: sources.ClassPrivate, Fleet: true, Filed: cfg.Now(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: cfg.Now(), Formula: 1, Facts: map[string]json.RawMessage{"z": json.RawMessage(`1`)}}}}}
+	obs := []store.Observation{{Scraper: "fixture", SourceID: "row/a", Digest: "digest", Reading: sources.Reading{Name: "unique-business", Names: []string{"unique-business"}, Street: "unique-street", City: "unique-city", State: "MN", Zip: "55072", Phone: "unique-phone", Email: "unique-email", People: []sources.Person{{Name: "unique-person", Role: "owner"}}, Class: sources.ClassPrivate, Fleet: true, Filed: fixtureTime(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1, Facts: map[string]json.RawMessage{"z": json.RawMessage(`1`)}}}}}
 	_, ids, err := cfg.Store.Attach(ctx, "run_fixture", false, obs)
 	if err != nil || len(ids) != 1 {
 		t.Fatal(ids, err)
@@ -252,7 +258,7 @@ func TestStoredPages(t *testing.T) {
 	}
 	b := bannerFor(cfg)
 	b.Trail = []page.Level{{Name: id, URL: "/candidates/" + id}}
-	av := assessmentView(a, cfg.Now())
+	av := assessmentView(a)
 	cd := CandidateData{Banner: b, Candidate: candidateView(c), Assessment: &av, Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}}
 	for _, e := range est {
 		cd.Estimates = append(cd.Estimates, estimateView(e))
@@ -263,12 +269,12 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, cd)
 	b.Trail = []page.Level{{Name: p.ID, URL: "/passes/" + p.ID}}
 	comparePage(t, cfg, "/passes/"+p.ID, "pass", 200, PassData{b, passView(p, "")})
-	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, ShortlistShown)
+	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, "", paging.DefaultLimit+1)
 	if err != nil || len(ranked) != 1 {
 		t.Fatal(ranked, err)
 	}
 	b.Trail = nil
-	comparePage(t, cfg, "/", "landing", 200, LandingData{b, scoring.DefaultMaxMinutes, dollars(scoring.DefaultMinRevenue), []ShortlistRow{shortlistRow(ranked[0], 0)}, []PassRow{passRow(p)}})
+	comparePage(t, cfg, "/", "landing", 200, LandingData{b, scoring.DefaultMaxMinutes, dollars(scoring.DefaultMinRevenue), []ShortlistRow{shortlistRow(ranked[0], 0)}, "", []PassRow{passRow(p)}, ""})
 	landing := requestPage(cfg, "GET", "/", "reader").Body.String()
 	for _, value := range []string{c.Phone, c.Email} {
 		if strings.Contains(landing, value) {
@@ -312,56 +318,100 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, CandidateData{Banner: b, Candidate: candidateView(merged), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{rulingView(r, id)}})
 }
 
-// R-8LVJ-VXKV: the shortlist cap and complete retained-pass list.
-func TestLandingBoundedShortlistAndAllPasses(t *testing.T) {
-	cfg, _ := pageFixture(t)
-	ctx := context.Background()
-	hi := int64(24000000)
-	for i := 0; i < 31; i++ {
-		key := strconv.Itoa(i)
-		reading := sources.Reading{Name: "Business " + key, Names: []string{"Business " + key}, NameKey: "business" + key, Zip: "55072", Fleet: true, Filed: cfg.Now(), Class: sources.ClassPrivate, Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: cfg.Now(), Formula: 1}}
-		_, ids, err := cfg.Store.Attach(ctx, "run_fixture", false, []store.Observation{{Scraper: "fixture", SourceID: key, Digest: key, Reading: reading}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := cfg.Store.Rescore(ctx, ids); err != nil {
-			t.Fatal(err)
-		}
+// R-5FSG-GVAB: independent windows and continuations at their boundaries.
+func TestLandingWindows(t *testing.T) {
+	for _, counts := range [][2]int{{0, 0}, {25, 0}, {26, 0}, {0, 30}, {26, 30}} {
+		t.Run(strconv.Itoa(counts[0])+"-"+strconv.Itoa(counts[1]), func(t *testing.T) {
+			cfg, _ := pageFixture(t)
+			ctx := context.Background()
+			hi := int64(24000000)
+			for i := 0; i < counts[0]; i++ {
+				key := strconv.Itoa(i)
+				reading := sources.Reading{Name: "Business " + key, Names: []string{"Business " + key}, NameKey: "business" + key, Zip: "55072", Fleet: true, Filed: fixtureTime(), Class: sources.ClassPrivate, Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1}}
+				_, ids, err := cfg.Store.Attach(ctx, "run_fixture", false, []store.Observation{{Scraper: "fixture", SourceID: key, Digest: key, Reading: reading}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = cfg.Store.Rescore(ctx, ids); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for i := 0; i < counts[1]; i++ {
+				p, err := cfg.Store.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "starter"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = cfg.Store.FinishPass(ctx, p.ID, store.Counts{Rows: int64(i)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, "", paging.DefaultLimit+1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ps, err := cfg.Store.ListPasses(ctx, "", "", paging.DefaultLimit+1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := LandingData{Banner: bannerFor(cfg), MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, Passes: []PassRow{}}
+			for i, e := range ranked[:min(len(ranked), paging.DefaultLimit)] {
+				data.Shortlist = append(data.Shortlist, shortlistRow(e, i))
+			}
+			for _, p := range ps[:min(len(ps), paging.DefaultLimit)] {
+				data.Passes = append(data.Passes, passRow(p))
+			}
+			if counts[0] > paging.DefaultLimit {
+				r := ranked[paging.DefaultLimit-1]
+				data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(r.Assessment.ScoreKey, r.Candidate.ID)
+			}
+			if counts[1] > paging.DefaultLimit {
+				p := ps[paging.DefaultLimit-1]
+				data.PassesNext = (paging.Token{Tool: "passes"}).Encode(p.Started.UTC().Format(time.RFC3339), p.ID)
+			}
+			writer := telemetry.New(telemetry.Config{Service: ServiceName, Sink: &telemetry.Capture{}, Now: fixtureTime, Rand: &sequence{}, Stderr: io.Discard})
+			defer writer.Shutdown(ctx, "fixture-stop")
+			server := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Telemetry: writer})
+			tools.Register(server, tools.Config{Store: cfg.Store})
+			endpoint := httptest.NewServer(identity.Require(server))
+			defer endpoint.Close()
+			client := mcp.NewClient(mcp.ClientConfig{Endpoint: endpoint.URL})
+			for _, tool := range []struct{ name, next string }{{"shortlist", data.ShortlistNext}, {"passes", data.PassesNext}} {
+				result, err := client.CallTool(ctx, identity.Caller{UserID: "reader"}, tool.name, json.RawMessage(`{}`))
+				if err != nil || result.IsError() {
+					t.Fatal(tool.name, result, err)
+				}
+				encoded, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var answer struct {
+					StructuredContent struct {
+						Next string `json:"next"`
+					} `json:"structuredContent"`
+				}
+				if err = json.Unmarshal(encoded, &answer); err != nil {
+					t.Fatal(err)
+				}
+				if answer.StructuredContent.Next != tool.next {
+					t.Fatalf("%s next mismatch", tool.name)
+				}
+			}
+			comparePage(t, cfg, "/", "landing", 200, data)
+			comparePage(t, cfg, "/?page=ignored", "landing", 200, data)
+			if len(ps) > 0 {
+				removed, err := cfg.Store.PrunePasses(ctx, 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(removed) > 0 {
+					comparePage(t, cfg, "/passes/"+removed[0].ID, "notfound", 404, NotFoundData{Banner: bannerFor(cfg)})
+				}
+			}
+		})
 	}
-	for i := 0; i < 150; i++ {
-		p, err := cfg.Store.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "starter"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := cfg.Store.FinishPass(ctx, p.ID, store.Counts{Rows: int64(i)}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, 100)
-	if err != nil || len(ranked) != 31 {
-		t.Fatal(len(ranked), err)
-	}
-	ps, err := cfg.Store.ListPasses(ctx, 0, 200)
-	if err != nil || len(ps) != 150 {
-		t.Fatal(len(ps), err)
-	}
-	data := LandingData{Banner: bannerFor(cfg), MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, Passes: []PassRow{}}
-	for i, e := range ranked[:30] {
-		data.Shortlist = append(data.Shortlist, shortlistRow(e, i))
-	}
-	for _, p := range ps {
-		data.Passes = append(data.Passes, passRow(p))
-	}
-	comparePage(t, cfg, "/", "landing", 200, data)
-	// A pruned record uses exactly the ordinary unknown-page answer.
-	removed, err := cfg.Store.PrunePasses(ctx, 1)
-	if err != nil || len(removed) == 0 {
-		t.Fatal(removed, err)
-	}
-	comparePage(t, cfg, "/passes/"+removed[0].ID, "notfound", 404, NotFoundData{Banner: bannerFor(cfg)})
 }
 
-// R-7JYS-YLTJ R-8N3G-9PBK: external links use the caller's configured services file.
+// R-5JG5-M6IE R-8N3G-9PBK: external links use the caller's configured services file.
 func TestSiblingPageLinks(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")

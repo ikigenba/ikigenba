@@ -53,7 +53,18 @@ func candidateKey(ctx context.Context, tx *sql.Tx, id string) (Candidate, error)
 	return cs[0], nil
 }
 func putCandidate(ctx context.Context, tx *sql.Tx, c Candidate) error {
-	return insertRecord(ctx, tx, "candidates", candidateColumns, c, map[string]any{"names_lower": strings.ToLower(strings.Join(c.Names, "\n"))})
+	if err := insertRecord(ctx, tx, "candidates", candidateColumns, c, map[string]any{"names_lower": strings.ToLower(strings.Join(c.Names, "\n"))}); err != nil {
+		return err
+	}
+	if err := execSQL(ctx, tx, "DELETE FROM candidate_cargo WHERE candidate=?", c.ID); err != nil {
+		return err
+	}
+	for _, cargo := range c.Cargo {
+		if err := execSQL(ctx, tx, "INSERT OR IGNORE INTO candidate_cargo(candidate,cargo) VALUES (?,?)", c.ID, cargo); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func putLink(ctx context.Context, tx *sql.Tx, l Link) error {
 	return insertRecord(ctx, tx, "links", linkColumns, l, map[string]any{"name_key": l.Reading.NameKey, "state": l.Reading.State, "zip": l.Reading.Zip, "phone_key": l.Reading.PhoneKey, "domain_key": l.Reading.DomainKey})
@@ -164,7 +175,7 @@ func (s *Store) passWrite(ctx context.Context, where string, args []any, fn func
 func (s *Store) readScope(ctx context.Context, scope, id string, fn func(*records) error) error {
 	return unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
 		r := emptyRecords()
-		if scope == "pass" || scope == "passes" || scope == "running" {
+		if scope == "pass" || scope == "running" {
 			where := ""
 			args := []any{}
 			if scope == "pass" {
@@ -197,10 +208,6 @@ func (s *Store) readScope(ctx context.Context, scope, id string, fn func(*record
 		}
 		where := " WHERE id=?"
 		args := []any{id}
-		if scope == "list" || scope == "shortlist" {
-			where = " WHERE status=?"
-			args = []any{StatusActive}
-		}
 		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, where, args...)
 		if err != nil {
 			return err
@@ -209,13 +216,9 @@ func (s *Store) readScope(ctx context.Context, scope, id string, fn func(*record
 			r.candidates[c.ID] = c
 		}
 		switch scope {
-		case "links", "list":
+		case "links":
 			where = " WHERE candidate=?"
 			args = []any{id}
-			if scope == "list" {
-				where = ""
-				args = nil
-			}
 			ls, e := readRecords[Link](ctx, tx, "links", linkColumns, where, args...)
 			if e != nil {
 				return e
@@ -231,13 +234,9 @@ func (s *Store) readScope(ctx context.Context, scope, id string, fn func(*record
 			for _, v := range es {
 				r.estimates[id] = append(r.estimates[id], v.Estimate)
 			}
-		case "assessment", "shortlist":
+		case "assessment":
 			where = " WHERE candidate=?"
 			args = []any{id}
-			if scope == "shortlist" {
-				where = ""
-				args = nil
-			}
 			as, e := readRecords[Assessment](ctx, tx, "assessments", assessmentColumns, where, args...)
 			if e != nil {
 				return e

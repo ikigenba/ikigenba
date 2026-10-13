@@ -4,8 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
@@ -54,26 +56,31 @@ func Handler(cfg Config) http.Handler {
 		case path == "/":
 			b.Trail = nil
 			d := LandingData{Banner: b, MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, Passes: []PassRow{}}
-			ranked, err := cfg.Store.Shortlist(r.Context(), store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, ShortlistShown)
+			ranked, err := cfg.Store.Shortlist(r.Context(), store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, "", paging.DefaultLimit+1)
 			if err != nil {
 				fail()
 				return
 			}
+			if len(ranked) > paging.DefaultLimit {
+				ranked = ranked[:paging.DefaultLimit]
+				last := ranked[len(ranked)-1]
+				d.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+			}
 			for i, e := range ranked {
 				d.Shortlist = append(d.Shortlist, shortlistRow(e, i))
 			}
-			for offset := int64(0); ; offset += 100 {
-				list, err := cfg.Store.ListPasses(r.Context(), offset, 100)
-				if err != nil {
-					fail()
-					return
-				}
-				for _, p := range list {
-					d.Passes = append(d.Passes, passRow(p))
-				}
-				if len(list) < 100 {
-					break
-				}
+			list, err := cfg.Store.ListPasses(r.Context(), "", "", paging.DefaultLimit+1)
+			if err != nil {
+				fail()
+				return
+			}
+			if len(list) > paging.DefaultLimit {
+				list = list[:paging.DefaultLimit]
+				last := list[len(list)-1]
+				d.PassesNext = (paging.Token{Tool: "passes"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
+			for _, p := range list {
+				d.Passes = append(d.Passes, passRow(p))
 			}
 			cfg.Pages.Write(w, r, 200, "landing", d)
 		case pass:
@@ -108,10 +115,9 @@ func Handler(cfg Config) http.Handler {
 				d.Rulings = append(d.Rulings, rulingView(v, cid))
 			}
 			if c.Status != store.StatusMerged {
-				now := cfg.Now()
 				a, err := cfg.Store.GetAssessment(r.Context(), cid)
 				if err == nil {
-					v := assessmentView(a, now)
+					v := assessmentView(a)
 					d.Assessment = &v
 				} else if !errors.Is(err, store.ErrNotFound) {
 					fail()

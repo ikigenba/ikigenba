@@ -22,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -54,7 +55,6 @@ type fixture struct {
 	eng    *passes.Engine
 	client *mcp.Client
 	now    time.Time
-	calls  int
 }
 
 func newFixture(t *testing.T) *fixture { return fixtureWithScrapes(t, nil) }
@@ -103,7 +103,7 @@ func fixtureWithScrapes(t *testing.T, h http.Handler) *fixture {
 	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
 	t.Cleanup(func() { f.eng.Drain(context.Background()) })
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: w})
-	tools.Register(srv, tools.Config{Passes: f.eng, Store: f.st, Now: func() time.Time { f.calls++; return f.now }})
+	tools.Register(srv, tools.Config{f.eng, f.st})
 	host := httptest.NewServer(identity.Require(srv))
 	t.Cleanup(host.Close)
 	f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: host.URL, HTTPClient: host.Client()})
@@ -186,7 +186,8 @@ func candidateOf(c store.Candidate) tools.Candidate {
 	}
 	return tools.Candidate{ID: c.ID, Status: c.Status, MergedInto: c.MergedInto, Name: c.Name, Names: c.Names, Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, County: c.County, Phone: c.Phone, Email: c.Email, People: ps, Class: c.Class, Cargo: c.Cargo, Created: stamp(c.Created), Updated: stamp(c.Updated)}
 }
-func (f *fixture) seed(n int) []string {
+func (f *fixture) seed(n int) []string { return f.seedWithStep(n, time.Second, false) }
+func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 	f.t.Helper()
 	zip := ""
 	for z, m := range candidates.ZipDrive() {
@@ -199,8 +200,11 @@ func (f *fixture) seed(n int) []string {
 	}
 	ids := []string{}
 	for i := range n {
-		f.now = f.now.Add(time.Second)
+		f.now = f.now.Add(step)
 		high := int64(16000001 + i)
+		if tie {
+			high = 16000001
+		}
 		r := sources.Reading{Name: fmt.Sprintf("Business %02d", i), Names: []string{fmt.Sprintf("Business %02d", i), fmt.Sprintf("Trucking Alias %02d", i)}, NameKey: fmt.Sprintf("key%d", i), PhoneKey: "5551234567", DomainKey: "business.test", Street: "12 Main", City: "City", State: "MN", Zip: zip, County: "MN-001", Phone: "(555) 123-4567", Email: "mail@business.test", People: []sources.Person{{Name: "Person", Role: "Owner"}}, Class: sources.ClassForHire, Cargo: []string{"general"}, Fleet: true, Filed: f.now, Estimate: &sources.Estimate{Source: "fmcsa", Low: 10000001, High: &high, Confidence: .7, Facts: map[string]json.RawMessage{"units": json.RawMessage(`52`)}, Filed: f.now, Formula: 1}}
 		_, newIDs, err := f.st.Attach(f.t.Context(), "run-fixture", true, []store.Observation{{Scraper: "fmcsa", SourceID: fmt.Sprintf("row%d", i), Digest: fmt.Sprintf("digest%d", i), Reading: r}})
 		if err != nil {
@@ -214,11 +218,11 @@ func (f *fixture) seed(n int) []string {
 	return ids
 }
 
-// R-2F95-Y6HY R-676J-W1QH R-68EG-9TH6 R-6EHY-6O6N R-6FPU-KFXC R-5ZV5-LFAB
+// R-5795-SH3G R-676J-W1QH R-68EG-9TH6 R-6EHY-6O6N R-6FPU-KFXC R-5LVY-DPZS R-5N3U-RHQH R-5OBR-59H6
 func TestCatalogAndSchemas(t *testing.T) {
 	f := newFixture(t)
 	want := []tools.Entry{{Name: "shortlist", Description: tools.DescribeShortlist}, {Name: "candidates", Description: tools.DescribeCandidates}, {Name: "candidate", Description: tools.DescribeCandidate}, {Name: "passes", Description: tools.DescribePasses}, {Name: "pass", Description: tools.DescribePass}, {Name: "rebuild", Description: tools.DescribeRebuild}, {Name: "decide", Description: tools.DescribeDecide}}
-	if tools.PageSize != 25 || !reflect.DeepEqual(tools.Catalog(), want) {
+	if !reflect.DeepEqual(tools.Catalog(), want) {
 		t.Fatal("catalog")
 	}
 	a := tools.Catalog()
@@ -251,7 +255,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 			t.Fatal("effect", info)
 		}
 	}
-	properties := [][]string{{"max_minutes", "min_revenue", "class", "cargo", "page"}, {"name", "zip", "phone", "page"}, {"candidate"}, {"page"}, {"pass"}, {}, {"kind", "why", "candidate", "other", "links"}}
+	properties := [][]string{{"max_minutes", "min_revenue", "class", "cargo", "page", "limit"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "why", "candidate", "other", "links"}}
 	required := [][]string{nil, nil, {"candidate"}, nil, {"pass"}, nil, {"kind", "why", "candidate"}}
 	for i, info := range infos {
 		var schema struct {
@@ -277,11 +281,14 @@ func TestCatalogAndSchemas(t *testing.T) {
 		}
 		for name, prop := range props {
 			expectedType := "string"
-			if name == "page" || name == "min_revenue" || name == "max_minutes" {
+			if name == "min_revenue" || name == "max_minutes" {
 				expectedType = "integer"
 				if prop.Minimum == nil || *prop.Minimum != 0 {
 					t.Fatal("unsigned schema", name)
 				}
+			}
+			if name == "limit" {
+				expectedType = "integer"
 			}
 			if name == "links" {
 				expectedType = "array"
@@ -334,7 +341,7 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-6131-Z710 R-62AY-CYRP R-63IU-QQIE R-64QR-4I93 R-65YN-I9ZS
+// R-6131-Z710 R-5PJN-J17V R-63IU-QQIE R-64QR-4I93 R-65YN-I9ZS
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -370,13 +377,14 @@ func TestAnswerJSONShapes(t *testing.T) {
 		}
 	}
 	one := int64(1)
+	continuation := "opaque-continuation"
 	populated := []struct {
 		v    any
 		keys string
 	}{
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
 		{tools.ShortlistEntry{High: &one}, "candidate minutes low high confidence effective point score"},
-		{tools.ShortlistPage{Next: &one}, "shortlist next"}, {tools.CandidateList{Next: &one}, "candidates next"}, {tools.PassList{Next: &one}, "passes next"},
+		{tools.ShortlistPage{Next: &continuation}, "shortlist next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
 		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet name_key phone_key domain_key reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
 		{tools.Exclusion{Detail: "detail"}, "reason detail"},
@@ -394,50 +402,46 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}
 }
 
-// R-6C25-F4P9 R-6I5N-BZEQ R-6JDJ-PR5F R-6KLG-3IW4
+// R-6C25-F4P9 R-5WV1-TNO1 R-5ZAU-L75F R-60IQ-YYW4
 func TestListsPaginationAndFilters(t *testing.T) {
 	f := newFixture(t)
 	success(t, f.call("candidates", tools.CandidatesArgs{}), tools.CandidateList{})
 	success(t, f.call("shortlist", tools.ShortlistArgs{}), tools.ShortlistPage{})
 	f.seed(30)
-	for _, p := range []uint32{0, 1, 171798692} {
-		rows, err := f.st.ListCandidates(t.Context(), store.CandidateFilter{}, int64(p)*tools.PageSize, tools.PageSize+1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := tools.CandidateList{}
-		if len(rows) > tools.PageSize {
-			n := int64(p) + 1
-			want.Next = &n
-			rows = rows[:tools.PageSize]
-		}
-		for _, c := range rows {
-			want.Candidates = append(want.Candidates, candidateOf(c))
-		}
-		success(t, f.call("candidates", tools.CandidatesArgs{Page: p}), want)
-	}
-	for _, args := range []tools.CandidatesArgs{{Name: "TRUCKING"}, {Name: "aLiAs 07"}, {Name: "absent-name"}, {Zip: "bogus"}, {Phone: "5551234567"}, {Phone: "bad"}} {
-		rows, err := f.st.ListCandidates(t.Context(), store.CandidateFilter{Name: args.Name, Zip: args.Zip, Phone: args.Phone}, 0, tools.PageSize+1)
+	for _, args := range []tools.CandidatesArgs{{}, {Name: "TRUCKING"}, {Name: "aLiAs 07"}, {Name: "absent-name"}, {Zip: "bogus"}, {Phone: "5551234567"}, {Phone: "bad"}} {
+		rows, err := f.st.ListCandidates(t.Context(), store.CandidateFilter{Name: args.Name, Zip: args.Zip, Phone: args.Phone}, "", "", 100)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if args.Name == "aLiAs 07" && (len(rows) != 1 || rows[0].Name != "Business 07") {
-			t.Fatal("selective name fixture did not distinguish candidates", rows)
+			t.Fatal("selective alias fixture", rows)
 		}
-		want := tools.CandidateList{}
-		if len(rows) > tools.PageSize {
-			n := int64(1)
-			want.Next = &n
-			rows = rows[:tools.PageSize]
+		for _, limit := range []int{1, 7, 25, 30, 100} {
+			args.Limit = &limit
+			args.Page = nil
+			offset := 0
+			for {
+				end := min(offset+limit, len(rows))
+				want := tools.CandidateList{}
+				for _, c := range rows[offset:end] {
+					want.Candidates = append(want.Candidates, candidateOf(c))
+				}
+				if end < len(rows) {
+					last := rows[end-1]
+					token := paging.Token{Tool: "candidates"}.Encode(stamp(last.Created), last.ID)
+					want.Next = &token
+				}
+				success(t, f.call("candidates", args), want)
+				if want.Next == nil {
+					break
+				}
+				args.Page = want.Next
+				offset = end
+			}
 		}
-		for _, c := range rows {
-			want.Candidates = append(want.Candidates, candidateOf(c))
-		}
-		success(t, f.call("candidates", args), want)
 	}
-	zero := uint32(0)
-	thirty := uint32(30)
-	for _, args := range []tools.ShortlistArgs{{}, {Page: 1}, {Page: 171798692}, {Class: "bogus"}, {Cargo: "bogus"}, {Class: sources.ClassForHire}, {MaxMinutes: &thirty}, {MinRevenue: &zero}, {MaxMinutes: &zero}} {
+	zero, thirty := uint32(0), uint32(30)
+	for _, args := range []tools.ShortlistArgs{{}, {Class: "bogus"}, {Cargo: "bogus"}, {Class: sources.ClassForHire}, {MaxMinutes: &thirty}, {MinRevenue: &zero}, {MaxMinutes: &zero}} {
 		filter := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue, Class: args.Class, Cargo: args.Cargo}
 		if args.MaxMinutes != nil {
 			filter.MaxMinutes = int64(*args.MaxMinutes)
@@ -445,28 +449,35 @@ func TestListsPaginationAndFilters(t *testing.T) {
 		if args.MinRevenue != nil {
 			filter.MinRevenue = int64(*args.MinRevenue)
 		}
-		rows, err := f.st.Shortlist(t.Context(), filter, int64(args.Page)*tools.PageSize, tools.PageSize+1)
+		rows, err := f.st.Shortlist(t.Context(), filter, 0, "", 100)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := tools.ShortlistPage{}
-		if len(rows) > tools.PageSize {
-			n := int64(args.Page) + 1
-			want.Next = &n
-			rows = rows[:tools.PageSize]
+		for _, limit := range []int{1, 7, 25, 30, 100} {
+			args.Limit = &limit
+			args.Page = nil
+			offset := 0
+			for {
+				end := min(offset+limit, len(rows))
+				want := tools.ShortlistPage{}
+				for _, r := range rows[offset:end] {
+					want.Shortlist = append(want.Shortlist, tools.ShortlistEntry{Candidate: candidateOf(r.Candidate), Minutes: *r.Assessment.Minutes, Low: r.Assessment.Low, High: r.Assessment.High, Confidence: r.Assessment.Confidence, Effective: r.Assessment.Effective, Point: scoring.Point(r.Assessment.Low, r.Assessment.High), Score: int64(math.Round(r.Assessment.Score))})
+				}
+				if end < len(rows) {
+					last := rows[end-1]
+					token := paging.Token{Tool: "shortlist"}.Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+					want.Next = &token
+				}
+				success(t, f.call("shortlist", args), want)
+				if want.Next == nil {
+					break
+				}
+				args.Page = want.Next
+				offset = end
+			}
 		}
-		for _, r := range rows {
-			want.Shortlist = append(want.Shortlist, tools.ShortlistEntry{Candidate: candidateOf(r.Candidate), Minutes: *r.Assessment.Minutes, Low: r.Assessment.Low, High: r.Assessment.High, Confidence: r.Assessment.Confidence, Effective: r.Effective, Point: scoring.Point(r.Assessment.Low, r.Assessment.High), Score: int64(math.Round(r.Score))})
-		}
-		success(t, f.call("shortlist", args), want)
 	}
 	success(t, f.call("shortlist", map[string]any{"max_minutes": nil, "min_revenue": nil}), decodeList[tools.ShortlistPage](t, f.call("shortlist", tools.ShortlistArgs{})))
-	for _, name := range []string{"shortlist", "candidates", "passes"} {
-		r := f.call(name, map[string]any{"page": -1})
-		if !r.IsError() {
-			t.Fatal("negative page accepted")
-		}
-	}
 }
 func decodeList[T any](t *testing.T, r mcp.Result) T {
 	t.Helper()
@@ -479,7 +490,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-6GXQ-Y7O1 R-6N18-V2DI R-6O95-8U47 R-HVKH-K41P R-6WSF-X8B2
+// R-5RZG-AKP9 R-646G-4A47 R-65EC-I1UW R-66M8-VTLL R-6WSF-X8B2
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -509,19 +520,22 @@ func TestDetailAndRulings(t *testing.T) {
 		expected.Estimates = append(expected.Estimates, tools.Estimate{Source: e.Source, Low: e.Low, High: e.High, Confidence: e.Confidence, Facts: e.Facts, Filed: e.Filed.UTC().Format("2006-01-02"), Formula: e.Formula})
 	}
 	point := scoring.Point(a.Low, a.High)
-	effective := scoring.Effective(a.Confidence, a.Filed, f.now)
-	expected.Assessment = &tools.Assessment{Fleet: a.Fleet, Minutes: a.Minutes, Low: a.Low, High: a.High, Confidence: a.Confidence, Filed: a.Filed.UTC().Format("2006-01-02"), Freshness: scoring.Freshness(a.Filed, f.now), Effective: effective, Point: point, Score: int64(math.Round(scoring.Score(point, effective))), Base: int64(math.Round(a.Base)), Excluded: a.Excluded, Rules: a.Rules, Scored: stamp(a.Scored)}
-	beforeCalls := f.calls
+	effective := a.Effective
+	expected.Assessment = &tools.Assessment{Fleet: a.Fleet, Minutes: a.Minutes, Low: a.Low, High: a.High, Confidence: a.Confidence, Filed: a.Filed.UTC().Format("2006-01-02"), Freshness: a.Effective / a.Confidence, Effective: effective, Point: point, Score: int64(math.Round(a.Score)), Base: int64(math.Round(a.Base)), Excluded: a.Excluded, Rules: a.Rules, Scored: stamp(a.Scored)}
 	success(t, f.call("candidate", tools.CandidateArgs{Candidate: id}), expected)
-	if f.calls != beforeCalls+1 {
-		t.Fatal("clock not read exactly once")
-	}
 	f.now = f.now.AddDate(6, 0, 0)
-	expected.Assessment.Freshness = scoring.Freshness(a.Filed, f.now)
+	success(t, f.call("candidate", tools.CandidateArgs{Candidate: id}), expected)
+	if err := f.st.RefreshShortlist(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	expected.Assessment.Freshness = 0
 	expected.Assessment.Effective = 0
 	expected.Assessment.Score = 0
 	success(t, f.call("candidate", tools.CandidateArgs{Candidate: id}), expected)
 	f.now = f.now.AddDate(-6, 0, 0)
+	if err := f.st.RefreshShortlist(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	for _, kind := range []string{store.KindExclude, store.KindInclude} {
 		why := "  owner's reason  "
 		result := decodeList[tools.Decision](t, f.call("decide", tools.DecideArgs{Kind: kind, Candidate: id, Why: why, Other: "ignored", Links: []string{"ignored"}}))
@@ -575,7 +589,7 @@ func TestDetailAndRulings(t *testing.T) {
 	}
 }
 
-// R-69MC-NL7V R-6DA1-SWFY R-6LTC-HAMT R-6QOY-0DLL R-HUCL-6CB0 R-6Y0C-B01R
+// R-69MC-NL7V R-5Y2Y-7FEQ R-6LTC-HAMT R-6QOY-0DLL R-HUCL-6CB0 R-6Y0C-B01R
 func TestRefusalsAndPrecedence(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -620,7 +634,7 @@ func TestRefusalsAndPrecedence(t *testing.T) {
 	refusal(t, f.call("decide", tools.DecideArgs{Kind: store.KindInclude, Candidate: "bad", Why: "reason"}), passes.RefusalNotFound, tools.RefuseNotFound)
 }
 
-// R-6PH1-MLUW
+// R-62YJ-QIDI R-5WV1-TNO1
 func TestPassPages(t *testing.T) {
 	f := newFixture(t)
 	success(t, f.call("passes", tools.PassesArgs{}), tools.PassList{})
@@ -632,23 +646,32 @@ func TestPassPages(t *testing.T) {
 		if _, err := f.st.FinishPass(t.Context(), p.ID, store.Counts{Rows: 2, Created: 1}); err != nil {
 			t.Fatal(err)
 		}
-		f.now = f.now.Add(time.Second)
 	}
-	for _, page := range []uint32{0, 1, 171798692} {
-		ps, err := f.st.ListPasses(t.Context(), int64(page)*tools.PageSize, tools.PageSize+1)
-		if err != nil {
-			t.Fatal(err)
+	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{1, 7, 25, 26, 100} {
+		var page *string
+		offset := 0
+		for {
+			end := min(offset+limit, len(ps))
+			want := tools.PassList{}
+			for _, p := range ps[offset:end] {
+				want.Passes = append(want.Passes, passes.RecordOf(p))
+			}
+			if end < len(ps) {
+				last := ps[end-1]
+				token := paging.Token{Tool: "passes"}.Encode(stamp(last.Started), last.ID)
+				want.Next = &token
+			}
+			success(t, f.call("passes", tools.PassesArgs{Page: page, Limit: &limit}), want)
+			if want.Next == nil {
+				break
+			}
+			page = want.Next
+			offset = end
 		}
-		want := tools.PassList{}
-		if len(ps) > tools.PageSize {
-			n := int64(page) + 1
-			want.Next = &n
-			ps = ps[:tools.PageSize]
-		}
-		for _, p := range ps {
-			want.Passes = append(want.Passes, passes.RecordOf(p))
-		}
-		success(t, f.call("passes", tools.PassesArgs{Page: page}), want)
 	}
 }
 
@@ -688,7 +711,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ps, err := f.st.ListPasses(t.Context(), 0, 100)
+		ps, err := f.st.ListPasses(t.Context(), "", "", 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -715,7 +738,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	if string(snapshot()) != before {
 		t.Fatal("read changed records")
 	}
-	ps, err := f.st.ListPasses(t.Context(), 0, 100)
+	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
 	if err != nil || len(ps) != 1 {
 		t.Fatal("unexpected pass", ps, err)
 	}
@@ -749,7 +772,7 @@ func TestRebuildAndNoSiblingReads(t *testing.T) {
 	if reads.Load() != 0 {
 		t.Fatal("read or ruling contacted scrapes")
 	}
-	ps, err := f.st.ListPasses(t.Context(), 0, 100)
+	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
 	if err != nil || len(ps) != 0 {
 		t.Fatal("read or ruling started pass")
 	}
@@ -788,7 +811,7 @@ func TestRebuildAndNoSiblingReads(t *testing.T) {
 	refusal(t, unavailable.call("rebuild", tools.NoArgs{}), passes.RefusalUnavailable, tools.RefuseUnavailable)
 }
 
-// R-HVKH-K41P
+// R-66M8-VTLL
 func TestSplitAndNotSame(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -832,7 +855,7 @@ func TestSplitAndNotSame(t *testing.T) {
 	}
 }
 
-// R-6JDJ-PR5F R-6N18-V2DI R-6QOY-0DLL
+// R-5ZAU-L75F R-646G-4A47 R-6QOY-0DLL
 func TestCutoffMissingAssessmentAndPrunedPass(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(1)
@@ -887,7 +910,7 @@ func TestCutoffMissingAssessmentAndPrunedPass(t *testing.T) {
 	refusal(t, f.call("pass", tools.PassArgs{Pass: oldest}), passes.RefusalNotFound, tools.RefuseNotFound)
 }
 
-// R-6GXQ-Y7O1 R-6N18-V2DI
+// R-5RZG-AKP9 R-646G-4A47
 func TestAssessmentExclusionMapping(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(1)

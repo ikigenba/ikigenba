@@ -45,7 +45,7 @@ func generatedRows(t *testing.T, run string) []scrapes.Row {
 func costEnded(t *testing.T, f *fixture, trigger string, began time.Time) store.Pass {
 	t.Helper()
 	deadline := began.Add(120 * time.Second)
-	ps, err := f.st.ListPasses(context.Background(), 0, 3)
+	ps, err := f.st.ListPasses(context.Background(), "", "", 3)
 	if err != nil {
 		t.Fatal(err)
 	}

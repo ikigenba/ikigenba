@@ -31,10 +31,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
 )
 
+func fixtureTime() time.Time { return time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC) }
+
 func fixture(t *testing.T) (web.Config, *db.DB, *telemetry.Capture, *events.Capture) {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	now := func() time.Time { return time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC) }
+	now := fixtureTime
 	rnd := func() io.Reader { return bytes.NewReader(bytes.Repeat([]byte{0x5a}, 100000)) }
 	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "state.db"), Migrations: candidates.Migrations(), Now: now})
 	if err != nil {
@@ -59,7 +61,7 @@ func fixture(t *testing.T) (web.Config, *db.DB, *telemetry.Capture, *events.Capt
 	})
 	return web.Config{func(u page.User) page.Banner {
 		return page.Banner{Service: pages.ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
-	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", st, eng, w, em, now}, d, tc, ec
+	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", st, eng, w, em}, d, tc, ec
 }
 func request(h http.Handler, method, path, body, user string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "https://candidates.example.test"+path, strings.NewReader(body))
@@ -78,7 +80,7 @@ type unread struct{ reads int }
 func (u *unread) Read([]byte) (int, error) { u.reads++; return 0, io.EOF }
 func (*unread) Close() error               { return nil }
 
-// R-3RDS-CKCH R-2E19-KER9 R-4GZO-DQX2 R-4LV9-WTVU
+// R-3RDS-CKCH R-5619-EPCR R-4GZO-DQX2 R-4LV9-WTVU
 func TestIdentityGate(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
 	h := web.Handler(cfg)
@@ -111,7 +113,7 @@ func TestIdentityGate(t *testing.T) {
 		t.Fatal(bus.Events())
 	}
 	d.SetFailing(false)
-	ps, err := cfg.Store.ListPasses(context.Background(), 0, 100)
+	ps, err := cfg.Store.ListPasses(context.Background(), "", "", 100)
 	if err != nil || len(ps) != 0 {
 		t.Fatal(ps, err)
 	}
@@ -140,7 +142,7 @@ func TestEventRoutes(t *testing.T) {
 	}
 }
 
-// R-4JFH-5AEG R-4KND-J255 R-4N36-ALMJ
+// R-4JFH-5AEG R-NWYH-IOWD R-4N36-ALMJ
 func TestPageAndStaticRoutes(t *testing.T) {
 	cfg, d, _, _ := fixture(t)
 	h := web.Handler(cfg)
@@ -148,7 +150,7 @@ func TestPageAndStaticRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ph := identity.Require(pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, Store: cfg.Store, Now: cfg.Now}))
+	ph := identity.Require(pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, Store: cfg.Store}))
 	for _, path := range []string{"/", "/about", "/tools", "/candidates/cand_5a5a5a5a5a5a5a5a", "/passes/pass_5a5a5a5a5a5a5a5a", "/nope", "/candidates", "/candidates/", "/passes/", "/mcp/", "/events/", "/declarations/", "/_appkit"} {
 		a := request(h, "GET", path, "", "reader")
 		b := request(ph, "GET", path, "", "reader")
@@ -182,7 +184,7 @@ func (t causeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r)
 }
 
-// R-4DBZ-8FOZ R-4I7K-RINR
+// R-4DBZ-8FOZ R-NVQL-4X5O
 func TestMCPContextAndTools(t *testing.T) {
 	cfg, _, capture, _ := fixture(t)
 	type observed struct {
@@ -250,7 +252,7 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	if err != nil || !result.IsError() {
 		t.Fatal(result, err)
 	}
-	event := events.Event{ID: "evt_0000000000000000", Time: cfg.Now(), Received: cfg.Now(), Seq: 1, Service: "scrapes", Name: trail.Accepted, Attrs: events.Attrs{"run": "run_fixture", "scraper": "fmcsa", "status": "done"}}
+	event := events.Event{ID: "evt_0000000000000000", Time: fixtureTime(), Received: fixtureTime(), Seq: 1, Service: "scrapes", Name: trail.Accepted, Attrs: events.Attrs{"run": "run_fixture", "scraper": "fmcsa", "status": "done"}}
 	resultDelivery, err := events.Send(context.Background(), srv.Client(), strings.TrimPrefix(srv.URL, "http://"), events.Delivery{Event: event, Attempt: 1})
 	if err != nil {
 		t.Fatal(err)

@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-591D-6GZ1 R-8KNN-I5U6 R-7IQW-KU2U
+// R-591D-6GZ1 R-8KNN-I5U6 R-5I89-8ERP
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
@@ -66,9 +66,9 @@ func TestCompleteViewContracts(t *testing.T) {
 	if got := passView(p, path); !reflect.DeepEqual(got, wantP) {
 		t.Fatal(got)
 	}
-	a := store.Assessment{Fleet: true, Low: 14400000, High: &hi, Confidence: .7, Filed: start, Minutes: &minutes, Exclusions: []sources.Exclusion{{Reason: "signal", Detail: "detail"}, {Reason: "other"}}, Excluded: true, Base: 13440000.4, Rules: 7, Scored: end}
+	a := store.Assessment{Fleet: true, Low: 14400000, High: &hi, Confidence: .7, Filed: start, Minutes: &minutes, Exclusions: []sources.Exclusion{{Reason: "signal", Detail: "detail"}, {Reason: "other"}}, Excluded: true, Base: 13440000.4, Effective: .7, Score: 13440000, Rules: 7, Scored: end}
 	wantA := AssessmentView{Fleet: true, Minutes: "31", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.70", Filed: "2026-10-05", FiledText: "2026-10-05", Freshness: "1.00", Effective: "0.70", Point: "$19,200,000", Base: "$13,440,000", Score: "$13,440,000", Excluded: true, Exclusions: []ExclusionRow{{"signal", "detail"}, {"other", ""}}, Rules: 7, Scored: "2026-10-05T10:00:07Z", ScoredText: "2026-10-05 10:00:07 UTC"}
-	if got := assessmentView(a, end); !reflect.DeepEqual(got, wantA) {
+	if got := assessmentView(a); !reflect.DeepEqual(got, wantA) {
 		t.Fatalf("assessment %#v", got)
 	}
 	a.High = nil
@@ -78,8 +78,10 @@ func TestCompleteViewContracts(t *testing.T) {
 	a.Excluded = false
 	a.Exclusions = nil
 	a.Fleet = false
+	a.Effective = 0
+	a.Score = 0
 	wantA = AssessmentView{Low: "$14,400,000", Confidence: "0.70", Freshness: "0.00", Effective: "0.00", Stale: true, Point: "$14,400,000", Base: "$13,440,000", Score: "$0", Exclusions: []ExclusionRow{}, Rules: 7}
-	if got := assessmentView(a, end); !reflect.DeepEqual(got, wantA) {
+	if got := assessmentView(a); !reflect.DeepEqual(got, wantA) {
 		t.Fatalf("empty assessment %#v", got)
 	}
 	e := sources.Estimate{Source: "source", Low: 14400000, High: &hi, Confidence: .7, Filed: start, Formula: 8, Facts: map[string]json.RawMessage{"z": json.RawMessage(` [1, 2] `), "a": json.RawMessage(` {"k": true} `)}}
@@ -134,7 +136,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-ISRR-T9KH
+// R-5C4R-BK28
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -148,5 +150,41 @@ func TestExplicitTemplateStates(t *testing.T) {
 	d := CandidateData{Candidate: CandidateView{Status: store.StatusActive}, Estimates: []EstimateView{{Source: "source", Low: "$999", Confidence: "0.70", Facts: []FactRow{}}}, Rulings: []RulingView{{Kind: store.KindInclude, User: "user-id", Why: "chosen", Keys: []string{}}}}
 	if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", d); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// R-5I89-8ERP: freshness and effective values reflect stored scoring.
+func TestAssessmentStoredScoring(t *testing.T) {
+	for _, tc := range []struct {
+		confidence, effective float64
+		freshness             string
+		stale                 bool
+	}{
+		{.8, .4, "0.50", false}, {.7, .7, "1.00", false}, {0, 0, "0.00", true}, {.7, 0, "0.00", true}, {.7, -.1, "0.00", true}, {.5, .8, "1.00", false},
+	} {
+		// Deliberately old filing and independently stored score ensure the view
+		// cannot calculate an effective value or score from today's date.
+		a := store.Assessment{Confidence: tc.confidence, Effective: tc.effective, Score: 7279999.6, Filed: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Scored: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+		got := assessmentView(a)
+		if got.Freshness != tc.freshness || got.Effective != two(tc.effective) || got.Stale != tc.stale || got.Score != "$7,280,000" {
+			t.Fatalf("%+v: %+v", tc, got)
+		}
+	}
+}
+
+// R-5EKK-33JM: every projected field and nullable value.
+func TestShortlistRowStoredAssessment(t *testing.T) {
+	minutes, high := int64(31), int64(24000000)
+	r := store.Ranked{Candidate: store.Candidate{ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Class: "chosen-class"}, Assessment: store.Assessment{Minutes: &minutes, Low: 14400000, High: &high, Confidence: .8, Effective: .4, Score: 7279999.6}}
+	want := ShortlistRow{Rank: 3, ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Minutes: 31, Class: "chosen-class", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.40", Score: "$7,280,000"}
+	if got := shortlistRow(r, 2); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	r.Assessment.Minutes = nil
+	r.Assessment.High = nil
+	want.Minutes = 0
+	want.High = ""
+	if got := shortlistRow(r, 2); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
 	}
 }

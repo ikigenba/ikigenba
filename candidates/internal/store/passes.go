@@ -177,28 +177,35 @@ func orderedPasses(r *records) []Pass {
 	})
 	return out
 }
-func window[T any](a []T, offset, limit int64) []T {
-	if offset >= int64(len(a)) {
-		return []T{}
-	}
-	a = a[offset:]
-	if limit < int64(len(a)) {
-		a = a[:limit]
-	}
-	return a
-}
-func validWindow(offset, limit int64) bool { return offset >= 0 && limit >= 1 }
 
-// ListPasses reads a window in newest-first pass order.
-func (s *Store) ListPasses(ctx context.Context, offset, limit int64) ([]Pass, error) {
+// ListPasses reads a keyset window in newest-first pass order.
+func (s *Store) ListPasses(ctx context.Context, started, id string, n int) ([]Pass, error) {
 	var out []Pass
-	err := s.readScope(ctx, "passes", "", func(r *records) error {
-		if !validWindow(offset, limit) {
+	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
+		if n < 1 {
 			return ErrUnreachable
 		}
-		out = window(orderedPasses(r), offset, limit)
+		var err error
+		out, err = readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE (?1='' OR started<?2 OR (started=?2 AND id<?1)) ORDER BY started DESC,id DESC LIMIT ?3`, id, started, n)
+		return err
+	}))
+	return out, err
+}
+
+// FindDelivered finds the newest pass carrying a delivery or run.
+func (s *Store) FindDelivered(ctx context.Context, delivery, run string) (Pass, error) {
+	var out Pass
+	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
+		ps, err := readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE (delivery<>'' AND delivery=?1) OR (?2<>'' AND ?2<>?3 AND "trigger"=?2) ORDER BY started DESC,id DESC LIMIT 1`, delivery, run, TriggerRebuild)
+		if err != nil {
+			return err
+		}
+		if len(ps) == 0 {
+			return ErrNotFound
+		}
+		out = ps[0]
 		return nil
-	})
+	}))
 	return out, err
 }
 

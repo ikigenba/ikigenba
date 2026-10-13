@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"math"
 	"sort"
 	"time"
 
@@ -60,6 +61,9 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 		break
 	}
 	a.Base = scoring.Score(scoring.Point(a.Low, a.High), a.Confidence)
+	a.Effective = scoring.Effective(a.Confidence, a.Filed, t)
+	a.Score = scoring.Score(scoring.Point(a.Low, a.High), a.Effective)
+	a.ScoreKey = scoreKey(a.Score)
 	return es, a
 }
 func rescore(r *records, ids []string, t time.Time) Counts {
@@ -131,4 +135,28 @@ func (s *Store) RescoreAll(ctx context.Context) (Counts, error) {
 		return Counts{}, err
 	}
 	return out, nil
+}
+
+func scoreKey(score float64) int64 {
+	x := score * 1000000
+	if x >= 0x1p63 {
+		return math.MaxInt64
+	}
+	if x < -0x1p63 {
+		return math.MinInt64
+	}
+	return int64(x)
+}
+
+// RefreshShortlist updates persisted freshness and repairs cargo lookup rows.
+func (s *Store) RefreshShortlist(ctx context.Context) error {
+	return unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := execSQL(ctx, tx, `UPDATE assessments SET effective = confidence * w.f, score = base * w.f, score_key = CAST(base * w.f * 1000000.0 AS INTEGER) FROM (SELECT candidate AS id, CASE WHEN filed = '' THEN 0.0 WHEN julianday(?1) <= julianday(filed, '+2 years') THEN 1.0 WHEN julianday(?1) >= julianday(filed, '+5 years') THEN 0.0 ELSE (julianday(filed, '+5 years') - julianday(?1)) / (julianday(filed, '+5 years') - julianday(filed, '+2 years')) END AS f FROM assessments) AS w WHERE assessments.candidate = w.id`, s.now().Format(time.RFC3339)); err != nil {
+			return err
+		}
+		if err := execSQL(ctx, tx, "DELETE FROM candidate_cargo"); err != nil {
+			return err
+		}
+		return execSQL(ctx, tx, `INSERT INTO candidate_cargo(candidate,cargo) SELECT DISTINCT candidates.id, j.value FROM candidates, json_each(candidates.cargo) AS j WHERE j.type = 'text'`)
+	}))
 }

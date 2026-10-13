@@ -56,7 +56,7 @@ func passView(p store.Pass, sp string) PassView {
 	return v
 }
 func shortlistRow(e store.Ranked, i int) ShortlistRow {
-	v := ShortlistRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, Class: e.Candidate.Class, Low: dollars(e.Assessment.Low), Confidence: two(e.Effective), Score: money(e.Score)}
+	v := ShortlistRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, Class: e.Candidate.Class, Low: dollars(e.Assessment.Low), Confidence: two(e.Assessment.Effective), Score: money(e.Assessment.Score)}
 	if e.Assessment.Minutes != nil {
 		v.Minutes = *e.Assessment.Minutes
 	}
@@ -88,10 +88,13 @@ func candidateView(c store.Candidate) CandidateView {
 	}
 	return v
 }
-func assessmentView(a store.Assessment, now time.Time) AssessmentView {
-	x := scoring.Effective(a.Confidence, a.Filed, now)
+func assessmentView(a store.Assessment) AssessmentView {
+	freshness := 0.0
+	if a.Confidence > 0 {
+		freshness = max(0, min(1, a.Effective/a.Confidence))
+	}
 	point := scoring.Point(a.Low, a.High)
-	v := AssessmentView{Fleet: a.Fleet, Low: dollars(a.Low), Confidence: two(a.Confidence), Filed: date(a.Filed), FiledText: date(a.Filed), Freshness: two(scoring.Freshness(a.Filed, now)), Effective: two(x), Stale: x == 0, Point: dollars(point), Base: money(a.Base), Score: money(scoring.Score(point, x)), Excluded: a.Excluded, Exclusions: []ExclusionRow{}, Rules: a.Rules}
+	v := AssessmentView{Fleet: a.Fleet, Low: dollars(a.Low), Confidence: two(a.Confidence), Filed: date(a.Filed), FiledText: date(a.Filed), Freshness: two(freshness), Effective: two(a.Effective), Stale: a.Effective <= 0, Point: dollars(point), Base: money(a.Base), Score: money(a.Score), Excluded: a.Excluded, Exclusions: []ExclusionRow{}, Rules: a.Rules}
 	if a.Minutes != nil {
 		v.Minutes = strconv.FormatInt(*a.Minutes, 10)
 	}

@@ -51,18 +51,20 @@ type Link struct {
 
 // Assessment is the last stored score and its evidence.
 type Assessment struct {
-	Candidate  string
-	Fleet      bool
-	Low        int64
-	High       *int64
-	Confidence float64
-	Filed      time.Time
-	Minutes    *int64
-	Exclusions []sources.Exclusion
-	Excluded   bool
-	Base       float64
-	Rules      int64
-	Scored     time.Time
+	Candidate        string
+	Fleet            bool
+	Low              int64
+	High             *int64
+	Confidence       float64
+	Filed            time.Time
+	Minutes          *int64
+	Exclusions       []sources.Exclusion
+	Excluded         bool
+	Base             float64
+	Effective, Score float64
+	ScoreKey         int64
+	Rules            int64
+	Scored           time.Time
 }
 
 // Ruling records an owner decision.
@@ -99,11 +101,10 @@ type ShortlistFilter struct {
 	Class, Cargo           string
 }
 
-// Ranked contains a candidate and its score at query time.
+// Ranked contains a candidate and its persisted assessment.
 type Ranked struct {
-	Candidate        Candidate
-	Assessment       Assessment
-	Effective, Score float64
+	Candidate  Candidate
+	Assessment Assessment
 }
 
 // Record vocabulary and identifier prefixes.

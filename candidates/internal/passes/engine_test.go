@@ -126,7 +126,7 @@ func (f *fixture) flush() {
 }
 func (f *fixture) list() []store.Pass {
 	f.t.Helper()
-	ps, err := f.st.ListPasses(context.Background(), 0, 1000)
+	ps, err := f.st.ListPasses(context.Background(), "", "", 1000)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-YZYK-QPT3 R-Z16H-4HJS R-Z2ED-I9AH R-Z3M9-W116 R-Z622-NKIK
+// R-9UJ9-AYIO R-9VR5-OQ9D R-9WZ2-2I02 R-Z3M9-W116 R-Z622-NKIK
 func TestResolutionAndRebuild(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
@@ -472,7 +472,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	if first.Status != store.StatusDone || first.Rows != 3 || first.New != 3 || first.Changed != 0 || first.Unchanged != 0 || first.Gone != 0 || first.Created+first.Linked != 3 || first.Rescored != 3 || first.Unranged != 3 {
 		t.Fatal(first)
 	}
-	cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, 0, 1000)
+	cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +545,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	}
 }
 
-// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-Z8HV-F3ZY
+// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-A32J-ZCPJ
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	released, firstBatch := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -578,7 +578,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	for {
-		cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, 0, 1000)
+		cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 1000)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -598,14 +598,14 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 	close(released)
 	end := f.ended(p.ID)
-	if end.Status != store.StatusFailed || end.Reason != store.ReasonScrapes || end.Rows != 0 || end.Created != 0 {
+	if end.Status != store.StatusFailed || end.Reason != store.ReasonScrapes || failedCounts(end) != (store.Counts{}) {
 		t.Fatal(end)
 	}
 	ls, err := f.st.Links(context.Background(), priorIDs[0])
 	if err != nil || ls[0].Gone {
 		t.Fatal(ls, err)
 	}
-	cs, _ := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, 0, 1000)
+	cs, _ := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 1000)
 	seen := 0
 	for _, c := range cs {
 		ls, _ := f.st.Links(context.Background(), c.ID)
@@ -623,7 +623,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-Z9PR-SVQN R-SF2K-0S3I R-Z8HV-F3ZY
+// R-Z9PR-SVQN R-SF2K-0S3I R-A32J-ZCPJ
 func TestFailedReads(t *testing.T) {
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
 		t.Run(mode, func(t *testing.T) {
@@ -667,7 +667,7 @@ func TestFailedReads(t *testing.T) {
 					t.Fatal(end)
 				}
 			} else {
-				if end.Status != store.StatusFailed || end.Reason != store.ReasonScrapes || end.Rows != 0 {
+				if end.Status != store.StatusFailed || end.Reason != store.ReasonScrapes || failedCounts(end) != (store.Counts{}) {
 					t.Fatal(end)
 				}
 			}
@@ -679,7 +679,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-ZFT9-PQG4 R-ZH16-3I6T R-Z8HV-F3ZY R-YOZH-AS4U
+// R-ZFT9-PQG4 R-ZH16-3I6T R-A32J-ZCPJ R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	for _, which := range []string{"rows", "record"} {
 		t.Run(which, func(t *testing.T) {
@@ -713,7 +713,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 			waitSignal(t, drained)
 			if which == "rows" {
 				p = f.ended(p.ID)
-				if p.Status != store.StatusFailed || p.Reason != store.ReasonInterrupted || p.Rows != 0 {
+				if p.Status != store.StatusFailed || p.Reason != store.ReasonInterrupted || failedCounts(p) != (store.Counts{}) {
 					t.Fatal(p)
 				}
 				f.flush()
@@ -870,7 +870,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-Z8HV-F3ZY
+// R-A32J-ZCPJ
 func TestStoreFailureReason(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
@@ -887,7 +887,7 @@ func TestStoreFailureReason(t *testing.T) {
 		t.Fatal(err)
 	}
 	p = f.ended(p.ID)
-	if p.Status != store.StatusFailed || p.Reason != store.ReasonStore || p.Rows != 0 {
+	if p.Status != store.StatusFailed || p.Reason != store.ReasonStore || failedCounts(p) != (store.Counts{}) {
 		t.Fatal(p)
 	}
 }
@@ -1032,4 +1032,8 @@ func TestRecoverSettlesActivePass(t *testing.T) {
 	if len(es) != 2 || es[1].Name != trail.Finished || es[1].Cause != "" || es[1].Depth != 0 {
 		t.Fatal(es)
 	}
+}
+
+func failedCounts(p store.Pass) store.Counts {
+	return store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Rescored: p.Rescored, Unranged: p.Unranged}
 }

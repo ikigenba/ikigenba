@@ -178,6 +178,9 @@ func Run(ctx context.Context, p Process) int {
 	eng := passes.New(passes.Config{Store: st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
 	if err = st.ReplaceZipDrive(bg, candidates.ZipDrive()); err == nil {
+		err = st.RefreshShortlist(bg)
+	}
+	if err == nil {
 		err = eng.Recover(bg)
 	}
 	if err != nil {
@@ -189,7 +192,7 @@ func Run(ctx context.Context, p Process) int {
 		return ExitServerFailed
 	}
 	_, _ = st.PrunePasses(bg, s.KeepPasses)
-	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em, Now: p.Now})
+	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em})
 	notify, _ := p.LookupEnv("NOTIFY_SOCKET")
 	if notify != "" {
 		if c, e := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: notify, Net: "unixgram"}); e == nil {

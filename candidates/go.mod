@@ -2,7 +2,7 @@ module github.com/ikigenba/ikigenba/candidates
 
 go 1.26.5
 
-require github.com/ikigenba/ikigenba/appkit v0.24.0
+require github.com/ikigenba/ikigenba/appkit v0.25.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

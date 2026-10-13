@@ -13,9 +13,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-JNUV-CQY3 R-545R-NE09
+// R-59OY-K0KU R-545R-NE09
 func TestFormatting(t *testing.T) {
-	if MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || DateLayout != "2006-01-02" || ShortlistShown != 30 || ToolsLevel.Name != "tools" || ToolsLevel.URL != "/tools" || AboutLevel.Name != "about" || AboutLevel.URL != "/about" {
+	if MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || DateLayout != "2006-01-02" || ToolsLevel.Name != "tools" || ToolsLevel.URL != "/tools" || AboutLevel.Name != "about" || AboutLevel.URL != "/about" {
 		t.Fatal("constants")
 	}
 	for _, tc := range []struct {
@@ -47,7 +47,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-4RYR-TOLB R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H R-8KNN-I5U6 R-56LK-EXHN R-591D-6GZ1 R-7IQW-KU2U
+// R-5AWU-XSBJ R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H R-8KNN-I5U6 R-5EKK-33JM R-591D-6GZ1 R-5I89-8ERP
 func TestViews(t *testing.T) {
 	now := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
 	hi := int64(24000000)
@@ -79,17 +79,21 @@ func TestViews(t *testing.T) {
 	if cv.Name != "" || cv.Phone != "" || cv.Street != "" || cv.Class != "" || cv.MergedInto != "survivor" || cv.Names == nil || len(cv.Names) != 0 || len(cv.People) != 0 || len(cv.Cargo) != 0 {
 		t.Fatal(cv)
 	}
-	a := store.Assessment{Fleet: true, Low: 14400000, High: &hi, Confidence: .7, Filed: now.AddDate(0, 0, -30), Minutes: &mins, Base: 7279999.6, Rules: 1, Scored: now, Exclusions: []sources.Exclusion{{Reason: "signal", Detail: "detail"}}}
-	av := assessmentView(a, now)
+	a := store.Assessment{Fleet: true, Low: 14400000, High: &hi, Confidence: .7, Filed: now.AddDate(0, 0, -30), Minutes: &mins, Base: 7279999.6, Effective: .7, Score: 7279999.6, Rules: 1, Scored: now, Exclusions: []sources.Exclusion{{Reason: "signal", Detail: "detail"}}}
+	av := assessmentView(a)
 	if av.Low != "$14,400,000" || av.High != "$24,000,000" || av.Confidence != "0.70" || av.Freshness != "1.00" || av.Effective != "0.70" || av.Stale || av.Minutes != "31" || av.Base != "$7,280,000" || !reflect.DeepEqual(av.Exclusions, []ExclusionRow{{"signal", "detail"}}) {
 		t.Fatal(av)
 	}
 	a.Filed = now.AddDate(-6, 0, 0)
-	av = assessmentView(a, now)
+	a.Effective = 0
+	a.Score = 0
+	av = assessmentView(a)
 	if av.Effective != "0.00" || !av.Stale {
 		t.Fatal(av)
 	}
-	sr := shortlistRow(store.Ranked{Candidate: c, Assessment: a, Effective: .7, Score: 7279999.6}, 2)
+	a.Effective = .7
+	a.Score = 7279999.6
+	sr := shortlistRow(store.Ranked{Candidate: c, Assessment: a}, 2)
 	if sr.Rank != 3 || sr.Minutes != 31 || sr.Low != "$14,400,000" || sr.High != "$24,000,000" || sr.Confidence != "0.70" || sr.Score != "$7,280,000" {
 		t.Fatal(sr)
 	}
@@ -111,7 +115,7 @@ func TestViews(t *testing.T) {
 	}
 }
 
-// R-4RYR-TOLB R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H
+// R-5AWU-XSBJ R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -127,7 +131,7 @@ func TestTemplateDataShape(t *testing.T) {
 	for _, v := range []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, 120, "min", []ShortlistRow{{1, "id", "name", "city", "MN", 31, "class", "low", "high", "confidence", "score"}}, []PassRow{{"id", "trigger", store.StatusRunning, "", "", "", "", "", 1, 2, 3}}}}, {"candidate", CandidateData{b, cv, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
+	}{{"landing", LandingData{b, 120, "min", []ShortlistRow{{1, "id", "name", "city", "MN", 31, "class", "low", "high", "confidence", "score"}}, "chosen-shortlist-token", []PassRow{{"id", "trigger", store.StatusRunning, "", "", "", "", "", 1, 2, 3}}, "chosen-passes-token"}}, {"candidate", CandidateData{b, cv, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
 		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, v.name, v.data); err != nil {
 			t.Fatal(v.name, err)
 		}

@@ -188,7 +188,7 @@ func TestDeliveryReadIdentityAndOrdering(t *testing.T) {
 		}
 	})
 	sink := &orderingEventSink{finished: make(chan struct{}, 1)}
-	em := events.New(events.Config{Service: pages.ServiceName, Sink: sink, Telemetry: cfg.Telemetry, Now: cfg.Now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x6a}, 1000)), Stderr: io.Discard, Emits: trail.Emits()})
+	em := events.New(events.Config{Service: pages.ServiceName, Sink: sink, Telemetry: cfg.Telemetry, Now: fixtureTime, Rand: bytes.NewReader(bytes.Repeat([]byte{0x6a}, 1000)), Stderr: io.Discard, Emits: trail.Emits()})
 	sc := scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: socket}, Telemetry: cfg.Telemetry})
 	eng := passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: cfg.Telemetry, Events: em})
 	cfg.Passes = eng
@@ -197,7 +197,7 @@ func TestDeliveryReadIdentityAndOrdering(t *testing.T) {
 	// Cleanups run in reverse order, so unblock the fake before draining the engine.
 	t.Cleanup(unblockRows)
 	h := web.Handler(cfg)
-	event := events.Event{ID: "evt_1212121212121212", Time: cfg.Now(), Received: cfg.Now(), Seq: 1, Service: "scrapes", Name: trail.Accepted, Attrs: events.Attrs{"run": "run_order", "scraper": "fmcsa", "status": "done"}}
+	event := events.Event{ID: "evt_1212121212121212", Time: fixtureTime(), Received: fixtureTime(), Seq: 1, Service: "scrapes", Name: trail.Accepted, Attrs: events.Attrs{"run": "run_order", "scraper": "fmcsa", "status": "done"}}
 	body, err := event.MarshalJSON()
 	if err != nil {
 		t.Fatal(err)

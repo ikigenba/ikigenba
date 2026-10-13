@@ -1,0 +1,11 @@
+ALTER TABLE assessments ADD COLUMN effective REAL;
+ALTER TABLE assessments ADD COLUMN score REAL;
+ALTER TABLE assessments ADD COLUMN score_key INTEGER;
+CREATE INDEX assessments_score ON assessments(score_key DESC,candidate);
+CREATE TABLE candidate_cargo (candidate TEXT NOT NULL, cargo TEXT NOT NULL, PRIMARY KEY(candidate,cargo)) WITHOUT ROWID;
+CREATE INDEX candidate_cargo_cargo ON candidate_cargo(cargo,candidate);
+INSERT INTO candidate_cargo(candidate,cargo) SELECT DISTINCT candidates.id, j.value FROM candidates, json_each(candidates.cargo) AS j WHERE j.type = 'text';
+CREATE INDEX links_phone ON links(phone_key);
+CREATE INDEX candidates_window ON candidates(status,created,id);
+CREATE INDEX passes_window ON passes(started,id);
+CREATE INDEX passes_trigger ON passes("trigger");

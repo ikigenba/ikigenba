@@ -4,7 +4,6 @@ package passes
 import (
 	"context"
 	"errors"
-	"math"
 	"sync"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
@@ -80,6 +79,7 @@ func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run
 		var ended store.Pass
 		var err error
 		if reason != "" {
+			_ = e.cfg.Store.RefreshShortlist(finishCtx)
 			ended, err = e.cfg.Store.FailPass(finishCtx, p.ID, reason)
 		} else {
 			ended, err = e.cfg.Store.FinishPass(finishCtx, p.ID, totals)
@@ -105,16 +105,14 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 		e.mu.Unlock()
 		return events.Skip()
 	}
-	previous, err := e.cfg.Store.ListPasses(context.Background(), 0, math.MaxInt64)
-	if err != nil {
+	_, err := e.cfg.Store.FindDelivered(context.WithoutCancel(ctx), d.Event.ID, runID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		e.mu.Unlock()
 		return events.Fail(store.Unreachable)
 	}
-	for _, p := range previous {
-		if p.Delivery == d.Event.ID || p.Trigger == runID {
-			e.mu.Unlock()
-			return events.Skip()
-		}
+	if err == nil {
+		e.mu.Unlock()
+		return events.Skip()
 	}
 	e.mu.Unlock()
 	caller, _ := identity.FromContext(ctx)
@@ -147,7 +145,8 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 		return events.OK()
 	}
 	trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
-	ended, writeErr := e.cfg.Store.FailPass(context.Background(), p.ID, store.ReasonScrapes)
+	_ = e.cfg.Store.RefreshShortlist(context.WithoutCancel(ctx))
+	ended, writeErr := e.cfg.Store.FailPass(context.WithoutCancel(ctx), p.ID, store.ReasonScrapes)
 	if writeErr != nil {
 		return events.Fail(store.Unreachable)
 	}
@@ -284,5 +283,8 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild boo
 		return store.Counts{}, store.ReasonStore
 	}
 	addCounts(&total, counts)
+	if err = e.cfg.Store.RefreshShortlist(ctx); err != nil {
+		return store.Counts{}, store.ReasonStore
+	}
 	return total, ""
 }

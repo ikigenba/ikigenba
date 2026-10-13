@@ -159,7 +159,7 @@ func TestResolutionRefusesWholeInvalidBatch(t *testing.T) {
 		if ids != nil || !errors.Is(err, store.ErrUnreachable) {
 			t.Fatal(ids, err)
 		}
-		cs, e := f.st.ListCandidates(regCtx, store.CandidateFilter{}, 0, 100)
+		cs, e := f.st.ListCandidates(regCtx, store.CandidateFilter{}, "", "", 100)
 		regNoErr(t, e)
 		regEqual(t, len(cs), 0)
 	}
@@ -170,7 +170,7 @@ func TestResolutionRefusesWholeInvalidBatch(t *testing.T) {
 	if ids != nil || !errors.Is(err, store.ErrUnreachable) {
 		t.Fatal(ids, err)
 	}
-	cs, e := f.st.ListCandidates(regCtx, store.CandidateFilter{}, 0, 100)
+	cs, e := f.st.ListCandidates(regCtx, store.CandidateFilter{}, "", "", 100)
 	regNoErr(t, e)
 	regEqual(t, len(cs), 0)
 }
@@ -427,7 +427,7 @@ func TestResolutionMergeAndNotSame(t *testing.T) {
 	regEqual(t, got, oldAssessment)
 }
 
-// R-H14C-XOPK R-H2C9-BGG9 R-H3K5-P86Y R-H4S2-2ZXN
+// R-H14C-XOPK R-4NXJ-LYAH R-H3K5-P86Y R-H4S2-2ZXN
 func TestScoringAssessmentAndFreshestSources(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 42}))
@@ -462,6 +462,9 @@ func TestScoringAssessmentAndFreshestSources(t *testing.T) {
 	regNoErr(t, e)
 	regEqual(t, counts, store.Counts{Rescored: 1})
 	aWant := store.Assessment{Candidate: id, Fleet: true, Low: 325, High: &high, Confidence: 0.75, Filed: d.Reading.Filed, Minutes: func() *int64 { v := int64(42); return &v }(), Exclusions: []sources.Exclusion{{Reason: "signal", Detail: "two"}, {Reason: "signal", Detail: "one"}}, Excluded: true, Base: scoring.Score(scoring.Point(325, &high), 0.75), Rules: sources.Rules, Scored: regTime(f)}
+	aWant.Effective = scoring.Effective(aWant.Confidence, aWant.Filed, regTime(f))
+	aWant.Score = scoring.Score(scoring.Point(aWant.Low, aWant.High), aWant.Effective)
+	aWant.ScoreKey = int64(aWant.Score * 1000000)
 	got, e := f.st.GetAssessment(regCtx, id)
 	regNoErr(t, e)
 	regEqual(t, got, aWant)
@@ -521,7 +524,7 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	_, e := f.st.RescoreAll(regCtx)
 	regNoErr(t, e)
 	filter := store.ShortlistFilter{MaxMinutes: 120, MinRevenue: 10000000}
-	rs, e := f.st.Shortlist(regCtx, filter, 0, 10)
+	rs, e := f.st.Shortlist(regCtx, filter, 0, "", 10)
 	regNoErr(t, e)
 	regEqual(t, len(rs), 1)
 	before := regCandidate(t, f, id)
@@ -542,7 +545,7 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 		} else {
 			regEqual(t, a.Exclusions, []sources.Exclusion{})
 		}
-		rs, e = f.st.Shortlist(regCtx, filter, 0, 10)
+		rs, e = f.st.Shortlist(regCtx, filter, 0, "", 10)
 		regNoErr(t, e)
 		want := 1
 		if kind == store.KindExclude {
@@ -569,7 +572,7 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	regEqual(t, rulings[0].Kind, store.KindInclude)
 }
 
-// R-H77U-UJF1
+// R-9TBC-X6RZ
 func TestScoringShortlistFiltersOrderAndAge(t *testing.T) {
 	f := regNew(t)
 	f.now = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -612,7 +615,7 @@ func TestScoringShortlistFiltersOrderAndAge(t *testing.T) {
 	_, e := f.st.RescoreAll(regCtx)
 	regNoErr(t, e)
 	filter := store.ShortlistFilter{MaxMinutes: 120, MinRevenue: 10000000, Class: sources.ClassForHire, Cargo: "genfreight"}
-	rs, e := f.st.Shortlist(regCtx, filter, 0, 100)
+	rs, e := f.st.Shortlist(regCtx, filter, 0, "", 100)
 	regNoErr(t, e)
 	want := []string{byName["floor"], byName["same-score"], byName["zero-minutes"], byName["boundary"]}
 	regEqual(t, len(rs), len(want))
@@ -622,24 +625,25 @@ func TestScoringShortlistFiltersOrderAndAge(t *testing.T) {
 		a, e := f.st.GetAssessment(regCtx, r.Candidate.ID)
 		regNoErr(t, e)
 		regEqual(t, r.Assessment, a)
-		regEqual(t, r.Effective, scoring.Effective(a.Confidence, a.Filed, f.now))
-		regEqual(t, r.Score, scoring.Score(scoring.Point(a.Low, a.High), r.Effective))
+		regEqual(t, r.Assessment.Effective, scoring.Effective(a.Confidence, a.Filed, f.now))
+		regEqual(t, r.Assessment.Score, scoring.Score(scoring.Point(a.Low, a.High), r.Assessment.Effective))
 	}
-	page, e := f.st.Shortlist(regCtx, filter, 1, 2)
+	page, e := f.st.Shortlist(regCtx, filter, rs[0].Assessment.ScoreKey, rs[0].Candidate.ID, 2)
 	regNoErr(t, e)
 	regEqual(t, page, rs[1:3])
 	filter.MaxMinutes = 0
-	zero, e := f.st.Shortlist(regCtx, filter, 0, 100)
+	zero, e := f.st.Shortlist(regCtx, filter, 0, "", 100)
 	regNoErr(t, e)
 	regEqual(t, len(zero), 1)
 	regEqual(t, zero[0].Candidate.ID, byName["zero-minutes"])
 	// With no class/cargo restrictions those independent filters disappear.
 	filter = store.ShortlistFilter{MaxMinutes: 121, MinRevenue: 9999999}
-	all, e := f.st.Shortlist(regCtx, filter, 0, 100)
+	all, e := f.st.Shortlist(regCtx, filter, 0, "", 100)
 	regNoErr(t, e)
 	regEqual(t, len(all), 8)
 	f.now = f.now.AddDate(6, 0, 0)
-	aged, e := f.st.Shortlist(regCtx, filter, 0, 100)
+	regNoErr(t, f.st.RefreshShortlist(regCtx))
+	aged, e := f.st.Shortlist(regCtx, filter, 0, "", 100)
 	regNoErr(t, e)
 	regEqual(t, len(aged), 0)
 }
@@ -674,7 +678,7 @@ func TestResolutionConcurrentMergeAttachAndRescore(t *testing.T) {
 	for e := range errs {
 		regNoErr(t, e)
 	}
-	cs, e := f.st.ListCandidates(regCtx, store.CandidateFilter{}, 0, 100)
+	cs, e := f.st.ListCandidates(regCtx, store.CandidateFilter{}, "", "", 100)
 	regNoErr(t, e)
 	for _, c := range cs {
 		for _, l := range regLinks(t, f, c.ID) {
@@ -804,9 +808,9 @@ func TestResolutionBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
 	regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
 	regEqual(t, regCandidate(t, batch, id).Updated, regTime(batch))
 	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
-	batchCandidates, err := batch.st.ListCandidates(regCtx, store.CandidateFilter{}, 0, 20)
+	batchCandidates, err := batch.st.ListCandidates(regCtx, store.CandidateFilter{}, "", "", 20)
 	regNoErr(t, err)
-	singleCandidates, err := single.st.ListCandidates(regCtx, store.CandidateFilter{}, 0, 20)
+	singleCandidates, err := single.st.ListCandidates(regCtx, store.CandidateFilter{}, "", "", 20)
 	regNoErr(t, err)
 	regEqual(t, batchCandidates, singleCandidates)
 	batch.reopen(t)

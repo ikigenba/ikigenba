@@ -158,7 +158,7 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-4K2U-1Q7P R-4DZC-4VI8 R-4F78-IN8X R-4OYF-KT6H R-4Q6B-YKX6 R-4TU1-3W59 R-4W9T-VFMN R-4ZXJ-0QUQ R-52DB-SAC4 R-5LVP-WM78
+// R-9B0V-6MNK R-4DZC-4VI8 R-99SY-SUWV R-4OYF-KT6H R-4Q6B-YKX6 R-4TU1-3W59 R-4W9T-VFMN R-4ZXJ-0QUQ R-52DB-SAC4 R-5LVP-WM78
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -220,7 +220,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractEqual(t, read, store.Pass{})
 }
 
-// R-4RE8-CCNV R-4SM4-Q4EK R-4XHQ-97DC R-I3E6-Z7A0
+// R-4RE8-CCNV R-4SM4-Q4EK R-4XHQ-97DC R-9KS2-8SL4
 func TestContractPassRefusals(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -328,9 +328,9 @@ func TestContractIDMinting(t *testing.T) {
 				_, err = f.s.FinishPass(ctx, second, store.Counts{})
 				contractOK(t, err)
 			}
-			originalPasses, err := f.s.ListPasses(ctx, 0, 20)
+			originalPasses, err := f.s.ListPasses(ctx, "", "", 20)
 			contractOK(t, err)
-			originalCandidates, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+			originalCandidates, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20)
 			contractOK(t, err)
 			originalLinks := map[string][]store.Link{}
 			for _, c := range originalCandidates {
@@ -351,10 +351,10 @@ func TestContractIDMinting(t *testing.T) {
 					wantRequests = []int{8, 4}
 				}
 				contractEqual(t, r.requests, wantRequests)
-				afterPasses, e := f.s.ListPasses(ctx, 0, 20)
+				afterPasses, e := f.s.ListPasses(ctx, "", "", 20)
 				contractOK(t, e)
 				contractEqual(t, afterPasses, originalPasses)
-				afterCandidates, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+				afterCandidates, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20)
 				contractOK(t, e)
 				contractEqual(t, afterCandidates, originalCandidates)
 				for _, c := range originalCandidates {
@@ -365,11 +365,11 @@ func TestContractIDMinting(t *testing.T) {
 
 			}
 			if kind == "pass" {
-				ps, err := f.s.ListPasses(ctx, 0, 20)
+				ps, err := f.s.ListPasses(ctx, "", "", 20)
 				contractOK(t, err)
 				contractEqual(t, len(ps), 2)
 			} else {
-				cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+				cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20)
 				contractOK(t, err)
 				contractEqual(t, len(cs), 2)
 			}
@@ -377,7 +377,7 @@ func TestContractIDMinting(t *testing.T) {
 	}
 }
 
-// R-515F-EILF R-53L8-622T R-54T4-JTTI
+// R-9EOK-BXVN R-53L8-622T R-54T4-JTTI
 func TestContractPassWindowsAndPrune(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -407,19 +407,19 @@ func TestContractPassWindowsAndPrune(t *testing.T) {
 		}
 		return strings.Compare(b.ID, a.ID)
 	})
-	got, err := f.s.ListPasses(ctx, 0, 20)
+	got, err := f.s.ListPasses(ctx, "", "", 20)
 	contractOK(t, err)
 	contractEqual(t, got, all)
-	got, err = f.s.ListPasses(ctx, 1, 2)
+	got, err = f.s.ListPasses(ctx, all[0].Started.Format(time.RFC3339), all[0].ID, 2)
 	contractOK(t, err)
 	contractEqual(t, got, all[1:3])
-	got, err = f.s.ListPasses(ctx, 99, 2)
+	got, err = f.s.ListPasses(ctx, "", "end", 2)
 	contractOK(t, err)
 	if got == nil || len(got) != 0 {
 		t.Fatal(got)
 	}
-	for _, w := range [][2]int64{{-1, 1}, {0, 0}, {0, -1}} {
-		got, err = f.s.ListPasses(ctx, w[0], w[1])
+	for _, n := range []int{0, -1} {
+		got, err = f.s.ListPasses(ctx, "", "", n)
 		contractError(t, err, store.ErrUnreachable)
 		if got != nil {
 			t.Fatal(got)
@@ -503,7 +503,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-47VU-80SR R-493Q-LSJG R-57V9-TQVL R-4CRF-R3RJ R-4LAQ-FHYE R-4MIM-T9P3 R-578X-BDAW R-58GT-P51L R-5AWM-GOIZ R-5C4I-UG9O
+// R-47VU-80SR R-493Q-LSJG R-98L2-F366 R-4CRF-R3RJ R-4LAQ-FHYE R-9C8R-KEE9 R-578X-BDAW R-58GT-P51L R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -539,6 +539,9 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	contractOK(t, err)
 	m := int64(41)
 	wantA := store.Assessment{Candidate: id, Fleet: true, Low: o.Reading.Estimate.Low, High: o.Reading.Estimate.High, Confidence: o.Reading.Estimate.Confidence, Filed: o.Reading.Filed, Minutes: &m, Exclusions: []sources.Exclusion{}, Base: scoring.Score(scoring.Point(o.Reading.Estimate.Low, o.Reading.Estimate.High), o.Reading.Estimate.Confidence), Rules: sources.Rules, Scored: stamp}
+	wantA.Effective = scoring.Effective(wantA.Confidence, wantA.Filed, stamp)
+	wantA.Score = scoring.Score(scoring.Point(wantA.Low, wantA.High), wantA.Effective)
+	wantA.ScoreKey = int64(wantA.Score * 1000000)
 	a, err = f.s.GetAssessment(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, a, wantA)
@@ -647,7 +650,7 @@ func TestContractLinkReadOrder(t *testing.T) {
 	}
 }
 
-// R-5DCF-880D R-5H04-DJ8G
+// R-4HU1-P3L0 R-9JK5-V0UF
 func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -660,7 +663,7 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 		}
 		ids = append(ids, contractAttach(t, f, "run", o)[0])
 	}
-	got, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+	got, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20)
 	contractOK(t, err)
 	var gotIDs []string
 	for _, c := range got {
@@ -668,37 +671,37 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	}
 	want := []string{ids[3], ids[2], ids[1], ids[0]}
 	contractEqual(t, gotIDs, want)
-	page, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 1, 2)
+	page, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, got[0].Created.Format(time.RFC3339), got[0].ID, 2)
 	contractOK(t, err)
 	contractEqual(t, page, got[1:3])
-	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, 99, 2)
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "end", 2)
 	contractOK(t, err)
 	if page == nil || len(page) != 0 {
 		t.Fatal(page)
 	}
 	for _, name := range []string{"TRUCKING", "trucking", "Trucking"} {
-		page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Name: name}, 0, 20)
+		page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Name: name}, "", "", 20)
 		contractOK(t, err)
 		contractEqual(t, len(page), 1)
 		contractEqual(t, page[0].ID, ids[0])
 	}
-	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Name: "ALIAS", Zip: "12345", Phone: "1 (320) 555-0101"}, 0, 20)
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Name: "ALIAS", Zip: "12345", Phone: "1 (320) 555-0101"}, "", "", 20)
 	contractOK(t, err)
 	contractEqual(t, len(page), 1)
 	contractEqual(t, page[0].ID, ids[3])
-	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "letters"}, 0, 20)
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "letters"}, "", "", 20)
 	contractOK(t, err)
 	if page == nil || len(page) != 0 {
 		t.Fatal(page)
 	}
 	_, _, err = f.s.MarkGone(ctx, "source-z", "absent")
 	contractOK(t, err)
-	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "320.555.0101"}, 0, 20)
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "320.555.0101"}, "", "", 20)
 	contractOK(t, err)
 	contractEqual(t, len(page), 4)
 	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids[0], Other: ids[1], Why: "same", UserID: "owner"})
 	contractOK(t, err)
-	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20)
+	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20)
 	contractOK(t, err)
 	for _, c := range page {
 		if c.ID == ids[1] || c.Status != store.StatusActive {
@@ -706,13 +709,13 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 		}
 	}
 	contractEqual(t, len(page), 3)
-	for _, w := range [][2]int64{{-1, 1}, {0, 0}, {0, -1}} {
-		page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, w[0], w[1])
+	for _, n := range []int{0, -1} {
+		page, err = f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", n)
 		contractError(t, err, store.ErrUnreachable)
 		if page != nil {
 			t.Fatal(page)
 		}
-		ranked, e := f.s.Shortlist(ctx, store.ShortlistFilter{}, w[0], w[1])
+		ranked, e := f.s.Shortlist(ctx, store.ShortlistFilter{}, 0, "", n)
 		contractError(t, e, store.ErrUnreachable)
 		if ranked != nil {
 			t.Fatal(ranked)
@@ -720,68 +723,11 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	}
 }
 
-// R-5EKB-LZR2
-func TestContractShortlistReadsClockAndPages(t *testing.T) {
-	f := contractDB(t)
-	ctx := context.Background()
-	filed := f.now.UTC().Truncate(time.Second)
-	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 30}))
-	for _, name := range []string{"A business", "B business", "C business"} {
-		contractAttach(t, f, "run", contractObservation(name, name, filed))
-	}
-	_, err := f.s.RescoreAll(ctx)
-	contractOK(t, err)
-	calls := 0
-	f.s = store.New(f.d, store.Config{Now: func() time.Time { calls++; return f.now }, Rand: f.rnd})
-	filter := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue, Class: sources.ClassForHire, Cargo: "grain"}
-	ranked, err := f.s.Shortlist(ctx, filter, 0, 20)
-	contractOK(t, err)
-	contractEqual(t, calls, 1)
-	contractEqual(t, len(ranked), 3)
-	for i, r := range ranked {
-		c, e := f.s.GetCandidate(ctx, r.Candidate.ID)
-		contractOK(t, e)
-		a, e := f.s.GetAssessment(ctx, r.Candidate.ID)
-		contractOK(t, e)
-		contractEqual(t, r, store.Ranked{Candidate: c, Assessment: a, Effective: 0.8, Score: 12000000})
-		if i > 0 && ranked[i-1].Candidate.ID >= r.Candidate.ID {
-			t.Fatal("tied ranking not id ascending")
-		}
-	}
-	page, err := f.s.Shortlist(ctx, filter, 1, 1)
-	contractOK(t, err)
-	contractEqual(t, page, ranked[1:2])
-	page, err = f.s.Shortlist(ctx, filter, 100, 1)
-	contractOK(t, err)
-	if page == nil || len(page) != 0 {
-		t.Fatal(page)
-	}
-	f.now = filed.AddDate(3, 0, 0)
-	page, err = f.s.Shortlist(ctx, filter, 0, 20)
-	contractOK(t, err)
-	for _, r := range page {
-		effective := scoring.Effective(r.Assessment.Confidence, r.Assessment.Filed, f.now)
-		contractEqual(t, r.Effective, effective)
-		contractEqual(t, r.Score, scoring.Score(scoring.Point(r.Assessment.Low, r.Assessment.High), effective))
-		for _, before := range ranked {
-			if before.Candidate.ID == r.Candidate.ID {
-				contractEqual(t, r.Assessment, before.Assessment)
-			}
-		}
-	}
-	f.now = filed.AddDate(5, 0, 0)
-	page, err = f.s.Shortlist(ctx, filter, 0, 20)
-	contractOK(t, err)
-	if page == nil || len(page) != 0 {
-		t.Fatal(page)
-	}
-}
-
 // R-5I80-RAZ5 R-58GT-P51L
 func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
-	ps, err := f.s.ListPasses(ctx, 3, 5)
+	ps, err := f.s.ListPasses(ctx, "", "", 5)
 	contractOK(t, err)
 	if ps == nil || len(ps) != 0 {
 		t.Fatal(ps)
@@ -791,12 +737,12 @@ func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	if ps == nil || len(ps) != 0 {
 		t.Fatal(ps)
 	}
-	cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{Name: "anything"}, 2, 3)
+	cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{Name: "anything"}, "", "", 3)
 	contractOK(t, err)
 	if cs == nil || len(cs) != 0 {
 		t.Fatal(cs)
 	}
-	rs, err := f.s.Shortlist(ctx, store.ShortlistFilter{}, 2, 3)
+	rs, err := f.s.Shortlist(ctx, store.ShortlistFilter{}, 0, "", 3)
 	contractOK(t, err)
 	if rs == nil || len(rs) != 0 {
 		t.Fatal(rs)
@@ -845,9 +791,9 @@ type contractSnapshot struct {
 func contractState(t *testing.T, f *contractFixture) contractSnapshot {
 	t.Helper()
 	ctx := context.Background()
-	cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 100)
+	cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100)
 	contractOK(t, err)
-	ps, err := f.s.ListPasses(ctx, 0, 100)
+	ps, err := f.s.ListPasses(ctx, "", "", 100)
 	contractOK(t, err)
 	snap := contractSnapshot{candidates: cs, passes: ps, links: map[string][]store.Link{}, estimates: map[string][]sources.Estimate{}, assessments: map[string]store.Assessment{}, rulings: map[string][]store.Ruling{}}
 	for _, c := range cs {
@@ -908,7 +854,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-OD8H-2EDG R-I3E6-Z7A0
+// R-OD8H-2EDG R-9KS2-8SL4
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -929,7 +875,9 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		{"FailPass", func(c context.Context) error { _, e := f.s.FailPass(c, p.ID, "invalid"); return e }},
 		{"FailPassValid", func(c context.Context) error { _, e := f.s.FailPass(c, p.ID, store.ReasonStore); return e }},
 		{"GetPass", func(c context.Context) error { _, e := f.s.GetPass(c, "missing"); return e }},
-		{"ListPasses", func(c context.Context) error { _, e := f.s.ListPasses(c, -1, 0); return e }},
+		{"FindDelivered", func(c context.Context) error { _, e := f.s.FindDelivered(c, p.Delivery, p.Trigger); return e }},
+		{"RefreshShortlist", func(c context.Context) error { return f.s.RefreshShortlist(c) }},
+		{"ListPasses", func(c context.Context) error { _, e := f.s.ListPasses(c, "", "", 0); return e }},
 		{"RunningPasses", func(c context.Context) error { _, e := f.s.RunningPasses(c); return e }},
 		{"PrunePasses", func(c context.Context) error { _, e := f.s.PrunePasses(c, 0); return e }},
 		{"Attach", func(c context.Context) error { _, _, e := f.s.Attach(c, "", false, nil); return e }},
@@ -954,8 +902,11 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		{"Estimates", func(c context.Context) error { _, e := f.s.Estimates(c, "missing"); return e }},
 		{"GetAssessment", func(c context.Context) error { _, e := f.s.GetAssessment(c, "missing"); return e }},
 		{"Rulings", func(c context.Context) error { _, e := f.s.Rulings(c, "missing"); return e }},
-		{"ListCandidates", func(c context.Context) error { _, e := f.s.ListCandidates(c, store.CandidateFilter{}, -1, 0); return e }},
-		{"Shortlist", func(c context.Context) error { _, e := f.s.Shortlist(c, store.ShortlistFilter{}, -1, 0); return e }},
+		{"ListCandidates", func(c context.Context) error {
+			_, e := f.s.ListCandidates(c, store.CandidateFilter{}, "", "", 0)
+			return e
+		}},
+		{"Shortlist", func(c context.Context) error { _, e := f.s.Shortlist(c, store.ShortlistFilter{}, 0, "", 0); return e }},
 	}
 	check := func(c context.Context, want error) {
 		t.Helper()
@@ -1046,7 +997,7 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 		func() error { _, e := f.s.FinishPass(ctx, p.ID, store.Counts{}); return e },
 		func() error { _, e := f.s.FailPass(ctx, p.ID, store.ReasonScrapes); return e },
 		func() error { _, e := f.s.GetPass(ctx, p.ID); return e },
-		func() error { _, e := f.s.ListPasses(ctx, 0, 20); return e },
+		func() error { _, e := f.s.ListPasses(ctx, "", "", 20); return e },
 		func() error { _, e := f.s.RunningPasses(ctx); return e },
 		func() error { _, e := f.s.PrunePasses(ctx, 20); return e },
 		func() error {
@@ -1067,8 +1018,8 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 		func() error { _, e := f.s.Estimates(ctx, id); return e },
 		func() error { _, e := f.s.GetAssessment(ctx, id); return e },
 		func() error { _, e := f.s.Rulings(ctx, id); return e },
-		func() error { _, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, 0, 20); return e },
-		func() error { _, e := f.s.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: 120}, 0, 20); return e },
+		func() error { _, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20); return e },
+		func() error { _, e := f.s.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: 120}, 0, "", 20); return e },
 	}
 	start = make(chan struct{})
 	for _, call := range calls {
@@ -1094,7 +1045,7 @@ func (r *contractErrorReader) Read(p []byte) (int, error) {
 	return 0, r.err
 }
 
-// R-5AB2-LACZ R-I3E6-Z7A0
+// R-5AB2-LACZ R-9KS2-8SL4
 func TestContractMintReaderRecordErrorsAreUnreachable(t *testing.T) {
 	recordErrors := []struct {
 		name string

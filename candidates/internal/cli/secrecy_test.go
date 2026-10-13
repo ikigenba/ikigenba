@@ -168,7 +168,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-O4P6-E06L R-O74Z-5JNZ R-O9KR-X35D R-OASO-AUW2
+// R-O4P6-E06L R-O74Z-5JNZ R-O9KR-X35D R-OASO-AUW2 R-6BHU-EWKD
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -180,8 +180,28 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	facts := row["facts"].(map[string]any)
 	facts["email"] = markers[7] + "@" + markers[8] + ".example"
 	facts["phone"] = phone
+	facts["power_units"] = "100"
+	facts["drivers"] = "100"
+	facts["status"] = "A"
+	facts["class"] = "AUTHORIZED FOR HIRE"
+	facts["mcs150_date"] = "20250101"
 	row["raw"] = map[string]any{"private": markers[9]}
-	f := &secrecyFake{rows: []map[string]any{row}, echo: strings.Join(forbidden, " ")}
+	secondBytes, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second map[string]any
+	if err = json.Unmarshal(secondBytes, &second); err != nil {
+		t.Fatal(err)
+	}
+	second["source_id"], second["digest"] = "102", "second-digest"
+	second["name"], second["names"] = markers[1], []string{markers[1]}
+	secondFacts := second["facts"].(map[string]any)
+	secondPhone := phone[:9] + string('0'+(phone[9]-'0'+1)%10)
+	secondFacts["phone"] = secondPhone
+	secondFacts["email"] = markers[8] + "@" + markers[7] + ".example"
+	forbidden = append(forbidden, secondPhone)
+	f := &secrecyFake{rows: []map[string]any{row, second}, echo: strings.Join(forbidden, " ")}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
 	h.p.Rand = &secrecyBytes{}
 	h.start()
@@ -233,8 +253,8 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		name string
 		args any
 	}{
-		{"shortlist", map[string]any{"page": -1}}, {"candidates", map[string]any{"name": markers[0], "phone": phone, "page": -1}},
-		{"candidate", map[string]any{"candidate": "absent"}}, {"passes", map[string]any{"page": -1}}, {"pass", map[string]any{"pass": "absent"}},
+		{"shortlist", map[string]any{"page": markers[0]}}, {"candidates", map[string]any{"name": markers[0], "phone": phone, "page": markers[0]}},
+		{"candidate", map[string]any{"candidate": "absent"}}, {"passes", map[string]any{"page": markers[0]}}, {"pass", map[string]any{"pass": "absent"}},
 		{"rebuild", []any{}}, {"decide", map[string]any{"kind": "invalid", "candidate": id, "why": markers[9]}},
 	} {
 		call(tc.name, tc.args, true)
@@ -281,6 +301,20 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("record failure pass missing")
+	}
+	// Each list has two entries here, and every returned paging handle is searched.
+	for _, name := range []string{"shortlist", "candidates", "passes"} {
+		first := call(name, map[string]any{"limit": 1}, false)
+		token := runText(first, "next")
+		if token == "" {
+			t.Fatalf("%s missing paging handle", name)
+		}
+		forbidden = append(forbidden, token)
+		second := call(name, map[string]any{"limit": 1, "page": token}, false)
+		if token = runText(second, "next"); token != "" {
+			forbidden = append(forbidden, token)
+		}
+		call(name, map[string]any{"limit": 1, "page": markers[0]}, true)
 	}
 	f.set("rows_failure")
 	rebuild(store.ReasonScrapes)
