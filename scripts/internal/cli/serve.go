@@ -227,7 +227,10 @@ func Run(ctx context.Context, p Process) int {
 		defer cancel()
 		writer.Shutdown(deadline, "")
 	}
-	if e = core.Recover(context.Background()); e == nil {
+	if e = catalog.SyncTables(context.Background()); e == nil {
+		e = core.Recover(context.Background())
+	}
+	if e == nil {
 		e = core.Prune(context.Background())
 	}
 	if e != nil {

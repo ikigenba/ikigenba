@@ -16,10 +16,10 @@ import (
 
 var _ func() fs.FS = scripts.Migrations
 
-// R-6N1T-NTHY R-6O9Q-1L8N
+// R-BLBO-ONI3 R-BMJL-2F8S
 func TestMigrations(t *testing.T) {
 	first := scripts.Migrations()
-	assertEntries(t, first, ".", []string{"0001_catalog.sql", "0002_subscriptions.sql"}, false)
+	assertEntries(t, first, ".", []string{"0001_catalog.sql", "0002_subscriptions.sql", "0003_tables.sql"}, false)
 	contents, err := fs.ReadFile(first, "0001_catalog.sql")
 	second, secondErr := fs.ReadFile(first, "0002_subscriptions.sql")
 	if secondErr != nil {
@@ -28,10 +28,21 @@ func TestMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	third, err := fs.ReadFile(first, "0003_tables.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(t.TempDir())
 	for range 3 {
 		next := scripts.Migrations()
-		assertEntries(t, next, ".", []string{"0001_catalog.sql", "0002_subscriptions.sql"}, false)
+		assertEntries(t, next, ".", []string{"0001_catalog.sql", "0002_subscriptions.sql", "0003_tables.sql"}, false)
+		last, err := fs.ReadFile(next, "0003_tables.sql")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(last, third) {
+			t.Fatal("third migration changed")
+		}
 		got, err := fs.ReadFile(next, "0001_catalog.sql")
 		if err != nil {
 			t.Fatal(err)
@@ -49,7 +60,7 @@ func TestMigrations(t *testing.T) {
 	}
 }
 
-// R-RVSC-1DRN R-YCYS-PQMD
+// R-BGG3-5KJB R-YCYS-PQMD
 func TestCatalogSchema(t *testing.T) {
 	ctx := context.Background()
 	d, err := db.Open(ctx, db.Config{Path: filepath.Join(t.TempDir(), "scripts.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }})
@@ -80,10 +91,10 @@ func TestCatalogSchema(t *testing.T) {
 		if err := rows.Close(); err != nil {
 			return err
 		}
-		if !reflect.DeepEqual(names, []string{"catalog", "event_runs", "schema_migrations", "subscriptions"}) {
+		if !reflect.DeepEqual(names, []string{"catalog", "event_runs", "runs", "schema_migrations", "scripts", "subscriptions"}) {
 			t.Fatalf("tables: %v", names)
 		}
-		for _, table := range []string{"catalog", "subscriptions", "event_runs"} {
+		for _, table := range []string{"catalog", "subscriptions", "event_runs", "scripts", "runs"} {
 			var count int
 			if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil {
 				return err
@@ -171,6 +182,129 @@ func TestSubscriptionTableShapes(t *testing.T) {
 			}
 			if !reflect.DeepEqual(names, want) {
 				t.Fatalf("%s columns %v", table, names)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// R-BBKH-MHKJ R-BCSE-09B8 R-BE0A-E11X
+func TestMirrorTableShapes(t *testing.T) {
+	ctx := context.Background()
+	d, err := db.Open(ctx, db.Config{Path: filepath.Join(t.TempDir(), "scripts.db"), Migrations: scripts.Migrations(), Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := d.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	err = d.Read(ctx, func(tx *sql.Tx) error {
+		for table, want := range map[string][]string{"scripts": {"id", "name", "owner", "repo", "ref", "created"}, "runs": {"id", "script", "sha", "ref", "user", "request_id", "trigger", "event", "status", "exit_code", "started", "finished", "stdout_bytes", "stderr_bytes", "truncated", "reason"}} {
+			rows, err := tx.QueryContext(ctx, "PRAGMA table_info("+table+")")
+			if err != nil {
+				return err
+			}
+			names := []string{}
+			for rows.Next() {
+				var id, notnull, pk int
+				var name, typ string
+				var def any
+				if err := rows.Scan(&id, &name, &typ, &notnull, &def, &pk); err != nil {
+					_ = rows.Close()
+					return err
+				}
+				names = append(names, name)
+				wantType := "TEXT"
+				if table == "runs" && (id == 9 || id >= 12 && id <= 14) {
+					wantType = "INTEGER"
+				}
+				wantNull := 1
+				if table == "runs" && id == 11 {
+					wantNull = 0
+				}
+				wantPK := 0
+				if id == 0 {
+					wantPK = 1
+				}
+				if id != len(names)-1 || typ != wantType || notnull != wantNull || pk != wantPK {
+					t.Fatalf("%s column %s: %d %s %d %d", table, name, id, typ, notnull, pk)
+				}
+			}
+			err = rows.Err()
+			_ = rows.Close()
+			if err != nil {
+				return err
+			}
+			if !reflect.DeepEqual(names, want) {
+				t.Fatalf("%s columns %v", table, names)
+			}
+		}
+		type index struct {
+			name, origin string
+			unique       int
+		}
+		for table, wantName := range map[string]string{"scripts": "scripts_owner_name", "runs": "runs_script_started_id"} {
+			rows, err := tx.QueryContext(ctx, "PRAGMA index_list("+table+")")
+			if err != nil {
+				return err
+			}
+			indexes := []index{}
+			for rows.Next() {
+				var seq, partial int
+				var i index
+				if err := rows.Scan(&seq, &i.name, &i.unique, &i.origin, &partial); err != nil {
+					_ = rows.Close()
+					return err
+				}
+				indexes = append(indexes, i)
+			}
+			err = rows.Err()
+			_ = rows.Close()
+			if err != nil {
+				return err
+			}
+			found, uniqueName := false, false
+			for _, i := range indexes {
+				rows, err := tx.QueryContext(ctx, "PRAGMA index_info("+i.name+")")
+				if err != nil {
+					return err
+				}
+				columns := []string{}
+				for rows.Next() {
+					var seq, cid int
+					var name string
+					if err := rows.Scan(&seq, &cid, &name); err != nil {
+						_ = rows.Close()
+						return err
+					}
+					columns = append(columns, name)
+				}
+				err = rows.Err()
+				_ = rows.Close()
+				if err != nil {
+					return err
+				}
+				if table == "scripts" && i.unique == 1 && reflect.DeepEqual(columns, []string{"name"}) {
+					uniqueName = true
+				}
+				if i.name == wantName {
+					found = true
+					want := []string{"owner", "name"}
+					if table == "runs" {
+						want = []string{"script", "started", "id"}
+					}
+					if i.origin != "c" || i.unique != 0 || !reflect.DeepEqual(columns, want) {
+						t.Fatalf("index %#v columns %v", i, columns)
+					}
+				}
+			}
+			if !found || table == "scripts" && !uniqueName {
+				t.Fatalf("missing indexes of %s", table)
 			}
 		}
 		return nil

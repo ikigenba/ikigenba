@@ -265,10 +265,14 @@ func (s *catalog) save(ctx context.Context, c content) error {
 		return err
 	}
 	_, err := s.tx.ExecContext(ctx, "INSERT INTO catalog(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", encoded.Bytes())
-	if err == nil {
-		s.data = c
+	if err != nil {
+		return err
 	}
-	return err
+	if err = s.mirror(ctx, c); err != nil {
+		return err
+	}
+	s.data = c
+	return nil
 }
 func (s *catalog) copy() content {
 	c := content{Scripts: map[string]Script{}, Runs: map[string]Run{}}

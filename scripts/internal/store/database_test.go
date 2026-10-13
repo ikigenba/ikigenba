@@ -153,17 +153,17 @@ func TestAdoptEarlierGobCatalog(t *testing.T) {
 	}
 }
 
-// R-95MU-8IBI R-G6AU-28DY
+// R-BIVV-X40P R-BF86-RSSM R-BK3S-AVRE
 func TestUpgradeBaselineCatalog(t *testing.T) {
-	for _, baseline := range []bool{false, true} {
+	for _, migrationCount := range []int{0, 1, 2} {
 		for _, records := range []bool{false, true} {
-			t.Run(fmt.Sprintf("baseline-%t-records-%t", baseline, records), func(t *testing.T) {
+			t.Run(fmt.Sprintf("migrations-%d-records-%t", migrationCount, records), func(t *testing.T) {
 				path := filepath.Join(t.TempDir(), "scripts.db")
 				migrations := fstest.MapFS{}
-				if baseline {
-					data, err := fs.ReadFile(scripts.Migrations(), "0001_catalog.sql")
+				for _, name := range []string{"0001_catalog.sql", "0002_subscriptions.sql"}[:migrationCount] {
+					data, err := fs.ReadFile(scripts.Migrations(), name)
 					must(t, err)
-					migrations["0001_catalog.sql"] = &fstest.MapFile{Data: data}
+					migrations[name] = &fstest.MapFile{Data: data}
 				}
 				legacy, err := db.Open(ctx, db.Config{Path: path, Migrations: migrations, Now: func() time.Time { return stamp }})
 				must(t, err)
@@ -171,7 +171,7 @@ func TestUpgradeBaselineCatalog(t *testing.T) {
 				r := run(sc, 1)
 				r.Started = r.Started.UTC().Truncate(time.Second)
 				must(t, legacy.Write(ctx, func(tx *sql.Tx) error {
-					if !baseline {
+					if migrationCount == 0 {
 						if _, err := tx.ExecContext(ctx, "CREATE TABLE catalog (id INTEGER PRIMARY KEY CHECK(id=1),value BLOB NOT NULL); DROP TABLE schema_migrations"); err != nil {
 							return err
 						}
@@ -206,9 +206,13 @@ func TestUpgradeBaselineCatalog(t *testing.T) {
 						}
 						names = append(names, name)
 					}
-					equal(t, names, []string{"catalog", "event_runs", "schema_migrations", "subscriptions"})
+					equal(t, names, []string{"catalog", "event_runs", "runs", "schema_migrations", "scripts", "subscriptions"})
 					return rows.Err()
 				}))
+				equal(t, tableRows(t, handle(s), "scripts"), [][]any{})
+				equal(t, tableRows(t, handle(s), "runs"), [][]any{})
+				must(t, s.SyncTables(ctx))
+				assertMirror(t, s)
 				if !records {
 					equal(t, lenList(t, s, "alice"), 0)
 					return
