@@ -354,7 +354,7 @@ func TestRunTrailSourceAndDelivery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for {
-		rs, e := st.ListRuns(ctx, "fmcsa", 0, 20)
+		rs, e := st.ListRunsAfter(ctx, "fmcsa", "", "", 20)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -643,7 +643,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	waitctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	for {
-		rs, e := st.ListRuns(waitctx, "fmcsa", 0, 20)
+		rs, e := st.ListRunsAfter(waitctx, "fmcsa", "", "", 20)
 		if e != nil {
 			t.Fatal(e)
 		}

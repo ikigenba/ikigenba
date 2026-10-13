@@ -102,14 +102,19 @@ func TestVocabulary(t *testing.T) {
 	}
 }
 
-// R-0K27-AH31 R-01RP-JWYM R-05FE-P86P
+// R-0YI6-DS20 R-01RP-JWYM R-05FE-P86P
 func TestEmptyAndRunning(t *testing.T) {
 	s, _ := fresh(t)
 	for _, name := range []string{"", "one"} {
-		rs, e := s.ListRuns(ctx, name, 0, 10)
-		if e != nil || rs == nil || len(rs) != 0 {
-			t.Fatal(rs, e)
+		for _, position := range [][2]string{{"", ""}, {"2000-01-01T00:00:00Z", ""}, {"", "missing"}, {"2999-01-01T00:00:00Z", "missing"}} {
+			for _, limit := range []int{1, 2, 100} {
+				rs, e := s.ListRunsAfter(ctx, name, position[0], position[1], limit)
+				if e != nil || rs == nil || len(rs) != 0 {
+					t.Fatal(rs, e)
+				}
+			}
 		}
+		var e error
 		_, e = s.CurrentRun(ctx, name)
 		is(t, e, store.ErrNotFound)
 		_, e = s.RunningRun(ctx, name)
@@ -204,7 +209,7 @@ func TestIDCandidates(t *testing.T) {
 	is(t, e, store.ErrUnreachable)
 }
 
-// R-ZJH7-TCU7 R-ZT8E-VIRR R-ZWW4-0TZU R-ZN4W-YO2A R-06NB-2ZXE R-07V7-GRO3 R-0933-UJES R-047I-BGG0
+// R-ZT8E-VIRR R-ZWW4-0TZU R-ZN4W-YO2A R-06NB-2ZXE R-07V7-GRO3 R-0933-UJES R-047I-BGG0
 func TestRowsComparisonAndReads(t *testing.T) {
 	s, _ := fresh(t)
 	base := finish(t, s, add(t, s, "a"), source.Row{SourceID: "2", Digest: "b"}, source.Row{SourceID: "3", Digest: "x"}, source.Row{SourceID: "4", Digest: "d"})
@@ -351,7 +356,7 @@ func TestFailureAndInvalidWrites(t *testing.T) {
 	}
 }
 
-// R-02ZL-XOPB R-0BIW-M2W6
+// R-0BIW-M2W6 R-0XAA-00BB
 func TestOrderingAndPrune(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	s, d := open(t, path, nil)
@@ -368,12 +373,12 @@ func TestOrderingAndPrune(t *testing.T) {
 	}
 	running := add(t, s, "a")
 	other := add(t, s, "b")
-	all, e := s.ListRuns(ctx, "a", 1, 2)
+	all, e := s.ListRunsAfter(ctx, "a", running.Started.UTC().Format(time.RFC3339), running.ID, 2)
 	if e != nil || len(all) != 2 || all[0].ID != fail2.ID || all[1].ID != fail1.ID {
 		t.Fatal(all, e)
 	}
-	for _, args := range [][2]int64{{-1, 1}, {0, 0}} {
-		rs, e := s.ListRuns(ctx, "", args[0], args[1])
+	for _, limit := range []int{-1, 0} {
+		rs, e := s.ListRunsAfter(ctx, "", "", "", limit)
 		is(t, e, store.ErrUnreachable)
 		if rs != nil {
 			t.Fatal(rs)
@@ -409,7 +414,7 @@ func TestUnavailablePrecedence(t *testing.T) {
 		if c == ctx {
 			d.SetFailing(true)
 		}
-		checks := []func() error{func() error { _, e := s.AddRun(c, store.Run{}); return e }, func() error { return s.PutRows(c, "missing", []source.Row{{}}) }, func() error { _, e := s.FinishRun(c, "missing"); return e }, func() error { _, e := s.FailRun(c, "missing", "bad"); return e }, func() error { _, e := s.GetRun(c, "missing"); return e }, func() error { _, e := s.ListRuns(c, "", -1, 0); return e }, func() error { _, e := s.CurrentRun(c, "a"); return e }, func() error { _, e := s.RunningRun(c, "a"); return e }, func() error { _, e := s.RunningRuns(c); return e }, func() error { _, e := s.GetRow(c, "missing", "x"); return e }, func() error { _, e := s.ListRows(c, "missing", "", -1, 0); return e }, func() error { return s.EachRow(c, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(c, 0); return e }}
+		checks := []func() error{func() error { _, e := s.AddRun(c, store.Run{}); return e }, func() error { return s.PutRows(c, "missing", []source.Row{{}}) }, func() error { _, e := s.FinishRun(c, "missing"); return e }, func() error { _, e := s.FailRun(c, "missing", "bad"); return e }, func() error { _, e := s.GetRun(c, "missing"); return e }, func() error { _, e := s.ListRunsAfter(c, "", "", "", 0); return e }, func() error { _, e := s.CurrentRun(c, "a"); return e }, func() error { _, e := s.RunningRun(c, "a"); return e }, func() error { _, e := s.RunningRuns(c); return e }, func() error { _, e := s.GetRow(c, "missing", "x"); return e }, func() error { _, e := s.ListRows(c, "missing", "", -1, 0); return e }, func() error { return s.EachRow(c, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(c, 0); return e }}
 		for _, call := range checks {
 			e := call()
 			is(t, e, store.ErrUnreachable)
@@ -540,7 +545,7 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 	}
 }
 
-// R-ZN4W-YO2A R-02ZL-XOPB R-047I-BGG0 R-ZWW4-0TZU R-06NB-2ZXE
+// R-ZN4W-YO2A R-047I-BGG0 R-ZWW4-0TZU R-06NB-2ZXE
 func TestStartOrderAndBaseline(t *testing.T) {
 	s, _ := fresh(t)
 	a := finish(t, s, add(t, s, "a"), source.Row{SourceID: "x", Digest: "first"})
@@ -557,7 +562,7 @@ func TestStartOrderAndBaseline(t *testing.T) {
 	if e != nil || rows == nil || len(rows) != 0 {
 		t.Fatal(rows, e)
 	}
-	all, e := s.ListRuns(ctx, "", 0, 99)
+	all, e := s.ListRunsAfter(ctx, "", "", "", 99)
 	if e != nil || !reflect.DeepEqual(all, []store.Run{c, b, a}) {
 		t.Fatal(all, e)
 	}
@@ -576,7 +581,7 @@ func TestStartOrderAndBaseline(t *testing.T) {
 	older := finish(t, custom, add(t, custom, "a"))
 	clock = clock.Add(-time.Hour)
 	later := finish(t, custom, add(t, custom, "a"))
-	all, e = custom.ListRuns(ctx, "a", 0, 10)
+	all, e = custom.ListRunsAfter(ctx, "a", "", "", 10)
 	if e != nil || !reflect.DeepEqual(all, []store.Run{older, later}) {
 		t.Fatal(all, e)
 	}
@@ -608,5 +613,132 @@ func TestRandomPrecedenceAndReadCounts(t *testing.T) {
 	is(t, e, store.ErrUnreachable)
 	if out != (store.Run{}) || rnd.Len() != 0 {
 		t.Fatal(out, rnd.Len())
+	}
+}
+
+// R-0XAA-00BB
+func TestRunsAfterWindows(t *testing.T) {
+	_, d := fresh(t)
+	clock := time.Date(2026, 2, 3, 4, 5, 6, 987, time.FixedZone("fixture", -3600))
+	rnd := bytes.NewReader(append(append(append(bytes.Repeat([]byte{0x40}, 8), bytes.Repeat([]byte{0x20}, 8)...), bytes.Repeat([]byte{0x30}, 8)...), bytes.Repeat([]byte{0x10}, 8)...))
+	s := store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: rnd})
+	old := finish(t, s, add(t, s, "a"))
+	clock = clock.Add(time.Second)
+	tieA := finish(t, s, add(t, s, "a"))
+	tieB, err := s.FailRun(ctx, add(t, s, "b").ID, store.ReasonSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Second)
+	newest := add(t, s, "b")
+	for _, tc := range []struct {
+		scraper string
+		want    []store.Run
+	}{{"", []store.Run{newest, tieB, tieA, old}}, {"a", []store.Run{tieA, old}}, {"b", []store.Run{newest, tieB}}, {"missing", []store.Run{}}} {
+		for _, limit := range []int{1, 2, 3, 4, 5} {
+			var got []store.Run
+			started, id := "2000-01-01T00:00:00Z", ""
+			for page := 0; page <= len(tc.want); page++ {
+				window, err := s.ListRunsAfter(ctx, tc.scraper, started, id, limit)
+				if err != nil || window == nil {
+					t.Fatal(window, err)
+				}
+				remaining := len(tc.want) - len(got)
+				count := min(remaining, limit)
+				if len(window) != count || !reflect.DeepEqual(window, tc.want[len(got):len(got)+count]) {
+					t.Fatalf("scraper %q, limit %d, page %d: got %#v", tc.scraper, limit, page, window)
+				}
+				got = append(got, window...)
+				if len(window) == 0 {
+					break
+				}
+				last := window[len(window)-1]
+				started, id = last.Started.UTC().Format(time.RFC3339), last.ID
+			}
+			if len(got) != len(tc.want) {
+				t.Fatal(got, tc.want)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		started, id string
+		want        []store.Run
+	}{{tieA.Started.Format(time.RFC3339), "run_2525252525252525", []store.Run{tieA, old}}, {"1999-01-01T00:00:00Z", "missing", []store.Run{}}, {"2999-01-01T00:00:00Z", "missing", []store.Run{newest, tieB, tieA, old}}} {
+		got, err := s.ListRunsAfter(ctx, "", tc.started, tc.id, 10)
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Fatal(got, tc.want, err)
+		}
+	}
+	for _, limit := range []int{-1, 0} {
+		for _, scraper := range []string{"", "a", "missing"} {
+			got, err := s.ListRunsAfter(ctx, scraper, "", "", limit)
+			if got != nil || !errors.Is(err, store.ErrUnreachable) {
+				t.Fatal(got, err)
+			}
+		}
+	}
+}
+
+// R-0W2D-M8KM
+func TestStoreMethodSignatures(t *testing.T) {
+	s, _ := fresh(t)
+	var methods interface {
+		AddRun(context.Context, store.Run) (store.Run, error)
+		PutRows(context.Context, string, []source.Row) error
+		FinishRun(context.Context, string) (store.Run, error)
+		FailRun(context.Context, string, string) (store.Run, error)
+		GetRun(context.Context, string) (store.Run, error)
+		ListRunsAfter(context.Context, string, string, string, int) ([]store.Run, error)
+		CurrentRun(context.Context, string) (store.Run, error)
+		RunningRun(context.Context, string) (store.Run, error)
+		RunningRuns(context.Context) ([]store.Run, error)
+		ListRows(context.Context, string, string, int64, int64) ([]source.Row, error)
+		GetRow(context.Context, string, string) (source.Row, error)
+		EachRow(context.Context, string, func(source.Row) error) error
+		PruneRuns(context.Context, int64) ([]store.Run, error)
+	} = s
+	r, err := methods.AddRun(ctx, store.Run{Scraper: "a", UserID: "caller"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := methods.PutRows(ctx, r.ID, []source.Row{{SourceID: "row"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.RunningRun(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.RunningRuns(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.FinishRun(ctx, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.GetRun(ctx, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.CurrentRun(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.ListRunsAfter(ctx, "a", "", "", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.ListRows(ctx, r.ID, "", 0, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.GetRow(ctx, r.ID, "row"); err != nil {
+		t.Fatal(err)
+	}
+	if err := methods.EachRow(ctx, r.ID, func(source.Row) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	r, err = methods.AddRun(ctx, store.Run{Scraper: "a", UserID: "caller"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.FailRun(ctx, r.ID, store.ReasonSource); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.PruneRuns(ctx, 1); err != nil {
+		t.Fatal(err)
 	}
 }

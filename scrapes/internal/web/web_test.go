@@ -269,7 +269,7 @@ type unread struct{ reads int }
 func (b *unread) Read([]byte) (int, error) { b.reads++; return 0, io.EOF }
 func (*unread) Close() error               { return nil }
 
-// R-U2P5-TFNY R-U3X2-77EN R-U09D-1W6K R-E3DY-7BX4
+// R-U2P5-TFNY R-10XZ-5BJE R-U09D-1W6K R-E3DY-7BX4
 func TestReadOnlyAndIdentity(t *testing.T) {
 	f := setup(t)
 	done := f.seed(t, store.StatusDone, source.Row{SourceID: "one", Facts: json.RawMessage(`{}`), Raw: json.RawMessage(`{}`)})
@@ -277,7 +277,7 @@ func TestReadOnlyAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+	before, err := f.cfg.Store.ListRunsAfter(t.Context(), "", "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestReadOnlyAndIdentity(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(rowBefore, rowAfter) {
 		t.Fatal("read path changed row")
 	}
-	after, err := f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+	after, err := f.cfg.Store.ListRunsAfter(t.Context(), "", "", "", 100)
 	if err != nil || !reflect.DeepEqual(before, after) || f.fake.calls.Load() != 0 {
 		t.Fatal("read path mutated store")
 	}
@@ -407,7 +407,7 @@ func TestBusRoutes(t *testing.T) {
 			t.Fatal("delivery route differs")
 		}
 	}
-	rs, err := f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+	rs, err := f.cfg.Store.ListRunsAfter(t.Context(), "", "", "", 100)
 	if err != nil || len(rs) != 0 || f.fake.calls.Load() != 0 {
 		t.Fatalf("rejected deliveries started work: %+v %v", rs, err)
 	}
@@ -420,7 +420,7 @@ func TestBusRoutes(t *testing.T) {
 	if g.Code != 200 || g.Body.String() != `{"outcome":"ok"}` {
 		t.Fatalf("delivery %d %s", g.Code, g.Body.String())
 	}
-	rs, err = f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+	rs, err = f.cfg.Store.ListRunsAfter(t.Context(), "", "", "", 100)
 	if err != nil || len(rs) != 1 || rs[0].Scraper != "fmcsa" || rs[0].Trigger != "scrape_fmcsa" || rs[0].Delivery != "evt_bbbbbbbbbbbbbbbb" || rs[0].RequestID != "delivery-request" || rs[0].UserID != "" {
 		t.Fatalf("delivery run %+v %v", rs, err)
 	}
@@ -459,7 +459,7 @@ func TestBusRoutesWithHeadersAndBodies(t *testing.T) {
 						t.Fatalf("bus response differs: %d %s versus %d %s", got.Code, got.Body.String(), want.Code, want.Body.String())
 					}
 					if path == "/events" && method == "POST" {
-						rs, err := f.cfg.Store.ListRuns(t.Context(), "", 0, 100)
+						rs, err := f.cfg.Store.ListRunsAfter(t.Context(), "", "", "", 100)
 						wantUser := user
 						if user == "absent" {
 							wantUser = ""

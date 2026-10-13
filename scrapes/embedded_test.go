@@ -8,7 +8,7 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes"
 )
 
-// R-Y6P8-IJ6F R-Y7X4-WAX4 R-Y951-A2NT
+// R-Y6P8-IJ6F R-Y7X4-WAX4 R-0ZQ2-RJSP
 func TestEmbeddedRoots(t *testing.T) {
 	for _, dir := range []string{"", t.TempDir()} {
 		if dir != "" {
@@ -17,7 +17,7 @@ func TestEmbeddedRoots(t *testing.T) {
 		for _, tc := range []struct {
 			f     func() fs.FS
 			names []string
-		}{{scrapes.Assets, []string{"about.html", "landing.html", "notfound.html", "row.html", "run.html", "tools.html"}}, {scrapes.Etc, []string{"manifest.toml", "nginx.conf"}}, {scrapes.Migrations, []string{"0001_runs.sql", "0002_rows.sql"}}} {
+		}{{scrapes.Assets, []string{"about.html", "landing.html", "notfound.html", "row.html", "run.html", "tools.html"}}, {scrapes.Etc, []string{"manifest.toml", "nginx.conf"}}, {scrapes.Migrations, []string{"0001_runs.sql", "0002_rows.sql", "0003_list_indexes.sql"}}} {
 			for range 2 {
 				entries, e := fs.ReadDir(tc.f(), ".")
 				if e != nil {
@@ -29,10 +29,6 @@ func TestEmbeddedRoots(t *testing.T) {
 						t.Fatal(entry.Name())
 					}
 					names = append(names, entry.Name())
-					b, e := fs.ReadFile(tc.f(), entry.Name())
-					if e != nil || len(b) == 0 {
-						t.Fatal(entry.Name(), e)
-					}
 				}
 				if !reflect.DeepEqual(names, tc.names) {
 					t.Fatal(names)

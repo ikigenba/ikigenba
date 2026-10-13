@@ -3,8 +3,10 @@ package pages
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +21,10 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	app "github.com/ikigenba/ikigenba/scrapes"
 	"github.com/ikigenba/ikigenba/scrapes/internal/scrapers"
 	"github.com/ikigenba/ikigenba/scrapes/internal/source"
@@ -164,8 +169,8 @@ func expectedCurrent(r store.Run) *CurrentRun {
 	return &CurrentRun{v.ID, v.Status, v.Started, v.StartedText, v.Finished, v.FinishedText, v.Rows, v.New, v.Changed, v.Gone}
 }
 
-// R-F2ZB-26W9 R-F477-FYMY R-FQ5E-BTZG R-FRDA-PLQ5
-// R-F5F3-TQDN R-F6N0-7I4C R-F7UW-L9V1 R-F92S-Z1LQ R-FAAP-CTCF
+// R-0MB6-K2N2 R-F477-FYMY R-0PYV-PDV5 R-FRDA-PLQ5
+// R-0OQZ-BM4G R-F6N0-7I4C R-F7UW-L9V1 R-F92S-Z1LQ R-FAAP-CTCF
 // R-FBIL-QL34 R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-FHM3-NFSL
 // R-FIU0-17JA R-FK1W-EZ9Z R-FL9S-SR0O R-FMHP-6IRD R-FNPL-KAI2 R-FOXH-Y28R
 func TestLoadAndWrite(t *testing.T) {
@@ -174,7 +179,7 @@ func TestLoadAndWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ServiceName != "scrapes" || RunsShown != 100 || MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || Description == "" || ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
+	if ServiceName != "scrapes" || MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || Description == "" || ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
 		t.Fatal("constants")
 	}
 	manifest, err := fs.ReadFile(app.Etc(), "manifest.toml")
@@ -199,13 +204,14 @@ func TestLoadAndWrite(t *testing.T) {
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, []ScraperRow{}, []RunRow{}}}, {"tools", ToolsData{b, []ToolRow{{"test-tool", "test-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}, {"row", RowData{b, RowView{}}}, {"row", RowData{b, RowView{"test-scraper", "test-run", "test-source", "collected", "collected-text", "digest", "test-name", []string{"one", "two"}, "street", "city", "state", "zip", "county", "lat", "lon", []PersonRow{{"person", "role"}}, []FactRow{{"key", "value"}}, "raw"}}}}
+	}{{"landing", LandingData{b, []ScraperRow{}, []RunRow{}, ""}}, {"tools", ToolsData{b, []ToolRow{{"test-tool", "test-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}, {"row", RowData{b, RowView{}}}, {"row", RowData{b, RowView{"test-scraper", "test-run", "test-source", "collected", "collected-text", "digest", "test-name", []string{"one", "two"}, "street", "city", "state", "zip", "county", "lat", "lon", []PersonRow{{"person", "role"}}, []FactRow{{"key", "value"}}, "raw"}}}}
 	for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
 		for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
 			for _, full := range []bool{false, true} {
 				r := RunView{ID: "fixture", Status: status, Reason: reason}
 				rows := []RowLine{}
 				next := int64(0)
+				landingNext := ""
 				current := (*CurrentRun)(nil)
 				running := (*RunningRun)(nil)
 				if full {
@@ -214,6 +220,7 @@ func TestLoadAndWrite(t *testing.T) {
 					r.FinishedText = "test-text"
 					rows = []RowLine{{"source", "name", "city", "state", "county"}}
 					next = 1
+					landingNext = "test-page-token"
 					current = &CurrentRun{"fixture", status, "started", "start-text", "finished", "finish-text", 1, 2, 3, 4}
 					running = &RunningRun{"running"}
 				}
@@ -223,7 +230,7 @@ func TestLoadAndWrite(t *testing.T) {
 				}{"run", RunData{b, r, rows, next}}, struct {
 					name string
 					data any
-				}{"landing", LandingData{b, []ScraperRow{{"scraper", current, running}}, []RunRow{{"fixture", "scraper", status, reason, "caller", r.Trigger, "started", "started-text", r.Finished, r.FinishedText, 7}}}})
+				}{"landing", LandingData{b, []ScraperRow{{"scraper", current, running}}, []RunRow{{"fixture", "scraper", status, reason, "caller", r.Trigger, "started", "started-text", r.Finished, r.FinishedText, 7}}, landingNext}})
 			}
 		}
 	}
@@ -246,12 +253,12 @@ func TestLoadAndWrite(t *testing.T) {
 	}
 }
 
-// R-FSL7-3DGU R-FV0Z-UWY8 R-FXGS-MGFM R-G8FW-2E3V
+// R-FSL7-3DGU R-FV0Z-UWY8 R-0R6S-35LU R-G8FW-2E3V
 func TestLanding(t *testing.T) {
 	f := setup(t)
 	b := baseBanner()
 	b.Trail = nil
-	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", LandingData{b, []ScraperRow{{Name: "alpha"}, {Name: "zeta"}}, []RunRow{}})
+	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", LandingData{b, []ScraperRow{{Name: "alpha"}, {Name: "zeta"}}, []RunRow{}, ""})
 	done := f.finish(t, f.add(t, "alpha", ""), nil)
 	failed := f.add(t, "zeta", "cron-slug")
 	var err error
@@ -260,11 +267,11 @@ func TestLanding(t *testing.T) {
 		t.Fatal(err)
 	}
 	running := f.add(t, "alpha", "")
-	d := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(done), &RunningRun{running.ID}}, {Name: "zeta"}}, []RunRow{expectedLanding(running), expectedLanding(failed), expectedLanding(done)}}
+	d := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(done), &RunningRun{running.ID}}, {Name: "zeta"}}, []RunRow{expectedLanding(running), expectedLanding(failed), expectedLanding(done)}, ""}
 	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", d)
 }
 
-// R-EWZO-7RYL R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
+// R-0TMK-UP38 R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
 func TestRunPages(t *testing.T) {
 	f := setup(t)
 	for _, count := range []int{0, 25, 30} {
@@ -395,7 +402,7 @@ func TestRoutesMethodsAndFailures(t *testing.T) {
 	}
 }
 
-// R-GEJD-Z8TC R-GFRA-D0K1 R-GGZ6-QSAQ
+// R-0UUH-8GTX R-GFRA-D0K1 R-GGZ6-QSAQ
 func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -405,7 +412,11 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	r = f.finish(t, r, []source.Row{w})
 	running := f.add(t, "alpha", "")
 	*f.now = f.now.Add(48 * time.Hour)
-	beforeRuns, err := f.st.ListRuns(ctx, "", 0, 1000)
+	beforeRuns, err := f.st.ListRunsAfter(ctx, "", "", "", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRun, err := f.st.GetRun(ctx, r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +448,11 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 			}
 		}
 	}
-	afterRuns, err := f.st.ListRuns(ctx, "", 0, 1000)
+	afterRuns, err := f.st.ListRunsAfter(ctx, "", "", "", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRun, err := f.st.GetRun(ctx, r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,25 +468,95 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(beforeRuns, afterRuns) || !reflect.DeepEqual(beforeRows, afterRows) || !reflect.DeepEqual(beforeRow, afterRow) || afterRunning.Status != store.StatusRunning || *f.calls != 0 {
+	if !reflect.DeepEqual(beforeRuns, afterRuns) || !reflect.DeepEqual(beforeRun, afterRun) || !reflect.DeepEqual(beforeRows, afterRows) || !reflect.DeepEqual(beforeRow, afterRow) || afterRunning.Status != store.StatusRunning || *f.calls != 0 {
 		t.Fatal("read mutated state or called scraper")
 	}
 }
 
-// R-FXGS-MGFM
-func TestLandingBound(t *testing.T) {
-	f := setup(t)
-	runs := []store.Run{}
-	for i := 0; i < RunsShown+3; i++ {
-		runs = append(runs, f.finish(t, f.add(t, "alpha", ""), nil))
+// R-0R6S-35LU R-0SEO-GXCJ
+func TestLandingCursorPageMatchesRunsTool(t *testing.T) {
+	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 1} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			f := setup(t)
+			recorded := []store.Run{}
+			for i := 0; i < count; i++ {
+				name := "alpha"
+				if i%2 != 0 {
+					name = "zeta"
+				}
+				recorded = append(recorded, f.finish(t, f.add(t, name, ""), nil))
+			}
+			b := baseBanner()
+			b.Trail = nil
+			d := LandingData{b, []ScraperRow{}, []RunRow{}, ""}
+			for _, name := range f.cfg.Scrapers.Names() {
+				r, err := f.st.CurrentRun(t.Context(), name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				d.Scrapers = append(d.Scrapers, ScraperRow{Name: name, Current: expectedCurrent(r)})
+			}
+			for i := count - 1; i >= count-paging.DefaultLimit; i-- {
+				d.Runs = append(d.Runs, expectedLanding(recorded[i]))
+			}
+			if count > paging.DefaultLimit {
+				last := recorded[count-paging.DefaultLimit]
+				d.Next = paging.Token{Tool: "runs"}.Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
+			assertBody(t, request(f.h, "GET", "/", "user"), 200, "landing", d)
+			writer := telemetry.New(telemetry.Config{Service: ServiceName, Version: "test", Sink: &telemetry.Capture{}, Now: func() time.Time { return *f.now }, Rand: bytes.NewReader(make([]byte, 65536)), Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
+			defer writer.Shutdown(context.Background(), "test")
+			srv := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Version: "test", Telemetry: writer})
+			tools.Register(srv, tools.Config{Store: f.st, Scrapers: f.cfg.Scrapers})
+			server := httptest.NewServer(identity.Require(srv))
+			defer server.Close()
+			client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL, HTTPClient: server.Client(), Name: "test", Version: "test"})
+			call := func(args json.RawMessage) tools.RunList {
+				t.Helper()
+				result, err := client.CallTool(t.Context(), identity.Caller{UserID: "test-user"}, "runs", args)
+				if err != nil || result.IsError() {
+					t.Fatalf("runs: %v %+v", err, result)
+				}
+				encoded, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var wire struct {
+					Structured tools.RunList `json:"structuredContent"`
+				}
+				if err := json.Unmarshal(encoded, &wire); err != nil {
+					t.Fatal(err)
+				}
+				return wire.Structured
+			}
+			first := call(json.RawMessage(`{}`))
+			if len(first.Runs) != len(d.Runs) {
+				t.Fatal("run page length differs")
+			}
+			for i, r := range first.Runs {
+				if r.ID != d.Runs[i].ID {
+					t.Fatal("run page order differs")
+				}
+			}
+			next := ""
+			if first.Next != nil {
+				next = *first.Next
+			}
+			if next != d.Next {
+				t.Fatal("run page token differs")
+			}
+			if next != "" {
+				args, err := json.Marshal(map[string]string{"page": next})
+				if err != nil {
+					t.Fatal(err)
+				}
+				last := call(args)
+				if len(last.Runs) != 1 || last.Runs[0].ID != recorded[0].ID || last.Next != nil {
+					t.Fatal("cursor did not return remaining run")
+				}
+			}
+		})
 	}
-	b := baseBanner()
-	b.Trail = nil
-	d := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(runs[len(runs)-1]), nil}, {Name: "zeta"}}, []RunRow{}}
-	for i := len(runs) - 1; i >= len(runs)-RunsShown; i-- {
-		d.Runs = append(d.Runs, expectedLanding(runs[i]))
-	}
-	assertBody(t, request(f.h, "GET", "/", "user"), 200, "landing", d)
 }
 
 // R-FV0Z-UWY8 R-EPO9-X5IF

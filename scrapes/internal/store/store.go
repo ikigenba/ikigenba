@@ -204,15 +204,31 @@ func (s *Store) list(ctx context.Context, q string, args ...any) ([]Run, error) 
 	return out, err
 }
 
-// ListRuns reads a window of runs in newest-first order.
-func (s *Store) ListRuns(ctx context.Context, scraper string, offset, limit int64) ([]Run, error) {
+// ListRunsAfter reads runs following a position in newest-first order.
+func (s *Store) ListRunsAfter(ctx context.Context, scraper, started, id string, limit int) ([]Run, error) {
 	var out []Run
 	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		if offset < 0 || limit < 1 {
+		if limit < 1 {
 			return ErrUnreachable
 		}
+		var q string
+		var args []any
+		switch {
+		case scraper != "" && id != "":
+			q = "SELECT " + runCols + " FROM runs WHERE scraper=? AND (started,id)<(?,?) ORDER BY started DESC,id DESC LIMIT ?"
+			args = []any{scraper, started, id, limit}
+		case scraper != "":
+			q = "SELECT " + runCols + " FROM runs WHERE scraper=? ORDER BY started DESC,id DESC LIMIT ?"
+			args = []any{scraper, limit}
+		case id != "":
+			q = "SELECT " + runCols + " FROM runs WHERE (started,id)<(?,?) ORDER BY started DESC,id DESC LIMIT ?"
+			args = []any{started, id, limit}
+		default:
+			q = "SELECT " + runCols + " FROM runs ORDER BY started DESC,id DESC LIMIT ?"
+			args = []any{limit}
+		}
 		var e error
-		out, e = queryRuns(ctx, tx, "SELECT "+runCols+" FROM runs WHERE (?='' OR scraper=?) ORDER BY started DESC,id DESC LIMIT ? OFFSET ?", scraper, scraper, limit, offset)
+		out, e = queryRuns(ctx, tx, q, args...)
 		return e
 	})
 	return out, err

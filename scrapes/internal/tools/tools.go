@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/scrapes/internal/runs"
 	"github.com/ikigenba/ikigenba/scrapes/internal/scrapers"
 	"github.com/ikigenba/ikigenba/scrapes/internal/source"
@@ -57,8 +59,9 @@ type ScrapeArgs struct {
 
 // RunsArgs selects a scraper and page of runs.
 type RunsArgs struct {
-	Scraper string `json:"scraper"`
-	Page    uint32 `json:"page"`
+	Scraper string  `json:"scraper"`
+	Page    *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit   *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // RunArgs names a run.
@@ -95,7 +98,7 @@ type ScraperList struct {
 // RunList is a page of run records.
 type RunList struct {
 	Runs []runs.Record `json:"runs"`
-	Next *int64        `json:"next,omitempty"`
+	Next *string       `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // RowList is a page of row envelopes.
@@ -172,24 +175,6 @@ func answer(v any) (mcp.Result, error) {
 	var result mcp.Result
 	if err = json.Unmarshal(payload, &result); err != nil {
 		return mcp.Result{}, refuse(runs.RefusalUnavailable)
-	}
-	return result, nil
-}
-
-// RunsPage projects one page of stored runs into public records.
-func RunsPage(ctx context.Context, st *store.Store, scraper string, page uint32) (RunList, error) {
-	list, err := st.ListRuns(ctx, scraper, int64(PageSize)*int64(page), PageSize+1)
-	if err != nil {
-		return RunList{}, err
-	}
-	result := RunList{Runs: make([]runs.Record, 0, PageSize)}
-	if len(list) > PageSize {
-		next := int64(page) + 1
-		result.Next = &next
-		list = list[:PageSize]
-	}
-	for _, r := range list {
-		result.Runs = append(result.Runs, runs.RecordOf(r))
 	}
 	return result, nil
 }
@@ -277,9 +262,30 @@ func Register(srv *mcp.Server, cfg Config) {
 		return answer(runs.RecordOf(r))
 	}})
 	mcp.AddRawTool(srv, mcp.RawTool[RunsArgs]{Name: "runs", Description: DescribeRuns, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, a RunsArgs) (mcp.Result, error) {
-		result, err := RunsPage(ctx, cfg.Store, a.Scraper, a.Page)
+		size, err := paging.Window(a.Limit)
+		if err != nil {
+			return mcp.Result{}, err
+		}
+		token := paging.Token{Tool: "runs"}
+		var started, id string
+		if a.Page != nil && *a.Page != "" {
+			if err = token.Decode(*a.Page, &started, &id); err != nil {
+				return mcp.Result{}, errors.New(paging.BadPage)
+			}
+		}
+		list, err := cfg.Store.ListRunsAfter(ctx, a.Scraper, started, id, size+1)
 		if err != nil {
 			return mcp.Result{}, storeError(err)
+		}
+		result := RunList{Runs: make([]runs.Record, 0, size)}
+		if len(list) > size {
+			list = list[:size]
+			last := list[len(list)-1]
+			next := token.Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			result.Next = &next
+		}
+		for _, r := range list {
+			result.Runs = append(result.Runs, runs.RecordOf(r))
 		}
 		return answer(result)
 	}})

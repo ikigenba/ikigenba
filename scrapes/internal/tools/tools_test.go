@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scrapes"
@@ -179,7 +181,7 @@ func (f *fixture) add(status string, n int) store.Run {
 	return r
 }
 
-// R-E9PP-VP3L R-EAXM-9GUA R-EELB-ES2D R-EKOT-BMRU R-ELWP-PEIJ
+// R-E9PP-VP3L R-07OD-YTQQ R-08WA-CLHF R-EELB-ES2D R-EKOT-BMRU R-ELWP-PEIJ
 func TestCatalogAndRegistration(t *testing.T) {
 	f := setup(t)
 	if tools.PageSize != 25 {
@@ -201,7 +203,7 @@ func TestCatalogAndRegistration(t *testing.T) {
 	if len(list) != 6 {
 		t.Fatal(list)
 	}
-	fields := [][]string{{}, {"scraper"}, {"scraper", "page"}, {"run"}, {"run", "scraper", "name", "page"}, {"run", "source_id"}}
+	fields := [][]string{{}, {"scraper"}, {"scraper", "page", "limit"}, {"run"}, {"run", "scraper", "name", "page"}, {"run", "source_id"}}
 	required := [][]string{{}, {"scraper"}, {}, {"run"}, {}, {"run", "source_id"}}
 	seen := map[string]bool{}
 	for i, tool := range list {
@@ -251,14 +253,21 @@ func TestCatalogAndRegistration(t *testing.T) {
 			}
 		}
 	}
+	dp, _ := json.Marshal(paging.PageDescription)
+	dl, _ := json.Marshal(paging.LimitDescription)
+	wantSchema := `{"type":"object","properties":{"scraper":{"type":"string"},"page":{"type":"string","description":` + string(dp) + `},"limit":{"type":"integer","description":` + string(dl) + `}},"additionalProperties":false}`
+	if string(list[2].InputSchema) != wantSchema {
+		t.Fatalf("runs schema got %s want %s", list[2].InputSchema, wantSchema)
+	}
+
 	_ = tools.NoArgs{}
 	_ = tools.ScrapeArgs{"fmcsa"}
-	_ = tools.RunsArgs{"", 0}
+	_ = tools.RunsArgs{"", nil, nil}
 	_ = tools.RunArgs{"invalid"}
 	_ = tools.RowsArgs{"", "fmcsa", "", 0}
 	_ = tools.RowArgs{"invalid", "one"}
 	for _, args := range []any{map[string]any{"page": -1}, map[string]any{"page": uint64(1) << 32}, map[string]any{"page": 1.5}} {
-		if !f.call("runs", args).IsError() {
+		if !f.call("rows", args).IsError() {
 			t.Fatal(args)
 		}
 	}
@@ -267,7 +276,7 @@ func TestCatalogAndRegistration(t *testing.T) {
 	}
 }
 
-// R-EDDF-10BO
+// R-0A46-QD84 R-0BC3-44YT
 func TestListEncoding(t *testing.T) {
 	for _, tc := range []struct {
 		v    any
@@ -279,6 +288,7 @@ func TestListEncoding(t *testing.T) {
 		}
 	}
 	n := int64(1)
+	token := "chosen-token"
 	r := runs.Record{ID: "example"}
 	w := source.Row{SourceID: "one"}
 	rb, _ := json.Marshal(r)
@@ -286,7 +296,7 @@ func TestListEncoding(t *testing.T) {
 	for _, tc := range []struct {
 		v    any
 		want string
-	}{{tools.RunList{[]runs.Record{r}, &n}, `{"runs":[` + string(rb) + `],"next":1}`}, {tools.RowList{[]source.Row{w}, &n}, `{"rows":[` + string(wb) + `],"next":1}`}, {tools.Scraper{"fmcsa", &r, &r}, `{"name":"fmcsa","current":` + string(rb) + `,"running":` + string(rb) + `}`}} {
+	}{{tools.RunList{[]runs.Record{r}, &token}, `{"runs":[` + string(rb) + `],"next":"` + token + `"}`}, {tools.RowList{[]source.Row{w}, &n}, `{"rows":[` + string(wb) + `],"next":1}`}, {tools.Scraper{"fmcsa", &r, &r}, `{"name":"fmcsa","current":` + string(rb) + `,"running":` + string(rb) + `}`}} {
 		b, err := json.Marshal(tc.v)
 		if err != nil || string(b) != tc.want {
 			t.Fatalf("%s %v", b, err)
@@ -304,7 +314,7 @@ func TestScrapers(t *testing.T) {
 	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}}})
 }
 
-// R-ES42-OOZT R-ETBZ-2GQI
+// R-0HFL-0ZOA
 func TestRunPages(t *testing.T) {
 	f := setup(t)
 	records := []runs.Record{}
@@ -315,15 +325,13 @@ func TestRunPages(t *testing.T) {
 			f.success("runs", tools.NoArgs{}, tools.RunList{Runs: records})
 		}
 	}
-	next := int64(1)
+	next := paging.Token{Tool: "runs"}.Encode(records[24].Started, records[24].ID)
 	f.success("runs", tools.NoArgs{}, tools.RunList{records[:25], &next})
-	f.success("runs", tools.RunsArgs{Page: 1}, tools.RunList{Runs: records[25:]})
-	for _, args := range []tools.RunsArgs{{Scraper: "unknown"}, {Page: 171798692}} {
-		f.success("runs", args, tools.RunList{})
-	}
+	f.success("runs", tools.RunsArgs{Page: &next}, tools.RunList{Runs: records[25:]})
+	f.success("runs", tools.RunsArgs{Scraper: "unknown"}, tools.RunList{})
 }
 
-// R-ET84-00YP R-EUJV-G8H7 R-EWVT-5C6S R-ES07-M980
+// R-ET84-00YP R-0CJZ-HWPI R-0INH-EREZ R-EWVT-5C6S R-ES07-M980
 func TestRowsAndLookup(t *testing.T) {
 	f := setup(t)
 	f.refused("rows", tools.RowsArgs{Scraper: "fmcsa"}, runs.RefusalNoRun, tools.RefuseNoRun)
@@ -378,7 +386,7 @@ func TestRowsAndLookup(t *testing.T) {
 	f.refused("row", tools.RowArgs{done.ID, "000"}, runs.RefusalNotFound, tools.RefuseNotFound)
 }
 
-// R-EFT7-SJT2 R-EH14-6BJR R-EJGW-XV15 R-EPKE-UPQM
+// R-EFT7-SJT2 R-EH14-6BJR R-0JVD-SJ5O R-EPKE-UPQM
 func TestStartRefusals(t *testing.T) {
 	f := setup(t)
 	seen := map[string]bool{}
@@ -434,12 +442,12 @@ func TestStoreOutage(t *testing.T) {
 	}
 }
 
-// R-EZBL-WVO6 R-F0JI-ANEV
+// R-EZBL-WVO6 R-0L3A-6AWD
 func TestReadToolsShareAndPreserveRecords(t *testing.T) {
 	f := setup(t)
 	done := f.add(store.StatusDone, 2)
 	running := f.add(store.StatusRunning, 1)
-	beforeRuns, err := f.st.ListRuns(t.Context(), "", 0, 100)
+	beforeRuns, err := f.st.ListRunsAfter(t.Context(), "", "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +479,7 @@ func TestReadToolsShareAndPreserveRecords(t *testing.T) {
 			t.Fatalf("caller changed answer %s", tc.name)
 		}
 	}
-	afterRuns, err := f.st.ListRuns(t.Context(), "", 0, 100)
+	afterRuns, err := f.st.ListRunsAfter(t.Context(), "", "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,5 +536,99 @@ func TestReadToolsShareRunStartedByCaller(t *testing.T) {
 		if !bytes.Equal(a, b) {
 			t.Fatalf("caller changed %s", tc.name)
 		}
+	}
+}
+
+// R-0DRV-VOG7 R-0EZS-9G6W R-0G7O-N7XL R-0JVD-SJ5O
+func TestRunsPagingRefusals(t *testing.T) {
+	f := setup(t)
+	token := paging.Token{Tool: "runs"}
+	pages := []string{"bogus", token.Encode("2026-10-05T09:00:07Z"), token.Encode(int64(1759654807), "run_5a5a5a5a5a5a5a5a"), (paging.Token{Tool: "run"}).Encode("2026-10-05T09:00:07Z", "run_5a5a5a5a5a5a5a5a")}
+	for _, failing := range []bool{false, true} {
+		f.d.SetFailing(failing)
+		for _, limit := range []int{-1, 0, paging.MaxLimit + 1} {
+			_, err := paging.Window(&limit)
+			for _, page := range append([]string{""}, pages...) {
+				f.refusedText("runs", tools.RunsArgs{Scraper: "unknown", Page: &page, Limit: &limit}, err.Error())
+			}
+		}
+		for _, page := range pages {
+			for _, limit := range []*int{nil, new(int(1)), new(int(paging.MaxLimit))} {
+				f.refusedText("runs", tools.RunsArgs{Page: &page, Limit: limit}, paging.BadPage)
+			}
+		}
+	}
+	f.d.SetFailing(false)
+	f.success("runs", map[string]any{"page": nil, "limit": nil}, tools.RunList{})
+	for _, args := range []any{map[string]any{"page": 0}, map[string]any{"limit": "1"}, map[string]any{"limit": 1.5}, json.RawMessage(`{"limit":9223372036854775808}`)} {
+		result := f.call("runs", args)
+		if !result.IsError() {
+			t.Fatal(args)
+		}
+	}
+}
+
+func (f *fixture) refusedText(name string, args any, text string) {
+	f.t.Helper()
+	result := f.call(name, args)
+	w := decode(f.t, result)
+	if !result.IsError() || w.Structured != nil || w.Content[0].Text != text {
+		f.t.Fatalf("text refusal: %+v", w)
+	}
+}
+
+// R-0HFL-0ZOA
+func TestRunsWindowsAcrossEqualStartedTimes(t *testing.T) {
+	f := setup(t)
+	records := []runs.Record{}
+	for i := 0; i < 30; i++ {
+		if i%6 != 0 {
+			f.now = f.now.Add(-time.Second)
+		}
+		records = append(records, runs.RecordOf(f.add(store.StatusDone, 0)))
+	}
+	// A second scraper's newest run participates only in the unfiltered list.
+	f.now = f.now.Add(time.Second)
+	other, err := f.st.AddRun(t.Context(), store.Run{Scraper: "other", UserID: "other-owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := append(append([]runs.Record{}, records...), runs.RecordOf(other))
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Started != all[j].Started {
+			return all[i].Started > all[j].Started
+		}
+		return all[i].ID > all[j].ID
+	})
+	for _, scraper := range []string{"", "fmcsa", "other", "unknown"} {
+		expected := []runs.Record{}
+		for _, r := range all {
+			if scraper == "" || r.Scraper == scraper {
+				expected = append(expected, r)
+			}
+		}
+		for _, limit := range []int{1, 2, 7, 25, paging.MaxLimit} {
+			var page *string
+			for offset := 0; ; offset += limit {
+				end := min(offset+limit, len(expected))
+				want := tools.RunList{Runs: expected[offset:end]}
+				if end < len(expected) {
+					last := expected[end-1]
+					next := (paging.Token{Tool: "runs"}).Encode(last.Started, last.ID)
+					want.Next = &next
+				}
+				f.success("runs", tools.RunsArgs{Scraper: scraper, Page: page, Limit: &limit}, want)
+				if want.Next == nil {
+					break
+				}
+				page = want.Next
+			}
+		}
+	}
+	empty := ""
+	next := (paging.Token{Tool: "runs"}).Encode(all[paging.DefaultLimit-1].Started, all[paging.DefaultLimit-1].ID)
+	want := tools.RunList{all[:paging.DefaultLimit], &next}
+	for _, args := range []any{tools.NoArgs{}, map[string]any{"page": nil, "limit": nil}, tools.RunsArgs{Page: &empty}} {
+		f.success("runs", args, want)
 	}
 }

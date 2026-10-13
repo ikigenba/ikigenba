@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	app "github.com/ikigenba/ikigenba/scrapes"
 	"github.com/ikigenba/ikigenba/scrapes/internal/scrapers"
 	"github.com/ikigenba/ikigenba/scrapes/internal/source"
@@ -34,9 +35,6 @@ const MinuteLayout = "2006-01-02 15:04"
 
 // SecondLayout formats stored times on record pages.
 const SecondLayout = "2006-01-02 15:04:05 UTC"
-
-// RunsShown bounds the landing page run list.
-const RunsShown = 100
 
 // ToolsLevel locates the tools page in the banner trail.
 var ToolsLevel = page.Level{Name: "tools", URL: "/tools"}
@@ -83,6 +81,7 @@ type LandingData struct {
 	Banner   page.Banner
 	Scrapers []ScraperRow
 	Runs     []RunRow
+	Next     string
 }
 
 // ScraperRow describes a registered scraper and its visible runs.
@@ -266,7 +265,7 @@ func Handler(cfg Config) http.Handler {
 		switch {
 		case p == "/":
 			b.Trail = nil
-			d := LandingData{b, []ScraperRow{}, []RunRow{}}
+			d := LandingData{b, []ScraperRow{}, []RunRow{}, ""}
 			for _, n := range cfg.Scrapers.Names() {
 				x := ScraperRow{Name: n}
 				current, err := cfg.Store.CurrentRun(ctx, n)
@@ -286,10 +285,15 @@ func Handler(cfg Config) http.Handler {
 				}
 				d.Scrapers = append(d.Scrapers, x)
 			}
-			rs, err := cfg.Store.ListRuns(ctx, "", 0, RunsShown)
+			rs, err := cfg.Store.ListRunsAfter(ctx, "", "", "", paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
+			}
+			if len(rs) > paging.DefaultLimit {
+				rs = rs[:paging.DefaultLimit]
+				last := rs[len(rs)-1]
+				d.Next = paging.Token{Tool: "runs"}.Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
 			}
 			for _, x := range rs {
 				d.Runs = append(d.Runs, landingRow(x))

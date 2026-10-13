@@ -138,7 +138,7 @@ func caller() identity.Caller {
 }
 func refused(t *testing.T, f *fixture, name, word string) {
 	t.Helper()
-	before, err := f.st.ListRuns(context.Background(), "", 0, 100)
+	before, err := f.st.ListRunsAfter(context.Background(), "", "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func refused(t *testing.T, f *fixture, name, word string) {
 	if r != (store.Run{}) || !errors.As(err, &rf) || rf.Word != word {
 		t.Fatalf("refusal %#v %v", r, err)
 	}
-	after, err := f.st.ListRuns(context.Background(), "", 0, 100)
+	after, err := f.st.ListRunsAfter(context.Background(), "", "", "", 100)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatal("refusal changed store")
 	}
@@ -203,7 +203,7 @@ func TestHandlerNames(t *testing.T) {
 				t.Fatalf("handler %q: %+v", name, got)
 			}
 			scraper := strings.TrimSuffix(strings.TrimPrefix(name, "cron."+runs.TriggerPrefix), ".fired")
-			list, err := f.st.ListRuns(context.Background(), scraper, 0, 10)
+			list, err := f.st.ListRunsAfter(context.Background(), scraper, "", "", 10)
 			if err != nil || len(list) != 1 || list[0].Delivery != d.Event.ID || list[0].Trigger != runs.TriggerPrefix+scraper {
 				t.Fatalf("handler %q recorded %+v: %v", name, list, err)
 			}
@@ -456,7 +456,7 @@ func TestRecover(t *testing.T) {
 	if err := f.e.Recover(ctx); err != nil {
 		t.Fatal(err)
 	}
-	list, err := f.st.ListRuns(context.Background(), "", 0, 10)
+	list, err := f.st.ListRunsAfter(context.Background(), "", "", "", 10)
 	if err != nil || len(list) != 2 {
 		t.Fatal(err, list)
 	}
@@ -577,7 +577,7 @@ func TestConcurrentMethods(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	list, err := f.st.ListRuns(context.Background(), "fake", 0, 100)
+	list, err := f.st.ListRunsAfter(context.Background(), "fake", "", "", 100)
 	if err != nil || len(list) != 1 {
 		t.Fatal(list, err)
 	}
@@ -751,14 +751,14 @@ func TestRefusedCallsHaveNoEffects(t *testing.T) {
 	}})
 	check := func(action func()) {
 		t.Helper()
-		before, err := f.st.ListRuns(context.Background(), "", 0, 100)
+		before, err := f.st.ListRunsAfter(context.Background(), "", "", "", 100)
 		if err != nil {
 			t.Fatal(err)
 		}
 		f.flush(t)
 		nt, ne, nc := len(f.tc.Events()), len(f.ec.Events()), calls.Load()
 		action()
-		after, err := f.st.ListRuns(context.Background(), "", 0, 100)
+		after, err := f.st.ListRunsAfter(context.Background(), "", "", "", 100)
 		if err != nil || !reflect.DeepEqual(before, after) {
 			t.Fatal("refusal changed records", err)
 		}
