@@ -2,11 +2,14 @@
      sites. Shown only to a signed-in user. Data: .Banner (a page.Banner,
      for banner and footer); .SitesURL
      (<sites-url>: the services file's sites url less one trailing "/", else
-     <scheme>://<Host>); .Sites, the sites the caller may see (every listed
-     site, and the caller's own unlisted ones), sorted by name, each with
+     <scheme>://<Host>); .Sites, the first page of the sites the caller may see (every
+     listed site, and the caller's own unlisted ones) by name, each with
      .Slug, .Name, .URL ("<.SitesURL>/<slug>/"), .Visibility ("public" or
      "private"), .Listed (bool), .Published (bool: a commit is published) and
-     .Mine (bool: the caller owns it). Hooks: h1 with text "sites";
+     .Mine (bool: the caller owns it); .Next (bool: true when more visible
+     sites follow the page, false when none remain; a bool naming no tool,
+     as auth's profile does, because sites' list tool answers the caller's
+     own sites, a different set). Hooks: h1 with text "sites";
      p#summary; section#sites with h2 "Sites" and either p#no-sites (text
      "No sites yet.") when .Sites is empty, or table#site-list with one
      tr[data-site=<slug>] per site holding td.site-name > a.site-link (href
@@ -16,7 +19,8 @@
      span.status[data-status=published] (text "published") or
      span.status[data-status=unpublished] (text "not published"), and
      td.site-owner holding span.badge[data-kind=mine] (text "yours") only
-     when .Mine; p#site-url whose code element holds "<.SitesURL>/<slug>/";
+     when .Mine, then, when .Next, p#next (text "More sites follow; the ones
+     not shown sort after these by name."); p#site-url whose code element holds "<.SitesURL>/<slug>/";
      a#about-link whose href is "/about". No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -41,7 +45,7 @@
 </tr>
 {{end}}</tbody>
 </table>
-</div>{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
+</div>{{if .Next}}<p id="next">More sites follow; the ones not shown sort after these by name.</p>{{end}}{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
 </section>
 <p><a id="about-link" href="/about">About sites</a></p>
 </main>
