@@ -1,6 +1,6 @@
-{{/* The landing page at GET /: what the service is, the first page
+{{/* The landing page at GET /: what the service is, one window
      (paging.DefaultLimit, 25) of the shortlist under the default filters,
-     ranked by score, then the first page of the passes, newest first. The root of the hierarchy: .Banner's .Trail is empty, so the
+     ranked by score, then one window of the passes, newest first. The root of the hierarchy: .Banner's .Trail is empty, so the
      banner's breadcrumb holds only the service. Shown only to a signed-in
      user; a guest is sent to sign in. Every signed-in user sees every
      candidate and pass: they are the funnel's, not a user's. Never shows a
@@ -8,9 +8,9 @@
      banner's sign out. Data: .Banner (a page.Banner, for banner and
      footer); .MaxMinutes (int, the default drive-minutes cutoff, 120);
      .MinRevenue (the default revenue cutoff as shown, "$10,000,000");
-     .Shortlist, the first page (paging.DefaultLimit, 25) of the candidates
+     .Shortlist, one window (paging.DefaultLimit, 25) of the candidates
      that pass the fit test under the default filters, ranked by score,
-     each with .Rank (int, from 1),
+     each with .Rank (int, from 1 within this window),
      .ID (its cand_ id, "cand_" and 16 hex), .Name (its display name),
      .City and .State (its display address's parts; each may be empty),
      .Minutes (int, drive minutes from the origin), .Class (its class tag,
@@ -20,9 +20,12 @@
      effective confidence as of the last refresh at the end of a pass, as
      stored, not computed at the request, two decimals, "0.70") and .Score
      (the score as of that refresh, in dollars as shown, "$7,280,000");
+     .ShortlistPage (string, this window's own shortlist page token, the
+     ?shortlist_page= the request carried; empty on the first window) and
      .ShortlistNext (string, the page token shortlist's next carries for
      the candidates after these, the value to pass as its page; empty when
-     none remain); .Passes, the first page (paging.DefaultLimit, 25) of the
+     none remain); .Shortlist is the window .ShortlistPage names; .Passes,
+     one window (paging.DefaultLimit, 25) of the
      kept passes, newest first by started, not every pass, each with .ID (its pass_ id,
      "pass_" and 16 hex), .Trigger (the run_ id of the scrapes run a
      delivery named, or "rebuild"), .Status ("running", "done" or "failed",
@@ -31,11 +34,17 @@
      and .StartedText (RFC 3339 UTC to the second, and UTC to the minute,
      "2026-10-05 09:00"), .Finished and .FinishedText (likewise; both empty
      while running), and .Rows, .Created and .Rescored (ints, as the record
-     holds them); and .PassesNext (string, the page token passes's next
+     holds them); and .PassesPage (string, this window's own passes page
+     token, the ?passes_page= the request carried; empty on the first
+     window) and .PassesNext (string, the page token passes's next
      carries for the passes after these, the value to pass as its page;
-     empty when none remain). Two lists share the page, so each hint has
-     its own id, p#next-shortlist and p#next-passes, where a page with one
-     list uses p#next. Counts and minutes are shown as the plain integer. Status
+     empty when none remain); .Passes is the window .PassesPage names. Two
+     lists share the page, so each has its own nav and parameter,
+     nav#paging-shortlist with shortlist_page and nav#paging-passes with
+     passes_page, where a page with one list uses nav#paging and page;
+     each nav's hrefs carry the other list's current token, so paging one
+     list never resets the other, and its First drops only its own
+     parameter. Counts and minutes are shown as the plain integer. Status
      and reason words, class tags and the trigger are shown as stored; the
      status's kind is chosen here: "running" info, "done" ok, "failed" err.
      Hooks: title "candidates"; h1 with text "candidates"; p#summary.lede
@@ -59,10 +68,18 @@
      td.candidate-minutes.num (.Minutes), td.candidate-class (.Class in a
      code element), td.candidate-low.num (.Low), td.candidate-high.num
      (.High, empty when absent), td.candidate-confidence.num (.Confidence)
-     and td.candidate-score.num (.Score), then, when .ShortlistNext is not
-     empty, p#next-shortlist (text "More candidates follow: call shortlist
-     with page <.ShortlistNext>.", shortlist, page and .ShortlistNext each
-     in a code element). Then section#passes with h2
+     and td.candidate-score.num (.Score); then, after the card
+     (section#shortlist), nav.paging#paging-shortlist (aria-label "Pages")
+     whose children are, in order, First (on the first window,
+     .ShortlistPage empty, a span with aria-current="page" and text
+     "First"; otherwise a link with text "First" to / when .PassesPage is
+     empty, else to /?passes_page=<.PassesPage>) and, only when
+     .ShortlistNext is not empty, Next (a link with text "Next" to
+     /?shortlist_page=<.ShortlistNext>, followed by
+     &passes_page=<.PassesPage> when .PassesPage is not empty); the nav
+     shows when .Shortlist is not empty or .ShortlistPage is not empty, so
+     an emptied later window still offers First; on the first window with
+     no candidates there is no nav. Then section#passes with h2
      "Passes" and a p in its header (text "The first page of passes, newest first. A
      pass resolves a scrapes run's records into candidates and re-scores
      the candidates they touch."), then either, when .Passes is empty,
@@ -80,9 +97,17 @@
      td.pass-finished holding, only when .Finished is not empty,
      time[datetime=<.Finished>] (text .FinishedText); td.pass-rows.num
      (.Rows), td.pass-created.num (.Created) and td.pass-rescored.num
-     (.Rescored), then, when .PassesNext is not empty, p#next-passes (text
-     "More passes follow: call passes with page <.PassesNext>.", passes,
-     page and .PassesNext each in a code element); a #about-link (text "About candidates") whose href is
+     (.Rescored); then, after the card (section#passes),
+     nav.paging#paging-passes (aria-label "Pages") whose children are, in
+     order, First (on the first window, .PassesPage empty, a span with
+     aria-current="page" and text "First"; otherwise a link with text
+     "First" to / when .ShortlistPage is empty, else to
+     /?shortlist_page=<.ShortlistPage>) and, only when .PassesNext is not
+     empty, Next (a link with text "Next" to /?passes_page=<.PassesNext>,
+     followed by &shortlist_page=<.ShortlistPage> when .ShortlistPage is
+     not empty); the nav shows when .Passes is not empty or .PassesPage is
+     not empty, so an emptied later window still offers First; on the
+     first window with no passes there is no nav; a #about-link (text "About candidates") whose href is
      "/about". No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -113,13 +138,13 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .ShortlistNext}}<p id="next-shortlist">More candidates follow: call <code>shortlist</code> with <code>page</code> <code>{{.ShortlistNext}}</code>.</p>
-{{end}}{{else}}<div id="no-shortlist" class="empty">
+{{else}}<div id="no-shortlist" class="empty">
 <h3 class="text-md">No candidates on the shortlist</h3>
 <p>A candidate shows here once a pass has resolved scrapes' records into it and it passes the fit test.</p>
 </div>{{end}}
 </section>
-<section id="passes" class="card flush" aria-labelledby="passes-title">
+{{if or .Shortlist .ShortlistPage}}<nav class="paging" id="paging-shortlist" aria-label="Pages">{{if .ShortlistPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page={{.ShortlistNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}</nav>
+{{end}}<section id="passes" class="card flush" aria-labelledby="passes-title">
 <header><div><h2 id="passes-title">Passes</h2><p>The first page of passes, newest first. A pass resolves a scrapes run's records into candidates and re-scores the candidates they touch.</p></div></header>
 {{if .Passes}}<div class="table-scroll">
 <table id="pass-list">
@@ -138,13 +163,13 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .PassesNext}}<p id="next-passes">More passes follow: call <code>passes</code> with <code>page</code> <code>{{.PassesNext}}</code>.</p>
-{{end}}{{else}}<div id="no-passes" class="empty">
+{{else}}<div id="no-passes" class="empty">
 <h3 class="text-md">No passes yet</h3>
 <p>A pass starts when scrapes finishes a run, or when an agent calls the <code>rebuild</code> tool, and shows up here.</p>
 </div>{{end}}
 </section>
-<p><a id="about-link" href="/about">About candidates</a></p>
+{{if or .Passes .PassesPage}}<nav class="paging" id="paging-passes" aria-label="Pages">{{if .PassesPage}}<a href="/{{if .ShortlistPage}}?shortlist_page={{.ShortlistPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PassesNext}}<a href="/?passes_page={{.PassesNext}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Next</a>{{end}}</nav>
+{{end}}<p><a id="about-link" href="/about">About candidates</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
