@@ -7,9 +7,22 @@ type NoArgs struct {
 
 // SearchArgs describes the typed tool contract.
 type SearchArgs struct {
-	Query string `json:"query" mcp:"required"`
-	Label string `json:"label"`
-	Page  string `json:"page"`
+	Query string  `json:"query" mcp:"required"`
+	Label string  `json:"label"`
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
+
+// DraftsArgs describes the stored drafts window.
+type DraftsArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
+
+// TransfersArgs describes the stored transfers window.
+type TransfersArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
 // ThreadArgs describes the typed tool contract.
@@ -110,7 +123,7 @@ type Label struct {
 // MessageList describes the typed tool contract.
 type MessageList struct {
 	Messages []Summary `json:"messages"`
-	Next     *string   `json:"next"`
+	Next     *string   `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // LabelList describes the typed tool contract.
@@ -149,6 +162,7 @@ type Draft struct {
 // DraftList describes the typed tool contract.
 type DraftList struct {
 	Drafts []Draft `json:"drafts"`
+	Next   *string `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Record describes the typed tool contract.
@@ -173,4 +187,5 @@ type Record struct {
 // TransferList describes the typed tool contract.
 type TransferList struct {
 	Transfers []Record `json:"transfers"`
+	Next      *string  `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }

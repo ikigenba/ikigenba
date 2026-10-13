@@ -8,13 +8,13 @@ import (
 	gmail "github.com/ikigenba/ikigenba/gmail"
 )
 
-// R-VETD-MHEM R-VG1A-095B R-VH96-E0W0
+// R-VETD-MHEM R-VG1A-095B R-3032-5GV6
 func TestEmbeddedResources(t *testing.T) {
 	t.Chdir(t.TempDir())
 	for _, tc := range []struct {
 		get   func() fs.FS
 		names []string
-	}{{gmail.Assets, []string{"about.html", "draft.html", "landing.html", "notfound.html", "tools.html", "transfer.html"}}, {gmail.Etc, []string{"manifest.toml", "nginx.conf"}}, {gmail.Migrations, []string{"0001_transfers.sql", "0002_drafts.sql"}}} {
+	}{{gmail.Assets, []string{"about.html", "draft.html", "landing.html", "notfound.html", "tools.html", "transfer.html"}}, {gmail.Etc, []string{"manifest.toml", "nginx.conf"}}, {gmail.Migrations, []string{"0001_transfers.sql", "0002_drafts.sql", "0003_list_indexes.sql"}}} {
 		for range 2 {
 			f := tc.get()
 			entries, err := fs.ReadDir(f, ".")

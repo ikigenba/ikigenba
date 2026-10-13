@@ -70,7 +70,7 @@ func TestRequestEvents(t *testing.T) {
 	var errs []error
 	_, err := c.Labels(ctx, syntheticToken)
 	errs = append(errs, err)
-	_, err = c.Search(ctx, syntheticToken, gmail.Query{})
+	_, err = c.Search(ctx, syntheticToken, gmail.Query{Limit: gmail.PageSize})
 	errs = append(errs, err)
 	_, err = c.Thread(ctx, syntheticToken, "thread", "")
 	errs = append(errs, err)
@@ -135,7 +135,7 @@ func TestFailureEventsAndSecrecy(t *testing.T) {
 			}
 			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"` + secret + `"}}`)), Header: make(http.Header)}, nil
 		})}, Telemetry: w})
-		_, err := c.Search(context.Background(), syntheticToken, gmail.Query{Text: secret, Label: secret})
+		_, err := c.Search(context.Background(), syntheticToken, gmail.Query{Limit: gmail.PageSize, Text: secret, Label: secret})
 		if err == nil || strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), syntheticToken) {
 			t.Fatal(err)
 		}

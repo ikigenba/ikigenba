@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/gmail/internal/urls"
 )
 
@@ -174,11 +175,14 @@ func summary(m wireMessage, labels []Label) Summary {
 
 // Search calls the provider and reduces its answer to connector types.
 func (c *Client) Search(ctx context.Context, token string, q Query) (Page, error) {
+	if q.Limit < 1 || q.Limit > paging.MaxLimit {
+		return Page{}, ErrProvider
+	}
 	labels, err := c.Labels(ctx, token)
 	if err != nil {
 		return Page{}, err
 	}
-	params := url.Values{"maxResults": {strconv.Itoa(PageSize)}, "includeSpamTrash": {"false"}}
+	params := url.Values{"maxResults": {strconv.Itoa(q.Limit)}, "includeSpamTrash": {"false"}}
 	if q.Text != "" {
 		params.Set("q", q.Text)
 	}

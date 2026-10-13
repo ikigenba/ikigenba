@@ -3,9 +3,11 @@ package tools
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/gmail/internal/drafts"
 	"github.com/ikigenba/ikigenba/gmail/internal/gmail"
 	"github.com/ikigenba/ikigenba/gmail/internal/store"
@@ -74,7 +76,11 @@ func Register(srv *mcp.Server, cfg Config) {
 		if err != nil {
 			return MessageList{}, serviceError(err)
 		}
-		pg, err := cfg.Gmail.Search(ctx, tok, gmail.Query{Text: a.Query, Label: a.Label, Page: a.Page})
+		n, err := paging.Window(a.Limit)
+		if err != nil {
+			return MessageList{}, err
+		}
+		pg, err := cfg.Gmail.Search(ctx, tok, gmail.Query{Text: a.Query, Label: a.Label, Page: argumentPage(a.Page), Limit: n})
 		return messagePage(pg), gmailError(cfg, err)
 	})
 	add(srv, "thread", DescribeThread, mcp.Read, func(ctx context.Context, c identity.Caller, a ThreadArgs) (MessageList, error) {
@@ -131,25 +137,45 @@ func Register(srv *mcp.Server, cfg Config) {
 		v, err := cfg.Drafts.Discard(ctx, c, a.Draft)
 		return DraftOf(v, false), serviceError(err)
 	})
-	add(srv, "drafts", DescribeDrafts, mcp.Read, func(ctx context.Context, c identity.Caller, _ NoArgs) (DraftList, error) {
-		ls, err := cfg.Store.ListDrafts(ctx, c.UserID)
+	add(srv, "drafts", DescribeDrafts, mcp.Read, func(ctx context.Context, c identity.Caller, a DraftsArgs) (DraftList, error) {
+		n, k1, k2, err := listWindow("drafts", a.Page, a.Limit)
+		if err != nil {
+			return DraftList{}, err
+		}
+		ls, err := cfg.Store.ListDraftsAfter(ctx, c.UserID, k1, k2, n+1)
+		var next *string
+		if len(ls) > n {
+			ls = ls[:n]
+			last := ls[n-1]
+			next = text((paging.Token{Tool: "drafts"}).Encode(last.Created.UTC().Format(time.RFC3339), last.ID))
+		}
 		v := make([]Draft, 0, len(ls))
 		for _, d := range ls {
 			v = append(v, DraftOf(d, false))
 		}
-		return DraftList{v}, serviceError(err)
+		return DraftList{v, next}, serviceError(err)
 	})
 	add(srv, "draft", DescribeDraft, mcp.Read, func(ctx context.Context, c identity.Caller, a DraftArgs) (Draft, error) {
 		v, err := cfg.Drafts.Get(ctx, c, a.Draft)
 		return DraftOf(v, true), serviceError(err)
 	})
-	add(srv, "transfers", DescribeTransfers, mcp.Read, func(ctx context.Context, c identity.Caller, _ NoArgs) (TransferList, error) {
-		ls, err := cfg.Store.ListTransfers(ctx, c.UserID)
+	add(srv, "transfers", DescribeTransfers, mcp.Read, func(ctx context.Context, c identity.Caller, a TransfersArgs) (TransferList, error) {
+		n, k1, k2, err := listWindow("transfers", a.Page, a.Limit)
+		if err != nil {
+			return TransferList{}, err
+		}
+		ls, err := cfg.Store.ListTransfersAfter(ctx, c.UserID, k1, k2, n+1)
+		var next *string
+		if len(ls) > n {
+			ls = ls[:n]
+			last := ls[n-1]
+			next = text((paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID))
+		}
 		v := make([]Record, 0, len(ls))
 		for _, t := range ls {
 			v = append(v, RecordOf(t))
 		}
-		return TransferList{v}, serviceError(err)
+		return TransferList{v, next}, serviceError(err)
 	})
 	add(srv, "transfer", DescribeTransfer, mcp.Read, func(ctx context.Context, c identity.Caller, a TransferArgs) (Record, error) {
 		if !store.ValidTransferID(a.Transfer) {
@@ -161,4 +187,24 @@ func Register(srv *mcp.Server, cfg Config) {
 		}
 		return RecordOf(v), serviceError(err)
 	})
+}
+
+func argumentPage(page *string) string {
+	if page == nil {
+		return ""
+	}
+	return *page
+}
+func listWindow(tool string, page *string, limit *int) (int, string, string, error) {
+	n, err := paging.Window(limit)
+	if err != nil {
+		return 0, "", "", err
+	}
+	var a, b string
+	if p := argumentPage(page); p != "" {
+		if err := (paging.Token{Tool: tool}).Decode(p, &a, &b); err != nil {
+			return 0, "", "", errors.New(paging.BadPage)
+		}
+	}
+	return n, a, b, nil
 }

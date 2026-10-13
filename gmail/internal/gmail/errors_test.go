@@ -25,7 +25,7 @@ func invocations() []invocation {
 	return []invocation{
 		{"labels", func(c *gmail.Client, ctx context.Context) (any, error) { return c.Labels(ctx, syntheticToken) }, []gmail.Label(nil), nil},
 		{"search", func(c *gmail.Client, ctx context.Context) (any, error) {
-			return c.Search(ctx, syntheticToken, gmail.Query{Page: "opaque"})
+			return c.Search(ctx, syntheticToken, gmail.Query{Limit: gmail.PageSize, Page: "opaque"})
 		}, gmail.Page{}, []reply{labelsJSON()}},
 		{"thread", func(c *gmail.Client, ctx context.Context) (any, error) {
 			return c.Thread(ctx, syntheticToken, "thread", "")
@@ -92,7 +92,7 @@ func TestStatusCategories(t *testing.T) {
 	}
 	// A messages.list rejection without an input page remains a provider error.
 	_, c := newFake(t, labelsJSON(), reply{status: 400})
-	_, err := c.Search(context.Background(), syntheticToken, gmail.Query{})
+	_, err := c.Search(context.Background(), syntheticToken, gmail.Query{Limit: gmail.PageSize})
 	requireError(t, err, gmail.ErrProvider)
 }
 

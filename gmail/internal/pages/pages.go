@@ -12,6 +12,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	app "github.com/ikigenba/ikigenba/gmail"
 	"github.com/ikigenba/ikigenba/gmail/internal/store"
@@ -72,9 +73,11 @@ type Config struct {
 
 // LandingData is the landing template input.
 type LandingData struct {
-	Banner    page.Banner
-	Drafts    []DraftRow
-	Transfers []TransferRow
+	Banner        page.Banner
+	Drafts        []DraftRow
+	DraftsNext    string
+	Transfers     []TransferRow
+	TransfersNext string
 }
 
 // DraftRow is a draft summary with minute-resolution display times.
@@ -213,18 +216,28 @@ func Handler(cfg Config) http.Handler {
 		c, _ := identity.FromContext(r.Context())
 		switch {
 		case p == "/":
-			ds, err := cfg.Store.ListDrafts(r.Context(), c.UserID)
+			ds, err := cfg.Store.ListDraftsAfter(r.Context(), c.UserID, "", "", paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
-			ts, err := cfg.Store.ListTransfers(r.Context(), c.UserID)
+			ts, err := cfg.Store.ListTransfersAfter(r.Context(), c.UserID, "", "", paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
 			b.Trail = nil
-			d := LandingData{b, []DraftRow{}, []TransferRow{}}
+			d := LandingData{Banner: b, Drafts: []DraftRow{}, Transfers: []TransferRow{}}
+			if len(ds) > paging.DefaultLimit {
+				ds = ds[:paging.DefaultLimit]
+				last := ds[len(ds)-1]
+				d.DraftsNext = (paging.Token{Tool: "drafts"}).Encode(last.Created.UTC().Format(time.RFC3339), last.ID)
+			}
+			if len(ts) > paging.DefaultLimit {
+				ts = ts[:paging.DefaultLimit]
+				last := ts[len(ts)-1]
+				d.TransfersNext = (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
 			base := artifactBase(cfg.ServicesPath)
 			for _, x := range ds {
 				d.Drafts = append(d.Drafts, draftRow(x))

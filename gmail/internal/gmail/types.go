@@ -93,7 +93,10 @@ type Attachment struct {
 }
 
 // Query selects mail and carries an opaque page token.
-type Query struct{ Text, Label, Page string }
+type Query struct {
+	Text, Label, Page string
+	Limit             int
+}
 
 // Stat holds message metadata used for transfers and reconciliation.
 type Stat struct {

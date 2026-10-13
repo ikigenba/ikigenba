@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -10,19 +11,22 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	root "github.com/ikigenba/ikigenba/gmail"
 	"github.com/ikigenba/ikigenba/gmail/internal/store"
 	"github.com/ikigenba/ikigenba/gmail/internal/tools"
 )
 
-type typedRandom struct{ n byte }
+type typedRandom struct{ n uint64 }
 
 func (r *typedRandom) Read(b []byte) (int, error) {
+	var counter [8]byte
+	binary.LittleEndian.PutUint64(counter[:], r.n)
 	for i := range b {
-		b[i] = r.n
-		r.n++
+		b[i] = counter[i%len(counter)]
 	}
+	r.n++
 	return len(b), nil
 }
 func typedRecords(t *testing.T) (*store.Store, *db.DB, *mcp.Client, *time.Time) {
@@ -76,7 +80,7 @@ func typedRefusal(t *testing.T, c *mcp.Client, name string, a any, want string) 
 	}
 }
 
-// R-OQ70-NLLW R-N1FE-FY8Z
+// R-3QWU-KF6G R-3VSG-3I58
 func TestTypedStoredDrafts(t *testing.T) {
 	st, d, c, at := typedRecords(t)
 	ctx := context.Background()
@@ -105,7 +109,7 @@ func TestTypedStoredDrafts(t *testing.T) {
 	typedRefusal(t, c, "drafts", tools.NoArgs{}, "unavailable: "+tools.RefuseUnavailable)
 }
 
-// R-ZOWT-XM78 R-ZQ4Q-BDXX R-ZRCM-P5OM
+// R-3S4Q-Y6X5 R-ZQ4Q-BDXX R-3X0C-H9VX
 func TestTypedStoredTransfers(t *testing.T) {
 	st, d, c, at := typedRecords(t)
 	ctx := context.Background()
@@ -154,4 +158,119 @@ func TestTypedStoredTransfers(t *testing.T) {
 	typedRefusal(t, c, "transfer", tools.TransferArgs{Transfer: "malformed"}, "not_found: "+tools.RefuseNotFound)
 	typedRefusal(t, c, "transfers", tools.NoArgs{}, "unavailable: "+tools.RefuseUnavailable)
 	typedRefusal(t, c, "transfer", tools.TransferArgs{Transfer: second.ID}, "unavailable: "+tools.RefuseUnavailable)
+}
+
+// R-3TCN-BYNU R-3KTC-NKGZ R-3M19-1C7O
+func TestStoredPagingRefusals(t *testing.T) {
+	_, d, c, _ := typedRecords(t)
+	for _, failing := range []bool{false, true} {
+		d.SetFailing(failing)
+		for _, name := range []string{"drafts", "transfers"} {
+			for _, limit := range []int{-1, 0, paging.MaxLimit + 1} {
+				_, err := paging.Window(&limit)
+				for _, page := range []string{"", "bogus"} {
+					typedRefusal(t, c, name, map[string]any{"limit": limit, "page": page}, err.Error())
+				}
+			}
+			bad := []string{"bogus", (paging.Token{Tool: name}).Encode(int64(1))}
+			if name == "transfers" {
+				bad = append(bad, (paging.Token{Tool: "drafts"}).Encode("time", "id"))
+			}
+			for _, page := range bad {
+				for _, limit := range []any{nil, 1, paging.MaxLimit} {
+					typedRefusal(t, c, name, map[string]any{"limit": limit, "page": page}, paging.BadPage)
+				}
+			}
+		}
+	}
+}
+
+// R-3QWU-KF6G R-3S4Q-Y6X5
+func TestStoredPagingTraversal(t *testing.T) {
+	st, _, c, at := typedRecords(t)
+	ctx := context.Background()
+	for i := 0; i < paging.DefaultLimit+5; i++ {
+		if i%3 == 0 {
+			*at = at.Add(time.Second)
+		}
+		for _, user := range []string{"owner", "other"} {
+			if _, err := st.AddDraft(ctx, store.Draft{UserID: user, GmailDraft: "remote", Message: "message", Link: "link", Body: "private"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.AddTransfer(ctx, store.Transfer{UserID: user, Direction: store.DirectionPull, Status: store.StatusQueued, Path: "path", Message: "message"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	drafts, err := st.ListDrafts(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transfers, err := st.ListTransfers(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range []any{map[string]any{}, map[string]any{"page": nil, "limit": nil}, map[string]any{"page": ""}} {
+		var ds tools.DraftList
+		typedDecode(t, typedCall(t, c, "drafts", args), &ds)
+		typedEqual(t, len(ds.Drafts), paging.DefaultLimit)
+		if ds.Next == nil {
+			t.Fatal(ds)
+		}
+		var ts tools.TransferList
+		typedDecode(t, typedCall(t, c, "transfers", args), &ts)
+		typedEqual(t, len(ts.Transfers), paging.DefaultLimit)
+		if ts.Next == nil {
+			t.Fatal(ts)
+		}
+	}
+	for _, limit := range []int{1, 5, paging.DefaultLimit, paging.MaxLimit} {
+		for _, name := range []string{"drafts", "transfers"} {
+			var page *string
+			offset := 0
+			for {
+				args := map[string]any{"page": page, "limit": limit}
+				raw := typedCall(t, c, name, args)
+				var next *string
+				count := 0
+				if name == "drafts" {
+					var list tools.DraftList
+					typedDecode(t, raw, &list)
+					next = list.Next
+					count = len(list.Drafts)
+					want := []tools.Draft{}
+					for _, d := range drafts[offset:min(offset+limit, len(drafts))] {
+						want = append(want, tools.DraftOf(d, false))
+					}
+					typedEqual(t, list.Drafts, want)
+					if next != nil {
+						last := drafts[offset+count-1]
+						typedEqual(t, *next, (paging.Token{Tool: name}).Encode(last.Created.UTC().Format(time.RFC3339), last.ID))
+					}
+				} else {
+					var list tools.TransferList
+					typedDecode(t, raw, &list)
+					next = list.Next
+					count = len(list.Transfers)
+					want := []tools.Record{}
+					for _, tr := range transfers[offset:min(offset+limit, len(transfers))] {
+						want = append(want, tools.RecordOf(tr))
+					}
+					typedEqual(t, list.Transfers, want)
+					if next != nil {
+						last := transfers[offset+count-1]
+						typedEqual(t, *next, (paging.Token{Tool: name}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID))
+					}
+				}
+				offset += count
+				typedEqual(t, next != nil, offset < len(drafts))
+				if next == nil {
+					break
+				}
+				page = next
+			}
+			typedEqual(t, offset, len(drafts))
+		}
+	}
 }

@@ -210,7 +210,7 @@ func TestReconciliation(t *testing.T) {
 }
 
 func TestBusyAndFinish(t *testing.T) {
-	// R-68EP-S9VP R-69MM-61ME R-63J4-96WX R-KN6T-RG03 R-6DAB-BCUH R-676T-EI50
+	// R-L7ZX-HUWJ R-69MM-61ME R-63J4-96WX R-KN6T-RG03 R-6DAB-BCUH R-676T-EI50
 	for _, which := range []string{"send", "discard"} {
 		t.Run(which, func(t *testing.T) {
 			f := fixture(t)

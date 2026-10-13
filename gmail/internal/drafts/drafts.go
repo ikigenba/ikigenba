@@ -234,14 +234,12 @@ func (s *Service) Attachable(ctx context.Context, c identity.Caller, tok connect
 }
 
 func (s *Service) busy(ctx context.Context, c identity.Caller, id string) error {
-	all, err := s.cfg.Store.ListTransfers(ctx, c.UserID)
+	active, err := s.cfg.Store.HasActivePush(ctx, c.UserID, id)
 	if err != nil {
 		return store.ErrUnreachable
 	}
-	for _, t := range all {
-		if t.Direction == store.DirectionPush && t.Draft == id && (t.Status == store.StatusQueued || t.Status == store.StatusRunning) {
-			return refusal(transfers.RefusalBusy)
-		}
+	if active {
+		return refusal(transfers.RefusalBusy)
 	}
 	return nil
 }

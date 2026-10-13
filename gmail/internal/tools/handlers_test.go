@@ -26,6 +26,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	root "github.com/ikigenba/ikigenba/gmail"
@@ -142,16 +143,14 @@ func (f *handlerFixture) serveGmail(w http.ResponseWriter, r *http.Request) {
 	case path == "/gmail/v1/users/me/messages":
 		limit, _ := strconv.Atoi(r.URL.Query().Get("maxResults"))
 		start := 0
-		if r.URL.Query().Get("pageToken") == "provider-next" {
-			start = 25
-		}
+		start, _ = strconv.Atoi(r.URL.Query().Get("pageToken"))
 		ids := []map[string]string{}
 		for i := start; i < n && i < start+limit; i++ {
 			ids = append(ids, map[string]string{"id": fmt.Sprintf("msg-%02d", n-i)})
 		}
 		obj := map[string]any{"messages": ids}
 		if start+limit < n {
-			obj["nextPageToken"] = "provider-next"
+			obj["nextPageToken"] = strconv.Itoa(start + limit)
 		}
 		answer = obj
 	case strings.Contains(path, "/threads/"):
@@ -325,7 +324,7 @@ func handlerRefusal(word string) string {
 	return word + ": " + sentences[word]
 }
 
-// R-YEKN-EC0U R-YH0G-5VI8 R-FFUO-QJLJ
+// R-YEKN-EC0U R-3M19-1C7O R-FFUO-QJLJ
 func TestHandlersConnectionPrecedesArguments(t *testing.T) {
 	for _, scenario := range []struct {
 		name            string
@@ -340,7 +339,7 @@ func TestHandlersConnectionPrecedesArguments(t *testing.T) {
 			for _, v := range []struct {
 				name string
 				args any
-			}{{"search", map[string]any{"query": "private-subject"}}, {"thread", map[string]any{"thread": ""}}, {"show", map[string]any{"message": ""}}, {"labels", map[string]any{}}, {"pull", map[string]any{"message": "secret-message", "path": "secret-file", "expires": ""}}, {"compose", map[string]any{"to": []string{"private-address"}}}, {"push", map[string]any{"path": "secret-file", "draft": "unknown"}}, {"send", map[string]any{"draft": "unknown"}}, {"discard", map[string]any{"draft": "unknown"}}} {
+			}{{"search", map[string]any{"query": "private-subject", "limit": 0, "page": "bogus"}}, {"thread", map[string]any{"thread": ""}}, {"show", map[string]any{"message": ""}}, {"labels", map[string]any{}}, {"pull", map[string]any{"message": "secret-message", "path": "secret-file", "expires": ""}}, {"compose", map[string]any{"to": []string{"private-address"}}}, {"push", map[string]any{"path": "secret-file", "draft": "unknown"}}, {"send", map[string]any{"draft": "unknown"}}, {"discard", map[string]any{"draft": "unknown"}}} {
 				f.reset()
 				want := handlerRefusal(scenario.word)
 				if scenario.url != "" {
@@ -361,10 +360,10 @@ func TestHandlersConnectionPrecedesArguments(t *testing.T) {
 	}
 }
 
-// R-YFSJ-S3RJ R-FH2L-4BC8 R-YQRN-81FS R-YRZJ-LT6H R-YUFC-DCNV R-YWV5-4W59 R-YY31-INVY R-YZAX-WFMN
+// R-YFSJ-S3RJ R-FH2L-4BC8 R-3N95-F3YD R-YRZJ-LT6H R-3POY-6NFR R-YWV5-4W59 R-YY31-INVY R-YZAX-WFMN
 func TestHandlersReadMail(t *testing.T) {
 	f := newHandlerFixture(t, true)
-	f.messages = 30
+	f.messages = paging.DefaultLimit + 5
 	query := "from:sender@example.test  has:attachment\tnewer_than:7d"
 	for _, name := range []string{"search", "thread"} {
 		f.reset()
@@ -374,7 +373,7 @@ func TestHandlersReadMail(t *testing.T) {
 		}
 		var first tools.MessageList
 		handlerJSON(t, f.call(t, name, args, ""), &first)
-		handlerEqual(t, len(first.Messages), 25)
+		handlerEqual(t, len(first.Messages), paging.DefaultLimit)
 		if first.Next == nil {
 			t.Fatal("missing next")
 		}
@@ -388,7 +387,7 @@ func TestHandlersReadMail(t *testing.T) {
 		all := append([]tools.Summary{}, first.Messages...)
 		all = append(all, second.Messages...)
 		for i, s := range all {
-			n := 30 - i
+			n := paging.DefaultLimit + 5 - i
 			if name == "thread" {
 				n = i + 1
 			}
@@ -413,7 +412,7 @@ func TestHandlersReadMail(t *testing.T) {
 				handlerEqual(t, r.Query["q"], []string{query})
 				handlerEqual(t, r.Query["labelIds"], []string{"custom-fixture"})
 				if lists == 2 {
-					handlerEqual(t, r.Query["pageToken"], []string{"provider-next"})
+					handlerEqual(t, r.Query["pageToken"], []string{strconv.Itoa(paging.DefaultLimit)})
 				}
 			}
 		}
@@ -750,7 +749,7 @@ func TestHandlersStorageFailures(t *testing.T) {
 	}
 }
 
-// R-YH0G-5VI8 R-Z0IU-A7DC R-Z2YN-1QUQ R-MYZL-OERL
+// R-3M19-1C7O R-Z0IU-A7DC R-Z2YN-1QUQ R-MYZL-OERL
 func TestHandlersRemainingServiceRefusals(t *testing.T) {
 	t.Run("stopping", func(t *testing.T) {
 		f := newHandlerFixture(t, true)
@@ -931,4 +930,74 @@ func TestHandlersWholePullAndDraftOwnership(t *testing.T) {
 		}
 		handlerEqual(t, after, d)
 	})
+}
+
+// R-3OH1-SVP2 R-3KTC-NKGZ R-3M19-1C7O
+func TestSearchPagingValidation(t *testing.T) {
+	f := newHandlerFixture(t, true)
+	for _, limit := range []int{0, -1, paging.MaxLimit + 1} {
+		_, err := paging.Window(&limit)
+		for _, page := range []string{"", "bogus"} {
+			f.reset()
+			f.call(t, "search", map[string]any{"query": "", "page": page, "limit": limit}, err.Error())
+			for _, r := range f.calls() {
+				if r.Path != "/token/google" {
+					t.Fatal(r)
+				}
+			}
+		}
+	}
+	f.gmailStatus = 400
+	f.call(t, "search", map[string]any{"query": "", "page": "bogus"}, handlerRefusal("provider"))
+}
+
+// R-3N95-F3YD R-3POY-6NFR
+func TestSearchWindowAndOptionalArguments(t *testing.T) {
+	for _, limit := range []any{nil, 10, paging.MaxLimit} {
+		f := newHandlerFixture(t, true)
+		n := paging.DefaultLimit
+		if l, ok := limit.(int); ok {
+			n = l
+		}
+		f.messages = n + 2
+		if limit == nil {
+			f.messages = n + 5
+		}
+		args := map[string]any{"query": "query-fixture", "page": nil, "limit": limit}
+		var first, second tools.MessageList
+		handlerJSON(t, f.call(t, "search", args, ""), &first)
+		handlerEqual(t, len(first.Messages), n)
+		if first.Next == nil {
+			t.Fatal(first)
+		}
+		args["page"] = first.Next
+		handlerJSON(t, f.call(t, "search", args, ""), &second)
+		handlerEqual(t, len(second.Messages), f.messages-n)
+		if second.Next != nil {
+			t.Fatal(second)
+		}
+		all := append([]tools.Summary{}, first.Messages...)
+		all = append(all, second.Messages...)
+		for i, s := range all {
+			handlerEqual(t, s.ID, fmt.Sprintf("msg-%02d", f.messages-i))
+		}
+		for _, r := range f.calls() {
+			if r.Path == "/gmail/v1/users/me/messages" {
+				handlerEqual(t, r.Query["maxResults"], []string{strconv.Itoa(n)})
+				handlerEqual(t, r.Query["q"], []string{"query-fixture"})
+			}
+		}
+	}
+}
+
+// R-3QWU-KF6G
+func TestDraftListingDoesNotRefresh(t *testing.T) {
+	f := newHandlerFixture(t, true)
+	d := f.seedDraft(t)
+	f.gmailStatus = 404
+	f.reset()
+	var list tools.DraftList
+	handlerJSON(t, f.call(t, "drafts", tools.DraftsArgs{}, ""), &list)
+	handlerEqual(t, list.Drafts, []tools.Draft{tools.DraftOf(d, false)})
+	handlerEqual(t, len(f.calls()), 0)
 }

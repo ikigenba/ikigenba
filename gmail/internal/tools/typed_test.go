@@ -11,6 +11,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/gmail/internal/gmail"
@@ -95,7 +96,7 @@ func TestTypedCatalog(t *testing.T) {
 	}
 }
 
-// R-MP8E-M8U1
+// R-3FXR-4HI7
 func TestTypedArguments(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	s := typedServer(t)
@@ -104,7 +105,7 @@ func TestTypedArguments(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	props := [][]string{{"query", "label", "page"}, {"thread", "page"}, {"message"}, {}, {"message", "path", "attachment", "expires"}, {"to", "cc", "bcc", "subject", "body", "reply_to"}, {"path", "draft"}, {"draft"}, {"draft"}, {}, {"draft"}, {}, {"transfer"}}
+	props := [][]string{{"query", "label", "page", "limit"}, {"thread", "page"}, {"message"}, {}, {"message", "path", "attachment", "expires"}, {"to", "cc", "bcc", "subject", "body", "reply_to"}, {"path", "draft"}, {"draft"}, {"draft"}, {"page", "limit"}, {"draft"}, {"page", "limit"}, {"transfer"}}
 	required := [][]string{{"query"}, {"thread"}, {"message"}, {}, {"message", "path"}, {}, {"path", "draft"}, {"draft"}, {"draft"}, {}, {"draft"}, {}, {"transfer"}}
 	for i, v := range info {
 		var schema struct {
@@ -138,7 +139,11 @@ func TestTypedArguments(t *testing.T) {
 		typedEqual(t, append([]string{}, schema.Required...), required[i])
 	}
 	_ = tools.NoArgs{}
-	_ = tools.SearchArgs{"", "", ""}
+	page, limit := "page-fixture", 7
+	search := tools.SearchArgs{"query-fixture", "label-fixture", &page, &limit}
+	typedEqual(t, search.Query, "query-fixture")
+	typedEqual(t, search.Label, "label-fixture")
+	typedPagingArguments(t, search.Page, search.Limit, page, limit)
 	_ = tools.ThreadArgs{"", ""}
 	_ = tools.ShowArgs{""}
 	_ = tools.PullArgs{"", "", "", nil}
@@ -146,6 +151,16 @@ func TestTypedArguments(t *testing.T) {
 	_ = tools.PushArgs{"", ""}
 	_ = tools.DraftArgs{""}
 	_ = tools.TransferArgs{""}
+	drafts := tools.DraftsArgs{&page, &limit}
+	typedPagingArguments(t, drafts.Page, drafts.Limit, page, limit)
+	transfers := tools.TransfersArgs{&page, &limit}
+	typedPagingArguments(t, transfers.Page, transfers.Limit, page, limit)
+}
+
+func typedPagingArguments(t *testing.T, page *string, limit *int, wantPage string, wantLimit int) {
+	t.Helper()
+	typedEqual(t, *page, wantPage)
+	typedEqual(t, *limit, wantLimit)
 }
 
 // R-YDCR-0KA5
@@ -228,19 +243,54 @@ func TestTypedMailEncoding(t *testing.T) {
 	typedEncoding(t, tools.LabelList{}, `{"labels":[]}`)
 }
 
-// R-Y3LJ-YECL
+// R-3H5N-I98W
 func TestTypedDraftEncoding(t *testing.T) {
 	typedEncoding(t, tools.Attachment{}, `{"path":"","name":"","content_type":"","bytes":0}`)
 	typedEncoding(t, tools.Draft{}, `{"id":"","message":"","thread":"","status":"","to":[],"cc":[],"bcc":[],"subject":"","attachments":[],"created":"","modified":""}`)
 	x := "x"
 	typedEncoding(t, tools.Draft{Draft: &x, ReplyTo: &x, Link: &x, Sent: &x, Body: &x}, `{"id":"","draft":"x","message":"","thread":"","status":"","to":[],"cc":[],"bcc":[],"subject":"","reply_to":"x","attachments":[],"link":"x","created":"","modified":"","sent":"x","body":"x"}`)
 	typedEncoding(t, tools.DraftList{}, `{"drafts":[]}`)
+	next := "page"
+	typedEncoding(t, tools.DraftList{Next: &next}, `{"drafts":[],"next":"page"}`)
 }
 
-// R-Y4TG-C63A
+// R-3IDJ-W0ZL
 func TestTypedTransferEncoding(t *testing.T) {
 	typedEncoding(t, tools.Record{}, `{"id":"","direction":"","status":"","message":"","name":"","path":"","content_type":"","bytes":0,"started":""}`)
 	x := "x"
 	typedEncoding(t, tools.Record{Reason: &x, Attachment: &x, Draft: &x, Finished: &x, URL: &x, Link: &x}, `{"id":"","direction":"","status":"","reason":"x","message":"","attachment":"x","draft":"x","name":"","path":"","content_type":"","bytes":0,"started":"","finished":"x","url":"x","link":"x"}`)
 	typedEncoding(t, tools.TransferList{}, `{"transfers":[]}`)
+	next := "page"
+	typedEncoding(t, tools.TransferList{Next: &next}, `{"transfers":[],"next":"page"}`)
+}
+
+// R-3JLG-9SQA
+func TestPagingSchemas(t *testing.T) {
+	s := typedServer(t)
+	tools.Register(s, tools.Config{})
+	info, err := typedClient(t, s).ListTools(context.Background(), identity.Caller{UserID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range info {
+		var input, output struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+		}
+		typedDecode(t, tool.InputSchema, &input)
+		typedDecode(t, tool.OutputSchema, &output)
+		switch tool.Name {
+		case "search", "drafts", "transfers":
+			typedEqual(t, input.Properties["page"].Description, paging.PageDescription)
+			typedEqual(t, input.Properties["limit"].Description, paging.LimitDescription)
+			typedEqual(t, output.Properties["next"].Description, paging.NextDescription)
+		case "thread":
+			if _, ok := input.Properties["limit"]; ok {
+				t.Fatal(tool.Name)
+			}
+		case "labels":
+			typedEqual(t, len(input.Properties), 0)
+		}
+	}
 }

@@ -333,6 +333,47 @@ func (s *Store) ListTransfers(ctx context.Context, userID string) ([]Transfer, e
 	return out, err
 }
 
+// ListTransfersAfter reads a bounded window below the supplied list position.
+func (s *Store) ListTransfersAfter(ctx context.Context, userID, started, id string, n int) ([]Transfer, error) {
+	var out []Transfer
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		query, args := listWindow(transferCols, "transfers", "started", userID, started, id, n)
+		var err error
+		out, err = queryTransfers(ctx, tx, query, args...)
+		return err
+	})
+	return out, err
+}
+
+// HasActivePush reports whether the user has a queued or running push onto a draft.
+func (s *Store) HasActivePush(ctx context.Context, userID, draft string) (bool, error) {
+	var active bool
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		var one int
+		err := tx.QueryRowContext(ctx, "SELECT 1 FROM transfers WHERE user_id=? AND draft=? AND direction=? AND status IN (?,?) LIMIT 1", userID, draft, DirectionPush, StatusQueued, StatusRunning).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		active = err == nil
+		return err
+	})
+	return active, err
+}
+
+func listWindow(cols, table, column, userID, position, id string, n int) (string, []any) {
+	if n < 1 {
+		n = 0
+	}
+	query := "SELECT " + cols + " FROM " + table + " WHERE user_id=?"
+	args := []any{userID}
+	if position != "" || id != "" {
+		query += " AND (" + column + ",id) < (?,?)"
+		args = append(args, position, id)
+	}
+	query += " ORDER BY " + column + " DESC,id DESC LIMIT ?"
+	return query, append(args, n)
+}
+
 // UnfinishedTransfers reads all unfinished transfers oldest first.
 func (s *Store) UnfinishedTransfers(ctx context.Context) ([]Transfer, error) {
 	var out []Transfer
@@ -573,6 +614,18 @@ func (s *Store) ListDrafts(ctx context.Context, userID string) ([]Draft, error) 
 	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
 		var err error
 		out, err = queryDrafts(ctx, tx, "SELECT "+draftCols+" FROM drafts WHERE user_id=? ORDER BY created DESC,id DESC", userID)
+		return err
+	})
+	return out, err
+}
+
+// ListDraftsAfter reads a bounded window below the supplied list position.
+func (s *Store) ListDraftsAfter(ctx context.Context, userID, created, id string, n int) ([]Draft, error) {
+	var out []Draft
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		query, args := listWindow(draftCols, "drafts", "created", userID, created, id, n)
+		var err error
+		out, err = queryDrafts(ctx, tx, query, args...)
 		return err
 	})
 	return out, err

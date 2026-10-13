@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/gmail/internal/gmail"
 	"github.com/ikigenba/ikigenba/gmail/internal/urls"
 )
@@ -123,17 +124,31 @@ func assertCall(t *testing.T, c call, method, path string, params map[string]str
 
 func TestDeclarations(t *testing.T) {
 	// R-G8E4-G1PY R-G9M0-TTGN R-GATX-7L7C R-GC1T-LCY1
-	// R-GD9P-Z4OQ R-GFPI-QO64 R-GGXF-4FWT R-GKL4-9R4W R-5Q48-1PRA
+	// R-GD9P-Z4OQ R-GFPI-QO64 R-37EG-G3BC R-GKL4-9R4W R-5Q48-1PRA
 	_ = gmail.Config{http.DefaultClient, "", nil}
 	_ = gmail.Label{"id", "label", true}
 	_ = gmail.Summary{"id", "thread", time.Time{}, "from", "to", "cc", "subject", "snippet", []string{}, true, 1, "link"}
 	_ = gmail.Page{[]gmail.Summary{}, "next"}
 	_ = gmail.Message{"id", "thread", time.Time{}, "from", "to", "cc", "subject", "snippet", []string{}, true, []gmail.Attachment{}, "link", "message-id", "reply", "reply-to", "refs", "text", true}
 	_ = gmail.Attachment{"part", "name", "type", 1}
-	_ = gmail.Query{"query", "label", "page"}
-	_ = gmail.Stat{"id", "thread", time.Time{}, 1, true}
-	_ = gmail.Draft{"draft", "message", "thread"}
-	_ = gmail.Content{0, strings.NewReader("")}
+	q := gmail.Query{"query", "label", "page", 1}
+	if q.Text != "query" || q.Label != "label" || q.Page != "page" || q.Limit != 1 {
+		t.Fatalf("query fields %#v", q)
+	}
+	instant := time.UnixMilli(1234).UTC()
+	stat := gmail.Stat{"id", "thread", instant, 7, true}
+	if stat.ID != "id" || stat.Thread != "thread" || !stat.Date.Equal(instant) || stat.SizeEstimate != 7 || !stat.Sent {
+		t.Fatalf("stat fields %#v", stat)
+	}
+	draft := gmail.Draft{"draft", "message", "thread"}
+	if draft.ID != "draft" || draft.Message != "message" || draft.Thread != "thread" {
+		t.Fatalf("draft fields %#v", draft)
+	}
+	reader := strings.NewReader("content")
+	content := gmail.Content{7, reader}
+	if content.Bytes != 7 || content.Reader != reader {
+		t.Fatalf("content fields %#v", content)
+	}
 	if gmail.DefaultBaseURL != "https://gmail.googleapis.com" || gmail.PageSize != 25 || gmail.BodyCap != 65536 || gmail.UploadCap != 36700160 || gmail.PushChunk != 8<<20 || gmail.Called != "gmail.called" {
 		t.Fatal("constants differ")
 	}
@@ -217,9 +232,9 @@ func TestLabels(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
-	// R-29FQ-KLVZ R-FYYQ-C9XO R-4MZO-A1QM R-GY00-H8AJ R-GZ7W-V018 R-4O7K-NTHB
+	// R-29FQ-KLVZ R-FYYQ-C9XO R-4MZO-A1QM R-GZ7W-V018 R-4O7K-NTHB
 	f, c := newFake(t, labelsJSON(), okJSON(`{"messages":[{"id":"first"},{"id":"vanished"},{"id":"third"}],"nextPageToken":"opaque-next"}`), okJSON(messageJSON("first", 1234)), reply{status: 404}, okJSON(messageJSON("third", 2345)))
-	p, err := c.Search(context.Background(), syntheticToken, gmail.Query{Text: `from:(synthetic) "quoted"`, Label: "wOrK", Page: "opaque-current"})
+	p, err := c.Search(context.Background(), syntheticToken, gmail.Query{Limit: gmail.PageSize, Text: `from:(synthetic) "quoted"`, Label: "wOrK", Page: "opaque-current"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +260,7 @@ func TestSearch(t *testing.T) {
 		want        error
 	}{{"unknown-label", "", gmail.ErrNotFound}, {"", `{}`, nil}} {
 		f, c := newFake(t, labelsJSON(), okJSON(input.list))
-		p, err := c.Search(context.Background(), syntheticToken, gmail.Query{Label: input.label})
+		p, err := c.Search(context.Background(), syntheticToken, gmail.Query{Limit: gmail.PageSize, Label: input.label})
 		if input.want != nil {
 			requireError(t, err, input.want)
 			if len(f.calls()) != 1 || !reflect.DeepEqual(p, gmail.Page{}) {
@@ -260,6 +275,50 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+func TestSearchQuery(t *testing.T) {
+	// R-38MC-TV21
+	for limit := 1; limit <= paging.MaxLimit; limit++ {
+		for options := 0; options < 8; options++ {
+			f, c := newFake(t, labelsJSON(), okJSON(`{}`))
+			q := gmail.Query{Limit: limit}
+			params := map[string]string{"maxResults": strconv.Itoa(limit), "includeSpamTrash": "false"}
+			if options&1 != 0 {
+				q.Text = "  from:(synthetic) \"quoted\" + & % é\n"
+				params["q"] = q.Text
+			}
+			if options&2 != 0 {
+				q.Label = "wOrK"
+				params["labelIds"] = "custom"
+			}
+			if options&4 != 0 {
+				q.Page = "opaque +/&=%é"
+				params["pageToken"] = q.Page
+			}
+			if _, err := c.Search(context.Background(), syntheticToken, q); err != nil {
+				t.Fatalf("limit %d options %d: %v", limit, options, err)
+			}
+			calls := f.calls()
+			if len(calls) != 2 {
+				t.Fatalf("limit %d options %d: requests %v", limit, options, calls)
+			}
+			assertCall(t, calls[0], "GET", "/gmail/v1/users/me/labels", nil)
+			assertCall(t, calls[1], "GET", "/gmail/v1/users/me/messages", params)
+		}
+	}
+}
+
+func TestSearchRejectsInvalidLimit(t *testing.T) {
+	// R-39U9-7MSQ
+	for _, limit := range []int{-100, -1, 0, paging.MaxLimit + 1, paging.MaxLimit * 2} {
+		f, c := newFake(t)
+		_, err := c.Search(context.Background(), syntheticToken, gmail.Query{Text: "query", Label: "Work", Page: "opaque", Limit: limit})
+		requireError(t, err, gmail.ErrProvider)
+		if calls := f.calls(); len(calls) != 0 {
+			t.Fatalf("limit %d: requests %v", limit, calls)
+		}
+	}
+}
+
 func TestReadStopsOnFailures(t *testing.T) {
 	// R-29FQ-KLVZ R-287U-6U5A R-5TRX-70ZD
 	for _, name := range []string{"search", "thread", "show"} {
@@ -267,7 +326,7 @@ func TestReadStopsOnFailures(t *testing.T) {
 		var err error
 		switch name {
 		case "search":
-			p, e := c.Search(context.Background(), syntheticToken, gmail.Query{})
+			p, e := c.Search(context.Background(), syntheticToken, gmail.Query{Limit: gmail.PageSize})
 			err = e
 			if !reflect.DeepEqual(p, gmail.Page{}) {
 				t.Fatal(p)
@@ -292,7 +351,7 @@ func TestReadStopsOnFailures(t *testing.T) {
 	}
 	for _, status := range []int{400, 401, 403, 413, 500} {
 		f, c := newFake(t, labelsJSON(), okJSON(`{"messages":[{"id":"first"},{"id":"later"}]}`), reply{status: status})
-		p, err := c.Search(context.Background(), syntheticToken, gmail.Query{})
+		p, err := c.Search(context.Background(), syntheticToken, gmail.Query{Limit: gmail.PageSize})
 		want := gmail.ErrProvider
 		switch status {
 		case 400:
