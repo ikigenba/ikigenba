@@ -1,5 +1,5 @@
 {{/* One run at GET /runs/<id>: its record in full, when it failed the
-     reason in words, and when it is done the first page of its rows. Shown
+     reason in words, and when it is done one window of its rows. Shown
      to any signed-in user; a guest is sent to sign in; an unknown id or a
      pruned one is the not-found page. The page does not stream: a run
      still running shows the record as it stands when the page is loaded,
@@ -16,14 +16,16 @@
      .Started and .StartedText (RFC 3339 UTC to the second, and the same as
      shown, "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText
      (likewise; both empty while running), and .Rows, .New, .Changed,
-     .Unchanged and .Gone (ints, as the record holds them); .Rows, the
-     first page of the run's rows by source id, the rows tool's first page,
+     .Unchanged and .Gone (ints, as the record holds them); .Rows, one
+     window of the run's rows by source id, the window .Page names,
      empty unless .Run.Status is "done", each with .SourceID (the row's
      source_id, such as "1023916"), .Name (the business as the source
      spells it), .City, .State and .County (the address's parts; each may
-     be empty); and .Next (string, the page token the rows tool's next
-     carries for the rows after these, the value to pass as its page; empty
-     when none remain or the run is not done). Counts are shown as the plain integer. Status and reason words
+     be empty); .Page (string, this window's own page token, the ?page=
+     the request carried; empty on the first window); and .Next (string,
+     the page token for the window after this one, the token the rows
+     tool's next carries; empty when none remain or the run is not
+     done). Counts are shown as the plain integer. Status and reason words
      are shown as stored; the status's kind is chosen here: "running" info,
      "done" ok, "failed" err; the failure's sentence is chosen from
      .Reason. Hooks: title "<.ID> · scrapes"; h1 with text .ID;
@@ -68,10 +70,15 @@
      td.row-id > a.row-link (href "/runs/<.Run.ID>/rows/<.SourceID>",
      .SourceID in a code element), td.row-name (.Name), td.row-city
      (.City), td.row-state (.State) and td.row-county (.County in a code
-     element when set); then, when .Next is not empty, p#next (text "More
-     rows follow: call rows with run <.Run.ID> and page <.Next>.", .Next
-     being the token; rows, run, .Run.ID, page and .Next each in a code
-     element). No script but
+     element when set); then nav.paging#paging (aria-label "Pages") whose
+     children are, in order, First (on the first window, .Page empty, a
+     span with aria-current="page" and text "First"; otherwise a link to
+     /runs/<.Run.ID> with text "First") and, only when .Next is not empty,
+     Next (a link to /runs/<.Run.ID>?page=<.Next> with text "Next"); the
+     nav shows only when .Status is "done" and .Rows is not empty or .Page
+     is not empty, after the card (section#rows), so an emptied later
+     window still offers First; on the first window with no rows there is
+     no nav. No script but
      appkit's /_appkit/feedback.js. */}}
 {{define "run"}}<!doctype html>
 <html lang="en">
@@ -79,7 +86,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$next := .Next}}{{$rows := .Rows}}{{with .Run}}<h1>{{.ID}}</h1>
+{{$next := .Next}}{{$page := .Page}}{{$rows := .Rows}}{{with .Run}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
 {{if eq .Status "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">Running</strong><p>The page does not stream. Reload it to see the outcome; the rows show once the run is done.</p></div>
 <p><a id="reload" class="button secondary small" href="/runs/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
@@ -121,7 +128,7 @@
 <p>The source answered no record inside the scraper's scope.</p>
 </div>{{end}}
 </section>
-{{if $next}}<p id="next">More rows follow: call <code>rows</code> with <code>run</code> <code>{{$id}}</code> and <code>page</code> <code>{{$next}}</code>.</p>
+{{if or $rows $page}}<nav class="paging" id="paging" aria-label="Pages">{{if $page}}<a href="/runs/{{$id}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if $next}}<a href="/runs/{{$id}}?page={{$next}}">Next</a>{{end}}</nav>
 {{end}}{{end}}{{end}}</main>
 {{template "footer" .Banner}}
 </body>
